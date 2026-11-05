@@ -1287,6 +1287,8 @@ internal static class Check
 
         foreach (string note in generated.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));
         foreach (string warning in generated.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+        // brief-dfr35-1 R-dfr35-1-7 — the short edges: no board tried with one stopped Gmsh, so said here and not among the warnings.
+        foreach (string note in CircuitRF.Design.Layout.Em3d.Em3dGeometryCheck.NoteSentences(generated.GeometryFindings)) f.Add(CliDiagnostics.CheckEmNote(path, note));
         if (generated.Problem is not { } problem)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, generated.Refusal ?? "the 3D problem could not be built."));

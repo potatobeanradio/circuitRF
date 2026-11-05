@@ -292,7 +292,8 @@ public static class EmergeResults
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));
-        lines.Add($"circuitRF-EM 3D mesh: {N(facts.Tetrahedra)} tetrahedra, element order {settings.ElementOrder}");
+        lines.Add($"circuitRF-EM 3D mesh: {N(facts.Tetrahedra)} tetrahedra, element order {settings.ElementOrder}" +
+                  (problem.MeshFrequencyHz is { } meshedAt ? $", sized at {(meshedAt / 1e9).ToString("R", System.Globalization.CultureInfo.InvariantCulture)} GHz" : ""));
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
         lines.Add(Em3dRunService.RunProvenancePrefix + string.Join("; ",
             $"preset {setup.Emerge?.Quality ?? PalaceQuality.Standard}",

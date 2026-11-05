@@ -991,6 +991,54 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>Why the typed pattern frequency was not taken; null when it was.</summary>
     [ObservableProperty] private string? _patternFrequencyError;
 
+    /// <summary><see cref="EmSetup.MeshFrequencyGHz"/> as typed, GHz; blank is the sweep's top. Committed on Enter or lost focus.</summary>
+    [ObservableProperty] private string _meshFrequency3DText = "";
+
+    /// <summary>Why the typed mesh frequency was not taken; null when it was.</summary>
+    [ObservableProperty] private string? _meshFrequency3DError;
+
+    /// <summary>A driven setup on a solver that meshes for it. openEMS's grid has to carry the sweep's top, and a static or eigenmode
+    /// problem has no sweep to size against.</summary>
+    public bool ShowMeshFrequency3D => (IsPalaceSetup || IsEmergeSetup) && Problem3DChoice.Value == Em3dProblemType.Driven;
+
+    /// <summary>The box's unit: the stop unit of the segment holding the sweep's top, since segments may differ. A segment that does not
+    /// parse yet, mid-typing, holds nothing; with none that does, the first segment's unit.</summary>
+    public string MeshFrequency3DUnit
+    {
+        get
+        {
+            double top = 0;
+            string unit = Frequency.StopUnit;
+            foreach (var row in FrequencySegments)
+            {
+                try
+                {
+                    var spec = row.Build();
+                    foreach (double f in spec.Expand())
+                        if (f > top && double.IsFinite(f)) (top, unit) = (f, spec.StopUnit);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or OverflowException or CircuitRF.Core.Expressions.ExpressionException) { }
+            }
+            return unit;
+        }
+    }
+
+    /// <summary>Blank means the sweep's top, so the grey text is that frequency, in the unit beside the box, following the sweep; empty
+    /// while no sweep parses, rather than a number from a sweep that is not there.</summary>
+    public string MeshFrequency3DPlaceholder
+        => TryMaxFrequency() is > 0 and var top
+            ? (top / ViewModels.FreqUnitHelper.Multiplier(MeshFrequency3DUnit)).ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : "";
+
+    /// <summary>The stored GHz in the box's unit; blank when none is stated.</summary>
+    private string FormatMeshFrequency3D()
+        => Working.MeshFrequencyGHz is { } ghz
+            ? (ghz * 1e9 / ViewModels.FreqUnitHelper.Multiplier(MeshFrequency3DUnit)).ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : "";
+
+    public const string MeshFrequency3DTip =
+        "The frequency the mesh is sized at. Blank sizes it for the top of the sweep. The solve still covers the whole sweep. " +
+        "Type your fundamental to put the elements where the accuracy matters: the harmonics above it are solved with fewer elements per " +
+        "wavelength, and the mesh and the run are much smaller. Palace and EMerge read it; openEMS's grid stays sized at the sweep's top.";
+
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
     /// condition (R-em-11).</summary>
@@ -1734,6 +1782,31 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>The mesh frequency as typed, in one undo entry; blank clears it.</summary>
+    public void CommitMeshFrequency3D()
+    {
+        if (_suppressCommit) return;
+        string t = (MeshFrequency3DText ?? "").Trim();
+        double? ghz = null;
+        if (t.Length > 0)
+        {
+            if (!TryDouble(t, out double v) || !(v > 0) || !double.IsFinite(v))
+            {
+                MeshFrequency3DError = $"Enter a frequency in {MeshFrequency3DUnit} greater than 0, or leave it blank for the sweep's top.";
+                return;
+            }
+            // In GHz on disk whatever the box's unit; rounded, so 2450 MHz is stored as 2.45 and not 2.4500000000000002.
+            ghz = Math.Round(v * ViewModels.FreqUnitHelper.Multiplier(MeshFrequency3DUnit) / 1e9, 9);
+        }
+        MeshFrequency3DError = null;
+        if (ghz == Working.MeshFrequencyGHz) return;
+        var before = SnapshotJson();
+        Working.MeshFrequencyGHz = ghz;
+        CommitEdit(before, "Change mesh frequency");
+        MeshFrequency3DText = FormatMeshFrequency3D();
+        Refresh();
+    }
+
     private static string FormatPatternFrequency(double? ghz)
         => ghz is { } g ? g.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : "";
 
@@ -2063,6 +2136,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
         PatternFrequencyText = FormatPatternFrequency(Working.PatternFrequencyGHz);
         PatternFrequencyError = null;
+        MeshFrequency3DText = FormatMeshFrequency3D();
+        MeshFrequency3DError = null;
         AnalysisKind = Working.AnalysisKind;
         SyncSolver3DFields();
         _suppressCommit = true;
@@ -2106,11 +2181,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         _suppressCommit = false;
         OnPropertyChanged(nameof(MeshFrequencyUnit));
         OnPropertyChanged(nameof(MeshFrequencyPlaceholder));
+        OnPropertyChanged(nameof(MeshFrequency3DUnit));
+        OnPropertyChanged(nameof(MeshFrequency3DPlaceholder));
+        // A stated value keeps its frequency when the sweep's unit changes; what is typed and refused stays for the user to fix.
+        if (MeshFrequency3DError is null) MeshFrequency3DText = FormatMeshFrequency3D();
     }
 
     /// <summary>Re-resolve the layout, re-extract, re-ask the kernel. Cheap enough to run on every
     /// settings change, which is exactly what R-em-13 asks for.</summary>
     public void Refresh()
+    {
+        _geometryCheckSource = null;
+        RefreshCore();
+        // brief-dfr35-1 R-dfr35-1-7 — off this thread, once this refresh has set the warnings it joins.
+        if (_geometryCheckSource is { } checkedSource) GeometryCheck = RefreshGeometryCheckAsync(checkedSource);
+    }
+
+    private void RefreshCore()
     {
         Problem            = null;
         PlanarProblem      = null;
@@ -2139,6 +2226,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // reaches the mesher would otherwise keep whatever the last geometry said.
         Warnings           = [];
         PlanarMeshWarnings = [];
+        _geometryCheck++;    // brief-dfr35-1 R-dfr35-1-7 — one still running is about what this refresh replaces
         // EM-SEV R-emsev-6 — cleared with the rest, so a refresh that returns early (no layout, no
         // technology) cannot leave the previous layout's sentence under the tick boxes.
         ExcludedArtworkNote = null;
@@ -2202,6 +2290,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         TechnologyName = source.Technology.Name;
         BuildStackupRows(source.Technology);
         BuildConductorChoices(source.Technology);
+        _geometryCheckSource = source;
 
         // Same two fields PreparePlanarMesh sets, reused here for BuildMesh's own (kernel A) length
         // formatter — Refresh() runs entirely on the UI thread, so this could read source.View
@@ -2375,10 +2464,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         try
         {
             double f = 0;
-            foreach (double v in Working.ExpandFrequencies()) f = Math.Max(f, v);
+            // A sweep divided by zero mid-typing is not a top frequency.
+            foreach (double v in Working.ExpandFrequencies()) if (double.IsFinite(v)) f = Math.Max(f, v);
             return f;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
+        // ExpressionException too: a stop frequency half typed as a name, which reached the panel's placeholder uncaught.
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or OverflowException or CircuitRF.Core.Expressions.ExpressionException)
         {
             return 0;
         }

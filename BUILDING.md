@@ -763,7 +763,9 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
 
 ## Release checklist
 
-1. `dotnet test` is green (see the root `CLAUDE.md` for what the default test gate covers).
+1. `dotnet test` is green (see the root `CLAUDE.md` for what the default test gate covers). Then
+   **run the mesh replay** over whatever field boards you hold, against last release's output, and
+   read what changed: see "Before a release: the mesh replay" below.
 2. Bump the repo-root `VERSION` file — that is the only place, and it feeds the About box, every
    installer and all their file names.
 3. Run **one script on each platform**, with no arguments — each builds everything that platform
@@ -877,6 +879,27 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    yet.
 
 ---
+
+## Before a release: the mesh replay
+
+Imported boards fail at the mesh, the one step a dry run does not reach, and most of what has stopped
+them was one piece of geometry on one board. `tools/MeshReplay` meshes every 3D setup under a folder:
+
+```
+dotnet build src/Cli -c Release
+dotnet run --project tools/MeshReplay -c Release -- <folder> --out replay.json --previous last-replay.json
+```
+
+It finds every `.cem` under the folder, copies each workspace to a temporary directory so nothing it
+is pointed at is written, and runs `em --mesh-only` there with a time limit and a memory ceiling
+(`--time`, 300 s; `--memory`, 12 GB). One row per setup: **meshed** (elements, against the estimate,
+and Gmsh's warnings), **refused** (the first sentence), **failed** (Gmsh's words), **timed-out**. A
+row marked "named before the mesh" is a failure the dry run's geometry check had already said.
+
+With `--previous` it prints only what changed. That is the part to read: a refusal that is a correct
+answer to a setup's state, such as a port outside its solve region, is not a failure, and it stays
+quiet until it changes. The tool holds no data, is not in `circuitRF.slnx` and is not a test: nothing
+in the repo depends on the folder existing. Keep the folder and `replay.json` out of the repo.
 
 ## The release signing key (design §15.5)
 

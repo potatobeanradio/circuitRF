@@ -1448,6 +1448,10 @@ public sealed class CemFile
     /// omitted when null, so a file written before it existed loads and re-serialises byte-identically.</summary>
     public double? PatternFrequencyGHz   { get; set; }
 
+    /// <summary>The frequency a driven 3D run sizes its mesh at, GHz (<see cref="EmSetup.MeshFrequencyGHz"/>); omitted when null, the
+    /// sweep's top.</summary>
+    public double? MeshFrequencyGHz      { get; set; }
+
     /// <summary>
     /// <b>LEGACY, read-only. The switch this came from has been removed — see
     /// <see cref="EmSetup.LegacyRawSolveRequested"/> for the measurement that removed it.</b>
@@ -1667,6 +1671,7 @@ public static class EmSetupPersistence
             s.DeembedOutsideCalibrationValidity ? true : null,
         RadiationPattern      = s.RadiationPattern ? true : null,
         PatternFrequencyGHz   = s.PatternFrequencyGHz is > 0 ? s.PatternFrequencyGHz : null,
+        MeshFrequencyGHz      = s.MeshFrequencyGHz is > 0 ? s.MeshFrequencyGHz : null,
         ReferenceInputPowerDbm = s.ReferenceInputPowerDbm != 0.0 ? s.ReferenceInputPowerDbm : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         CreateSnpSchematic    = s.CreateSnpSchematic ? true : null,
@@ -1791,6 +1796,7 @@ public static class EmSetupPersistence
         DeembedOutsideCalibrationValidity = f.DeembedOutsideCalibrationValidity ?? false,
         RadiationPattern      = f.RadiationPattern ?? false,
         PatternFrequencyGHz   = f.PatternFrequencyGHz is > 0 ? f.PatternFrequencyGHz : null,
+        MeshFrequencyGHz      = f.MeshFrequencyGHz is > 0 ? f.MeshFrequencyGHz : null,
         ReferenceInputPowerDbm = f.ReferenceInputPowerDbm ?? 0.0,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         CreateSnpSchematic    = f.CreateSnpSchematic ?? false,

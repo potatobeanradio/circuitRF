@@ -248,6 +248,16 @@ public static partial class Em3dRunService
         }
         var legs = Em3dSolvers.Of(choice).Select(d => d.NewLeg()).ToList();
         if (legs.Count == 0) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(choice.ToString()));
+        // brief-dfr35-1 R-dfr35-1-5 — the mesh Gmsh makes for Palace, whichever else a comparison runs: the other solvers mesh
+        // inside their own drivers, or not at all.
+        bool meshOnly = control?.MeshOnly == true;
+        if (meshOnly)
+        {
+            if (legs.FirstOrDefault(l => l.Solver.Id == PalaceSolver.Id) is not { } meshing)
+                return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(MeshOnlySource, MeshOnlyRefusal(Em3dSolvers.Names(Em3dSolvers.Of(choice)))));
+            legs = [meshing];
+            compare = false;
+        }
 
         // brief-em3d-25 R-em3d25-1c — every circuitRF-installed program this run found is held until it
         // returns, here and (by a lock file in its home) in every other process, so Uninstall refuses
@@ -322,9 +332,12 @@ public static partial class Em3dRunService
             return compare ? CompareRefused(legs, log) : log.Result(refused.Status, refused.Diagnostic);
 
         // ── brief-emdc-2 R-emdc2-2 — the 0 Hz row: ONE conduction solve, before any leg executes, which every leg splices ───
-        if (generated.WantsDc) run.Dc = SolveDc(problem, setup, resultsRoot, run);
+        if (generated.WantsDc && !meshOnly) run.Dc = SolveDc(problem, setup, resultsRoot, run);
 
         // ── execution ─────────────────────────────────────────────────────────────────────────
+        // brief-dfr35-1 R-dfr35-1-5 — no status.json: a mesh is not a run's result, and beginning one would drop the record of
+        // the result already in that folder.
+        if (meshOnly) return Single(legs[0].Execute(problem, SnpBasePath(resultsRoot, setup, legs[0].Solver.Id), run), log);
         if (!compare)
         {
             var only = legs[0];
@@ -580,7 +593,7 @@ public static partial class Em3dRunService
         => leg.Ok
             ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
                               Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull,
-                              MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull)
+                              MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull, MeshOnly: leg.MeshOnly)
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
@@ -593,7 +606,7 @@ public static partial class Em3dRunService
     /// criterion of ours): the sentence its <c>status.json</c> carries. Null when it converged.</param>
     internal sealed record Leg(Em3dSolverId Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
                               string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null,
-                              string? NotConverged = null)
+                              string? NotConverged = null, Em3dMeshOnlyReport? MeshOnly = null)
     {
         public bool Ok => Status == EmRunStatus.Ok;
         public static Leg Failed(Em3dSolverId s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
@@ -656,6 +669,13 @@ public static partial class Em3dRunService
         => Leg.Failed(solver, EmRunStatus.Refused, EmDiagnostics.Forwarded(
                stop.Reason == ProcessStopReason.Memory ? MemoryCeilingSource : DiskFloorSource,
                before + stop.Sentence(name, limits.CeilingOwner, remedies, logPath)));
+
+    /// <summary>The diagnostic source of <c>--mesh-only</c>'s refusal of a setup Gmsh does not mesh for.</summary>
+    public const string MeshOnlySource = "mesh-only";
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — why a setup with no Palace leg has nothing for <c>--mesh-only</c> to make.</summary>
+    public static string MeshOnlyRefusal(string solver)
+        => $"--mesh-only makes the mesh Gmsh writes for Palace, and this setup runs on {solver}, which meshes in its own run or not at all.";
 
     /// <summary>The diagnostic source of a run stopped at its memory ceiling.</summary>
     public const string MemoryCeilingSource = "memory-ceiling";

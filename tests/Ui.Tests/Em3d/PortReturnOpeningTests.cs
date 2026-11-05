@@ -117,6 +117,51 @@ public sealed class PortReturnOpeningTests : IDisposable
         Assert.Contains("/Inner 3/", r.Resolved!.NegativeObject, StringComparison.Ordinal);
     }
 
+    // ── brief-dfr35-1 R-dfr35-1-4 — the refusal says how far ─────────────────────────────────────────
+
+    /// <summary>A line ending inside an opening on the only plane under it: the refusal says how far along the line the plane starts,
+    /// which is the edit that fixes the port. A clearance whose near edge is 1.5 mm from the end.</summary>
+    [Fact]
+    public void ALineEndingInAnOpening_IsRefusedWithHowFarAlongTheLineThePlaneStarts()
+    {
+        var plane = new PolygonShape
+        {
+            Layer = new LayerKey(4, 0),
+            Xy = [Mm(-2), Mm(-5), Mm(12), Mm(-5), Mm(12), Mm(5), Mm(-2), Mm(5)],
+            Holes = [[Mm(8.5), Mm(-1.25), Mm(11), Mm(-1.25), Mm(11), Mm(1.25), Mm(8.5), Mm(1.25)]],
+        };
+        var g = Generate(FourLayer("Bottom Copper"), Line(L1, plane));
+        // The line runs from x = 0 to 10 and the opening starts at 8.5: 1.5 mm back along it.
+        string refusal = g.Refusal ?? g.PortRefusal ?? "";
+        Assert.Contains("the plane starts 1500 µm", refusal, StringComparison.Ordinal);
+        Assert.Contains("along the line", refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>A coplanar return whose gap flares at the end: the refusal says where it is straight for the sheet's length.</summary>
+    [Fact]
+    public void ACoplanarGapThatFlaresAtTheEnd_IsRefusedWithWhereItIsStraight()
+    {
+        var tech = FourLayer();
+        var ground = new PolygonShape
+        {
+            Layer = L1,
+            // Above the line, 0.2 mm from it from x = 2.4 mm inward; flaring to 1 mm over the last 0.4 mm. Below, the same.
+            Xy = [Mm(-1), Mm(0.5), Mm(2), Mm(1.3), Mm(2.4), Mm(0.5), Mm(10), Mm(0.5), Mm(10), Mm(3), Mm(-1), Mm(3)],
+        };
+        var lower = new PolygonShape
+        {
+            Layer = L1,
+            Xy = [Mm(-1), Mm(-0.5), Mm(2), Mm(-1.3), Mm(2.4), Mm(-0.5), Mm(10), Mm(-0.5), Mm(10), Mm(-3), Mm(-1), Mm(-3)],
+        };
+        List<LayoutShape> shapes = [Rect(L1, 0, -0.3, 10, 0.3), ground, lower, Port("P1", 0, 0, L1, LayoutRotation.R0), Rect(L2, -1, -3, 10, 3)];
+        var g = Generate(tech, shapes, s => s.Ports3D = [new EmPort3D(1, Return: EmPort3D.SameLayerReturn)]);
+
+        string refusal = g.Refusal ?? g.PortRefusal ?? "";
+        Assert.Contains("the gap is not straight", refusal, StringComparison.Ordinal);
+        Assert.Contains("it is straight from", refusal, StringComparison.Ordinal);
+        Assert.Contains("along the line", refusal, StringComparison.Ordinal);
+    }
+
     // ── R-5 — unmarked solid metal before any marked plane ──────────────────────────────────────────
 
     private static readonly LayerKey L1 = new(1, 0), L2 = new(2, 0), L3 = new(3, 0), L4 = new(4, 0);

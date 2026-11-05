@@ -147,6 +147,24 @@ public static class Em3dSizeEstimate
     }
 
     /// <summary>
+    /// brief-dfr35-1 R-dfr35-1-12 — tetrahedra per triangle of a round conductor's own curved face. Gmsh puts
+    /// <see cref="Em3dFidelity.PalaceCurvatureElements"/> elements round every circle whatever the size field says, so a board's via
+    /// barrels are far finer than the element at metal. Fitted on field boards with 18 to 220 vias, within 2.3 of 2 on all but the
+    /// few-via boards, where the term is small: it took a 6.6× estimate to 1.1× and a 2× estimate to 1.0×. Measured, not derived.
+    /// </summary>
+    public const double TetrahedraPerCurvedFaceTriangle = 2;
+
+    /// <summary>The curved face's term for a round conductor meshed at <paramref name="edgeM"/>: nothing when the curvature rule asks
+    /// for no finer an element than the size field, since the conductor's shell has counted that already.</summary>
+    public static double CurvedFaceTetrahedra(Em3dCylinder c, double edgeM)
+    {
+        double e = 2 * Math.PI * c.Radius / Em3dFidelity.PalaceCurvatureElements;
+        if (!(e > 0) || !(e < edgeM)) return 0;
+        double triangles = 2 * Math.PI * c.Radius * Distance(c.AxisStart, c.AxisEnd) / (Math.Sqrt(3) / 4 * e * e);
+        return TetrahedraPerCurvedFaceTriangle * triangles;
+    }
+
+    /// <summary>
     /// The initial Palace mesh, estimated: every MESHED region's volume divided by the volume of one
     /// regular tetrahedron at that region's initial element edge, times <see cref="GmshVolumeFill"/>, summed,
     /// plus the refined shells round conductors, sheets and ports when <c>refinement</c> is given. Conductors are holes in a
@@ -235,6 +253,11 @@ public static class Em3dSizeEstimate
                 outline += ShortEdgeTetrahedra([sh.Outline, .. sh.Holes], r.ConductorEdgeM);
             if (outline > 0) regions.Add(new Em3dRegionEstimate("outline short edges", 0, r.ConductorEdgeM, outline));
             tets += outline;
+            // brief-dfr35-1 R-dfr35-1-12 — and a round conductor's curved face, at the curvature rule's own element.
+            double curved = problem.Solids.Where(s => s.Role == Em3dRole.Conductor).Select(s => s.Primitive).OfType<Em3dCylinder>()
+                                   .Sum(c => CurvedFaceTetrahedra(c, r.ConductorEdgeM));
+            if (curved > 0) regions.Add(new Em3dRegionEstimate("round conductors' curved faces", 0, r.ConductorEdgeM, curved));
+            tets += curved;
         }
         long unknowns = (long)Math.Round(tets * UnknownsPerTet(order, problem.IsStatic));
         return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,

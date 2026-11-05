@@ -634,8 +634,25 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The setup the scene draws with: the active one's full .cem spelling, for the build's snapshot.</summary>
     private string? SceneSetupJson() => ActiveSetup is { } s ? EmSetupPersistence.Serialize(s) : null;
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-10 — what the box was last sized from with no setup active.</summary>
+    public C3dNoSetupBasis? NoSetupBasis { get; private set; }
+
+    private (string Key, long Ticks, string? Cem) _soleSetup;
+
+    /// <summary>The walk over the workspace's <c>.cem</c> files is kept a few seconds: this runs on every rebuild of the scene, an
+    /// edit is many rebuilds, and the walk reads each file.</summary>
+    private C3dNoSetupBasis NoSetupBasisFor(C3dDocument doc, C3dElaboration e, string documentPath, string? workspaceCws)
+    {
+        string key = $"{documentPath}|{workspaceCws}|{string.Join('|', e.FilesRead)}";
+        long now = Environment.TickCount64;
+        if (_soleSetup.Key != key || now - _soleSetup.Ticks > 10_000)
+            _soleSetup = (key, now, C3dNoSetupBox.SoleSetupFile(documentPath, workspaceCws, e.FilesRead));
+        return C3dNoSetupBox.For(doc, _soleSetup.Cem);
+    }
+
     /// <summary>Runs on the build's thread: the box, the ports and the face boundaries for this elaboration.</summary>
-    private RecordsView ResolveRecords(C3dDocument doc, C3dElaboration e, string? setupJson, IReadOnlySet<string>? hiddenTints = null)
+    private RecordsView ResolveRecords(C3dDocument doc, C3dElaboration e, string? setupJson, string documentPath, string? workspaceCws,
+                                       IReadOnlySet<string>? hiddenTints = null)
     {
         EmSetup? setup = null;
         if (setupJson is not null)
@@ -643,9 +660,8 @@ public sealed partial class C3dEditorViewModel
         // 3D editor round 3 — with no setup, the box a new setup would solve in (owner decision): drawn once there is a solid
         // or a sheet to size it (Extent is null until then), never before.
         // With no setup, the document's own box (its padding and walls, stated before any setup exists) on that default.
-        var boxSetup = setup ?? (setupJson is null
-            ? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, AirBox = EmSetupPersistence.FromCem(doc.AirBox) }
-            : null);
+        // brief-dfr35-1 R-dfr35-1-10 — or, where exactly one .cem names what this view places, on that setup's problem and sweep.
+        var boxSetup = setup ?? (setupJson is null ? (NoSetupBasis = NoSetupBasisFor(doc, e, documentPath, workspaceCws)).Setup : null);
         // 3D editor round 5 — the box is sized from what DID elaborate, refusals or not: a wire whose end a boolean took the
         // pad from is the wire's refusal, and gating the box on a clean elaboration took the box — and, with no setup, its
         // tree row — away with it. The ports and face boundaries below still wait for a clean elaboration.

@@ -69,6 +69,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// copper's net, and <i>Give the via its copper's net</i> writes it into the layout.</summary>
     public IReadOnlyDictionary<string, Em3dViaNetFix> ViaNetFixes { get; init; } = new Dictionary<string, Em3dViaNetFix>();
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-7 — what <see cref="Em3dGeometryCheck"/> found in the outlines this run will mesh; each is
+    /// among <see cref="Warnings"/> too, as a sentence.</summary>
+    public IReadOnlyList<Em3dGeometryFinding> GeometryFindings { get; init; } = [];
+
     /// <summary>Findings a user should act on that do not stop the problem being built — a foot that
     /// overhangs its pad, a metal the technology and the <c>.wBond</c> define differently.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
@@ -477,14 +481,20 @@ public static class Em3dGenerator
                 GroundObjects = groundObjects,
                 EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
                 EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
+                MeshFrequencyHz = setup.Problem3D == Em3dProblemType.Driven ? setup.MeshFrequencyGHz * 1e9 : null,
                 PaddedContent = (new Point3(cx0, cy0, zLow), new Point3(cx1, cy1, zHigh)),
                 PaddingHeightM = paddingH,
                 PaddingHeightBelowM = paddingHBelow,
                 ArtworkBarrels = ArtworkBarrels(solids, _g.OriginMap),
             };
+            if (MeshFrequencyNote(problem, setup) is { } meshedAt) _notes.Add(meshedAt);
+            // brief-dfr35-1 R-dfr35-1-7 — what is known to stop Gmsh, said before it runs; a picture of the board needs none of it.
+            var geometry = displaySlabs ? [] : Em3dGeometryCheck.ForRun(problem, setup);
+            _g.WarningList.AddRange(Em3dGeometryCheck.Sentences(geometry));
             return new Em3dGenerationResult(problem, null, _notes)
             {
                 ViaNetFixes = _viaNetFixes,
+                GeometryFindings = geometry,
                 Warnings = _g.WarningList,
                 Wires = _g.WireBuild?.Reports ?? [],
                 Origins = _g.OriginMap,
@@ -628,7 +638,7 @@ public static class Em3dGenerator
                 }
                 ReturnSide? landed;
                 Dictionary<int, (double At, double Gap)> moves;
-                var openings = new Dictionary<int, (double Along, double Across)>();
+                var openings = new Dictionary<int, (double Along, double Across, double Inward)>();
                 double tolerance;
                 for (int pass = 0; ; pass++)
                 {
@@ -656,7 +666,9 @@ public static class Em3dGenerator
                         if (!touches && gap is { } og && og > tolerance && Opening(on, p.Side, edgeAt, lo, hi) is { } hole)
                         {
                             openings[b.Index] = hole;
-                            return new(null, false, $"an opening {Length(hole.Along)} × {Length(hole.Across)} round the line's end");
+                            // brief-dfr35-1 R-dfr35-1-4 — and how far along the line the metal starts: the edit that fixes it.
+                            return new(null, false, $"an opening {Length(hole.Along)} × {Length(hole.Across)} round the line's end" +
+                                                    MetalStartsAlongLine(piece, p.Side, edgeAt, inward, mid, hole.Inward));
                         }
                         double moved = edgeAt + inward * (gap ?? 0);
                         // Designer feedback round 34 — beyond the tenth, the sheet moves only along a line as wide as the
@@ -680,7 +692,10 @@ public static class Em3dGenerator
                                 ? $"its metal stops {Length(wide)} short of the port's end of the line" +
                                   (wave ? ", and a wave port's return has to reach the line's end on the air box's face"
                                         : $", beyond a tenth of the line's width, {Length(tolerance)}")
-                                : touches ? "metal across part of the line's end" : "no metal under the line's end",
+                                : touches ? "metal across part of the line's end"
+                                : "no metal under the line's end" +
+                                  (StartsInward(on, p.Side, edgeAt, inward, mid) is { } starts
+                                      ? MetalStartsAlongLine(piece, p.Side, edgeAt, inward, mid, starts) : ""),
                             Short: gap is not null);
                     }
                     var walks = new[] { false, true }
@@ -1294,7 +1309,7 @@ public static class Em3dGenerator
         /// its metal resumes in all four directions — along the line inward and outward, and across it on both sides. Its
         /// size is the hole's extent along the line through the end's middle, and across it just inside the end.
         /// </summary>
-        private static (double Along, double Across)? Opening(List<Piece> pieces, PlanarPortSide side, double at, double lo, double hi)
+        private static (double Along, double Across, double Inward)? Opening(List<Piece> pieces, PlanarPortSide side, double at, double lo, double hi)
         {
             if (pieces.Count == 0) return null;
             bool normalX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
@@ -1315,8 +1330,23 @@ public static class Em3dGenerator
             double? Side(double dir) => across.Select(c => (c - mid) * dir).Where(s => s > 0).Order()
                                               .Cast<double?>().FirstOrDefault(s => Metal(u, mid + dir * (s!.Value + eps)));
             if (Side(1) is not { } aHi || Side(-1) is not { } aLo) return null;
-            return (sIn + sOut, aHi + aLo);
+            return (sIn + sOut, aHi + aLo, sIn);
         }
+
+        /// <summary>brief-dfr35-1 R-dfr35-1-4 — how far along the line from its end, over the end's middle, a level's metal
+        /// starts; null when it does not.</summary>
+        private static double? StartsInward(List<Piece> pieces, PlanarPortSide side, double at, double inward, double mid)
+        {
+            bool normalX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+            double eps = 1e-9;
+            return pieces.SelectMany(q => Crossings(q.Poly, mid, normalX)).Select(c => (c - at) * inward).Where(d => d > 0).Order()
+                         .Cast<double?>().FirstOrDefault(d => pieces.Any(q => MetalAt(q.Poly, side, at + inward * (d!.Value + eps), mid)));
+        }
+
+        /// <summary>brief-dfr35-1 R-dfr35-1-4 — the distance in words, when the line itself reaches that far: only then is
+        /// shortening it the edit that fixes the port.</summary>
+        private string MetalStartsAlongLine(Piece line, PlanarPortSide side, double at, double inward, double mid, double distance)
+            => MetalAt(line.Poly, side, at + inward * (distance + 1e-9), mid) ? $", where the plane starts {Length(distance)} along the line" : "";
 
         /// <summary>
         /// <b>brief-dfr34-1 R-dfr34-1-6 — a coplanar return (Return = Same layer): one horizontal lumped sheet across the
@@ -1340,11 +1370,10 @@ public static class Em3dGenerator
             var others = pieces[band.Index].Where(q => !ReferenceEquals(q, piece)).ToList();
 
             // At three points along the sheet's length: the line's own edge on each side, and the nearest metal past it.
-            double[] samples = [edgeAt + inward * 0.02 * w, edgeAt + inward * 0.5 * w, edgeAt + inward * 0.98 * w];
-            (double LineEdge, double GroundEdge, Piece? Ground, string? Why)? Gap(double dir)
+            (double LineEdge, double GroundEdge, Piece? Ground, string? Why)? Gap(double dir, double shift = 0)
             {
                 (double, double, Piece?, string?)? first = null;
-                foreach (double a in samples)
+                foreach (double a in new[] { edgeAt + inward * (shift + 0.02 * w), edgeAt + inward * (shift + 0.5 * w), edgeAt + inward * (shift + 0.98 * w) })
                 {
                     if (Chord(piece.Poly, a, !normalX, (lo + hi) / 2) is not var (cLo, cHi))
                         return (0, 0, null, $"the line is shorter than the sheet's {Length(w)} length from its end");
@@ -1358,10 +1387,23 @@ public static class Em3dGenerator
                     if (near is not { } n) return (edge, 0, null, "no metal on the line's layer beside it");
                     if (!IsGround(n.Q)) return (edge, n.At, null, $"the nearest metal beside it is '{n.Q.Name}', which is not ground");
                     if (first is { } f && (Math.Abs(f.Item1 - edge) > tol || Math.Abs(f.Item2 - n.At) > tol || !ReferenceEquals(f.Item3, n.Q)))
-                        return (edge, n.At, null, "the gap is not straight over the sheet's length from the line's end");
+                        return (edge, n.At, null, "the gap is not straight over the sheet's length from the line's end" +
+                                                  (shift == 0 && StraightFrom(dir) is { } from ? $"; it is straight from {Length(from)} along the line" : ""));
                     first ??= (edge, n.At, n.Q, null);
                 }
                 return first;
+            }
+            // brief-dfr35-1 R-dfr35-1-4 — how far along the line a sheet this long would find a straight gap to ground: the
+            // edit that fixes the port. Stepped in quarters of the sheet, up to where the line or its ground ends.
+            double? StraightFrom(double dir)
+            {
+                for (int k = 1; k <= 400; k++)
+                {
+                    var g = Gap(dir, k * w / 4);
+                    if (g is { Ground: not null }) return k * w / 4;
+                    if (g is { Why: { } why } && !why.StartsWith("the gap is not straight", StringComparison.Ordinal)) return null;
+                }
+                return null;
             }
             var sides = new[] { 1.0, -1.0 }.Select(d => (Dir: d, G: Gap(d)!.Value)).ToList();
             var usable = sides.Where(s => s.G.Ground is not null).ToList();
@@ -1799,6 +1841,16 @@ public static class Em3dGenerator
     /// exactly this, so what is shown cannot differ from what is meshed.
     /// </summary>
     /// <param name="largestExtentM">The content's largest extent, metres — a static solve's padding.</param>
+    /// <summary>What a run says when its setup sizes the mesh somewhere other than the sweep's top; null when it does not.</summary>
+    public static string? MeshFrequencyNote(Em3dProblem problem, EmSetup setup)
+    {
+        if (problem.MeshFrequencyHz is not > 0 || problem.MeshFrequencyHz == problem.Frequency.StopHz) return null;
+        double at = problem.MeshFrequencyHz.Value, top = problem.Frequency.StopHz;
+        string note = $"The mesh is sized at {Fmt(at / 1e9)} GHz, this setup's Mesh frequency, and the solve covers the sweep to {Fmt(top / 1e9)} GHz: " +
+                      (at < top ? $"at the top of the sweep the elements are {Fmt(top / at)} × as long against the wavelength." : "finer than the sweep's top asks for.");
+        return setup.Solver3D.Runs(CircuitRF.Design.Em3d.OpenEmsSolver.Id) ? note + " openEMS's grid is still sized at the sweep's top." : note;
+    }
+
     public static (double PadM, string Basis, string Short) DefaultPadding(EmSetup setup, double fMin, double largestExtentM)
     {
         if (setup.IsStatic3D)

@@ -1439,6 +1439,27 @@ internal static class CliDiagnostics
         "cli.args.em-malformed", DiagnosticSeverity.Error,
         "{verb}: --em takes on or off, not '{value}'.", ("verb", verb), ("value", value));
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — <c>--mesh-only</c> makes one setup's mesh and writes no result.</summary>
+    public static Diagnostic EmMeshOnlyTakes(string flag) => Diagnostic.Create(
+        "cli.em.mesh-only-takes", DiagnosticSeverity.Error,
+        "em: --mesh-only makes one 3D setup's mesh and writes no result, so it does not take {flag}.", ("flag", flag));
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — a setup whose mesh is not the step this option stops after.</summary>
+    public static Diagnostic EmMeshOnlyNeeds3D(string file, bool thermal) => Diagnostic.Create(
+        "cli.em.mesh-only-needs-3d", DiagnosticSeverity.Error,
+        "em: --mesh-only makes a 3D EM setup's mesh, and '{file}' is {what}.",
+        ("file", file), ("what", thermal ? "a thermal setup" : "a planar setup, which --dry-run meshes"));
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — the mesh's size, for a caller reading diagnostics.</summary>
+    public static Diagnostic EmMeshed(long elements, long estimated, int warnings) => Diagnostic.Create(
+        "em.mesh-only.meshed", DiagnosticSeverity.Info,
+        "Meshed {elements} tetrahedra against {estimated} estimated, with {warnings} warning(s).",
+        ("elements", elements), ("estimated", estimated), ("warnings", warnings));
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — one of Gmsh's warnings, in its words.</summary>
+    public static Diagnostic EmMeshWarning(string warning) => Diagnostic.Create(
+        "em.mesh-only.warning", DiagnosticSeverity.Warning, "Gmsh: {warning}", ("warning", warning));
+
     /// <summary>EMB-5 R-emb5-2 — <c>--dry-run</c> estimates one setup file; an extracted part or a band sweep is not one.</summary>
     public static Diagnostic EmDryRunNeedsSetup(string flag) => Diagnostic.Create(
         "cli.em.dry-run-needs-setup", DiagnosticSeverity.Error,

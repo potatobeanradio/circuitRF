@@ -9152,6 +9152,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                       "Save the layout for the next run to read it.", fix.LayoutPath);
     }
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-8 — what the row of a mesher failure with a place offers.</summary>
+    public const string ShowPlaceAction = "Show this place in the layout";
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-8 — opens the layout (or brings its tab forward), selects what is at the place and frames it.</summary>
+    private async Task ShowPlaceInLayoutAsync(string layoutPath, CircuitRF.Design.Em3d.Em3dLayoutPlace place)
+    {
+        await OpenOrActivateLayoutAsync(layoutPath);
+        string full = Path.GetFullPath(layoutPath);
+        var doc = _openDocsByPath.Values.OfType<LayoutDocument>()
+                                 .FirstOrDefault(d => d.FilePath is { } fp && string.Equals(Path.GetFullPath(fp), full, StringComparison.Ordinal));
+        if (doc is null) { Messages.Warning($"The layout '{Path.GetFileName(layoutPath)}' could not be opened."); return; }
+        doc.ViewModel.ShowPlace(place.XUm, place.YUm, place.SpanUm);
+    }
+
     /// <summary>The memory dialog, opened from a row or the confirmation, reporting to this window's Messages.</summary>
     private Task RaiseSubsystemMemoryAsync() => Views.Dialogs.WslMemoryDialog.OpenFromRow(Messages);
 
@@ -9385,6 +9399,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 Messages.PostAction(MessageLevel.Error, unavailable.Render(),
                                     $"Install {CircuitRF.Design.Em3d.SolverDiscovery.For(installTool).Name}…",
                                     () => CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(installTool, owner: null, Messages));
+            // brief-dfr35-1 R-dfr35-1-8 — a mesher failure that says where offers to show it, for a layout's own run.
+            else if (result.Diagnostic is { } placed && vm.ResolvedLayoutPath is { } placedIn
+                     && result.MessageOffers?.GetValueOrDefault(placed.Render()) is CircuitRF.Design.Em3d.Em3dLayoutPlace place)
+                Messages.PostAction(MessageLevel.Error, placed.Render(), ShowPlaceAction, () => ShowPlaceInLayoutAsync(placedIn, place));
             else if (result.Diagnostic is { } diagnostic)
                 Messages.PostDiagnostic(diagnostic);
             else

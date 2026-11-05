@@ -17,8 +17,9 @@
 //      surface carries Palace's conductivity boundary. What no solid claims inside the box is the
 //      background, which is air: the box minus every solid, in ONE BooleanDifference (brief-em3d-137).
 //   2. Sheets and port sheets are plane surfaces, and ONE BooleanFragments imprints them and the
-//      shared faces. It splits no volume, and with OCCBooleanPreserveNumbering every volume keeps its
-//      tag — so a VOLUME group is its construction tags, checked to have survived.
+//      shared faces. With OCCBooleanPreserveNumbering a volume it leaves whole keeps its tag, so a VOLUME
+//      group is its construction tags, checked to have survived. A sheet reaching right across a solid
+//      splits it, and that solid's tag is replaced by its pieces' (brief-dfr35-1 R-dfr35-1-9).
 //   3. SURFACES cannot be followed by tag through a fragment, so each is recovered from what
 //      circuitRF knows of it: a tight BoundingBox query around geometry it placed itself (F0 Q5's
 //      caveat 1: OCCBoundsUseStl, or a curved face's box is loose). Classification is set algebra and
@@ -41,6 +42,9 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.Em3d;
+
+/// <summary>brief-dfr35-1 R-dfr35-1-8 — a point a mesher failure names, in layout micrometres, and the size of what is there.</summary>
+public sealed record Em3dLayoutPlace(double XUm, double YUm, double SpanUm);
 
 /// <summary>What a mesh group is, to the entity check and to the Palace configuration.</summary>
 public enum Em3dGroupKind
@@ -99,6 +103,9 @@ public static partial class GmshGeoWriter
 
     /// <summary>The script's length unit, metres — Palace's <c>Model.L0</c>.</summary>
     public const double LengthUnitM = 1e-6;
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-8 — surfaces to one write of the face table's boxes.</summary>
+    private const int SurfaceBoxBatch = 200;
 
     /// <summary>The group that holds the air no named solid claims.</summary>
     public const string BackgroundName = "background";
@@ -324,6 +331,7 @@ public static partial class GmshGeoWriter
           (surfaces.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", surfaces)}}}; Delete; }};"));
         L("allV[] = Volume{:};");
         L("allS[] = Surface{:};");
+        EmitSplitVolumes(g, meshed, bounds, box.Min, box.Max);
         L("single[] = CombinedBoundary{ Volume{allV[]}; };");
         L("For k In {0:#single[]-1}");
         L("  single[k] = Abs(single[k]);");
@@ -532,7 +540,7 @@ public static partial class GmshGeoWriter
         // brief-dfr31-6 R-dfr31-6-4 — Gmsh names a failing surface by its tag; this table is how the refusal names the
         // object instead. One line per group, so the file is opened once per group rather than once per surface.
         L("// ---- the face table: whose each surface is, so a mesher error can name the object (brief-dfr31-6) ----");
-        L($"Printf(\"# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes>\") > \"{FacesFile}\";");
+        L($"Printf(\"# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes> | b <surface> <x0 y0 z0 x1 y1 z1>;...\") > \"{FacesFile}\";");
         L("Macro CrfFaces");
         L("  crft = \"\";");
         L("  For crfk In {0:#crfl[]-1}");
@@ -542,7 +550,20 @@ public static partial class GmshGeoWriter
         L("Return");
         void Faces(string kind, int attribute, string list)
         {
-            L($"crfl[] = {(kind == "v" ? $"Boundary{{ Volume{{{list}}}; }}" : $"{{{list}}}")};");
+            // brief-dfr35-1 R-dfr35-1-9 — a tag no volume has is left out: this table is diagnostic, and a Boundary{} on one is an
+            // error that stops the run, ahead of the entity check that names what was lost.
+            if (kind == "v")
+            {
+                L($"crfv[] = {{{list}}};");
+                L("crfg[] = crfv[];");
+                L("crfg[] -= allV[];");
+                L("crfv[] -= crfg[];");
+                L("crfl[] = {};");
+                L("If (#crfv[])");
+                L("  crfl[] = Boundary{ Volume{crfv[]}; };");
+                L("EndIf");
+            }
+            else L($"crfl[] = {{{list}}};");
             L($"crfh = \"{kind} {attribute}\";");
             L("Call CrfFaces;");
         }
@@ -554,6 +575,19 @@ public static partial class GmshGeoWriter
         for (int k = 0; k < portGroups.Count; k++) Faces("f", portGroups[k].Attribute, $"q{portIndex[k]}[]");
         for (int k = 0; k < 6; k++) Faces("f", faceGroups[k].Attribute, $"f{k}[]");
         for (int k = 0; k < boundaryGroups.Count; k++) Faces("f", boundaryGroups[k].Attribute, $"b{k}[]");
+        // brief-dfr35-1 R-dfr35-1-8 — where each surface is, so a refusal can say where. Measured on a 3,705-surface board:
+        // 0.3 s on a 23.4 s parse, against parsing the script a second time (23 s) to ask only after a failure. It is written
+        // in batches, so the file is opened about once per SurfaceBoxBatch surfaces.
+        L($"crfb = \"b\";");
+        L("For crfk In {0:#allS[]-1}");
+        L("  crfbb[] = BoundingBox Surface{allS[crfk]};");
+        L("  crfb = StrCat(crfb, Sprintf(\" %g %.1f %.1f %.1f %.1f %.1f %.1f;\", allS[crfk], crfbb[0], crfbb[1], crfbb[2], crfbb[3], crfbb[4], crfbb[5]));");
+        L($"  If (crfk % {SurfaceBoxBatch} == {SurfaceBoxBatch - 1})");
+        L($"    Printf(crfb) >> \"{FacesFile}\";");
+        L("    crfb = \"b\";");
+        L("  EndIf");
+        L("EndFor");
+        L($"Printf(crfb) >> \"{FacesFile}\";");
         L();
 
         // ── Mesh size (R-em3d7-2e): an initial mesh only ─────────────────────────────────────
@@ -701,10 +735,12 @@ public static partial class GmshGeoWriter
     /// <summary>
     /// The frequency a problem's initial mesh is sized at: the sweep's top — or, for an eigenmode problem,
     /// which has no sweep, <b>twice its target</b>: the modes it finds lie above the target, and the first
-    /// few of a cavity lie within an octave of the fundamental.
+    /// few of a cavity lie within an octave of the fundamental. A driven setup may state another frequency to size at
+    /// (<see cref="Em3dProblem.MeshFrequencyHz"/>): EMerge's script sizes from this too.
     /// </summary>
     public static double SizingFrequencyHz(Em3dProblem problem)
-        => problem.Type == Em3dProblemType.Eigenmode ? 2 * problem.EigenmodeTargetHz : problem.Frequency.StopHz;
+        => problem.Type == Em3dProblemType.Eigenmode ? 2 * problem.EigenmodeTargetHz
+         : problem.MeshFrequencyHz is { } stated and > 0 ? stated : problem.Frequency.StopHz;
 
     /// <summary>
     /// brief-em3d-23 — true when nothing of face <paramref name="key"/> is left to be a boundary of the
@@ -890,9 +926,10 @@ public static partial class GmshGeoWriter
                            (gr.Terminal is { } term
                                ? $", so {(term.Length == 0 ? "the ground" : $"terminal '{term}'")} has no surface there."
                                : "."));
-            else if (gr.AtLeast ? got.Count < gr.Expected : got.Count != gr.Expected)
+            // brief-dfr35-1 R-dfr35-1-9 — a solid split by a sheet right across it is its pieces, so a volume group's count is a floor.
+            else if (gr.AtLeast || gr.Dimension == 3 ? got.Count < gr.Expected : got.Count != gr.Expected)
                 faults.Add($"'{gr.Name}' ({Describe(gr)}) selected {got.Count} {(gr.Dimension == 3 ? "volume" : "surface")}(s) " +
-                           $"where {(gr.AtLeast ? "at least " : "")}{gr.Expected} were expected.");
+                           $"where {(gr.AtLeast || gr.Dimension == 3 ? "at least " : "")}{gr.Expected} were expected.");
         }
         if (table.ClassifiedVolumes != table.AllVolumes)
             faults.Add($"{table.AllVolumes} volume(s) were meshed and {table.ClassifiedVolumes} belong to a named object, " +
@@ -942,10 +979,42 @@ public static partial class GmshGeoWriter
         var named = tags.Select(Surface).OfType<string>().ToList();
         if (named.Count == 0) return null;
         string list = named.Count == 1 ? named[0] : string.Join(", ", named.SkipLast(1)) + " and " + named[^1];
-        return lines.Any(l => l.Contains("overlapping facets", StringComparison.Ordinal)) && named.Count == 2
-            ? $"The overlap is between {named[0]} and {named[1]}."
-            : $"The surface{(named.Count == 1 ? " it names is" : "s it names are")} {list}.";
+        // brief-dfr35-1 R-dfr35-1-8 — where, since two faces of one pour read as "between X and X".
+        string at = SurfacePlace(lines, facesText) is { } p ? $", at ({Coordinate(p.XUm)}, {Coordinate(p.YUm)}) µm" : "";
+        if (lines.Any(l => l.Contains("overlapping facets", StringComparison.Ordinal)) && named.Count == 2)
+            return named[0] == named[1]
+                ? $"The overlap is between two faces of {named[0].Replace("a face of ", "", StringComparison.Ordinal)}{at}."
+                : $"The overlap is between {named[0]} and {named[1]}{at}.";
+        return $"The surface{(named.Count == 1 ? " it names is" : "s it names are")} {list}{at}.";
     }
+
+    /// <summary>
+    /// brief-dfr35-1 R-dfr35-1-8 — where the surfaces Gmsh's <paramref name="errors"/> name are, from the boxes in the script's
+    /// <see cref="FacesFile"/>; null when it holds none of them. In the layout's coordinates: a layout's run keeps them.
+    /// </summary>
+    public static Em3dLayoutPlace? SurfacePlace(IEnumerable<string> errors, string facesText)
+    {
+        var tags = errors.SelectMany(l => Regex.Matches(l, @"\bsurface (\d+)").Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)))
+                         .ToHashSet();
+        if (tags.Count == 0) return null;
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        bool found = false;
+        foreach (string raw in facesText.Split('\n'))
+        {
+            if (!raw.StartsWith("b ", StringComparison.Ordinal)) continue;
+            foreach (string row in raw[2..].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var t = row.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (t.Length != 7 || !int.TryParse(t[0], CultureInfo.InvariantCulture, out int tag) || !tags.Contains(tag)) continue;
+                var v = t.Skip(1).Select(c => double.Parse(c, CultureInfo.InvariantCulture)).ToArray();
+                (x0, y0, x1, y1) = (Math.Min(x0, v[0]), Math.Min(y0, v[1]), Math.Max(x1, v[3]), Math.Max(y1, v[4]));
+                found = true;
+            }
+        }
+        return found ? new Em3dLayoutPlace((x0 + x1) / 2, (y0 + y1) / 2, Math.Max(x1 - x0, y1 - y0)) : null;
+    }
+
+    private static string Coordinate(double um) => um.ToString("#,0.#", CultureInfo.InvariantCulture);
 
     private static string Describe(Em3dGroup gr) => gr.Kind switch
     {
@@ -1209,6 +1278,43 @@ public static partial class GmshGeoWriter
         => p.FaceGroup is { } g && problem.Ports.Any(q => q.FaceGroup == g && q.Number < p.Number);
 
     /// <summary>An axis-aligned rectangle with one zero axis — a port sheet.</summary>
+    /// <summary>
+    /// brief-dfr35-1 R-dfr35-1-9 — a sheet reaching right across a solid cuts it in two, and the fragment then gives the pieces
+    /// new tags: on a crop whose edges met a port's sheet on both sides, the dielectric's tag was simply gone. Each solid that
+    /// lost its tag takes the volumes the fragment made inside its own box, smallest solid first and the background last, so a
+    /// piece goes to the tightest box that holds it. Nothing changes for a solid the fragment left whole.
+    /// </summary>
+    private static void EmitSplitVolumes(StringBuilder g, IReadOnlyList<int> meshed,
+                                         IReadOnlyList<(double X0, double Y0, double Z0, double X1, double Y1, double Z1)> bounds,
+                                         Point3 boxMin, Point3 boxMax)
+    {
+        void L(string line) => g.Append(line).Append('\n');
+        L("// ---- a sheet right across a solid splits it: the solid takes its pieces (brief-dfr35-1) -----");
+        L($"made[] = allV[];");
+        L($"made[] -= {{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}};");
+        L("Macro CrfSplit");
+        L("  crfp[] = {};");
+        L("  crfg[] -= allV[];");
+        L("  If (#crfg[])");
+        L("    crfp[] = Volume In BoundingBox{crfx0 - e, crfy0 - e, crfz0 - e, crfx1 + e, crfy1 + e, crfz1 + e};");
+        L("    crfo[] = crfp[];");
+        L("    crfo[] -= made[];");
+        L("    crfp[] -= crfo[];");
+        L("    made[] -= crfp[];");
+        L("  EndIf");
+        L("Return");
+        void Split(string list, double x0, double y0, double z0, double x1, double y1, double z1)
+        {
+            L($"crfg[] = {list}; crfx0 = {Um(x0)}; crfy0 = {Um(y0)}; crfz0 = {Um(z0)}; crfx1 = {Um(x1)}; crfy1 = {Um(y1)}; crfz1 = {Um(z1)};");
+            L("Call CrfSplit;");
+            L($"{list} -= crfg[];");
+            L($"{list} += crfp[];");
+        }
+        foreach (int i in meshed.OrderBy(i => (bounds[i].X1 - bounds[i].X0) * (bounds[i].Y1 - bounds[i].Y0) * (bounds[i].Z1 - bounds[i].Z0)))
+            Split($"s{i}[]", bounds[i].X0, bounds[i].Y0, bounds[i].Z0, bounds[i].X1, bounds[i].Y1, bounds[i].Z1);
+        Split("bg[]", boxMin.X, boxMin.Y, boxMin.Z, boxMax.X, boxMax.Y, boxMax.Z);
+    }
+
     private static void EmitRectangle(StringBuilder g, string list, Point3 min, Point3 max)
     {
         Point3[] corners = max.X == min.X

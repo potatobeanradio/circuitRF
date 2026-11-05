@@ -138,7 +138,14 @@ public static partial class Em3dRunService
             // brief-dfr27-5 R-dfr27-5-5 — priced on the processes the run will use, so fewer can be offered.
             int? processes = run.Device == PalaceDevice.Cpu && _runner is not null
                 ? PalaceProcessCount(run.Device, run.MaxCores, _runner.Cores, _gpus).Processes : null;
-            if (_plan is not null && Stop is null &&
+            // brief-dfr35-1 R-dfr35-1-5 — meshing is what is asked: the size a solve would need is said, and refuses nothing.
+            if (run.Control?.MeshOnly == true)
+            {
+                if (_plan is not null && Stop is null &&
+                    PalaceMemoryVerdict(problem, run.Setup, run.Build, _settings!, _memory?.Bytes ?? MachineMemory.PhysicalBytes, _memory, processes) is { Text: { } size })
+                    run.Log.Notes.Add(size);
+            }
+            else if (_plan is not null && Stop is null &&
                 run.Memory.Admit(PalaceMemoryVerdict(problem, run.Setup, run.Build, _settings!, _memory?.Bytes ?? MachineMemory.PhysicalBytes,
                                                      _memory, processes), run.Log) is { } tooBig)
             {
@@ -242,7 +249,13 @@ public static partial class Em3dRunService
         if (meshed.Stopped is { } meshStop)
             return StoppedLeg(Me, "Gmsh", meshStop, limits, [], Path.Combine(runDir, PalaceRun.GmshLogFile));
         if (meshed.Refused) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-mesh", meshed.Message));
-        if (!meshed.Ok) return Failed(meshed.Message!);
+        if (!meshed.Ok)
+        {
+            var failedMesh = Failed(meshed.Message!);
+            // brief-dfr35-1 R-dfr35-1-8 — the place travels with the refusal, for the row that shows it in the layout.
+            if (meshed.Place is { } place) log.Offers[failedMesh.Stop!.Render()] = place;
+            return failedMesh;
+        }
         log.Notes.Add(meshed.Reused
             ? $"The geometry script is unchanged since the last run, so its mesh was reused ({runDir})."
             : $"Meshed with Gmsh in {runDir}.");
@@ -253,6 +266,21 @@ public static partial class Em3dRunService
         if (Em3dMeshCheck.Check(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering.Groups) is { Refusal: { } badMesh })
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(Em3dMeshCheck.Source,
                 badMesh + $" The mesh is {Path.Combine(runDir, GmshGeoWriter.MeshFile)}."));
+
+        // brief-dfr35-1 R-dfr35-1-5 — stopped here, after everything a run checks of its mesh and before any solver.
+        if (control?.MeshOnly == true)
+        {
+            string meshLog = Path.Combine(runDir, PalaceRun.GmshLogFile);
+            var checkedMesh = Em3dMeshCheck.Check(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering.Groups);
+            if (meshed.Tetrahedra is { } madeHere && MeshedAgainstEstimate(madeHere, EstimatePalace(problem, settings), settings, problem.IsStatic,
+                                                                           plan.Device == PalaceDevice.Cpu ? PalaceProcessCount(plan.Device, maxCores, runner.Cores, plan.Gpus).Processes : null) is { } sized)
+                log.Notes.Add(sized);
+            return new Leg(Me, EmRunStatus.Ok, null, null, null, null, $"Gmsh {plan.Gmsh.DescribeVersion()}")
+            {
+                MeshOnly = new Em3dMeshOnlyReport((long?)checkedMesh?.Tetrahedra ?? meshed.Tetrahedra, EstimatePalace(problem, settings)?.Tetrahedra,
+                                                  meshed.Reused, runDir, PalaceRun.GmshWarningLines(meshLog)),
+            };
+        }
 
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.
@@ -813,6 +841,7 @@ public static partial class Em3dRunService
         string settingsText = string.Join("|", R(settings.MaxElementWavelengths), R(settings.EdgeRefinement),
             R(settings.Grading), settings.ElementOrder, R(settings.AdaptiveTol), settings.AdaptiveMaxIterations,
             R(settings.SweepAdaptiveTol));
+        if (problem.MeshFrequencyHz is { } sizedAt) settingsText += "|mesh frequency " + R(sizedAt);
         string materialsText = string.Join("|", problem.Materials.Select(m =>
             $"{m.Name}:{R(m.Epsr)}:{R(m.TanD)}:{R(m.Mur)}:{R(m.SigmaSm)}"));
 
@@ -828,7 +857,8 @@ public static partial class Em3dRunService
                           : $"lumped, {R(p.Z0.Real)} Ohm"));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
-                  $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}");
+                  $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}" +
+                  (problem.MeshFrequencyHz is { } meshedAt ? $", sized at {R(meshedAt / 1e9)} GHz" : ""));
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
         // brief-em3d-21 R-em3d21-5b — added fields, none renamed. What the solve WAS is one line; what it
         // COST (wall time, peak memory) is another, because it differs between two runs of one setup

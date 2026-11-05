@@ -1111,6 +1111,20 @@
                               IsVisible="{Binding ViewModel.ShowRobustMeshing}"
                               IsChecked="{Binding ViewModel.RobustMeshing}"
                               ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.RobustMeshingTip}"/>
+                    <!-- A driven setup's mesh, sized somewhere other than the sweep's top: staged text, committed on Enter or lost focus. -->
+                    <Grid Name="MeshFrequency3DRow" ColumnDefinitions="Auto,Auto,Auto" Margin="0,6,0,0"
+                          IsVisible="{Binding ViewModel.ShowMeshFrequency3D}"
+                          ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.MeshFrequency3DTip}">
+                        <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center" Margin="0,0,6,0" Text="Mesh frequency"/>
+                        <TextBox Grid.Column="1" Width="130" FontSize="11" Padding="5,2" Tag="MeshFrequency3D"
+                                 Text="{Binding ViewModel.MeshFrequency3DText}"
+                                 PlaceholderText="{Binding ViewModel.MeshFrequency3DPlaceholder}"
+                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                        <TextBlock Grid.Column="2" Classes="colhdr" VerticalAlignment="Center" Margin="6,0,0,0" Text="{Binding ViewModel.MeshFrequency3DUnit}"/>
+                    </Grid>
+                    <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                         Text="{Binding ViewModel.MeshFrequency3DError}"
+                                         IsVisible="{Binding ViewModel.MeshFrequency3DError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                     <!-- brief-emb-1 R-emb1-8 — a lumped gap port across each chosen part's own pads; Check builds and verifies
                          them as a run would and shows each verdict. A picker: the placed parts are listed. -->
                     <StackPanel Name="ComponentPortsSection" Margin="0,10,0,0" Spacing="4"

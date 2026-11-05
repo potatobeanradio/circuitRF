@@ -549,6 +549,16 @@ public sealed class EmSetup
     public double? PatternFrequencyGHz { get; set; }
 
     /// <summary>
+    /// The frequency a driven 3D run sizes its mesh at, GHz; null is the sweep's top. A power amplifier's S-parameters matter most
+    /// at the fundamental and a fifth harmonic only has to be reasonable, so sizing the elements for the top of a 5×f sweep costs
+    /// about 5³ the elements for accuracy where it matters least. Palace and EMerge read it; openEMS's grid has to carry the sweep's
+    /// top to stay stable and does not. The solve still covers the whole sweep. Planar's own is
+    /// <see cref="CircuitRF.Engine.Mom.PlanarMeshSettings.MeshFrequencyHz"/>. Omitted from the <c>.cem</c> and the <c>.c3d</c> when null,
+    /// so a file written before it existed loads and re-serialises byte-identically.
+    /// </summary>
+    public double? MeshFrequencyGHz { get; set; }
+
+    /// <summary>
     /// <b>brief-dfr28-3 — Robust meshing: a 3D run removes each layout outline point that lies within a fraction of a
     /// micrometre of the line through its neighbours</b> (<see cref="CircuitRF.Design.Layout.Em3d.Em3dOutlineCleanup"/>),
     /// so the mesher is not handed a sub-micrometre edge or a near-straight run of points. Imported artwork carries both —
@@ -873,6 +883,7 @@ public sealed class EmSetup
         DeembedOutsideCalibrationValidity = DeembedOutsideCalibrationValidity,
         RadiationPattern       = RadiationPattern,
         PatternFrequencyGHz    = PatternFrequencyGHz,
+        MeshFrequencyGHz       = MeshFrequencyGHz,
         RobustMeshing          = RobustMeshing,
         Conductors             = Conductors,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,

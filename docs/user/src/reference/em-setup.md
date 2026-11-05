@@ -529,6 +529,14 @@ Each 3D solver is told about a film in the way it solves accurately, with the sa
 conducting boundary. openEMS takes a conducting sheet at a thickness large enough that its model does not bypass the film,
 and a grid at least six cells across it. EMerge takes a thin lossy volume. The run's notes state the values each one used.
 
+<a id="mesh-frequency-3d"></a>**Mesh frequency** (`MeshFrequencyGHz`), below the solvers' sections on a driven Palace or EMerge
+setup, is the frequency the mesh is sized at. Blank, which writes nothing, sizes it for the top of the sweep. The solve still covers
+the whole sweep, so this changes where the accuracy goes and not what is solved: in a power amplifier the S-parameters matter most at
+the fundamental and the fifth harmonic only has to be reasonable, so mesh at the fundamental and sweep to the fifth harmonic. The mesh is
+far smaller, and the harmonics are solved with fewer elements per wavelength; the run's notes say how many times longer they are at
+the sweep's top. The dry run's estimate follows it. The `.sNp` header records it, and it is stored in the `.cem` and in a `.c3d`'s
+embedded setup. openEMS's grid stays sized at the sweep's top, which it needs for its time step.
+
 <a id="robust-meshing"></a>**Robust meshing** (`RobustMeshing`), below the solvers' sections, applies to every 3D solver,
 because they all mesh the same outlines. It removes each outline point that lies within a fraction of a micrometre of
 the line through its neighbours: at most 0.5 µm, or 1/50 of the layer's thickness where that is less. Artwork imported

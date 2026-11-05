@@ -500,6 +500,11 @@ the startup volume or the results' volume falls below 10 GB free; either way the
 `--force` lifts the memory limit, never the disk floor. `explain` on a 3D setup reports both, and takes
 `--memory-limit` too.
 
+`--mesh-only` runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
+warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits **0** on a mesh, **1**
+on a refusal or a mesher failure, and **130** when cancelled. `--dry-run` also warns about geometry known to stop the
+mesher, naming the object, its layer and the layout coordinates.
+
 A 3D or thermal run makes its mesh in the **Scratch folder** that **Settings ▸ Solvers** names, the system temp folder
 when none is named, and prints it as a `Scratch:` line beside the solver. `--json` carries it on every run, refused or
 not, as `result.scratch`: `folder`, `source` (`preference` or `system`), `exists`, and `systemTemp`, which a solver's

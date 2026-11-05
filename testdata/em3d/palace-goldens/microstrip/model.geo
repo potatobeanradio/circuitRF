@@ -74,6 +74,32 @@ s = news; Plane Surface(s) = {c}; p1[] = {s};
 frag[] = BooleanFragments{ Volume{s0[], s1[], bg[]}; Delete; }{ Surface{p0[], p1[]}; Delete; };
 allV[] = Volume{:};
 allS[] = Surface{:};
+// ---- a sheet right across a solid splits it: the solid takes its pieces (brief-dfr35-1) -----
+made[] = allV[];
+made[] -= {s0[], s1[], bg[]};
+Macro CrfSplit
+  crfp[] = {};
+  crfg[] -= allV[];
+  If (#crfg[])
+    crfp[] = Volume In BoundingBox{crfx0 - e, crfy0 - e, crfz0 - e, crfx1 + e, crfy1 + e, crfz1 + e};
+    crfo[] = crfp[];
+    crfo[] -= made[];
+    crfp[] -= crfo[];
+    made[] -= crfp[];
+  EndIf
+Return
+crfg[] = s0[]; crfx0 = -10000; crfy0 = -10550; crfz0 = 35; crfx1 = 20000; crfy1 = 10550; crfz1 = 543;
+Call CrfSplit;
+s0[] -= crfg[];
+s0[] += crfp[];
+crfg[] = s1[]; crfx0 = -10000; crfy0 = -10550; crfz0 = 543; crfx1 = 20000; crfy1 = 10550; crfz1 = 10578;
+Call CrfSplit;
+s1[] -= crfg[];
+s1[] += crfp[];
+crfg[] = bg[]; crfx0 = -10000; crfy0 = -10550; crfz0 = 35; crfx1 = 20000; crfy1 = 10550; crfz1 = 10578;
+Call CrfSplit;
+bg[] -= crfg[];
+bg[] += crfp[];
 single[] = CombinedBoundary{ Volume{allV[]}; };
 For k In {0:#single[]-1}
   single[k] = Abs(single[k]);
@@ -166,7 +192,7 @@ Printf("single_sided %g", #single[]) >> "entities.txt";
 Printf("unclassified_single_sided %g", #rest[]) >> "entities.txt";
 
 // ---- the face table: whose each surface is, so a mesher error can name the object (brief-dfr31-6) ----
-Printf("# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes>") > "faces.txt";
+Printf("# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes> | b <surface> <x0 y0 z0 x1 y1 z1>;...") > "faces.txt";
 Macro CrfFaces
   crft = "";
   For crfk In {0:#crfl[]-1}
@@ -174,16 +200,37 @@ Macro CrfFaces
   EndFor
   Printf(StrCat(crfh, crft)) >> "faces.txt";
 Return
-crfl[] = Boundary{ Volume{s0[]}; };
+crfv[] = {s0[]};
+crfg[] = crfv[];
+crfg[] -= allV[];
+crfv[] -= crfg[];
+crfl[] = {};
+If (#crfv[])
+  crfl[] = Boundary{ Volume{crfv[]}; };
+EndIf
 crfh = "v 1";
 Call CrfFaces;
-crfl[] = Boundary{ Volume{s1[]}; };
+crfv[] = {s1[]};
+crfg[] = crfv[];
+crfg[] -= allV[];
+crfv[] -= crfg[];
+crfl[] = {};
+If (#crfv[])
+  crfl[] = Boundary{ Volume{crfv[]}; };
+EndIf
 crfh = "v 2";
 Call CrfFaces;
 crfl[] = {c2[]};
 crfh = "f 3";
 Call CrfFaces;
-crfl[] = Boundary{ Volume{bg[]}; };
+crfv[] = {bg[]};
+crfg[] = crfv[];
+crfg[] -= allV[];
+crfv[] -= crfg[];
+crfl[] = {};
+If (#crfv[])
+  crfl[] = Boundary{ Volume{crfv[]}; };
+EndIf
 crfh = "v 4";
 Call CrfFaces;
 crfl[] = {q0[]};
@@ -210,6 +257,16 @@ Call CrfFaces;
 crfl[] = {f5[]};
 crfh = "f 12";
 Call CrfFaces;
+crfb = "b";
+For crfk In {0:#allS[]-1}
+  crfbb[] = BoundingBox Surface{allS[crfk]};
+  crfb = StrCat(crfb, Sprintf(" %g %.1f %.1f %.1f %.1f %.1f %.1f;", allS[crfk], crfbb[0], crfbb[1], crfbb[2], crfbb[3], crfbb[4], crfbb[5]));
+  If (crfk % 200 == 199)
+    Printf(crfb) >> "faces.txt";
+    crfb = "b";
+  EndIf
+EndFor
+Printf(crfb) >> "faces.txt";
 
 // ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------
 // Largest element per material: 0.1 of its wavelength at 10 GHz;

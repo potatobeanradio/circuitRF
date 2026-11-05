@@ -763,6 +763,10 @@ public sealed record Em3dProblem(
     /// modes, Hz.</summary>
     public double EigenmodeTargetHz { get; init; }
 
+    /// <summary>The frequency a driven problem's mesh is sized at, when the setup states one; null is the sweep's top. The mesh's
+    /// business alone: the sweep is <see cref="Frequency"/> either way.</summary>
+    public double? MeshFrequencyHz { get; init; }
+
     /// <summary>True when any port is a wave port.</summary>
     public bool HasWavePorts => Ports.Any(p => p.Kind == Em3dPortKind.Wave);
 

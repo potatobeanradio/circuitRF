@@ -51,6 +51,9 @@ public sealed record PalaceStep(bool Ok, bool Cancelled, bool Refused, string? M
     /// <summary>brief-emb-2 R-emb2-1 — what the run must say about the mesh step: that Gmsh's curving ran past its cap and the
     /// mesh was made again with straight-sided second-order elements. Null otherwise.</summary>
     public string? Note { get; init; }
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-8 — where the surfaces a failed mesh named are, when the script's table held them.</summary>
+    public Em3dLayoutPlace? Place { get; init; }
 }
 
 /// <summary>
@@ -257,11 +260,12 @@ public static class PalaceRun
                     // brief-dfr31-6 R-dfr31-6-4 — the surfaces it names, as the objects they belong to; the face table is
                     // in the stage folder, which goes when this returns.
                     string faces = Path.Combine(stage, GmshGeoWriter.FacesFile);
-                    string? named = File.Exists(faces)
-                        ? GmshGeoWriter.NameSurfaces(GmshErrorLines(logPath), File.ReadAllText(faces), lowering.Groups) : null;
+                    string? facesText = File.Exists(faces) ? File.ReadAllText(faces) : null;
+                    string? named = facesText is null ? null : GmshGeoWriter.NameSurfaces(GmshErrorLines(logPath), facesText, lowering.Groups);
                     return new(false, false, false,
                         $"Gmsh failed (exit code {run.ExitCode}). Its own words: {GmshErrors(logPath, run.Tail)} " +
-                        (named is null ? "" : named + " ") + $"The full log is {logPath}.");
+                        (named is null ? "" : named + " ") + $"The full log is {logPath}.")
+                    { Place = facesText is null ? null : GmshGeoWriter.SurfacePlace(GmshErrorLines(logPath), facesText) };
                 }
                 foreach (string produced in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
                     if (File.Exists(Path.Combine(stage, produced)))
@@ -1394,6 +1398,23 @@ public static class PalaceRun
             if (File.Exists(logPath))
                 return [.. File.ReadLines(logPath).Select(l => l.Trim())
                            .Where(l => l.StartsWith("Error", StringComparison.Ordinal)).Distinct().Take(5)];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return [];
+    }
+
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — the distinct <c>Warning</c> lines of a Gmsh log, or none when it cannot be read.</summary>
+    internal static IReadOnlyList<string> GmshWarningLines(string logPath)
+    {
+        try
+        {
+            if (File.Exists(logPath))
+                return [.. File.ReadLines(logPath).Select(l => l.Trim())
+                           .Where(l => l.StartsWith("Warning", StringComparison.Ordinal))
+                           .Select(l => l[(l.IndexOf(':') + 1)..].Trim())
+                           // Gmsh's closing summary repeats the count in a box of its own.
+                           .TakeWhile(l => !l.StartsWith("Mesh generation error summary", StringComparison.Ordinal))
+                           .Where(l => !l.StartsWith("---", StringComparison.Ordinal)).Distinct()];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         return [];

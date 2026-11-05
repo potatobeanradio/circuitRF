@@ -33,6 +33,46 @@ public sealed class AirBoxDefaultsDfr34Tests
         return [x0 - b.Min.X, b.Max.X - x1, y0 - b.Min.Y, b.Max.Y - y1, z0 - b.Min.Z, b.Max.Z - z1];
     }
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-10 — a view with no setup, over a layout whose one <c>.cem</c> asks for a pattern, gets what
+    /// that <c>.cem</c>'s run pads with on every face; with two naming it, nothing says which, and the box is a new setup's.</summary>
+    [Fact]
+    public void AViewWithNoSetup_FollowsTheOneCemNamingItsLayout()
+    {
+        string root = Directory.CreateTempSubdirectory("dfr35-10-").FullName;
+        try
+        {
+            string clay = Path.Combine(root, "ant", "layout", "ant.clay");
+            string c3d = Path.Combine(root, "ant", "3d", "ant.c3d");
+            string cws = Path.Combine(root, ".cws");
+            CircuitRF.Design.Workspace.WorkspacePersistence.SaveToFile(cws, new CircuitRF.Design.Workspace.CwsFile());
+            Directory.CreateDirectory(Path.GetDirectoryName(clay)!);
+            var document = new CircuitRF.Design.ThreeD.C3dDocument();
+            string cem = Path.Combine(root, "ant.cem");
+            var first = Radiator(new FrequencySpec("2.1", "2.7", 7, SweepKind.Linear, "GHz", "GHz"), 2.45);
+            first.LayoutRef = "ant/layout/ant.clay";
+            EmSetupPersistence.SaveToFile(cem, first);
+
+            string? one = CircuitRF.Design.ThreeD.C3dNoSetupBox.SoleSetupFile(c3d, cws, [clay]);
+            Assert.Equal(Path.GetFullPath(cem), Path.GetFullPath(one!));
+            var basis = CircuitRF.Design.ThreeD.C3dNoSetupBox.For(document, one);
+            Assert.True(basis.Setup.RadiationPattern);
+            Assert.Equal(2.45, basis.Setup.PatternFrequencyGHz);
+
+            // The rule is the rule: this setup's padding is what the .cem's own run pads with, on every face.
+            var box = Em3dGenerator.PaddedAirBox(basis.Setup, Antenna, 2.1e9, null, [], [], out string? why);
+            Assert.Null(why);
+            double quarter = C0 / 2.45e9 / 4;
+            foreach (double pad in Pads(box!)) Assert.Equal(quarter, pad, 6);
+
+            var second = Radiator(new FrequencySpec("1", "2", 3, SweepKind.Linear, "GHz", "GHz"), null);
+            second.LayoutRef = "ant/layout/ant.clay";
+            EmSetupPersistence.SaveToFile(Path.Combine(root, "second.cem"), second);
+            Assert.Null(CircuitRF.Design.ThreeD.C3dNoSetupBox.SoleSetupFile(c3d, cws, [clay]));
+            Assert.False(CircuitRF.Design.ThreeD.C3dNoSetupBox.For(document, null).Setup.RadiationPattern);
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+    }
+
     /// <summary>R-dfr34-2-1 — a pattern at 2.45 GHz, on the sweep R-2 offers round it: every face λ/4 at 2.45 GHz (30.6 mm), not
     /// 150 mm. With no pattern frequency on the 0.5 GHz default, λ/4 there (150 mm) is capped at the board's 95 mm, and the
     /// note says so.</summary>

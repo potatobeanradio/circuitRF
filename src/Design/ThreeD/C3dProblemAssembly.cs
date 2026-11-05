@@ -617,17 +617,22 @@ public static class C3dProblemAssembly
             GroundObjects = ground,
             EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
             EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
+            MeshFrequencyHz = setup.Problem3D == Em3dProblemType.Driven ? setup.MeshFrequencyGHz * 1e9 : null,
             LumpedElements = lumped,
             CylinderSheets = e.CylinderSheets,
             SolidDensities = sar is null ? new Dictionary<string, double>() : SolidDensities(e, solids),
             ArtworkBarrels = Em3dGenerator.ArtworkBarrels(solids, e.Origins),
         };
+        if (Em3dGenerator.MeshFrequencyNote(problem, setup) is { } meshedAt) notes.Add(meshedAt);
+        // brief-dfr35-1 R-dfr35-1-7 — what is known to stop Gmsh, as a layout's run says it.
+        var geometry = Em3dGeometryCheck.ForRun(problem, setup);
         return new Em3dGenerationResult(problem, null, notes)
         {
             ViaNetFixes = viaNetFixes,
             WantsDc = wantsDc,
             ComponentPorts = components,
-            Warnings = components is { Warnings.Count: > 0 } ? [.. e.Warnings, .. components.Warnings] : e.Warnings,
+            GeometryFindings = geometry,
+            Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry)],
             Wires = e.Wires,
             Origins = e.Origins,
             MaterialSources = materialSources,

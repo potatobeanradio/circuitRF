@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mesh replay: every 3D setup under a folder, meshed with `circuitrf em mesh-only`, before a release. Not part of the application
+    and not a test: it references no other project in this repo, is NOT in circuitRF.slnx, holds no data, and nothing in the repo
+    depends on the folder it is pointed at. How to run it is in BUILDING.md ("Before a release: the mesh replay").
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

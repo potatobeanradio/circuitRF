@@ -863,6 +863,24 @@ estimate to state. It solves nothing and writes nothing; a planar dry run meshes
 two are not one setup file, and `explain` sizes the setup's own solver. MCP: `run analysis=em
 dryRun=true`.
 
+### 8.10a `--mesh-only` — the run as far as its mesh (brief-dfr35-1 R-dfr35-1-5)
+
+```
+circuitrf em <setup.cem | view.c3d> --mesh-only [--setup <name>] [--memory-limit <GB>]
+```
+
+**It is the run, stopped.** `RunControl.MeshOnly` reaches the Palace leg, which builds the problem, writes the script into the
+run's own folder and stages Gmsh exactly as a run does, so it fails where a run would, then checks the entity table and the mesh
+(`Em3dMeshCheck`) and returns before any solver. Stdout says the elements, the estimate before meshing and Gmsh's warnings in its
+words; `--json` carries them as `em.mesh-only.meshed` and `em.mesh-only.warning`. Exit 0 on a mesh, 1 on a refusal or a mesher
+failure (Gmsh's words, the objects named and where they are), 130 on cancellation.
+
+What it does not do: it starts no solver and writes no result, no Touchstone and no `status.json`, so a result already in that
+folder keeps its record. The size a solve would need is a note rather than a refusal, since meshing is what was asked; Gmsh keeps its
+memory ceiling. A planar or thermal setup is refused by name (`cli.em.mesh-only-needs-3d`), as is `--dry-run`, `--component`,
+`--bands` or `-o` beside it (`cli.em.mesh-only-takes`). A comparison meshes Palace's script; a setup with no Palace leg is refused,
+because EMerge meshes inside its own run and openEMS has a grid. `tools/MeshReplay` runs this over a folder of setups.
+
 ### 8.11 Component ports: `--component-ports` (brief-emb-1)
 
 ```

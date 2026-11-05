@@ -1606,6 +1606,8 @@ static int RunEm(string[] args)
     // would not mesh before its first point. The device and limit go to explain as typed.
     bool dryRun = false;
     string? deviceText = null, memoryLimitText = null;
+    // brief-dfr35-1 R-dfr35-1-5 — `em --mesh-only`: the run as far as its mesh, in its own folder, and no solver.
+    bool meshOnly = false;
     // brief-emb-1 R-emb1-8 — `em x.c3d --component-ports "C1,C2"|"*"`: component ports added to the setup for this run only.
     string? componentPorts = null;
 
@@ -1641,6 +1643,9 @@ static int RunEm(string[] args)
                 break;
             case "--dry-run":
                 dryRun = true;
+                break;
+            case "--mesh-only":
+                meshOnly = true;
                 break;
             case "--device" when i + 1 < args.Length:
             {
@@ -1696,6 +1701,12 @@ static int RunEm(string[] args)
         }
     }
 
+    if (meshOnly)
+    {
+        foreach (var (given, flag) in new[] { (dryRun, "--dry-run"), (component is not null, "--component"), (bandsName is not null, "--bands"), (output is not null, "-o") })
+            if (given) return JsonRun.Fail(CliDiagnostics.EmMeshOnlyTakes(flag));
+    }
+
     if (dryRun)
     {
         if (component is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--component"));
@@ -1732,7 +1743,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1807,6 +1818,9 @@ static int RunEm(string[] args)
             ? CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name) + " --solver names an EM solver, which a thermal setup never uses."
             : CircuitRF.Design.ThreeD.C3dThermal.CemRefusal));
 
+    // brief-dfr35-1 R-dfr35-1-5 — only a 3D EM setup's mesh is Gmsh's and a run's first step; a planar one meshes in --dry-run.
+    if (meshOnly && (!setup.Is3D || setup.IsThermal))
+        return JsonRun.Fail(CliDiagnostics.EmMeshOnlyNeeds3D(Path.GetFileName(cemPath), setup.IsThermal));
     // brief-em3d-21 R-em3d21-6a — --solver chooses between 3D solvers; it never makes a planar setup 3D.
     if (solver is not null && !setup.Is3D)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
@@ -1935,9 +1949,9 @@ static int RunEm(string[] args)
     {
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
-                                         RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
+                                         RunHost.Cancellation, EmProgressToStderr(meshOnly), confirmMemory: force ? _ => true : null,
                                          fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice)
-            : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
+            : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(meshOnly),
                                confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
     }
     // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
@@ -1997,6 +2011,26 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
         // string stays exactly as it was: it is the contract cli.md §8 promises.
         if (result.Diagnostic is { } refusal) JsonRun.Note(refusal);
         return result.Status == EmRunStatus.Cancelled ? 130 : 1;
+    }
+
+    // brief-dfr35-1 R-dfr35-1-5 — the mesh, its size and what Gmsh warned about, and nothing a solve would have written.
+    if (result.MeshOnly is { } mesh)
+    {
+        Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
+        Console.WriteLine($"Mesher:    {result.KernelName}");
+        Console.WriteLine($"Meshed:    {(mesh.Elements is { } n ? $"{n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} tetrahedra" : "the count was not reported")}" +
+                          (mesh.Reused ? ", the mesh already beside this unchanged script" : ""));
+        if (mesh.Estimated is { } est) Console.WriteLine($"Estimated: {est.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} before meshing");
+        Console.WriteLine($"Warnings:  {mesh.Warnings.Count}");
+        foreach (string w in mesh.Warnings)
+        {
+            Console.WriteLine($"  {w}");
+            JsonRun.Note(CliDiagnostics.EmMeshWarning(w));
+        }
+        Console.WriteLine($"Folder:    {mesh.RunDirectory}");
+        JsonRun.AddOutput("mesh", Path.Combine(mesh.RunDirectory, CircuitRF.Design.Em3d.GmshGeoWriter.MeshFile));
+        JsonRun.Note(CliDiagnostics.EmMeshed(mesh.Elements ?? 0, mesh.Estimated ?? 0, mesh.Warnings.Count));
+        return 0;
     }
 
     Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
@@ -2174,7 +2208,7 @@ static void PrintModes(RfCore.Data.DataSet data)
 /// <summary>The run's own progress, on stderr — §3.1's split, so `circuitrf em x.cem > summary.txt`
 /// still shows a full-wave sweep moving. A de-embedded point costs tens of seconds at the shipping
 /// mesh, so a run reporting nothing is indistinguishable from a hung one.</summary>
-static RunControl EmProgressToStderr()
+static RunControl EmProgressToStderr(bool meshOnly = false)
 {
     string lastLine = "";
     // brief-dfr27-5 R-dfr27-5-3 — a run's notes and warnings print the moment they are known (openEMS's time estimate before a
@@ -2187,6 +2221,7 @@ static RunControl EmProgressToStderr()
     var observer = RunHost.Observer;
     return new RunControl
     {
+        MeshOnly = meshOnly,
         Token    = RunHost.Cancellation,
         Progress = new Progress<RunProgress>(p =>
         {

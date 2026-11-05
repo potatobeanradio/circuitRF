@@ -158,7 +158,12 @@ internal static class ExplainEm3d
                     : " (Offset 0: the S-parameters are referred to the face itself)"),
         }).ToList();
 
-        var grid = Grid(p, setup);
+        // brief-dfr35-1 R-dfr35-1-11 — the openEMS grid is what an uncropped board's explain spent its time on. A setup openEMS runs always
+        // builds it; another reads it only as a comparison, so past a whole board's size it says so rather than taking minutes.
+        int outlinePoints = OutlinePoints(p);
+        var grid = setup.Solver3D.Runs(OpenEmsSolver.Id) || outlinePoints <= OpenEmsGridComparisonPoints
+            ? Grid(p, setup)
+            : (null, $"this setup does not run on openEMS and its outlines hold {outlinePoints:N0} points, so its grid was not built. Set the solver to openEMS to size it.");
         var box = p.Boundary;
         var stated = setup.AirBox;
         // Designer feedback round 11 — every face says how far it stands from the content, and where that distance came from:
@@ -421,7 +426,7 @@ internal static class ExplainEm3d
                 (est.OutlineTetrahedra > 0
                     ? $", {est.OutlineTetrahedra:N0} of the elements for the outlines' edges shorter than the element at metal"
                     : "") +
-                ". A curved surface's own refinement and Palace's adaptive passes add to " +
+                ". Palace's adaptive passes add to " +
                 "it, and the run reports the real counts. No mesher is run to get it." +
                 (est.OutlineDominates
                     ? " The estimate is low on imported outlines with many short edges, and this one has them: the " +
@@ -461,6 +466,14 @@ internal static class ExplainEm3d
             return (null, e.Message);
         }
     }
+
+    /// <summary>Outline points past which <c>explain</c> builds no openEMS grid for a setup that does not run on openEMS. A cropped board has
+    /// a few thousand; the 83,164-point whole board this was measured on took over a minute.</summary>
+    private const int OpenEmsGridComparisonPoints = 20_000;
+
+    private static int OutlinePoints(Em3dProblem p)
+        => p.Solids.Sum(s => s.Primitive is Em3dExtrudedPolygon e ? e.Outline.Count + e.Holes.Sum(h => h.Count) : 0)
+         + p.Sheets.Sum(s => s.Outline.Count + s.Holes.Sum(h => h.Count));
 
     /// <summary>R-em3d8-5c — cells per axis, total, smallest cell and its feature, Δt, steps, memory, merges.</summary>
     private static Em3dSizeJson OpenEmsSize((FdtdGridResult? Grid, string? Why) grid, int ports)

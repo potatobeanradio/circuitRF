@@ -124,6 +124,18 @@ public sealed partial class LayoutEditorViewModel
         return true;
     }
 
+    /// <summary>
+    /// brief-dfr35-1 R-dfr35-1-8 — a place a mesher failure named, in micrometres: selects the smallest shape holding it and frames
+    /// the place itself, since that shape is often a whole pour. The frame is several times what is there, so the place has context.
+    /// </summary>
+    public void ShowPlace(double xUm, double yUm, double spanUm)
+    {
+        long x = (long)Math.Round(xUm * Model.DbuPerMicron), y = (long)Math.Round(yUm * Model.DbuPerMicron);
+        long reach = (long)Math.Round(Math.Max(spanUm * 2, 20) * Model.DbuPerMicron);
+        SelectArtworkAt(x, y);
+        RequestZoomToRegion(new Bbox(x - reach, y - reach, x + reach, y + reach));
+    }
+
     // ── the one-shot point pick (the dialog's Ground ▸ Pick on layout) ──────────────────────────────
 
     private Action<long, long>? _artworkPointPick;

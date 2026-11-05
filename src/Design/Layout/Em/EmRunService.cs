@@ -126,7 +126,9 @@ public sealed record EmRunResult(
     /// brief-emb-1 R-emb1-7 — the co-simulation netlist a finished driven run with component ports wrote beside the
     /// <c>_sim</c> cell: the board's N-port with each part across its own port. Null when the setup names no component ports.
     /// </summary>
-    EmCoSimResult? CoSim = null);
+    EmCoSimResult? CoSim = null,
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — what <c>em --mesh-only</c> meshed; a run with this has no data and wrote no result.</summary>
+    CircuitRF.Design.Em3d.Em3dMeshOnlyReport? MeshOnly = null);
 
 /// <summary>brief-dfr34-4 R-dfr34-4-5 — a page of the user documentation a run's sentence links to: the page under the docs
 /// root, the section's anchor, and what the link says.</summary>
@@ -719,7 +721,7 @@ public static class EmRunService
     private static EmRunResult WithSnpSchematic(EmRunResult result, EmSetup setup, string resultsRoot,
                                                 Func<IReadOnlyDictionary<int, EmPortFace>> faces)
     {
-        if (!setup.CreateSnpSchematic || result.Status != EmRunStatus.Ok) return result;
+        if (!setup.CreateSnpSchematic || result.Status != EmRunStatus.Ok || result.MeshOnly is not null) return result;
         string cellName = EmSnpSchematic.CellNameFor(setup);
         string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;
         if (snp is null || !File.Exists(snp))
@@ -742,7 +744,7 @@ public static class EmRunService
     private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot,
                                          CircuitRF.Design.Layout.Em3d.Em3dGenerationResult? assembled, CircuitRF.Design.ThreeD.C3dDocument document)
     {
-        if (assembled is not { ComponentPorts: { } build, Problem: { } problem } || result.Status != EmRunStatus.Ok ||
+        if (assembled is not { ComponentPorts: { } build, Problem: { } problem } || result.Status != EmRunStatus.Ok || result.MeshOnly is not null ||
             setup.Problem3D != CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
             return result;
         string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;

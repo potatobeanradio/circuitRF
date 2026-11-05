@@ -247,6 +247,86 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("nope.clay", stderr, StringComparison.Ordinal);
     }
 
+    // ── brief-dfr35-1 R-dfr35-1-5 — em --mesh-only ───────────────────────────────────────────
+
+    /// <summary>The 2 × 2 mm board of BoardEdgeSliverTests as a workspace on disk: Inner 2's plane drawn as given, Robust meshing off.</summary>
+    private string MeshBoard(long[] plane)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "b", "layout"));
+        TechPersistence.SaveToFile(Path.Combine(_root, "pcb.ctech"), CircuitRF.Design.Layout.ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz"));
+        const long Mm2 = 2_000_000;
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(new RectShape { Layer = new(11, 0), X1 = 0, Y1 = 0, X2 = Mm2, Y2 = Mm2 });
+        view.Shapes.Add(new RectShape { Layer = new(1, 0), X1 = 400_000, Y1 = 800_000, X2 = 1_200_000, Y2 = 1_200_000, Net = "SIG" });
+        view.Shapes.Add(new RectShape { Layer = new(2, 0), X1 = 0, Y1 = 0, X2 = Mm2, Y2 = Mm2, Net = "GND" });
+        view.Shapes.Add(new PolygonShape { Layer = new(3, 0), Net = "GND", Xy = plane });
+        LayoutPersistence.SaveToFile(Path.Combine(_root, "b", "layout", "b.clay"), view);
+        WorkspacePersistence.SaveToFile(Path.Combine(_root, ".cws"), new CwsFile { DefaultTechRef = "pcb.ctech" });
+        var face = new EmAirBoxFace(500, null);
+        string cem = Path.Combine(_root, "b.cem");
+        EmSetupPersistence.SaveToFile(cem, new EmSetup
+        {
+            Name = "b", LayoutRef = Path.Combine("b", "layout", "b.clay"), Solver3D = CircuitRF.Design.Layout.Em.Em3dSolverId.Palace,
+            Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz"),
+            Problem3D = CircuitRF.Engine.Em3d.Em3dProblemType.Electrostatic,
+            Terminals3D = [new("SIG", "SIG")], Ground3D = "GND",
+            AirBox = new EmAirBox(face, face, face, face, face, face), RobustMeshing = false,
+        });
+        return cem;
+    }
+
+    /// <summary>A board that meshes exits 0, says how many elements, and starts no solver: no status record, no result, no Touchstone.</summary>
+    [CircuitRF.Ui.Tests.Em3d.PalaceFact]
+    public void MeshOnly_OnABoardThatMeshes_ReportsTheMeshAndSolvesNothing()
+    {
+        string cem = MeshBoard([1_000_000, 500_000, 2_000_000, 500_000, 2_000_000, 1_000_000, 1_000_000, 1_000_000]);
+
+        var (exit, stdout, stderr) = RunCli(RepoRoot(), "em", cem, "--mesh-only");
+        output.WriteLine(stdout + stderr);
+
+        Assert.Equal(0, exit);
+        Assert.Matches(@"Meshed:\s+[\d,]+ tetrahedra", stdout);
+        string run = Directory.GetDirectories(Path.Combine(_root, "results")).Single();
+        Assert.True(File.Exists(Path.Combine(run, "model.msh")));
+        Assert.False(File.Exists(Path.Combine(run, "palace.log")));
+        Assert.False(File.Exists(Path.Combine(run, "status.json")));
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "results"), "*.s*p"));
+    }
+
+    /// <summary>A board Gmsh stops on exits 1 with Gmsh's words and the objects named, and the dry run named it first.</summary>
+    [CircuitRF.Ui.Tests.Em3d.PalaceFact]
+    public void MeshOnly_OnABoardGmshStopsOn_ExitsOne_WithItsWordsAndTheObject_AndTheDryRunNamedItFirst()
+    {
+        string cem = MeshBoard([1_015_550, 1_296_836, 1_003_909, 1_347_835, 1_010_200, 1_320_274, 1_010_200, 200_000,
+                                1_800_000, 200_000, 1_800_000, 1_800_000, 1_200_000, 1_800_000]);
+
+        var (dryExit, dryOut, dryErr) = RunCli(RepoRoot(), "em", cem, "--dry-run");
+        Assert.Equal(0, dryExit);
+        Assert.Contains("Geometry that can stop the mesher", dryOut + dryErr, StringComparison.Ordinal);
+        Assert.Contains("Inner 2/GND", dryOut + dryErr, StringComparison.Ordinal);
+
+        var (exit, stdout, stderr) = RunCli(RepoRoot(), "em", cem, "--mesh-only");
+        output.WriteLine(stdout + stderr);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("overlapping facets", stderr, StringComparison.Ordinal);
+        Assert.Contains("two faces of 'Inner 2/GND'", stderr, StringComparison.Ordinal);
+    }
+
+    /// <summary>What it does not take, and a planar setup, are refused by name.</summary>
+    [Fact]
+    public void MeshOnly_RefusesWhatItDoesNotDo()
+    {
+        var (cem, _) = BuildWorkspace();
+        var (exit, _, stderr) = RunCli(RepoRoot(), "em", cem, "--mesh-only");
+        Assert.Equal(1, exit);
+        Assert.Contains("a planar setup", stderr, StringComparison.Ordinal);
+
+        var (dry, _, dryErr) = RunCli(RepoRoot(), "em", cem, "--mesh-only", "--dry-run");
+        Assert.Equal(1, dry);
+        Assert.Contains("--dry-run", dryErr, StringComparison.Ordinal);
+    }
+
     // ── --json (brief-automation-1-structured-output.md §6.2) ─────────────────
     //
     // `em`'s share of the structured-output gates lives here rather than beside the other verbs'

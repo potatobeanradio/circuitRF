@@ -1352,7 +1352,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         // what a setup added later starts with.
         var active = editor.ActiveSetup;
         var stated = active is not null ? active.AirBox : EmSetupPersistence.FromCem(editor.Document.AirBox);
-        var setup = active ?? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, AirBox = stated };
+        // brief-dfr35-1 R-dfr35-1-10 — the rows' reasons come from what the drawn box was sized from.
+        var basis = active is null ? editor.NoSetupBasis : null;
+        var setup = active ?? basis?.Setup ?? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, AirBox = stated };
         Heading = "Air box";
         if (editor.ShownAirBox is not { } box)
         {
@@ -1362,7 +1364,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             IsAirBox = false;
             return;
         }
-        Rows.Add(new C3dPropertyRow("Setup", active is null ? "None active: a setup added now starts with this box" : editor.ActiveSetupLabel));
+        Rows.Add(new C3dPropertyRow("Setup", active is not null ? editor.ActiveSetupLabel
+            : basis?.CemPath is { } cem ? $"None active: sized as {System.IO.Path.GetFileName(cem)} sizes its run"
+            : "None active: a setup added now starts with this box"));
         // brief-dfr34-2 R-dfr34-2-5 — each box shows the padding in use as a LENGTH in the display unit (a percentage of a
         // 1.5 mm z extent read 9986 %, which nobody can judge); a face that states a percentage shows it with its % sign, and
         // typing "10 %" states one.

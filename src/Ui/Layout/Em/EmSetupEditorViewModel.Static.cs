@@ -368,6 +368,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         OnPropertyChanged(nameof(IsThermalSetup));
         OnPropertyChanged(nameof(ShowRobustMeshing));
+        OnPropertyChanged(nameof(ShowMeshFrequency3D));
         OnPropertyChanged(nameof(ShowReturnPlane));
         OnPropertyChanged(nameof(ShowConductorsGroup));
         OnPropertyChanged(nameof(IsNotThermalSetup));

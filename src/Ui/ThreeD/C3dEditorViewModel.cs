@@ -258,7 +258,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             if (_origin is not { } o || !NearEnough(o, extent))
                 _origin = FieldPlotResolver.SceneOrigin(extent);
             // brief-em3d-49 — the active setup's box, ports and face boundaries, resolved as a run resolves them.
-            var records = ResolveRecords(doc, e, inputs.SetupJson, inputs.HiddenTints);
+            var records = ResolveRecords(doc, e, inputs.SetupJson, inputs.Path, inputs.WorkspaceCws, inputs.HiddenTints);
             _records[generation] = records;
             ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
             _built[generation] = new C3dDisplayRebuild(doc, inputs, e, records,

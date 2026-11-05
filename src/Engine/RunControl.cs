@@ -81,6 +81,10 @@ public sealed class RunControl
     /// <c>RunControl</c> created purely for progress never cancels.</summary>
     public CancellationToken Token { get; init; } = CancellationToken.None;
 
+    /// <summary>brief-dfr35-1 R-dfr35-1-5 — a 3D run builds its problem and its mesh, reports them and starts no solver
+    /// (<c>em --mesh-only</c>). Unlike <see cref="StopRequested"/> it is a statement of what the run is, read by the mesher's run.</summary>
+    public bool MeshOnly { get; init; }
+
     private int _stop;
 
     /// <summary>

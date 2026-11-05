@@ -27984,3 +27984,67 @@ microstrip's sides and floor took the board's largest extent. Metal that passes 
 
 **Still open: brief-dfr35-1.** A dielectric's tag can be gone after the fragment (`Unknown model region with tag 1`), while the
 same layout at a slightly different crop meshes. A dry run reports neither this nor the spike, because it stops before meshing.
+
+## Field boards, a mesh replay and a geometry check before meshing (brief-dfr35-1, 2026-11-04)
+
+**What stops Gmsh, measured.** Small boards were meshed one change at a time until the rule was clear: two faces **sharing an edge**
+at under Gmsh's 0.1° facet angle stop it, with "Invalid boundary mesh (overlapping facets)". 0.09° fails and 0.2° meshes, and the same
+0.05° wedge starting 1 nm away, so that the faces share no edge, meshes. Parallel-sided slits and slivers from 0.002 µm to 0.2 µm wide
+mesh; so do parallel jogs of 0.1 µm and 0.4 µm against a board edge, and every short edge tried, down to 0.05 µm. A cut of no width
+fails differently ("Curve loop is not closed"). So width was never the thing, though the brief's list reads as if it were.
+
+**`Em3dGeometryCheck` reports that, not the list as written.** A *reversal* (the needle: legs under the facet angle, within the
+tolerance at the shorter leg's end), a *sliver* (the same corner opening wider than the tolerance, or a stretch of one outline lying
+exactly on another stretch of it, the keyhole), and *near faces* (two objects' outlines leaving one point under the facet angle, at a
+shared height). Each has a board in `Em3dGeometryCheckTests` that fails in Gmsh, named first. **A short edge has no such board**: none
+tried stopped Gmsh, so it is reported as a note and `check` prints it, rather than a warning that would be wrong every time it
+appeared. It adds elements, and it is where a flat element has come from before; `Em3dMeshCheck` is what catches that one. A warning
+that says a parallel slit can stop the mesher would also be wrong, so it says nothing. The check takes about 70 ms on a 3,211-shape
+board with 83,164 outline points, about 1 % of generating the problem, measured with a scratch harness; no timing test was added.
+
+**A failure says where (R-8).** `faces.txt` gains `b` lines, each a run of `<surface> <box>;`, written 200 surfaces to a write.
+Measured on a 3,705-surface script: 0.3 s on a 23.4 s parse, against parsing the script a second time to ask only after a failure,
+which costs that 23 s on every failure and gives nothing when Gmsh is killed. The price is that the script changes, so the four writer
+goldens were regenerated with `CRF_WRITE_PALACE_GOLDENS=1` and every cached mesh is made again once. Two faces of one pour read as
+"between two faces of 'X'" instead of "between 'X' and 'X'", with the coordinates. In the GUI the row offers *Show this place in the
+layout* for a layout's own run; a `.c3d`'s coordinates are the view's, so that row stays plain.
+
+**A dielectric lost in the fragment (R-9).** The script's comment said the fragment "splits no volume", and that is false when a sheet
+reaches right across a solid. A crop can do that: on the field setup, a port on a pour cut by the crop had an edge 4.9 mm wide from
+one side of the region to the other, so its sheet parted the dielectric in two. The fragment then gives both pieces new tags, `s0[]` names
+nothing, and the face table's `Boundary{ Volume{s0[]}; }` is an error that stops the run with no explanation. That is why one crop
+meshes and a slightly different one fails. Now each solid that lost its tag takes the volumes the fragment made inside its own box,
+smallest solid first and the background last, and a volume group's count is a floor. A pieces' box can only mislead if two nested
+solids are both split, which nothing here has produced. The face table now asks only about volumes that exist, so it cannot stop a
+run: the entity check's refusal is what names a lost volume. The field setup still does not run, correctly and for a new reason: that
+sheet also passes through a via barrel, so 68 of its triangles lie in the void, and `Em3dMeshCheck` refuses it naming the port. Its
+port has to move. Reproduced by `APortSheetRightAcrossTheDielectric…`, which failed with the field's own message with the fix taken out.
+
+**R-11: a `.c3d`'s dry run is not about the `.c3d`.** The `.cem` took 3 s because its solve region keeps 68 shapes; the `.c3d` on the
+same layout has no region and keeps all of them. Sampled with `dotnet-stack`, the time went to `explain` building the **openEMS grid**
+(`FdtdGrid.CollectRequired` → `LocalCell`, which walks every conductor per edge) for a setup that runs Palace. A setup not on openEMS reads that
+grid only as a comparison, so past 20,000 outline points it is no longer built and the row says why; a cropped board keeps it: 21 s for the dry run and 8.9 s for `explain` on that board, from over a minute here. A 3D view builds that grid only
+when its grid overlay is turned on, so the view's open time is the elaboration, about 8 s of that `explain` in Release, which this does
+not change.
+
+**R-5's shape.** `RunControl.MeshOnly` rather than a parameter through five signatures: the run, the leg and the mesher all already hold
+that object. No `status.json`: beginning one drops the record of a result already in that folder. The memory gate is a note here because
+meshing is what was asked, while Gmsh keeps its ceiling.
+
+**R-12: the estimate left out via barrels.** Gmsh puts 12 elements round every circle whatever the size field asks, so a barrel's face is far
+finer than the element at metal, and the estimate priced it at that element. On one radiating board that was 13,720 estimated against 90,333
+meshed, with 67,406 of those in a 1.5 mm dielectric full of 76 barrels. The term is 2 tetrahedra per triangle of a round conductor's own face at
+the curvature rule's element; fitted across the replay's setups it is within a factor of 2.3 where barrels matter, and it takes the ratios
+from 6.6, 6.4, 2.0, 1.6, 1.3 and 1.1 to 1.1, 1.0, 1.0, 0.9, 1.0 and 1.0. Two setups stay off for other reasons: a few-via board at 1.3 and a
+20 GHz whole board at 0.5, where the estimate is high and was already high. A round wire's sweep is not in the term, as none was in the fit.
+
+**Mesh frequency for a 3D run.** `MeshFrequencyGHz` on the setup, stored in a `.cem` and in a `.c3d`'s embedded setup, omitted when blank. It reaches
+`Em3dProblem.MeshFrequencyHz` for a driven problem only, and `GmshGeoWriter.SizingFrequencyHz` is the one place both Palace's script and EMerge's read
+it from. Eigenmode keeps twice its target and a static problem has no wavelength. openEMS's `FdtdGrid` deliberately ignores it, since its cell also sets the
+time step and the excitation has energy to the sweep's top. **It is not a large saver on a board full of features**: on a 3,211-shape crop 2 GHz against a 6 GHz
+top moved 97,553 elements to 80,587, because barrels and short edges set the mesh there. It does most on open air and plain dielectric.
+
+**What sizing at the fundamental does to the fundamental.** A 10 × 5 mm line at Draft, swept 1-12.5 GHz: 57,707 tetrahedra at the sweep's top against 23,219 at a 2.5 GHz mesh
+frequency, 21 s against 14 s and 3.0 GB against 1.4 GB. |ΔS21| between the two is 0.10 at 2.5 GHz and 0.05 at 12.5 GHz, so the coarser mesh moved the answer at the frequency it
+was sized for as well: Draft's 0.1 λ is coarse there. The setting moves the budget and does not make the fundamental converged; the preset's element size still decides that.
+
