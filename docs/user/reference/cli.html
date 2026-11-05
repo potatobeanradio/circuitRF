@@ -794,7 +794,8 @@ otherwise.
 <code>--device gpu</code> is refused on a run that uses neither Palace nor EMerge.</p>
 <p>A 3D run's solver is stopped if its memory reaches this computer's (<code>--memory-limit &lt;GB&gt;</code> sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits <strong>1</strong>.
-<code>--force</code> lifts the memory limit, never the disk floor. <code>explain</code> on a 3D setup reports both, and takes
+<code>--force</code> lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
+lifts the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 <code>--memory-limit</code> too.</p>
 <p><code>--mesh-only</code> runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits <strong>0</strong> on a mesh, <strong>1</strong>

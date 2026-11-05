@@ -497,7 +497,8 @@ otherwise.
 
 A 3D run's solver is stopped if its memory reaches this computer's (`--memory-limit <GB>` sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits **1**.
-`--force` lifts the memory limit, never the disk floor. `explain` on a 3D setup reports both, and takes
+`--force` lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
+lifts the disk floor. `explain` on a 3D setup reports both, and takes
 `--memory-limit` too.
 
 `--mesh-only` runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's

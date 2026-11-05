@@ -653,12 +653,15 @@ refinement its curvature asks for is nearly the whole mesh and the first check s
 the machine's memory the run carries a warning naming the estimate and what would shrink it — the
 Draft preset, first-order elements, no refinement passes, a smaller air box, fewer MPI processes, a
 smaller crop — each with the estimate it would give, and saying which of them fit. Past
-**150 %** Simulate asks before going on (headless, `circuitrf em` needs `--force`). A warning never stops
-a run on its own: the estimate uses the highest memory per unknown circuitRF has measured.
+**100 %** Simulate asks before going on: run with a remedy that fits, such as fewer MPI processes, which keeps the memory
+limit; **Simulate Anyway**, which lifts it and lets the run swap; or don't run. The question says how much the run may swap and how
+much room the startup disk has for it. Headless, `circuitrf em` warns and runs with its limit, needs `--force` past **150 %**, and
+`--force` lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory per
+unknown circuitRF has measured.
 
 **A setup on the Direct linear solver is checked as Direct**: it needs about two to three times the
 iterative solver's memory (on a four-layer via transition, 6.2 GB against 3.0 GB at 193 k unknowns). When
-Direct will not fit and Iterative would, Simulate asks before starting, below 150 % too. The question's default
+Direct will not fit and Iterative would, the question before the run offers it. Its default
 button is **Use the Iterative Solver**, which runs this once on Iterative without changing the setup;
 **Simulate Anyway** keeps Direct. Headless, `circuitrf em` prints the same warning and runs as the setup says.
 
@@ -698,7 +701,7 @@ second, of everything the solver's processes hold, including what the operating 
 - **The disk floor is 10 GB free** (5 % of a smaller volume), on the startup volume, where the operating system swaps,
   and on the volume the results are written to. Below it the run is stopped the same way, and a run that would start
   below it is not started. The message names the volume and the free space left.
-- **A run you start anyway when the 150 % check asks** (or with `--force`) has no memory limit, since you chose to let
+- **A run you start anyway when the size check asks** (or with `--force`) has no memory limit, since you chose to let
   it swap, but it keeps the disk floor.
 - **On Windows the limit is held by the operating system itself**, so a sudden burst cannot overshoot it. Elsewhere
   it can overshoot by the memory taken between two readings, which is why it sits at the computer's memory and not

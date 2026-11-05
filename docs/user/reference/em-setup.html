@@ -1445,11 +1445,14 @@ refinement its curvature asks for is nearly the whole mesh and the first check s
 the machine's memory the run carries a warning naming the estimate and what would shrink it — the
 Draft preset, first-order elements, no refinement passes, a smaller air box, fewer MPI processes, a
 smaller crop — each with the estimate it would give, and saying which of them fit. Past
-<strong>150 %</strong> Simulate asks before going on (headless, <code>circuitrf em</code> needs <code>--force</code>). A warning never stops
-a run on its own: the estimate uses the highest memory per unknown circuitRF has measured.</p>
+<strong>100 %</strong> Simulate asks before going on: run with a remedy that fits, such as fewer MPI processes, which keeps the memory
+limit; <strong>Simulate Anyway</strong>, which lifts it and lets the run swap; or don't run. The question says how much the run may swap and how
+much room the startup disk has for it. Headless, <code>circuitrf em</code> warns and runs with its limit, needs <code>--force</code> past <strong>150 %</strong>, and
+<code>--force</code> lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory per
+unknown circuitRF has measured.</p>
 <p><strong>A setup on the Direct linear solver is checked as Direct</strong>: it needs about two to three times the
 iterative solver's memory (on a four-layer via transition, 6.2 GB against 3.0 GB at 193 k unknowns). When
-Direct will not fit and Iterative would, Simulate asks before starting, below 150 % too. The question's default
+Direct will not fit and Iterative would, the question before the run offers it. Its default
 button is <strong>Use the Iterative Solver</strong>, which runs this once on Iterative without changing the setup;
 <strong>Simulate Anyway</strong> keeps Direct. Headless, <code>circuitrf em</code> prints the same warning and runs as the setup says.</p>
 <p><strong>Fewer processes is another remedy a run can take by itself</strong>, without changing the setup: every MPI
@@ -1485,7 +1488,7 @@ what would shrink it. Past 90 % of the limit the run carries a warning.</li>
 <li><strong>The disk floor is 10 GB free</strong> (5 % of a smaller volume), on the startup volume, where the operating system swaps,
 and on the volume the results are written to. Below it the run is stopped the same way, and a run that would start
 below it is not started. The message names the volume and the free space left.</li>
-<li><strong>A run you start anyway when the 150 % check asks</strong> (or with <code>--force</code>) has no memory limit, since you chose to let
+<li><strong>A run you start anyway when the size check asks</strong> (or with <code>--force</code>) has no memory limit, since you chose to let
 it swap, but it keeps the disk floor.</li>
 <li><strong>On Windows the limit is held by the operating system itself</strong>, so a sudden burst cannot overshoot it. Elsewhere
 it can overshoot by the memory taken between two readings, which is why it sits at the computer's memory and not

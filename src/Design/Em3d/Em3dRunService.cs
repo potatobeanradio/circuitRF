@@ -811,7 +811,8 @@ public static partial class Em3dRunService
 
     /// <summary>
     /// R-em3d21-2b — one run's memory decisions: a warning is posted once at its highest level, and a
-    /// run past 150 % is confirmed once (the panel's question, the CLI's --force) or refused.
+    /// run past this machine's memory is confirmed once where it can be (the panel's question, the CLI's --force), and one past
+    /// 150 % is refused unless it is.
     /// </summary>
     internal sealed class MemoryGate(Func<Em3dMemoryVerdict, bool>? confirm)
     {
@@ -850,8 +851,9 @@ public static partial class Em3dRunService
         {
             Last = verdict;
             if (verdict.Level == Em3dMemoryLevel.Fits || verdict.Text is null) return null;
-            // A direct solver that will not fit is asked about below 150 % too, where someone can be asked; the CLI warns.
-            if ((verdict.Level == Em3dMemoryLevel.Severe || verdict.AskFirst && confirm is not null) && !_confirmed)
+            // A run that will not fit is asked about below 150 % too, where someone can be asked, and --force counts as the answer:
+            // otherwise it starts with its ceiling and is stopped at it, with no way to choose to let it swap. With neither, a warning.
+            if ((verdict.Level == Em3dMemoryLevel.Severe || verdict.PastMemory && confirm is not null) && !_confirmed)
             {
                 if (confirm?.Invoke(verdict) != true)
                     return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";

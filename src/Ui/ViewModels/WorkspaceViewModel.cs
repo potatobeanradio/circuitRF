@@ -9741,12 +9741,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return await new Views.Dialogs.SaveChangesDialog(
                     verdict.Text ?? "", saveLabel: "Run Anyway", dontSaveLabel: null, cancelLabel: "Cancel",
                     title: "This Run May Take a Long Time").ShowDialog<SaveChangesResult>(owner) == SaveChangesResult.Save;
+            // A run started anyway swaps, and how much room the disk has for that is what decides whether it finishes.
+            string text = string.Join(" ", new[]
+            {
+                verdict.Text,
+                verdict.LiftsCeiling && verdict.File is null && CircuitRF.Design.Em3d.DiskFloor.SwapPath is { } swap && verdict.EstimateBytes is { } estimate
+                    ? CircuitRF.Design.Em3d.DiskFloor.SwapRoom(estimate, verdict.PhysicalBytes, CircuitRF.Design.Em3d.DiskFloor.Read(swap))
+                    : null,
+            }.Where(t => t is { Length: > 0 }));
             // brief-dfr27-5 R-dfr27-5-5 — a remedy the run can take itself and that fits (fewer MPI processes) is the default
             // answer; the subsystem's memory dialog stays on the warning's own row in Messages.
             if (verdict.Applicable is [var fits, ..])
             {
                 var answer = await new Views.Dialogs.SaveChangesDialog(
-                    verdict.Text ?? "", saveLabel: fits.Iterative ? "Use the Iterative Solver"
+                    text, saveLabel: fits.Iterative ? "Use the Iterative Solver"
                                                  : $"Run on {fits.Processes} Process{(fits.Processes == 1 ? "" : "es")}",
                     dontSaveLabel: "Simulate Anyway", cancelLabel: "Don't Simulate",
                     title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
@@ -9757,7 +9765,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // run that will very likely be stopped part-way.
             bool noneFits = verdict.NothingFits;
             var choice = await new Views.Dialogs.SaveChangesDialog(
-                verdict.Text ?? "", saveLabel: "Simulate Anyway",
+                text, saveLabel: "Simulate Anyway",
                 dontSaveLabel: offer ? MoreMemoryFirstLabel : null, cancelLabel: "Don't Simulate",
                 title: "This Run May Not Fit in Memory", destructive: noneFits).ShowDialog<SaveChangesResult>(owner);
             return AnswerEmMemory(choice, () => Dispatcher.UIThread.Post(() => _ = RaiseSubsystemMemoryAsync()));
@@ -9766,7 +9774,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     internal const string MoreMemoryFirstLabel = "Give the Subsystem More Memory First…";
 
     /// <summary>
-    /// What the 150 % question's answer means for the run: <b>only Simulate Anyway runs it</b>. <i>More memory
+    /// What the memory question's answer means for the run: <b>only Simulate Anyway runs it</b>. <i>More memory
     /// first</i> opens the dialog and STOPS the run (Simulate again afterwards) — it must not restart the subsystem
     /// and carry on, because this run's Palace runner was set up against the old VM.
     /// </summary>

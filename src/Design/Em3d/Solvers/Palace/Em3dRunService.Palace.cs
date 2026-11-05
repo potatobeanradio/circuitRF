@@ -1059,7 +1059,7 @@ public static partial class Em3dRunService
         if (iterative is not null) remedies.Add(iterative);
         remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
-            basis: "Before meshing, from the 3D model's volumes:", scope: scope) with { AskFirst = AskFirst(e, iterative, physicalBytes) };
+            basis: "Before meshing, from the 3D model's volumes:", scope: scope);
     }
 
     /// <summary>brief-dfr27-5 R-dfr27-5-5 — <paramref name="bytes"/>, measured on <see cref="Em3dSizeEstimate.PalaceMeasuredProcesses"/>
@@ -1125,8 +1125,7 @@ public static partial class Em3dRunService
         if (iterative is not null) remedies.Add(iterative);
         remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
-            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
-            with { AskFirst = AskFirst(e, iterative, physicalBytes) };
+            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope);
     }
 
     /// <summary>
@@ -1163,10 +1162,6 @@ public static partial class Em3dRunService
             ? new("the iterative linear solver (Palace.LinearSolver: Iterative; slower on some problems, far less memory)", b)
               { Iterative = true }
             : null;
-
-    /// <summary>Direct will not fit and iterative would: the run asks first, below 150 % too.</summary>
-    private static bool AskFirst(long estimate, Em3dMemoryRemedy? iterative, long physicalBytes)
-        => iterative is not null && physicalBytes > 0 && estimate > physicalBytes && iterative.Fits(physicalBytes);
 
     /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
     /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>

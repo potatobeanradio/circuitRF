@@ -285,7 +285,7 @@ the problem's size. A `.c3d` that embeds several setups takes `--setup <name>` t
 uses the model's volumes and the refined shell round each conductor and port. A second check, once Gmsh has
 reported how many tetrahedra it made, uses the real count. On a bond wire or another small curved conductor
 the second is the one that counts, because the refinement its curvature asks for is nearly the whole mesh. Past 75 % of memory the run carries a warning naming the estimate and
-what would shrink it. Past 150 %, Simulate asks before going on.
+what would shrink it. Past 100 %, Simulate asks before going on.
 
 **While it runs**, the progress row names the solver's own stages, read from its own log: *Meshing
 (Gmsh)* with Gmsh's own stage (curves, surfaces, 3D, the second-order elements, and *high-order optimisation* with

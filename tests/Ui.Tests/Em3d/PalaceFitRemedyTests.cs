@@ -83,7 +83,7 @@ public sealed class PalaceFitRemedyTests
         var v = Em3dRunService.MeshMemoryVerdict(29_042, direct, physical);
         Assert.True(v.EstimateBytes > physical);
         Assert.NotEqual(Em3dMemoryLevel.Severe, v.Level);
-        Assert.True(v.AskFirst);
+        Assert.True(v.PastMemory);
         Assert.True(v.Applicable[0].Iterative);
         Assert.True(v.Applicable[0].EstimateBytes < physical);
         Assert.Contains("Palace.LinearSolver: Iterative", v.Text);
@@ -102,6 +102,59 @@ public sealed class PalaceFitRemedyTests
         Assert.Contains("Palace.LinearSolver: Iterative", Assert.Single(cliLog.Warnings));
 
         // The same mesh on the iterative solver fits: nothing is asked.
-        Assert.False(Em3dRunService.MeshMemoryVerdict(29_042, PalaceSettings.Preset(PalaceQuality.Standard), physical).AskFirst);
+        Assert.False(Em3dRunService.MeshMemoryVerdict(29_042, PalaceSettings.Preset(PalaceQuality.Standard), physical).PastMemory);
+    }
+
+    private static Em3dMemoryVerdict OfShare(double share, params Em3dMemoryRemedy[] remedies)
+        => Em3dMemoryVerdict.Evaluate((long)(share * 16 * GB), (long)(16 * GB), remedies);
+
+    /// <summary>A run estimated past this machine's memory but below 150 % is asked about. Anyway lifts its ceiling, a remedy keeps it, and no
+    /// does not run it. It was started with its ceiling and stopped at it, with no way to choose to let it swap.</summary>
+    [Fact]
+    public void PastMemoryBelow150Percent_IsAskedAbout_AndOnlyAnywayLiftsTheCeiling()
+    {
+        var two = new Em3dMemoryRemedy("2 MPI processes", (long)(10 * GB)) { Processes = 2 };
+        var v = OfShare(1.4, two);
+        Assert.Equal(Em3dMemoryLevel.Warning, v.Level);
+        Assert.Contains("stopped at this machine's memory limit, unless it is started anyway", v.Text);
+
+        var anyway = new Em3dRunService.MemoryGate(_ => true);
+        Assert.Null(anyway.Admit(v, new Em3dRunService.RunLog()));
+        Assert.True(anyway.Forced);
+
+        var remedy = new Em3dRunService.MemoryGate(q => { q.Choice.Remedy = q.Applicable[0]; return true; });
+        Assert.Null(remedy.Admit(OfShare(1.4, two), new Em3dRunService.RunLog()));
+        Assert.Equal((false, (int?)2), (remedy.Forced, remedy.ProcessCap));
+
+        Assert.NotNull(new Em3dRunService.MemoryGate(_ => false).Admit(v, new Em3dRunService.RunLog()));
+
+        // With no one to ask it is a warning, and the ceiling stays.
+        var headless = new Em3dRunService.MemoryGate(null);
+        Assert.Null(headless.Admit(v, new Em3dRunService.RunLog()));
+        Assert.False(headless.Forced);
+    }
+
+    /// <summary>A run within this machine's memory is not asked about.</summary>
+    [Fact]
+    public void WithinMemory_IsNotAskedAbout()
+    {
+        int asked = 0;
+        var gate = new Em3dRunService.MemoryGate(_ => { asked++; return true; });
+        Assert.Null(gate.Admit(OfShare(0.95), new Em3dRunService.RunLog()));
+        Assert.Equal((0, false), (asked, gate.Forced));
+    }
+
+    /// <summary>The question says what starting anyway will ask of the disk, and how much more it needs when that is too much.</summary>
+    [Fact]
+    public void SwapRoom_SaysWhatTheDiskHasAndWhatIsShort()
+    {
+        long gb = 1_000_000_000;
+        var space = new VolumeSpace(20 * gb, 500 * gb);
+        Assert.Contains("may swap about 8.0 GB: the startup disk has 20.0 GB free, and the run is stopped when that falls to 10.0 GB.",
+                        DiskFloor.SwapRoom(25 * gb, 17 * gb, space));
+        Assert.DoesNotContain("Free about", DiskFloor.SwapRoom(25 * gb, 17 * gb, space));
+        Assert.Contains("Free about 5.0 GB more first.", DiskFloor.SwapRoom(32 * gb, 17 * gb, space));
+        Assert.Null(DiskFloor.SwapRoom(16 * gb, 17 * gb, space));
+        Assert.Null(DiskFloor.SwapRoom(25 * gb, 17 * gb, null));
     }
 }

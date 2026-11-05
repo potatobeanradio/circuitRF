@@ -7,7 +7,8 @@
 // run's own volume every second and kills the tree below the floor. Both write no result, as a cancelled run writes none.
 //
 //   * The ceiling defaults to this machine's physical memory: past it the operating system swaps. A run the user forced past
-//     the size check keeps no ceiling (owner decision O2) — it chose swap knowingly — but keeps the floor.
+//     the size check, which asks once the estimate is past that memory, keeps no ceiling (owner decision O2) — it chose swap
+//     knowingly — but keeps the floor.
 //   * The floor is 10 GB, or 5 % of the volume when that is smaller (O3). It is not a setting, and forcing does not lift it:
 //     it is the guard against the failure that happened.
 //   * On Windows the Job Object holds the ceiling itself (Em3dProcessJob), so a burst between two polls cannot overshoot it.
@@ -152,6 +153,22 @@ public static class DiskFloor
             return new(d.AvailableFreeSpace, d.TotalSize);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
+
+    /// <summary>
+    /// What starting a run anyway means for the disk, in the question before it: it keeps no memory ceiling, so it swaps what
+    /// does not fit, and the floor is then what stops it. Null where swap is no volume's to give (Linux, the subsystem's memory).
+    /// </summary>
+    /// <param name="estimateBytes">What the run may need.</param>
+    /// <param name="physicalBytes">The memory it is checked against.</param>
+    /// <param name="space">The swap volume's free and total space, or null when it cannot be read.</param>
+    public static string? SwapRoom(long estimateBytes, long physicalBytes, VolumeSpace? space)
+    {
+        if (space is not { } s || estimateBytes <= physicalBytes) return null;
+        long swap = estimateBytes - physicalBytes, floor = FloorFor(s.TotalBytes), room = s.FreeBytes - floor;
+        return $"Simulate Anyway keeps no memory limit, so the run may swap about {MachineMemory.Format(swap)}: the startup disk has " +
+               $"{MachineMemory.Format(s.FreeBytes)} free, and the run is stopped when that falls to {MachineMemory.Format(floor)}." +
+               (room < swap ? $" Free about {MachineMemory.Format(swap - room)} more first." : "");
     }
 
     /// <summary>The volume's name as a reader knows it: its drive, or its mount point.</summary>

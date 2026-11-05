@@ -1,5 +1,15 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
+
+Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was
+stopped at it minutes later. The limit in Settings cannot exceed physical memory, and `--force` answered a question this range never asked, so
+it did nothing here though the CLI reference said it lifted the limit. `MemoryGate.Admit` now asks from `Em3dMemoryVerdict.PastMemory`, which also
+covers what `AskFirst` was for, so that went. **A remedy chosen keeps the ceiling; only Simulate Anyway lifts it.** With no one to ask,
+the CLI still warns and keeps it. The question carries `DiskFloor.SwapRoom`, because a forced run is then stopped by the disk floor instead, but
+only for a verdict with `LiftsCeiling`: the planar solver shares the dialog and has no such ceiling to lift. **Still open:** a run estimated within
+memory that then reaches it is stopped with no question ever asked, so it has no way to swap.
+
 ## A component port's corner a sliver inside its copper: "a face of no element" (2026-11-05)
 
 - **What it was.** On an imported board with chamfered pads, one surface triangle of a component port, 40 pm by 100 pm, was a face of no

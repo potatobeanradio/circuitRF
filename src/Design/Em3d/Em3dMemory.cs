@@ -346,7 +346,8 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// <summary>Above this share of physical memory a run is warned about.</summary>
     public const double WarnFraction = 0.75;
 
-    /// <summary>Above this share a run must be confirmed (the panel asks; the CLI needs --force).</summary>
+    /// <summary>Above this share a run must be confirmed where no one can be asked as well (the CLI needs --force). The panel asks
+    /// from <see cref="PastMemory"/>.</summary>
     public const double SevereFraction = 1.5;
 
     /// <summary>During a run, the share of its memory ceiling (of physical memory, on a run forced past the size check) the
@@ -368,9 +369,14 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     public IReadOnlyList<Em3dMemoryRemedy> Applicable =>
         [.. Remedies.Where(r => (r.Processes is not null || r.Iterative) && r.Fits(PhysicalBytes)).OrderByDescending(r => r.Iterative)];
 
-    /// <summary>The setup asks for the direct solver, the run will not fit with it, and it would with the iterative one: asked
-    /// about where a question can be asked, below 150 % too, so the run is not started only to be stopped at its ceiling.</summary>
-    public bool AskFirst { get; init; }
+    /// <summary>The estimate is past the memory the run's ceiling is set at, so as it stands it would most likely be started only to be
+    /// stopped there. Asked about where a question can be asked, and answering "anyway" is what lets a run swap; below this, a run
+    /// is not asked about, and keeps its ceiling.</summary>
+    public bool PastMemory => EstimateBytes is { } e && PhysicalBytes > 0 && e > PhysicalBytes;
+
+    /// <summary>The run's processes are held to a memory ceiling that starting it anyway lifts, so it may swap: a 3D run's verdict, as
+    /// the planar solver's is not.</summary>
+    public bool LiftsCeiling { get; init; }
 
     /// <summary>Past the confirmation with no remedy that is a setting and fits: the question says so, and its default is
     /// not to run.</summary>
@@ -401,7 +407,10 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
                       $"{scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
                       (level == Em3dMemoryLevel.Severe
                           ? ". At that size the run will very likely swap or be killed by the operating system. "
-                          : "; a run this size may slow the machine or swap (the estimate errs high). ");
+                          : share > 1
+                              ? $"; as it stands it will probably be stopped at {scope?.Owner ?? "this machine's"} memory limit, unless it is " +
+                                "started anyway, which lets it swap (the estimate errs high). "
+                              : "; a run this size may slow the machine or swap (the estimate errs high). ");
         var useful = remedies.Where(r => r.EstimateBytes is { } b && b < e).ToList();
         // brief-dfr27-5 R-dfr27-5-5 — each says whether it fits; past the confirmation, a list none of which fits says so
         // plainly, rather than leave "anyway" the only way forward the reader is shown.
@@ -413,7 +422,7 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
                     (useful.Any(r => r.Sized) ? "; only a smaller crop would" : "") +
                     ". As it stands, the run would very likely be stopped for memory part-way through.";
         var raise = scope?.Remedy?.Invoke(e);
-        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File) { Remedies = remedies };
+        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File) { Remedies = remedies, LiftsCeiling = true };
     }
 }
 
