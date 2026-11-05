@@ -64,7 +64,8 @@ public sealed class Em3dExampleTests(ITestOutputHelper output) : IDisposable
             var r = Check(cem);
             string rel = Path.GetRelativePath(Root(), cem);
             output.WriteLine($"{rel}: {r.Errors} error(s), {r.Warnings.Count} warning(s)");
-            Assert.Empty(r.Warnings);
+            // The bond wire's 3 µm gold pads are under three skin depths at the sweep's 1 GHz, and the run says so.
+            Assert.All(r.Warnings, w => Assert.Contains("skin depths thick", w));
             if (rel == numbers.PlanarVia.Setup)
                 Assert.Equal([numbers.PlanarVia.Refusal], r.ErrorMessages.Select(Unprefixed));
             else

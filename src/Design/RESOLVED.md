@@ -28048,3 +28048,27 @@ top moved 97,553 elements to 80,587, because barrels and short edges set the mes
 frequency, 21 s against 14 s and 3.0 GB against 1.4 GB. |ΔS21| between the two is 0.10 at 2.5 GHz and 0.05 at 12.5 GHz, so the coarser mesh moved the answer at the frequency it
 was sized for as well: Draft's 0.1 λ is coarse there. The setting moves the budget and does not make the fundamental converged; the preset's element size still decides that.
 
+## Metal thin against the skin depth reads too little loss on Palace and EMerge (2026-11-04)
+
+Neither solver meshes a conductor's interior: its faces carry (1+j)/(σδ), the impedance of thick metal. Below about three skin depths
+that is wrong in both directions, and nothing in the answer shows it. Measured on Palace, 1 µm aluminium 10 µm over ground, 300 µm
+long, against a 2D filament solve of the same section, R' as a ratio to the reference:
+
+| GHz | 5 µm wide | 50 µm wide | 5 µm, `Thickness` = 2A/P on the faces |
+|---|---|---|---|
+| 0.1 | 0.05 | 0.07 | 1.00 |
+| 0.45 | 0.11 | 0.16 | 1.00 |
+| 2 | 0.24 | 0.33 | 1.01 |
+| 8.9 | 0.47 | 0.61 | 0.99 |
+| 40 | 0.73 | 0.91 | 0.80 |
+
+The inductance reads high with it, because the impedance is as reactive as it is resistive: 0.97 pH/µm at 0.1 GHz on the 5 µm line
+against a true 0.55. `Em3dThinMetalLoss` warns of this before a run; a warning and not a fix, so nothing a run returns has changed.
+
+**The fix this points at, not made.** Palace's `Thickness` without `External` is (1+j)/(σδ)·coth((1+j)h/2δ), read from its 0.18.1
+source, which tends to 2/(σh) when thin and to today's value when thick. With h = 2A/P on every face, a section's faces in parallel
+give exactly the DC resistance, whatever its shape. It held L' to 1 % at every frequency above, and R' to 1 % up to 9 GHz. At 40 GHz it
+is 20 % low on the 5 µm line, where the current crowds to the edges and no single face value can follow it. EMerge's `SurfaceImpedance`
+takes a `thickness` of its own, with coth(γ·thickness), so its h would be A/P. **Unmeasured:** that run, the 50 µm line with `Thickness`,
+sheets and meshed metal were all stopped before finishing, so none of them has a number. The one `Thickness` run took 294 s against
+42 s, on a loaded machine and partly beside a build, so what it costs is not known either.

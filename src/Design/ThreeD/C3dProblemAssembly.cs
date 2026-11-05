@@ -632,7 +632,7 @@ public static class C3dProblemAssembly
             WantsDc = wantsDc,
             ComponentPorts = components,
             GeometryFindings = geometry,
-            Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry)],
+            Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry), .. Em3dThinMetalLoss.ForRun(problem, setup)],
             Wires = e.Wires,
             Origins = e.Origins,
             MaterialSources = materialSources,

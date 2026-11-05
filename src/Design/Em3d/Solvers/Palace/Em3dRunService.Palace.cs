@@ -1247,7 +1247,8 @@ public static partial class Em3dRunService
             };
             if (radius is not { } r || !sigma.TryGetValue(solid.Material, out var m) || !(m.SigmaSm > 0)) continue;
             double delta = 1 / Math.Sqrt(Math.PI * problem.Frequency.StartHz * Mu0 * m.Mur * m.SigmaSm);
-            if (r < 10 * delta) names.Add(solid.Name);
+            // Under three skin depths the radius is not a curvature correction any more: Em3dThinMetalLoss warns of what that reads.
+            if (r < 10 * delta && r >= Em3dThinMetalLoss.SkinDepths * delta) names.Add(solid.Name);
         }
         return names;
     }
