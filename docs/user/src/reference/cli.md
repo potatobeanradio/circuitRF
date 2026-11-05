@@ -123,7 +123,7 @@ convention behind both.</p>
 | `hb` | `.cnl` or `.csch` | Harmonic balance, single- or multi-tone | Spectra tables to stdout; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
-| `em` | `.cem`, or a `.c3d` with `--setup` | The EM kernel or 3D solver the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
+| `em` | `.cem`, or a `.c3d` with `--setup` | The EM kernel or 3D solver the setup resolves to | A Touchstone `.sNp`, a grouped `.npy` **and** a `.cemr` result record, where **Simulate** writes them |
 | `solver list`, `install`, `remove` | **nothing** — a tool name | The install assistant **Settings ▸ Solvers** runs | What each 3D solver's row shows, to stdout; an install or a removal, only with `--yes` |
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
 | `yield mc`, `yield estimate`, `yield trial` | `.csch` or `.cnl` | A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the `statistics` line | The yield, each goal's result and the spread to stdout; the trials to `<design>.yield.npy`; **nothing** in the design (`--save-preset`, `--save-corner` with `--trial`) |
@@ -500,6 +500,9 @@ the startup volume or the results' volume falls below 10 GB free; either way the
 `--force` lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
 lifts the disk floor. `explain` on a 3D setup reports both, and takes
 `--memory-limit` too.
+
+`--adopt <file.sNp>` solves nothing: it writes the `.cemr` record of a result from before records existed, beside its
+Touchstone, and refuses when no `.npy` matches it. `explain <file.cemr>` reads a record back, and `-o` moves the Touchstone alone.
 
 `--mesh-only` runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits **0** on a mesh, **1**

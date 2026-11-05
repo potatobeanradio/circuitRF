@@ -41,7 +41,8 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
     private const string WriteStampMarker = "circuitRF-EM written:";
 
     private static string[] WithoutWriteStamp(IEnumerable<string> lines)
-        => [.. lines.Where(l => !l.Contains(WriteStampMarker, StringComparison.Ordinal))];
+        => [.. lines.Where(l => !l.Contains(WriteStampMarker, StringComparison.Ordinal) &&
+                                !l.Contains(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal))];
 
     /// <summary>
     /// Runs `circuitrf &lt;args&gt;` and returns (exit code, stdout, stderr).

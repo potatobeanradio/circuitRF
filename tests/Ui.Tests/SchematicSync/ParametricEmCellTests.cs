@@ -74,5 +74,6 @@ public sealed class ParametricEmCellTests : IDisposable
     }
 
     private static string WithoutTimestamp(string text) =>
-        string.Join('\n', text.Split('\n').Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal)));
+        string.Join('\n', text.Split('\n').Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal) &&
+                                                       !l.Contains(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal)));
 }

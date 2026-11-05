@@ -469,7 +469,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     // ── Output file (owner request, 2026-08-09) ────────────────────────────────────────────────
 
     /// <summary>
-    /// Staged text for <see cref="EmSetupModel.SnpOutputPathOverride"/> — where the s-parameters land.
+    /// Staged text for <see cref="EmSetupModel.SnpOutputPathOverride"/> — the result's name, which decides every file a run writes.
     /// Committed on LostFocus/Enter like every other typed field in this panel, so a half-typed path
     /// never reaches the model.
     ///
@@ -480,30 +480,22 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _snpOutputPathText = "";
 
-    /// <summary>What a blank box resolves to — the layout's own name with its <c>.clay</c> swapped
-    /// for <c>.sNp</c>, N being however many ports the run finds. Shown as the placeholder.</summary>
-    public string SnpOutputPlaceholder
-    {
-        get
-        {
-            string stem = Working.LayoutRef is { Length: > 0 } r
-                ? Path.GetFileNameWithoutExtension(r)
-                : Working.Name;
-            if (stem.Length == 0) stem = "results";
-            return $"{stem}.sNp";
-        }
-    }
+    /// <summary>brief-cosim-pattern-1 R-cp1-8 — the bare name a blank box resolves to, by the rule the run reads: the setup's name
+    /// and, in 3D, the solver's token. Shown as the placeholder.</summary>
+    public string SnpOutputPlaceholder => EmResultNames.BlankStem(Working);
 
     /// <summary>Commits the staged path. Same value is a no-op, so tabbing through pushes no undo
     /// entry.</summary>
     public void CommitSnpOutputPath()
     {
-        string v = (SnpOutputPathText ?? "").Trim();
+        // A suffix is the run's to add, so a typed or browsed .sNp, .npy or .cemr is removed here too and the box shows the name.
+        string v = EmResultNames.Clean((SnpOutputPathText ?? "").Trim());
+        SnpOutputPathText = v;
         if (v == Working.SnpOutputPathOverride) return;
 
         var before = SnapshotJson();
         Working.SnpOutputPathOverride = v;
-        CommitEdit(before, "Set output file");
+        CommitEdit(before, "Set output name");
         SnpOutputPathText = Working.SnpOutputPathOverride;
     }
 
@@ -1168,6 +1160,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         var afterJson = SnapshotJson();
         if (afterJson == beforeJson) return;
+        OnPropertyChanged(nameof(SnpOutputPlaceholder));     // it follows the setup's name and solver
         // brief-em3d-49 — embedded, the edit is the .c3d's: its editor pushes one entry that writes the setup back.
         if (EmbeddedCommit is { } commit) commit(beforeJson, afterJson, description);
         else UndoRedo.Execute(new EmSetupSnapshotCommand(this, beforeJson, afterJson, description));

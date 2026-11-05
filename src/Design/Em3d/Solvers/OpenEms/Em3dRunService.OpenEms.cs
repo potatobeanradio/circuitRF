@@ -102,7 +102,7 @@ public static partial class Em3dRunService
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
             => ExecuteOpenEms(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log,
-                              run.Limits(MachineMemory.PhysicalBytes), run.Dc);
+                              run.Limits(MachineMemory.PhysicalBytes), run, run.Dc);
     }
 
     // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ public static partial class Em3dRunService
 
     private static Leg ExecuteOpenEms(OpenEmsPlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
                                       CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
-                                      ProcessLimits? limits = null, Em3dDcResult? dc = null)
+                                      ProcessLimits? limits, RunContext run, Em3dDcResult? dc = null)
     {
         const Em3dSolverId Me = OpenEmsSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -285,18 +285,23 @@ public static partial class Em3dRunService
             OpenEmsSarResults.AddTo(data, sar.Records, sarPlan.Settings);
         }
 
-        // ── brief-sar-9 R-sar9-1 — every port's fields beside the .sNp, written BEFORE it so the .sNp is never the older ────────
+        // ── brief-sar-9 R-sar9-1 — every port's fields, staged with the rest of the result (brief-cosim-pattern-1 R-cp1-3): writing
+        // them takes minutes, and a failure or a cancel here leaves the previous result's set whole ────────
+        var paths = run.Paths(Me);
+        using var staging = EmResultStaging.Begin(paths);
         string? fieldsLine = null;
+        PortFieldManifest? fieldManifest = null;
         if (runSettings.Sar is { Settings.PerPortFields: true } fieldPlan)
         {
-            string folder = PortFieldSet.FolderForBase(snpBase);
-            string stamp = PortFieldSet.NewStamp();
+            string folder = staging.StagedFields;
+            string stamp = staging.Stamp;
             var (manifest, fieldError) = PortFieldSetWriter.Write(
-                folder, stamp, Path.GetFileName(snpBase + $".s{ports.Count}p"), setup.Name ?? "", fieldPlan, problem, runDir,
+                folder, stamp, Path.GetFileName(paths.SnpPath(ports.Count)), setup.Name ?? "", fieldPlan, problem, runDir,
                 lowering.Ports, [.. ports.Select(p => p.Name)], [.. ports.Select(p => p.Z0)], [.. runs.Select(r => r.Probes!)],
                 efficiencies.Count > 0 ? efficiencies : null, control, ct, grid.Cylinder);
             if (fieldError is not null) return Failed(fieldError);
-            fieldsLine = PortFieldSet.ProvenanceLine(folder, stamp);
+            fieldManifest = manifest;
+            fieldsLine = PortFieldSet.ProvenanceLine(paths.FieldsFolder, stamp, paths.SnpPath(ports.Count));
             log.Notes.Add($"Per-port fields kept in '{Path.GetFileName(folder)}': {manifest!.Ports.Count} port{(manifest.Ports.Count == 1 ? "" : "s")} at " +
                           $"{string.Join(", ", manifest.Frequencies.Select(f => MaterialDispersion.Hz(f.Hz)))}, " +
                           $"{MachineMemory.Format(manifest.TotalBytes)}; a schematic's fields analysis recombines them with no new EM run.");
@@ -304,17 +309,10 @@ public static partial class Em3dRunService
 
         // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
         var dcLines = SpliceDc(data, problem, dc);
-        string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-
-        string? snpError;
-        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, plan.GridSettings, runSettings, lowering, openEms, runs, fieldsLine, dcLines); }
-        catch (Exception e) { snpError = e.Message; }
-        if (snpError is not null)
-        {
-            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
-            snpPath = null;
-        }
+        var published = PublishDriven(run, Me, problem, data, openEms.DescribeVersion(), "cpu", new EmResultMesh(grid.Cells, "cells", null),
+                                      (stagedBase, stamp) => WriteOpenEmsSnp(data, stagedBase, setup, problem, grid, plan.GridSettings, runSettings, lowering,
+                                                                             openEms, runs, fieldsLine, dcLines, stamp),
+                                      staging, fieldManifest);
 
         var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
                                                       [.. runs.Where(r => !r.Converged).Select(r => r.Port)]);
@@ -324,8 +322,8 @@ public static partial class Em3dRunService
             : $"openEMS stopped at its step limit {(open.Count == 1 ? $"exciting port {open[0].Port}" : $"exciting ports {string.Join(", ", open.Select(r => r.Port))}")}" +
               (open.Where(r => !double.IsNaN(r.DecayDb)).Select(r => r.DecayDb).DefaultIfEmpty(double.NaN).Max() is var worst && !double.IsNaN(worst)
                    ? $" at {Db(worst)} against {Db(runSettings.EndCriterionDb)}" : "") + ": not converged.";
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts,
-                       NotConverged: notConverged);
+        return new Leg(Me, EmRunStatus.Ok, null, data, published.Npy, published.Snp, "openEMS " + openEms.DescribeVersion(), comparisonFacts,
+                       NotConverged: notConverged, RecordPath: published.Record);
     }
 
     /// <summary>brief-sar-6 — the source a SAR refusal is forwarded under.</summary>
@@ -473,7 +471,7 @@ public static partial class Em3dRunService
     private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
                                            OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
                                            SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs, string? fieldsLine = null,
-                                           IReadOnlyList<string>? dcLines = null)
+                                           IReadOnlyList<string>? dcLines = null, string? stamp = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -534,7 +532,7 @@ public static partial class Em3dRunService
                 lines,
                 setup.Name is { Length: > 0 } nm ? nm : Path.GetFileNameWithoutExtension(snpBase),
                 setup.SolveRegion is { } reg ? $"{setup.LayoutRef} (solve region {Ascii(reg.Describe())})" : setup.LayoutRef,
-                DateTimeOffset.Now));
+                DateTimeOffset.Now, stamp));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBase)!);
         var result = TouchstoneExporter.Export(

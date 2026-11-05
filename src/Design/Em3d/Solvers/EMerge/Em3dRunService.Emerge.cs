@@ -196,12 +196,12 @@ public static partial class Em3dRunService
         control?.BeginStage(ReadingLabel);
         string version = facts.Version ?? emerge.Release ?? "(version unreported)";
         return eigen
-            ? FinishEmergeEigen(problem, setup, run.ResultsRoot, dir, facts, tier, version, peak, wall.Elapsed, log)
-            : FinishEmergeDriven(problem, setup, run.ResultsRoot, snpBase, dir, settings, lowering, facts, tier, version,
+            ? FinishEmergeEigen(problem, setup, run.Paths(Me).NpyPath, dir, facts, tier, version, peak, wall.Elapsed, log)
+            : FinishEmergeDriven(problem, setup, run, dir, settings, lowering, facts, tier, version,
                                  peak, wall, log, run.Dc);
     }
 
-    private static Leg FinishEmergeDriven(Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase, string dir,
+    private static Leg FinishEmergeDriven(Em3dProblem problem, EmSetup setup, RunContext run, string dir,
                                           EmergeSettings settings, EmergeLowering lowering, EmergeRunFacts facts, EmergeSpeedTier tier,
                                           string version, long? peak, Stopwatch wall, RunLog log, Em3dDcResult? dc = null)
     {
@@ -314,25 +314,15 @@ public static partial class Em3dRunService
             log.Warnings.Add($"No radiation pattern from EMerge: {patternError}");
         // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
         var dcLines = SpliceDc(data, problem, dc);
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        string? snpPath = snpBase + $".s{ports.Count}p";
-        string? snpError;
-        try
-        {
-            snpError = EmergeResults.WriteSnp(data, snpBase, setup, problem, lowering, settings, facts, version, wall.Elapsed, peak,
-                                              DateTimeOffset.Now, dcLines);
-        }
-        catch (Exception e) { snpError = e.Message; }
-        if (snpError is not null)
-        {
-            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
-            snpPath = null;
-        }
+        var published = PublishDriven(run, Me, problem, data, version, facts.Device?.ToString().ToLowerInvariant(),
+                                      new EmResultMesh(facts.Tetrahedra, "tetrahedra", facts.Unknowns),
+                                      (stagedBase, stamp) => EmergeResults.WriteSnp(data, stagedBase, setup, problem, lowering, settings, facts, version,
+                                                                                    wall.Elapsed, peak, DateTimeOffset.Now, dcLines, stamp));
 
         // R-emi5-4c — the one line a user reads first of what the run cost, the last thing the run says.
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false, EmergeFields.Bytes(dir)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "EMerge " + version, EmergeComparisonFacts(problem, settings, facts),
-                       NotConverged: notConverged);
+        return new Leg(Me, EmRunStatus.Ok, null, data, published.Npy, published.Snp, "EMerge " + version, EmergeComparisonFacts(problem, settings, facts),
+                       NotConverged: notConverged, RecordPath: published.Record);
     }
 
     /// <summary>
@@ -389,7 +379,7 @@ public static partial class Em3dRunService
     }
 
     /// <summary>R-emi5-4b — the modes, as Palace's eigenmode run reports them (f, Q), with what EMerge does not report left out.</summary>
-    private static Leg FinishEmergeEigen(Em3dProblem problem, EmSetup setup, string resultsRoot, string dir, EmergeRunFacts facts,
+    private static Leg FinishEmergeEigen(Em3dProblem problem, EmSetup setup, string npyTarget, string dir, EmergeRunFacts facts,
                                          EmergeSpeedTier tier, string version, long? peak, TimeSpan wall, RunLog log)
     {
         const Em3dSolverId Me = EmergeSolver.Id;
@@ -435,7 +425,7 @@ public static partial class Em3dRunService
         log.Notes.Add($"EMerge found {modes.Kept.Count} mode(s) at or above {Fmt(modes.FloorHz / 1e9)} GHz on {Count(facts.Tetrahedra)} " +
                       $"tetrahedra, {Count(facts.Unknowns)} unknowns.");
 
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
+        string? npyPath = WriteNpy(npyTarget, data, log);
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall, eigenmode: true, EmergeFields.Bytes(dir)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "EMerge " + version);
     }

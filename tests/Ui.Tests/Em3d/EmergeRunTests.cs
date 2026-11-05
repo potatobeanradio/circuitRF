@@ -337,6 +337,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
     private static string[] Header(IEnumerable<string> lines)
         => [.. lines.Where(l => (l.StartsWith('!') || l.StartsWith('#')) &&
                                 !l.Contains("circuitRF-EM written:", StringComparison.Ordinal) &&
+                                !l.Contains(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal) &&
                                 !l.Contains(Em3dRunService.CostProvenancePrefix, StringComparison.Ordinal))];
 
     private static List<double[]> Rows(IEnumerable<string> lines)

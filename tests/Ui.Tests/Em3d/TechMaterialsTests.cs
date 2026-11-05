@@ -174,8 +174,8 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
         const string stamp = "circuitRF-EM written:";
         string[] A = File.ReadAllLines(plain.SnpPath!), B = File.ReadAllLines(plus.SnpPath!);
         Assert.Contains(A, l => l.Contains(stamp, StringComparison.Ordinal));
-        Assert.Equal(A.Where(l => !l.Contains(stamp, StringComparison.Ordinal)),
-                     B.Where(l => !l.Contains(stamp, StringComparison.Ordinal)));
+        bool Same(string l) => !l.Contains(stamp, StringComparison.Ordinal) && !l.Contains(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal);
+        Assert.Equal(A.Where(Same), B.Where(Same));
     }
 
     // ── 5. One door ─────────────────────────────────────────────────────────────────────────────

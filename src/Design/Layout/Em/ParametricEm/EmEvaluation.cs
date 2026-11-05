@@ -233,7 +233,7 @@ public static partial class EmEvaluation
                     $"the EM result of '{target.CellName}' has nowhere to be kept: its EM cache folder {dir} cannot be made ({e.Message}).");
             }
             // The setup keeps its own name, so the Touchstone is the one `em` writes for it byte for byte but the write
-            // time. Only where it goes changes: <key>.sNp in the cache, and the run's other output (the .npy with the
+            // time and the stamp. Only where it goes changes: <key>.sNp in the cache, and the run's other output (the .npy with the
             // diagnostics group) in a <key>/ folder beside it.
             if (SolverStandIn is { } standIn)
             {
@@ -245,13 +245,13 @@ public static partial class EmEvaluation
             var setup = (g.ThreeD?.Setup ?? target.Setup).Clone();
             // Written under a name Find never matches, then renamed onto <key>.sNp: a solve stopped mid-write (a crash, a
             // killed process) leaves a file the cache ignores, never a truncated Touchstone read back as solved.
-            setup.SnpOutputPathOverride = Path.Combine(dir, g.Key + ".partial-" + Guid.NewGuid().ToString("N")[..8]);
+            var runTarget = new EmRunTarget { TouchstoneDestination = Path.Combine(dir, g.Key + ".partial-" + Guid.NewGuid().ToString("N")[..8]), KeepRecord = false };
             setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace
             var run = g.ThreeD is { } three
                 // brief-sdl-8 R-sdl8-2 — the 3D view's run, on the point's document and its regenerated layout, in memory.
                 ? EmRunService.RunThreeDView(setup, three.Document, target.C3dPath!, target.CwsPath, Path.Combine(dir, g.Key),
-                                             control?.Token ?? default, control, maxCores, elaborator: three.Elaborator)
-                : EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores);
+                                             control?.Token ?? default, control, maxCores, elaborator: three.Elaborator, target: runTarget)
+                : EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores, target: runTarget);
             if (run.Status == EmRunStatus.Cancelled)
             {
                 TryDelete(run.SnpPath);

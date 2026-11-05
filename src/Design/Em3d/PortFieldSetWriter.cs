@@ -27,7 +27,8 @@ namespace CircuitRF.Design.Em3d;
 public static class PortFieldSetWriter
 {
     /// <summary>
-    /// The field set of a finished run, into <paramref name="folder"/> (created; anything there before is replaced). Returns the
+    /// The field set of a finished run, into <paramref name="folder"/> (created; anything there before is replaced). A run hands it
+    /// its staging folder (EmResultStaging), so a failure here leaves the previous result's set alone. Returns the
     /// manifest written, or the sentence why not. <paramref name="portNumbers"/> orders the runs and <paramref name="z0"/>, as
     /// FdtdPortTransform.Solve takes them.
     /// </summary>

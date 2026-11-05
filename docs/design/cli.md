@@ -585,16 +585,28 @@ Without `-o`, the run writes exactly where Simulate writes: `<workspace>/results
 reference stays valid across re-runs — a headless run that minted its own filename would orphan every
 one of them, which is why the CLI does not get to choose a default here.
 
-Two files come out, and they are not redundant:
+These come out, and they are not redundant:
 
 | File | Holds |
 |---|---|
 | `<key>.sNp` | S only — the artifact a schematic REFERENCES by path |
 | `<key>_em.npy` | the whole `DataSet`, including the diagnostics group (`tline` or `planar`) that makes a wrong answer diagnosable |
+| `<key>.fields/` | the per-port field set, when the run keeps one |
+| `<key>.cemr` | how the result was made: the setup, the ports, the sweep, and these files relative to it |
 
-`-o` sets `EmSetup.SnpOutputPathOverride` — the same field the EM panel writes — so the Touchstone
-moves and the `.npy` does not. There is no second naming rule to keep in step, and a `.sNp` extension
-typed into `-o` is not doubled: the exporter appends the real one from the port count it finds.
+`<key>` is the setup's key, or its Output name (`EmSetup.SnpOutputPathOverride`, the field the EM panel writes), which decides every
+file above. **`-o` is not that name**: it is `EmRunTarget.TouchstoneDestination`, a destination on this one run, so the Touchstone moves
+and nothing else does, and the record names it by a relative path. A `.sNp` extension typed into `-o` is not doubled.
+
+**One stamp per run** is carried by the record, the `.sNp` (`circuitRF-EM stamp:`), the `.npy` (a `__ResultStamp` cube) and the field
+set's manifest, so **a byte comparison of two runs excludes the stamp as well as the write time**: the stamp line of a `.sNp`, and the
+same number of bytes in a `.npy`. Files are staged and renamed in the order field set, `.npy`, `.sNp`, record; a run that does not finish
+changes none of them.
+
+`explain <file.cemr>` prints the run's settings in the setup's own words and what differs from the setup now; a difference never exits
+nonzero. `check <file.cemr>` is an error when a file is missing or from another run; a folder walk skips records, since results are not
+kept in history and a clone holds records whose `.npy` is not there. `em --adopt <file.sNp>` writes a record for a result from before
+records existed, with `Setup` null, and refuses when no `.npy` matches.
 
 With no workspace above the `.cem`, `results/` is created beside the `.cem` itself. The GUI's own
 fallback there is the scratch recovery session, which does not exist headlessly; using the `.cem`'s

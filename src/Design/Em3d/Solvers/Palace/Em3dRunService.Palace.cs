@@ -156,7 +156,7 @@ public static partial class Em3dRunService
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
             => ExecutePalace(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log, run.Memory,
-                             run.Limits(_memory?.Bytes ?? MachineMemory.PhysicalBytes), run.Dc);
+                             run.Limits(_memory?.Bytes ?? MachineMemory.PhysicalBytes), run, run.Dc);
     }
 
     // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ public static partial class Em3dRunService
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory,
-                                     ProcessLimits limits, Em3dDcResult? dc = null)
+                                     ProcessLimits limits, RunContext run, Em3dDcResult? dc = null)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -354,9 +354,9 @@ public static partial class Em3dRunService
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         PalaceRun.PruneIterationFields(post);
         if (problem.IsStatic)
-            return FinishStatic(problem, setup, resultsRoot, post, tracker, processes, log, palace, wall.Elapsed);
+            return FinishStatic(problem, setup, run.Paths(Me).NpyPath, post, tracker, processes, log, palace, wall.Elapsed);
         if (problem.Type == Em3dProblemType.Eigenmode)
-            return FinishEigen(problem, setup, resultsRoot, post, lowering, tracker, processes, log, palace, wall.Elapsed);
+            return FinishEigen(problem, setup, run.Paths(Me).NpyPath, post, lowering, tracker, processes, log, palace, wall.Elapsed);
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
         if (readError is not null) return Failed(readError);
@@ -494,22 +494,15 @@ public static partial class Em3dRunService
 
         // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
         var dcLines = SpliceDc(data, problem, dc);
-        string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-
-        string? snpError;
-        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts, summary, quality, wall.Elapsed, dcLines); }
-        catch (Exception e) { snpError = e.Message; }
-        if (snpError is not null)
-        {
-            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
-            snpPath = null;
-        }
+        var published = PublishDriven(run, Me, problem, data, palace.DescribeVersion(), plan.Device == PalaceDevice.Gpu ? "gpu" : "cpu",
+                                      new EmResultMesh(facts.FinalElements, "elements", facts.DegreesOfFreedom),
+                                      (stagedBase, stamp) => WriteSnp(data, stagedBase, setup, problem, lowering, settings, palace, facts, summary,
+                                                                      quality, wall.Elapsed, dcLines, stamp));
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
         log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion(),
-                       NotConverged: PalaceNotConverged(tracker));
+        return new Leg(Me, EmRunStatus.Ok, null, data, published.Npy, published.Snp, "Palace " + palace.DescribeVersion(),
+                       NotConverged: PalaceNotConverged(tracker), RecordPath: published.Record);
     }
 
     /// <summary>brief-em3d-98 — Palace's own not-converged signal: its log's "Linear solver did not converge", which the stage
@@ -521,7 +514,7 @@ public static partial class Em3dRunService
     /// brief-em3d-22 R-em3d22-3c/4c — a static solve's matrices, read by column name, as a DataSet in
     /// <c>results/</c> under <c>&lt;key&gt;.palace_es</c> or <c>_ms</c>. No Touchstone: a matrix is not S.
     /// </summary>
-    private static Leg FinishStatic(Em3dProblem problem, EmSetup setup, string resultsRoot, string post,
+    private static Leg FinishStatic(Em3dProblem problem, EmSetup setup, string npyTarget, string post,
                                     PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
@@ -598,7 +591,7 @@ public static partial class Em3dRunService
                       $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
+        string? npyPath = WriteNpy(npyTarget, data, log);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
@@ -671,7 +664,7 @@ public static partial class Em3dRunService
     /// <c>results/</c> under <c>&lt;key&gt;.palace_eig</c>. No Touchstone: a mode is not S. The run directory keeps
     /// whatever Palace wrote (R-em3d23-4d).
     /// </summary>
-    private static Leg FinishEigen(Em3dProblem problem, EmSetup setup, string resultsRoot, string post, GmshLowering lowering,
+    private static Leg FinishEigen(Em3dProblem problem, EmSetup setup, string npyTarget, string post, GmshLowering lowering,
                                    PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
@@ -723,7 +716,7 @@ public static partial class Em3dRunService
                       $"elements ({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
+        string? npyPath = WriteNpy(npyTarget, data, log);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
@@ -828,7 +821,7 @@ public static partial class Em3dRunService
     private static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem,
                                  GmshLowering lowering, PalaceSettings settings, SolverInstallation palace,
                                  PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall,
-                                 IReadOnlyList<string> dcLines)
+                                 IReadOnlyList<string> dcLines, string? stamp = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -882,7 +875,7 @@ public static partial class Em3dRunService
                 lines,
                 setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBase),
                 setup.SolveRegion is { } r ? $"{setup.LayoutRef} (solve region {Ascii(r.Describe())})" : setup.LayoutRef,
-                DateTimeOffset.Now));
+                DateTimeOffset.Now, stamp));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBase)!);
         var result = TouchstoneExporter.Export(

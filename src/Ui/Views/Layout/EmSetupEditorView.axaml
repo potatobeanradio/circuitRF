@@ -207,22 +207,22 @@
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip.Tip="{Binding ViewModel.Working.Name}"/>
 
-                        <!-- Where the s-parameters land (owner request, 2026-08-09). Modelled on the
+                        <!-- The result's name: every file a run writes takes it. Modelled on the
                              Analyses panel's own "Results file:" field: staged text, committed on
                              LostFocus/Enter, and BLANK MEANS THE DEFAULT — shown as the placeholder
                              rather than pre-filled, so the default keeps tracking the layout's name
                              instead of freezing into a literal the moment anything is renamed. -->
                         <TextBlock Grid.Column="1"
-                                   Text="Output file:" Classes="colhdr" VerticalAlignment="Center"/>
+                                   Text="Output name:" Classes="colhdr" VerticalAlignment="Center"/>
                         <TextBox Grid.Column="2" Name="SnpOutputPathBox"
                                  Text="{Binding ViewModel.SnpOutputPathText}"
                                  PlaceholderText="{Binding ViewModel.SnpOutputPlaceholder}"
                                  FontSize="11" Padding="4,2"
                                  MinWidth="20" MaxWidth="210" Width="120"
                                  VerticalAlignment="Center"
-                                 ToolTip.Tip="Where the s-parameters are written. Blank uses the layout's own name with an .sNp suffix, in the workspace's results folder. A relative path is taken from there; an absolute path is used as given. The .sNp suffix is added from the port count, so you do not need to type it."/>
+                                 ToolTip.Tip="The name of this run's result. It applies to the S-parameters, the far field and field data, and the run's settings. Blank uses the name shown here, in the workspace's results folder. A relative name is taken from there; an absolute path is used as given. A new name keeps the earlier result; the same name replaces it."/>
                         <Button Grid.Column="3" Name="BrowseSnpOutputButton" Classes="ellipsis" Content="…"
-                                ToolTip.Tip="Pick where the s-parameters are written."/>
+                                ToolTip.Tip="Pick the name and folder of this run's result."/>
                     </Grid>
 
                     <!-- Which .clay this setup is FOR, with the way to change it right beside it

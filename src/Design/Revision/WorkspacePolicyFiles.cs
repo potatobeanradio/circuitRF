@@ -52,9 +52,10 @@ public static class WorkspacePolicyFiles
     /// every one under <see cref="LargeFileGuard.ThresholdBytes"/>. Kept, they cost ~40 s of
     /// <c>git add</c> and <c>git gc</c> on the UI thread at the next close and ~500 MB of history per
     /// re-solve. The trailing slash matches only a DIRECTORY, so the Touchstone and the <c>.cdd</c>
-    /// written BESIDE the folder under the same stem stay kept.</para>
+    /// written BESIDE the folder under the same stem stay kept. <c>.staging-*</c> is what a killed EM run left of its result
+    /// (EmResultStaging), removed by the next run of that setup.</para>
     /// </summary>
-    public static readonly string[] RunFolderPatterns = ["*.palace/", "*.palace_*/", "*.openems/", "*.thermal/"];
+    public static readonly string[] RunFolderPatterns = ["*.palace/", "*.palace_*/", "*.openems/", "*.thermal/", ".staging-*/"];
 
     /// <summary>
     /// Opens the run-folder section. <b>A marker of its own</b>, because the section arrived after

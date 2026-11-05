@@ -1610,11 +1610,16 @@ static int RunEm(string[] args)
     bool meshOnly = false;
     // brief-emb-1 R-emb1-8 — `em x.c3d --component-ports "C1,C2"|"*"`: component ports added to the setup for this run only.
     string? componentPorts = null;
+    // brief-cosim-pattern-1 R-cp1-6 — `em --adopt x.sNp`: a record for a result from before records existed. Solves nothing.
+    string? adopt = null;
 
     for (int i = 0; i < args.Length; i++)
     {
         switch (args[i])
         {
+            case "--adopt" when i + 1 < args.Length:
+                adopt = args[++i];
+                break;
             case "--component" when i + 1 < args.Length:
                 component = args[++i];
                 break;
@@ -1701,6 +1706,16 @@ static int RunEm(string[] args)
         }
     }
 
+    if (adopt is not null)
+    {
+        JsonRun.InputPath = adopt;
+        var (adopted, adoptRefusal) = EmResultRecord.Adopt(adopt);
+        if (adopted is null) return JsonRun.Fail(CliDiagnostics.EmAdoptRefused(adoptRefusal!));
+        Console.WriteLine($"Wrote {adopted}");
+        JsonRun.AddOutput("record", adopted);
+        return 0;
+    }
+
     if (meshOnly)
     {
         foreach (var (given, flag) in new[] { (dryRun, "--dry-run"), (component is not null, "--component"), (bandsName is not null, "--bands"), (output is not null, "-o") })
@@ -1744,6 +1759,7 @@ static int RunEm(string[] args)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
         Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("       circuitrf em --adopt <file.sNp>");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1888,14 +1904,20 @@ static int RunEm(string[] args)
     // R-emcli-7 — with no -o the run writes where the GUI writes, and that is not a default this file
     // gets to choose: EmRunService.ResolveSnpPath is a PREDICTABLE path by design so a schematic's
     // SnP reference stays valid across re-runs, and a headless run that minted a different filename
-    // would orphan every one of them. -o moves the Touchstone and nothing else — and it goes in
-    // through the setup's own override field, the one the panel writes, so there is no second naming
-    // rule to keep in step.
+    // would orphan every one of them. -o moves the Touchstone and nothing else (brief-cosim-pattern-1
+    // R-cp1-7): it is a destination on the run, not the setup's Output name, which decides every result
+    // file. A thermal setup's -o is where its DataSet goes, through the setup's field.
     if (output is not null)
     {
         EnsureOutputDirectory(output);
-        setup.SnpOutputPathOverride = Path.GetFullPath(output);
+        if (setup.IsThermal) setup.SnpOutputPathOverride = Path.GetFullPath(output);
     }
+    var emTarget = new EmRunTarget
+    {
+        TouchstoneDestination = output is not null && !setup.IsThermal ? Path.GetFullPath(output) : null,
+        SetupPath = Path.GetFullPath(cemPath),
+        EmbeddedSetup = embeddedName,
+    };
 
     // The GUI's results root, as a headless run has it (ResultsRoot — the one rule `render --field` reads by too).
     string resultsRoot = CircuitRF.Cli.ResultsRoot.For(cemPath, cwsPath);
@@ -1950,9 +1972,11 @@ static int RunEm(string[] args)
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                          RunHost.Cancellation, EmProgressToStderr(meshOnly), confirmMemory: force ? _ => true : null,
-                                         fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice)
+                                         fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice,
+                                         target: emTarget)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(meshOnly),
-                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
+                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice,
+                               target: emTarget);
     }
     // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
     catch (Exception ex) when (ex is not OperationCanceledException)
@@ -2072,6 +2096,7 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
     {
         if (result.SnpPath is { } snp) { Console.WriteLine($"Wrote {snp}"); JsonRun.AddOutput("touchstone", snp); }
         if (result.NpyPath is { } npy) { Console.WriteLine($"Wrote {npy}"); JsonRun.AddOutput("npy", npy); }
+        if (result.RecordPath is { } record) { Console.WriteLine($"Wrote {record}"); JsonRun.AddOutput("record", record); }
     }
 
     // brief-dfr31-4 — the setup's Create SnP schematic, made by the run service exactly as Simulate makes it.

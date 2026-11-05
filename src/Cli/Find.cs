@@ -148,6 +148,8 @@ internal static class Find
                 Console.WriteLine($"    picture {pic.Path}" + (pic.Kind is { } k
                     ? $"  {k}{(pic.Reason is { } r ? $" ({r})" : "")}, confidence {pic.Confidence!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"
                     : pic.Reason is { } why ? $"  unreadable: {why}" : ""));
+            foreach (string record in ws.EmResults ?? [])
+                Console.WriteLine($"    EM result {record}");
             foreach (var lib in ws.MaterialLibraries ?? [])
                 Console.WriteLine($"    material library {lib.Path}" + (lib.NamedBy.Count == 0
                     ? "  (named by no technology)"
@@ -267,7 +269,25 @@ internal static class Find
         return new FoundWorkspaceJson(
             workspaceDir,
             Path.GetFileName(Path.TrimEndingDirectorySeparator(workspaceDir)),
-            tech, cells, libraries.Count > 0 ? libraries : null, pictures.Count > 0 ? pictures : null);
+            tech, cells, libraries.Count > 0 ? libraries : null, pictures.Count > 0 ? pictures : null,
+            ResultRecords(workspaceDir) is { Count: > 0 } records ? records : null);
+    }
+
+    /// <summary>brief-cosim-pattern-1 — every EM result record under a workspace, sorted; a symlinked directory is not followed.</summary>
+    private static List<string> ResultRecords(string workspaceDir)
+    {
+        var list = new List<string>();
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint,
+            };
+            list.AddRange(Directory.EnumerateFiles(workspaceDir, "*" + CircuitRF.Design.Layout.Em.EmResultNames.RecordExtension, options).Select(Path.GetFullPath));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        list.Sort(StringComparer.Ordinal);
+        return list;
     }
 
     /// <summary>Every picture under a workspace, by extension, sorted; a symlinked directory is not followed.</summary>

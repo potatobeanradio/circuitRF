@@ -277,6 +277,9 @@ internal static class Explain
             case DocumentKind.Touchstone:
                 exit |= ExplainTouchstone(path, walks);
                 break;
+            case DocumentKind.EmResult:
+                exit |= ExplainEmResult.Walk(path, walks);
+                break;
             case DocumentKind.Picture:
                 exit |= ExplainPicture(path, walks);
                 break;

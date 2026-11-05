@@ -9197,7 +9197,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                                                   EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem: true,
                                                                   device: EmPalaceDevicePreference.Preferred,
                                                                   memoryCeilingBytes: EmMemoryLimitPreference.CeilingBytes,
-                                                                  emergeDevice: EmEmergeDevicePreference.Preferred);
+                                                                  emergeDevice: EmEmergeDevicePreference.Preferred,
+                                                                  target: new EmRunTarget { SetupPath = vm.FilePath });
         }
         var source = run is null ? ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef) : null;
 
@@ -9332,7 +9333,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
                 result = await Task.Run(() => run is not null ? run(setup, control, resultsRoot) : EmRunService.Run(
                     setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred, ConfirmEmMemory,
-                    EmPalaceDevicePreference.Preferred, EmMemoryLimitPreference.CeilingBytes, EmEmergeDevicePreference.Preferred));
+                    EmPalaceDevicePreference.Preferred, EmMemoryLimitPreference.CeilingBytes, EmEmergeDevicePreference.Preferred,
+                    new EmRunTarget { SetupPath = vm.FilePath }));
             }
             catch (Exception ex)
             {
@@ -9528,14 +9530,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             // Every .npy the run wrote: a both-run rewrites each solver's as well as the comparison.
             await RefreshOpenDataDisplaysAsync([.. WrittenEmNpys(result)]);
-            // ResolveNpyKey, not ResolveResultKey — the EM results file (and therefore the .cdd named
-            // after it) is deliberately distinct from the schematic's, or an EM run on cell "MLin"
-            // replaces MLin's schematic results and its Data Display. See EmRunService.NpyKeySuffix.
-            //
-            // A 3D result is named after its solver (`<key>.palace_em`, brief-em3d-7 R-em3d7-5a), so its
-            // display is keyed on the file it shows. Keyed on `<key>_em`, it reopened whatever display
-            // that name already had — a planar run's, or the other solver's — bound to the old file.
-            string displayKey = setup.Is3D || setup.IsThermal ? Path.GetFileNameWithoutExtension(npy) : EmRunService.ResolveNpyKey(setup);
+            // Keyed on the file it shows, never on a rebuilt key: the EM results file (and therefore the .cdd
+            // named after it) is deliberately distinct from the schematic's (EmRunService.NpyKeySuffix); a 3D
+            // result is named after its solver (brief-em3d-7 R-em3d7-5a), and two Output names are two results
+            // (brief-cosim-pattern-1 R-cp1-7). Keyed on the setup, each would reopen another result's display.
+            string displayKey = Path.GetFileNameWithoutExtension(npy);
+            // A display's source list is the workspace's results folder, so a result elsewhere is not on it.
+            string resultsFolder = Path.GetFullPath(Path.Combine(baseDir, "results"));
+            if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(npy)), resultsFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                Messages.Info($"{npy} is outside this workspace's results folder, so a Data Display's source list does not show it. " +
+                              "Choose Add from file… in a trace's source list to plot it.", npy);
+                return true;
+            }
             await AutoOpenOrCreateDataDisplayAsync(baseDir, displayKey, npy);
         }
         return true;

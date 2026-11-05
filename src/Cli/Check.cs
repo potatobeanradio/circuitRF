@@ -232,6 +232,7 @@ internal static class Check
             case DocumentKind.AssemblyRules:
                                           Scoped(path, kind, f, () => CheckAssemblyRules(path, f)); break;
             case DocumentKind.Touchstone: Scoped(path, kind, f, () => CheckTouchstone(path, f)); break;
+            case DocumentKind.EmResult:   Scoped(path, kind, f, () => CheckEmResult(path, f)); break;
             case DocumentKind.DataDisplay:
                                           Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
             case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
@@ -412,8 +413,10 @@ internal static class Check
             // parts the user did not author. A file is checked when it is NAMED.
             // A picture likewise (brief-img-2 R-im2-6): a workspace's screenshots and figures are not documents, and
             // classifying each would decode every one of them. `find` lists them with their kinds.
+            // A result record too (brief-cosim-pattern-1): results are not kept in history, so a fresh clone holds records whose
+            // .npy is not there, and that is not a finding about the design.
             if (kind is DocumentKind.Unknown or DocumentKind.Interchange or DocumentKind.Workspace
-                     or DocumentKind.Touchstone or DocumentKind.Foreign or DocumentKind.Picture) continue;
+                     or DocumentKind.Touchstone or DocumentKind.Foreign or DocumentKind.Picture or DocumentKind.EmResult) continue;
             CheckPath(file, kind, f, cache, recursive);
         }
 
@@ -1559,6 +1562,17 @@ internal static class Check
         f.Add(p.Kind.Kind == CircuitRF.Design.Imaging.DrawingKind.None
             ? CliDiagnostics.CheckPictureNoDrawing(path, format, raster.Width, raster.Height, p.Kind.Reason!, p.Kind.Confidence)
             : CliDiagnostics.CheckPictureKind(path, format, raster.Width, raster.Height, p.Kind.Name, p.Kind.Confidence));
+    }
+
+    /// <summary>brief-cosim-pattern-1 — a result record reads, and the files it names exist and carry its stamp
+    /// (<see cref="CircuitRF.Design.Layout.Em.EmResultRecord.Verify"/>, the one rule for that).</summary>
+    private static void CheckEmResult(string path, Findings f)
+    {
+        var (record, refusal) = CircuitRF.Design.Layout.Em.EmResultRecord.Load(path);
+        if (record is null) { f.Add(CliDiagnostics.CheckUnreadable(path, refusal!)); return; }
+        f.Add(CliDiagnostics.CheckEmResultSummary(path, record.Solver.Name, record.Ports.Count, record.Frequencies.SweepHz.Count,
+                                                  record.Setup is null ? "settings not recorded" : "settings recorded"));
+        foreach (var d in record.Verify(path)) f.Add(CliDiagnostics.CheckEmResultDisagrees(path, d.Sentence));
     }
 
     private static void CheckTouchstone(string path, Findings f)

@@ -459,7 +459,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
         // R-aut10-3/4, plus .clay/.cem/.wBond), the analysis directives (R-aut10-1), the component
         // index before the catalogue it indexes, and what ships.
         Assert.Equal(
-            ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "wbond",
+            ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "em-result", "wbond",
                                                "3d-view", "materials", "schematic", "cmc", "analyses", "tuning", "goals",
                                                "optimizers", "statistics", "component-index",
                                                "components", "technologies", "shipped-materials"]),

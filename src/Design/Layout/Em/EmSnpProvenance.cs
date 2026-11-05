@@ -61,16 +61,19 @@ public sealed record EmProvenanceStamp(string GeometryHash, string MeshHash, str
     /// ports differ has already lost that in the format.</para>
     /// </summary>
     public const string PortPrefixNumbered = "circuitRF-EM port ";
+
+    /// <summary>brief-cosim-pattern-1 R-cp1-2 — the run's stamp, which its <c>.cemr</c>, <c>.npy</c> and field set carry too.</summary>
+    public const string StampPrefix = "circuitRF-EM stamp: ";
 }
 
 public static class EmSnpProvenance
 {
     /// <summary>The header lines to stamp into a freshly written <c>.snp</c>.</summary>
     public static IReadOnlyList<string> BuildHeader(
-        EmProblem problem, EmMeshSettings mesh, string setupName, string layoutRef, DateTimeOffset when)
+        EmProblem problem, EmMeshSettings mesh, string setupName, string layoutRef, DateTimeOffset when, string? stamp = null)
         => BuildHeader(QuasiStaticKernel.KernelName,
                        GeometryHash(problem), MeshHash(mesh), PortHash(problem),
-                       setupName, layoutRef, when);
+                       setupName, layoutRef, when, stamp: stamp);
 
     /// <summary>
     /// D9 — the planar counterpart. <b>A planar run through the same <c>.snp</c> path with no planar
@@ -82,10 +85,10 @@ public static class EmSnpProvenance
         PlanarProblem problem, PlanarMeshSettings mesh, IReadOnlyList<PlanarPort> ports,
         string setupName, string layoutRef, DateTimeOffset when,
         IReadOnlyList<string>? caveats = null,
-        IReadOnlyList<string>? portMap = null)
+        IReadOnlyList<string>? portMap = null, string? stamp = null)
         => BuildHeader(PlanarKernel.KernelName,
                        GeometryHash(problem), MeshHash(mesh), PortHash(ports),
-                       setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap);
+                       setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap, stamp);
 
     /// <summary>
     /// brief-em3d-7 R-em3d7-5d — a 3D run's stamp: the planar one EXTENDED, not a second header format.
@@ -96,9 +99,9 @@ public static class EmSnpProvenance
     /// </summary>
     public static IReadOnlyList<string> BuildHeader3D(
         string solverName, string geometryHash, string meshHash, string portHash, string solverVersion,
-        IReadOnlyList<string> solverLines, string setupName, string layoutRef, DateTimeOffset when)
+        IReadOnlyList<string> solverLines, string setupName, string layoutRef, DateTimeOffset when, string? stamp = null)
         => BuildHeader(solverName, geometryHash, meshHash, portHash, setupName, layoutRef, when,
-                       caveats: null, modelRevision: solverVersion, portMap: solverLines);
+                       caveats: null, modelRevision: solverVersion, portMap: solverLines, stamp: stamp);
 
     /// <summary>The same SHA-256 the planar stamps use, over text a caller has already made canonical.</summary>
     public static string HashText(string canonical) => Sha(canonical);
@@ -107,7 +110,7 @@ public static class EmSnpProvenance
         string kernelName, string geometry, string mesh, string ports,
         string setupName, string layoutRef, DateTimeOffset when,
         IReadOnlyList<string>? caveats = null, string? modelRevision = null,
-        IReadOnlyList<string>? portMap = null)
+        IReadOnlyList<string>? portMap = null, string? stamp = null)
     {
         var lines = new List<string>
         {
@@ -118,10 +121,14 @@ public static class EmSnpProvenance
             $"circuitRF-EM setup: {setupName}",
             $"circuitRF-EM layout: {layoutRef}",
             $"circuitRF-EM written: {when.ToString("u", CultureInfo.InvariantCulture)}",
+        };
+        if (stamp is { Length: > 0 }) lines.Add(EmProvenanceStamp.StampPrefix + stamp);
+        lines.AddRange(
+        [
             EmProvenanceStamp.GeometryPrefix + geometry,
             EmProvenanceStamp.MeshPrefix     + mesh,
             EmProvenanceStamp.PortPrefix     + ports,
-        };
+        ]);
 
         // Emitted only where there is one — the planar overload. A kernel-A file gains no byte, so
         // no cross-section .snp in any workspace is marked stale to record a token kernel A has not

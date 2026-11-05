@@ -22,6 +22,8 @@ internal enum DocumentKind
     /// <summary>A <c>.cmat</c> material library (brief-em3d-53 §1a).</summary>
     MaterialLibrary,
     EmSetup,
+    /// <summary>A finished EM run's result record, a <c>.cemr</c> (brief-cosim-pattern-1 R-cp1-1).</summary>
+    EmResult,
     Rail,
     Smith,
     /// <summary>A composed FET model, a <c>.cmodel</c> (brief-modelcomposer-1 R-mc1-2).</summary>
@@ -74,6 +76,7 @@ internal static class DocumentKinds
         DocumentKind.Technology    => "technology",
         DocumentKind.MaterialLibrary => "material-library",
         DocumentKind.EmSetup       => "em-setup",
+        DocumentKind.EmResult      => "em-result",
         DocumentKind.Rail          => "rail",
         DocumentKind.Smith         => "smith",
         DocumentKind.ComposedModel => "composed-model",
@@ -139,6 +142,8 @@ internal static class DocumentKinds
             ".ctech" => DocumentKind.Technology,
             ".cmat"  => DocumentKind.MaterialLibrary,
             ".cem"   => DocumentKind.EmSetup,
+            // How a finished run was made and where its files are (brief-cosim-pattern-1 R-cp1-1).
+            ".cemr"  => DocumentKind.EmResult,
             // A railRF document (brief-railrf-1-document.md R-rail1-11). `check`, `explain`, `find`
             // and `render` classify it BY KIND rather than calling it unreadable; the `rail` verb
             // that runs one is brief 10's.

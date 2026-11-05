@@ -745,6 +745,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     // one setup exactly as the write stamp does, so it is left out with it.
     internal static string[] WithoutWriteStamp(IEnumerable<string> lines)
         => [.. lines.Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal) &&
+                                !l.Contains(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal) &&
                                 !l.Contains(Em3dRunService.CostProvenancePrefix, StringComparison.Ordinal))];
 
     internal static double[] Unwrap(double[] p)

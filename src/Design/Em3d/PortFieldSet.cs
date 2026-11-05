@@ -213,6 +213,11 @@ public sealed class PortFieldSet : IPortFieldSet, IDisposable
     /// <summary>The .sNp's provenance line for a set in <paramref name="folder"/> with <paramref name="stamp"/>.</summary>
     public static string ProvenanceLine(string folder, string stamp) => $"{ProvenancePrefix} '{Path.GetFileName(folder)}' stamp {stamp}";
 
+    /// <summary>The line for a set in <paramref name="folder"/> and the Touchstone at <paramref name="snpPath"/>, wherever each one is:
+    /// a Touchstone a run moved with <c>-o</c> names the set by a relative path. Goes with the line in CP-2.</summary>
+    public static string ProvenanceLine(string folder, string stamp, string snpPath)
+        => $"{ProvenancePrefix} '{Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(snpPath))!, Path.GetFullPath(folder)).Replace('\\', '/')}' stamp {stamp}";
+
     private static readonly Regex Provenance = new(@"port fields:\s*'([^']+)'\s+stamp\s+(\S+)", RegexOptions.CultureInvariant);
 
     /// <summary>The folder (beside the .sNp) and stamp a .sNp's provenance names; null when it names none.</summary>

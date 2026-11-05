@@ -128,7 +128,9 @@ public sealed record EmRunResult(
     /// </summary>
     EmCoSimResult? CoSim = null,
     /// <summary>brief-dfr35-1 R-dfr35-1-5 — what <c>em --mesh-only</c> meshed; a run with this has no data and wrote no result.</summary>
-    CircuitRF.Design.Em3d.Em3dMeshOnlyReport? MeshOnly = null);
+    CircuitRF.Design.Em3d.Em3dMeshOnlyReport? MeshOnly = null,
+    /// <summary>brief-cosim-pattern-1 — the result record a finished driven run wrote; a comparison's are in <see cref="Outputs"/>.</summary>
+    string? RecordPath = null);
 
 /// <summary>brief-dfr34-4 R-dfr34-4-5 — a page of the user documentation a run's sentence links to: the page under the docs
 /// root, the section's anchor, and what the link says.</summary>
@@ -515,12 +517,8 @@ public static class EmRunService
     {
         if (setup.SnpOutputPathOverride is { Length: > 0 } o)
         {
-            string p = Path.IsPathRooted(o) ? o : Path.Combine(resultsRoot, o);
-            string ext = Path.GetExtension(p);
-            // Strip a .sNp the user typed, so the exporter's own suffix is not doubled.
-            return ext.StartsWith(".s", StringComparison.OrdinalIgnoreCase) && ext.EndsWith('p')
-                ? p[..^ext.Length]
-                : p;
+            // A suffix the user typed is removed: the run adds each file's own.
+            return EmResultNames.Clean(Path.IsPathRooted(o) ? o : Path.Combine(resultsRoot, o));
         }
         return Path.Combine(resultsRoot, ResolveResultKey(setup));
     }
@@ -608,11 +606,12 @@ public static class EmRunService
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
         CircuitRF.Design.Em3d.PalaceDevice device = CircuitRF.Design.Em3d.PalaceDevice.Cpu,
         long?              memoryCeilingBytes = null,
-        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto)
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto,
+        EmRunTarget?       target = null)
     {
         try
         {
-            var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice);
+            var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice, target);
             return WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source));
         }
         catch (OperationCanceledException)
@@ -649,7 +648,8 @@ public static class EmRunService
         CircuitRF.Design.Em3d.PalaceDevice device = CircuitRF.Design.Em3d.PalaceDevice.Cpu,
         long?              memoryCeilingBytes = null,
         CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto,
-        CircuitRF.Design.ThreeD.C3dElaborator? elaborator = null)
+        CircuitRF.Design.ThreeD.C3dElaborator? elaborator = null,
+        EmRunTarget?       target = null)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
         // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1).
@@ -699,7 +699,8 @@ public static class EmRunService
                 {
                     try { inputs?.KeepIn(dir); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException) { notKept.Add(e.Message); }
-                }, device, memoryCeilingBytes, emergeDevice);
+                }, device, memoryCeilingBytes, emergeDevice, target,
+                CircuitRF.Design.ThreeD.C3dPersistence.Serialize(document));
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
             result = WithCoSim(result, setup, resultsRoot, assembled, document);
@@ -775,7 +776,8 @@ public static class EmRunService
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory,
         CircuitRF.Design.Em3d.PalaceDevice device,
         long?              memoryCeilingBytes,
-        CircuitRF.Design.Em3d.EmergeDevice emergeDevice)
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice,
+        EmRunTarget?       target)
     {
         // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
         // wires both once; where a control is supplied its token is authoritative and the bare `ct`
@@ -814,7 +816,7 @@ public static class EmRunService
         if (setup.Is3D && CemCylindricalRefusal(setup) is { } cemCylinder) return cemCylinder;
         if (setup.Is3D)
             return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device,
-                                                            memoryCeilingBytes, emergeDevice);
+                                                            memoryCeilingBytes, emergeDevice, target);
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //
@@ -901,11 +903,13 @@ public static class EmRunService
 
         if (choice.Kind == EmAnalysisKind.Planar)
             return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores,
-                             confirmMemory, memoryCeilingBytes);
+                             confirmMemory, memoryCeilingBytes, target);
 
         var extraction = crossSection;
         var problem = extraction.Problem!;
         var kernel  = new QuasiStaticKernel(setup.DispersionCorrection);
+        var paths = EmResultPaths.Planar(resultsRoot, setup, target?.TouchstoneDestination);
+        EmResultStaging.RemoveLeftovers(paths);
 
         var verdict = kernel.CanSolve(problem);
         if (!verdict.Ok)
@@ -942,40 +946,24 @@ public static class EmRunService
 
         // R-em-20: compare BEFORE overwriting — the whole point is to tell the user their schematic
         // has been reading stale s-parameters, which is only knowable from the file about to be replaced.
-        string? snpPath = ResolveSnpPath(resultsRoot, setup, problem.Ports.Count);
+        string snpPath = paths.SnpPath(problem.Ports.Count);
         if (EmSnpProvenance.DescribeStaleness(snpPath, problem, setup.Mesh) is { } staleWarning)
             warnings.Add(staleWarning);
 
-        string? npyPath = null;
-        try
-        {
-            // WriteRun appends "results" to the base dir it is given — hand it the parent, exactly
-            // as the schematic run path does, so both land in the same one results/ folder.
-            var written = ResultsWriter.WriteRun(
-                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar))
-                    ?? resultsRoot,
-                ResolveNpyKey(setup), solved.Data);
-            if (written.Error is { } writeError)
-                errors.Add($"The EM result could not be written to results/: {writeError}");
-            npyPath = written.Written.Count > 0 ? written.Written[0] : null;
-        }
-        catch (Exception ex)
-        {
-            errors.Add($"The EM result could not be written to results/: {ex.Message}");
-        }
-
-        try
-        {
-            WriteSnp(solved.Data, ResolveSnpBasePath(resultsRoot, setup), problem, setup);
-        }
-        catch (Exception ex)
-        {
-            errors.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
-            snpPath = null;
-        }
+        // R-cp1-3 — staged, then renamed into place, so a write that fails leaves the previous result as it was.
+        var published = EmResultStaging.PublishRun(new EmPublishRequest(
+            paths, problem.Ports.Count, solved.Data, setup, target, choice.KernelName, "", "cpu",
+            new EmResultMesh(solved.MeshReport.SegmentsPerConductor.Sum() + solved.MeshReport.SegmentsPerInterface.Sum(), "segments",
+                             solved.MeshReport.UnknownCount),
+            [.. problem.Ports.Select(p => new EmResultPort
+            {
+                Number = p.Number, Name = p.Conductor, Z0Re = p.Z0.Real, Z0Im = p.Z0.Imaginary, Kind = EmResultPort.Plane,
+            })],
+            (stagedBase, stamp) => { WriteSnp(solved.Data, stagedBase, problem, setup, stamp); return null; }), errors);
 
         return new EmRunResult(EmRunStatus.Ok, solved.Data, extraction.Readback, solved.MeshReport,
-                               npyPath, snpPath, null, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                               published.Npy, published.Snp, null, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName,
+                               RecordPath: published.Record);
     }
 
     // ── The planar branch, behind the registry (R-res-1) ───────────────────────────────────────
@@ -1002,10 +990,12 @@ public static class EmRunService
         List<string> warnings, List<string> notes, List<string> errors,
         CancellationToken ct, RunControl? control = null, int? maxCores = null,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
-        long? memoryCeilingBytes = null)
+        long? memoryCeilingBytes = null, EmRunTarget? target = null)
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
+        var paths = EmResultPaths.Planar(resultsRoot, setup, target?.TouchstoneDestination);
+        EmResultStaging.RemoveLeftovers(paths);
         var lengthFmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
 
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
@@ -1235,54 +1225,47 @@ public static class EmRunService
         AddFindings(solved.Findings, notes, warnings);
 
         // D9/R-res-9 — compare BEFORE overwriting, exactly as kernel A does.
-        string? snpPath = ResolveSnpPath(resultsRoot, setup, ports.Ports.Count);
+        string snpPath = paths.SnpPath(ports.Ports.Count);
         if (EmSnpProvenance.DescribeStaleness(snpPath, problem, setup.PlanarMesh, ports.Ports)
             is { } staleWarning)
             warnings.Add(staleWarning);
 
-        string? npyPath = null;
-        try
-        {
-            var written = ResultsWriter.WriteRun(
-                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot,
-                ResolveNpyKey(setup), solved.Data);
-            if (written.Error is { } writeError)
-                errors.Add($"The EM result could not be written to results/: {writeError}");
-            npyPath = written.Written.Count > 0 ? written.Written[0] : null;
-        }
-        catch (Exception ex)
-        {
-            errors.Add($"The EM result could not be written to results/: {ex.Message}");
-        }
+        // R-cp1-3 — staged, then renamed into place, so a write that fails leaves the previous result as it was.
+        var published = EmResultStaging.PublishRun(new EmPublishRequest(
+            paths, ports.Ports.Count, solved.Data, setup, target, choice.KernelName, PlanarKernel.ModelRevision, "cpu",
+            new EmResultMesh(solved.MeshReport.CellCount, "cells", solved.MeshReport.UnknownCount),
+            [.. ports.Ports.Select((p, i) => new EmResultPort
+            {
+                Number = p.Number,
+                Name = i < ports.SourceLabels.Count && ports.SourceLabels[i].Text is { Length: > 0 } label ? label : $"P{p.Number}",
+                Z0Re = p.Z0.Real, Z0Im = p.Z0.Imaginary,
+                Kind = p.Kind == PlanarPortKind.InternalDeltaGap ? EmResultPort.Gap : EmResultPort.Plane,
+            })],
+            (stagedBase, stamp) =>
+            {
+                WritePlanarSnp(solved.Data, stagedBase,
+                               problem, setup, ports.Ports, solved.Solve,
+                               // MIM-10 — the port map goes on the FILE, built from the extraction's own
+                               // index-aligned labels rather than re-derived from the numbers.
+                               EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
+                                                       ports.Ports, ports.SourceLabels,
+                                                       source.DbuPerMicron, source.View.DisplayUnit), stamp);
+                return null;
+            }), errors);
 
-        try
-        {
-            WritePlanarSnp(solved.Data, ResolveSnpBasePath(resultsRoot, setup),
-                           problem, setup, ports.Ports, solved.Solve,
-                           // MIM-10 — the port map goes on the FILE, built from the extraction's own
-                           // index-aligned labels rather than re-derived from the numbers.
-                           EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
-                                                   ports.Ports, ports.SourceLabels,
-                                                   source.DbuPerMicron, source.View.DisplayUnit));
-        }
-        catch (Exception ex)
-        {
-            errors.Add($"The .snp could not be written to '{snpPath}': {ex.Message}");
-            snpPath = null;
-        }
-
-        return new EmRunResult(EmRunStatus.Ok, solved.Data, null, null, npyPath, snpPath, null,
+        return new EmRunResult(EmRunStatus.Ok, solved.Data, null, null, published.Npy, published.Snp, null,
                                warnings, Notes: notes, Errors: errors,
                                Kind: choice.Kind, KernelName: choice.KernelName,
                                PlanarMesh: solved.MeshReport, PlanarSolve: solved.Solve,
-                               CurrentDensity: solved.CurrentDensity, PlanarPorts: solved.Ports);
+                               CurrentDensity: solved.CurrentDensity, PlanarPorts: solved.Ports,
+                               RecordPath: published.Record);
     }
 
     /// <summary>The same exporter, the same options, the planar provenance stamp (D9).</summary>
     private static void WritePlanarSnp(
         DataSet data, string snpBasePath, PlanarProblem problem, EmSetup setup,
         IReadOnlyList<PlanarPort> ports, PlanarSolveResult? solve = null,
-        IReadOnlyList<string>? portMap = null)
+        IReadOnlyList<string>? portMap = null, string? stamp = null)
     {
         string? group = null;
         foreach (var g in data.Groups)
@@ -1304,7 +1287,7 @@ public static class EmRunService
                 // calibration's validity, so an ordinary .sNp is byte-identical to one written
                 // before this existed.
                 EmSnpProvenance.ValidityCaveats(solve),
-                portMap));
+                portMap, stamp));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBasePath)!);
 
@@ -1330,7 +1313,7 @@ public static class EmRunService
 
     /// <summary>R-em-19: uses the existing <c>RfCore.Export.TouchstoneExporter</c>, with the
     /// provenance stamp riding on its new additive <c>HeaderComments</c> option.</summary>
-    private static void WriteSnp(DataSet data, string snpBasePath, EmProblem problem, EmSetup setup)
+    private static void WriteSnp(DataSet data, string snpBasePath, EmProblem problem, EmSetup setup, string? stamp = null)
     {
         string? group = null;
         foreach (var g in data.Groups)
@@ -1346,7 +1329,7 @@ public static class EmRunService
             HeaderComments: EmSnpProvenance.BuildHeader(
                 problem, setup.Mesh,
                 setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBasePath),
-                ProvenanceLayout(setup), DateTimeOffset.Now));
+                ProvenanceLayout(setup), DateTimeOffset.Now, stamp));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBasePath)!);
 

@@ -125,7 +125,7 @@ public partial class EmSetupEditorView : UserControl
     }
 
     /// <summary>
-    /// Picks where the s-parameters land. The picker lives here rather than on the view model
+    /// Picks the result's name and folder. The picker lives here rather than on the view model
     /// because everything under <c>src/Ui/Layout/</c> is framework-free.
     ///
     /// <para>The chosen path is stored RELATIVE to the workspace's results folder when it sits
@@ -140,12 +140,12 @@ public partial class EmSetupEditorView : UserControl
 
         var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title               = "EM output file",
+            Title               = "EM output name",
             SuggestedFileName   = vm.SnpOutputPathText is { Length: > 0 } t
                                       ? Path.GetFileName(t)
                                       : vm.SnpOutputPlaceholder,
             ShowOverwritePrompt = false,   // the run writes it; this only names it
-            FileTypeChoices     = [new FilePickerFileType("Touchstone") { Patterns = ["*.s*p"] }],
+            FileTypeChoices     = [new FilePickerFileType("EM result") { Patterns = ["*" + EmResultNames.RecordExtension] }],
         });
         if (file?.TryGetLocalPath() is not { Length: > 0 } path) return;
 

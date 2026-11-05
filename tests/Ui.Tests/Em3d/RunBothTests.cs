@@ -53,7 +53,7 @@ public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
             [Path.Combine(results, "ms.palace.s2p"), Path.Combine(results, "ms.openems.s2p"),
              Path.Combine(results, "ms.palace_em.npy"), Path.Combine(results, "ms.openems_em.npy"),
              Path.Combine(results, "ms.compare_em.npy")],
-            result.Outputs!.Select(o => o.Path));
+            result.Outputs!.Where(o => o.Kind != "record").Select(o => o.Path));
         Assert.All(result.Outputs!, o => Assert.True(File.Exists(o.Path), o.Path));
     }
 

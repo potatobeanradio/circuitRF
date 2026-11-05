@@ -326,14 +326,18 @@ workspace-scoped — there is no scratch EM setup.</p>
 <p><strong>The defaults are meant to be run, not configured.</strong> A fresh setup arrives at 50 Ω on every port, a
 0.5–8 GHz linear sweep in 50 MHz steps, <code>Auto</code> analysis, and mesh settings that are the engine's own. On a
 small structure the only thing you have to supply is which layout.</p>
-<h2 id="header">The header: name, output file, layout</h2>
+<h2 id="header">The header: name, output name, layout</h2>
 <p><strong>Name</strong> — the setup's display name, taken from the file stem. It is also what names the written result,
 so two setups over one layout do not collide.</p>
-<p><strong>Output file</strong> — where the S-parameters are written. Leave it blank and you get the layout's own name
-with an <code>.sNp</code> suffix, in the workspace's <code>results/</code> folder. A relative path is taken from <code>results/</code>; an
-absolute path is used as given. <strong>The <code>.sNp</code> suffix is added from the port count</strong>, so you do not type
-it: the same structure re-run with a coupled pair goes from <code>.s2p</code> to <code>.s4p</code> on its own. The <code>…</code> button
-browses; a path inside the workspace is stored relative so the workspace stays portable.</p>
+<p><strong>Output name</strong> — the name of the run's result, for every file it writes: the S-parameters, the far field
+and field data, and the run's settings. The box shows what a blank name resolves to: the setup's name and,
+in 3D, the solver's (<code>Setup.palace</code>), in the workspace's <code>results/</code> folder. A relative name is taken from
+<code>results/</code>; an absolute path is used as given. <strong>The suffixes are the run's to add</strong>, so you type none: a
+<code>.sNp</code>, <code>.npy</code> or <code>.cemr</code> you do type is removed, and the same structure re-run with a coupled pair goes from
+<code>.s2p</code> to <code>.s4p</code> on its own. The <code>…</code> button browses; a path inside the workspace is stored relative so the
+workspace stays portable. <strong>A run replaces the result of the same name, so a new name is how an earlier
+result is kept</strong>, and each name has its own <code>_sim</code> cell and co-simulation netlist. A result outside <code>results/</code>
+is not in a Data Display's list of sources: choose <strong>Add from file…</strong> in a trace's source list to plot it.</p>
 <p><strong>Layout</strong> — the <code>.clay</code> this setup analyses, and the <code>…</code> button re-points it. Re-pointing re-derives the
 cross-section, the ports and the mesh against the new artwork, and it is undoable.</p>
 <p>The reference is by path, resolved when the panel refreshes and again when it runs. If the layout is
@@ -1133,23 +1137,33 @@ is not on the metal, or has no direction on it);</li>
 number that looks plausible; <a href="mom-engine.html#refusals">what the engine refuses</a> lists the refusals and
 what each of them means you should do.</p>
 <h2 id="results">Where the results land</h2>
-<p>A successful run writes <strong>two</strong> files into the workspace's <code>results/</code> folder:</p>
+<p>A successful run writes these files under its <a href="#header">output name</a>, in the workspace's <code>results/</code> folder
+unless that name says otherwise:</p>
 <ul>
-<li><strong>The Touchstone <code>.sNp</code></strong>, at the output path above. This is the artefact you point a schematic's
+<li><strong>The Touchstone <code>&lt;name&gt;.sNp</code></strong>. This is the artefact you point a schematic's
 <a href="components.html#snp">SnP component</a> at — that is the whole co-simulation route, and it is described
 in <a href="mom-engine.html#cosim">Using EM results in a circuit simulation</a>. Its header is stamped with the
 stackup, the mesh settings, the port definitions and a hash of the geometry, so a stale file beside an
 edited layout is <em>reported</em>, not silently trusted.</li>
-<li><strong>The <code>.npy</code> dataset</strong>, carrying what Touchstone cannot: the per-kernel diagnostics group — Z_c, γ,
+<li><strong>The <code>&lt;name&gt;_em.npy</code> dataset</strong>, carrying what Touchstone cannot: the per-kernel diagnostics group — Z_c, γ,
 ε_eff, attenuation and per-unit-length RLGC for the cross-section kernel, and the calibration's own
 residual and usability flags for the full-wave one. Open it in the <a href="data-display.html">Data Display</a>
 like any other run.</li>
+<li><strong>The field set <code>&lt;name&gt;.fields/</code></strong>, when the run keeps per-port fields.</li>
+<li><strong>The result record <code>&lt;name&gt;.cemr</code></strong>, which says how the result was made: the whole setup as this run used
+it, the ports, the sweep, the solver and the mesh. <code>circuitrf explain &lt;name&gt;.cemr</code> prints those settings and
+what differs from the setup now, so they can still be read after the setup is edited. A result from before
+records existed gets one with <code>circuitrf em --adopt &lt;name&gt;.sNp</code>, whose settings read as not recorded.</li>
 </ul>
+<p><strong>A run that does not finish changes none of them.</strong> Everything is written under staging names and renamed
+into place at the end, so a cancel, a solver that fails or a full disk leaves the previous result whole. A 3D
+view's saved field plots are the exception: they live in the solver's own run folder, which a new run clears
+when it starts, so one of the previous run's may not survive a run that fails.</p>
 <div class="callout warn">
 <span class="label">One flat results folder</span>
 <p><code>results/</code> is shared with schematic runs and is keyed by name. An EM setup named after a
 schematic that also writes results will collide with it — both resolve to the same stem. Give the setup
-its own name, or set the output file explicitly.</p>
+its own name, or set its output name.</p>
 </div>
 <h3 id="snp-schematic">A schematic to start from</h3>
 <p>Tick <strong>Create SnP schematic when the run finishes</strong>, under <em>After the run</em>, and a driven run also makes a

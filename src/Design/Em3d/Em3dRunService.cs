@@ -26,6 +26,9 @@
 // `<key>.<token>` + NpyKeySuffix, and the run directory `<results>/<key>.<token>/`, which is KEPT — the
 // script, the mesh, the configuration and the solver's log and output — so a user can re-run it by hand
 // and F2's viewer can read its fields. A planar result's path does not move by one byte.
+//
+// brief-cosim-pattern-1 — the setup's Output name, when it has one, decides every result file (EmResultPaths); the run directory is a
+// working folder and does not follow it. Every driven leg publishes through PublishDriven: staged, then renamed into place.
 
 using System.Globalization;
 using System.Numerics;
@@ -137,8 +140,8 @@ public static partial class Em3dRunService
     internal static double[]? FarFieldFrequencies(EmSetup setup, Em3dProblem problem)
         => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? FrequenciesHz(problem.Frequency) : null;
 
-    /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
-    /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
+    /// <summary>The result's name as a path: the setup's Output name when it has one, the solver-named stem otherwise. The
+    /// Touchstone lands here unless the run was given a separate destination (<see cref="EmRunTarget.TouchstoneDestination"/>).</summary>
     public static string SnpBasePath(string resultsRoot, EmSetup setup, Em3dSolverId solver)
         => setup.SnpOutputPathOverride is { Length: > 0 }
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup)
@@ -163,6 +166,23 @@ public static partial class Em3dRunService
     public static long ProblemsGenerated => Interlocked.Read(ref _problemsGenerated);
     private static long _problemsGenerated;
 
+    /// <summary>brief-cosim-pattern-1 — where one leg's result files land. <paramref name="compare"/>: one name cannot hold two
+    /// results, so each solver's has its token after the name.</summary>
+    internal static EmResultPaths ResultPaths(string resultsRoot, EmSetup setup, Em3dSolverId solver, bool compare, string? touchstone)
+    {
+        string token = Em3dSolvers.Get(solver).ResultToken;
+        bool named = setup.SnpOutputPathOverride is { Length: > 0 };
+        string b = compare ? BothSnpBasePath(resultsRoot, setup, solver) : SnpBasePath(resultsRoot, setup, solver);
+        string suffix = StaticSuffix(setup) is { Length: > 0 } st ? st : EmRunService.NpyKeySuffix;
+        string npy = named ? b + suffix + ".npy" : Path.Combine(EmResultNames.ResultsDirectory(resultsRoot), NpyKey(setup, solver) + ".npy");
+        string snp = touchstone is { Length: > 0 } t ? EmResultNames.Clean(t) + (compare ? "." + token : "") : b;
+        return new EmResultPaths(b, npy, snp);
+    }
+
+    /// <summary>brief-cosim-pattern-1 — test seam: a stand-in for a solver's leg in a run under the given results root, or null. Discovery
+    /// is not asked, so the run's own path from lowering to publishing is held with no solver installed.</summary>
+    internal static Func<string, Em3dSolverDescriptor, SolverLeg?>? LegStandIn;
+
     /// <summary>brief-emi-10 — test seam: called first thing in every run with its results root and the memory limit it was
     /// handed, so a test can see a flag reach the run (and cancel it by throwing) without a solver installed.</summary>
     internal static Action<string, long?>? RunStarting;
@@ -185,9 +205,11 @@ public static partial class Em3dRunService
             : Path.Combine(resultsRoot, ResultKey(setup, solver));
 
     /// <summary>R-em3d10-2c/5 — where a comparison lands: <c>base.compare_em.npy</c> with
-    /// <c>-o base</c>, <c>results/&lt;key&gt;.compare_em.npy</c> beside the results otherwise.</summary>
-    public static string ComparePath(string resultsRoot, EmSetup setup)
-        => setup.SnpOutputPathOverride is { Length: > 0 }
+    /// <c>-o base</c> or an Output name, <c>results/&lt;key&gt;.compare_em.npy</c> beside the results otherwise.</summary>
+    public static string ComparePath(string resultsRoot, EmSetup setup, string? touchstone = null)
+        => touchstone is { Length: > 0 } t
+            ? EmResultNames.Clean(t) + "." + CompareToken + EmRunService.NpyKeySuffix + ".npy"
+            : setup.SnpOutputPathOverride is { Length: > 0 }
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + CompareToken + EmRunService.NpyKeySuffix + ".npy"
             : Path.Combine(resultsRoot, CompareNpyKey(setup) + ".npy");
 
@@ -200,9 +222,9 @@ public static partial class Em3dRunService
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
-                                    EmergeDevice emergeDevice = EmergeDevice.Auto)
+                                    EmergeDevice emergeDevice = EmergeDevice.Auto, EmRunTarget? target = null)
         => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
-               confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes, emergeDevice: emergeDevice);
+               confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes, emergeDevice: emergeDevice, target: target);
 
     /// <summary>
     /// brief-em3d-42 — the run, from whatever builds the problem: a <c>.cem</c>'s layout through the generator,
@@ -215,12 +237,14 @@ public static partial class Em3dRunService
     /// Per LEG, so a comparison whose second leg is cancelled still keeps the first's.</param>
     /// <param name="device">brief-em3d-136 — where Palace solves: a machine setting, passed in like
     /// <paramref name="maxCores"/> and hashed nowhere. The Palace leg only; openEMS is unaffected.</param>
+    /// <param name="target">brief-cosim-pattern-1 — what this run is asked beyond the setup.</param>
+    /// <param name="threeDViewText">brief-cosim-pattern-1 R-cp1-1 — the 3D view's document as text, for the record.</param>
     internal static EmRunResult Run(EmSetup setup, Func<EmSetup, Em3dGenerationResult> build, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     Action<Em3dSolverId, string>? keepRecord = null,
                                     PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
-                                    EmergeDevice emergeDevice = EmergeDevice.Auto)
+                                    EmergeDevice emergeDevice = EmergeDevice.Auto, EmRunTarget? target = null, string? threeDViewText = null)
     {
         RunStarting?.Invoke(resultsRoot, memoryCeilingBytes);
         var log = new RunLog(control);
@@ -237,7 +261,8 @@ public static partial class Em3dRunService
         // brief-em3d-23 R-em3d23-1c — probed for what THIS setup needs, so a build without an eigensolver
         // is refused here, before Gmsh.
         // brief-em3d-136 R-em3d136-3d — and, for a GPU run, whether this Palace solves on a GPU and how many it sees.
-        var readiness = SolverDiscovery.ReadinessFor(choice, setup, device);
+        bool standIn = Em3dSolvers.Of(choice).Any(d => LegStandIn?.Invoke(resultsRoot, d) is not null);
+        var readiness = standIn ? [] : SolverDiscovery.ReadinessFor(choice, setup, device);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
         {
             var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!, Install.SolverInstaller.OfferFor(blocked));
@@ -246,7 +271,7 @@ public static partial class Em3dRunService
             return log.Result(EmRunStatus.Refused, RefusedBeforeWork(choice.Solvers.Count,
                 string.Join(" ", readiness.Where(r => !r.Proceeds).Select(r => r.Refusal)), Remedy(ready)));
         }
-        var legs = Em3dSolvers.Of(choice).Select(d => d.NewLeg()).ToList();
+        var legs = Em3dSolvers.Of(choice).Select(d => LegStandIn?.Invoke(resultsRoot, d) ?? d.NewLeg()).ToList();
         if (legs.Count == 0) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(choice.ToString()));
         // brief-dfr35-1 R-dfr35-1-5 — the mesh Gmsh makes for Palace, whichever else a comparison runs: the other solvers mesh
         // inside their own drivers, or not at all.
@@ -272,7 +297,7 @@ public static partial class Em3dRunService
 
         // ── each solver's settings ────────────────────────────────────────────────────────────
         var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory, memoryCeilingBytes,
-                                 emergeDevice);
+                                 emergeDevice) { Target = target, ThreeDViewText = threeDViewText };
         foreach (var leg in legs) leg.Configure(run);
         using var legHolds = new Holds([.. legs.Select(l => l.Hold(holder)).OfType<IDisposable>()]);
         // One solver stops at its first refusal. A comparison goes on while any could still run, so the
@@ -289,6 +314,7 @@ public static partial class Em3dRunService
         log.Warnings.AddRange(generated.Warnings);
         if (!generated.Ok) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
         var problem = generated.Problem!;
+        run.Generated = generated;
         if (problem.Validate() is { Count: > 0 } invalid)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
         // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery.
@@ -337,12 +363,15 @@ public static partial class Em3dRunService
         // ── execution ─────────────────────────────────────────────────────────────────────────
         // brief-dfr35-1 R-dfr35-1-5 — no status.json: a mesh is not a run's result, and beginning one would drop the record of
         // the result already in that folder.
-        if (meshOnly) return Single(legs[0].Execute(problem, SnpBasePath(resultsRoot, setup, legs[0].Solver.Id), run), log);
+        run.Compare = compare;
+        if (meshOnly) return Single(legs[0].Execute(problem, run.Paths(legs[0].Solver.Id).SnpBase, run), log);
+        // R-cp1-3 — what a killed run of this setup left is gone before this one spends anything.
+        foreach (var leg in legs) EmResultStaging.RemoveLeftovers(run.Paths(leg.Solver.Id));
         if (!compare)
         {
             var only = legs[0];
             return Single(Recorded(setup, resultsRoot, only.Solver.Id, keepRecord, () =>
-                only.Execute(problem, SnpBasePath(resultsRoot, setup, only.Solver.Id), run)), log);
+                only.Execute(problem, run.Paths(only.Solver.Id).SnpBase, run)), log);
         }
         return RunCompare(legs, choice.Reference, problem, setup, resultsRoot, run, keepRecord);
     }
@@ -444,14 +473,23 @@ public static partial class Em3dRunService
         log.Notes.Add($"{(two ? "Both solvers run" : $"All {SolverCount(legs.Count)} solvers run")} on the one 3D problem generated above, one after the other — " +
                       $"{string.Join(", then ", legs.Select(l => l.Solver.DisplayName))} — because each already uses every core.");
 
-        // An earlier run's comparison describes files this run is about to rewrite. Left in place past
-        // a failed leg or a refused comparison, it would sit beside the fresh result disagreeing with
-        // it; only this run may put one there. This file only, as ResultsWriter deletes only its own.
-        try { if (File.Exists(ComparePath(resultsRoot, setup))) File.Delete(ComparePath(resultsRoot, setup)); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        string comparePath = ComparePath(resultsRoot, setup, run.Target?.TouchstoneDestination);
+
+        // An earlier run's comparison describes files this run rewrites. Left in place past a failed
+        // leg or a refused comparison, it would sit beside the fresh result disagreeing with it; only
+        // this run may put one there. Once a leg has published (R-cp1-3: until then, nothing changed).
+        // This file only, as ResultsWriter deletes only its own.
+        bool cleared = false;
+        void ClearComparison()
         {
-            log.Warnings.Add($"An earlier comparison, '{ComparePath(resultsRoot, setup)}', could not be removed " +
-                             $"({e.Message}); it does not describe this run.");
+            if (cleared) return;
+            cleared = true;
+            try { if (File.Exists(comparePath)) File.Delete(comparePath); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                log.Warnings.Add($"An earlier comparison, '{comparePath}', could not be removed " +
+                                 $"({e.Message}); it does not describe this run.");
+            }
         }
 
         var done = new List<Leg>();
@@ -460,7 +498,8 @@ public static partial class Em3dRunService
             var leg = legs[k];
             control?.BeginStage($"{leg.Solver.DisplayName}, the {Ordinal(k)} of {SolverCount(legs.Count)} solvers");
             var ran = Recorded(setup, resultsRoot, leg.Solver.Id, keepRecord, () =>
-                leg.Execute(problem, BothSnpBasePath(resultsRoot, setup, leg.Solver.Id), run));
+                leg.Execute(problem, run.Paths(leg.Solver.Id).SnpBase, run));
+            if (ran.SnpPath is not null || ran.NpyPath is not null) ClearComparison();
             if (ran.Status != EmRunStatus.Cancelled) { done.Add(ran); continue; }
 
             // What had already failed is the other half of what this run found.
@@ -510,20 +549,10 @@ public static partial class Em3dRunService
         log.Warnings.AddRange(compared.Warnings);
         log.Notes.InsertRange(0, [compared.Summary!, .. compared.Notes]);     // the line a user reads first
 
-        string path = ComparePath(resultsRoot, setup);
-        string? written = null;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            if (File.Exists(path)) File.Delete(path);                       // this file only, as ResultsWriter does
-            DataSetExporter.Export(data, path, ExportFormat.Npy);
-            written = Path.GetFullPath(path);
-            outputs.Add(new("npy", written));
-        }
-        catch (Exception e)
-        {
-            log.Errors.Add($"The comparison could not be written to '{path}': {e.Message}");
-        }
+        string path = comparePath;
+        var (written, compareError) = EmResultStaging.PublishNpy(path, data);
+        if (written is not null) outputs.Add(new("npy", written));
+        if (compareError is not null) log.Errors.Add($"The comparison could not be written to '{path}': {compareError}");
 
         if (bad.Count > 0)
             return log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)),
@@ -551,6 +580,7 @@ public static partial class Em3dRunService
         var outputs = new List<EmRunOutput>();
         foreach (var leg in legs) if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
         foreach (var leg in legs) if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
+        foreach (var leg in legs) if (leg.RecordPath is { } record) outputs.Add(new("record", record));
         return outputs;
     }
 
@@ -593,7 +623,8 @@ public static partial class Em3dRunService
         => leg.Ok
             ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
                               Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull,
-                              MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull, MeshOnly: leg.MeshOnly)
+                              MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull, MeshOnly: leg.MeshOnly,
+                              RecordPath: leg.RecordPath)
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
@@ -606,7 +637,7 @@ public static partial class Em3dRunService
     /// criterion of ours): the sentence its <c>status.json</c> carries. Null when it converged.</param>
     internal sealed record Leg(Em3dSolverId Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
                               string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null,
-                              string? NotConverged = null, Em3dMeshOnlyReport? MeshOnly = null)
+                              string? NotConverged = null, Em3dMeshOnlyReport? MeshOnly = null, string? RecordPath = null)
     {
         public bool Ok => Status == EmRunStatus.Ok;
         public static Leg Failed(Em3dSolverId s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
@@ -655,6 +686,22 @@ public static partial class Em3dRunService
         /// <summary>brief-emdc-2 R-emdc2-2 — the run's one DC conduction solve, which every leg splices; null when the sweep
         /// asked for no 0 Hz point. A refused one has no S, and its leg's file says so.</summary>
         public Em3dDcResult? Dc { get; set; }
+
+        /// <summary>brief-cosim-pattern-1 — what the caller asked of this run beyond the setup.</summary>
+        public EmRunTarget? Target { get; init; }
+
+        /// <summary>brief-cosim-pattern-1 R-cp1-1 — the 3D view's document as text, when the run came from one.</summary>
+        public string? ThreeDViewText { get; init; }
+
+        /// <summary>What the run's problem was built from, once it has been: the component ports the record names.</summary>
+        public Em3dGenerationResult? Generated { get; set; }
+
+        /// <summary>This run compares solvers, so each one's result has its token after the name.</summary>
+        public bool Compare { get; set; }
+
+        /// <summary>Where <paramref name="solver"/>'s result files land.</summary>
+        public EmResultPaths Paths(Em3dSolverId solver)
+            => ResultPaths(ResultsRoot, Setup, solver, Compare, Target?.TouchstoneDestination);
 
         /// <summary>brief-emi-10 R-emi10-2 — what this run's processes are held to: the ceiling (this machine's memory, or the
         /// user's lower limit), lifted once the user forces the run past its size check.</summary>
@@ -774,23 +821,44 @@ public static partial class Em3dRunService
         public void Dispose() { foreach (var h in holds) h.Dispose(); }
     }
 
-    /// <summary>A solver's grouped <c>.npy</c> in <c>results/</c>; null, with an error, when it could not be written.</summary>
-    private static string? WriteNpy(string resultsRoot, string key, DataSet data, RunLog log)
+    /// <summary>A static or eigenmode problem's grouped <c>.npy</c>; null, with an error, when it could not be written.</summary>
+    private static string? WriteNpy(string npyPath, DataSet data, RunLog log)
     {
-        try
-        {
-            var written = ResultsWriter.WriteRun(
-                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot, key, data);
-            if (written.Error is { } writeError)
-                log.Errors.Add($"The EM result could not be written to results/: {writeError}");
-            return written.Written.Count > 0 ? written.Written[0] : null;
-        }
-        catch (Exception e)
-        {
-            log.Errors.Add($"The EM result could not be written to results/: {e.Message}");
-            return null;
-        }
+        var (written, error) = EmResultStaging.PublishNpy(npyPath, data);
+        if (error is not null) log.Errors.Add($"The EM result could not be written to results/: {error}");
+        return written;
     }
+
+    /// <summary>
+    /// brief-cosim-pattern-1 — a finished driven leg's whole result, through the one publisher: staged, then renamed into place, with
+    /// its record. <paramref name="writeSnp"/> takes the staged base and the stamp; null, or why not.
+    /// </summary>
+    internal static EmPublished PublishDriven(RunContext run, Em3dSolverId solver, Em3dProblem problem, DataSet data, string version, string? device,
+                                              EmResultMesh? mesh, Func<string, string, string?> writeSnp,
+                                              EmResultStaging? staging = null, PortFieldManifest? fields = null)
+        => EmResultStaging.PublishRun(new EmPublishRequest(
+                run.Paths(solver), problem.Ports.Count, data, run.Setup, run.Target, Em3dSolvers.Get(solver).DisplayName, version, device, mesh,
+                RecordPorts(problem, run.Generated), writeSnp)
+            { Fields = fields, Staging = staging, ThreeDViewText = run.ThreeDViewText }, run.Log.Errors);
+
+    /// <summary>R-cp1-1 — the problem's ports as the record states them: a part's gap port, a port with a real return, or a wave port.</summary>
+    internal static IReadOnlyList<EmResultPort> RecordPorts(Em3dProblem problem, Em3dGenerationResult? generated)
+        => [.. problem.Ports.OrderBy(p => p.Number).Select(p =>
+           {
+               int source = p.SourceNumber ?? p.Number;
+               var part = generated?.ComponentPorts?.Ports.FirstOrDefault(c => c.Port?.Number == source);
+               return new EmResultPort
+               {
+                   Number = p.Number,
+                   Name = part?.Port?.Name ?? p.Name,
+                   Z0Re = p.Z0.Real,
+                   Z0Im = p.Z0.Imaginary,
+                   Kind = p.Kind == Em3dPortKind.Wave ? EmResultPort.Wave
+                        : part is { Connector: false } ? EmResultPort.Gap : EmResultPort.Plane,
+                   Part = part?.Refdes,
+                   Pins = part is null ? null : [.. new[] { part.Pin, part.ReferencePin }.OfType<string>()],
+               };
+           })];
 
     /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>
     public static double[] FrequenciesHz(Em3dFrequency f)

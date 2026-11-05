@@ -206,7 +206,7 @@ convention behind both.</p>
 <td><code>em</code></td>
 <td><code>.cem</code>, or a <code>.c3d</code> with <code>--setup</code></td>
 <td>The EM kernel or 3D solver the setup resolves to</td>
-<td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
+<td>A Touchstone <code>.sNp</code>, a grouped <code>.npy</code> <strong>and</strong> a <code>.cemr</code> result record, where <strong>Simulate</strong> writes them</td>
 </tr>
 <tr>
 <td><code>solver list</code>, <code>install</code>, <code>remove</code></td>
@@ -797,6 +797,8 @@ the startup volume or the results' volume falls below 10 GB free; either way the
 <code>--force</code> lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
 lifts the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 <code>--memory-limit</code> too.</p>
+<p><code>--adopt &lt;file.sNp&gt;</code> solves nothing: it writes the <code>.cemr</code> record of a result from before records existed, beside its
+Touchstone, and refuses when no <code>.npy</code> matches it. <code>explain &lt;file.cemr&gt;</code> reads a record back, and <code>-o</code> moves the Touchstone alone.</p>
 <p><code>--mesh-only</code> runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits <strong>0</strong> on a mesh, <strong>1</strong>
 on a refusal or a mesher failure, and <strong>130</strong> when cancelled. <code>--dry-run</code> also warns about geometry known to stop the

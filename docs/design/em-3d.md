@@ -438,6 +438,16 @@ With several backends on one setup, **the solver is part of the path** — other
 overwrites the first — and a schematic's reference names which solver's result it uses. Re-running the
 same solver still lands on the same path.
 
+**The setup's Output name (`SnpOutputPathOverride`) decides every result file** (brief-cosim-pattern-1): `<name>.sNp`,
+`<name>_em.npy`, `<name>.fields/` and `<name>.cemr`. A comparison puts each solver's token after the name. The run directory is a
+working folder and does not follow it.
+
+**What survives a run that fails.** The S-parameters, the pattern and the fields a schematic reads survive: they are staged and
+renamed into place only when the run finishes (`EmResultStaging`). **A 3D field plot of the old run may not**, because the plots live
+in the solver's run directory and each solver clears its own when it starts: Palace's `postpro/`, each openEMS port directory and
+EMerge's `post/` with its result arrays. That is acceptable for working files, and `src/Design/RESOLVED.md` records exactly what each
+clears and when.
+
 ### 4.6 Authoring it headlessly — the same documents, the same verbs
 
 **The 3D problem of Tier A is not a new document to author.** It is generated from a layout

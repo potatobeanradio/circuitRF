@@ -114,7 +114,6 @@ internal static class EmComponent
             JsonRun.Note(CliDiagnostics.EmSetupWarning($"{token}: {note}"));
         }
 
-        prepared.Setup.SnpOutputPathOverride = outFull;
         EmRunResult result;
         try
         {
@@ -122,7 +121,8 @@ internal static class EmComponent
             // Touchstone only, as it does for a .cem.
             string resultsRoot = ResultsRoot.For(layoutName, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(dir));
             result = EmRunService.Run(prepared.Setup, prepared.Source, resultsRoot, RunHost.Cancellation, control,
-                                      confirmMemory: force ? _ => true : null, memoryCeilingBytes: memoryLimitBytes);
+                                      confirmMemory: force ? _ => true : null, memoryCeilingBytes: memoryLimitBytes,
+                                      target: new EmRunTarget { TouchstoneDestination = outFull });
         }
         catch (Exception ex)
         {

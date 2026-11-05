@@ -28195,3 +28195,43 @@ is 20 % low on the 5 µm line, where the current crowds to the edges and no sing
 takes a `thickness` of its own, with coth(γ·thickness), so its h would be A/P. **Unmeasured:** that run, the 50 µm line with `Thickness`,
 sheets and meshed metal were all stopped before finishing, so none of them has a number. The one `Thickness` run took 294 s against
 42 s, on a loaded machine and partly beside a build, so what it costs is not known either.
+
+## brief-cosim-pattern-1 — the result record and staged publishing
+
+**What each solver clears, and when (R-cp1-4).** All of it is in the run directory, after every refusal and memory question, before the
+solver starts. So a solver that then fails has already lost the previous run's working files, and its 3D field plots with them. The
+`.sNp`, `.npy`, field set and record are outside these folders and survive.
+
+| Solver | Cleared | When |
+|---|---|---|
+| Palace | `postpro/` whole (`PalaceRun`, before `palace` starts). The `.msh`, its hash and entity table only when the geometry changed; otherwise they are reused | at the solve; the mesh files at the mesh step |
+| openEMS | every `port<k>/` directory, whole (`OpenEmsRun.Stage`), and its abort file before each port runs | when the leg's execution begins |
+| EMerge | `post/`, the far-field arrays, the group file and every result array (`EmergeFields.Clear` and the list beside it) | before each attempt, so a CPU re-run after a GPU sweep clears again |
+| All | `status.json` and the kept inputs record (`C3dRunStatus.Begin`) | before the leg executes |
+
+**Why staging is a folder and not a name.** Files are staged under their final file names in `<dir>/.staging-<name>/new/`. A Touchstone
+header falls back to the file's stem when a setup has no name, and a field set's manifest names its `.sNp`, so a staging NAME would have
+been written into the files themselves. The folder keeps every byte the same as a file written in place, stays on the target's volume so
+the renames are renames, and is out of the flat listing a Data Display reads.
+
+**A rename that fails is undone; a killed process is not.** Each target is moved aside before its new file goes in, so a failed rename
+(a file held open on Windows) puts everything back. A process killed in that window leaves a target missing or stamps that disagree,
+which `EmResultRecord.Verify` names. The moved-aside copy is deleted with the staging folder by the next run of that setup.
+
+**`-o` no longer moves the field set.** It did by accident, since the folder was derived from the Touchstone's base. The `.sNp`'s `port
+fields:` line can now hold a relative path, so `fields` still finds the set from a moved Touchstone until CP-2 removes that line.
+
+**A write that fails now publishes nothing.** The `.npy` and `.sNp` used to be written independently, so one failing still left the other
+replaced and the run reported one path. Both paths are now null, with the errors saying the previous result was kept. The run's status
+stays `Ok`, because the numbers exist and are returned in memory.
+
+**The EM cache passes a Touchstone destination and asks for no record**, since it renames the `.partial-` file after the run and a record
+would name a file about to move. It kept using the setup's field until this brief; under the new meaning that would have moved its `.npy`
+and field set into the cache's `.partial-` name too.
+
+**The previous comparison is now removed when a leg publishes, not when the run starts**, so a comparison run cancelled in its first leg
+leaves the old comparison beside the results it still describes.
+
+**The stamp is the second line a byte comparison must exclude.** Five test helpers filter the write time from a Touchstone; each now filters `EmProvenanceStamp.StampPrefix` too. `EmEvaluation`'s note that a cached Touchstone matches `em`'s "but
+the write time" now means write time and stamp.
+

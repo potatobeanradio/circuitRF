@@ -52,6 +52,33 @@ internal static class NpyReader
         return Read(fs);
     }
 
+    /// <summary>
+    /// The <c>__meta__</c> JSON of a circuitRF <c>.npy</c>, without reading any cube's array: a stamp or an axis can be asked of a
+    /// large file at the cost of its header.
+    /// </summary>
+    public static string ReadMetaJson(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var r  = new BinaryReader(fs, Encoding.ASCII, leaveOpen: true);
+        var magic = r.ReadBytes(6);
+        if (!magic.SequenceEqual(Magic))
+            throw new InvalidDataException($"Not a NumPy .npy file: expected magic \\x93NUMPY, got {BitConverter.ToString(magic)}.");
+        byte major = r.ReadByte();
+        byte minor = r.ReadByte();
+        if (major is not (1 or 2))
+            throw new InvalidDataException(
+                $"Unsupported .npy format version {major}.{minor}. Expected 1 or 2.");
+        int headerLen = major == 1 ? r.ReadUInt16() : (int)r.ReadUInt32();
+        string header = Encoding.ASCII.GetString(r.ReadBytes(headerLen)).TrimEnd();
+        foreach (var f in ParseHeader(header))
+        {
+            if (f.Name == "__meta__")
+                return Encoding.UTF8.GetString(r.ReadBytes(checked((int)f.ByteCount)));
+            fs.Seek(f.ByteCount, SeekOrigin.Current);
+        }
+        throw new InvalidDataException("Missing '__meta__' field — not a circuitRF .npy file.");
+    }
+
     /// <summary>The path form's reader over a caller's stream, which is left open.</summary>
     public static (DataSet DataSet, ImportedLinearNetwork? LinearNetwork) Read(Stream stream)
     {

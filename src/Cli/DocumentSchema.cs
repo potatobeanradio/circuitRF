@@ -71,6 +71,11 @@ internal static class DocumentSchema
             typeof(CircuitRF.Design.Layout.ClayFile), ClayPreamble),
         new("em-setup", "The .cem EM setup format", ".cem",
             typeof(CircuitRF.Design.Layout.Em.CemFile), CemPreamble),
+        new("em-result", "The .cemr EM result record", ".cemr",
+            typeof(CircuitRF.Design.Layout.Em.EmResultRecord), CemrPreamble,
+            [typeof(CircuitRF.Design.Layout.Em.EmResultSolver), typeof(CircuitRF.Design.Layout.Em.EmResultFiles),
+             typeof(CircuitRF.Design.Layout.Em.EmResultPort), typeof(CircuitRF.Design.Layout.Em.EmResultFrequencies),
+             typeof(CircuitRF.Design.Layout.Em.EmResultSetupSource), typeof(CircuitRF.Design.Layout.Em.EmResultGeometry)]),
         new("wbond", "The .wBond wirebond format", ".wBond",
             typeof(CircuitRF.WBond.WBondIo.WBondDocument), WBondPreamble),
         new("3d-view", "The .c3d 3D view format", ".c3d",
@@ -331,12 +336,28 @@ internal static class DocumentSchema
         kind, each with the "$type" value that selects it.
         """;
 
+    private const string CemrPreamble = """
+        A result record is written by a finished driven EM run beside its Touchstone, as <name>.cemr, and says how the
+        result was made: the settings used, the ports, the sweep, and the files holding the numbers, each relative to the
+        record so a moved folder still resolves. It is written by the run, not by hand. Its Setup is the setup as a .cem
+        holds it (the em-setup topic), and ThreeDView the 3D view's document as text when the run came from one.
+
+        The record, the .sNp (a `circuitRF-EM stamp:` line), the .npy (a __ResultStamp cube) and the field set's manifest
+        carry one Stamp. Files are renamed into place in the order field set, .npy, .sNp, record, so a process killed among
+        them leaves stamps that disagree; `check` says which file differs. `explain <file.cemr>` prints the settings and what
+        differs from the setup now. `em --adopt <file.sNp>` writes a record for a result from before records existed, with
+        Setup null ("settings not recorded") and Adopted true.
+
+        Port Kind: Gap, whose negative end is a pad; Plane, which returns to a real reference; Wave, a wave port.
+        """;
+
     private const string CemPreamble = """
         An EM setup is one electromagnetic run: which layout, which conductor of the stackup carries
         the signal, the frequency plan, the ports' reference impedances and the mesh. It is JSON; by
         convention it lives at <cell>/em/<name>.cem. `circuitrf em <file.cem>` runs it with no other
-        argument and writes exactly what the GUI's Simulate writes: <workspace>/results/<Name>.sNp
-        and <Name>_em.npy (`-o` moves the Touchstone only).
+        argument and writes exactly what the GUI's Simulate writes: <workspace>/results/<Name>.sNp,
+        <Name>_em.npy and <Name>.cemr (`-o` moves the Touchstone only). SnpOutputPathOverride is the
+        Output name: every one of those files takes it, relative to results/ or absolute.
 
         This solves the layout topic's microstrip through-line, 1 to 10 GHz at 4 points, in about
         5 seconds on a laptop; |S11| comes back below -35 dB. It is a whole file:

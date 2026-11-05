@@ -18,10 +18,10 @@ public class EmOutputPathAndMessageLevelTests
     // ── (2) the output-file field ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public void TheDefaultShown_IsTheLayoutNameWithTheTouchstoneSuffix()
+    public void TheDefaultShown_IsTheBareNameABlankBoxResolvesTo()
     {
-        Assert.Equal("MLin.sNp", Vm("MLin.clay").SnpOutputPlaceholder);
-        Assert.Equal("Amp.sNp",  Vm(Path.Combine("cells", "Amp", "layout", "Amp.clay")).SnpOutputPlaceholder);
+        Assert.Equal("MLin", Vm("MLin.clay").SnpOutputPlaceholder);
+        Assert.Equal("Amp",  Vm(Path.Combine("cells", "Amp", "layout", "Amp.clay"), name: "").SnpOutputPlaceholder);
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class EmOutputPathAndMessageLevelTests
     [Fact]
     public void WithNoLayoutRef_ThePlaceholderFallsBackToTheSetupName()
     {
-        Assert.Equal("MyEm.sNp", Vm(layoutRef: "", name: "MyEm").SnpOutputPlaceholder);
+        Assert.Equal("MyEm", Vm(layoutRef: "", name: "MyEm").SnpOutputPlaceholder);
     }
 
     [Fact]
@@ -46,7 +46,8 @@ public class EmOutputPathAndMessageLevelTests
         var vm = Vm();
         vm.SnpOutputPathText = "baseline.s2p";
         vm.CommitSnpOutputPath();
-        Assert.Equal("baseline.s2p", vm.Working.SnpOutputPathOverride);
+        Assert.Equal("baseline", vm.Working.SnpOutputPathOverride);     // the suffix is the run's to add
+        Assert.Equal("baseline", vm.SnpOutputPathText);
 
         bool couldUndo = vm.UndoRedo.CanUndo;
         vm.CommitSnpOutputPath();                       // same value again

@@ -75,11 +75,11 @@ public static class EmSnpSchematic
 
     private const double P = 100;
 
-    /// <summary>The cell a setup's schematic is made as: the Touchstone's own stem plus <see cref="CellSuffix"/>, with
-    /// any character a cell name may not hold replaced.</summary>
+    /// <summary>The cell a setup's schematic is made as: the result's name (the setup's Output name, or its key when that is blank)
+    /// plus <see cref="CellSuffix"/>, with any character a cell name may not hold replaced. Each output name has its own cell.</summary>
     public static string CellNameFor(EmSetup setup)
     {
-        string key = EmRunService.ResolveResultKey(setup);
+        string key = EmResultNames.CompanionKey(setup);
         var sb = new System.Text.StringBuilder(key.Length + CellSuffix.Length);
         foreach (char c in key)
             sb.Append(c is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' || char.IsControl(c) ? '_' : c);

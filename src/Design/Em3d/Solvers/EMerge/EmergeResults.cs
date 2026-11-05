@@ -273,7 +273,7 @@ public static class EmergeResults
     /// </summary>
     public static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, EmergeLowering lowering,
                                    EmergeSettings settings, EmergeRunFacts facts, string solverVersion, TimeSpan wall, long? peakBytes,
-                                   DateTimeOffset when, IReadOnlyList<string>? dcLines = null)
+                                   DateTimeOffset when, IReadOnlyList<string>? dcLines = null, string? stamp = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -321,7 +321,7 @@ public static class EmergeResults
                 lines,
                 setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBase),
                 setup.SolveRegion is { } r ? $"{setup.LayoutRef} (solve region {Ascii(r.Describe())})" : setup.LayoutRef,
-                when));
+                when, stamp));
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(snpBase))!);
         var result = TouchstoneExporter.Export(

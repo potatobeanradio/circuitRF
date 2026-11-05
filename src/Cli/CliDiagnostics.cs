@@ -1515,6 +1515,21 @@ internal static class CliDiagnostics
         ("path", path));
 
     /// <summary>A file with circuitRF's extension and another program's content (overview §1c).</summary>
+    /// <summary>brief-cosim-pattern-1 — what a result record holds, in one line.</summary>
+    public static Diagnostic CheckEmResultSummary(string path, string solver, int ports, int points, string settings) => Diagnostic.Create(
+        "check.em-result.summary", DiagnosticSeverity.Info,
+        "{path}: a {solver} result, {ports} port(s), {points} frequency point(s), {settings}.",
+        ("path", path), ("solver", solver), ("ports", ports), ("points", points), ("settings", settings));
+
+    /// <summary>brief-cosim-pattern-1 R-cp1-3 — a file the record names is missing or from another run.</summary>
+    public static Diagnostic CheckEmResultDisagrees(string path, string sentence) => Diagnostic.Create(
+        "check.em-result.disagrees", DiagnosticSeverity.Error,
+        "{path}: {sentence}. Run the EM setup again to get a whole result.", ("path", path), ("sentence", sentence));
+
+    /// <summary>brief-cosim-pattern-1 R-cp1-6 — an older result could not be given a record.</summary>
+    public static Diagnostic EmAdoptRefused(string reason) => Diagnostic.Create(
+        "cli.em.adopt-refused", DiagnosticSeverity.Error, "em --adopt: {reason}", ("reason", reason));
+
     public static Diagnostic CheckForeignFile(string path) => Diagnostic.Create(
         "check.path.foreign", DiagnosticSeverity.Info,
         "'{path}' is not a circuitRF 3D view: it has the .c3d extension but not a 3D view's content "

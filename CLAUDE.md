@@ -58,8 +58,9 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   Touchstone only, never the `.npy` that carries the diagnostics group. A refusal stays a refusal:
   `Refused`/`NoLayout`/`EngineError` exit 1 with the run service's own sentence, `Cancelled` exits 130.
   The gate is `tests/Ui.Tests/Em/EmCliVerbTests.cs`, which compares the CLI's `.sNp` **byte for byte**
-  against `EmRunService.Run`'s — every line but the provenance write-timestamp, which the file carries
-  by design; the `.npy` matches with no exception.
+  against `EmRunService.Run`'s — every line but the provenance write-timestamp and run stamp, which the file
+  carries by design; the `.npy` differs only by that stamp.
+  **The setup's Output name decides every result file, `.cemr` record included; `-o` is `EmRunTarget.TouchstoneDestination`** (CP-1, `cli.md` §8.2).
   **`convert` is one import and one export** (2026-09): every ordered pair of `clay`/`gdsii`/`dxf`/
   `gerber`/`board` works because every reader lands on a cell folder plus a technology and every
   writer starts from one — a `.clay` target stops after the import, anything else exports out of a

@@ -643,7 +643,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<FoundMaterialLibraryJson>? MaterialLibraries = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<FoundPictureJson>? Pictures = null);
+        IReadOnlyList<FoundPictureJson>? Pictures = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? EmResults = null);
 
     /// <summary>brief-img-2 R-im2-6 — one picture, as <c>find</c> lists it.</summary>
     /// <param name="Kind"><c>schematic</c>, <c>layout</c> or <c>none</c>; absent when it was not read

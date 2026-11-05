@@ -46,6 +46,14 @@ public static class DataSetImporter
         return NpyReader.Read(path);
     }
 
+    /// <summary>The metadata JSON of a circuitRF <c>.npy</c>, without reading any cube's array.</summary>
+    public static string ReadMetaJson(string path)
+    {
+        if (path is null) throw new ArgumentNullException(nameof(path));
+        if (!File.Exists(path)) throw new FileNotFoundException("File not found.", path);
+        return NpyReader.ReadMetaJson(path);
+    }
+
     /// <summary>Reads one circuitRF <c>.npy</c> from <paramref name="stream"/>, which is left open.</summary>
     public static DataSet ImportNpy(Stream stream)
     {
