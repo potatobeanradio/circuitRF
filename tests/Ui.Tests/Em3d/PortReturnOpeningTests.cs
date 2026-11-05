@@ -188,6 +188,40 @@ public sealed class PortReturnOpeningTests : IDisposable
         Assert.Contains("a coplanar return", none.Refusal, StringComparison.Ordinal);
     }
 
+    /// <summary>Designer round 35 — a return stated on the layout label is the planar kernel's, and its refusals are about that
+    /// kernel's calibration standards. In 3D, coplanar on the label builds the coplanar sheet; with no straight gap there the
+    /// port walks to its plane; a second conductor on the label leaves the walk alone.</summary>
+    [Fact]
+    public void AReturnOnTheLabel_IsNoEdgePortRefusalIn3D()
+    {
+        var tech = ShippedTechnologies.Load("pcb-2layer_RO4350B_20mil_1oz");
+        var top = new LayerKey(1, 0);
+        var coplanar = Port("P1", 0, 0, top, LayoutRotation.R0);
+        coplanar.PortReference = LayoutPortReference.CoplanarGround;
+        List<LayoutShape> shapes =
+        [
+            Rect(top, 0, -0.3, 10, 0.3),
+            Rect(top, 0, 0.5, 10, 3), Rect(top, 0, -3, 10, -0.55),
+            coplanar,
+            Port("P2", 10, 0, top, LayoutRotation.R180),
+            Rect(new LayerKey(2, 0), 0, -3, 10, 3),
+        ];
+        var g = Generate(tech, shapes);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.Equal(PortOf(g, 1).Min.Z, PortOf(g, 1).Max.Z, 12);
+        Assert.Contains(g.Notes, n => n.Contains("says it returns through a coplanar ground conductor", StringComparison.Ordinal));
+
+        // No ground beside it: the walk answers, down to the plane.
+        var alone = Generate(tech, [shapes[0], coplanar, shapes[4], shapes[5]]);
+        Assert.True(alone.Ok, alone.Refusal);
+        Assert.StartsWith("Bottom Copper (1 oz)/", PortOf(alone, 1).NegativeObject, StringComparison.Ordinal);
+
+        var second = Port("P1", 0, 0, top, LayoutRotation.R0);
+        second.PortReference = LayoutPortReference.SecondConductor;
+        var walked = Generate(tech, [shapes[0], second, shapes[4], shapes[5]]);
+        Assert.True(walked.Ok, walked.Refusal);
+    }
+
     private (string Cell, string C3d, string Cws) Board(Technology tech, List<LayoutShape> shapes)
     {
         string ws = Path.Combine(_root, "ws" + Guid.NewGuid().ToString("N")[..6]);

@@ -1499,6 +1499,7 @@ public static class GerberImport
                 "bottom, is: " + string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ".");
 
         BindDrillsBySpan(drillIdentities, copperTopToBottom.Count, tech, messages);
+        if (use) BindRemainingDrillsToThrough(drillIdentities, drillReads, copperTopToBottom.Count, tech, messages);
 
         // ── 7. Source layers, and the one reconciliation (R-L4g-0, R-L4g-7, R-L4g-11) ───────────
         var allIdentities = new List<GerberLayerIdentity>(identities);
@@ -1855,10 +1856,14 @@ public static class GerberImport
             bool? entryPlated = routedOnly ? plated ?? false : plated;
             bool conductive = entryPlated != false;
 
+            // Designer round 35 — two files a technology's suffix sent to one layer are one via layer, and two layers are
+            // two names: stackup entries are resolved by name, and the validator refuses a repeat.
+            if (ViaBinds(tech, finalKeyByFile[identity.FilePath])) continue;
+
             tech.Stackup.Layers.Add(new StackupLayer
             {
                 Kind = StackupKind.Via,
-                Name = identity.LayerName,
+                Name = UniqueEntryName(tech, tech.Layers.FirstOrDefault(l => l.Key == finalKeyByFile[identity.FilePath])?.Name ?? identity.LayerName),
                 DrawingLayers = [finalKeyByFile[identity.FilePath]],
 
                 // Fill is a fill MODEL and only means anything for something that is metal, so it is
@@ -1948,10 +1953,11 @@ public static class GerberImport
             if (from is not null && to is not null)
                 spans[identity.FilePath] = new DrillSpan(from.Value, to.Value, kind ?? "PTH", plated);
 
+            if (ViaBinds(tech, finalKeyByFile[identity.FilePath])) continue;
             tech.Stackup.Layers.Add(new StackupLayer
             {
                 Kind = StackupKind.Via,
-                Name = identity.LayerName,
+                Name = UniqueEntryName(tech, tech.Layers.FirstOrDefault(l => l.Key == finalKeyByFile[identity.FilePath])?.Name ?? identity.LayerName),
                 DrawingLayers = [finalKeyByFile[identity.FilePath]],
                 Fill = conductive ? ViaFillKind.Plated : null,
                 Plated = plated,
@@ -1984,6 +1990,17 @@ public static class GerberImport
         PcbStackupMapping.NameDefaultedCopper(tech);
 
         return tech;
+    }
+
+    private static bool ViaBinds(Technology tech, LayerKey key)
+        => tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(key));
+
+    private static string UniqueEntryName(Technology tech, string name)
+    {
+        string candidate = name;
+        for (int n = 2; tech.Stackup.Layers.Any(l => string.Equals(l.Name, candidate, StringComparison.Ordinal)); n++)
+            candidate = $"{name} {n}";
+        return candidate;
     }
 
     /// <summary>
@@ -2304,6 +2321,41 @@ public static class GerberImport
         }
     }
 
+    /// <summary>
+    /// Designer round 35 — into a technology an import USES, a plated drill file no name or span has placed lands on that
+    /// technology's through-hole via layer. A board commonly splits its holes across several files that state no span; the
+    /// first took the "Drill" layer by name and each of the rest got a minted layer no via entry binds, so the default
+    /// mapping of an ordinary four-layer set into a four-layer technology was refused. A file with no stated span is
+    /// read as through-hole everywhere else in this import. A routed or non-plated file is not interconnect and stays put.
+    /// </summary>
+    private static void BindRemainingDrillsToThrough(
+        List<GerberLayerIdentity> drillIdentities,
+        IReadOnlyList<(GerberFileClass File, ExcellonReadResult Read, string LayerName)> drillReads,
+        int copperCount, Technology? tech, List<string> messages)
+    {
+        if (tech is null || copperCount < 2) return;
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.Name).ToList();
+        if (conductors.Count != copperCount) return;
+        var vias = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via && l.DrawingLayers.Count > 0).ToList();
+        var through = vias.FirstOrDefault(v => v.Plated != false && v.SpanFromLayer == conductors[0] && v.SpanToLayer == conductors[^1]);
+        if (through is null) return;
+        var bound = vias.SelectMany(v => v.DrawingLayers).ToHashSet();
+        var key = through.DrawingLayers[0];
+        string name = tech.Layers.FirstOrDefault(l => l.Key == key)?.Name ?? through.Name;
+
+        for (int i = 0; i < drillIdentities.Count; i++)
+        {
+            var d = drillIdentities[i];
+            var read = drillReads[i].Read;
+            bool? plated = read.Plated ?? ExcellonReader.PlatingFromFileName(d.FilePath);
+            bool routedOnly = read.Hits.Count == 0 && read.Slots.Count > 0;
+            if (plated == false || routedOnly || (d.DestLayer is { } dest && dest != key && bound.Contains(dest))) continue;
+            drillIdentities[i] = d with { DestLayer = key, LayerName = name, SharesDrillLayer = true };
+            if (d.DestLayer != key)
+                messages.Add($"{d.FileName}: states no layer pair, so it was mapped to '{name}', the through-hole via layer of '{through.Name}'.");
+        }
+    }
+
     /// <summary>The extensions that identify exactly ONE file in this set — the only ones that can
     /// serve as a per-layer <c>GerberSuffix</c> alias. See <see cref="BuildSourceLayers"/>'s own note
     /// on the amendment to R-L4g-7 for why a shared extension is worse than no alias at all.</summary>
@@ -2361,6 +2413,12 @@ public static class GerberImport
         foreach (var identity in identities)
         {
             LayerKey key;
+            // Holes on one via layer do not merge into anything, unlike artwork: the files just add their holes.
+            if (identity is { SharesDrillLayer: true, DestLayer: { } shared } && taken.Contains(shared))
+            {
+                keyByFile[identity.FilePath] = shared;
+                continue;
+            }
             if (identity.DestLayer is { } donated && taken.Add(donated))
             {
                 key = donated;

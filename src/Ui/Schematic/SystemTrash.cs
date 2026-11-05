@@ -95,16 +95,34 @@ public static class SystemTrash
             fFlags = (short)(FofAllowUndo | FofNoConfirm | FofSilent),
         };
         int result = SHFileOperation(ref fileOp);
+
+        // The document was closed a moment ago, and a sync client commonly holds a file it has just seen change: access
+        // denied is usually over in a moment. Bounded and short, because this runs on the UI thread.
+        for (int attempt = 0; result == WindowsAccessDenied && attempt < WindowsRetries; attempt++)
+        {
+            Thread.Sleep(WindowsRetryDelayMs);
+            fileOp.fAnyOperationsAborted = false;
+            result = SHFileOperation(ref fileOp);
+        }
+
         if (result == 0 && !fileOp.fAnyOperationsAborted)
         {
             error = null;
             return true;
         }
-        error = fileOp.fAnyOperationsAborted
-            ? "Operation was cancelled."
-            : $"SHFileOperation failed with code {result}.";
+        error = fileOp.fAnyOperationsAborted ? "Operation was cancelled." : WindowsFailure(path, result);
         return false;
     }
+
+    private const int WindowsAccessDenied = 0x78;
+    private const int WindowsRetries = 5;
+    private const int WindowsRetryDelayMs = 300;
+
+    /// <summary>What a failed Recycle Bin move says: the code alone gives the reader nothing to act on.</summary>
+    public static string WindowsFailure(string path, int code) => code == WindowsAccessDenied
+        ? $"Windows denied access to '{path}', so it is still there. Another program has it or something in it open, or a " +
+          $"cloud sync client is holding it: close that program or pause the sync, and try again. (SHFileOperation code {code}.)"
+        : $"SHFileOperation failed with code {code}.";
 
     // ── Linux: gio trash (GNOME VFS; KDE / other DEs may need trash-put / kioclient) ────
     // NOTE: if gio is absent (not a GNOME system), this returns false with a clear message.

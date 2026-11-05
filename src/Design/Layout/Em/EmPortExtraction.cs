@@ -541,7 +541,14 @@ public static class EmPortExtraction
             EmPoint? negPoint  = null;
             int?     negLevel  = null;
             string?  negLayerName = null;
-            if (label.PortReference is { } wantedReference)
+            // A label's stated return is the planar kernel's, and every refusal below is about that kernel's standards. A 3D
+            // setup builds a lumped sheet instead and takes its return from its own port table, so none of them applies.
+            if (padToPlane && label.PortReference is { } planarOnly)
+                notes.Add($"Port {number} ('{Describe(label)}') says it returns through {ReferenceName(planarOnly)} on its layout label. " +
+                          (planarOnly == LayoutPortReference.CoplanarGround
+                              ? "A 3D setup reads that as a same-layer return unless its port table states another."
+                              : "That belongs to a planar setup; a 3D setup takes its return from its own port table."));
+            if (!padToPlane && label.PortReference is { } wantedReference)
             {
                 // ── R-rp2b-7a — AN EDGE PORT CANNOT BE CONDUCTOR-REFERENCED, AND THE USER READS
                 // THIS MESSAGE RATHER THAN THE KERNEL'S ──────────────────────────────────────────

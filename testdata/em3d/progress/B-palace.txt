@@ -1,12 +1,12 @@
 Solving: pass 1 of 1 (no refinement)
 Solving: pass 1 of 1 (no refinement) · 593,548 unknowns
-Adaptive sweep: model change 2.65e-1 (done below 1.0e-4)  [0/1000 (log scale)]
-Adaptive sweep: model change 3.62e-2 (done below 1.0e-4)  [253/1000 (log scale)]
-Adaptive sweep: model change 8.83e-3 (done below 1.0e-4)  [431/1000 (log scale)]
-Adaptive sweep: model change 7.35e-4 (done below 1.0e-4)  [747/1000 (log scale)]
-Adaptive sweep: model change 3.83e-4 (done below 1.0e-4)  [830/1000 (log scale)]
-Adaptive sweep: model change 3.62e-4 (done below 1.0e-4)  [837/1000 (log scale)]
-Adaptive sweep: model change 9.63e-6 (done below 1.0e-4)  [1000/1000 (log scale)]
-Adaptive sweep: model change 2.12e-5 (done below 1.0e-4)  [1000/1000 (log scale)]
+Adaptive sweep: 3 frequencies solved, model change 2.65e-1 (done below 1.0e-4)  [0/1000 (log scale)]
+Adaptive sweep: 4 frequencies solved, model change 3.62e-2 (done below 1.0e-4)  [253/1000 (log scale)]
+Adaptive sweep: 5 frequencies solved, model change 8.83e-3 (done below 1.0e-4)  [431/1000 (log scale)]
+Adaptive sweep: 6 frequencies solved, model change 7.35e-4 (done below 1.0e-4)  [747/1000 (log scale)]
+Adaptive sweep: 7 frequencies solved, model change 3.83e-4 (done below 1.0e-4)  [830/1000 (log scale)]
+Adaptive sweep: 8 frequencies solved, model change 3.62e-4 (done below 1.0e-4)  [837/1000 (log scale)]
+Adaptive sweep: 9 frequencies solved, model change 9.63e-6 (done below 1.0e-4)  [1000/1000 (log scale)]
+Adaptive sweep: 10 frequencies solved, model change 2.12e-5 (done below 1.0e-4)  [1000/1000 (log scale)]
 Sweep: evaluating frequencies  [200/200 frequencies]
 summary: initial 87467, final 87467, unknowns 593548, passes 0, samples 10, peak 7000000000, seconds 270.838

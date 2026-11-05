@@ -593,6 +593,11 @@ public static class Em3dGenerator
                 if (ReturnStated(p.Number, out var stated) is { } unknown) return unknown;
                 bool wave = setup.PortKind3D(p.Number) == Em3dPortKind.Wave;
                 // brief-dfr34-1 R-dfr34-1-6 — Return = Same layer: across the gap beside the line's end, not down or up.
+                // A label placed for the planar kernel as coplanar means the same thing here when the setup says nothing, and
+                // the walk below answers when no straight gap is there: the setup's own table never asked for this one.
+                if (stated is null && !wave && portLabel?.PortReference == LayoutPortReference.CoplanarGround &&
+                    CoplanarPort(p, bands, band, piece, edgeAt, lo, hi, pieces, ports) is null)
+                    return null;
                 if (stated is { PerPort: true, Layer: EmPort3D.SameLayerReturn })
                     return wave
                         ? $"Port {p.Number} is a wave port, and its Return states the same layer. A wave port's return is the " +
@@ -1112,7 +1117,7 @@ public static class Em3dGenerator
                        $"({ReturnReason(stated)}). State a plane above or below the line.";
             return $"Port {port} on '{band.Layer.Name}' finds no {(stated is not null ? $"metal of {toward}" : toward)} under its " +
                    $"line's end to return through, and it is not the air box's floor — {string.Join("; ", walks.Select(Side))}. " +
-                   "So the port's sheet has nothing to end on. Draw the plane under the port's end" +
+                   "So the port's sheet has nothing to end on. Draw the plane under the port's end, or shorten the line so its end sits over metal" +
                    (stated is not null ? $", or {StateReturn.Replace("the port's return", "a different return")}." : ".");
         }
 
@@ -2059,8 +2064,12 @@ public static class Em3dGenerator
                        .OfType<(double, double)>()
                        .Concat(sheets.Where(s => s.Frame is null).Select(s => (s.Z, s.Z)));
         var diel = all.Where(s => s.Role == Em3dRole.Dielectric)
-                      .Select(s => Em3dProblem.Bounds(s.Primitive)).Select(b => (b.Z0, b.Z1));
-        return ([.. metal], [.. diel]);
+                      .Select(s => Em3dProblem.Bounds(s.Primitive)).Select(b => (b.Z0, b.Z1)).ToList();
+        // A plated slot arrives as an extruded polygon, not a cylinder, and is a barrel all the same: metal that passes right
+        // through a dielectric is not flat. Left in, one slot's top-to-bottom span became "the top metal" and H was lost.
+        const double tol = 1e-9;
+        var flat = metal.Where(m => !diel.Any(d => m.Item1 <= d.Z0 + tol && m.Item2 >= d.Z1 - tol)).ToList();
+        return (flat, diel);
     }
 
     /// <summary>

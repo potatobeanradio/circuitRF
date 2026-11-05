@@ -40,6 +40,35 @@ public sealed class RobustMeshingTests
         Assert.True(EmSetupPersistence.FromEmbedded(embedded).RobustMeshing);
     }
 
+    /// <summary>Designer round 35 — an outline runs out to (−11.641, 50.999) µm and straight back along the same line. The tip goes, the copper's own corners stay, the note says so, and the
+    /// spike is not counted as an outline moving. A sharp corner of real copper stays.</summary>
+    [Fact]
+    public void AZeroWidthSpike_IsCutOff_AndARealSharpCornerStays()
+    {
+        double ax = 200 * Um, ay = 100 * Um, ux = -11.641 * Um, uy = 50.999 * Um;
+        (double X, double Y)[] ring =
+        [
+            (0, 0), (ax + 50 * Um, 0), (ax + 50 * Um, ay),
+            (ax, ay),                                   // the foot of the needle
+            (ax + ux, ay + uy),                         // the tip
+            (ax + 0.46 * ux, ay + 0.46 * uy),           // back down the same line
+            (0, ay + 0.46 * uy),
+        ];
+        var stats = new Em3dOutlineCleanup.Stats();
+        var kept = Em3dOutlineCleanup.Clean(ring, q => q, 0.5 * Um, stats);
+        Assert.DoesNotContain(ring[4], kept);
+        Assert.Equal(1, stats.Spikes);
+        Assert.True(stats.LongestSpikeM > 20 * Um);
+        Assert.True(stats.MaxMoveM < 0.5 * Um);
+        Assert.Contains("zero-width spike", Em3dLayoutSolids.Builder.RobustNote(stats), StringComparison.Ordinal);
+
+        // A 3° point 200 µm long is copper, however sharp.
+        (double X, double Y)[] sharp = [(0, 0), (200 * Um, 5 * Um), (0, 10.5 * Um), (-50 * Um, 5 * Um)];
+        var none = new Em3dOutlineCleanup.Stats();
+        Assert.Equal(sharp.Length, Em3dOutlineCleanup.Clean(sharp, q => q, 0.5 * Um, none).Count);
+        Assert.Equal(0, none.Spikes);
+    }
+
     /// <summary>The TP149 trace's corner, in its shape: a quarter arc of 6.89 µm segments ending in a 1.44 µm stub, a 0.1 µm
     /// edge, a straight run of collinear points, and four real corners. The stub, the 0.1 µm edge, the collinear points
     /// and some of the arc go; every original point stays within the tolerance of the result; the corners stay.</summary>

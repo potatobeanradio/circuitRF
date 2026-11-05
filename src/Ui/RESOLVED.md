@@ -41926,3 +41926,10 @@ the card list scrolls through `StackupScrollTargetRow` because a selected film l
 **Frequency (GitHub discussion 42).** The plan's text boxes commit on every keystroke, and `UndoRedo.Execute` runs the command it is given, so `EmSetupSnapshotCommand.Execute` applied the snapshot of an edit that had already happened. `ApplySnapshot` rebuilt `FrequencySegments`, which destroyed the box being typed in: a second digit went nowhere until the field was clicked again. Clearing a Points box also snapped it to the 101 fallback mid-edit, for the same reason. `CommitFrequency` now tells `ApplySnapshot` the rows already show the edit; an undo or redo still rebuilds them. A field that commits on LostFocus never showed this, since it has already lost focus when the rebuild runs. An embedded `.c3d` setup commits through `EmbeddedCommit` and never calls `ApplySnapshot`. Each keystroke is still its own undo entry. Gate: `EmFrequencyPlanTests.TypingInAFrequencyField_KeepsItsRow_AndUndoStillShowsTheEarlierValue`.
 
 **Object Tree.** A row centred its 12 px name and 11 px detail separately, and layout rounded each position on its own. At 1x the errors happen to cancel (0.03 DIP), so a headless snapshot looks right; at 2x the heights round to 15 and 13.5 and the arithmetic leaves the detail about 0.47 DIP high. `TextBaselineRow` places the two from the baselines the text reports, so only one offset is rounded and the error stays under half a device pixel at any scale. The headless platform ignores a forced `RenderScaling`, so the 2x case is arithmetic and not a measurement.
+
+## Removing a file on a synced folder: SHFileOperation code 120 (designer round 35, 2026-11-04)
+
+Code 120 is 0x78, the shell's "access denied to the source", reported on a 3D view inside a cloud-synced folder right after its
+document closed. `SystemTrash` now retries it five times, 300 ms apart, and says what the code means. NOT verified on Windows and
+not reproduced: nothing in the app holds a `.c3d` open, so a sync client is the likely holder, not a measured one. The workspace
+watchers' subtree handles have not been ruled out.

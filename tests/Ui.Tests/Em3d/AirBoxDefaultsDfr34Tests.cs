@@ -118,6 +118,35 @@ public sealed class AirBoxDefaultsDfr34Tests
         Assert.Contains("over the bottom metal", d.Basis("zmin", 0), StringComparison.Ordinal);
     }
 
+    /// <summary>Designer round 35 — a padding box is 8 characters wide: E notation clipped 13.98 mm to "1.398E+0".</summary>
+    [Theory]
+    [InlineData(13980.4, "13980")]
+    [InlineData(18161, "18160")]
+    [InlineData(1594, "1594")]
+    [InlineData(13.98, "13.98")]
+    [InlineData(0.25, "0.25")]
+    public void APaddingBox_NeverReadsInENotation(double value, string shown)
+        => Assert.Equal(shown, CircuitRF.Ui.ThreeD.C3dEditorViewModel.FourFigures(value));
+
+    /// <summary>Designer round 35 — a plated slot is an extruded polygon, not a cylinder: it passes through the board and is no
+    /// "top metal". Counted, it lost H, and every face of a 220 µm microstrip took the board's largest extent.</summary>
+    [Fact]
+    public void APlatedSlot_DoesNotHideTheHeight()
+    {
+        static Em3dSolid Slab(string name, Em3dRole role, double z0, double z1)
+            => new(name, "m", role, new Em3dBox(new Point3(0, 0, z0), new Point3(1e-3, 1e-3, z1)), 1);
+        Em3dSolid[] solids =
+        [
+            Slab("bottom", Em3dRole.Conductor, 0, 35e-6),
+            Slab("core", Em3dRole.Dielectric, 35e-6, 1341e-6),
+            Slab("in1", Em3dRole.Conductor, 1323e-6, 1341e-6),
+            Slab("prepreg", Em3dRole.Dielectric, 1341e-6, 1561e-6),
+            Slab("top", Em3dRole.Conductor, 1561e-6, 1596e-6),
+            Slab("slot", Em3dRole.Conductor, 0, 1596e-6),
+        ];
+        Assert.Equal(220e-6, Em3dGenerator.PaddingHeight(solids, [], null)!.Value, 1e-12);
+    }
+
     /// <summary>R-dfr34-2-4 — a bottom pour the technology does not mark ground-reference is still the floor when it covers the
     /// footprint, and the note says it was treated as one.</summary>
     [Fact]

@@ -47,6 +47,10 @@ public sealed record GerberLayerIdentity(
 {
     public string FileName => Path.GetFileName(FilePath);
 
+    /// <summary>A drill file bound to a via layer other drill files of the set land on too: it adds its holes to that
+    /// layer rather than taking a layer of its own.</summary>
+    public bool SharesDrillLayer { get; init; }
+
     /// <summary>R-L4g-5's flag: rung 3 is the one that can be confidently wrong, so anything identified
     /// there is reported AS A GUESS by name.</summary>
     public bool IsGuess => Rung == GerberLayerRung.Heuristic;

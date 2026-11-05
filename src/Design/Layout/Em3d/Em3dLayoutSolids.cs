@@ -1588,7 +1588,9 @@ public static class Em3dLayoutSolids
             $"Robust meshing removed {s.Removed:N0} of {s.Points:N0} outline points that lay within a fraction of a micrometre " +
             "of the line through their neighbours" +
             (s.Snapped > 0 ? $", and moved {s.Snapped:N0} that lay as close to the board's edge (or a dielectric film's) onto it" : "") +
-            $"; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm.";
+            $"; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm." +
+            (s.Spikes > 0 ? $" It also cut off {s.Spikes:N0} zero-width spike{(s.Spikes == 1 ? "" : "s")} where an outline ran out and straight back, " +
+                            $"holding no copper; the longest reached {Fmt(s.LongestSpikeM * 1e6)} µm." : "");
 
         private static Em3dExtrudedPolygon Extrude(PlanarPolygon p, double z0, double z1)
             => new(Ring(p.Outer), [.. p.HoleRings.Select(Ring)], z0, z1);

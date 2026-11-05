@@ -27900,3 +27900,37 @@ cells across). 180 µm of a 40 µm film at 50 Ω/sq is 225 Ω, and via contact r
 **A drawn film's level joins from every route but a named list.** `SignalStackupLayerName` names one level, and a stated
 `AnalysisLevelNames` is a choice, so leaving a drawn film out of that is the refusal. The join sits after the incidental-metal
 trim so the trim cannot discard a level the film needs.
+
+## Designer round 35: a Gerber spike, a planar return in 3D, drill files into a technology, and a slot hiding H (2026-11-04)
+
+**"Overlapping facets" again, with a new cause.** Same Gmsh message as brief-dfr31-6, different geometry. Surfaces 14762 and
+14763 share one vertical edge and point the same way, because a pour's outline ran out along a line for 28.27 µm and came
+straight back along it, a zero-width needle where a pad's arc met a straight edge. `Em3dOutlineCleanup.Clean` could not take
+the tip: `Covered` measures distance to the SEGMENT between the neighbours, and the tip lies on their line but beyond the
+segment's end. It now cuts such a point off (`TurnsBack`: a reversal whose shorter leg ends within the tolerance of the longer
+leg's line) and reports it apart in `Stats.Spikes`, because a needle holds no copper and is not an outline moving.
+`Mesh.AngleToleranceFacetOverlap`, which Gmsh's hint names, was not used: the two facets really do lie on each other, so
+loosening the tolerance hides the check rather than heals the geometry. That is reasoned, not measured.
+
+**A planar rule reached 3D.** `EmPortExtraction` refused a label with `PortReference` set on an edge port for a reason about
+the planar kernel's calibration standards, and `Em3dGenerator` runs the same extractor. So a 3D setup, which has no edge
+port and no standard, was told to pick 'Internal delta gap' from a list it does not have, whatever its Return said, and the port
+never reached the 3D view. With `padToPlane` the extractor now skips that block and notes the label. Coplanar on the label
+builds the coplanar sheet when no Return is stated, and otherwise the walk answers. A Return stated in the setup still wins.
+A line that ends inside an opening on every layer, as on an SMA footprint, still has no return and is refused for that.
+
+**Drill files into a technology.** With several plated drill files that state no span, the first took the technology's Drill
+layer by name and each of the rest got a minted layer no via entry binds, so the default mapping into a matching shipped
+technology was refused (`UseRefusal`). This is the case round 26's `BindDrillsBySpan` fixed only for files whose NAME gives
+a pair. `BindRemainingDrillsToThrough` now puts the rest on the through-hole via layer, which they share
+(`SharesDrillLayer`; holes do not merge the way artwork does, which is why other files still get a layer of their own).
+Separately, `MintTechnology` named every via entry `identity.LayerName`, the name BEFORE `BuildSourceLayers` made layer names
+unique, so several entries could read "Drill" over layers named Drill, Drill (drl) and Drill (rou), and the validator refused
+the result. Entries now take the final layer's name, and one layer gets one entry. Gate: `GerberDrillEntriesTests`.
+
+**A slot hid H.** `FlatMetalAndDielectric` filtered out cylinders as barrels, but a plated slot is an extruded polygon, so its
+top-to-bottom span became "the top metal", `PaddingHeight` found no dielectric under it and returned null, and a 220 µm
+microstrip's sides and floor took the board's largest extent. Metal that passes right through a dielectric is no longer flat.
+
+**Still open: brief-dfr35-1.** A dielectric's tag can be gone after the fragment (`Unknown model region with tag 1`), while the
+same layout at a slightly different crop meshes. A dry run reports neither this nor the spike, because it stops before meshing.

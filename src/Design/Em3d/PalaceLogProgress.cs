@@ -416,6 +416,8 @@ public sealed class PalaceStageTracker
                 _phase = x.Sampling ? "" : "sweeping";
                 break;
             case PalaceGreedyIteration g:
+                // Palace solves the sweep's two ends before iteration 1: iteration 8 is "converged with 10 frequency samples".
+                _solved = g.Iteration + 2;
                 Sampling(g.Error);
                 break;
             case PalaceSamplingDone s:
@@ -557,15 +559,19 @@ public sealed class PalaceStageTracker
         _control?.TickStage(step, SamplingText(error));
     }
 
-    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol);
+    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol, _solved);
+
+    private int _solved;
 
     /// <summary>
     /// R-dfr31-5-5 — <c>Adaptive sweep, port 1 of 6: model change 2.6e-5 (done below 1.0e-3)</c>. The figure falls as
     /// samples are added and the port is done once it is below the tolerance — said that way round, because "error →
     /// tolerance" read as either.
     /// </summary>
-    public static string SamplingText(string port, double error, double tolerance)
-        => $"{SamplingLabel}{port}: {ModelChangeWords} {Sci(error)} (done below {Sci(tolerance)})";
+    /// <param name="solved">How many frequencies this port has solved so far, when known: the one figure that moves on a run
+    /// where each solve takes minutes, and what tells a long sweep from a stuck one.</param>
+    public static string SamplingText(string port, double error, double tolerance, int? solved = null)
+        => $"{SamplingLabel}{port}: {(solved is { } n ? $"{n} frequencies solved, " : "")}{ModelChangeWords} {Sci(error)} (done below {Sci(tolerance)})";
 
     /// <summary>", port i of n" for the i-th of n excitations — circuitRF excites every port, one at a time — and empty
     /// for one.</summary>

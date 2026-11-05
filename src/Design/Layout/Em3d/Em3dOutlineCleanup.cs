@@ -20,6 +20,12 @@
 // pair ("Invalid boundary mesh (overlapping facets)"). So the dielectrics' outlines are Edges: a point within the
 // tolerance of one is moved onto it first (the sub-tolerance jog disappears with it), and a point that lies on one is
 // removed only when both its neighbours lie on that same edge, so a face on the board's side stays on it.
+//
+// A ZERO-WIDTH SPIKE (designer round 35). A merged Gerber pour can run out along a line and straight back along it: a flat
+// needle 28 µm long on a pad's arc, with no copper inside it. Its two side faces lie on each other, so Gmsh's boundary
+// recovery stops with the same "overlapping facets" as above, and neither of the rules above touches it: its tip is far
+// from its neighbours' SEGMENT though on their line. The needle holds no copper, so cutting it off moves no copper; the
+// tolerance guarantee is about moved outlines and does not count it, and Stats reports it apart.
 
 namespace CircuitRF.Design.Layout.Em3d;
 
@@ -43,6 +49,10 @@ public static class Em3dOutlineCleanup
         /// <summary>Points moved onto another object's edge (<see cref="Snap{T}"/>).</summary>
         public int Snapped { get; set; }
         public double MaxMoveM { get; set; }
+        /// <summary>Zero-width spikes cut off: an outline that ran out along a line and back along it.</summary>
+        public int Spikes { get; set; }
+        /// <summary>How far the longest of <see cref="Spikes"/> reached, metres.</summary>
+        public double LongestSpikeM { get; set; }
     }
 
     /// <summary>
@@ -183,13 +193,25 @@ public static class Em3dOutlineCleanup
         int[] edgeOf = new int[n];
         for (int i = 0; i < n; i++) edgeOf[i] = edges?.On(p[i]) ?? -1;
 
+        // The points of a spike already cut off: no copper was there, so they are no measure of how far an outline moved.
+        var inSpike = new bool[n];
+
         // The farthest of the original points strictly between a and c (ring order) from the segment a–c.
         double Covered(int a, int c)
         {
             double worst = 0;
             for (int k = (a + 1) % n; k != c; k = (k + 1) % n)
-                worst = Math.Max(worst, Distance(p[k], p[a], p[c]));
+                if (!inSpike[k]) worst = Math.Max(worst, Distance(p[k], p[a], p[c]));
             return worst;
+        }
+
+        // Whether the outline turns straight back at b: a reversal whose shorter leg ends within the tolerance of the longer
+        // leg's line. Covered, not this, takes a tiny edge at an ordinary corner, whose point is near the segment a–c too.
+        bool TurnsBack(int a, int b, int c)
+        {
+            double ux = p[b].X - p[a].X, uy = p[b].Y - p[a].Y, vx = p[c].X - p[b].X, vy = p[c].Y - p[b].Y;
+            double lu = Math.Sqrt(ux * ux + uy * uy), lv = Math.Sqrt(vx * vx + vy * vy);
+            return lu > 0 && lv > 0 && ux * vx + uy * vy < 0 && Math.Abs(ux * vy - uy * vx) / Math.Max(lu, lv) < tolerance;
         }
 
         var touched = new bool[n];
@@ -202,8 +224,19 @@ public static class Em3dOutlineCleanup
             {
                 if (!alive[b] || touched[b]) continue;
                 int a = prev[b], c = next[b];
-                if (edgeOf[b] is int e and >= 0 && !(edges!.On(e, p[a]) && edges.On(e, p[c]))) continue;
-                if (Covered(a, c) >= tolerance) continue;
+                double reach = Covered(a, c);
+                if (reach >= tolerance && TurnsBack(a, b, c))
+                {
+                    stats.Spikes++;
+                    stats.LongestSpikeM = Math.Max(stats.LongestSpikeM, reach);
+                    for (int k = (a + 1) % n; k != c; k = (k + 1) % n)
+                        if (Distance(p[k], p[a], p[c]) >= tolerance) inSpike[k] = true;
+                }
+                else
+                {
+                    if (edgeOf[b] is int e and >= 0 && !(edges!.On(e, p[a]) && edges.On(e, p[c]))) continue;
+                    if (reach >= tolerance) continue;
+                }
                 alive[b] = false;
                 next[a] = c; prev[c] = a;
                 touched[a] = touched[c] = true;

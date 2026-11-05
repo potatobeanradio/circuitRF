@@ -1284,7 +1284,17 @@ public sealed partial class C3dEditorViewModel
     {
         if (AirBoxPaddingM(face) is not { } m) return "";
         long dbu = (long)Math.Round(m / C3dLowering.Metres(1, Document.DbuPerMicron));
-        return ((double)LayoutUnits.FromDbu(dbu, Document.DisplayUnit, Document.DbuPerMicron)).ToString("G4", CultureInfo.InvariantCulture);
+        return FourFigures((double)LayoutUnits.FromDbu(dbu, Document.DisplayUnit, Document.DbuPerMicron));
+    }
+
+    /// <summary>Four significant figures, never in E notation: "G4" wrote 13.98 mm in µm as 1.398E+04, which the box clipped to
+    /// a plausible-looking 1.398E+0.</summary>
+    public static string FourFigures(double value)
+    {
+        if (value == 0 || !double.IsFinite(value)) return value.ToString("0", CultureInfo.InvariantCulture);
+        int digits = 3 - (int)Math.Floor(Math.Log10(Math.Abs(value)));
+        double rounded = digits >= 0 ? Math.Round(value, Math.Min(digits, 15)) : Math.Round(value / Math.Pow(10, -digits)) * Math.Pow(10, -digits);
+        return rounded.ToString("0.######", CultureInfo.InvariantCulture);
     }
 
     /// <summary>brief-dfr32-1 R-dfr32-1-4 — a box face's distance from the modelled content now, metres; null with no box.</summary>
