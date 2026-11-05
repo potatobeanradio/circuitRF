@@ -203,6 +203,9 @@ for vgs, vds in ((-1.0, 8.0), (-2.4, 0.3)):
         assert abs(got[k] - w) <= 1e-15 + 1e-12*abs(w), (vgs, vds, k, got[k], w)
     print(f"OPVARS after eval({vgs}, {vds}):", {k: round(v, 9) for k, v in got.items()})
 print("OPVARS track the last evaluated bias: ok")
+# crf_fet calls through its $limit table and keeps state on every eval, so getting this far with the
+# closed form intact is the check that the worker fills the table with identities and the state vectors.
+print("$limit table + state vectors: ok")
 
 # The second bias is deliberately in a DIFFERENT region from the first, so a read that lagged by one
 # point would disagree on an integer and not merely in the last digits.

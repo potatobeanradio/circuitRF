@@ -101,3 +101,33 @@ and `tests/Engine.Tests/External/VerilogARefusingModelCliTests.cs` (the `dc` ver
 sentence on stderr's first line, no node table, a 60 s bound). In the GUI the same exception text reaches the Messages
 panel as an Error through `CircuitEvaluation`'s per-analysis catch: elaboration failure, or `'<analysis>': <message>`,
 then `RunStatus.EngineError` and `WorkspaceViewModel`'s `live.Finish(MessageLevel.Error, …)`.
+
+## Every model that uses `$limit` crashed the worker: VBIC, HICUM/L2 (2026-11-05)
+
+A compiled VBIC 1.3 (the bipolar model of SiGe BiCMOS kits) failed its first DC point with
+`DC: DID NOT CONVERGE, residual inf`; the worker had died with SIGSEGV. Three host duties were unmet,
+and a `$limit` model needs all three on every eval, whether or not limiting is enabled:
+
+**1. The limit table was never filled.** A model that calls `$limit` exports `OSDI_LIM_TABLE` with
+every `func_ptr` NULL, for the host to fill, and calls through it unconditionally. The worker now
+installs an identity per arity (`install_lim_table`). Identities and not real `pnjlim`: a limiting
+host must also load `load_limit_rhs_*`, and this worker loads neither, so an identity is the only
+choice that keeps the model's bias and the solved bias the same (see the comment above `crf_lim0`).
+The signature is `double f(bool init, bool *check, double vnew, double vold, <num_args doubles>)`,
+as the OSDI 0.3 specification has it. Dropping `init` still works on
+System V targets, where integer and floating arguments use separate registers, but on Windows x64
+registers go by position and the function would hand back the wrong one.
+
+**2. `prev_state`/`next_state` were NULL.** The model reads its last limited value from `prev_state`
+and writes the new one to `next_state`, through the instance's `state_idx` table. Each instance now
+owns two `num_states` vectors, swapped after each point, and freed on `destroy`.
+
+**3. `state_idx` was never written.** Like `node_mapping`, it is the host's to fill; left at calloc's
+zero, every state aliased slot 0. The worker now writes the identity.
+
+PSP103, R3 and the varactor models export no limit table, which is why only bipolar models crashed.
+
+Gate: `tools/fake-osdi-model`'s `crf_fet` now calls a `pnjlim` entry and keeps one state, as compiled
+code does, so `verify.py` and every C# test that evaluates `crf_fet` through the real worker
+(`OsdiWorkerTests`, `WorkerOpVarProtocolTests`, `ExternalDeviceHbDcConsistencyTests`,
+`ExternalDeviceBatchingTests`) crash on a worker without the fix.
