@@ -258,6 +258,12 @@ public static class TechValidation
                 problems.Add(new(TechProblemArea.Stackup,
                     $"Stackup layer \"{sl.Name}\" is a dielectric with a conductivity of {sl.SigmaSm} S/m; " +
                     "conductivity is a non-negative number (0 for none)."));
+            else if (sl.Kind == StackupKind.Dielectric && sl.SigmaSm > 0 && sl.TanD > 0)
+                problems.Add(new(TechProblemArea.Stackup,
+                    $"Dielectric entry \"{sl.Name}\" states tanδ {sl.TanD:G4} and σ {sl.SigmaSm:G4} S/m, and the two " +
+                    "add. If that tanδ was derived from the same conductivity, this loss is counted twice: keep σ " +
+                    "and set tanδ to 0.",
+                    Id: Ids.DielectricTanDAndSigma, Severity: DiagnosticSeverity.Warning));
 
             // Roughness is a non-negative length; null and 0 both mean a smooth conductor.
             if (sl.RoughnessRmsM is { } rough && !(rough >= 0 && double.IsFinite(rough)))
@@ -418,6 +424,7 @@ public static class TechValidation
         public const string MaterialDuplicate       = "tech.material.duplicate";
         public const string MaterialMissingProperty = "tech.material.missing-property";
         public const string MaterialPartial         = "tech.material.partial";
+        public const string DielectricTanDAndSigma  = "tech.stackup.tand-and-sigma";
         public const string MaterialDisagrees       = "tech.material.disagrees";
         public const string MaterialInvalid         = "tech.material.invalid";
         /// <summary>brief-em3d-73 R-em3d73-2b — a σ(T) or k(T) table disagreeing with its own constant at 20 °C (warning).

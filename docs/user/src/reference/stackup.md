@@ -715,7 +715,7 @@ on its layer. The **PDK PCells** example draws a resistor on it.
 
 Silicon's loss is conduction: tanδ = σ/(ωε₀ε<sub>r</sub>), which falls as 1/f. Over a 1 to 40 GHz sweep, any single
 tanδ is wrong by up to a factor of 40 at one end. State **σ** on the dielectric, or choose a material that states it, and each
-frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it.
+frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it, and `check` and the editor warn about that, because a tanδ worked out from the same conductivity would count the loss twice.
 
 | Resistivity | σ | tanδ at 1 GHz | 5 GHz | 40 GHz | Field decay depth at 5 GHz |
 |---|---|---|---|---|---|

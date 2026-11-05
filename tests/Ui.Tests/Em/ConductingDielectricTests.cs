@@ -1,6 +1,7 @@
 // SI-SIG — a dielectric's conductivity in the file, the extractors, the 3D route, the editor and the line models.
 
 using CircuitRF.Core.Design;
+using CircuitRF.Diagnostics;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
@@ -66,6 +67,26 @@ public sealed class ConductingDielectricTests
         var both = Tech(10);
         both.Stackup.Layers[2].TanD = 0.001;
         Assert.DoesNotContain(TechValidation.Analyze(both), p => p.Message.Contains("conductivity of"));
+    }
+
+    [Fact]
+    public void BothLossesOnADielectricAreAWarningThatTheyAdd()
+    {
+        static IEnumerable<TechProblem> Notes(Technology t) =>
+            TechValidation.Analyze(t).Where(p => p.Id == TechValidation.Ids.DielectricTanDAndSigma);
+
+        var both = Tech(0.01);
+        both.Stackup.Layers[2].TanD = 0.0015;
+        var note = Assert.Single(Notes(both));
+        Assert.Equal(DiagnosticSeverity.Warning, note.Severity);
+        Assert.Contains("\"Silicon\"", note.Message);
+        Assert.Contains("add", note.Message);
+        Assert.Contains(note.Message, TechValidation.Validate(both));
+
+        Assert.Empty(Notes(Tech(0.01)));   // σ alone
+        var tanOnly = Tech(0);
+        tanOnly.Stackup.Layers[2].TanD = 0.0015;
+        Assert.Empty(Notes(tanOnly));
     }
 
     [Theory]

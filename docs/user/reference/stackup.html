@@ -2944,7 +2944,7 @@ on its layer. The <strong>PDK PCells</strong> example draws a resistor on it.</p
 <h2 id="conducting-substrate">A conducting substrate</h2>
 <p>Silicon's loss is conduction: tanδ = σ/(ωε₀ε<sub>r</sub>), which falls as 1/f. Over a 1 to 40 GHz sweep, any single
 tanδ is wrong by up to a factor of 40 at one end. State <strong>σ</strong> on the dielectric, or choose a material that states it, and each
-frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it.</p>
+frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it, and <code>check</code> and the editor warn about that, because a tanδ worked out from the same conductivity would count the loss twice.</p>
 <table>
 <thead>
 <tr>
