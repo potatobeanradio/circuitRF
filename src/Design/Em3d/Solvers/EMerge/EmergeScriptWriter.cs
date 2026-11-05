@@ -7,6 +7,7 @@
 // EmergeLoweringRules'; a string reaches the input only through PyStr.
 
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.Em3d;
@@ -131,6 +132,8 @@ public static partial class EmergeScriptWriter
         foreach (var (key, kind) in EmergeLoweringRules.FaceKinds(problem)) e.Key(key).Str(FaceWord(kind));
         e.EndObject().EndObject();
 
+        // brief-em3d-139 R-em3d139-3 — written only on a thin conductor, so every other run's problem.json is the bytes it was.
+        var thinFaces = Em3dThinMetalLoss.CorrectedFaces(problem);
         e.Key("solids").BeginArray();
         foreach (var s in problem.Solids)
         {
@@ -138,6 +141,7 @@ public static partial class EmergeScriptWriter
              .Key("material").Int(materials.Of(s.Material, s.Role == Em3dRole.Conductor)).Key("priority").Int(priority[s])
              .Key("shape");
             WriteShape(e, s.Primitive);
+            if (thinFaces.TryGetValue(s, out double h)) e.Key("thinMetalHM").Number(h);
             e.EndObject();
         }
         e.EndArray();

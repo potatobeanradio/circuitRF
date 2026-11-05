@@ -551,6 +551,45 @@ are meshed as drawn. It is on unless a setup says `"RobustMeshing": false`, whic
 on a placed layout is inferred on the outline robust meshing leaves, by `check` and by the run alike, and an edge that
 touched a point the cleanup moved moves with it; the port's line in `check` says by how much.
 
+<a id="thin-metal-3d"></a>**Thin Metal Correction** (`ThinMetalCorrection`), below Robust meshing on a driven Palace or EMerge
+setup. Neither solver meshes the inside of a conductor: its faces carry the impedance of metal thick against the skin
+depth. Under about three skin depths that reads too little resistance and too much inductance, because the current
+really fills the metal. With the correction on, a conductor under three skin depths thick at the lowest frequency solved has
+its faces given its thickness, h = 2A/P for a section of area A and perimeter P, and its resistance levels off at the DC
+value. The mesh is the same either way. It is on unless a setup says `"ThinMetalCorrection": false`, which is the only
+value ever written. openEMS has nothing to correct, because it treats solid metal as a perfect conductor.
+
+The correction assumes the two faces carry equal current. Under a line close to ground they do not, so **a wide line reads
+high**, and near two to three skin depths **any line can read low**. Resistance as a ratio to a 2D reference, on EMerge with a
+refined mesh, for a 300 µm line of 1 µm aluminium 10 µm over ground, corrected and then uncorrected:
+
+| Width | 0.1 GHz | 0.45 GHz | 2 GHz | 9 GHz | 40 GHz |
+|---|---|---|---|---|---|
+| 5 µm | 1.00, 0.05 | 1.00, 0.11 | 1.00, 0.24 | 0.99, 0.48 | 0.82, 0.75 |
+| 50 µm | 1.02, 0.07 | 1.13, 0.16 | 1.18, 0.32 | 1.10, 0.61 | 0.85, 0.86 |
+| 200 µm | 1.09, 0.08 | 1.36, 0.18 | 1.39, 0.38 | 1.26, 0.71 | 0.82, 0.83 |
+| 500 µm | 1.12, 0.09 | 1.43, 0.19 | 1.47, 0.40 | 1.32, 0.75 | 0.80, 0.82 |
+
+Palace agrees: 1.00 to 1.01 up to 9 GHz and 0.82 at 40 GHz at 5 µm, 1.41 at 2 GHz at 200 µm. On its Standard preset as it comes, with
+refinement passes and the adaptive sweep, the 5 µm line reads 1.00 to 1.01 up to 9 GHz and 0.86 at 40 GHz, with its inductance 5 % low. The overshoot follows the line's width over its height above ground: at 0.5 it is about 1 %, and at 3 to 4 it is under 10 % on
+3 µm metal. Thicker metal also reads low sooner: a 100 µm line of 3 µm aluminium 25 µm over ground reads 0.88 at 2 GHz and 0.76 at 9 GHz,
+against 0.66 and 0.82 uncorrected. So below about 2 GHz the correction is the closer answer on every line measured, and from about
+9 GHz up it can be a little further off than leaving it out. The inductance of a line this wide also reads high at the bottom
+of a sweep, 1.63 of the reference at 0.1 GHz on the 500 µm line against 1.19 uncorrected, where the 5 µm line goes the other way, 0.99 against 1.74.
+
+Drawing the line as a sheet, through [Conductor bands](#conductors-3d), does different things on the two solvers. On EMerge, the same
+1 µm lines as sheets read 0.97 to 1.00 up to 9 GHz at widths from 50 to 500 µm, and 1.09 to 1.39 at 40 GHz, so a sheet is the closer model for a
+wide line there; at 5 µm it reads 0.90 with its inductance 18 % high. On Palace a sheet's two sides divide the current as a solid's faces
+do, so a wide sheet reads as high as the corrected solid, 1.46 at 2 GHz at 500 µm, and a 5 µm sheet reads 0.99 to 1.01 at every frequency
+above, 40 GHz included. `Auto` makes a band a sheet when it is thin at the top of the sweep and under a tenth of its width.
+
+The correction costs no memory to speak of and leaves the mesh alone. On Palace the linear solves take about a quarter more iterations, which made a
+run about 15 % longer on that 5 µm line. On EMerge the difference does not show.
+
+A conductor the correction leaves alone keeps a warning: on an eigenmode problem, with the setting off, or across a sweep so wide
+the solver's own expression would overflow, more than 700 skin depths thick at its top. A kernel solid or a sphere has no single thickness
+to use, and gets neither the correction nor this warning.
+
 <a id="component-ports-list"></a>**Component ports** (`ComponentPorts`), below Robust meshing in a 3D view's setup, lists
 every part placed on the view's layout with its pad count. A ticked part gets a lumped gap port across its own pads,
 numbered after the view's own ports; **Every two-terminal part** writes `"*"`. **Check** builds and verifies the ports

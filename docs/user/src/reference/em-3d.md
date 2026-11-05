@@ -244,6 +244,9 @@ full description.
   their neighbours' line, which imported artwork often has and which can stop the mesher. On unless the setup says
   `false`; ports are inferred on the outline it leaves, by `check` and by the run alike. See
   [EM Setup ▸ Robust meshing](em-setup.html#robust-meshing).
+- **Thin Metal Correction** (`ThinMetalCorrection`): on a driven Palace or EMerge run, gives a conductor under three
+  skin depths thick the impedance of its thickness, so its resistance levels off at the DC value. On unless the setup
+  says `false`. See [EM Setup ▸ Thin Metal Correction](em-setup.html#thin-metal-3d).
 - **Vias** are solid copper barrels in every EM problem, whatever their stackup entry's **Fill** says: a plated
   barrel's air core changes nothing an RF answer can see and makes the mesher build inverted elements. A thermal
   solve keeps the wall, which is where the heat runs. `circuitrf explain` names each entry that was built solid.

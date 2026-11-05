@@ -476,6 +476,7 @@ public static class Em3dGenerator
 
             var problem = new Em3dProblem(solids, sheets, _g.Materials, ports, airBox!, frequency, _tempC)
             {
+                ThinMetalCorrection = setup.ThinMetalCorrection,
                 Type = setup.Problem3D,
                 Terminals = terminals,
                 GroundObjects = groundObjects,
@@ -491,7 +492,11 @@ public static class Em3dGenerator
             // brief-dfr35-1 R-dfr35-1-7 — what is known to stop Gmsh, said before it runs; a picture of the board needs none of it.
             var geometry = displaySlabs ? [] : Em3dGeometryCheck.ForRun(problem, setup);
             _g.WarningList.AddRange(Em3dGeometryCheck.Sentences(geometry));
-            if (!displaySlabs) _g.WarningList.AddRange(Em3dThinMetalLoss.ForRun(problem, setup));
+            if (!displaySlabs)
+            {
+                _g.WarningList.AddRange(Em3dThinMetalLoss.ForRun(problem, setup));
+                _notes.AddRange(Em3dThinMetalLoss.NotesForRun(problem, setup));
+            }
             return new Em3dGenerationResult(problem, null, _notes)
             {
                 ViaNetFixes = _viaNetFixes,

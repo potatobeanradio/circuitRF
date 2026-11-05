@@ -1111,6 +1111,11 @@
                               IsVisible="{Binding ViewModel.ShowRobustMeshing}"
                               IsChecked="{Binding ViewModel.RobustMeshing}"
                               ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.RobustMeshingTip}"/>
+                    <!-- brief-em3d-139 — a driven Palace or EMerge setup's: the faces of metal thin against the skin depth. -->
+                    <CheckBox Name="ThinMetalCorrectionCheck" Content="Thin Metal Correction" Margin="0,4,0,0"
+                              IsVisible="{Binding ViewModel.ShowThinMetalCorrection}"
+                              IsChecked="{Binding ViewModel.ThinMetalCorrection}"
+                              ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.ThinMetalCorrectionTip}"/>
                     <!-- A driven setup's mesh, sized somewhere other than the sweep's top: staged text, committed on Enter or lost focus. -->
                     <Grid Name="MeshFrequency3DRow" ColumnDefinitions="Auto,Auto,Auto" Margin="0,6,0,0"
                           IsVisible="{Binding ViewModel.ShowMeshFrequency3D}"

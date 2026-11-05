@@ -608,6 +608,7 @@ public static class C3dProblemAssembly
         if (noPortsNote is not null) notes.Add(noPortsNote);
         var problem = new Em3dProblem(solids, sheets, materials, ports, box, frequency, tempC)
         {
+            ThinMetalCorrection = setup.ThinMetalCorrection,
             Type = setup.Problem3D,
             PaddingHeightM = paddingH,
             PaddingHeightBelowM = paddingHBelow,
@@ -624,6 +625,7 @@ public static class C3dProblemAssembly
             ArtworkBarrels = Em3dGenerator.ArtworkBarrels(solids, e.Origins),
         };
         if (Em3dGenerator.MeshFrequencyNote(problem, setup) is { } meshedAt) notes.Add(meshedAt);
+        notes.AddRange(Em3dThinMetalLoss.NotesForRun(problem, setup));
         // brief-dfr35-1 R-dfr35-1-7 — what is known to stop Gmsh, as a layout's run says it.
         var geometry = Em3dGeometryCheck.ForRun(problem, setup);
         return new Em3dGenerationResult(problem, null, notes)

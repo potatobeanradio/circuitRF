@@ -726,6 +726,10 @@ public sealed record Em3dProblem(
     /// every problem before static solves existed asks.</summary>
     public Em3dProblemType Type { get; init; } = Em3dProblemType.Driven;
 
+    /// <summary>brief-em3d-139 — whether a conductor thin against the skin depth has its faces carry that thinness on the solvers that
+    /// model a conductor by its faces. The setup's Thin Metal Correction, on by default; the lowerings read it, openEMS has no use for it.</summary>
+    public bool ThinMetalCorrection { get; init; } = true;
+
     /// <summary>brief-dfr32-1 — the content extent the air box was padded round, when the problem's builder knows it better than
     /// its solids say: a <c>.cem</c>'s dielectric slabs are built out TO the box, so their bounds are the box's. Null — every other
     /// problem — means the solids' and sheets' own bounds. Nothing lowers it.</summary>

@@ -318,6 +318,10 @@ their neighbours' line, which imported artwork often has and which can stop the 
 <code>false</code>; ports are inferred on the outline it leaves, by <code>check</code> and by the run alike. See
 <a href="em-setup.html#robust-meshing">EM Setup ▸ Robust meshing</a>.</p>
 </li>
+<li><p><strong>Thin Metal Correction</strong> (<code>ThinMetalCorrection</code>): on a driven Palace or EMerge run, gives a conductor under three
+skin depths thick the impedance of its thickness, so its resistance levels off at the DC value. On unless the setup
+says <code>false</code>. See <a href="em-setup.html#thin-metal-3d">EM Setup ▸ Thin Metal Correction</a>.</p>
+</li>
 <li><p><strong>Vias</strong> are solid copper barrels in every EM problem, whatever their stackup entry's <strong>Fill</strong> says: a plated
 barrel's air core changes nothing an RF answer can see and makes the mesher build inverted elements. A thermal
 solve keeps the wall, which is where the heat runs. <code>circuitrf explain</code> names each entry that was built solid.</p>

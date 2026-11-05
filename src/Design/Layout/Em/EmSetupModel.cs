@@ -572,6 +572,10 @@ public sealed class EmSetup
     /// </summary>
     public bool RobustMeshing { get; set; } = true;
 
+    /// <summary>brief-em3d-139 — Thin Metal Correction: a conductor under <see cref="Em3d.Em3dThinMetalLoss.SkinDepths"/> skin depths thick
+    /// has that thickness on its faces on Palace and EMerge, so its resistance levels off at the DC value. On unless a setup says otherwise.</summary>
+    public bool ThinMetalCorrection { get; set; } = true;
+
     /// <summary>
     /// EM-TFR — what a 3D setup makes of every conductor band: <see cref="Em3dConductorMode.Auto"/> takes the
     /// sheet rule, <see cref="Em3dConductorMode.Sheets"/> is the planar model's own idealisation and
@@ -885,6 +889,7 @@ public sealed class EmSetup
         PatternFrequencyGHz    = PatternFrequencyGHz,
         MeshFrequencyGHz       = MeshFrequencyGHz,
         RobustMeshing          = RobustMeshing,
+        ThinMetalCorrection    = ThinMetalCorrection,
         Conductors             = Conductors,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,

@@ -227,7 +227,7 @@ public static class PalaceConfigWriter
                 Attributes(w, [g.Attribute]);
                 w.WriteNumber("Conductivity", metal.SigmaSm);
                 w.WriteNumber("Permeability", metal.Mur);
-                // A sheet carries its real thickness, in the mesh's length unit.
+                // A sheet carries its real thickness, and a thin conductor its h, in the mesh's length unit.
                 if (g.ThicknessM is { } t && t > 0)
                     w.WriteNumber("Thickness", Math.Round(t / GmshGeoWriter.LengthUnitM, 9));
                 w.WriteEndObject();

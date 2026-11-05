@@ -1,3 +1,5 @@
+using System.Text.Json;
+using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
@@ -47,11 +49,85 @@ public class Em3dThinMetalLossTests
     }
 
     [Fact]
-    public void ARunWarnsOnPalaceAndEmerge_ButNotOnOpenEmsAlone()
+    public void WithTheCorrectionOff_ARunWarnsOnPalaceAndEmerge_ButNotOnOpenEmsAlone()
     {
-        var problem = Line(5, 1, 3.77e7, 1e9);
-        Assert.Contains("'strip'", Assert.Single(Em3dThinMetalLoss.ForRun(problem, new EmSetup { Solver3D = Em3dSolverId.Palace })));
+        var problem = Line(5, 1, 3.77e7, 1e9) with { ThinMetalCorrection = false };
+        Assert.Contains("is off", Assert.Single(Em3dThinMetalLoss.ForRun(problem, new EmSetup { Solver3D = Em3dSolverId.Palace })));
         Assert.Single(Em3dThinMetalLoss.ForRun(problem, new EmSetup { Solver3D = Em3dSolverId.Emerge }));
         Assert.Empty(Em3dThinMetalLoss.ForRun(problem, new EmSetup { Solver3D = Em3dSolverId.OpenEms }));
+        Assert.Empty(Em3dThinMetalLoss.NotesForRun(problem, new EmSetup { Solver3D = Em3dSolverId.Palace }));
+    }
+
+    [Fact]
+    public void ACorrectedConductor_GetsANote_AndNoWarning()
+    {
+        var problem = Line(5, 1, 3.77e7, 1e9);
+        var setup = new EmSetup { Solver3D = Em3dSolverId.Palace };
+        Assert.Empty(Em3dThinMetalLoss.ForRun(problem, setup));
+        Assert.Contains("0.833 µm on 'strip'", Assert.Single(Em3dThinMetalLoss.NotesForRun(problem, setup)));
+    }
+
+    /// <summary>The Thickness Palace is written, in the mesh's micrometres, or null.</summary>
+    private static double? PalaceThickness(Em3dProblem problem)
+    {
+        var low = GmshGeoWriter.Write(problem, PalaceSettings.Default);
+        Assert.True(low.Ok, low.Refusal);
+        var config = PalaceConfigWriter.Write(problem, low.Groups, PalaceSettings.Default);
+        Assert.True(config.Ok, config.Refusal);
+        using var doc = JsonDocument.Parse(config.Json!);
+        var entry = doc.RootElement.GetProperty("Boundaries").GetProperty("Conductivity").EnumerateArray().Single();
+        return entry.TryGetProperty("Thickness", out var t) ? t.GetDouble() : null;
+    }
+
+    private static Em3dProblem Driven(Em3dProblem line) => line with
+    {
+        Ports = [new Em3dPort(1, "P1", "strip", "airbox/zmin", new Point3(0, 0, -1 * Um), new Point3(0, 5 * Um, 0), new Point3(0, 0, 1),
+                              50, new Em3dReferencePlane(new Point3(0, 0, 0), new Point3(1, 0, 0), 0))],
+    };
+
+    [Fact]
+    public void PalaceWritesThickness_OnAThinConductorOnly()
+    {
+        Assert.InRange(PalaceThickness(Driven(Line(5, 1, 3.77e7, 1e9)))!.Value, 0.83, 0.834);
+        Assert.Null(PalaceThickness(Driven(Line(100, 35, 5.8e7, 1e9))));
+    }
+
+    [Fact]
+    public void PalaceWritesNoThickness_WithTheCorrectionOff_OnAnEigenmodeProblem_OrPastTheRangeItCanEvaluate()
+    {
+        var thin = Driven(Line(5, 1, 3.77e7, 1e9));
+        Assert.Null(PalaceThickness(thin with { ThinMetalCorrection = false }));
+        Assert.Null(PalaceThickness(thin with { Type = Em3dProblemType.Eigenmode, EigenmodeTargetHz = 1e9, EigenmodeCount = 1 }));
+        // 26 µm of copper: under three skin depths at 1 MHz, and past 700 at 10 THz.
+        var wide = Driven(Line(100, 35, 5.8e7, 1e6)) with { Frequency = new Em3dFrequency(1e6, 1e13, 5, Em3dSweepKind.Linear) };
+        var past = Assert.Single(Em3dThinMetalLoss.Find(wide));
+        Assert.False(past.Corrected);
+        Assert.Contains("over 700 skin depths", Assert.Single(Em3dThinMetalLoss.ForRun(wide, new EmSetup { Solver3D = Em3dSolverId.Palace })));
+        Assert.Null(PalaceThickness(wide));
+    }
+
+    [Fact]
+    public void EmergeProblemJson_CarriesHPerConductor_AndNothingOnThickMetal()
+    {
+        double? H(Em3dProblem problem)
+        {
+            var low = EmergeScriptWriter.Write(problem, EmergeSettings.Default);
+            Assert.True(low.Ok, low.Refusal);
+            using var doc = JsonDocument.Parse(low.ProblemJson!);
+            var solid = doc.RootElement.GetProperty("solids").EnumerateArray().Single();
+            return solid.TryGetProperty("thinMetalHM", out var h) ? h.GetDouble() : null;
+        }
+        Assert.InRange(H(Driven(Line(5, 1, 3.77e7, 1e9)))!.Value, 0.83 * Um, 0.834 * Um);
+        Assert.Null(H(Driven(Line(100, 35, 5.8e7, 1e9))));
+        Assert.Null(H(Driven(Line(5, 1, 3.77e7, 1e9)) with { ThinMetalCorrection = false }));
+    }
+
+    [Fact]
+    public void TheSetting_IsOnByDefault_AndOnlyOffIsWritten()
+    {
+        Assert.True(new EmSetup().ThinMetalCorrection);
+        Assert.DoesNotContain("ThinMetalCorrection", EmSetupPersistence.Serialize(new EmSetup { Name = "s" }));
+        string off = EmSetupPersistence.Serialize(new EmSetup { Name = "s", ThinMetalCorrection = false });
+        Assert.False(EmSetupPersistence.Deserialize(off).ThinMetalCorrection);
     }
 }

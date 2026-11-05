@@ -39,6 +39,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.Em3d;
@@ -74,7 +75,8 @@ public enum Em3dGroupKind
 /// <param name="Material">A volume's material, a conductor's or a sheet's metal; null otherwise.</param>
 /// <param name="Boundary">An air-box face's kind; null otherwise.</param>
 /// <param name="PortNumber">A port's number; null otherwise.</param>
-/// <param name="ThicknessM">A sheet's real thickness, metres; null otherwise.</param>
+/// <param name="ThicknessM">A sheet's real thickness, or the h of a conductor whose faces carry it (brief-em3d-139), metres;
+/// null otherwise.</param>
 /// <param name="Terminal">brief-em3d-22 — the static terminal a conductor belongs to ("" for the
 /// ground); null otherwise, and for every driven problem.</param>
 public sealed record Em3dGroup(
@@ -182,11 +184,14 @@ public static partial class GmshGeoWriter
             foreach (string gnd in problem.GroundObjects) terminalOf[gnd] = "";
             foreach (var t in problem.Terminals) foreach (string o in t.Objects) terminalOf[o] = t.Name;
         }
+        // brief-em3d-139 R-em3d139-2 — a thin conductor's h, on its group, which the configuration writes as a sheet's is.
+        var thinFaces = Em3dThinMetalLoss.CorrectedFaces(problem);
         for (int i = 0; i < problem.Solids.Count; i++)
         {
             var s = problem.Solids[i];
             solidGroup[i] = s.Role == Em3dRole.Conductor
                 ? new Em3dGroup(s.Name, ++attr, 2, Em3dGroupKind.Conductor, 1, AtLeast: true, s.Material,
+                                ThicknessM: thinFaces.TryGetValue(s, out double h) ? h : null,
                                 Terminal: terminalOf.GetValueOrDefault(s.Name))
                 : new Em3dGroup(s.Name, ++attr, 3, Em3dGroupKind.Volume, 1, AtLeast: false, s.Material);
             groups.Add(solidGroup[i]);
@@ -293,7 +298,8 @@ public static partial class GmshGeoWriter
         // brief-em3d-137 — ONE difference with every solid as a tool. Cut one solid at a time (859dda96), every step
         // re-processed the whole background, cavities and all: 580 s of a ten-layer board's 650 s of geometry, against
         // 8 s for this. The wrong region that chaining was meant to avoid was a plane's clockwise hole (PlanarRings).
-        L($"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{allSolids}}}; }};");
+        // With no solid there is nothing to cut, and Gmsh takes an empty tool list as a syntax error: a document of sheets alone.
+        L(problem.Solids.Count == 0 ? "bg[] = {bx};" : $"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{allSolids}}}; }};");
         var conductors = Enumerable.Range(0, problem.Solids.Count)
                                    .Where(i => problem.Solids[i].Role == Em3dRole.Conductor).ToList();
         if (conductors.Count > 0)

@@ -751,12 +751,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     air = GeoVolume(box_of(gmsh, lo, hi), name="air box")
     air.set_material(mats[box["material"]]).prio_set(0)
     owners = [(air, 0, "air", box["material"])]
+    thin_h = {}    # brief-em3d-139: owner index -> the h its faces carry, or None for thick metal
     names = ["background"]
     described = {(3, t): "the air box" for t in air.tags}
     for s in problem["solids"]:
         v = GeoVolume(shape(gmsh, s["shape"], folder), name=s["name"])
         v.set_material(mats[s["material"]]).prio_set(s["priority"])
         owners.append((v, s["priority"], s["role"], s["material"]))
+        thin_h[len(owners) - 1] = s.get("thinMetalHM")
         names.append(s["name"])
         described.update({(3, t): solid_words(gmsh, s, problem, t) for t in v.tags})
 
@@ -798,7 +800,9 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         in_metal = [v for v in up if v in metal]
         if in_metal and any(v not in metal for v in up):
             _, _, mat, k = owner[in_metal[0]]
-            walls.setdefault(mat, []).append(tag)
+            # brief-em3d-139: by material and h, since two conductors of one metal can differ in h and each boundary is a
+            # frequency-by-frequency impedance. Every conductor with no h shares its material's one boundary, as it always did.
+            walls.setdefault((mat, thin_h.get(k)), []).append(tag)
             plated.setdefault(k, []).append(tag)    # brief-emi-11: and the conductor it belongs to, for its surface current
     # Recursive, as Palace's script deletes its conductors: whatever bounded only metal goes too, down to its curves and
     # points, and whatever still bounds meshed space stays.
@@ -875,11 +879,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     gmsh.option.setNumber("Mesh.MeshSizeMin", edge / 1000)
     sim.generate_mesh()
 
-    for mat, tags in walls.items():
+    for (mat, h), tags in walls.items():
         if problem["materials"][mat]["pec"]:
             sim.mw.bc.PEC(em.FaceSelection(tags))
-        else:
+        elif h is None:
             sim.mw.bc.SurfaceImpedance(em.FaceSelection(tags), mats[mat])
+        else:
+            # brief-em3d-139: coth(gamma*thickness), so a slab of thickness h with current on both faces is thickness = h/2, in metres.
+            sim.mw.bc.SurfaceImpedance(em.FaceSelection(tags), mats[mat], thickness=h / 2)
     for key, kind in box["faces"].items():
         if not faces[key] or kind == "pec":
             continue

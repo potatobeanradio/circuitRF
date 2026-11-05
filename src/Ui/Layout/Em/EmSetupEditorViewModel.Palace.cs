@@ -120,6 +120,16 @@ public sealed partial class EmSetupEditorViewModel
     /// setup does not read it.</summary>
     public bool ShowRobustMeshing => Is3DSetup && !IsThermalSetup;
 
+    /// <summary>brief-em3d-139 — only a driven Palace or EMerge run reads it: openEMS writes its metals as perfect conductors.</summary>
+    public bool ShowThinMetalCorrection => ShowMeshFrequency3D;
+
+    public static string ThinMetalCorrectionTip { get; } =
+        "Palace and EMerge model a conductor by its faces. Under about " +
+        $"{CircuitRF.Design.Layout.Em3d.Em3dThinMetalLoss.SkinDepths:G} skin depths thick, this gives those faces the conductor's thickness, " +
+        "so its resistance levels off at the DC value and its inductance stops reading high. The mesh is the same either way. " +
+        "A line much wider than its height over ground can read high, by up to 50 %. " +
+        "Off treats every conductor as thick metal, which reads thin metal's loss too low.";
+
     /// <summary>The tooltip, with the tolerance written from the constants the cleanup reads.</summary>
     public static string RobustMeshingTip { get; } =
         "Removes outline points that sit within a fraction of a micrometre of the line through their neighbours (at most " +
@@ -133,6 +143,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         OnPropertyChanged(nameof(ShowRobustMeshing));
         OnPropertyChanged(nameof(ShowMeshFrequency3D));
+        OnPropertyChanged(nameof(ShowThinMetalCorrection));
         OnPropertyChanged(nameof(ShowComponentPorts));
         OnPropertyChanged(nameof(ShowPlanarControls));
         OnPropertyChanged(nameof(ShowCrossSectionControls));

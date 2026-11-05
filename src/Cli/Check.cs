@@ -875,16 +875,31 @@ internal static class Check
                     CylindricalAdvice(path, f, embedded.Name, C3dSetups.ForRun(s3, Path.GetFullPath(path)), doc);
 
         // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own
-        // severity. Only a document holding a kernel object assembles anything here.
-        if (C3dKernelUse.Of(doc).Count > 0)
-            foreach (var embedded in C3dSetups.Read(doc))
-                if (embedded is { Refusal: null, Setup: { Is3D: true } s })
-                {
-                    var run = C3dSetups.ForRun(s, Path.GetFullPath(path));
-                    var assembled = C3dProblemAssembly.Assemble(run, doc, Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path)));
-                    AddFidelity(path, f, embedded.Name, run, assembled.Problem);
-                }
+        // severity. Only a document holding a kernel object assembles anything for those rows.
+        // brief-em3d-139 R-em3d139-5 — and metal thin against the skin depth, which a dry run and a run both state, for a setup a
+        // solver that models a conductor by its faces runs. That needs the problem whatever the document holds.
+        bool kernel = C3dKernelUse.Of(doc).Count > 0;
+        foreach (var embedded in C3dSetups.Read(doc))
+            if (embedded is { Refusal: null, Setup: { Is3D: true } s } && (kernel || MayModelThinMetal(s)))
+            {
+                RunHost.Control?.ThrowIfCancellationRequested();
+                var run = C3dSetups.ForRun(s, Path.GetFullPath(path));
+                var assembled = C3dProblemAssembly.Assemble(run, doc, Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path)));
+                if (kernel) AddFidelity(path, f, embedded.Name, run, assembled.Problem);
+                if (assembled.Problem is not { } problem) continue;
+                string solver = s.Solver3D.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id) && s.Solver3D.Runs(CircuitRF.Design.Em3d.EmergeSolver.Id) ? "Palace, EMerge"
+                              : s.Solver3D.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id) ? "Palace" : "EMerge";
+                foreach (string warning in CircuitRF.Design.Layout.Em3d.Em3dThinMetalLoss.ForRun(problem, run))
+                    f.Add(CliDiagnostics.CheckThreeDFidelity(path, embedded.Name, solver, warning, true));
+                foreach (string note in CircuitRF.Design.Layout.Em3d.Em3dThinMetalLoss.NotesForRun(problem, run))
+                    f.Add(CliDiagnostics.CheckThreeDFidelity(path, embedded.Name, solver, note, false));
+            }
     }
+
+    /// <summary>brief-em3d-139 R-em3d139-5 — a driven or eigenmode setup on Palace or EMerge: the only ones thin metal can be said of.</summary>
+    private static bool MayModelThinMetal(EmSetup s)
+        => !s.IsThermal && s.Problem3D is CircuitRF.Engine.Em3d.Em3dProblemType.Driven or CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode
+           && (s.Solver3D.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id) || s.Solver3D.Runs(CircuitRF.Design.Em3d.EmergeSolver.Id));
 
     /// <summary>brief-em3d-120 — the cylindrical-grid note or refusals for one embedded openEMS setup, from the run's own planner.</summary>
     private static void CylindricalAdvice(string path, Findings f, string setupName, EmSetup setup, C3dDocument doc)

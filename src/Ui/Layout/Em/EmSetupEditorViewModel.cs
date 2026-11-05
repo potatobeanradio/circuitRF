@@ -972,6 +972,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _acceleratedSolve;
     [ObservableProperty] private bool   _conductorThicknessCorrection;
     [ObservableProperty] private bool   _robustMeshing;
+    [ObservableProperty] private bool   _thinMetalCorrection;
     [ObservableProperty] private bool   _groundedEdgePorts = EmSetup.DefaultEdgePortReturn == PlanarEdgePortReturn.Ground;
     [ObservableProperty] private bool   _deembedOutsideCalibrationValidity;
     [ObservableProperty] private bool   _radiationPattern;
@@ -1858,6 +1859,16 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         InvalidateMesh();
     }
 
+    /// <summary>brief-em3d-139 — Thin Metal Correction. The mesh is the same either way, so unlike Robust meshing it leaves the mesh valid.</summary>
+    partial void OnThinMetalCorrectionChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.ThinMetalCorrection) return;
+        var before = SnapshotJson();
+        Working.ThinMetalCorrection = value;
+        CommitEdit(before, value ? "Turn on thin metal correction" : "Turn off thin metal correction");
+    }
+
     partial void OnGroundedEdgePortsChanged(bool value)
     {
         if (_suppressCommit) return;
@@ -2129,6 +2140,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         AcceleratedSolve     = Working.AcceleratedSolve;
         ConductorThicknessCorrection = Working.ConductorThicknessCorrection;
         RobustMeshing        = Working.RobustMeshing;
+        ThinMetalCorrection  = Working.ThinMetalCorrection;
         GroundedEdgePorts    = Working.EdgePortReturn == PlanarEdgePortReturn.Ground;
         DeembedOutsideCalibrationValidity = Working.DeembedOutsideCalibrationValidity;
         RadiationPattern     = Working.RadiationPattern;

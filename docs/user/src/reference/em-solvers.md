@@ -228,7 +228,7 @@ lossy substrate these are the largest expected differences between the two solve
 | Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
 | Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No | No |
 | Ports | Edge ports (de-embedded), internal delta-gap ports and internal ports ([the three types](mom-engine.html#ports)) | Lumped and wave ports, up to two terminals on one face ([its rules](em-setup.html#wave-port-terminals-palace)) | Lumped and wave ports, up to nine terminals on one face ([its rules](em-setup.html#wave-port-terminals-emerge)) | Lumped and wave ports, any number of terminals on one face ([its rules](em-setup.html#wave-port-terminals)) |
-| Metal loss | Yes | Yes (conductivity on every metal surface) | Yes (a surface impedance on every metal surface) | Sheets only; solid metal is lossless |
+| Metal loss | Yes | Yes (conductivity on every metal surface, [corrected for thin metal](em-setup.html#thin-metal-3d)) | Yes (a surface impedance on every metal surface, [corrected for thin metal](em-setup.html#thin-metal-3d)) | Sheets only; solid metal is lossless |
 | Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
 | Installed | Always | You install it | You install it | You install it |
 

@@ -28099,7 +28099,69 @@ long, against a 2D filament solve of the same section, R' as a ratio to the refe
 The inductance reads high with it, because the impedance is as reactive as it is resistive: 0.97 pH/µm at 0.1 GHz on the 5 µm line
 against a true 0.55. `Em3dThinMetalLoss` warns of this before a run; a warning and not a fix, so nothing a run returns has changed.
 
-**The fix this points at, not made.** Palace's `Thickness` without `External` is (1+j)/(σδ)·coth((1+j)h/2δ), read from its 0.18.1
+**Built behind Thin Metal Correction, and measured (brief-em3d-139; 2026-11-05).** The rest of this entry is the starting point; this
+paragraph is where it went. `Em3dThinMetalLoss.CorrectedFaces` is the one predicate, written as `Thickness` for Palace and `thinMetalHM` for
+EMerge. EMerge's `thickness` is in metres: at 0.1 GHz the 5 µm line reads 5.31 Ω/mm against 5.305, in a model built in micrometres. Its walls
+are keyed by material and h rather than by conductor, so every conductor with no h keeps its material's one boundary. R' and L' as ratios to a
+2D filament solve (`testdata/em3d/thin-metal/`), EMerge, order 2, 12,000 tetrahedra on the 5 µm line and 18,000 on the 50 µm, the uncorrected
+column on 6,700:
+
+| GHz | 5 µm R' | 5 µm L' | 50 µm R' uncorrected | 50 µm R' | 50 µm L' |
+|---|---|---|---|---|---|
+| 0.1 | 1.00 | 0.99 | 0.07 | 1.02 | 1.22 |
+| 0.447 | 1.00 | 0.99 | 0.16 | 1.13 | 1.08 |
+| 2 | 1.00 | 0.99 | 0.33 | 1.19 | 0.98 |
+| 8.94 | 1.00 | 0.98 | 0.63 | 1.11 | 0.97 |
+| 40 | 0.89 | 0.98 | 0.93 | 0.88 | 0.96 |
+
+**A wide line reads high, and refining does not change it.** Palace's preset mesh gave 1.02, 1.12, 1.21, 1.19, 0.92 on the same 50 µm line.
+The cause is that coth(γh/2) is a slab with equal current on both faces, and neither solver couples one face to the other. A real thin slab's
+current is uniform through it whatever the field outside; a face model's current follows the field outside it. Under a line close to ground
+that field is mostly on one side, so the faces divide the current unequally and the resistance rises above the DC value. Equal division at low
+frequency holds field above the strip that a real one does not have, which is the L' at 0.1 GHz. The limit, not measured, is twice the true
+resistance, on a line wide against its height over ground. Uncorrected metal is worse below about 9 GHz on this line and about equal at 40 GHz.
+
+**L' on the preset's mesh is low, and that is the mesh.** The preset sizes elements from the wavelength, which at 40 GHz is far larger than this
+line: EMerge's 490 tetrahedra read L' = 0.69 of the reference, Palace's 10,930 read 0.85, and EMerge's L' rose to 0.71, 0.83, 0.96 and 0.99 as
+the mesh was refined, with R' correct throughout. The 20 % at 40 GHz is partly this as well: 0.81 on the preset's mesh, 0.89 refined. So the
+gates state their mesh.
+
+**How wide, and what else reads off (all EMerge, same mesh setting, 1 µm over 10 µm unless stated, R' over the reference, corrected then uncorrected).**
+200 µm: 1.09/0.08, 1.36/0.18, 1.39/0.38, 1.26/0.71, 0.82/0.83 at the five frequencies. 500 µm: 1.12/0.09, 1.43/0.19, 1.47/0.40, 1.32/0.75, 0.80/0.82, with L' 1.63
+against 1.19 at 0.1 GHz. Palace at 200 µm reads 1.09, 1.36, 1.41, 1.31, 0.86, so this is the face model and not one solver. So the limit of twice the true
+resistance is not reached at a width of 50 times the height, and at 500 µm and 9 GHz uncorrected is the closer of the two. The overshoot falls with width over height:
+at 0.5 it is about 1 % (50 µm wide, 1 or 3 µm thick, 100 µm over ground), at 3 to 4 it peaks near 1.08 on 3 µm metal, and a 500 µm line of 3 µm metal 10 µm over ground
+reads 1.45 at 0.447 GHz against 0.54. Thick-against-the-band metal reads low in the middle: a 100 µm line of 3 µm metal 25 µm over ground reads 0.88 at 2 GHz and 0.76 at
+9 GHz, against 0.66 and 0.82, and refining from 0.03 to 0.015 did not move that. The run's note states the 25 % and the width figures. Corrected is the closer answer on every line
+measured up to 2 GHz. The owner kept the default on with these figures in hand, and left `SheetRule` as it is.
+
+**A lossless strip reads a resistance on EMerge.** At σ = 1e13 the 300 µm line reads R' = 0.593 Ω/mm on 5 µm at 40 GHz, 7 % of the reference, and under 1 % up to 9 GHz; 3 % on 50 µm.
+It grows as f² and sharply with length: a 1500 µm line reads 0.30 Ω/mm at 9 GHz and 4.5 at 40 GHz, corrected or not. Palace's same strip reads 0.016 Ω/mm at 40 GHz on the 5 µm line, so this
+is EMerge's and its cause is not known. Subtracted, EMerge's 5 µm line at 40 GHz is 0.82 corrected and 0.75 uncorrected, and Palace's on a refined mesh reads 0.82, so the two agree. The
+table above is not subtracted; the user page's is. Reading R' on a long line on EMerge needs this baseline, which a 2D comparison at 9 GHz on a 1500 µm line does not survive without.
+
+**Palace against the reference.** 5 µm, mesh refined (28,759 tetrahedra): R' 1.00, 1.00, 1.01, 1.00, 0.82; L' 1.00, 1.00, 1.00, 0.99, 0.99. The run gates pass on both solvers.
+
+**The preset as a user gets it.** Palace, Standard, two refinement passes (10,930 to 15,865 tetrahedra), adaptive sweep of 33 points, 2 min 52 s on the 5 µm line: R' 1.00, 1.00, 1.01, 1.00, 0.86, L' 0.95, 0.95, 0.95, 0.94, 0.94. On its first mesh the
+adaptive sweep matched five direct solves to every printed digit, so a face impedance that varies with frequency survives both. EMerge's adaptive sweep of 33 from 7 full solves agrees with its direct solves to 0.2 %. Its Standard preset does no mesh passes here.
+
+**The 0 Hz row meets the sweep.** The DC row reads 5.3050 Ω/mm on the 5 µm line on either solver, against 5.309 (EMerge) and 5.323 (Palace) at 0.1 GHz; 0.5305 against 0.534 on 50 µm (EMerge).
+
+**Sheets, for the record, not acted on: the two solvers differ.** A `.c3d` sheet of 1 µm, reaching the solver as a band under `Conductors: Sheets` does. EMerge, refined: 5 µm 0.90, 0.90, 0.91, 0.99, 1.57 with L' 1.18;
+50 µm 0.99, 0.99, 0.97, 0.99, 1.39; 200 µm 1.00, 0.99, 0.98, 1.00, 1.18; 500 µm 1.00, 1.00, 0.99, 1.00, 1.09. Palace, preset mesh: 5 µm 1.00, 1.00, 1.00, 1.01, 0.99 with L' 0.96; 50 µm 1.01, 1.11, 1.21,
+1.23, 0.99; 500 µm 1.12, 1.42, 1.46, 1.34, 0.82. So Palace's `Thickness` on a sheet's two sides divides the current as a solid's faces do, and a layout's Auto rule has been sending wide thin lines to that model
+before this brief; EMerge's sheet does not. `SheetRule` is unchanged. A narrow line on Palace is closer as a sheet than as a corrected solid at every frequency here, and the width rule keeps it a solid.
+
+**What it costs.** No mesh change, and about 40 MB more of Palace's 1.2 GB. Palace's GMRES took 26, 28, 36, 37 iterations against 21, 23, 27, 30. Three corrected and uncorrected runs back to back at 10 ranks, once another job had
+finished: 32.3, 30.8, 27.1 s of Palace's own time against 28.2, 26.4, 23.9 s, so 15 % longer. EMerge took the same seconds either way. **The 294 s against 42 s was the machine:** with another job holding it, the same corrected run,
+with the same iteration counts, took 400 s and then 31 s, beside an uncorrected 43 s and 26 s. Why one run on a loaded machine is ten times another was not looked into.
+
+**`check`'s assembly.** 5,000 conductors in a `.c3d` check in 0.52 s with a Palace setup, which assembles, against 0.43 s with an openEMS one, which does not; 1,000 in 0.30 s against 0.26 s. A placed layout of that size was
+not measured, since none exists here.
+
+**Found on the way, and fixed: a problem with no solid could not mesh.** `GmshGeoWriter` wrote `BooleanDifference{ Volume{bx}; Delete; }{ Volume{}; }`, and Gmsh takes the empty tool list as a syntax error, so Palace could not run a `.c3d` of sheets alone; EMerge writes no such script and could. With no solid the background is now the box. The Palace sheet figures above were taken with a small air block in the model to get past this; the 5 µm line run again without it reads the same to 1 % (0.99 to 1.00 at 40 GHz). A script with any solid is unchanged, byte for byte.
+
+**The fix this points at, as first written.** Palace's `Thickness` without `External` is (1+j)/(σδ)·coth((1+j)h/2δ), read from its 0.18.1
 source, which tends to 2/(σh) when thin and to today's value when thick. With h = 2A/P on every face, a section's faces in parallel
 give exactly the DC resistance, whatever its shape. It held L' to 1 % at every frequency above, and R' to 1 % up to 9 GHz. At 40 GHz it
 is 20 % low on the 5 µm line, where the current crowds to the edges and no single face value can follow it. EMerge's `SurfaceImpedance`
