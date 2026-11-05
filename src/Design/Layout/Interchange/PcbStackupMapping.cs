@@ -3,17 +3,18 @@
 //
 // §4 is this phase's centre of gravity, not an accessory to the geometry: per layer the file carries a
 // thickness, a relative permittivity and a loss tangent, which is most of a .ctech and most of an EM
-// setup arriving for free. It also carries two of those things NOT AT ALL — conductivity and Mur — and
-// a third (the open/ground boundary condition) has no counterpart in the format whatsoever. What this
-// file does with the gaps matters more than what it does with the values: one honest paragraph about
-// what was and was not recovered beats three separate silent assumptions.
+// setup arriving for free. The board format carries two things NOT AT ALL — conductivity and Mur — and
+// a third (the open/ground boundary condition) has no counterpart in it whatsoever; another reader's
+// format may state conductivity (R-ipx0-2). What this file does with the gaps matters more than what it
+// does with the values: one honest paragraph about what was and was not recovered beats three separate
+// silent assumptions.
 
 namespace CircuitRF.Design.Layout.Interchange;
 
 public static class PcbStackupMapping
 {
-    /// <summary>Copper's bulk conductivity, S/m — the default R-L4d-7 names, applied because the format
-    /// states no conductivity at all. <b>Never inferred from the entry's <c>material</c> string</b>:
+    /// <summary>Copper's bulk conductivity, S/m — the default R-L4d-7 names, applied to a conductor whose
+    /// entry states no conductivity, which is every conductor of a board file. <b>Never inferred from the entry's <c>material</c> string</b>:
     /// that is a lookup table of laminate trade names, it is out of scope, and it would put third-party
     /// product names into this repo (root <c>CLAUDE.md</c> §"Commercial Vendor References").
     ///
@@ -130,7 +131,7 @@ public static class PcbStackupMapping
                 ? PcbUnits.Length(overallMm, dbuPerMicron)
                 : null,
         };
-        int conductors = 0, dielectrics = 0, ignored = 0;
+        int conductors = 0, dielectrics = 0, ignored = 0, defaultedSigma = 0;
 
         // R-L4d-5: the file's order is top-to-bottom and must STAY top-to-bottom. A reversed stackup
         // simulates cleanly and answers the wrong question.
@@ -150,12 +151,14 @@ public static class PcbStackupMapping
             {
                 if (entry.EpsilonR is { } er) layer.Epsr = er;
                 if (entry.LossTangent is { } td) layer.TanD = td;
-                layer.Mur = 1.0;                                    // R-L4d-7 — the format states none
+                layer.Mur = 1.0;                                    // R-L4d-7 — no entry states one
                 dielectrics++;
             }
             else
             {
-                layer.SigmaSm = DefaultCopperConductivitySm;        // R-L4d-7 — the format states none
+                // R-ipx0-2a: a stated value is used; R-L4d-7's default is for an entry that states none.
+                if (entry.ConductivitySm is null) defaultedSigma++;
+                layer.SigmaSm = entry.ConductivitySm ?? DefaultCopperConductivitySm;
                 if (resolveDrawingLayer(entry.Name) is { } key) layer.DrawingLayers.Add(key);
                 conductors++;
             }
@@ -179,13 +182,33 @@ public static class PcbStackupMapping
 
         // R-L4d-7 and R-L4d-8 in ONE note, deliberately: three separate lines read as three separate
         // small caveats, and the point is that these are the things a simulation will silently use.
-        messages.Add(
-            $"Not carried by this format, so defaulted: conductor conductivity ({DefaultCopperConductivitySm:0.###e+0} S/m, " +
-            "copper) and relative permeability (1.0) — neither was inferred from the file's material " +
-            "names. The stackup's top and bottom boundary conditions have no counterpart in the format " +
-            "either and were left at the technology's own defaults. Check all three before simulating.");
+        messages.Add(DefaultsNote(conductors, defaultedSigma, dielectrics));
 
         return new Result(stackup, messages);
+    }
+
+    /// <summary>R-ipx0-2b: says what THIS stackup defaulted, so a conductivity the file stated is not reported as
+    /// missing. No entry states a permeability or a boundary condition, so those are named whenever they apply.</summary>
+    private static string DefaultsNote(int conductors, int defaultedSigma, int dielectrics)
+    {
+        var defaulted = new List<string>(2);
+        if (defaultedSigma > 0)
+            defaulted.Add("conductor conductivity " +
+                          (defaultedSigma < conductors ? $"on {defaultedSigma} of {conductors} conductors " : "") +
+                          $"({DefaultCopperConductivitySm:0.###e+0} S/m, copper)");
+        if (dielectrics > 0) defaulted.Add("relative permeability (1.0)");
+
+        const string Boundaries = "the stackup's top and bottom boundary conditions";
+        const string LeftAtDefaults = "left at the technology's own defaults";
+        return defaulted.Count switch
+        {
+            2 => $"Not stated by this file, so defaulted: {defaulted[0]} and {defaulted[1]} — neither was inferred from the " +
+                 $"file's material names. It does not state {Boundaries} either, and they were {LeftAtDefaults}. " +
+                 "Check all three before simulating.",
+            1 => $"Not stated by this file, so defaulted: {defaulted[0]} — it was not inferred from the file's material " +
+                 $"names. It does not state {Boundaries} either, and they were {LeftAtDefaults}. Check both before simulating.",
+            _ => $"This file does not state {Boundaries}, and they were {LeftAtDefaults}. Check them before simulating.",
+        };
     }
 
     /// <summary>R-L4d-5's mapping. Anything else — solder mask, silkscreen, paste — is not an

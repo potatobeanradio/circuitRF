@@ -209,10 +209,48 @@ public class PcbImportTests : IDisposable
         Assert.Equal(1.0, stackup.Layers[1].Mur);
 
         // R-L4d-8: one honest paragraph, not three silent assumptions.
-        var note = Assert.Single(result.Messages, m => m.Contains("Not carried by this format"));
+        var note = Assert.Single(result.Messages, m => m.Contains("Not stated by this file"));
         Assert.Contains("conductivity", note);
         Assert.Contains("permeability", note);
         Assert.Contains("boundary conditions", note);
+    }
+
+    [Fact]
+    public void AStatedConductivity_IsUsed_AndTheNoteNamesOnlyWhatWasDefaulted()
+    {
+        var some = PcbStackupMapping.Build(
+            [new PcbStackupEntry("top", "copper", 0.035, null, null, 4.1e7),
+             new PcbStackupEntry("bottom", "copper", 0.035, null, null)],
+            null, Dbu, _ => null);
+        Assert.Equal(4.1e7, some.Stackup!.Layers[0].SigmaSm);
+        Assert.Equal(PcbStackupMapping.DefaultCopperConductivitySm, some.Stackup.Layers[1].SigmaSm);
+        Assert.Contains(some.Messages, m => m.Contains("conductivity on 1 of 2 conductors"));
+
+        var all = PcbStackupMapping.Build(
+            [new PcbStackupEntry("top", "copper", 0.035, null, null, 4.1e7)], null, Dbu, _ => null);
+        Assert.DoesNotContain(all.Messages, m => m.Contains("conductivity"));
+        Assert.Contains(all.Messages, m => m.Contains("boundary conditions"));
+    }
+
+    // ── IPX-0: the seam any reader imports through ──────────────────────────────────────────────
+
+    /// <summary>R-ipx0-1c: the flat board cell a reader with no footprints produces. R-ipx0-1b: the format's own
+    /// sentence belongs to <see cref="PcbImport.Import"/>, so a board's version alone says nothing here.</summary>
+    [Fact]
+    public void ABoardWithNoFootprintsOrPlacements_CreatesOnlyItsBoardCell_AndReportsOnlyItsDiagnostics()
+    {
+        var board = new PcbBoard { Version = "20221018" };
+        board.Diagnostics.Add("a reader's own sentence");
+        board.LayerTable.Add(new PcbLayerTableEntry(0, "top", "signal", null));
+        board.Shapes.Add(new PcbImportedShape(new RectShape { X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 }, "top"));
+
+        var result = PcbImport.ImportBoard(board, _dir, "flat", null, Dbu);
+
+        Assert.Equal(result.BoardCellDir, Assert.Single(result.CreatedCellDirs));
+        Assert.Single(LoadPrimaryLayout(result.BoardCellDir!).Shapes);
+        Assert.Equal("a reader's own sentence", result.Messages[0]);
+        Assert.DoesNotContain(result.Messages, m => m.Contains("Board format epoch"));
+        Assert.Contains(ImportFixture("stackup-present.kicad_pcb").Messages, m => m.Contains("Board format epoch"));
     }
 
     // ── Gate 7: unfilled stays unfilled (R-L4d-9) ───────────────────────────────────────────────

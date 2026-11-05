@@ -110,7 +110,10 @@ public sealed record PcbPlacement(
 /// <param name="ThicknessMm">Null when the entry states none (a paste layer usually does not).</param>
 /// <param name="EpsilonR">Null unless stated.</param>
 /// <param name="LossTangent">Null unless stated.</param>
-public sealed record PcbStackupEntry(string Name, string Type, double? ThicknessMm, double? EpsilonR, double? LossTangent);
+/// <param name="ConductivitySm">A conductor's conductivity in S/m, null unless stated. The board format
+/// states none; a format that does overrides <see cref="PcbStackupMapping.DefaultCopperConductivitySm"/>.</param>
+public sealed record PcbStackupEntry(
+    string Name, string Type, double? ThicknessMm, double? EpsilonR, double? LossTangent, double? ConductivitySm = null);
 
 /// <summary>Everything <c>PcbReader</c> recovered, and everything it could not.</summary>
 public sealed class PcbBoard

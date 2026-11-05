@@ -90,7 +90,6 @@ public static class PcbImport
         Func<ImportMappingRequest, ImportMappingAnswer?>? resolveMapping = null,
         string? destTechPath = null)
     {
-        target ??= ImportTechnologyTarget.New;
         using var textReader = new StreamReader(stream, System.Text.Encoding.UTF8);
         string text = textReader.ReadToEnd();
 
@@ -101,10 +100,38 @@ public static class PcbImport
             return Nothing(["This file could not be read as a board."]);
 
         var board = read.Board;
-        var messages = new List<string>(board.Diagnostics);
         if (board.Version is { Length: > 0 } version)
-            // R-L4d-1: the version is REPORTED, never branched on and never a reason to refuse.
-            messages.Add($"Board format epoch {version} — read by the tokens present, not by the version.");
+            // R-L4d-1: the version is REPORTED, never branched on and never a reason to refuse. A sentence
+            // about this format, so it is said here rather than by ImportBoard (R-ipx0-1b).
+            board.Diagnostics.Add($"Board format epoch {version} — read by the tokens present, not by the version.");
+
+        return ImportBoard(board, parentDir, boardName, destTech, destDbuPerMicron, resolveLayerMapping,
+                           coalesceRasterFill, target, resolveMapping, destTechPath);
+    }
+
+    /// <summary>
+    /// Everything <see cref="Import"/> does once a board has been read, for any reader (R-ipx0-1a): layer mapping,
+    /// technology, via spans and the cell folders. A reader of a large format hands its board here directly, so the
+    /// file is never decoded to one string on its way in. See <see cref="Import"/> for every parameter it shares.
+    ///
+    /// <para>The messages open with <see cref="PcbBoard.Diagnostics"/>, which is where a sentence about the format
+    /// belongs. A board with no footprint cells and no placements creates only its board cell.</para>
+    /// </summary>
+    /// <param name="board">The board as read, at <paramref name="destDbuPerMicron"/>.</param>
+    public static ImportResult ImportBoard(
+        PcbBoard board,
+        string parentDir,
+        string boardName,
+        Technology? destTech,
+        int destDbuPerMicron,
+        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
+        bool coalesceRasterFill = true,
+        ImportTechnologyTarget? target = null,
+        Func<ImportMappingRequest, ImportMappingAnswer?>? resolveMapping = null,
+        string? destTechPath = null)
+    {
+        target ??= ImportTechnologyTarget.New;
+        var messages = new List<string>(board.Diagnostics);
 
         // ── Layers ──────────────────────────────────────────────────────────────────────────────
         var allNames = new List<string>();
