@@ -1317,8 +1317,8 @@ leaves it, so a port lands on its pin's final place.
 doing unasked). After the layout command, `EmSetupFromSchematic` looks for the setups that resolve to this layout
 (`EmSetupResolver.FindSetupsForLayout`). With none, it creates one through `EmSetupCreate` — the function File ▸ New ▸
 EM Setup… and the Layout Editor's EM button call — named after the cell, a planar analysis, each Port's `Z` in
-`PortZ0s`, and the schematic's first S-parameter sweep when it is written in numbers (a sweep written in the
-schematic's variables leaves the setup's default, and says so). With setups, each gains an impedance for a port number
+`PortZ0s`, and every segment of the schematic's first S-parameter analysis when all are written in numbers (a segment written in
+the schematic's variables leaves the setup's default, and says so). With setups, each gains an impedance for a port number
 it has none for and reports a number it was given that the schematic no longer has. A changed `Z` is written only
 while the setup still holds the value this command wrote last (`EmSetup.SchematicPortZ0s`, a provenance note
 omitted from the file when empty); otherwise the setup's value is kept and reported. Nothing is deleted, and no other

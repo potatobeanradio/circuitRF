@@ -17,8 +17,8 @@ namespace CircuitRF.Design.Layout.SchematicSync;
 ///
 /// <list type="bullet">
 ///   <item><b>No setup references the layout:</b> one is created through <see cref="EmSetupCreate"/>, named after the
-///   cell, a planar analysis, with each Port's <c>Z</c> and the schematic's first S-parameter sweep (else the
-///   setup's own default sweep).</item>
+///   cell, a planar analysis, with each Port's <c>Z</c> and every segment of the schematic's first S-parameter
+///   analysis (else the setup's own default sweep).</item>
 ///   <item><b>Setups reference it:</b> each gains an impedance for a port number it has none for, and reports a number
 ///   it was given that the schematic no longer has. A changed <c>Z</c> is written only while the setup still holds
 ///   the value this command wrote last (<see cref="EmSetup.SchematicPortZ0s"/>); otherwise the setup's value is kept
@@ -60,12 +60,16 @@ public static class EmSetupFromSchematic
                 lines.Add(Info("", "No EM setup was created: the schematic has no numbered Port"));
                 return new Outcome(written, lines);
             }
-            var frequency = FrequencyOf(extraction, out string? frequencyNote);
+            var plan = FrequencyPlanOf(extraction, out string? frequencyNote);
             var created = EmSetupCreate.Create(workspaceDir, EmSetupCreate.NextFreeName(workspaceDir, cellName),
                 EmSetupCreate.LayoutRefOf(workspaceDir, clayPath), setup =>
                 {
                     setup.AnalysisKind = EmAnalysisKind.Planar;
-                    if (frequency is not null) setup.Frequency = frequency;
+                    if (plan is not null)
+                    {
+                        setup.Frequency = plan[0];
+                        setup.AdditionalFrequencies = [.. plan.Skip(1)];
+                    }
                     foreach (var port in ports) Write(setup, port);
                 });
             if (created.Refusal is { } refusal)
@@ -76,7 +80,7 @@ public static class EmSetupFromSchematic
             written.Add(created.Path!);
             string rel = EmSetupCreate.LayoutRefOf(workspaceDir, created.Path!);
             lines.Add(Info("", $"Created EM setup {rel}: ports {NumberList(ports.Select(p => p.Number))}, " +
-                               (frequency is not null ? "the schematic's S-parameter sweep" : "the default sweep")));
+                               (plan is not null ? "the schematic's S-parameter sweep" : "the default sweep")));
             if (frequencyNote is not null) lines.Add(Info("", $"{rel}: {frequencyNote}"));
             return new Outcome(written, lines);
         }
@@ -191,22 +195,20 @@ public static class EmSetupFromSchematic
         return [.. ports.Values];
     }
 
-    /// <summary>The schematic's first S-parameter sweep as a setup's frequency plan — its first segment, when it is
-    /// written in numbers a <c>.cem</c> can hold (a sweep written in the schematic's variables is not), else null with
-    /// why.</summary>
-    public static FrequencySpec? FrequencyOf(NetExtractor.ExtractionResult extraction, out string? note)
+    /// <summary>Every segment of the schematic's first S-parameter analysis as a setup's frequency plan, when all of
+    /// them are written in numbers a <c>.cem</c> can hold (a segment written in the schematic's variables is not), else
+    /// null with why: part of a plan would be a different set of frequencies from the one the schematic runs.</summary>
+    public static IReadOnlyList<FrequencySpec>? FrequencyPlanOf(NetExtractor.ExtractionResult extraction, out string? note)
     {
         note = null;
         if (extraction.TestBench.Analyses.OfType<SParameterAnalysis>().FirstOrDefault() is not { } sp) return null;
-        var f = sp.Freq;
         bool Literal(string e) => e.Length == 0 || double.TryParse(e, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
-        if (!Literal(f.StartExpr) || !Literal(f.StopExpr) || !Literal(f.StepExpr))
+        if (!sp.Sweeps.All(f => Literal(f.StartExpr) && Literal(f.StopExpr) && Literal(f.StepExpr)))
         {
             note = $"{sp.Name}'s sweep is written in the schematic's variables, so the setup keeps its default sweep";
             return null;
         }
-        if (sp.Sweeps.Count > 1) note = $"{sp.Name} has {sp.Sweeps.Count} segments; the setup takes the first";
-        return f;
+        return sp.Sweeps;
     }
 
     /// <summary>Sets port <paramref name="port"/>'s impedance and records it as written by this command.</summary>

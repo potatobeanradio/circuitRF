@@ -41933,3 +41933,17 @@ Code 120 is 0x78, the shell's "access denied to the source", reported on a 3D vi
 document closed. `SystemTrash` now retries it five times, 300 ms apart, and says what the code means. NOT verified on Windows and
 not reproduced: nothing in the app holds a `.c3d` open, so a sync client is the likely holder, not a measured one. The workspace
 watchers' subtree handles have not been ruled out.
+
+## The S-parameter analysis takes a single point in its frequency plan (2026-11-05)
+
+The analysis dialog kept its own copy of the segment row, with no Single button. It now places `FrequencyPlanEditor`, the control the EM setup and Export to Library use, and + Segment adds a single point at the first segment's start, as the EM setup's does. The engine needed nothing: `SParameterAnalysis.Expand` already took the sorted union.
+
+**One seed rule for every host.** `offersSinglePoint` existed so the circuit editor would not read a one-point sweep as Single and rewrite its Stop. A seed now opens as Single only when its Stop equals its Start, so `start=1 stop=2 npts=1` opens in Points with its Stop intact in all three hosts, and the flag is gone.
+
+**Goal ranges.** `GoalTemplates.RangeOf` took the first segment's Start and the last segment's Stop, so a 2.45 GHz point added after a 1 to 10 GHz sweep narrowed a new goal's range to 1 to 2.45 GHz. It now takes the lowest and highest of every segment.
+
+**Width.** The editor's three 140 px blocks need 436 px inside a card, and the dialog's panel padding left 426, so the third block wrapped. The panel has no side padding now.
+
+**A created EM setup takes the whole plan.** `EmSetupFromSchematic` copied the first segment and said so in a note, so a single point added to the schematic was silently absent from every EM result unless that note was read. `FrequencyPlanOf` now hands over every segment, as `Frequency` plus `AdditionalFrequencies`. A segment written in the schematic's variables leaves the setup on its default sweep with the existing note, rather than carrying part of the plan: the setup would otherwise solve a different set of frequencies from the schematic with nothing to show for it. Setups that already exist still keep their own plan. Gate: `PortPlacementTests.ACreatedSetup_TakesTheWholeFrequencyPlan`.
+
+**The Analyses panel's card** also read the first segment, so it showed 1 to 5 GHz for a plan reaching 10 GHz and "2.45 GHz–2.45 GHz" for one point. It now spans every segment and states one frequency once; when an end does not resolve it falls back to the first segment's text, which names the unresolved variable.

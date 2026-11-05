@@ -40,6 +40,17 @@ public class AnalysisFreqCardSummaryTests
     private static AnalysisRowViewModel Row(Analysis a, SchematicEditModel model)
         => new(a, new SchematicViewModel(model));
 
+    /// <summary>The card reads the whole plan, wherever a segment sits, and one frequency as one.</summary>
+    [Fact]
+    public void ComputeFreqRangeSummary_SpansEverySegment_AndOneFrequencyReadsOnce()
+    {
+        var model = Model();
+        var sweep = new FrequencySpec("1", "5", 11, SweepKind.Linear, "GHz", "GHz");
+        var point = new FrequencySpec("6", "6", 1, SweepKind.Linear, "GHz", "GHz");
+        Assert.Equal("1 GHz–6 GHz", AnalysisPreviewHelper.ComputeFreqRangeSummary([sweep, point], model));
+        Assert.Equal("6 GHz", AnalysisPreviewHelper.ComputeFreqRangeSummary([point], model));
+    }
+
     // ── Gate 6: SI-suffixed direct literal display, all three sub-Hz-and-above units ──────────────
 
     [Fact]
@@ -121,7 +132,7 @@ public class AnalysisFreqCardSummaryTests
             new("5", "10", 51, startUnit: "GHz", stopUnit: "GHz"),
         });
 
-        Assert.Equal("1 GHz–5 GHz, 2 segments", Row(sp, model).Summary);
+        Assert.Equal("1 GHz–10 GHz, 2 segments", Row(sp, model).Summary);
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Ui.Layout.Em;
@@ -72,6 +73,28 @@ public sealed class EmFrequencyPlanTests : IDisposable
         var circuit = new FrequencySpecViewModel(new SchematicEditModel(), new FrequencySpec("1", "2", 1, SweepKind.Linear, "GHz", "GHz"));
         Assert.False(circuit.IsSinglePoint);
         Assert.Equal("2", circuit.Build().StopExpr);
+    }
+
+    /// <summary>The S-parameter analysis offers the same plan: + Segment adds a single point, and it survives the netlist
+    /// and sorts into the run's frequencies.</summary>
+    [Fact]
+    public void TheSParameterEditor_AddsASinglePoint_ThatSurvivesTheNetlistAndJoinsTheRun()
+    {
+        var model = new SchematicEditModel();
+        var body = SpBodyViewModel.FromAnalysis(
+            new SParameterAnalysis("SP1", new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz")), model);
+
+        body.AddSegmentCommand.Execute(null);
+        Assert.True(body.Segments[1].IsSinglePoint);
+        body.Segments[1].StartCoeff = "2.45";
+
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(new SParameterAnalysis("SP1", body.BuildSweeps()));
+        var read = Assert.IsType<SParameterAnalysis>(Assert.Single(new CnlReader().Read(CnlWriter.Write(tb)).TestBench.Analyses));
+
+        Assert.Equal([1e9, 2e9, 2.45e9, 3e9], read.Expand());
+        var reopened = SpBodyViewModel.FromAnalysis(read, model);
+        Assert.Equal([false, true], reopened.Segments.Select(s => s.IsSinglePoint));
     }
 
     /// <summary>GitHub discussion 42: a field commits on every keystroke, so a commit that rebuilt the rows destroyed the

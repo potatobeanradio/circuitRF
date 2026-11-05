@@ -292,13 +292,17 @@ public static class GoalTemplates
     /// in; null when an end is not a plain number (a variable, say), which the editor shows as "whole range".</summary>
     private static GoalRange? RangeOf(SParameterAnalysis sp)
     {
-        var first = sp.Sweeps[0];
-        var last  = sp.Sweeps[^1];
-        string lo = $"{first.StartExpr.Trim()} {first.StartUnit}".Trim();
-        string hi = $"{last.StopExpr.Trim()} {last.StopUnit}".Trim();
-        return TunableValue.TryParse(lo, out _, out _, out _) && TunableValue.TryParse(hi, out _, out _, out _)
-            ? new GoalRange { Axis = "freq", Lo = lo, Hi = hi }
-            : null;
+        // The lowest and highest of every segment: segments come in any order, and a single point added after a
+        // sweep usually lies inside it.
+        (string Text, double Si)? lo = null, hi = null;
+        foreach (var s in sp.Sweeps)
+            foreach (var end in new[] { $"{s.StartExpr.Trim()} {s.StartUnit}".Trim(), $"{s.StopExpr.Trim()} {s.StopUnit}".Trim() })
+            {
+                if (!TunableValue.TryParse(end, out _, out _, out double si)) return null;
+                if (lo is null || si < lo.Value.Si) lo = (end, si);
+                if (hi is null || si > hi.Value.Si) hi = (end, si);
+            }
+        return new GoalRange { Axis = "freq", Lo = lo!.Value.Text, Hi = hi!.Value.Text };
     }
 
     private static GoalRange? RangeOf(TestBench tb, string analysis)

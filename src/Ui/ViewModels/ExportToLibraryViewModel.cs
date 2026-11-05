@@ -115,7 +115,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
     private void AddFrequencyRow(Core.Design.FrequencySpec segment)
     {
         // An empty schematic model: the plan is literal numbers, as an EM setup's is.
-        var row = new FrequencySpecViewModel(new SchematicEditModel(), segment, offersSinglePoint: true);
+        var row = new FrequencySpecViewModel(new SchematicEditModel(), segment);
         row.PropertyChanged += (_, e) => { if (e.PropertyName != nameof(FrequencySpecViewModel.CanRemoveSelf)) Replan(); };
         row.SetRemoveCallback(RemoveFrequencyRow);
         FrequencySegments.Add(row);

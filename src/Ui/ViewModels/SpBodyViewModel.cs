@@ -44,8 +44,14 @@ public sealed partial class SpBodyViewModel : ObservableObject
 
     // ── Add / Remove commands ─────────────────────────────────────────────────
 
+    /// <summary>Adds a single point at the first segment's start, as the EM setup's plan does.</summary>
     [RelayCommand]
-    private void AddSegment() => AddSegmentInternal(new FrequencySpecViewModel(_model));
+    private void AddSegment()
+    {
+        var first = Segments[0].Build();
+        AddSegmentInternal(new FrequencySpecViewModel(_model,
+            new FrequencySpec(first.StartExpr, first.StartExpr, 1, SweepKind.Linear, first.StartUnit, first.StartUnit)));
+    }
 
     [RelayCommand(CanExecute = nameof(CanRemoveSegment))]
     private void RemoveSegment(FrequencySpecViewModel? seg)

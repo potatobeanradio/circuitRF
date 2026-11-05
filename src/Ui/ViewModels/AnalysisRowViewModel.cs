@@ -158,12 +158,13 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
     private static string FormatSpSummary(SParameterAnalysis sp, SchematicEditModel model)
     {
         int n = sp.Sweeps.Count;
-        var first = sp.Sweeps[0];
-        string start = AnalysisPreviewHelper.ComputeFreqSummary(first.StartExpr, first.StartUnit, model);
-        string stop  = AnalysisPreviewHelper.ComputeFreqSummary(first.StopExpr,  first.StopUnit,  model);
-        string range = $"{start}–{stop}";
+        string range = AnalysisPreviewHelper.ComputeFreqRangeSummary(sp.Sweeps, model) ?? UnresolvedRange(sp.Sweeps[0], model);
         return n == 1 ? range : $"{range}, {n} segments";
     }
+
+    private static string UnresolvedRange(FrequencySpec first, SchematicEditModel model)
+        => AnalysisPreviewHelper.ComputeFreqSummary(first.StartExpr, first.StartUnit, model) + "–"
+           + AnalysisPreviewHelper.ComputeFreqSummary(first.StopExpr, first.StopUnit, model);
 
     /// <summary>
     /// The tone half of the HB card. A multi-tone analysis carries its fundamentals in

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
+using CircuitRF.Core.Design;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine.Mom;
 using Xunit;
@@ -182,6 +183,28 @@ public sealed class PortPlacementTests : IDisposable
         var now = EmSetupPersistence.LoadFromFile(cem);
         Assert.Equal([new Complex(75, 0), new Complex(25, 0)], now.PortZ0s);
         Assert.Equal(setup.Frequency.StartExpr, now.Frequency.StartExpr);
+    }
+
+    /// <summary>A created setup solves the frequencies the schematic runs: every segment, or the default sweep and a note
+    /// when one is written in variables, never part of the plan.</summary>
+    [Fact]
+    public void ACreatedSetup_TakesTheWholeFrequencyPlan()
+    {
+        var (p, layout) = Placed("C1-through-line");
+        LayoutPersistence.SaveToFile(p.ClayPath, layout);
+        var sweep = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz");
+
+        p.Model.Analyses.Clear();
+        p.Model.Analyses.Add(new SParameterAnalysis("SP1", [sweep, new FrequencySpec("2.45", "2.45", 1, SweepKind.Linear, "GHz", "GHz")]));
+        var whole = EmSetupFromSchematic.Run(p.Model, Cws(p), p.ClayPath, "whole");
+        Assert.Equal([1e9, 2e9, 2.45e9, 3e9], EmSetupPersistence.LoadFromFile(Assert.Single(whole.Written)).ExpandFrequencies());
+        File.Delete(whole.Written[0]);
+
+        p.Model.Analyses.Clear();
+        p.Model.Analyses.Add(new SParameterAnalysis("SP1", [sweep, new FrequencySpec("f0", "f0", 1, SweepKind.Linear, "GHz", "GHz")]));
+        var partial = EmSetupFromSchematic.Run(p.Model, Cws(p), p.ClayPath, "partial");
+        Assert.Empty(EmSetupPersistence.LoadFromFile(Assert.Single(partial.Written)).AdditionalFrequencies);
+        Assert.Contains(partial.Lines, l => l.Text.Contains("keeps its default sweep"));
     }
 
     /// <summary>A setup made by hand holds its impedances as the EM Setup editor writes them — the odd/even port fields,

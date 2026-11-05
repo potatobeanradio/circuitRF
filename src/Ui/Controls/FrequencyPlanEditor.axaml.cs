@@ -8,7 +8,7 @@ namespace CircuitRF.Ui.Controls;
 /// <summary>
 /// The frequency plan editor: one card per <see cref="ViewModels.FrequencySpecViewModel"/> segment (Step / Points /
 /// Single, Lin / Log, Start / Stop / count or step) and a + Segment button. The rows and what + Segment does belong to
-/// the host — the EM Setup panel and Export to Library (brief vendorlib-11 R-vl11-4a) — so the control owns markup only.
+/// the host — the EM Setup panel, Export to Library (brief vendorlib-11 R-vl11-4a) and the S-parameter analysis — so the control owns markup only.
 /// </summary>
 public partial class FrequencyPlanEditor : UserControl
 {

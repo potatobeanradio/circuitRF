@@ -643,7 +643,7 @@ Ports are placed when **Connect parts on Update Layout from Schematic** is on.
 **An EM setup from the schematic.** With **Create or update EM setup on Update Layout from Schematic** on in
 Settings (it is off until you turn it on), Update Layout also writes the EM setup. A layout with no setup gets
 one in the workspace's `em/` folder, named after the cell. It uses each port's impedance from the schematic and
-the schematic's first S-parameter sweep. A layout that already has setups gets an impedance in each for every new
+every segment of the schematic's first S-parameter analysis. A layout that already has setups gets an impedance in each for every new
 port number, and Messages notes a port number the schematic no longer has; nothing is deleted. An impedance you
 set in a setup is never changed, and neither is its sweep or any other setting. Writing the setup is not part of
 the layout's undo.

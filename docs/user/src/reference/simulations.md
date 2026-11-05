@@ -68,7 +68,7 @@ interpolated onto the sweep.
 <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td>Frequency sweep</td><td>Start / Stop / Step (or point count); one or more segments. Units accepted (<code>GHz</code>, <code>MHz</code>, …).</td></tr>
+      <tr><td>Frequency sweep</td><td>Start / Stop / Step (or point count), or <b>Single</b> for one frequency; one or more segments, which <b>+ Segment</b> adds as a single point. The run solves every segment's frequencies together, sorted, each once. Units accepted (<code>GHz</code>, <code>MHz</code>, …).</td></tr>
       <tr><td>Reference impedance</td><td>Per-port reference (from each Term's <code>Z</code>); the result renormalizes to it.</td></tr>
       <tr><td><code>NDF=yes</code></td><td>Also compute the <a href="wsprobe.html#ndf">normalized determinant function</a> — the rigorous count of right-half-plane poles of the whole network. <code>PassiveVars=</code> / <code>PassiveParams=</code> name what passivates a user-supplied model.</td></tr>
       <tr><td><code>MarginThreshold=</code></td><td>The <a href="wsprobe.html#stability-margin">stability margin</a> in dB below which a WSProbe is reported as worth looking at. Default <code>-15</code>; <code>none</code> disables.</td></tr>

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Schematic;
 
@@ -100,6 +102,21 @@ internal static class AnalysisPreviewHelper
             return unresolved is not null ? $"unknown: {unresolved}" : expr;
 
         return FormatHzSi(hz);
+    }
+
+    /// <summary>The lowest to the highest frequency of every segment, one frequency when they are the same; null when
+    /// an end does not resolve.</summary>
+    public static string? ComputeFreqRangeSummary(IReadOnlyList<FrequencySpec> segments, SchematicEditModel model)
+    {
+        double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+        foreach (var s in segments)
+            foreach (var (coeff, unit) in new[] { (s.StartExpr, s.StartUnit), (s.StopExpr, s.StopUnit) })
+            {
+                if (!TryResolveFreqHz(coeff, unit, model, out double hz, out _)) return null;
+                lo = Math.Min(lo, hz);
+                hi = Math.Max(hi, hz);
+            }
+        return lo == hi ? FormatHzSi(lo) : $"{FormatHzSi(lo)}–{FormatHzSi(hi)}";
     }
 
     /// <summary>SI-suffixed hertz formatting (GHz/MHz/kHz/Hz) for <see cref="ComputeFreqSummary"/>.</summary>

@@ -1585,20 +1585,14 @@
                 </Expander>
 
                 <!-- ── Frequency sweep ──────────────────────────────────────────
-                     R-em-11: the EXISTING FrequencySpecViewModel, never a second frequency editor.
-                     What that rule protects is the LOGIC — unit suffixes, the coefficient rescale on
-                     a unit change, mode/kind, and the resolved-value preview — and every one of
-                     those is the VM's, bound to below. The markup is presentation: SpBodyView's own
-                     copy is an ItemTemplate inside a segment list with a Remove button, which is not
-                     what a single-sweep panel wants, and extracting it into a shared UserControl
-                     would churn the analysis editor for no behavioural gain. -->
+                     R-em-11: the EXISTING FrequencySpecViewModel, never a second frequency editor. -->
                   </StackPanel>
                 </Border>
 
                 <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Frequency"/>
-                <!-- The frequency plan is the shared control (brief vendorlib-11 R-vl11-4a): Export to Library uses the same one. -->
+                <!-- The frequency plan is the shared control (brief vendorlib-11 R-vl11-4a). -->
                 <ctl:FrequencyPlanEditor Segments="{Binding ViewModel.FrequencySegments}"
                                          AddSegmentCommand="{Binding ViewModel.AddFrequencySegmentCommand}"/>
 

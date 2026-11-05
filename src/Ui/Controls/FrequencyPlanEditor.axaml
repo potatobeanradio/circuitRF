@@ -4,7 +4,7 @@
              x:Class="CircuitRF.Ui.Controls.FrequencyPlanEditor">
 
     <!-- A frequency PLAN over FrequencySpecViewModel rows (R-em-11's editor, shared by brief vendorlib-11 R-vl11-4a):
-         the EM Setup panel and Export to Library both place this control, so there is one plan editor, not two. The
+         the EM Setup panel, Export to Library and the S-parameter analysis all place this control, so there is one plan editor. The
          rows and the + Segment command are the host's; see FrequencyPlanEditor.axaml.cs. The text styles are carried
          here so the control looks the same in any host. -->
     <UserControl.Styles>

@@ -1098,7 +1098,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     private void AddFrequencyRow(FrequencySpec segment)
     {
-        var vm = new ViewModels.FrequencySpecViewModel(new SchematicEditModel(), segment, offersSinglePoint: true);
+        var vm = new ViewModels.FrequencySpecViewModel(new SchematicEditModel(), segment);
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(ViewModels.FrequencySpecViewModel.CanRemoveSelf)) CommitFrequency();

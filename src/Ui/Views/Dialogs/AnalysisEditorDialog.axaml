@@ -140,7 +140,7 @@
             <Border x:Name="SpBodyPanel"
                     Background="{DynamicResource SystemRegionColor}"
                     CornerRadius="6"
-                    Padding="10,10"
+                    Padding="0,10"
                     IsVisible="False">
                 <analyses:SpBodyView x:Name="SpBodyViewControl"/>
             </Border>

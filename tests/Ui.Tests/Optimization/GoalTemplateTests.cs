@@ -37,6 +37,21 @@ public sealed class GoalTemplateTests
         for (int f = 0; f < k.Length; f++) Assert.Equal(byHand[f], k[f], 1e-9);
     }
 
+    /// <summary>A single point added after a sweep lies inside it, and must not narrow the goal's range to that point.</summary>
+    [Fact]
+    public void AGoalsRange_IsTheLowestAndHighestOfEverySegment()
+    {
+        const string cnl = """
+            Port:P1 in  0   Num=1 Z=50 Ohm
+            R:R1    in  out R=10 Ohm
+            Port:P2 out 0   Num=2 Z=50 Ohm
+            analysis SP1 type=sparam start=1 stop=10 npts=10 Unit=GHz
+            analysis SP1 type=sparam start=2.45 stop=2.45 npts=1 Unit=GHz
+            """;
+        var range = GoalTemplates.For(PreparedCircuit.FromText(cnl, null, null)).First(t => t.Id == "SP1.sij").Make().Range!;
+        Assert.Equal(("1 GHz", "10 GHz"), (range.Lo, range.Hi));
+    }
+
     [Fact]
     public void WsProbeTemplates_EvaluateOnAProbedCircuit()
     {
