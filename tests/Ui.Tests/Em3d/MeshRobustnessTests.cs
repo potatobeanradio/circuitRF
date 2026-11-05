@@ -185,6 +185,11 @@ public sealed class MeshRobustnessTests : IDisposable
             "volume mesh, which the solver cannot read; " + Em3dMeshCheck.OrphanRemedy,
         ], r.Sentences);
         Assert.StartsWith("The mesh has elements the solver cannot use. 1 zero-volume element", r.Refusal);
+
+        // A run with Robust meshing on is not told to turn it on.
+        var on = Em3dMeshCheck.Check(msh, groups, robustMeshing: true)!;
+        Assert.Equal(r.Sentences.Count, on.Sentences.Count);
+        Assert.All(on.Sentences, x => Assert.DoesNotContain("robust", x, StringComparison.OrdinalIgnoreCase));
     }
 
     // ── R-emb2-5 ───────────────────────────────────────────────────────────────────────────────

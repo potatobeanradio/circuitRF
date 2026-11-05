@@ -1,5 +1,18 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A component port's corner a sliver inside its copper: "a face of no element" (2026-11-05)
+
+- **What it was.** On an imported board with chamfered pads, one surface triangle of a component port, 40 pm by 100 pm, was a face of no
+  tetrahedron. A landing's face is found on scan lines inset 2 DBU from the width's ends and then rounded to the DBU grid, so a slanted copper edge
+  can cross the face inside those 2 DBU. The sheet's corner then stood inside the copper by a sliver, the fragment cut it off as a surface of its
+  own inside the metal, and metal has no elements. Gmsh gives no warning, and it depends on the rounding, so one corner in many does it.
+- **The fix.** `Apply` now seams the copper's side onto the sheet's two corners (`C3dTurnedPorts.Seam`, what a turned port already did), moving
+  the outline by at most 2 DBU. The outline's corner and the sheet's are then the same numbers in the script. Only a landing's end
+  takes this: a face already straight across the width has no slanted edge to cross it, except inside the inset, which has not been seen.
+- **Robust meshing does not touch this.** It thins an outline's points and knows nothing of a port's corner, yet the remedy recommended it from a
+  constant, whatever the run's setting was (on by default). `Em3dMeshCheck.Check` now takes the setting and leaves that advice out when it is on.
+- **A mesh's `.msh` here is binary (`2.2 1 8`)**: reading one by hand needs the block format, not lines of text.
+
 ## The background is one multi-tool difference again (2026-10-20, amended 2026-10-24 by brief-em3d-137)
 
 Reported 2026-10-20 against a stack of overlapping dielectric slabs and conductor pieces: the mesh stage refused the

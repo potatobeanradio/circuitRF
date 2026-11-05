@@ -45,6 +45,10 @@ public static class Em3dMeshCheck
     public const string OrphanRemedy =
         "enable robust meshing, or move it so that it lies on the metal's face or clear of it.";
 
+    /// <summary>What a sentence advises when the run already had Robust meshing on.</summary>
+    public const string ElementRemedyRobustOn = "set the via entry's Fill to Solid, or leave the part out of the model.",
+                        OrphanRemedyRobustOn = "move it so that it lies on the metal's face or clear of it.";
+
     /// <summary>Bad elements clustered pairwise at most; past this the rest are counted, not placed.</summary>
     private const int MaxPlaced = 4000;
 
@@ -53,17 +57,20 @@ public static class Em3dMeshCheck
     /// made. Null when there is no such file or it cannot be read: the check then says nothing and the solver reads it.
     /// </summary>
     /// <param name="lengthUnitM">The mesh's length unit, metres (the Palace script's is a micrometre).</param>
-    public static Em3dMeshCheckResult? Check(string mshPath, IReadOnlyList<Em3dGroup> groups, double lengthUnitM = GmshGeoWriter.LengthUnitM)
+    /// <param name="robustMeshing">The run's Robust meshing: on, a remedy does not offer turning it on.</param>
+    public static Em3dMeshCheckResult? Check(string mshPath, IReadOnlyList<Em3dGroup> groups, double lengthUnitM = GmshGeoWriter.LengthUnitM,
+                                             bool robustMeshing = false)
     {
         if (!File.Exists(mshPath)) return null;
         MshMesh mesh;
         try { mesh = MshReader.Read(mshPath); }
         catch (Exception e) when (e is InvalidDataException or IOException) { return null; }
-        return Check(mesh, groups, lengthUnitM);
+        return Check(mesh, groups, lengthUnitM, robustMeshing);
     }
 
     /// <summary>The check on a mesh already read.</summary>
-    public static Em3dMeshCheckResult Check(MshMesh mesh, IReadOnlyList<Em3dGroup> groups, double lengthUnitM = GmshGeoWriter.LengthUnitM)
+    public static Em3dMeshCheckResult Check(MshMesh mesh, IReadOnlyList<Em3dGroup> groups, double lengthUnitM = GmshGeoWriter.LengthUnitM,
+                                            bool robustMeshing = false)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         var byAttr = new Dictionary<int, Em3dGroup>();
@@ -144,7 +151,7 @@ public static class Em3dMeshCheck
                             : z > 0 ? (z == 1 ? "1 zero-volume element" : $"{z} zero-volume elements")
                                     : (v == 1 ? "1 inverted element" : $"{v} inverted elements");
                 sentences.Add($"{what} {(members.Count == 1 ? "lies" : "lie")} in {List(where)} around " +
-                              $"({Mm(members.Average(e => e.Cx) * mm)}, {Mm(members.Average(e => e.Cy) * mm)}) mm; {ElementRemedy}");
+                              $"({Mm(members.Average(e => e.Cx) * mm)}, {Mm(members.Average(e => e.Cy) * mm)}) mm; {(robustMeshing ? ElementRemedyRobustOn : ElementRemedy)}");
             }
             if (bad.Count > placed.Count)
                 sentences.Add($"{bad.Count - placed.Count} more such elements lie elsewhere in the mesh.");
@@ -182,7 +189,7 @@ public static class Em3dMeshCheck
         foreach (var (tag, o) in orphanGroups)
             sentences.Add($"{o.Count} surface triangle{(o.Count == 1 ? "" : "s")} of {Name(tag)} near ({Mm(o.X / o.Count * mm)}, " +
                           $"{Mm(o.Y / o.Count * mm)}) mm {(o.Count == 1 ? "is" : "are")} a face of no element: that surface is not " +
-                          $"embedded in the volume mesh, which the solver cannot read; {OrphanRemedy}");
+                          $"embedded in the volume mesh, which the solver cannot read; {(robustMeshing ? OrphanRemedyRobustOn : OrphanRemedy)}");
 
         return new Em3dMeshCheckResult(mesh.TetCount, zero, inverted, orphans, sentences);
     }

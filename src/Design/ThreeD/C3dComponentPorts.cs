@@ -50,6 +50,9 @@ namespace CircuitRF.Design.ThreeD;
 /// <param name="AlongX">True when the gap it faces runs along x.</param>
 public sealed record C3dLanding(string Port, string Conductor, (double X0, double Y0, double X1, double Y1) Box, bool AlongX)
 {
+    /// <summary>The ends of the side facing the gap, on the DBU grid: the port's sheet has these two corners there.</summary>
+    public (Point2 A, Point2 B) Face { get; init; }
+
     /// <summary>How far it reaches along the gap, metres.</summary>
     public double DepthM => AlongX ? Box.X1 - Box.X0 : Box.Y1 - Box.Y0;
 
@@ -660,7 +663,10 @@ public static class C3dComponentPorts
                                                         (side < 0 ? Math.Abs(t.B - faces[i]) < 1e-12 : Math.Abs(t.A - faces[i]) < 1e-12));
                 if (!solidAcross) continue;
                 double e0 = Math.Min(edge, grid), e1 = Math.Max(edge, grid);
-                landings.Add(new C3dLanding(name, solid.Name, ax ? (e0, w0, e1, w1) : (w0, e0, w1, e1), ax));
+                landings.Add(new C3dLanding(name, solid.Name, ax ? (e0, w0, e1, w1) : (w0, e0, w1, e1), ax)
+                {
+                    Face = ax ? (new Point2(grid, w0), new Point2(grid, w1)) : (new Point2(w0, grid), new Point2(w1, grid)),
+                });
                 return grid;
             }
             endWhy = $"the copper of '{solid.Name}' facing its gap is not one straight face, and no landing rectangle reaching back from it " +
@@ -771,7 +777,14 @@ public static class C3dComponentPorts
                     return (e, $"{string.Join(", ", group.Select(l => l.Port).Distinct())}: the landing rectangles on '{group.Key}' leave copper islands inside its holes; it cannot be lowered as one outline.", group.Select(l => l.Port).ToHashSet(StringComparer.Ordinal));
                 newHoles.Add(Ring(outer[k].Polygon!));
             }
-            solids[at] = solids[at] with { Primitive = own with { Outline = Ring(outer.Polygon!), Holes = newHoles } };
+            var joined = own with { Outline = Ring(outer.Polygon!), Holes = newHoles };
+            // The face is picked on scan lines inset from the width's ends and rounded to the grid, so a slanted copper edge can cross it
+            // a fraction of a DBU from the sheet's corner. Left there, that corner stands a sliver out of the copper's side, far below
+            // anything a mesher can resolve: a surface inside the metal, which no element has for a face. So the copper's side takes
+            // the sheet's two corners exactly, as a turned port's does. A corner it does not come near keeps the outline as it is.
+            foreach (var l in group)
+                joined = C3dTurnedPorts.Seam(joined, l.Face.A, l.Face.B, 2 * dbu + e.OutlineMoveM) ?? joined;
+            solids[at] = solids[at] with { Primitive = joined };
         }
         int order = solids.Count == 0 ? 0 : solids.Max(s => s.Order);
         foreach (var b in bridges)

@@ -32,6 +32,31 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
     private static long Um(double v) => (long)Math.Round(v * Dbu);
     private const double M = 1e-6;   // µm in metres
 
+    /// <summary>A slanted copper edge crossing the face a fraction of a DBU from the sheet's corner would leave a sliver of the sheet inside
+    /// the metal, which no mesh element has for a face. The copper takes the corner exactly: it is a vertex of the outline, with no
+    /// other vertex beside it.</summary>
+    [Fact]
+    public void ASlantedEdgeCrossingTheFaceBesideTheSheetsCorner_TakesTheCorner()
+    {
+        // A 45° edge reaching x = 4900 µm at the bottom of C1's shared width, y = 4750 µm, and falling away above it.
+        var slant = new PolygonShape { Layer = Top, Xy = [Um(4000), Um(4650), Um(5000), Um(4650), Um(4700), Um(4950), Um(4000), Um(4950)] };
+        var (g, _) = Assemble(["C1"], [slant]);
+        Assert.True(g.Ok, g.Refusal);
+        var build = g.ComponentPorts!;
+        var c1 = Assert.Single(build.Ports);
+        Assert.Equal("verified", c1.Verdict);
+        var port = c1.Port!;
+        var corner = new Point2(port.Rect.Min.U * 1e-9, port.Rect.Min.V * 1e-9);
+        Assert.InRange(corner.X, 4899 * M, 4900 * M);
+
+        var low = c1.Landings.Single(l => l.Box.X0 < 5000 * M);
+        var outline = ((Em3dExtrudedPolygon)build.Elaboration.Solids.Single(s => s.Name == low.Conductor).Primitive).Outline;
+        var beside = outline.Where(q => Math.Abs(q.X - corner.X) < 1e-7 && Math.Abs(q.Y - corner.Y) < 1e-7).ToList();
+        var only = Assert.Single(beside);
+        Assert.Equal(corner.X, only.X, 12);
+        Assert.Equal(corner.Y, only.Y, 12);
+    }
+
     /// <summary>The gate: the sheet's ends lie on the landing faces within 1 DBU, no sample of the sheet is copper, the conductor
     /// count is unchanged, and each landing overlaps its pad across the port's whole width.</summary>
     [Fact]

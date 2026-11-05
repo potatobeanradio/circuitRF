@@ -263,7 +263,7 @@ public static partial class Em3dRunService
 
         // brief-emb-2 R-emb2-4 — the mesh itself, before Palace: a zero-volume or inverted element, or a surface triangle that is
         // no element's face, is refused naming where it is, instead of a solver abort that names nothing.
-        if (Em3dMeshCheck.Check(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering.Groups) is { Refusal: { } badMesh })
+        if (Em3dMeshCheck.Check(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering.Groups, robustMeshing: setup.RobustMeshing) is { Refusal: { } badMesh })
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(Em3dMeshCheck.Source,
                 badMesh + $" The mesh is {Path.Combine(runDir, GmshGeoWriter.MeshFile)}."));
 
