@@ -318,6 +318,7 @@ public static class SymbolPortDefs
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
             case SymbolKind.Snp:
+            case SymbolKind.EmFieldData:
                 return GenerateSnpPorts(portCount >= 1 ? portCount : 2,
                     refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
             // VerilogA: a generic box whose terminal count is the MODEL's, not the symbol's. Pins
@@ -884,7 +885,7 @@ public sealed class EditableComponent
     /// <summary>World coordinates of a port by 0-based port index.</summary>
     public (double X, double Y) GetPortWorldCoord(int portIndex)
     {
-        var ports = Symbol == SymbolKind.Snp
+        var ports = IsSnpBox
             ? GetEffectiveSnpPortDefs()
             : SymbolPortDefs.For(Symbol, PortCount);
         if ((uint)portIndex >= (uint)ports.Length)
@@ -907,7 +908,10 @@ public sealed class EditableComponent
     /// is a copy that disagrees the first time the pin generation changes.</para>
     /// </summary>
     public int EffectivePortCount =>
-        Symbol == SymbolKind.Snp ? GetEffectiveSnpPortDefs().Length : PortCount;
+        IsSnpBox ? GetEffectiveSnpPortDefs().Length : PortCount;
+
+    /// <summary>The kinds drawn as the Touchstone box: pins from the port count, and for an SnP also from its layout parameters.</summary>
+    internal bool IsSnpBox => Symbol is SymbolKind.Snp or SymbolKind.EmFieldData;
 
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
@@ -1005,6 +1009,7 @@ public sealed class EditableComponent
             GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
             GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose),
             SnpPortLabels),
+        SymbolKind.EmFieldData => BuiltInSymbols.PrimitivesForEmFieldData(PortCount, SnpPortLabels),
         SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
             => BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")),
         SymbolKind.Match      => BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()),
@@ -1073,7 +1078,7 @@ public sealed class EditableComponent
                 return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
             }
 
-            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp)
+            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp or SymbolKind.EmFieldData)
             {
                 var p = Parameters.FirstOrDefault(q => q.Name == "NumPorts");
                 if (p is not null && int.TryParse(p.Expression, out int n) && n >= 1)
@@ -1690,6 +1695,11 @@ public sealed class SchematicEditModel
                     SnpPathPolicy.Resolve(c.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression,
                                           HostWorkspaceRoot, SchematicDirectory),
                     c.PortCount);
+            // An EM Field Data block's pins are named by its record (brief-cosim-pattern-2 R-cp2-2).
+            else if (c.Symbol == SymbolKind.EmFieldData)
+                c.SnpPortLabels = CircuitRF.Core.Devices.EmFieldDataRecord.ReadPortNames(
+                    SnpPathPolicy.Resolve(c.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression,
+                                          HostWorkspaceRoot, SchematicDirectory));
             CellSymbolResolution? res = c.ExternalSymbolRef is not null && cellRefResolutions is not null
                 && cellRefResolutions.TryGetValue(c.Id, out var r) ? r : null;
             return c.ToRenderComponent(IsConnected, res);
@@ -1855,7 +1865,7 @@ public sealed class SchematicEditModel
         }
 
         // SnP: use RefNode/PinConfig/Pitch-aware port defs (may include N+1 ports when RefNode=true).
-        if (comp.Symbol == SymbolKind.Snp)
+        if (comp.IsSnpBox)
         {
             var snpDefs = comp.GetEffectiveSnpPortDefs();
             var snpResult = new (float LocalX, float LocalY, int PortIndex)[snpDefs.Length];

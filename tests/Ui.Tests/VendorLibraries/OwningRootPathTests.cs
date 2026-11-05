@@ -129,7 +129,8 @@ public sealed class OwningRootPathTests : IDisposable
         var bySite = new Dictionary<string, (string Reference, string Param)[]>
         {
             ["ResolveExtDeviceParameters"] = [("VerilogA", "File")],
-            ["ResolveSnpParameters"]       = [("SnP", "File")],
+            ["ResolveSnpParameters"]       = [("SnP", "File"), ("EmFieldData", "File")],
+            ["BindEmFieldData"]            = [("EmFieldData", "File")],
             ["ComposedFetCell"]            = [("ComposedFET", "File")],
             ["ResolveComposedParameters"]  = [("ComposedCore", "File")],
             ["ResolveWBondParameters"]     = [("wBond", "File"), ("wBond", "MaterialLibrary")],

@@ -249,6 +249,9 @@ public static class InstanceNetContract
         ["SnP"] =
             "NumPorts=N binds N nets, or N+1 where the extra trailing net is a floating reference. " +
             "Both counts are legal and the reader tells them apart by how many were written.",
+        [EmFieldDataRecord.TypeName] =
+            "One net per port of the result record its File names, in the record's order, or one more where the extra trailing net " +
+            "is a floating reference, as on an SnP. The record states the count, so there is none until one is chosen.",
         ["wBond"] =
             "2 nets per wire array — Arrays=M binds 2M — plus one trailing reference net when " +
             "RefPin is on. The arrays come from the design the instance carries or names, so there " +

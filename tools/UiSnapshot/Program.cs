@@ -173,6 +173,7 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
+string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
@@ -257,6 +258,7 @@ for (int i = 0; i < args.Length; i++)
         case "--settings-solvers": settingsSolvers = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
+        case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
@@ -363,6 +365,18 @@ if (cellOwnValues is { } ownCsch && select is { } ownInstance && output is not n
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowCellOwnValues(ownCsch, ownInstance, output);
+}
+// --em-run-settings <file.cemr>: brief-cosim-pattern-2 R-cp2-6 — the settings a saved EM result was made with, what differs from its setup marked.
+if (emRunSettings is { } runSettingsRecord && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    var settingsDialog = CircuitRF.Ui.Views.Dialogs.EmRunSettingsDialog.Build(runSettingsRecord);
+    settingsDialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); settingsDialog.UpdateLayout(); }
+    settingsDialog.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
 }
 if ((analysisDialog ?? emSolvesDialog) is { } sdl6Csch && output is not null)
 {

@@ -437,6 +437,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
             IsCommon: true),
+        // A saved EM result, placed as a block. DataFiles for SnP's reason: what is placed is a file a run left.
+        [SymbolKind.EmFieldData]   = new("EM Field Data", "EM",
+            Category: ComponentCategory.DataFiles,
+            SearchTerms: ["EM Field Data", "EmFieldData", "cemr", "result record", "fields", "co-simulation", "cosimulation", "SAR", "B1", "far field", "radiation pattern"]),
         // SpiceModel — a SPICE .model card or .subckt definition placed as a component, run from
         // the file rather than copied into a cell. ComponentCategory.DataFiles for the same reason
         // SnP is there: what the user is placing is a FILE they already have, and that is how they
@@ -928,7 +932,8 @@ public static class ComponentTypeRegistry
     {
         // The three variadic boxes. Their pin geometry is generated from N — SymbolPortDefs.For
         // takes the count — and PortCountParameterIsExercisedTests holds that agreement.
-        SymbolKind.Snp or SymbolKind.ZPort or SymbolKind.Sdd => "NumPorts",
+        // An EM Field Data block's NumPorts is hidden: it remembers the pins it is drawn with, and the record decides the count.
+        SymbolKind.Snp or SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.EmFieldData => "NumPorts",
         // A Verilog-A model's terminal count is the MODEL's, filled in from the file it names.
         SymbolKind.VerilogA                                  => "Pins",
         // 1 common port plus `Throws` throws. See the remarks above for why both tiles answer.
@@ -1162,6 +1167,7 @@ public static class ComponentTypeRegistry
         SymbolKind.PnTone        => "PnTone",
         SymbolKind.ModSource     => "MOD_Source",
         SymbolKind.Snp           => "SnP",
+        SymbolKind.EmFieldData   => EmFieldDataRecord.TypeName,
         // Sentinel, like Var and Meas: no ComponentModelFactory entry exists and none can. A
         // SpiceModel resolves at EXTRACTION to whatever its file describes — a primitive for a
         // .model card, a subcircuit cell for a .subckt — so this string never reaches the engine.
@@ -2389,6 +2395,17 @@ public static class ComponentTypeRegistry
                     new("InterpMode",  "CubicSpline",   "",  false, UnitDimension.None),
                     new("InterpDomain","MA",            "",  false, UnitDimension.None),
                     new("ExtrapMode",  "NearestEdge",   "",  false, UnitDimension.None),
+                ];
+            }
+
+            // EM Field Data: File is the whole interface. NumPorts is the pin count it is drawn with, set from the record when
+            // one is picked and never offered, and the extraction leaves it out of the netlist.
+            case SymbolKind.EmFieldData:
+            {
+                int n = portCount >= 1 ? portCount : 2;
+                return [
+                    new("NumPorts",    $"{n}",         "",  false, UnitDimension.None),
+                    new("File",        "",              "",  true,  UnitDimension.None),
                 ];
             }
 

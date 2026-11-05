@@ -79,6 +79,27 @@ internal static class NpyReader
         throw new InvalidDataException("Missing '__meta__' field — not a circuitRF .npy file.");
     }
 
+    /// <summary>True when the file is shorter than its own header says, or its header cannot be read at all. Reads the header only.</summary>
+    public static bool IsTruncated(string path)
+    {
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var r  = new BinaryReader(fs, Encoding.ASCII, leaveOpen: true);
+            if (!r.ReadBytes(6).SequenceEqual(Magic)) return true;
+            byte major = r.ReadByte();
+            r.ReadByte();
+            if (major is not (1 or 2)) return true;
+            int headerLen = major == 1 ? r.ReadUInt16() : (int)r.ReadUInt32();
+            long need = fs.Position + headerLen;
+            if (need > fs.Length) return true;
+            string header = Encoding.ASCII.GetString(r.ReadBytes(headerLen)).TrimEnd();
+            foreach (var f in ParseHeader(header)) need += f.ByteCount;
+            return fs.Length < need;
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or FormatException or OverflowException) { return true; }
+    }
+
     /// <summary>The path form's reader over a caller's stream, which is left open.</summary>
     public static (DataSet DataSet, ImportedLinearNetwork? LinearNetwork) Read(Stream stream)
     {

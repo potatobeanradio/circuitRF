@@ -3,7 +3,7 @@
 // docs/design/sar.md §11.
 //
 //   <stem>.fields/fields.json          PortFieldManifest: the ports and their Z0, each SAR frequency's S, tissue matrix and files,
-//                                      the tissue names and regions, and the stamp the .sNp carries too
+//                                      the tissue names and regions, and the stamp the result record carries too
 //   <stem>.fields/f<j>.{x,y,z}faces.npy the cells' faces along each axis, float64, metres (n + 1 values)
 //   <stem>.fields/f<j>.{sigma,rho,volume}.npy  σ, ρ and V per cell, float32, C order over (x, y, z)
 //   <stem>.fields/f<j>.owner.npy       each cell's tissue, int16: an index into the manifest's Tissues, −1 background
@@ -19,10 +19,10 @@
 // share one definition of a wave. The power wave of port i is a = (U + Z0·I)/(√2·√Z0) in circuitRF's DFT of the probes:
 // openEMS's dumps carry a ×2 against that DFT (SarVolumeFiles' header), and with it P_inc = |a|² exactly.
 //
-// STALE (R-sar9-5). The manifest and the .sNp's provenance both carry the run's stamp, written in that order, so the .sNp is
-// never older than its fields. A set whose stamp is not the .sNp's belongs to another run and is refused naming every port; a
-// port whose file is missing or the wrong size is refused naming that port. File times are not compared: a git checkout or a
-// copy sets them arbitrarily, and a committed field set would read as stale on every fresh clone.
+// STALE (brief-cosim-pattern-2). The result record is the only pointer to a field set, and the manifest carries the run's stamp as the
+// record does. A set whose stamp is not the record's belongs to another run and is refused saying so; a file missing or the wrong size
+// is refused naming it (EmResultIntegrity). File times are not compared: a git checkout or a copy sets them arbitrarily, and a committed
+// field set would read as stale on every fresh clone.
 //
 // READ MEMORY-MAPPED. A whole body at 2 mm is ~1.6 GB per port, so a field file is never read whole: each read maps the file
 // and copies one run of cells, through a view stream (no unsafe code in this assembly).
@@ -34,7 +34,6 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout;
 using CircuitRF.Engine;
@@ -93,7 +92,7 @@ public sealed class PortFieldManifest
 {
     public int FormatVersion { get; set; } = 1;
 
-    /// <summary>The run's stamp, which the .sNp's provenance carries too (R-sar9-5).</summary>
+    /// <summary>The run's stamp, which its result record, .npy and .sNp carry too.</summary>
     public string Stamp { get; set; } = "";
 
     /// <summary>The .sNp the set belongs to, by file name.</summary>
@@ -159,10 +158,7 @@ public sealed class PortFieldManifest
 public sealed class PortFieldSet : IPortFieldSet, IDisposable
 {
     /// <summary>The manifest's name in the folder.</summary>
-    public const string ManifestFile = "fields.json";
-
-    /// <summary>The provenance line the .sNp carries: <c>circuitRF-EM 3D port fields: '&lt;folder&gt;' stamp &lt;stamp&gt;</c>.</summary>
-    public const string ProvenancePrefix = "circuitRF-EM 3D port fields:";
+    public const string ManifestFile = CircuitRF.Core.Devices.EmResultIntegrity.ManifestFile;
 
     /// <summary>Bytes one port's E or H takes per cell: three complex64 components.</summary>
     public const int FieldBytesPerCell = 24;
@@ -210,31 +206,6 @@ public sealed class PortFieldSet : IPortFieldSet, IDisposable
         => DateTimeOffset.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" +
            Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
 
-    /// <summary>The .sNp's provenance line for a set in <paramref name="folder"/> with <paramref name="stamp"/>.</summary>
-    public static string ProvenanceLine(string folder, string stamp) => $"{ProvenancePrefix} '{Path.GetFileName(folder)}' stamp {stamp}";
-
-    /// <summary>The line for a set in <paramref name="folder"/> and the Touchstone at <paramref name="snpPath"/>, wherever each one is:
-    /// a Touchstone a run moved with <c>-o</c> names the set by a relative path. Goes with the line in CP-2.</summary>
-    public static string ProvenanceLine(string folder, string stamp, string snpPath)
-        => $"{ProvenancePrefix} '{Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(snpPath))!, Path.GetFullPath(folder)).Replace('\\', '/')}' stamp {stamp}";
-
-    private static readonly Regex Provenance = new(@"port fields:\s*'([^']+)'\s+stamp\s+(\S+)", RegexOptions.CultureInvariant);
-
-    /// <summary>The folder (beside the .sNp) and stamp a .sNp's provenance names; null when it names none.</summary>
-    public static (string Folder, string Stamp)? ReadProvenance(string snpPath)
-    {
-        if (!File.Exists(snpPath)) return null;
-        foreach (string raw in File.ReadLines(snpPath))
-        {
-            string line = raw.TrimStart();
-            if (line.StartsWith('#')) break;
-            if (!line.StartsWith('!') || !line.Contains(ProvenancePrefix, StringComparison.Ordinal)) continue;
-            if (Provenance.Match(line) is { Success: true } m)
-                return (Path.Combine(Path.GetDirectoryName(Path.GetFullPath(snpPath)) ?? "", m.Groups[1].Value), m.Groups[2].Value);
-        }
-        return null;
-    }
-
     public static PortFieldManifest? ReadManifest(string folder)
     {
         string path = Path.Combine(folder, ManifestFile);
@@ -248,44 +219,27 @@ public sealed class PortFieldSet : IPortFieldSet, IDisposable
     // ── opening, with the refusals R-sar9-5 asks for ──────────────────────────────────────────────────
 
     /// <summary>
-    /// The field set of <paramref name="snpPath"/> at <paramref name="frequencyHz"/>, or the sentence refusing it: the .sNp names
-    /// no fields, the folder or manifest is missing, the set belongs to another run (stale), the frequency is not one the run kept,
-    /// or a port's file is missing or truncated — each naming what is wrong and the port.
+    /// The field set of the result record at <paramref name="recordPath"/> at <paramref name="frequencyHz"/>, or the sentence refusing it:
+    /// the record is refused as an EM Field Data block refuses it, it holds no field set, or the frequency is not one the run kept.
     /// </summary>
-    public static (PortFieldSet? Set, string? Refusal) Open(string snpPath, double frequencyHz)
+    public static (PortFieldSet? Set, string? Refusal) Open(string recordPath, double frequencyHz)
     {
-        string name = Path.GetFileName(snpPath);
-        if (!File.Exists(snpPath)) return (null, $"'{snpPath}' does not exist.");
-        if (ReadProvenance(snpPath) is not { } prov)
-            return (null, $"'{name}' carries no per-port fields: it was written by a run without the setup's Sar.PerPortFields. Turn it on and " +
-                          "run the EM setup again.");
-        string folder = prov.Folder;
+        var (record, refused) = CircuitRF.Core.Devices.EmFieldDataRecord.Open(recordPath);
+        if (record is null) return (null, refused);
+        string name = Path.GetFileName(recordPath);
+        if (record.FieldsFolder is not { } folder)
+            return (null, $"'{name}' holds no field set: the run that wrote it did not have Keep per-port fields on (Sar.PerPortFields). " +
+                          "Turn it on and run the EM setup again.");
         if (ReadManifest(folder) is not { } manifest)
-            return (null, $"'{name}' names its per-port fields in '{Path.GetFileName(folder)}', and {(Directory.Exists(folder) ? $"its {ManifestFile} is missing or unreadable" : "that folder is missing")}: " +
-                          "the fields must be kept beside the .sNp they belong to. Run the EM setup again.");
-        if (!string.Equals(manifest.Stamp, prov.Stamp, StringComparison.Ordinal))
-            return (null, $"The per-port fields in '{Path.GetFileName(folder)}' are stale: they are from another run than '{name}' " +
-                          $"(stamp {manifest.Stamp}, the .sNp's {prov.Stamp}), so port{(manifest.Ports.Count == 1 ? "" : "s")} " +
-                          $"{string.Join(", ", manifest.Ports.Select(p => p.Number))} would be recombined with the wrong S-matrix. Run the EM setup again.");
+            return (null, $"The field set of '{name}' has no readable {ManifestFile}. Run the EM setup again.");
         var freq = manifest.Frequencies.FirstOrDefault(f => Math.Abs(f.Hz - frequencyHz) <= 1e-9 * Math.Max(f.Hz, frequencyHz));
         if (freq is null)
             return (null, $"'{name}' keeps per-port fields at {string.Join(", ", manifest.Frequencies.Select(f => MaterialDispersion.Hz(f.Hz)))} only, " +
                           $"not at {MaterialDispersion.Hz(frequencyHz)}: fields are kept at the setup's SAR frequencies (Sar.FrequenciesGHz).");
-        foreach (var f in freq.Files)
-        {
-            string path = Path.Combine(folder, f.Name);
-            string who = f.Port > 0 ? $"Port {f.Port}'s" : "The shared";
-            if (!File.Exists(path))
-                return (null, $"{who} field file '{f.Name}' at {MaterialDispersion.Hz(freq.Hz)} is missing from '{Path.GetFileName(folder)}'. Run the EM setup again.");
-            long size = new FileInfo(path).Length;
-            if (size != f.Bytes)
-                return (null, $"{who} field file '{f.Name}' at {MaterialDispersion.Hz(freq.Hz)} is {size:N0} bytes where its run wrote {f.Bytes:N0}: it is " +
-                              "damaged or from another run. Run the EM setup again.");
-        }
         try { return (OpenUnchecked(folder, manifest, freq), null); }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
         {
-            return (null, $"The per-port fields in '{Path.GetFileName(folder)}' could not be read: {e.Message}");
+            return (null, $"The field set of '{name}' could not be read: {e.Message}");
         }
     }
 

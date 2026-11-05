@@ -63,7 +63,7 @@ public sealed record EmProvenanceStamp(string GeometryHash, string MeshHash, str
     public const string PortPrefixNumbered = "circuitRF-EM port ";
 
     /// <summary>brief-cosim-pattern-1 R-cp1-2 — the run's stamp, which its <c>.cemr</c>, <c>.npy</c> and field set carry too.</summary>
-    public const string StampPrefix = "circuitRF-EM stamp: ";
+    public const string StampPrefix = CircuitRF.Core.Devices.EmResultIntegrity.SnpStampPrefix;
 }
 
 public static class EmSnpProvenance

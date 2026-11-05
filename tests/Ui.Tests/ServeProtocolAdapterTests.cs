@@ -695,7 +695,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
 
         var kinds = doc.GetProperty("outputs").EnumerateArray()
             .Select(o => o.GetProperty("kind").GetString()!).ToArray();
-        Assert.Equal(["touchstone", "npy"], kinds);
+        Assert.Equal(["touchstone", "npy", "record"], kinds);
 
         foreach (var o in doc.GetProperty("outputs").EnumerateArray())
             Assert.True(File.Exists(o.GetProperty("path").GetString()!),

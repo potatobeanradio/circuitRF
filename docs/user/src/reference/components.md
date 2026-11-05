@@ -1227,6 +1227,16 @@ bridge over a ground strap.
 
 ## Data-file components
 
+### EM Field Data {#emfielddata}
+
+A finished EM run as a block: one parameter, **File**, a result record (`.cemr`). Its pins are named after the run's ports, in the
+run's order, and it stamps the record's Touchstone exactly as an SnP does, so its S is the file's. It holds a far field or a field set or it
+is refused, and it is the block a [Fields analysis](cosimulation.html#schematic) names. A result with neither belongs in an SnP.
+
+```
+EmFieldData:EM1 feed cl cr ct File="results/Loop Coil CoSim.openems.cemr"
+```
+
 ### Touchstone N-Port (SnP) {#snp}
 
 {{symbol: snp}}

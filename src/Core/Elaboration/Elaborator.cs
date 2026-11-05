@@ -956,6 +956,9 @@ public sealed class Elaborator
                 continue;
             }
 
+            if (inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+                inst = BindEmFieldData(inst, childPath);
+
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
@@ -1378,6 +1381,29 @@ public sealed class Elaborator
     }
 
     /// <summary>
+    /// brief-cosim-pattern-2 R-cp2-2 / R-cp2-5 — an EM Field Data line against its record. The port count is the record's, so the line's
+    /// nets are counted here rather than where they are read: N nets, or N+1 with the trailing one a floating reference, SnP's rule. Every
+    /// refusal is raised here, where the instance has its path, and it stops every analysis alike.
+    /// </summary>
+    private Instance BindEmFieldData(Instance inst, string childPath)
+    {
+        string who = EmFieldDataRecord.Describe(childPath);
+        string file = inst.Overrides.FirstOrDefault(o => o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))?.Expression.Trim() ?? "";
+        if (file.Length >= 2 && file[0] == '"' && file[^1] == '"') file = file[1..^1];
+        var (record, refusal) = EmFieldDataRecord.Open(ResolveSnpFilePath(file));
+        if (record is null) throw new InvalidOperationException($"{who}: {refusal}");
+        int nets = inst.NetBindings.Count, ports = record.PortCount;
+        string name = Path.GetFileName(record.RecordPath);
+        if (nets != ports && nets != ports + 1)
+            throw new InvalidOperationException(
+                $"{who} is wired to {nets} net(s) and '{name}' holds {ports} port(s) ({string.Join(", ", record.PortNames)}). " +
+                "A record re-written with a different port count changes the block's pins: pick the record again and rewire it.");
+        return nets == ports
+            ? inst
+            : new Instance(inst.InstanceName, inst.Reference, [.. inst.NetBindings.Take(ports)], inst.Overrides) { RefNetBinding = inst.NetBindings[ports] };
+    }
+
+    /// <summary>
     /// D7: an instance override of a cell is checked against what the cell declares before it is bound. A name that is
     /// both a parameter and a variable of the cell is ambiguous to override and is refused naming both; a name that is
     /// neither, and that nothing in the cell reads, would change nothing and is refused (<see cref="WarnUnreadOverrides"/>
@@ -1431,7 +1457,8 @@ public sealed class Elaborator
             return ResolvePnToneParameters(inst, parentScope);
         if (inst.Reference.Equals("MOD_Source", StringComparison.OrdinalIgnoreCase))
             return ResolveModSourceParameters(inst, parentScope);
-        if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
+        if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
         // A .cmodel path is not an expression, for SnP's reason.
         if (inst.Reference.Equals(ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))

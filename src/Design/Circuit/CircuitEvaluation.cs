@@ -412,6 +412,8 @@ public static class CircuitEvaluation
         var notes       = new List<string>();
         var errors      = new List<string>();
         var convergence = new List<AnalysisConvergence>();
+        var plainSnps   = new List<PlainSnpFieldsBlock>();
+        CircuitRF.Design.Em3d.EmFieldBlocks.NoteSetupChanges(nl);
 
         foreach (var pa in plan.Analyses)
         {
@@ -459,6 +461,7 @@ public static class CircuitEvaluation
             }
             catch (Exception ex)
             {
+                if (ex is CircuitRF.Design.Em3d.PlainSnpFieldsBlockException plain) plainSnps.Add(new PlainSnpFieldsBlock(plain.Block, plain.SnpPath));
                 errors.Add($"'{pa.ResultName}': {ex.Message}");
                 convergence.Add(new AnalysisConvergence(pa.ResultName, false, ex.Message));
             }
@@ -499,7 +502,7 @@ public static class CircuitEvaluation
 
         if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
-                string.Join("; ", errors), warnings: nlWarnings, notes: nlNotes, convergence: convergence);
+                string.Join("; ", errors), warnings: nlWarnings, notes: nlNotes, convergence: convergence) { PlainSnpFieldsBlocks = plainSnps };
 
         if (results.Count == 0)
             return new RunResult(RunStatus.NoAnalysis,
@@ -513,7 +516,7 @@ public static class CircuitEvaluation
             ? string.Join("; ", allNotes)
             : $"{results.Count} analysis run(s) complete";
         return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped, nlNotes,
-                             convergence, outcomes, fields);
+                             convergence, outcomes, fields) { PlainSnpFieldsBlocks = plainSnps };
     }
 
     /// <summary>

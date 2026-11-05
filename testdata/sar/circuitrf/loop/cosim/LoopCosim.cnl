@@ -1,9 +1,9 @@
 ; brief-sar-9 — MRI_Loop_Coil by co-simulation: LoopPorts.c3d's four ports (the feed and the three capacitor gaps, each a
-; 50 Ohm port) as one S-parameter block, the tutorial's 5.4 pF capacitors put back across the gaps here, and its 2.5 Ohm
+; 50 Ohm port) as one EM Field Data block, the tutorial's 5.4 pF capacitors put back across the gaps here, and its 2.5 Ohm
 ; feed driving port 1. The fields analysis recombines the run's per-port fields with the waves this circuit delivers.
 Cgap = 5.4 pF
 Port:P1 feed 0 Num=1 Z=2.5 Ohm
-SnP:EM1 feed cl cr ct 0 NumPorts=4 File="../results/LoopPorts CoSim.openems.s4p"
+EmFieldData:EM1 feed cl cr ct File="../results/LoopPorts CoSim.openems.cemr"
 C:Cleft cl 0 C=Cgap
 C:Cright cr 0 C=Cgap
 C:Ctop ct 0 C=Cgap

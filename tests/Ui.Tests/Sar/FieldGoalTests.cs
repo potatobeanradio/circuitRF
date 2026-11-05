@@ -37,7 +37,7 @@ public sealed class FieldGoalTests(ITestOutputHelper output) : IDisposable
     private static string Bench(string dir, string drive = "drive=1", string ports = "Port:P1 in 0 Num=1 Z=50 Ohm\nC:C1 p2 0 C=2e-12") => $"""
         W2 = polar(1,-90)
         {ports}
-        SnP:EM1 in p2 0 NumPorts=2 File="{Path.Combine(dir, "ems.s2p")}"
+        EmFieldData:EM1 in p2 File="{Path.Combine(dir, "ems.cemr")}"
         analysis F1 type=fields block=EM1 freq=300 freqUnit=MHz {drive} average=no
         """;
 
@@ -188,7 +188,7 @@ public sealed class LoopCoilOptimizeTests(ITestOutputHelper output)
     private static string Bench(string snp, bool fields) => $"""
         Cgap = 4.5 pF
         Port:P1 feed 0 Num=1 Z=2.5 Ohm
-        SnP:EM1 feed cl cr ct 0 NumPorts=4 File="{snp}"
+        {(fields ? $"EmFieldData:EM1 feed cl cr ct File=\"{snp}\"" : $"SnP:EM1 feed cl cr ct 0 NumPorts=4 File=\"{snp}\"")}
         C:Cleft cl 0 C=Cgap
         C:Cright cr 0 C=Cgap
         C:Ctop ct 0 C=Cgap
@@ -225,7 +225,7 @@ public sealed class LoopCoilOptimizeTests(ITestOutputHelper output)
     public void AtTheOptimum_B1pMeanIsTheFixedDatas()
     {
         var (cgap, _) = Optimize();
-        var circuit = PreparedCircuit.FromText(Bench(LoopCosim.Snp(LoopCosim.Workspace), fields: true), LoopCosim.Folder, LoopCosim.Folder);
+        var circuit = PreparedCircuit.FromText(Bench(LoopCosim.Record(LoopCosim.Workspace), fields: true), LoopCosim.Folder, LoopCosim.Folder);
         var run = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
         {
             Tunables = new Dictionary<string, string> { ["Cgap"] = cgap }, Analyses = ["F1"], Fields = FieldsOutput.OnDemand,
@@ -252,7 +252,8 @@ public sealed class CapacitorYieldTests(ITestOutputHelper output) : IDisposable
         // port 2 is the pair's other lumped port, about −437 Ω at 1 GHz: 100 nH with the toleranced capacitor nearly resonates it,
         // so the 2 % moves port 2's wave and with it the peak. A copy of the set: the worst trial's re-run writes beside it.
         Directory.CreateDirectory(_dir);
-        File.Copy(Path.Combine(PairCosim.Fixed, PairCosim.Stem + ".s2p"), Path.Combine(_dir, PairCosim.Stem + ".s2p"));
+        foreach (string ext in new[] { ".s2p", "_em.npy", ".cemr" })
+            File.Copy(Path.Combine(PairCosim.Fixed, PairCosim.Stem + ext), Path.Combine(_dir, PairCosim.Stem + ext));
         string fields = PortFieldSet.FolderFor(Path.Combine(_dir, PairCosim.Stem + ".s2p"));
         Directory.CreateDirectory(fields);
         foreach (string f in Directory.EnumerateFiles(PortFieldSet.FolderFor(Path.Combine(PairCosim.Fixed, PairCosim.Stem + ".s2p"))))
@@ -260,7 +261,7 @@ public sealed class CapacitorYieldTests(ITestOutputHelper output) : IDisposable
 
         string bench = $"""
             Port:P1 in 0 Num=1 Z=50 Ohm
-            SnP:EM1 in p2 0 NumPorts=2 File="{Path.Combine(_dir, PairCosim.Stem + ".s2p")}"
+            EmFieldData:EM1 in p2 File="{Path.Combine(_dir, PairCosim.Stem + ".cemr")}"
             L:L2 p2 mid L=100 nH
             C:C2 mid 0 C=0.84 pF
             analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1 average=no

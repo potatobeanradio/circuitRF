@@ -289,7 +289,6 @@ public static partial class Em3dRunService
         // them takes minutes, and a failure or a cancel here leaves the previous result's set whole ────────
         var paths = run.Paths(Me);
         using var staging = EmResultStaging.Begin(paths);
-        string? fieldsLine = null;
         PortFieldManifest? fieldManifest = null;
         if (runSettings.Sar is { Settings.PerPortFields: true } fieldPlan)
         {
@@ -301,7 +300,6 @@ public static partial class Em3dRunService
                 efficiencies.Count > 0 ? efficiencies : null, control, ct, grid.Cylinder);
             if (fieldError is not null) return Failed(fieldError);
             fieldManifest = manifest;
-            fieldsLine = PortFieldSet.ProvenanceLine(paths.FieldsFolder, stamp, paths.SnpPath(ports.Count));
             log.Notes.Add($"Per-port fields kept in '{Path.GetFileName(folder)}': {manifest!.Ports.Count} port{(manifest.Ports.Count == 1 ? "" : "s")} at " +
                           $"{string.Join(", ", manifest.Frequencies.Select(f => MaterialDispersion.Hz(f.Hz)))}, " +
                           $"{MachineMemory.Format(manifest.TotalBytes)}; a schematic's fields analysis recombines them with no new EM run.");
@@ -311,7 +309,7 @@ public static partial class Em3dRunService
         var dcLines = SpliceDc(data, problem, dc);
         var published = PublishDriven(run, Me, problem, data, openEms.DescribeVersion(), "cpu", new EmResultMesh(grid.Cells, "cells", null),
                                       (stagedBase, stamp) => WriteOpenEmsSnp(data, stagedBase, setup, problem, grid, plan.GridSettings, runSettings, lowering,
-                                                                             openEms, runs, fieldsLine, dcLines, stamp),
+                                                                             openEms, runs, dcLines, stamp),
                                       staging, fieldManifest);
 
         var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
@@ -470,7 +468,7 @@ public static partial class Em3dRunService
     /// <summary>R-em3d9-5b — the planar exporter with the 3D stamp and openEMS's provenance lines.</summary>
     private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
                                            OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
-                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs, string? fieldsLine = null,
+                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs,
                                            IReadOnlyList<string>? dcLines = null, string? stamp = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
@@ -514,7 +512,6 @@ public static partial class Em3dRunService
         if (lowering.SubCellWires.Count > 0)
             lines.Add("circuitRF-EM 3D sub-cell wires: " + string.Join(", ", lowering.SubCellWires.Select(Ascii)));
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
-        if (fieldsLine is not null) lines.Add(Ascii(fieldsLine));     // brief-sar-9 R-sar9-1 — the fields move and stale with this file
         lines.AddRange(dcLines ?? []);                                // brief-emdc-2 R-emdc2-4
 
         double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;

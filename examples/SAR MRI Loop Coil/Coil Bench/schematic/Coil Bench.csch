@@ -86,7 +86,7 @@
     },
     {
       "InstanceName": "EM1",
-      "Symbol": "Snp",
+      "Symbol": "EmFieldData",
       "X": 1700,
       "Y": -200,
       "Rotation": "R270",
@@ -102,14 +102,7 @@
         },
         {
           "Name": "File",
-          "Expression": "results/Loop Coil CoSim.openems.s4p",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "RefNode",
-          "Expression": "true",
+          "Expression": "results/Loop Coil CoSim.openems.cemr",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -193,18 +186,6 @@
           -325
         ]
       ]
-    },
-    {
-      "InstanceName": "GND1",
-      "Symbol": "Ground",
-      "X": 1900,
-      "Y": -200,
-      "Rotation": "R270",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [],
-      "ShowTypeLabel": false,
-      "ShowInstanceName": false
     },
     {
       "InstanceName": "GND2",

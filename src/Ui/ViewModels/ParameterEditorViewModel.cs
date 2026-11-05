@@ -548,6 +548,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public bool IsSnp => _target?.Symbol == SymbolKind.Snp;
 
+    /// <summary>A block whose File is the point of it, so its file label has the two checkboxes.</summary>
+    public bool IsDataFileBlock => IsSnp || IsEmFieldData;
+
     /// <summary>Whether the <c>File = …</c> label is drawn — the <c>File</c> parameter's own
     /// <c>ShowOnSchematic</c>, so it is the same flag a generic row's checkbox would set (issue #31).</summary>
     [ObservableProperty] private bool _showFileLabel;
@@ -725,7 +728,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (fileParam is null) return null;
         fileParam.Expression = stored;
 
-        if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
+        if (CircuitRF.Core.Devices.EmFieldDataRecord.ReadPortNames(path)?.Count is int fromRecord && target.Symbol == SymbolKind.EmFieldData)
+        {
+            var numPorts = newParams.FirstOrDefault(p => p.Name == "NumPorts");
+            if (numPorts is not null) numPorts.Expression = fromRecord.ToString();
+        }
+        else if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
         {
             var numPorts = newParams.FirstOrDefault(p => p.Name == "NumPorts");
             if (numPorts is not null) numPorts.Expression = n.ToString();
@@ -1101,7 +1109,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         Rows.Clear();
         SwitchRows.Clear();
         VariableRows.Clear();
-        if (_schematicVm is not null && comp.Symbol != SymbolKind.Snp)
+        if (_schematicVm is not null && comp.Symbol is not (SymbolKind.Snp or SymbolKind.EmFieldData))
         {
             AdoptCellDeclaredParameters(comp);
             var (cellVars, emSetups) = AdoptCellVariablesAndModel(comp);
@@ -1216,6 +1224,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowModelSwitches));
         OnPropertyChanged(nameof(ShowVariables));
         OnPropertyChanged(nameof(IsSnp));
+        OnPropertyChanged(nameof(IsEmFieldData));
+        OnPropertyChanged(nameof(IsDataFileBlock));
         OnPropertyChanged(nameof(IsSpiceModel));
         if (comp.Symbol != SymbolKind.SpiceModel && !IsVendorModelComponent(comp)) IsVendorPart = false;
         OnPropertyChanged(nameof(IsVendorModel));
@@ -1235,6 +1245,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         UpdateCanRemoveTopGroup();
         RefreshFootprintPanel();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (comp.Symbol == SymbolKind.EmFieldData) RefreshEmFieldDataProperties();
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (IsVendorModelComponent(comp)) RefreshVendorModel();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
@@ -2311,6 +2322,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // footprint change, and including the Custom… picker's own write.
         RefreshFootprintPanel();
         if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (_target.Symbol == SymbolKind.EmFieldData) RefreshEmFieldDataProperties();
         if (_target.Symbol == SymbolKind.VerilogA) RefreshVerilogAPanel();
         // The Match panel is a READOUT of the design, so it has to follow every change to it —
         // including the ones the Designer window makes, and including an undo of one.
@@ -2516,7 +2528,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private static List<EditableParameter> VisibleParams(EditableComponent comp)
     {
         // SnP uses a custom panel; generic rows are always empty.
-        if (comp.Symbol == SymbolKind.Snp) return [];
+        if (comp.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData) return [];
         return comp.Parameters
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
             // A SpiceModel's panel owns File/Name/PinConfig/Pitch, so they are not rows and must not

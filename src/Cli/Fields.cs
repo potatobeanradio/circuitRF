@@ -7,7 +7,7 @@ namespace CircuitRF.Cli;
 
 /// <summary>
 /// <c>circuitrf fields &lt;path.cnl|path.csch&gt;</c> — a schematic's <c>fields</c> analyses, headless (brief-sar-9; <c>cli.md</c> §26):
-/// an EM block's per-port fields, kept beside its <c>.sNp</c> by a 3D run with <c>Sar.PerPortFields</c>, recombined with the waves
+/// an EM Field Data block's per-port fields, named by its <c>.cemr</c> and kept by a 3D run with <c>Sar.PerPortFields</c>, recombined with the waves
 /// the circuit delivers to its ports, into SAR and B1 at one frequency — with no EM run.
 ///
 /// <para><b>It owns no recombination.</b> The run is <see cref="CircuitEvaluation.Evaluate"/>, which dispatches

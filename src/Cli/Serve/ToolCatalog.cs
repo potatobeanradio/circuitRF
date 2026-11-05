@@ -525,7 +525,7 @@ internal static class ToolCatalog
                 new("fields", ["fields"],
                     [new("path", true, "The .cnl or .csch whose fields analyses to run.")],
                     [Analysis, Set, Output],
-                    "An S-parameter block's per-port fields (kept beside its .sNp by a 3D run with Sar.PerPortFields) recombined with "
+                    "An EM Field Data block's per-port fields (its .cemr names them; a 3D run with Sar.PerPortFields keeps them) recombined with "
                   + "the waves this circuit delivers to its ports: SAR, B1± and their scalars at one frequency, per watt at the "
                   + "drive port. Starts no EM run, so a capacitor changed with set re-runs in seconds. Every enabled fields analysis "
                   + "unless analysis names one."),

@@ -348,6 +348,10 @@ internal static class DocumentSchema
         differs from the setup now. `em --adopt <file.sNp>` writes a record for a result from before records existed, with
         Setup null ("settings not recorded") and Adopted true.
 
+        A schematic reads a result through it: an EM Field Data block (`EmFieldData:EM1 a b File="x.cemr"`) names a record, takes its
+        port count and names from Ports, and stamps the Touchstone in Files. The block is refused when the record holds neither a far
+        field nor a field set, and when a file it names is missing, truncated or from another run.
+
         Port Kind: Gap, whose negative end is a pad; Plane, which returns to a real reference; Wave, a wave port.
         """;
 

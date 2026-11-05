@@ -1,9 +1,9 @@
 ; brief-sar-8b R-sar8b-5 — MRI_LP_Birdcage's quadrature feed as a superposition: Birdcage.c3d's two 50 Ohm feeds as one
-; two-port S-parameter block, each driven from its own matched 50 Ohm circuit port, rung 1 at 1 and rung 3 at -j (the
+; two-port EM Field Data block, each driven from its own matched 50 Ohm circuit port, rung 1 at 1 and rung 3 at -j (the
 ; tutorial's quarter-period delay at 128 MHz). The fields analysis recombines the run's per-port fields — each port run alone,
 ; the other terminated in its 50 Ohm — with the incident waves this circuit delivers, before SAR and B1 are formed.
 Wq = polar(1,-90)
 Port:P1 f1 0 Num=1 Z=50 Ohm
 Port:P2 f2 0 Num=2 Z=50 Ohm
-SnP:EM1 f1 f2 0 NumPorts=2 File="../results/Birdcage ReferenceGrid.openems.s2p"
+EmFieldData:EM1 f1 f2 File="../results/Birdcage ReferenceGrid.openems.cemr"
 analysis F1 type=fields block=EM1 freq=128 freqUnit=MHz drive=1,2 weights=1,Wq

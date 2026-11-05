@@ -701,12 +701,24 @@ public static class NetlistSchematic
             });
         }
 
+        // An EM Field Data line states no port count. The record does, when it can be read; otherwise its nets are all there is.
+        if (kind == SymbolKind.EmFieldData)
+            comp.Parameters.Insert(0, new EditableParameter
+            {
+                Name = "NumPorts", ShowOnSchematic = false,
+                Expression = (CircuitRF.Core.Devices.EmFieldDataRecord.ReadPortNames(FileOf(inst))?.Count ?? inst.NetBindings.Count)
+                             .ToString(System.Globalization.CultureInfo.InvariantCulture),
+            });
+
         if (inst.RefNetBinding is not null && kind == SymbolKind.Snp
             && !comp.Parameters.Any(p => p.Name == "RefNode"))
             comp.Parameters.Add(new EditableParameter { Name = "RefNode", Expression = "true", ShowOnSchematic = false });
 
         return comp;
     }
+
+    private static string? FileOf(Instance inst)
+        => inst.Overrides.FirstOrDefault(o => o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))?.Expression.Trim('"');
 
     private static bool IsLayerName(string parameter) =>
         parameter is "SignalLayer" or "GroundReference" || ViaSubstrateInjection.LayerParams.Contains(parameter)
@@ -735,7 +747,7 @@ public static class NetlistSchematic
     }
 
     private static (float X, float Y)[] LocalPins(EditableComponent comp)
-        => [.. (comp.Symbol == SymbolKind.Snp ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp.Symbol, comp.PortCount))
+        => [.. (comp.IsSnpBox ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp.Symbol, comp.PortCount))
                .Select(p => (p.LocalX, p.LocalY))];
 
     /// <summary>
@@ -789,6 +801,8 @@ public static class NetlistSchematic
             if (nets.Count + 1 == pins) return [.. nets, refNet];
         }
         else if (nets.Count == pins) return [.. nets];
+        // An EM Field Data line may spell its ground reference as a trailing net, and the block draws no reference pin.
+        else if (kind == SymbolKind.EmFieldData && nets.Count == pins + 1 && nets[pins] == Ground) return [.. nets.Take(pins)];
 
         why = $"'{inst.Reference}' binds {nets.Count} net(s) and its symbol has {pins} pin(s).";
         return null;

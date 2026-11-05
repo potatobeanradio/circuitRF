@@ -210,7 +210,7 @@ public sealed class PaletteGlyphControl : Control
             // Variadic types (ZPort/Sdd/Snp) need the ENTRY POINT's own preset port count, not the
             // always-2 default — otherwise Z1P/Z3P/SDD1/SDD3 tiles show the generic 2-port glyph
             // regardless of what the tile actually places (owner report, 2026-07-29).
-            bool isVariadic = _kind is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp;
+            bool isVariadic = _kind is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp or SymbolKind.EmFieldData;
             int  n          = _portCount > 0 ? _portCount : 2;
 
             // A resolved cell symbol wins over the SymbolKind glyph: for a kit part the kind is only

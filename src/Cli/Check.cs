@@ -1700,8 +1700,9 @@ internal static class Check
             CheckTuning(path, tb, lib, nl, catalog, f);
 
             // brief-sens-2 R-sens2-3: Reciprocal=tied on a file that is not reciprocal — allowed, warned once.
-            if (tb.Instances.Any(i => i.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
-                || lib.Cells.Any(c => c.Instances.Any(i => i.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))))
+            static bool HasEntries(Instance i) => i.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+                                                  || i.Reference.Equals(CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase);
+            if (tb.Instances.Any(HasEntries) || lib.Cells.Any(c => c.Instances.Any(HasEntries)))
                 foreach (var w in Design.Statistics.StatisticsValidator.SnpTieWarnings(catalog ?? TunableCatalog.FromNetlist(tb, lib)))
                     f.Add(CliDiagnostics.CheckTuningFinding(path, w));
 

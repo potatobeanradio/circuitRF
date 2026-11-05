@@ -21,7 +21,8 @@ Its one setup, **CoSim**: openEMS, 98–498 MHz in 41 points, first-order absorb
 −40 dB, and a **Sar** group at 298 MHz — 10 g averaged SAR by cubes, B1 with B0 along +z, and **Keep per-port fields**
 on. Two field plots are saved: B1+ and SAR on the axial plane, both drawn from the schematic's fields analysis `F1`.
 
-**Coil Bench** (a test bench). The coil's four-port Touchstone as one S-parameter block, `EM1`, and around it:
+**Coil Bench** (a test bench). The coil's saved run as one **EM Field Data** block, `EM1`, on `results/Loop Coil CoSim.openems.cemr`, with its
+four pins named after the run's ports, and around it:
 
 | Part | What it is |
 |---|---|
@@ -37,8 +38,9 @@ source (`norm=available`), so a poor match shows as weak B1, as it would on the 
 ## Run it
 
 1. **Simulate the Loop Coil's 3D view** (setup `CoSim`). It needs openEMS; the first run offers to install it. Four
-   openEMS runs, one per port, about 95 s in all, and a field set of 87 MB written beside the `.s4p` in `results/`.
-2. **Simulate the Coil Bench.** `SP1` gives S11 and `F1` gives B1 and SAR. The Messages pane's **Open in 3D view**
+   openEMS runs, one per port, about 95 s in all, and a result record and a field set of 87 MB written beside the `.s4p` in `results/`.
+2. **Simulate the Coil Bench.** `EM1` reads the saved result, so editing the setup later changes nothing it uses until the setup runs
+   again; its **Run settings…** shows what differs. `SP1` gives S11 and `F1` gives B1 and SAR. The Messages pane's **Open in 3D view**
    shows them on the coil.
 3. **Optimize.** The Optimizer panel already holds the variables, the goals and an algorithm (simplex, seed 1). Press
    **Run**.

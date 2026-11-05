@@ -49,7 +49,7 @@ internal static class PairCosim
     /// against that run's fields, every cell; and the fast path on the plane through the block's middle.</summary>
     public static void Compare(string dir, ITestOutputHelper output)
     {
-        var (set, refusal) = PortFieldSet.Open(Path.Combine(dir, Stem + ".s2p"), Hz);
+        var (set, refusal) = PortFieldSet.Open(Path.Combine(dir, Stem + ".cemr"), Hz);
         Assert.True(set is not null, refusal);
         using (set)
         {
@@ -168,7 +168,8 @@ public sealed class PairSuperpositionRerunTests(ITestOutputHelper output) : IDis
         // ── what the test reads: the field set, the .s2p, and the simultaneous run's fields and incident waves ──
         string outDir = Path.Combine(_root, "fixed");
         Directory.CreateDirectory(Path.Combine(outDir, PairCosim.Simultaneous));
-        File.Copy(runDir + ".s2p", Path.Combine(outDir, PairCosim.Stem + ".s2p"));
+        foreach (string ext in new[] { ".s2p", "_em.npy", ".cemr" })
+            File.Copy(runDir + ext, Path.Combine(outDir, PairCosim.Stem + ext));
         string fields = PortFieldSet.FolderForBase(runDir);
         Directory.CreateDirectory(Path.Combine(outDir, Path.GetFileName(fields)));
         foreach (string f in Directory.EnumerateFiles(fields))
@@ -216,7 +217,7 @@ public sealed class PairSuperpositionRerunTests(ITestOutputHelper output) : IDis
         WriteC8(Path.Combine(outDir, PairCosim.Simultaneous, "H.npy"), hf, ax.Count, ay.Count, az.Count);
         File.WriteAllText(Path.Combine(outDir, "README.md"),
             "# circuitRF OUTPUT for brief-sar-9's superposition gate — not a reference\n\n" +
-            $"`{PairCosim.Stem}.s2p` and its `.fields` folder are what `circuitrf em ../Pair/3d/Pair.c3d --setup {PairCosim.Setup}` wrote. " +
+            $"`{PairCosim.Stem}.s2p`, its `_em.npy`, its `.cemr` and its `.fields` folder are what `circuitrf em ../Pair/3d/Pair.c3d --setup {PairCosim.Setup}` wrote. " +
             $"`{PairCosim.Simultaneous}/` is one openEMS run of port 1's model with port 2's excitation added at {PairCosim.Excite[1]} times its own " +
             "(PairSuperpositionRerunTests): its E and H on the field set's cells (complex64, as solved) and the incident waves its own probes " +
             "measured at the two ports (√W as solved, the field set's power-wave convention). PairSuperpositionTests recombines the field set " +

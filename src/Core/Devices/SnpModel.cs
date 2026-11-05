@@ -41,6 +41,10 @@ public sealed class SnpModel : ComponentModel
     /// brief-em3d-79 reads it to find the instance whose model is a 3D view's EM result.</summary>
     public string FilePath => _filePath;
 
+    /// <summary>The <c>.cemr</c> of an EM Field Data block, absolute; null on a plain SnP, which is a Touchstone file and nothing more.
+    /// What the Fields analysis finds its data through (brief-cosim-pattern-2 R-cp2-3).</summary>
+    public string? RecordPath { get; }
+
     /// <summary>The S-parameter entry offsets this instance states (brief-sens-2), expanded over the tie; null when it
     /// states none or every one is 0 — then nothing about the block differs from a block with no such parameters.
     /// A reader of the block's S that does not go through <see cref="Stamp"/> must apply these through
@@ -62,8 +66,10 @@ public sealed class SnpModel : ComponentModel
         InterpolationMethod  interpMethod = InterpolationMethod.CubicSpline,
         OutOfRangePolicy     extrapPolicy = OutOfRangePolicy.WarnClamp,
         InterpolationFormat  interpFormat = InterpolationFormat.RealImag,
-        SnpOffsets?          offsets      = null)
+        SnpOffsets?          offsets      = null,
+        string?              recordPath   = null)
     {
+        RecordPath    = recordPath;
         Offsets       = offsets is { Any: true } ? offsets : null;
         _portCount    = portCount;
         _filePath     = absoluteFilePath;

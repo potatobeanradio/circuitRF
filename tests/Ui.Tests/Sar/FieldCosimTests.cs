@@ -5,7 +5,7 @@
 //                             averaged SAR of the summed field; the fast path's plane is the full path's; aᴴQa is the absorbed power
 //    CosimNoEmRunTests        a capacitor change re-runs a schematic's fields analysis with zero openEMS launches, and the
 //                             weights move with it
-//    FieldSetStaleTests       a field set from another run, or with a port's file missing, is refused naming the ports
+//    FieldSetStaleTests       a field set from another run, or with a port's file missing, is refused naming the file
 // ================================================================
 
 using System.Numerics;
@@ -70,8 +70,8 @@ internal sealed class MemoryFieldSet : IPortFieldSet
         }
     }
 
-    /// <summary>Writes the set as the files a 3D run leaves beside its .sNp (PortFieldSet's layout), with the .sNp itself:
-    /// a two-port Touchstone around <paramref name="hz"/> whose provenance names the folder and <paramref name="stamp"/>.</summary>
+    /// <summary>Writes the set as the files a 3D run leaves (PortFieldSet's layout), with the .sNp itself, a two-port Touchstone around
+    /// <paramref name="hz"/>, its .npy and the result record <c>ems.cemr</c>, all four carrying <paramref name="stamp"/>.</summary>
     public string WriteBeside(string dir, double hz, string stamp)
     {
         Directory.CreateDirectory(dir);
@@ -107,11 +107,28 @@ internal sealed class MemoryFieldSet : IPortFieldSet
             Frequencies = [freq], Tissues = ["block"], TissueMaterials = ["tissue"], RegionName = "all tissue",
             B1Region = ["block"], B1RegionName = "block", MassesGrams = [0.001], B1 = true,
         });
-        var lines = new List<string> { "! " + PortFieldSet.ProvenanceLine(folder, stamp), "# Hz S RI R 50" };
-        foreach (double f in new[] { 0.6 * hz, 0.8 * hz, hz, 1.2 * hz, 1.4 * hz })
+        var lines = new List<string> { "! " + CircuitRF.Design.Layout.Em.EmProvenanceStamp.StampPrefix + stamp, "# Hz S RI R 50" };
+        double[] sweep = [0.6 * hz, 0.8 * hz, hz, 1.2 * hz, 1.4 * hz];
+        foreach (double f in sweep)
             lines.Add($"{f:R} {s[0, 0].Real} {s[0, 0].Imaginary} {s[1, 0].Real} {s[1, 0].Imaginary} " +
                       $"{s[0, 1].Real} {s[0, 1].Imaginary} {s[1, 1].Real} {s[1, 1].Imaginary}");
         File.WriteAllLines(snp, lines);
+
+        var values = new Complex[sweep.Length * 4];
+        for (int k = 0; k < sweep.Length; k++)
+            for (int i = 0; i < 2; i++)
+                for (int j = 0; j < 2; j++) values[(k * 2 + i) * 2 + j] = s[i, j];
+        var data = new DataSet();
+        data.AddToGroup("em", "S", new DataCube([new Axis("f", sweep, "Hz"), new Axis("i", [1.0, 2.0], ""), new Axis("j", [1.0, 2.0], "")], values));
+        CircuitRF.Design.Layout.Em.EmResultRecord.StampData(data, stamp);
+        using (var npy = File.Create(Path.Combine(dir, "ems_em.npy"))) RfCore.Export.DataSetExporter.ExportNpy(data, npy);
+        File.WriteAllText(Path.Combine(dir, "ems.cemr"), new CircuitRF.Design.Layout.Em.EmResultRecord
+        {
+            Stamp = stamp, Written = DateTimeOffset.Now, Solver = new() { Name = "test" },
+            Files = new() { Snp = "ems.s2p", Npy = "ems_em.npy", Fields = "ems.fields" },
+            Ports = [new() { Number = 1, Name = "a", Z0Re = 50 }, new() { Number = 2, Name = "b", Z0Re = 50 }],
+            Frequencies = new() { SweepHz = [.. sweep], FieldSetHz = [hz] },
+        }.Serialize());
         return snp;
     }
 
@@ -202,7 +219,7 @@ public sealed class CosimNoEmRunTests
     private static string Bench(string dir) => $"""
         Cval = 2e-12
         Port:P1 in 0 Num=1 Z=50 Ohm
-        SnP:EM1 in p2 0 NumPorts=2 File="{Path.Combine(dir, "ems.s2p")}"
+        EmFieldData:EM1 in p2 File="{Path.Combine(dir, "ems.cemr")}"
         C:C1 p2 0 C=Cval
         analysis F1 type=fields block=EM1 freq=300 freqUnit=MHz drive=1 average=no
         """;
@@ -245,23 +262,25 @@ public sealed class FieldSetStaleTests
         string dir = Path.Combine(Path.GetTempPath(), "crf-sar9-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
-            string snp = new MemoryFieldSet().WriteBeside(dir, 300e6, "stamp-1");
-            var (ok, none) = PortFieldSet.Open(snp, 300e6);
+            new MemoryFieldSet().WriteBeside(dir, 300e6, "stamp-1");
+            string record = Path.Combine(dir, "ems.cemr"), manifest = Path.Combine(dir, "ems.fields", PortFieldSet.ManifestFile);
+            var (ok, none) = PortFieldSet.Open(record, 300e6);
             Assert.Null(none);
             ok!.Dispose();
 
-            // the .sNp re-written by another run: its stamp is not the fields'
-            File.WriteAllText(snp, File.ReadAllText(snp).Replace("stamp stamp-1", "stamp stamp-2"));
-            var (_, stale) = PortFieldSet.Open(snp, 300e6);
-            Assert.Contains("stale", stale);
-            Assert.Contains("1, 2", stale);
+            // the field set re-written by another run: its stamp is not the record's
+            string kept = File.ReadAllText(manifest);
+            File.WriteAllText(manifest, kept.Replace("stamp-1", "stamp-2"));
+            var (_, stale) = PortFieldSet.Open(record, 300e6);
+            Assert.Contains("from another run (stamp stamp-2)", stale);
+            Assert.Contains("ems.fields", stale);
 
             // the right run, with port 2's E gone
-            File.WriteAllText(snp, File.ReadAllText(snp).Replace("stamp stamp-2", "stamp stamp-1"));
-            File.Delete(Path.Combine(PortFieldSet.FolderFor(snp), PortFieldSet.FieldFile(2, 1, 'E')));
-            var (_, missing) = PortFieldSet.Open(snp, 300e6);
-            Assert.Contains("Port 2's", missing);
-            Assert.Contains("missing", missing);
+            File.WriteAllText(manifest, kept);
+            File.Delete(Path.Combine(PortFieldSet.FolderFor(Path.Combine(dir, "ems.s2p")), PortFieldSet.FieldFile(2, 1, 'E')));
+            var (_, missing) = PortFieldSet.Open(record, 300e6);
+            Assert.Contains(PortFieldSet.FieldFile(2, 1, 'E'), missing);
+            Assert.Contains("lost", missing);
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

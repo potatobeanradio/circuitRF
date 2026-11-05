@@ -28235,3 +28235,44 @@ leaves the old comparison beside the results it still describes.
 **The stamp is the second line a byte comparison must exclude.** Five test helpers filter the write time from a Touchstone; each now filters `EmProvenanceStamp.StampPrefix` too. `EmEvaluation`'s note that a cached Touchstone matches `em`'s "but
 the write time" now means write time and stamp.
 
+
+## brief-cosim-pattern-2 — the EM Field Data block (`EmFieldData`)
+
+**The record is read from `src/Core`, below the project that writes it.** The factory has to reach a `.cemr`, and a hook from `src/Design`
+would leave any host that forgot to install it silently unable to build the block. So `EmFieldDataRecord` in `src/Core/Devices` reads the part of
+the schema a run needs, and `EmResultIntegrity` holds the one check of whether a result holds together. `EmResultRecord.Verify` is that check, and
+the stamp constants moved down with it. The schema itself is still `EmResultRecord`'s.
+
+**Refused during elaboration, not at the first stamp.** An SnP defers its refusal to the stamp because the factory cannot name it. This block's port
+count is the record's, so without a readable record the line's nets cannot be counted at all. `Elaborator.BindEmFieldData` has the path, and a refusal
+there stops every analysis alike. `check` therefore reports an error on a fresh copy of the loop coil example until its 3D view has run. That is true of the
+document, since nothing it names exists yet.
+
+**A verdict is cached on size and write time, and that is not a stale check.** A sweep re-elaborates at every point and an optimizer at every evaluation,
+so `EmFieldDataRecord.Open` keeps its answer while no file has moved. Whether a result is stale is only answered by its stamps.
+
+**The pin count is stored and hidden.** The drawing has to survive a record that is missing or re-written, so the `.csch` keeps a hidden `NumPorts`, set
+when a record is picked, and the extractor leaves it out of the `.cnl`. A record re-written with another port count is said on the panel and refused at
+the run naming both counts. Picking the record again updates the pins, as a changed SnP's do. A `.cnl` may still write N+1 nets, the trailing one a floating
+reference; a drawn block has no reference pin, and `netlist toSchematic` takes a trailing net only when it is ground.
+
+**A setup that cannot be parsed must not stop a run.** `CurrentSetup` did not catch `InvalidDataException`, which a `.cem` of a newer format throws, so comparing
+against the setup could have ended a run whose whole point is not to need it. A UiSnapshot of Run settings found it.
+
+**`Adopt` still reads the older `port fields:` line**, and nothing else does. Writing that line and `ReadProvenance` are gone, but an older Touchstone is the only
+statement of which field set is its own. A set beside it with another stamp is left out of the record, so the block refuses it as holding no fields.
+
+**Where `SymbolKind.Snp` and `"SnP"` were audited.**
+
+*Any S-parameter block, so the new kind was added:* `ComponentTypeRegistry` (registry entry, `PortCountParameter`, `EngineReference`, `DefaultParameters`),
+`LibraryCatalog` (one tile), `BuiltInSymbols`, `SchematicModel` (label offset), `EditableSchematic` (ports, `PortCount`, `EffectivePortCount`, glyph, pin names,
+port defs), `NetExtractor`, `NetlistSchematic`, `FileReferences`, `CnlReader`, `CnlWriter`, `InstanceNetContract`, `ComponentModelFactory`, `Elaborator`,
+`TunableCatalog`, `TunableOverrides`, `ProtectPartition`, `Check`, `ParameterEditorViewModel` (rows, panel, set file), `ParameterRowViewModel`, `SchematicViewModel`
+(inline file edit), `SchematicView` (tune menu), `SetSnpFileCommand`, `YieldPanelViewModel.Sensitivity`, `PaletteGlyphControl`, `SymbolArtworkGenerator`.
+`ModelLibraryExport` learned it as a refusal: a part carries a Touchstone file, not a run's fields, and the record's data files are not copied.
+
+*A Touchstone file, so it was left:* `SnpGlyph` (it only excludes the new kind as a glyph), `ParameterEditorViewModel.SnpSymbol`, `EmBackAnnotation`, `EmSnpSchematic`,
+`EmCoSimNetlist` and `EmComponentKinds` (a run's plain N-port; CP-6 makes a run's schematic), `Elaborator.ElaborateParametric` (an EM cell's result),
+`ModelLibraryExport`'s conversion and `Encapsulate` (they write Touchstone files), `SmithComponentMap` and `SmithPasteRecognizer`, every recognition emitter
+(`RecognitionEmit`, `RecognitionSessionViewModel`, `SchematicImageEmit`, `SchematicPasteOutcome`), `VendorAReader` and `KitNetlistReader` (other dialects), the
+`"SnP"` labels in `NonlinearDcEngine` and `HbEngine` (they name the model in a sentence), `SnpModel.Describe`, and `LibraryCatalog`'s S1P…S8P rows.

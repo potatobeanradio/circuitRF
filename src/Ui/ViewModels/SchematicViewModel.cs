@@ -5637,7 +5637,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (newName != param.Name || expr != param.Expression || unit != param.Unit)
                 {
                     var comp = EditModel.FindComponent(targetId ?? "");
-                    if (comp?.Symbol == SymbolKind.Snp && param.Name == "File")
+                    if (comp?.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData && param.Name == "File")
                         Execute(new SetSnpFileCommand(EditModel, comp, expr, WorkspaceRoot));
                     else
                         Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));

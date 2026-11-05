@@ -33,6 +33,15 @@ internal static class LoopCosim
     /// <summary>The run's .s4p beside its field set in a workspace's results/.</summary>
     public static string Snp(string workspace) => Path.Combine(workspace, "results", Stem + ".s4p");
 
+    /// <summary>The run's result record. results/ is git-ignored and a run from before records has none, so the first asker adopts it once;
+    /// the data files are not touched, so the numbers below it cannot move.</summary>
+    public static string Record(string workspace)
+    {
+        string record = Path.ChangeExtension(Snp(workspace), EmResultNames.RecordExtension);
+        if (!File.Exists(record) && File.Exists(Snp(workspace))) EmResultRecord.Adopt(Snp(workspace));
+        return record;
+    }
+
     /// <summary>What a recombination left beside the field set of <paramref name="snp"/>, kept in <paramref name="outDir"/>: the
     /// Touchstone, the field set's manifest, the co-simulation record, and SAR-8's record, lines and planes of the recombined field.</summary>
     public static void Collect(string snp, string outDir)
@@ -108,7 +117,7 @@ public sealed class CosimLoopFieldSetFactAttribute : FactAttribute
         if (!File.Exists(Path.Combine(LoopCosim.Output, LoopReplication.Record)))
             Skip = "needs the committed co-simulation output in testdata/sar/circuitrf/loop/cosim/output";
         else if (PortFieldSet.ReadManifest(PortFieldSet.FolderFor(LoopCosim.Snp(LoopCosim.Workspace)))?.Stamp is not { } stamp ||
-                 PortFieldSet.Open(LoopCosim.Snp(LoopCosim.Workspace), 298e6) is not { Set: { } set })
+                 PortFieldSet.Open(LoopCosim.Record(LoopCosim.Workspace), 298e6) is not { Set: { } set })
             Skip = "needs LoopPorts.c3d's field set, which stays on the machine that ran it (201 MB): CosimLoopCoilRerunTests makes it";
         else
         {

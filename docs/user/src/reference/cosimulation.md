@@ -4,7 +4,7 @@ slug: reference/cosimulation.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Co-simulation
 lede: Capacitors as ports. One EM run keeps each port's fields, and a schematic's fields analysis turns the waves its circuit delivers into B1 and SAR — so tuning, optimizing and yield on fields start no EM run.
-keywords: co-simulation, cosimulation, port fields, per-port fields, PerPortFields, field set, superposition, recombination, fields analysis, type=fields, MRI coil, RF coil, tuning capacitor, matching network, capacitors as ports, B1pMean, B1pMin, B1pCoV, psSAR, SARwb, SarEff, Pabs, goal, tuning, optimizer, yield, multi-channel, RF shimming, parallel transmit, drive weights, quadrature, birdcage, norm=available, norm=accepted, research use
+keywords: co-simulation, cosimulation, EM Field Data, EmFieldData, result record, cemr, port fields, per-port fields, PerPortFields, field set, superposition, recombination, fields analysis, type=fields, MRI coil, RF coil, tuning capacitor, matching network, capacitors as ports, B1pMean, B1pMin, B1pCoV, psSAR, SARwb, SarEff, Pabs, goal, tuning, optimizer, yield, multi-channel, RF shimming, parallel transmit, drive weights, quadrature, birdcage, norm=available, norm=accepted, research use
 ---
 
 An MRI coil is a resonant conductor with many tuning, matching and decoupling capacitors next to lossy tissue. Solving
@@ -30,8 +30,8 @@ In the coil's 3D view:
    (50 Ω): the Touchstone records one reference impedance, so a block whose ports differ would be read in the wrong one.
 2. In the openEMS setup's **SAR and B1** group, set the frequency, the masses and B1 as usual, and tick **Keep per-port
    fields** (`PerPortFields`).
-3. **Simulate.** openEMS runs once per port, as any driven run does. Beside the `.sNp` the run writes a **field set**,
-   a folder `<stem>.fields/`: each port's E and H over the tissue's box, per √W incident at that port and nothing
+3. **Simulate.** openEMS runs once per port, as any driven run does. Beside the `.sNp` the run writes a result record,
+   `<stem>.cemr`, and a **field set**, a folder `<stem>.fields/`: each port's E and H over the tissue's box, per √W incident at that port and nothing
    incident anywhere else, with the cells' σ, ρ and volume and a manifest. They are float32, 24 bytes a cell per port and
    field; the loop coil's four ports at 298 MHz take 87 MB on the example's grid. The disk estimate before the run says how
    much of it the field set is.
@@ -41,14 +41,16 @@ each; the same coil with lumped capacitors in the EM model needed 72,000 steps f
 
 ## 2. The schematic side: the fields analysis {#schematic}
 
-Place the `.sNp` as an **S-parameter block** in a test bench and draw the circuit around its ports: the capacitors, the
-match, the feed. Then add a **Fields (SAR, B1)** analysis in the Analysis editor:
+Place an **EM Field Data** block in a test bench and pick the run's `.cemr` for its **File**. Its pins are named after the
+run's ports, in the run's order, so there is no port count to set. Draw the circuit around them: the capacitors, the match,
+the feed. Then add a **Fields (SAR, B1)** analysis in the Analysis editor, whose **Block** control lists the schematic's EM
+Field Data blocks, those inside sub-cells included, and still takes typed text:
 
 <pre><code>analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1 [norm=accepted|available] [average=yes|no]</code></pre>
 
 | Key | | |
 |---|---|---|
-| `block` | the S-parameter block's instance name (`X1.EM1` inside a cell) | required |
+| `block` | the EM Field Data block's instance name (`X1.EM1` inside a cell) | required |
 | `freq`, `freqUnit` | one of the run's SAR frequencies | required |
 | `drive` | the circuit port that drives; every other circuit port is terminated in its Z0 | required |
 | `weights` | with several drives, each one's complex amplitude ([multi-channel](#multichannel)) | 1 each |
@@ -76,8 +78,21 @@ scanner. The loop coil example uses `available`.
 All three compare the field set with itself. **They cannot see a field that is wrong in the same way in E and in S** —
 a grid too coarse, a run stopped too early. The checks hold the recombination to its inputs; the inputs are the 3D run's.
 
-**A stale field set is refused**, naming every port, when its stamp is not the `.sNp`'s: re-run the 3D view. File times
-are not compared, so a copied or checked-out field set reads as current.
+**The block works on the saved result.** It reads the record and the files the record names, and no `.c3d`, `.cem` or `.clay`,
+so editing the setup, or deleting the 3D view, changes nothing it uses. Its properties show one line from the record: when, which
+solver and quality, the sweep and the port count. **Run settings…** beside it shows the settings that run used, read-only, with
+what differs from the setup now marked. A difference adds one note to a run and blocks nothing. A record from before settings were
+kept reads *settings not recorded*.
+
+**What the block refuses**, naming itself and the file: no such record; a record holding neither a far field nor a field set, whose
+S-parameters belong in an SnP; a file the record names that is missing or truncated; and files from different runs, saying which. The
+record, the `.sNp`, the `.npy` and the field set share one stamp. File times are not compared, so a copied or checked-out result
+reads as current.
+
+**A Touchstone file is not enough.** A Fields analysis on a plain SnP is refused. A run from before records has a `.sNp` and a `.npy`
+and no `.cemr`: pick its `.sNp` in the block's file picker and it offers to write one beside it, as `circuitrf em --adopt` does, with
+the data files untouched. A saved schematic with a Fields analysis on an SnP still opens; running it says so, and the Messages pane
+offers **Change to EM Field Data** when the block's `.sNp` can be adopted.
 
 Headless: `circuitrf fields bench.csch` runs every enabled fields analysis of a schematic (`-a` names some, `--set`
 changes a value first) and prints the same lines; MCP's `run analysis=fields` does the same.

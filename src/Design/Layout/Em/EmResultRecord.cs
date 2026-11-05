@@ -15,6 +15,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using CircuitRF.Core.Devices;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Results;
 using CircuitRF.Design.Thermal;
@@ -191,7 +192,7 @@ public sealed record EmResultDisagreement(string What, string Path, string Sente
 public sealed partial class EmResultRecord
 {
     /// <summary>The <c>.npy</c>'s metadata cube holding the stamp, on the group that holds S.</summary>
-    public const string StampCube = "__ResultStamp";
+    public const string StampCube = EmResultIntegrity.StampCube;
 
     public int FormatVersion { get; set; } = 1;
     public string Stamp { get; set; } = "";
@@ -264,70 +265,19 @@ public sealed partial class EmResultRecord
     }
 
     /// <summary>The stamp a <c>.npy</c> carries, read from its metadata without its arrays; null when it carries none.</summary>
-    public static string? ReadNpyStamp(string npyPath)
-    {
-        try
-        {
-            using var meta = JsonDocument.Parse(DataSetImporter.ReadMetaJson(npyPath));
-            foreach (var field in meta.RootElement.EnumerateObject())
-            {
-                if (field.Value.ValueKind != JsonValueKind.Object || !field.Value.TryGetProperty("cube", out var cube) ||
-                    cube.GetString() != StampCube) continue;
-                return field.Value.GetProperty("axes")[0].GetProperty("labels")[0].GetString();
-            }
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or JsonException
-                                     or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
-        {
-            return null;
-        }
-    }
+    public static string? ReadNpyStamp(string npyPath) => EmResultIntegrity.NpyStamp(npyPath);
 
     /// <summary>The stamp a <c>.sNp</c>'s header carries; null when it carries none.</summary>
-    public static string? ReadSnpStamp(string snpPath)
-    {
-        try
-        {
-            foreach (string raw in File.ReadLines(snpPath))
-            {
-                string line = raw.TrimStart();
-                if (line.StartsWith('#')) break;
-                if (!line.StartsWith('!')) continue;
-                line = line[1..].Trim();
-                if (line.StartsWith(EmProvenanceStamp.StampPrefix, StringComparison.Ordinal))
-                    return line[EmProvenanceStamp.StampPrefix.Length..].Trim();
-            }
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
-    }
+    public static string? ReadSnpStamp(string snpPath) => EmResultIntegrity.SnpStamp(snpPath);
 
     /// <summary>
-    /// Every file the record names that is missing or carries another run's stamp, in publish order. Empty when the result holds
-    /// together. An adopted record's files were written before stamps, so only their presence can be asked about.
+    /// Every file the record names that is missing, truncated or carries another run's stamp, in publish order. Empty when the result
+    /// holds together. An adopted record's files were written before stamps, so only whether they are whole can be asked about.
+    /// The check itself is <see cref="EmResultIntegrity.Check"/>, the one an EM Field Data block is refused by.
     /// </summary>
     public IReadOnlyList<EmResultDisagreement> Verify(string recordPath)
-    {
-        var found = new List<EmResultDisagreement>();
-        void File_(string what, string relative, Func<string, string?> stampOf)
-        {
-            string path = Resolve(recordPath, relative);
-            if (what == "field set" ? !Directory.Exists(path) : !File.Exists(path))
-            {
-                found.Add(new(what, path, $"its {what} '{relative}' is missing"));
-                return;
-            }
-            if (Adopted) return;
-            string? stamp = stampOf(path);
-            if (stamp != Stamp)
-                found.Add(new(what, path, $"its {what} '{relative}' {(stamp is null ? "carries no stamp" : $"is from another run (stamp {stamp})")}, and the record's stamp is {Stamp}"));
-        }
-        if (Files.Fields is { Length: > 0 } fields) File_("field set", fields, p => PortFieldSet.ReadManifest(p)?.Stamp);
-        File_(".npy", Files.Npy, ReadNpyStamp);
-        File_(".sNp", Files.Snp, ReadSnpStamp);
-        return found;
-    }
+        => [.. EmResultIntegrity.Check(recordPath, Stamp, Adopted, Files.Snp, Files.Npy, Files.Fields, Frequencies.SweepHz.Count)
+                                .Select(p => new EmResultDisagreement(p.What, p.Path, p.Sentence))];
 
     // ── a finished run's record ───────────────────────────────────────────────────────────────────
 
@@ -401,19 +351,34 @@ public sealed partial class EmResultRecord
     /// </summary>
     public static (string? RecordPath, string? Refusal) Adopt(string snpPath)
     {
+        var (record, recordPath, refusal) = Adoption(snpPath);
+        if (record is null) return (null, refusal);
+        try { File.WriteAllText(recordPath!, record.Serialize()); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (null, $"'{Path.GetFileName(recordPath)}' could not be written: {e.Message}");
+        }
+        return (recordPath, null);
+    }
+
+    /// <summary>The sentence <see cref="Adopt"/> would refuse <paramref name="snpPath"/> with, or null when it would write a record. Writes nothing.</summary>
+    public static string? AdoptionRefusal(string snpPath) => Adoption(snpPath).Refusal;
+
+    private static (EmResultRecord? Record, string? RecordPath, string? Refusal) Adoption(string snpPath)
+    {
         string full = Path.GetFullPath(snpPath);
         string name = Path.GetFileName(full);
-        if (!File.Exists(full)) return (null, $"'{snpPath}' does not exist.");
+        if (!File.Exists(full)) return (null, null, $"'{snpPath}' does not exist.");
         string stem = Path.GetFileNameWithoutExtension(full);
         string dir = Path.GetDirectoryName(full)!;
         string recordPath = Path.Combine(dir, stem + EmResultNames.RecordExtension);
-        if (File.Exists(recordPath)) return (null, $"'{name}' already has a result record: '{Path.GetFileName(recordPath)}'.");
+        if (File.Exists(recordPath)) return (null, null, $"'{name}' already has a result record: '{Path.GetFileName(recordPath)}'.");
 
         SNP snp;
         try { snp = TouchstoneIO.ReadFile(full, readComments: false); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or InvalidDataException or ArgumentException)
         {
-            return (null, $"'{name}' could not be read: {e.Message}");
+            return (null, null, $"'{name}' could not be read: {e.Message}");
         }
 
         var header = ReadHeader(full);
@@ -433,12 +398,14 @@ public sealed partial class EmResultRecord
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or JsonException) { }
         }
         if (data is null || npy is null)
-            return (null, $"No .npy matches '{name}', so it cannot be adopted: looked for {string.Join(", ", candidates.Select(c => $"'{Path.GetFileName(c)}'"))} " +
+            return (null, null, $"No .npy matches '{name}', so it cannot be adopted: looked for {string.Join(", ", candidates.Select(c => $"'{Path.GetFileName(c)}'"))} " +
                           "and found none with the same ports, frequencies and S-parameters. Run the EM setup again to get a whole result.");
 
         var provenance = EmSnpProvenance.TryRead(full);
         string fieldsFolder = PortFieldSet.FolderFor(full);
         var manifest = PortFieldSet.ReadManifest(fieldsFolder);
+        // An older run's Touchstone says which field set is its own. One beside it from another run is not this result's.
+        if (manifest is not null && header.FieldsStamp is { } own && manifest.Stamp != own) manifest = null;
         var record = new EmResultRecord
         {
             Stamp = PortFieldSet.NewStamp(),
@@ -472,20 +439,16 @@ public sealed partial class EmResultRecord
                 ModelRevision = provenance?.ModelRevision,
             },
         };
-        try { File.WriteAllText(recordPath, record.Serialize()); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return (null, $"'{Path.GetFileName(recordPath)}' could not be written: {e.Message}");
-        }
-        return (recordPath, null);
+        return (record, recordPath, null);
     }
 
-    private sealed record SnpHeader(string? Setup, string? Solver, DateTimeOffset? Written, Dictionary<int, string> PortNames, Dictionary<int, string> PortKinds);
+    private sealed record SnpHeader(string? Setup, string? Solver, DateTimeOffset? Written, Dictionary<int, string> PortNames, Dictionary<int, string> PortKinds, string? FieldsStamp);
 
     private static SnpHeader ReadHeader(string snpPath)
     {
         string? setup = null, solver = null;
         DateTimeOffset? written = null;
+        string? fieldsStamp = null;
         var names = new Dictionary<int, string>();
         var kinds = new Dictionary<int, string>();
         foreach (string raw in File.ReadLines(snpPath))
@@ -498,6 +461,7 @@ public sealed partial class EmResultRecord
             else if (line.StartsWith("circuitRF-EM setup: ", StringComparison.Ordinal)) setup = line["circuitRF-EM setup: ".Length..].Trim();
             else if (line.StartsWith("circuitRF-EM written: ", StringComparison.Ordinal) &&
                      DateTimeOffset.TryParse(line["circuitRF-EM written: ".Length..].Trim(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var w)) written = w;
+            else if (OlderFieldsLine().Match(line) is { Success: true } older) fieldsStamp = older.Groups[1].Value;
             else if (PortLine().Match(line) is { Success: true } m)
             {
                 int n = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
@@ -508,11 +472,15 @@ public sealed partial class EmResultRecord
                 else if (rest.Contains("edge,", StringComparison.Ordinal) || rest.Contains("to the ground plane", StringComparison.Ordinal)) kinds[n] = EmResultPort.Plane;
             }
         }
-        return new SnpHeader(setup, solver, written, names, kinds);
+        return new SnpHeader(setup, solver, written, names, kinds, fieldsStamp);
     }
 
     [GeneratedRegex(@"^circuitRF-EM port (\d+): '([^']*)'(.*)$", RegexOptions.CultureInvariant)]
     private static partial Regex PortLine();
+
+    /// <summary>The line a run from before records wrote to tie its Touchstone to its field set. Only adoption reads it.</summary>
+    [GeneratedRegex(@"port fields:\s*'[^']+'\s+stamp\s+(\S+)", RegexOptions.CultureInvariant)]
+    private static partial Regex OlderFieldsLine();
 
     /// <summary>Where an older run's <c>.npy</c> can be: named after the Touchstone, or, under an older Output name, which moved only
     /// the Touchstone, named after the setup in the workspace's <c>results/</c>.</summary>
@@ -596,10 +564,50 @@ public sealed partial class EmResultRecord
                 : (null, $"'{source.File}' no longer holds a setup named '{embedded}'", path);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException
-                                     or ArgumentException or ThreeD.C3dReadException)
+                                     or ArgumentException or InvalidDataException or ThreeD.C3dReadException)
         {
             return (null, $"'{source.File}' could not be read: {e.Message}", path);
         }
+    }
+
+    /// <summary>
+    /// What differs between the settings this run used and the setup on disk now. Empty with a null reason when they agree; a reason
+    /// says why they could not be compared: settings not recorded, or a setup that cannot be read. A difference never blocks anything.
+    /// </summary>
+    public (IReadOnlyList<(string Field, string? Then, string? Now)> Differences, string? WhyNot) DifferencesFromCurrent(string recordPath)
+    {
+        if (Setup is not { } setup) return ([], SettingsNotRecorded);
+        var (current, whyNot, _) = CurrentSetup(recordPath);
+        if (current is null) return ([], whyNot);
+        return (Differences(Settings(setup), Settings(EmSetupPersistence.ToEmbedded(current))), null);
+    }
+
+    /// <summary>What a record with no setup says about its settings.</summary>
+    public const string SettingsNotRecorded = "settings not recorded";
+
+    /// <summary>R-cp2-6 — one line of what this result is: when, which solver and quality, the sweep and the port count.</summary>
+    public string Summary()
+    {
+        var sweep = Frequencies.SweepHz;
+        string band = sweep.Count switch
+        {
+            0 => "no sweep",
+            1 => MaterialDispersion.Hz(sweep[0]),
+            _ => $"{MaterialDispersion.Hz(sweep[0])} to {MaterialDispersion.Hz(sweep[^1])}, {sweep.Count} points",
+        };
+        string solver = Solver.Name.Length > 0 ? Solver.Name : "solver not recorded";
+        string quality = Setup is { } s && s.ValueKind == JsonValueKind.Object && QualityOf(s) is { } q ? $" {q}" : "";
+        return $"{Written.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}, {solver}{quality}, {band}, {Ports.Count} port{(Ports.Count == 1 ? "" : "s")}";
+    }
+
+    /// <summary>The quality the solver's own section of the setup states; null when it states none, as a planar setup does.</summary>
+    private string? QualityOf(JsonElement setup)
+    {
+        foreach (var section in setup.EnumerateObject())
+            if (section.Value.ValueKind == JsonValueKind.Object && section.Name.Equals(Solver.Name, StringComparison.OrdinalIgnoreCase))
+                foreach (var p in section.Value.EnumerateObject())
+                    if (p.Name.Equals("Quality", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String) return p.Value.GetString();
+        return null;
     }
 
     private static void Flatten(JsonElement e, string prefix, List<(string, string)> into)

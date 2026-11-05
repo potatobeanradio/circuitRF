@@ -4200,6 +4200,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         foreach (var w in result.Warnings)
             Messages.Warning(w);
 
+        // brief-cosim-pattern-2 R-cp2-8 — a fields analysis refused on a plain SnP: the change, one click, when the result can have a record.
+        foreach (var plain in result.PlainSnpFieldsBlocks)
+            if (CircuitRF.Ui.Commands.Schematic.ChangeToEmFieldDataCommand.For(activeDoc.ViewModel, plain) is { } change)
+                Messages.PostAction(MessageLevel.Warning, change.Sentence, "Change to EM Field Data", () =>
+                {
+                    change.Apply();
+                    return Task.CompletedTask;
+                });
+
         // brief-sar-9 R-sar9-3 — each fields analysis's recombined SAR and B1, one click from the 3D view whose run kept the fields,
         // which opens with that result drawn and selected.
         foreach (var f in result.Fields)

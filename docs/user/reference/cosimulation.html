@@ -58,8 +58,8 @@ against S11, B1 and psSAR goals in 4 s. What B1 and SAR are, and their units, is
 (50 Ω): the Touchstone records one reference impedance, so a block whose ports differ would be read in the wrong one.</li>
 <li>In the openEMS setup's <strong>SAR and B1</strong> group, set the frequency, the masses and B1 as usual, and tick <strong>Keep per-port
 fields</strong> (<code>PerPortFields</code>).</li>
-<li><strong>Simulate.</strong> openEMS runs once per port, as any driven run does. Beside the <code>.sNp</code> the run writes a <strong>field set</strong>,
-a folder <code>&lt;stem&gt;.fields/</code>: each port's E and H over the tissue's box, per √W incident at that port and nothing
+<li><strong>Simulate.</strong> openEMS runs once per port, as any driven run does. Beside the <code>.sNp</code> the run writes a result record,
+<code>&lt;stem&gt;.cemr</code>, and a <strong>field set</strong>, a folder <code>&lt;stem&gt;.fields/</code>: each port's E and H over the tissue's box, per √W incident at that port and nothing
 incident anywhere else, with the cells' σ, ρ and volume and a manifest. They are float32, 24 bytes a cell per port and
 field; the loop coil's four ports at 298 MHz take 87 MB on the example's grid. The disk estimate before the run says how
 much of it the field set is.</li>
@@ -67,8 +67,10 @@ much of it the field set is.</li>
 <p><strong>Without capacitors there is no resonance to ring down.</strong> The example's four runs stop after about 3,700–3,900 steps
 each; the same coil with lumped capacitors in the EM model needed 72,000 steps for one run, and it was still ringing.</p>
 <h2 id="schematic">2. The schematic side: the fields analysis</h2>
-<p>Place the <code>.sNp</code> as an <strong>S-parameter block</strong> in a test bench and draw the circuit around its ports: the capacitors, the
-match, the feed. Then add a <strong>Fields (SAR, B1)</strong> analysis in the Analysis editor:</p>
+<p>Place an <strong>EM Field Data</strong> block in a test bench and pick the run's <code>.cemr</code> for its <strong>File</strong>. Its pins are named after the
+run's ports, in the run's order, so there is no port count to set. Draw the circuit around them: the capacitors, the match,
+the feed. Then add a <strong>Fields (SAR, B1)</strong> analysis in the Analysis editor, whose <strong>Block</strong> control lists the schematic's EM
+Field Data blocks, those inside sub-cells included, and still takes typed text:</p>
 <pre><code>analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1 [norm=accepted|available] [average=yes|no]</code></pre>
 <table>
 <thead>
@@ -81,7 +83,7 @@ match, the feed. Then add a <strong>Fields (SAR, B1)</strong> analysis in the An
 <tbody>
 <tr>
 <td><code>block</code></td>
-<td>the S-parameter block's instance name (<code>X1.EM1</code> inside a cell)</td>
+<td>the EM Field Data block's instance name (<code>X1.EM1</code> inside a cell)</td>
 <td>required</td>
 </tr>
 <tr>
@@ -129,8 +131,19 @@ between its points, or one that is not the run's;</li>
 </ul>
 <p>All three compare the field set with itself. <strong>They cannot see a field that is wrong in the same way in E and in S</strong> —
 a grid too coarse, a run stopped too early. The checks hold the recombination to its inputs; the inputs are the 3D run's.</p>
-<p><strong>A stale field set is refused</strong>, naming every port, when its stamp is not the <code>.sNp</code>'s: re-run the 3D view. File times
-are not compared, so a copied or checked-out field set reads as current.</p>
+<p><strong>The block works on the saved result.</strong> It reads the record and the files the record names, and no <code>.c3d</code>, <code>.cem</code> or <code>.clay</code>,
+so editing the setup, or deleting the 3D view, changes nothing it uses. Its properties show one line from the record: when, which
+solver and quality, the sweep and the port count. <strong>Run settings…</strong> beside it shows the settings that run used, read-only, with
+what differs from the setup now marked. A difference adds one note to a run and blocks nothing. A record from before settings were
+kept reads <em>settings not recorded</em>.</p>
+<p><strong>What the block refuses</strong>, naming itself and the file: no such record; a record holding neither a far field nor a field set, whose
+S-parameters belong in an SnP; a file the record names that is missing or truncated; and files from different runs, saying which. The
+record, the <code>.sNp</code>, the <code>.npy</code> and the field set share one stamp. File times are not compared, so a copied or checked-out result
+reads as current.</p>
+<p><strong>A Touchstone file is not enough.</strong> A Fields analysis on a plain SnP is refused. A run from before records has a <code>.sNp</code> and a <code>.npy</code>
+and no <code>.cemr</code>: pick its <code>.sNp</code> in the block's file picker and it offers to write one beside it, as <code>circuitrf em --adopt</code> does, with
+the data files untouched. A saved schematic with a Fields analysis on an SnP still opens; running it says so, and the Messages pane
+offers <strong>Change to EM Field Data</strong> when the block's <code>.sNp</code> can be adopted.</p>
 <p>Headless: <code>circuitrf fields bench.csch</code> runs every enabled fields analysis of a schematic (<code>-a</code> names some, <code>--set</code>
 changes a value first) and prints the same lines; MCP's <code>run analysis=fields</code> does the same.</p>
 <h2 id="goals">3. Tuning and optimizing on fields</h2>

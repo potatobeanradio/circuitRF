@@ -234,7 +234,7 @@ public static partial class AnalysisDirectiveSchema
         // brief-sar-9 R-sar9-3 — an EM block's per-port fields recombined by this circuit's port waves
         new("fields", ["field_cosim", "cosim"],
         [
-            new("block",    Required: true,  Summary: "Instance path of the S-parameter block whose .sNp was written by a 3D run with Sar.PerPortFields."),
+            new("block",    Required: true,  Summary: "Instance path of the EM Field Data block whose result record holds the field set, written by a 3D run with Sar.PerPortFields. A plain SnP is refused."),
             new("freq",     Required: true,  Summary: "The frequency the fields are recombined at: one the 3D run kept (its Sar.FrequenciesGHz). Bare number in Hz unless freqUnit= or Unit= says otherwise."),
             new("freqUnit", Default: "Hz",   Summary: "Unit for freq."),
             new("Unit",                      Summary: "Same as freqUnit."),

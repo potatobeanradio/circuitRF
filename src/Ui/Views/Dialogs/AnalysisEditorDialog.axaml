@@ -181,8 +181,9 @@
                 <Grid x:Name="FieldsBodyGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
                       RowSpacing="6" ColumnSpacing="8">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Block:" FontSize="12" VerticalAlignment="Center"/>
-                    <TextBox   Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Text="{Binding FieldsBody.Block}"
-                               PlaceholderText="the S-parameter block's instance, e.g. EM1"/>
+                    <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" IsEditable="True" HorizontalAlignment="Stretch"
+                               ItemsSource="{Binding FieldsBody.Blocks}" Text="{Binding FieldsBody.Block, Mode=TwoWay}"
+                               PlaceholderText="an EM Field Data block, e.g. EM1 or X1.EM1"/>
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Frequency:" FontSize="12" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="1" Grid.Column="1" FontSize="12" Text="{Binding FieldsBody.Freq}"
                                PlaceholderText="one its 3D run kept fields at"/>

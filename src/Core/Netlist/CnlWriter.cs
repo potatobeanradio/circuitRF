@@ -299,7 +299,8 @@ public static class CnlWriter
         // from the schematic side (R-cpl-13 stores workspace-relative), where the Browse… picker had
         // always produced an absolute one that happened not to need the resolution branch.
         if (reference is not null
-            && reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+            && (reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+                || reference.Equals(Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
             && ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
             && !IsQuoted(ov.Expression))
             return $"{ov.Name}=\"{ov.Expression}\"";

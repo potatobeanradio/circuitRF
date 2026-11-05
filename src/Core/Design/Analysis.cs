@@ -103,7 +103,7 @@ public sealed class DcAnalysis(string name) : Analysis(name);
 /// </summary>
 public sealed class FieldsAnalysis(string name) : Analysis(name)
 {
-    /// <summary>The S-parameter block's instance path (<c>EM1</c>, or <c>X1.EM1</c> inside a cell).</summary>
+    /// <summary>The EM Field Data block's instance path (<c>EM1</c>, or <c>X1.EM1</c> inside a cell).</summary>
     public string Block { get; init; } = "";
 
     /// <summary>The frequency the fields are taken at: one the 3D run kept (its Sar.FrequenciesGHz).</summary>

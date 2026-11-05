@@ -682,7 +682,7 @@ public partial class SchematicView : UserControl
         // complex value offers its four parts as a submenu (overview D18).
         var tuneKeys = TuneKeysOfContextTarget(comp);
         // An SnP block's S-parameter offset is never tuned (brief-sens-2).
-        if (comp?.Symbol == SymbolKind.Snp)
+        if (comp?.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData)
             tuneKeys = [.. tuneKeys.Where(k => !(CircuitRF.Core.Design.TunableKey.TryParse(k, out var tk) && tk.IsSnpEntryShape))];
         CtxTune.IsVisible = tuneKeys.Count > 0;
         CtxTune.Items.Clear();

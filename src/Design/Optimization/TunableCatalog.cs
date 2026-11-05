@@ -1,3 +1,4 @@
+using CircuitRF.Core.Devices;
 using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
@@ -411,7 +412,8 @@ public sealed class TunableCatalog
                     continue;
                 }
 
-                bool isSnp = inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase);
+                bool isSnp = inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
+                             || inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase);
                 if (isSnp) SnpEntries(inst, prefix, location, cell, count, readOnly);
 
                 foreach (var ov in inst.Overrides)
@@ -446,7 +448,15 @@ public sealed class TunableCatalog
                 string? loadError = null;
                 RfCore.SNP? snp = null;
                 string file = Elaborator.ResolveFileReference(Stated("File") ?? "", referenceBase);
-                if (string.IsNullOrWhiteSpace(file)) loadError = "no Touchstone file is specified";
+                // An EM Field Data block's File is its record; the entries are those of the Touchstone the record names.
+                if (inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var (record, refusal) = EmFieldDataRecord.Open(file);
+                    if (record is null) { loadError = refusal; ports = EmFieldDataRecord.ReadPortNames(file)?.Count ?? 0; }
+                    else { file = record.SnpPath; ports = record.PortCount; }
+                }
+                if (loadError is not null) { }
+                else if (string.IsNullOrWhiteSpace(file)) loadError = "no Touchstone file is specified";
                 else if (!File.Exists(file)) loadError = $"its Touchstone file was not found: '{file}'";
                 else
                 {

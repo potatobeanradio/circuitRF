@@ -63,7 +63,7 @@ public static class ComponentModelFactory
     private static readonly HashSet<string> _parameterizedTypes =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
+            "SnP", EmFieldDataRecord.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
             "Tuner", "P1Tone", "PnTone", "MOD_Source",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
@@ -151,6 +151,8 @@ public static class ComponentModelFactory
 
         if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
+        if (typeName.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateEmFieldDataModel(parameters);
         if (typeName.Equals(ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateComposedCoreModel(parameters, ambientC);
         if (typeName.Equals(ComposedFetTypeName, StringComparison.OrdinalIgnoreCase))
@@ -722,19 +724,36 @@ public static class ComponentModelFactory
         return (int)n;
     }
 
+    /// <summary>
+    /// brief-cosim-pattern-2 R-cp2-3 — an EM Field Data block is an <see cref="SnpModel"/> on the Touchstone its record names, with the
+    /// record's path kept for Fields. Nothing else differs, so every <c>is SnpModel</c> site works and its S is the file's to the last bit.
+    /// The elaborator has already asked <see cref="EmFieldDataRecord.Open"/> and refused by the instance's name; the refusal here is for a
+    /// caller that builds a model with no netlist around it.
+    /// </summary>
+    private static SnpModel CreateEmFieldDataModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string file = parameters.TryGetValue("File", out var fileVal) && fileVal.Kind == ValueKind.String ? fileVal.AsString() : "";
+        var (record, refusal) = EmFieldDataRecord.Open(file);
+        if (record is null) throw new ParameterRefusalException($"{EmFieldDataRecord.DisplayName}: {refusal}");
+        return CreateSnpModel(parameters, record.PortCount, record.SnpPath, record.RecordPath);
+    }
+
     private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters)
     {
         if (!parameters.TryGetValue("NumPorts", out var np) || np.Kind != ValueKind.Real)
             throw new InvalidOperationException("SnP: NumPorts parameter is missing or not a number");
-        int portCount = (int)np.AsReal();
+        return CreateSnpModel(parameters, (int)np.AsReal(), null, null);
+    }
 
+    private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters, int portCount, string? touchstone, string? recordPath)
+    {
         // A missing or blank File is NOT refused here. This factory sees resolved parameters and has
         // no idea which instance they came from, so its refusal could only say "SnP:" — and that is
         // the whole complaint the message is being fixed for. SnpModel raises it instead, at stamp
         // time, where ElaboratedComponent.InstancePath names the component and its parent cells.
-        string filePath = parameters.TryGetValue("File", out var fileVal) && fileVal.Kind == ValueKind.String
-                          ? fileVal.AsString()
-                          : "";
+        string filePath = touchstone ?? (parameters.TryGetValue("File", out var fileVal) && fileVal.Kind == ValueKind.String
+                                         ? fileVal.AsString()
+                                         : "");
 
         // Default is cubic spline — anything other than an explicit "linear"/"makima" falls back to
         // it, which also covers the pre-existing stored value "Cubic".
@@ -761,7 +780,7 @@ public static class ComponentModelFactory
                 ? OutOfRangePolicy.WarnExtrapolate
                 : OutOfRangePolicy.WarnClamp;
 
-        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat, SnpOffsetsOf(parameters, portCount, filePath));
+        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat, SnpOffsetsOf(parameters, portCount, filePath), recordPath);
     }
 
     /// <summary>

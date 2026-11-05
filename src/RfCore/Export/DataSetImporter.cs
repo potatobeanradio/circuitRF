@@ -54,6 +54,13 @@ public static class DataSetImporter
         return NpyReader.ReadMetaJson(path);
     }
 
+    /// <summary>True when a <c>.npy</c> is shorter than its own header says, read from the header alone.</summary>
+    public static bool IsTruncated(string path)
+    {
+        if (path is null) throw new ArgumentNullException(nameof(path));
+        return NpyReader.IsTruncated(path);
+    }
+
     /// <summary>Reads one circuitRF <c>.npy</c> from <paramref name="stream"/>, which is left open.</summary>
     public static DataSet ImportNpy(Stream stream)
     {

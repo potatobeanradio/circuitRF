@@ -199,6 +199,8 @@ public static class BuiltInSymbols
                 int n = portCount > 0 ? portCount : 2;
                 return PrimitivesForSnp(n, refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
             }
+            case SymbolKind.EmFieldData:
+                return PrimitivesForEmFieldData(portCount > 0 ? portCount : 2, null);
             case SymbolKind.VerilogA:
             {
                 int n = portCount > 0 ? portCount : 2;
@@ -1502,6 +1504,24 @@ public static class BuiltInSymbols
             string s = name.Trim();
             return s.Length <= SnpPortLabelMaxChars ? s : s[..(SnpPortLabelMaxChars - 1)] + "~";
         }
+    }
+
+    /// <summary>
+    /// The EM Field Data block: the SnP's box, pins and pin geometry, with the 3D view's field plot glyph (three broad waves) across its
+    /// middle, so a glance tells it from a Touchstone file. <paramref name="portNames"/> are its record's, or null before one is chosen.
+    /// </summary>
+    public static Symbol PrimitivesForEmFieldData(int n, IReadOnlyList<string?>? portNames)
+    {
+        var box = BuildSnpSymbol(n, false, SnpPinConfig.Standard, SnpPitch.Loose, portNames);
+        float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, SnpPinConfig.Standard, SnpPitch.Loose);
+        var prims = new List<SymbolPrimitive>(box.Primitives);
+        for (int k = -1; k <= 1; k++)
+        {
+            var wave = Sine(0, cy + 24 * k, 7, 2, 72, SineAxis.Horizontal);
+            wave.StrokeTier = SymbolStrokeTier.Thick;
+            prims.Add(wave);
+        }
+        return new Symbol(prims, box.Pins);
     }
 
     /// <summary>The longest port name an SnP lead shows; a longer one is cut to it, ending in <c>~</c>.</summary>

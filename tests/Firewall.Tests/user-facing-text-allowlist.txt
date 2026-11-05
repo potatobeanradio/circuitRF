@@ -1251,14 +1251,14 @@ src/Design/Em3d/CosimFieldMetrics.cs|Fields '{_fa.Name}': the field set is on a 
 src/Design/Em3d/CosimFieldMetrics.cs|Fields '{_fa.Name}': the field set is on a cylindrical grid, whose cells are (ρ, α, z), so a box region 
 src/Design/Em3d/FieldCosimulation.cs|Fields '{fa.Name}': every drive's weight is zero, so nothing is driven.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.
-src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an S-parameter block.
-src/Design/Em3d/FieldCosimulation.cs|{who}: block= names no S-parameter block.
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{fa.DriveExpr}' names {ports.Count} port{(ports.Count == 1 ? 
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{ports[i]}' is not a port number ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: the circuit has no instance '{fa.Block}'.
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not a number ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not finite.
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.
+src/Design/Em3d/FieldCosimulation.cs|{who}: block= names no {EmFieldDataRecord.DisplayName} block.
 src/Design/Em3d/PortFieldSet.cs|'{path}' holds {(fs.Length - start) / size:N0} values where {elements:N0} were expected.
 src/Design/Em3d/PortFieldSet.cs|'{path}' is not a C-order {descr} array.
 src/Design/Em3d/PortFieldSet.cs|'{path}' is not a NumPy array.
@@ -1580,4 +1580,7 @@ src/Core/Devices/External/IParametricModelProvider.cs|'{request.InstancePath}' i
 src/Core/Elaboration/Elaborator.cs|'{childPath}' cannot be simulated by EM: {answer.Failure ?? 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' declares both as a parameter and as a variable; 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.
+src/Core/Elaboration/Elaborator.cs|{who} is wired to {nets} net(s) and '{name}' holds {ports} port(s) ({string.Join(
 src/Engine/Mom/PlanarGram.cs|Rooftops {bi} and {bj} share cells of three different sheet classes. A 
+
+src/Engine/Mom/EmProblem.cs|A material with a conductivity of {SigmaSm:G4} S/m has no complex permittivity until a 

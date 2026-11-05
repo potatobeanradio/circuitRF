@@ -114,12 +114,12 @@
                       FontSize="11"/>
             <!-- GitHub issue #31: a data file's label shown with its path, its name only, or not at all. -->
             <CheckBox IsChecked="{Binding ShowFileLabel}"
-                      IsVisible="{Binding IsSnp}"
+                      IsVisible="{Binding IsDataFileBlock}"
                       Content="File label"
                       FontSize="11"
                       ToolTip.Tip="Show the File = … label on the schematic"/>
             <CheckBox IsChecked="{Binding ShowFileNameOnly}"
-                      IsVisible="{Binding IsSnp}"
+                      IsVisible="{Binding IsDataFileBlock}"
                       IsEnabled="{Binding ShowFileLabel}"
                       Content="Name only"
                       FontSize="11"
@@ -1322,6 +1322,29 @@
                     </StackPanel>
                 </StackPanel>
 
+                <!-- EM Field Data (brief-cosim-pattern-2): the record it reads, one line from it, and how that run was made. -->
+                <StackPanel IsVisible="{Binding IsEmFieldData}" Margin="6,4" Spacing="8">
+                    <Grid ColumnDefinitions="60,*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="File" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Text="{Binding SnpFilePath}" FontSize="11" Padding="4,3"
+                                 VerticalAlignment="Center" IsReadOnly="True"/>
+                        <Button Grid.Column="2" Content="Browse…" FontSize="11" Padding="6,3" Margin="4,0,0,0"
+                                Command="{Binding PickEmFieldFileCommand}"/>
+                        <Button Grid.Column="3" Width="24" Height="24" Padding="0" MinWidth="0" MinHeight="0" Margin="4,0,0,0"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                ToolTip.Tip="Reveal this file in the system file manager"
+                                Command="{Binding ShowSnpFileCommand}">
+                            <mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+                    <TextBlock Text="{Binding EmFieldSummary}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    <TextBlock Text="{Binding EmFieldPinsNote}" IsVisible="{Binding EmFieldPinsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"/>
+                    <Button Content="Run settings…" FontSize="11" Padding="6,3" HorizontalAlignment="Left"
+                            ToolTip.Tip="The settings this result was made with, and what differs from its setup now"
+                            Command="{Binding ShowEmRunSettingsCommand}"/>
+                </StackPanel>
                 <!-- SnP custom panel: file picker + layout controls -->
                 <StackPanel IsVisible="{Binding IsSnp}"
                             Margin="6,4"

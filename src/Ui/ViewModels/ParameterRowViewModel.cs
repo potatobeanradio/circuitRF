@@ -715,7 +715,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// S-parameter offset, which is toleranced and ranked, never tuned (brief-sens-2).</summary>
     public bool CanTune => TuneKey is not null && !IsSnpEntryRow;
 
-    private bool IsSnpEntryRow => _ownerComp?.Symbol == SymbolKind.Snp && RfCore.SnpPerturbation.TryParseName(_param.Name, out _, out _, out _);
+    private bool IsSnpEntryRow => _ownerComp?.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData && RfCore.SnpPerturbation.TryParseName(_param.Name, out _, out _, out _);
 
     /// <summary>The row is a complex value: its tune button offers a menu of the four parts instead.</summary>
     public bool CanTuneParts => TuneKeys.Count > 1;

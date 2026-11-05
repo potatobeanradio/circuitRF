@@ -43,7 +43,7 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | `lp` | `.cnl` or `.csch` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` (`WireTemp [grid, pin, wire array]` with a wBond) |
 | `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb` (the follow-on carries `WireTemp`); `--out-grid` writes the `.gam` |
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
-| `fields` | `.cnl` or `.csch` | its `fields` analyses through `CircuitEvaluation` — an EM block's per-port fields recombined by the circuit's waves (`FieldCosimulation`); no EM run | stdout notes and scalars; SAR and B1 volumes and records beside the field set; `-o .mat/.npy/.txt` for the scalars — §28 |
+| `fields` | `.cnl` or `.csch` | its `fields` analyses through `CircuitEvaluation` — an EM Field Data block's per-port fields recombined by the circuit's waves (`FieldCosimulation`); no EM run | stdout notes and scalars; SAR and B1 volumes and records beside the field set; `-o .mat/.npy/.txt` for the scalars — §28 |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
 | `snp` | a Touchstone `.sNp` | `TouchstoneSource` + `SParameterViewerPreset` — the reading and the plots the S-Parameter Viewer shows | stdout file pane; `-o .svg/.pdf/.png` the four plots, `-o .cdd` the Data Display — §33 |
@@ -591,7 +591,7 @@ These come out, and they are not redundant:
 |---|---|
 | `<key>.sNp` | S only — the artifact a schematic REFERENCES by path |
 | `<key>_em.npy` | the whole `DataSet`, including the diagnostics group (`tline` or `planar`) that makes a wrong answer diagnosable |
-| `<key>.fields/` | the per-port field set, when the run keeps one |
+| `<key>.fields/` | the per-port field set, when the run keeps one; an EM Field Data block reaches it through the record |
 | `<key>.cemr` | how the result was made: the setup, the ports, the sweep, and these files relative to it |
 
 `<key>` is the setup's key, or its Output name (`EmSetup.SnpOutputPathOverride`, the field the EM panel writes), which decides every
@@ -4304,8 +4304,8 @@ patterns refused listing the candidates; a bare-number `--region` refused.
 ## 28. `fields` — an EM block's SAR and B1 from the circuit around it, with no EM run
 
 **brief-sar-9.** `circuitrf fields <file.cnl|.csch> [-a name]... [--set var=expr]... [-o out.{mat,npy,txt}]` runs a
-design's `fields` analyses: the per-port fields a 3D run kept beside its `.sNp` (`Sar.PerPortFields`) recombined with
-the incident waves the circuit delivers to the block's ports, into local and averaged SAR, B1± and their scalars at one
+design's `fields` analyses: the per-port fields an EM Field Data block's result record names (kept by a 3D run with
+`Sar.PerPortFields`) recombined with the incident waves the circuit delivers to the block's ports, into local and averaged SAR, B1± and their scalars at one
 frequency. The method, the directive and the checks are `docs/design/sar.md` §11. Several circuit ports can drive at once
 (`drive=1,2 weights=1,W2`, brief-sar-10), and the field measurements (`B1pMean(F1)`, `psSAR(F1, 10)` …) read the result in a
 `measure` or `goal` line; `sar.md` §12.
@@ -4327,8 +4327,8 @@ same DataSet. Over the protocol it is `run analysis=fields`.
 
 ### 28.3 Exit codes
 
-0 every named analysis ran; 1 refused or failed (a block with no field set, a stale or incomplete one, a frequency the
-run kept no fields at, no fields analysis), with the analysis's own sentence; 130 cancelled, with nothing written. A
+0 every named analysis ran; 1 refused or failed (a plain SnP where an EM Field Data block belongs, a record with no field set, a result whose
+files are missing, truncated or from different runs, a frequency the run kept no fields at, no fields analysis), with the analysis's own sentence; 130 cancelled, with nothing written. A
 failed power check is a **warning** on stderr and still exits 0: the result is written, and the warning says which input
 disagrees.
 

@@ -1,0 +1,66 @@
+{
+  "FormatVersion": 1,
+  "Stamp": "20261105T213651Z-6296828e",
+  "Written": "2026-10-18T19:17:23+00:00",
+  "Product": "1.7.1",
+  "Solver": {
+    "Name": "openEMS",
+    "Version": "openEMS 0.37.0 (v0.37.0, CSXCAD v0.7.0)",
+    "Device": null
+  },
+  "Files": {
+    "Snp": "Pair PerPort.openems.s2p",
+    "Npy": "Pair PerPort.openems_em.npy",
+    "Fields": "Pair PerPort.openems.fields"
+  },
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "port/1",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": null,
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 2,
+      "Name": "port/2",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": null,
+      "Part": null,
+      "Pins": null
+    }
+  ],
+  "Frequencies": {
+    "SweepHz": [
+      500000000,
+      600000000,
+      700000000,
+      800000000,
+      900000000,
+      1000000000,
+      1100000000,
+      1200000000,
+      1300000000,
+      1400000000,
+      1500000000
+    ],
+    "FarFieldHz": [],
+    "FieldSetHz": [
+      1000000000
+    ]
+  },
+  "Setup": null,
+  "Geometry": {
+    "GeometryHash": "ebda329beedeafbb",
+    "MeshHash": "4c8efa042fff0f06",
+    "PortHash": "8aadd8ff608c1838",
+    "ModelRevision": "openEMS 0.37.0 (v0.37.0, CSXCAD v0.7.0)",
+    "MeshSize": null,
+    "MeshUnit": null,
+    "Unknowns": null
+  },
+  "Adopted": true
+}

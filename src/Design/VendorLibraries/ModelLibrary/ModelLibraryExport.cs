@@ -795,6 +795,13 @@ public static partial class ModelLibraryExport
                 }
                 if (IsNonlinearReference(ComponentTypeRegistry.EngineReference(comp.Symbol))) Nonlinear = true;
 
+                // A part carries a Touchstone file, not a run's far field and field set, and its record's data files are not copied.
+                if (comp.Symbol == SymbolKind.EmFieldData)
+                {
+                    refusals.Add($"{name} is an EM Field Data block, and a model library part cannot carry a run's fields. Place its .sNp in an SnP to export it.");
+                    continue;
+                }
+
                 string? file = comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression?.Trim();
                 if (comp.Symbol == SymbolKind.SpiceModel && VendorLibraryRefs.IsVendorRef(file))
                 {

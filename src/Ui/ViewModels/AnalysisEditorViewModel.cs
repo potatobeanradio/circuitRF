@@ -175,6 +175,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         LpBody         = SeededLp(model, workspaceRoot);
         LppBody        = SeededLpp(model, workspaceRoot);
         EnvBody        = new EnvBodyViewModel(model);
+        FieldsBody.BlockSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Paths(model);
         LoadEmSetups(null);
         ValidateName();
     }
@@ -262,6 +263,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             case FieldsAnalysis fa:
                 _type      = AnalysisKind.Fields;
                 FieldsBody = FieldsBodyViewModel.From(fa);
+                FieldsBody.BlockSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Paths(model);
                 SpBody     = new SpBodyViewModel(model);
                 HbBody     = SeededHb(model);
                 LpBody     = SeededLp(model, workspaceRoot);

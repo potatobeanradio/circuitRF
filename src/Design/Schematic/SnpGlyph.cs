@@ -22,7 +22,7 @@ public static class SnpGlyph
         string name = (symbol ?? "").Trim().Trim('"').Trim();
         if (refNode || name.Length == 0) return null;
         if (!Enum.TryParse<SymbolKind>(name, ignoreCase: false, out var kind) || !Enum.IsDefined(kind)
-            || int.TryParse(name, out _) || kind is SymbolKind.Snp or SymbolKind.Unknown)
+            || int.TryParse(name, out _) || kind is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Unknown)
             return null;
         return SymbolPortDefs.For(kind, ports).Length == ports ? kind : null;
     }

@@ -43,8 +43,9 @@ internal sealed class SetSnpFileCommand : IUiCommand
         // leaves NumPorts exactly as it was — this command never invents one, because a guessed
         // port count draws pins that are not there.
         string? probe = SnpPathPolicy.Resolve(newFile, workspaceRoot, model.SchematicDirectory);
-        _newNumPorts = probe is not null && TouchstoneIO.TryGetPortCount(probe, out int n, out _)
-            ? n.ToString() : _oldNumPorts;
+        _newNumPorts = comp.Symbol == SymbolKind.EmFieldData
+            ? CircuitRF.Core.Devices.EmFieldDataRecord.ReadPortNames(probe)?.Count.ToString() ?? _oldNumPorts
+            : probe is not null && TouchstoneIO.TryGetPortCount(probe, out int n, out _) ? n.ToString() : _oldNumPorts;
     }
 
     public void Execute()

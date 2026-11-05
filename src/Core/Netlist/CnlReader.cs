@@ -1930,7 +1930,8 @@ public sealed class CnlReader
         // against this netlist's source directory. It used to reach the elaborator as written, and
         // the headless run verbs set no elaborator base, so it resolved against the PROCESS's
         // working directory: one .cnl ran from its own folder and failed from anywhere else.
-        bool resolvesFile = isSnP || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase);
+        bool resolvesFile = isSnP || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase)
+                            || typeName.Equals(CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase);
         // A VerilogA's File is the same (brief vendorlib-15): a model library's .cnl names its compiled device
         // model-relative, and Export's self-check reads that .cnl with the model folder as its source directory. It is
         // rebased by FileReferences' own rule, which leaves a bare word alone — that may be a variable in scope.

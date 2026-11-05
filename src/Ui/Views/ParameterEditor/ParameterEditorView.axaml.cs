@@ -196,6 +196,9 @@ public partial class ParameterEditorView : UserControl
         if (DataContext is ParameterEditorViewModel vm)
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
+            vm.PickEmFieldFileAsync   = PickEmFieldFileAsync;
+            vm.ConfirmAdoptAsync      = ConfirmAdoptAsync;
+            vm.ShowEmRunSettingsAsync = ShowEmRunSettingsAsync;
             vm.PickSpiceFileAsync     = PickSpiceFileAsync;
             vm.PickFootprintFileAsync = PickFootprintFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
@@ -244,6 +247,39 @@ public partial class ParameterEditorView : UserControl
         dialog.Closed += (_, _) => cvVm.Dispose();
         dialog.Show(owner!);
         await Task.CompletedTask;
+    }
+
+    /// <summary>brief-cosim-pattern-2 R-cp2-1 — a result record, or an older result's Touchstone, which the view model offers to adopt.</summary>
+    private async Task<string?> PickEmFieldFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Open EM Result Record",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("EM result record (*.cemr)") { Patterns = ["*.cemr"] },
+                new FilePickerFileType("Older EM result (*.sNp)")
+                {
+                    Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.s5p","*.s6p","*.s7p","*.s8p","*.s9p","*.s10p","*.s12p","*.s16p","*.s24p","*.s32p"],
+                },
+            ],
+        });
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+    }
+
+    private Task<bool> ConfirmAdoptAsync(string snpName, string recordName)
+        => Views.Dialogs.TextConfirmDialog.AskAsync(TopLevel.GetTopLevel(this) as Window, "Older EM Result",
+            $"Write a result record for {snpName}?",
+            $"{snpName} is from a run older than result records. {recordName} would be written beside it from what the result's files hold. " +
+            "Its data files are not touched, and its settings read \"not recorded\".", "Write Record");
+
+    private Task ShowEmRunSettingsAsync(string recordPath)
+    {
+        var dialog = Views.Dialogs.EmRunSettingsDialog.Build(recordPath);
+        return TopLevel.GetTopLevel(this) is Window owner ? dialog.ShowDialog(owner) : Task.CompletedTask;
     }
 
     private async Task<string?> PickSnpFileAsync()

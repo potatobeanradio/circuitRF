@@ -3227,7 +3227,7 @@ public static class NetExtractor
             reference = comp.Symbol == SymbolKind.ToneSource ? "V_nTone" : "I_nTone";
 
         // SnP: filter UI-only params and separate the optional reference-node pin.
-        if (comp.Symbol == SymbolKind.Snp)
+        if (comp.IsSnpBox)
         {
             bool hasRefNode = comp.Parameters
                 .FirstOrDefault(p => p.Name == "RefNode")?.Expression
@@ -3236,6 +3236,8 @@ public static class NetExtractor
 
             var overrides = comp.Parameters
                 .Where(p => p.Name is not "RefNode" and not "PinConfig" and not "Pitch" and not SnpGlyph.SymbolParameter)
+                // An EM Field Data block's port count is its record's: the drawn pin count is not part of its line.
+                .Where(p => comp.Symbol != SymbolKind.EmFieldData || p.Name != "NumPorts")
                 .Select(p =>
                 {
                     var unit = UnitNormalizer.ToEngineUnit(p.Unit);

@@ -1428,8 +1428,8 @@ of which 188 MB is the per-port field set kept beside the `.s2p`.
 ## 11. Capacitors as ports: per-port fields recombined by the circuit (SAR-9)
 
 The method coil designers use. Every capacitor gap and the feed of a coil become ports, so the EM problem has no resonance of
-its own and no long ring-down. openEMS runs once per port and keeps each port's E and H. A schematic places the `.sNp` as an
-S-parameter block, puts the real capacitors, matching network and feed around it, and a `fields` analysis turns the waves the
+its own and no long ring-down. openEMS runs once per port and keeps each port's E and H. A schematic places the run's result record as an
+EM Field Data block (§11.3), puts the real capacitors, matching network and feed around it, and a `fields` analysis turns the waves the
 circuit delivers into the block's ports into SAR and B1± by superposition, **in about a second and with no EM run**. Changing a
 capacitor and running the analysis again starts no process.
 
@@ -1470,7 +1470,11 @@ E = Σ_k a_k·Ê_k, and the same for H.
 analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1 [norm=accepted|available] [average=yes|no]
 ```
 
-`block` is the S-parameter block's instance path (`X1.EM1` inside a cell); `freq` must be one of the run's SAR frequencies; `drive`
+`block` is the EM Field Data block's instance path (`X1.EM1` inside a cell), and a plain SnP is refused saying to place one: a Touchstone
+file says nothing of fields. **The block is `.cnl` `EmFieldData`**, one parameter, `File`, a `.cemr` (brief-cosim-pattern-2). Its port count, names and
+order are the record's, it stamps an `SnpModel` on the Touchstone the record names, so every `is SnpModel` site works and its S is the file's to the
+last bit, and `SnpModel.RecordPath` is how `FieldCosimulation.Run` finds the field set. Elaboration and every analysis read the record and the files it
+names, and no `.c3d`, `.cem` or `.clay`. `freq` must be one of the run's SAR frequencies; `drive`
 is the circuit port that drives, every other circuit port terminated in its Z0. One circuit solve at that frequency
 (`SParameterEngine.BlockWaves`: the S-parameter run's own unit-incident-wave drive, one factorisation) gives the voltage across
 each of the block's ports and the current into it. Then a_k = (V_k + Z0_k·I_k)/(2√Z0_k) and b_k likewise, in the Z0 the fields were
@@ -1513,11 +1517,13 @@ Three checks, each a note, and a warning when it fails:
 way in E and in S (too short a ring-down, a coarse grid) passes every one: they hold the recombination to its inputs, not the
 inputs to the physics. The loop coil (§11.6) is what holds those.
 
-**Stale or missing.** The manifest and the `.sNp`'s provenance carry the same stamp, and the manifest is written first, so the `.sNp`
-is never the older. A set whose stamp is not the `.sNp`'s is **refused as stale, naming every port**. A port file that is missing,
-or whose size is not the size the run wrote, is refused naming that port. **File times are not compared**: a git checkout or a copy
-sets them arbitrarily, and a committed field set would read as stale on every fresh clone. A new run deletes the old folder,
-recombined results included, before writing.
+**Stale or missing.** The result record is the only pointer to a field set; the record, the `.sNp`, the `.npy` and the manifest carry one
+stamp. `EmResultIntegrity.Check` (in `src/Core`, so elaboration can ask, and `EmResultRecord.Verify` is the same check) says which file
+differs, or which is missing or shorter than its run wrote, and the block refuses naming itself and the file. A record with neither a
+far field nor a field set is refused too, since its S-parameters belong in an SnP. **File times are not compared**: a git checkout or a
+copy sets them arbitrarily, and a committed field set would read as stale on every fresh clone. A sweep re-elaborates at every point, so
+a verdict is kept while no file's size and write time have moved; that is a cache key, never the answer. A run publishes by renames
+(`EmResultStaging`), so a failed run leaves the old result, recombined results included.
 
 ### 11.5 Superposition (R-sar9-6)
 
@@ -1584,7 +1590,9 @@ the 3 % tolerance.
 - `FieldRecombinationTests` (routine): synthetic per-port fields with known weights give the hand-computed sum, local SAR and B1±;
   the fast path's plane is the full path's and reads only its cells.
 - `CosimNoEmRunTests` (routine): two capacitor values recombine twice with zero openEMS launches, and port 2's wave moves.
-- `FieldSetStaleTests` (routine): a set from another run is refused as stale naming both ports; a missing port file names its port.
+- `FieldSetStaleTests` (routine): a set from another run is refused saying so; a missing port file is named.
+- `EmFieldDataTests` (routine, brief-cosim-pattern-2): S identical to an SnP on one file, to the bit; a deleted setup changes nothing; each refusal;
+  a hierarchical path; `.csch` to `.cnl` to a run; a plain SnP refused, with the undoable change.
 - `FieldsDirectiveRoundTripTests` (routine): `type=fields` survives the `.cnl` reader and writer and the schematic's serialisation.
 - `PairSuperpositionTests` (routine, fixed data): §11.5. `PairSuperpositionRerunTests` (`Benchmark`) remakes the fixed data with
   `CRF_WRITE_SAR9_OUTPUTS=1`.
@@ -2120,7 +2128,7 @@ changing the generator is the owner's.
 | O3 | `sar_calc` as an optional cross-check | Done (SAR-5, SAR-6): `Sar.CrossCheck`; identical 10 g peaks on the dipole and the loop coil; found only beside the openEMS that wrote the dump; judged by its output file, its exit status being inverted |
 | O4 | §4's tolerances as proposed | Kept; none widened. Two comparisons made like with like by the owner (2026-10-18): B1+ at the cell centre (item 16) and S11 over a common time window (items 14–15) |
 | O5 | Octave on the developer machine, the birdcage in the reference set | Done (SAR-1): the birdcage reference ran 53 min on 0.37.0 and is in the local reference set; replicated by SAR-8b on circuitRF's cylindrical grid (§10a) |
-| O6 | Co-simulation lives in a schematic: an S-parameter block plus per-port fields | Done (SAR-9, SAR-10): the `fields` analysis, field goals, tuning, the optimizer, yield and multi-channel drive, none of which starts an EM run |
+| O6 | Co-simulation lives in a schematic: an EM Field Data block plus per-port fields | Done (SAR-9, SAR-10): the `fields` analysis, field goals, tuning, the optimizer, yield and multi-channel drive, none of which starts an EM run |
 
 Decisions taken during the series and recorded where they were taken: the reference data stays local, never in the
 repository (SAR-1); openEMS's list is of tested versions (SAR-1); the bundled phantom voxelized as one DiscMaterial (SAR-8);

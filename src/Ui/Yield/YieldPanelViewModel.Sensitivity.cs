@@ -627,7 +627,7 @@ public sealed partial class YieldPanelViewModel
     /// <summary>The component the tile's Tie writes to: a top-level SnP instance of the focused schematic.</summary>
     internal EditableComponent? SnpComponent(string instance)
         => instance.Contains(':') ? null
-         : _tuned?.EditModel.Components.FirstOrDefault(c => c.Symbol == SymbolKind.Snp && c.InstanceName == instance);
+         : _tuned?.EditModel.Components.FirstOrDefault(c => c.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData && c.InstanceName == instance);
 
     /// <summary>
     /// Tie reciprocal pairs (R-sens3-6): writes <c>Reciprocal=</c> on the instance — back to <c>auto</c> (the parameter

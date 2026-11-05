@@ -4,7 +4,7 @@ using CircuitRF.Core.Design;
 namespace CircuitRF.Ui.ViewModels;
 
 /// <summary>
-/// brief-sar-9 — the Add/Edit Analysis dialog's body for a fields analysis: the S-parameter block whose per-port fields are
+/// brief-sar-9 — the Add/Edit Analysis dialog's body for a fields analysis: the EM Field Data block whose per-port fields are
 /// recombined, the frequency (one its 3D run kept), the driving circuit port or ports and their weights (brief-sar-10), what the results are per watt of, and whether the
 /// averaged SAR is computed. Every value is the directive's own text, as <see cref="FieldsAnalysis"/> stores it.
 /// </summary>
@@ -14,6 +14,13 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
     public static IReadOnlyList<string> Norms { get; } = [FieldsAnalysis.NormAccepted, FieldsAnalysis.NormAvailable];
 
     [ObservableProperty] private string _block = "";
+
+    /// <summary>brief-cosim-pattern-2 R-cp2-7 — the schematic's EM Field Data blocks by path, sub-cells included; the control still takes typed text.</summary>
+    public IReadOnlyList<string> Blocks => _blocks ??= BlockSource?.Invoke() ?? [];
+    private IReadOnlyList<string>? _blocks;
+
+    /// <summary>Where <see cref="Blocks"/> comes from, asked only when a fields body is shown: listing them extracts the schematic.</summary>
+    internal Func<IReadOnlyList<string>>? BlockSource { get; set; }
     [ObservableProperty] private string _freq = "";
     [ObservableProperty] private string _freqUnit = "MHz";
     [ObservableProperty] private string _drive = "1";

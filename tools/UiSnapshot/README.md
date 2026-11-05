@@ -396,6 +396,12 @@ dotnet run --project tools/UiSnapshot --no-build -- --analysis-dialog <file.csch
 dotnet run --project tools/UiSnapshot --no-build -- --em-solves-dialog <file.csch> -o out.png
 ```
 
+**The Run settings dialog** (brief CP-2) of an EM Field Data block's result record, what differs from its setup now marked:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --em-run-settings <file.cemr> -o out.png
+```
+
 A placed EM-capable cell's Model row and Variables group show in the ordinary parameter dialog:
 `--schematic <parent.csch> --select X1 --dialog`.
 

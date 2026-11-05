@@ -52,6 +52,9 @@ public enum FieldsOutput
 /// Result returned by <see cref="CircuitEvaluation.Execute"/>: status, message, and the collected
 /// per-analysis results.
 /// </summary>
+/// <summary>A fields analysis's block that is a plain SnP: the instance and its Touchstone.</summary>
+public sealed record PlainSnpFieldsBlock(string Block, string SnpPath);
+
 public sealed class RunResult(
     RunStatus                        status,
     string                           statusMessage,
@@ -63,6 +66,10 @@ public sealed class RunResult(
     IReadOnlyList<ExpressionOutcome>?   expressions = null,
     IReadOnlyList<FieldsArtifact>?      fields = null)
 {
+    /// <summary>brief-cosim-pattern-2 R-cp2-8 — each plain SnP a fields analysis was refused on, so a window can offer the change beside
+    /// the sentence the run already reports.</summary>
+    public IReadOnlyList<PlainSnpFieldsBlock> PlainSnpFieldsBlocks { get; init; } = [];
+
     /// <summary>brief-sar-9 — every fields analysis's recombined result, in run order.</summary>
     public IReadOnlyList<FieldsArtifact> Fields { get; } = fields ?? [];
 

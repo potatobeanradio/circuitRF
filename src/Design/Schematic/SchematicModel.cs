@@ -649,6 +649,13 @@ public enum SymbolKind
     /// <c>W</c>, <c>S</c> apart. Pin 1 the end of the line on one side, pin 2 the other. Its layout is the two
     /// pins alone — the lines either side are the copper. Appended so no existing kind's ordinal moves.</summary>
     MGap,
+
+    /// <summary>
+    /// A finished EM run placed as a block (brief-cosim-pattern-2): an N-port on a result record (<c>.cemr</c>), with its pins named
+    /// after the run's ports. It stamps the same model as <see cref="Snp"/>; what it adds is that it holds field data or it is refused,
+    /// so the Fields analysis can name it. Engine token <c>EmFieldData</c>.
+    /// </summary>
+    EmFieldData,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
@@ -752,7 +759,7 @@ public sealed class SchematicComponent
             double halfH = SymbolPortDefs.SddBodyRect(portCount).HalfH;
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
-        if (symbol is SymbolKind.Snp)
+        if (symbol is SymbolKind.Snp or SymbolKind.EmFieldData)
         {
             double halfH = glyphHalfH
                 ?? SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose).HalfH;

@@ -1,5 +1,5 @@
-// brief-sar-9 R-sar9-3 / R-sar9-4 / R-sar9-5 — a schematic's `fields` analysis: the S-parameter block's per-port fields (kept
-// beside its .sNp by a 3D run with Sar.PerPortFields) recombined with the incident waves THIS circuit delivers to each of the
+// brief-sar-9 R-sar9-3 / R-sar9-4 / R-sar9-5 — a schematic's `fields` analysis: an EM Field Data block's per-port fields (named by
+// its result record, kept by a 3D run with Sar.PerPortFields) recombined with the incident waves THIS circuit delivers to each of the
 // block's ports, into the field — and the SAR and B1 — of the whole coil with its capacitors, matching network and feed.
 // docs/design/sar.md §11.
 //
@@ -75,6 +75,19 @@ public sealed class CosimRecord
     public Complex DriveZ0 => new(DriveZ0Re, DriveZ0Im);
 }
 
+/// <summary>
+/// brief-cosim-pattern-2 R-cp2-7 / R-cp2-8 — Fields was pointed at a plain SnP. An exception of its own so a run can offer the change
+/// beside the sentence; the sentence alone is the whole answer headlessly.
+/// </summary>
+public sealed class PlainSnpFieldsBlockException(string who, string block, string snpPath)
+    : InvalidOperationException($"{who}: '{block}' is an SnP, and Fields reads its data from an {EmFieldDataRecord.DisplayName} block. Place one and pick " +
+                                $"the same run's record, '{Path.ChangeExtension(Path.GetFileName(snpPath), EmFieldDataRecord.Extension)}', beside the Touchstone file; " +
+                                "for a run older than records, its file picker offers to write one, as `circuitrf em --adopt` does.")
+{
+    public string Block { get; } = block;
+    public string SnpPath { get; } = snpPath;
+}
+
 public static class FieldCosimulation
 {
     /// <summary>The folder inside a field set the recombined results are written to, one subfolder per analysis.</summary>
@@ -123,7 +136,7 @@ public static class FieldCosimulation
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(nl);
         string who = $"Fields '{fa.Name}'";
-        if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no S-parameter block.");
+        if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no {EmFieldDataRecord.DisplayName} block.");
         double hz;
         try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
         catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
@@ -132,12 +145,16 @@ public static class FieldCosimulation
         var block = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))
                     ?? throw new InvalidOperationException($"{who}: the circuit has no instance '{fa.Block}'.");
         if (block.Model is not SnpModel snp)
-            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an S-parameter block.");
+            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.");
+        // brief-cosim-pattern-2 R-cp2-7 — a Touchstone file says nothing of fields, so a plain SnP is refused. It is not converted:
+        // no record exists to point at until the setup runs again or the file is adopted.
+        if (snp.RecordPath is not { } recordPath)
+            throw new PlainSnpFieldsBlockException(who, fa.Block, snp.FilePath);
         // brief-sens-2: the port fields are the FILE's structure's; offsets on its S describe one the field set does not hold.
         if (snp.OffsetsNotAppliedBy(block.InstancePath, "the field co-simulation, whose port fields are the file's own") is { } offsets)
             throw new InvalidOperationException($"{who}: {offsets}.");
 
-        var (set, refusal) = PortFieldSet.Open(snp.FilePath, hz);
+        var (set, refusal) = PortFieldSet.Open(recordPath, hz);
         if (set is null) throw new InvalidOperationException($"{who}: {refusal}");
         bool handedOver = false;
         try
