@@ -432,6 +432,14 @@ public sealed class PlanarPortCalibrator
     private readonly Dictionary<double, Complex>               _cAt      = [];
     private double _c0PerMetre = double.NaN;
 
+    // ── SI-LOW — the series term and the β of a substrate conducting above 10 S/m. Null on every other
+    //    run, which then takes none of what reads it. ──────────────────────────────────────────────
+    private readonly PlanarSubstrateReturn? _substrate;
+
+    /// <summary>SI-LOW — whether γ carries current in the substrate, so a caller knows whether the
+    /// range <see cref="PlanarConductingMedium.Findings"/> names is still unserved.</summary>
+    public bool SuppliesSubstrateReturn => _substrate is not null;
+
     public IReadOnlyList<PlanarStandard> Standards { get; }
 
     /// <summary>How many meshes this calibrator owns — R-prt-11's counter counts these.</summary>
@@ -561,9 +569,11 @@ public sealed class PlanarPortCalibrator
                                 IReadOnlyList<PlanarStandard>? standards = null,
                                 LayerStack? mediumStack = null,
                                 PlanarCalibration.PlanarSeparationPlan? separations = null,
-                                string standardLayerName = PlanarCalibration.DefaultLayerName)
+                                string standardLayerName = PlanarCalibration.DefaultLayerName,
+                                PlanarSubstrateReturn? substrateReturn = null)
     {
         _slab = slab;
+        _substrate = substrateReturn;
         _standardLevels = double.IsNaN(standardLevelZ) ? null : new PlanarLevels([standardLevelZ]);
         _standardLevelZ = standardLevelZ;
 
@@ -589,7 +599,8 @@ public sealed class PlanarPortCalibrator
         // WHICH standards exist. A caller that supplied its own set (PlanarSolve does, so the
         // ceiling refusal can size the meshes before paying for them) built it from BuildSet, which
         // asks this same function with these same arguments.
-        _plan = separations ?? PlanarCalibration.SeparationPlan(slab, fLoHz, fHiHz, port, calibration);
+        _plan = separations ?? PlanarCalibration.SeparationPlan(slab, fLoHz, fHiHz, port, calibration,
+                                                                _substrate is { } sized ? sized.EstimatedBetaAt : null);
 
         var set = standards is null
                 ? PlanarCalibration.BuildSet(port, slab, _plan,
@@ -855,6 +866,9 @@ public sealed class PlanarPortCalibrator
         // SI-SIG — except where a conducting substrate's skin depth has made the quasi-static β wrong by
         // tens of percent. Seeding from it put the first measured point on the wrong 2π branch (α = −1063
         // at 40 GHz, on 0.01 Ω·cm silicon), where the pre-solve estimate finds the right one.
+        //
+        // SI-LOW — a stack with a substrate return predicts from ExpectedBeta's history-free estimate, so
+        // what is stored here is not read and no sweep's answer depends on the point before it.
         if (!quasi || fHz < _skinOnsetHz)
         {
             _prevBeta = g.Beta;
@@ -1103,6 +1117,7 @@ public sealed class PlanarPortCalibrator
                                                  _c0PerMetre);
         }
         _c0PerMetre = line.C0PerMetre;
+        if (_substrate is not null) line = line with { Substrate = _substrate };
         return _qsLineAt[fHz] = line;
     }
 
@@ -1180,10 +1195,13 @@ public sealed class PlanarPortCalibrator
     }
 
     /// <summary>The β this frequency's selection and branch continuation are predicted from — the
-    /// previous point's measured β scaled by frequency, or the pre-solve estimate at the first.</summary>
+    /// previous point's measured β scaled by frequency, or the pre-solve estimate at the first.
+    /// <para>SI-LOW — on a stack with a substrate return, that estimate at every point. β does not scale with
+    /// frequency there: scaling it overshot enough at 40 GHz on 1 Ω·cm to pick the wrong 2π branch.</para></summary>
     private double ExpectedBeta(double fHz) =>
-        double.IsNaN(_prevBeta) ? PlanarCalibration.EstimateBeta(_slab, fHz)
-                                : _prevBeta * (fHz / _prevF);
+        _substrate is { } s ? s.EstimatedBetaAt(fHz)
+        : double.IsNaN(_prevBeta) ? PlanarCalibration.EstimateBeta(_slab, fHz)
+                                  : _prevBeta * (fHz / _prevF);
 
     /// <summary>
     /// L9e/M1 — the standards' RAW scattering per frequency, <b>one slot per standard, null where it
@@ -2815,7 +2833,12 @@ public static class PlanarSolve
                     // own R-pcal6-3 found a run solving one standard and calibrating against
                     // another. The set is the short line followed by one standard per separation,
                     // so the quasi-static separation's standard is at QuasiStaticIndex + 1.
-                    var stdPlan = PlanarCalibration.SeparationPlan(slab, fLo, fHi, ports[i], st.Calibration);
+                    //
+                    // SI-LOW — both are sized from what the substrate does to β, where it conducts enough
+                    // to matter; a port the term declines stays on εᵣ.
+                    var substrate = PlanarSubstrateReturn.TryFor(problem, ports[i], fillSt.PerfectConductor);
+                    Func<double, double>? betaAt = substrate is null ? null : substrate.EstimatedBetaAt;
+                    var stdPlan = PlanarCalibration.SeparationPlan(slab, fLo, fHi, ports[i], st.Calibration, betaAt);
 
                     // CL1 — the standard is a piece of THIS PORT'S LEVEL, so it is named after it.
                     // A standard's mesh numbers its one conductor level 0 whatever level the port
@@ -2886,7 +2909,7 @@ public static class PlanarSolve
                                   "frequency-domain system, and its ceiling is " +
                                   $"{SurfaceMesher.AcceleratedUnknownCeiling:N0} unknowns. ") +
                             BandEdgeRemedy(std, nStd, stdCeiling, slab, fLo, fHi, st.Calibration,
-                                           quasiStd) +
+                                           quasiStd, betaAt) +
                             $" The DUT's own mesh is N = {mesh.Bases.Count:N0}; this port's " +
                             $"standard(s) are N = {string.Join(" / ", stdSizes)}.");
                     }
@@ -2897,7 +2920,8 @@ public static class PlanarSolve
                         standards: stdSet,
                         mediumStack: general ? problem.EffectiveStack : null,
                         separations: stdPlan,
-                        standardLayerName: stdLayerName);
+                        standardLayerName: stdLayerName,
+                        substrateReturn: substrate);
 
                     // MIM-4 — the interior electrostatics is fitted, so its quality is asked about
                     // rather than assumed. R-mom-17: a fit this poor is refused BY NAME at setup,
@@ -3013,7 +3037,8 @@ public static class PlanarSolve
                 notes.AddRange(PlanarConductingMedium.Findings(
                     problem.EffectiveStack, freqs.First(q => q > 0), freqs[^1],
                     calibrators.Count > 0 ? calibrators.Max(c => c.QuasiStaticCrossoverHz) : 0.0,
-                    calibrators.Any(c => c.IsGroup)));
+                    calibrators.Any(c => c.IsGroup),
+                    calibrators.Count > 0 && calibrators.All(c => c.SuppliesSubstrateReturn)));
 
             // M2 — the user set a core count in the panel and it is a machine setting, not part of the
             // design, so the run says what it actually did with it rather than leaving the user to
@@ -4982,7 +5007,8 @@ public static class PlanarSolve
     internal static string BandEdgeRemedy(PlanarStandard std, int nStd, int ceiling,
                                          GroundedSlab slab, double fLo, double fHi,
                                          PlanarCalibrationSettings? calSettings,
-                                         bool quasiStandard = false)
+                                         bool quasiStandard = false,
+                                         Func<double, double>? betaAt = null)
     {
         double cross = PlanarCalibration.QuasiStaticCrossoverHz(slab);
         double fEff  = PlanarCalibration.MeasuredBandBottomHz(slab, fLo, fHi);
@@ -4998,11 +5024,11 @@ public static class PlanarSolve
                 "(Min cells across conductor, Edge cells), or cut this port as an internal delta " +
                 "gap, which has no feed outside it and needs no standard at all.";
 
-        int nSep = PlanarCalibration.SuggestDeltas(slab, fEff, fHi, calSettings).Length;
-        double lMax = PlanarCalibration.LongestStandardLengthM(slab, fEff, fHi, calSettings);
+        int nSep = PlanarCalibration.SuggestDeltas(slab, fEff, fHi, calSettings, betaAt).Length;
+        double lMax = PlanarCalibration.LongestStandardLengthM(slab, fEff, fHi, calSettings, betaAt);
 
         var fit = PlanarCalibration.StartFrequencyThatFits(
-            slab, fEff, fHi, calSettings, ceiling, nStd, std.LengthM);
+            slab, fEff, fHi, calSettings, ceiling, nStd, std.LengthM, betaAt);
 
         // Asked of the EFFECTIVE bottom, because that is the one the ladder was drawn from. Below
         // the crossover there is one short separation and no λ scaling at all, so quoting the

@@ -739,11 +739,12 @@ The substrate falls into one of three regimes, and the run's notes say which:
 
 ### What each solver does with it {#conducting-substrate-solvers}
 
-- **The full-wave planar kernel** solves the first two regimes. Against a Palace reference, a 1 mm line over 2 µm of oxide on 100 µm of
-  silicon reads within 0.025 in |S| from 5 to 40 GHz at 10 kΩ·cm, 1 kΩ·cm and 10 Ω·cm. In the third regime **it warns and names the range**: where the skin
-  depth is under twice the layer's thickness, up to the frequency where the de-embedding's γ stops being quasi-static, loss reads far too low and phase
-  too high, and the S-parameters there are not reliable. At 0.01 Ω·cm on that line, the range is 633 MHz to 27 GHz. Above it the
-  same line reads within 0.011.
+- **The full-wave planar kernel** solves all three regimes on a single strip over the floor. Against a Palace reference, a 1 mm line over 2 µm of oxide on 100 µm of
+  silicon reads within 0.025 in |S| from 5 to 40 GHz at 10 kΩ·cm, 1 kΩ·cm and 10 Ω·cm, and from 1 to 40 GHz at 0.01 Ω·cm. Between those, at 1 and 0.1 Ω·cm,
+  **it warns and names the range**: on that line 9 to 27 GHz, where phase reads about 2 % low and |S| was up to 0.035 off, and a longer line reads worse in proportion.
+  A coplanar pair, or a standard widened for a neighbour, has no term for current in the silicon, so loss reads far too low and phase too high from where the
+  skin depth is under twice the layer's thickness up to where the de-embedding's γ stops being quasi-static. The run names that range as well.
+  [The MoM engine](mom-engine.html#deembedding-conducting) says why.
 - **Palace** takes σ directly. Its wave ports are not reliable on conducting silicon at the low end of a sweep: at 10 Ω·cm a wave port took a wrong
   mode at 1 GHz, and a uniform line read S11 of −0.8 dB at 5 GHz. Use lumped ports there. Mesh the skin depth yourself with a mesh region, because
   the automatic sizing follows the wavelength and not the skin depth; at 0.01 Ω·cm a 15 µm region moved α by about 10 %.

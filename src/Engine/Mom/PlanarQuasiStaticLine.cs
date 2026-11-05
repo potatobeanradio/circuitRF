@@ -191,6 +191,12 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
     public PlanarQuasiStaticGround? Ground { get; init; }
 
     /// <summary>
+    /// <b>SI-LOW — what current in a conducting substrate adds to R + jωL, or null where none is
+    /// supplied.</b> Null is every stack at 10 Ω·cm and above, and those keep their numbers to the bit.
+    /// </summary>
+    public PlanarSubstrateReturn? Substrate { get; init; }
+
+    /// <summary>
     /// <b>Whether the medium this line was extracted in has a conducting floor AND this route can
     /// read it.</b> False on MIM-4's interior route even when the floor conducts — a general stack's
     /// return current has no closed form (see <c>PlanarGroundReturn</c>'s header) — so a
@@ -221,12 +227,13 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
         // √(jωL·jωC), so a run with PlanarFillSettings.PerfectConductor set reproduces every number
         // QSC recorded BIT FOR BIT. The two agree to the last digit of the physics and not to the
         // last bit of the arithmetic, and the oracle has to be the second kind.
-        if (Conductor is null && Ground is null)
+        if (Conductor is null && Ground is null && Substrate is null)
             return Complex.ImaginaryOne * omega * Complex.Sqrt(LPerMetre * CComplexPerMetre);
 
         double r = (Conductor?.ResistancePerMetreAt(omega) ?? 0.0)
                  + (Ground?.ResistancePerMetreAt(omega)    ?? 0.0);
         Complex z = r + Complex.ImaginaryOne * omega * LPerMetre;
+        if (Substrate is not null) z += Substrate.SeriesPerMetreAt(fHz);
         Complex y = Complex.ImaginaryOne * omega * CComplexPerMetre;
         return Complex.Sqrt(z * y);
     }

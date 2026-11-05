@@ -66,7 +66,9 @@ public static class PlanarRunMemory
             // (PlanarPortCalibrator.PlannedSolvesAt), so at its worst point it holds the short one and the
             // largest of the rest.
             string layer = problem.Layers[Math.Clamp(port.LayerIndex, 0, problem.Layers.Count - 1)].Name;
-            var set = PlanarCalibration.BuildSet(port, slab, fLo, fHi, st.Calibration, layer);
+            var substrate = PlanarSubstrateReturn.TryFor(problem, port, st.Fill?.PerfectConductor == true);
+            var set = PlanarCalibration.BuildSet(port, slab, fLo, fHi, st.Calibration, layer,
+                                                 substrate is null ? null : substrate.EstimatedBetaAt);
             long longest = 0, longestCores = 0;
             int longestAt = 0;
             for (int i = 0; i < set.Length; i++)

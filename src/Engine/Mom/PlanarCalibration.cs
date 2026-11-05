@@ -797,8 +797,11 @@ public static class PlanarCalibration
     /// .BandRatioPerSeparation"/> of band, geometrically spaced so each covers its own octave-and-a-
     /// bit with βΔℓ centred on the usable interval. A narrow band gets one; 2–20 GHz gets two.
     /// </summary>
+    /// <param name="betaAt">SI-LOW — β of this port's line at a frequency, where the substrate conducts enough
+    /// that εᵣ does not say it (<see cref="PlanarSubstrateReturn.EstimatedBetaAt"/>). Null reads εᵣ alone.</param>
     public static double[] SuggestDeltas(GroundedSlab slab, double fLoHz, double fHiHz,
-                                         PlanarCalibrationSettings? settings = null)
+                                         PlanarCalibrationSettings? settings = null,
+                                         Func<double, double>? betaAt = null)
     {
         var s = settings ?? PlanarCalibrationSettings.Default;
         double lo = Math.Max(Math.Min(fLoHz, fHiHz), 1.0);
@@ -813,7 +816,7 @@ public static class PlanarCalibration
         {
             // Each separation is centred on its own sub-band's geometric mean.
             double f = lo * Math.Pow(ratio, (k + 0.5) / n);
-            deltas[k] = DeltaAt(slab, f, s);
+            deltas[k] = DeltaAt(slab, f, s, betaAt);
         }
         return deltas;
     }
@@ -872,7 +875,8 @@ public static class PlanarCalibration
     /// term alone — which is what <see cref="PlanarSolve"/>'s ceiling refusal wants, since it is
     /// sizing a message rather than a mesh.</param>
     public static double QuasiStaticSeparationM(GroundedSlab slab, PlanarPortResolution? port,
-                                                PlanarCalibrationSettings? settings = null)
+                                                PlanarCalibrationSettings? settings = null,
+                                                Func<double, double>? betaAt = null)
     {
         ArgumentNullException.ThrowIfNull(slab);
         var s = settings ?? PlanarCalibrationSettings.Default;
@@ -892,15 +896,23 @@ public static class PlanarCalibration
         // and ≈ 50° on GaAs, so the cap is inert on any ordinary board and binds only on a
         // substrate close enough to air that the crossover runs away.
         double want = Math.Min(s.QuasiStaticSeparationHeights * slab.HeightM,
-                               DeltaAt(slab, QuasiStaticCrossoverHz(slab), s));
+                               DeltaAt(slab, QuasiStaticCrossoverHz(slab), s, betaAt));
 
         // The mesh has the last word, and it would have it anyway: BuildLine realises a separation
         // as a whole number of bulk cells, so a target under one cell simply becomes one cell. This
         // makes that floor explicit and puts it where D7's capacitance DIFFERENCING needs it —
         // C_pul is (C₂ − C₁)/Δℓ, and two standards differing by one cell difference by one cell's
         // worth of discretisation error as well.
+        //
+        // SI-LOW — but a slow wave can make those cells electrically long, and this floor then undoes the
+        // cap above: on 1 Ω·cm at 20 GHz, a point run alone meshes coarsely and four cells read 159°, on the
+        // way to D6's zero. Where β is known the floor stops at twice the angle a separation is aimed at.
         if (port is not null)
-            want = Math.Max(want, s.QuasiStaticSeparationMinBulkCells * port.BulkCellM);
+        {
+            double floor = s.QuasiStaticSeparationMinBulkCells * port.BulkCellM;
+            if (betaAt is not null) floor = Math.Min(floor, 2.0 * DeltaAt(slab, QuasiStaticCrossoverHz(slab), s, betaAt));
+            want = Math.Max(want, floor);
+        }
         return want;
     }
 
@@ -939,9 +951,10 @@ public static class PlanarCalibration
     /// and no quasi-static entry; a band entirely below it gets ONE separation and no measured
     /// ladder at all; a band spanning it gets both.</para>
     /// </summary>
+    /// <param name="betaAt">SI-LOW — see <see cref="SuggestDeltas"/>.</param>
     public static PlanarSeparationPlan SeparationPlan(
         GroundedSlab slab, double fLoHz, double fHiHz, PlanarPortResolution? port = null,
-        PlanarCalibrationSettings? settings = null)
+        PlanarCalibrationSettings? settings = null, Func<double, double>? betaAt = null)
     {
         ArgumentNullException.ThrowIfNull(slab);
         var st = settings ?? PlanarCalibrationSettings.Default;
@@ -953,7 +966,7 @@ public static class PlanarCalibration
         // `IsQuasiStaticAt` false everywhere as well, so the switch is one comparison and not a
         // second branch each caller has to remember.
         if (!st.QuasiStaticBelowCrossover)
-            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings), -1, cross);
+            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
 
         // ── A CALIBRATION GROUP STAYS ON THE MEASURED LADDER, AND THAT IS A DECLINE BY NAME ──
         //
@@ -970,13 +983,13 @@ public static class PlanarCalibration
             return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings), -1, cross);
 
         if (lo >= cross)
-            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings), -1, cross);
+            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
 
-        double qs = QuasiStaticSeparationM(slab, port, settings);
+        double qs = QuasiStaticSeparationM(slab, port, settings, betaAt);
 
         if (hi <= cross) return new PlanarSeparationPlan([qs], 0, cross);
 
-        var measured = SuggestDeltas(slab, cross, hi, settings);
+        var measured = SuggestDeltas(slab, cross, hi, settings, betaAt);
         var all = new double[measured.Length + 1];
         Array.Copy(measured, all, measured.Length);
         all[^1] = qs;
@@ -1013,12 +1026,13 @@ public static class PlanarCalibration
     /// what cancels that bias rather than leaving it in an absolute estimate.</para>
     /// </summary>
     public static double LongestStandardLengthM(GroundedSlab slab, double fLoHz, double fHiHz,
-                                                PlanarCalibrationSettings? settings = null)
+                                                PlanarCalibrationSettings? settings = null,
+                                                Func<double, double>? betaAt = null)
     {
         ArgumentNullException.ThrowIfNull(slab);
         var (shortTarget, _) = SuggestLengths(slab, fLoHz, fHiHz, settings);
         double max = 0;
-        foreach (double d in SuggestDeltas(slab, fLoHz, fHiHz, settings)) max = Math.Max(max, d);
+        foreach (double d in SuggestDeltas(slab, fLoHz, fHiHz, settings, betaAt)) max = Math.Max(max, d);
         return shortTarget + max;
     }
 
@@ -1040,12 +1054,12 @@ public static class PlanarCalibration
     /// </summary>
     public static double? StartFrequencyThatFits(
         GroundedSlab slab, double fLoHz, double fHiHz, PlanarCalibrationSettings? settings,
-        int ceiling, int measuredN, double measuredLengthM)
+        int ceiling, int measuredN, double measuredLengthM, Func<double, double>? betaAt = null)
     {
         ArgumentNullException.ThrowIfNull(slab);
         if (measuredN <= 0 || measuredLengthM <= 0 || ceiling <= 0) return null;
 
-        double lNow = LongestStandardLengthM(slab, fLoHz, fHiHz, settings);
+        double lNow = LongestStandardLengthM(slab, fLoHz, fHiHz, settings, betaAt);
         if (lNow <= 0) return null;
 
         const int Steps = 240;                       // ~1% resolution over a 60:1 band
@@ -1053,7 +1067,7 @@ public static class PlanarCalibration
         for (int k = 1; k <= Steps; k++)
         {
             double f = lo * Math.Pow(hi / lo, (double)k / Steps);
-            double predicted = measuredN * (LongestStandardLengthM(slab, f, fHiHz, settings) / lNow);
+            double predicted = measuredN * (LongestStandardLengthM(slab, f, fHiHz, settings, betaAt) / lNow);
             if (predicted <= ceiling) return f;
         }
         return null;
@@ -1073,8 +1087,13 @@ public static class PlanarCalibration
         return tidy * decade;
     }
 
-    private static double DeltaAt(GroundedSlab slab, double fHz, PlanarCalibrationSettings s)
+    private static double DeltaAt(GroundedSlab slab, double fHz, PlanarCalibrationSettings s,
+                                  Func<double, double>? betaAt = null)
     {
+        // SI-LOW — a conducting substrate's slow wave is not in εᵣ, and on 0.1 Ω·cm the crude estimate below
+        // sat 3× low: a 60° target read past 180° and the extraction aliased onto −α.
+        if (betaAt is not null) return s.TargetElectricalDegrees * Math.PI / 180.0 / betaAt(fHz);
+
         // ε_eff is not known before a solve; (εᵣ+1)/2 is the standard crude microstrip estimate, and
         // it only has to be right to a factor for βΔℓ to land inside an 8:1-wide usable interval.
         double epsEst = 0.5 * (slab.Material.EpsR + 1.0);
@@ -1100,12 +1119,13 @@ public static class PlanarCalibration
     /// </param>
     public static PlanarStandard[] BuildSet(
         PlanarPortResolution port, GroundedSlab slab, double fLoHz, double fHiHz,
-        PlanarCalibrationSettings? settings = null, string layerName = DefaultLayerName)
+        PlanarCalibrationSettings? settings = null, string layerName = DefaultLayerName,
+        Func<double, double>? betaAt = null)
     {
         // QSC — the measured ladder over the band's ABOVE-crossover part, plus one short
         // frequency-independent separation for the part below it. Above the crossover throughout,
         // this IS SuggestDeltas' own array and the set built is the one that shipped.
-        return BuildSet(port, slab, SeparationPlan(slab, fLoHz, fHiHz, port, settings),
+        return BuildSet(port, slab, SeparationPlan(slab, fLoHz, fHiHz, port, settings, betaAt),
                         SuggestLengths(slab, fLoHz, fHiHz, settings).Short, settings, layerName);
     }
 

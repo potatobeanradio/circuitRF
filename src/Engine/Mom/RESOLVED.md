@@ -13413,3 +13413,55 @@ The measured route is the replacement this needs. What stands in its way: its us
 **1 GHz on this stack is wrong at σ = 0:** |ΔS| 0.23 and σ_max 1.28, with a peel amplification of 8e5, about 80× what §PEEL's stacks show at that frequency. It is flagged by the existing floor or dropped, at every σ. At 1 kΩ·cm the run names it (floor 0.24) and the point is published, which the floor's own rule permits. Not investigated here.
 
 A calibration group takes one capacitance, at the top of the sweep, and warns across the sweep. `PlanarModalMedium` would need per-frequency C and Z_c,m's imaginary part to do better.
+
+## SI-LOW — de-embedding on a low-resistivity substrate (2026-11)
+
+`docs/briefs/brief-si-low-resistivity-calibration.md`. The same line as §SI-SIG, against `testdata/em-si-sigma`, which now holds 100 and 1000 S/m and `series-term.csv`. The owner chose candidate B plus a conduction-aware β, after R-silow-0.
+
+### 1. What was built
+
+**`PlanarSubstrateReturn`, one solve across the port's own transverse cells over the magnetoquasistatic TE line.** γ takes Z_ser(σ) − Z_ser(0), so the shipped R + jωL₀ stays and the floor is not counted twice. It holds within 0.6 % in R and 1.5 % in ΔL of a 2D finite-element solve at 20, 90 and 300 µm, from nine cells, at about 5 ms per frequency. The term sits on the quasi-static path, so `IsQuasiStaticAt` and the crossover did not move and no standard got longer.
+
+**The same object gives β with no mesh or earlier point**, from a second solve for C* over the static TM line. Below 10 Ω·cm it sizes the separations and predicts the selection and the branch at every point. Within 4 % of the 3D β at all 22 reference points from 100 to 1e4 S/m.
+
+**It applies above 10 S/m and not at it, to one strip over the floor.** At 0, 0.1 and 10 S/m, at 5 and 40 GHz, on both edge-port types, γ, Z_c, S and the error floor printed to full precision match the unchanged engine exactly. A coplanar port, a standard widened for a neighbour and a group decline it, and `Findings` keeps naming the range for them.
+
+### 2. Why not candidate A
+
+| 1000 S/m, 20 GHz, same mesh | γ | \|ΔS\| |
+|---|---|---|
+| The term, quasi-static | 544 + j3188 | 0.034 |
+| Measured two-line, sized by the new β | 523 + j3164 | 0.052 |
+| Palace, three pairs from 0.5, 1 and 1.5 mm | 564-568 + j3231-3235 | |
+
+A costs longer standards and is no closer here. It also meets a fit that has not converged at the bottom of the band (§4).
+
+### 3. The result
+
+Worst |ΔS| from 1 to 40 GHz, sweep on a 40 GHz mesh:
+
+| σ, S/m | Series gap | Grounded edge port | Before, series gap |
+|---|---|---|---|
+| 1e4 | 0.014 at 20 GHz | 0.013 at 20 GHz | 2.36 at 20 GHz |
+| 1000 | 0.035 at 20 GHz | 0.027 at 10 and 20 GHz | 0.30 at 20 GHz |
+| 100 | 0.024 at 20 GHz, and 0.034 at 1 GHz (flagged) | 0.020 at 10 GHz | 1.54 at 40 GHz |
+
+α is positive at every point. Sweep against each point alone is 0.0000 on the same mesh and at most 0.009 on the point's own mesh, because nothing reads the previous point. 30 GHz at 1000 S/m reads 0.024 against a row added for it, so the top of the band is in tolerance.
+
+### 4. Findings
+
+**The negative α at 100 S/m and above was a 2π alias, not a sign or conditioning fault.** `EstimateBeta` reads εᵣ only, so a 60° target passed 180° on the slow wave and the extraction landed on −α + j(2π/Δℓ − β). `Usable` cannot see it: at 1000 S/m the wrapped points at 5 and 10 GHz read 155° and 146° and were marked usable, while at 1e4 S/m the correct ones at 178° and 167° were not.
+
+**A scaled β picked a wrong branch in a sweep at 100 S/m, 40 GHz:** −1969 + j5923 where the truth is 1990 + j3731, |ΔS| 1.54, with only the generic passivity warning. β does not scale with frequency through the slow-wave transition. This predates the brief and is what the history-free prediction removes.
+
+**The 4-bulk-cell floor on the quasi-static separation can undo its electrical cap.** A point alone at 20 GHz meshes coarsely, and four cells read 159° at 1000 S/m on the way to D6's zero, with a floor of 0.014. Where β is known, the floor stops at twice the angle a separation is aimed at. 119° reads a floor of 0.010.
+
+**At 10 and 100 S/m and 1 GHz, the measured γ is an unconverged Green's function fit**, not the peel alone. At 10 S/m, 512, 2048 and 8192 samples read 208 + j234, 31 + j151 and 56 + j97 against Palace's 42 + j153, and `MaxOrder` 24 changes nothing. Published γ there is quasi-static, so α is positive, but the DUT's own fill goes through the same fit: 100 S/m at 1 GHz on a series gap reads 0.034 with a floor of 0.12, and warns as not passive. The grounded port reads 0.0035 there. Not pursued, per the brief's limit on 1 GHz.
+
+**Palace's lumped pairs disagree on α at 1e4 S/m below 5 GHz**, at 53.7, 27.0 and 0.6 Np/m at 1 GHz from the three pairs, and β agrees within 2 %. The two-line γ (11.8), the term (11.3) and the 2D solve (11.6) agree, so those rows take α from the 2D solve. This replaced the row at 1 GHz, which read 7.08.
+
+### 5. What is left, and warned
+
+**On a layer not shielded by the crossover, the top two thirds below the crossover: 9.1 to 27 GHz on this stack.** γ has no dispersion there, phase reads about 2 % low and loss about 3 % low. |ΔS| is proportional to line length, so a longer line reads worse than the 0.035 measured here. Skin depth at the crossover against half the layer's thickness is what separates 1e4 S/m (0.3, reads 0.014) from 1000 S/m (0.96, reads 0.034). 100 S/m is in tolerance on this line and warned anyway, because the mechanism is the same.
+
+**A finer mesh does move the measured γ toward Palace** at 1000 S/m and 20 GHz: 523 + j3164 at 20 cells per wavelength, 546 + j3203 at 40 and 553 + j3213 at 80. The quasi-static γ does not move. So the mesh's own λ, taken from εᵣ, is too long on a slow wave, and a mesh sized from `EstimatedBetaAt` is what would be worth measuring next. Not done: it changes the DUT's mesh, which this brief did not set out to do.

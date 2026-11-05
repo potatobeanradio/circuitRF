@@ -894,12 +894,29 @@ electrostatic solve behind C<sub>pul</sub> runs once per frequency rather than o
 That imaginary part is as large as the real part at 10 Ω·cm, and leaving it out gives Z<sub>c</sub> the wrong sign of phase. The air-filled
 half is still solved once.
 
-Below the crossover, γ = jω√(LC) takes L from the same geometry with the dielectric removed, which has no current in the silicon. That holds until
-the skin depth reaches the silicon's thickness. From where the skin depth is under twice its thickness, up to the crossover, the run warns and names the range:
-on a 1 mm line over 0.01 Ω·cm silicon this γ reads α 22 times low and β 44 % high at 20 GHz. The measured two-line γ follows the
-structure there, but cannot yet be relied on below the crossover: it marks itself unusable below 20 GHz on that line and reads a negative α at 1 GHz.
+Below the crossover, γ = √((R + jωL)(jωC)) takes L from the same geometry with the dielectric removed, which has no current in the silicon. Above about
+10 Ω·cm that holds, because the magnetic field passes through the silicon to the backside metal. Below that, **a one-dimensional solve across the port's own
+cells adds what the silicon does**, Z(σ) − Z(0), which raises R and lowers L. It agrees with a 2D finite-element solve of the cross-section within 0.6 % in R and
+1.5 % in ΔL from 20 to 300 µm wide. Without it, a 1 mm line over 0.01 Ω·cm silicon read α 22 times low and β 44 % high at 20 GHz.
 
-A coupled-port calibration group takes one capacitance, at the top of the sweep, so it warns across the whole sweep on a conducting substrate.
+The same solve, with a static one for C, gives β at any frequency with no mesh. Below 10 Ω·cm it sizes the line separations and picks the 2π branch at every
+point, so no point depends on the one before it: a sweep and each point run alone give the same answer on the same mesh. Sized from ε<sub>r</sub> alone, the
+slow wave took a separation past half a wavelength, and the extraction read a negative α.
+
+| Silicon | Worst \|ΔS\|, 1 to 40 GHz, grounded edge port | Series-gap edge port |
+|---|---|---|
+| 0.01 Ω·cm | 0.013, at 20 GHz | 0.014, at 20 GHz |
+| 0.1 Ω·cm | 0.027, at 10 and 20 GHz, named in a warning | 0.035, at 20 GHz, named in a warning |
+| 1 Ω·cm | 0.020, at 10 GHz, named in a warning | 0.024, at 20 GHz, named in a warning |
+
+Those are on a 1 mm line over 2 µm of oxide on 100 µm of silicon, against a 3D reference. The warning covers the top two thirds of the range below the
+crossover on a layer whose skin depth at the crossover is over half its thickness. There, γ has no dispersion, phase reads about 2 % low and loss about 3 % low,
+and a longer line reads worse in proportion. The measured γ does not close it on the same mesh: at 0.1 Ω·cm and 20 GHz it reads 0.052. On a series-gap port at
+1 Ω·cm, 1 GHz reads 0.034 with an estimated de-embedding error of 0.12, and the run reports that point as not passive.
+
+**The term is for one strip over the floor.** A coplanar pair and a standard widened for a neighbour carry a second current, so they decline it, and the run warns
+and names the range from where the skin depth is under twice the layer's thickness up to the crossover. So does a layer at 10 Ω·cm or above that is thick enough
+to reach that skin depth. A coupled-port calibration group takes one capacitance, at the top of the sweep, so it warns across the whole sweep on a conducting substrate.
 
 ## Adaptive frequency sampling {#adaptive}
 

@@ -34,7 +34,9 @@ public sealed class ConductingDielectricReferenceTests
         return rows;
     }
 
-    private static PlanarKernelResult Sweep(double sigma, params double[] ghz)
+    private static PlanarKernelResult Sweep(double sigma, params double[] ghz) => SweepOnMesh(sigma, ghz[^1], ghz);
+
+    private static PlanarKernelResult SweepOnMesh(double sigma, double meshTopGhz, params double[] ghz)
     {
         double h = HSi + HOx;
         var stack = new LayerStack(Termination.Pec,
@@ -42,7 +44,7 @@ public sealed class ConductingDielectricReferenceTests
             Termination.Air);
         var slab = new GroundedSlab(h, new EmMaterial(h / (HSi / 11.9 + HOx / 3.9)));
         var line = new PlanarPolygon([new EmPoint(0, -W / 2), new EmPoint(L, -W / 2), new EmPoint(L, W / 2), new EmPoint(0, W / 2)]);
-        var problem = new PlanarProblem([new PlanarConductorLayer("M", [line], 5.8e7, 5e-6, h)], slab, ghz[^1] * 1e9, null, stack);
+        var problem = new PlanarProblem([new PlanarConductorLayer("M", [line], 5.8e7, 5e-6, h)], slab, meshTopGhz * 1e9, null, stack);
         PlanarPort[] ports =
         [
             new PlanarPort(1, new EmPoint(0, 0), PlanarPortSide.MinX, 50),
@@ -51,11 +53,13 @@ public sealed class ConductingDielectricReferenceTests
         return new PlanarKernel().Solve(problem, PlanarMeshSettings.Default, ports, [.. ghz.Select(f => f * 1e9)]);
     }
 
-    private static double WorstDelta(double sigma, PlanarKernelResult run)
+    private static double WorstDelta(double sigma, PlanarKernelResult run) => WorstDelta(sigma, run.Solve.Points);
+
+    private static double WorstDelta(double sigma, IEnumerable<PlanarFrequencyPoint> points)
     {
         var reference = Reference();
         double worst = 0;
-        foreach (var p in run.Solve.Points)
+        foreach (var p in points)
         {
             var (s11, s21) = reference[(sigma, p.FrequencyHz / 1e9)];
             worst = Math.Max(worst, new[]
@@ -85,21 +89,56 @@ public sealed class ConductingDielectricReferenceTests
         Assert.DoesNotContain(run.Warnings, w => w.Contains("not reliable"));
     }
 
-    /// <summary>Gate 4 at 0.01 Ω·cm: outside the named range it matches, and inside it the run says so. A clean
-    /// result inside the range is what must never happen, so the wrong numbers are asserted wrong too.</summary>
+    /// <summary>SI-LOW gates 2 and 3: 0.01 Ω·cm is within tolerance across the band, routes included, with α positive
+    /// everywhere and no range left to warn about.</summary>
     [Fact]
-    public void AtPointZeroOneOhmCmTheRangeIsWarnedAndAboveItTheKernelMatches()
+    public void AtPointZeroOneOhmCmTheKernelMatchesTheReferenceAcrossTheBand()
     {
-        var run = Sweep(1e4, 5, 40);
-        Assert.Contains(run.Warnings, w => w.Contains("5 GHz to 27.29 GHz") && w.Contains("not reliable"));
+        var run = Sweep(1e4, 1, 2, 3, 5, 10, 20, 40);
+        Assert.Contains(run.Solve.Points, p => p.Calibrations[0].Source == PlanarCalibrationSource.QuasiStatic);
+        Assert.Contains(run.Solve.Points, p => p.Calibrations[0].Source == PlanarCalibrationSource.Measured);
+        Assert.True(WorstDelta(1e4, run) <= GateFourTolerance, $"worst |ΔS| {WorstDelta(1e4, run):G4}");
+        Assert.All(run.Solve.Points, p => Assert.True(p.Calibrations[0].Gamma.Alpha > 0, $"α at {p.FrequencyHz:G3} Hz"));
+        Assert.Empty(run.Warnings);
+    }
 
-        var reference = Reference();
-        var top = run.Solve.Points.Single(p => p.FrequencyHz == 40e9);
-        Assert.Equal(PlanarCalibrationSource.Measured, top.Calibrations[0].Source);
-        Assert.True((top.S[1, 0] - reference[(1e4, 40)].S21).Magnitude <= GateFourTolerance);
+    /// <summary>SI-LOW gate 4: a sweep crossing the routes gives each point's own answer, because nothing here reads
+    /// the point before. The two share a mesh, since a mesh follows the top of the sweep. 1 Ω·cm at 40 GHz is the
+    /// wrong branch a scaled β took, and the alias its first point alone took.</summary>
+    [Fact]
+    public void ASweepCrossingTheRoutesMatchesEachPointAlone()
+    {
+        foreach (double sigma in new[] { 1e4, 100.0 })
+        {
+            double[] ghz = [5, 20, 40];
+            var sweep = Sweep(sigma, ghz);
+            foreach (var p in sweep.Solve.Points)
+            {
+                var alone = SweepOnMesh(sigma, ghz[^1], p.FrequencyHz / 1e9).Solve.Points.Single();
+                Assert.True((p.S[1, 0] - alone.S[1, 0]).Magnitude <= GateFourTolerance, $"{sigma} S/m at {p.FrequencyHz:G3} Hz");
+                Assert.True((p.S[0, 0] - alone.S[0, 0]).Magnitude <= GateFourTolerance, $"{sigma} S/m at {p.FrequencyHz:G3} Hz");
+                Assert.True(alone.Calibrations[0].Gamma.Alpha > 0);
+            }
+        }
+    }
 
-        var low = run.Solve.Points.Single(p => p.FrequencyHz == 5e9);
-        Assert.True((low.S[1, 0] - reference[(1e4, 5)].S21).Magnitude > 0.02, "the range is warned because it is wrong");
+    /// <summary>SI-LOW gate 6: 1 and 100 Ω·cm are within tolerance, or inside a range a warning names. That range
+    /// is bounded as well, since it says how far off it reads.</summary>
+    [Theory]
+    [InlineData(1000.0)]
+    [InlineData(100.0)]
+    public void AtOneAndTenthOhmCmTheKernelMatchesTheReferenceOrNamesTheRange(double sigma)
+    {
+        var run = Sweep(sigma, 2, 5, 20, 40);
+        Assert.All(run.Solve.Points, p => Assert.True(p.Calibrations[0].Gamma.Alpha > 0));
+        Assert.Contains(run.Warnings, w => w.Contains("9.096 GHz to 27.29 GHz") && w.Contains("no dispersion"));
+
+        foreach (var p in run.Solve.Points)
+        {
+            bool named = p.FrequencyHz is >= 9.096e9 and <= 27.29e9;
+            double delta = WorstDelta(sigma, [p]);
+            Assert.True(delta <= (named ? 0.035 : GateFourTolerance), $"{sigma} S/m at {p.FrequencyHz:G3} Hz: {delta:G4}");
+        }
     }
 
     /// <summary>The brief asks 0.02. The worst point, 20 GHz at both resistivities, reads 0.022 because quasi-static γ just
