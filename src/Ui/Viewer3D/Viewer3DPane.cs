@@ -27,6 +27,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -74,6 +75,14 @@ public sealed class Viewer3DPane : Control
     private ulong _frame, _doneValue;
     private volatile string? _fault;
 
+    // Software present: no usable GPU interop (a remote or software-rendered display, e.g. a remote X session with
+    // Mesa's software Vulkan). Each frame is rendered by the backend into an image of its own, read back, and drawn as a
+    // bitmap.
+    private bool _soft;
+    private byte[]? _px;
+    private int _pxW, _pxH;
+    private Avalonia.Media.Imaging.WriteableBitmap? _bmp;
+
     // brief-em3d-99 — a window resize draws in the layout pass that sized the pane (DrawDuringWindowResize).
     private long _windowResizedAt;
     private int _awaited;                                     // 1: the UI thread waits for the frame in flight and presents it
@@ -120,7 +129,11 @@ public sealed class Viewer3DPane : Control
     public IBrush? Background { get => GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
 
     /// <summary>Hit-testable everywhere: the composition visual draws on top, but pointer input is ours.</summary>
-    public override void Render(DrawingContext context) => context.FillRectangle(Background ?? Brushes.Transparent, new Rect(Bounds.Size));
+    public override void Render(DrawingContext context)
+    {
+        context.FillRectangle(Background ?? Brushes.Transparent, new Rect(Bounds.Size));
+        if (_soft && _bmp is not null) context.DrawImage(_bmp, new Rect(Bounds.Size));
+    }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -195,19 +208,32 @@ public sealed class Viewer3DPane : Control
             // Still the lost context (designer feedback round 34): wait for the compositor's next one rather than import
             // against this one, which fails the same way.
             if (_interop is { IsLost: true }) { Faulted(new InvalidOperationException("the GPU context is lost.")); return; }
-            if (_interop is null) { SetFault("this window's compositor offers no GPU interop, so the 3D view cannot present."); return; }
             if (_vm is null) return;
             var backend = _vm.Session.EnsureBackend();
-            if (backend.CheckInterop(_interop) is { } why) { SetFault($"{backend.Description}: {why}."); return; }
+            // No usable GPU interop: a backend that can present in software reads each frame back instead of refusing,
+            // unless Settings ▸ General turned that off.
+            string? noInterop = _interop is null ? "this window's compositor offers no GPU interop, so the 3D view cannot present."
+                              : backend.CheckInterop(_interop) is { } why ? $"{backend.Description}: {why}." : null;
+            if (noInterop is not null)
+            {
+                if (!backend.CanPresentInSoftware) { SetFault(noInterop); return; }
+                if (!(AppPreferencesIo.Load().View3DSoftwarePresent ?? true))
+                { SetFault(noInterop + " Settings ▸ General ▸ Software 3D without GPU interop draws it, more slowly."); return; }
+            }
+            _soft = noInterop is not null;
+            if (_soft) _interop = null;
             backend.PresentFaulted -= OnPresentFaulted;
             backend.PresentFaulted += OnPresentFaulted;
             backend.ClearPresentFault();
 
-            _surface = _compositor.CreateDrawingSurface();
-            _visual = _compositor.CreateSurfaceVisual();
-            _visual.Surface = _surface;
-            _visual.Size = new Vector(Bounds.Width, Bounds.Height);
-            ElementComposition.SetElementChildVisual(this, _visual);
+            if (!_soft)
+            {
+                _surface = _compositor.CreateDrawingSurface();
+                _visual = _compositor.CreateSurfaceVisual();
+                _visual.Surface = _surface;
+                _visual.Size = new Vector(Bounds.Width, Bounds.Height);
+                ElementComposition.SetElementChildVisual(this, _visual);
+            }
 
             if (_thread is { IsAlive: false }) _thread = null;
             if (_thread is not null)
@@ -261,6 +287,7 @@ public sealed class Viewer3DPane : Control
             catch (Exception) { /* a lost context may refuse the release; the images are dropped with the device */ }
         }
         _surface?.Dispose(); _surface = null;
+        _soft = false; _bmp = null; _px = null;
         _imgW = _imgH = 0;
         _busy = _done = false;
         _tickQueued = false;
@@ -271,8 +298,8 @@ public sealed class Viewer3DPane : Control
     // A machine moved between docking setups lost the compositor's GPU context: every present then faulted
     // ("OpenSharedResource failed", PlatformGraphicsContextLostException), unobserved, and the view stayed as it was
     // until the app was restarted. Now a failure rebuilds the surface, the images and the device; once the rebuilds
-    // below are spent, the failure is the pane's fault, said in its place and once in Messages. There is no software
-    // renderer to fall back to — every backend presents through the compositor's GPU interop — so the fault stands until
+    // below are spent, the failure is the pane's fault, said in its place and once in Messages. A LOST context is not a
+    // missing one, so software present (_soft) is no fallback for it here, and the fault stands until
     // Reconnect (the fault text's, or the stalled bar's Retry: brief-dfr34-5 R-dfr34-5-2) or a reattach, each of which
     // starts afresh with its rebuilds again.
 
@@ -471,7 +498,7 @@ public sealed class Viewer3DPane : Control
     private void OnTick()
     {
         _tickQueued = false;
-        if (_surface is null || _stop || _vm is null) return;
+        if ((_surface is null && !_soft) || _stop || _vm is null) return;
         var s = _vm.Session;
         var backend = s.Backend;
         if (backend is null) return;
@@ -494,8 +521,12 @@ public sealed class Viewer3DPane : Control
         if (!_done) return;
         try
         {
-            backend.Present(_surface!, _doneImage, _doneValue);
-            SurfaceUpdateFlush.AfterUpdate(_compositor!);      // drawn by the render that applies it (brief-em3d-99)
+            if (_soft) ShowSoftFrame();
+            else
+            {
+                backend.Present(_surface!, _doneImage, _doneValue);
+                SurfaceUpdateFlush.AfterUpdate(_compositor!);      // drawn by the render that applies it (brief-em3d-99)
+            }
         }
         catch (Exception ex) { _done = _busy = false; Faulted(ex); return; }
         _done = false;
@@ -504,6 +535,19 @@ public sealed class Viewer3DPane : Control
         _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
         SyncTrackingTimer();
         FramePresented?.Invoke();
+    }
+
+    /// <summary>Software present: copies the frame read back on the render thread into the bitmap Render draws.</summary>
+    private void ShowSoftFrame()
+    {
+        if (_px is not { } px) return;
+        if (_bmp is null || _bmp.PixelSize.Width != _pxW || _bmp.PixelSize.Height != _pxH)
+            _bmp = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(_pxW, _pxH), new Vector(96, 96),
+                Avalonia.Platform.PixelFormat.Rgba8888, Avalonia.Platform.AlphaFormat.Premul);
+        using (var fb = _bmp.Lock())
+            for (int y = 0; y < _pxH; y++)
+                System.Runtime.InteropServices.Marshal.Copy(px, y * _pxW * 4, fb.Address + y * fb.RowBytes, _pxW * 4);
+        InvalidateVisual();
     }
 
     /// <summary>Plans the next frame and starts the render thread on it, if one is wanted and none is in flight.</summary>
@@ -579,6 +623,7 @@ public sealed class Viewer3DPane : Control
                         continue;
                     }
                     if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit, _pField)) return;
+                    if (_soft) { _px = backend.ReadFramePixels(image); _pxW = _imgW; _pxH = _imgH; }
                 }
                 _doneImage = image;
                 _doneValue = value;

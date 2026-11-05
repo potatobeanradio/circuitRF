@@ -350,3 +350,29 @@ labels covered one another in the Front and Side views.
   (a separate change) allowed. Driving the app on a virtual display: before, one Reconnect logged 4 faults from
   `WaitReusable` before a rebuild won the race (on the remote desktop it was found on, all of them lost); after,
   none, and the view draws at once and redraws on a wheel zoom.
+
+## Linux without a GPU: the 3D view refused to draw (2026-11-05)
+
+- **Symptom:** on a remote desktop over X with no GPU (Mesa's llvmpipe for GL, lavapipe for Vulkan), Design > 3D view
+  showed only "this window's compositor offers no GPU interop, so the 3D view cannot present", or the backend's
+  `CheckInterop` refusal. The scene itself renders fine there: `circuitrf render` draws the same `.c3d`.
+- **Cause:** presenting needs the compositor to import the Vulkan image AND its semaphores by file descriptor. Mesa's
+  software drivers can share the image but not the semaphores (no `GL_EXT_semaphore_fd`), so Avalonia offers no usable
+  interop, and the pane had no other way to show a frame.
+- **Fix:** software present. When interop is missing or refused and the backend says `CanPresentInSoftware` (Vulkan
+  only), the pane renders into images no compositor imports (`CreateOffscreenImages`, the headless path), reads each
+  finished frame back on the render thread (`ReadFramePixels` = `ReadRgba`) and draws it as a `WriteableBitmap` in
+  `Render`. Orbit, zoom and picking work, at the cost of one readback per frame. With interop nothing changes, and a
+  backend that cannot present in software (D3D11, Metal) refuses with the same sentence as before. A LOST context is
+  still the loss path's fault, not a reason to switch to software. Settings ▸ General ▸ Software 3D without GPU interop
+  (on by default, `view3d_software_present`) turns it off; the view then refuses as before and names that setting.
+- Verified on a no-GPU Linux host (Mesa lavapipe, remote X) by driving the built application with synthetic input: the
+  view draws on open, and wheel zoom, middle-drag pan, left-drag orbit and a click that picks an instance's part all
+  redraw. There is no automated gate: the Viewer3D tests run headless and never reach `Host`.
+- Same display, same Mesa (llvmpipe with `GL_EXT_memory_object_fd` but no `GL_EXT_semaphore_fd`), main against this
+  fix: [before](../../../docs/images/viewer3d-software-present/before.png),
+  [after](../../../docs/images/viewer3d-software-present/after.png),
+  [after, orbited and a part picked](../../../docs/images/viewer3d-software-present/after-orbit-pick.png).
+- The setting, driven the same way on a virtual display with the same Mesa: [the checkbox](../../../docs/images/viewer3d-software-present/setting.png)
+  writes the preference at once; [off](../../../docs/images/viewer3d-software-present/setting-off.png), a view opened
+  refuses and names it; ticked again, the view's Reconnect draws (after the stale-wake fix above).
