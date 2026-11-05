@@ -1471,6 +1471,8 @@ below t)</em> — how much the frequency model still changes when a new frequenc
 added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
 the number of samples is not known in advance); <em>Sweep: evaluating frequencies</em> with a count; <em>Reading
 results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
+A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
+the last figure, and the run is marked not converged; a Sweep tolerance of 0 solves every frequency instead.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
 out or compressed, the larger figure that counts it is shown beside it. If Palace prints
 something circuitRF does not recognise (a Palace version it has not been validated against), the row

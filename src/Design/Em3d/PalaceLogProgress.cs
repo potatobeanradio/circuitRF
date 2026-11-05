@@ -350,6 +350,7 @@ public sealed class PalaceStageTracker
     private int? _refinementPasses, _samples;
     private double? _peak, _seconds;
     private double _firstError = double.NaN;
+    private double _lastModelChange = double.NaN;
     private long _stageDone;
     private string _phase = "";
     private bool _degraded;
@@ -374,7 +375,8 @@ public sealed class PalaceStageTracker
     /// <summary>Notes for the run: an early refinement convergence, an unrecognised log.</summary>
     public IReadOnlyList<string> Notes => _notes;
 
-    /// <summary>brief-em3d-22 — findings to act on: a linear solve that did not converge.</summary>
+    /// <summary>brief-em3d-22 — findings to act on: a linear solve that did not converge, or an adaptive sweep that
+    /// stopped at Palace's sample limit.</summary>
     public IReadOnlyList<string> Warnings => _warnings;
 
     public PalaceRunSummary Summary => new(_initialElements, _finalElements, _unknowns, _refinementPasses, _samples,
@@ -418,10 +420,13 @@ public sealed class PalaceStageTracker
             case PalaceGreedyIteration g:
                 // Palace solves the sweep's two ends before iteration 1: iteration 8 is "converged with 10 frequency samples".
                 _solved = g.Iteration + 2;
+                _lastModelChange = g.Error;
                 Sampling(g.Error);
                 break;
             case PalaceSamplingDone s:
                 _samples = s.Samples;
+                if (!s.Converged) _warnings.Add(SamplingLimitWarning(_excitation, s.Samples, _lastModelChange, _sweepTol));
+                _lastModelChange = double.NaN;
                 break;
             case PalaceFrequency f:
                 if (_phase != "online")
@@ -560,6 +565,18 @@ public sealed class PalaceStageTracker
     }
 
     private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol, _solved);
+
+    /// <summary>
+    /// A port's sampling hit Palace's limit before the model settled, so its S-parameters come from a model short of the
+    /// tolerance. The limit is the one Palace printed. A last figure below the tolerance can still stop here, since Palace
+    /// wants it to stay there for several samples, hence "settling".
+    /// </summary>
+    public static string SamplingLimitWarning(string port, int samples, double lastChange, double tolerance)
+        => $"Palace's adaptive sweep{port}{(port.Length > 0 ? "," : "")} stopped at its limit of {samples} solved frequencies without " +
+           $"the {ModelChangeWords} settling below the tolerance of {Sci(tolerance)}" +
+           (double.IsNaN(lastChange) ? "" : $" (it was last {Sci(lastChange)})") + ". " +
+           $"{(port.Length > 0 ? "That port's" : "The")} S-parameters come from a model that did not converge. " +
+           "Setting Sweep tolerance to 0 solves every frequency instead.";
 
     private int _solved;
 

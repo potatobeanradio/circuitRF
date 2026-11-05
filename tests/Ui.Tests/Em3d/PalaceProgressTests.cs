@@ -110,6 +110,26 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(1, tracker.Summary.RefinementPasses);
     }
 
+    /// <summary>A port stopped at Palace's sample limit is a warning, which is what marks the run not converged; a port that
+    /// converged is not.</summary>
+    [Theory]
+    [InlineData("Adaptive sampling reached maximum 20 frequency samples:", true)]
+    [InlineData("Adaptive sampling converged with 20 frequency samples:", false)]
+    public void ASweepStoppedAtPalacesSampleLimit_IsAWarning_NamingThePortAndHowFarItGot(string summary, bool warns)
+    {
+        var (tracker, _) = FeedLines(
+        [
+            "Adding excitation index 2 (2/3):",
+            "Greedy iteration 18 (n = 38): ω* = 2.840e+00 GHz (1.691e+01), error = 2.974e-03, memory = 0/2",
+            summary,
+        ], 0, 1e-3);
+
+        if (!warns) { Assert.Empty(tracker.Warnings); return; }
+        string warning = Assert.Single(tracker.Warnings);
+        Assert.StartsWith("Palace's adaptive sweep, port 2 of 3, stopped at its limit of 20 solved frequencies", warning);
+        Assert.Contains("tolerance of 1.0e-3 (it was last 2.97e-3)", warning);
+    }
+
     // ── 3. The convergence fraction ─────────────────────────────────────────────────────────────
 
     /// <summary>brief-dfr31-5 R-dfr31-5-5 — the sampling row says what the figure measures and which way is done, and the

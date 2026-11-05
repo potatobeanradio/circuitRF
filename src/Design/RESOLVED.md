@@ -16416,7 +16416,9 @@ result is the model's is still brief 87's `C3dRunDocument.Check`, and how the ru
   the previous result and its record alone.
 - **`notConverged` reuses each solver's own signal**, and invents none: openEMS's per-port `Converged`; Palace's stage
   tracker warnings, which hold only "Linear solver did not converge"; the thermal solver's `ThermalSolution.Converged`
-  (Newton over k(T)). Palace's "adaptive sampling reached maximum" is not one: nothing reports it as a warning today.
+  (Newton over k(T)). Palace's "adaptive sampling reached maximum" joined them later (`SamplingLimitWarning`): the parser
+  had always read the line, but the tracker kept only the count, so a port's S-parameters could come from a model short of
+  the sweep tolerance with nothing said. The limit in the sentence is the figure Palace printed, not one assumed here.
 - **A `running` status whose `Pid` is gone is interrupted**, which counts as partial. "Could not tell" reads as alive,
   `WorkspaceLock`'s rule. A directory with no `status.json` but a kept document is a pre-98 run: complete, no duration
   (`C3dRunStatusRecord.Legacy`).
