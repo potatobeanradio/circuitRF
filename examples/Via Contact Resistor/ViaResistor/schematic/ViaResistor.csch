@@ -1,0 +1,247 @@
+{
+  "FormatVersion": 2,
+  "CellName": "ViaResistor",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "Term1",
+      "Symbol": "Term",
+      "X": 0,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Tfr",
+      "X": 600,
+      "Y": -0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "N",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "W",
+          "Expression": "20",
+          "Unit": "um",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "100",
+          "Unit": "um",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Lc",
+          "Expression": "10",
+          "Unit": "um",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Film",
+          "Expression": "Resistor",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Term2",
+      "Symbol": "Term",
+      "X": 1200,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 1200,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 0,
+      "Y": -1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "S21_dB",
+          "Expression": "dB(SP1.S(2,1))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "R_ohm",
+          "Expression": "100*(1/real(SP1.S(2,1)) - 1)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          1200,
+          0
+        ],
+        [
+          1200,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 200,
+      "Y": 0,
+      "Name": "in",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1000,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "1",
+          "StopExpr": "20",
+          "NumPoints": 20,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ]
+}

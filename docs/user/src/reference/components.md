@@ -1203,8 +1203,13 @@ whose clear length between the segments is `Lc`. An `N` of 1 is a straight film 
 two ends on opposite sides, and an even `N` on the same side.
 
 Its resistance is the film's sheet resistance times its squares: the straight film between the bends, plus 0.559 of a square for
-each corner. The contacts and their overlap of the film are not included. A technology [states its film on a
-conductor](stackup.md#film), which models an overlap-contact resistor, with metal lapping the film's ends.
+each corner. The contacts are not included.
+
+`Film` chooses among the technology's [resistive films](stackup.md#film), and it decides both the sheet resistance and the contact.
+Each row of the combobox says what it gives. On a level with metal the part draws contacts lapping the film's ends, and `L` runs
+between their edges. On a [film level](stackup.md#film-level) it draws a head on the metal at the contact via's far end with a via
+inside it, and `L` runs between the vias' inner edges. Left at its default it is the first film in the stackup. A name that matches no
+film is a refusal listing the real ones, in the dialog, in `check` and in a run.
 
 {{table: components/Tfr}}
 

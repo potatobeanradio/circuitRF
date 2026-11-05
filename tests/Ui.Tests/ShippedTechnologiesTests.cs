@@ -25,6 +25,7 @@ public sealed class ShippedTechnologiesTests
                 "pcb-2layer_RO4350B_30mil_1oz",
                 "pcb-4layer_FR-4_62mil_1oz",
                 "pcb-6layer_FR-4_1.6mm_1oz",
+                "rfic-Si_3LM_TFR_100um",
             }.OrderBy(x => x, StringComparer.Ordinal),
             ids);
     }
@@ -39,6 +40,7 @@ public sealed class ShippedTechnologiesTests
     // problems — the actual gate a malformed shipped file must fail.
     [Theory]
     [InlineData("mmic-GaAs_2LM_100um")]
+    [InlineData("rfic-Si_3LM_TFR_100um")]
     [InlineData("pcb-2layer_FR-4_70mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]

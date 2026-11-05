@@ -152,8 +152,6 @@ internal static class DeviceRecognition
         // ordinary instance reading, unchanged.
         if (tech is not { DeviceRules.Count: > 0 } || copper.Count == 0) return;
 
-        var constants = ConstantsOf(tech);
-
         int recognised = 0, rulesUsed = 0;
 
         foreach (var rule in tech.DeviceRules)
@@ -165,6 +163,19 @@ internal static class DeviceRecognition
                 notes.Add(LvsDiagnostics.RecognizeRuleInvalid(ruleName, why!));
                 continue;
             }
+
+            // The film this rule's body is drawn on decides its R_s and, on a level of its own, how it is contacted: through its
+            // via, so a terminal naming metal would read a strap crossing the film as a contact, and a film with no via as a match.
+            LayerKey? bodyFilm = body!.ReferencedLayers().Where(k => ResistiveFilms.IsFilm(tech, k)).Cast<LayerKey?>().FirstOrDefault();
+            bool viaContacted = bodyFilm is { } filmKey && ResistiveFilms.ConductorOf(tech, filmKey) is { } filmLevel
+                                && ResistiveFilms.IsFilmLevel(filmLevel);
+            if (viaContacted && !terminals!.All(t => t.ReferencedLayers().All(k => ResistiveFilms.IsContactOf(tech, k, bodyFilm!.Value))))
+            {
+                notes.Add(LvsDiagnostics.RecognizeRuleInvalid(ruleName,
+                    "its body is a film on a level of its own, which is contacted through a via, and its terminals name something else."));
+                continue;
+            }
+            var constants = ConstantsOf(tech, bodyFilm);
 
             var candidates = DeviceCandidates.Find(copper, tech, body!, terminals!, out var missing, cut);
 
@@ -204,8 +215,9 @@ internal static class DeviceRecognition
 
                 if (candidate.Terminals.Count != drawn && !openEnd)
                 {
-                    notes.Add(LvsDiagnostics.RecognizeTerminalCount(
-                        ruleName, where, candidate.Terminals.Count, drawn));
+                    notes.Add(viaContacted
+                        ? LvsDiagnostics.RecognizeFilmOpen(ruleName, where, candidate.Terminals.Count, drawn)
+                        : LvsDiagnostics.RecognizeTerminalCount(ruleName, where, candidate.Terminals.Count, drawn));
                     continue;
                 }
 
@@ -213,6 +225,11 @@ internal static class DeviceRecognition
                 int deviceIndex = devices.Count;
 
                 var measured = Measure(candidate, naming.Format.DbuPerMicron);
+
+                // The vias set a via-contacted film's length, and the film runs on past them: between their inner edges.
+                if (viaContacted && candidate.Terminals.Count == 2)
+                    measured["Length"] = (candidate.Terminals[1].AlongMin - candidate.Terminals[0].AlongMax)
+                                         / (1e6 * Math.Max(1, naming.Format.DbuPerMicron));
                 var (values, withheld) = Evaluate(
                     rule, ruleName, path, constants, measured, candidate.AxisAmbiguous, notes);
 
@@ -552,8 +569,9 @@ internal static class DeviceRecognition
 
     /// <summary>
     /// The names a deck formula may use: the technology's own <see cref="Technology.Constants"/>,
-    /// over two the process already states elsewhere — <c>TfrSheetResistance</c>, the first resistive
-    /// film's <see cref="StackupFilm.SheetResistanceOhmPerSq"/>, and <c>MimCapDensity</c>, ε0·εr/t of
+    /// over two the process already states elsewhere — <c>TfrSheetResistance</c>, the
+    /// <see cref="StackupFilm.SheetResistanceOhmPerSq"/> of the film <paramref name="film"/> names or else the first, and
+    /// <c>MimCapDensity</c>, ε0·εr/t of
     /// the stackup's capacitor dielectric — both found by the same <see cref="MmicStackResolver"/>
     /// the MIMCAP and TFR models read.
     /// </summary>
@@ -563,10 +581,10 @@ internal static class DeviceRecognition
     /// would leave behind. A constant of the same name still wins, because it binds in the inner
     /// frame — a process whose film is not ideal states its measured density there.
     /// </remarks>
-    internal static Scope ConstantsOf(Technology tech)
+    internal static Scope ConstantsOf(Technology tech, LayerKey? film = null)
     {
         var derived = new Scope("technology (derived)");
-        foreach (var (name, expression, unit) in MmicStackResolver.DeckConstants(tech))
+        foreach (var (name, expression, unit) in MmicStackResolver.DeckConstants(tech, film))
             derived.Bind(name, expression, EngineUnit(unit));
 
         var constants = new Scope("technology", derived);

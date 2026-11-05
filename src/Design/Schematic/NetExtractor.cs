@@ -3602,10 +3602,25 @@ public static class NetExtractor
         // resolution their artwork draws with (MmicPassiveInjection).
         if (MmicPassiveInjection.IsMmicKind(comp.Symbol))
         {
-            var (mmicOverrides, mmicWarning) = MmicPassiveInjection.Build(microstripTech, comp.Symbol);
-            overrides2.AddRange(mmicOverrides);
-            if (mmicWarning is not null)
-                warningsOut?.Add($"{comp.InstanceName}: {mmicWarning}");
+            // A TFR's Film is consumed here. One naming no film stays on the line, so the run's own binding refuses it too
+            // (CnlTechnologyBinding), as a SLIN's SignalLayer does, rather than simulating another film's value.
+            string? film = comp.Symbol == SymbolKind.Tfr
+                ? NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == MmicPassiveInjection.FilmParam)?.Expression)
+                : null;
+            overrides2.RemoveAll(o => comp.Symbol == SymbolKind.Tfr && o.Name == MmicPassiveInjection.FilmParam);
+            if (film is not null && (microstripTech is null || MmicPassiveInjection.FilmRefusal(microstripTech, film) is not null))
+            {
+                if (MmicPassiveInjection.FilmRefusal(microstripTech, film) is { } refused)
+                    warningsOut?.Add($"Instance '{comp.InstanceName}' (TFR) is refused: {refused}.");
+                overrides2.Add(new ParameterAssignment(MmicPassiveInjection.FilmParam, $"\"{film}\""));
+            }
+            else
+            {
+                var (mmicOverrides, mmicWarning) = MmicPassiveInjection.Build(microstripTech, comp.Symbol, film);
+                overrides2.AddRange(mmicOverrides);
+                if (mmicWarning is not null)
+                    warningsOut?.Add($"{comp.InstanceName}: {mmicWarning}");
+            }
         }
 
         // All built-in primitives: emit terminals in PortIndex order.

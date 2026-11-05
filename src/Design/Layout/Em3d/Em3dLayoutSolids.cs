@@ -757,8 +757,8 @@ public static class Em3dLayoutSolids
             foreach (var bd in _bodies) { zLow = Math.Min(zLow, bd.ZBottom); zHigh = Math.Max(zHigh, bd.ZTop); }
             foreach (var v in _viaSpans)
             {
-                zLow  = Math.Min(zLow, PecFloor && ReferenceEquals(v.Bottom.Layer, Ground!.Layer) ? FloorZ : v.Bottom.BottomM);
-                zHigh = Math.Max(zHigh, v.Top.TopM);
+                zLow  = Math.Min(zLow, PecFloor && ReferenceEquals(v.Bottom.Layer, Ground!.Layer) ? FloorZ : ViaBottomZ(v.Bottom));
+                zHigh = Math.Max(zHigh, ViaTopZ(v.Top));
             }
             foreach (var (_, _, prim) in WireBuild?.Solids ?? [])
             {
@@ -898,8 +898,8 @@ public static class Em3dLayoutSolids
             {
                 viaN++;
                 string material = ConductorMaterial(entry);
-                double z1 = top.TopM;
-                double z0 = PecFloor && ReferenceEquals(bottom.Layer, Ground!.Layer) ? FloorZ : bottom.BottomM;
+                double z1 = ViaTopZ(top);
+                double z0 = PecFloor && ReferenceEquals(bottom.Layer, Ground!.Layer) ? FloorZ : ViaBottomZ(bottom);
                 string name = $"via/{viaN}";
                 // A via is on its own net when it names one, else on the nets of the metal it lands on.
                 var viaNets = shape.Net is { Length: > 0 } vn ? [vn] : ViaLandingNets(shape, top, bottom);
@@ -1179,6 +1179,16 @@ public static class Em3dLayoutSolids
 
         private double SheetZOf(PlanarExtractor.StackBand band) => SheetOnTop(band) ? band.TopM : band.BottomM;
 
+        /// <summary>TFR-V — where a via ends on a level whose every piece is a sheet is that sheet. Past it, the part of the
+        /// sheet over the via lies inside the barrel, a surface of no element, and the solver cannot read the mesh.</summary>
+        private double ViaTopZ(PlanarExtractor.StackBand band) => SheetZIfAllSheets(band) ?? band.TopM;
+
+        /// <inheritdoc cref="ViaTopZ"/>
+        private double ViaBottomZ(PlanarExtractor.StackBand band) => SheetZIfAllSheets(band) ?? band.BottomM;
+
+        private double? SheetZIfAllSheets(PlanarExtractor.StackBand band)
+            => Pieces.TryGetValue(band.Index, out var list) && list.Count > 0 && list.All(p => p.IsSheet) ? list[0].SheetZ : null;
+
         /// <summary>
         /// EM-TFR — every film piece as a sheet on its level: σ = 1/(R_s·t), for which only the product is physical. The z
         /// is the metal's own sheet where the level is a sheet, and the face <see cref="LayerDef.FilmAt"/> names where the
@@ -1195,10 +1205,12 @@ public static class Em3dLayoutSolids
                 var def = tech.Layers.First(l => l.Key == group.Key.Layer);
                 var entry = ResistiveFilms.Of(tech, group.Key.Layer)!;
                 double rs = entry.SheetResistanceOhmPerSq;
-                bool stated = entry.ThicknessDbu is > 0;
+                // A film level's thickness is the entry's, and a film on one states none of its own (R-tfrv-1).
+                long? statedDbu = ResistiveFilms.IsFilmLevel(band.Layer) ? band.Layer.ThicknessDbu : entry.ThicknessDbu;
+                bool stated = statedDbu is > 0;
                 // t < δ exactly when t < 2·R_s/(ωμ₀): σ = 1/(R_s·t) puts t on both sides of the skin depth.
                 double thinLimit = options.FMaxHz is { } f && f > 0 ? 2.0 * rs / (2.0 * Math.PI * f * Mu0) : double.PositiveInfinity;
-                double t = stated ? entry.ThicknessDbu!.Value * StackPerDbu : Math.Min(DefaultFilmThicknessM, 0.5 * thinLimit);
+                double t = stated ? statedDbu!.Value * StackPerDbu : Math.Min(DefaultFilmThicknessM, 0.5 * thinLimit);
                 double sigma = 1.0 / (rs * t);
                 string material = Add(new Em3dMaterial($"Film {def.Name}", 1, null, 0, 1, sigma), TechnologySource());
 

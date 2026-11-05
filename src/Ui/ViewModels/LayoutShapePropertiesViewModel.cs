@@ -2283,7 +2283,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             var geometry = new Dictionary<string, double>(StringComparer.Ordinal);
             foreach (var (pname, pvalue) in ParametersForDisplay(origin.Parameters))
                 if (SchematicLayoutPlanner.TryAsNumber(pvalue, out double v)) geometry[pname] = v;
-            string? readout = MmicPassiveInjection.Readout(_vm.Technology, _mmicReadoutKind!.Value, geometry, out string? note);
+            string? readout = MmicPassiveInjection.Readout(_vm.Technology, _mmicReadoutKind!.Value, geometry, out string? note,
+                                                           origin.Parameters.Text(MmicPassiveInjection.FilmParam));
             row.Error = note;
             row.ShowValue(readout ?? "—", null);
             return;

@@ -128,6 +128,7 @@ public sealed partial class TechEditorViewModel
     internal bool SetFilmFace(LayerKey key, ConductorSheetSurface face)
     {
         if (ResistiveFilms.Of(Working, key) is not { } film || ResistiveFilms.ConductorOf(Working, key) is not { } level) return false;
+        if (ResistiveFilms.IsFilmLevel(level)) return false;   // no metal, so no face: the drag to the other face writes nothing
         if (ResistiveFilms.FaceOf(film, level) == face) return false;
         var before = SnapshotJson();
         film.At = face;
@@ -175,6 +176,63 @@ public sealed partial class TechEditorViewModel
         (level.Films ??= []).Add(new StackupFilm { Layer = def.Key, SheetResistanceOhmPerSq = ohmPerSq });
         CommitEdit(before, $"New resistor film {def.Name} on {conductorName}");
         return true;
+    }
+
+    // ── A film level (TFR-V R-tfrv-6) ─────────────────────────────────────────────────────────────
+
+    /// <summary>What the film dialog's drawing-layer picker ends with: a name is typed only when creating one.</summary>
+    internal const string NewFilmLayerChoice = "New layer…";
+
+    /// <summary>The picker's rows: the layers no metal or film uses, then <see cref="NewFilmLayerChoice"/>.</summary>
+    internal IReadOnlyList<string> FilmLayerPickerRows()
+        => [.. FilmLayerChoices().Select(c => c.Name), NewFilmLayerChoice];
+
+    /// <summary>The entries a new film level may be inserted below, in stackup order: anything that is not a via.</summary>
+    internal IReadOnlyList<string> FilmLevelInsertTargets()
+        => [.. Working.Stackup.Layers.Where(l => l.Kind != StackupKind.Via).Select(l => l.Name)];
+
+    /// <summary>Where the picker opens: the first place no conductor would touch the level, else the first dielectric.</summary>
+    internal string? DefaultFilmLevelInsertTarget()
+    {
+        var layers = Working.Stackup.Layers.Where(l => l.Kind != StackupKind.Via).ToList();
+        for (int i = 0; i + 1 < layers.Count; i++)
+            if (layers[i].Kind == StackupKind.Dielectric && layers[i + 1].Kind == StackupKind.Dielectric) return layers[i].Name;
+        return layers.FirstOrDefault(l => l.Kind == StackupKind.Dielectric)?.Name ?? layers.FirstOrDefault()?.Name;
+    }
+
+    /// <summary>A new film level below <paramref name="below"/> holding one film, in ONE edit: a level with no film yet would be
+    /// a conductor with no metal, which is a warning nobody asked for. <paramref name="existing"/> names the drawing layer, else
+    /// <paramref name="newLayerName"/> creates one. It gains no Material or σ, because it has no metal.</summary>
+    internal bool AddFilmLevel(string below, LayerKey? existing, string? newLayerName, double ohmPerSq)
+    {
+        if (!(ohmPerSq > 0)) return false;
+        if (existing is null && string.IsNullOrWhiteSpace(newLayerName)) return false;
+        if (existing is { } taken && ResistiveFilms.Of(Working, taken) is not null) return false;
+        var layers = Working.Stackup.Layers;
+        int at = layers.FindIndex(l => string.Equals(l.Name, below, System.StringComparison.Ordinal));
+        if (at < 0) return false;
+
+        var before = SnapshotJson();
+        var key = existing ?? AppendLayer(newLayerName!.Trim()).Key;
+        var level = new StackupLayer
+        {
+            Kind         = StackupKind.Conductor,
+            Name         = NextFreeFilmLevelName(),
+            ThicknessDbu = LayoutUnits.ToDbu(0.05m, LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron),
+            Films        = [new StackupFilm { Layer = key, SheetResistanceOhmPerSq = ohmPerSq }],
+        };
+        layers.Insert(at + 1, level);
+        CommitEdit(before, $"Add film level {level.Name}");
+        return true;
+    }
+
+    private string NextFreeFilmLevelName()
+    {
+        const string name = "TFR Level";
+        var taken = Working.Stackup.Layers.Select(l => l.Name).ToHashSet(System.StringComparer.Ordinal);
+        if (!taken.Contains(name)) return name;
+        for (int n = 2; ; n++)
+            if (!taken.Contains($"{name} {n}")) return $"{name} {n}";
     }
 
     private StackupLayer ConductorNamed(string name)

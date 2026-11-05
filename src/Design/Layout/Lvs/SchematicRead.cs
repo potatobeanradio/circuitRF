@@ -32,6 +32,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 
@@ -78,7 +79,7 @@ public static class SchematicRead
         SchematicEditModel model, string cschPath,
         bool includeFixture = false, bool isTestBenchCell = false,
         IReadOnlyList<LvsGlobalOverride>? overrides = null,
-        IReadOnlySet<string>? excludeInstances = null)
+        IReadOnlySet<string>? excludeInstances = null, Technology? technology = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -200,7 +201,7 @@ public static class SchematicRead
                 nets.Attach(net, deviceIndex, terminals.Count - 1);
             }
 
-            var parameters = ParametersOf(inst, resolved);
+            var parameters = WithFilm(ParametersOf(inst, resolved), comp, technology);
             devices.Add(new LvsDevice(
                 inst.InstanceName, comp?.InstanceName ?? inst.InstanceName, type, terminals,
                 parameters,
@@ -303,6 +304,17 @@ public static class SchematicRead
     private static IReadOnlyDictionary<string, object?> ParametersOf(
         Instance inst, IReadOnlyDictionary<string, Resolved> resolved)
         => resolved.TryGetValue(inst.InstanceName, out var r) ? r.Parameters : EmptyParameters;
+
+    /// <summary>A TFR's film, by the layer name the layout side reads off the artwork. It left the parameters at elaboration,
+    /// because it is text, and a part stating none asked for the first film.</summary>
+    private static IReadOnlyDictionary<string, object?> WithFilm(
+        IReadOnlyDictionary<string, object?> parameters, EditableComponent? comp, Technology? technology)
+    {
+        if (technology is null || comp is not { Symbol: SymbolKind.Tfr }) return parameters;
+        string? stated = comp.Parameters.FirstOrDefault(p => p.Name == MmicPassiveInjection.FilmParam)?.Expression;
+        if (MmicStackResolver.Resolve(technology, stated).ResistorLayer is not { } layer) return parameters;
+        return new Dictionary<string, object?>(parameters, StringComparer.Ordinal) { [MmicPassiveInjection.FilmParam] = layer.Name };
+    }
 
     /// <summary>
     /// What each resolved value IS — its <see cref="UnitDimension"/>, from the component that

@@ -588,7 +588,7 @@
                                      ONE combobox, nothing else — no adjacent text field. A value the
                                      picker doesn't offer (a custom/renamed layer) is set via the
                                      schematic canvas's own inline label text-edit instead. -->
-                                <ComboBox Grid.Column="1"
+                                <ComboBox Grid.Column="1" Grid.ColumnSpan="2"
                                           ItemsSource="{Binding LayerChoiceOptions}"
                                           SelectedItem="{Binding SelectedLayerChoice}"
                                           IsVisible="{Binding IsLayerChoiceParam}"

@@ -7,6 +7,10 @@
         CanResize="False">
     <StackPanel Margin="16" Spacing="8" MinWidth="300" MaxWidth="380">
         <TextBlock x:Name="PromptText" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <StackPanel x:Name="LayerRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
+            <TextBlock Text="Drawing layer:" Width="110" VerticalAlignment="Center" FontSize="12"/>
+            <ComboBox x:Name="LayerBox" Width="180" FontSize="12" SelectionChanged="OnPicked"/>
+        </StackPanel>
         <StackPanel x:Name="NameRow" Orientation="Horizontal" Spacing="6">
             <TextBlock Text="Name:" Width="110" VerticalAlignment="Center" FontSize="12"/>
             <TextBox x:Name="NameBox" Width="140" FontSize="12" TextChanged="OnChanged"/>
@@ -15,6 +19,10 @@
             <TextBlock Text="Sheet resistance:" Width="110" VerticalAlignment="Center" FontSize="12"/>
             <TextBox x:Name="ValueBox" Width="80" FontSize="12" PlaceholderText="e.g. 50" TextChanged="OnChanged"/>
             <TextBlock Text="Ω/sq" VerticalAlignment="Center" FontSize="12"/>
+        </StackPanel>
+        <StackPanel x:Name="BelowRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
+            <TextBlock Text="Insert below:" Width="110" VerticalAlignment="Center" FontSize="12"/>
+            <ComboBox x:Name="BelowBox" Width="180" FontSize="12"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
             <Button Content="Cancel" IsCancel="True" MinWidth="80" HorizontalContentAlignment="Center" Click="OnCancel"/>

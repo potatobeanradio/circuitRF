@@ -36,6 +36,13 @@ internal static class EmergeLoweringRules
     /// mesh and only 293 Ω at 16 times the elements, where 300 Ω is exact. At or below the surface-impedance limit EMerge solves
     /// a volume's real current, which read 301 Ω on fewer elements than the sheet's shipped mesh (RESOLVED, EM-TFR).
     /// Metal, and a slanted sheet, are returned as they came, and a problem with no resistive sheet is the same object.
+    ///
+    /// <para><b>TFR-V — it rises from the sheet, unless that puts metal inside it.</b> A film on a level of its own has metal a
+    /// fraction of a micron above it, and a volume through that metal contacts it: a strap crossing the film shorted the resistor
+    /// (295 Ω to 225 Ω at 1 GHz), which the DC row, being circuitRF's own solve, did not show. The volume cannot be thinner, because
+    /// σ would pass the limit, so it goes down instead, and where metal is on both sides <see cref="ResistiveVolumeRefusal"/>
+    /// says so before anything is written. Below a film the Standard preset reads half the reactance the Accurate preset does (61j
+    /// against 146j at 40 GHz, on the TFR-V zig-zag), which the note says; Accurate solves it in 18 s there.</para>
     /// </summary>
     public static Em3dProblem ResistiveSheetsAsVolumes(Em3dProblem problem, out IReadOnlyList<string> notes)
     {
@@ -54,16 +61,77 @@ internal static class EmergeLoweringRules
             double rs = SheetOhms(sheet);
             // σ must end at or below the limit, or EMerge reads the volume as a conductor's surface again.
             double t = Math.Max(ResistiveVolumeThicknessM, 1.0 / (rs * SurfaceImpedanceLimitSm));
-            string name = $"{sheet.Material} (volume)";
+            bool down = MetalIn(problem, sheet, sheet.Z, sheet.Z + t) is not null;
+            // Going down it displaces the dielectric the film's capacitance to ground runs through, so it keeps that permittivity:
+            // at εr 1 in GaAs the film's reactance read half what it is. Going up it displaces what it always has.
+            double epsr = down ? DielectricUnder(problem, byName, sheet, sheet.Z - t, sheet.Z) : 1;
+            string name = down ? $"{sheet.Material} (volume, εr {G(epsr)})" : $"{sheet.Material} (volume)";
             if (materials.All(m => m.Name != name))
-                materials.Add(new Em3dMaterial(name, 1, null, 0, 1, 1.0 / (rs * t)));
+                materials.Add(new Em3dMaterial(name, epsr, null, 0, 1, 1.0 / (rs * t)));
             solids.Add(new Em3dSolid(sheet.Name, name, Em3dRole.Dielectric,
-                                     new Em3dExtrudedPolygon(sheet.Outline, sheet.Holes, sheet.Z, sheet.Z + t), sheet.Order));
-            said.Add($"'{sheet.Name}' ({G(rs)} Ω/sq) goes to EMerge as a {G(t * 1e6)} µm volume of σ = {G(1.0 / (rs * t))} S/m, the same " +
-                     "sheet resistance: its thin-conductor boundary reads a film low, and how low depends on the mesh.");
+                                     new Em3dExtrudedPolygon(sheet.Outline, sheet.Holes, down ? sheet.Z - t : sheet.Z, down ? sheet.Z : sheet.Z + t), sheet.Order));
+            said.Add($"'{sheet.Name}' ({G(rs)} Ω/sq) goes to EMerge as a {G(t * 1e6)} µm volume of σ = {G(1.0 / (rs * t))} S/m" +
+                     (down ? " below the film, because metal lies over it" : "") + ", the same " +
+                     "sheet resistance: its thin-conductor boundary reads a film low, and how low depends on the mesh." +
+                     (down ? " Below a film this mesh matters more: on one test film the Standard preset read the reactance at half what the Accurate preset does." : ""));
         }
         notes = said;
         return problem with { Materials = materials, Solids = solids, Sheets = [.. problem.Sheets.Except(resistive)] };
+    }
+
+    /// <summary>Why a resistive sheet cannot go to EMerge, or null: metal both above and below it within the volume it needs.</summary>
+    public static string? ResistiveVolumeRefusal(Em3dProblem problem)
+    {
+        var byName = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        foreach (var sheet in problem.Sheets.Where(s => s.Frame is null))
+        {
+            if (byName[sheet.Material].SigmaSm is not (> 0 and var g) || !double.IsFinite(g) || sheet.ThicknessM <= 0) continue;
+            double rs = 1.0 / (g * sheet.ThicknessM);
+            if (rs < ResistiveSheetFromOhmPerSq) continue;
+            double t = Math.Max(ResistiveVolumeThicknessM, 1.0 / (rs * SurfaceImpedanceLimitSm));
+            if (MetalIn(problem, sheet, sheet.Z, sheet.Z + t) is { } above && MetalIn(problem, sheet, sheet.Z - t, sheet.Z) is { } below)
+                return $"Resistive film '{sheet.Name}' goes to EMerge as a {G(t * 1e6)} µm volume, and '{above}' over it and '{below}' under " +
+                       "it are both closer than that, so the volume would contact the metal it crosses and read a lower resistance. " +
+                       "Run the setup on Palace, or clear the metal from one side of the film.";
+        }
+        return null;
+    }
+
+    /// <summary>The conductor lying over <paramref name="film"/> strictly between two heights, or null. Metal on the film's own plane
+    /// is an overlap contact and is not in the way.</summary>
+    private static string? MetalIn(Em3dProblem problem, Em3dSheet film, double z0, double z1)
+    {
+        const double eps = 1e-12;
+        foreach (var other in problem.Sheets)
+            if (!ReferenceEquals(other, film) && other.Frame is null && other.Z > z0 + eps && other.Z < z1 - eps && Overlaps(film.Outline, other.Outline))
+                return other.Name;
+        foreach (var solid in problem.Solids)
+        {
+            if (solid.Role != Em3dRole.Conductor) continue;
+            var (x0, y0, zb, x1, y1, zt) = Em3dProblem.Bounds(solid.Primitive);
+            if (zb < z1 - eps && zt > z0 + eps && Overlaps(film.Outline, [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)]))
+                return solid.Name;
+        }
+        return null;
+    }
+
+    /// <summary>The permittivity of the dielectric filling the span under <paramref name="film"/>, or 1 where none does.</summary>
+    private static double DielectricUnder(Em3dProblem problem, Dictionary<string, Em3dMaterial> byName, Em3dSheet film, double z0, double z1)
+    {
+        foreach (var solid in problem.Solids.Where(s => s.Role == Em3dRole.Dielectric))
+        {
+            var (x0, y0, zb, x1, y1, zt) = Em3dProblem.Bounds(solid.Primitive);
+            if (zb <= z0 + 1e-12 && zt >= z1 - 1e-12 && Overlaps(film.Outline, [new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)]))
+                return byName[solid.Material].Epsr;
+        }
+        return 1;
+    }
+
+    private static bool Overlaps(IReadOnlyList<Point2> a, IReadOnlyList<Point2> b)
+    {
+        static Clipper2Lib.Paths64 Path(IReadOnlyList<Point2> ring)
+            => [[.. ring.Select(p => new Clipper2Lib.Point64((long)Math.Round(p.X * 1e9), (long)Math.Round(p.Y * 1e9)))]];
+        return Clipper2Lib.Clipper.Intersect(Path(a), Path(b), Clipper2Lib.FillRule.NonZero).Any(q => Math.Abs(Clipper2Lib.Clipper.Area(q)) > 0);
     }
 
     private static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);

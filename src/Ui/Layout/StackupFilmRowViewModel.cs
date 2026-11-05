@@ -14,6 +14,10 @@ public sealed partial class StackupFilmRowViewModel : ObservableObject
     public LayerKey Key { get; }
     public string LayerName { get; private set; } = "";
     public string ThicknessUnitSuffix => LayoutUnits.Suffix(_owner.Working.DefaultDisplayUnit);
+
+    /// <summary>A film on a level with metal has a face and may state a thickness. On a film level neither has a meaning: the
+    /// entry's thickness is the film's, and with no metal there is no face to be on.</summary>
+    public bool ShowsFaceAndThickness => ResistiveFilms.ConductorOf(_owner.Working, Key) is not { } level || !ResistiveFilms.IsFilmLevel(level);
     public IRelayCommand RemoveCommand { get; }
 
     [ObservableProperty] private string _stagedSheetResistance = "";
@@ -54,6 +58,7 @@ public sealed partial class StackupFilmRowViewModel : ObservableObject
         LayerName = tech.Layers.FirstOrDefault(l => l.Key == Key)?.Name ?? $"{Key.Layer}/{Key.Datatype}";
         OnPropertyChanged(nameof(LayerName));
         OnPropertyChanged(nameof(ThicknessUnitSuffix));
+        OnPropertyChanged(nameof(ShowsFaceAndThickness));
         StagedSheetResistance = CircuitRF.Render.StackupScene.FilmSheetResistanceText(film.SheetResistanceOhmPerSq);
         StagedThickness = film.ThicknessDbu is { } t
             ? LayoutUnits.Format(t, tech.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron,

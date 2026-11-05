@@ -1,0 +1,3 @@
+refusal The frequency sweep produced no points. Check the start, stop and step or count.
+no-alpha 
+unknown-temperature 

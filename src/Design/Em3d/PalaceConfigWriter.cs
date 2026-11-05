@@ -291,7 +291,7 @@ public static class PalaceConfigWriter
                     w.WriteNumber("Offset", Math.Round(p.ReferencePlane.ShiftM / GmshGeoWriter.LengthUnitM, 9));
                     if (!eigen) w.WriteNumber("Excitation", p.Number);
                     w.WriteStartArray("VoltagePath");
-                    foreach (var q in new[] { v.From, v.To })
+                    foreach (var q in PulledInside(v))
                     {
                         w.WriteStartArray();
                         w.WriteNumberValue(Math.Round(q.X / GmshGeoWriter.LengthUnitM, 9));
@@ -646,6 +646,17 @@ public static class PalaceConfigWriter
             w.WriteNumberValue(p.Direction.Z);
             w.WriteEndArray();
         }
+    }
+
+    /// <summary>A wave port's voltage path with each end moved in by 1e-9 of its length. Its ends lie on the port surface's
+    /// boundary, where metal starts, and Palace looks up each quadrature point on the surface: whether a point exactly on that
+    /// boundary is found depends on how the mesh is partitioned, and when it is not found Palace aborts (TFR-V, 10 ranks on one
+    /// mesh and not on 4). The integral moves by the same 1e-9, which no S-parameter shows.</summary>
+    private static Point3[] PulledInside(Em3dSegment v)
+    {
+        const double fraction = 1e-9;
+        double dx = fraction * (v.To.X - v.From.X), dy = fraction * (v.To.Y - v.From.Y), dz = fraction * (v.To.Z - v.From.Z);
+        return [new Point3(v.From.X + dx, v.From.Y + dy, v.From.Z + dz), new Point3(v.To.X - dx, v.To.Y - dy, v.To.Z - dz)];
     }
 
     private static void Attributes(Utf8JsonWriter w, IEnumerable<int> attributes)

@@ -21,6 +21,10 @@ namespace CircuitRF.Design.Schematic;
 /// </summary>
 public static class MmicPassiveInjection
 {
+    /// <summary>A <c>TFR</c>'s film: a drawing layer's name, and empty for the first film in stackup order. Text, so it is
+    /// resolved here and never reaches the numeric layer, as a test pad's <c>PadLayer</c> is.</summary>
+    public const string FilmParam = "Film";
+
     public static bool IsMmicKind(SymbolKind kind)
         => kind is SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge;
 
@@ -48,11 +52,11 @@ public static class MmicPassiveInjection
     /// them. No technology at all is NOT a message — the standalone default is what such a line has
     /// always meant, exactly as for a microstrip.
     /// </summary>
-    public static (IReadOnlyList<ParameterAssignment> Overrides, string? Warning) Build(Technology? technology, SymbolKind kind)
+    public static (IReadOnlyList<ParameterAssignment> Overrides, string? Warning) Build(Technology? technology, SymbolKind kind, string? film = null)
     {
         if (technology is null || !IsMmicKind(kind)) return ([], null);
 
-        var stack = MmicStackResolver.Resolve(technology);
+        var stack = MmicStackResolver.Resolve(technology, kind == SymbolKind.Tfr ? film : null);
         if (MmicStackResolver.Why(stack, PartOf(kind), technology.Name) is { } why)
             return ([], $"{why}; the {ComponentTypeRegistry.EngineReference(kind)} uses its standalone defaults " +
                         "(the shipped GaAs process's).");
@@ -85,9 +89,10 @@ public static class MmicPassiveInjection
                 Add("Erb",   stack.BridgeEpsR);
                 break;
             case SymbolKind.Tfr:
+                var underFilm = stack.ResistorSubstrate ?? sub;
                 Add("Rs",    stack.ResistorFilm!.SheetResistanceOhmPerSq);
-                Add("H",     sub.HeightMeters);
-                Add("ErSub", sub.RelativePermittivity);
+                Add("H",     underFilm.HeightMeters);
+                Add("ErSub", underFilm.RelativePermittivity);
                 break;
             case SymbolKind.Airbridge:
                 Add("Sigma", stack.BridgeMetal!.SigmaSm);
@@ -103,6 +108,11 @@ public static class MmicPassiveInjection
         }
         return (o, null);
     }
+
+    /// <summary>Why a <c>TFR</c>'s <c>Film</c> cannot be honoured, or null when it can: a name matching no film, which is a
+    /// refusal and never the first film.</summary>
+    public static string? FilmRefusal(Technology? technology, string? film)
+        => technology is null || string.IsNullOrWhiteSpace(film) ? null : MmicStackResolver.Resolve(technology, film).FilmRefusal;
 
     /// <summary>True for the parts with a readout: a TFR's resistance, a MIMCAP's capacitance and a
     /// spiral's inductance.</summary>
@@ -131,14 +141,15 @@ public static class MmicPassiveInjection
     /// estimated and that is all the panel says.
     /// </summary>
     public static string? Readout(Technology? technology, SymbolKind kind, IReadOnlyDictionary<string, double> geometry,
-                                  out string? note)
+                                  out string? note, string? film = null)
     {
         note = null;
         if (!HasReadout(kind)) return null;
+        if (kind == SymbolKind.Tfr && FilmRefusal(technology, film) is { } refused) { note = refused; return null; }
         foreach (var (name, v) in geometry)
             if (name is "W" or "L" or "Din" or "N" or "Lc" && !(v > 0)) { note = $"{name} must be positive."; return null; }
 
-        var (overrides, _) = Build(technology, kind);
+        var (overrides, _) = Build(technology, kind, film);
         var values = new Dictionary<string, CircuitRF.Core.Expressions.Value>(StringComparer.Ordinal);
         foreach (var (name, v) in geometry) values[name] = new CircuitRF.Core.Expressions.Value(v);
         foreach (var o in overrides)
@@ -188,9 +199,11 @@ public static class MmicPassiveInjection
         if (!HasReadout(kind)) return null;
         var geometry = new Dictionary<string, double>(StringComparer.Ordinal);
         var unevaluated = new List<string>();
+        string? film = null;
         foreach (var p in parameters)
         {
             if (string.IsNullOrWhiteSpace(p.Expression)) continue;
+            if (p.Name == FilmParam) { film = p.Expression; continue; }
             try
             {
                 string unit = CircuitRF.Core.Expressions.UnitNormalizer.ToEngineUnit(p.Unit);
@@ -206,7 +219,7 @@ public static class MmicPassiveInjection
                  + "the readout cannot evaluate here; the run uses the real value.";
             return null;
         }
-        return Readout(technology, kind, geometry, out note);
+        return Readout(technology, kind, geometry, out note, film);
     }
 
     /// <summary>A schematic instance's rows in SI, evaluated in their units; null when any cannot be
@@ -216,7 +229,7 @@ public static class MmicPassiveInjection
         var geometry = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var p in parameters)
         {
-            if (string.IsNullOrWhiteSpace(p.Expression)) continue;
+            if (string.IsNullOrWhiteSpace(p.Expression) || p.Name == FilmParam) continue;
             try
             {
                 string unit = CircuitRF.Core.Expressions.UnitNormalizer.ToEngineUnit(p.Unit);

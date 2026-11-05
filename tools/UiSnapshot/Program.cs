@@ -336,7 +336,9 @@ if (args.Contains("--film-prompt") && output is not null)
 {
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
-    var prompt = new CircuitRF.Ui.Views.Dialogs.ResistorFilmPromptDialog();
+    var prompt = args.Contains("--film-level")
+        ? CircuitRF.Ui.Views.Dialogs.ResistorFilmPromptDialog.LevelForm(["Nitride", "Line Marker", "New layer…"], ["Metal1", "TFR Isolation", "GaAs"], "TFR Isolation")
+        : new CircuitRF.Ui.Views.Dialogs.ResistorFilmPromptDialog();
     prompt.Show();
     Dispatcher.UIThread.RunJobs();
     prompt.CaptureRenderedFrame()!.Save(output);

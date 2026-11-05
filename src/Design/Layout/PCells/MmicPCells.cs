@@ -35,6 +35,27 @@ internal static class MmicArt
         return best > 0 ? best : 4 * DbuPerMicron;
     }
 
+    /// <summary>The technology's enclosure of <paramref name="enclosed"/> by <paramref name="enclosing"/>: its MinEnclosure rule
+    /// over those two layers, else <paramref name="fallback"/>.</summary>
+    public static long Enclosure(Technology? technology, LayerKey enclosing, LayerKey enclosed, long fallback)
+    {
+        if (technology is null) return fallback;
+        static HashSet<LayerKey>? LayersOf(string? text)
+            => text is { Length: > 0 } && Drc.DrcLayerExprParser.TryParse(text, out var e, out _) && e is not null
+                ? [.. e.ReferencedLayers()] : null;
+        long best = 0;
+        foreach (var r in technology.DrcRules)
+        {
+            if (r.Kind != DrcRuleKind.MinEnclosure) continue;
+            // The enclosed region may be narrowed to where it meets the enclosing one, and(via, film), so that a rule about one
+            // film of a level does not read a via in its neighbour.
+            if (LayersOf(r.RegionA) is { Count: 1 } a && a.Contains(enclosing)
+                && LayersOf(r.RegionB) is { } b && b.Contains(enclosed) && b.All(k => k == enclosed || k == enclosing))
+                best = Math.Max(best, r.ValueDbu);
+        }
+        return best > 0 ? best : fallback;
+    }
+
     public static RectShape Rect(LayerKey layer, long x1, long y1, long x2, long y2)
         => new() { Layer = layer, X1 = Math.Min(x1, x2), Y1 = Math.Min(y1, y2), X2 = Math.Max(x1, x2), Y2 = Math.Max(y1, y2) };
 
@@ -116,9 +137,10 @@ public static class MimCapPCell
 }
 
 /// <summary>
-/// TFR artwork: the resistor film, W wide, with a contact over each end on the metal of the level the
-/// film is on. N = 1 is a straight film whose contacts' edges are exactly L apart, so what lies between
-/// them is the L×W the model counts; each contact overlaps the film by half a minimum feature.
+/// TFR artwork: the resistor film, W wide, with a contact at each end. The film decides the contact. On a level with metal it
+/// is that metal lapping the film's end by half a minimum feature. On a film level it is a via inside the film, under a head of
+/// the metal at the via's other end. N = 1 is a straight film whose contacts' inner edges are exactly L apart, so what lies
+/// between them is the L×W the model counts.
 ///
 /// <para>N &gt; 1 is the classic serpentine: N parallel runs of length L between bend centres, stepped in
 /// +Y and joined by square-cornered links whose clear length between the runs' edges is Lc, as one polygon
@@ -132,8 +154,12 @@ public static class TfrPCell
     public static PCellResult Generate(IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology,
                                        PCellLayerSelection layerSelection)
     {
-        var stack = MmicStackResolver.Resolve(technology);
-        var baseLayer = ResolvedMmicStack.Key(stack.ResistorLevel ?? stack.BaseMetal, MmicStackResolver.FallbackLayers.Base);
+        var stack = MmicStackResolver.Resolve(technology, parameters.Text(MmicFilm));
+        bool viaContact = stack.ResistorIsViaContacted && stack.ResistorContactVia is not null;
+        var metal = viaContact ? stack.ResistorContactMetal
+                  : stack.ResistorIsViaContacted ? stack.BaseMetal
+                  : stack.ResistorLevel ?? stack.BaseMetal;
+        var baseLayer = ResolvedMmicStack.Key(metal, MmicStackResolver.FallbackLayers.Base);
         var film = stack.ResistorLayer?.Key ?? MmicStackResolver.FallbackLayers.Resistor;
 
         long f = MmicArt.MinFeature(technology, baseLayer);
@@ -141,8 +167,24 @@ public static class TfrPCell
         long l = Math.Max(MmicArt.Dbu(parameters.Real("L", 20e-6)), 1);
         int n = Math.Max((int)Math.Round(parameters.Real("N", 1.0)), 1);
         long link = Math.Max(MmicArt.Dbu(parameters.Real("Lc", 10e-6)), 1);
-        long ov = Math.Max(f / 2, 1), c = 2 * f;
-        long wc = w + f, half = w / 2, cHalf = wc / 2;
+
+        // Overlap: the contact is the metal lapping the film's end, and L runs between the contacts' edges. Via: the contact is
+        // the via, and L runs between the vias' inner edges, with the film and the head enclosing it by the technology's rules.
+        long ov = Math.Max(f / 2, 1), c = 2 * f, headIn = 0, wc = w + f;
+        long viaLength = 0, viaWidth = 0;
+        var viaLayer = viaContact ? ResolvedMmicStack.Key(stack.ResistorContactVia, MmicStackResolver.FallbackLayers.BridgeVia) : default;
+        if (viaContact)
+        {
+            long inFilm = MmicArt.Enclosure(technology, film, viaLayer, ov);
+            headIn = MmicArt.Enclosure(technology, baseLayer, viaLayer, ov);
+            viaLength = MmicArt.MinFeature(technology, viaLayer);
+            viaWidth = Math.Max(w - 2 * inFilm, 1);
+            ov = viaLength + inFilm;
+            c = viaLength + Math.Max(inFilm, headIn);
+            wc = Math.Max(w + f, viaWidth + 2 * headIn);
+        }
+        long half = w / 2;
+        long cHalf = wc / 2;
         long xEnd = 2 * c + l;
 
         // A serpentine's run is at least as long as it is wide: shorter, its two bends would overlap.
@@ -150,11 +192,22 @@ public static class TfrPCell
         xEnd = 2 * c + l;
 
         var notes = MmicArt.Notes(technology, stack, MmicPart.Tfr);
-        var shapes = new List<LayoutShape>();
         long pitch = w + link;
         long yLast = (n - 1) * pitch;
         bool sameSide = n % 2 == 0;
+        long x2 = sameSide ? 0 : c + l;
 
+        var pins = new[]
+        {
+            new PCellPin("1", 0, 0, baseLayer, wc, 180.0),
+            sameSide ? new PCellPin("2", 0, yLast, baseLayer, wc, 180.0)
+                     : new PCellPin("2", xEnd, yLast, baseLayer, wc, 0.0),
+        };
+
+        // A film the technology does not have draws nothing: another film's artwork would look right and be a different part.
+        if (stack.FilmRefusal is not null) return new PCellResult([], pins, Diagnostics: notes.Count > 0 ? notes : null);
+
+        var shapes = new List<LayoutShape>();
         if (n == 1) shapes.Add(MmicArt.Rect(film, c - ov, -half, c + l + ov, w - half));
         else
         {
@@ -176,19 +229,24 @@ public static class TfrPCell
                 notes.Add($"Lc = {link / (double)LayoutUnits.DefaultDbuPerMicron:G4} µm is under the metal's minimum feature, so a contact sits against the film's next run.");
         }
 
-        long x2 = sameSide ? 0 : c + l;
-        shapes.Add(MmicArt.Rect(baseLayer, 0, -cHalf, c, wc - cHalf));
-        if (sameSide) shapes.Add(MmicArt.Rect(baseLayer, 0, yLast - cHalf, c, yLast + wc - cHalf));
-        else shapes.Add(MmicArt.Rect(baseLayer, x2, yLast - cHalf, xEnd, yLast + wc - cHalf));
+        shapes.Add(MmicArt.Rect(baseLayer, 0, -cHalf, c + headIn, wc - cHalf));
+        if (sameSide) shapes.Add(MmicArt.Rect(baseLayer, 0, yLast - cHalf, c + headIn, yLast + wc - cHalf));
+        else shapes.Add(MmicArt.Rect(baseLayer, x2 - headIn, yLast - cHalf, xEnd, yLast + wc - cHalf));
 
-        var pins = new[]
+        if (viaContact)
         {
-            new PCellPin("1", 0, 0, baseLayer, wc, 180.0),
-            sameSide ? new PCellPin("2", 0, yLast, baseLayer, wc, 180.0)
-                     : new PCellPin("2", xEnd, yLast, baseLayer, wc, 0.0),
-        };
+            long viaHalf = viaWidth / 2;
+            shapes.Add(MmicArt.Rect(viaLayer, c - viaLength, -viaHalf, c, viaWidth - viaHalf));
+            if (sameSide) shapes.Add(MmicArt.Rect(viaLayer, c - viaLength, yLast - viaHalf, c, yLast + viaWidth - viaHalf));
+            else shapes.Add(MmicArt.Rect(viaLayer, c + l, yLast - viaHalf, c + l + viaLength, yLast + viaWidth - viaHalf));
+            if (!sameSide && n == 1 && l < 2 * headIn + f)
+                notes.Add($"L = {l / (double)LayoutUnits.DefaultDbuPerMicron:G4} µm leaves the two metal heads closer than the metal's minimum feature.");
+        }
+
         return new PCellResult(shapes, pins, Diagnostics: notes.Count > 0 ? notes : null);
     }
+
+    private const string MmicFilm = "Film";
 }
 
 /// <summary>

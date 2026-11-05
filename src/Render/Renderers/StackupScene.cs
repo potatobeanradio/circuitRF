@@ -642,7 +642,7 @@ public sealed class StackupScene
             var rect = new SKRect(bandLeft, y, bandRight, y + h);
             bands.Add(new StackupBand(
                 band.Name, band.Kind, rect,
-                band.Kind == StackupKind.Conductor ? MetalOf(band, tech) : null,
+                band.Kind == StackupKind.Conductor && !ResistiveFilms.IsFilmLevel(band) ? MetalOf(band, tech) : null,
                 band is { Kind: StackupKind.Conductor, IsGroundReference: true },
                 band.ThicknessDbu));
             y += h;
@@ -907,6 +907,9 @@ public sealed class StackupScene
         g.Add(ThicknessText(layer.ThicknessDbu, tech), StackupField.Thickness, StackupLabelStyle.Spec, font, QuantityGap);
         g.Add(UnitText(tech), StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
 
+        // A film level has no metal, so nothing here describes it: its films' own labels say what it holds.
+        if (ResistiveFilms.IsFilmLevel(layer)) return;
+
         if (layer.Kind == StackupKind.Conductor)
         {
             // In mil — the unit a board is spoken of in — a copper thickness is also read in ounces,
@@ -959,10 +962,12 @@ public sealed class StackupScene
         {
             if (bandLayers[i] is not { Kind: StackupKind.Conductor, Films: { Count: > 0 } onLevel } conductor) continue;
             var band = bands[i].Rect;
-            float height = Math.Min(FilmStripPx, band.Height);
+            // On a film level the strip IS the band, and there is no face: a stated At means nothing (tech.film.face-on-level).
+            bool fills = ResistiveFilms.IsFilmLevel(conductor);
+            float height = fills ? band.Height : Math.Min(FilmStripPx, band.Height);
             foreach (var face in new[] { ConductorSheetSurface.Top, ConductorSheetSurface.Bottom })
             {
-                var here = onLevel.Where(f => ResistiveFilms.FaceOf(f, conductor) == face).ToList();
+                var here = onLevel.Where(f => fills ? face == ConductorSheetSurface.Bottom : ResistiveFilms.FaceOf(f, conductor) == face).ToList();
                 float y0 = face == ConductorSheetSurface.Top ? band.Top : band.Bottom - height;
                 for (int k = 0; k < here.Count; k++)
                 {
@@ -1004,6 +1009,7 @@ public sealed class StackupScene
         g.Add("·", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
         g.Add(FilmSheetResistanceText(film.SheetResistanceOhmPerSq), StackupField.FilmSheetResistance, StackupLabelStyle.Spec, font, PieceGap);
         g.Add("Ω/sq", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        if (ResistiveFilms.IsFilmLevel(conductor)) return;   // the entry's thickness is the film's, and with no metal there is no face
         if (film.ThicknessDbu is { } t)
         {
             g.Add("·", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);

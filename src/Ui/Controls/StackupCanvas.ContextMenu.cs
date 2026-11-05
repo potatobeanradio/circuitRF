@@ -256,7 +256,7 @@ public sealed partial class StackupCanvas
             faces.Add(mi);
         }
         face.ItemsSource = faces;
-        items.Add(face);
+        if (ResistiveFilms.ConductorOf(vm.Working, film) is not { } level || !ResistiveFilms.IsFilmLevel(level)) items.Add(face);
 
         var targets = vm.FilmMoveTargets(film);
         var move = new MenuItem { Header = "Move to", IsEnabled = targets.Count > 0 };

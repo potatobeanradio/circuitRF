@@ -1,0 +1,224 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 5,
+ "AngleMode": "AnyAngle",
+ "SchematicPCellSnapshots": {
+  "R1": {
+   "N": 1,
+   "W": 1.9999999999999998e-05,
+   "L": 9.999999999999999e-05,
+   "Lc": 9.999999999999999e-06,
+   "Film": "Resistor"
+  }
+ },
+ "GeneratedPlacements": {
+  "R1": {
+   "X": 0,
+   "Y": 0,
+   "RotationDeg": 0,
+   "Mirror": false
+  },
+  "Term1": {
+   "X": 0,
+   "Y": 0,
+   "RotationDeg": 0,
+   "Mirror": false,
+   "Text": "1"
+  },
+  "Term2": {
+   "X": 103000,
+   "Y": 0,
+   "RotationDeg": 180,
+   "Mirror": false,
+   "Text": "2"
+  }
+ },
+ "PCellSnapshots": {
+  "TFR_55136c68dba8": {
+   "GeneratorId": "TFR",
+   "Parameters": {
+    "N": 1,
+    "W": 1.9999999999999998e-05,
+    "L": 9.999999999999999e-05,
+    "Lc": 9.999999999999999e-06,
+    "Film": "Resistor"
+   },
+   "TechIdentity": "tech/rfic-Si_3LM_TFR_100um.ctech"
+  }
+ },
+ "Shapes": [
+  {
+   "$type": "Label",
+   "X": -70000,
+   "Y": 0,
+   "Text": "1",
+   "Height": 11000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "SchematicId": "Term1",
+   "PortDirection": "R0",
+   "PortLayer": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 173000,
+   "Y": 0,
+   "Text": "2",
+   "Height": 11000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "SchematicId": "Term2",
+   "PortDirection": "R180",
+   "PortLayer": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "X1": -70000,
+   "Y1": -10000,
+   "X2": -14000,
+   "Y2": 10000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 6,
+    "Datatype": 0
+   },
+   "X1": -22000,
+   "Y1": -6000,
+   "X2": -14000,
+   "Y2": 6000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 2,
+    "Datatype": 0
+   },
+   "X1": -24000,
+   "Y1": -8000,
+   "X2": 1000,
+   "Y2": 8000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "X1": 117000,
+   "Y1": -10000,
+   "X2": 173000,
+   "Y2": 10000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 6,
+    "Datatype": 0
+   },
+   "X1": 117000,
+   "Y1": -6000,
+   "X2": 125000,
+   "Y2": 6000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 2,
+    "Datatype": 0
+   },
+   "X1": 102000,
+   "Y1": -8000,
+   "X2": 127000,
+   "Y2": 8000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 5,
+    "Datatype": 0
+   },
+   "X1": -10000,
+   "Y1": -6000,
+   "X2": -4000,
+   "Y2": 6000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   },
+   "X1": -12000,
+   "Y1": -40000,
+   "X2": -2000,
+   "Y2": 8000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   },
+   "X1": -12000,
+   "Y1": -40000,
+   "X2": 56500,
+   "Y2": -30000
+  },
+  {
+   "$type": "Rect",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   },
+   "X1": 46500,
+   "Y1": -40000,
+   "X2": 56500,
+   "Y2": 30000
+  }
+ ],
+ "Instances": [
+  {
+   "CellRef": "../../.generated-cells/TFR_55136c68dba8",
+   "X": 0,
+   "Y": 0,
+   "Rot": "R0",
+   "MirrorX": false,
+   "Mag": 1,
+   "Rows": 1,
+   "Cols": 1,
+   "PitchX": 0,
+   "PitchY": 0,
+   "SchematicId": "R1",
+   "OrientationLink": {
+    "SchematicDeg": 0,
+    "SchematicMirror": false,
+    "LayoutDeg": 0,
+    "LayoutMirror": false
+   }
+  }
+ ]
+}

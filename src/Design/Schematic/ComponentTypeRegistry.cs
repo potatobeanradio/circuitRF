@@ -1597,6 +1597,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.Tfr, "W") => "Film width. R is the film's sheet resistance times its squares; the contacts "
                                + "and the metal overlap at each end are not included.",
         (SymbolKind.Tfr, "L") => "Length of one segment, between bend centres, or between the contacts' edges for one segment.",
+        (SymbolKind.Tfr, MmicPassiveInjection.FilmParam) => "The resistive film, which sets the sheet resistance and how the part is contacted: "
+          + "through vias on a level of its own, or by the metal's overlap on a level with metal. Default: the first film in the stackup.",
         (SymbolKind.Tfr, "Lc") => "Length of the orthogonal link joining two segments: the clear gap between their edges. "
                                 + "Not used when N is 1.",
         (SymbolKind.Airbridge, "L") => "Span: the bridge's length between its two landings.",
@@ -3374,7 +3376,8 @@ public static class ComponentTypeRegistry
                 return [new("N",  "3",  "",   true,  UnitDimension.None),
                         new("W",  "10", "µm", true,  UnitDimension.Length),
                         new("L",  "40", "µm", true,  UnitDimension.Length),
-                        new("Lc", "10", "µm", false, UnitDimension.Length)];
+                        new("Lc", "10", "µm", false, UnitDimension.Length),
+                        new(MmicPassiveInjection.FilmParam, "", "", false, UnitDimension.None)];
             case SymbolKind.Airbridge:
                 return [new("L",  "30", "µm", true,  UnitDimension.Length),
                         new("W",  "10", "µm", false, UnitDimension.Length),
@@ -3916,7 +3919,7 @@ public static class ComponentTypeRegistry
     /// <summary>Which of the two layer-choice roles (if any) a given (owner, paramName) pair is —
     /// null for every other parameter. Reused by <see cref="MicrostripSubstrateInjection.IsMicrostripKind"/>'s
     /// own kind set rather than a second, duplicate list.</summary>
-    public enum LayerChoiceKind { Signal, Ground }
+    public enum LayerChoiceKind { Signal, Ground, Film }
 
     /// <summary>
     /// True for a parameter naming SEVERAL conductors as comma-separated text — a test pad's <c>ClearLayers</c>
@@ -3928,6 +3931,9 @@ public static class ComponentTypeRegistry
 
     public static LayerChoiceKind? LayerChoiceKindFor(SymbolKind kind, string paramName)
     {
+        // A TFR's film: a resistive film of the technology, by its drawing layer's name.
+        if (kind == SymbolKind.Tfr)
+            return paramName == MmicPassiveInjection.FilmParam ? LayerChoiceKind.Film : null;
         // A via's two ends take any conductor; its GroundLayer only a ground-designated one, as a
         // microstrip's GroundReference does.
         if (ViaSubstrateInjection.IsViaKind(kind))

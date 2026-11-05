@@ -46,7 +46,14 @@ namespace CircuitRF.Design.Layout.Extraction;
 /// <param name="Along">Its position along the body's principal axis, DBU — the tie-break within
 /// one slot.</param>
 public readonly record struct DeviceTerminalCandidate(
-    int Slot, long X, long Y, IReadOnlyList<LayerKey> Layers, long WidthDbu, double Along);
+    int Slot, long X, long Y, IReadOnlyList<LayerKey> Layers, long WidthDbu, double Along)
+{
+    /// <summary>The terminal's extent along the body's principal axis, DBU: its low and high edges there.</summary>
+    public double AlongMin { get; init; }
+
+    /// <inheritdoc cref="AlongMin"/>
+    public double AlongMax { get; init; }
+}
 
 /// <summary>
 /// One connected component of a rule's <c>Body</c> region, measured — <b>a candidate device</b>
@@ -203,7 +210,11 @@ public static class DeviceCandidates
                 touching.Add(new DeviceTerminalCandidate(
                     slot, px, py, layers,
                     Math.Min(pieceBounds.MaxX - pieceBounds.MinX, pieceBounds.MaxY - pieceBounds.MinY),
-                    px * axisX + py * axisY));
+                    px * axisX + py * axisY)
+                {
+                    AlongMin = piece.Min(ring => ring.Min(q => q.X * axisX + q.Y * axisY)),
+                    AlongMax = piece.Max(ring => ring.Max(q => q.X * axisX + q.Y * axisY)),
+                });
             }
 
             // R-lvs14-3b's order: the rule's own layer order first, then position ALONG the

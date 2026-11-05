@@ -79,6 +79,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     }
 
     public StackupKind Kind => Layer.Kind;
+
+    /// <summary>What the card's corner calls the entry.</summary>
+    public string KindLabel => IsFilmLevel ? "Film level" : Kind.ToString();
     public bool IsDielectric => Kind == StackupKind.Dielectric;
     public bool IsConductor  => Kind == StackupKind.Conductor;
     public bool IsVia        => Kind == StackupKind.Via;
@@ -816,6 +819,16 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     /// <summary>A return plane is a termination with no cells for a film to sit on, so it offers no add.</summary>
     public bool CanAddFilm => IsConductor && !Layer.IsGroundReference;
 
+    /// <summary>A level holding only films (<see cref="ResistiveFilms.IsFilmLevel"/>): its card shows what the level has, and
+    /// the fields that describe metal go, because none of them means anything without any.</summary>
+    public bool IsFilmLevel => ResistiveFilms.IsFilmLevel(Layer);
+
+    /// <summary>The rows that describe a conductor's metal: σ, roughness, where its thickness goes.</summary>
+    public bool ShowsMetalFields => IsConductor && !IsFilmLevel;
+
+    /// <summary>The Material row. A film level has no metal to name one for.</summary>
+    public bool ShowsMaterial => HasMaterialChoices && !IsFilmLevel;
+
     public bool HasFilmRows => FilmRows.Count > 0;
 
     private void RefreshFilmRows()
@@ -1013,6 +1026,35 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         _owner.CommitEdit(before, $"Set µr of {Layer.Name}{inMaterial}");
         RaiseReadiness();
     }
+
+    /// <summary>The units the σ field offers. A display choice: the file, and <see cref="StagedSigmaSm"/>, are always S/m.</summary>
+    public static IReadOnlyList<string> SigmaUnitChoices { get; } = ["S/m", "MS/m", "S/cm"];
+
+    private string _selectedSigmaUnit = "S/m";
+    public string SelectedSigmaUnit
+    {
+        get => _selectedSigmaUnit;
+        set
+        {
+            if (SetProperty(ref _selectedSigmaUnit, value ?? "S/m")) OnPropertyChanged(nameof(SigmaInUnit));
+        }
+    }
+
+    private double SigmaUnitScale => _selectedSigmaUnit switch { "MS/m" => 1e6, "S/cm" => 100.0, _ => 1.0 };
+
+    /// <summary>The σ field in <see cref="SelectedSigmaUnit"/>, over <see cref="StagedSigmaSm"/>.</summary>
+    public string SigmaInUnit
+    {
+        get => SigmaUnitScale == 1.0 || !NumericText.TryParseDouble(StagedSigmaSm, out var v)
+            ? StagedSigmaSm : (v / SigmaUnitScale).ToString("0.###e+0", Inv);
+        set
+        {
+            StagedSigmaSm = SigmaUnitScale != 1.0 && NumericText.TryParseDouble(value, out var v)
+                ? (v * SigmaUnitScale).ToString("R", Inv) : value;
+        }
+    }
+
+    partial void OnStagedSigmaSmChanged(string value) => OnPropertyChanged(nameof(SigmaInUnit));
 
     public void CommitSigmaSm()
     {

@@ -710,7 +710,8 @@ public static class NetlistSchematic
 
     private static bool IsLayerName(string parameter) =>
         parameter is "SignalLayer" or "GroundReference" || ViaSubstrateInjection.LayerParams.Contains(parameter)
-        || parameter is TestPadInjection.PadLayerParam or TestPadInjection.ViaFromParam or TestPadInjection.ClearLayersParam;
+        || parameter is TestPadInjection.PadLayerParam or TestPadInjection.ViaFromParam or TestPadInjection.ClearLayersParam
+        || parameter == MmicPassiveInjection.FilmParam;
 
     /// <summary>The folder a schematic in <paramref name="schematicDirectory"/> resolves a <c>File</c> against —
     /// <see cref="SchematicCircuit.ReferenceBaseOf"/>'s rule, taken from the folder because the drawing is not

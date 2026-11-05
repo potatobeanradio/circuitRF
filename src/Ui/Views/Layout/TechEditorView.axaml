@@ -680,31 +680,35 @@
 
                     <!-- TWO rows, and which control is on which is the whole point of the arrangement:
                          the things you ACT with are on the top row (the two boundary conditions, and the
-                         three Add buttons at the right edge), and the things you READ are on the row
+                         four Add buttons), and the things you READ are on the row
                          below. The Add buttons used to be docked to the BOTTOM of the pane, a full
                          stackup's scroll away from the row being added to.
 
-                         ClipToBounds on the top row is the backstop for a window narrow enough that the
-                         starred spacer has run out: the Add buttons are then trimmed at the right edge
-                         rather than painting over the Bottom combo beside them, which is what a Grid
-                         does when its Auto columns no longer fit. -->
+                         ClipToBounds stays the backstop for a pane narrower than one group of them. -->
                     <Grid Grid.Row="0" RowDefinitions="Auto,Auto" RowSpacing="4"
                           ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="6,6" ClipToBounds="True">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Top:" VerticalAlignment="Center" FontSize="11" Margin="0,0,4,0"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell"
+                        <!-- A WrapPanel: the four Add buttons and the two boundary combos need more than a narrow pane has, and the buttons take the next line whole rather than being clipped at the edge. -->
+                        <WrapPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="6">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Top:" VerticalAlignment="Center" FontSize="11" Margin="0,0,4,0"/>
+                        <ComboBox Classes="cell"
                                   ItemsSource="{x:Static lay:TechEditorViewModel.BoundaryConditions}"
                                   SelectedItem="{Binding ViewModel.StackupTop, Mode=TwoWay}"/>
-                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Bottom:" VerticalAlignment="Center" FontSize="11" Margin="12,0,4,0"/>
-                        <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell"
+                        <TextBlock Text="Bottom:" VerticalAlignment="Center" FontSize="11" Margin="12,0,4,0"/>
+                        <ComboBox Classes="cell"
                                   ItemsSource="{x:Static lay:TechEditorViewModel.BoundaryConditions}"
                                   SelectedItem="{Binding ViewModel.StackupBottom, Mode=TwoWay}"/>
+                        </StackPanel>
 
-                        <StackPanel Grid.Row="0" Grid.Column="5" Orientation="Horizontal" Spacing="4"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="4"
+                                    VerticalAlignment="Center" Margin="12,0,0,0">
                             <Button Content="＋ Dielectric" Command="{Binding ViewModel.AddDielectricLayerCommand}" FontSize="11" Padding="8,3"/>
                             <Button Content="＋ Conductor" Command="{Binding ViewModel.AddConductorLayerCommand}" FontSize="11" Padding="8,3"/>
+                            <Button Content="＋ Film Level" Click="OnAddFilmLevelClick" FontSize="11" Padding="8,3"
+                                    ToolTip.Tip="A level of its own for a via-contacted resistor film: no metal, and metal over it passes without touching it."/>
                             <Button Content="＋ Via" Command="{Binding ViewModel.AddViaLayerCommand}" FontSize="11" Padding="8,3"/>
                         </StackPanel>
+                        </WrapPanel>
 
                         <!-- GI3 R-gi3-6/R-gi3-7, plus the three counts beside it. The height is the
                              cheapest possible check on a hand-entered stackup: does it add up? It
@@ -964,7 +968,7 @@
                                             Margin="0,3" Padding="8,6">
                                         <StackPanel Spacing="4">
                                             <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                <TextBlock Grid.Column="0" Text="{Binding Kind}" FontSize="10"
+                                                <TextBlock Grid.Column="0" Text="{Binding KindLabel}" FontSize="10"
                                                            Foreground="{DynamicResource SystemBaseMediumColor}"
                                                            VerticalAlignment="Center" Width="70"/>
                                                 <TextBox Grid.Column="1" Classes="cell" Tag="Name"
@@ -990,7 +994,7 @@
 
                                             <!-- Label column is a fixed width shared between the Thickness and σ
                                                  rows so their TextBoxes start at the same x, even though
-                                                 "Thickness:" and "σ (S/m):" are different lengths. -->
+                                                 "Thickness:" and "σ:" are different lengths. -->
                                             <!-- Hidden on a via row. A via has no z band of its own —
                                                  PlanarExtractor.BuildStack skips every StackupKind.Via
                                                  entry and the barrel's length comes from the Spans pair
@@ -1008,7 +1012,7 @@
                                                  of the row's role (FR-4 among them); picking a built-in
                                                  copies it into this technology. Hidden only when there
                                                  is nothing but "(none)" to offer. -->
-                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasMaterialChoices}">
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowsMaterial}">
                                                 <TextBlock Text="Material:" Width="70" FontSize="11" VerticalAlignment="Center"/>
                                                 <ComboBox Classes="cell" MinWidth="120"
                                                           ItemsSource="{Binding MaterialChoices}"
@@ -1038,14 +1042,17 @@
                                                  it writes into the text box, which stays freely typeable
                                                  and remains the source of truth, and a value matching no
                                                  metal reads back as "Custom". -->
-                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
-                                                <TextBlock Text="σ (S/m):" Width="70" FontSize="11" VerticalAlignment="Center"
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowsMetalFields}">
+                                                <TextBlock Text="σ:" Width="70" FontSize="11" VerticalAlignment="Center"
                                                            ToolTip.Tip="Conductor conductivity at 20 °C, in siemens per metre. It sets conductor loss and skin depth — how deep the current actually flows at frequency, and therefore how much of this metal is doing any work. A conductor with a conductivity of zero or less is REFUSED by the EM path rather than solved, which is what an imported board hits if this is left blank."/>
                                                 <TextBox Classes="cell compact" Width="60" Tag="Sigma"
                                                          Classes.needsvalue="{Binding SigmaNeedsValue}"
-                                                         Text="{Binding StagedSigmaSm}"
+                                                         Text="{Binding SigmaInUnit}"
                                                          ToolTip.Tip="{Binding SigmaTip}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <ComboBox Classes="cell" MinWidth="64" ItemsSource="{Binding SigmaUnitChoices}"
+                                                          SelectedItem="{Binding SelectedSigmaUnit, Mode=TwoWay}"
+                                                          ToolTip.Tip="The unit this field reads in. The file always states S/m."/>
                                                 <ComboBox Classes="cell" MinWidth="96"
                                                           ItemsSource="{Binding ConductorMaterialChoices}"
                                                           SelectedItem="{Binding SelectedConductorMaterial, Mode=TwoWay}"
@@ -1054,7 +1061,7 @@
                                                           IsChecked="{Binding IsGroundReference}"
                                                           ToolTip.Tip="{x:Static lay:StackupCardText.GroundReferenceTip}"/>
                                             </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowsMetalFields}">
                                                 <TextBlock Text="Rough (µm):" Width="70" FontSize="11" VerticalAlignment="Center"
                                                            ToolTip.Tip="RMS surface roughness of this copper, in microns; leave empty for a smooth conductor. Once the skin depth is comparable to it, the current follows the rough surface and the conductor loss rises, up to about double (Hammerstad-Bekkadal). It is applied in the planar and cross-section EM solvers (to this metal, and to the return plane's face when this is the return plane) and to MLIN and MCURVE through the technology. Foil datasheets state it as Rq or Rz; use the RMS (Rq) figure."/>
                                                 <TextBox Classes="cell compact" Width="60" Tag="Roughness"
@@ -1071,7 +1078,7 @@
                                                  authored before this field meant. Top is what a
                                                  capacitor's LOWER plate wants, so the modelled plate
                                                  gap is the capacitor dielectric alone. -->
-                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowsMetalFields}">
                                                 <!-- Owner, 2026-09-09: this row used to read "EM sheet
                                                      at: Bottom / Top", which cannot be answered without
                                                      knowing what a conductor's z BAND is — a word the
@@ -1302,11 +1309,11 @@
                                                                                  LostFocus="OnFilmRsLostFocus"
                                                                                  ToolTip.Tip="What the film is worth per square."/>
                                                                         <TextBlock Text="Ω/sq" FontSize="11" VerticalAlignment="Center"/>
-                                                                        <TextBox Classes="cell" Width="60" Text="{Binding StagedThickness, Mode=TwoWay}"
+                                                                        <TextBox Classes="cell" Width="60" IsVisible="{Binding ShowsFaceAndThickness}" Text="{Binding StagedThickness, Mode=TwoWay}"
                                                                                  PlaceholderText="auto" LostFocus="OnFilmThicknessLostFocus"
                                                                                  ToolTip.Tip="The deposited thickness, read by a 3D solve. Empty lets the generator pick one well under a skin depth."/>
-                                                                        <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="11" VerticalAlignment="Center"/>
-                                                                        <ComboBox Classes="cell" Width="86" ItemsSource="{x:Static lay:StackupFilmRowViewModel.FaceChoices}"
+                                                                        <TextBlock IsVisible="{Binding ShowsFaceAndThickness}" Text="{Binding ThicknessUnitSuffix}" FontSize="11" VerticalAlignment="Center"/>
+                                                                        <ComboBox Classes="cell" Width="86" IsVisible="{Binding ShowsFaceAndThickness}" ItemsSource="{x:Static lay:StackupFilmRowViewModel.FaceChoices}"
                                                                                   SelectedItem="{Binding SelectedFace, Mode=TwoWay}"
                                                                                   ToolTip.Tip="Which face of this level's band the film sits on."/>
                                                                         <Button Content="✕" FontSize="10" Padding="4,1" Command="{Binding RemoveCommand}"

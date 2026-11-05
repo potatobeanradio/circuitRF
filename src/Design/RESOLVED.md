@@ -27901,6 +27901,56 @@ cells across). 180 µm of a 40 µm film at 50 Ω/sq is 225 Ω, and via contact r
 `AnalysisLevelNames` is a choice, so leaving a drawn film out of that is the refusal. The join sits after the incidental-metal
 trim so the trim cannot discard a level the film needs.
 
+
+**A via with one conductor to touch connected nothing.** `DrcConnectivity.Partition` joins a via only when it touches two conductors, the
+right rule for a via mid-edit. A contact via has one, because a film level draws no metal and a film is not copper, so the head and the via
+were separate pieces, and LVS read a resistor between two nets that reached nothing. A via ending on a film level now joins at one touch.
+
+**LVS reads a via film's length between the vias' inner edges, and refuses a rule that does not name the via.** A body of `not(film, metal)` cannot
+describe this style: a strap crossing the film cuts it in two, and a film with no contact via still found its metal, which is how a missing via
+reported a match. `DeviceRecognition` now refuses a rule whose body is a film level's film and whose terminals are not its via. The minimum-area
+rectangle's length would be the whole film, which runs on past the vias, so the terminals' own edges set it. A missing via is
+`lvs.recognize.film-open`. A placed part's film is read off the artwork, because the snapshot's `Film` says only what was asked for.
+
+**`H` under Metal1 skips a band.** `SubstrateResolver` sums dielectrics between signal and ground, so Metal1 over a film level reads 100.2 µm where
+the metal is 100.25 µm above the plane. It is 0.05 %, on an overlap-film `TFR`'s capacitance to ground only, and was left.
+
+**Metal anywhere moves a short film's DC reading, and the metal need not be near it.** A straight 4.5-square film reads 238.69 Ω bare and 230.83 Ω with a
+strip of metal crossing over it, crossing under it, doing both, or lying 10 µm beside it, those four equal to nine figures. Nothing is contacted: the
+extra edges change the mesh, and a via-contacted film's reading follows the cell at its via (the 3.7 % above). So the Si demo's gate compares
+crossing metal with metal beside the film, not with none.
+
+**A Film change does not move a GaAs cell's name.** `Film` reaches the generator only when stated, so a part stating none hashes to its old cell, and
+`TFR`'s generator version stays 2. A technology's content is in the hash, so an edit to a `.ctech` renames every cell drawn on it: the example's
+`.clay` had to be regenerated after the technology's last edit, or it names a cell a headless reader cannot find.
+
+**A shipped technology needs a grounding via.** `ViaComponentTests` holds that a `VIAGND` placed with its defaults warns of nothing on every shipped
+technology, so the Si demo carries a plated `Through-Silicon Via`, Metal3 to Backside Metal, beyond the three vias its brief lists.
+
+**New 3D View from Layout on a placed `TFR`: the GUI is not affected.** The earlier "no metal" comes from a stale instance reference, not from the film.
+A generated cell's folder is a cache, and `examples/PDK PCells/ThinFilmResistor` names one that a current generator no longer produces. A workspace
+open rebuilds it and repoints the layout, after which the view finds its metal. `circuitrf new view3d` and `check` on a `.c3d` never run that step,
+so headlessly it still reads "no metal". Nothing here changes that, since `em`, `lvs`, `render` and `convert` do prepare generated cells and those two do not.
+
+**R-tfrv-4, in 3D: numbers in `testdata/em-tfr/zigzag-via/README.md`.** Planar against Palace is 0.0287 at worst, at 40 GHz, and the owner accepted it, so that
+gate is 0.03 above 10 GHz. Three defects turned up, none of them visible before anyone solved this stack:
+
+- **A via ran past a sheet it joined.** `Em3dLayoutSolids` ended a via at the band's top, and a level with `SheetAt` unstated has its sheet at the bottom, so
+  that part of the sheet lay inside the barrel, a surface of no element, and Palace refused the mesh. A via now ends at the sheet on a level whose every piece is one.
+  No committed dump moved, so nothing had relied on this: the case could only ever be refused.
+- **A wave port's voltage path could abort Palace, by partition.** Its ends lie exactly on the port surface's boundary, and whether Palace finds a point
+  there depends on the ranks: one mesh aborted at 10 and solved at 4 ("found 50/51"), at an end that is a mesh node, so the rule recorded under brief-em3d-113 is not
+  sufficient. `PalaceConfigWriter` moves each end in by 1e-9 of the path's length, which changes `config.json` for every wave port, and the film golden with it, and no
+  S-parameter by anything visible. It reached no provenance hash.
+- **EMerge's film volume contacted metal over it, silently.** A 3 µm volume rising from a film 250 nm under Metal1 passes through that sheet, so a strap joined to
+  nothing took the zig-zag from 295 Ω to 225 Ω at 1 GHz. The 0 Hz row, being circuitRF's own conduction solve, did not show it. It now goes below the film with the displaced
+  dielectric's εᵣ, and metal within reach on both sides is a refusal. With a strap and without now read 297.6 Ω at 1 GHz.
+
+**The halved reactance at EMerge's Standard preset is mesh.** Moving the volume down gave 61j at 40 GHz where Palace gives 131j. The volume's εᵣ was the first
+suspect and was wrong: 1 and 12.9 read the same. At Accurate it is 146j. The note says so; Standard stays the default.
+
+**A dry run's unknowns can be far from the run's.** The example's `--dry-run` read 9,004 unknowns where the run refused at 22,798, and with a coarser mesh and `PlanarMesh.Auto` off 5,137 against 13,365. The difference was
+not traced. Since even the coarser run's calibration standards need about 30 GB, the example's setup is DC, and its README states the full-wave cost.
 ## Designer round 35: a Gerber spike, a planar return in 3D, drill files into a technology, and a slot hiding H (2026-11-04)
 
 **"Overlapping facets" again, with a new cause.** Same Gmsh message as brief-dfr31-6, different geometry. Surfaces 14762 and

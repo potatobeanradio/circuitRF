@@ -799,6 +799,17 @@ public static class LvsDiagnostics
         ("rule", rule), ("where", where), ("found", found), ("expected", expected));
 
     /// <summary>
+    /// A via-contacted film short of a contact via: nothing joins it to the metal at that end, so it is an open, which is
+    /// what an EM run of the same artwork reads.
+    /// </summary>
+    public static Diagnostic RecognizeFilmOpen(
+        string rule, string where, int found, int expected) => Diagnostic.Create(
+        "lvs.recognize.film-open", DiagnosticSeverity.Warning,
+        "Device rule '{rule}' matched a film at {where} with {found} contact via(s) where {expected} are needed: the resistor "
+        + "is an open circuit, so no device was made from it.",
+        ("rule", rule), ("where", where), ("found", found), ("expected", expected));
+
+    /// <summary>
     /// R-lvs14-3c. A body within a few percent of square, so which way is "along" is not decidable
     /// from the shape.
     /// </summary>

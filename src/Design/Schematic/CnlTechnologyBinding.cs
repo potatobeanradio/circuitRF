@@ -189,21 +189,48 @@ public static class CnlTechnologyBinding
     private static Instance? BindMmic(Instance inst, SymbolKind kind, Context context)
     {
         var stated = new HashSet<string>(inst.Overrides.Select(o => o.Name), StringComparer.Ordinal);
-        if (MmicPassiveInjection.InjectedNames(kind).All(stated.Contains)) return null;
+        string label = $"{inst.Reference}:{inst.InstanceName}";
+
+        // A TFR's Film is a word for this step and never reaches the numeric layer. A name no film answers is a refusal,
+        // because the first film would be a different resistor with nothing on the line saying so.
+        string? film = kind == SymbolKind.Tfr
+            ? inst.Overrides.LastOrDefault(o => o.Name == MmicPassiveInjection.FilmParam)?.Expression is { } e
+              && Unquote(e) is { Length: > 0 } named ? named : null
+            : null;
+        var kept = kind == SymbolKind.Tfr
+            ? inst.Overrides.Where(o => o.Name != MmicPassiveInjection.FilmParam).ToList()
+            : [.. inst.Overrides];
+
+        if (MmicPassiveInjection.InjectedNames(kind).All(stated.Contains))
+        {
+            if (kept.Count == inst.Overrides.Count) return null;
+            if (film is not null) context.Tb.ReadNotes.Add($"{label}: Film not used — the line states its own process.");
+            return Rebuilt(inst, kept);
+        }
 
         var tech = context.Technology;
-        if (tech is null) return null;
+        if (tech is null)
+        {
+            if (film is not null)
+                throw new InvalidOperationException(
+                    $"{label} names the film '{film}', but no technology resolves for this netlist (it is not inside a workspace, " +
+                    "or the workspace names no default technology). Put the netlist in a workspace whose technology has that " +
+                    $"film, or state {string.Join(", ", MmicPassiveInjection.InjectedNames(kind))} on the line.");
+            return kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
+        }
 
-        string label = $"{inst.Reference}:{inst.InstanceName}";
-        var (resolved, warning) = MmicPassiveInjection.Build(tech, kind);
+        if (MmicPassiveInjection.FilmRefusal(tech, film) is { } refused)
+            throw new InvalidOperationException($"{label} is refused: {refused}.");
+
+        var (resolved, warning) = MmicPassiveInjection.Build(tech, kind, film);
         if (warning is not null) context.Tb.ReadWarnings.Add($"{label}: {warning}");
         var added = resolved.Where(r => !stated.Contains(r.Name)).ToList();
-        if (added.Count == 0) return null;
+        if (added.Count == 0) return kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
 
         context.Tb.ReadNotes.Add(
             $"{label}: process from the technology {context.TechnologyName} — " +
             string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
-        return Rebuilt(inst, [.. inst.Overrides, .. added]);
+        return Rebuilt(inst, [.. kept, .. added]);
     }
 
     /// <summary>

@@ -368,7 +368,8 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
             var wp = b.GetProperty("WavePort");
             Assert.Equal(2, wp.GetArrayLength());
             Assert.Equal(2000, wp[0].GetProperty("Offset").GetDouble());
-            Assert.Equal(WrB / Um, wp[0].GetProperty("VoltagePath")[1][2].GetDouble(), 6);
+            // 4 places: the path's ends are moved in by 1e-9 of its length, off the port surface's boundary (PalaceConfigWriter).
+            Assert.Equal(WrB / Um, wp[0].GetProperty("VoltagePath")[1][2].GetDouble(), 4);
             var faces = low.Groups.Where(gr => covered.Contains(gr.Name)).Select(gr => gr.Attribute).ToHashSet();
             Assert.DoesNotContain(b.GetProperty("PEC").GetProperty("Attributes").EnumerateArray(), a => faces.Contains(a.GetInt32()));
         }

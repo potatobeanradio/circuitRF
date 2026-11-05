@@ -1,7 +1,7 @@
 refusal (none)
 note The sweep's 0 Hz point is answered by circuitRF's conduction solve of the conductors, not by the 3D solver.
 note 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
-note Resistive film 'Resistor' on 'TFR Level' is a sheet at σ = 4E+05 S/m × t = 50 nm (a thickness well under a skin depth, picked because the layer states none), 50 Ω/sq: for a sheet only the product is physical.
+note Resistive film 'Resistor' on 'TFR Level' is a sheet at σ = 4E+05 S/m × t = 50 nm, 50 Ω/sq: for a sheet only the product is physical.
 note Dielectric 'MIM Dielectric' exists only where 'Nitride' is drawn, and nothing is drawn there, so it is not in the 3D problem.
 note Port 1 ('1') at (0, 0 µm) was taken to be on the conductor's low-x (left) end (inferred from the nearest conductor boundary) of level 1 ('Metal1'), driving current in the +x direction, at 50 Ω.
 note Port 2 ('2') at (800, 0 µm) was taken to be on the conductor's high-x (right) end (inferred from the nearest conductor boundary) of level 1 ('Metal1'), driving current in the −x direction, at 50 Ω.
@@ -18,7 +18,7 @@ solid via/1 Gold Conductor 8 extrude 0.00010300000000000001 0.000106250000000000
 solid via/2 Gold Conductor 9 extrude 0.00010300000000000001 0.00010625000000000001 [0.000315,-2E-05 0.00032,-2E-05 0.00032,2E-05 0.000315,2E-05]
 sheet TFR Level/Resistor/1 Film Resistor 5 0.00010300000000000001 5.0000000000001215E-08 [0.000315,-2E-05 0.00038,-2E-05 0.00038,6E-05 0.00042,6E-05 0.00042,-2E-05 0.000485,-2E-05 0.000485,2E-05 0.00046,2E-05 0.00046,0.0001 0.00034,0.0001 0.00034,2E-05 0.000315,2E-05]
 material Gold 1 - 0 1 41000000
-material Film Resistor 1 - 0 1 400000.00000000006
+material Film Resistor 1 - 0 1 399999.99999999994
 material GaAs 12.9 - 0.0006 1 0
 material TFR Isolation 6.8 - 0.001 1 0
 material MIM Dielectric 6.8 - 0.001 1 0

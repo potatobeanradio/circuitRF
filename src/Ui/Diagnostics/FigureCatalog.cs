@@ -233,6 +233,13 @@ public static class FigureCatalog
           + "process's dielectrics span 0.2 um to 100 um, which is too wide to draw even on its "
           + "own, so they are compressed while staying in order."),
 
+        // TFR-V — a film level between two metals. 460 is StackupScene.Height at 960 for its ten bands and three vias, rounded up.
+        new("stackup-si-tfr", DocStackupFixtures.SiTfrCrossSection, 960, 460, null,
+            "A silicon back-end in cross-section: three aluminium metals in oxide over a silicon "
+          + "substrate, and a film level between Metal1 and Metal2 holding two resistive films. The "
+          + "film fills its band, which has no metal. The contact via lands on it from Metal2, and "
+          + "Via12 passes its height without touching it."),
+
         // MIM-7 — the capacitor module on its own, for the chapter's MIM section. A WINDOW on the
         // figure above, from the same real Technology object, because seven bands at reading size
         // make the 0.2 um film and its tie the two least legible things in the picture.

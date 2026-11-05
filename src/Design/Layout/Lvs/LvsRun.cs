@@ -245,7 +245,7 @@ public static class LvsRun
 
         control?.BeginStage("Reading the schematic");
         var schematicNetlist = SchematicRead.Read(
-            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set, excluded);
+            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set, excluded, tech);
         control?.ThrowIfCancellationRequested();
 
         // R-lvs3-3d's dangling SchematicId needs the other side's names, and NOTHING else here

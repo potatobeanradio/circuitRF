@@ -4,7 +4,10 @@
 using System.Numerics;
 using CircuitRF.Design.Layout;
 using CircuitRF.Core.Design;
+using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Tests.Em3d;
 using RfCore;
@@ -199,6 +202,102 @@ public sealed class FilmLevelTests
     public void AMissingContactViaIsAnOpen()
         => Assert.Null(DcSeriesR(Straight60().Where(x => !(x is RectShape { X1: 250000 } r && r.Layer == Contact)), Tech()));
 
+    // ── R-tfrv-4 — 3D ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>New 3D View from Layout carries the film as a sheet and the contact as a solid.</summary>
+    [Fact]
+    public void A3DViewFromTheLayoutCarriesTheViaAndTheFilm()
+    {
+        string cell = Fixture("zigzag");
+        var made = CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout(cell, Path.Combine(cell, "3d", "z.c3d"), Fixture(".cws"));
+        Assert.True(made.Document is not null, made.Refusal);
+        Assert.Empty(made.PortsLeftOut);
+        var e = CircuitRF.Design.ThreeD.C3dElaborator.ElaborateOnce(made.Document!, Path.Combine(cell, "3d", "z.c3d"), null);
+        Assert.True(e.Ok, string.Join(" ", e.Refusals));
+        Assert.Contains(e.Sheets, s => s.Material == "Film Resistor");
+        Assert.Equal(2, e.Solids.Count(s => s.Name.StartsWith("U1/via/", StringComparison.Ordinal)));
+    }
+
+    /// <summary>A placed TFR's artwork is a generated cell, a cache a checkout does not have. A workspace's open rebuilds it and
+    /// repoints the layout, and then New 3D View finds the metal.</summary>
+    [Fact]
+    public void A3DViewOfAPlacedTfrFindsItsMetalAfterTheWorkspaceOpens()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "crf-filmlevel-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            string example = Path.Combine(PalaceBackendTests.RepoRoot(), "examples", "PDK PCells");
+            Directory.CreateDirectory(root);
+            File.Copy(Path.Combine(example, ".cws"), Path.Combine(root, ".cws"));
+            foreach (string sub in new[] { "tech", "ThinFilmResistor" })
+                foreach (string f in Directory.EnumerateFiles(Path.Combine(example, sub), "*", SearchOption.AllDirectories))
+                {
+                    string to = Path.Combine(root, Path.GetRelativePath(example, f));
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(f, to);
+                }
+            string cws = Path.Combine(root, ".cws");
+            CircuitRF.Design.Layout.PCells.GeneratedCellsLifecycle.RegenerateAll(root, r => r is not null && File.Exists(r) ? TechPersistence.LoadFromFile(r) : null);
+
+            string cell = Path.Combine(root, "ThinFilmResistor");
+            var made = CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout(cell, Path.Combine(cell, "3d", "t.c3d"), cws);
+            Assert.True(made.Document is not null, made.Refusal);
+            Assert.Empty(made.PortsLeftOut);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static Em3dProblem ThreeD(params LayoutShape[] more)
+    {
+        var view = LayoutPersistence.LoadFromFile(Fixture("zigzag", "layout", "zigzag.clay"));
+        view.Shapes.AddRange(more);
+        var tech = Tech();
+        var setup = EmSetupPersistence.LoadFromFile(Fixture("zigzag", "em", "sheets.cem"));
+        var made = Em3dGenerator.Generate(setup, new EmLayoutSource(Fixture("zigzag", "layout", "zigzag.clay"), view, tech, Dbu), tech);
+        Assert.True(made.Problem is not null, made.Refusal);
+        return made.Problem!;
+    }
+
+    /// <summary>The 3D via ends on the metal's sheet. Past it, that sheet would lie inside the barrel and Palace refuses the mesh.</summary>
+    [Fact]
+    public void AViaEndsOnTheSheetsItJoins()
+    {
+        var p = ThreeD();
+        var via = p.Solids.First(s => s.Name.StartsWith("via/", StringComparison.Ordinal));
+        var (_, _, z0, _, _, z1) = Em3dProblem.Bounds(via.Primitive);
+        Assert.Equal(p.Sheets.Single(s => s.Name.StartsWith("Metal1", StringComparison.Ordinal) && s.Name.EndsWith("/1", StringComparison.Ordinal)).Z, z1, 12);
+        Assert.Equal(p.Sheets.Single(s => s.Material == "Film Resistor").Z, z0, 12);
+    }
+
+    /// <summary>EMerge's film is a 3 µm volume, and rising through Metal1 it contacted whatever crossed it: a strap took the zig-zag from
+    /// 295 Ω to 225 Ω at 1 GHz. It goes below the film, keeping the dielectric's permittivity.</summary>
+    [Fact]
+    public void EMergesVolumeKeepsClearOfMetalOverTheFilm()
+    {
+        var p = ThreeD(Rect(Metal1, 330, 30, 390, 50));
+        double film = p.Sheets.Single(s => s.Material == "Film Resistor").Z;
+        var lowered = EmergeLoweringRules.ResistiveSheetsAsVolumes(p, out var notes);
+        var volume = lowered.Solids.Single(s => s.Name.Contains("Resistor", StringComparison.Ordinal));
+        var (_, _, z0, _, _, z1) = Em3dProblem.Bounds(volume.Primitive);
+        Assert.Equal(film, z1, 12);
+        Assert.True(z0 < film);
+        Assert.Equal(12.9, lowered.Materials.Single(m => m.Name == volume.Material).Epsr);
+        Assert.Contains(notes, n => n.Contains("below the film", StringComparison.Ordinal));
+    }
+
+    /// <summary>With metal on both sides of the film inside that span, EMerge has nowhere to put it, and says so by name.</summary>
+    [Fact]
+    public void EMergeRefusesAFilmWithMetalCloseOnBothSides()
+    {
+        var p = ThreeD();
+        Assert.Null(EmergeLoweringRules.ResistiveVolumeRefusal(p));
+        double film = p.Sheets.Single(s => s.Material == "Film Resistor").Z;
+        var under = p.Sheets.First(s => s.Name.StartsWith("Metal1", StringComparison.Ordinal)) with { Name = "Under", Z = film - 0.4e-6, Outline = p.Sheets.Single(s => s.Material == "Film Resistor").Outline };
+        string why = EmergeLoweringRules.ResistiveVolumeRefusal(p with { Sheets = [.. p.Sheets, under] })!;
+        Assert.Contains("Under", why);
+        Assert.Contains("Palace", why);
+    }
+
     // ── The committed runs (testdata/em-tfr/zigzag-via/README.md) ─────────────────────────────────
 
     private static Dictionary<double, Complex[]> ReadS2p(string path)
@@ -225,6 +324,49 @@ public sealed class FilmLevelTests
         var without = ReadS2p(Fixture("refs", "p_thru_noband.s2p"));
         Assert.Equal(6, with.Count);
         foreach (double f in with.Keys) Assert.InRange(WorstDelta(with, without, f), 0, 0.002);
+    }
+
+    /// <summary>Gate 7 — the planar film section against Palace's, de-embedded by each solver's own thru. The owner accepted the
+    /// worst of them, 0.0287 at 40 GHz, so the gate is 0.03 where EM-TFR's is 0.02 (README). It is met at 0.02 through 10 GHz.</summary>
+    [Theory]
+    [InlineData("pa")]
+    [InlineData("pb")]
+    public void TheFilmSectionAgreesWithPalace(string run)
+    {
+        static (Complex A, Complex B, Complex C, Complex D) Abcd(Complex[] s)
+        {
+            Complex s11 = s[0], s21 = s[1], s12 = s[2], s22 = s[3], d = 2 * s21;
+            const double z = 50;
+            return (((1 + s11) * (1 - s22) + s12 * s21) / d, z * ((1 + s11) * (1 + s22) - s12 * s21) / d,
+                    ((1 - s11) * (1 - s22) - s12 * s21) / (d * z), ((1 - s11) * (1 + s22) + s12 * s21) / d);
+        }
+        // The section between two half-thrus, and its S: the ABCD square root deembed.py takes.
+        static Complex[] Section(Complex[] dut, Complex[] thru)
+        {
+            var (a, b, c, d) = Abcd(dut);
+            var (ta, tb, tc, td) = Abcd(thru);
+            Complex sd = Complex.Sqrt(ta * td - tb * tc), st = Complex.Sqrt(ta + td + 2 * sd);
+            Complex ha = (ta + sd) / st, hb = tb / st, hc = tc / st, hd = (td + sd) / st;
+            if (ha.Real < 0) (ha, hb, hc, hd) = (-ha, -hb, -hc, -hd);
+            Complex det = ha * hd - hb * hc;
+            (Complex ia, Complex ib, Complex ic, Complex id) = (hd / det, -hb / det, -hc / det, ha / det);
+            Complex ma = ia * a + ib * c, mb = ia * b + ib * d, mc = ic * a + id * c, md = ic * b + id * d;
+            Complex ra = ma * ia + mb * ic, rb = ma * ib + mb * id, rc = mc * ia + md * ic, rd = mc * ib + md * id;
+            const double z = 50;
+            Complex den = ra + rb / z + rc * z + rd;
+            return [(ra + rb / z - rc * z - rd) / den, 2 / den, 2 * (ra * rd - rb * rc) / den, (-ra + rb / z - rc * z + rd) / den];
+        }
+        var pd = ReadS2p(Fixture("refs", "p_dut.s2p"));
+        var pt = ReadS2p(Fixture("refs", "p_thru.s2p"));
+        var rd = ReadS2p(Fixture("refs", run + "_dut.s2p"));
+        var rt = ReadS2p(Fixture("refs", run + "_thru.s2p"));
+        Assert.Equal(6, rd.Count);
+        foreach (double f in rd.Keys)
+        {
+            var p = Section(pd[f], pt[f]);
+            var r = Section(rd[f], rt[f]);
+            for (int e = 0; e < 4; e++) Assert.InRange((p[e] - r[e]).Magnitude, 0, f <= 10 ? 0.02 : 0.03);
+        }
     }
 
     /// <summary>Gate 2 — the same resistor on its own level against the overlap run. Its length is the same, by construction.</summary>

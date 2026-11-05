@@ -354,6 +354,11 @@ internal static class DrcConnectivity
             bool spansUndrawnGround =
                 !groundDraws && groundName is not null && spannedNames.Contains(groundName, StringComparer.Ordinal);
 
+            // TFR-V — a via ending on a film level has one conductor to touch, because the level draws no metal and a film is not
+            // copper. The via is part of the metal at its other end, and the film beneath it is a device between two such nets.
+            bool endsOnFilm = tech.Stackup.Layers.Any(l => ResistiveFilms.IsFilmLevel(l)
+                && (string.Equals(l.Name, from, StringComparison.Ordinal) || string.Equals(l.Name, to, StringComparison.Ordinal)));
+
             foreach (var viaLayer in via.DrawingLayers)
             {
                 if (!byLayer.TryGetValue(viaLayer, out var viaPieces)) continue;
@@ -385,7 +390,7 @@ internal static class DrcConnectivity
                     // A via touching only one conductor is a real, common state mid-edit — it
                     // connects nothing yet. It is not an error here; a rule about it is a rule's
                     // business. Unchanged: what widened is WHICH conductors are candidates.
-                    if (touched.Count < 2) continue;
+                    if (touched.Count < (endsOnFilm ? 1 : 2)) continue;
 
                     foreach (int hit in touched)
                     {

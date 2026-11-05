@@ -66,7 +66,7 @@ public static class StackupFieldReadiness
                 : null,
 
         StackupField.Sigma =>
-            layer.Kind == StackupKind.Conductor && layer.SigmaSm <= 0
+            layer.Kind == StackupKind.Conductor && layer.SigmaSm <= 0 && !ResistiveFilms.IsFilmLevel(layer)
                 ? "An EM run needs a positive conductivity here — it is what sets conductor loss and skin depth. Pick a metal from the list beside this box, or type your process's own figure."
                 : null,
 

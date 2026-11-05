@@ -2273,8 +2273,12 @@ Extract the drawn coil for a value to rely on:
 whose clear length between the segments is <code>Lc</code>. An <code>N</code> of 1 is a straight film with its contacts <code>L</code> apart. An odd <code>N</code> leaves the
 two ends on opposite sides, and an even <code>N</code> on the same side.</p>
 <p>Its resistance is the film's sheet resistance times its squares: the straight film between the bends, plus 0.559 of a square for
-each corner. The contacts and their overlap of the film are not included. A technology <a href="stackup.md#film">states its film on a
-conductor</a>, which models an overlap-contact resistor, with metal lapping the film's ends.</p>
+each corner. The contacts are not included.</p>
+<p><code>Film</code> chooses among the technology's <a href="stackup.md#film">resistive films</a>, and it decides both the sheet resistance and the contact.
+Each row of the combobox says what it gives. On a level with metal the part draws contacts lapping the film's ends, and <code>L</code> runs
+between their edges. On a <a href="stackup.md#film-level">film level</a> it draws a head on the metal at the contact via's far end with a via
+inside it, and <code>L</code> runs between the vias' inner edges. Left at its default it is the first film in the stackup. A name that matches no
+film is a refusal listing the real ones, in the dialog, in <code>check</code> and in a run.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -2288,6 +2292,7 @@ conductor</a>, which models an overlap-contact resistor, with metal lapping the 
 <tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Film width. R is the film&#39;s sheet resistance times its squares; the contacts and the metal overlap at each end are not included.</td></tr>
 <tr><td>L</td><td><code>40</code></td><td>&#181;m</td><td>shown</td><td>Length of one segment, between bend centres, or between the contacts&#39; edges for one segment.</td></tr>
 <tr><td>Lc</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Length of the orthogonal link joining two segments: the clear gap between their edges. Not used when N is 1.</td></tr>
+<tr><td>Film</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The resistive film, which sets the sheet resistance and how the part is contacted: through vias on a level of its own, or by the metal&#39;s overlap on a level with metal. Default: the first film in the stackup.</td></tr>
 </tbody></table>
 <h3 id="airbridge">Air Bridge (AIRBRIDGE)</h3>
 <figure class="symbol"><span class="frame">

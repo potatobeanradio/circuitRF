@@ -2428,16 +2428,433 @@ deposited on: open that conductor's card, and under <strong>Resistive films</str
 drawing. <strong>Add Resistor Film</strong> makes an existing drawing layer a film and asks for its sheet resistance. <strong>New Resistor Film…</strong>
 asks for a name as well and creates the drawing layer with it. On the Layers tab a film's layer is an ordinary row: name,
 colour, pattern and order.</p>
-<p><strong>A film models an overlap-contact resistor.</strong> Thin-film resistors are contacted in one of two ways, and a film here is the first:</p>
+<p><strong>A film is contacted in one of two ways, and the level it is on says which.</strong></p>
 <ul>
-<li><strong>Overlap contact</strong>, common on GaAs. The film lies on the substrate or a passivation layer, on the same surface the metal is
-deposited on, and the metal laps over its ends. The contact is the metal's underside on the film's top surface, across the
-overlap.</li>
-<li><strong>Via contact</strong>, common in a silicon back-end. The film has a level of its own in the dielectric, and dedicated vias join it to
-a metal level. Metal can cross such a film without touching it, and the via openings set the resistor's length.</li>
+<li><strong>Overlap contact</strong>, common on GaAs. The film is on a level that has metal. It lies on the substrate or a passivation layer, on the
+same surface the metal is deposited on, and the metal laps over its ends. The contact is the metal's underside on the film's top
+surface, across the overlap, and metal drawn over the film is a contact wherever it lies.</li>
+<li><strong>Via contact</strong>, common in a silicon back-end. The film has a <strong>film level</strong> of its own in the dielectric, and dedicated vias join
+it to a metal level. Metal can cross such a film without touching it, and the via openings set the resistor's length.</li>
 </ul>
-<p>A film cannot state the second kind: any metal drawn over a film on its own level is a contact. Contact resistance is not
-modelled either, so the overlap is an ideal short. Where it matters, as on a low-value resistor, add it in the schematic.</p>
+<p>Contact resistance is not modelled in either, so a contact is an ideal short. Where it matters, as on a low-value resistor, add it
+in the schematic.</p>
+<h3 id="film-level">A film level</h3>
+<p><strong>＋ Film Level</strong> adds a Conductor entry with no metal, and asks for its film: an unused drawing layer or a new one, a sheet
+resistance, and which entry it goes below. In the <code>.ctech</code> it is a <code>Conductor</code> whose <code>DrawingLayers</code> is empty and whose <code>Films</code> is not.
+Its card shows its name, thickness and films, since nothing else on a conductor's card means anything without metal, and the drawing
+fills its band with its film. Checking a drawing layer on the card gives it metal, and it is an ordinary metal level from then on,
+whose film is overlap-contact.</p>
+<p>A film level needs:</p>
+<ul>
+<li><strong>A via.</strong> Add a via entry whose span ends on the level. The other end is the metal a <code>TFR</code> draws its heads on. With no via a film
+there can only ever be an open, and <code>check</code> warns.</li>
+<li><strong>A dielectric each side.</strong> A conductor directly above or below is an error, because nothing separates them.</li>
+</ul>
+<p>Its thickness is the entry's, so a film on one states no thickness and no face: a stated one is unused, and <code>check</code> warns. A
+drawn film's level joins a planar run on its own, and the run says so. Naming a list of levels in <code>AnalysisLevelNames</code> that leaves
+it out is a refusal, because a film left out of a run reads as an open circuit.</p>
+<p>A via-contacted film reads long at DC, by up to half a via cell at each end, because the current reaches a via at its cells' centres.
+A 4.5-square test film at the shipped mesh is 3.7 % high, falling to 1.6 % at 32 cells across.</p>
+<p><strong>In 3D the three solvers differ.</strong> On a zig-zag film 250 nm under a 3 µm metal, over 100 µm of GaAs:</p>
+<ul>
+<li><strong>Palace</strong> takes it as it stands. <code>Sheets</code> and <code>Solids</code> agree to 0.002 in |S| through 40 GHz, in a mesh 12 % larger than the same resistor as overlap contact.</li>
+<li><strong>EMerge</strong> solves a film as a volume at least 2 µm thick, on a film of this sheet resistance. It puts that volume below the level when metal lies over the film,
+and refuses, naming both metals, when metal lies on both sides closer than that. Below a film the Standard preset read half the reactance, so use
+<strong>Accurate</strong>, which took 18 s here. The run's note says so.</li>
+<li><strong>openEMS</strong> needs a cell the size of the thinnest gap. A 250 nm cell over this structure is estimated at 4.2 hours.</li>
+</ul>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="460" viewBox="0 0 960 460"><rect fill="white" width="960" height="460" /><rect fill="#F6F8FA" width="960" height="460" /><clipPath id="stackup-si-tfr_cl_0"><path d="M0 0L960 0L960 446.94L0 446.94L0 0ZM52.53 36.9L62.53 36.9L62.53 406.04L52.53 406.04L52.53 36.9Z" clip-rule="evenodd" /></clipPath><g clip-path="url(#stackup-si-tfr_cl_0)"><rect fill="#B06018" x="24" y="36.9" width="501.6" height="36" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="36.9" width="501.6" height="36" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="72.9" width="501.6" height="34.94" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="72.9" width="501.6" height="34.94" /><rect fill="#C08020" x="24" y="107.84" width="501.6" height="30.63" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="107.84" width="501.6" height="30.63" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="138.47" width="501.6" height="20" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="138.47" width="501.6" height="20" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="158.47" width="501.6" height="16" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="158.47" width="501.6" height="16" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="174.47" width="501.6" height="20" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="174.47" width="501.6" height="20" /><rect fill="#E0B040" x="24" y="194.47" width="501.6" height="30.63" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="194.47" width="501.6" height="30.63" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="225.1" width="501.6" height="34.94" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="225.1" width="501.6" height="34.94" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="260.04" width="501.6" height="110" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="260.04" width="501.6" height="110" /><rect fill="#BE965A" x="24" y="370.04" width="501.6" height="36" /><rect fill="none" stroke="#1E82C8" stroke-width="2.5" stroke-miterlimit="4" x="24" y="370.04" width="501.6" height="36" /><rect fill="#6040B0" x="24" y="158.47" width="250.8" height="16" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="158.47" width="250.8" height="16" /><rect fill="#A04890" x="274.8" y="158.47" width="250.8" height="16" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="274.8" y="158.47" width="250.8" height="16" /></g><rect fill="#606060" x="354.09" y="107.84" width="22" height="117.27" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="354.09" y="107.84" width="22" height="117.27" /><rect fill="#707070" x="286.27" y="36.9" width="22" height="101.57" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="286.27" y="36.9" width="22" height="101.57" /><rect fill="gray" x="185.08" y="107.84" width="22" height="66.63" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="185.08" y="107.84" width="22" height="66.63" /><rect fill="#302070" x="46.53" y="36.9" width="6" height="369.14" /><rect fill="#302070" x="62.53" y="36.9" width="6" height="369.14" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="46.53" y="36.9" width="22" height="369.14" /><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="51.22">
+					Metal3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="51.22">
+					3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="51.22">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="51.22">
+					σ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="51.22">
+					3.77e+7
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="51.22">
+					S/m
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33" y="91.07">
+					ILD3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="583.13" y="91.07">
+					1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="595.03, 601.62" y="91.07">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="620.66, 626.61, 630.84, 633.55" y="91.07">
+					εr =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.45, 652.35, 655.48" y="91.07">
+					4.1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="671.38, 675.41, 681.55, 688.09, 694.53, 697.24" y="91.07">
+					tanδ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="709.14, 716.04, 719.17, 726.07, 732.97" y="91.07">
+					0.001
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="111.97">
+					Metal2
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="111.97">
+					1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="111.97">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="111.97">
+					σ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="111.97">
+					3.77e+7
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="111.97">
+					S/m
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33, 574.13, 577.2, 586.15, 593.95, 601.75, 609.01" y="151.82">
+					ILD2 Upper
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="623.12, 630.02, 633.14" y="151.82">
+					0.4
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.04, 651.63" y="151.82">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="670.67, 676.63, 680.85, 683.57" y="151.82">
+					εr =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="695.47, 702.37, 705.49" y="151.82">
+					4.1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="721.39, 725.43, 731.57, 738.1, 744.54, 747.26" y="151.82">
+					tanδ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="759.16, 766.06, 769.18, 776.08, 782.98" y="151.82">
+					0.001
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 552.64, 560.14, 568.77, 571.84, 578.61, 585.87, 592.68, 599.93" y="172.72">
+					TFR Level
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="612.76, 619.66, 622.78, 629.68" y="172.72">
+					0.05
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="641.58, 648.17" y="172.72">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552.46, 558.77, 564.37, 567.25, 572.85, 576.89, 583.33" y="192.09">
+					Resistor
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="592.55" y="192.09">
+					·
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="601.3, 608.2" y="192.09">
+					50
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="620.1, 628.33, 632.73, 638.33" y="192.09">
+					Ω/sq
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552.46, 558.77, 564.37, 567.25, 572.85, 576.89, 583.33, 587.55, 590.26, 598.39" y="211.04">
+					Resistor Hi
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="606.27" y="211.04">
+					·
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="615.02, 621.92, 628.82" y="211.04">
+					500
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="640.72, 648.95, 653.35, 658.95" y="211.04">
+					Ω/sq
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33, 574.13, 577.2, 583.97, 591.29, 601.94, 609.19" y="250.47">
+					ILD2 Lower
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="623.3, 630.2, 633.33" y="250.47">
+					0.4
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.23, 651.82" y="250.47">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="670.86, 676.81, 681.03, 683.75" y="250.47">
+					εr =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="695.65, 702.55, 705.68" y="250.47">
+					4.1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="721.58, 725.61, 731.75, 738.28, 744.72, 747.44" y="250.47">
+					tanδ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="759.34, 766.24, 769.37, 776.27, 783.17" y="250.47">
+					0.001
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="271.37">
+					Metal1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="271.37">
+					1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="271.37">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="271.37">
+					σ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="271.37">
+					3.77e+7
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="271.37">
+					S/m
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33" y="311.22">
+					ILD1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="583.13" y="311.22">
+					1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="595.03, 601.62" y="311.22">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="620.66, 626.61, 630.84, 633.55" y="311.22">
+					εr =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.45, 652.35, 655.48" y="311.22">
+					4.1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="671.38, 675.41, 681.55, 688.09, 694.53, 697.24" y="311.22">
+					tanδ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="709.14, 716.04, 719.17, 726.07, 732.97" y="311.22">
+					0.001
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.04, 556.62, 560.44, 564.01, 570.68, 578" y="332.12">
+					Silicon
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="594.65, 601.55, 608.45" y="332.12">
+					100
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="620.35, 626.94" y="332.12">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.98, 651.93, 656.15, 658.87" y="332.12">
+					εr =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="670.77, 677.67, 684.57, 687.7" y="332.12">
+					11.9
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="703.6, 707.63, 713.77, 720.3, 726.75, 729.46" y="332.12">
+					tanδ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="741.36, 748.26, 751.39, 758.29, 765.19, 772.09" y="332.12">
+					0.0015
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.72, 560.99, 567.65, 574.96, 581.45, 585.02, 592.82, 600.08, 603.14, 613.77, 621.02, 625.88, 633.15" y="392.91">
+					Backside Metal
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.97" y="392.91">
+					3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="657.87, 664.46" y="392.91">
+					µm
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="683.5, 690.2, 692.92" y="392.91">
+					σ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="704.82, 711.72, 714.85, 721.75, 728.06, 734.96" y="392.91">
+					4.1e+7
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="746.86, 753.54, 757.95" y="392.91">
+					S/m
+			</text><text fill="#1E82C8" font-size="11.5" font-family="IBM Plex Sans" x="776.99, 783.06, 789.59" y="392.91">
+					gnd
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="382.59, 389.59, 392.47, 398.61, 405.51" y="152.78">
+					Via12
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="229.99">
+					Metal1
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="229.99">
+					→
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="229.99">
+					Metal2
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="229.99">
+					solid
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="314.77, 321.77, 324.65, 330.79, 337.69" y="94.68">
+					Via23
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="70.59">
+					Metal2
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="70.59">
+					→
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="70.59">
+					Metal3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="70.59">
+					solid
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="213.58, 220.15, 226.58, 233.94, 236.66, 243.8, 250.24, 256.77, 260.81, 266.95, 272.73" y="152.78">
+					TFR Contact
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="131.34">
+					Metal2
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="131.34">
+					→
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 606.96, 613.39, 620.75, 623.47, 629.23, 635.54, 641.2, 647.51" y="131.34">
+					TFR Level
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="659.64, 665.24, 671.68, 674.81, 677.69" y="131.34">
+					solid
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="75.03, 81.61, 88.14, 92.36, 98.8, 105.33, 111.41, 117.94, 122.53, 129.21, 132.08, 135.21, 138.09, 143.87, 150.31, 156.84, 159.56, 166.56, 169.44" y="246.88">
+					Through-Silicon Via
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="290.74">
+					Metal3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="290.74">
+					→
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 607.9, 614.04, 619.82, 625.88, 631.48, 634.36, 641.03, 647.34, 650.06, 659.39, 665.71, 669.74, 675.88" y="290.74">
+					Backside Metal
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="688.01, 694.68, 697.81, 703.95, 707.99, 714.3, 720.97, 723.69" y="290.74">
+					plated =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="735.59" y="290.74">
+					3
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="747.49, 754.07" y="290.74">
+					µm
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="25.5, 33.04, 40.36, 48.16, 52.31, 55.37, 64.63, 72.43, 79.68" y="24.32">
+					Top: Open
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="92.33, 102.47, 105.54, 110.09, 115.2, 122.45, 129.7, 132.77, 139.26, 147.06, 154.33, 160.99, 168.25, 171.32, 178.58, 186.38, 193.7, 200.51" y="24.32">
+					— free space above
+			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="25.5, 34.12, 41.44, 46.3, 51.16, 58.48, 70.02, 74.17, 77.24, 86.5, 91.6, 98.92, 106.57, 114.21" y="428.36">
+					Bottom: Ground
+			</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="460" viewBox="0 0 960 460"><rect fill="#010101" width="960" height="460" /><rect fill="#15222D" width="960" height="460" /><clipPath id="stackup-si-tfr-dark_cl_0"><path d="M0 0L960 0L960 446.94L0 446.94L0 0ZM52.53 36.9L62.53 36.9L62.53 406.04L52.53 406.04L52.53 36.9Z" clip-rule="evenodd" /></clipPath><g clip-path="url(#stackup-si-tfr-dark_cl_0)"><rect fill="#B06018" x="24" y="36.9" width="501.6" height="36" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="36.9" width="501.6" height="36" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="72.9" width="501.6" height="34.94" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="72.9" width="501.6" height="34.94" /><rect fill="#C08020" x="24" y="107.84" width="501.6" height="30.63" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="107.84" width="501.6" height="30.63" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="138.47" width="501.6" height="20" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="138.47" width="501.6" height="20" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="158.47" width="501.6" height="16" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="158.47" width="501.6" height="16" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="174.47" width="501.6" height="20" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="174.47" width="501.6" height="20" /><rect fill="#E0B040" x="24" y="194.47" width="501.6" height="30.63" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="194.47" width="501.6" height="30.63" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="225.1" width="501.6" height="34.94" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="225.1" width="501.6" height="34.94" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="260.04" width="501.6" height="110" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="260.04" width="501.6" height="110" /><rect fill="#BE965A" x="24" y="370.04" width="501.6" height="36" /><rect fill="none" stroke="#5AB4FF" stroke-width="2.5" stroke-miterlimit="4" x="24" y="370.04" width="501.6" height="36" /><rect fill="#6040B0" x="24" y="158.47" width="250.8" height="16" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="158.47" width="250.8" height="16" /><rect fill="#A04890" x="274.8" y="158.47" width="250.8" height="16" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="274.8" y="158.47" width="250.8" height="16" /></g><rect fill="#606060" x="354.09" y="107.84" width="22" height="117.27" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="354.09" y="107.84" width="22" height="117.27" /><rect fill="#707070" x="286.27" y="36.9" width="22" height="101.57" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="286.27" y="36.9" width="22" height="101.57" /><rect fill="gray" x="185.08" y="107.84" width="22" height="66.63" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="185.08" y="107.84" width="22" height="66.63" /><rect fill="#302070" x="46.53" y="36.9" width="6" height="369.14" /><rect fill="#302070" x="62.53" y="36.9" width="6" height="369.14" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="46.53" y="36.9" width="22" height="369.14" /><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="51.22">
+					Metal3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="51.22">
+					3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="51.22">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="51.22">
+					σ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="51.22">
+					3.77e+7
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="51.22">
+					S/m
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33" y="91.07">
+					ILD3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="583.13" y="91.07">
+					1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="595.03, 601.62" y="91.07">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="620.66, 626.61, 630.84, 633.55" y="91.07">
+					εr =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.45, 652.35, 655.48" y="91.07">
+					4.1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="671.38, 675.41, 681.55, 688.09, 694.53, 697.24" y="91.07">
+					tanδ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="709.14, 716.04, 719.17, 726.07, 732.97" y="91.07">
+					0.001
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="111.97">
+					Metal2
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="111.97">
+					1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="111.97">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="111.97">
+					σ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="111.97">
+					3.77e+7
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="111.97">
+					S/m
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33, 574.13, 577.2, 586.15, 593.95, 601.75, 609.01" y="151.82">
+					ILD2 Upper
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="623.12, 630.02, 633.14" y="151.82">
+					0.4
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.04, 651.63" y="151.82">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="670.67, 676.63, 680.85, 683.57" y="151.82">
+					εr =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="695.47, 702.37, 705.49" y="151.82">
+					4.1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="721.39, 725.43, 731.57, 738.1, 744.54, 747.26" y="151.82">
+					tanδ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="759.16, 766.06, 769.18, 776.08, 782.98" y="151.82">
+					0.001
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 552.64, 560.14, 568.77, 571.84, 578.61, 585.87, 592.68, 599.93" y="172.72">
+					TFR Level
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="612.76, 619.66, 622.78, 629.68" y="172.72">
+					0.05
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="641.58, 648.17" y="172.72">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552.46, 558.77, 564.37, 567.25, 572.85, 576.89, 583.33" y="192.09">
+					Resistor
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="592.55" y="192.09">
+					·
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="601.3, 608.2" y="192.09">
+					50
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="620.1, 628.33, 632.73, 638.33" y="192.09">
+					Ω/sq
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552.46, 558.77, 564.37, 567.25, 572.85, 576.89, 583.33, 587.55, 590.26, 598.39" y="211.04">
+					Resistor Hi
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="606.27" y="211.04">
+					·
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="615.02, 621.92, 628.82" y="211.04">
+					500
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="640.72, 648.95, 653.35, 658.95" y="211.04">
+					Ω/sq
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33, 574.13, 577.2, 583.97, 591.29, 601.94, 609.19" y="250.47">
+					ILD2 Lower
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="623.3, 630.2, 633.33" y="250.47">
+					0.4
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.23, 651.82" y="250.47">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="670.86, 676.81, 681.03, 683.75" y="250.47">
+					εr =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="695.65, 702.55, 705.68" y="250.47">
+					4.1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="721.58, 725.61, 731.75, 738.28, 744.72, 747.44" y="250.47">
+					tanδ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="759.34, 766.24, 769.37, 776.27, 783.17" y="250.47">
+					0.001
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 562.97, 567.84, 575.1, 578.93" y="271.37">
+					Metal1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="595.73" y="271.37">
+					1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="607.63, 614.22" y="271.37">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="633.26, 639.96, 642.67" y="271.37">
+					σ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="654.57, 661.47, 664.6, 671.5, 678.4, 684.71, 691.61" y="271.37">
+					3.77e+7
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="703.52, 710.2, 714.6" y="271.37">
+					S/m
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 550.6, 557.37, 566.33" y="311.22">
+					ILD1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="583.13" y="311.22">
+					1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="595.03, 601.62" y="311.22">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="620.66, 626.61, 630.84, 633.55" y="311.22">
+					εr =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.45, 652.35, 655.48" y="311.22">
+					4.1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="671.38, 675.41, 681.55, 688.09, 694.53, 697.24" y="311.22">
+					tanδ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="709.14, 716.04, 719.17, 726.07, 732.97" y="311.22">
+					0.001
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.04, 556.62, 560.44, 564.01, 570.68, 578" y="332.12">
+					Silicon
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="594.65, 601.55, 608.45" y="332.12">
+					100
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="620.35, 626.94" y="332.12">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.98, 651.93, 656.15, 658.87" y="332.12">
+					εr =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="670.77, 677.67, 684.57, 687.7" y="332.12">
+					11.9
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="703.6, 707.63, 713.77, 720.3, 726.75, 729.46" y="332.12">
+					tanδ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="741.36, 748.26, 751.39, 758.29, 765.19, 772.09" y="332.12">
+					0.0015
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.72, 560.99, 567.65, 574.96, 581.45, 585.02, 592.82, 600.08, 603.14, 613.77, 621.02, 625.88, 633.15" y="392.91">
+					Backside Metal
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.97" y="392.91">
+					3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="657.87, 664.46" y="392.91">
+					µm
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="683.5, 690.2, 692.92" y="392.91">
+					σ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="704.82, 711.72, 714.85, 721.75, 728.06, 734.96" y="392.91">
+					4.1e+7
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="746.86, 753.54, 757.95" y="392.91">
+					S/m
+			</text><text fill="#5AB4FF" font-size="11.5" font-family="IBM Plex Sans" x="776.99, 783.06, 789.59" y="392.91">
+					gnd
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="382.59, 389.59, 392.47, 398.61, 405.51" y="152.78">
+					Via12
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="229.99">
+					Metal1
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="229.99">
+					→
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="229.99">
+					Metal2
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="229.99">
+					solid
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="314.77, 321.77, 324.65, 330.79, 337.69" y="94.68">
+					Via23
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="70.59">
+					Metal2
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="70.59">
+					→
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="70.59">
+					Metal3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="70.59">
+					solid
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="213.58, 220.15, 226.58, 233.94, 236.66, 243.8, 250.24, 256.77, 260.81, 266.95, 272.73" y="152.78">
+					TFR Contact
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="131.34">
+					Metal2
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="131.34">
+					→
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 606.96, 613.39, 620.75, 623.47, 629.23, 635.54, 641.2, 647.51" y="131.34">
+					TFR Level
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="659.64, 665.24, 671.68, 674.81, 677.69" y="131.34">
+					solid
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="75.03, 81.61, 88.14, 92.36, 98.8, 105.33, 111.41, 117.94, 122.53, 129.21, 132.08, 135.21, 138.09, 143.87, 150.31, 156.84, 159.56, 166.56, 169.44" y="246.88">
+					Through-Silicon Via
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="290.74">
+					Metal3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="290.74">
+					→
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 607.9, 614.04, 619.82, 625.88, 631.48, 634.36, 641.03, 647.34, 650.06, 659.39, 665.71, 669.74, 675.88" y="290.74">
+					Backside Metal
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="688.01, 694.68, 697.81, 703.95, 707.99, 714.3, 720.97, 723.69" y="290.74">
+					plated =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="735.59" y="290.74">
+					3
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="747.49, 754.07" y="290.74">
+					µm
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="25.5, 33.04, 40.36, 48.16, 52.31, 55.37, 64.63, 72.43, 79.68" y="24.32">
+					Top: Open
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="92.33, 102.47, 105.54, 110.09, 115.2, 122.45, 129.7, 132.77, 139.26, 147.06, 154.33, 160.99, 168.25, 171.32, 178.58, 186.38, 193.7, 200.51" y="24.32">
+					— free space above
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="25.5, 34.12, 41.44, 46.3, 51.16, 58.48, 70.02, 74.17, 77.24, 86.5, 91.6, 98.92, 106.57, 114.21" y="428.36">
+					Bottom: Ground
+			</text></svg></span>
+</span><figcaption>A silicon back-end in cross-section: three aluminium metals in oxide over a silicon substrate, and a film level between Metal1 and Metal2 holding two resistive films. The film fills its band, which has no metal. The contact via lands on it from Metal2, and Via12 passes its height without touching it.</figcaption></figure>
+<p>The shipped <code>rfic-Si_3LM_TFR_100um</code> technology is an example of this style, with generic round numbers taken from no process. It holds
+two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's <code>High-resistivity silicon</code>, a constant
+tanδ of 0.0015, which is the value at 10 GHz for 10 kΩ·cm. Real conduction loss falls with frequency and a constant tanδ does not, so
+read its substrate loss as correct near 10 GHz only.</p>
 <p>Each film states:</p>
 <table>
 <thead>
@@ -2453,15 +2870,15 @@ modelled either, so the overlap is an ideal short. Where it matters, as on a low
 </tr>
 <tr>
 <td><strong>Thickness</strong></td>
-<td>Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which.</td>
+<td>On a level with metal. Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which.</td>
 </tr>
 <tr>
 <td><strong>Face</strong></td>
-<td>Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet.</td>
+<td>On a level with metal. Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet.</td>
 </tr>
 </tbody>
 </table>
-<p>The drawing shows a film as a strip on its conductor, against its face, in its layer's colour.</p>
+<p>The drawing shows a film as a strip on its conductor, against its face, in its layer's colour. On a film level the strip fills the band.</p>
 <table>
 <thead>
 <tr>
@@ -2480,23 +2897,23 @@ modelled either, so the overlap is an ideal short. Where it matters, as on a low
 </tr>
 <tr>
 <td>Drag it to the other face of its conductor</td>
-<td>Set its face.</td>
+<td>Set its face. On a film level this writes nothing.</td>
 </tr>
 <tr>
 <td>Drag it onto another conductor</td>
-<td>Move it.</td>
+<td>Move it. A move onto a level with metal makes it overlap-contact.</td>
 </tr>
 <tr>
 <td>Right-click it</td>
-<td><strong>Face</strong>, <strong>Move to</strong>, <strong>Remove Film</strong>. Removing a film leaves its drawing layer.</td>
+<td><strong>Face</strong>, <strong>Move to</strong>, <strong>Remove Film</strong>. Removing a film leaves its drawing layer. A film level has no <strong>Face</strong>.</td>
 </tr>
 </tbody>
 </table>
 <p>A film may sit on one conductor. A via, a dielectric and a ground-reference conductor refuse a drop and say why, and a layer
 that is a level's metal cannot also pattern a film.</p>
-<p><strong>Where a film and metal overlap, the cell is metal.</strong> The current in an overlap runs in the metal, so a resistor's
+<p><strong>On a level with metal, where a film and metal overlap, the cell is metal.</strong> The current in an overlap runs in the metal, so a resistor's
 length is the distance between its contacts' edges rather than the length of the film you drew.</p>
-<p><strong>The film and the metal share one sheet, at one height.</strong> A planar solve meshes a conductor as a zero-thickness sheet
+<p><strong>On a level with metal, the film and the metal share one sheet, at one height.</strong> A planar solve meshes a conductor as a zero-thickness sheet
 at one z, and the film is a surface impedance of <code>R_s</code> on the part of that sheet it covers. A film's height above its
 metal's bottom is not a quantity this model has, so a 50 nm film on the bottom face of a 1 µm metal solves the
 same as one at any other height. A 3D setup can see the difference: with <code>Conductors: Solids</code> the metal keeps its

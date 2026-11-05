@@ -1,0 +1,34 @@
+{
+ "FormatVersion": 1,
+ "Name": "ViaResistor",
+ "LayoutRef": "ViaResistor/layout/ViaResistor.clay",
+ "SignalStackupLayerName": "Metal3",
+ "Frequency": {
+  "StartExpr": "0",
+  "StopExpr": "0",
+  "StepExpr": "",
+  "NumPoints": 1,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "DispersionCorrection": true,
+ "AnalysisKind": "Planar",
+ "AnalysisLevelNames": [
+  "Metal3",
+  "Metal2",
+  "TFR Level",
+  "Metal1"
+ ],
+ "PlanarMesh": {
+  "Auto": false,
+  "EdgeMesh": false,
+  "MinCellsAcrossConductor": 3
+ }
+}

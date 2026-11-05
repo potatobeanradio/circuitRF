@@ -70,6 +70,7 @@ public static partial class EmergeScriptWriter
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
+        if (EmergeLoweringRules.ResistiveVolumeRefusal(problem) is { } noRoom) return new(null, [], noRoom, [], 0, 0);
         problem = EmergeLoweringRules.ResistiveSheetsAsVolumes(problem, out var loweringNotes);
         if (EmergeLoweringRules.Refusal(problem, settings) is { } refused) return new(null, [], refused, [], 0, 0);
 

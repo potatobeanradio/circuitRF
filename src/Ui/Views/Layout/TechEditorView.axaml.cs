@@ -707,6 +707,16 @@ public partial class TechEditorView : UserControl
         flyout.ShowAt(button);
     }
 
+    /// <summary>＋ Film Level: which layer the film is on, its sheet resistance and where the level goes, then one edit.</summary>
+    private async void OnAddFilmLevelClick(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as TechDocument)?.ViewModel is not { } vm || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var answer = await Dialogs.ResistorFilmPromptDialog.AskForLevelAsync(owner, vm.FilmLayerPickerRows(), vm.FilmLevelInsertTargets(), vm.DefaultFilmLevelInsertTarget());
+        if (answer is not { } a) return;
+        var existing = vm.FilmLayerChoices().Where(c => c.Name == a.Layer).Select(c => (LayerKey?)c.Key).FirstOrDefault();
+        vm.AddFilmLevel(a.Below, existing, existing is null ? a.Name : null, a.OhmPerSq);
+    }
+
     private void OnFilmRsLostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: StackupFilmRowViewModel row }) row.CommitSheetResistance();

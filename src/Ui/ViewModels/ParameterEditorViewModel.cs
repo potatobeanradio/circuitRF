@@ -1107,6 +1107,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             var (cellVars, emSetups) = AdoptCellVariablesAndModel(comp);
             if (comp.Symbol == SymbolKind.SpiceModel) AdoptSpiceModelDeclaredParameters(comp);
             if (comp.Symbol == SymbolKind.ComposedFET) AdoptComposedFetSwitches(comp);
+            if (comp.Symbol == SymbolKind.Tfr) AdoptTfrFilm(comp);
 
             var built = new List<ParameterRowViewModel>();
             foreach (var param in comp.Parameters)
@@ -1299,6 +1300,24 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 ShowOnSchematic = d.ShowOnSchematic,
             });
         }
+    }
+
+    /// <summary>
+    /// Gives a TFR placed before its film could be chosen the empty Film row, which is the first film: the instance it already
+    /// is. Same rule as <see cref="AdoptDefaultSnpParameters"/>.
+    /// </summary>
+    private static void AdoptTfrFilm(EditableComponent comp)
+    {
+        if (comp.Parameters.Any(p => p.Name.Equals(MmicPassiveInjection.FilmParam, StringComparison.Ordinal))) return;
+        var d = ComponentTypeRegistry.DefaultParameters(SymbolKind.Tfr, comp.PortCount).Single(x => x.Name == MmicPassiveInjection.FilmParam);
+        comp.Parameters.Add(new EditableParameter
+        {
+            Name            = d.Name,
+            Expression      = d.Expression,
+            Unit            = d.Unit,
+            Dimension       = d.Dimension,
+            ShowOnSchematic = d.ShowOnSchematic,
+        });
     }
 
     /// <summary>

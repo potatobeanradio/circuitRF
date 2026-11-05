@@ -1664,6 +1664,14 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
+            // A TFR's film is a drawing layer's NAME for its generator, and empty states nothing, so a part stating no film
+            // hashes to the cell it always did.
+            if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)
+            {
+                if (p.Expression.Trim() is { Length: > 0 } film) resolved[p.Name] = PCellValue.Text(film);
+                continue;
+            }
+
             // A broadside pair's (BCLIN/MBCLIN) layer choices are conductor NAMES for its generator, as a
             // via's are; its cross-section rows are the MODEL's alone (the artwork is W, O and L on the
             // two layers), and an empty one follows the technology.

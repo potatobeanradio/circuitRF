@@ -50,6 +50,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Layout.PCells;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Layout.Lvs;
@@ -325,7 +326,7 @@ public static class LayoutRead
                     new DirectoryInfo(positional).Name, map.Terminals.Count));
 
             var type = DeviceTypes.OfLayout(inst, resolvedDir, subView);
-            var (parameters, parameterFacts) = ParametersOf(subView, resolvedDir);
+            var (parameters, parameterFacts) = ParametersOf(subView, resolvedDir, tech);
             devicePaths.Add(LayoutDesignFlatten.PathOf(inst, instIndex));
 
             // R-lvs3-4a. An MxN array is MxN devices, each with the array element's own transformed
@@ -677,7 +678,7 @@ public static class LayoutRead
     /// </remarks>
     private static (IReadOnlyDictionary<string, object?> Values,
                     IReadOnlyDictionary<string, LvsParameterFact> Facts)
-        ParametersOf(LayoutView? subView, string? cellDir)
+        ParametersOf(LayoutView? subView, string? cellDir, Technology? tech)
     {
         var values = new Dictionary<string, object?>(StringComparer.Ordinal);
         var facts  = new Dictionary<string, LvsParameterFact>(StringComparer.Ordinal);
@@ -706,6 +707,16 @@ public static class LayoutRead
                     facts.TryGetValue(name, out var prior) ? prior.Dimension : UnitDimension.None,
                     origin.IsComputed(name), origin.IsUnread(name));
             }
+
+        // A TFR's film is the layer actually drawn, whatever its snapshot's Film says. The schematic side states the film it
+        // asked for, so a part drawn on another film is a property mismatch even at the same sheet resistance.
+        if (tech is not null && subView?.PCellOrigin?.GeneratorId == TfrPCell.GeneratorId
+            && subView.Shapes.Select(sh => tech.Layers.FirstOrDefault(d => d.Key == sh.Layer && ResistiveFilms.IsFilm(tech, sh.Layer)))
+                             .OfType<LayerDef>().FirstOrDefault() is { } drawn)
+        {
+            values[MmicPassiveInjection.FilmParam] = drawn.Name;
+            facts[MmicPassiveInjection.FilmParam] = new LvsParameterFact(UnitDimension.None);
+        }
 
         return values.Count == 0
             ? (EmptyParameters, EmptyFacts)

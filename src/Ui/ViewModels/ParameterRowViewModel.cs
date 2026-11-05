@@ -243,6 +243,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// of this when needed.</summary>
     private IReadOnlyList<string> _knownLayerChoiceOptions = [];
 
+    /// <summary>A Film row's text by its film's drawing-layer name: null on every other layer choice, whose row IS its value.</summary>
+    private Dictionary<string, string>? _filmRowOfName;
+
     /// <summary>The picker's own option list — "(Default)" first (R-tec-8's empty-means-follow-the-
     /// technology, mirroring L0c's TechRef=null convention), then every conductor layer name for
     /// SignalLayer, or per the owner's explicit instruction ONLY conductors with
@@ -280,7 +283,20 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         var tech = LayerChoiceKind is not null
             ? SchematicTechnology.Of(_schematicVm.EditModel)
             : null;
-        if (tech is not null)
+        _filmRowOfName = null;
+        if (tech is not null && LayerChoiceKind == ComponentTypeRegistry.LayerChoiceKind.Film)
+        {
+            // Each row says what the film gives; the value stored is its drawing layer's name.
+            _filmRowOfName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (level, film) in ResistiveFilms.All(tech))
+                if (tech.Layers.FirstOrDefault(d => d.Key == film.Layer)?.Name is { } name)
+                {
+                    string row = $"{name} · {film.SheetResistanceOhmPerSq:G4} Ω/sq · {level.Name} ({(ResistiveFilms.IsFilmLevel(level) ? "via" : "overlap")})";
+                    _filmRowOfName[name] = row;
+                    known.Add(row);
+                }
+        }
+        else if (tech is not null)
         {
             IEnumerable<StackupLayer> conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor);
             if (LayerChoiceKind == ComponentTypeRegistry.LayerChoiceKind.Ground)
@@ -291,7 +307,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
         var display = new List<string>(known);
         string current = StagedExpression.Trim();
-        if (current.Length > 0 && !display.Contains(current))
+        if (current.Length > 0 && _filmRowOfName?.ContainsKey(current) != true && !display.Contains(current))
             display.Add(current);
 
         if (!display.SequenceEqual(LayerChoiceOptions))
@@ -307,11 +323,13 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// layer-choice parameter from this dialog.</summary>
     public string SelectedLayerChoice
     {
-        get => string.IsNullOrWhiteSpace(StagedExpression) ? DefaultLayerChoiceLabel : StagedExpression;
+        get => string.IsNullOrWhiteSpace(StagedExpression) ? DefaultLayerChoiceLabel
+             : _filmRowOfName?.GetValueOrDefault(StagedExpression.Trim()) ?? StagedExpression;
         set
         {
             if (_isRefreshing) return;
-            string newExpr = value == DefaultLayerChoiceLabel ? "" : value;
+            string newExpr = value == DefaultLayerChoiceLabel ? ""
+                           : _filmRowOfName?.FirstOrDefault(kv => kv.Value == value).Key ?? value;
             if (newExpr == StagedExpression) return;
             StagedExpression = newExpr;
             CommitExpression();
@@ -333,6 +351,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             string expr = StagedExpression.Trim();
             if (expr.Length == 0) return "";
             if (_knownLayerChoiceOptions.Contains(expr)) return "";
+            if (_filmRowOfName is { } films)
+                return films.ContainsKey(expr) ? ""
+                     : MmicPassiveInjection.FilmRefusal(SchematicTechnology.Of(_schematicVm.EditModel), expr) ?? "";
             return $"\"{expr}\" is not a conductor in the resolved technology — falling back to the default.";
         }
     }

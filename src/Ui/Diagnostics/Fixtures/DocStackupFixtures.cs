@@ -98,6 +98,10 @@ public static class DocStackupFixtures
     /// named in the footer rather than redrawn. The full seven-band cross-section is
     /// <c>stackup-mmic</c>, in the same chapter.</para>
     /// </summary>
+    /// <summary>TFR-V — the shipped silicon demo: a film level between two metals, the via-contact style.</summary>
+    public static FigureScene SiTfrCrossSection() => CrossSection(
+        ShippedTechnologies.Load("rfic-Si_3LM_TFR_100um"), include: null, footer: null);
+
     public static FigureScene MimModuleCrossSection() => CrossSection(
         StarterTechnologies.MmicGaAs(),
         include: l => l.Name is "Metal2" or "Air" or "MIM Metal" or "MIM Dielectric" or "Metal1",

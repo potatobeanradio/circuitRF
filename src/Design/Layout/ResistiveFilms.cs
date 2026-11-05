@@ -27,6 +27,15 @@ public static class ResistiveFilms
                 foreach (var film in films) yield return (entry, film);
     }
 
+    /// <summary>True when <paramref name="layer"/> draws a via spanning to the level the film <paramref name="film"/> is on.</summary>
+    public static bool IsContactOf(Technology tech, LayerKey layer, LayerKey film)
+    {
+        string? level = ConductorOf(tech, film)?.Name;
+        return tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(layer)
+            && (string.Equals(l.SpanToLayer, level, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(l.SpanFromLayer, level, StringComparison.OrdinalIgnoreCase)));
+    }
+
     /// <summary>The film entry <paramref name="key"/> patterns, or null when it patterns none.</summary>
     public static StackupFilm? Of(Technology tech, LayerKey key)
     {

@@ -503,9 +503,9 @@
   {
    "Name": "Thin-film resistor",
    "Kind": "Resistor",
-   "Body": "not(4/0, 1/0)",
+   "Body": "4/0",
    "Terminals": [
-    "1/0"
+    "11/0"
    ],
    "Parameters": {
     "R": "TfrSheetResistance * Length / Width"

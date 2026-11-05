@@ -76,6 +76,9 @@ if (Directory.Exists(ws)) Directory.Delete(ws, recursive: true);
 string techPath = Path.Combine(ws, "tech", Path.GetFileName(techSource));
 Directory.CreateDirectory(Path.GetDirectoryName(techPath)!);
 File.Copy(techSource, techPath);
+// A technology names its material libraries relative to itself, and without them it does not load.
+foreach (string lib in Directory.EnumerateFiles(Path.GetDirectoryName(Path.GetFullPath(techSource))!, "*.cmat"))
+    File.Copy(lib, Path.Combine(Path.GetDirectoryName(techPath)!, Path.GetFileName(lib)), true);
 string cws = Path.Combine(ws, ".cws");
 WorkspacePersistence.SaveToFile(cws, new CwsFile { DefaultTechRef = "tech/" + Path.GetFileName(techSource) });
 string cellDir = Path.Combine(ws, design);

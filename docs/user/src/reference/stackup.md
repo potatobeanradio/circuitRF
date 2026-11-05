@@ -623,42 +623,78 @@ drawing. **Add Resistor Film** makes an existing drawing layer a film and asks f
 asks for a name as well and creates the drawing layer with it. On the Layers tab a film's layer is an ordinary row: name,
 colour, pattern and order.
 
-**A film models an overlap-contact resistor.** Thin-film resistors are contacted in one of two ways, and a film here is the first:
+**A film is contacted in one of two ways, and the level it is on says which.**
 
-- **Overlap contact**, common on GaAs. The film lies on the substrate or a passivation layer, on the same surface the metal is
-  deposited on, and the metal laps over its ends. The contact is the metal's underside on the film's top surface, across the
-  overlap.
-- **Via contact**, common in a silicon back-end. The film has a level of its own in the dielectric, and dedicated vias join it to
-  a metal level. Metal can cross such a film without touching it, and the via openings set the resistor's length.
+- **Overlap contact**, common on GaAs. The film is on a level that has metal. It lies on the substrate or a passivation layer, on the
+  same surface the metal is deposited on, and the metal laps over its ends. The contact is the metal's underside on the film's top
+  surface, across the overlap, and metal drawn over the film is a contact wherever it lies.
+- **Via contact**, common in a silicon back-end. The film has a **film level** of its own in the dielectric, and dedicated vias join
+  it to a metal level. Metal can cross such a film without touching it, and the via openings set the resistor's length.
 
-A film cannot state the second kind: any metal drawn over a film on its own level is a contact. Contact resistance is not
-modelled either, so the overlap is an ideal short. Where it matters, as on a low-value resistor, add it in the schematic.
+Contact resistance is not modelled in either, so a contact is an ideal short. Where it matters, as on a low-value resistor, add it
+in the schematic.
+
+### A film level {#film-level}
+
+**＋ Film Level** adds a Conductor entry with no metal, and asks for its film: an unused drawing layer or a new one, a sheet
+resistance, and which entry it goes below. In the `.ctech` it is a `Conductor` whose `DrawingLayers` is empty and whose `Films` is not.
+Its card shows its name, thickness and films, since nothing else on a conductor's card means anything without metal, and the drawing
+fills its band with its film. Checking a drawing layer on the card gives it metal, and it is an ordinary metal level from then on,
+whose film is overlap-contact.
+
+A film level needs:
+
+- **A via.** Add a via entry whose span ends on the level. The other end is the metal a `TFR` draws its heads on. With no via a film
+  there can only ever be an open, and `check` warns.
+- **A dielectric each side.** A conductor directly above or below is an error, because nothing separates them.
+
+Its thickness is the entry's, so a film on one states no thickness and no face: a stated one is unused, and `check` warns. A
+drawn film's level joins a planar run on its own, and the run says so. Naming a list of levels in `AnalysisLevelNames` that leaves
+it out is a refusal, because a film left out of a run reads as an open circuit.
+
+A via-contacted film reads long at DC, by up to half a via cell at each end, because the current reaches a via at its cells' centres.
+A 4.5-square test film at the shipped mesh is 3.7 % high, falling to 1.6 % at 32 cells across.
+
+**In 3D the three solvers differ.** On a zig-zag film 250 nm under a 3 µm metal, over 100 µm of GaAs:
+
+- **Palace** takes it as it stands. `Sheets` and `Solids` agree to 0.002 in |S| through 40 GHz, in a mesh 12 % larger than the same resistor as overlap contact.
+- **EMerge** solves a film as a volume at least 2 µm thick, on a film of this sheet resistance. It puts that volume below the level when metal lies over the film,
+  and refuses, naming both metals, when metal lies on both sides closer than that. Below a film the Standard preset read half the reactance, so use
+  **Accurate**, which took 18 s here. The run's note says so.
+- **openEMS** needs a cell the size of the thinnest gap. A 250 nm cell over this structure is estimated at 4.2 hours.
+
+{{ui: stackup-si-tfr}}
+
+The shipped `rfic-Si_3LM_TFR_100um` technology is an example of this style, with generic round numbers taken from no process. It holds
+two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's `High-resistivity silicon`, a constant
+tanδ of 0.0015, which is the value at 10 GHz for 10 kΩ·cm. Real conduction loss falls with frequency and a constant tanδ does not, so
+read its substrate loss as correct near 10 GHz only.
 
 Each film states:
 
 | | |
 |---|---|
 | **Sheet resistance** | Ω/sq, positive. What a `TFR` on it is worth per square. |
-| **Thickness** | Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which. |
-| **Face** | Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet. |
+| **Thickness** | On a level with metal. Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which. |
+| **Face** | On a level with metal. Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet. |
 
-The drawing shows a film as a strip on its conductor, against its face, in its layer's colour.
+The drawing shows a film as a strip on its conductor, against its face, in its layer's colour. On a film level the strip fills the band.
 
 | Gesture | Means |
 |---|---|
 | Click a film | Select it. Its conductor's card scrolls into view with the film's row shaded. |
 | Double-click its sheet resistance or thickness | Edit in place. |
-| Drag it to the other face of its conductor | Set its face. |
-| Drag it onto another conductor | Move it. |
-| Right-click it | **Face**, **Move to**, **Remove Film**. Removing a film leaves its drawing layer. |
+| Drag it to the other face of its conductor | Set its face. On a film level this writes nothing. |
+| Drag it onto another conductor | Move it. A move onto a level with metal makes it overlap-contact. |
+| Right-click it | **Face**, **Move to**, **Remove Film**. Removing a film leaves its drawing layer. A film level has no **Face**. |
 
 A film may sit on one conductor. A via, a dielectric and a ground-reference conductor refuse a drop and say why, and a layer
 that is a level's metal cannot also pattern a film.
 
-**Where a film and metal overlap, the cell is metal.** The current in an overlap runs in the metal, so a resistor's
+**On a level with metal, where a film and metal overlap, the cell is metal.** The current in an overlap runs in the metal, so a resistor's
 length is the distance between its contacts' edges rather than the length of the film you drew.
 
-**The film and the metal share one sheet, at one height.** A planar solve meshes a conductor as a zero-thickness sheet
+**On a level with metal, the film and the metal share one sheet, at one height.** A planar solve meshes a conductor as a zero-thickness sheet
 at one z, and the film is a surface impedance of `R_s` on the part of that sheet it covers. A film's height above its
 metal's bottom is not a quantity this model has, so a 50 nm film on the bottom face of a 1 µm metal solves the
 same as one at any other height. A 3D setup can see the difference: with `Conductors: Solids` the metal keeps its

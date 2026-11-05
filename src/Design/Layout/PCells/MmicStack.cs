@@ -25,9 +25,11 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <param name="TopPlate">The conductor directly above <paramref name="CapDielectric"/>.</param>
 /// <param name="CapMask">The drawing layer whose shapes put <paramref name="CapDielectric"/> in place.</param>
 /// <param name="TopPlateVia">The via entry that carries the top plate up to the bridge metal.</param>
-/// <param name="ResistorLayer">The drawing layer patterning the first resistive film in stackup order.</param>
+/// <param name="ResistorLayer">The drawing layer patterning the chosen resistive film: the one named, else the first in
+/// stackup order.</param>
 /// <param name="ResistorFilm">That film's entry.</param>
-/// <param name="ResistorLevel">The conductor it is on, which is the metal a <c>TFR</c>'s contacts are drawn on.</param>
+/// <param name="ResistorLevel">The conductor entry it is on. With metal, it is also the metal a <c>TFR</c>'s contacts are
+/// drawn on. Without, the film is via-contacted (<see cref="ResistiveFilms.IsFilmLevel"/>).</param>
 /// <param name="Substrate">The substrate under <paramref name="BaseMetal"/>, to its ground.</param>
 public sealed record ResolvedMmicStack(
     StackupLayer? BaseMetal,
@@ -45,6 +47,21 @@ public sealed record ResolvedMmicStack(
     ResolvedSubstrate? Substrate,
     string? SubstrateFailure)
 {
+    /// <summary>The via spanning to a film level from a metal, or null for an overlap film or a level no via reaches.</summary>
+    public StackupLayer? ResistorContactVia { get; init; }
+
+    /// <summary>The metal at that via's other end: a via-contacted <c>TFR</c>'s heads and its pins.</summary>
+    public StackupLayer? ResistorContactMetal { get; init; }
+
+    /// <summary>The substrate a <c>TFR</c> reads: under the chosen film's level.</summary>
+    public ResolvedSubstrate? ResistorSubstrate { get; init; }
+
+    /// <summary>The sentence refusing a <c>Film</c> that names no film. It is never answered by another film.</summary>
+    public string? FilmRefusal { get; init; }
+
+    /// <summary>True when the chosen film is contacted through vias, not by the metal's overlap.</summary>
+    public bool ResistorIsViaContacted => ResistorLevel is { } level && ResistiveFilms.IsFilmLevel(level);
+
     public static LayerKey Key(StackupLayer? layer, LayerKey fallback)
         => layer is { DrawingLayers.Count: > 0 } ? layer.DrawingLayers[0] : fallback;
 }
@@ -71,7 +88,10 @@ public static class MmicStackResolver
         public static readonly LayerKey TopPlateVia = new(10, 0);
     }
 
-    public static ResolvedMmicStack Resolve(Technology? technology)
+    /// <param name="technology">The technology, or null when none resolves.</param>
+    /// <param name="film">A <c>TFR</c>'s <c>Film</c>: a drawing layer's name. Null or empty takes the first film in stackup
+    /// order, which is what a part stating none has always read.</param>
+    public static ResolvedMmicStack Resolve(Technology? technology, string? film = null)
     {
         if (technology is null)
             return new(null, null, null, 0, 1, null, null, null, null, null, null, null, null, "no technology resolved for this document");
@@ -115,6 +135,7 @@ public static class MmicStackResolver
             .Where(l => l.Kind == StackupKind.Via
                         && Conductor(l.SpanFromLayer) is { IsGroundReference: false }
                         && Conductor(l.SpanToLayer) is { IsGroundReference: false }
+                        && !ResistiveFilms.IsFilmLevel(Conductor(l.SpanFromLayer)!) && !ResistiveFilms.IsFilmLevel(Conductor(l.SpanToLayer)!)
                         && (topPlate is null || !Spans(l, topPlate.Name)))
             .ToList();
         var bridgeVia = bottomPlate is not null
@@ -148,13 +169,62 @@ public static class MmicStackResolver
         }
         else substrateFailure = $"technology '{technology.Name}' stackup has no conductor layer";
 
-        var (resistorLevel, resistorFilm) = ResistiveFilms.All(technology)
-            .FirstOrDefault(f => f.Film.SheetResistanceOhmPerSq > 0 && technology.Layers.Any(d => d.Key == f.Film.Layer));
+        bool named = !string.IsNullOrWhiteSpace(film);
+        var usable = ResistiveFilms.All(technology)
+            .Where(f => f.Film.SheetResistanceOhmPerSq > 0 && technology.Layers.Any(d => d.Key == f.Film.Layer));
+        var (resistorLevel, resistorFilm) = named
+            ? usable.FirstOrDefault(f => string.Equals(technology.Layers.First(d => d.Key == f.Film.Layer).Name, film!.Trim(), StringComparison.OrdinalIgnoreCase))
+            : usable.FirstOrDefault();
         var resistor = resistorFilm is null ? null : technology.Layers.First(d => d.Key == resistorFilm.Layer);
 
+        // A film level has one via reaching it from a metal. A film on a level with metal has none: its metal is its contact.
+        StackupLayer? contactVia = null, contactMetal = null;
+        if (resistorLevel is not null && ResistiveFilms.IsFilmLevel(resistorLevel))
+        {
+            StackupLayer? OtherEnd(StackupLayer via)
+            {
+                string? other = string.Equals(via.SpanToLayer, resistorLevel.Name, StringComparison.OrdinalIgnoreCase) ? via.SpanFromLayer
+                              : string.Equals(via.SpanFromLayer, resistorLevel.Name, StringComparison.OrdinalIgnoreCase) ? via.SpanToLayer : null;
+                return Conductor(other) is { DrawingLayers.Count: > 0, IsGroundReference: false } metal ? metal : null;
+            }
+            contactVia = layers.FirstOrDefault(l => l.Kind == StackupKind.Via && OtherEnd(l) is not null);
+            contactMetal = contactVia is null ? null : OtherEnd(contactVia);
+        }
+
+        // Under the chosen film's level. A part stating no Film on a level with metal keeps what it has always read.
+        var resistorSubstrate = substrate;
+        if (resistorLevel is not null && !ReferenceEquals(resistorLevel, baseMetal) && (named || ResistiveFilms.IsFilmLevel(resistorLevel)))
+            resistorSubstrate = SubstrateResolver.ResolveElectrical(technology, new PCellLayerSelection(resistorLevel.Name, null)).Substrate;
+
+        string? filmRefusal = named && resistorFilm is null
+            ? $"technology '{technology.Name}' has no resistor film '{film!.Trim()}'; {DescribeFilms(technology)}"
+            : null;
+
         return new ResolvedMmicStack(baseMetal, bridgeMetal, bridgeVia, hb, erb, capDielectric, topPlate, capMask,
-                                     topPlateVia, resistor, resistorFilm, resistorLevel, substrate, substrateFailure);
+                                     topPlateVia, resistor, resistorFilm, resistorLevel, substrate, substrateFailure)
+        {
+            ResistorContactVia = contactVia,
+            ResistorContactMetal = contactMetal,
+            ResistorSubstrate = resistorSubstrate,
+            FilmRefusal = filmRefusal,
+        };
     }
+
+    /// <summary>The names a <c>Film</c> may take, in stackup order.</summary>
+    public static IReadOnlyList<string> FilmNames(Technology technology)
+    {
+        ArgumentNullException.ThrowIfNull(technology);
+        return [.. ResistiveFilms.All(technology)
+            .Where(f => f.Film.SheetResistanceOhmPerSq > 0)
+            .Select(f => technology.Layers.FirstOrDefault(d => d.Key == f.Film.Layer)?.Name)
+            .OfType<string>()];
+    }
+
+    /// <summary>The second half of a refused <c>Film</c>: the films there are.</summary>
+    private static string DescribeFilms(Technology technology)
+        => FilmNames(technology) is { Count: > 0 } names
+            ? $"its films are {string.Join(", ", names.Select(n => $"'{n}'"))}"
+            : "it states no film";
 
     /// <summary>The clear gap between two stackup entries (upper index < lower index) and its
     /// permittivity, where a patterned film and a conductor band count as air.</summary>
@@ -176,13 +246,16 @@ public static class MmicStackResolver
     /// <summary>The names a device-recognition formula may use without the technology declaring them (see
     /// <c>DeviceRecognition.ConstantsOf</c>), for a caller that
     /// lists what a formula may use. Absent where the process does not state the number.</summary>
-    public static IReadOnlyList<(string Name, string Expression, string? Unit)> DeckConstants(Technology tech)
+    public static IReadOnlyList<(string Name, string Expression, string? Unit)> DeckConstants(Technology tech, LayerKey? filmLayer = null)
     {
         var list = new List<(string, string, string?)>();
         var stack = Resolve(tech);
 
-        if (stack.ResistorFilm is { } film0)
-            list.Add(("TfrSheetResistance", film0.SheetResistanceOhmPerSq.ToString("R", CultureInfo.InvariantCulture), "Ohm"));
+        // A rule's body names its own film: DeviceRecognition reads this with that film's R_s, so a two-film technology
+        // compares each resistor against its own.
+        double? ownRs = filmLayer is { } key ? ResistiveFilms.SheetResistanceOf(tech, key) : null;
+        if ((ownRs ?? stack.ResistorFilm?.SheetResistanceOhmPerSq) is { } rs)
+            list.Add(("TfrSheetResistance", rs.ToString("R", CultureInfo.InvariantCulture), "Ohm"));
 
         if (stack.CapDielectric is { ThicknessDbu: > 0, Epsr: > 0 } film)
         {
@@ -208,8 +281,14 @@ public static class MmicStackResolver
             MmicPart.MimCap when stack.CapDielectric is null =>
                 $"technology '{technologyName}' has no capacitor dielectric — a dielectric directly between two " +
                 "conductors and tied to a mask by PresentWithLayer",
+            MmicPart.Tfr when stack.FilmRefusal is { } refused => refused,
             MmicPart.Tfr when stack.ResistorLayer is null =>
                 $"technology '{technologyName}' has no resistor film — no conductor in its stackup states one",
+            MmicPart.Tfr when stack.ResistorIsViaContacted && stack.ResistorContactVia is null =>
+                $"technology '{technologyName}' has no contact for resistor film '{stack.ResistorLayer.Name}' — no via joins " +
+                $"'{stack.ResistorLevel!.Name}' to a metal",
+            MmicPart.Tfr when stack.ResistorSubstrate is null =>
+                $"technology '{technologyName}' has no substrate under resistor film '{stack.ResistorLayer.Name}'",
             MmicPart.Spiral or MmicPart.Airbridge when stack.BridgeMetal is null =>
                 $"technology '{technologyName}' has no bridge metal — no via joins '{stack.BaseMetal?.Name}' to a " +
                 "second, non-ground conductor above it",

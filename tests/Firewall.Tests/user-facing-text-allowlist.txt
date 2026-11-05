@@ -1159,6 +1159,7 @@ src/Core/Devices/ComponentModelFactory.cs|TLIN states {stray} but no L. {stray} 
 src/Design/Layout/Text/StrokeFont.cs|the embedded stroke font '{resource}' is missing from {typeof(StrokeFont).Assembly.GetName().Name}
 src/Design/Schematic/CnlTechnologyBinding.cs|{label} is refused: {refused}.
 src/Design/Schematic/CnlTechnologyBinding.cs|{label} names {Describe(namedLayers, Text)}, but {(tech is null ? 
+src/Design/Schematic/CnlTechnologyBinding.cs|{label} names the film '{film}', but no technology resolves for this netlist (it is not inside a workspace, 
 src/Engine/Statistics/LeastSquares.cs|A fit needs at least one observation and one column.
 
 # ── Create from Image's internal invariants (IM-1, IM-2, IM-8; allow-listed 2026-10-10) ───────────────
