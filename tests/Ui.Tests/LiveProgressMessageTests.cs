@@ -31,6 +31,25 @@ public sealed class LiveProgressMessageTests
         return (new LiveProgressMessage(entry, Inline), entry);
     }
 
+    /// <summary>While the operation waits on a question its row draws no bar, whatever it is told meanwhile, and the bar comes back
+    /// as it stands once the question is answered.</summary>
+    [Fact]
+    public void Hold_HidesTheBar_UntilReleased()
+    {
+        var (live, entry) = NewLive();
+        live.Update("Running", indeterminate: true);
+        Assert.True(entry.ShowsProgressBar);
+
+        live.Hold(true);
+        Assert.False(entry.ShowsProgressBar);
+        live.Update("Running", percentComplete: 40);
+        Assert.False(entry.ShowsProgressBar);
+
+        live.Hold(false);
+        Assert.True(entry.ShowsProgressBar);
+        Assert.Equal(40, entry.ProgressValue);
+    }
+
     [Fact]
     public void Update_RewritesTheSameRow_RatherThanAddingAnother()
     {

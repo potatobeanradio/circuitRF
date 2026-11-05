@@ -30,6 +30,8 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
                 Entry.ProgressPercent = Math.Clamp(pct, 0, 100);
         });
 
+    public void Hold(bool held) => marshal(() => Entry.ProgressHeld = held);
+
     public void Finish(MessageLevel level, string outcome, bool keepBar = true)
         => marshal(() =>
         {

@@ -16,12 +16,17 @@
              invisible while every message was one short sentence, and the blast-radius confirmations
              this dialog now carries are paragraphs. Capped here rather than on the Window so a short
              message still sizes down to MinWidth on its own. -->
-        <TextBlock Grid.Row="0"
-                   x:Name="MessageText"
-                   TextWrapping="Wrap"
-                   MaxWidth="460"
-                   VerticalAlignment="Center"
-                   FontSize="13"/>
+        <StackPanel Grid.Row="0" VerticalAlignment="Center" MaxWidth="460" Spacing="10">
+            <TextBlock x:Name="MessageText"
+                       TextWrapping="Wrap"
+                       FontSize="13"/>
+            <!-- A list a message offers: each item wraps within its own column, so its bullet stands clear of every line. -->
+            <StackPanel x:Name="BulletList" IsVisible="False" Spacing="5" Margin="12,0,0,0"/>
+            <TextBlock x:Name="FooterText"
+                       IsVisible="False"
+                       TextWrapping="Wrap"
+                       FontSize="13"/>
+        </StackPanel>
 
         <!-- The message ran straight into the buttons' outlines with the two rows flush. -->
         <StackPanel Grid.Row="1"

@@ -31,6 +31,10 @@ public interface IProgressMessage
     /// </summary>
     void Update(string text, string? counter = null, double? percentComplete = null, bool indeterminate = false);
 
+    /// <summary>Draws no bar while <paramref name="held"/>, whatever the row is told meanwhile: nothing is working, because the
+    /// operation is waiting on a question. A row with no bar has nothing to hold.</summary>
+    void Hold(bool held) { }
+
     /// <summary>
     /// Settles the line: raises it to <paramref name="level"/> and APPENDS the outcome to the END of
     /// the row — after the counter when there is one.

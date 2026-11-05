@@ -116,7 +116,10 @@ public sealed class PalaceFitRemedyTests
         var two = new Em3dMemoryRemedy("2 MPI processes", (long)(10 * GB)) { Processes = 2 };
         var v = OfShare(1.4, two);
         Assert.Equal(Em3dMemoryLevel.Warning, v.Level);
-        Assert.Contains("stopped at this machine's memory limit, unless it is started anyway", v.Text);
+        Assert.Contains("141 % of this machine's", OfShare(1.41).Text);
+        Assert.Contains(", so it will probably be stopped before it finishes.", v.Lead);
+        Assert.Equal(["2 MPI processes — about 10.0 GB, which fits"], v.Options);
+        Assert.DoesNotContain("processes", v.Lead);
 
         var anyway = new Em3dRunService.MemoryGate(_ => true);
         Assert.Null(anyway.Admit(v, new Em3dRunService.RunLog()));
@@ -150,7 +153,7 @@ public sealed class PalaceFitRemedyTests
     {
         long gb = 1_000_000_000;
         var space = new VolumeSpace(20 * gb, 500 * gb);
-        Assert.Contains("may swap about 8.0 GB: the startup disk has 20.0 GB free, and the run is stopped when that falls to 10.0 GB.",
+        Assert.Contains("lets the run swap about 8.0 GB. The startup disk has 20.0 GB free, and the run stops if that falls to 10.0 GB.",
                         DiskFloor.SwapRoom(25 * gb, 17 * gb, space));
         Assert.DoesNotContain("Free about", DiskFloor.SwapRoom(25 * gb, 17 * gb, space));
         Assert.Contains("Free about 5.0 GB more first.", DiskFloor.SwapRoom(32 * gb, 17 * gb, space));

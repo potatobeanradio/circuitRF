@@ -374,6 +374,15 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// is not asked about, and keeps its ceiling.</summary>
     public bool PastMemory => EstimateBytes is { } e && PhysicalBytes > 0 && e > PhysicalBytes;
 
+    /// <summary>What <see cref="Text"/> says, for a question that shows its options as a list: the estimate and what it means (null when
+    /// the verdict has no such parts, and the question shows <see cref="Text"/>), each option, and what follows them.</summary>
+    public string? Lead { get; init; }
+    public IReadOnlyList<string> Options { get; init; } = [];
+    public string? Closing { get; init; }
+
+    /// <summary>What heads a question's list of <see cref="Options"/>, which are in that order.</summary>
+    public const string OptionsHeader = "What would reduce it, largest effect first:";
+
     /// <summary>The run's processes are held to a memory ceiling that starting it anyway lifts, so it may swap: a 3D run's verdict, as
     /// the planar solver's is not.</summary>
     public bool LiftsCeiling { get; init; }
@@ -408,21 +417,25 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
                       (level == Em3dMemoryLevel.Severe
                           ? ". At that size the run will very likely swap or be killed by the operating system. "
                           : share > 1
-                              ? $"; as it stands it will probably be stopped at {scope?.Owner ?? "this machine's"} memory limit, unless it is " +
-                                "started anyway, which lets it swap (the estimate errs high). "
+                              ? ", so it will probably be stopped before it finishes. "
                               : "; a run this size may slow the machine or swap (the estimate errs high). ");
         var useful = remedies.Where(r => r.EstimateBytes is { } b && b < e).ToList();
         // brief-dfr27-5 R-dfr27-5-5 — each says whether it fits; past the confirmation, a list none of which fits says so
         // plainly, rather than leave "anyway" the only way forward the reader is shown.
-        string tail = useful.Count == 0 ? ""
-            : "In order of effect: " + string.Join("; ", useful.Select(r =>
-                  $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}{(r.Fits(physical) ? ", which fits" : "")}")) + ".";
+        var options = useful.Select(r => $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}{(r.Fits(physical) ? ", which fits" : "")}").ToList();
+        string tail = options.Count == 0 ? "" : "In order of effect: " + string.Join("; ", options) + ".";
+        string closing = "";
         if (level == Em3dMemoryLevel.Severe && !useful.Any(r => r.Fits(physical)))
-            tail += $" No setting fits it in {scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
-                    (useful.Any(r => r.Sized) ? "; only a smaller crop would" : "") +
-                    ". As it stands, the run would very likely be stopped for memory part-way through.";
+            closing = $"No setting fits it in {scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
+                      (useful.Any(r => r.Sized) ? "; only a smaller crop would" : "") +
+                      ". As it stands, the run would very likely be stopped for memory part-way through.";
         var raise = scope?.Remedy?.Invoke(e);
-        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File) { Remedies = remedies, LiftsCeiling = true };
+        if (raise?.Text is { } r) closing = (closing + " " + r).TrimStart();
+        return new(level, e, physical, (head + tail + (closing.Length > 0 ? " " + closing : "")).Trim(), raise?.File)
+        {
+            Remedies = remedies, LiftsCeiling = true, Lead = head.TrimEnd(),
+            Options = [.. options.Select(o => char.ToUpperInvariant(o[0]) + o[1..])], Closing = closing,
+        };
     }
 }
 

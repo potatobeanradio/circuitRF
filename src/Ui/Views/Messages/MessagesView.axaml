@@ -186,7 +186,7 @@
                                              Minimum="0" Maximum="100"
                                              Value="{Binding ProgressValue}"
                                              IsIndeterminate="{Binding ProgressIndeterminate}"
-                                             IsVisible="{Binding HasProgress}"
+                                             IsVisible="{Binding ShowsProgressBar}"
                                              ToolTip.Tip="{Binding ProgressTip}"/>
                             </InlineUIContainer>
 

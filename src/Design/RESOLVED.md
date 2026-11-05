@@ -9,6 +9,8 @@ covers what `AskFirst` was for, so that went. **A remedy chosen keeps the ceilin
 the CLI still warns and keeps it. The question carries `DiskFloor.SwapRoom`, because a forced run is then stopped by the disk floor instead, but
 only for a verdict with `LiftsCeiling`: the planar solver shares the dialog and has no such ceiling to lift. **Still open:** a run estimated within
 memory that then reaches it is stopped with no question ever asked, so it has no way to swap.
+The question lists its options from the verdict's `Options`, and `Text` stays one flowing sentence for Messages and a terminal. While it is open the run's
+Messages rows draw no bar (`IProgressMessage.Hold`), since nothing is working and a moving bar says the run has begun.
 
 ## A component port's corner a sliver inside its copper: "a face of no element" (2026-11-05)
 

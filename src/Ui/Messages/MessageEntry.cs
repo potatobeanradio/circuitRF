@@ -39,6 +39,7 @@ public sealed partial class MessageEntry : ObservableObject
     private string?      _progressText;
     private double?      _progressPercent;
     private bool         _progressIndeterminate;
+    private bool         _progressHeld;
     private RunCancellation? _cancellation;
     private string?      _actionLabel;
     private Func<Task>?  _actionInvoke;
@@ -162,6 +163,7 @@ public sealed partial class MessageEntry : ObservableObject
         {
             if (!SetProperty(ref _progressPercent, value)) return;
             OnPropertyChanged(nameof(HasProgress));
+            OnPropertyChanged(nameof(ShowsProgressBar));
             OnPropertyChanged(nameof(ProgressValue));
         }
     }
@@ -173,6 +175,19 @@ public sealed partial class MessageEntry : ObservableObject
         get => _progressIndeterminate;
         internal set => SetProperty(ref _progressIndeterminate, value);
     }
+
+    /// <summary>The operation is waiting on a question, so the row draws no bar until it is answered.</summary>
+    public bool ProgressHeld
+    {
+        get => _progressHeld;
+        internal set
+        {
+            if (SetProperty(ref _progressHeld, value)) OnPropertyChanged(nameof(ShowsProgressBar));
+        }
+    }
+
+    /// <summary>Whether the row's bar is drawn now.</summary>
+    public bool ShowsProgressBar => HasProgress && !_progressHeld;
 
     public bool   HasProgress   => _progressPercent is not null;
     public double ProgressValue => _progressPercent ?? 0;

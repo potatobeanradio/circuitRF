@@ -27,16 +27,32 @@ public partial class SaveChangesDialog : Window
     /// Trash): Cancel becomes the default button, answers Enter and Escape, and holds the focus.
     /// A removal can now be started from the keyboard (Delete in the Workspace panel), and a confirm
     /// that Enter accepts turns a stray Delete-then-Enter into a deleted cell.</param>
+    /// <param name="bullets">A list shown after the message, one bullet per item, indented.</param>
+    /// <param name="footer">Text shown after the list.</param>
     public SaveChangesDialog(
         string  message,
         string  saveLabel     = "Save",
         string? dontSaveLabel = "Don't Save",
         string  cancelLabel   = "Cancel",
         string  title         = "Save Changes",
-        bool    destructive   = false) : this()
+        bool    destructive   = false,
+        IReadOnlyList<string>? bullets = null,
+        string? footer        = null) : this()
     {
         Title                = title;
         MessageText.Text     = message;
+        foreach (string item in bullets ?? [])
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("14,*") };
+            row.Children.Add(new TextBlock { Text = "•", FontSize = 13, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top });
+            var text = new TextBlock { Text = item, TextWrapping = Avalonia.Media.TextWrapping.Wrap, FontSize = 13, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            BulletList.Children.Add(row);
+        }
+        BulletList.IsVisible = BulletList.Children.Count > 0;
+        FooterText.Text      = footer;
+        FooterText.IsVisible = footer is { Length: > 0 };
         SaveButton.Content   = saveLabel;
         CancelButton.Content = cancelLabel;
         if (dontSaveLabel is null)

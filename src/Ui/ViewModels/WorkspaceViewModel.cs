@@ -9230,6 +9230,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
         var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
+        _emRunRows.AddRange([sweepLive, stageLive]);
 
         var emWorkDescriptor = $"the EM run '{setup.Name}'";
 
@@ -9343,6 +9344,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 cancellation.Finish();
                 _emWorkInFlight.Remove(emWorkDescriptor);
+                _emRunRows.Remove(sweepLive);
+                _emRunRows.Remove(stageLive);
                 vm.IsRunning       = false;
                 vm.IsCancelling    = false;
                 vm.IsStopping      = false;
@@ -9725,13 +9728,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// row's label is the changing part by design, so there it goes in the label.</para></param>
     /// <summary>
     /// brief-em3d-21 R-em3d21-2b — asked by a Palace run, on ITS thread, when its memory estimate is
-    /// past 150 % of this machine's: before Gmsh starts, and again before Palace once the mesh's size is
+    /// past this machine's: before Gmsh starts, and again before Palace once the mesh's size is
     /// known. The dialog runs on the UI thread and the run waits for the answer; nothing has started a
     /// solver while it is open.
     ///
     /// <para>brief-em3d-97 R-em3d97-3 — when the verdict names the Linux subsystem's <c>.wslconfig</c>, a third answer,
     /// <i>Give the subsystem more memory first…</i>: the one point BEFORE a run where raising it can help.</para>
     /// </summary>
+    private readonly List<IProgressMessage> _emRunRows = [];
+
     private bool ConfirmEmMemory(CircuitRF.Design.Em3d.Em3dMemoryVerdict verdict)
         => Dispatcher.UIThread.InvokeAsync(async () =>
         {
@@ -9742,22 +9747,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     verdict.Text ?? "", saveLabel: "Run Anyway", dontSaveLabel: null, cancelLabel: "Cancel",
                     title: "This Run May Take a Long Time").ShowDialog<SaveChangesResult>(owner) == SaveChangesResult.Save;
             // A run started anyway swaps, and how much room the disk has for that is what decides whether it finishes.
-            string text = string.Join(" ", new[]
+            string? room = verdict.LiftsCeiling && verdict.File is null && CircuitRF.Design.Em3d.DiskFloor.SwapPath is { } swap && verdict.EstimateBytes is { } estimate
+                ? CircuitRF.Design.Em3d.DiskFloor.SwapRoom(estimate, verdict.PhysicalBytes, CircuitRF.Design.Em3d.DiskFloor.Read(swap))
+                : null;
+            string lead = verdict.Lead is { } l
+                ? l + (verdict.Options.Count > 0 ? "\n\n" + CircuitRF.Design.Em3d.Em3dMemoryVerdict.OptionsHeader : "")
+                : verdict.Text ?? "";
+            string footer = string.Join(" ", new[] { verdict.Closing, room }.Where(t => t is { Length: > 0 }));
+            // Nothing is running while the question is open, so the run's rows draw no bars: a bar moving behind it says the run has begun.
+            foreach (var row in _emRunRows) row.Hold(true);
+            try
             {
-                verdict.Text,
-                verdict.LiftsCeiling && verdict.File is null && CircuitRF.Design.Em3d.DiskFloor.SwapPath is { } swap && verdict.EstimateBytes is { } estimate
-                    ? CircuitRF.Design.Em3d.DiskFloor.SwapRoom(estimate, verdict.PhysicalBytes, CircuitRF.Design.Em3d.DiskFloor.Read(swap))
-                    : null,
-            }.Where(t => t is { Length: > 0 }));
             // brief-dfr27-5 R-dfr27-5-5 — a remedy the run can take itself and that fits (fewer MPI processes) is the default
             // answer; the subsystem's memory dialog stays on the warning's own row in Messages.
             if (verdict.Applicable is [var fits, ..])
             {
                 var answer = await new Views.Dialogs.SaveChangesDialog(
-                    text, saveLabel: fits.Iterative ? "Use the Iterative Solver"
+                    lead, saveLabel: fits.Iterative ? "Use the Iterative Solver"
                                                  : $"Run on {fits.Processes} Process{(fits.Processes == 1 ? "" : "es")}",
                     dontSaveLabel: "Simulate Anyway", cancelLabel: "Don't Simulate",
-                    title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
+                    title: "This Run May Not Fit in Memory", bullets: verdict.Options, footer: footer).ShowDialog<SaveChangesResult>(owner);
                 return AnswerEmMemoryWithRemedy(answer, verdict, fits);
             }
             bool offer = CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(verdict.File);
@@ -9765,10 +9774,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // run that will very likely be stopped part-way.
             bool noneFits = verdict.NothingFits;
             var choice = await new Views.Dialogs.SaveChangesDialog(
-                text, saveLabel: "Simulate Anyway",
+                lead, saveLabel: "Simulate Anyway",
                 dontSaveLabel: offer ? MoreMemoryFirstLabel : null, cancelLabel: "Don't Simulate",
-                title: "This Run May Not Fit in Memory", destructive: noneFits).ShowDialog<SaveChangesResult>(owner);
+                title: "This Run May Not Fit in Memory", destructive: noneFits, bullets: verdict.Options, footer: footer).ShowDialog<SaveChangesResult>(owner);
             return AnswerEmMemory(choice, () => Dispatcher.UIThread.Post(() => _ = RaiseSubsystemMemoryAsync()));
+            }
+            finally
+            {
+                foreach (var row in _emRunRows) row.Hold(false);
+            }
         }).GetAwaiter().GetResult();
 
     internal const string MoreMemoryFirstLabel = "Give the Subsystem More Memory First…";

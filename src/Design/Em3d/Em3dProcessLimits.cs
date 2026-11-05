@@ -166,8 +166,8 @@ public static class DiskFloor
     {
         if (space is not { } s || estimateBytes <= physicalBytes) return null;
         long swap = estimateBytes - physicalBytes, floor = FloorFor(s.TotalBytes), room = s.FreeBytes - floor;
-        return $"Simulate Anyway keeps no memory limit, so the run may swap about {MachineMemory.Format(swap)}: the startup disk has " +
-               $"{MachineMemory.Format(s.FreeBytes)} free, and the run is stopped when that falls to {MachineMemory.Format(floor)}." +
+        return $"Simulate Anyway removes the memory limit and lets the run swap about {MachineMemory.Format(swap)}. The startup disk has " +
+               $"{MachineMemory.Format(s.FreeBytes)} free, and the run stops if that falls to {MachineMemory.Format(floor)}." +
                (room < swap ? $" Free about {MachineMemory.Format(swap - room)} more first." : "");
     }
 
