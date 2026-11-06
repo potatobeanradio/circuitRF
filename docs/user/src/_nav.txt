@@ -86,7 +86,7 @@ reference/antennas.html        | Patch antennas: the pattern, the numbers that g
 
 == SAR and MRI
 reference/sar.html             | SAR and B1 from a 3D run: setting it up, units and normalisation, the B1 convention, reading the results.
-reference/cosimulation.html    | Capacitors as ports: B1 and SAR from a schematic, tuned, optimized and toleranced with no new EM run.
+reference/cosimulation.html    | Parts as ports: B1, SAR and the radiation pattern from a schematic, tuned, optimized and toleranced with no new EM run.
 reference/phantoms.html        | Body tissues and tissue-simulating liquids with their sources, and the phantoms they fill.
 reference/anatomy-import.html  | Your own anatomy: a segmented label map or one closed surface per tissue, imported into a 3D view.
 reference/phone-sar.html       | A device against a phantom at its bands, and psSAR at its rated power beside published reference values.

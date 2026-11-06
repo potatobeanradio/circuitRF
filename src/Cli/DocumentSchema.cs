@@ -988,7 +988,8 @@ internal static class DocumentSchema
             across each part's own pads on a placed layout, numbered after the drawn ports. circuitRF builds
             it on the copper facing the gap (with a landing rectangle where that copper is a cap or an arc,
             in the solved problem only) and verifies it before meshing; `explain --component-ports` lists
-            them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground.
+            them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground, and with
+            CreateSnpSchematic draws it as a "<setup>_cosim" cell in place of the "_sim" cell.
             A gap port, not a pad-to-plane port at each pad: a part between two pad-to-plane ports carries
             its current down one sheet, along the plane and up the other — a loop that is not on the board —
             so a hand-drawn pair of them is a different, approximate model of the part.

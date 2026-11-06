@@ -473,26 +473,31 @@ public static class EmSnpSchematic
             ["CustomYLabel"] = "dB", ["CustomYLabelOn"] = true,
             ["Traces"] = new JsonArray(traces),
         };
-
-        static JsonNode Trace(string source, int outPort, int inPort, int colour) => new JsonObject
-        {
-            ["SourcePath"] = source, ["Row"] = 0, ["Col"] = 0, ["MatrixType"] = "S", ["Derived"] = "None",
-            ["InputPort"] = inPort, ["OutputPort"] = outPort, ["YAxis"] = "Db", ["UseSecondaryAxis"] = false,
-            ["Z0"] = "50", ["Z0Override"] = false, ["CubeName"] = "S",
-            ["CubeSlice"] = new JsonArray(
-                Slice("freq", "KeepAsX", 0), Slice("i", "PinToIndex", outPort - 1), Slice("j", "PinToIndex", inPort - 1)),
-            ["CubeTransform"] = "dB20", ["Expression"] = null,
-            ["Label"] = $"dB(S({outPort},{inPort}))",
-            ["Properties"] = new JsonObject
-            {
-                ["LineEnabled"] = true, ["LineWidth"] = 2, ["LineColorIndex"] = colour, ["LineType"] = "Solid",
-                ["MarkerEnabled"] = false, ["MarkerSize"] = 1.5, ["MarkerColorIndex"] = colour, ["MarkerType"] = "Circle",
-            },
-        };
-
-        static JsonObject Slice(string axis, string role, int index) => new()
-        {
-            ["AxisName"] = axis, ["Role"] = role, ["Index"] = index, ["RangeStart"] = 0, ["RangeEndExclusive"] = -1, ["Label"] = "",
-        };
     }
+
+    /// <summary>A dB trace of one S entry, reading <paramref name="cube"/>: <c>S</c> on a one-analysis bench, <c>SP1.S</c> beside another analysis.</summary>
+    internal static JsonNode Trace(string source, int outPort, int inPort, int colour, string cube = "S") => new JsonObject
+    {
+        ["SourcePath"] = source, ["Row"] = 0, ["Col"] = 0, ["MatrixType"] = "S", ["Derived"] = "None",
+        ["InputPort"] = inPort, ["OutputPort"] = outPort, ["YAxis"] = "Db", ["UseSecondaryAxis"] = false,
+        ["Z0"] = "50", ["Z0Override"] = false, ["CubeName"] = cube,
+        ["CubeSlice"] = new JsonArray(
+            Slice("freq", "KeepAsX", 0), Slice("i", "PinToIndex", outPort - 1), Slice("j", "PinToIndex", inPort - 1)),
+        ["CubeTransform"] = "dB20", ["Expression"] = null,
+        ["Label"] = $"dB(S({outPort},{inPort}))",
+        ["Properties"] = TraceProperties(colour),
+    };
+
+    /// <summary>A trace's line and marker settings: a solid line in the colour, no markers.</summary>
+    internal static JsonObject TraceProperties(int colour) => new()
+    {
+        ["LineEnabled"] = true, ["LineWidth"] = 2, ["LineColorIndex"] = colour, ["LineType"] = "Solid",
+        ["MarkerEnabled"] = false, ["MarkerSize"] = 1.5, ["MarkerColorIndex"] = colour, ["MarkerType"] = "Circle",
+    };
+
+    /// <summary>How a cube axis enters a trace.</summary>
+    internal static JsonObject Slice(string axis, string role, int index) => new()
+    {
+        ["AxisName"] = axis, ["Role"] = role, ["Index"] = index, ["RangeStart"] = 0, ["RangeEndExclusive"] = -1, ["Label"] = "",
+    };
 }

@@ -336,7 +336,7 @@ in 3D, the solver's (<code>Setup.palace</code>), in the workspace's <code>result
 <code>.sNp</code>, <code>.npy</code> or <code>.cemr</code> you do type is removed, and the same structure re-run with a coupled pair goes from
 <code>.s2p</code> to <code>.s4p</code> on its own. The <code>…</code> button browses; a path inside the workspace is stored relative so the
 workspace stays portable. <strong>A run replaces the result of the same name, so a new name is how an earlier
-result is kept</strong>, and each name has its own <code>_sim</code> cell and co-simulation netlist. A result outside <code>results/</code>
+result is kept</strong>, and each name has its own <code>_sim</code> or <code>_cosim</code> cell and co-simulation netlist. A result outside <code>results/</code>
 is not in a Data Display's list of sources: choose <strong>Add from file…</strong> in a trace's source list to plot it.</p>
 <p><strong>Layout</strong> — the <code>.clay</code> this setup analyses, and the <code>…</code> button re-points it. Re-pointing re-derives the
 cross-section, the ports and the mesh against the new artwork, and it is undoable.</p>
@@ -1182,6 +1182,8 @@ between a port and its <code>TermG</code>.</p>
 has just rewritten, so it picks up the new result unchanged. If the port count changed, its <code>SnP</code> is
 pointed at the new file and Messages says when its <code>TermG</code>s no longer match. A cell of that name that
 reads something else is left alone, and Messages says so. <code>circuitrf em</code> honours the same tick.</p>
+<p>A run with <strong>component ports</strong> makes a <code>_cosim</code> cell in place of the <code>_sim</code> one, because a <code>TermG</code> on a part's port would have no part on it: each part
+stands on its own port, with the analyses and a Data Display. <a href="cosimulation.html#pattern">Co-simulation</a> describes it.</p>
 <p>Without the tick, place an <a href="components.html#snp">SnP component</a> yourself and point its <code>File</code>
 parameter at the written path. Re-running updates the file in place, so the schematic picks the new
 result up the way it picks up any changed source.</p>

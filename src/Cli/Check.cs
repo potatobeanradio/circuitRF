@@ -1717,6 +1717,9 @@ internal static class Check
                         path, ec.InstancePath,
                         ec.Nodes[0] < nl.Nodes.Count ? nl.Nodes.NameOf(ec.Nodes[0]) : $"node {ec.Nodes[0]}"));
 
+            foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
+                f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));
+
             // Will anything dispatch? Two questions, and only the second one uses ChainSelector.
             //
             // First: does the document declare an analysis AT ALL — the GUI's own NoAnalysis test.

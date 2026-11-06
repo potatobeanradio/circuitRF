@@ -1750,6 +1750,15 @@ internal static class CliDiagnostics
         ("path", path), ("probe", probe), ("net", net));
 
     /// <summary>
+    /// brief-cosim-pattern-6 R-cp6-5 — a part between two gap ports' nodes is in series with the port references, so it is not the board.
+    /// </summary>
+    public static Diagnostic CheckPartBetweenGapPorts(string path, string part, string block, string portA, string portB) => Diagnostic.Create(
+        "fields.part-between-gap-ports", DiagnosticSeverity.Warning,
+        "{path}: '{part}' joins ports '{portA}' and '{portB}' of EM Field Data '{block}', and both are gap ports. A gap port's negative end is a pad " +
+        "and not ground, so this part is in series with both ports' references and is not the board. It belongs from one port's node to ground.",
+        ("path", path), ("part", part), ("block", block), ("portA", portA), ("portB", portB));
+
+    /// <summary>
     /// No analysis of any kind will dispatch. <c>SelectTop</c>'s own sentence per kind, forwarded.
     /// A WARNING: a cell's schematic is not supposed to declare an analysis, and a `.cnl` written to
     /// be included by another is not either.

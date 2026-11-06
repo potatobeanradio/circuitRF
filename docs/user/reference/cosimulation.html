@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>circuitRF — Co-simulation: B1 and SAR from a schematic</title>
+<title>circuitRF — Co-simulation: B1, SAR and the radiation pattern from a schematic</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
 <!--
@@ -36,8 +36,8 @@
     </nav>
   </div>
 
-  <h1>Co-simulation: B1 and SAR from a schematic</h1>
-  <p class="lede">Capacitors as ports. One EM run keeps each port&#39;s fields, and a schematic&#39;s fields analysis turns the waves its circuit delivers into B1 and SAR — so tuning, optimizing and yield on fields start no EM run.</p>
+  <h1>Co-simulation: B1, SAR and the radiation pattern from a schematic</h1>
+  <p class="lede">Parts as ports. One EM run keeps each port&#39;s fields, and a schematic&#39;s fields analysis turns the waves its circuit delivers into B1, SAR and the radiation pattern — so tuning, optimizing and yield on fields start no EM run.</p>
 
 <p>An MRI coil is a resonant conductor with many tuning, matching and decoupling capacitors next to lossy tissue. Solving
 it with the capacitors inside the EM model means a new EM run for every capacitor value, and a high-Q coil rings for a
@@ -50,7 +50,8 @@ for a yield trial — in about a second and with no EM run.</p>
 <p>circuitRF's SAR is for research and engineering. It is not a compliance tool.</p>
 </div>
 <p>The worked example is <strong>SAR: MRI Loop Coil</strong> (<em>File ▸ New ▸ Examples</em>): a 7 T loop with four ports, matched and optimized
-against S11, B1 and psSAR goals in 4 s. What B1 and SAR are, and their units, is <a href="sar.html">SAR and B1</a>.</p>
+against S11, B1 and psSAR goals in 4 s. What B1 and SAR are, and their units, is <a href="sar.html">SAR and B1</a>. An antenna board with parts on it works the same way: see
+<a href="#pattern">The radiation pattern</a>.</p>
 <h2 id="em">1. The EM side: ports for capacitors, fields kept</h2>
 <p>In the coil's 3D view:</p>
 <ol>
@@ -69,8 +70,10 @@ each; the same coil with lumped capacitors in the EM model needed 72,000 steps f
 <h2 id="schematic">2. The schematic side: the fields analysis</h2>
 <p>Place an <strong>EM Field Data</strong> block in a test bench and pick the run's <code>.cemr</code> for its <strong>File</strong>. Its pins are named after the
 run's ports, in the run's order, so there is no port count to set. Draw the circuit around them: the capacitors, the match,
-the feed. Then add a <strong>Fields (SAR, B1)</strong> analysis in the Analysis editor, whose <strong>Block</strong> control lists the schematic's EM
-Field Data blocks, those inside sub-cells included, and still takes typed text:</p>
+the feed. Then add a <strong>Fields (SAR, B1, pattern)</strong> analysis in the Analysis editor. Its <strong>Block</strong> control lists the schematic's EM
+Field Data blocks, those inside sub-cells included, and its <strong>Frequency</strong> control lists what the block's record stores, with
+<strong>All</strong> when it holds a far field. Both still take typed text. <strong>Per watt</strong> and <strong>Averaged SAR</strong> are grey when the record holds no field set, since
+they act only on SAR and B1:</p>
 <pre><code>analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1 [norm=accepted|available] [average=yes|no]</code></pre>
 <table>
 <thead>
@@ -88,7 +91,7 @@ Field Data blocks, those inside sub-cells included, and still takes typed text:<
 </tr>
 <tr>
 <td><code>freq</code>, <code>freqUnit</code></td>
-<td>one of the run's SAR frequencies</td>
+<td>a frequency the record stores, or <code>all</code> for every frequency of its far field</td>
 <td>required</td>
 </tr>
 <tr>
@@ -227,6 +230,73 @@ tune phase(W2) min=-180 deg max=0 deg opt=1</code></pre>
 <p>The circuit is solved once with every drive at its weight. <strong>Per watt</strong> then means per watt of the drives' total,
 accepted or available, so &quot;maximise <code>B1pMin</code> with <code>psSAR</code> at most so much per W total&quot; is an ordinary optimizer problem:
 a channel's amplitude and phase are the parts of a complex variable, and ordinary tunables.</p>
+<h2 id="pattern">5. The radiation pattern</h2>
+<p>A 3D run with component ports stores a pattern per port. A fields analysis combines them for the parts in the schematic, so the pattern of the
+antenna as built follows every part value with no new EM run.</p>
+<ol>
+<li>In the 3D setup, tick the parts in <strong>Component ports</strong>, turn on <strong>Radiation pattern</strong> and tick <strong>Create SnP schematic when the run finishes</strong>.</li>
+<li><strong>Simulate.</strong> The run makes a cell named after the setup with <code>_cosim</code> on the end, and writes the same circuit as <code>&lt;setup&gt;_cosim.cnl</code>. The cell holds an
+EM Field Data block on the run's record, a <code>Port</code> for each of the 3D view's own ports and each connector, and each part from its port's node to ground,
+with its model from the board's schematic. A part with no model there is a placeholder variable, named in a note on the sheet and by <code>check</code>.</li>
+<li><strong>Set the values and simulate the cell.</strong> It has an S-parameter analysis over the sweep and <code>analysis F1 type=fields block=BOARD drive=1</code> at the stored
+frequency nearest the sweep's centre, with a note naming every stored frequency. Its <a href="data-display.html">Data Display</a> holds S11, a polar cut of
+<code>F1.farfield.U</code> and the realized gain.</li>
+<li><strong>Change values</strong> with a <a href="tuning.html">tuning slider</a>, a parametric sweep, <code>--set</code>, the optimizer or yield. None starts an EM run. The Fields
+analysis's <code>S</code> is at its own frequencies, so <code>F1.S</code> lines up with the pattern.</li>
+</ol>
+<p>A cell of that name is <strong>never overwritten</strong>: edit it freely and run the setup again, and the block reads the new result. A run that kept neither a far field
+nor a field set gets an SnP in place of the block. A run with no component ports makes the <code>_sim</code> cell described under
+<a href="em-setup.html#snp-schematic">A schematic to start from</a>.</p>
+<p>To wire a circuit by hand, place an EM Field Data block as in <a href="#schematic">The schematic side</a> and add a Fields analysis. <code>RealizedGainDbi(F1)</code>,
+<code>GainDbi</code>, <code>DirectivityDbi</code>, <code>RadiationEfficiency</code>, <code>TrpDbm</code> and <code>PeakEirpDbm</code> read the pattern in a <code>measure</code> or <code>goal</code> line.</p>
+<h3 id="gap">What can be placed across a gap</h3>
+<p>The N-port has one common reference, but a <strong>gap port's negative end is a pad, not ground</strong>. So where a part goes depends on the port's kind:</p>
+<table>
+<thead>
+<tr>
+<th>On</th>
+<th>Place</th>
+<th>Because</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a gap port</td>
+<td>a part from the port's node to ground</td>
+<td>the circuit's ground stands for that port's own pad, so the part bridges the pads</td>
+</tr>
+<tr>
+<td>two gap ports</td>
+<td><strong>not</strong> a part between their nodes</td>
+<td>it is in series with both ports' references, which is not the board; <code>check</code> warns, naming the part and both ports</td>
+</tr>
+<tr>
+<td>a feed, or any port with a real return</td>
+<td>any network, series or shunt</td>
+<td>its reference is the board's real return</td>
+</tr>
+</tbody>
+</table>
+<p>A part with more pads connects each signal pin to its port's node and its ground pin to ground.</p>
+<p><strong>A two-port file on a gap port.</strong> A two-port part file goes with port 1 on the node and port 2 on ground, so its series impedance stands across the gap.
+Any <strong>shunt branch in the file does not reach the board's ground plane</strong>: port 1's stands across the gap, and port 2's is shorted out. A file whose
+pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the 3D model, and so is their capacitance to the plane.</p>
+<p><strong>The part's body is not in the 3D model</strong>, with this method or any other that uses a gap port.</p>
+<h3 id="frequencies">Frequencies</h3>
+<p>A pattern exists <strong>only at frequencies the run solved</strong>. Far-field phase across a coarse sweep is not safe to interpolate, so a frequency between stored points
+is refused, listing them. <code>freq=all</code> takes every stored one. S comes from the same result, so a denser S-parameter analysis in the same schematic reads
+between the Touchstone's points as any SnP does, while its pattern stays at the stored frequencies.</p>
+<h2 id="saved">6. Working from saved results</h2>
+<p>The block reads a result on disk, so <strong>a result outlives its setup</strong>: the setup can be edited, the 3D view deleted or the workspace moved, and the block
+reads what it read.</p>
+<ul>
+<li><strong>A run that does not finish changes no result.</strong> Results are staged and published only once the run has finished, so a failed, cancelled or refused run leaves
+the previous <code>.sNp</code>, <code>.npy</code>, field set and record as they were, and a schematic reading them goes on working. A solver's working files are not part of
+this: a run that starts clears them, so 3D field plots of the previous run can be gone after one that fails.</li>
+<li><strong>A run that finishes replaces the result of its name.</strong> The setup's <strong>Output name</strong> decides that name for every file, so a new name keeps the earlier result.</li>
+<li><strong>A result's settings can be read back.</strong> <strong>Run settings…</strong> on the block, or <code>circuitrf explain &lt;name&gt;.cemr</code>, shows what that run used and what differs from
+the setup now.</li>
+</ul>
 <h2 id="limits">Costs and limits</h2>
 <table>
 <thead>
@@ -258,6 +328,12 @@ it moves to within 0.3 % in B1 and 0.6 % in psSAR10g of the co-simulation.</li>
 per value, each named in the legend, and plot <code>F1.farfield.RealizedGainDbi</code> along it for the peak. The run summary states the memory its cubes take and warns above 2 GB, when
 naming one frequency in place of <code>freq=all</code> is the remedy. It is refused at a frequency with a field set: SAR and B1 volumes are written per run and the cube average
 is a long solve per run, so those stay a slider's or <code>--set</code>'s, one value at a time. A result holding both still sweeps its pattern at <code>freq=all</code>.</li>
+<li><strong>How far the pattern agrees.</strong> Measured on a 50 mm strip dipole at 3 GHz with a feed and two gap ports, against a run with those parts in the EM model or
+those loads on the ports, on one mesh and within 20 dB of the peak. <strong>Palace</strong> and <strong>openEMS</strong> agree to 0.003 dB or better in peak gain and pattern, and within 2e-4 in S11,
+with the parts 5 nH and 1 pF or the loads 200 Ω and 100 Ω. <strong>EMerge</strong> at Standard reads 0.043 dB in peak gain, 0.079 dB in pattern and 3.8e-3 in S11.
+Its gain and pattern are within what the method asks, and its S11 across a change of load needs a fine port edge mesh: an <code>EdgeRefinement</code> of 0.02 gives 7.5e-4.</li>
+<li><strong>Near a resonance</strong> (6.5 nH and 0.05 pF on the same dipole), Palace agrees to 0.009 dB and 1.6e-3 in S11 on its own mesh. Draft and Standard disagree with each other
+by far more than that: these comparisons show the method is right, not that the mesh is. A radiating dipole is a mild case, and a sharper resonance has not been measured.</li>
 <li><strong>A cylindrical grid's</strong> field set recombines as a Cartesian one does, but its volumes are not drawn in the 3D view.</li>
 </ul>
 

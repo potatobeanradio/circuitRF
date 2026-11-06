@@ -24,7 +24,7 @@ using Xunit;
 namespace CircuitRF.Ui.Tests.Sar;
 
 [Collection(FieldCosimulationRunsCollection.Name)]
-public sealed class FarFieldCosimTests : IDisposable
+public sealed partial class FarFieldCosimTests : IDisposable
 {
     private const double F0 = 1e9, F1 = 2e9, Z0 = 50;
     private const double Tolerance = 1e-9;

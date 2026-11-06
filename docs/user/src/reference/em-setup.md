@@ -70,7 +70,7 @@ in 3D, the solver's (`Setup.palace`), in the workspace's `results/` folder. A re
 `.sNp`, `.npy` or `.cemr` you do type is removed, and the same structure re-run with a coupled pair goes from
 `.s2p` to `.s4p` on its own. The `…` button browses; a path inside the workspace is stored relative so the
 workspace stays portable. **A run replaces the result of the same name, so a new name is how an earlier
-result is kept**, and each name has its own `_sim` cell and co-simulation netlist. A result outside `results/`
+result is kept**, and each name has its own `_sim` or `_cosim` cell and co-simulation netlist. A result outside `results/`
 is not in a Data Display's list of sources: choose **Add from file…** in a trace's source list to plot it.
 
 **Layout** — the `.clay` this setup analyses, and the `…` button re-points it. Re-pointing re-derives the
@@ -490,6 +490,9 @@ A cell of that name is **never overwritten**. On a re-run it already reads the s
 has just rewritten, so it picks up the new result unchanged. If the port count changed, its `SnP` is
 pointed at the new file and Messages says when its `TermG`s no longer match. A cell of that name that
 reads something else is left alone, and Messages says so. `circuitrf em` honours the same tick.
+
+A run with **component ports** makes a `_cosim` cell in place of the `_sim` one, because a `TermG` on a part's port would have no part on it: each part
+stands on its own port, with the analyses and a Data Display. [Co-simulation](cosimulation.html#pattern) describes it.
 
 Without the tick, place an [SnP component](components.html#snp) yourself and point its `File`
 parameter at the written path. Re-running updates the file in place, so the schematic picks the new

@@ -4315,7 +4315,7 @@ patterns refused listing the candidates; a bare-number `--region` refused.
 **brief-sar-9.** `circuitrf fields <file.cnl|.csch> [-a name]... [--set var=expr]... [-o out.{mat,npy,txt}]` runs a
 design's `fields` analyses: the per-port fields an EM Field Data block's result record names (kept by a 3D run with
 `Sar.PerPortFields`) recombined with the incident waves the circuit delivers to the block's ports, into local and averaged SAR, B1± and their scalars at one
-frequency. The method, the directive and the checks are `docs/design/sar.md` §11. Several circuit ports can drive at once
+frequency, and a record's far field into the pattern's cubes at one frequency or `freq=all`. The method, the directive and the checks are `docs/design/sar.md` §11. Several circuit ports can drive at once
 (`drive=1,2 weights=1,W2`, brief-sar-10), and the field measurements (`B1pMean(F1)`, `psSAR(F1, 10)` …) read the result in a
 `measure` or `goal` line; `sar.md` §12.
 
@@ -4336,6 +4336,9 @@ notes name the folder. A far field writes nothing beside the result: its cubes, 
 pattern, and stays in that file. Over the protocol it is `run analysis=fields`.
 A parametric sweep around a far field runs when its analysis is named or by default, and naming the sweep runs the same chain (`sar.md` §11.12). The run's line goes to stderr before it starts, with
 the size of its pattern cubes, and `explain --analysis` reports the same size, or the refusal, as `fieldsSweep`. In `plot --trace`, `cut=` over such a cube is one curve per value with a legend, and a key naming an axis pins it: `cube=F1.farfield.U,cut=0,L1=5n`.
+
+A run with component ports writes `<setup>_cosim.cnl`, and with `CreateSnpSchematic` draws it as a `<setup>_cosim` cell, so `em` then `fields` on that cell needs nothing authored in between (`sar.md` §11.13). `check` warns on
+a part between two gap ports' nodes, by the record's port kinds.
 
 ### 28.3 Exit codes
 

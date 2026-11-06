@@ -197,9 +197,10 @@ full description.
   part whose ground pads on top and bottom copper lie over each other is a coaxial launch, and its shell is modelled
   by a copper block through the substrate joining the two. `explain <view.c3d> --component-ports` lists each port's
   pads, conductors, gap, width, landings and verdict without meshing. A finished driven run also writes
-  `<setup>_cosim.cnl` beside where the `_sim` cell goes: the board's S-parameter block, a `Port` for each of the 3D
+  `<setup>_cosim.cnl`: the board's block, a `Port` for each of the 3D
   view's own ports and each connector, and each part's model from the board's schematic from its port's node to
-  ground — a part with no model there is a placeholder value, named in a comment and by `check`. A 3D view of a
+  ground — a part with no model there is a placeholder value, named in a comment and by `check`. With its radiation pattern on, part values
+  then move the pattern with no new run: [Co-simulation](cosimulation.html#pattern). A 3D view of a
   cell's layout is made by **Design ▸ New 3D View from Layout**, or `new view3d <cell> --from-layout`.
 
   **Why a gap port, and not a pad-to-plane port at each pad.** A part between two pad-to-plane ports carries its

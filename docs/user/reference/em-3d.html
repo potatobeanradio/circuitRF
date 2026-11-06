@@ -269,9 +269,10 @@ amplifier, gets one gap port per signal pad against its own ground pad (a pad on
 part whose ground pads on top and bottom copper lie over each other is a coaxial launch, and its shell is modelled
 by a copper block through the substrate joining the two. <code>explain &lt;view.c3d&gt; --component-ports</code> lists each port's
 pads, conductors, gap, width, landings and verdict without meshing. A finished driven run also writes
-<code>&lt;setup&gt;_cosim.cnl</code> beside where the <code>_sim</code> cell goes: the board's S-parameter block, a <code>Port</code> for each of the 3D
+<code>&lt;setup&gt;_cosim.cnl</code>: the board's block, a <code>Port</code> for each of the 3D
 view's own ports and each connector, and each part's model from the board's schematic from its port's node to
-ground — a part with no model there is a placeholder value, named in a comment and by <code>check</code>. A 3D view of a
+ground — a part with no model there is a placeholder value, named in a comment and by <code>check</code>. With its radiation pattern on, part values
+then move the pattern with no new run: <a href="cosimulation.html#pattern">Co-simulation</a>. A 3D view of a
 cell's layout is made by <strong>Design ▸ New 3D View from Layout</strong>, or <code>new view3d &lt;cell&gt; --from-layout</code>.</p>
 <p><strong>Why a gap port, and not a pad-to-plane port at each pad.</strong> A part between two pad-to-plane ports carries its
 current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is

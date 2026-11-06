@@ -2130,7 +2130,7 @@
                 <CheckBox Name="CreateSnpSchematicCheck" FontSize="11"
                           Content="Create SnP schematic when the run finishes"
                           IsChecked="{Binding ViewModel.CreateSnpSchematic}"
-                          ToolTip.Tip="Makes a cell named after this setup with _sim on the end: an SnP block reading this run's s-parameter file, a TermG on every port placed on the side its port faces in the layout and turned to face out, an S-parameter analysis over this sweep, and a Data Display of the through paths and the input matches. A cell of that name that already exists is never overwritten; on a re-run it already reads the same file, which the run has just rewritten."/>
+                          ToolTip.Tip="Makes a cell named after this setup with _sim on the end: an SnP block reading this run's s-parameter file, a TermG on every port placed on the side its port faces in the layout and turned to face out, an S-parameter analysis over this sweep, and a Data Display of the through paths and the input matches. A cell of that name that already exists is never overwritten; on a re-run it already reads the same file, which the run has just rewritten. A run with component ports makes a cell with _cosim on the end instead: the board's result block with each part on its own port, its analyses and a Data Display."/>
                   </StackPanel>
                 </Border>
 

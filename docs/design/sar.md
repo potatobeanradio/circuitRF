@@ -1687,6 +1687,20 @@ A point is one circuit solve and a sum, so a sweep is those stacked on an axis: 
 
 ---
 
+### 11.13 The run makes the schematic (CP-6)
+
+`EmCoSimNetlist.Text` writes an `EmFieldData` block on the run's record when the run kept a far field or a field set (`RecordFor`), and an `SnP` otherwise. With a far field and at least one
+`Port` line it adds `analysis F1 type=fields block=BOARD drive=1` at the stored frequency nearest the sweep's centre, with a comment naming the stored frequencies. A tie takes the lower.
+
+With the setup's `CreateSnpSchematic` on, a finished driven run with component ports draws that text as `<setup>_cosim` (`CreateCell`), by `NetlistSchematic.Build`, the drawing `netlist --to-schematic` uses, and
+the text's comments become notes on the sheet. It makes no `_sim` cell, whose TermG on a part's port has no part on it. `_cosim.cnl` is written regardless. A run with no component ports still makes `_sim`. `Build` refuses a
+netlist holding a sub-cell definition, so a board whose part is a hierarchical cell gets the netlist and a sentence and no cell.
+
+**An existing cell is never written to**, unlike `_sim`, whose SnP is repointed when the port count changes. A record's name holds no port count, and a change in ports is a change in the wiring that someone may have edited.
+
+**A part between two gap ports' nodes** is a `check` warning (`EmFieldBlocks.GapPortBridges`), from the record's port kinds. It looks only at two-terminal elements, since a multi-terminal part's signal pins stand on gap ports' nodes by design, and only at
+an EM Field Data block, since a plain SnP has no record to say what its ports are. An adopted record whose Touchstone stated no port kinds gives no finding.
+
 ## 12. B1 and SAR as goals: tuning, the optimizer, yield and multi-channel drive (SAR-10)
 
 SAR-9 made a field set a function of the schematic's values. SAR-10 lets everything that already varies those values read the

@@ -28413,3 +28413,25 @@ on every edit. `LayoutNets.Of` therefore counts the open cell's own shapes and f
 that leaves out, in the Nets panel's header and in the `nets` step of `explain --nets`. A board whose nets exist only on footprint
 pads, with no tracks, reports no named nets beside that sentence. On a Gerber set the nets stated by a composited layer's objects
 are gone before this list is read, as the reader's own note says, so such a board can list its vias and little else.
+
+## brief-cosim-pattern-6 — the run makes the schematic
+
+**The drawing had already moved.** `NetlistSchematic.Build` was in `src/Design` from AA-6, and `src/Cli/NetlistToSchematic.cs` was already arguments and reporting, so R-cp6-2's move needed no code. The source scan holds both callers to it.
+
+**A hierarchical part gives no cell.** `Build` refuses a netlist that defines a sub-cell, so a board whose part's model is a cell gets `_cosim.cnl` and a sentence saying so, and no cell. Drawing those needs a symbol per definition, which `ExactPlacement.Cells` could carry.
+
+**`_cosim` is never repointed, unlike `_sim`.** An EM Field Data block's File names no port count, and a changed port set means changed wiring that someone may have edited. So a re-run with other ports leaves a cell whose block no longer matches its result, and running it says so through the block's own refusal.
+
+**The netlist's comments are notes on the sheet.** Without that, a placeholder part and the stored frequencies would be said only in a file the cell does not open. They are one `EditableText` per comment line, since the sheet draws each as one line.
+
+**The display's cube names depend on the analysis count.** A one-analysis bench publishes `S`, and beside a second analysis it is `SP1.S`, so a far-field cell's S11 reads `SP1.S` and a cell with no pattern takes `_sim`'s display, which reads `S`. The gate reads every trace's cube and axes against a real evaluation.
+
+**A polar plot clips a custom title**, since it fills its square and draws the title above its top edge, and a table draws none. So only the rectangular plot has one, the polar trace's label says the plane, and the table's column carries the unit.
+
+**The check reads two-terminal elements only.** `EmCoSimNetlist` itself wires an amplifier's signal pins to two gap ports' nodes, which is right, so a rule on any shared element would flag the netlist the run wrote. It is on an EM Field Data block only: a plain SnP has no record to give its port kinds.
+
+**Measured once, with a scratch board not kept.** A 30 mm microstrip with a connector and two gap-port parts, EMerge Draft, 3,845 tetrahedra, 3 points, about 4 s. `em` made the cell. `fields` on it and on the same circuit written by hand, with other instance names, wrote byte-identical `.npy` files. A second `em` left an edited cell's bytes alone and said so. `check` was clean on the cell and warned once when L1 was moved between two gap nodes. The same board on Palace at its defaults, with the default air box and refinement passes, had not finished when stopped at 20 minutes, on a mesh 2.7× the estimate. No part values were compared against a loaded run here; those are CP-3's gates.
+
+**No worked example ships.** The brief makes one conditional on a small board meeting G4-G5 quickly enough. CP-3's dipole meets G4's limits on EMerge with `EdgeRefinement` 0.02 in 6 s, but that is a dipole in free space. No board has been measured against those gates, and the scratch board here ran at Draft with no reference.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.Cell.cs`. Inspected: the analysis editor on a far-field and a SAR record through UiSnapshot, with every control in the same place and norm and average grey on the first; the cell's sheet through `render`; its Data Display through UiSnapshot.
