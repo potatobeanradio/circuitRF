@@ -296,6 +296,7 @@ for (int i = 0; i < args.Length; i++)
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
         case "--dark": dark = true; break;
         case "--messages" or "--film-prompt": break;
+        case "--run-messages" when i + 1 < args.Length: i++; break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
@@ -370,6 +371,12 @@ if ((ipc2581Steps ?? ipc2581Report) is { } ipcFile && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ipc2581Steps is not null ? ShowIpc2581Steps(ipcFile, output) : ShowIpc2581Report(ipcFile, output, sizeGiven ? width : 760, sizeGiven ? height : 420);
+}
+if (args.SkipWhile(a => a != "--run-messages").Skip(1).FirstOrDefault() is { } runMessagesCsch && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ShowRunMessages(Path.GetFullPath(runMessagesCsch), output, sizeGiven ? width : 900, sizeGiven ? height : 320);
 }
 if (args.Contains("--messages") && output is not null)
 {
@@ -2295,6 +2302,37 @@ static int ShowIpc2581Report(string file, string path, double w, double h)
     window.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
     Console.WriteLine($"technology {result.TechPath}");
+    return 0;
+}
+
+// --run-messages <csch>: a real run of a schematic, as Simulate posts it to a real Messages panel, the plan first and the run's
+// own row last; and the dialog its radiation-pattern row opens, to <out>.details.png.
+static int ShowRunMessages(string csch, string path, double w, double h)
+{
+    var circuit = CircuitRF.Design.Circuit.PreparedCircuit.FromSchematic(csch);
+    var request = new CircuitRF.Design.Circuit.CircuitEvaluationRequest();
+    var plan = CircuitRF.Design.Circuit.CircuitEvaluation.Plan(circuit, request);
+    var tool = new MessagesTool();
+    foreach (string line in plan.Notes.Concat(plan.Lines)) tool.Post(MessageLevel.Info, line);
+    var live = tool.BeginProgress($"Running '{Path.GetFileName(csch)}'");
+    var result = CircuitRF.Design.Circuit.CircuitEvaluation.Evaluate(circuit, request);
+    RunMessages.Post(tool, result, () => null);
+    if (result.Status == CircuitRF.Design.Circuit.RunStatus.Success) live.Finish(RunMessages.OutcomeLevel(result), result.Summary, keepBar: false);
+    else live.Finish(MessageLevel.Error, result.StatusMessage, keepBar: false);
+    tool.Post(MessageLevel.Info, $"Finished '{Path.GetFileName(csch)}'.");
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Messages.MessagesView { DataContext = tool } };
+    window.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}; {result.Notes.Count} notes, {result.Notes.Count(CircuitRF.Design.Circuit.RunNotes.IsDetail)} folded");
+    var folded = result.Notes.Where(CircuitRF.Design.Circuit.RunNotes.IsDetail).ToList();
+    if (folded.Count > 0)
+    {
+        var dialog = CircuitRF.Ui.Views.Dialogs.TextConfirmDialog.Build("Radiation pattern", RunMessages.Sentence(folded), RunMessages.Text(folded), null, _ => { }, centerOnOwner: false);
+        dialog.Show();
+        for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+        dialog.CaptureRenderedFrame()!.Save(path + ".details.png");
+    }
     return 0;
 }
 

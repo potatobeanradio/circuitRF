@@ -60,7 +60,9 @@ public static class EmFieldBlocks
     {
         try
         {
-            var (lib, tb) = SchematicCircuit.FromSchematic(model, "fields", model.SchematicDirectory);
+            // A block's File is relative to what a run reads it from, the owning workspace, and not to the schematic's own folder.
+            string? root = SchematicCircuit.ReferenceBaseOfDirectory(model.SchematicDirectory);
+            var (lib, tb) = SchematicCircuit.FromSchematic(model, "fields", root);
             var found = new List<EmFieldBlockData>();
             void Walk(IEnumerable<Instance> instances, string prefix, HashSet<string> visiting)
             {
@@ -70,7 +72,7 @@ public static class EmFieldBlocks
                     if (inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
                     {
                         string? file = inst.Overrides.FirstOrDefault(o => o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))?.Expression.Trim('"');
-                        if (file is { Length: > 0 } && EmResultRecord.Load(file).Record is { } r)
+                        if (file is { Length: > 0 } && EmResultRecord.Load(root is null ? file : Path.Combine(root, file)).Record is { } r)
                             found.Add(new EmFieldBlockData(path, [.. r.Frequencies.FarFieldHz.Union(r.Frequencies.FieldSetHz).Order()],
                                                            r.Frequencies.FarFieldHz.Count > 0, r.Frequencies.FieldSetHz.Count > 0));
                     }

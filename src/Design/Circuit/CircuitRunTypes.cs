@@ -71,6 +71,15 @@ public sealed class RunResult(
     /// the sentence the run already reports.</summary>
     public IReadOnlyList<PlainSnpFieldsBlock> PlainSnpFieldsBlocks { get; init; } = [];
 
+    /// <summary>The analyses that failed in a run where others finished, one sentence each. Such a run is still
+    /// <see cref="RunStatus.Success"/>, since it has results to publish; <see cref="StatusMessage"/> carries these too.</summary>
+    public IReadOnlyList<string> Errors { get; init; } = [];
+
+    /// <summary>What the run's own row says: <see cref="StatusMessage"/> without the sentences of <see cref="Errors"/>, which a
+    /// window posts on rows of their own.</summary>
+    public string Summary { get => _summary ?? StatusMessage; init => _summary = value; }
+    private readonly string? _summary;
+
     /// <summary>brief-sar-9 — every fields analysis's recombined result, in run order.</summary>
     public IReadOnlyList<FieldsArtifact> Fields { get; } = fields ?? [];
 
@@ -110,7 +119,7 @@ public sealed class RunResult(
     /// <summary>This result with <paramref name="leading"/> ahead of its own notes.</summary>
     public RunResult WithLeadingNotes(IReadOnlyList<string> leading)
         => new(Status, StatusMessage, Results, Warnings, GroupedResults, [.. leading, .. Notes],
-               Convergence, Expressions, Fields);
+               Convergence, Expressions, Fields) { Errors = Errors, Summary = Summary };
 
     // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
     public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();

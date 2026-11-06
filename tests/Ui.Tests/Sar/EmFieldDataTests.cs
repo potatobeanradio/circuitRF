@@ -165,6 +165,19 @@ public sealed class EmFieldDataTests : IDisposable
         Assert.True(run.Results[0].Data.Cubes[FieldCosimulation.DeliveredCube].RealValues[0] > 0);
     }
 
+    /// <summary>A run reads a block's File from the owning workspace, so the editor's list of stored frequencies has to as well;
+    /// reading it from the schematic's own folder left that list empty on every schematic kept in a cell folder.</summary>
+    [Fact]
+    public void TheEditorReadsABlocksRecordFromWhereARunDoes()
+    {
+        File.WriteAllText(Path.Combine(_dir, ".cws"), "{}");
+        var (lib, tb) = new CnlReader().Read(Around + Block + Fields, "t", _dir);
+        var schematic = NetlistSchematic.Build(lib, tb, _dir).Schematic;
+        Assert.DoesNotContain(_dir, SchematicCircuit.CnlTextOf(schematic, "t"), StringComparison.Ordinal);
+        schematic.SchematicDirectory = Directory.CreateDirectory(Path.Combine(_dir, "cell", "schematic")).FullName;
+        Assert.NotEmpty(Assert.Single(EmFieldBlocks.Data(schematic)).StoredHz);
+    }
+
     [Fact]
     public void ASchematicRoundTripsThroughTheNetlistAndRuns()
     {

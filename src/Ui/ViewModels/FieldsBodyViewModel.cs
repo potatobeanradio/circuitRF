@@ -20,7 +20,7 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
     public const string AllFrequencies = "All";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Frequencies), nameof(HasSarFields))]
+    [NotifyPropertyChangedFor(nameof(Frequencies), nameof(HasSarFields), nameof(FreqProblem))]
     private string _block = "";
 
     /// <summary>brief-cosim-pattern-2 R-cp2-7 — the schematic's EM Field Data blocks by path, sub-cells included; the control still takes typed text.</summary>
@@ -51,11 +51,27 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
     /// <summary>False only when the named block's record is read and holds no field set: norm and average then have nothing to act on.</summary>
     public bool HasSarFields => Named is not { HasFieldSet: false };
 
-    [ObservableProperty] private string _freq = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FreqProblem))]
+    private string _freq = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Frequencies))]
+    [NotifyPropertyChangedFor(nameof(Frequencies), nameof(FreqProblem))]
     private string _freqUnit = "MHz";
+
+    /// <summary>What the run would refuse, said while it can still be changed: a number the named block's record stores no result at.
+    /// An expression, or a block whose record cannot be read, is the run's to judge. It does not stop the dialog closing, since the
+    /// EM run may be repeated to add that frequency.</summary>
+    public string? FreqProblem
+    {
+        get
+        {
+            if (Named is not { StoredHz.Count: > 0 } block
+                || !double.TryParse(Freq.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value)) return null;
+            double hz = value * CircuitRF.Core.Expressions.FreqUnit.Multiplier(FreqUnit);
+            return block.StoredHz.Any(f => Math.Abs(f - hz) <= 1e-9 * Math.Max(f, hz)) ? null : "No result at this frequency: pick one from the list.";
+        }
+    }
 
     [ObservableProperty] private string _drive = "1";
     [ObservableProperty] private string _weights = "";

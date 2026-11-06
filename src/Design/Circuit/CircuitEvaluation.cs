@@ -461,7 +461,8 @@ public static class CircuitEvaluation
             catch (Exception ex)
             {
                 if (ex is CircuitRF.Design.Em3d.PlainSnpFieldsBlockException plain) plainSnps.Add(new PlainSnpFieldsBlock(plain.Block, plain.SnpPath));
-                errors.Add($"'{pa.ResultName}': {ex.Message}");
+                // A fields refusal already opens by naming its analysis.
+                errors.Add(ex.Message.StartsWith($"Fields '{pa.ResultName}'", StringComparison.Ordinal) ? ex.Message : $"'{pa.ResultName}': {ex.Message}");
                 convergence.Add(new AnalysisConvergence(pa.ResultName, false, ex.Message));
             }
         }
@@ -507,6 +508,7 @@ public static class CircuitEvaluation
             return new RunResult(RunStatus.NoAnalysis,
                 "No supported analysis dispatched.", warnings: nlWarnings, notes: nlNotes, convergence: convergence);
 
+        string finished = notes.Count > 0 ? string.Join("; ", notes) : $"{results.Count} analysis run(s) complete";
         var allNotes = new List<string>(notes);
         if (errors.Count > 0)
             foreach (var e in errors) allNotes.Add($"Error — {e}");
@@ -515,7 +517,12 @@ public static class CircuitEvaluation
             ? string.Join("; ", allNotes)
             : $"{results.Count} analysis run(s) complete";
         return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped, nlNotes,
-                             convergence, outcomes, fields) { PlainSnpFieldsBlocks = plainSnps };
+                             convergence, outcomes, fields)
+        {
+            PlainSnpFieldsBlocks = plainSnps,
+            Errors = errors,
+            Summary = errors.Count > 0 ? $"{finished}; {errors.Count} failed" : finished,
+        };
     }
 
     /// <summary>
@@ -666,7 +673,7 @@ public static class CircuitEvaluation
                 return ($"DC '{analysis.Name}': operating point", 1, false);
 
             case FieldsAnalysis fa:
-                return ($"Fields '{fa.Name}': '{fa.Block}' recombined at {fa.FrequencyText}, driven from " +
+                return ($"Fields '{fa.Name}': recombine '{fa.Block}' at {fa.FrequencyText}, driven from " +
                         $"{(fa.DriveExpr.Contains(',') ? "ports" : "port")} {fa.DriveExpr}", 1, false);
 
             default:

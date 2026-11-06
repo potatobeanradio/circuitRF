@@ -311,6 +311,43 @@ public sealed partial class FarFieldCosimTests : IDisposable
         Assert.Equal(CircuitRF.Core.Design.AnalysisModel.Circuit, vm.BuildAnalyses()!.Single().Model);
     }
 
+    /// <summary>The Messages panel's half of a fields run: the pattern's notes fold behind one row, the run's own row says one short
+    /// thing, a failed analysis beside a finished one is an error of its own, and a drive that cannot reach the block is a warning.</summary>
+    [Fact]
+    public void AFieldsRun_FoldsItsPatternNotes_FailsOnItsOwnRow_AndWarnsWhenTheDriveCannotReachTheBlock()
+    {
+        WriteResult(2);
+        const string Bench = "Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=75\n";
+        const string Line = "analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1\n";
+
+        var run = Run(Bench + Block("a", "b") + Line);
+        Assert.Contains(run.Notes, n => n.Contains("is not published", StringComparison.Ordinal) || n.StartsWith("Check at", StringComparison.Ordinal));
+        Assert.All(run.Notes, n => Assert.True(RunNotes.IsDetail(n), n));
+        Assert.Contains("|Γ|", run.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("the pattern of", run.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain(run.Warnings, w => w.Contains("no power", StringComparison.Ordinal));
+
+        var partial = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(
+            Bench + Block("a", "b") + "analysis SP1 type=sparam start=1 stop=2 npts=3 Unit=GHz\nanalysis F1 type=fields block=EM1 freq=1.5 freqUnit=GHz drive=1\n", _dir, _dir), new CircuitEvaluationRequest());
+        Assert.Equal(RunStatus.Success, partial.Status);
+        Assert.StartsWith("Fields 'F1'", Assert.Single(partial.Errors), StringComparison.Ordinal);
+        Assert.Contains("1 failed", partial.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("not at", partial.Summary, StringComparison.Ordinal);
+
+        // P2 is the only port the block is on, so driving P1 delivers nothing to it.
+        var apart = Run("Port:P1 a 0 Num=1 Z=50 Ohm\nR:R1 a 0 R=50\nPort:P2 b 0 Num=2 Z=50 Ohm\nR:R2 c 0 R=50\n" + Block("b", "c") + Line);
+        Assert.Contains("no power from circuit port 1 reaches 'EM1'", Assert.Single(apart.Warnings, w => w.Contains("no power", StringComparison.Ordinal)), StringComparison.Ordinal);
+
+        // The editor says the same before the run does, and leaves an expression to the run.
+        var body = new CircuitRF.Ui.ViewModels.FieldsBodyViewModel { Block = "EM1", FreqUnit = "GHz", Freq = "1.5" };
+        body.DataSource = () => [new EmFieldBlockData("EM1", [1e9, 2e9], true, false)];
+        Assert.NotNull(body.FreqProblem);
+        body.Freq = "1";
+        Assert.Null(body.FreqProblem);
+        body.Freq = "Fcoil";
+        Assert.Null(body.FreqProblem);
+    }
+
     private string RefusalOf(string fields, string around = "Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=50\n", params string[] nets)
     {
         var run = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(around + Block(nets.Length > 0 ? nets : ["a", "b"]) + fields, _dir, _dir), new CircuitEvaluationRequest());

@@ -28682,3 +28682,23 @@ would put that part on its circuit model in silence. So `IsEm` is true for a fie
 `Apply` skips Path A for one. `IsEm` takes the `Library` and `Apply` takes the chain's top so no caller can get this half right. The
 editor greys Simulate by for a fields analysis and writes circuit models back; a part's own Model=EM is unaffected. `--em on` follows
 the same rule.
+
+## Fields runs: the Messages panel, and three defects behind the same report
+
+**The editor could not see a block's record.** `EmFieldBlocks.Data` resolved a block's `File` against the schematic's own folder and
+a run resolves it against the owning workspace, so on any schematic in a cell folder the Frequency list came up empty and Per watt
+and Averaged SAR never greyed. A frequency then had to be typed, which is how a value the run refuses gets in. A unit test handing the
+view model a `DataSource` passes either way; the empty list only showed in a picture of the real dialog.
+
+**A failed analysis beside a finished one looked like a success.** The run is `RunStatus.Success`, correctly, because it has results to
+publish, and the failure was only folded into `StatusMessage`, so its row carried a success level. `RunResult.Errors` and `Summary` now
+separate them. `StatusMessage` is unchanged for its other readers.
+
+**A drive port on another part of the circuit gave empty cubes and exit 0.** Every downstream metric refused for its own correct reason
+(radiated power zero, no current moment), which together read as a solver problem. `WarnIfNothingReachesTheBlock` says what happened,
+once per analysis. It goes straight to the netlist because a sweep's warnings are otherwise repeated at every point.
+
+**Folding, not removing.** `RunNotes.IsDetail` picks out a pattern's explanations; only the panel reads it, so `RunResult.Notes`, the CLI
+and MCP keep every sentence. It classifies text deliberately: the sentences come from the engine across several solvers, and a sentence it
+fails to recognise is simply shown, so the failure mode is one extra row and never a hidden one. A check that fails also raises a warning,
+so folding the check's note hides nothing. An EM run folds the same sentences; its other notes are untouched.

@@ -34,8 +34,9 @@ public static partial class FieldCosimulation
     /// Returns what the measurements read, or null at <c>freq=all</c>, where a scalar function has no one frequency to answer at (R-cp4-4).</summary>
     private static CosimPatternMetrics? PublishFarField(FieldsAnalysis fa, ElaboratedNetlist nl, PortFarFieldSet far, IReadOnlyList<int> at,
                                                         IReadOnlyList<(int Port, Complex Amplitude)> drives, DataSet data,
-                                                        List<string> lines, List<string> warnings, RunControl? control, FieldsOutput output)
+                                                        List<string> lines, List<string> warnings, RunControl? control, FieldsOutput output, out string? headline)
     {
+        headline = null;
         int n = far.PortCount;
         Complex[] z0 = [.. Enumerable.Repeat(far.Z0, n)];
         var freqs = new double[at.Count];
@@ -47,6 +48,7 @@ public static partial class FieldCosimulation
             waves[f] = Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives));
         }
         string where = at.Count == 1 ? MaterialDispersion.Hz(freqs[0]) : $"{at.Count} frequencies, {MaterialDispersion.Hz(freqs[0])} to {MaterialDispersion.Hz(freqs[^1])}";
+        WarnIfNothingReachesTheBlock(fa, nl, waves, where);
         CosimPatternMetrics? Metrics(Em3dPatternPoint? point) => fa.AtEveryFrequency ? null : new CosimPatternMetrics(fa, far, at[0], waves[0], point);
 
         if (output == FieldsOutput.OnDemand)
@@ -76,6 +78,9 @@ public static partial class FieldCosimulation
         string drivenBy = first.Multi
             ? $"driven from circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))} together ({Pct(first.Accepts)} of their available power accepted) and referred to 1 V at port {drives[0].Port}"
             : $"driven from circuit port {drives[0].Port} (|Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted) and referred to 1 V there";
+        headline = at.Count > 1 ? $"Fields '{fa.Name}' at {where}: pattern recombined"
+                 : first.Multi  ? $"Fields '{fa.Name}' at {where}: {Pct(first.Accepts)} of the available power accepted"
+                 :                $"Fields '{fa.Name}' at {where}: |Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted";
         lines.Add($"Fields '{fa.Name}' at {where}: the pattern of '{fa.Block}' with this circuit around it, recombined from its {n} ports' stored patterns, {drivenBy}. " +
                   $"Gain is per watt accepted and realized gain includes mismatch, as for a {(far.Planar ? "planar" : "3D")} run.");
         // The first of Publish's sentences describes a run that excited each port; the rest (refusals, polarization) are about the cubes.

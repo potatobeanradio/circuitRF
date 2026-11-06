@@ -66,6 +66,10 @@ Fields are combined before SAR is formed, never SAR itself. The results land bes
 `<stem>.fields/cosim/<analysis>/`; the Messages pane's **Open in 3D view** opens the coil's 3D view with the recombined
 result drawn and selected. Its solution is labelled `<f> GHz, fields 'F1' (circuit port 1 driven)`.
 
+The Messages pane gives the run one line for the pattern's notes, what each metric means and why any was not published, with **Details…**
+to read them. A check that fails is a warning of its own, and so is a drive port that delivers no power to the block, which leaves the results empty.
+A frequency the block's record does not store is flagged under the **Frequency** control and refused if you run it.
+
 A fields analysis has no **Simulate by** choice, because the block already holds the EM result. On one, `model=em` and
 `--em on` start no EM run of the schematic's layout; they switch only EM-capable parts the circuit places, as a part set
 to EM is.

@@ -159,6 +159,7 @@ public static partial class FieldCosimulation
                     throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.");
                 control?.ThrowIfCancellationRequested();
                 var waves = SParameterEngine.BlockWaves(nl, hz, fa.Block, drives);
+                WarnIfNothingReachesTheBlock(fa, nl, [Weigh(fa, set, waves)], MaterialDispersion.Hz(hz));
                 if (output == CircuitRF.Design.Circuit.FieldsOutput.OnDemand)
                 {
                     // R-sar10-2 — an optimizer's, yield's or DOE's evaluation: the waves and the tissue matrix's absorbed power, nothing
@@ -179,11 +180,12 @@ public static partial class FieldCosimulation
             }
             double[] frequencies = [hz];
             CosimPatternMetrics? pattern = null;
+            string? headline = null;
             if (plan.FarField.Count > 0)
             {
                 if (far!.PortCount != snp.PortCount)
                     throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.");
-                pattern = PublishFarField(fa, nl, far, plan.FarField, drives, data, lines, warnings, control, output);
+                pattern = PublishFarField(fa, nl, far, plan.FarField, drives, data, lines, warnings, control, output, out headline);
                 frequencies = [.. plan.FarField.Select(i => far.FrequenciesHz[i])];
                 // R-cp3-2 — gain per watt accepted is what a pattern means, whatever a field set's numbers are per
                 if (fa.PerAvailable)
@@ -196,10 +198,10 @@ public static partial class FieldCosimulation
             if (sweepPoint is not null) SweepDiagnostics(fa, nl, far!, drives[0].Port, plan.Notes, warnings, sweepPoint);
             else
             {
-                // the detail as the run's notes (the Messages pane's Info), the first line as the analysis's summary
+                // the detail as the run's notes (RunNotes says which the Messages pane folds), and the analysis's summary
                 for (int i = 0; i < lines.Count; i++) nl.AddNoteOnce($"fields:{fa.Name}:{i}", lines[i]);
                 foreach (string warning in warnings) nl.AddWarning(warning);
-                if (lines.Count > 0) notes.Add(lines[0]);
+                if ((headline ?? lines.FirstOrDefault()) is { } summary) notes.Add(summary);
             }
             if (metrics is not null)
             {
@@ -300,6 +302,17 @@ public static partial class FieldCosimulation
 
     /// <summary>brief-sar-10 — the block's waves for one excitation of the circuit, in each port's Z0, scaled so the drives
     /// together make <see cref="PalaceDrive.IncidentPowerW"/> available, and what the excitation accepts and reflects.</summary>
+    /// <summary>A drive on a part of the circuit the block is not connected to leaves every cube empty with nothing else wrong, so
+    /// the run says so once, however many frequencies or sweep points it covers. Below -240 dB of incident power is numerical zero.</summary>
+    private static void WarnIfNothingReachesTheBlock(FieldsAnalysis fa, ElaboratedNetlist nl, IReadOnlyList<CosimWaves> waves, string where)
+    {
+        if (!waves.All(w => w.A.Sum(a => a.Magnitude * a.Magnitude) < 1e-24 * w.AvailableW)) return;
+        var first = waves[0];
+        string from = first.Multi ? $"circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))}" : $"circuit port {first.Drive.DrivenPort}";
+        nl.AddWarningOnce($"fields:{fa.Name}:unreached",
+                          $"Fields '{fa.Name}' at {where}: no power from {from} reaches '{fa.Block}', so its results are empty. Drive a port connected to the block.");
+    }
+
     internal sealed record CosimWaves(Complex[] A, Complex[] B, SParameterEngine.BlockPortDrive Drive, double AvailableW,
                                       double AcceptedW, Complex Reflection, double DivisorW, bool PerAvailable)
     {
