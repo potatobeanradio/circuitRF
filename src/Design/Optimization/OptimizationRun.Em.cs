@@ -290,7 +290,7 @@ public sealed partial class OptimizationRun
         // by EM at every evaluation, with no budget and no connectivity check, unless the run says circuit models — and
         // em=off has to say it for that analysis too.
         bool simulatesEm = _settings.Scope == OptimizerScope.All
-                           && AnalysisChain.RunnableTops(tb).Any(t => EmModelSwitch.IsEm(t, tb));
+                           && AnalysisChain.RunnableTops(tb).Any(t => EmModelSwitch.IsEm(t, tb, lib));
         var asked = _settings.Em;
         var mode = asked ?? (involved ? OptimizerEmMode.Correct : OptimizerEmMode.Off);
 
@@ -338,7 +338,7 @@ public sealed partial class OptimizationRun
         {
             var one = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
             if (one is null || !one.Enabled || !AnalysisChain.IsChainRunnable(one, tb)) continue;
-            if (EmModelSwitch.IsEm(AnalysisChain.PromoteToRunnableTop(one, tb), tb)) return true;
+            if (EmModelSwitch.IsEm(AnalysisChain.PromoteToRunnableTop(one, tb), tb, lib)) return true;
         }
         return false;
     }
@@ -357,7 +357,7 @@ public sealed partial class OptimizationRun
                        .OfType<Analysis>().Where(a => a.Enabled && AnalysisChain.IsChainRunnable(a, tb))
                        .Select(a => AnalysisChain.PromoteToRunnableTop(a, tb));
         foreach (var top in tops)
-            if (EmModelSwitch.IsEm(top, tb) && !names.Contains(top.Name)) names.Add(top.Name);
+            if (EmModelSwitch.IsEm(top, tb, lib) && !names.Contains(top.Name)) names.Add(top.Name);
         if (EmModelSwitch.HasInstancesSetToEm(tb, lib)) names.Add("parts set to EM");
         return names;
     }

@@ -121,6 +121,9 @@ block's ports, sums the stored fields with those weights, and computes SAR and B
 Fields are combined before SAR is formed, never SAR itself. The results land beside the field set, in
 <code>&lt;stem&gt;.fields/cosim/&lt;analysis&gt;/</code>; the Messages pane's <strong>Open in 3D view</strong> opens the coil's 3D view with the recombined
 result drawn and selected. Its solution is labelled <code>&lt;f&gt; GHz, fields 'F1' (circuit port 1 driven)</code>.</p>
+<p>A fields analysis has no <strong>Simulate by</strong> choice, because the block already holds the EM result. On one, <code>model=em</code> and
+<code>--em on</code> start no EM run of the schematic's layout; they switch only EM-capable parts the circuit places, as a part set
+to EM is.</p>
 <p><strong>Per watt available or accepted.</strong> With <code>norm=accepted</code> (the default) the numbers are per watt that entered the
 circuit at the drive, so a poor match does not show: B1 per √W accepted barely moves as the match changes. With
 <code>norm=available</code> they are per watt the source could deliver, so a poor match shows as a weak B1, as it would on the

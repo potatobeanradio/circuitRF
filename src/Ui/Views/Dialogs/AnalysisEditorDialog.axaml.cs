@@ -55,9 +55,9 @@ public partial class AnalysisEditorDialog : Window
         SimulateByCombo.SelectedIndex = vm.SimulateByIndex;
         EmSetupCombo.ItemsSource      = vm.EmSetupOptions;
         EmSetupCombo.SelectedIndex    = vm.EmSetupIndex;
-        EmSetupCombo.IsEnabled        = vm.EmSetupChoosable && vm.SimulateByIndex == 1;
         SimulateByCombo.SelectionChanged += (_, _) =>
         {
+            if (!vm.SimulateByChoosable) return;   // UpdateSimulateBy showing "Circuit models", not a choice
             vm.SimulateByIndex     = Math.Max(0, SimulateByCombo.SelectedIndex);
             EmSetupCombo.IsEnabled = vm.EmSetupChoosable && vm.SimulateByIndex == 1;
         };
@@ -118,6 +118,16 @@ public partial class AnalysisEditorDialog : Window
         LppBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.LPP;
         FieldsBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.Fields;
         EnvBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.ENV;
+        UpdateSimulateBy();
+    }
+
+    /// <summary>Grey for a fields analysis, keeping what was chosen for the other kinds in case the type is changed back.</summary>
+    private void UpdateSimulateBy()
+    {
+        bool choosable = Vm.SimulateByChoosable;
+        SimulateByCombo.IsEnabled     = choosable;
+        SimulateByCombo.SelectedIndex = choosable ? Vm.SimulateByIndex : 0;
+        EmSetupCombo.IsEnabled        = choosable && Vm.EmSetupChoosable && Vm.SimulateByIndex == 1;
     }
 
     // ── Name ──────────────────────────────────────────────────────────────────

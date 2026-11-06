@@ -39,10 +39,17 @@ public static class EmModelSwitch
     /// from the global scope.</summary>
     public const string PathAReference = "__EMCELL__";
 
-    /// <summary>Whether the chain topped by <paramref name="top"/> runs the whole schematic by EM: the run-wide switch when
-    /// one is given (<c>--em on|off</c>), else any analysis of the chain stating <c>model=em</c>.</summary>
-    public static bool IsEm(Analysis top, TestBench tb, bool? runWide = null) =>
-        runWide ?? Chain(top, tb).Any(a => a.Model == AnalysisModel.Em);
+    /// <summary>Whether the chain topped by <paramref name="top"/> runs by EM: the run-wide switch when one is given
+    /// (<c>--em on|off</c>), else any analysis of the chain stating <c>model=em</c>. A fields analysis already reads an EM
+    /// result, so it asks nothing of the schematic's layout: there the request reaches only the EM-capable cells the bench
+    /// places, and with none it runs by circuit models.</summary>
+    public static bool IsEm(Analysis top, TestBench tb, Library lib, bool? runWide = null) =>
+        (runWide ?? Chain(top, tb).Any(a => a.Model == AnalysisModel.Em))
+        && (!RecombinesSavedEm(top, tb) || HasEmInstances(tb, lib));
+
+    /// <summary>Whether the chain's base is a fields analysis. Path A cannot serve one: it replaces the bench's parts with
+    /// the layout's N-port, and the EM Field Data block the analysis recombines is one of those parts.</summary>
+    private static bool RecombinesSavedEm(Analysis top, TestBench tb) => Chain(top, tb)[^1] is FieldsAnalysis;
 
     /// <summary>Whether any instance in the bench or its cells is already set to <c>Model=EM</c> (Path B, chosen on the
     /// instance) — such a bench makes EM evaluations whatever its analyses say.</summary>
@@ -73,11 +80,12 @@ public static class EmModelSwitch
     /// The bench a model=em chain runs on. <paramref name="sourcePath"/> is the document the bench was read from — a
     /// <c>.csch</c> names its own cell; a <c>.cnl</c> names one only through <paramref name="emSetup"/> (its layout's
     /// cell). Null with <paramref name="refusal"/> when nothing in it can be simulated by EM, or when a part cannot be
-    /// connected to the EM result.
+    /// connected to the EM result. <paramref name="top"/> is the chain being run: it names the setup, and a fields chain
+    /// never takes Path A (<see cref="RecombinesSavedEm"/>).
     /// </summary>
     /// <param name="wholeSchematic">True when the chain asks for EM (model=em, --em on); false when it runs by circuit
     /// models and only instances already set to EM make evaluations — then nothing is switched.</param>
-    public static EmSwitched? Apply(TestBench tb, Library lib, string? sourcePath, string? emSetup, string? baseDirectory,
+    public static EmSwitched? Apply(TestBench tb, Library lib, Analysis top, string? sourcePath, string? baseDirectory,
                                     out string? refusal, bool wholeSchematic = true)
     {
         refusal = null;
@@ -86,7 +94,8 @@ public static class EmModelSwitch
             var already = tb.Instances.Where(NamesEmCell).Select(i => i.InstanceName).ToList();
             return new EmSwitched(tb, lib, null, already);
         }
-        string? ownCell = OwnCell(sourcePath, emSetup, baseDirectory);
+        string? emSetup = SetupOf(top, tb);
+        string? ownCell = RecombinesSavedEm(top, tb) ? null : OwnCell(sourcePath, emSetup, baseDirectory);
         var switchedLib = SwitchLibrary(lib, out var inCells);
 
         if (ownCell is not null)
@@ -110,9 +119,9 @@ public static class EmModelSwitch
 
         var bench = Copy(tb);
         bench.Instances.Clear();
-        var top = new List<string>();
-        foreach (var inst in tb.Instances) bench.Instances.Add(SwitchInstance(inst, top));
-        return new EmSwitched(bench, switchedLib, null, [.. top, .. inCells]);
+        var onBench = new List<string>();
+        foreach (var inst in tb.Instances) bench.Instances.Add(SwitchInstance(inst, onBench));
+        return new EmSwitched(bench, switchedLib, null, [.. onBench, .. inCells]);
     }
 
     /// <summary>

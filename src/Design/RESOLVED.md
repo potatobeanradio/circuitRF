@@ -28669,3 +28669,16 @@ Palace, 868 MHz, four ports, a two-layer 45 × 95 mm antenna board whose top and
 **The generated pattern display showed one cut and a plot with one point.** φ = 0 on a board along y is the plane with no null, a plain circle. It now draws φ = 0 and φ = 90 and a table of S11, realized gain, gain and directivity. A run of one frequency gets no S11 curve. Its rings say `dB re peak`, because U there is per volt at the drive and the plot is normalised to its own peak.
 
 Gates: `tests/Ui.Tests/Em3d/CoSimNetlistTests.cs`, `tests/Core.Tests/Netlist/CnlWriterTests.cs`, `tests/Ui.Tests/Sar/FarFieldCosimTests.Cell.cs`.
+
+## A fields analysis asks nothing of the schematic's layout
+
+`model=em` on a fields analysis used to send the chain to `EmModelSwitch`'s Path A, which replaces the bench's parts with the
+layout's N-port. The EM Field Data block the analysis recombines is one of those parts, so Path A could never serve it, and on an
+imported layout the run stopped earlier still, with a refusal recommending Update Layout from Schematic for a design that needed no
+EM run at all. Following that advice would have placed the matching parts into the imported board.
+
+The key cannot simply be ignored: it also switches placed EM-capable cells (Path B), and a fields bench can hold one, so dropping it
+would put that part on its circuit model in silence. So `IsEm` is true for a fields chain only when the bench places such a cell, and
+`Apply` skips Path A for one. `IsEm` takes the `Library` and `Apply` takes the chain's top so no caller can get this half right. The
+editor greys Simulate by for a fields analysis and writes circuit models back; a part's own Model=EM is unaffected. `--em on` follows
+the same rule.

@@ -169,6 +169,31 @@ public sealed class ParametricEmStubTests : IDisposable
         Assert.NotEqual(KeyOfPathA(), KeyOfPathB("300"));
     }
 
+    /// <summary>A fields analysis stating model=em never takes Path A, which would drop the block it recombines. It asks
+    /// nothing of an EM-capable schematic's layout on its own; a placed EM-capable cell is still switched to EM.</summary>
+    [Fact]
+    public void FieldsChain_NeverTakesPathA_ButAPlacedEmCellIsStillSwitched()
+    {
+        var fx = EmCellFixture.Create("C2-branch-line", _scratch, AnalysisModel.Em);
+        var lib = new Library("l");
+        var tb = new TestBench("tb");
+        tb.Instances.Add(new Instance("P1", "Port", ["n1", "0"], [new ParameterAssignment("Num", "1"), new ParameterAssignment("Z", "50")]));
+        var fields = new FieldsAnalysis("F1") { Block = "EM1", FreqExpr = "1", FreqUnit = "GHz", Model = AnalysisModel.Em };
+        tb.Analyses.Add(fields);
+
+        Assert.False(EmModelSwitch.IsEm(fields, tb, lib));
+        Assert.False(EmModelSwitch.IsEm(fields, tb, lib, runWide: true));
+
+        tb.Instances.Add(new Instance("X1", "Part", ["n1", "0"],
+            [new ParameterAssignment(ParametricModelRegistry.CellParameter, "\"" + fx.P.CellDir + "\"")]));
+        Assert.True(EmModelSwitch.IsEm(fields, tb, lib));
+        var switched = EmModelSwitch.Apply(tb, lib, fields, fx.Csch, null, out var refusal);
+        Assert.Null(refusal);
+        Assert.Null(switched!.PathA);
+        Assert.Equal(["X1"], switched.Switched);
+        Assert.Equal(2, switched.Tb.Instances.Count);
+    }
+
     /// <summary>D7: an overridden cell VAR is a tunable keyed as a parameter is (X1.w50, not X1:w50, which is a cell's own
     /// variable), and a cell's VAR names are part of its interface — a rename changes the hash, a cell with none keeps
     /// the hash it always had.</summary>

@@ -38,7 +38,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv),
-                              nameof(ShowSweeps))]
+                              nameof(ShowSweeps), nameof(SimulateByChoosable))]
     private AnalysisKind _type = AnalysisKind.DC;
 
     public bool IsDc  => Type == AnalysisKind.DC;
@@ -72,6 +72,10 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     /// <summary>0 = circuit models, 1 = EM of the schematic's own layout.</summary>
     [ObservableProperty] private int _simulateByIndex;
 
+    /// <summary>Whether the choice applies: a fields analysis reads the EM result in its block, so there is no layout to
+    /// simulate it by. A part set to EM in its bench stays EM; that is the part's own setting.</summary>
+    public bool SimulateByChoosable => !IsFields;
+
     /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
     /// "(choose a setup)" so a picker always has a row to show.</summary>
     public IReadOnlyList<string> EmSetupOptions { get; private set; } = [];
@@ -100,7 +104,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     /// <summary>The base analysis takes the choice: what it is simulated by, and the setup when several could be.</summary>
     private void ApplyModel(Analysis inner)
     {
-        inner.Model = SimulateByIndex == 1 ? AnalysisModel.Em : AnalysisModel.Circuit;
+        inner.Model = SimulateByChoosable && SimulateByIndex == 1 ? AnalysisModel.Em : AnalysisModel.Circuit;
         inner.EmSetup = inner.Model == AnalysisModel.Em && EmSetupIndex > 0 && EmSetupIndex <= _emSetupPaths.Count
             ? CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel(_emSetupPaths[EmSetupIndex - 1]) : null;
     }
@@ -197,7 +201,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         _name        = inner.Name;
         // Enabled now lives on the base analysis (each sweep axis has its own row Enabled).
         _enabled = inner.Enabled;
-        SimulateByIndex = inner.Model == AnalysisModel.Em ? 1 : 0;
+        SimulateByIndex = inner is not FieldsAnalysis && inner.Model == AnalysisModel.Em ? 1 : 0;
         LoadEmSetups(inner.EmSetup);
 
         // Track all chain member names so the edit command can remove the old chain.

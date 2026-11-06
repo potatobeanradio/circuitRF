@@ -290,6 +290,27 @@ public sealed partial class FarFieldCosimTests : IDisposable
         Assert.Equal(0.0, data["M1"].RealValues[0]);
     }
 
+    /// <summary>model=em on a fields analysis was refused for want of a layout it never needed; it now runs on the saved
+    /// result, giving the same pattern as the line without the key.</summary>
+    [Fact]
+    public void AFieldsAnalysisStatingModelEm_RunsAsTheSameLineWithoutIt()
+    {
+        WriteResult(2);
+        const string Bench = "Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=75\n";
+        const string Line = "analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1";
+        var want = Run(Bench + Block("a", "b") + Line + "\n").Results.Single().Data.Cubes["farfield.U"];
+        var got = Run(Bench + Block("a", "b") + Line + " model=em\n").Results.Single().Data.Cubes["farfield.U"];
+        Assert.Equal(want.RealValues, got.RealValues);
+
+        // The editor shows the same thing: nothing to choose, and what it writes back is circuit models.
+        var model = new CircuitRF.Design.Schematic.SchematicEditModel();
+        var existing = new CircuitRF.Core.Design.FieldsAnalysis("F1") { Block = "EM1", FreqExpr = "1", FreqUnit = "GHz", Model = CircuitRF.Core.Design.AnalysisModel.Em };
+        model.Analyses.Add(existing);
+        var vm = new CircuitRF.Ui.ViewModels.AnalysisEditorViewModel(model, existing);
+        Assert.False(vm.SimulateByChoosable);
+        Assert.Equal(CircuitRF.Core.Design.AnalysisModel.Circuit, vm.BuildAnalyses()!.Single().Model);
+    }
+
     private string RefusalOf(string fields, string around = "Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=50\n", params string[] nets)
     {
         var run = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(around + Block(nets.Length > 0 ? nets : ["a", "b"]) + fields, _dir, _dir), new CircuitEvaluationRequest());

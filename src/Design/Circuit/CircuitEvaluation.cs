@@ -298,11 +298,10 @@ public static class CircuitEvaluation
             // brief-sdl-6 R-sdl6-1/2: what the chain runs on when it runs by EM — its own bench, built once here.
             EmSwitched? em = null;
             string? emRefusal = null;
-            bool wholeByEm = request.Em != false && EmModelSwitch.IsEm(top, tb, request.Em);
+            bool wholeByEm = request.Em != false && EmModelSwitch.IsEm(top, tb, lib, request.Em);
             if (wholeByEm || (request.Em != false && EmModelSwitch.HasInstancesSetToEm(tb, lib)))
             {
-                em = EmModelSwitch.Apply(tb, lib, circuit.SourcePath ?? circuit.FilesRead.FirstOrDefault(),
-                                         EmModelSwitch.SetupOf(top, tb), circuit.BaseDirectory, out emRefusal, wholeByEm);
+                em = EmModelSwitch.Apply(tb, lib, top, circuit.SourcePath ?? circuit.FilesRead.FirstOrDefault(), circuit.BaseDirectory, out emRefusal, wholeByEm);
                 if (em is not null && wholeByEm) desc += " — by EM";
             }
 

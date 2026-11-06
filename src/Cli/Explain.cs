@@ -1620,10 +1620,9 @@ internal static class Explain
     /// </summary>
     private static ExplainEmJson? EmOf(Analysis top, TestBench tb, Library lib, string? refBase, string? sourcePath)
     {
-        bool whole = EmModelSwitch.IsEm(top, tb);
+        bool whole = EmModelSwitch.IsEm(top, tb, lib);
         if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) return null;
-        var switched = EmModelSwitch.Apply(tb, lib, sourcePath is null ? null : Path.GetFullPath(sourcePath),
-                                           EmModelSwitch.SetupOf(top, tb), refBase, out var refusal, whole);
+        var switched = EmModelSwitch.Apply(tb, lib, top, sourcePath is null ? null : Path.GetFullPath(sourcePath), refBase, out var refusal, whole);
         string model = whole ? "em" : "circuit, with instances set to EM";
         if (switched is null)
             return new ExplainEmJson(model, null, null, 0, 0, 0, 0, [], [], refusal);

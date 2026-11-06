@@ -699,9 +699,9 @@ internal static class Check
         string? refBase = CircuitSource.ReferenceBaseOf(path);
         foreach (var top in AnalysisChain.RunnableTops(tb))
         {
-            bool whole = EmModelSwitch.IsEm(top, tb);
+            bool whole = EmModelSwitch.IsEm(top, tb, lib);
             if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) continue;
-            var switched = EmModelSwitch.Apply(tb, lib, Path.GetFullPath(path), EmModelSwitch.SetupOf(top, tb), refBase,
+            var switched = EmModelSwitch.Apply(tb, lib, top, Path.GetFullPath(path), refBase,
                                                out var refusal, whole);
             if (switched is null) { f.Add(CliDiagnostics.CheckEmRefused(path, top.Name, refusal ?? "")); continue; }
             var count = EmSolveCount.Count(switched.Tb, switched.Lib, top, refBase);

@@ -296,7 +296,7 @@ own value keeps it, one that does not takes the new one.
 The analysis's choice is the `.cnl` key `model=em` (and `emSetup=` when the layout has several setups); a
 schematic run headless honours it. Every run verb also takes:
 
-- `--em on` — run every analysis by EM, and every EM-capable part by EM;
+- `--em on` — run every analysis by EM, and every EM-capable part by EM (a [fields analysis](cosimulation.html#schematic) keeps reading its saved result);
 - `--em off` — run everything by circuit models;
 - `--em-max-solves N` — the most uncached solves the run may start (default 20).
 

@@ -66,6 +66,10 @@ Fields are combined before SAR is formed, never SAR itself. The results land bes
 `<stem>.fields/cosim/<analysis>/`; the Messages pane's **Open in 3D view** opens the coil's 3D view with the recombined
 result drawn and selected. Its solution is labelled `<f> GHz, fields 'F1' (circuit port 1 driven)`.
 
+A fields analysis has no **Simulate by** choice, because the block already holds the EM result. On one, `model=em` and
+`--em on` start no EM run of the schematic's layout; they switch only EM-capable parts the circuit places, as a part set
+to EM is.
+
 **Per watt available or accepted.** With `norm=accepted` (the default) the numbers are per watt that entered the
 circuit at the drive, so a poor match does not show: B1 per √W accepted barely moves as the match changes. With
 `norm=available` they are per watt the source could deliver, so a poor match shows as a weak B1, as it would on the

@@ -86,7 +86,7 @@ public static partial class AnalysisDirectiveSchema
     [
         new("type",    Required: true,  Summary: "The analysis kind. One of the tokens this page lists."),
         new("enabled", Default: "true", Summary: "false skips the analysis at run time without deleting it."),
-        new("model",   Default: "circuit", Summary: "circuit runs on the circuit models; em runs on the EM result of the schematic's own layout at the variables' values, and switches every EM-capable cell instance to EM."),
+        new("model",   Default: "circuit", Summary: "circuit runs on the circuit models; em runs on the EM result of the schematic's own layout at the variables' values, and switches every EM-capable cell instance to EM. A fields analysis already reads an EM result, so em there switches only those instances."),
         new("emSetup", Summary: "The EM view that solves a model=em analysis when the cell has several: a .cem (a path relative to the netlist, or its name), or a driven setup embedded in the cell's 3D view as <view>#<setup> (C1#Driven1; a path to the .c3d before the # from a netlist that is not the cell's). Palace, EMerge or openEMS, as that setup says."),
     ];
 

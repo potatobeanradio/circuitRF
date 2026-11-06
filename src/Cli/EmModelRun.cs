@@ -64,10 +64,10 @@ internal sealed class EmModelRun
         if (top is null || Em == false || ChainSelector.BaseOfChain(top, tb) is not { } chainBase || !isBase(chainBase))
             return EmEvaluationScope.Begin(control: RunHost.Control);   // the verb refuses a chain of another kind itself
 
-        bool whole = EmModelSwitch.IsEm(top, tb, Em);
+        bool whole = EmModelSwitch.IsEm(top, tb, lib, Em);
         if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) return EmEvaluationScope.Begin(control: RunHost.Control);
 
-        var switched = EmModelSwitch.Apply(tb, lib, Path.GetFullPath(input), EmModelSwitch.SetupOf(top, tb), refBase,
+        var switched = EmModelSwitch.Apply(tb, lib, top, Path.GetFullPath(input), refBase,
                                            out var refusal, whole);
         if (switched is null)
         {
