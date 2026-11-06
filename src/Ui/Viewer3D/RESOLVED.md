@@ -333,3 +333,20 @@ labels covered one another in the Front and Side views.
   is out of sight, and swings back on its spring as the point comes on screen. A point on screen near an edge is laid
   out as before, kept in view.
 - Gate: `ViewNavigationRound14Tests.Labels_WhosePointIsOffScreen_StayOffScreen`.
+
+## A re-hosted view's new render thread could start on a stale wake (2026-11-06)
+
+- **Symptom:** a Reconnect, or a loss rebuild, after the render thread had ended (it returns on an exception, which is
+  what starts the rebuilds) or had never started (the view had refused to draw) could fault at once with "Index was
+  outside the bounds of the array", thrown by `WaitReusable` on the render thread, and each further rebuild could fault
+  the same way until they were spent.
+- **Cause:** `Teardown` sets `_go` to wake the render thread so that it sees `_stop`. With no thread alive to take it,
+  the wake stays set, and the next `Host`'s new thread takes it as a planned frame: it calls
+  `WaitReusable(_nextImage)` before `PlanFrame` has created the fresh backend's images. A race: when the UI thread
+  plans the first frame first, the two wakes merge and the frame draws, which is why a rebuild sometimes recovered.
+- **Fix:** `Host` resets `_go` before it starts a thread. No thread is running then (it refuses while the last one is
+  alive), and only `PlanFrame`, once the images exist, sets it again.
+- Found on Linux without GPU interop, through a view that had refused and was then reconnected with software present
+  (a separate change) allowed. Driving the app on a virtual display: before, one Reconnect logged 4 faults from
+  `WaitReusable` before a rebuild won the race (on the remote desktop it was found on, all of them lost); after,
+  none, and the view draws at once and redraws on a wheel zoom.
