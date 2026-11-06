@@ -24,4 +24,16 @@ public static class AtomicFile
             throw;
         }
     }
+
+    /// <summary>
+    /// <see cref="WriteAllText"/> for a file changed on the way through another operation (a rename repointing the
+    /// documents that reference a cell). A rename needs permission on the folder and not on the file, so on macOS and
+    /// Linux it would replace a read-only file that an in-place write refuses.
+    /// </summary>
+    public static void RewriteText(string path, string contents)
+    {
+        if (File.Exists(path) && new FileInfo(path).IsReadOnly)
+            throw new UnauthorizedAccessException($"'{Path.GetFileName(path)}' is read-only.");
+        WriteAllText(path, contents);
+    }
 }

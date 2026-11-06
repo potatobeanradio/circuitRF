@@ -1338,3 +1338,20 @@ which is why it read as a drawing fault. Both now call `PinnedWireDragPoints`: t
 `WireGeometry.FollowEndpoints` carries the held end back, so only the legs at that end give. The netlist oracle alone
 did not catch it; `DragSelectedWireKeepsTapsTests` adds a loose-end count (`ComputeLiveConnectivity`), which failed 4
 of 4 wire-selected drags before the change.
+
+## A cell rename rewrote the documents that reference it in place (2026-11-06)
+
+Saves reach disk through `AtomicFile`, but the rewriters that repoint references did not: `CellUsageScanner` (a rename's
+`CellRef`s in every `.csch`, `.clay` and `.c3d`, and its wBond links), `WorkspaceMove` and `CrossWorkspaceCellCopy` opened the
+document and truncated it, so a crash or a full disk during the write could leave a referencing document cut short.
+`DocumentClash`, choosing a version of a clashed document, did the same. All four now call `AtomicFile.RewriteText`. A rename
+never rewrites a `.csym`: it has no `CellRef`, and its primary-file rename is a `File.Move`.
+
+**A rename needs permission on the folder, not on the file,** so on macOS and Linux the switch alone would have replaced a
+read-only document that the in-place write refused. `RewriteText` refuses it first, and it stays in the rename's failure list.
+`AtomicFile.WriteAllText` does not check this, so a save relies on its caller's read-only check.
+
+Left in place on purpose: `WorkspaceRestore.TryWrite` writes only `.gitignore` and `.gitattributes`, and
+`WBondGeometryEmbedding` writes a `.clay` into a new folder, where there is no earlier text to lose.
+
+Gate: `CellRewriteAtomicTests`, which puts a folder where the temp file goes, so an in-place write would get through.

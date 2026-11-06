@@ -311,7 +311,7 @@ public static class CrossWorkspaceCellCopy
         if (string.Equals(existing, rewritten, StringComparison.Ordinal)) return;
 
         node["TechRef"] = rewritten is null ? null : JsonValue.Create(rewritten);
-        File.WriteAllText(clayPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        AtomicFile.RewriteText(clayPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static void RewriteRefsIn(CopiedFolder folder, Dictionary<string, string> map)
@@ -359,7 +359,7 @@ public static class CrossWorkspaceCellCopy
         }
 
         if (!changed) return;
-        File.WriteAllText(destFile, node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        AtomicFile.RewriteText(destFile, node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     // ── Walking the source ────────────────────────────────────────────────────

@@ -350,7 +350,7 @@ public static class CellUsageScanner
             catch { /* unreadable by its own reader: the JsonNode text is still a correct edit */ }
         }
 
-        File.WriteAllText(filePath, text);
+        AtomicFile.RewriteText(filePath, text);
         return true;
     }
 
@@ -481,7 +481,7 @@ public static class CellUsageScanner
 
         if (!changed) return false;
 
-        File.WriteAllText(filePath, node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        AtomicFile.RewriteText(filePath, node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         return true;
 
         static bool Resolves(string schDir, string[] segments, string targetAbs)

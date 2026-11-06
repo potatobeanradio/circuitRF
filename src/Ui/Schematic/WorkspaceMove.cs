@@ -196,7 +196,7 @@ public static class WorkspaceMove
 
                 if (!changed) continue;
 
-                File.WriteAllText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                AtomicFile.RewriteText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 rewritten.Add(path);
             }
             catch (Exception ex)

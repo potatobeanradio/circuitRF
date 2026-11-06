@@ -160,7 +160,7 @@ public static class DocumentClashes
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-                File.WriteAllText(full, content.StdOut);
+                Cells.AtomicFile.RewriteText(full, content.StdOut);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
