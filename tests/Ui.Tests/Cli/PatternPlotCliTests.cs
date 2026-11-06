@@ -247,6 +247,52 @@ public sealed class PatternPlotCliTests(ITestOutputHelper output) : IDisposable
         output.WriteLine("resolved through PlotConfigLoader: " + scale.ReferenceCaption());
     }
 
+    // ══ over a parametric sweep (brief-cosim-pattern-5 R-cp5-5) ══════════════
+
+    /// <summary>The fixture's far field at two values of L1, as a fields analysis under a sweep leaves it.</summary>
+    private string SweptResult(string dir)
+    {
+        var data = new DataSet();
+        var l1 = new Axis("L1", [1e-9, 5e-9], "H");
+        foreach (var (name, cube) in PatternFixture.Data.CubesIn("farfield"))
+            data.AddToGroup("F1", "farfield." + name, DataCube.PrependAxis(l1, [cube, cube]));
+        string npy = Path.Combine(dir, "swept.npy");
+        DataSetExporter.Export(data, npy, ExportFormat.Npy);
+        return npy;
+    }
+
+    private (TraceConfig Trace, LegendPlacement Legend, string StdErr) Authored(string npy, string trace, string dir, string type = "rect")
+    {
+        string cdd = Path.Combine(dir, "one.cdd");
+        var run = RunCli("plot", npy, "-o", Path.Combine(dir, "p.svg"), "--write-cdd", cdd, "--type", type, "--trace", trace);
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+        var plot = JsonSerializer.Deserialize<DataDisplayConfig>(File.ReadAllText(cdd))!.Tabs[0].Plots[0];
+        return (plot.Traces[0], plot.Legend, run.StdErr);
+    }
+
+    [Fact]
+    public void ACutOverASweep_IsAFamilyWithALegend_AndAKeyPinsOneValue()
+    {
+        string dir = Dir("over-sweep");
+        string npy = SweptResult(dir);
+
+        var (family, legend, _) = Authored(npy, "cube=F1.farfield.U,cut=0", dir);
+        Assert.Equal(AxisRole.FamilyIterate, family.CubeSlice[0].Role);
+        Assert.Equal(LegendPlacement.Inside, legend);
+
+        var (pinned, off, said) = Authored(npy, "cube=F1.farfield.U,cut=0,L1=5n", dir);
+        Assert.Equal((AxisRole.PinToIndex, 1), (pinned.CubeSlice[0].Role, pinned.CubeSlice[0].Index));
+        Assert.Equal(LegendPlacement.Off, off);
+        Assert.Contains("L1 pinned to 5E-09 H", said);
+
+        // Peak metrics read along the sweep with nothing to say about it, and an axis the cube does not have is the unknown key it always was.
+        var (metric, _, _) = Authored(npy, "cube=F1.farfield.GainDbi,port=1", dir);
+        Assert.Equal(AxisRole.KeepAsX, metric.CubeSlice[0].Role);
+        var refused = RunCli("plot", npy, "-o", Path.Combine(dir, "p.svg"), "--trace", "cube=F1.farfield.U,cut=0,nope=1");
+        Assert.NotEqual(0, refused.ExitCode);
+        Assert.Contains("'nope' is not one of", refused.StdErr);
+    }
+
     // ══ the refusals ═════════════════════════════════════════════════════════
 
     [Fact]

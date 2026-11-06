@@ -28383,6 +28383,26 @@ publish is partial whatever the scope now, since a run over every analysis lacks
 Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Inspected: a polar cut from a `Local` evaluation with a shunt C at 0.5 pF and 8 pF on a synthetic coupled two-port, through UiSnapshot: the lobes drop about 5 dB, read off the rings, and the
 floor, rings and reference stay.
 
+## brief-cosim-pattern-5 — A parametric sweep wraps the pattern
+
+**An unkeyed warning does not survive a sweep.** `FieldCosimulation.Run` used `nl.AddWarning`, and `MergeDiagnosticsFrom` replays only keyed entries, because unkeyed ones are taken to come from elaboration. So every far-field check would have vanished under a sweep, and the keyed notes would have reported the first point's |Γ| as if it were the sweep's. A swept run now has one note describing the sweep, and each warning is keyed and names its point.
+
+**`plot`'s `cut=` pinned any axis it did not know to index 0, silently.** A cut of `[L1, freq, theta, phi, port]` drew the first value alone and looked complete. That axis is now the family, and a second sweep axis is pinned with a line on stderr saying which value.
+
+**The family mechanism did not label anything.** Its comment says so: one colour, no legend, one trace drawn N times. That is right for a curve tracer and unreadable for cuts that cross, and three reds on the first picture showed it. `Trace.LabelsFamilyCurves` covers a family along an angle over anything but φ or a trial, and every other family draws as it did. The legend is off by default, so a family with no legend would still carry no values: `plot` opens one unless `--legend` is stated, and the trace card opens one when its axis role makes the family, once.
+
+**`--whole-plane` was dropped silently on a family.** `ResolveFamily` never read `PatternWholePlane`, so the picture was the front half with no sign of it. Each curve is the plane now, through `TryWholePlaneCompanion`, with the same outwards-in walk so no chord crosses the disc.
+
+**A failed point lost its unit.** `NaNLike` rebuilt each cube without its `Unit`, and stacking takes the unit from the first point, so a sweep whose first point failed would draw `U` as a bare number. It keeps it now, which changes nothing for an envelope's cubes but their first-point-failed unit.
+
+**A far field's size is 72 bytes a direction only with the Ludwig-3 pair.** The pair exists when the pattern has a polarization to reference; a random-field test fixture has 56. The stated figure is the larger, so the summary does not understate it. A real export at 2° with 3 points was 3.56 MB against a stated 3.5 MB.
+
+**A seed on a single frequency.** `SeedSlice` always took `freq` as X, so a metric at one frequency under a sweep opened as one dot. With one frequency and a sweep around it the sweep is X now, and a pattern keeps its old seed, since its X is an angle the seed cannot choose. This also applies to an S-parameter sweep at one frequency.
+
+**`plot`'s positional branch wrote `0` for a port.** A port token is a port number, so `cube=…,L1=5n` was refused with "Port 0 is not a port". It writes the first port's number now, which also repairs `freq=` alone on a cube whose port comes after the X.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs` and `tests/Ui.Tests/Cli/PatternPlotCliTests.cs`. Inspected: a polar cut at 1, 5 and 9 nH on a synthetic two-port through UiSnapshot, the rect form and a 3D surface pinned by `L1=5n` through `plot`: three distinct curves, front and back halves matching, a legend reading `L1 = 5 nH`, nothing clipped. Not run against a solved 3D result: every number here is the circuit's and a sum already gated in CP-3.
+
 ## How a net reaches copper inside a placed instance (brief-ipx-1 R-ipx1-1c, 2026-11-05)
 
 It does not, through anything stored. `LayoutInstance` has no pin-to-net map, and a land pattern is one cell shared by every

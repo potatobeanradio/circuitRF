@@ -507,7 +507,7 @@ src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} is out of ran
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} — {kind} is a two-terminal device; 
 src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': inner analysis 
 src/Engine/ParametricSweepEngine.cs|ParametricSweepEngine: inner analysis type 
-src/Engine/ParametricSweepEngine.cs|envelope '{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join(
+src/Engine/ParametricSweepEngine.cs|{(inner is EnvelopeAnalysis ? 
 src/Engine/SParameterEngine.cs|S-parameter analysis requires at least one Port, Term, or P1Tone component at the testbench top level. 
 src/Engine/SParameterEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
 src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): 
@@ -1249,6 +1249,10 @@ src/Design/Em3d/CosimFieldMetrics.cs|{how}; '{region}' has {parts.Length}.
 src/Design/Em3d/CosimFieldMetrics.cs|{how}; '{unit}' is not a length unit.
 src/Design/Em3d/CosimFieldMetrics.cs|Fields '{_fa.Name}': the field set is on a cylindrical grid, and psSAR averages over cubes, which are a 
 src/Design/Em3d/CosimFieldMetrics.cs|Fields '{_fa.Name}': the field set is on a cylindrical grid, whose cells are (ρ, α, z), so a box region 
+src/Design/Em3d/FieldCosimulation.Sweep.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and a parametric sweep wraps fields analysis '{fa.Name}' over a far field alone.
+src/Design/Em3d/FieldCosimulation.Sweep.cs|{who}: a parametric sweep wraps a far field alone, and at this frequency '{Path.GetFileName(recordPath)}' holds a field set. Its SAR and B1 volumes are written per run and 
+src/Design/Em3d/FieldCosimulation.Sweep.cs|{metric}({fa.Name}) is one number, and a parametric sweep over {sweep.SweepVarName} wraps fields analysis '{fa.Name}', so it has one per point. 
+src/Design/Em3d/FieldCosimulation.Sweep.cs|{who}: this value moves freq= to {MaterialDispersion.Hz(hz)} from {MaterialDispersion.Hz(first.Value)}, and a pattern's cube 
 src/Design/Em3d/FieldCosimulation.cs|Fields '{fa.Name}': every drive's weight is zero, so nothing is driven.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{fa.DriveExpr}' names {ports.Count} port{(ports.Count == 1 ? 

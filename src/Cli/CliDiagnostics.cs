@@ -3531,6 +3531,11 @@ internal static class CliDiagnostics
         "plot: in --trace '{trace}', freq='{value}' is not a frequency (2.45G and 2.45e9 both work).",
         ("trace", trace), ("value", value));
 
+    public static Diagnostic PlotTraceAxisValueMalformed(string trace, string axis, string value) => Diagnostic.Create(
+        "plot.trace.axis-value-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', {axis}='{value}' is neither a value of that axis (3n and 3e-9 both work) nor 'all'.",
+        ("trace", trace), ("axis", axis), ("value", value));
+
     public static Diagnostic PlotUnknownVariant(string name) => Diagnostic.Create(
         "plot.variant.unknown", DiagnosticSeverity.Error,
         "plot: --variant '{name}' is not light or dark.", ("name", name));

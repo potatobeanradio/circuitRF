@@ -408,10 +408,11 @@ public sealed class FarFieldCosimTests : IDisposable
         Assert.Equal(data.Cubes[FieldCosimulation.ReflectionCube].ComplexValues[0], data.Cubes["S"].ComplexValues[0]);
     }
 
-    [Fact]
-    public void ARecordWithBoth_GivesBothInOneAnalysis_AndSaysWhichHalfAFrequencyLacks()
+    private const double Sar = 300e6;
+
+    /// <summary>A result with a field set at <see cref="Sar"/> and a far field at 0.8 of it and at it.</summary>
+    private void WriteResultWithBoth()
     {
-        const double Sar = 300e6;
         new MemoryFieldSet().WriteBeside(_dir, Sar, "stamp-1");
         string npyPath = Path.Combine(_dir, "ems_em.npy");
         var data = DataSetImporter.Import(npyPath).DataSet;
@@ -426,7 +427,12 @@ public sealed class FarFieldCosimTests : IDisposable
         var (record, _) = EmResultRecord.Load(Record);
         record!.Frequencies.FarFieldHz = [0.8 * Sar, Sar];
         File.WriteAllText(Record, record.Serialize());
+    }
 
+    [Fact]
+    public void ARecordWithBoth_GivesBothInOneAnalysis_AndSaysWhichHalfAFrequencyLacks()
+    {
+        WriteResultWithBoth();
         const string Around = "Port:P1 in 0 Num=1 Z=50 Ohm\nC:C1 p2 0 C=2e-12\n";
         var both = Run(Around + Block("in", "p2") + "analysis F1 type=fields block=EM1 freq=300 freqUnit=MHz drive=1 average=no\n").Results.Single().Data;
         Assert.True(both.Cubes.ContainsKey("farfield.U"));
@@ -725,5 +731,181 @@ public sealed class FarFieldCosimTests : IDisposable
         lib.Publish(path, final, DataSourceLibraryViewModel.OptimizingChip, partial: false);
         Assert.Empty(lib.StaleGroupsFor(path));
         Assert.Equal(final["F1.farfield.U"].RealValues, lib.Entries.Single().Data!["F1.farfield.U"].RealValues);
+    }
+
+    // ── brief-cosim-pattern-5: a parametric sweep wraps the pattern ───────────────────────────────
+
+    private string Swept(string fields, string sweep = "analysis SW1 type=parametric_sweep Var=Lv Start=1 Stop=9 Step=4 Unit=nH Inner=F1\n", string lv = "Lv = 5 nH")
+        => $"{lv}\nPort:P1 a 0 Num=1 Z=50 Ohm\nL:L1 b 0 L=Lv\nR:R3 c 0 R=75\n" + Block("a", "b", "c") +
+           $"analysis F1 type=fields block=EM1 {fields} drive=1\n" + sweep;
+
+    /// <summary>The cube's values at one point of its first axis, as a single run's buffer is laid out.</summary>
+    private static void SamePoint(DataCube swept, int point, DataCube single, string name)
+    {
+        Assert.Equal(single.Axes.Select(a => a.Name), swept.Axes.Skip(1).Select(a => a.Name));
+        int n = single.BufferLength;
+        if (single.DataKind == DataKind.Complex)
+            for (int i = 0; i < n; i++)
+                Assert.True((swept.ComplexValues[point * n + i] - single.ComplexValues[i]).Magnitude <= 1e-12 * Math.Max(1, single.ComplexValues[i].Magnitude), $"{name}[{i}]");
+        else
+            for (int i = 0; i < n; i++)
+                Assert.True(Math.Abs(swept.RealValues[point * n + i] - single.RealValues[i]) <= 1e-12 * Math.Max(1, Math.Abs(single.RealValues[i])), $"{name}[{i}]");
+    }
+
+    [Theory]
+    [InlineData("freq=1 freqUnit=GHz")]
+    [InlineData("freq=all")]
+    public void ASweepsPoint_IsASingleRunAtThatValue_CubeForCube(string frequency)
+    {
+        WriteResult();
+        var swept = Run(Swept(frequency)).Results.Single().Data;
+        Assert.Equal(["Lv", "freq", "theta", "phi", "port"], swept["farfield.U"].Axes.Select(a => a.Name));
+        Assert.Equal("H", swept["farfield.U"].Axes[0].Unit);
+        for (int p = 0; p < 3; p++)
+        {
+            var single = Run(Swept(frequency, "", $"Lv = {1 + 4 * p} nH")).Results.Single().Data;
+            Assert.Equal(single.Cubes.Keys.Order(), swept.Cubes.Keys.Order());
+            foreach (var (name, cube) in single.Cubes) SamePoint(swept[name], p, cube, name);
+        }
+    }
+
+    // R-cp5-1 / R-cp5-2 — naming the analysis inside runs the whole chain, a nested sweep adds an axis, and the plan counts every point.
+    [Fact]
+    public void ANamedInner_IsPromotedToItsSweeps_AndANestedSweepAddsAnAxis()
+    {
+        WriteResult();
+        var circuit = PreparedCircuit.FromText("Rv = 75\n" + Swept("freq=1 freqUnit=GHz",
+            "analysis SW1 type=parametric_sweep Var=Lv Start=1 Stop=9 Step=4 Unit=nH Inner=F1\nanalysis SW2 type=parametric_sweep Var=Rv Values=50,75 Inner=SW1\n"), _dir, _dir);
+        var request = new CircuitEvaluationRequest { Analyses = ["F1"] };
+        var plan = CircuitEvaluation.Plan(circuit, request);
+        Assert.Equal(6, plan.SweepPoints);
+        Assert.Contains("6 points", plan.Lines.Single());
+        var run = CircuitEvaluation.Execute(plan);
+        Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        Assert.Equal(["Rv", "Lv", "freq", "theta", "phi", "port"], run.Results.Single().Data["farfield.U"].Axes.Select(a => a.Name));
+    }
+
+    // A field set beside the far field stops a sweep only where the analysis would run it, and writes nothing where it does not.
+    [Theory]
+    [InlineData("freq=all", 2)]
+    [InlineData("freq=240 freqUnit=MHz", 1)]
+    public void ARecordWithBoth_Sweeps_WhereTheAnalysisTakesTheFarFieldAlone(string frequency, int frequencies)
+    {
+        WriteResultWithBoth();
+        string Bench(string fields) => $"Cv = 2 pF\nPort:P1 in 0 Num=1 Z=50 Ohm\nC:C1 p2 0 C=Cv\n{Block("in", "p2")}analysis F1 type=fields block=EM1 {fields} drive=1 average=no\n" +
+                                       "analysis SW1 type=parametric_sweep Var=Cv Start=1 Stop=3 Step=1 Unit=pF Inner=F1\n";
+        var data = Run(Bench(frequency)).Results.Single().Data;
+        var u = data["farfield.U"];
+        Assert.Equal((3, frequencies), (u.Axes[0].Length, u.Axes[1].Length));
+        Assert.False(data.Cubes.ContainsKey(FieldCosimulation.PeakLocalCube));
+        Assert.False(Directory.Exists(Path.Combine(_dir, "ems.fields", FieldCosimulation.CosimFolder)));
+
+        var refused = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(Bench("freq=300 freqUnit=MHz"), _dir, _dir));
+        Assert.Equal(RunStatus.EngineError, refused.Status);
+        Assert.Contains("use freq=all", refused.StatusMessage);
+    }
+
+    // R-cp5-2 — a field set is refused, whose sentence says why and is the same before the run and at it; with no far field there is no freq=all to offer.
+    [Fact]
+    public void ABlockWithAFieldSet_IsRefused_NamingTheLimit()
+    {
+        new MemoryFieldSet().WriteBeside(_dir, F0, "stamp-1");
+        var run = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(
+            $"Lv = 5 nH\nPort:P1 a 0 Num=1 Z=50 Ohm\nL:L1 b 0 L=Lv\n{Block("a", "b")}analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1\n" +
+            "analysis SW1 type=parametric_sweep Var=Lv Start=1 Stop=9 Step=4 Unit=nH Inner=F1\n", _dir, _dir));
+        Assert.Equal(RunStatus.EngineError, run.Status);
+        Assert.Contains("a parametric sweep wraps a far field alone", run.StatusMessage);
+        Assert.Contains("holds a field set", run.StatusMessage);
+        Assert.Contains("ems.cemr", run.StatusMessage);
+        Assert.DoesNotContain("freq=all", run.StatusMessage);
+    }
+
+    // R-cp5-1 — with nothing to run it, the engine refuses a fields analysis in the words it always has.
+    [Fact]
+    public void ASweepWithNoInnerRunner_IsRefusedAsEver()
+    {
+        WriteResult();
+        var circuit = PreparedCircuit.FromText(Swept("freq=1 freqUnit=GHz"), _dir, _dir);
+        var tb = circuit.Tb!;
+        var refused = Assert.Throws<NotSupportedException>(() =>
+            CircuitRF.Engine.ParametricSweepEngine.Run(tb.Analyses.OfType<CircuitRF.Core.Design.ParametricSweepAnalysis>().Single(), circuit.Lib!, tb, baseDirectory: _dir));
+        Assert.Contains("inner analysis type 'FieldsAnalysis' is not supported", refused.Message);
+    }
+
+    // R-cp5-3 — a value that moves freq= fails its own point: NaN, a warning naming the value, the others kept and the cube's units with them.
+    [Fact]
+    public void AFailedPoint_IsNaN_NamingItsValue_AndTheOthersAreKept()
+    {
+        WriteResult();
+        var run = Run(Swept("freq=Fv freqUnit=GHz", "analysis SW1 type=parametric_sweep Var=Fv Values=1,2 Inner=F1\n", "Lv = 5 nH\nFv = 1"));
+        var u = run.Results.Single().Data["farfield.U"];
+        int n = Grid.DirectionCount;
+        Assert.DoesNotContain(u.RealValues[..n], double.IsNaN);
+        Assert.All(u.RealValues[n..], v => Assert.True(double.IsNaN(v)));
+        Assert.Equal("W/sr", u.Unit);
+        Assert.Contains(run.Warnings, w => w.Contains("Fv = 2") && w.Contains("that point is NaN") && w.Contains("freq=all"));
+    }
+
+    // R-cp5-4 — the size is said before the run, its figure is what the cubes take, and past 2 GB the warning names the remedy.
+    [Fact]
+    public void ItsSize_IsStatedBeforeTheRun_AndALargeOneIsWarnedAbout()
+    {
+        WriteResult();
+        var plan = CircuitEvaluation.Plan(PreparedCircuit.FromText(Swept("freq=all"), _dir, _dir), new CircuitEvaluationRequest());
+        Assert.Contains($"{Grid.DirectionCount} directions x 2 frequencies x 3 points", plan.Lines.Single());
+
+        var data = Run(Swept("freq=1 freqUnit=GHz", "")).Results.Single().Data;
+        // Every cube the size of the grid: 56 bytes on this fixture, whose random field names no polarization to reference, and the 72 stated once the Ludwig-3 pair is there.
+        double taken = data.Cubes.Values.Where(c => c.BufferLength >= Grid.DirectionCount)
+                           .Sum(c => (double)c.BufferLength * (c.DataKind == DataKind.Complex ? 16 : 8)) / Grid.DirectionCount;
+        Assert.InRange(taken, 56, FieldsSweepSize.BytesPerDirection);
+
+        Assert.Equal("4.7 MB", new FieldsSweepSize(65160, 1, 1).Amount);
+        var every = new CircuitRF.Core.Design.FieldsAnalysis("F1") { FreqExpr = "all" };
+        Assert.Null(FieldCosimulation.SweepSizeWarning(every, new FieldsSweepSize(65160, 21, 20)));
+        Assert.Contains("freq=", FieldCosimulation.SweepSizeWarning(every, new FieldsSweepSize(65160, 21, 30)));
+    }
+
+    // A scalar function has one number per point under a sweep, and it says where those numbers are.
+    [Fact]
+    public void APatternFunction_UnderASweep_NamesTheCubeThatHoldsIt()
+    {
+        WriteResult();
+        var run = Run(Swept("freq=1 freqUnit=GHz") + "measure G = RealizedGainDbi(F1)\n", measurements: true);
+        Assert.Contains("F1.farfield.RealizedGainDbi over Lv", run.StatusMessage);
+    }
+
+    // R-cp5-5 — a cut over the sweep: distinct curves with their values, in the legend, and a whole-plane cut is the plane per curve.
+    [Fact]
+    public void ACutOverASweep_IsOneLabelledCurvePerValue()
+    {
+        WriteResult();
+        var data = Run(Swept("freq=1 freqUnit=GHz")).Results.Single().Data;
+        Assert.True(CubeTraceSpecParser.TryParse("db10(farfield.U[~, 0, :, 0, 1])", data, out string cube, out var slice, out var transform, out string error), error);
+        Trace Resolved(bool wholePlane)
+        {
+            var t = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+            {
+                CubeName = cube, Slice = slice, Transform = transform, PatternWholePlane = wholePlane,
+                PatternScale = new PolarPatternScale { ReferenceDb = 0, FloorDb = -200, RingStepDb = 10, Normalised = false, Unit = "dB" },
+            };
+            TraceResolve.SetCubeDataFrom(t, data, PlotType.Polar, FreqUnit.GHz);
+            return t;
+        }
+        var front = Resolved(false);
+        Assert.True(front.LabelsFamilyCurves);
+        Assert.Equal(["Lv = 1 nH", "Lv = 5 nH", "Lv = 9 nH"], Enumerable.Range(0, 3).Select(front.FamilyCurveLabel));
+        Assert.Equal(3, Enumerable.Range(0, 3).Select(front.FamilyCurveColor).Distinct().Count());
+
+        var plot = new Plot(PlotType.Polar, FreqUnit.GHz) { Legend = LegendPlacement.Inside };
+        plot.Traces.Add(front);
+        var mirrored = Resolved(false);
+        mirrored.MirrorPatternAngle = true;
+        plot.Traces.Add(mirrored);
+        Assert.Equal(["Lv = 1 nH", "Lv = 5 nH", "Lv = 9 nH"], LegendRenderer.Entries(plot, false, null).Select(e => e.Label));
+
+        var whole = Resolved(true);
+        int theta = data["farfield.U"].Axes[2].Length;
+        Assert.All(whole.FamilyCurves, c => Assert.Equal(2 * theta, c.Points.Count));
     }
 }

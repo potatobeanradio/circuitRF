@@ -162,5 +162,8 @@ a channel's amplitude and phase are the parts of a complex variable, and ordinar
   +1.5 % in B1 and +3.0 % in psSAR10g. About four fifths of that is the lumped run's own ring-down cut short: run to −60 dB
   it moves to within 0.3 % in B1 and 0.6 % in psSAR10g of the co-simulation.
 - **One frequency per field set**, the SAR frequency: a fields analysis at any other is refused.
-- **No parametric sweep** wraps a fields analysis.
+- **A parametric sweep** wraps a fields analysis over a far field and adds its axis to every cube. Make the sweep's axis the **Family** of a pattern cut for one curve
+  per value, each named in the legend, and plot `F1.farfield.RealizedGainDbi` along it for the peak. The run summary states the memory its cubes take and warns above 2 GB, when
+  naming one frequency in place of `freq=all` is the remedy. It is refused at a frequency with a field set: SAR and B1 volumes are written per run and the cube average
+  is a long solve per run, so those stay a slider's or `--set`'s, one value at a time. A result holding both still sweeps its pattern at `freq=all`.
 - **A cylindrical grid's** field set recombines as a Cartesian one does, but its volumes are not drawn in the 3D view.

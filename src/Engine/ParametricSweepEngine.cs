@@ -59,6 +59,11 @@ public static class ParametricSweepEngine
     /// <c>AddWarningOnce</c> uses — so a condition every point raises is reported once, not once per
     /// point. Null keeps the old behaviour, which is what every test caller wants.</para>
     /// </param>
+    /// <param name="runOtherInner">
+    /// brief-cosim-pattern-5 R-cp5-1 — runs an inner analysis this engine does not dispatch itself, given that point's netlist.
+    /// A layer above supplies it, because what it runs lives above this one (a far field is read in <c>src/Design</c>). A point
+    /// it fails is NaN with a warning naming its value, and the others are kept. Null: such an inner is refused, as ever.
+    /// </param>
     public static DataSet Run(
         ParametricSweepAnalysis sweep,
         Library lib,
@@ -67,9 +72,10 @@ public static class ParametricSweepEngine
         string? baseDirectory = null,
         RunControl? control = null,
         HarmonicBalance.HbSmallSignalCache? wspCache = null,
-        ElaboratedNetlist? diagnosticsInto = null)
+        ElaboratedNetlist? diagnosticsInto = null,
+        Func<Analysis, ElaboratedNetlist, RunControl?, DataSet>? runOtherInner = null)
         => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState(), control, wspCache,
-               diagnosticsInto);
+               diagnosticsInto, runOtherInner);
 
     /// <summary>
     /// The values a sweep injects at each of its points, in base SI, with the unit the injection marks them with — the
@@ -132,7 +138,8 @@ public static class ParametricSweepEngine
         OutputWriteState writeState,
         RunControl? control = null,
         HarmonicBalance.HbSmallSignalCache? wspCache = null,
-        ElaboratedNetlist? diagnosticsInto = null)
+        ElaboratedNetlist? diagnosticsInto = null,
+        Func<Analysis, ElaboratedNetlist, RunControl?, DataSet>? runOtherInner = null)
     {
         // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
         // transparent — its dimension is dropped and ITS inner runs here instead.
@@ -233,7 +240,7 @@ public static class ParametricSweepEngine
                     thermal.Drive = DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive);
                     netlist.WireThermal = thermal;
                     datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
-                        warmStart ? seed : null, out var nextSeed, innerControl, wspCache));
+                        warmStart ? seed : null, out var nextSeed, innerControl, wspCache, runOtherInner));
                     seed = warmStart ? nextSeed : null;
 
                     // Before this netlist goes away with everything the run wrote on it.
@@ -249,6 +256,16 @@ public static class ParametricSweepEngine
                     diagnosticsInto?.AddWarning(
                         $"Sweep '{sweep.Name}' at {at}: {ex.Summary} The point failed; the worker was restarted and the point run again.");
                     seed = null;
+                }
+                catch (Exception ex) when (runOtherInner is not null && !IsCancellation(ex))
+                {
+                    // R-cp5-3 — the envelope's rule for a failed point: NaN, a warning naming its value, the others kept.
+                    string why = $"{DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive)}: {ex.Message}";
+                    failedPoints.Add(why);
+                    diagnosticsInto?.AddWarningOnce($"sweep-point-failed:{why}",
+                        $"'{inner.Name}' at {why} — that point is NaN; the other points are kept.");
+                    datasets.Add(null!);
+                    break;
                 }
             }
             finally
@@ -271,7 +288,7 @@ public static class ParametricSweepEngine
         {
             if (failedPoints.Count == datasets.Count)
                 throw new InvalidOperationException(
-                    $"envelope '{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join("; ", failedPoints)}");
+                    $"{(inner is EnvelopeAnalysis ? "envelope " : "")}'{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join("; ", failedPoints)}");
             var template = datasets.First(d => d is not null);
             for (int i = 0; i < datasets.Count; i++) datasets[i] ??= NaNLike(template);
         }
@@ -454,8 +471,8 @@ public static class ParametricSweepEngine
             if (name.StartsWith("__", StringComparison.Ordinal)) { ds.Add(name, c); continue; }
             int n = c.BufferLength;
             ds.Add(name, c.DataKind == DataKind.Complex
-                ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray())
-                : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()));
+                ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray()) { Unit = c.Unit }
+                : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()) { Unit = c.Unit });
         }
         return ds;
     }
@@ -614,7 +631,8 @@ public static class ParametricSweepEngine
         Complex[,]? hbWarmStart,
         out Complex[,]? hbConvergedSeed,
         RunControl? control = null,
-        HarmonicBalance.HbSmallSignalCache? wspCache = null)
+        HarmonicBalance.HbSmallSignalCache? wspCache = null,
+        Func<Analysis, ElaboratedNetlist, RunControl?, DataSet>? runOtherInner = null)
     {
         // Only an HB inner produces a chainable seed — at ANY tone count since HB-P3 M3; every other
         // inner leaves it null so the sweep does not warm-start across it (continuation is
@@ -651,7 +669,7 @@ public static class ParametricSweepEngine
                 // merged into the caller's the moment RunInner returns — so a message raised three
                 // levels down arrives once at the top, deduped by the same key the whole way up.
                 return Run(psa, lib, tb, settings, baseDirectory, writeState, control, wspCache,
-                           diagnosticsInto: netlist);
+                           diagnosticsInto: netlist, runOtherInner);
 
             case LoadpullAnalysis lpa:
             {
@@ -682,6 +700,7 @@ public static class ParametricSweepEngine
             }
 
             default:
+                if (runOtherInner is not null) return runOtherInner(inner, netlist, control);
                 throw new NotSupportedException(
                     $"ParametricSweepEngine: inner analysis type " +
                     $"'{inner.GetType().Name}' is not supported. " +

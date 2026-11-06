@@ -63,6 +63,7 @@ internal static class Explain
         (a => a is LoadpullAnalysis,         "loadpull",         "analysis <name> type=loadpull ...",          "lp"),
         (a => a is LoadpullPursuitAnalysis,  "loadpull-pursuit", "analysis <name> type=loadpull_pursuit ...",  "lpp"),
         (a => a is EnvelopeAnalysis,         "envelope",         "analysis <name> type=env ...",               "env"),
+        (a => a is FieldsAnalysis,           "fields",           "analysis <name> type=fields ...",            "fields"),
     ];
 
     public static int Run(string[] args)
@@ -1507,6 +1508,9 @@ internal static class Explain
             {
                 dispatched[top.Name] = verb;
                 if (sel.PromotedFrom is { } from) promoted[top.Name] = from.Name;
+                // `fields` runs every chain of its kind unless one is named, where the others run the first.
+                if (verb == "fields" && requested is null)
+                    foreach (var chain in sel.Candidates) dispatched[chain.Name] = verb;
             }
             else if (sel.Why is { } why) reasons.Add(why);
         }
@@ -1520,6 +1524,8 @@ internal static class Explain
         foreach (var a in tb.Analyses)
             if (a is ParametricSweepAnalysis ps && !string.IsNullOrEmpty(ps.InnerAnalysisName))
                 inner.Add(ps.InnerAnalysisName);
+
+        var fieldSweeps = FieldSweepsOf(lib, tb, sourcePath);
 
         var rows = new List<ExplainAnalysisJson>(tb.Analyses.Count);
         foreach (var a in tb.Analyses)
@@ -1541,7 +1547,8 @@ internal static class Explain
             var unresolved = UnresolvedReferences(a, tb);
             bool runnable  = top is not null
                           && AnalysisChain.IsChainRunnable(top, tb)
-                          && unresolved.Count == 0;
+                          && unresolved.Count == 0
+                          && fieldSweeps.GetValueOrDefault(a.Name)?.Refusal is null;
 
             bool isSparam = a is SParameterAnalysis;
             rows.Add(new ExplainAnalysisJson(
@@ -1563,10 +1570,44 @@ internal static class Explain
                 Optimize: OptimizeScopes(a.Name),
                 OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null,
                 Records: envRecords.GetValueOrDefault(a.Name),
-                Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null));
+                Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
+                FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
+    }
+
+    /// <summary>
+    /// brief-cosim-pattern-5 R-cp5-2 / R-cp5-4 — each sweep around a fields analysis, by its name: <c>FieldCosimulation.PlanSweep</c>, which the run calls, so a refusal here
+    /// is the run's word for word. It reads the result's <c>.npy</c>, for its grid, and only when a design has such a sweep. A design that does not elaborate is <c>check</c>'s to report.
+    /// </summary>
+    private static Dictionary<string, ExplainFieldsSweepJson> FieldSweepsOf(Library lib, TestBench tb, string? sourcePath)
+    {
+        var sweeps = new Dictionary<string, ExplainFieldsSweepJson>(StringComparer.Ordinal);
+        var tops = AnalysisChain.RunnableTops(tb).OfType<ParametricSweepAnalysis>()
+                                .Where(t => ChainSelector.BaseOfChain(t, tb) is FieldsAnalysis).ToList();
+        if (tops.Count == 0) return sweeps;
+        try
+        {
+            using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+            foreach (var top in tops)
+            {
+                var fa = (FieldsAnalysis)ChainSelector.BaseOfChain(top, tb)!;
+                long points = ParametricSweepRunSummary.TotalPoints(top, tb);
+                try
+                {
+                    var size = CircuitRF.Design.Em3d.FieldCosimulation.PlanSweep(fa, nl, points);
+                    sweeps[top.Name] = new ExplainFieldsSweepJson(points, size.Directions, size.Frequencies, size.Bytes, size.Sentence,
+                                                                  CircuitRF.Design.Em3d.FieldCosimulation.SweepSizeWarning(fa, size), null);
+                }
+                catch (InvalidOperationException e)
+                {
+                    sweeps[top.Name] = new ExplainFieldsSweepJson(points, 0, 0, 0, null, null, e.Message);
+                }
+            }
+        }
+        catch (Exception) { /* reported by check; nothing to explain here */ }
+        return sweeps;
     }
 
     /// <summary>
@@ -2065,6 +2106,10 @@ internal static class Explain
                         (s.Step is { } st ? $" step {st:G6}" : "") +
                         $" {s.BaseUnit} ({s.Points} pts, {s.Kind}" +
                         (s.StatedUnit.Length > 0 ? $", stated in {s.StatedUnit} ×{s.Scale:G6}" : "") + ")");
+
+                if (a.FieldsSweep is { } fieldSweep)
+                    foreach (string? line in new[] { fieldSweep.Summary, fieldSweep.Warning is null ? null : $"warning: {fieldSweep.Warning}", fieldSweep.Refusal is null ? null : $"refused: {fieldSweep.Refusal}" })
+                        if (line is not null) Console.WriteLine($"      {line}");
 
                 // R-aut8-8. "not-runnable" without WHICH reference failed leaves the caller no
                 // better off than the optimistic "runnable" this replaced, so the reasons are on

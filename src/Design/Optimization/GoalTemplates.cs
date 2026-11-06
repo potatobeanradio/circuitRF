@@ -89,7 +89,8 @@ public static class GoalTemplates
         if (probes.Count > 0)
             foreach (var sp in tb.Analyses.OfType<SParameterAnalysis>())
                 list.AddRange(WsProbeTemplates(sp, probes));
-        foreach (var fa in tb.Analyses.OfType<FieldsAnalysis>())
+        // Under a sweep each of these functions refuses, having one number per point (brief-cosim-pattern-5), so none is offered.
+        foreach (var fa in tb.Analyses.OfType<FieldsAnalysis>().Where(f => ReferenceEquals(AnalysisChain.PromoteToRunnableTop(f, tb), f)))
             list.AddRange(FieldsTemplates(fa, tb, baseDirectory));
         foreach (var m in tb.Measurements)
         {

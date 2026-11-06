@@ -54,7 +54,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Parametric-sweep chains are supported on every analysis type — including freq-swept
     /// Loadpull and Loadpull-Pursuit over a tone VAR (FreqSweptLoadpull brief, Layers A–E).</summary>
-    public bool ShowSweeps => !IsFields;     // brief-sar-9 — a fields analysis is one frequency, one circuit: no sweep wraps it
+    public bool ShowSweeps => true;     // a fields analysis too, over a far field (brief-cosim-pattern-5); the run refuses a block with a field set
 
     // ── Name + Enabled ────────────────────────────────────────────────────────
 
@@ -338,7 +338,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     /// LP engine already does the Pin/Pavl sweep), "e.g. Pavl" for HB and everything else.</summary>
     private void ApplySweepVariableHint()
     {
-        string hint = (IsLp || IsLpp) ? "e.g. RFfreq" : "e.g. Pavl";
+        string hint = (IsLp || IsLpp) ? "e.g. RFfreq" : IsFields ? "e.g. Lmatch" : "e.g. Pavl";
         foreach (var row in SweepAxes) row.VariablePlaceholder = hint;
     }
 

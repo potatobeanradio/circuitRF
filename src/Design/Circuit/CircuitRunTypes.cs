@@ -108,7 +108,7 @@ public sealed class RunResult(
     public IReadOnlyList<ExpressionOutcome> Expressions { get; } = expressions ?? [];
 
     /// <summary>This result with <paramref name="leading"/> ahead of its own notes.</summary>
-    internal RunResult WithLeadingNotes(IReadOnlyList<string> leading)
+    public RunResult WithLeadingNotes(IReadOnlyList<string> leading)
         => new(Status, StatusMessage, Results, Warnings, GroupedResults, [.. leading, .. Notes],
                Convergence, Expressions, Fields);
 

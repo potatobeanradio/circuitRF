@@ -798,7 +798,7 @@ public static class TraceResolve
     /// silently-wrong companion here draws a smooth, plausible, wrong pattern.</para>
     /// </summary>
     private static bool TryWholePlaneCompanion(
-        DataCube cube, object[] args, int xDim, ResolveProbe probe,
+        DataCube cube, object[] args, int xDim, ResolveProbe? probe,
         out Complex[]? backComplex, out double[]? backReal, out double backPhiDeg, out string? error)
     {
         backComplex = null; backReal = null; backPhiDeg = double.NaN; error = null;
@@ -845,7 +845,7 @@ public static class TraceResolve
 
         var backArgs = (object[])args.Clone();
         backArgs[phiDim] = best;
-        probe.Reading("whole-plane-back", cube, backArgs);
+        probe?.Reading("whole-plane-back", cube, backArgs);
         var r = cube[backArgs];
         if (!r.IsCube || r.Cube!.Rank != 1)
         {
@@ -1019,6 +1019,9 @@ public static class TraceResolve
 
         double[]? xVals = null; string xName = ""; string? xUnit = null;
         var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>(count);
+        // brief-cosim-pattern-5 R-cp5-5 — a whole-plane cut over a sweep's values: each curve is the plane, as one cut is. A family OVER φ already holds both halves.
+        bool wholePlane = t.PatternWholePlane && plotType == PlotType.Polar && !t.IsVersus && fAxis.Name != "phi";
+        var backs = wholePlane ? new List<(System.Numerics.Complex[]?, double[]?)>(count) : null;
 
         for (int k = 0; k < count; k++)
         {
@@ -1037,6 +1040,17 @@ public static class TraceResolve
             var res = cube[args];
             if (!res.IsCube || res.Cube!.Rank != 1) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
             var sliced = res.Cube!;
+            if (backs is not null)
+            {
+                if (!TryWholePlaneCompanion(cube, args, xDim, probe, out var backComplex, out var backReal, out _, out string? wpErr))
+                {
+                    t.ExpressionError = wpErr;
+                    t.InvalidSpecText = t.Expression ?? t.CubeName;
+                    t.Points.Clear(); t.FamilyCurves.Clear();
+                    return;
+                }
+                backs.Add((backComplex, backReal));
+            }
             if (xVals is null)
             {
                 var xa = sliced.Axes[0];
@@ -1086,6 +1100,22 @@ public static class TraceResolve
             xVals = perCurveX[0];       // trace-level anchor; every curve carries its own below
             xName = t.XSpec!;
             xUnit = null;
+        }
+
+        // The back half first and walked outwards-in at negative angles, as one whole-plane cut draws, so the curve runs −θ_max → 0 → +θ_max with no chord across the disc.
+        if (backs is not null)
+        {
+            perCurveX = new List<double[]>(curves.Count);
+            double[] planeX = [.. xVals.Reverse().Select(x => -x), .. xVals];
+            for (int k = 0; k < curves.Count; k++)
+            {
+                var (axisValue, label, cz, rv) = curves[k];
+                var (bc, br) = backs[k];
+                curves[k] = (axisValue, label,
+                             cz is null ? null : [.. bc!.Reverse(), .. cz],
+                             rv is null ? null : [.. br!.Reverse(), .. rv]);
+                perCurveX.Add(planeX);
+            }
         }
 
         var toneFreqs2 = GetToneFreqsCube(ds, t.CubeName);

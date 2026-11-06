@@ -14,7 +14,7 @@
 // PalaceDrive.IncidentPowerW, the incident power every driven field in the 3D view is loaded at, so the view draws a
 // recombined field with no scale of its own (its drive is the circuit's port and reflection).
 //
-// A FAR FIELD IS THE OTHER HALF, in FieldCosimulation.FarField.cs: same waves, and no SAR wording.
+// A FAR FIELD IS THE OTHER HALF, in FieldCosimulation.FarField.cs: same waves, and no SAR wording. A parametric sweep around one is in FieldCosimulation.Sweep.cs.
 //
 // AS SOLVED, THEN PER WATT. The volumes and the record's values are at P available; the record's AcceptedPowerW is the power
 // the circuit's drive port accepts, P·(1 − |Γ|²), and its per-watt values divide by that (norm=accepted) or by P itself
@@ -131,38 +131,18 @@ public static partial class FieldCosimulation
     /// field set from then on (the caller disposes it once the measurements are evaluated).</para>
     /// <para>brief-cosim-pattern-3 R-cp3-2 — the record decides what runs: a field set gives SAR and B1, a far field the pattern's cubes, both give both,
     /// and every run publishes the circuit's S and Z0. Nothing is written beside a result that has only a far field.</para>
+    /// <para>brief-cosim-pattern-5 — <paramref name="sweepPoint"/> says this is that point of a parametric sweep, which takes a far field alone and reports per sweep.</para>
     /// </summary>
     public static DataSet Run(FieldsAnalysis fa, ElaboratedNetlist nl, List<string> notes, RunControl? control = null,
                               List<CircuitRF.Design.Circuit.FieldsArtifact>? artifacts = null,
                               CircuitRF.Design.Circuit.FieldsOutput output = CircuitRF.Design.Circuit.FieldsOutput.Written,
-                              string? label = null, Action<IFieldMetrics>? metrics = null)
+                              string? label = null, Action<IFieldMetrics>? metrics = null, string? sweepPoint = null)
     {
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(nl);
         string who = $"Fields '{fa.Name}'";
-        if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no {EmFieldDataRecord.DisplayName} block.");
-        bool every = fa.AtEveryFrequency;
-        double hz = double.NaN;
-        if (!every)
-        {
-            try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
-            catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
-        }
-        var drives = Drives(fa, nl, who);
-
-        var block = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))
-                    ?? throw new InvalidOperationException($"{who}: the circuit has no instance '{fa.Block}'.");
-        if (block.Model is not SnpModel snp)
-            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.");
-        // brief-cosim-pattern-2 R-cp2-7 — a Touchstone file says nothing of fields, so a plain SnP is refused. It is not converted:
-        // no record exists to point at until the setup runs again or the file is adopted.
-        if (snp.RecordPath is not { } recordPath)
-            throw new PlainSnpFieldsBlockException(who, fa.Block, snp.FilePath);
-        // brief-sens-2: the port fields are the FILE's structure's; offsets on its S describe one the field set does not hold.
-        if (snp.OffsetsNotAppliedBy(block.InstancePath, "the field co-simulation, whose port fields are the file's own") is { } offsets)
-            throw new InvalidOperationException($"{who}: {offsets}.");
-
-        var plan = PlanOf(fa, recordPath, hz, who, out var far);
+        var (snp, recordPath, hz, drives) = Prepare(fa, nl, who);
+        var plan = sweepPoint is null ? PlanOf(fa, recordPath, hz, who, out var far) : SweepPlanOf(fa, recordPath, hz, who, out far);
         var lines = new List<string>();
         var warnings = new List<string>();
         var data = new DataSet();
@@ -213,10 +193,14 @@ public static partial class FieldCosimulation
             Interlocked.Increment(ref _runs);
             AddCircuitS(data, nl, frequencies);
 
-            // the detail as the run's notes (the Messages pane's Info), the first line as the analysis's summary
-            for (int i = 0; i < lines.Count; i++) nl.AddNoteOnce($"fields:{fa.Name}:{i}", lines[i]);
-            foreach (string warning in warnings) nl.AddWarning(warning);
-            if (lines.Count > 0) notes.Add(lines[0]);
+            if (sweepPoint is not null) SweepDiagnostics(fa, nl, far!, drives[0].Port, plan.Notes, warnings, sweepPoint);
+            else
+            {
+                // the detail as the run's notes (the Messages pane's Info), the first line as the analysis's summary
+                for (int i = 0; i < lines.Count; i++) nl.AddNoteOnce($"fields:{fa.Name}:{i}", lines[i]);
+                foreach (string warning in warnings) nl.AddWarning(warning);
+                if (lines.Count > 0) notes.Add(lines[0]);
+            }
             if (metrics is not null)
             {
                 metrics(new FieldsRunMetrics(fa, Path.GetFileName(recordPath), provider, pattern));
@@ -228,6 +212,33 @@ public static partial class FieldCosimulation
         {
             if (!handedOver) set?.Dispose();
         }
+    }
+
+    /// <summary>What every run of <paramref name="fa"/> needs of its circuit, or the refusal: the frequency (NaN at <c>freq=all</c>), the drives and the block, read
+    /// through its result record.</summary>
+    private static (SnpModel Block, string RecordPath, double Hz, List<(int Port, Complex Amplitude)> Drives) Prepare(FieldsAnalysis fa, ElaboratedNetlist nl, string who)
+    {
+        if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no {EmFieldDataRecord.DisplayName} block.");
+        double hz = double.NaN;
+        if (!fa.AtEveryFrequency)
+        {
+            try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
+            catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
+        }
+        var drives = Drives(fa, nl, who);
+
+        var block = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))
+                    ?? throw new InvalidOperationException($"{who}: the circuit has no instance '{fa.Block}'.");
+        if (block.Model is not SnpModel snp)
+            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.");
+        // brief-cosim-pattern-2 R-cp2-7 — a Touchstone file says nothing of fields, so a plain SnP is refused. It is not converted:
+        // no record exists to point at until the setup runs again or the file is adopted.
+        if (snp.RecordPath is not { } recordPath)
+            throw new PlainSnpFieldsBlockException(who, fa.Block, snp.FilePath);
+        // brief-sens-2: the port fields are the FILE's structure's; offsets on its S describe one the field set does not hold.
+        if (snp.OffsetsNotAppliedBy(block.InstancePath, "the field co-simulation, whose port fields are the file's own") is { } offsets)
+            throw new InvalidOperationException($"{who}: {offsets}.");
+        return (snp, recordPath, hz, drives);
     }
 
     /// <summary>What one fields analysis does: run the field set, and at which of the far field's frequencies; and what it says about the half it cannot do.</summary>

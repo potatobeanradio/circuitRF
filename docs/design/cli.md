@@ -4334,6 +4334,8 @@ for, so it never does. The volumes, the SAR record and `cosim.json` are written 
 notes name the folder. A far field writes nothing beside the result: its cubes, `F1.farfield.U` and the rest, are the DataSet's, on any block whose record holds one
 (`sar.md` §11.10). `-o` exports the DataSet grouped by analysis, and `--json` carries the same DataSet but for a cube of over 10,000 values, which is a
 pattern, and stays in that file. Over the protocol it is `run analysis=fields`.
+A parametric sweep around a far field runs when its analysis is named or by default, and naming the sweep runs the same chain (`sar.md` §11.12). The run's line goes to stderr before it starts, with
+the size of its pattern cubes, and `explain --analysis` reports the same size, or the refusal, as `fieldsSweep`. In `plot --trace`, `cut=` over such a cube is one curve per value with a legend, and a key naming an axis pins it: `cube=F1.farfield.U,cut=0,L1=5n`.
 
 ### 28.3 Exit codes
 

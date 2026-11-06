@@ -5,7 +5,7 @@
 //  not: "+ Trace", a signal picked on a card, a re-run that added a
 //  sweep, and a bare cube name typed on a cube of three or more axes.
 //
-//    • a cube with a freq axis: freq is X, everything else pinned
+//    • a cube with a freq axis: freq is X, everything else pinned; with one frequency and a sweep around it, the sweep is X
 //    • two or more swept axes: the INNERMOST is X, the next one out is
 //      the family, the rest pinned
 //    • otherwise the first plottable axis is X, the rest pinned
@@ -84,6 +84,11 @@ public static class SeedSlice
     public static AxisSlice[] Build(DataCube cube)
     {
         var axes = cube.Axes;
+        // One frequency under a sweep is one point along freq: a value per sweep point reads along the sweep (a far field's metrics, brief-cosim-pattern-5 R-cp5-5).
+        // Not a pattern, whose X is an angle the seed has no way to choose.
+        if (axes.Any(a => a.Name == "freq" && a.Length == 1) && !axes.Any(a => a.Name is "theta" or "phi"))
+            for (int d = axes.Count - 1; d >= 0; d--)
+                if (axes[d].Length > 1 && axes[d].Labels is null && !IsStructuralAxis(axes[d].Name)) return Default(axes, d);
         if (axes.Any(a => a.Name == "freq")) return Default(axes, DefaultXAxis(axes));
 
         var sweeps = new List<int>();

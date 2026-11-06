@@ -2413,7 +2413,21 @@ namespace RfCore.Export
         /// evaluation at every point it runs (cached or to solve), and the variables that do not reach the copper. Null for
         /// a chain run by circuit models.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainEmJson? Em = null);
+        ExplainEmJson? Em = null,
+        /// <summary>brief-cosim-pattern-5 R-cp5-2 / R-cp5-4 — a parametric sweep around a fields analysis: what its pattern cubes will take, or the sentence the
+        /// run refuses it with. Null for any other analysis.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainFieldsSweepJson? FieldsSweep = null);
+
+    /// <summary>brief-cosim-pattern-5 — <c>explain --analysis</c>'s answer for a sweep around a fields analysis, from the function the run uses.</summary>
+    public sealed record ExplainFieldsSweepJson(
+        long Points,
+        int Directions,
+        int Frequencies,
+        double Bytes,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Warning,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal);
 
     /// <summary>brief-sdl-6 — <c>explain --analysis</c>'s EM answer for one chain.</summary>
     public sealed record ExplainEmJson(
