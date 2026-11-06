@@ -218,6 +218,9 @@ public sealed class Viewer3DPane : Control
                 return;
             }
             _stop = false;
+            // Teardown's wake is left set when no thread was there to take it (the view had refused, or its thread
+            // had ended on an exception); the new thread would take it as a frame and wait on an image never created.
+            _go.Reset();
             _thread = new Thread(RenderLoop) { IsBackground = true, Name = "viewer3d-render" };
             _thread.Start();
             SetFault(null);
