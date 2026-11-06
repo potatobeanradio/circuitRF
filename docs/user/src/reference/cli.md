@@ -1616,6 +1616,7 @@ conversion here and the same conversion through the GUI produce the same bytes.
 | DXF | `.dxf` | ✓ | ✓ |
 | Gerber + Excellon | a **folder**, or one Gerber/drill file | ✓ | a **folder** |
 | Board | `.kicad_pcb` | ✓ | ✓ |
+| IPC-2581 | its root element, or `.cvg` | one step | refused: import only |
 | STEP | `.step`, `.stp` | into a **new `.c3d`** | from a `.c3d`, a `.clay`, a cell folder, or any source above |
 
 **Every ordered pair works** — DXF to Gerber, Gerber to board, GDSII to DXF, board to GDSII, and the
@@ -1649,6 +1650,11 @@ A mask set to a drawing your mechanical engineer can open, at the DXF version th
 Bring a board in as editable circuitRF cells and keep the technology it declared:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o cells/ --to clay</code></pre>
+
+An IPC-2581 file, after asking what it holds:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert export.xml --list-steps
+<span class="prompt">$ </span>circuitrf convert export.xml -o cells/ --to clay --step board</code></pre>
 
 Bring a Gerber set in on a stackup you already have, writing no technology of its own:
 
@@ -1752,14 +1758,16 @@ are the same bytes when neither includes a camera.
 | Option | What it does |
 |---|---|
 | `-o, --output <path>` | The file to write — or the **folder**, for `gerber` and `clay`; a file-shaped path there is refused. Required. |
-| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `oasis`, `dxf`, `gerber`, `board`, `step`, `gltf` (a target only). Say it when the path does not. |
+| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `oasis`, `dxf`, `gerber`, `board`, `step`, `ipc2581` (a source only), `gltf` (a target only). Say it when the path does not. |
 | `--engine native\|gdstk` | Which GDSII reader or writer a GDSII source or target goes through. Default `native`. See [OASIS](#convert-oasis). |
 | `--oas-compression <0-9>`, `--oas-validation none\|crc32\|checksum32`, `--oas-standard-properties` | OASIS export: the Export OASIS dialog's options. Defaults `6`, `crc32`, off. |
 | `--cell <name>` | Which cell to export, when the source holds several. |
 | `--list-cells` | Report what the input holds and write nothing. |
+| `--step <name>` | Which step of an IPC-2581 file to import. A file holding several is refused until one is named, and the refusal lists them. |
+| `--list-steps` | Every step of an IPC-2581 file with its layer and net counts, writing nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
 | `--tech <file.ctech>` | The technology to convert against, instead of the one the layout resolves. |
-| `--into-tech <file.ctech>` | A Gerber set or a board file into a `clay` folder **using** this technology: the cells reference it, nothing is added to it, and no `.ctech` is written. Refused together with `--tech`, and for any other source. See [below](#convert-tech). |
+| `--into-tech <file.ctech>` | A Gerber set, a board file or an IPC-2581 file into a `clay` folder **using** this technology: the cells reference it, nothing is added to it, and no `.ctech` is written. Refused together with `--tech`, and for any other source. See [below](#convert-tech). |
 | `--workspace <file.cws>` | The workspace a `.clay`'s references resolve against. Default: the nearest one above it. |
 | `--keep-cells <dir>` | Keep the cells the import produced instead of discarding them. |
 | `--dbu <n>` | Database units per micron for an imported design. Default `1000` — one DBU is one nanometre. |

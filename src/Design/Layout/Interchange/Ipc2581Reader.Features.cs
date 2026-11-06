@@ -164,6 +164,13 @@ public sealed partial class Ipc2581Reader
         {
             CountEntity();
             if (piece.Erase) EraseWithin(sink, piece, xf);
+            else if (piece is Ipc2581Region { Holes.Count: > 1 } region)
+            {
+                var islands = new List<LayoutShape>();
+                sink.AddRange(Ipc2581Shapes.Place(WithoutNestedCutouts(region, xf, islands), xf, _flattenTolDbu));
+                sink.AddRange(islands);
+                _cutoutIslands.UnionWith(islands);
+            }
             else sink.AddRange(Ipc2581Shapes.Place(piece, xf, _flattenTolDbu));
         }
     }

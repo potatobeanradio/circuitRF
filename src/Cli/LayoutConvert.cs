@@ -38,7 +38,7 @@ public static class LayoutConvert
     /// second rule for it — an interchange file they could not name would read as a file circuitRF
     /// does not handle, when in fact `convert` handles it.
     /// </summary>
-    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step, Gltf, Oasis, Image }
+    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step, Gltf, Oasis, Image, Ipc2581 }
 
     private sealed class Options
     {
@@ -47,6 +47,10 @@ public static class LayoutConvert
         // brief-gerber-import-target-technology R-gt-7 — import a Gerber set INTO this technology: the cells
         // reference it, and no .ctech is written. The GUI's Technology row, as a flag.
         public string? IntoTech;
+
+        // brief-ipx-4 R-ipx4-3c — which step of an IPC-2581 file, and the listing that answers the question.
+        public string? Ipc2581Step;
+        public bool ListSteps;
         public Fmt? From, To;
         public bool ListCells;
         public int DbuPerMicron = 1000;
@@ -139,6 +143,8 @@ public static class LayoutConvert
                 case "--cell" when i + 1 < args.Length: o.Cell = args[++i]; break;
                 case "--name" when i + 1 < args.Length: o.Name = args[++i]; break;
                 case "--list-cells": o.ListCells = true; break;
+                case "--step" when i + 1 < args.Length: o.Ipc2581Step = args[++i]; break;
+                case "--list-steps": o.ListSteps = true; break;
                 case "--tech" when i + 1 < args.Length: o.TechPath = args[++i]; break;
                 case "--into-tech" when i + 1 < args.Length: o.IntoTech = args[++i]; break;
                 case "--workspace" when i + 1 < args.Length: o.Cws = args[++i]; break;
@@ -277,10 +283,21 @@ public static class LayoutConvert
         {
             if (o.TechPath is not null) return JsonRun.Fail(CliDiagnostics.ConvertIntoTechWithTech());
             var intoFrom = o.From ?? DetectSource(o.Input);
-            if (intoFrom is not (Fmt.Gerber or Fmt.Board))
+            if (intoFrom is not (Fmt.Gerber or Fmt.Board or Fmt.Ipc2581))
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotGerber(intoFrom is { } f ? Name(f) : "not recognised"));
             if (o.Output is null || (o.To ?? DetectTarget(o.Output)) != Fmt.Clay)
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotClay());
+        }
+
+        // brief-ipx-4 R-ipx4-3b/c. Import only, and the two step flags belong to this source alone.
+        if (o.To == Fmt.Ipc2581 || (o.To is null && o.Output is not null && DetectTarget(o.Output) == Fmt.Ipc2581))
+            return JsonRun.Fail(CliDiagnostics.ConvertIpc2581Target());
+        if (o.Ipc2581Step is not null || o.ListSteps)
+        {
+            var stepFrom = o.From ?? DetectSource(o.Input);
+            if (stepFrom != Fmt.Ipc2581)
+                return JsonRun.Fail(CliDiagnostics.ConvertStepsNeedIpc2581(stepFrom is { } f ? Name(f) : "not recognised"));
+            if (o.ListSteps) return ListIpc2581Steps(o);
         }
 
         // brief-oasis-gdstk.md §7d — --engine picks a GDSII reader or writer, so it needs a GDSII end, and
@@ -781,6 +798,8 @@ public static class LayoutConvert
             staging = Path.Combine(Path.GetTempPath(), "circuitrf-convert-" + Guid.NewGuid().ToString("N")[..12]);
             scratch = staging;
         }
+        // A refused or cancelled import leaves no folder it made, and never removes one that was already there.
+        bool stagingExisted = Directory.Exists(staging);
         Directory.CreateDirectory(staging);
 
         Technology? destTech = null;
@@ -804,14 +823,23 @@ public static class LayoutConvert
         // layer an unmatched row, which is exactly what it is.
         destTech ??= new Technology { Name = name };
 
-        return from switch
+        Source? imported = null;
+        try
         {
-            Fmt.Gdsii or Fmt.Oasis => ImportStream(o, from, staging, destTech, name),
-            Fmt.Dxf   => ImportDxf(o, staging, destTech, name),
-            Fmt.Board => ImportBoard(o, staging, destTech, name),
-            Fmt.Gerber => ImportGerber(o, staging, destTech),
-            _ => null,
-        };
+            return imported = from switch
+            {
+                Fmt.Gdsii or Fmt.Oasis => ImportStream(o, from, staging, destTech, name),
+                Fmt.Dxf   => ImportDxf(o, staging, destTech, name),
+                Fmt.Board => ImportBoard(o, staging, destTech, name),
+                Fmt.Ipc2581 => ImportIpc2581(o, staging, destTech, name),
+                Fmt.Gerber => ImportGerber(o, staging, destTech),
+                _ => null,
+            };
+        }
+        finally
+        {
+            if (imported is null && !stagingExisted) ImportFolder.RemoveIfEmpty(staging);
+        }
     }
 
     private static Source? LoadClay(Options o)
@@ -919,7 +947,26 @@ public static class LayoutConvert
             coalesceRasterFill: !o.NoCoalesce,
             target: o.IntoTech is { } into ? ImportTechnologyTarget.Use(into) : null,
             destTechPath: destTech is null ? null : o.TechPath is { } tp && File.Exists(tp) ? Path.GetFullPath(tp) : null);
-        Report(r.Messages);
+        return FinishBoardImport(o, r);
+    }
+
+    /// <summary>brief-ipx-4 R-ipx4-1 — every decision is <c>Ipc2581Import.Import</c>'s,
+    /// the function File ▸ Import ▸ IPC-2581 calls.</summary>
+    private static Source? ImportIpc2581(Options o, string staging, Technology? destTech, string name)
+    {
+        var r = Ipc2581Import.Import(
+            Path.GetFullPath(o.Input!), staging, name, destTech, o.DbuPerMicron, stepName: o.Ipc2581Step,
+            coalesceRasterFill: !o.NoCoalesce,
+            target: o.IntoTech is { } into ? ImportTechnologyTarget.Use(into) : null,
+            destTechPath: destTech is null ? null : o.TechPath is { } tp && File.Exists(tp) ? Path.GetFullPath(tp) : null,
+            control: RunHost.Control);
+        RunHost.Cancellation.ThrowIfCancellationRequested();
+        return FinishBoardImport(o, r);
+    }
+
+    private static Source? FinishBoardImport(Options o, PcbImport.ImportResult r)
+    {
+        Report(r.Messages.Where(m => m != r.Refusal).ToList());
         if (r.Refusal is { } refusal) { JsonRun.Report(CliDiagnostics.ConvertBoardRefused(refusal)); return null; }
         if (r.Cancelled) return Refused();
 
@@ -1319,6 +1366,26 @@ public static class LayoutConvert
         }
     }
 
+    /// <summary>brief-ipx-4 R-ipx4-3c — every step a file holds, with its layer and net counts, writing nothing.</summary>
+    private static int ListIpc2581Steps(Options o)
+    {
+        Ipc2581Reader.StepListing listing;
+        try { listing = Ipc2581Import.ListSteps(Path.GetFullPath(o.Input!), RunHost.Control); }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine("[circuitRF] cancelled");
+            return 130;
+        }
+        if (listing.Refusal is { } refusal) return JsonRun.Fail(CliDiagnostics.ConvertBoardRefused(refusal));
+        foreach (var step in listing.Steps!)
+        {
+            string panel = step.IsPanel ? $"\ta panel placing {string.Join(", ", step.Places)}" : "";
+            Console.WriteLine($"{step.Name}\t{step.LayerCount} layer(s)\t{step.NetCount} net(s){panel}");
+            JsonRun.Note(CliDiagnostics.ConvertStepListed(step.Name, step.LayerCount, step.NetCount));
+        }
+        return 0;
+    }
+
     // ── Small shared pieces ───────────────────────────────────────────────────────────────────────
 
     private static string? PickCell(string? wanted, IReadOnlyList<string> created, string? preferred, string what)
@@ -1381,6 +1448,7 @@ public static class LayoutConvert
         "dxf" => Fmt.Dxf,
         "gerber" or "rs274x" or "excellon" => Fmt.Gerber,
         "board" or "kicad_pcb" => Fmt.Board,   // the extension is a data format; the bare product name is not ours to use
+        "ipc2581" => Fmt.Ipc2581,
         "step" or "stp" => Fmt.Step,
         "gltf" or "glb" => Fmt.Gltf,
         "image" or "picture" => Fmt.Image,
@@ -1395,7 +1463,7 @@ public static class LayoutConvert
     internal static string Name(Fmt f) => f switch
     {
         Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Oasis => "OASIS", Fmt.Dxf => "DXF",
-        Fmt.Gerber => "Gerber", Fmt.Step => "STEP", Fmt.Gltf => "glTF", Fmt.Image => "picture", _ => "board",
+        Fmt.Gerber => "Gerber", Fmt.Step => "STEP", Fmt.Gltf => "glTF", Fmt.Image => "picture", Fmt.Ipc2581 => "IPC-2581", _ => "board",
     };
 
     internal static Fmt? DetectSource(string path)
@@ -1410,6 +1478,8 @@ public static class LayoutConvert
         if (StepImport.LooksLikeStep(path)) return Fmt.Step;
         // An OASIS file says so in its first 13 bytes (brief-oasis-gdstk.md §10a); nothing else begins that way.
         if (StreamInterchange.LooksLikeOasis(path)) return Fmt.Oasis;
+        // By its root element, whatever the file is called (R-ipx4-3a). Before the Gerber classifier, which reads text.
+        if (Ipc2581Reader.LooksLikeIpc2581(path)) return Fmt.Ipc2581;
         try
         {
             var kind = GerberFileClassifier.Classify(path).Kind;
@@ -1428,6 +1498,7 @@ public static class LayoutConvert
         ".oas" or ".oasis" => Fmt.Oasis,
         ".dxf" => Fmt.Dxf,
         ".kicad_pcb" => Fmt.Board,
+        ".cvg" => Fmt.Ipc2581,
         ".step" or ".stp" => Fmt.Step,
         _ => null,
     };
@@ -1435,7 +1506,7 @@ public static class LayoutConvert
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
-        Console.Error.WriteLine("       formats: clay | gdsii | oasis | dxf | gerber | board | step | gltf");
+        Console.Error.WriteLine("       formats: clay | gdsii | oasis | dxf | gerber | board | step | gltf | ipc2581 (a source only)");
         Console.Error.WriteLine("       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)");
         Console.Error.WriteLine("       oasis target:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties");
         Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path>[#<solid>] (repeatable)  --tech <path.ctech>");
@@ -1446,7 +1517,8 @@ public static class LayoutConvert
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");
-        Console.Error.WriteLine("       gerber or board source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
+        Console.Error.WriteLine("       gerber, board or ipc2581 source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
+        Console.Error.WriteLine("       ipc2581 source (found by its root element, or .cvg):  --step <name>  --list-steps  every step with its layers and nets, writing nothing");
         Console.Error.WriteLine("       picture source (png, jpeg, bmp, gif, webp; --from image):  --scale <len>/px | --dpi <n> |");
         Console.Error.WriteLine("              --scale-points x0,y0,x1,y1=<len> | --scale auto   --tech <id|path.ctech>");
         Console.Error.WriteLine("              --layer-map \"#rrggbb=<layer>|drill|outline|silk|ignore,...\"  --preset <name>");

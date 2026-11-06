@@ -447,7 +447,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertUnknownFormat(string format) => Diagnostic.Create(
         "convert.args.unknown-format", DiagnosticSeverity.Error,
-        "Unknown format '{format}'. Known: clay, gdsii, oasis, dxf, gerber, board, step, gltf.", ("format", format));
+        "Unknown format '{format}'. Known: clay, gdsii, oasis, dxf, gerber, board, step, gltf, ipc2581.", ("format", format));
 
     /// <summary>The usage text itself, recorded so a document says what stderr said. Both lines,
     /// because both were printed.</summary>
@@ -630,7 +630,7 @@ internal static class CliDiagnostics
     /// predates the board import taking the same choice (issue #34) and is kept: it is a stable diagnostic code.</summary>
     public static Diagnostic ConvertIntoTechNotGerber(string format) => Diagnostic.Create(
         "convert.into-tech.not-gerber", DiagnosticSeverity.Error,
-        "--into-tech applies to a gerber or board source, and this one is {format}. Its importer already keeps the stackup of " +
+        "--into-tech applies to a gerber, board or ipc2581 source, and this one is {format}. Its importer already keeps the stackup of " +
         "the technology given with --tech.", ("format", format));
 
     /// <summary>R-gt-7 — a technology is referenced by the cells an import leaves behind; an export target keeps none.</summary>
@@ -703,6 +703,20 @@ internal static class CliDiagnostics
         "convert.gerber.cross-technology-mapping", DiagnosticSeverity.Error,
         "this design instantiates cells from another technology, and the layer mapping " +
         "has to be confirmed. Open it in circuitRF and export once, or flatten the design first.");
+
+    public static Diagnostic ConvertIpc2581Target() => new(
+        "convert.ipc2581.target", DiagnosticSeverity.Error,
+        "IPC-2581 is import only: circuitRF reads it and does not write it. Nothing was written.");
+
+    public static Diagnostic ConvertStepsNeedIpc2581(string format) => Diagnostic.Create(
+        "convert.ipc2581.step-flags", DiagnosticSeverity.Error,
+        "--step and --list-steps apply to an IPC-2581 source, and this one is {format}.", ("format", format));
+
+    public static Diagnostic ConvertStepListed(string step, int layers, int nets) => Diagnostic.Create(
+        "convert.ipc2581.step-listed", DiagnosticSeverity.Info,
+        "{step}: {layers} layer(s), {nets} net(s).",
+        ("step", step), ("layers", layers.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ("nets", nets.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
     public static Diagnostic ConvertBoardRefused(string reason) => Diagnostic.Create(
         "convert.board.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));

@@ -84,6 +84,7 @@ using CircuitRF.Design.Layout;
 // --place <code> (with --clay) drops one component at the origin through the layout palette's own drop, so the
 // picture is what placing it draws.
 //
+// --ipc2581-steps <file.xml> shows the step chooser on a file's own steps; --ipc2581-report <file.xml> imports it and shows the Messages panel holding the report, printing where the technology landed.
 // --nets-panel nets|filter|selected|none|many|nolayout shows the Nets panel on a seeded layout and prints where its action row landed.
 // --nets a,b (with --clay) shows the real Nets panel on the editor with those rows selected, --nets-filter x narrows it first,
 // --nets-dim ticks Dim other copper and --nets-zoom presses Zoom to net; the panel is written beside -o as <out>.nets.png.
@@ -147,6 +148,7 @@ var impedanceLayers = new List<string>();
 bool impedancePanel = false;
 string? reviewPanel = null;
 string? netsPanel = null;
+string? ipc2581Steps = null, ipc2581Report = null;
 string? netsHighlight = null;
 string? netsFilter = null;
 bool netsDim = false, netsZoom = false;
@@ -261,6 +263,8 @@ for (int i = 0; i < args.Length; i++)
         case "--impedance-panel": impedancePanel = true; break;
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
         case "--nets-panel" when i + 1 < args.Length: netsPanel = args[++i]; break;
+        case "--ipc2581-steps" when i + 1 < args.Length: ipc2581Steps = Path.GetFullPath(args[++i]); break;
+        case "--ipc2581-report" when i + 1 < args.Length: ipc2581Report = Path.GetFullPath(args[++i]); break;
         case "--nets" when i + 1 < args.Length: netsHighlight = args[++i]; break;
         case "--nets-filter" when i + 1 < args.Length: netsFilter = args[++i]; break;
         case "--nets-dim": netsDim = true; break;
@@ -358,6 +362,12 @@ if (args.Contains("--film-prompt") && output is not null)
     prompt.CaptureRenderedFrame()!.Save(output);
     Console.WriteLine($"wrote {output}");
     return 0;
+}
+if ((ipc2581Steps ?? ipc2581Report) is { } ipcFile && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ipc2581Steps is not null ? ShowIpc2581Steps(ipcFile, output) : ShowIpc2581Report(ipcFile, output, sizeGiven ? width : 760, sizeGiven ? height : 420);
 }
 if (args.Contains("--messages") && output is not null)
 {
@@ -2244,6 +2254,36 @@ static void ShowImpedancePanel(LayoutEditorViewModel vm, string path)
 // --messages: the real Messages panel holding one row of each kind — plain text, a file link, a live progress bar, the
 // Relaunch button and an expandable row. Prints each row's height and where its text and its inline control sit, so a
 // row that draws taller than the others, or a control off the text's centre line, is read rather than eyeballed.
+static int ShowIpc2581Steps(string file, string path)
+{
+    var listing = CircuitRF.Design.Layout.Interchange.Ipc2581Import.ListSteps(file);
+    if (listing.Refusal is { } refusal) { Console.Error.WriteLine(refusal); return 1; }
+    var window = new CircuitRF.Ui.Views.Dialogs.Ipc2581StepDialog(listing.Steps!);
+    window.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
+static int ShowIpc2581Report(string file, string path, double w, double h)
+{
+    string dir = Directory.CreateTempSubdirectory("ipc2581-report-").FullName;
+    var result = CircuitRF.Design.Layout.Interchange.Ipc2581Import.Import(
+        file, dir, Path.GetFileNameWithoutExtension(file), new Technology { Name = "report" }, LayoutUnits.DefaultDbuPerMicron);
+    if (result.Refusal is { } refusal) { Console.Error.WriteLine(refusal); return 1; }
+    var tool = new MessagesTool();
+    tool.Post(MessageLevel.Success, $"Imported {result.CreatedCellDirs.Count} cell(s) from the IPC-2581 file into '{Path.GetFileName(dir)}'.");
+    foreach (var message in result.Messages) tool.Post(MessageLevel.Info, message);
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Messages.MessagesView { DataContext = tool } };
+    window.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    Console.WriteLine($"technology {result.TechPath}");
+    return 0;
+}
+
 static int ShowMessagesPanel(string path, double w, double h)
 {
     var tool = new MessagesTool();

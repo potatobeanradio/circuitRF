@@ -28455,3 +28455,39 @@ built from the format's text alone misses all of them.
 - **The pairing is `DrillViaPairing.Pair`, one call per copper layer.** Handing it every layer at once with a landing
   key would let a pad from one layer become a via landing on another, which moves copper. One layer per call makes a
   pad and its stated landing the same thing by construction. Its diagnostics are about drill files and are dropped.
+
+## IPX-4: what a real plane is, and where the import stopped reading it faithfully (2026-11-05)
+
+**A stated clearance and a plotted one can differ, and the file is what was imported.** Artwork plotted from the same design may
+drop inner pads that connect to nothing, or a layer's clearances. An XOR against such artwork reports those as differences with
+no misreading on either side, so a difference has to be attributed by which side holds the copper before it counts against the
+reader. No rule here removes a pad that the file states.
+
+**A cutout inside another cutout of a contour is an island of copper on a negative layer.** A split plane writes a filled contour
+for the island plus its surrounding band, and in a later set a contour whose nested cutout is the island. Played plainly, the fill
+clears the island and nothing puts it back, where plotted film of such a layer holds copper. So `WithoutNestedCutouts` places the
+nested cutout as a shape of its own, marked in `_cutoutIslands`, and `Resolve` plays a marked shape as copper on a negative layer,
+in the contour's place in the document, so a later clearance still cuts it. On a positive layer it is the copper it always was.
+The detection has to be made on the region: placed whole, the nested ring comes out of `EnsureValidHoles` as an ordinary solid and
+can no longer be told from an antipad.
+
+**Two rules for a plane's extent were tried against film and rejected.** Dropping pieces no hole reaches removed copper the film
+keeps and left others that holes do touch. Stopping a plane at a contour drawn around most of the profile removed real copper
+beyond that contour. A negative layer stays bounded by the profile, so a plane runs to the board's edge where film may hold it back
+by a setback the file does not state. A piece's lack of a net is no evidence either, because whole planes have none.
+
+**Some files escape a net name twice**, so after the XML reader's pass a bus bit still reads `D&lt;3&gt;`. `NetName` undoes the second
+pass, and every use of a net name, pin lists and hole nets included, goes through it.
+
+**The report's stackup is rows of fields, not aligned columns.** The Messages panel uses a proportional font, so padded columns
+would align in a terminal and not in the panel. `Ipc2581Import.StackupReport` joins each row's fields with a separator instead.
+
+**A chooser costs one extra walk of the file.** `Ipc2581Reader.ListSteps` builds nothing, and runs only when a caller supplies a
+chooser and no step name. `convert` passes neither, so a file with one step is read once there.
+
+**`PcbReader.EntityHardCeiling` is held on the shapes a board comes to, and the walk stops at twice that many features.** The
+constant is the layout model's working limit, and a feature count overstates it, since a via's pads collapse into the via. The walk's
+guard bounds the read's own memory, and every `Set` is released once played, so neither limit leaves anything written.
+
+Gates: `tests/Ui.Tests/Ipc2581/Ipc2581ImportTests.cs` and the `Ipc2581_*` rows in `tests/Ui.Tests/ConvertCliVerbTests.cs`.
+

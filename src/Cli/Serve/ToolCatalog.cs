@@ -942,7 +942,7 @@ internal static class ToolCatalog
           + "2.0.0, or a binary .DSN of version 2.0 or 3.2) as a new cell with its own schematic, reporting the connectivity check against the source (exit 1 when "
           + "it is not matched, the cell still written); a segmented voxel model (NIfTI, raw, a "
           + "DiscMaterial .h5, or a tetrahedral .node/.ele voxelised) or per-tissue closed surfaces (STL, OBJ, PLY) into a .c3d. "
-          + "To convert artwork between formats, including exporting a layout, use convert.",
+          + "To convert artwork between formats, including exporting a layout or importing a whole board (.kicad_pcb, Gerber, IPC-2581), use convert.",
             "what",
             "What to import.",
             [
@@ -1039,7 +1039,7 @@ internal static class ToolCatalog
 
         new("convert",
             "Convert artwork from one format to another, in either direction: export a layout (.clay) to "
-          + "GDSII, OASIS, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats to .clay. Formats come from the paths; "
+          + "GDSII, OASIS, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats, and IPC-2581, which is import only, to .clay. Formats come from the paths; "
           + "from and to override. OASIS, and GDSII with engine gdstk, go through the gdstk worker. "
           + "A STEP product of several solids imports as one object per solid, gathered in a group named after the file. "
           + "A picture of a layout (png, jpeg, bmp, gif, webp) is traced onto layers at a stated scale, then written as any "
@@ -1050,16 +1050,18 @@ internal static class ToolCatalog
                     [new("path", true, "The file or folder to convert. A folder is a Gerber file set; a picture is traced.")],
                     [
                         Output,
-                        new("from",       "--from",        OptKind.Str,  "The source format when the path does not say: clay, gdsii, oasis, dxf, gerber, board, image."),
+                        new("from",       "--from",        OptKind.Str,  "The source format when the path does not say: clay, gdsii, oasis, dxf, gerber, board, ipc2581, image."),
                         new("to",         "--to",          OptKind.Str,  "The target format when the path does not say."),
                         new("cell",       "--cell",        OptKind.Str,  "Which cell, when the source holds several."),
                         new("name",       "--name",        OptKind.Str,  "What to call the written file set (gerber)."),
                         new("listCells",  "--list-cells",  OptKind.Flag, "Report what the input holds and write nothing."),
+                        new("step",       "--step",        OptKind.Str,  "An IPC-2581 source: the step to import. A file holding several is refused until one is named."),
+                        new("listSteps",  "--list-steps",  OptKind.Flag, "An IPC-2581 source: every step with its layer and net counts, writing nothing."),
                         new("tech",       "--tech",        OptKind.PathOrName,
                             "The technology to convert against: a .ctech path, or for a picture also a technology id (the default "
                           + "is a new workspace's)."),
                         new("intoTech",   "--into-tech",   OptKind.Path,
-                            "Gerber source, clay target: import into this .ctech, reference it, and write none. Refused with --tech, and when its copper count or order disagrees with the set's."),
+                            "Gerber, board or IPC-2581 source, clay target: import into this .ctech, reference it, and write none. Refused with --tech, and when its copper count or order disagrees with the set's."),
                         new("keepCells",  "--keep-cells",  OptKind.Path, "Keep the cells the import produced, here."),
                         new("workspace",  "--workspace",   OptKind.Path,
                             "The .cws the layers graft onto. Without one a .ctech of its own is written."),
@@ -1082,7 +1084,7 @@ internal static class ToolCatalog
                         new("region",     "--region",      OptKind.Str,
                             "A picture: trace only x0,y0,x1,y1, each in pixels with px. A gltf target: the region to export."),
                         new("crop",       "--crop",        OptKind.Str,
-                            "An import (gerber, gdsii, oasis, dxf, board): Crop to Rectangle on what was imported, x0,y0,x1,y1, " +
+                            "An import (gerber, gdsii, oasis, dxf, board, ipc2581): Crop to Rectangle on what was imported, x0,y0,x1,y1, " +
                             "every coordinate with its unit (124mm,114.5mm,129.3mm,119.5mm). A .clay source is refused."),
                         PictureUnderlay,
                         PictureOverlayPath,

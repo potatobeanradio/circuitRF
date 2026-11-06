@@ -2410,6 +2410,12 @@ conversion here and the same conversion through the GUI produce the same bytes.<
 <td>✓</td>
 </tr>
 <tr>
+<td>IPC-2581</td>
+<td>its root element, or <code>.cvg</code></td>
+<td>one step</td>
+<td>refused: import only</td>
+</tr>
+<tr>
 <td>STEP</td>
 <td><code>.step</code>, <code>.stp</code></td>
 <td>into a <strong>new <code>.c3d</code></strong></td>
@@ -2436,6 +2442,9 @@ that, and <code>--to</code> is <strong>required</strong> when the output is a fo
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert mmic.gds -o mmic.dxf --dxf-version AC1015</code></pre>
 <p>Bring a board in as editable circuitRF cells and keep the technology it declared:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o cells/ --to clay</code></pre>
+<p>An IPC-2581 file, after asking what it holds:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert export.xml --list-steps
+<span class="prompt">$ </span>circuitrf convert export.xml -o cells/ --to clay --step board</code></pre>
 <p>Bring a Gerber set in on a stackup you already have, writing no technology of its own:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o cells/ --to clay --into-tech tech/pcb-6layer_FR-4_1.6mm_1oz.ctech</code></pre>
 <div class="callout note">
@@ -2529,7 +2538,7 @@ otherwise.</li>
 </tr>
 <tr>
 <td><code>--from &lt;fmt&gt;</code>, <code>--to &lt;fmt&gt;</code></td>
-<td><code>clay</code>, <code>gdsii</code>, <code>oasis</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>, <code>gltf</code> (a target only). Say it when the path does not.</td>
+<td><code>clay</code>, <code>gdsii</code>, <code>oasis</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>, <code>ipc2581</code> (a source only), <code>gltf</code> (a target only). Say it when the path does not.</td>
 </tr>
 <tr>
 <td><code>--engine native\|gdstk</code></td>
@@ -2548,6 +2557,14 @@ otherwise.</li>
 <td>Report what the input holds and write nothing.</td>
 </tr>
 <tr>
+<td><code>--step &lt;name&gt;</code></td>
+<td>Which step of an IPC-2581 file to import. A file holding several is refused until one is named, and the refusal lists them.</td>
+</tr>
+<tr>
+<td><code>--list-steps</code></td>
+<td>Every step of an IPC-2581 file with its layer and net counts, writing nothing.</td>
+</tr>
+<tr>
 <td><code>--name &lt;stem&gt;</code></td>
 <td>What to call the written Gerber file set. Default: the cell's name.</td>
 </tr>
@@ -2557,7 +2574,7 @@ otherwise.</li>
 </tr>
 <tr>
 <td><code>--into-tech &lt;file.ctech&gt;</code></td>
-<td>A Gerber set or a board file into a <code>clay</code> folder <strong>using</strong> this technology: the cells reference it, nothing is added to it, and no <code>.ctech</code> is written. Refused together with <code>--tech</code>, and for any other source. See <a href="#convert-tech">below</a>.</td>
+<td>A Gerber set, a board file or an IPC-2581 file into a <code>clay</code> folder <strong>using</strong> this technology: the cells reference it, nothing is added to it, and no <code>.ctech</code> is written. Refused together with <code>--tech</code>, and for any other source. See <a href="#convert-tech">below</a>.</td>
 </tr>
 <tr>
 <td><code>--workspace &lt;file.cws&gt;</code></td>

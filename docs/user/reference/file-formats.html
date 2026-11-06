@@ -103,7 +103,10 @@ visually until you draw one.</p>
 <p class="small">These are circuitRF's own formats. The <strong>interchange</strong> formats it reads
 and writes — GDSII, DXF, Gerber plus Excellon drill, and <code>.kicad_pcb</code> board files — are not
 in this family and are not documents you open: they are imported into cells, or exported from them. See
-<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot. The
+<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot.
+<strong>IPC-2581</strong> (<code>.xml</code>, <code>.cvg</code>) is the same kind of thing and is import
+only; it imports one step of the file, known by its root element whatever the file is called. See
+<a href="layout-editor.html#ipc2581">IPC-2581</a>. The
 same goes for <strong>STEP</strong> (<code>.step</code>, <code>.stp</code>), the solid-model interchange
 format: its parts are imported into a 3D view, and a 3D view or a layout is exported as one — see
 <a href="drawing-in-3d.html#step">The 3D Editor ▸ STEP</a>.</p>

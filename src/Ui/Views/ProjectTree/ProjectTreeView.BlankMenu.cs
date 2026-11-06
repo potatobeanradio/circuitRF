@@ -58,6 +58,8 @@ public partial class ProjectTreeView
             "Import a .kicad_pcb board: its stackup, nets, tracks, vias, zone fills and footprints. The file's version is reported, never branched on — every epoch reads."),
         ("Ge_rber…", nameof(WorkspaceViewModel.ImportGerberCommand),
             "Import a Gerber/Excellon file set as one flat cell and a technology of its own. Point at a folder, or at one file and say whether its folder was meant. Vias are rebuilt where the drill data comes too."),
+        ("IPC-_2581…", nameof(WorkspaceViewModel.ImportIpc2581Command),
+            "Import one step of an IPC-2581 file as one flat cell and a technology of its own: copper, nets, vias and the stackup. A file is known by its root element, whatever it is called."),
         // File ▸ Import binds this tip, because it says whether the geometry worker can read a STEP file
         // on this machine; the menu here is rebuilt on every open, so it reads the same property then.
         ("_STEP…", nameof(WorkspaceViewModel.ImportStepCommand), "{Binding " + nameof(WorkspaceViewModel.ThreeDImportStepTip) + "}"),

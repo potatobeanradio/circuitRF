@@ -163,6 +163,9 @@
                 <MenuItem Header="Ge_rber…"
                           Command="{Binding ImportGerberCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="IPC-_2581…"
+                          Command="{Binding ImportIpc2581Command}"
+                          CommandParameter="{Binding $parent[Window]}"/>
                 <MenuItem Header="_STEP…"
                           Command="{Binding ImportStepCommand}"
                           CommandParameter="{Binding $parent[Window]}"

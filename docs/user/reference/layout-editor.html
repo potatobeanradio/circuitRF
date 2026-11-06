@@ -69,6 +69,7 @@ stackup, a mesh and ports. That half has its own chapters —
   <li><a href="#dxf">DXF</a></li>
   <li><a href="#gerber">Gerber and Excellon</a></li>
   <li><a href="#board">Board files (<code>.kicad_pcb</code>)</a></li>
+  <li><a href="#ipc2581">IPC-2581</a></li>
   </ol>
 </li>
 <li><a href="#drc">Design-rule checking</a></li>
@@ -1414,8 +1415,8 @@ review-slide use case work.</li>
 <li><strong>DXF</strong>, as genuine <strong>aligned <code>DIMENSION</code> entities</strong> on their own <code>RULER</code> layer — see below.</li>
 </ul>
 <h2 id="interchange">Interchange</h2>
-<p><strong>File ▸ Import</strong> offers GDSII, DXF, Gerber and Board; <strong>File ▸ Export</strong> offers the same four. Both menus
-also offer <strong>GDSII (gdstk)</strong> and <strong>OASIS (gdstk)</strong>, described <a href="#oasis-gdstk">below</a>.</p>
+<p><strong>File ▸ Import</strong> offers GDSII, DXF, Gerber, Board and <a href="#ipc2581">IPC-2581</a>; <strong>File ▸ Export</strong> offers the first
+four. Both menus also offer <strong>GDSII (gdstk)</strong> and <strong>OASIS (gdstk)</strong>, described <a href="#oasis-gdstk">below</a>.</p>
 <p><strong>Every export says what it could not carry at full fidelity before it writes anything</strong>, and that
 preview is produced by running the <em>real</em> write into a null stream — so it can never disagree with what
 lands on disk. Imports report the same class of thing afterwards, in the Messages panel: what was
@@ -1823,6 +1824,75 @@ through and leaving a half-imported layout or a half-written file that opens and
 are decimal millimetres with no exponent notation; at the default 1000 DBU/µm one DBU is one nanometre,
 so six decimal places represent every DBU exactly — this is the one interchange path here that is
 lossless in both directions.</p>
+<h3 id="ipc2581">IPC-2581</h3>
+<p>Import only, through <strong>File ▸ Import ▸ IPC-2581…</strong> or <a href="cli.html#convert"><code>circuitrf convert</code></a>. A file is known by
+its root element, so a <code>.xml</code> or <code>.cvg</code> of any name reads, and any other file is refused with the reason. A file
+that holds several steps asks which one to import, because a panel and the board it places are both steps. The board
+lands as one flat cell in a folder named after the file, beside a technology of its own, or in a technology you
+choose in the same layer-mapping dialog a board file uses. A large file reads with a progress row that can be
+cancelled, and a cancelled import creates nothing.</p>
+<h4 id="what-comes-across-1">What comes across</h4>
+<ul>
+<li><strong>Copper on every conductor and plane layer</strong>, with a negative layer's clearances cut out of the step's profile.</li>
+<li><strong>Other layers</strong>: mask, paste, silkscreen, drill and the outline, each named for its stated function.</li>
+<li><strong>Nets</strong> on tracks, pads, vias and pours, which the <a href="#nets-panel">Nets panel</a> lists. Each pad also carries its part and pin.</li>
+<li><strong>Vias</strong>, one stackup via entry per span, wherever a hole has a pad to land on and either says it is a via or
+stops short of the board. A through hole written only as <code>PLATED</code> stays a hole with its pads as copper, and the
+report counts them, because the file does not say whether any of them is really a via.</li>
+<li><strong>The stackup</strong>, which the Technology editor then shows. The report in <strong>Messages</strong> opens
+with it, one line per layer, with <code>*</code> on every value the file did not state.</li>
+</ul>
+<h4 id="when-the-file-states-no-value">When the file states no value</h4>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>What is used</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A dielectric's εr or tanδ</td>
+<td>4.4 and 0.02. A value tabulated against frequency uses its lowest frequency, and the report says so.</td>
+</tr>
+<tr>
+<td>A conductor's conductivity</td>
+<td>Copper, 5.8e7 S/m</td>
+</tr>
+<tr>
+<td>A conductor's thickness</td>
+<td>35 µm on an outer layer, 18 µm on an inner one</td>
+</tr>
+<tr>
+<td>A dielectric's thickness</td>
+<td>The file's overall thickness, less the copper, shared equally among the dielectrics that state none</td>
+</tr>
+<tr>
+<td>Two conductors with nothing between them</td>
+<td>A dielectric is added, with the values above</td>
+</tr>
+<tr>
+<td>Which stackup, when a file has several zones</td>
+<td>The largest zone's. The report names every zone.</td>
+</tr>
+<tr>
+<td>No <code>Stackup</code> element at all</td>
+<td>The stackup stays empty, and vias have no span until you give the technology one</td>
+</tr>
+</tbody>
+</table>
+<p>A material or product name decides nothing and is never looked up.</p>
+<h4 id="what-is-reported-and-not-imported">What is reported and not imported</h4>
+<ul>
+<li><strong>Placement as instances.</strong> The board is one flat cell, because its artwork already holds every pad.</li>
+<li><strong>Step and repeat.</strong> A step that only places other steps is refused, and the refusal names the step to read.</li>
+<li><strong>Backdrill</strong>, and <strong>stackup zones</strong> beyond the one chosen.</li>
+</ul>
+<p>A negative layer's copper is the step's profile less what the layer draws, and a cutout inside another cutout of a contour
+is an island of copper in a split plane. A file states no setback from the board's edge, so a plane runs to the profile
+wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches.</p>
+<h4 id="size">Size</h4>
+<p>A board that comes to more than <strong>500,000 shapes</strong> is refused before anything is written.</p>
 <h2 id="drc">Design-rule checking</h2>
 <p><strong>Design ▸ Check Design Rules</strong>, or the <strong>Check</strong> button on the DRC panel. The rules come from the
 <strong>technology</strong>, not from the layout, so a design retargeted to a different process is checked against

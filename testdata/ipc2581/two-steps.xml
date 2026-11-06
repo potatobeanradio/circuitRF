@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Two steps: a board with one conductor layer, two nets and a filled rectangle, and a panel that holds nothing but a
+     step-and-repeat of the board. Choosing between them is the import's question to ask. -->
+<IPC-2581 revision="C">
+  <Content>
+    <FunctionMode mode="FULL"/>
+    <DictionaryUser units="MILLIMETER">
+      <EntryUser id="R1"><RectCenter width="2" height="1"/></EntryUser>
+    </DictionaryUser>
+  </Content>
+  <Ecad name="fixture">
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Step name="board">
+        <LayerFeature layerRef="TOP">
+          <Set net="A"><Pad><Location x="1" y="1"/><UserPrimitiveRef id="R1"/></Pad></Set>
+          <Set net="B"><Pad><Location x="4" y="1"/><UserPrimitiveRef id="R1"/></Pad></Set>
+        </LayerFeature>
+      </Step>
+      <Step name="panel">
+        <StepRepeat stepRef="board" x="0" y="0" nx="2" ny="1" dx="10" dy="0" angle="0" mirror="false"/>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

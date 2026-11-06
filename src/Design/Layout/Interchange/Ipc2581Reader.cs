@@ -10,8 +10,17 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
+using CircuitRF.Engine;
 
 namespace CircuitRF.Design.Layout.Interchange;
+
+/// <summary>One step of a file, as a chooser or a listing shows it.</summary>
+/// <param name="Name">The step's own name.</param>
+/// <param name="LayerCount">The layers the step draws on.</param>
+/// <param name="NetCount">The distinct nets it names.</param>
+/// <param name="Places">The steps it places by step and repeat.</param>
+/// <param name="IsPanel">All it does is place other steps, so it holds no artwork of its own.</param>
+public sealed record Ipc2581Step(string Name, int LayerCount, int NetCount, IReadOnlyList<string> Places, bool IsPanel);
 
 public sealed partial class Ipc2581Reader
 {
@@ -27,25 +36,19 @@ public sealed partial class Ipc2581Reader
     /// <paramref name="dbuPerMicron"/>.</summary>
     /// <param name="stepName">The step to read. Null reads the file's one step, and a file holding several is a
     /// refusal listing them.</param>
-    /// <param name="entityCeiling">Refuse above this many features, counted as the read proceeds.</param>
+    /// <param name="entityCeiling">Refuse a board that comes to more than this many shapes, and stop reading at twice
+    /// this many features.</param>
+    /// <param name="control">Progress in megabytes of the stream, and cancellation, which throws
+    /// <see cref="OperationCanceledException"/>. Nothing has been written at that point, because a read writes nothing.</param>
     public static PcbReader.ReadResult Read(
-        Stream stream, int dbuPerMicron, string? stepName = null, long entityCeiling = PcbReader.EntityHardCeiling)
+        Stream stream, int dbuPerMicron, string? stepName = null, long entityCeiling = PcbReader.EntityHardCeiling,
+        RunControl? control = null)
     {
-        var settings = new XmlReaderSettings
-        {
-            // As ComponentLibraryXmlReader: a declared DTD is skipped unexpanded and never fetched.
-            DtdProcessing = DtdProcessing.Ignore,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            IgnoreProcessingInstructions = true,
-            CheckCharacters = false,
-        };
-
         try
         {
-            using var xml = XmlReader.Create(stream, settings);
-            var reader = new Ipc2581Reader(dbuPerMicron, stepName, entityCeiling);
+            using var xml = XmlReader.Create(stream, Settings());
+            var reader = new Ipc2581Reader(dbuPerMicron, stepName, entityCeiling) { _control = control, _stream = stream };
+            control?.BeginStage("reading the file", MegabytesOf(stream), "MB");
             return new PcbReader.ReadResult(reader.Run(xml), null);
         }
         catch (Refusal refusal)
@@ -54,10 +57,144 @@ public sealed partial class Ipc2581Reader
         }
         catch (XmlException e)
         {
-            return new PcbReader.ReadResult(null,
-                $"This file could not be read as XML (line {e.LineNumber}: {e.Message}). It is not an IPC-2581 file, " +
-                "or it is cut short. Nothing was imported.");
+            return new PcbReader.ReadResult(null, NotXml(e));
         }
+    }
+
+    private static XmlReaderSettings Settings() => new()
+    {
+        // As ComponentLibraryXmlReader: a declared DTD is skipped unexpanded and never fetched.
+        DtdProcessing = DtdProcessing.Ignore,
+        XmlResolver = null,
+        IgnoreComments = true,
+        IgnoreWhitespace = true,
+        IgnoreProcessingInstructions = true,
+        CheckCharacters = false,
+    };
+
+    /// <summary>Whether <paramref name="path"/>'s root element makes it this format, whatever it is called. Reads only
+    /// as far as the root element.</summary>
+    public static bool LooksLikeIpc2581(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var xml = XmlReader.Create(stream, Settings());
+            return xml.MoveToContent() == XmlNodeType.Element && xml.LocalName == RootElement;
+        }
+        catch (Exception e) when (e is XmlException or IOException or UnauthorizedAccessException or ArgumentException
+                                      or System.Text.DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The steps a file holds, or the reason it cannot say.</summary>
+    public sealed record StepListing(IReadOnlyList<Ipc2581Step>? Steps, string? Refusal);
+
+    /// <summary>Walks the whole file for its steps, building nothing, so a chooser costs a small part of a read.</summary>
+    public static StepListing ListSteps(Stream stream, RunControl? control = null)
+    {
+        try
+        {
+            using var xml = XmlReader.Create(stream, Settings());
+            xml.MoveToContent();
+            if (xml.NodeType != XmlNodeType.Element || xml.LocalName != RootElement)
+                return new StepListing(null, NotThisFormat(xml.LocalName));
+
+            control?.BeginStage("listing the file's steps", MegabytesOf(stream), "MB");
+            long reported = 0, elements = 0;
+            var steps = new List<Ipc2581Step>();
+            string? step = null;
+            int stepDepth = 0;
+            bool ownContent = false;
+            var layers = new HashSet<string>(StringComparer.Ordinal);
+            var nets = new HashSet<string>(StringComparer.Ordinal);
+            var places = new List<string>();
+
+            while (xml.Read())
+            {
+                if (xml.NodeType == XmlNodeType.EndElement && step is not null && xml.Depth == stepDepth)
+                {
+                    steps.Add(new Ipc2581Step(step, layers.Count, nets.Count, [.. places.Distinct()], places.Count > 0 && !ownContent));
+                    step = null;
+                    continue;
+                }
+                if (xml.NodeType != XmlNodeType.Element) continue;
+                if ((++elements & 0xFFF) == 0) reported = Report(control, stream, reported);
+
+                if (step is null)
+                {
+                    if (xml.LocalName != "Step") continue;
+                    step = xml.GetAttribute("name") ?? "";
+                    stepDepth = xml.Depth;
+                    ownContent = false;
+                    layers.Clear();
+                    nets.Clear();
+                    places.Clear();
+                    if (xml.IsEmptyElement)
+                    {
+                        steps.Add(new Ipc2581Step(step, 0, 0, [], false));
+                        step = null;
+                    }
+                    continue;
+                }
+
+                switch (xml.LocalName)
+                {
+                    case "StepRepeat":
+                        if (xml.GetAttribute("stepRef") is { Length: > 0 } placed) places.Add(placed);
+                        break;
+                    case "LayerFeature":
+                        ownContent = true;
+                        if (xml.GetAttribute("layerRef") is { Length: > 0 } layer) layers.Add(layer);
+                        break;
+                    case "PadStack" or "Set":
+                        if (xml.LocalName == "PadStack") ownContent = true;
+                        if (NetName(xml.GetAttribute("net"), step) is { } stated) nets.Add(stated);
+                        break;
+                    case "LogicalNet" or "PhyNet":
+                        if (NetName(xml.GetAttribute("name"), step) is { } named) nets.Add(named);
+                        break;
+                }
+            }
+            return new StepListing(steps, null);
+        }
+        catch (XmlException e)
+        {
+            return new StepListing(null, NotXml(e));
+        }
+    }
+
+    private static long Report(RunControl? control, Stream stream, long reported)
+    {
+        if (control is null) return reported;
+        control.Token.ThrowIfCancellationRequested();
+        if (!stream.CanSeek) return reported;
+        long now = stream.Position >> 20;
+        if (now > reported) control.TickStage(now - reported);
+        return Math.Max(now, reported);
+    }
+
+    private static long MegabytesOf(Stream stream) => stream.CanSeek ? Math.Max(1, stream.Length >> 20) : 0;
+
+    private static string NotThisFormat(string root) =>
+        $"This file's root element is <{root}>, not <{RootElement}>, so it is not an IPC-2581 file. Nothing was imported.";
+
+    private static string NotXml(XmlException e) =>
+        $"This file could not be read as XML (line {e.LineNumber}: {e.Message}). It is not an IPC-2581 file, " +
+        "or it is cut short. Nothing was imported.";
+
+    private RunControl? _control;
+    private Stream? _stream;
+    private long _reportedMegabytes;
+    private long _ticks;
+
+    /// <summary>Between children of the walk, which is the finest grain the walk has.</summary>
+    private void Tick()
+    {
+        if (_control is null || (++_ticks & 0xFF) != 0) return;
+        _reportedMegabytes = Report(_control, _stream!, _reportedMegabytes);
     }
 
     private readonly int _dbuPerMicron;
@@ -105,9 +242,7 @@ public sealed partial class Ipc2581Reader
     {
         xml.MoveToContent();
         if (xml.NodeType != XmlNodeType.Element || xml.LocalName != RootElement)
-            throw new Refusal(
-                $"This file's root element is <{xml.LocalName}>, not <{RootElement}>, so it is not an IPC-2581 file. " +
-                "Nothing was imported.");
+            throw new Refusal(NotThisFormat(xml.LocalName));
 
         string? revision = xml.GetAttribute("revision");
         _board.Version = revision;
@@ -133,13 +268,14 @@ public sealed partial class Ipc2581Reader
 
     /// <summary>Calls <paramref name="onElement"/> for each child element of the element the reader is on. The
     /// callback consumes the whole child, so a tree it builds is released before the next one starts.</summary>
-    private static void Children(XmlReader xml, Action<string> onElement)
+    private void Children(XmlReader xml, Action<string> onElement)
     {
         if (xml.IsEmptyElement) { xml.Read(); return; }
         int depth = xml.Depth;
         xml.Read();
         while (!(xml.NodeType == XmlNodeType.EndElement && xml.Depth == depth) && !xml.EOF)
         {
+            Tick();
             if (xml.NodeType == XmlNodeType.Element) onElement(xml.LocalName);
             else xml.Read();
         }
@@ -357,12 +493,15 @@ public sealed partial class Ipc2581Reader
                 "Nothing was imported.");
         }
 
+        _control?.Token.ThrowIfCancellationRequested();
+        _control?.BeginStage("working out each layer's copper");
         ApplyPadParts();
         ReadStackup();
         ResolveLayers();
         ResolveHoles();
         ReportNetsAndComponents();
         BuildLayerTable();
+        if (_board.Shapes.Count > _ceiling) throw OverCeiling();
         _board.ShapesProduced = _board.Shapes.Count;
         _board.EntitiesRead = (int)Math.Min(_entities, int.MaxValue);
     }
@@ -509,9 +648,12 @@ public sealed partial class Ipc2581Reader
 
     private void CountEntity()
     {
-        if (++_entities > _ceiling)
-            throw new Refusal(
-                $"This board carries more than {_ceiling:N0} entities, above the import ceiling. Nothing was imported. " +
-                "Crop the board in the originating tool and export the region you intend to simulate.");
+        // A feature read is often not a shape kept: a via's pads collapse into it. So the walk only guards the read's own
+        // memory, at twice the ceiling, and the ceiling itself is held on what the board comes to (Finish).
+        if (++_entities > _ceiling * 2) throw OverCeiling();
     }
+
+    private Refusal OverCeiling() => new(
+        $"This board carries more than {_ceiling:N0} entities, above the import ceiling. Nothing was imported. " +
+        "Crop the board in the originating tool and export the region you intend to simulate.");
 }

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. A 20 x 10 negative plane split the way a file writes an island. A filled contour
+     clears x 6..14, y 2..8. A later set's contour clears x 1..19, y 1..9 except inside its cutouts: one for the plane,
+     x 1.5..18.5, y 1.5..8.5, and one inside that for the island, x 7..13, y 3..7. So the ring clears 144 - 119 = 25, the
+     fill clears 48, the island's 24 stays copper, and copper is 200 - 25 - 48 + 24 = 151. A clearance placed after them
+     still cuts the island, removing 1, so copper is 150. -->
+<IPC-2581 revision="B">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="CLEAR"><RectCenter width="1" height="1"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="PWR" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Step name="board">
+        <Profile>
+          <Polygon>
+            <PolyBegin x="0" y="0"/><PolyStepSegment x="20" y="0"/><PolyStepSegment x="20" y="10"/>
+            <PolyStepSegment x="0" y="10"/><PolyStepSegment x="0" y="0"/>
+          </Polygon>
+        </Profile>
+        <LayerFeature layerRef="PWR">
+          <Set>
+            <Features><Location x="0" y="0"/>
+              <Contour><Polygon>
+                <PolyBegin x="6" y="2"/><PolyStepSegment x="14" y="2"/><PolyStepSegment x="14" y="8"/>
+                <PolyStepSegment x="6" y="8"/><PolyStepSegment x="6" y="2"/>
+              </Polygon></Contour>
+            </Features>
+          </Set>
+          <Set>
+            <Features><Location x="0" y="0"/>
+              <Contour>
+                <Polygon>
+                  <PolyBegin x="1" y="1"/><PolyStepSegment x="19" y="1"/><PolyStepSegment x="19" y="9"/>
+                  <PolyStepSegment x="1" y="9"/><PolyStepSegment x="1" y="1"/>
+                </Polygon>
+                <Cutout>
+                  <PolyBegin x="1.5" y="1.5"/><PolyStepSegment x="18.5" y="1.5"/><PolyStepSegment x="18.5" y="8.5"/>
+                  <PolyStepSegment x="1.5" y="8.5"/><PolyStepSegment x="1.5" y="1.5"/>
+                </Cutout>
+                <Cutout>
+                  <PolyBegin x="7" y="3"/><PolyStepSegment x="13" y="3"/><PolyStepSegment x="13" y="7"/>
+                  <PolyStepSegment x="7" y="7"/><PolyStepSegment x="7" y="3"/>
+                </Cutout>
+              </Contour>
+            </Features>
+          </Set>
+          <Set net="SIG"><Pad><Location x="10" y="5"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

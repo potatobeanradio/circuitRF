@@ -51,6 +51,7 @@ public sealed partial class Ipc2581Reader
 
         foreach (var layer in _layers.DistinctBy(l => l.Name))
         {
+            _control?.Token.ThrowIfCancellationRequested();
             if (layer.Function is "RESISTIVE" or "CAPACITIVE")
                 Degraded($"{layer.Function} layer '{layer.Name}' imported as non-copper artwork");
 
@@ -70,6 +71,7 @@ public sealed partial class Ipc2581Reader
                     continue;
                 }
                 var plane = Resolve(outline, ops, invert: true);
+                ReportIslands(layer.Name, ops);
                 NamePlanePieces(layer.Name, plane);
                 AddResolved(layer.Name, plane);
             }
@@ -126,9 +128,10 @@ public sealed partial class Ipc2581Reader
         int i = 0;
         while (i < ops.Shapes.Count)
         {
-            bool erase = ops.Erases[i] != invert;
+            bool Clears(int k) => ops.Erases[k] != invert && !(invert && _cutoutIslands.Contains(ops.Shapes[k]));
+            bool erase = Clears(i);
             int j = i;
-            while (j < ops.Shapes.Count && (ops.Erases[j] != invert) == erase) j++;
+            while (j < ops.Shapes.Count && Clears(j) == erase) j++;
 
             if (erase)
             {
@@ -188,6 +191,46 @@ public sealed partial class Ipc2581Reader
             image.AddRange(added);
             index.Apply(image, LayoutChangeInfo.Appended(first, added.Count));
         }
+    }
+
+    /// <summary>A contour's cutout inside another of its cutouts, as a shape of its own. On a positive layer it is the copper
+    /// it always was. On a negative layer it is an island in a split plane: the contour clears around it, and it puts back
+    /// what a filled contour written for the island's surrounding band has already cleared.</summary>
+    private readonly HashSet<LayoutShape> _cutoutIslands = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Takes the cutouts lying inside another cutout out of a contour, placed as shapes of their own.</summary>
+    private Ipc2581Region WithoutNestedCutouts(Ipc2581Region region, Ipc2581Transform xf, List<LayoutShape> islands)
+    {
+        var nested = region.Holes.Where(hole => region.Holes.Any(other =>
+            !ReferenceEquals(other, hole) && Encloses(other, hole))).ToList();
+        if (nested.Count == 0) return region;
+
+        foreach (var hole in nested) islands.AddRange(Ipc2581Shapes.Place(new Ipc2581Region(hole, []), xf, _flattenTolDbu));
+        return region with { Holes = [.. region.Holes.Except(nested)] };
+    }
+
+    /// <summary>Every vertex of the inner ring is inside the outer one. Ring vertices are enough: two cutouts of one contour do
+    /// not cross.</summary>
+    private static bool Encloses(Ipc2581Contour outer, Ipc2581Contour inner) =>
+        inner.Points.Length > 0 && Array.TrueForAll(inner.Points, point => Contains(outer, point));
+
+    private static bool Contains(Ipc2581Contour ring, Ipc2581Point point)
+    {
+        var points = ring.Points;
+        bool inside = false;
+        for (int i = 0, j = points.Length - 1; i < points.Length; j = i++)
+            if (points[i].Y > point.Y != points[j].Y > point.Y
+                && point.X < (points[j].X - points[i].X) * (point.Y - points[i].Y) / (points[j].Y - points[i].Y) + points[i].X)
+                inside = !inside;
+        return inside;
+    }
+
+    private void ReportIslands(string layer, LayerOps? ops)
+    {
+        int islands = ops?.Shapes.Count(_cutoutIslands.Contains) ?? 0;
+        if (islands > 0)
+            _board.Diagnostics.Add(
+                $"Negative layer '{layer}' states {islands} island(s) of copper as a cutout inside another cutout, and each was kept as copper.");
     }
 
     /// <summary>A VOID fill: it clears what the same set has already drawn, and nothing else on the layer.</summary>

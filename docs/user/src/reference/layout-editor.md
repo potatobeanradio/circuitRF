@@ -37,6 +37,7 @@ at any moment:
   <li><a href="#dxf">DXF</a></li>
   <li><a href="#gerber">Gerber and Excellon</a></li>
   <li><a href="#board">Board files (<code>.kicad_pcb</code>)</a></li>
+  <li><a href="#ipc2581">IPC-2581</a></li>
   </ol>
 </li>
 <li><a href="#drc">Design-rule checking</a></li>
@@ -905,8 +906,8 @@ The two places it *does* come out are the two where a measurement is the point:
 
 ## Interchange {#interchange}
 
-**File ▸ Import** offers GDSII, DXF, Gerber and Board; **File ▸ Export** offers the same four. Both menus
-also offer **GDSII (gdstk)** and **OASIS (gdstk)**, described [below](#oasis-gdstk).
+**File ▸ Import** offers GDSII, DXF, Gerber, Board and [IPC-2581](#ipc2581); **File ▸ Export** offers the first
+four. Both menus also offer **GDSII (gdstk)** and **OASIS (gdstk)**, described [below](#oasis-gdstk).
 
 **Every export says what it could not carry at full fidelity before it writes anything**, and that
 preview is produced by running the *real* write into a null stream — so it can never disagree with what
@@ -1208,6 +1209,54 @@ through and leaving a half-imported layout or a half-written file that opens and
 are decimal millimetres with no exponent notation; at the default 1000 DBU/µm one DBU is one nanometre,
 so six decimal places represent every DBU exactly — this is the one interchange path here that is
 lossless in both directions.
+
+### IPC-2581 {#ipc2581}
+
+Import only, through **File ▸ Import ▸ IPC-2581…** or [`circuitrf convert`](cli.html#convert). A file is known by
+its root element, so a `.xml` or `.cvg` of any name reads, and any other file is refused with the reason. A file
+that holds several steps asks which one to import, because a panel and the board it places are both steps. The board
+lands as one flat cell in a folder named after the file, beside a technology of its own, or in a technology you
+choose in the same layer-mapping dialog a board file uses. A large file reads with a progress row that can be
+cancelled, and a cancelled import creates nothing.
+
+#### What comes across
+
+- **Copper on every conductor and plane layer**, with a negative layer's clearances cut out of the step's profile.
+- **Other layers**: mask, paste, silkscreen, drill and the outline, each named for its stated function.
+- **Nets** on tracks, pads, vias and pours, which the [Nets panel](#nets-panel) lists. Each pad also carries its part and pin.
+- **Vias**, one stackup via entry per span, wherever a hole has a pad to land on and either says it is a via or
+  stops short of the board. A through hole written only as `PLATED` stays a hole with its pads as copper, and the
+  report counts them, because the file does not say whether any of them is really a via.
+- **The stackup**, which the Technology editor then shows. The report in **Messages** opens
+  with it, one line per layer, with `*` on every value the file did not state.
+
+#### When the file states no value
+
+| Value | What is used |
+|---|---|
+| A dielectric's εr or tanδ | 4.4 and 0.02. A value tabulated against frequency uses its lowest frequency, and the report says so. |
+| A conductor's conductivity | Copper, 5.8e7 S/m |
+| A conductor's thickness | 35 µm on an outer layer, 18 µm on an inner one |
+| A dielectric's thickness | The file's overall thickness, less the copper, shared equally among the dielectrics that state none |
+| Two conductors with nothing between them | A dielectric is added, with the values above |
+| Which stackup, when a file has several zones | The largest zone's. The report names every zone. |
+| No `Stackup` element at all | The stackup stays empty, and vias have no span until you give the technology one |
+
+A material or product name decides nothing and is never looked up.
+
+#### What is reported and not imported
+
+- **Placement as instances.** The board is one flat cell, because its artwork already holds every pad.
+- **Step and repeat.** A step that only places other steps is refused, and the refusal names the step to read.
+- **Backdrill**, and **stackup zones** beyond the one chosen.
+
+A negative layer's copper is the step's profile less what the layer draws, and a cutout inside another cutout of a contour
+is an island of copper in a split plane. A file states no setback from the board's edge, so a plane runs to the profile
+wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches.
+
+#### Size
+
+A board that comes to more than **500,000 shapes** is refused before anything is written.
 
 ## Design-rule checking {#drc}
 

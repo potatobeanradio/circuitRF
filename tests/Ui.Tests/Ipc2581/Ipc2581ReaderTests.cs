@@ -313,6 +313,22 @@ public class Ipc2581ReaderTests : IDisposable
         Assert.False(IsCopper(plane, 13.5, 6.5));// the ring between spokes
     }
 
+    /// <summary>The copper is checked against plotted film of a split plane written this way.</summary>
+    [Fact]
+    public void A_cutout_inside_a_cutout_is_an_island_of_copper_on_a_negative_plane_and_a_later_clearance_still_cuts_it()
+    {
+        var board = Board(Fixture("plane-island.xml"));
+        var plane = On(board, "PWR").ToList();
+
+        Assert.Equal(150.0, AreaMm2(plane), 6);
+        Assert.True(IsCopper(plane, 3, 5));       // the plane
+        Assert.False(IsCopper(plane, 6.5, 5));    // the band around the island
+        Assert.True(IsCopper(plane, 8, 5));       // the island
+        Assert.False(IsCopper(plane, 10, 5));     // the clearance placed in the island
+        Assert.False(IsCopper(plane, 1.2, 5));    // the ring
+        Assert.Contains(board.Diagnostics, d => d.Contains("'PWR' states 1 island(s)", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void An_erased_pour_keeps_its_net_on_every_piece_and_shapes_it_misses_are_untouched()
     {
@@ -511,6 +527,25 @@ public class Ipc2581ReaderTests : IDisposable
     {
         var refusal = Refusal(OneLayer("""<Features><Circle diameter="1"/></Features><Features><Circle diameter="1"/></Features>"""), ceiling: 1);
         Assert.Contains("Crop the board in the originating tool", refusal);
+    }
+
+    [Fact]
+    public void A_net_name_a_file_escaped_twice_reads_as_the_name()
+    {
+        var board = Board(OneLayer("""<Features><Circle diameter="1"/></Features>""", """net="D&amp;lt;3&amp;gt;" """));
+        Assert.Equal("D<3>", Assert.Single(On(board, "TOP")).Net);
+    }
+
+    /// <summary>A via's pads collapse into it, so a file's feature count overstates the board it comes to.</summary>
+    [Fact]
+    public void The_ceiling_is_on_the_shapes_a_board_comes_to_and_not_the_features_that_made_them()
+    {
+        string xml = Fixture("holes-vias.xml");
+        var board = Board(xml);
+        Assert.True(board.EntitiesRead > board.ShapesProduced);
+
+        Assert.Null(ReadText(xml, ceiling: board.ShapesProduced).Refusal);
+        Assert.Contains("import ceiling", Refusal(xml, ceiling: board.ShapesProduced - 1));
     }
 
     // ── Layers ─────────────────────────────────────────────────────────────────────────────────

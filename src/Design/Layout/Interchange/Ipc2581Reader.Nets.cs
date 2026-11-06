@@ -34,8 +34,17 @@ public sealed partial class Ipc2581Reader
     private static string? NetName(string? raw, string step)
     {
         string? name = StripStepPrefix(raw, step);
-        return string.IsNullOrWhiteSpace(name) || NoNetNames.Contains(name.Trim()) ? null : name;
+        return string.IsNullOrWhiteSpace(name) || NoNetNames.Contains(name.Trim()) ? null : Unescaped(name);
     }
+
+    /// <summary>Some files escape a name twice, so after the XML reader's own pass a bus bit still reads D&amp;lt;3&amp;gt;. Those
+    /// spellings are never a real net's name.</summary>
+    private static string Unescaped(string name) => !name.Contains('&', StringComparison.Ordinal) ? name : name
+        .Replace("&lt;", "<", StringComparison.Ordinal)
+        .Replace("&gt;", ">", StringComparison.Ordinal)
+        .Replace("&quot;", "\"", StringComparison.Ordinal)
+        .Replace("&apos;", "'", StringComparison.Ordinal)
+        .Replace("&amp;", "&", StringComparison.Ordinal);
 
     private void ReleaseNetsAndHoles()
     {

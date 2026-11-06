@@ -48,11 +48,12 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     /// <summary>Every ordered pair of formats that names a real conversion. clay→clay is excluded
     /// because it is a file copy and the verb refuses it by name; the diagonal is otherwise kept —
     /// GDSII→GDSII is a normalization through the cell model, not a no-op, and it is the pair most
-    /// likely to expose a reader and a writer disagreeing. 35 pairs over six formats.</summary>
+    /// likely to expose a reader and a writer disagreeing. 35 pairs over six formats, plus IPC-2581, which is a
+    /// source only and so adds one row per target.</summary>
     private static IEnumerable<(string From, string To)> AllPairs()
     {
         string[] all = ["clay", "gdsii", "oasis", "dxf", "gerber", "board"];
-        foreach (string from in all)
+        foreach (string from in all.Append("ipc2581"))
             foreach (string to in all)
                 if (!(from == "clay" && to == "clay")) yield return (from, to);
     }
@@ -209,7 +210,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         var (code, _, stderr) = RunCli("convert", dxf, "-o", target, "--into-tech", "a.ctech");
 
         Assert.Equal(1, code);
-        Assert.Contains("--into-tech applies to a gerber or board source, and this one is", stderr);
+        Assert.Contains("--into-tech applies to a gerber, board or ipc2581 source, and this one is", stderr);
         Assert.False(Directory.Exists(target));
     }
 
@@ -254,6 +255,97 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         {
             Assert.True(new FileInfo(FirstFile(target)).Length > 0);
         }
+    }
+
+    // ── IPC-2581 (brief-ipx-4 R-ipx4-3) ───────────────────────────────────────────────────────────
+
+    private static string Ipc2581Fixture(string name)
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "testdata", "ipc2581"))) dir = Path.GetDirectoryName(dir);
+        return Path.Combine(dir ?? throw new DirectoryNotFoundException("testdata/ipc2581"), "testdata", "ipc2581", name);
+    }
+
+    /// <summary>The CLI's whole tree against the in-process import, through the step flag, every file byte for byte.</summary>
+    [Fact]
+    public void Ipc2581_WritesWhatTheInProcessImportWrites()
+    {
+        string name = Path.Combine(_root, "two.xml");
+        Directory.CreateDirectory(_root);
+        File.Copy(Ipc2581Fixture("two-steps.xml"), name);
+
+        string viaCli = Path.Combine(_root, "cli");
+        var (code, _, stderr) = RunCli("convert", name, "-o", viaCli, "--to", "clay", "--step", "board");
+        output.WriteLine(stderr);
+        Assert.Equal(0, code);
+
+        string viaApp = Path.Combine(_root, "app");
+        Directory.CreateDirectory(viaApp);
+        var app = Ipc2581Import.Import(name, viaApp, "two", new Technology { Name = "two" }, Dbu, stepName: "board");
+        Assert.False(app.Cancelled, string.Join("\n", app.Messages));
+
+        static List<string> Tree(string root) => [.. Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(root, f)).Order(StringComparer.Ordinal)];
+        Assert.Equal(Tree(viaApp), Tree(viaCli));
+        foreach (string file in Tree(viaApp))
+            Assert.Equal(File.ReadAllBytes(Path.Combine(viaApp, file)), File.ReadAllBytes(Path.Combine(viaCli, file)));
+    }
+
+    [Fact]
+    public void Ipc2581_SeveralStepsAreListedOrRefused_AndWriteNothing()
+    {
+        Directory.CreateDirectory(_root);
+        string source = Ipc2581Fixture("two-steps.xml");
+        string target = Path.Combine(_root, "refused");
+
+        var (refusedCode, _, refused) = RunCli("convert", source, "-o", target, "--to", "clay");
+        Assert.Equal(1, refusedCode);
+        Assert.Contains("'board'", refused);
+        Assert.Contains("'panel'", refused);
+        Assert.False(Directory.Exists(target));
+
+        var (listCode, listed, _) = RunCli("convert", source, "--list-steps");
+        Assert.Equal(0, listCode);
+        Assert.Contains("board\t1 layer(s)\t2 net(s)", listed);
+        Assert.Contains("panel\t0 layer(s)\t0 net(s)\ta panel placing board", listed);
+    }
+
+    [Fact]
+    public void Ipc2581_IsNotATarget_AndTheStepFlagsNeedThatSource()
+    {
+        var (cvgCode, _, cvg) = RunCli("convert", BuildClayCell().ClayPath, "-o", Path.Combine(_root, "x.cvg"));
+        Assert.Equal(1, cvgCode);
+        Assert.Contains("IPC-2581 is import only", cvg);
+
+        var (toCode, _, to) = RunCli("convert", BuildClayCell().ClayPath, "-o", Path.Combine(_root, "x"), "--to", "ipc2581");
+        Assert.Equal(1, toCode);
+        Assert.Contains("IPC-2581 is import only", to);
+
+        var (stepCode, _, step) = RunCli("convert", BuildClayCell().ClayPath, "-o", Path.Combine(_root, "x.gds"), "--step", "a");
+        Assert.Equal(1, stepCode);
+        Assert.Contains("--step and --list-steps apply to an IPC-2581 source", step);
+    }
+
+    /// <summary>Known by the root element under any name, and .cvg by the extension as well.</summary>
+    [Fact]
+    public void Ipc2581_IsDetectedByContent_AndCheckNamesIt()
+    {
+        Directory.CreateDirectory(_root);
+        string renamed = Path.Combine(_root, "export.dat");
+        string cvg = Path.Combine(_root, "export.cvg");
+        File.Copy(Ipc2581Fixture("board-plain.xml"), renamed);
+        File.Copy(Ipc2581Fixture("board-plain.xml"), cvg);
+
+        foreach (string source in new[] { renamed, cvg })
+        {
+            var (code, _, stderr) = RunCli("convert", source, "-o", source + ".gds");
+            Assert.True(code == 0, stderr);
+            Assert.Contains("IPC-2581 -> GDSII", stderr);
+        }
+
+        var (checkCode, checkOut, checkErr) = RunCli("check", renamed);
+        Assert.Equal(0, checkCode);
+        Assert.Contains("is IPC-2581 interchange", checkOut + checkErr);
     }
 
     // ── The identity claim: the CLI runs the application's own export ─────────────────────────────
@@ -770,6 +862,11 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     /// testing the pairs.</summary>
     private string SourceIn(string format)
     {
+        if (format == "ipc2581")
+        {
+            Directory.CreateDirectory(_root);   // the working directory of the run, which nothing else has made yet
+            return Ipc2581Fixture("holes-vias.xml");
+        }
         var (clayPath, _, _) = BuildClayCell();
         if (format == "clay") return clayPath;
 

@@ -439,6 +439,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
         ImportGerberCommand.NotifyCanExecuteChanged();
+        ImportIpc2581Command.NotifyCanExecuteChanged();
         ImportComponentCommand.NotifyCanExecuteChanged();
         ImportSchematicCommand.NotifyCanExecuteChanged();
         ImportDataCommand.NotifyCanExecuteChanged();
@@ -5353,6 +5354,118 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             $"Imported {result.CreatedCellDirs.Count} cell(s) from the board file into "
             + $"'{Path.GetFileName(importDir)}'.");
         if (result.BoardCellDir is { } boardDir) OpenPrimaryLayoutIfResolvable(boardDir);
+    }
+
+    // ── Import IPC-2581 (docs/briefs/brief-ipx-4-surfaces-and-acceptance.md §2) ─────────────────────
+    //
+    // Picking, prompting and reporting only: every decision is Ipc2581Import.Import's, the function `convert` calls.
+    // A file this size reads for a while, so it reports on one live row with a Cancel, as Import Gerber does.
+
+    [RelayCommand(CanExecute = nameof(CanImportIpc2581))]
+    private Task ImportIpc2581(Window? owner) => ImportIpc2581Async(owner);
+    private bool CanImportIpc2581() => CurrentWorkspacePath is not null;
+
+    private async Task ImportIpc2581Async(Window? owner)
+    {
+        const string Title = "Import IPC-2581";
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = Title,
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("IPC-2581") { Patterns = ["*.xml", "*.cvg"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        string path = files[0].Path.LocalPath;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null); // the workspace's own default technology
+        var boardName = Path.GetFileNameWithoutExtension(path);
+        var importDir = CircuitRF.Design.Layout.Interchange.ImportFolder.Create(workspaceDir, boardName);
+
+        var live = Messages.BeginProgress(Title);
+        live.Update(Title, "starting", indeterminate: true);
+
+        CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result;
+        using (var cts = new CancellationTokenSource())
+        {
+            var control = new RunControl
+            {
+                Token    = cts.Token,
+                Progress = new Progress<RunProgress>(p => ReportIpc2581ImportProgress(live, p)),
+            };
+            var cancellation = new RunCancellation("the IPC-2581 import", () =>
+            {
+                Messages.Info("Stopping the IPC-2581 import. It creates nothing.");
+                cts.Cancel();
+            });
+            live.BindCancellation(cancellation);
+
+            try
+            {
+                result = await Task.Run(() => CircuitRF.Design.Layout.Interchange.Ipc2581Import.Import(
+                    path, importDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    chooseStep: steps => Dispatcher.UIThread
+                        .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.Ipc2581StepDialog(steps).ShowDialog<string?>(window))
+                        .GetAwaiter().GetResult(),
+                    coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true,
+                    resolveMapping: request => Dispatcher.UIThread
+                        .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "IPC-2581", techRes, request))
+                        .GetAwaiter().GetResult(),
+                    destTechPath: techRes.ResolvedPath,
+                    control: control));
+            }
+            catch (Exception ex)
+            {
+                CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
+                live.Complete(MessageLevel.Error, $"{Title}: {ex.Message}");
+                return;
+            }
+            finally
+            {
+                cancellation.Finish();
+            }
+        }
+
+        if (result.Cancelled)
+        {
+            CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
+            live.Complete(result.Refusal is null ? MessageLevel.Info : MessageLevel.Error,
+                result.Refusal is null ? $"{Title} cancelled — nothing was created." : $"{Title}: {result.Refusal}");
+            foreach (var msg in result.Messages.Where(m => m != result.Refusal)) Messages.Info(msg);
+            return;
+        }
+
+        _factory.ProjectTreeTool?.Refresh();
+        if (result.BoardCellDir is { } boardDir)
+        {
+            live.Update(Title, "opening the imported layout", indeterminate: true);
+            await OpenPrimaryLayoutIfResolvableAsync(boardDir);
+        }
+        live.Complete(MessageLevel.Success,
+            $"Imported {result.CreatedCellDirs.Count} cell(s) from the IPC-2581 file into '{Path.GetFileName(importDir)}'.");
+
+        // After the live row settles, for the reason ReportGerberImportNotes gives. The stackup is the first of them.
+        foreach (var msg in result.Messages) Messages.Info(msg);
+    }
+
+    /// <summary>The IPC-2581 import's one live row, rewritten in place, counted in megabytes of the file.</summary>
+    internal static void ReportIpc2581ImportProgress(IProgressMessage live, RunProgress p)
+    {
+        const string Title = "Import IPC-2581";
+        string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        if (p.StageTotal > 0)
+            live.Update(Title, $"{what}  ({FormatCounter(p.StageCompleted, p.StageTotal)} {p.StageUnit})",
+                        100.0 * p.StageCompleted / p.StageTotal);
+        else
+            live.Update(Title, what, indeterminate: true);
     }
 
     // ── Import Component (docs/sonnet-briefs/brief-PL1-component-library-import.md §2) ────────────

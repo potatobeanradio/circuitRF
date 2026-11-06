@@ -219,6 +219,16 @@ verb's own argument loop has to learn about any of them:
 | `--at`, `--range`, `--interp`, `--result` | narrow it by AXIS, or ask for the shape alone — §3.2 |
 | `--summary` | report the informational notes as counts rather than in full — §3.2b |
 
+**IPC-2581 is a source of `convert` and never a target** (brief-ipx-4). `--from ipc2581`, a `.cvg` path, or a file
+whose root element says so, which `Ipc2581Reader.LooksLikeIpc2581` reads and `DetectSource` asks before the Gerber
+classifier. A target of that format is refused (`convert.ipc2581.target`). `--step <name>` names the step, several with
+none named is the reader's refusal listing them, and `--list-steps` prints each with its layer and net counts and writes
+nothing; both flags on another source are refused (`convert.ipc2581.step-flags`). `--into-tech`, `--crop` and
+`--no-coalesce` work as on a board source. The verb holds no sequence of its own: `Ipc2581Import.Import` is the function
+File ▸ Import ▸ IPC-2581 calls, a source scan holds that, and the tree it writes is compared byte for byte with the
+in-process call. `check` names such a file through `DocumentKinds.Classify` as interchange. A refused or cancelled import
+into a folder it created leaves no folder, for every source.
+
 ## 3. The anatomy of a run verb
 
 `hb`, `lp` and `lpp` are the same five steps. A new run verb should be the same five steps.

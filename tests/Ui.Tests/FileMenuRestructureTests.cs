@@ -346,7 +346,7 @@ public class FileMenuRestructureTests
             // "Image" (its one child, As Touchstone…) sits beside "Data": a picture of a datasheet's S-parameter plot,
             // digitised into a Touchstone file, is data arriving another way.
             // "Schematic" (SI series) sits beside "Data" too: a whole design arriving from another tool.
-            "Data", "Schematic", "Image", "GDSII", "GDSII (gdstk)", "OASIS (gdstk)", "DXF", "Board", "Gerber", "STEP", "Voxel Model", "Surface Meshes", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
+            "Data", "Schematic", "Image", "GDSII", "GDSII (gdstk)", "OASIS (gdstk)", "DXF", "Board", "Gerber", "IPC-2581", "STEP", "Voxel Model", "Surface Meshes", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 
