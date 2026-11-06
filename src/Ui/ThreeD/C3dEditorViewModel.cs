@@ -721,6 +721,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     private void ShowPropertiesPanel() => ShowProperties(rename: false);
 
+    /// <summary>A double-click on a row of the tree: a row with nothing beneath it brings the Properties Inspector forward.
+    /// A row that opens (a group, a boolean, an instance) keeps the double-click for its expander, and false says so.</summary>
+    public bool ShowPropertiesOfRow(C3dTreeItem row)
+    {
+        if (row.Children.Count > 0) return false;
+        ShowProperties(rename: false);
+        return true;
+    }
+
     // ── edits ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One undoable edit of the objects at <paramref name="indices"/>: each is copied, the copy is

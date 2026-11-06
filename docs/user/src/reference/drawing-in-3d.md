@@ -1603,6 +1603,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd+C**, **Ctrl/Cmd+V** in the object tree | Copy the selected rows; paste a 3D copy ([Copy and Paste](#copy-paste)). In the view, Ctrl/Cmd+C copies the picture |
 | **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
 | double-click an edge | Its tangent chain (**Shift** adds it) |
+| double-click a row in the object tree | Bring **Properties** forward for that row, when nothing is listed beneath it; a row that opens just opens or closes |
 | **M** | Measure |
 | **Alt** (**Option**) | Suspend geometry snapping while held |
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
