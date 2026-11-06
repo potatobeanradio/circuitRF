@@ -55,8 +55,15 @@ public class Ipc2581ReaderTests : IDisposable
         </IPC-2581>
         """;
 
+    /// <summary>What is drawn on a layer, including the pad of a via that landed on it: a via holds its pad, so the
+    /// copper is the same whichever of the two carries it.</summary>
     private static IEnumerable<LayoutShape> On(PcbBoard board, string layer) =>
-        board.Shapes.Where(s => s.LayerName == layer).Select(s => s.Shape);
+        board.Shapes.Where(s => s.LayerName == layer).Select(s => s.Shape).Where(s => s is not ViaShape)
+            .Concat(board.Shapes.Where(s => s.LandingLayerName == layer && s.Shape is ViaShape).Select(s =>
+            {
+                var via = (ViaShape)s.Shape;
+                return (LayoutShape)new CircleShape { Cx = via.X, Cy = via.Y, R = via.PadSize / 2 };
+            }));
 
     private static Paths64 Union(IEnumerable<LayoutShape> shapes)
     {

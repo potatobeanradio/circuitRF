@@ -218,7 +218,8 @@ public static class PcbImport
         // messages still go out in their original place, below.
         var stackup = PcbStackupMapping.Build(
             board.Stackup, board.OverallThicknessMm, destDbuPerMicron,
-            name => ResolveKey(keyByName, choices, name));
+            name => ResolveKey(keyByName, choices, name),
+            board.CompleteStackupFromDefaults, board.StackupRefusal);
 
         // Which stackup is in force after this import (issue #34). A technology this import USES keeps its own. One it
         // writes keeps the donor's — R-L4d-6: nothing already declared is replaced — unless the donor's conductors are

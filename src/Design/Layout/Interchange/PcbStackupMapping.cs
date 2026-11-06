@@ -93,13 +93,25 @@ public static class PcbStackupMapping
     /// <param name="resolveDrawingLayer">Maps a stackup entry's own name onto the reconciled drawing
     /// <see cref="LayerKey"/> it corresponds to, or null when nothing matches. This is what links a
     /// conductor entry to the artwork drawn on it.</param>
+    /// <param name="completeMissing">R-ipx3-5f: an unstated value goes through <see cref="SubstrateDefaults.Fill"/> and
+    /// is named, rather than staying at air. Off for a board file, whose behaviour here is an open question.</param>
+    /// <param name="refusal">A reader's reason for not using the stackup its file holds.</param>
     public static Result Build(
         IReadOnlyList<PcbStackupEntry>? entries,
         double? overallThicknessMm,
         int dbuPerMicron,
-        Func<string, LayerKey?> resolveDrawingLayer)
+        Func<string, LayerKey?> resolveDrawingLayer,
+        bool completeMissing = false,
+        string? refusal = null)
     {
         var messages = new List<string>();
+
+        if (refusal is not null)
+        {
+            messages.Add($"This board's stackup was not used: {refusal} The technology's stackup was left EMPTY and no " +
+                         "substrate was invented. The artwork was imported all the same.");
+            return new Result(null, messages);
+        }
 
         // R-L4d-6 — a board whose author never opened the stackup page has only an overall thickness.
         // Import the geometry, leave the stackup EMPTY, and say so. Do not fabricate a plausible default
@@ -149,7 +161,9 @@ public static class PcbStackupMapping
 
             if (kind == StackupKind.Dielectric)
             {
+                // Zero is the spelling of unset that SubstrateDefaults.Fill looks for. 1.0 is air, which would stay.
                 if (entry.EpsilonR is { } er) layer.Epsr = er;
+                else if (completeMissing) layer.Epsr = 0;
                 if (entry.LossTangent is { } td) layer.TanD = td;
                 layer.Mur = 1.0;                                    // R-L4d-7 — no entry states one
                 dielectrics++;
@@ -183,6 +197,18 @@ public static class PcbStackupMapping
         // R-L4d-7 and R-L4d-8 in ONE note, deliberately: three separate lines read as three separate
         // small caveats, and the point is that these are the things a simulation will silently use.
         messages.Add(DefaultsNote(conductors, defaultedSigma, dielectrics));
+
+        if (completeMissing)
+        {
+            bool statesValues = entries.Any(e => KindOf(e.Type) is not null
+                && (e.ThicknessMm > 0 || e.EpsilonR > 0 || e.LossTangent > 0 || e.ConductivitySm > 0));
+            if (!statesValues)
+                messages.Add("This file's stackup states its structure and no values: every entry is a placeholder.");
+            GerberStackupMapping.AddSubstrateNote(messages, SubstrateDefaults.Fill(
+                stackup,
+                overallThicknessMm is { } mm && mm > 0 ? (decimal)mm * 1000m : null,
+                dbuPerMicron));
+        }
 
         return new Result(stackup, messages);
     }

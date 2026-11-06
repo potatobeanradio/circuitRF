@@ -107,7 +107,8 @@ public static class PcbLayerReconciliation
                 // exactly what DxfLayerReconciliation falls back to for ACI 7.
                 Color = FallbackPalette.For(key).Color,
                 Purpose = tableEntry?.IsCopper == true ? "conductor"
-                        : string.Equals(name, PcbReader.DrillLayerName, StringComparison.OrdinalIgnoreCase) ? "drill"
+                        : tableEntry?.IsDrill == true
+                          || string.Equals(name, PcbReader.DrillLayerName, StringComparison.OrdinalIgnoreCase) ? "drill"
                         : null,
             });
         }

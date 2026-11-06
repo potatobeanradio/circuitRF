@@ -36,6 +36,10 @@ public sealed record PcbLayerTableEntry(int Ordinal, string CanonicalName, strin
     /// recognises (<c>Edge.Cuts</c>, <c>F.SilkS</c>), for a format whose layer names are the author's own. Null keeps
     /// the source name.</summary>
     public string? InterchangeName { get; init; }
+
+    /// <summary>The format states this is a drill layer, whatever it is called. A hole on it is a hole to everything
+    /// that reads a layer's purpose.</summary>
+    public bool IsDrill { get; init; }
 }
 
 /// <summary>A shape plus the source layer NAME it was drawn on — <see cref="LayoutShape.Layer"/> is
@@ -125,6 +129,14 @@ public sealed record PcbPlacement(
 public sealed record PcbStackupEntry(
     string Name, string Type, double? ThicknessMm, double? EpsilonR, double? LossTangent, double? ConductivitySm = null);
 
+/// <summary>A part a board file names and the import does not place: its pads are already in the flat artwork.</summary>
+/// <param name="Reference">The reference designator.</param>
+/// <param name="Side"><c>TOP</c> or <c>BOTTOM</c>, null where the file's mounting layer states neither.</param>
+/// <param name="X">Board X in DBU.</param>
+/// <param name="Y">Board Y in DBU.</param>
+/// <param name="RotationDegrees">Counter-clockwise, as the file states it.</param>
+public sealed record PcbStatedComponent(string Reference, string? Side, long X, long Y, double RotationDegrees);
+
 /// <summary>Everything <c>PcbReader</c> recovered, and everything it could not.</summary>
 public sealed class PcbBoard
 {
@@ -136,6 +148,14 @@ public sealed class PcbBoard
     /// <summary>Null when the file carries no <c>(setup (stackup …))</c> at all — which is NOT an
     /// error and must never be papered over with an invented substrate (R-L4d-6).</summary>
     public List<PcbStackupEntry>? Stackup { get; set; }
+
+    /// <summary>A reader's reason for not using the stackup its file holds, a sentence. The artwork still imports and
+    /// the technology's stackup stays empty.</summary>
+    public string? StackupRefusal { get; set; }
+
+    /// <summary>A value <see cref="Stackup"/> does not state is completed through <see cref="SubstrateDefaults"/> and
+    /// named, rather than left at air. Set by a reader whose format often carries structure with no values.</summary>
+    public bool CompleteStackupFromDefaults { get; set; }
 
     /// <summary>The board's overall thickness in mm from <c>(general (thickness …))</c>, when stated —
     /// the ONLY substrate fact a file without a stackup section carries, and worth naming in the
@@ -149,6 +169,9 @@ public sealed class PcbBoard
     public Dictionary<string, PcbFootprintCell> FootprintCells { get; } = [];
 
     public List<PcbPlacement> Placements { get; } = [];
+
+    /// <summary>Parts the file names and this import does not place as instances.</summary>
+    public List<PcbStatedComponent> Components { get; } = [];
 
     // ── What was read, and what was not — every one of these is REPORTED, never silent (§2) ────────
 

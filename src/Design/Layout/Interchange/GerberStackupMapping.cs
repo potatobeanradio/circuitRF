@@ -282,7 +282,7 @@ public static class GerberStackupMapping
     /// values describe their board and which describe a generic one. Nothing is said when nothing was
     /// supplied: a set whose job file carried a complete stackup gets no note.</para>
     /// </summary>
-    private static void AddSubstrateNote(List<string> messages, SubstrateDefaults.Filled filled)
+    internal static void AddSubstrateNote(List<string> messages, SubstrateDefaults.Filled filled)
     {
         if (!filled.Any) return;
 

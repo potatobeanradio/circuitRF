@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Inches, so every thickness below is a conversion. Values from Specs: CORE has a
+     table against frequency, stated out of order, in two units, and with one row that is not a frequency. PREG is plain.
+     Conductors state S/m and mho/cm. Everything between the groups is nested and referred to by name. -->
+<IPC-2581 revision="C">
+  <Content/>
+  <Ecad>
+    <CadHeader units="INCH">
+      <Spec name="core_spec">
+        <Dielectric type="DIELECTRIC_CONSTANT">
+          <Property value="3.9" refValue="10" refUnit="GHz"/>
+          <Property value="4.1" refValue="500" refUnit="MHz"/>
+          <Property value="4.5" refValue="85" refUnit="CELCIUS"/>
+        </Dielectric>
+        <Dielectric type="LOSS_TANGENT">
+          <Property value="0.012" refValue="1e10" refUnit="Hz"/>
+          <Property value="0.009" refValue="5e8" refUnit="Hz"/>
+        </Dielectric>
+        <Dielectric type="PRODUCT_NAME"><Property text="not looked up"/></Dielectric>
+      </Spec>
+      <Spec name="preg_spec">
+        <Dielectric type="DIELECTRIC_CONSTANT"><Property value="3.6"/></Dielectric>
+        <Dielectric type="LOSS_TANGENT"><Property value="0.004"/></Dielectric>
+      </Spec>
+      <Spec name="foil_sm">
+        <Conductor type="CONDUCTIVITY"><Property value="5e7" unit="SIEMENS/M"/></Conductor>
+        <Conductor type="SURFACE_ROUGHNESS_UPFACING"><Property value="3" unit="MICRON"/></Conductor>
+      </Spec>
+      <Spec name="foil_mho"><Conductor type="CONDUCTIVITY"><Property value="4e5" unit="MHO/CM"/></Conductor></Spec>
+      <Spec name="foil_odd"><Conductor type="CONDUCTIVITY"><Property value="9" unit="OTHER"/></Conductor></Spec>
+      <Spec name="target"><Impedance type="IMPEDANCE"><Property value="50" unit="OHMS"/></Impedance></Spec>
+    </CadHeader>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="MID" layerFunction="PLANE" side="INNER" polarity="POSITIVE"/>
+      <Layer name="BOT" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="MASK" layerFunction="SOLDERMASK" side="TOP" polarity="POSITIVE"/>
+      <Layer name="CORE" layerFunction="DIELCORE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="PREG" layerFunction="DIELPREG" side="INTERNAL" polarity="POSITIVE"/>
+      <Stackup overallThickness="0.04">
+        <StackupGroup name="whole">
+          <StackupLayer layerOrGroupRef="MASK" thickness="0.001" sequence="1"/>
+          <StackupLayer layerOrGroupRef="upper" sequence="2"/>
+          <StackupLayer layerOrGroupRef="lower" sequence="3"/>
+        </StackupGroup>
+        <StackupGroup name="upper">
+          <StackupLayer layerOrGroupRef="TOP" thickness="0.002"><SpecRef id="foil_sm"/></StackupLayer>
+          <StackupLayer layerOrGroupRef="CORE" thickness="0.02"><SpecRef id="core_spec"/></StackupLayer>
+        </StackupGroup>
+        <StackupGroup name="lower">
+          <StackupLayer layerOrGroupRef="MID" thickness="0.001"><SpecRef id="foil_mho"/></StackupLayer>
+          <StackupLayer layerOrGroupRef="PREG" thickness="0.012"><SpecRef id="preg_spec"/></StackupLayer>
+          <StackupLayer layerOrGroupRef="BOT" thickness="0.002"><SpecRef id="foil_odd"/></StackupLayer>
+        </StackupGroup>
+      </Stackup>
+      <Step name="board">
+        <Port name="P1"/>
+        <LayerFeature layerRef="TOP">
+          <Set net="A"><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

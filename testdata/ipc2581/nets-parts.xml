@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Millimetres. Nets and parts on copper, one spelling per pad. -->
+<IPC-2581 revision="C">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="PAD"><RectCenter width="1" height="1"/></EntryStandard>
+      <EntryStandard id="ROUND"><Circle diameter="1"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="BOTTOM" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="PLACE_BOTTOM" layerFunction="COMPONENT" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="DRILL1" layerFunction="DRILL" side="ALL" polarity="POSITIVE"/>
+      <Step name="board">
+        <Component refDes="board:U1" layerRef="TOP" packageRef="P"><Xform rotation="90"/><Location x="2" y="3"/></Component>
+        <Component refDes="R1" layerRef="PLACE_BOTTOM" packageRef="P"><Location x="4" y="3"/></Component>
+        <LogicalNet name="board:SIG3"><LogicalNetPin componentRef="board:R1" pin="5"/><LogicalNetPin componentRef="C9" pin="1"/></LogicalNet>
+        <LogicalNet name="SIG4"><PinRef componentRef="C1" pin="7"/></LogicalNet>
+        <LogicalNet name="SIG5"><PinRef componentRef="L1" pin="1"/><PinRef componentRef="L1" pin="2"/></LogicalNet>
+        <LogicalNet name="NO_COPPER_1"/>
+        <PhyNetGroup name="all">
+          <PhyNet name="NO_COPPER_2"><PhyNetPoint x="30" y="30" layerRef="TOP" netNode="END"/></PhyNet>
+          <PhyNet name="NO_COPPER_1"/>
+          <PhyNet name="board:TRACK"><PhyNetPoint x="1" y="1" layerRef="TOP" netNode="END"/></PhyNet>
+        </PhyNetGroup>
+        <LayerFeature layerRef="TOP">
+          <Set net="board:TRACK"><Features><Line startX="0" startY="1" endX="5" endY="1"><LineDesc lineEnd="NONE" lineWidth="0.2"/></Line></Features></Set>
+          <Set net="SIG1"><Pad><Location x="10" y="1"/><StandardPrimitiveRef id="PAD"/><PinRef pin="1" componentRef="board:U1"/></Pad></Set>
+          <Set net="SIG2"><Pad pin="2" componentRef="U1"><Location x="12" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG3"><Pad componentRef="R1"><Location x="14" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG4"><Pad pin="7"><Location x="16" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG5"><Pad componentRef="L1"><Location x="18" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG6"><Pad><Location x="20" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="No Net"><Pad><Location x="22" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net=""><Pad><Location x="24" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG7"><Pad pin="U1.9"><Location x="28" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SIG8"><Pad pin="XX.9"><Location x="29.5" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="BOTTOM">
+          <Set net="POUR">
+            <Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="10" upperRightY="4"/></Features>
+          </Set>
+          <Set net="PIN_PAD"><Pad><Location x="15" y="2"/><RectCenter width="4" height="2"/><PinRef pin="3" componentRef="U1"/></Pad></Set>
+          <Set polarity="NEGATIVE" net="ISLAND"><Features><RectCorner lowerLeftX="4" lowerLeftY="-1" upperRightX="6" upperRightY="5"/></Features></Set>
+          <Set polarity="NEGATIVE"><Features><RectCorner lowerLeftX="14.5" lowerLeftY="0" upperRightX="15.5" upperRightY="4"/></Features></Set>
+          <Set net="VIA_NET"><Pad><Location x="30" y="2"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="DRILL1">
+          <Set net="board:VIA_NET"><Hole name="H1" diameter="0.3" platingStatus="VIA" x="30" y="2"/></Set>
+        </LayerFeature>
+        <PadStack net="STACK_NET">
+          <PinRef pin="4" componentRef="U1"/>
+          <LayerPad layerRef="TOP"><Location x="26" y="1"/><StandardPrimitiveRef id="PAD"/></LayerPad>
+        </PadStack>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

@@ -75,7 +75,7 @@ public sealed partial class Ipc2581Reader
     private string? _ecadUnits;
 
     private readonly List<LayerDeclaration> _layers = [];
-    private XElement? _stackup;
+    private readonly List<XElement> _stackups = [];
     private readonly List<StepInfo> _steps = [];
     private StepInfo? _chosen;
     private XElement? _stepProfile;
@@ -177,9 +177,28 @@ public sealed partial class Ipc2581Reader
                 case "CadHeader":
                     _ecadUnits = xml.GetAttribute("units");
                     _ecadScale = ScaleOf(_ecadUnits);
-                    xml.Skip();
+                    ReadCadHeader(xml);
                     break;
                 case "CadData": ReadCadData(xml); break;
+                default: Unknown(name); xml.Skip(); break;
+            }
+        });
+    }
+
+    /// <summary>A CadHeader holds the file's specifications, which a stackup entry refers to by name.</summary>
+    private void ReadCadHeader(XmlReader xml)
+    {
+        Children(xml, name =>
+        {
+            switch (name)
+            {
+                case "Spec":
+                {
+                    var spec = Tree(xml);
+                    if (Attr(spec, "name") is { Length: > 0 } specName) _specs.TryAdd(specName, spec);
+                    break;
+                }
+                case "ChangeRec": xml.Skip(); break;
                 default: Unknown(name); xml.Skip(); break;
             }
         });
@@ -194,7 +213,7 @@ public sealed partial class Ipc2581Reader
             switch (name)
             {
                 case "Layer": ReadLayer(Tree(xml)); break;
-                case "Stackup": { var s = Tree(xml); _stackup ??= s; break; }
+                case "Stackup": _stackups.Add(Tree(xml)); break;
                 case "Step": ReadStep(xml); break;
                 case "LayerDesc" or "StepList": ReadCadData(xml); break;
                 default: Unknown(name); xml.Skip(); break;
@@ -236,6 +255,7 @@ public sealed partial class Ipc2581Reader
             _ops.Clear();
             _stepProfile = null;
             _chosen = null;
+            ReleaseNetsAndHoles();
         }
 
         if (read) _chosen = step;
@@ -264,7 +284,17 @@ public sealed partial class Ipc2581Reader
                     _stepProfile = Tree(xml);
                     break;
 
-                // Facts the copper does not depend on. S2 of the series: none of these creates a shape.
+                // Facts that attach to the copper. S2 of the series: none of these creates a shape.
+                case "Component" when read: ReadComponent(Tree(xml), step); break;
+                case "LogicalNet" when read: ReadLogicalNet(Tree(xml), step); break;
+                case "PhyNetGroup" when read: ReadPhyNetGroup(xml, step); break;
+                case "StackupZone" when read: _zones.Add(Tree(xml)); break;
+
+                case "Port" or "Model" or "BendArea" or "DfxMeasurementList" when read:
+                    Skipped($"{name} (not modelled)");
+                    xml.Skip();
+                    break;
+
                 case "Profile" or "Datum" or "Package" or "Component" or "LogicalNet" or "PhyNetGroup" or "PadStackDef"
                     or "NonstandardAttribute" or "BendArea" or "StackupZone" or "Port" or "Model" or "DfxMeasurementList":
                     xml.Skip();
@@ -327,7 +357,11 @@ public sealed partial class Ipc2581Reader
                 "Nothing was imported.");
         }
 
+        ApplyPadParts();
+        ReadStackup();
         ResolveLayers();
+        ResolveHoles();
+        ReportNetsAndComponents();
         BuildLayerTable();
         _board.ShapesProduced = _board.Shapes.Count;
         _board.EntitiesRead = (int)Math.Min(_entities, int.MaxValue);
@@ -409,13 +443,10 @@ public sealed partial class Ipc2581Reader
     {
         var order = new List<string>();
         var declared = new HashSet<string>(_layers.Select(l => l.Name), StringComparer.Ordinal);
-        foreach (var name in StackupLayerOrder())
+        foreach (var name in _stackupOrder)
             if (declared.Contains(name) && !order.Contains(name)) order.Add(name);
 
         var byName = _layers.GroupBy(l => l.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var named = order.Where(n => IsCopperFunction(byName[n].Function)).ToList();
-        if (named.Count > 0 && (byName[named[0]].Side == "BOTTOM" || byName[named[^1]].Side == "TOP"))
-            order.Reverse();
 
         foreach (var layer in _layers)
             if (!order.Contains(layer.Name)) order.Add(layer.Name);
@@ -427,47 +458,9 @@ public sealed partial class Ipc2581Reader
             {
                 Side = layer.Side.Length > 0 ? layer.Side : null,
                 InterchangeName = InterchangeNameOf(layer.Function, layer.Side),
+                IsDrill = layer.Function == DrillFunction,
             });
         }
-    }
-
-    /// <summary>The names a stackup lists, top to bottom: by <c>sequence</c> when every entry at a level has one and
-    /// by document order otherwise, descending into a group an entry refers to.</summary>
-    private IReadOnlyList<string> StackupLayerOrder()
-    {
-        if (_stackup is null) return [];
-
-        var groups = new Dictionary<string, XElement>(StringComparer.Ordinal);
-        foreach (var group in _stackup.Descendants().Where(e => e.Name.LocalName == "StackupGroup"))
-            if (Attr(group, "name") is { Length: > 0 } name) groups.TryAdd(name, group);
-
-        var referred = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in _stackup.Descendants().Where(e => e.Name.LocalName == "StackupLayer"))
-            if (Attr(entry, "layerOrGroupRef") is { Length: > 0 } r && groups.ContainsKey(r)) referred.Add(r);
-
-        var result = new List<string>();
-        var visiting = new HashSet<XElement>();
-        void Walk(XElement container)
-        {
-            if (!visiting.Add(container)) return;
-            var entries = container.Elements()
-                .Where(e => e.Name.LocalName is "StackupLayer" or "StackupGroup").ToList();
-            if (entries.Count > 0 && entries.All(e => Number(Attr(e, "sequence")) is not null))
-                entries = [.. entries.OrderBy(e => Number(Attr(e, "sequence"))!.Value)];
-            foreach (var entry in entries)
-            {
-                if (entry.Name.LocalName == "StackupGroup")
-                {
-                    if (!(Attr(entry, "name") is { } name && referred.Contains(name))) Walk(entry);
-                    continue;
-                }
-                string reference = Attr(entry, "layerOrGroupRef") ?? "";
-                if (groups.TryGetValue(reference, out var group)) Walk(group);
-                else if (reference.Length > 0) result.Add(reference);
-            }
-        }
-        Walk(_stackup);
-        return result;
     }
 
     // ── Small readers ──────────────────────────────────────────────────────────────────────────

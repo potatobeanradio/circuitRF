@@ -69,7 +69,9 @@ public sealed partial class Ipc2581Reader
                         "copper on it cannot be known. That layer was not imported.");
                     continue;
                 }
-                AddResolved(layer.Name, Resolve(outline, ops, invert: true));
+                var plane = Resolve(outline, ops, invert: true);
+                NamePlanePieces(layer.Name, plane);
+                AddResolved(layer.Name, plane);
             }
             else if (ops is not null)
             {

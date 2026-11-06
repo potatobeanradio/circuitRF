@@ -49,7 +49,7 @@ public sealed partial class Ipc2581Reader
     private void ReadSet(XElement set, string layer, StepInfo step)
     {
         bool negative = string.Equals(Attr(set, "polarity"), "NEGATIVE", StringComparison.OrdinalIgnoreCase);
-        string? net = StripStepPrefix(Attr(set, "net"), step.Name);
+        string? net = NetName(Attr(set, "net"), step.Name);
         double scale = EcadScale();
 
         var drawn = new List<LayoutShape>();
@@ -59,14 +59,21 @@ public sealed partial class Ipc2581Reader
             switch (name)
             {
                 case "Features" or "Pad" or "BadBoardMark" or "GlobalFiducial" or "GoodPanelMark" or "LocalFiducial":
+                {
+                    int first = drawn.Count;
                     PlaceElement(child, Ipc2581Transform.Identity, scale, drawn);
+                    if (name == "Pad") StatePart(child, null, drawn, first, step);
+                    if (!negative && net is not null) NoteThermal(child, layer, net, scale);
                     break;
+                }
                 case "Fiducial":
                     foreach (var mark in child.Elements()) PlaceElement(mark, Ipc2581Transform.Identity, scale, drawn);
                     break;
-                case "Hole" or "SlotCavity":
-                    CountEntity();
-                    Skipped($"{name} on a layer feature (holes are not read yet)");
+                case "Hole":
+                    ReadHole(child, layer, net, scale);
+                    break;
+                case "SlotCavity":
+                    ReadSlot(child, layer, scale);
                     break;
                 case "ColorRef" or "Color" or "NonstandardAttribute" or "SpecRef" or "TextAttribute":
                     break;
@@ -81,8 +88,9 @@ public sealed partial class Ipc2581Reader
     /// <summary>The second form pads and holes take: at step level, each pad stating its own layer.</summary>
     private void ReadPadStack(XElement padStack, StepInfo step)
     {
-        string? net = StripStepPrefix(Attr(padStack, "net"), step.Name);
+        string? net = NetName(Attr(padStack, "net"), step.Name);
         double scale = EcadScale();
+        var stackPin = Child(padStack, "PinRef");
         foreach (var child in padStack.Elements())
         {
             switch (child.Name.LocalName)
@@ -93,12 +101,12 @@ public sealed partial class Ipc2581Reader
                     if (layer.Length == 0) { Skipped("pad of a pad stack that names no layer"); break; }
                     var drawn = new List<LayoutShape>();
                     PlaceElement(child, Ipc2581Transform.Identity, scale, drawn);
+                    StatePart(child, stackPin, drawn, 0, step);
                     AddOps(layer, drawn, net, erase: false);
                     break;
                 }
                 case "LayerHole":
-                    CountEntity();
-                    Skipped("LayerHole of a pad stack (holes are not read yet)");
+                    ReadHole(child, null, net, scale);
                     break;
                 case "NonstandardAttribute" or "SpecRef" or "TextAttribute" or "PinRef":
                     break;

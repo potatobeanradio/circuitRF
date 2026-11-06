@@ -28431,3 +28431,27 @@ side first and matches a technology's layer by role only when a side is stated, 
 not drawn: the brief's list of features does not include it.
 
 Gates: `tests/Ui.Tests/Ipc2581/Ipc2581ReaderTests.cs`.
+
+## IPX-3: what IPC-2581 files write for nets, holes and the stackup (2026-11-05)
+
+`docs/briefs/brief-ipx-3-nets-vias-stackup.md`. The forms below are not predicted by a file's revision, and a reader
+built from the format's text alone misses all of them.
+
+- **A conductor can be a group.** `StackupGroup` may be named by `stackupGroupName` as well as `name`, after a copper
+  layer, with the copper's thickness on the group and only zero-thickness annotation layers inside. Such a stackup lists
+  no dielectric at all, so `WalkStackup` makes the group the conductor and `ReadStackup` adds a placeholder dielectric
+  between adjacent conductors, reported, for `SubstrateDefaults.Fill` to complete.
+- **`PLATED` does not always mean a component hole.** Some files write it for every plated hole, blind and buried vias
+  included, with `VIA` nowhere in the file. A hole whose stated span stops short of the board cannot hold a lead, so
+  `ResolveHoles` reads it as a via and says how many. A `PLATED` hole running the whole board stays a hole, as the brief
+  states, which leaves such a file's through vias joining no layers. The message says the file does not separate them.
+- **`pin` can hold both halves.** `Pad@pin` is written `J1.1` as well as `1`. It is split only where the file names that
+  part in a `Component`, so a pin that merely contains a dot stays as written. A plain `pin` takes its part from the
+  logical net of the pad's own net when exactly one of that net's pins fits, and otherwise stays pin-only and is counted.
+- **A sum of thicknesses is checked only when it can agree.** With a placeholder row or an unlisted dielectric the sum is
+  short by construction, and reporting that as a mismatch would be false.
+- **`DRILL` is a function, and the layer table now carries it** (`PcbLayerTableEntry.IsDrill`). Reconciliation gave
+  purpose `drill` only to the board format's own layer name, so these holes would have landed on a general drawing layer.
+- **The pairing is `DrillViaPairing.Pair`, one call per copper layer.** Handing it every layer at once with a landing
+  key would let a pad from one layer become a via landing on another, which moves copper. One layer per call makes a
+  pad and its stated landing the same thing by construction. Its diagnostics are about drill files and are dropped.

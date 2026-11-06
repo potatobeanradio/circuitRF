@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Millimetres. Four copper layers. Holes along y = 1, by x:
+     1 VIA, through by default. 2 VIA_CAPPED, its own Span L1-L2. 3 VIA on a drill layer called Hole1-4 whose Span says L2-L3.
+     4 VIA, no pad. 5 VIA, square pad. 6 PLATED through. 7 NONPLATED. 8 VIA in a pad stack, Span L1-L4.
+     9 PLATED in a pad stack, Span L3-L4, which stops short of the board. -->
+<IPC-2581 revision="C">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="ROUND"><Circle diameter="0.6"/></EntryStandard>
+      <EntryStandard id="SQUARE"><RectCenter width="0.6" height="0.6"/></EntryStandard>
+      <EntryStandard id="SLOT"><Oval width="3" height="1"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER">
+      <Spec name="drillback"><Backdrill type="MAX_STUB_LENGTH"><Property value="0.2" unit="MM"/></Backdrill></Spec>
+    </CadHeader>
+    <CadData>
+      <Layer name="L4" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="L3" layerFunction="SIGNAL" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="L2" layerFunction="SIGNAL" side="INNER" polarity="POSITIVE"/>
+      <Layer name="L1" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="D12" layerFunction="DIELCORE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="D23" layerFunction="DIELPREG" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="D34" layerFunction="DIELCORE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="DRILL_ALL" layerFunction="DRILL" side="ALL" polarity="POSITIVE"/>
+      <Layer name="Hole1-4" layerFunction="DRILL" side="NONE" polarity="POSITIVE"><Span fromLayer="L3" toLayer="L2"/></Layer>
+      <Layer name="ROUTE" layerFunction="ROUT" side="NONE" polarity="POSITIVE"/>
+      <Stackup overallThickness="1.2">
+        <StackupGroup name="all">
+          <StackupLayer layerOrGroupRef="L1" thickness="0.03"/>
+          <StackupLayer layerOrGroupRef="D12" thickness="0.35"/>
+          <StackupLayer layerOrGroupRef="L2" thickness="0.03"/>
+          <StackupLayer layerOrGroupRef="D23" thickness="0.35"/>
+          <StackupLayer layerOrGroupRef="L3" thickness="0.03"/>
+          <StackupLayer layerOrGroupRef="D34" thickness="0.35"/>
+          <StackupLayer layerOrGroupRef="L4" thickness="0.03"/>
+        </StackupGroup>
+      </Stackup>
+      <Step name="board">
+        <LayerFeature layerRef="L1">
+          <Set net="N1"><Pad><Location x="1" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+          <Set net="N2"><Pad><Location x="2" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+          <Set net="N5"><Pad><Location x="5" y="1"/><StandardPrimitiveRef id="SQUARE"/></Pad></Set>
+          <Set net="N6"><Pad><Location x="6" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="L2">
+          <Set net="N2"><Pad><Location x="2" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+          <Set net="N3"><Pad><Location x="3" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="L3">
+          <Set net="N3"><Pad><Location x="3" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="L4">
+          <Set net="N1"><Pad><Location x="1" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+          <Set net="N6"><Pad><Location x="6" y="1"/><StandardPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="DRILL_ALL">
+          <Set><Hole name="H1" diameter="0.3" platingStatus="VIA" x="1" y="1"/></Set>
+          <Set><Hole name="H2" diameter="0.2" platingStatus="VIA_CAPPED" x="2" y="1"><Span fromLayer="L1" toLayer="L2"/></Hole></Set>
+          <Set net="N4"><Hole name="H4" diameter="0.3" platingStatus="VIA" x="4" y="1"/></Set>
+          <Set net="N5"><Hole name="H5" diameter="0.3" platingStatus="VIA" x="5" y="1"/></Set>
+          <Set net="N6"><Hole name="H6" diameter="0.8" platingStatus="PLATED" x="6" y="1"/></Set>
+          <Set><Hole name="H7" diameter="3" platingStatus="NONPLATED" x="7" y="1"/></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="Hole1-4">
+          <Set><Hole name="H3" diameter="0.25" platingStatus="VIA" x="3" y="1"/></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="ROUTE">
+          <Set><SlotCavity name="S1" platingStatus="NONPLATED"><Location x="20" y="5"/><StandardPrimitiveRef id="SLOT"/></SlotCavity></Set>
+          <Set><SlotCavity name="S2" platingStatus="NONPLATED"><Location x="25" y="5"/><RectCenter width="3" height="3"/></SlotCavity></Set>
+        </LayerFeature>
+        <PadStack net="N8">
+          <LayerHole name="H8" diameter="0.3" platingStatus="VIA" x="8" y="1"><Span fromLayer="L1" toLayer="L4"/></LayerHole>
+          <LayerPad layerRef="L1"><Location x="8" y="1"/><StandardPrimitiveRef id="ROUND"/></LayerPad>
+          <LayerPad layerRef="L4"><Location x="8" y="1"/><StandardPrimitiveRef id="ROUND"/></LayerPad>
+        </PadStack>
+        <PadStack net="N9">
+          <LayerHole name="H9" diameter="0.15" platingStatus="PLATED" x="9" y="1"><Span fromLayer="L4" toLayer="L3"/></LayerHole>
+          <LayerPad layerRef="L3"><Location x="9" y="1"/><StandardPrimitiveRef id="ROUND"/></LayerPad>
+          <LayerPad layerRef="L4"><Location x="9" y="1"/><StandardPrimitiveRef id="ROUND"/></LayerPad>
+        </PadStack>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

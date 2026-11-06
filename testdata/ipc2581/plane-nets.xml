@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Millimetres. A 20 x 10 profile on four negative planes.
+     SPLIT: a slot down x = 10 makes two pieces, x < 10 and x > 10. Points name each; a clearance's net names nothing.
+     GND: no evidence, whatever the layer is called. CONFLICT: two nets stated on one piece.
+     THERMAL: a thermal's net, with no point stated. -->
+<IPC-2581 revision="C">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="CLEAR"><Circle diameter="1"/></EntryStandard>
+      <EntryStandard id="TH"><Thermal shape="SQUARE" outerDiameter="4" innerDiameter="2" spokeCount="4" spokeWidth="0.5" spokeStartAngle="0"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="SPLIT" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Layer name="GND" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Layer name="CONFLICT" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Layer name="THERMAL" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Step name="board">
+        <Profile>
+          <Polygon>
+            <PolyBegin x="0" y="0"/><PolyStepSegment x="20" y="0"/><PolyStepSegment x="20" y="10"/>
+            <PolyStepSegment x="0" y="10"/><PolyStepSegment x="0" y="0"/>
+          </Polygon>
+        </Profile>
+        <PhyNetGroup name="all">
+          <PhyNet name="LEFT"><PhyNetPoint x="5" y="5" layerRef="SPLIT" netNode="END"/><PhyNetPoint x="5" y="5" layerRef="TOP" netNode="END"/></PhyNet>
+          <PhyNet name="RIGHT"><PhyNetPoint x="15" y="5" layerRef="SPLIT" netNode="END"/></PhyNet>
+          <PhyNet name="ONE"><PhyNetPoint x="5" y="5" layerRef="CONFLICT" netNode="END"/></PhyNet>
+          <PhyNet name="TWO"><PhyNetPoint x="15" y="5" layerRef="CONFLICT" netNode="END"/></PhyNet>
+        </PhyNetGroup>
+        <LayerFeature layerRef="SPLIT">
+          <Set><Features><RectCorner lowerLeftX="9.5" lowerLeftY="-1" upperRightX="10.5" upperRightY="11"/></Features></Set>
+          <Set net="THROUGH_PIN"><Pad><Location x="3" y="3"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="GND">
+          <Set net="THROUGH_PIN"><Pad><Location x="3" y="3"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="CONFLICT">
+          <Set net="THROUGH_PIN"><Pad><Location x="3" y="3"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="THERMAL">
+          <Set net="THROUGH_PIN"><Pad><Location x="3" y="3"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+          <Set net="PWR"><Pad><Location x="12" y="5"/><StandardPrimitiveRef id="TH"/></Pad></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>
