@@ -245,6 +245,25 @@ public sealed class EmFieldDataTests : IDisposable
         Assert.Contains("No .npy matches", editor.EmFieldSummary);
     }
 
+    [Theory]
+    [InlineData("missing.cemr")]
+    [InlineData("")]
+    public async Task RunSettings_StillOpens_WithNoRecordToRead(string file)
+    {
+        var comp = new EditableComponent { InstanceName = "EM1", Symbol = SymbolKind.EmFieldData };
+        comp.Parameters.Add(new EditableParameter { Name = "File", Expression = file.Length == 0 ? "" : Path.Combine(_dir, file) });
+        var model = new SchematicEditModel();
+        model.Components.Add(comp);
+        var editor = new ParameterEditorViewModel();
+        editor.SetTargetDirect(new SchematicViewModel(model), comp, showClose: false);
+
+        bool opened = false;
+        editor.ShowEmRunSettingsAsync = _ => { opened = true; return Task.CompletedTask; };
+        await editor.ShowEmRunSettingsCommand.ExecuteAsync(null);
+
+        Assert.True(opened);
+    }
+
     [Fact]
     public void TheShippedExampleIsMoved()
     {

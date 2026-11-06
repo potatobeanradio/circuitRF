@@ -276,7 +276,7 @@ public partial class ParameterEditorView : UserControl
             $"{snpName} is from a run older than result records. {recordName} would be written beside it from what the result's files hold. " +
             "Its data files are not touched, and its settings read \"not recorded\".", "Write Record");
 
-    private Task ShowEmRunSettingsAsync(string recordPath)
+    private Task ShowEmRunSettingsAsync(string? recordPath)
     {
         var dialog = Views.Dialogs.EmRunSettingsDialog.Build(recordPath);
         return TopLevel.GetTopLevel(this) is Window owner ? dialog.ShowDialog(owner) : Task.CompletedTask;

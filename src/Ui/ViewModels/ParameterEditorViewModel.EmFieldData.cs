@@ -23,7 +23,8 @@ public sealed partial class ParameterEditorViewModel
     /// <summary>Asks whether to write a record for an older result: the Touchstone's name and the record's.</summary>
     public Func<string, string, Task<bool>>? ConfirmAdoptAsync { get; set; }
 
-    public Func<string, Task>? ShowEmRunSettingsAsync { get; set; }
+    /// <summary>Takes the record's resolved path, which is null or names no file when there is nothing to read; the dialog then says why.</summary>
+    public Func<string?, Task>? ShowEmRunSettingsAsync { get; set; }
 
     [RelayCommand]
     private async Task PickEmFieldFile()
@@ -58,7 +59,7 @@ public sealed partial class ParameterEditorViewModel
     [RelayCommand]
     private async Task ShowEmRunSettings()
     {
-        if (ResolvedEmFieldRecord() is { } path && File.Exists(path) && ShowEmRunSettingsAsync is not null) await ShowEmRunSettingsAsync(path);
+        if (ShowEmRunSettingsAsync is not null) await ShowEmRunSettingsAsync(ResolvedEmFieldRecord());
     }
 
     private void RefreshEmFieldDataProperties()

@@ -10,20 +10,23 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// <summary>
 /// brief-cosim-pattern-2 R-cp2-6 — the settings a saved EM result was made with, read-only, each beside the setup's value now, what
 /// differs marked and listed first. A difference is information: running against older data is the point of the block.
+/// With no record to read, as on a fresh copy of a workspace, it opens all the same and says what to do.
 /// </summary>
 public static class EmRunSettingsDialog
 {
     private const string Columns = "*,200,200";
 
-    public static Window Build(string recordPath)
+    public static Window Build(string? recordPath)
     {
-        var (record, refusal) = EmResultRecord.Load(recordPath);
+        var (record, refusal) = recordPath is null ? (null, "No result record is chosen. Press Browse… and pick the .cemr a 3D run wrote.")
+                              : !File.Exists(recordPath) ? (null, "This result record does not exist yet. Simulate the 3D setup that writes it, or press Browse… and pick another record.")
+                              : EmResultRecord.Load(recordPath);
         var rows = new StackPanel { Spacing = 2 };
         string heading;
         if (record is null) heading = refusal!;
         else
         {
-            var (settings, whyNot) = EmFieldBlocks.SettingsOf(record, recordPath);
+            var (settings, whyNot) = EmFieldBlocks.SettingsOf(record, recordPath!);
             int differing = settings.Count(s => s.Differs);
             heading = record.Setup is null ? EmResultRecord.SettingsNotRecorded
                     : whyNot is not null ? $"Not compared with the setup now: {whyNot}"
@@ -36,16 +39,16 @@ public static class EmRunSettingsDialog
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
         var dialog = new Window
         {
-            Title = $"Run Settings: {Path.GetFileName(recordPath)}", Width = 760, SizeToContent = SizeToContent.Height, CanResize = false,
+            Title = recordPath is null ? "Run Settings" : $"Run Settings: {Path.GetFileName(recordPath)}", Width = 760, SizeToContent = SizeToContent.Height, CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new StackPanel
             {
                 Margin = new Thickness(20), Spacing = 12,
                 Children =
                 {
-                    new SelectableTextBlock { Text = record?.Summary() ?? "", FontSize = 12, TextWrapping = TextWrapping.Wrap },
+                    new SelectableTextBlock { Text = record?.Summary() ?? recordPath ?? "", IsVisible = record is not null || recordPath is not null, FontSize = 12, TextWrapping = TextWrapping.Wrap },
                     new TextBlock { Text = heading, FontWeight = FontWeight.SemiBold, FontSize = 14, TextWrapping = TextWrapping.Wrap },
-                    new ScrollViewer { MaxHeight = 460, Content = rows },
+                    new ScrollViewer { MaxHeight = 460, Content = rows, IsVisible = rows.Children.Count > 0 },
                     close,
                 },
             },
