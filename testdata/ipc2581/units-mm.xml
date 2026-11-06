@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. One board in millimetres; units-inch.xml is the same board with each
+     section in its own unit. -->
+<IPC-2581 revision="B">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="PAD"><RectCenter width="2.54" height="1.27"/></EntryStandard>
+    </DictionaryStandard>
+    <DictionaryLineDesc units="MILLIMETER">
+      <EntryLineDesc id="W"><LineDesc lineEnd="ROUND" lineWidth="0.254"/></EntryLineDesc>
+    </DictionaryLineDesc>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Step name="board">
+        <LayerFeature layerRef="TOP">
+          <Set><Features><Polyline><PolyBegin x="25.4" y="0"/><PolyStepSegment x="50.8" y="2.54"/><LineDescRef id="W"/></Polyline></Features></Set>
+          <Set><Pad><Location x="12.7" y="25.4"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set><Features><Line startX="2.54" startY="5.08" endX="7.62" endY="5.08"><LineDesc lineEnd="NONE" lineWidth="0.127"/></Line></Features></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

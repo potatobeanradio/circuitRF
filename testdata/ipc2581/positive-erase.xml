@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. POUR is 10 x 10. An eraser takes a 4 x 4 window out of it (16) and another
+     takes a bar 0.5 x 10 (5), which splits it in two, leaving 79 of POUR. ISLAND is drawn after the erase and survives
+     (1), and TRK sits clear of both erasers and keeps its own shape. -->
+<IPC-2581 revision="B">
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Step name="board">
+        <LayerFeature layerRef="TOP">
+          <Set net="POUR">
+            <Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="10" upperRightY="10"/></Features>
+          </Set>
+          <Set net="TRK">
+            <Features><Line startX="12" startY="0" endX="12" endY="10"><LineDesc lineEnd="NONE" lineWidth="0.2"/></Line></Features>
+          </Set>
+          <Set polarity="NEGATIVE">
+            <Features><RectCorner lowerLeftX="3" lowerLeftY="3" upperRightX="7" upperRightY="7"/></Features>
+            <Features><RectCorner lowerLeftX="8" lowerLeftY="-1" upperRightX="8.5" upperRightY="11"/></Features>
+          </Set>
+          <Set net="ISLAND">
+            <Features><RectCorner lowerLeftX="4.5" lowerLeftY="4.5" upperRightX="5.5" upperRightY="5.5"/></Features>
+          </Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

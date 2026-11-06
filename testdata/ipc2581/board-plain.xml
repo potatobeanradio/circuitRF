@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Millimetres. Copper by hand:
+     TOP 6 (trace 10 x 0.2, two 2 x 1 pads), INNER1 140 (18 x 8 minus a 2 x 2 cutout), BOTTOM 2 + pi/4. -->
+<IPC-2581 revision="A" xmlns="http://webstds.ipc.org/2581">
+  <Content>
+    <FunctionMode mode="FULL" level="1"/>
+    <StepRef name="board"/>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="RECT1"><RectCenter width="2" height="1"/></EntryStandard>
+      <EntryStandard id="OFFPAD"><RectCorner lowerLeftX="1" lowerLeftY="0" upperRightX="3" upperRightY="1"/></EntryStandard>
+      <EntryStandard id="CIRCLE1"><Circle diameter="1"/></EntryStandard>
+    </DictionaryStandard>
+    <DictionaryLineDesc units="MILLIMETER">
+      <EntryLineDesc id="L02"><LineDesc lineEnd="NONE" lineWidth="0.2"/></EntryLineDesc>
+    </DictionaryLineDesc>
+  </Content>
+  <Ecad name="plain">
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="INNER1" layerFunction="PLANE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="BOTTOM" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="OUTLINE" layerFunction="BOARD_OUTLINE" side="NONE" polarity="POSITIVE"/>
+      <Layer name="SILK" layerFunction="SILKSCREEN" side="TOP" polarity="POSITIVE"/>
+      <Layer name="DRILL1" layerFunction="DRILL" side="ALL" polarity="POSITIVE"/>
+      <Step name="board">
+        <Datum x="0" y="0"/>
+        <Profile>
+          <Polygon>
+            <PolyBegin x="0" y="0"/><PolyStepSegment x="20" y="0"/><PolyStepSegment x="20" y="10"/>
+            <PolyStepSegment x="0" y="10"/><PolyStepSegment x="0" y="0"/>
+          </Polygon>
+        </Profile>
+        <LayerFeature layerRef="TOP">
+          <Set net="NET1">
+            <Features><Polyline><PolyBegin x="1" y="5"/><PolyStepSegment x="11" y="5"/><LineDescRef id="L02"/></Polyline></Features>
+          </Set>
+          <Set net="NET1">
+            <Pad><Xform mirror="true"/><Location x="3" y="3"/><StandardPrimitiveRef id="OFFPAD"/></Pad>
+          </Set>
+          <Set net="NET2">
+            <Pad><Location x="15" y="5"/><StandardPrimitiveRef id="RECT1"/></Pad>
+          </Set>
+        </LayerFeature>
+        <LayerFeature layerRef="INNER1">
+          <Set net="GND">
+            <Features>
+              <Contour>
+                <Polygon>
+                  <PolyBegin x="1" y="1"/><PolyStepSegment x="19" y="1"/><PolyStepSegment x="19" y="9"/>
+                  <PolyStepSegment x="1" y="9"/><PolyStepSegment x="1" y="1"/>
+                </Polygon>
+                <Cutout>
+                  <PolyBegin x="5" y="5"/><PolyStepSegment x="7" y="5"/><PolyStepSegment x="7" y="7"/>
+                  <PolyStepSegment x="5" y="7"/><PolyStepSegment x="5" y="5"/>
+                </Cutout>
+              </Contour>
+            </Features>
+          </Set>
+        </LayerFeature>
+        <LayerFeature layerRef="BOTTOM">
+          <Set net="NET1">
+            <Pad><Location x="10" y="5"/><StandardPrimitiveRef id="CIRCLE1"/></Pad>
+          </Set>
+          <Set net="NET1">
+            <Features><Location x="2" y="2"/><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="2" upperRightY="1"/></Features>
+          </Set>
+        </LayerFeature>
+        <LayerFeature layerRef="SILK">
+          <Set><Features><Line startX="1" startY="8" endX="4" endY="8"><LineDesc lineEnd="ROUND" lineWidth="0.1"/></Line></Features></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="DRILL1">
+          <Set net="NET1"><Hole name="H1" diameter="0.3" platingStatus="VIA" plusTol="0" minusTol="0" x="10" y="5"/></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

@@ -28393,3 +28393,41 @@ on every edit. `LayoutNets.Of` therefore counts the open cell's own shapes and f
 that leaves out, in the Nets panel's header and in the `nets` step of `explain --nets`. A board whose nets exist only on footprint
 pads, with no tracks, reports no named nets beside that sentence. On a Gerber set the nets stated by a composited layer's objects
 are gone before this list is read, as the reader's own note says, so such a board can list its vias and little else.
+
+## What the IPC-2581 reader decided about copper (brief-ipx-2, 2026-11-05)
+
+**A wrapper is walked as if it were not there, and the references that go with it are expected.** Files using the
+`LayerDesc`/`StepList` wrappers also carry `LayerDescRef` and `StepListRef` in `Content`. Dictionary ids carry the step prefix
+in those files too; they stay as written, because a reference spells its id the same way and R-ipx2-2a's strip is for names that
+mean something outside the file.
+
+**A step-level pad is played in document order, which means before every `LayerFeature`.** Read literally, R-ipx2-6a lets a later
+negative set erase it. Pads and clearances stating a shared centre would make that visible, and none has been seen. If one appears,
+the pad stack belongs after the features rather than before them, in `ReadPadStack`.
+
+**A double negative puts copper back.** The format does not say what a `NEGATIVE` set means on a `NEGATIVE` layer. A feature on such
+a layer is a clearance, so its opposite is read as copper, with the set's net.
+
+**A VOID fill clears only what its own set drew**, as the format states, whereas a negative set clears everything before it on the
+layer. A VOID inside a user primitive clears within the placing set, which is slightly wider than the primitive alone.
+
+**The older spelling of a thermal's spoke width is `gap`, and `spokeWidth` is the later one.** Both are read. A thermal's spokes are
+cut outward from the centre, so three spokes are three cuts and not three diameters. `RectRound` with `radius="0"` is how some files
+write a plain rectangle.
+
+**The format's text disagrees with itself on a hexagon.** The primitive's definition puts a point to the north, and the donut and
+thermal definitions measure a hexagon point to point on the x-axis. All three read the primitive's definition, because the other
+two say they are shaped like it.
+
+**A zero `lineWidth` is stated in files and kept.** Such a line has no area, and a Gerber of the same drawing may plot it with an
+aperture of its own, so the two differ on document layers without either being misread.
+
+**The step's profile is drawn on the outline layer**, beyond what the brief lists, because a file very often states its board's shape
+nowhere else and `Em3dGenerator.BoardOutlineLayers` finds the outline through the layer's `Edge.Cuts` name. It adds a layer when the
+file declares no outline layer, drawn as a line whose width means nothing, and it is skipped when that layer has features of its own.
+
+**`PcbLayerTableEntry` gained `Side` and `InterchangeName`, both null for the board format.** `PcbLayerReconciliation` ranks copper by
+side first and matches a technology's layer by role only when a side is stated, so `.kicad_pcb` behaves as it did. Text is counted and
+not drawn: the brief's list of features does not include it.
+
+Gates: `tests/Ui.Tests/Ipc2581/Ipc2581ReaderTests.cs`.

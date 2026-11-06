@@ -26,6 +26,16 @@ public sealed record PcbLayerTableEntry(int Ordinal, string CanonicalName, strin
 {
     /// <summary>Copper, by the table's own type word (see <see cref="Type"/>).</summary>
     public bool IsCopper => Type is "signal" or "power" or "mixed" or "jumper";
+
+    /// <summary>The side a format states for the layer: <c>TOP</c>, <c>BOTTOM</c>, <c>INTERNAL</c> and so on. Null for
+    /// a format whose ordinals are themselves top-to-bottom order. A stated side decides which copper layer is which
+    /// surface, because a layer's position in such a file need not.</summary>
+    public string? Side { get; init; }
+
+    /// <summary>The name a non-copper layer's stated function gives it among the names the rest of the application
+    /// recognises (<c>Edge.Cuts</c>, <c>F.SilkS</c>), for a format whose layer names are the author's own. Null keeps
+    /// the source name.</summary>
+    public string? InterchangeName { get; init; }
 }
 
 /// <summary>A shape plus the source layer NAME it was drawn on — <see cref="LayoutShape.Layer"/> is

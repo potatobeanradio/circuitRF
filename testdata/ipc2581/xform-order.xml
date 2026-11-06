@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. PAD covers x 1..3, y 0..1, so it is asymmetric on both axes. Each net is one
+     placement at (10,10); the test states where each lands, worked by hand in the format's stated order. -->
+<IPC-2581 revision="C">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="PAD"><RectCorner lowerLeftX="1" lowerLeftY="0" upperRightX="3" upperRightY="1"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Step name="board">
+        <LayerFeature layerRef="TOP">
+          <Set net="NONE"><Pad><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="ROT"><Pad><Xform rotation="90"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="MIR"><Pad><Xform mirror="true"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="ROTMIR"><Pad><Xform rotation="90" mirror="true"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="SCALE"><Pad><Xform scale="2"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="OFFSET"><Pad><Xform xOffset="1" yOffset="0.5"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set net="ALL"><Pad><Xform xOffset="1" rotation="90" mirror="true" scale="2"/><Location x="10" y="10"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

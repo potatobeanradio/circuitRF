@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. A 20 x 10 negative plane with one 2 x 2 clearance and one square thermal:
+     outer 4, inner 2, four spokes 0.5 wide along the axes. The thermal removes 16 - 4 - 4 x (0.5 x 1) = 10,
+     so copper is 200 - 4 - 10 = 186, in one piece, because the spokes join the middle to the plane. -->
+<IPC-2581 revision="B">
+  <Content>
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="CLEAR"><RectCenter width="2" height="2"/></EntryStandard>
+      <EntryStandard id="TH"><Thermal shape="SQUARE" outerDiameter="4" innerDiameter="2" spokeCount="4" spokeWidth="0.5" spokeStartAngle="0"/></EntryStandard>
+    </DictionaryStandard>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="GND" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Step name="board">
+        <Profile>
+          <Polygon>
+            <PolyBegin x="0" y="0"/><PolyStepSegment x="20" y="0"/><PolyStepSegment x="20" y="10"/>
+            <PolyStepSegment x="0" y="10"/><PolyStepSegment x="0" y="0"/>
+          </Polygon>
+        </Profile>
+        <LayerFeature layerRef="GND">
+          <Set net="SIG"><Pad><Location x="5" y="5"/><StandardPrimitiveRef id="CLEAR"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="12" y="5"/><StandardPrimitiveRef id="TH"/></Pad></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

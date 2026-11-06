@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. units-mm.xml with its coordinates in inches, its primitives in microns
+     and its named line in millimetres. Each section's numbers are read at that section's own unit. -->
+<IPC-2581 revision="B">
+  <Content>
+    <DictionaryStandard units="MICRON">
+      <EntryStandard id="PAD"><RectCenter width="2540" height="1270"/></EntryStandard>
+    </DictionaryStandard>
+    <DictionaryLineDesc units="MILLIMETER">
+      <EntryLineDesc id="W"><LineDesc lineEnd="ROUND" lineWidth="0.254"/></EntryLineDesc>
+    </DictionaryLineDesc>
+  </Content>
+  <Ecad>
+    <CadHeader units="INCH"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Step name="board">
+        <LayerFeature layerRef="TOP">
+          <Set><Features><Polyline><PolyBegin x="1" y="0"/><PolyStepSegment x="2" y="0.1"/><LineDescRef id="W"/></Polyline></Features></Set>
+          <Set><Pad><Location x="0.5" y="1"/><StandardPrimitiveRef id="PAD"/></Pad></Set>
+          <Set><Features><Line startX="0.1" startY="0.2" endX="0.3" endY="0.2"><LineDesc lineEnd="NONE" lineWidth="0.005"/></Line></Features></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

@@ -44,18 +44,33 @@ public static class PcbLayerReconciliation
         // no "F.Cu" anywhere in it. Ordinal order IS top-to-bottom order in this format, which is the
         // same fact ExpandLayerSpec already relies on.
         var copperRank = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var copper = layerTable.Where(e => e.IsCopper).OrderBy(e => e.Ordinal).ToList();
+        //
+        // A format that states each layer's side (IPC-2581) decides the two surfaces by that, because its ordinals
+        // fall back to document order when no stackup names the layer. With no side stated the sort is the ordinal alone.
+        var copper = layerTable.Where(e => e.IsCopper)
+            .OrderBy(e => e.Side switch { "TOP" => 0, "BOTTOM" => 2, _ => 1 })
+            .ThenBy(e => e.Ordinal).ToList();
         for (int i = 0; i < copper.Count; i++)
             copperRank[copper[i].CanonicalName] =
-                i == 0 ? "F.Cu" : i == copper.Count - 1 ? "B.Cu" : $"In{i}.Cu";
+                i == 0 && copper[i].Side != "BOTTOM" ? "F.Cu" : i == copper.Count - 1 ? "B.Cu" : $"In{i}.Cu";
 
         var usedKeys = new HashSet<LayerKey>(destTech?.Layers.Select(l => l.Key) ?? []);
         int nextSynthetic = -1;
 
         foreach (var name in distinct)
         {
+            tableByName.TryGetValue(name, out var tableEntry);
+
+            // What the layer IS, for a format that states it: a layer called TOP on side TOP is the technology's top
+            // copper whatever that technology calls it. A format stating no side matches by its own name only.
+            string? role = tableEntry is null || tableEntry.Side is null ? null
+                : tableEntry.IsCopper && copperRank.TryGetValue(tableEntry.CanonicalName, out var rank) ? rank
+                : tableEntry.InterchangeName;
+
             var aliasOwner = destTech?.Layers.FirstOrDefault(l =>
-                string.Equals(l.Interchange?.PcbLayerName, name, StringComparison.OrdinalIgnoreCase));
+                string.Equals(l.Interchange?.PcbLayerName, name, StringComparison.OrdinalIgnoreCase))
+                ?? (role is null ? null : destTech?.Layers.FirstOrDefault(l =>
+                    string.Equals(l.Interchange?.PcbLayerName, role, StringComparison.OrdinalIgnoreCase)));
 
             LayerKey key;
             string layerName;
@@ -74,7 +89,6 @@ public static class PcbLayerReconciliation
             }
 
             keyByName[name] = key;
-            tableByName.TryGetValue(name, out var tableEntry);
             sourceLayers.Add(new LayerDef
             {
                 Key = key,
@@ -86,7 +100,7 @@ public static class PcbLayerReconciliation
                 // turned 370 tracks into graphics and collapsed 57 distinct footprints into 21.
                 Interchange = aliasOwner?.Interchange ?? new InterchangeMapping(null, null, null, null, null,
                     tableEntry is { IsCopper: true } && copperRank.TryGetValue(tableEntry.CanonicalName, out var canonical)
-                        ? canonical : name),
+                        ? canonical : tableEntry?.InterchangeName ?? name),
                 // The format carries no per-layer colour a reader can trust across epochs (the stackup's
                 // own (color "Green") describes the SOLDER MASK, not the drawing layer), so this takes
                 // the same deterministic gap-fill the renderer already uses for an undefined layer —

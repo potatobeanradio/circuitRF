@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. Document order here is not physical order, and the stackup, through a nested
+     group and stated sequence numbers, gives TOP, Conductive1, GND, BOTTOM. Names say nothing about which layer is copper:
+     Conductive1 is a conductor and NOTES is not. -->
+<IPC-2581 revision="B">
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="BOTTOM" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="GND" layerFunction="PLANE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="Conductive1" layerFunction="CONDUCTOR" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="NOTES" layerFunction="DOCUMENT" side="NONE" polarity="POSITIVE"/>
+      <Layer name="FILM" layerFunction="RESISTIVE" side="INTERNAL" polarity="POSITIVE"/>
+      <Stackup>
+        <StackupGroup name="ALL">
+          <StackupLayer layerOrGroupRef="BOTTOM" sequence="4"/>
+          <StackupLayer layerOrGroupRef="INNERS" sequence="2"/>
+          <StackupLayer layerOrGroupRef="TOP" sequence="1"/>
+        </StackupGroup>
+        <StackupGroup name="INNERS">
+          <StackupLayer layerOrGroupRef="Conductive1"/>
+          <StackupLayer layerOrGroupRef="GND"/>
+        </StackupGroup>
+      </Stackup>
+      <Step name="board">
+        <LayerFeature layerRef="TOP"><Set><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set></LayerFeature>
+        <LayerFeature layerRef="Conductive1"><Set><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set></LayerFeature>
+        <LayerFeature layerRef="GND"><Set><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set></LayerFeature>
+        <LayerFeature layerRef="BOTTOM"><Set><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set></LayerFeature>
+        <LayerFeature layerRef="FILM"><Set><Features><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="1" upperRightY="1"/></Features></Set></LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>
