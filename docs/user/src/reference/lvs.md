@@ -77,6 +77,8 @@ run that relies on it</b>, naming the stackup entry and how many vias reached gr
 the one inference in the whole extraction that you cannot check by looking at your own screen.</p>
 </div>
 
+**A part left off the board.** A footprint whose schematic part has **Disable** set to *Open* is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.
+
 ## Running it from the window {#window}
 
 Open the cell's **layout** view, then **View &rsaquo; Panels &rsaquo; LVS**. The panel is not in either
@@ -170,6 +172,7 @@ indices, and never a coordinate where a name exists. These are the ones you will
 | `lvs.device.unmatched-schematic` | A part in the drawing that the artwork does not have |
 | `lvs.device.unmatched-layout` | A part in the artwork that the drawing does not have |
 | `lvs.device.type-mismatch` | Both sides have it, and they disagree about what it is |
+| `lvs.device.not-fitted` | A footprint whose schematic part is marked Open: not compared, and a note rather than a fault |
 | `lvs.device.turned` | A resistor, capacitor or inductor placed end for end: the circuit is the same, but its pin 1 is on the other land. A **warning**, one per part |
 | `lvs.device.reversed` | A diode or other one-way two-pin part placed end for end, **naming both nets**. An **error**: the board would assemble it backwards |
 | `lvs.net.open` | One schematic net is two or more separate pieces of copper, **with the pins on each** |

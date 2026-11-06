@@ -1,0 +1,188 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 0,
+	"AngleMode": "AnyAngle",
+	"TechRef": "../../tech/one-layer-fr4.ctech",
+	"SchematicPCellSnapshots": {
+		"L1": {},
+		"C1": {},
+		"C2": {}
+	},
+	"PCellSnapshots": {
+		"smt-0402@N_306feab4d14b": {
+			"GeneratorId": "smt:0402@N",
+			"Parameters": {},
+			"TechIdentity": "tech/one-layer-fr4.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Poly",
+			"Xy": [
+				0,
+				0,
+				45000000,
+				0,
+				45000000,
+				95000000,
+				0,
+				95000000
+			],
+			"Layer": {
+				"Layer": 8,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				1000000,
+				1000000,
+				44000000,
+				1000000,
+				44000000,
+				63000000,
+				24000000,
+				63000000,
+				24000000,
+				58000000,
+				23250000,
+				58000000,
+				23250000,
+				45000000,
+				21750000,
+				45000000,
+				21750000,
+				58000000,
+				21000000,
+				58000000,
+				21000000,
+				63000000,
+				1000000,
+				63000000
+			],
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Rect",
+			"X1": 22000000,
+			"Y1": 45500000,
+			"X2": 23000000,
+			"Y2": 61975000,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Rect",
+			"X1": 22000000,
+			"Y1": 62225000,
+			"X2": 23000000,
+			"Y2": 67000000,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				22500000,
+				68000000,
+				40000000,
+				68000000,
+				40000000,
+				74000000,
+				3000000,
+				74000000,
+				3000000,
+				84000000,
+				30500000,
+				84000000,
+				30500000,
+				82000000,
+				5000000,
+				82000000,
+				5000000,
+				76000000,
+				42000000,
+				76000000,
+				42000000,
+				66000000,
+				22500000,
+				66000000
+			],
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 22500000,
+			"Y": 45500000,
+			"Text": "P1",
+			"Height": 45748,
+			"Rotation": "R0",
+			"IsPort": true,
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"PortKind": "Edge",
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_306feab4d14b",
+			"X": 22500000,
+			"Y": 62100000,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "L1"
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_306feab4d14b",
+			"X": 23400000,
+			"Y": 60000000,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C1"
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_306feab4d14b",
+			"X": 23400000,
+			"Y": 62600000,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C2"
+		}
+	]
+}

@@ -3483,3 +3483,17 @@ lowering), which the run then repeats; a solve is minutes against that. A Palace
   expanded; `Format.Descend` adds assemblies per format.
 - **The catalog-parity test was already red at HEAD** for `run/sensitivity` (SENS-1 added the mode, not the gate's
   positionals row); the row is added.
+
+---
+
+## A 3D view's headless verbs and a fresh copy of a workspace (2026-11-05)
+
+Found running a board with component ports from a copy that had no `.generated-cells`, which is every clone and every installed example.
+
+**`em`, `check`, `explain` and `render` on a `.c3d` never rebuilt a placed layout's footprints.** `GeneratedCells.Prepare` ran on `resolution.Source`, which is null for a 3D view, so each footprint resolved to nothing and the setup was refused with no part having two pads. `GeneratedCells.PrepareThreeD` walks the view's instances, through placed 3D views, and prepares each layout. `em` writes the cells; the others hold them in memory.
+
+**`check` on a workspace walked `results/` and hidden folders.** Each 3D run keeps a copy of its view as `results/<key>.<solver>/document.c3d`, whose relative references resolve to nothing from there, so one finished run with three setups added four errors about a design that was fine. Both are now walked only when named.
+
+**`em --cores <n>`.** A memory refusal advised fewer Palace processes, and nothing headless could do that: `em_max_cores` belongs to `src/Ui`, so the CLI always ran one process per physical core. The refusal's advice also names the Cores setting, which a headless run does not read.
+
+Gate: `tests/Ui.Tests/Examples/AntennaCoSimExampleTests.cs`.

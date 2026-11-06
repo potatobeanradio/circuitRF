@@ -1,0 +1,99 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 0,
+  "TechRef": "../../tech/one-layer-fr4.ctech",
+  "Objects": [],
+  "Instances": [
+    {
+      "Name": "U1",
+      "CellRef": "..",
+      "View": "Layout"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Lumped",
+      "Plane": "XY",
+      "Offset": 1617500,
+      "Rect": {
+        "Min": [
+          22000000,
+          45000000
+        ],
+        "Size": [
+          1000000,
+          500000
+        ]
+      },
+      "Z0": "50"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Pattern",
+      "Frequency": {
+        "StartExpr": "828",
+        "StopExpr": "908",
+        "StepExpr": "20",
+        "Mode": "StepSize",
+        "Kind": "Linear",
+        "StartUnit": "MHz",
+        "StopUnit": "MHz",
+        "StepUnit": "MHz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "DispersionCorrection": true,
+      "ConductorThicknessCorrection": true,
+      "RadiationPattern": true,
+      "PatternFrequencyGHz": 0.868,
+      "MeshFrequencyGHz": 0.908,
+      "Solver3D": "Emerge",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        },
+        "ZMax": {
+          "PaddingUm": 170000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "EMerge": {
+        "Quality": "Accurate",
+        "AdaptiveSweep": false,
+        "SaveFieldsGHz": [
+          0.828,
+          0.848,
+          0.868,
+          0.888,
+          0.908
+        ]
+      },
+      "ComponentPorts": "*"
+    }
+  ]
+}

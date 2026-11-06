@@ -1599,6 +1599,8 @@ static int RunEm(string[] args)
     // brief-emi-10 R-emi10-4 — a lower memory ceiling for this run's solver processes than this machine's memory; no flag is
     // the machine's.
     long? memoryLimit = null;
+    // The Cores setting's headless spelling: the GUI passes its preference, and a refusal's advice to use fewer processes needs a way to do it here.
+    int? maxCores = null;
     var emSets = new List<(string Name, string Expr)>();
     // AA-1 — `em --component "SPIRAL N=3 W=10 um"`: one built-in component's drawn part, extracted.
     string? component = null, componentFreq = null;
@@ -1672,6 +1674,14 @@ static int RunEm(string[] args)
                 if (CircuitRF.Design.Em3d.Em3dMemoryLimit.Refusal(gb, CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes) is { } badLimit)
                     return JsonRun.Fail(CliDiagnostics.EmMemoryLimit(badLimit));
                 memoryLimit = CircuitRF.Design.Em3d.Em3dMemoryLimit.Bytes(gb);
+                break;
+            }
+            case "--cores" when i + 1 < args.Length:
+            {
+                string text = args[++i];
+                if (!int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int cores) || cores < 1)
+                    return JsonRun.Fail(CliDiagnostics.EmCores(text));
+                maxCores = cores;
                 break;
             }
             // brief-em3d-21 R-em3d21-2b — start a Palace run whose memory estimate is past 150 % of this
@@ -1758,7 +1768,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em --adopt <file.sNp>");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
@@ -1935,6 +1945,11 @@ static int RunEm(string[] args)
         ? CircuitRF.Cli.GeneratedCells.Prepare(emSource.View, emSource.AbsolutePath, mayWrite: true, out emCellRefusal)
         : null;
     if (emCellRefusal is { } emRefused) return emRefused;
+    // The same for the layouts a 3D view places: a component port stands on a part's pads, which live in those layouts.
+    using var emGeneratedPlaced = threeDPath is not null
+        ? CircuitRF.Cli.GeneratedCells.PrepareThreeD(threeDPath, mayWrite: true, out emCellRefusal)
+        : null;
+    if (emCellRefusal is { } emPlacedRefused) return emPlacedRefused;
 
     // brief-em3d-98 R-em3d98-7 — the GUI asks before replacing a complete, current result; a headless run never asks. It says
     // so in one line and runs, so a build log shows a re-run that changed nothing.
@@ -1954,7 +1969,7 @@ static int RunEm(string[] args)
             try
             {
                 bandResult = EmRunService.RunThreeDView(bandRun, threeD!, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
-                                                        RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
+                                                        RunHost.Cancellation, EmProgressToStderr(), maxCores: maxCores, confirmMemory: force ? _ => true : null,
                                                         device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
@@ -1971,11 +1986,11 @@ static int RunEm(string[] args)
     {
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
-                                         RunHost.Cancellation, EmProgressToStderr(meshOnly), confirmMemory: force ? _ => true : null,
+                                         RunHost.Cancellation, EmProgressToStderr(meshOnly), maxCores: maxCores, confirmMemory: force ? _ => true : null,
                                          fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice,
                                          target: emTarget)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(meshOnly),
-                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice,
+                               maxCores: maxCores, confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice,
                                target: emTarget);
     }
     // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.

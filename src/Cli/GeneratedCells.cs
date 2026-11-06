@@ -1,6 +1,9 @@
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Layout.PCells.Wire;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Cli;
@@ -249,6 +252,73 @@ internal static class GeneratedCells
         foreach (var kit in run.KitsNotAllowed) add(CliDiagnostics.CheckGeneratedCellKitNotAllowed(clayPath, KitSentence(kit)));
         foreach (string note in run.Notes) add(CliDiagnostics.CheckGeneratedCellNote(clayPath, note));
         return run;
+    }
+
+    /// <summary>
+    /// <see cref="Prepare(string, bool, out int?)"/> for every layout a 3D view places, at any depth. A view's parts live in
+    /// those layouts, and a fresh copy of a workspace has no <c>.generated-cells</c>, so without this a board's footprints
+    /// resolve to nothing and its component ports find no part. Dispose the result when the verb is done with the geometry.
+    /// </summary>
+    public static IDisposable PrepareThreeD(string c3dPath, bool mayWrite, out int? refusal)
+    {
+        var runs = new Runs();
+        refusal = null;
+        foreach (string clay in PlacedLayouts(c3dPath))
+        {
+            runs.Add(Prepare(clay, mayWrite, out int? one));
+            refusal ??= one;
+        }
+        return runs;
+    }
+
+    /// <summary><see cref="PrepareForCheck"/> for every layout a 3D view places.</summary>
+    public static IDisposable PrepareThreeDForCheck(string c3dPath, Action<Diagnostic> add)
+    {
+        var runs = new Runs();
+        foreach (string clay in PlacedLayouts(c3dPath))
+        {
+            var run = GeneratedCellsRun.Prepare(clay, Options(mayWrite: false));
+            foreach (var cell in run.Unbuildable) add(CliDiagnostics.CheckGeneratedCellUnbuildable(clay, cell.Sentence));
+            foreach (var kit in run.KitsNotAllowed) add(CliDiagnostics.CheckGeneratedCellKitNotAllowed(clay, KitSentence(kit)));
+            foreach (string note in run.Notes) add(CliDiagnostics.CheckGeneratedCellNote(clay, note));
+            runs.Add(run);
+        }
+        return runs;
+    }
+
+    /// <summary>The layouts a 3D view places, through the 3D views it places. An unreadable document or a reference that resolves
+    /// to nothing is skipped here: the elaboration reports it, by name, as it always has.</summary>
+    private static List<string> PlacedLayouts(string c3dPath)
+    {
+        var layouts = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Walk(Path.GetFullPath(c3dPath));
+        return layouts;
+
+        void Walk(string doc)
+        {
+            if (!seen.Add(doc)) return;
+            C3dDocument read;
+            try { read = C3dPersistence.LoadFromFile(doc); }
+            catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException) { return; }
+            foreach (var inst in read.Instances)
+            {
+                var type = inst.View == C3dInstanceView.Layout ? ViewType.Layout : ViewType.ThreeD;
+                if (ExternalCellRef.ResolveCellDir(inst.CellRef, Path.GetDirectoryName(doc)) is not { } cellDir || !Directory.Exists(cellDir)) continue;
+                if (CellFolder.ResolvePrimary(cellDir, type).ResolvedName is not { } file) continue;
+                string view = Path.GetFullPath(Path.Combine(CellFolder.SubFolderPath(cellDir, type), file));
+                if (type == ViewType.ThreeD) Walk(view);
+                else if (seen.Add(view)) layouts.Add(view);
+            }
+        }
+    }
+
+    /// <summary>Several layouts' runs, ended together.</summary>
+    private sealed class Runs : IDisposable
+    {
+        private readonly List<GeneratedCellsRun> _runs = [];
+        public void Add(GeneratedCellsRun run) => _runs.Add(run);
+        public void Dispose() { foreach (var run in _runs) run.Dispose(); }
     }
 
     private static GeneratedCellRunOptions Options(bool mayWrite) => new()

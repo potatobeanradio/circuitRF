@@ -119,7 +119,8 @@ public static class LayoutRead
         IReadOnlySet<string>? schematicComponents = null,
         LvsHierarchyContext? hierarchy = null,
         IReadOnlyList<AssemblyWBond>? wbonds = null,
-        Pdn.PdnSchematicNets? schematicParts = null)
+        Pdn.PdnSchematicNets? schematicParts = null,
+        IReadOnlySet<string>? notFitted = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
@@ -293,6 +294,13 @@ public static class LayoutRead
                     unclassified[dir] = (name, unclassified.TryGetValue(dir, out var prior) ? prior.Count + 1 : 1);
                 }
                 continue;   // R-lvs3-4c: an array of an interconnect cell is copper and no devices
+            }
+
+            // A footprint the schematic marks Open is a part left off the board. Its pads stay copper, and it is no device to pair.
+            if (notFitted is not null && (inst.SchematicId ?? inst.DisplayRefDes) is { Length: > 0 } unfitted && notFitted.Contains(unfitted))
+            {
+                notes.Add(LvsDiagnostics.NotFitted(LayoutDesignFlatten.PathOf(inst, instIndex)));
+                continue;
             }
 
             if (schematicComponents is not null

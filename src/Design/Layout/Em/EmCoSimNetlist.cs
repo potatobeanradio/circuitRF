@@ -40,6 +40,12 @@ public sealed record EmCoSimPort(int Number, string Name, string Z0, C3dComponen
 public sealed record EmCoSimModels(IReadOnlyDictionary<string, Instance> Instances, Library? Library, string? Technology)
 {
     public static readonly EmCoSimModels None = new(new Dictionary<string, Instance>(), null, null);
+
+    /// <summary>The parts the board's schematic marks Open (not fitted): each one's port stays open, with no model across it.</summary>
+    public IReadOnlySet<string> Open { get; init; } = new HashSet<string>();
+
+    /// <summary>The parts the board's schematic marks Short: each one's port is shorted.</summary>
+    public IReadOnlySet<string> Shorted { get; init; } = new HashSet<string>();
 }
 
 /// <summary>What writing the co-simulation netlist did.</summary>
@@ -127,6 +133,18 @@ public static class EmCoSimNetlist
                     : mine.Any(q => q.Component!.ReferencePin == pin) ? "0"
                     : $"nc_{cp.Refdes}_{pin}").ToList();
                 tb.Instances.Add(Rewired(model, nets));
+                continue;
+            }
+            // Marked in the schematic as not fitted, or as a link: the part is no value to guess at.
+            if (mine.Count == 1 && models.Open.Contains(cp.SchematicId ?? cp.Refdes))
+            {
+                comments.Add($"{cp.Refdes} is Open in the board's schematic, so its port {Node(p.Number)} is left open.");
+                continue;
+            }
+            if (mine.Count == 1 && models.Shorted.Contains(cp.SchematicId ?? cp.Refdes))
+            {
+                tb.Instances.Add(new Instance(cp.Refdes, "Short", [Node(p.Number), "0"], []));
+                comments.Add($"{cp.Refdes} is Short in the board's schematic, so its port {Node(p.Number)} is shorted.");
                 continue;
             }
             // No model, or one this wiring cannot read: a placeholder per port, named in a comment.
@@ -233,7 +251,13 @@ public static class EmCoSimNetlist
             var byName = new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase);
             foreach (var inst in extracted.TestBench.Instances)
                 if (inst.InstanceName is { Length: > 0 } n) byName.TryAdd(n, inst);
-            return new EmCoSimModels(byName, extracted.Library, extracted.TestBench.Technology);
+            HashSet<string> Marked(DisableState state) =>
+                new(model.Components.Where(c => c.Disable == state && c.InstanceName is { Length: > 0 }).Select(c => c.InstanceName!), StringComparer.OrdinalIgnoreCase);
+            return new EmCoSimModels(byName, extracted.Library, extracted.TestBench.Technology)
+            {
+                Open = Marked(DisableState.Open),
+                Shorted = Marked(DisableState.Short),
+            };
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or ArgumentException
                                        or InvalidOperationException or UnauthorizedAccessException)
@@ -318,7 +342,7 @@ public static class EmCoSimNetlist
             int circuitPorts = tb.Instances.Count(i => i.Reference.Equals("Port", StringComparison.OrdinalIgnoreCase));
             if (circuitPorts > 0)
                 CellCreate.WriteTemplateDataDisplay(workspaceDir, schematic, null, tb.Analyses.Any(a => a is FieldsAnalysis)
-                    ? PatternDisplayJson("em_cosim.npy")
+                    ? PatternDisplayJson("em_cosim.npy", tb.Analyses.OfType<SParameterAnalysis>().Any(HasSweep))
                     : EmSnpSchematic.DataDisplayJson(circuitPorts, "em_cosim.npy"));
             return new(EmSnpSchematicOutcome.Created, cellName, schematic,
                        $"Created cell {cellName}: the board's result with each part on its own port, ready to simulate.");
@@ -361,24 +385,41 @@ public static class EmCoSimNetlist
             model.CanvasObjects.Add(new EditableText { Text = notes[i], X = left, Y = top - (notes.Length - i) * Pitch });
     }
 
+    /// <summary>The S-parameter analysis covers a band: a run of one frequency has no curve to draw, and its S11 is in the table.</summary>
+    private static bool HasSweep(SParameterAnalysis a) => a.Sweeps.Count > 1 || a.Sweeps.Any(s => s.StartExpr != s.StopExpr);
+
     /// <summary>
-    /// R-cp6-3 — the display a cell with a far field opens: S11, a polar cut of the pattern, and the realized gain. <paramref name="source"/>
-    /// is a placeholder that <see cref="CellCreate.WriteTemplateDataDisplay"/> repoints to the file the schematic's run writes.
+    /// R-cp6-3 — the display a cell with a far field opens: S11, polar cuts of the pattern through both planes, and a table of S11 and the
+    /// gains. <paramref name="source"/> is a placeholder that <see cref="CellCreate.WriteTemplateDataDisplay"/> repoints to the file the
+    /// schematic's run writes.
     /// </summary>
-    public static string PatternDisplayJson(string source)
+    /// <param name="sweep">False for a run of one frequency, which gets no S11 curve.</param>
+    public static string PatternDisplayJson(string source, bool sweep = true)
     {
         string f = FieldsAnalysisName;
-        var match = Plot("Input match", 0, 0, 520, 320, "Rect", EmSnpSchematic.Trace(source, 1, 1, 0, EmSnpSchematic.AnalysisName + ".S"));
-        match["CustomYLabel"] = "dB";
-        match["CustomYLabelOn"] = true;
-        var pattern = Plot(null, 540, 0, 420, 420, "Polar", CubeTrace(source, $"{f}.farfield.U", "dB10", "dB(U), phi = 0",
-            EmSnpSchematic.Slice("freq", "PinToIndex", 0), EmSnpSchematic.Slice("theta", "KeepAsX", 0),
-            EmSnpSchematic.Slice("phi", "PinToIndex", 0), EmSnpSchematic.Slice("port", "PinToIndex", 0)));
-        pattern["PolarRadial"] = "Db";
-        ((JsonObject)((JsonArray)pattern["Traces"]!)[0]!)["PatternWholePlane"] = true;
-        var gain = Plot(null, 0, 340, 520, 100, "Table", CubeTrace(source, $"{f}.farfield.RealizedGainDbi", "None", "Realized gain (dBi)",
-            EmSnpSchematic.Slice("freq", "KeepAsX", 0), EmSnpSchematic.Slice("port", "PinToIndex", 0)));
-        ((JsonObject)((JsonArray)gain["Traces"]!)[0]!)["ColumnWidth"] = 170;
+        var plots = new JsonArray();
+        double tableTop = 440;
+        if (sweep)
+        {
+            var match = Plot("Input match", 0, 0, 520, 320, "Rect", EmSnpSchematic.Trace(source, 1, 1, 0, EmSnpSchematic.AnalysisName + ".S"));
+            match["CustomYLabel"] = "dB";
+            match["CustomYLabelOn"] = true;
+            plots.Add(match);
+            tableTop = 340;
+        }
+        double cutLeft = sweep ? 540 : 0;
+        plots.Add(Cut(cutLeft, 0));
+        plots.Add(Cut(cutLeft + 430, 90));
+        // The S11 column is the Fields analysis's own, so it is the value at the pattern's frequency.
+        var gain = Plot(null, 0, tableTop, sweep ? 520 : 850, 100, "Table",
+            CubeTrace(source, $"{f}.farfield.RealizedGainDbi", "None", "Realized gain (dBi)", FreqX(), Port()));
+        var rows = (JsonArray)gain["Traces"]!;
+        rows.Insert(0, CubeTrace(source, $"{f}.S", "dB20", "S11 (dB)", FreqX(),
+            EmSnpSchematic.Slice("i", "PinToIndex", 0), EmSnpSchematic.Slice("j", "PinToIndex", 0)));
+        rows.Add(CubeTrace(source, $"{f}.farfield.GainDbi", "None", "Gain (dBi)", FreqX(), Port()));
+        rows.Add(CubeTrace(source, $"{f}.farfield.DirectivityDbi", "None", "Directivity (dBi)", FreqX(), Port()));
+        foreach (var row in rows) ((JsonObject)row!)["ColumnWidth"] = 150;
+        plots.Add(gain);
         var root = new JsonObject
         {
             ["FormatVersion"] = 2,
@@ -386,13 +427,29 @@ public static class EmCoSimNetlist
             ["SourceAliases"] = new JsonObject(),
             ["Tabs"] = new JsonArray(new JsonObject
             {
-                ["Name"] = "Co-simulation", ["ZoomLevel"] = 1, ["ViewOffsetX"] = 0, ["ViewOffsetY"] = 0, ["Plots"] = new JsonArray(match, pattern, gain),
+                ["Name"] = "Co-simulation", ["ZoomLevel"] = 1, ["ViewOffsetX"] = 0, ["ViewOffsetY"] = 0, ["Plots"] = plots,
             }),
             ["ActiveTabIndex"] = 0,
         };
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
-        // A polar plot fills its square and a table has no title, so only the rectangular plot carries one.
+        static JsonObject FreqX() => EmSnpSchematic.Slice("freq", "KeepAsX", 0);
+        static JsonObject Port() => EmSnpSchematic.Slice("port", "PinToIndex", 0);
+
+        // One cut through a pole, at a φ on the pattern's 1° grid. A board's long axis decides which of the two shows the null, so both are drawn.
+        JsonObject Cut(double left, int phiDeg)
+        {
+            var cut = Plot($"phi = {phiDeg}", left, 0, 420, 420, "Polar", CubeTrace(source, $"{f}.farfield.U", "dB10", "dB(U)",
+                EmSnpSchematic.Slice("freq", "PinToIndex", 0), EmSnpSchematic.Slice("theta", "KeepAsX", 0),
+                EmSnpSchematic.Slice("phi", "PinToIndex", phiDeg), Port()));
+            cut["PolarRadial"] = "Db";
+            // U here is per volt at the drive, which nobody reads: the shape is the point, and the outer ring is the plot's own peak.
+            cut["PolarDbUnit"] = "dB re peak";
+            ((JsonObject)((JsonArray)cut["Traces"]!)[0]!)["PatternWholePlane"] = true;
+            return cut;
+        }
+
+        // A table has no title, so a title is given to everything else.
         static JsonObject Plot(string? title, double left, double top, double width, double height, string type, JsonNode trace) => new()
         {
             ["Left"] = left, ["Top"] = top, ["Width"] = width, ["Height"] = height, ["PlotType"] = type, ["FreqUnit"] = "GHz",

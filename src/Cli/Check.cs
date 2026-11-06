@@ -422,6 +422,11 @@ internal static class Check
 
         foreach (var sub in Enumerate(() => Directory.EnumerateDirectories(dir), f, dir).Order(StringComparer.Ordinal))
         {
+            // A workspace's results hold each 3D run's copy of its view (a run's document.c3d), whose relative references mean
+            // nothing from there, and a hidden folder is a cache or a history. Neither is a design: both are walked only when named.
+            string subName = Path.GetFileName(sub);
+            if (subName.StartsWith('.') || subName.Equals("results", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(dir, ".cws"))) continue;
+
             var kind = DocumentKinds.Classify(sub);
             if (kind == DocumentKind.Cell) { CheckPath(sub, kind, f, cache, recursive: false); continue; }
 
@@ -782,6 +787,8 @@ internal static class Check
         C3dDocument doc;
         try { doc = C3dPersistence.LoadFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+
+        using var generated = GeneratedCells.PrepareThreeDForCheck(path, f.Add);
 
         var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, Path.GetFullPath(path), null, cache);
         foreach (var d in tech.Diagnostics) f.Add(CliDiagnostics.CheckResolverNote(path, d));

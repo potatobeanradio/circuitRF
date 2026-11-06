@@ -339,9 +339,14 @@ public static class CnlWriter
             && ov.Expression.AsSpan().ContainsAny(' ', '\t'))
             return $"{ov.Name}=\"{ov.Expression}\"";
 
+        // A .cnl is whitespace-delimited, so `L=Lser + dL` would read its tail as a unit and refuse the line. Quoting would make it
+        // a string, and no expression needs a space between two tokens, so the spaces go. A string literal keeps its own.
+        string expression = IsQuoted(ov.Expression) || ov.Expression.Contains('"')
+            ? ov.Expression
+            : string.Concat(ov.Expression.Where(c => !char.IsWhiteSpace(c)));
         if (!string.IsNullOrEmpty(ov.Unit))
-            return $"{ov.Name}={ov.Expression} {ov.Unit}";
-        return $"{ov.Name}={ov.Expression}";
+            return $"{ov.Name}={expression} {ov.Unit}";
+        return $"{ov.Name}={expression}";
     }
 
     private static bool IsQuoted(string s) => s.Length >= 2 && s[0] == '"' && s[^1] == '"';

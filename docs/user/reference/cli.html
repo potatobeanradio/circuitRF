@@ -792,6 +792,8 @@ EMerge run is <code>auto</code> unless <code>--device</code> says otherwise, wha
 for a driven problem large enough to be faster on it (<a href="em-solvers.html#emerge-gpu">EMerge on a GPU</a>), the CPU
 otherwise.
 <code>--device gpu</code> is refused on a run that uses neither Palace nor EMerge.</p>
+<p><code>--cores &lt;n&gt;</code> is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. Fewer
+processes take less memory and solve more slowly. A run that does not say uses one process per physical core.</p>
 <p>A 3D run's solver is stopped if its memory reaches this computer's (<code>--memory-limit &lt;GB&gt;</code> sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits <strong>1</strong>.
 <code>--force</code> lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never

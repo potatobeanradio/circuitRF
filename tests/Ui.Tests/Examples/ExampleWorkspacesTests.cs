@@ -605,9 +605,11 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                                                  StringComparison.OrdinalIgnoreCase);
 
         // The 3D run's own rule for where its Touchstone lands — the one the thermal link matches by.
-        static bool IsWrittenByAnEmSetupOf(string workspace, string snp)
+        // An EM Field Data block names the run's record, which sits beside the Touchstone under the same stem.
+        static bool IsWrittenByAnEmSetupOf(string workspace, string result)
             => Directory.EnumerateFiles(workspace, "*.c3d", SearchOption.AllDirectories).Any(c3d =>
-                   CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(snp,
+                   CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(
+                       result.EndsWith(".cemr", StringComparison.OrdinalIgnoreCase) ? Path.ChangeExtension(result, ".s4p") : result,
                        CircuitRF.Design.Thermal.ThermalCircuitLink.ResultPaths(
                            CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3d), c3d,
                            Path.Combine(workspace, "results")).Select(r => r.BasePath)));

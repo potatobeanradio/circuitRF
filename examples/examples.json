@@ -87,6 +87,11 @@
       "Summary": "A system-check dipole 10 mm under a flat phantom of head tissue-simulating liquid, run at two bands by a band sweep, with psSAR1g and psSAR10g at the rated power beside published reference values."
     },
     {
+      "Folder": "Antenna Co-Simulation",
+      "Title": "Antenna Co-Simulation",
+      "Summary": "A meander antenna on a 45 x 95 mm board, solved once at five frequencies with each of its parts as a port. An EM Field Data block then gives S11, the radiation pattern and realized gain from a schematic, so the optimizer matches it and a sweep shows an inductor's error with no new EM run."
+    },
+    {
       "Folder": "Thermal Die to Heatsink",
       "Title": "Thermal: Die to Heatsink",
       "Summary": "A GaN-on-SiC die on a copper\u2013molybdenum flange, a board with a field of plated vias, and a heatsink at 85 \u00b0C: the junction temperature and Rth against dissipated power, with the via field solved as drawn or as one effective block."

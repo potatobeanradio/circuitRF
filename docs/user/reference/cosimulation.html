@@ -51,7 +51,7 @@ for a yield trial — in about a second and with no EM run.</p>
 </div>
 <p>The worked example is <strong>SAR: MRI Loop Coil</strong> (<em>File ▸ New ▸ Examples</em>): a 7 T loop with four ports, matched and optimized
 against S11, B1 and psSAR goals in 4 s. What B1 and SAR are, and their units, is <a href="sar.html">SAR and B1</a>. An antenna board with parts on it works the same way: see
-<a href="#pattern">The radiation pattern</a>.</p>
+<a href="#pattern">The radiation pattern</a>, and the <strong>Antenna Co-Simulation</strong> example.</p>
 <h2 id="em">1. The EM side: ports for capacitors, fields kept</h2>
 <p>In the coil's 3D view:</p>
 <ol>
@@ -247,6 +247,7 @@ analysis's <code>S</code> is at its own frequencies, so <code>F1.S</code> lines 
 <p>A cell of that name is <strong>never overwritten</strong>: edit it freely and run the setup again, and the block reads the new result. A run that kept neither a far field
 nor a field set gets an SnP in place of the block. A run with no component ports makes the <code>_sim</code> cell described under
 <a href="em-setup.html#snp-schematic">A schematic to start from</a>.</p>
+<p>The worked example is <strong>Antenna Co-Simulation</strong> (<em>File ▸ New ▸ Examples</em>): a meander antenna solved once at five frequencies, then matched by the optimizer, with its pattern compared across the band and against an inductor's error.</p>
 <p>To wire a circuit by hand, place an EM Field Data block as in <a href="#schematic">The schematic side</a> and add a Fields analysis. <code>RealizedGainDbi(F1)</code>,
 <code>GainDbi</code>, <code>DirectivityDbi</code>, <code>RadiationEfficiency</code>, <code>TrpDbm</code> and <code>PeakEirpDbm</code> read the pattern in a <code>measure</code> or <code>goal</code> line.</p>
 <h3 id="planar">A planar result</h3>
@@ -297,6 +298,7 @@ so a port's number from the run cannot be added up for a circuit. <code>PowerAcc
 Any <strong>shunt branch in the file does not reach the board's ground plane</strong>: port 1's stands across the gap, and port 2's is shorted out. A file whose
 pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the 3D model, and so is their capacitance to the plane.</p>
 <p><strong>The part's body is not in the 3D model</strong>, with this method or any other that uses a gap port.</p>
+<p><strong>A part not fitted.</strong> A part whose <strong>Disable</strong> is <em>Open</em> in the board's schematic leaves its port open in the generated netlist and cell, and one set to <em>Short</em> shorts its port. Neither gets a placeholder value.</p>
 <h3 id="frequencies">Frequencies</h3>
 <p>A pattern exists <strong>only at frequencies the run solved</strong>. Far-field phase across a coarse sweep is not safe to interpolate, so a frequency between stored points
 is refused, listing them. <code>freq=all</code> takes every stored one. S comes from the same result, so a denser S-parameter analysis in the same schematic reads
@@ -349,6 +351,7 @@ with the parts 5 nH and 1 pF or the loads 200 Ω and 100 Ω. <strong>EMerge</str
 Its gain and pattern are within what the method asks, and its S11 across a change of load needs a fine port edge mesh: an <code>EdgeRefinement</code> of 0.02 gives 7.5e-4.</li>
 <li><strong>Near a resonance</strong> (6.5 nH and 0.05 pF on the same dipole), Palace agrees to 0.009 dB and 1.6e-3 in S11 on its own mesh. Draft and Standard disagree with each other
 by far more than that: these comparisons show the method is right, not that the mesh is. A radiating dipole is a mild case, and a sharper resonance has not been measured.</li>
+<li><strong>The air box moves gain and efficiency more than S11.</strong> On a 95 mm board at 868 MHz with first-order Palace elements, padding of 86, 130 and 170 mm read efficiency 100.5, 90.9 and 84.9 % and gain 2.09, 1.51 and 1.25 dBi, while S11 stayed within 0.1 dB and directivity within 0.15 dB. λ/4 passed the run's own power balance and was still too small. Check a pattern's gain at a second box size.</li>
 <li><strong>A cylindrical grid's</strong> field set recombines as a Cartesian one does, but its volumes are not drawn in the 3D view.</li>
 </ul>
 

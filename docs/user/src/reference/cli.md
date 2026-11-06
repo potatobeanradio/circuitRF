@@ -495,6 +495,9 @@ for a driven problem large enough to be faster on it ([EMerge on a GPU](em-solve
 otherwise.
 `--device gpu` is refused on a run that uses neither Palace nor EMerge.
 
+`--cores <n>` is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. Fewer
+processes take less memory and solve more slowly. A run that does not say uses one process per physical core.
+
 A 3D run's solver is stopped if its memory reaches this computer's (`--memory-limit <GB>` sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits **1**.
 `--force` lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
