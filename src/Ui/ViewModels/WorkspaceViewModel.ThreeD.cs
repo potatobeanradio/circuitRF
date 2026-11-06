@@ -34,6 +34,7 @@ namespace CircuitRF.Ui.ViewModels;
 public partial class WorkspaceViewModel
 {
     private readonly Dictionary<C3dEditorDocument, FileSystemWatcher> _c3dWatchers = [];
+    private readonly HashSet<C3dEditorDocument> _c3dReloadAsked = [];
 
     /// <summary>Extensions whose change on disk re-elaborates an open 3D editor (a placed cell, a technology).</summary>
     private static readonly string[] C3dInputs = [".c3d", ".clay", ".ctech", ".wbond", ".cmat"];
@@ -187,6 +188,7 @@ public partial class WorkspaceViewModel
             // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.
             vm.OfferStepParts = (source, parts) => ShowStepImportAsync(vm, source, null, parts.ToHashSet(StringComparer.Ordinal));
             vm.ExternalChangeWhileDirty += () => _ = AskReloadC3dAsync(doc);
+            vm.SaveRequested = () => SaveC3dFromSetupWindowAsync(doc);
             // 3D editor round 1 — the selection's fields are the application's Properties Inspector: Properties (the
             // toolbar button, the menus) brings it forward, opening it when it was closed.
             // 3D menu cleanup — the 3D menu's Modify items follow this editor's selection while it is the active document.
@@ -257,15 +259,29 @@ public partial class WorkspaceViewModel
     /// <summary>The open document changed on disk while it has unsaved edits: ask, as the layout editor does.</summary>
     private async Task AskReloadC3dAsync(C3dEditorDocument doc)
     {
-        if (HostWindowOf(doc) is not { } window) return;
-        var dlg = new Views.Dialogs.SaveChangesDialog(
-            $"'{Path.GetFileName(doc.FilePath)}' changed on disk. Reload it and discard your unsaved changes?",
-            saveLabel: "Keep Mine", dontSaveLabel: "Reload", cancelLabel: "Cancel", title: "File Changed on Disk");
-        await dlg.ShowDialog(window);
-        if (dlg.Result == SaveChangesResult.DontSave)
+        if (HostWindowOf(doc) is not { } window || !_c3dReloadAsked.Add(doc)) return;   // a later write is answered by the open question
+        try
         {
-            if (doc.ViewModel.Reload() is { } why) Messages.Error($"Could not reload '{doc.FilePath}': {why}");
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"'{Path.GetFileName(doc.FilePath)}' changed on disk. Reload it and discard your unsaved changes?",
+                saveLabel: "Keep Mine", dontSaveLabel: "Reload", cancelLabel: "Cancel", title: "File Changed on Disk");
+            await dlg.ShowDialog(window);
+            if (dlg.Result == SaveChangesResult.DontSave)
+            {
+                if (doc.ViewModel.Reload() is { } why) Messages.Error($"Could not reload '{doc.FilePath}': {why}");
+            }
         }
+        finally { _c3dReloadAsked.Remove(doc); }
+    }
+
+    /// <summary>Save pressed in a window of a 3D view's setups: the answers File ▸ Save gives on the view's tab.</summary>
+    private async Task SaveC3dFromSetupWindowAsync(C3dEditorDocument doc)
+    {
+        if (ReadOnlyDocumentReason(doc) is { } readOnly) { Messages.Warning(readOnly); return; }
+        if (!doc.IsDirty && !doc.IsScratch) { Messages.Info("Nothing to save."); return; }
+        NoteWorkspaceWrite();
+        if (!doc.IsScratch) SaveC3d(doc);
+        else if ((HostWindowOf(doc) ?? ResolveOwner(null)) is { } owner) await SaveC3dAs(doc, owner);
     }
 
     /// <summary>Writes a 3D view; reports either way. True when it was written.</summary>

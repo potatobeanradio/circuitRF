@@ -60,6 +60,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private bool _preferenceDirty;
     private bool _loading;
     private string? _savedStamp;
+    private string? _askedStamp;
 
     public string FilePath { get; private set; }
 
@@ -1156,14 +1157,17 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     }
 
     /// <summary>The file changed on disk. Our own save is ignored; a clean document reloads without asking; a
-    /// dirty one raises <see cref="ExternalChangeWhileDirty"/> and the shell asks, as for a layout.</summary>
+    /// dirty one raises <see cref="ExternalChangeWhileDirty"/> and the shell asks, as for a layout. One write reaches the
+    /// watcher as several events, and keeping the edits leaves the file as it is, so each state of the file is answered once:
+    /// a question while dirty, a reload while clean, or a message when that reload cannot read the file.</summary>
     public void OnFileChangedOnDisk()
     {
         if (CanPopOut) { Viewer.Invalidate(); return; }       // pushed in: the top file is context, redrawn
         string? stamp = Stamp(FilePath);
-        if (stamp is null || stamp == _savedStamp) return;
+        if (stamp is null || stamp == _savedStamp || stamp == _askedStamp) return;
+        _askedStamp = stamp;
         if (IsDirty) { ExternalChangeWhileDirty?.Invoke(); return; }
-        Reload();
+        if (Reload() is { } why) PostMessage?.Invoke($"Could not reload '{Path.GetFileName(FilePath)}': {why} The open tab keeps what it had.", true);
     }
 
     /// <summary>A placed cell's .c3d or .clay changed: elaborate again. The elaborator's child cache is keyed

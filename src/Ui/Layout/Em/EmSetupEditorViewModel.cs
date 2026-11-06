@@ -1111,8 +1111,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     // ── Save ───────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Set by the view: puts the text of the field being typed in into the setup, as leaving that field would.
+    /// Save is a key press, so the focus has not moved and nothing else has committed it.</summary>
+    public Action? CommitFocusedField { get; set; }
+
+    /// <summary>Set by the 3D editor on an embedded panel: Save here saves the document holding the setup.</summary>
+    public Action? EmbeddedSave { get; set; }
+
     private void Save()
     {
+        CommitFocusedField?.Invoke();
+        // Embedded, FilePath names the container and the setup is one record in it: writing Working there replaces the whole
+        // .c3d with a lone setup.
+        if (IsEmbedded) { EmbeddedSave?.Invoke(); return; }
         try
         {
             EmSetupPersistence.SaveToFile(FilePath, Working);

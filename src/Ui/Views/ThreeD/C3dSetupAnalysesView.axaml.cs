@@ -146,6 +146,9 @@ public partial class C3dSetupAnalysesView : UserControl
             Content = body,
         };
         close.Click += (_, _) => window.Close();
+        // With the focus on Close or nothing, the panel's own binding is not on the way up.
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Control), Command = vm.SaveDocumentCommand });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Meta), Command = vm.SaveDocumentCommand });
         // brief-dfr31-1 R-dfr31-1-4 — not modal: a terminal is picked by clicking the 3D view behind it.
         if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner); else window.Show();
     }

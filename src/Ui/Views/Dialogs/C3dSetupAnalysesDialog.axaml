@@ -10,6 +10,11 @@
         CanResize="True"
         ShowInTaskbar="False">
 
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveDocumentCommand}"/>
+        <KeyBinding Gesture="Meta+S" Command="{Binding SaveDocumentCommand}"/>
+    </Window.KeyBindings>
+
     <!-- Simulate ▸ Setup Analyses… with a 3D view active: the 3D view's setups (C3dSetupAnalysesView, the control the
          Analyses panel shows for a .c3d too) and a footer. -->
     <Grid RowDefinitions="*,Auto" Background="{DynamicResource SystemChromeLowColor}">

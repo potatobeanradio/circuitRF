@@ -599,6 +599,43 @@ public sealed class C3dEditorGateTests : IDisposable
         Assert.Equal("mine", vm.Document.Objects[1].Name);
     }
 
+    [Fact]
+    public void OneWriteOnDisk_IsAskedAboutOnce_HoweverManyWatcherEventsReportIt()
+    {
+        var vm = Open(Stack());
+        int asked = 0;
+        vm.ExternalChangeWhileDirty += () => asked++;
+        Assert.Null(vm.Rename(1, "mine"));
+
+        var other = C3dPersistence.LoadFromFile(vm.FilePath);
+        other.Objects[0].Name = "theirs";
+        C3dPersistence.SaveToFile(vm.FilePath, other);
+        vm.OnFileChangedOnDisk();
+        vm.OnFileChangedOnDisk();
+        vm.OnFileChangedOnDisk();
+        Assert.Equal(1, asked);
+
+        other.Objects[0].Name = "theirs again";                // a different write is a new question
+        C3dPersistence.SaveToFile(vm.FilePath, other);
+        vm.OnFileChangedOnDisk();
+        Assert.Equal(2, asked);
+    }
+
+    [Fact]
+    public void AnUnreadableFile_UnderACleanDocument_IsReportedOnce_AndTheDocumentIsKept()
+    {
+        var vm = Open(Stack());
+        var posted = new List<string>();
+        vm.PostMessage = (text, _) => posted.Add(text);
+
+        File.WriteAllText(vm.FilePath, """{ "FormatVersion": 1 }""");
+        vm.OnFileChangedOnDisk();
+        vm.OnFileChangedOnDisk();
+
+        Assert.Contains("Could not reload", Assert.Single(posted), StringComparison.Ordinal);
+        Assert.Equal(3, vm.Document.Objects.Count);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     private C3dEditorViewModel Open(string c3d, PatchRecordingBackend? backend = null, string? ws = null)

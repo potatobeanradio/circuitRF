@@ -217,6 +217,13 @@ public sealed partial class C3dEditorViewModel
     [RelayCommand]
     public void OpenSetupAnalyses() => SetupAnalysesRequested?.Invoke(this);
 
+    /// <summary>The shell saves this document as File ▸ Save does, for a key press in a setup panel or window. Set by the workspace.</summary>
+    public Func<Task>? SaveRequested { get; set; }
+
+    /// <summary>Save, from a window of this document's setups: those windows are not the document's tab, so the shell's own binding does not see them.</summary>
+    [RelayCommand]
+    public Task SaveDocument() => SaveRequested?.Invoke() ?? Task.CompletedTask;
+
     /// <summary>The active setup's name — editor state, per user (the shell stores it in the <c>.cwsuser</c>).</summary>
     public string? ActiveSetupName { get; private set; }
 
@@ -375,6 +382,7 @@ public sealed partial class C3dEditorViewModel
             string name = item.Name;
             vm.EmbeddedCommit = (_, after, description) => CommitSetupFromPanel(name, after, description);
         }
+        vm.EmbeddedSave = () => _ = SaveDocument();
         vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
         vm.MeshRequested = _ => MeshRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
         // brief-dfr31-1 R-dfr31-1-4 — the terminal picker lists this view's pieces of metal (from the elaboration the view

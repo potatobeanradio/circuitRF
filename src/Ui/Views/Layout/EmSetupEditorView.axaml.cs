@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.ViewModels;
 
@@ -116,6 +117,21 @@ public partial class EmSetupEditorView : UserControl
 
     private EmSetupEditorViewModel? Vm =>
         DataContext is EmSetupDocument d ? d.ViewModel : null;
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (Vm is { } vm) vm.CommitFocusedField = CommitFocusedField;
+    }
+
+    /// <summary>Moves the focus off the field being typed in and back, so the field's own LostFocus commits it.</summary>
+    private void CommitFocusedField()
+    {
+        if (TopLevel.GetTopLevel(this)?.FocusManager is not { } focus) return;
+        if (focus.GetFocusedElement() is not Control field || !this.IsVisualAncestorOf(field)) return;
+        focus.Focus(null);
+        field.Focus();
+    }
 
     private void OnSnpOutputPathKeyDown(object? sender, KeyEventArgs e)
     {

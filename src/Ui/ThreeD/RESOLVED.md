@@ -544,3 +544,28 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
 - **Direction:** the ends are ordered so the camera sits on the line's right; distance along the line then grows left to
   right in the view and in `render --field`'s picture alike.
 - Gates: `FieldRenderCliTests.Gate13`–`Gate15`. UiSnapshot `--c3d … --section x,y,z:x,y,z [--undo]` drives the pick.
+
+## Save in a setup panel replaced the whole `.c3d` with one setup
+
+- **Cause:** an embedded `EmSetupEditorViewModel` carries the `.c3d` as its `FilePath`, and `EmSetupEditorView` binds Ctrl/Meta+S to
+  the panel's own `SaveCommand`. That command wrote the lone setup to `FilePath`, so the geometry was gone from disk. The panel's
+  Save button had been hidden when embedded; the key binding had not. The open tab still held the document, because `Reload` only
+  replaces it after a successful read.
+- **The dialogs were a symptom:** the write changed the file's stamp, so the watcher reported it as an outside change to a dirty
+  document, and every watcher event opened its own File Changed on Disk dialog. Choosing Reload then read the setup and failed on
+  the missing `Objects`.
+- **Fix:** embedded, `Save` hands off through `EmbeddedSave` to `C3dEditorViewModel.SaveRequested`, which gives the answers File ▸
+  Save gives (read-only, nothing to save, Save As for a scratch design). **Anything that writes `FilePath` must check `IsEmbedded`
+  first.** The setup window and Setup Analyses bind the key too, for when the focus is not inside a panel.
+- **A key press does not move the focus,** so a field's LostFocus commit has not run when Save does. `CommitFocusedField` moves the
+  focus off the field and back first. It covers a `.cem` too, which saved without the typed value before.
+- **One question per state of the file:** `OnFileChangedOnDisk` remembers the stamp it asked about, and the shell opens one dialog
+  per document at a time. A later write while the dialog is open is answered by it: Reload reads the newest file, and Keep Mine
+  overwrites it on the next save.
+- **A clean document's failed reload is now reported** as one warning per state of the file, where it used to be dropped; the tab
+  keeps what it had. **Limit:** a program writing the `.c3d` in place can be read half written, which gives this warning and then a
+  normal reload on its next event.
+- Gates: `C3dSetupPanelSaveTests` (without the fix it fails with the same missing `Objects` error),
+  `C3dEditorGateTests.OneWriteOnDisk_IsAskedAboutOnce_HoweverManyWatcherEventsReportIt` and
+  `AnUnreadableFile_UnderACleanDocument_IsReportedOnce_AndTheDocumentIsKept`. `Ui.Tests` has no Avalonia host, so the real
+  key press was checked through a scratch `tools/UiSnapshot` probe, against the real shell.
