@@ -26,6 +26,12 @@
 // recovery stops with the same "overlapping facets" as above, and neither of the rules above touches it: its tip is far
 // from its neighbours' SEGMENT though on their line. The needle holds no copper, so cutting it off moves no copper; the
 // tolerance guarantee is about moved outlines and does not count it, and Stats reports it apart.
+//
+// A HOLE TOUCHING ITS OWN OUTLINE (designer round 37). A pour's round hole can be tangent to the pour's edge, a corner of the hole
+// lying exactly on that edge with nothing beside it. OpenCASCADE splits one object's faces against another's, but never one face's
+// outer wire against its own holes, so the edge stays whole and its 1D mesh runs through the hole's corner. Gmsh says "There are 9
+// intersections in the 1D mesh", leaves the face with no elements, and stops at the 3D stage with "overlapping facets" or "Could not
+// recover boundary mesh". OpenTouches moves that corner by the tolerance, into the hole, which leaves a neck the tolerance wide.
 
 namespace CircuitRF.Design.Layout.Em3d;
 
@@ -53,6 +59,8 @@ public static class Em3dOutlineCleanup
         public int Spikes { get; set; }
         /// <summary>How far the longest of <see cref="Spikes"/> reached, metres.</summary>
         public double LongestSpikeM { get; set; }
+        /// <summary>Corners moved off another stretch of their own object's outline (<see cref="OpenTouches{T}"/>).</summary>
+        public int Touches { get; set; }
     }
 
     /// <summary>
@@ -100,6 +108,10 @@ public static class Em3dOutlineCleanup
         }
 
         public bool IsEmpty => _segments.Count == 0;
+
+        /// <summary>The segments that may lie within the tolerance of <paramref name="p"/>.</summary>
+        internal IEnumerable<((double X, double Y) A, (double X, double Y) B)> Around((double X, double Y) p)
+            => Near(p).Select(k => _segments[k]);
 
         private (long, long) Cell(double x, double y) => ((long)Math.Floor((x - _x0) / _cell), (long)Math.Floor((y - _y0) / _cell));
 
@@ -172,6 +184,61 @@ public static class Em3dOutlineCleanup
         stats.Removed += ring.Count - moved.Count;
         stats.MaxMoveM = Math.Max(stats.MaxMoveM, worst);
         return [.. moved.Select(p => make(p.X, p.Y))];
+    }
+
+    /// <summary>Two points this close, metres, are one point: half the layout's smallest step. A gap of 1 nm is two faces, and meshes.</summary>
+    public const double SameM = 0.5e-9;
+
+    /// <summary>
+    /// Whether corner <paramref name="b"/>, between <paramref name="a"/> and <paramref name="c"/>, touches the segment
+    /// <paramref name="s"/>–<paramref name="t"/> at that one point: on it, with both neighbours off its line on one side. So an edge of
+    /// the corner's own is not touched (a neighbour lies on its line), nor is a stretch the outline runs along, which is a cut of no width.
+    /// </summary>
+    public static bool TouchesAtPoint((double X, double Y) a, (double X, double Y) b, (double X, double Y) c,
+                                      (double X, double Y) s, (double X, double Y) t)
+    {
+        double ux = t.X - s.X, uy = t.Y - s.Y, l = Math.Sqrt(ux * ux + uy * uy);
+        if (l <= SameM || Distance(b, s, t) > SameM) return false;
+        double sa = (ux * (a.Y - s.Y) - uy * (a.X - s.X)) / l, sc = (ux * (c.Y - s.Y) - uy * (c.X - s.X)) / l;
+        return (sa > SameM && sc > SameM) || (sa < -SameM && sc < -SameM);
+    }
+
+    /// <summary>
+    /// <paramref name="rings"/>, one object's outer ring and holes, with every corner that touches another stretch of them at one
+    /// point moved by <paramref name="tolerance"/> into its own wedge, counted into <paramref name="stats"/> (the same list when there
+    /// is none). A corner too shallow to take the move stays, for <see cref="Em3dGeometryCheck"/> to report.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<T>> OpenTouches<T>(IReadOnlyList<IReadOnlyList<T>> rings, Func<T, (double X, double Y)> xy,
+                                                                 Func<double, double, T> make, double tolerance, Stats stats)
+    {
+        if (!(tolerance > 0) || rings.Sum(r => r.Count) <= 4) return rings;
+        var points = rings.Select(r => r.Select(xy).ToList()).ToList();
+        var edges = new Edges(points.Select(r => (IReadOnlyList<(double X, double Y)>)r));
+        List<IReadOnlyList<T>>? result = null;
+        for (int r = 0; r < points.Count; r++)
+        {
+            var p = points[r];
+            int n = p.Count;
+            List<T>? moved = null;
+            for (int i = 0; i < n && n > 3; i++)
+            {
+                var (a, b, c) = (p[(i + n - 1) % n], p[i], p[(i + 1) % n]);
+                if (!edges.Around(b).Any(e => TouchesAtPoint(a, b, c, e.A, e.B))) continue;
+                double la = Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+                double lc = Math.Sqrt((c.X - b.X) * (c.X - b.X) + (c.Y - b.Y) * (c.Y - b.Y));
+                double wx = (a.X - b.X) / la + (c.X - b.X) / lc, wy = (a.Y - b.Y) / la + (c.Y - b.Y) / lc;
+                double w = Math.Sqrt(wx * wx + wy * wy);
+                if (w < 1e-9 || Distance(b, a, c) <= tolerance) continue;
+                moved ??= [.. rings[r]];
+                moved[i] = make(b.X + tolerance * wx / w, b.Y + tolerance * wy / w);
+                stats.Touches++;
+                stats.MaxMoveM = Math.Max(stats.MaxMoveM, tolerance);
+            }
+            if (moved is null) continue;
+            result ??= [.. rings];
+            result[r] = moved;
+        }
+        return result ?? rings;
     }
 
     /// <summary><paramref name="ring"/> with its removable points removed (the same list when none is), counted into

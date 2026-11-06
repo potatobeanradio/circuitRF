@@ -563,7 +563,9 @@ and tiny edges left where shapes were merged — and they can make the mesher bu
 No outline moves by more than the tolerance, and the run's notes say how many points were removed and the largest
 move. A conductor point that close to the board's edge is moved onto it, and a conductor's side that lies along the
 board's edge stays on it, so a plane cut at the edge never ends a fraction of a degree off the board's side, a sliver
-the mesher refuses as "overlapping facets". Only conductor outlines change; via barrels, the board outline and slabs
+the mesher refuses as "overlapping facets". A hole with a corner exactly on its own pour's edge, such as a round hole
+tangent to it, has that corner moved into the hole by the same tolerance, because the mesher cannot cross a face's edge
+at a point it does not share; the notes say how many. Only conductor outlines change; via barrels, the board outline and slabs
 are meshed as drawn. It is on unless a setup says `"RobustMeshing": false`, which is the only value ever written: a
 `.cem` or an embedded setup without the field runs with it on. Off, the artwork is meshed exactly as drawn. A port
 on a placed layout is inferred on the outline robust meshing leaves, by `check` and by the run alike, and an edge that

@@ -14,6 +14,8 @@
 //   - Sliver: a wedge-shaped slit or sliver, the same corner opening wider than the tolerance; or two stretches of one object's
 //     outline lying exactly on each other, away from any corner, a zero-width cut such as a keyhole.
 //   - NearFaces: stretches of two outlines that start from one point, share a height, and part at under the facet angle.
+//   - PointTouch: a corner of one object's outline lying on another stretch of that outline with nothing beside it, such as a hole
+//     tangent to its pour's edge. OpenCASCADE does not split a face's outer wire against its own holes, so the 1D mesh crosses there.
 //   - ShortEdge: an edge far below the element asked for where it meets another object. No board tried with one stopped Gmsh, so
 //     this is a note and not a warning: it costs elements (Em3dSizeEstimate counts them), and it is where a flat element has come from.
 //
@@ -29,8 +31,8 @@ using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.Layout.Em3d;
 
-/// <summary>Which of the check's four classes a finding is.</summary>
-public enum Em3dGeometryKind { Reversal, Sliver, NearFaces, ShortEdge }
+/// <summary>Which of the check's classes a finding is.</summary>
+public enum Em3dGeometryKind { Reversal, Sliver, NearFaces, PointTouch, ShortEdge }
 
 /// <summary>One place: the object and layer it is on, the other object where there is one, in layout micrometres.</summary>
 public sealed record Em3dGeometryFinding(Em3dGeometryKind Kind, string Object, string Layer, string? Other, double XUm, double YUm, string Sentence);
@@ -41,7 +43,7 @@ public static class Em3dGeometryCheck
     public const double ToleranceM = Em3dOutlineCleanup.MaxToleranceM;
 
     /// <summary>Two points this close, metres, are the same point: half the layout's smallest step. A gap of 1 nm is two faces, and meshes.</summary>
-    private const double SameM = 0.5e-9;
+    private const double SameM = Em3dOutlineCleanup.SameM;
 
     /// <summary>Gmsh's own default for two facets lying on each other (<c>Mesh.AngleToleranceFacetOverlap</c>), degrees.</summary>
     public const double FacetAngleDegrees = 0.1;
@@ -158,6 +160,16 @@ public static class Em3dGeometryCheck
             return a.Flat || b.Flat ? overlap >= -SameM : overlap > SameM;
         }
 
+        // Corner j of edge e's ring on edge other, with nothing beside it.
+        void Touch(Edge e, Edge other, int j)
+        {
+            var p = rings[e.Ring].Points;
+            int n = p.Count;
+            var (a, b, c) = (p[(j + n - 1) % n], p[j % n], p[(j + 1) % n]);
+            if (Em3dOutlineCleanup.TouchesAtPoint((a.X, a.Y), (b.X, b.Y), (c.X, c.Y), (other.Ax, other.Ay), (other.Bx, other.By)))
+                Add(Em3dGeometryKind.PointTouch, rings[e.Ring], null, b.X, b.Y, "its outline touches another stretch of itself at one point,");
+        }
+
         // ── pairs sharing a cell ─────────────────────────────────────────────────────────────
         var seen = new HashSet<(int, int)>();
         foreach (var list in cells.Values)
@@ -173,6 +185,13 @@ public static class Em3dGeometryCheck
                     bool same = ra.Owner == rb.Owner;
                     if (!same && !ShareHeight(ra, rb)) continue;
                     if (ea.Ring == eb.Ring && Adjacent(ea.Index, eb.Index, ra.Points.Count)) continue;
+                    if (same)
+                    {
+                        Touch(ea, eb, ea.Index);
+                        Touch(ea, eb, ea.Index + 1);
+                        Touch(eb, ea, eb.Index);
+                        Touch(eb, ea, eb.Index + 1);
+                    }
                     if (Near(ea, eb) is not { } near || near.Sine > sinFacet || near.Smallest > SameM || !seen.Add((ka, kb))) continue;
                     double mx = (near.Xa + near.Xb) / 2, my = (near.Ya + near.Yb) / 2;
                     if (near.Largest <= SameM)

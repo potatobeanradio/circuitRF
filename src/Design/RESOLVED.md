@@ -28725,3 +28725,30 @@ left P1Tones' amplitudes empty, whose Pavls used to be ignored.
 **The Block list cannot depend on the whole schematic reading back.** `EmFieldBlocks.Paths` round-trips the schematic through the netlist reader, so a fault anywhere in it
 emptied the list, which was harmless while the control took typed text. Non-editable, that would have left no way to name a block, so a failure falls back to the blocks on
 the schematic's own sheet.
+
+## Designer round 37: a hole touching its own pour's edge stopped Gmsh (2026-11-06)
+
+**Third cause of the same message.** A pour can hold a round hole, flattened to straight sides, tangent to its edge, so a hole corner lies
+exactly on the pour's outer ring. Gmsh's log reports intersections in the 1D mesh and "No elements in surface" for the pour's top and bottom
+faces, and the 3D stage then stops. The text differs by platform on the same script: "Invalid boundary mesh (overlapping facets)" on Windows,
+"Could not recover boundary mesh: error 2" on macOS. The tag in the overlapping-facets
+message is a side face of a hole; the faces at fault are the two empty ones, so read those warnings first.
+
+**Why only here.** OpenCASCADE's fragment splits one object's faces against another's, but never one face's outer wire against its own
+holes. The long edge stays one curve with no node at the corner, so its 1D mesh crosses that corner. The geometry check missed it because
+every class it had needs two edges under the facet angle, and a 72-sided hole's edges part from the pour's at 5°.
+
+**The fix.** `Em3dOutlineCleanup.OpenTouches`, last in Robust meshing, moves such a corner along its own bisector by the tolerance, which
+leaves a neck 0.5 µm wide on 35 µm copper. The test is `TouchesAtPoint`: on the segment within half a DBU, both neighbours off its line on
+one side, so a corner's own edges and a zero-width cut (a stretch run along, not a point) are left alone. The check reports the same predicate
+as `PointTouch`, so a setup with Robust meshing off is warned before a long geometry build. With the neck, Gmsh finds no intersections and
+`Em3dMeshCheck` passes. Gmsh's optimiser can leave ill-shaped tets near a neck, none zero-volume or inverted. Whether they affect a Palace solve
+has not been measured.
+
+**A neck rather than a cut.** At a tangent point the copper's real width is zero, so a true model would part it there, and a corner piece between
+a hole and the pour's corner would become an island. A neck was chosen because it keeps one object per drawn shape and stays within the tolerance
+guarantee. PEC or surface-impedance metal then ties that small piece to the pour. For a 250 µm radius its area is about 1.3e4 µm². Its effect on
+an answer has not been measured.
+
+**The refusal.** `GmshSurfaceLines` falls back to the "No elements in surface" tags when no error names a surface, so "error 2" now names the object.
+A list of surfaces on one object says it once. Gate: `tests/Ui.Tests/Em3d/HoleTouchingOutlineTests.cs`.

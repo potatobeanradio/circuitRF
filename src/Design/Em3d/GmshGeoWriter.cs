@@ -984,14 +984,15 @@ public static partial class GmshGeoWriter
         }
         var named = tags.Select(Surface).OfType<string>().ToList();
         if (named.Count == 0) return null;
-        string list = named.Count == 1 ? named[0] : string.Join(", ", named.SkipLast(1)) + " and " + named[^1];
+        var listed = named.Distinct().ToList();
+        string list = listed.Count == 1 ? listed[0] : string.Join(", ", listed.SkipLast(1)) + " and " + listed[^1];
         // brief-dfr35-1 R-dfr35-1-8 — where, since two faces of one pour read as "between X and X".
         string at = SurfacePlace(lines, facesText) is { } p ? $", at ({Coordinate(p.XUm)}, {Coordinate(p.YUm)}) µm" : "";
         if (lines.Any(l => l.Contains("overlapping facets", StringComparison.Ordinal)) && named.Count == 2)
             return named[0] == named[1]
                 ? $"The overlap is between two faces of {named[0].Replace("a face of ", "", StringComparison.Ordinal)}{at}."
                 : $"The overlap is between {named[0]} and {named[1]}{at}.";
-        return $"The surface{(named.Count == 1 ? " it names is" : "s it names are")} {list}{at}.";
+        return $"The surface{(listed.Count == 1 ? " it names is" : "s it names are")} {list}{at}.";
     }
 
     /// <summary>

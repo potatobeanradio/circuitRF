@@ -251,11 +251,12 @@ public static class PalaceRun
                     // in the stage folder, which goes when this returns.
                     string faces = Path.Combine(stage, GmshGeoWriter.FacesFile);
                     string? facesText = File.Exists(faces) ? File.ReadAllText(faces) : null;
-                    string? named = facesText is null ? null : GmshGeoWriter.NameSurfaces(GmshErrorLines(logPath), facesText, lowering.Groups);
+                    var surfaceLines = GmshSurfaceLines(logPath);
+                    string? named = facesText is null ? null : GmshGeoWriter.NameSurfaces(surfaceLines, facesText, lowering.Groups);
                     return new(false, false, false,
                         $"Gmsh failed (exit code {run.ExitCode}). Its own words: {GmshErrors(logPath, run.Tail)} " +
                         (named is null ? "" : named + " ") + $"The full log is {logPath}.")
-                    { Place = facesText is null ? null : GmshGeoWriter.SurfacePlace(GmshErrorLines(logPath), facesText) };
+                    { Place = facesText is null ? null : GmshGeoWriter.SurfacePlace(surfaceLines, facesText) };
                 }
                 foreach (string produced in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
                     if (File.Exists(Path.Combine(stage, produced)))
@@ -1450,6 +1451,21 @@ public static class PalaceRun
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         return [];
+    }
+
+    /// <summary>
+    /// The lines to name objects from: the errors, and when they name no surface ("Could not recover boundary mesh: error 2"), the
+    /// surfaces it left empty, spelled as an error spells them. An empty surface is what the 3D stage then failed on.
+    /// </summary>
+    internal static IReadOnlyList<string> GmshSurfaceLines(string logPath)
+    {
+        var errors = GmshErrorLines(logPath);
+        if (errors.Any(l => l.Contains("surface ", StringComparison.Ordinal))) return errors;
+        var empty = GmshWarningLines(logPath)
+            .Where(l => l.Contains("No elements in surface ", StringComparison.Ordinal))
+            .SelectMany(l => l[(l.IndexOf("surface ", StringComparison.Ordinal) + 8)..].Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Select(tag => $"surface {tag}");
+        return [.. errors, .. empty];
     }
 
     /// <summary>brief-dfr35-1 R-dfr35-1-5 — the distinct <c>Warning</c> lines of a Gmsh log, or none when it cannot be read.</summary>

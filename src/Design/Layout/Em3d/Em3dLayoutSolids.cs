@@ -877,7 +877,7 @@ public static class Em3dLayoutSolids
                                                  Extrude(poly, p.ZBottom, p.ZTop), order));
                 }
             }
-            if (_robust.Removed > 0 || _robust.Snapped > 0)
+            if (_robust.Removed > 0 || _robust.Snapped > 0 || _robust.Touches > 0)
                 Notes.Add(RobustNote(_robust));
             int sheetCount = Bands.Where(b => Pieces.ContainsKey(b.Index)).Sum(b => Pieces[b.Index].Count(p => p.IsSheet && !p.IsFilm));
             if (sheetCount > 0 && options.Conductors == Em3dConductorMode.Sheets)
@@ -1551,8 +1551,10 @@ public static class Em3dLayoutSolids
             IReadOnlyList<EmPoint> Clean(IReadOnlyList<EmPoint> ring) => Em3dOutlineCleanup.Clean(
                 Em3dOutlineCleanup.Snap(ring, q => (q.X, q.Y), (x, y) => new EmPoint(x, y), tol, edges, _robust),
                 q => (q.X, q.Y), tol, _robust, edges);
-            var outer = Clean(poly.Outer);
-            var holes = poly.HoleRings.Select(Clean).ToList();
+            IReadOnlyList<IReadOnlyList<EmPoint>> rings = [Clean(poly.Outer), .. poly.HoleRings.Select(Clean)];
+            rings = Em3dOutlineCleanup.OpenTouches(rings, q => (q.X, q.Y), (x, y) => new EmPoint(x, y), tol, _robust);
+            var outer = rings[0];
+            var holes = rings.Skip(1).ToList();
             return ReferenceEquals(outer, poly.Outer) && holes.Zip(poly.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
                 ? poly : new PlanarPolygon(outer, poly.Holes is null ? null : holes);
         }
@@ -1602,7 +1604,9 @@ public static class Em3dLayoutSolids
             (s.Snapped > 0 ? $", and moved {s.Snapped:N0} that lay as close to the board's edge (or a dielectric film's) onto it" : "") +
             $"; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm." +
             (s.Spikes > 0 ? $" It also cut off {s.Spikes:N0} zero-width spike{(s.Spikes == 1 ? "" : "s")} where an outline ran out and straight back, " +
-                            $"holding no copper; the longest reached {Fmt(s.LongestSpikeM * 1e6)} µm." : "");
+                            $"holding no copper; the longest reached {Fmt(s.LongestSpikeM * 1e6)} µm." : "") +
+            (s.Touches > 0 ? $" It also moved {s.Touches:N0} corner{(s.Touches == 1 ? "" : "s")} off {(s.Touches == 1 ? "a stretch" : "stretches")} of the same object's " +
+                             "outline, such as a hole touching its pour's edge at one point, which the mesher cannot cross." : "");
 
         private static Em3dExtrudedPolygon Extrude(PlanarPolygon p, double z0, double z1)
             => new(Ring(p.Outer), [.. p.HoleRings.Select(Ring)], z0, z1);
