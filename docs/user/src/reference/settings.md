@@ -95,6 +95,13 @@ enough to leave on depends on **your** graphics card, not on the design. A desig
 machine sends you opens the way you have chosen here. The look itself — environment, exposure, edges,
 grid — *is* saved in each design, so turning the view on shows it the way it was set up.
 
+**Software 3D without GPU interop** (Linux only) decides what a 3D view does where the window cannot show
+the graphics card's frames directly — a remote desktop, a virtual machine, a session without GPU acceleration.
+On, the default, the view copies each frame back and draws it in software: slower, but it draws. Off, the view
+says it cannot draw there and names this setting. It takes effect the next time a 3D view opens, or when you
+press the view's **Reconnect**. On Windows and macOS the 3D view has no software path, so the setting is not
+shown there.
+
 ### Copy / Export
 
 | Control | What it does |

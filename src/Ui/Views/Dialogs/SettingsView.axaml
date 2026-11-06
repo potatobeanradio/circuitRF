@@ -151,7 +151,8 @@
                              carries both variants and the two compose), and whether a .c3d opens in the realistic
                              view, which is a property of this machine's GPU rather than of the design
                              (Realistic3DPreference), and likewise whether a 3D view with no usable GPU interop draws
-                             in software (View3DSoftwarePresent). The theme buttons are radio buttons in the Layout Editor's
+                             in software (View3DSoftwarePresent; Linux only, the one renderer that can, so the
+                             macOS-generated settings figure is unchanged). The theme buttons are radio buttons in the Layout Editor's
                              toolbar-button clothes; SyncThemeButtons sets the active one's Button.ToolActive. -->
                         <Border Grid.Row="0" Grid.Column="2" Classes="group">
                             <StackPanel Spacing="6">
@@ -177,7 +178,7 @@
                                           Content="Open 3D designs in realistic view"
                                           IsCheckedChanged="OnRealisticOnOpenChanged"
                                           ToolTip.Tip="Opens every 3D design with the realistic view already on, as if you had pressed its toolbar button. The look itself — environment, exposure, edges, grid — is saved in each design. Leave this off on a machine whose graphics card makes the realistic view slow; the toolbar button still turns it on for one design."/>
-                                <CheckBox  Name="SoftwarePresentCheck" FontSize="12"
+                                <CheckBox  Name="SoftwarePresentCheck" FontSize="12" IsVisible="{OnPlatform False, Linux=True}"
                                           Content="Software 3D without GPU interop"
                                           IsCheckedChanged="OnSoftwarePresentChanged"
                                           ToolTip.Tip="Where the window cannot show the graphics card's 3D frames directly — a remote desktop, a virtual machine, a session without GPU acceleration — copies each frame back and draws it in software, more slowly. Turn it off to have the 3D view say so instead. Takes effect when a 3D view next opens."/>
