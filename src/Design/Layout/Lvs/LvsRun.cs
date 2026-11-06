@@ -281,7 +281,9 @@ public static class LvsRun
             (techRef, subLayoutDir) => TechnologyResolver.ResolveForDocument(
                 techRef, Path.Combine(subLayoutDir, "x.clay"), null, techCache).Resolution,
             schematicNetlist.Devices.Select(d => d.Path).ToHashSet(StringComparer.Ordinal),
-            level, wbonds, schematicParts);
+            level, wbonds, schematicParts,
+            schematic.Components.Where(c => c.Disable == DisableState.Open && c.InstanceName is { Length: > 0 })
+                                .Select(c => c.InstanceName!).ToHashSet(StringComparer.Ordinal));
         control?.ThrowIfCancellationRequested();
 
         control?.BeginStage("Reducing");

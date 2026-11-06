@@ -342,6 +342,13 @@ internal static class CliDiagnostics
         "em: --device takes auto, cpu or gpu, not '{value}'.",
         ("value", value));
 
+    /// <summary><c>em --cores</c>: not a whole number of at least 1. One past this machine's cores is the run's own refusal.</summary>
+    public static Diagnostic EmCores(string value) => Diagnostic.Create(
+        "cli.em.cores",
+        DiagnosticSeverity.Error,
+        "em: --cores takes a whole number of at least 1, not '{value}'.",
+        ("value", value));
+
     /// <summary>brief-emi-10 R-emi10-4 — <c>em --memory-limit</c>: not a number, not positive, or not below this machine's
     /// memory (the panel refuses it with the same sentence).</summary>
     public static Diagnostic EmMemoryLimit(string why) => Diagnostic.Create(

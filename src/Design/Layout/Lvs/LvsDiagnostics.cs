@@ -31,6 +31,12 @@ public static class LvsDiagnostics
         + "these are distinct nothing that matches by name can be trusted.",
         ("designator", designator), ("count", count));
 
+    /// <summary>A footprint whose schematic part is marked Open: an unfitted site, which is a note rather than a layout-only part.</summary>
+    public static Diagnostic NotFitted(string path) => Diagnostic.Create(
+        "lvs.device.not-fitted", DiagnosticSeverity.Info,
+        "'{path}' is marked Open in the schematic, so it is taken as not fitted and is not compared. Its pads are still copper.",
+        ("path", path));
+
     /// <summary>R-lvs3-3d. A proposed pairing whose other half is gone.</summary>
     public static Diagnostic DanglingSchematicId(string path, string schematicId) => Diagnostic.Create(
         "lvs.device.dangling-schematic-id", DiagnosticSeverity.Warning,

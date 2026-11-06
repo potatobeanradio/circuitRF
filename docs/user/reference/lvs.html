@@ -114,6 +114,7 @@ exists in the process and nowhere in your artwork. LVS reads that connection, an
 run that relies on it</b>, naming the stackup entry and how many vias reached ground through it. It is
 the one inference in the whole extraction that you cannot check by looking at your own screen.</p>
 </div>
+<p><strong>A part left off the board.</strong> A footprint whose schematic part has <strong>Disable</strong> set to <em>Open</em> is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.</p>
 <h2 id="window">Running it from the window</h2>
 <p>Open the cell's <strong>layout</strong> view, then <strong>View › Panels › LVS</strong>. The panel is not in either
 shipped default layout, because it needs a cell with both views drawn and most documents being edited do
@@ -271,6 +272,10 @@ indices, and never a coordinate where a name exists. These are the ones you will
 <tr>
 <td><code>lvs.device.type-mismatch</code></td>
 <td>Both sides have it, and they disagree about what it is</td>
+</tr>
+<tr>
+<td><code>lvs.device.not-fitted</code></td>
+<td>A footprint whose schematic part is marked Open: not compared, and a note rather than a fault</td>
 </tr>
 <tr>
 <td><code>lvs.device.turned</code></td>

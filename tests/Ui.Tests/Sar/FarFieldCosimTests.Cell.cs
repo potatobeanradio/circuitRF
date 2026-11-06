@@ -79,7 +79,7 @@ public sealed partial class FarFieldCosimTests
 
         string display = Directory.EnumerateFiles(_dir, "*.cdd", SearchOption.AllDirectories).Single();
         var plots = JsonSerializer.Deserialize<DataDisplayConfig>(File.ReadAllText(display))!.Tabs[0].Plots;
-        Assert.Equal([PlotType.Rect, PlotType.Polar, PlotType.Table], plots.Select(p => p.PlotType));
+        Assert.Equal([PlotType.Rect, PlotType.Polar, PlotType.Polar, PlotType.Table], plots.Select(p => p.PlotType));
         foreach (var trace in plots.SelectMany(p => p.Traces))
             Assert.Equal(run.GroupedResults![trace.CubeName!].Axes.Select(a => a.Name), trace.CubeSlice.Select(a => a.AxisName));
 

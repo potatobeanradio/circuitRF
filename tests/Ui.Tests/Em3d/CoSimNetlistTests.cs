@@ -65,6 +65,26 @@ public sealed class CoSimNetlistTests : IDisposable
         Assert.NotNull(netlist);
     }
 
+    /// <summary>A part the schematic marks Open or Short has no value to guess: it is a port left open, or a shorted one, never a placeholder.</summary>
+    [Fact]
+    public void APartMarkedOpenOrShort_IsNoPlaceholder()
+    {
+        var ports = new List<EmCoSimPort> { new(1, "P1", "50", null), new(2, "C1", "50", Component("C1")), new(3, "L1", "50", Component("L1")) };
+        var models = new EmCoSimModels(new Dictionary<string, Instance>(), null, null)
+        {
+            Open = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "C1" },
+            Shorted = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "L1" },
+        };
+        var setup = new EmSetup { Name = "board Driven", Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz") };
+
+        string text = EmCoSimNetlist.Text(setup, "results/board.s3p", ports, models);
+        string[] lines = [.. text.Split('\n').Select(l => System.Text.RegularExpressions.Regex.Replace(l.Trim(), @"\s+", " "))];
+
+        Assert.Contains("Short:L1 p3 0", lines);
+        Assert.DoesNotContain(lines, l => l.StartsWith("C:C1", StringComparison.Ordinal) || l.Contains("_value", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.StartsWith("; C1 is Open in the board's schematic", StringComparison.Ordinal));
+    }
+
     private static C3dComponentPort Component(string refdes)
         => new(refdes, "1", "2", new C3dPort { Name = refdes }, 300e-6, 500e-6, true, [], null, false) { PartPins = ["1", "2"] };
 

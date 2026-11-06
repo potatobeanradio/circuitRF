@@ -842,3 +842,23 @@ default fixed format a capacitance in farads prints as 0.000. Scaling in the tra
 table still reads 0.000. Not changed here. The table is stored at its minimum size, each column fitted to its header
 and cells, and the box to the columns and rows, as a double-click on the gripper sizes it
 (`CapacitanceExamplesAuthoring.PadAndLineTableAtItsMinimumSize`, run against a fresh result).
+
+
+## Antenna Co-Simulation: one layer, no vias, five frequencies (2026-11-05)
+
+Added to show EM Field Data plotting a pattern from a schematic, on a board much cheaper than a real one of the same outline.
+
+**Which solver.** Palace at order 2 took 2 min 44 s for ONE frequency on 68,085 tets with all ten processes. EMerge at Accurate took 2 min 45 s for FIVE on 81,547 tets. Five stored frequencies decided it. The README tables EMerge against Palace at 868 MHz: S11 within 0.05 dB as drawn and 3 dB at the match, and EMerge's gain about 0.6 dB higher, as `antennas.md` warns its far field reads.
+
+**The meander's length is what sets the match, and a first guess was badly off.** The first length tried, 148 mm, is near a parallel resonance at 868 MHz, which no L-network in range could match. At the Standard preset, 106 mm puts the series resonance near 790 MHz and 85 mm near 880 MHz. At Accurate, 98 mm leaves 868 MHz just above it, at about 20 + j33 Ω at the port with the inductor shorted.
+
+**Component ports need solid conductors.** With `Conductors: Sheets`, every pad is refused as landing on no conductor. The setup stays at Auto, which makes 35 µm copper a solid at this frequency.
+
+**A swept variable cannot also be optimized, and a swept analysis cannot be read by a scalar goal.** So the sweep drives `dL`, an offset added to `Lser`, and `F3` exists apart from `F1`. `dL` is limited to 2 nH each way so that the inductor stays positive at the optimizer's 2.57 nH.
+
+**The stackup marks Top Copper as the ground reference.** A one-layer board has no other conductor, and with none marked `check` warns about microstrip parts the board does not use.
+
+Gates: `tests/Ui.Tests/Examples/AntennaCoSimExampleTests.cs`, and `ExampleWorkspacesTests`, whose result-name check had not been told that an EM Field Data block names a `.cemr`.
+
+**Connecting the schematic is what let `lvs` run on it, and that exposed a false error.** `C2` is drawn with **Disable** Open and its land pattern is on the board, so `lvs` reported a layout part with no counterpart. An unfitted site is an ordinary thing to build, so `lvs.device.not-fitted` reports it as a note and the pads stay copper. A P1 label added to the layout changes no solve, since a 3D view takes no port labels from a layout it places: the mesh and ports came out the same, and S magnitudes agreed to 2e-7.
+

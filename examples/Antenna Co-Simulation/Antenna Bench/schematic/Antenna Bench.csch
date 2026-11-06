@@ -1,0 +1,408 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Antenna Bench",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "EM1",
+      "Symbol": "EmFieldData",
+      "X": 1000,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "4",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "results/Meander Antenna Pattern.emerge.cemr",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          430,
+          -289
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P1",
+      "Symbol": "Term",
+      "X": 200,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 1600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "Cshunt",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C2",
+      "Symbol": "Capacitor",
+      "X": 1600,
+      "Y": -300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "Open",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "0.1",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Inductor",
+      "X": 200,
+      "Y": -300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "Lser+dL",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 200,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 1600,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 1600,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 200,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 1000,
+      "Y": -1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Lser",
+          "Expression": "10",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "dL",
+          "Expression": "0",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Cshunt",
+          "Expression": "2.7",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          900,
+          200
+        ],
+        [
+          900,
+          500
+        ],
+        [
+          200,
+          500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          200
+        ],
+        [
+          1100,
+          500
+        ],
+        [
+          1600,
+          500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          -200
+        ],
+        [
+          1100,
+          -500
+        ],
+        [
+          1600,
+          -500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          -200
+        ],
+        [
+          900,
+          -500
+        ],
+        [
+          200,
+          -500
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "828",
+          "StopExpr": "908",
+          "NumPoints": 41,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "MHz",
+          "StopUnit": "MHz"
+        }
+      ]
+    },
+    {
+      "Type": "fields",
+      "Name": "F1",
+      "Enabled": true,
+      "FieldsBlock": "EM1",
+      "FieldsFreqExpr": "868",
+      "FieldsFreqUnit": "MHz",
+      "FieldsDriveExpr": "1",
+      "FieldsNorm": "available",
+      "FieldsAverageExpr": "no"
+    },
+    {
+      "Type": "fields",
+      "Name": "F2",
+      "Enabled": true,
+      "FieldsBlock": "EM1",
+      "FieldsFreqExpr": "all",
+      "FieldsFreqUnit": "MHz",
+      "FieldsDriveExpr": "1",
+      "FieldsNorm": "available",
+      "FieldsAverageExpr": "no"
+    },
+    {
+      "Type": "fields",
+      "Name": "F3",
+      "Enabled": true,
+      "FieldsBlock": "EM1",
+      "FieldsFreqExpr": "868",
+      "FieldsFreqUnit": "MHz",
+      "FieldsDriveExpr": "1",
+      "FieldsNorm": "available",
+      "FieldsAverageExpr": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "F3_sweep_dL",
+      "Enabled": true,
+      "PsaVarName": "dL",
+      "PsaInnerName": "F3",
+      "PsaMode": "PointCount",
+      "PsaStart": -2.0,
+      "PsaStop": 2.0,
+      "PsaStepOrCount": 5,
+      "PsaKind": "Linear",
+      "PsaUnit": "nH"
+    }
+  ],
+  "Tuning": {
+    "Variables": [
+      {
+        "Key": "Lser",
+        "Tune": true,
+        "Opt": true,
+        "Min": "1 nH",
+        "Max": "30 nH"
+      },
+      {
+        "Key": "Cshunt",
+        "Tune": true,
+        "Opt": true,
+        "Min": "0.2 pF",
+        "Max": "10 pF"
+      }
+    ],
+    "Goals": [
+      {
+        "Name": "Match",
+        "Expression": "dB(SP1.S(1,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "868 MHz",
+          "Hi": "868 MHz"
+        },
+        "Type": "Le",
+        "Limit": "-15",
+        "Weight": 1,
+        "Enabled": true
+      },
+      {
+        "Name": "Gain",
+        "Expression": "RealizedGainDbi(F1)",
+        "Analysis": "F1",
+        "Type": "Ge",
+        "Limit": "1.5",
+        "Weight": 1,
+        "Enabled": true
+      }
+    ],
+    "Optimizer": {
+      "Algorithm": "simplex",
+      "Seed": 1
+    }
+  }
+}

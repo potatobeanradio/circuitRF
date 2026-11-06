@@ -438,11 +438,14 @@ public static class C3dComponentPorts
         var hasModel = projection.HasSchematic
             ? projection.Parts.ToDictionary(p => p.Refdes, p => p.Value is not null || p.Description is not null, StringComparer.OrdinalIgnoreCase)
             : null;
+        // A part the schematic marks Open or Short has no value to want: the netlist leaves its port open or shorts it.
+        var marked = Layout.Em.EmCoSimNetlist.ModelsFor(frame.DocumentPath);
         var parts = new List<Part>();
         foreach (var group in projection.Pads.Where(p => p.Refdes is { Length: > 0 }).GroupBy(p => p.Refdes!, StringComparer.OrdinalIgnoreCase))
         {
             string rd = group.Key;
             bool? model = hasModel is null ? false : hasModel.TryGetValue(rd, out bool m) ? m : false;
+            if (model == false && (marked.Open.Contains(rd) || marked.Shorted.Contains(rd))) model = true;
             var inst = view.Instances.FirstOrDefault(i => string.Equals(i.DisplayRefDes, rd, StringComparison.OrdinalIgnoreCase));
             if (!upright) { parts.Add(new Part(rd, frame, [], $"{rd}'s layout is placed tilted in this 3D view; component ports are built on a layout lying flat.", model)); continue; }
             if (inst is null) continue;

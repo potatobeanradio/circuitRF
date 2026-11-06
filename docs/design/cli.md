@@ -651,6 +651,11 @@ the one Settings ▸ Solvers shows. A process stopped at the ceiling or below th
 decision O2), never the floor. `explain` reports the ceiling and the floor a run would keep, and takes the same flag
 (`cli.explain.memory-limit`). The MCP `run` and `explain` tools spell it `memoryLimitGB`.
 
+**`--cores <n>`** is the headless spelling of Settings ▸ Solvers ▸ Cores for this run: it reaches `EmRunService.Run` as the
+same argument the GUI fills from `em_max_cores`, so one past this machine's physical cores gets the run's own refusal. Until
+it existed a run's memory refusal advised fewer processes and nothing headless could take that advice, since the preference
+file belongs to `src/Ui`. The MCP `run` tool spells it `cores`.
+
 **A 3D result carries its solver in its name** (em-3d.md §4.5), so running a second solver on one setup
 never overwrites the first: `<key>.palace.sNp`, the `.npy` key `<key>.palace_em`, and a run directory
 `results/<key>.palace/` that is **kept** — the `.geo` script, the mesh and its SHA-256, `groups.json`

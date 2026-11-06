@@ -28641,3 +28641,31 @@ A mode's frequency is b × f/s. **Its Q is |a+bi|/2|a|, not b/2|a|**: the two ag
 **Air box edits, measured on the two field boards in the Debug build with an idle machine:** about 0.6 s from the edit to the adopted scene, and the box, the panel's figure and the modelled extent agree to the micrometre on every face tried (`zmax`, `xmin`, `ymin`). The drawn box is `RecordsView.Box` and the panel reads the distance from that same box, so they cannot differ once a scene is adopted. Between the edit and the adoption the view still shows the old box, which on a machine with every core in a solve can be long. A mismatch that outlasts adoption has not been reproduced.
 
 **An imported dielectric with no Material is not empty.** The row's own εr and tanδ are what the solve uses; the Material column is blank because no artwork names a laminate, by the rule in `GerberStackupMapping` (R-gi2-5). Nothing was changed.
+
+## A 95 mm board with 324 vias: what one frequency costs on 17 GB (2026-11-05)
+
+Palace, 868 MHz, four ports, a two-layer 45 × 95 mm antenna board whose top and bottom copper are stitched by 324 vias of 0.2 mm. A 10-core Mac with 17 GB.
+
+| Run | Tets | Unknowns | Processes | Time | Footprint | Palace's own peak | |
+|---|---|---|---|---|---|---|---|
+| Order 1, air λ/10, box 86 mm | 475,064 | 757,527 | 10 | stopped at 32 s | 14.7 GB (a 14 GB limit) | | |
+| the same | 475,064 | 757,527 | 4 | stopped on port 3 | 15.2 GB (a 15 GB limit) | | |
+| the same | 475,064 | 757,527 | 3 | 3 min 19 s | 15.9 GB | 7.4 GB | power balance 104.2 % |
+| Order 1, air λ/20, box 86 mm | 538,281 | 837,879 | 3 | 4 min 34 s | 17.4 GB | 6.3 GB | 100.5 % |
+| Order 1, air λ/20, box 170 mm | 580,332 | 890,274 | 3 | 7 min 12 s | | 6.4 GB | 84.9 % |
+| Order 2, air λ/10, box 86 mm | 475,064 | 3,675,192 | 3 | stopped at 18 min on port 1 | 26 GB (a watchdog) | | |
+
+- **Palace's own peak is about half the footprint the limit is held against.** Its table is built from resident size, which stops growing once the system compresses or swaps pages. Resident size was 0.9 GB a rank with 5.3 GB of footprint. Neither figure is wrong, but a run's report of 6.4 GB does not mean 8 GB of memory is enough.
+- **The element size at metal has almost no effect on this board.** `EdgeRefinement` 0.2, 0.4 and 0.7 gave 475, 459 and 454 thousand tets, because the vias set the mesh. So order 2 cannot be paid for by coarsening: its unknowns scale with this same mesh.
+- **Order 2's Krylov basis is the memory that grows.** Each GMRES iteration at 3.68 M complex unknowns adds about 59 MB, and it had reached a relative residual of about 4e-6 after 100 iterations against a tolerance of 1e-8.
+- **The default λ/4 air box passes the power balance and is still too small for gain.** Padding of 86, 130 and 170 mm read efficiency 100.5, 90.9, 84.9 % and gain 2.09, 1.51, 1.25 dBi with S11 −3.24, −3.16, −3.25 dB and directivity 2.07, 1.93, 1.96 dBi. It has not converged at 170 mm. The run's power check is an upper limit, 103 %, and cannot see an efficiency that reads high by less than that.
+- **The air's element size moved S11.** λ/10 to λ/20 at the same box moved S11 from −4.15 to −3.24 dB, about 11 Ω of reactance at the parts' plane, on a board whose metal mesh did not change.
+- **A narrow sweep costs little more than one frequency.** 700-1000 MHz in 31 points on the λ/20 mesh took 12 min 18 s by the adaptive sweep. The earlier 0.5-8 GHz setup on 2 processes had reached 48 solves when it was stopped at 2 hours.
+
+**A part marked Open in the board's schematic became a placeholder.** `NetExtractor` omits a part disabled Open or Short, so `EmCoSimNetlist.ModelsFor` found no model and wrote a 1 nH or 1 pF variable across a pad the board leaves unfitted, with a warning asking for a model. `EmCoSimModels` now carries both sets: an Open part leaves its port open, a Short part puts a `Short` across it, each with a comment, and `C3dComponentPorts` no longer warns about either.
+
+**A value typed with spaces could not cross the netlist.** `L=Lser + dL` in a schematic was refused when read back, since a `.cnl` is whitespace-delimited and the tail read as a unit. Quoting makes a string, so `CnlWriter` drops the spaces instead. A string literal keeps its own.
+
+**The generated pattern display showed one cut and a plot with one point.** φ = 0 on a board along y is the plane with no null, a plain circle. It now draws φ = 0 and φ = 90 and a table of S11, realized gain, gain and directivity. A run of one frequency gets no S11 curve. Its rings say `dB re peak`, because U there is per volt at the drive and the plot is normalised to its own peak.
+
+Gates: `tests/Ui.Tests/Em3d/CoSimNetlistTests.cs`, `tests/Core.Tests/Netlist/CnlWriterTests.cs`, `tests/Ui.Tests/Sar/FarFieldCosimTests.Cell.cs`.

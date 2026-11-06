@@ -1,0 +1,655 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "Antenna Bench.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Match and pattern",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 520,
+          "Height": 320,
+          "PlotType": "Rect",
+          "FreqUnit": "MHz",
+          "CustomTitle": "S11",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "SP1.S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Label": "dB(S(1,1))",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        },
+        {
+          "Left": 540,
+          "Top": 0,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Polar",
+          "FreqUnit": "MHz",
+          "CustomTitle": "YZ plane (phi = 90)",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.U",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "theta",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "phi",
+                  "Role": "PinToIndex",
+                  "Index": 90,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB10",
+              "Label": "dB(U)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "PatternWholePlane": true
+            }
+          ],
+          "PolarRadial": "Db",
+          "PolarDbUnit": "dB re peak"
+        },
+        {
+          "Left": 970,
+          "Top": 0,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Polar",
+          "FreqUnit": "MHz",
+          "CustomTitle": "XZ plane (phi = 0)",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.U",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "theta",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "phi",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB10",
+              "Label": "dB(U)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "PatternWholePlane": true
+            }
+          ],
+          "PolarRadial": "Db",
+          "PolarDbUnit": "dB re peak"
+        },
+        {
+          "Left": 0,
+          "Top": 440,
+          "Width": 1000,
+          "Height": 100,
+          "PlotType": "Table",
+          "FreqUnit": "MHz",
+          "CustomTitle": "",
+          "CustomTitleOn": false,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Label": "S11 (dB)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "ColumnWidth": 170
+            },
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.RealizedGainDbi",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Realized gain (dBi)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "ColumnWidth": 170
+            },
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.GainDbi",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Gain (dBi)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "ColumnWidth": 170
+            },
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.DirectivityDbi",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Directivity (dBi)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "ColumnWidth": 170
+            },
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F1.farfield.RadiationEfficiency",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Efficiency (%)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "ColumnWidth": 170
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Across the band",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Polar",
+          "FreqUnit": "MHz",
+          "CustomTitle": "YZ plane at each stored frequency",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F2.farfield.U",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "FamilyIterate",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "theta",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "phi",
+                  "Role": "PinToIndex",
+                  "Index": 90,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB10",
+              "Label": "dB(U)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "PatternWholePlane": true
+            }
+          ],
+          "PolarRadial": "Db",
+          "PolarDbUnit": "dB re peak"
+        },
+        {
+          "Left": 440,
+          "Top": 0,
+          "Width": 520,
+          "Height": 320,
+          "PlotType": "Rect",
+          "FreqUnit": "MHz",
+          "CustomTitle": "Realized gain",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F2.farfield.RealizedGainDbi",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Realized gain (dBi)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": true,
+                "MarkerSize": 3,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dBi",
+          "CustomYLabelOn": true
+        }
+      ]
+    },
+    {
+      "Name": "Inductor error",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Polar",
+          "FreqUnit": "MHz",
+          "CustomTitle": "YZ plane per volt at the feed",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F3.farfield.U",
+              "CubeSlice": [
+                {
+                  "AxisName": "dL",
+                  "Role": "FamilyIterate",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "freq",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "theta",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "phi",
+                  "Role": "PinToIndex",
+                  "Index": 90,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB10",
+              "Label": "dB(U)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              },
+              "PatternWholePlane": true
+            }
+          ],
+          "PolarRadial": "Db",
+          "PolarDbUnit": "dB re peak"
+        },
+        {
+          "Left": 440,
+          "Top": 0,
+          "Width": 520,
+          "Height": 320,
+          "PlotType": "Rect",
+          "FreqUnit": "MHz",
+          "CustomTitle": "Realized gain against the inductor's error",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Antenna Bench.npy",
+              "CubeName": "F3.farfield.RealizedGainDbi",
+              "CubeSlice": [
+                {
+                  "AxisName": "dL",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "freq",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "port",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "Label": "Realized gain (dBi)",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": true,
+                "MarkerSize": 3,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dBi",
+          "CustomYLabelOn": true
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

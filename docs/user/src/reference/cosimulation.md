@@ -21,7 +21,7 @@ for a yield trial — in about a second and with no EM run.
 
 The worked example is **SAR: MRI Loop Coil** (*File ▸ New ▸ Examples*): a 7 T loop with four ports, matched and optimized
 against S11, B1 and psSAR goals in 4 s. What B1 and SAR are, and their units, is [SAR and B1](sar.html). An antenna board with parts on it works the same way: see
-[The radiation pattern](#pattern).
+[The radiation pattern](#pattern), and the **Antenna Co-Simulation** example.
 
 ## 1. The EM side: ports for capacitors, fields kept {#em}
 
@@ -173,6 +173,8 @@ A cell of that name is **never overwritten**: edit it freely and run the setup a
 nor a field set gets an SnP in place of the block. A run with no component ports makes the `_sim` cell described under
 [A schematic to start from](em-setup.html#snp-schematic).
 
+The worked example is **Antenna Co-Simulation** (*File ▸ New ▸ Examples*): a meander antenna solved once at five frequencies, then matched by the optimizer, with its pattern compared across the band and against an inductor's error.
+
 To wire a circuit by hand, place an EM Field Data block as in [The schematic side](#schematic) and add a Fields analysis. `RealizedGainDbi(F1)`,
 `GainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` read the pattern in a `measure` or `goal` line.
 
@@ -209,6 +211,8 @@ Any **shunt branch in the file does not reach the board's ground plane**: port 1
 pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the 3D model, and so is their capacitance to the plane.
 
 **The part's body is not in the 3D model**, with this method or any other that uses a gap port.
+
+**A part not fitted.** A part whose **Disable** is *Open* in the board's schematic leaves its port open in the generated netlist and cell, and one set to *Short* shorts its port. Neither gets a placeholder value.
 
 ### Frequencies {#frequencies}
 
@@ -249,4 +253,5 @@ reads what it read.
   Its gain and pattern are within what the method asks, and its S11 across a change of load needs a fine port edge mesh: an `EdgeRefinement` of 0.02 gives 7.5e-4.
 - **Near a resonance** (6.5 nH and 0.05 pF on the same dipole), Palace agrees to 0.009 dB and 1.6e-3 in S11 on its own mesh. Draft and Standard disagree with each other
   by far more than that: these comparisons show the method is right, not that the mesh is. A radiating dipole is a mild case, and a sharper resonance has not been measured.
+- **The air box moves gain and efficiency more than S11.** On a 95 mm board at 868 MHz with first-order Palace elements, padding of 86, 130 and 170 mm read efficiency 100.5, 90.9 and 84.9 % and gain 2.09, 1.51 and 1.25 dBi, while S11 stayed within 0.1 dB and directivity within 0.15 dB. λ/4 passed the run's own power balance and was still too small. Check a pattern's gain at a second box size.
 - **A cylindrical grid's** field set recombines as a Cartesian one does, but its volumes are not drawn in the 3D view.

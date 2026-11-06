@@ -22,6 +22,20 @@ public class CnlWriterTests
         return tb2;
     }
 
+    /// <summary>A value typed with spaces reads back as the same expression: the format is whitespace-delimited, so the tail would otherwise be read as a unit.</summary>
+    [Fact]
+    public void AnExpressionWithSpaces_ReadsBackAsAnExpression()
+    {
+        var tb = new TestBench("test");
+        tb.GlobalVariables.Add(new Variable("A", "1", "nH"));
+        tb.GlobalVariables.Add(new Variable("B", "2", "nH"));
+        tb.Instances.Add(new Instance("L1", "L", ["a", "0"], [new ParameterAssignment("L", "A + B")]));
+
+        var read = RoundTrip(tb).Instances.Single(i => i.InstanceName == "L1").Overrides.Single(o => o.Name == "L");
+
+        Assert.Equal("A+B", read.Expression);
+    }
+
     // ── Test 1: standard instances, variables, measurement, raw directive ───
 
     [Fact]

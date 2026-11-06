@@ -213,6 +213,9 @@ internal static class Explain
             return JsonRun.Fail(CliDiagnostics.ExplainPathNotFound(path));
 
         var kind  = DocumentKinds.Classify(path);
+        int? placedRefusal = null;
+        using var placedCells = kind == DocumentKind.ThreeD ? GeneratedCells.PrepareThreeD(path, mayWrite: false, out placedRefusal) : null;
+        if (placedRefusal is { } refusedCells) return refusedCells;
         if (setupName is not null && kind != DocumentKind.ThreeD)
             return JsonRun.Fail(kind == DocumentKind.EmSetup ? CliDiagnostics.EmSetupOnCem(path)
                                                              : CliDiagnostics.SetupNotAThreeDView("explain", path));

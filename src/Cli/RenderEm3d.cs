@@ -75,6 +75,11 @@ internal static class RenderEm3d
 
     public static int Draw(string path, Request req)
     {
+        int? cellRefusal = null;
+        using var generated = DocumentKinds.Classify(Path.GetFullPath(path)) == DocumentKind.ThreeD
+            ? GeneratedCells.PrepareThreeD(path, mayWrite: false, out cellRefusal)
+            : null;
+        if (cellRefusal is { } refused) return refused;
         if (req.Inapplicable is { } option) return JsonRun.Fail(CliDiagnostics.RenderEm3dNotApplicable(option));
         // brief-em3d-110 — a realistic picture's refusals come first: on a .cem every other answer would be about the wrong picture
         if (req.Realistic && RenderEm3dRealistic.Refusal(path, req) is { } notRealistic) return notRealistic;

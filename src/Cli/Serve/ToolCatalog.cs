@@ -710,6 +710,9 @@ internal static class ToolCatalog
                        + "are held to it: one reaching it is stopped and the run refused, writing nothing. A planar run's size "
                        + "is checked against it before anything is filled. Default: this machine's memory; a run started "
                        + "with force past its size check keeps none."),
+                     new("cores", "--cores", OptKind.Integer,
+                         "How many Palace processes or solver threads this run may use: Settings ▸ Solvers ▸ Cores for this run only. "
+                       + "Fewer processes take less memory and solve more slowly. Default: one per physical core."),
                      new("component", "--component", OptKind.Str,
                          "Extract one built-in component's drawn part instead of a .cem: its type and parameters as on a "
                        + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "

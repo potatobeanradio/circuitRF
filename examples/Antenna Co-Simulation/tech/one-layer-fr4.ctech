@@ -1,0 +1,156 @@
+{
+  "FormatVersion": 1,
+  "Name": "one-layer-fr4",
+  "DefaultDisplayUnit": "Mm",
+  "DefaultSnapDbu": 0,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 0,
+      "Purpose": "conductor",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Courtyard",
+      "Color": {
+        "r": 120,
+        "g": 120,
+        "b": 120,
+        "a": 255
+      },
+      "FillOpacity": 0.2,
+      "ZOrder": 900,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.CrtYd"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Silk Top",
+      "Color": {
+        "r": 242,
+        "g": 242,
+        "b": 242,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1004,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Top",
+      "Color": {
+        "r": 30,
+        "g": 107,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.2,
+      "ZOrder": 1005,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Paste Top",
+      "Color": {
+        "r": 207,
+        "g": 98,
+        "b": 217,
+        "a": 255
+      },
+      "FillOpacity": 0.2,
+      "ZOrder": 1006,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Paste"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Outline",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.05,
+      "ZOrder": 1003,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "FR-4",
+        "ThicknessDbu": 1600000,
+        "Epsr": 4.2,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      }
+    ]
+  },
+  "DrcRules": []
+}
