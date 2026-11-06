@@ -562,8 +562,8 @@ Model Composer chapter:
   temperatures — set `temp` in the bench to `T0` to run it at its own temperature. See
   [Temperature](model-composer.html#temperature).
 - **Self-heating** (`Thermal`) needs a `Range` model. See [Temperature](model-composer.html#temperature).
-- **Traps** (`Traps`) add the states `phi1` and `phi2` as inputs of `Id` and `Qd`. See
-  [Traps](model-composer.html#trap-data).
+- **Traps** (`Traps`) add one internal node per state, `phi1` for gate lag and `phi2` for drain lag, whose voltages are
+  inputs of `Id` and `Qd`. See [How traps work in the model](model-composer.html#trap-model).
 - **Dispersion** (`IdRF` and `Core.Dispersion`) is a second drain current that applies above `1/(2πτ)`.
 - **`Core.Symmetry: Exchange`** lets constituents written for `vds ≥ 0` serve negative `vds` too.
 

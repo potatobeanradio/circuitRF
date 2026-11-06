@@ -2180,7 +2180,8 @@ as the standard FET, with one warning.
 
 Ten switches turn one part of the model off on one instance — the intrinsic charge, its nonlinearity (all of it,
 or one capacitance at a time), gate lag, drain lag, self-heating and dispersion — without refitting anything:
-[Switching parts of the model off](model-composer.html#switches).
+[Switching parts of the model off](model-composer.html#switches). The model's architecture and its gate-lag and drain-lag
+networks are drawn in [How traps work in the model](model-composer.html#trap-model).
 
 {{table: components/ComposedFET}}
 

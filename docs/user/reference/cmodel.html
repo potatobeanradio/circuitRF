@@ -688,8 +688,8 @@ Model Composer chapter:</p>
 temperatures — set <code>temp</code> in the bench to <code>T0</code> to run it at its own temperature. See
 <a href="model-composer.html#temperature">Temperature</a>.</li>
 <li><strong>Self-heating</strong> (<code>Thermal</code>) needs a <code>Range</code> model. See <a href="model-composer.html#temperature">Temperature</a>.</li>
-<li><strong>Traps</strong> (<code>Traps</code>) add the states <code>phi1</code> and <code>phi2</code> as inputs of <code>Id</code> and <code>Qd</code>. See
-<a href="model-composer.html#trap-data">Traps</a>.</li>
+<li><strong>Traps</strong> (<code>Traps</code>) add one internal node per state, <code>phi1</code> for gate lag and <code>phi2</code> for drain lag, whose voltages are
+inputs of <code>Id</code> and <code>Qd</code>. See <a href="model-composer.html#trap-model">How traps work in the model</a>.</li>
 <li><strong>Dispersion</strong> (<code>IdRF</code> and <code>Core.Dispersion</code>) is a second drain current that applies above <code>1/(2πτ)</code>.</li>
 <li><strong><code>Core.Symmetry: Exchange</code></strong> lets constituents written for <code>vds ≥ 0</code> serve negative <code>vds</code> too.</li>
 </ul>
