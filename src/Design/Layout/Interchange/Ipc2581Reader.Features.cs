@@ -171,6 +171,14 @@ public sealed partial class Ipc2581Reader
                 sink.AddRange(islands);
                 _cutoutIslands.UnionWith(islands);
             }
+            else if (piece is Ipc2581Stroke { OutlineElement: true } outline && feature.Name.LocalName == "UserPrimitiveRef")
+            {
+                foreach (var shape in Ipc2581Shapes.Place(outline, xf, _flattenTolDbu))
+                {
+                    _primitiveOutlines[shape] = new PlacedOutline(outline.Line, xf);
+                    sink.Add(shape);
+                }
+            }
             else sink.AddRange(Ipc2581Shapes.Place(piece, xf, _flattenTolDbu));
         }
     }
@@ -234,7 +242,7 @@ public sealed partial class Ipc2581Reader
             {
                 var line = RequiredLine(element, scale);
                 var polygon = Child(element, "Polygon") ?? throw new FeatureError("no Polygon");
-                return [new Ipc2581Stroke(Ring(polygon, scale), line.Width, line.End, Closed: true)];
+                return [new Ipc2581Stroke(Ring(polygon, scale), line.Width, line.End, Closed: true, OutlineElement: true)];
             }
             case "Polygon":
                 return WithFill([new Ipc2581Region(Ring(element, scale), [])], element, scale);

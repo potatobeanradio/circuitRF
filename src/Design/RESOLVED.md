@@ -28476,6 +28476,21 @@ keeps and left others that holes do touch. Stopping a plane at a contour drawn a
 beyond that contour. A negative layer stays bounded by the profile, so a plane runs to the board's edge where film may hold it back
 by a setback the file does not state. A piece's lack of a net is no evidence either, because whole planes have none.
 
+**Why a plane's contour cannot bound it.** One exporter writes a plane's boundary as the cutout of a contour whose outer ring lies just
+outside it, and that cutout is the film's boundary vertex for vertex. Stopping at that ring accounts for the copper the film holds back
+along the edge and in the notches near it, but the film also keeps copper in rectangles on the breakaway rails, outside the ring. Those
+rectangles are written on every positive layer and on no plane layer, so the plane layer alone cannot give them. Borrowing them from
+another layer is a rule fitted to one board, with nothing in the file saying a plane shares them, and it was not added. Nothing is stated
+about the space outside the ring, so the profile still bounds the plane.
+
+**An Outline placed through a user primitive on a negative layer is filled, with no line.** The draft defines Outline as a closed shape
+with a line width, and the reader strokes it everywhere else. One exporter writes every flash symbol on its planes this way, at one line
+width whatever the symbol's size, and plotted film and the same design's third format both draw those symbols as their filled polygon
+with no line. Stroked, a small symbol clears twice its diameter and a large one leaves copper floating inside its clearance. The polygon
+is kept with the stroke when it is placed and swapped in when a negative layer resolves, because a layer's polarity can be declared after
+its features. An Outline written directly in a layer's features, and any Outline on a positive layer, stays the line it states, since
+nothing measured says otherwise. Each layer this touches says so in the import's messages.
+
 **Some files escape a net name twice**, so after the XML reader's pass a bus bit still reads `D&lt;3&gt;`. `NetName` undoes the second
 pass, and every use of a net name, pin lists and hole nets included, goes through it.
 

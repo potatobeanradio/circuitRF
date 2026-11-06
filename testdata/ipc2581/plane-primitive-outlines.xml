@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by hand for the reader's tests. A 20 x 10 board with two user primitives written as Outline elements, the way a
+     plane's flash symbols are: SQUARE, x/y -2..2 at line width 0.5, and ROUND, radius 1 at line width 2.
+     GND, a negative plane, places SQUARE at 5,5 and ROUND at 15,5. Filled with no line they clear 16 and pi, so copper is
+     184 - pi. PWR, a negative plane, writes the same square directly in its features at 5,5, centred on the same place, and
+     stays a line around uncleared copper. TOP, a positive layer, places SQUARE at 5,5 and stays the line it states. -->
+<IPC-2581 revision="B">
+  <Content>
+    <DictionaryUser units="MILLIMETER">
+      <EntryUser id="SQUARE">
+        <UserSpecial>
+          <Outline>
+            <LineDesc lineEnd="ROUND" lineWidth="0.5"/>
+            <Polygon>
+              <PolyBegin x="-2" y="-2"/><PolyStepSegment x="2" y="-2"/><PolyStepSegment x="2" y="2"/>
+              <PolyStepSegment x="-2" y="2"/><PolyStepSegment x="-2" y="-2"/>
+            </Polygon>
+          </Outline>
+        </UserSpecial>
+      </EntryUser>
+      <EntryUser id="ROUND">
+        <UserSpecial>
+          <Outline>
+            <LineDesc lineEnd="ROUND" lineWidth="2"/>
+            <Polygon>
+              <PolyBegin x="1" y="0"/>
+              <PolyStepCurve x="-1" y="0" centerX="0" centerY="0" clockwise="TRUE"/>
+              <PolyStepCurve x="1" y="0" centerX="0" centerY="0" clockwise="TRUE"/>
+            </Polygon>
+          </Outline>
+        </UserSpecial>
+      </EntryUser>
+    </DictionaryUser>
+  </Content>
+  <Ecad>
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="GND" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Layer name="PWR" layerFunction="PLANE" side="INTERNAL" polarity="NEGATIVE"/>
+      <Step name="board">
+        <Profile>
+          <Polygon>
+            <PolyBegin x="0" y="0"/><PolyStepSegment x="20" y="0"/><PolyStepSegment x="20" y="10"/>
+            <PolyStepSegment x="0" y="10"/><PolyStepSegment x="0" y="0"/>
+          </Polygon>
+        </Profile>
+        <LayerFeature layerRef="TOP">
+          <Set><Pad><Location x="5" y="5"/><UserPrimitiveRef id="SQUARE"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="GND">
+          <Set><Pad><Location x="5" y="5"/><UserPrimitiveRef id="SQUARE"/></Pad></Set>
+          <Set><Pad><Location x="15" y="5"/><UserPrimitiveRef id="ROUND"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="PWR">
+          <Set>
+            <Features><Location x="5" y="5"/>
+              <Outline>
+                <LineDesc lineEnd="ROUND" lineWidth="0.5"/>
+                <Polygon>
+                  <PolyBegin x="-2" y="-2"/><PolyStepSegment x="2" y="-2"/><PolyStepSegment x="2" y="2"/>
+                  <PolyStepSegment x="-2" y="2"/><PolyStepSegment x="-2" y="-2"/>
+                </Polygon>
+              </Outline>
+            </Features>
+          </Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

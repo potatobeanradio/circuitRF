@@ -1890,7 +1890,9 @@ with it, one line per layer, with <code>*</code> on every value the file did not
 </ul>
 <p>A negative layer's copper is the step's profile less what the layer draws, and a cutout inside another cutout of a contour
 is an island of copper in a split plane. A file states no setback from the board's edge, so a plane runs to the profile
-wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches.</p>
+wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches. A user
+primitive written as an outline clears its filled polygon on a negative layer, without its line width, and the report names
+each layer where that applied.</p>
 <h4 id="size">Size</h4>
 <p>A board that comes to more than <strong>500,000 shapes</strong> is refused before anything is written.</p>
 <h2 id="drc">Design-rule checking</h2>

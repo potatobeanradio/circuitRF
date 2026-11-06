@@ -30,7 +30,8 @@ internal sealed record Ipc2581Disc(double Cx, double Cy, double R, bool Erase = 
 internal sealed record Ipc2581Region(Ipc2581Contour Outer, IReadOnlyList<Ipc2581Contour> Holes, bool Erase = false)
     : Ipc2581Piece(Erase);
 
-internal sealed record Ipc2581Stroke(Ipc2581Contour Line, double Width, PathEndStyle End, bool Closed, bool Erase = false)
+/// <summary><see cref="OutlineElement"/>: written as an Outline element, as opposed to a hollow fill's line.</summary>
+internal sealed record Ipc2581Stroke(Ipc2581Contour Line, double Width, PathEndStyle End, bool Closed, bool Erase = false, bool OutlineElement = false)
     : Ipc2581Piece(Erase);
 
 /// <summary>A placement: a uniform scale, a rotation and possibly one reflection, then a translation.</summary>

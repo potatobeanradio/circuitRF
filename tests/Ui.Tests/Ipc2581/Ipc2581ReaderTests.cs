@@ -329,6 +329,32 @@ public class Ipc2581ReaderTests : IDisposable
         Assert.Contains(board.Diagnostics, d => d.Contains("'PWR' states 1 island(s)", StringComparison.Ordinal));
     }
 
+    /// <summary>The copper is checked against plotted film of a plane whose flash symbols are written this way.</summary>
+    [Fact]
+    public void A_user_primitive_outline_on_a_negative_plane_clears_its_filled_polygon_with_no_line()
+    {
+        var board = Board(Fixture("plane-primitive-outlines.xml"));
+
+        var gnd = On(board, "GND").ToList();
+        Assert.Equal(184 - Math.PI, AreaMm2(gnd), 2);
+        Assert.False(IsCopper(gnd, 5, 5));       // inside the square
+        Assert.True(IsCopper(gnd, 7.1, 5));      // within the stated line's reach, past the polygon
+        Assert.False(IsCopper(gnd, 15, 5));      // inside the round symbol
+        Assert.True(IsCopper(gnd, 16.5, 5));     // within the stated line's reach, past the polygon
+        Assert.Contains(board.Diagnostics, d => d.Contains("'GND' places 2 user primitive outline(s)", StringComparison.Ordinal));
+
+        // Written directly in a plane's features, an Outline stays the line it states.
+        var pwr = On(board, "PWR").ToList();
+        Assert.True(IsCopper(pwr, 5, 5));
+        Assert.False(IsCopper(pwr, 3, 5));
+        Assert.DoesNotContain(board.Diagnostics, d => d.Contains("'PWR' places", StringComparison.Ordinal));
+
+        // On a positive layer the same primitive stays the line it states.
+        var top = On(board, "TOP").ToList();
+        Assert.False(IsCopper(top, 5, 5));
+        Assert.True(IsCopper(top, 3, 5));
+    }
+
     [Fact]
     public void An_erased_pour_keeps_its_net_on_every_piece_and_shapes_it_misses_are_untouched()
     {

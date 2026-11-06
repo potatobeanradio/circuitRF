@@ -1252,7 +1252,9 @@ A material or product name decides nothing and is never looked up.
 
 A negative layer's copper is the step's profile less what the layer draws, and a cutout inside another cutout of a contour
 is an island of copper in a split plane. A file states no setback from the board's edge, so a plane runs to the profile
-wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches.
+wherever nothing clears it, which fabrication data may hold back. The report lists plane pieces no net reaches. A user
+primitive written as an outline clears its filled polygon on a negative layer, without its line width, and the report names
+each layer where that applied.
 
 #### Size
 

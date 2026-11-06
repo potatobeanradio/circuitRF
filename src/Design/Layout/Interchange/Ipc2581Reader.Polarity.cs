@@ -72,6 +72,7 @@ public sealed partial class Ipc2581Reader
                 }
                 var plane = Resolve(outline, ops, invert: true);
                 ReportIslands(layer.Name, ops);
+                ReportFilledOutlines(layer.Name, ops);
                 NamePlanePieces(layer.Name, plane);
                 AddResolved(layer.Name, plane);
             }
@@ -83,6 +84,7 @@ public sealed partial class Ipc2581Reader
 
         AddProfileAsOutline();
         _ops.Clear();
+        _primitiveOutlines.Clear();
     }
 
     private void AddResolved(string layer, IReadOnlyList<LayoutShape> shapes)
@@ -133,15 +135,17 @@ public sealed partial class Ipc2581Reader
             int j = i;
             while (j < ops.Shapes.Count && Clears(j) == erase) j++;
 
+            var run = ops.Shapes.GetRange(i, j - i);
+            if (invert) run = FilledOutlines(run);
             if (erase)
             {
-                EraseBatch(image, ref index, ops.Shapes.GetRange(i, j - i));
+                EraseBatch(image, ref index, run);
             }
             else
             {
                 int first = image.Count;
-                for (int k = i; k < j; k++) image.Add(ops.Shapes[k]);
-                index?.Apply(image, LayoutChangeInfo.Appended(first, j - i));
+                image.AddRange(run);
+                index?.Apply(image, LayoutChangeInfo.Appended(first, run.Count));
             }
             i = j;
         }
@@ -197,6 +201,36 @@ public sealed partial class Ipc2581Reader
     /// it always was. On a negative layer it is an island in a split plane: the contour clears around it, and it puts back
     /// what a filled contour written for the island's surrounding band has already cleared.</summary>
     private readonly HashSet<LayoutShape> _cutoutIslands = new(ReferenceEqualityComparer.Instance);
+
+    private readonly record struct PlacedOutline(Ipc2581Contour Ring, Ipc2581Transform Transform);
+
+    /// <summary>Each Outline placed through a user primitive, by the stroke it placed. A plane's flash symbols are written
+    /// this way, every one at the same line width whatever its size, and plotted artwork draws them filled at their polygon
+    /// with no line. Read as strokes they clear twice too much on a small symbol and leave copper inside a large one.
+    /// So a negative layer fills them; on a positive layer such an Outline is the drawn line it states, and an Outline
+    /// written directly in a layer's features is left as stated everywhere.</summary>
+    private readonly Dictionary<LayoutShape, PlacedOutline> _primitiveOutlines = new(ReferenceEqualityComparer.Instance);
+
+    private List<LayoutShape> FilledOutlines(List<LayoutShape> run)
+    {
+        if (_primitiveOutlines.Count == 0) return run;
+        var filled = new List<LayoutShape>(run.Count);
+        foreach (var shape in run)
+        {
+            if (_primitiveOutlines.TryGetValue(shape, out var placed))
+                filled.AddRange(Ipc2581Shapes.Place(new Ipc2581Region(placed.Ring, []), placed.Transform, _flattenTolDbu));
+            else filled.Add(shape);
+        }
+        return filled;
+    }
+
+    private void ReportFilledOutlines(string layer, LayerOps? ops)
+    {
+        int outlines = ops?.Shapes.Count(_primitiveOutlines.ContainsKey) ?? 0;
+        if (outlines > 0)
+            _board.Diagnostics.Add(
+                $"Negative layer '{layer}' places {outlines} user primitive outline(s), and each was drawn filled at its polygon, without its stated line width.");
+    }
 
     /// <summary>Takes the cutouts lying inside another cutout out of a contour, placed as shapes of their own.</summary>
     private Ipc2581Region WithoutNestedCutouts(Ipc2581Region region, Ipc2581Transform xf, List<LayoutShape> islands)
