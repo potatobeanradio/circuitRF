@@ -1479,6 +1479,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     public override bool CanPresentInSoftware => true;
 
+    public override bool CompositorMovedGpu(ICompositionGpuInterop interop) =>
+        _api is not null && interop.DeviceUuid is { Length: 16 } uuid && !uuid.AsSpan().SequenceEqual(_deviceUuid);
+
     public override byte[]? ReadFramePixels(int image) => ReadRgba(image);
 
     /// <summary>brief-em3d-29 R-em3d29-5 — the plan drawn into an image of its own (no semaphores, never

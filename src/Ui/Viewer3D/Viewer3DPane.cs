@@ -82,6 +82,7 @@ public sealed class Viewer3DPane : Control
     private byte[]? _px;
     private int _pxW, _pxH;
     private Avalonia.Media.Imaging.WriteableBitmap? _bmp;
+    private static bool _softwareNoted;                       // the slower mode is said once per run, not per view or rebuild
 
     // brief-em3d-99 — a window resize draws in the layout pass that sized the pane (DrawDuringWindowResize).
     private long _windowResizedAt;
@@ -193,6 +194,15 @@ public sealed class Viewer3DPane : Control
         await Host(gen);
     }
 
+    public enum PresentChoice { Interop, Software, Refuse }
+
+    /// <summary>How a view presents. A compositor on another GPU than the backend's device is a refusal even where software
+    /// could draw: Reconnect makes a device on the compositor's GPU, and software would hide that it could have one.</summary>
+    internal static PresentChoice ChoosePresent(bool interopRefused, bool canPresentInSoftware, bool compositorMovedGpu, bool softwareAllowed) =>
+        !interopRefused ? PresentChoice.Interop
+        : canPresentInSoftware && !compositorMovedGpu && softwareAllowed ? PresentChoice.Software
+        : PresentChoice.Refuse;
+
     /// <summary>Builds the surface and starts the render thread, for attach <paramref name="gen"/>.</summary>
     private async Task Host(int gen)
     {
@@ -214,14 +224,26 @@ public sealed class Viewer3DPane : Control
             // unless Settings ▸ General turned that off.
             string? noInterop = _interop is null ? "this window's compositor offers no GPU interop, so the 3D view cannot present."
                               : backend.CheckInterop(_interop) is { } why ? $"{backend.Description}: {why}." : null;
-            if (noInterop is not null)
+            bool moved = noInterop is not null && _interop is not null && backend.CompositorMovedGpu(_interop);
+            bool canSoft = backend.CanPresentInSoftware && !moved;
+            var choice = ChoosePresent(noInterop is not null, backend.CanPresentInSoftware, moved,
+                                       AppPreferencesIo.Load().View3DSoftwarePresent ?? true);
+            if (choice == PresentChoice.Refuse)
             {
-                if (!backend.CanPresentInSoftware) { SetFault(noInterop); return; }
-                if (!(AppPreferencesIo.Load().View3DSoftwarePresent ?? true))
-                { SetFault(noInterop + " Settings ▸ General ▸ Software 3D without GPU interop draws it, more slowly."); return; }
+                // The setting is named only where ticking it would draw.
+                SetFault(canSoft ? noInterop + " Settings ▸ General ▸ Software 3D without GPU interop draws it, more slowly." : noInterop);
+                return;
             }
-            _soft = noInterop is not null;
-            if (_soft) _interop = null;
+            _soft = choice == PresentChoice.Software;
+            if (_soft)
+            {
+                _interop = null;
+                if (!_softwareNoted)
+                {
+                    _softwareNoted = true;
+                    _vm.PostMessage?.Invoke("3D views are drawing in software on this display, more slowly, because it offers no usable GPU interop. Settings ▸ General ▸ Software 3D without GPU interop turns this off.", false);
+                }
+            }
             backend.PresentFaulted -= OnPresentFaulted;
             backend.PresentFaulted += OnPresentFaulted;
             backend.ClearPresentFault();
@@ -287,7 +309,7 @@ public sealed class Viewer3DPane : Control
             catch (Exception) { /* a lost context may refuse the release; the images are dropped with the device */ }
         }
         _surface?.Dispose(); _surface = null;
-        _soft = false; _bmp = null; _px = null;
+        _soft = false; _bmp?.Dispose(); _bmp = null; _px = null;
         _imgW = _imgH = 0;
         _busy = _done = false;
         _tickQueued = false;
@@ -542,8 +564,11 @@ public sealed class Viewer3DPane : Control
     {
         if (_px is not { } px) return;
         if (_bmp is null || _bmp.PixelSize.Width != _pxW || _bmp.PixelSize.Height != _pxH)
+        {
+            _bmp?.Dispose();
             _bmp = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(_pxW, _pxH), new Vector(96, 96),
                 Avalonia.Platform.PixelFormat.Rgba8888, Avalonia.Platform.AlphaFormat.Premul);
+        }
         using (var fb = _bmp.Lock())
             for (int y = 0; y < _pxH; y++)
                 System.Runtime.InteropServices.Marshal.Copy(px, y * _pxW * 4, fb.Address + y * fb.RowBytes, _pxW * 4);

@@ -376,3 +376,8 @@ labels covered one another in the Front and Side views.
 - The setting, driven the same way on a virtual display with the same Mesa: [the checkbox](../../../docs/images/viewer3d-software-present/setting.png)
   writes the preference at once; [off](../../../docs/images/viewer3d-software-present/setting-off.png), a view opened
   refuses and names it; ticked again, the view's Reconnect draws (after the stale-wake fix above).
+- **Follow-up:** the slower mode now says so, one line in Messages per run. A compositor on another GPU than the
+  backend's device stays a refusal rather than software (`CompositorMovedGpu`), because Reconnect makes a device on that
+  GPU and software would hide that it could have one. A replaced or torn-down `WriteableBitmap` is disposed rather than
+  left to the collector. Gate for the choice: `SoftwarePresentChoiceTests`; the rest was checked by driving the app on a
+  virtual display, since the Viewer3D tests never reach `Host`.

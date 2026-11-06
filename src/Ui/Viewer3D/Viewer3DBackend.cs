@@ -106,6 +106,10 @@ public abstract class Viewer3DBackend : IDisposable
     /// naming what the compositor offered.</summary>
     public abstract string? CheckInterop(ICompositionGpuInterop interop);
 
+    /// <summary>True when the compositor is on another GPU than this backend's device, so a new device would present
+    /// through it. Read only after <see cref="CheckInterop"/> has refused.</summary>
+    public virtual bool CompositorMovedGpu(ICompositionGpuInterop interop) => false;
+
     /// <summary>Creates <paramref name="count"/> shareable images of the size and imports each.</summary>
     public abstract void CreateImages(ICompositionGpuInterop interop, int width, int height, int count);
 
