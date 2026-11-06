@@ -764,7 +764,10 @@ public partial class WorkspaceViewModel
     [RelayCommand]
     private void ShowToolPanel(string? panelId)
     {
-        try { ShowToolPanelCore(panelId); }
+        try
+        {
+            if (panelId != DockPanelIds.Nets || !TryDockNetsPanel()) ShowToolPanelCore(panelId);
+        }
         finally { RaiseToolPanelVisibilityChanged(); }
     }
 

@@ -15,6 +15,7 @@
              xmlns:lvsv="using:CircuitRF.Ui.Views.Lvs"
              xmlns:impv="using:CircuitRF.Ui.Views.Impedance"
              xmlns:lrev="using:CircuitRF.Ui.Views.Review"
+             xmlns:netsv="using:CircuitRF.Ui.Views.Nets"
              xmlns:instv="using:CircuitRF.Ui.Views.Instances"
              xmlns:tunv="using:CircuitRF.Ui.Views.Tuning"
              xmlns:optv="using:CircuitRF.Ui.Views.Optimization"
@@ -100,6 +101,10 @@
         <!-- brief-review-6 — the Layout Review's checks, run, findings and acceptances. -->
         <DataTemplate DataType="{x:Type dockVm:ReviewTool}">
             <lrev:ReviewToolView/>
+        </DataTemplate>
+        <!-- brief-ipx-1 — the nets the active layout names, and their copper outlined on the canvas. -->
+        <DataTemplate DataType="{x:Type dockVm:NetsTool}">
+            <netsv:NetsToolView/>
         </DataTemplate>
         <!-- brief-find-instance-panel.md — the focused schematic's or layout's placed components. -->
         <DataTemplate DataType="{x:Type dockVm:InstancesTool}">

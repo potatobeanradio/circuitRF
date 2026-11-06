@@ -72,7 +72,7 @@ internal static class Explain
 
         string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
-        bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false;
+        bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false, wantNets = false;
         IReadOnlyList<string>? snpEntries = null;
         bool wantComponentPorts = false;      // brief-emb-1 R-emb1-8
         string? componentPortList = null;
@@ -90,6 +90,8 @@ internal static class Explain
                 case "--cells":   wantCells   = true; continue;
                 case "--layers":  wantLayers  = true; continue;
                 case "--extents": wantExtents = true; continue;
+                // brief-ipx-1 R-ipx1-3 — the Nets panel's rows, on the same one-question rule.
+                case "--nets":    wantNets    = true; continue;
                 // brief-footprint-4 R-fp4-4b. An OPTION and not a verb, on R-rnd3-1's terms, and it
                 // joins the one-question rule below rather than getting an exception from it.
                 case "--footprints": wantFootprints = true; continue;
@@ -202,7 +204,7 @@ internal static class Explain
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
                   + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
                   + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1) + (wantLook ? 1 : 0)
-                  + (wantTunables ? 1 : 0) + (wantMaterials ? 1 : 0) + (wantComponentPorts ? 1 : 0);
+                  + (wantTunables ? 1 : 0) + (wantMaterials ? 1 : 0) + (wantComponentPorts ? 1 : 0) + (wantNets ? 1 : 0);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -223,6 +225,7 @@ internal static class Explain
         ExplainLayersJson?                  layers   = null;
         ExplainExtentsJson?                 extents  = null;
         IReadOnlyList<ExplainFootprintJson>? footprints = null;
+        IReadOnlyList<ExplainNetJson>?      nets     = null;
         ExplainEm3dJson?                    em3d     = null;
         IReadOnlyList<CircuitRF.Design.ThreeD.SetupSolveStatus>? solved = null;
         ExplainTunablesJson?                tunables = null;
@@ -330,6 +333,13 @@ internal static class Explain
             exit   |= extentExit;
         }
 
+        if (wantNets)
+        {
+            var (rows, netExit) = ExplainQueries.Nets(path, kind, askedView, walks);
+            nets  = netExit == 0 ? rows : null;
+            exit |= netExit;
+        }
+
         if (wantFootprints)
         {
             var (rows, fpExit) = ExplainQueries.Footprints(path, kind, walks);
@@ -392,9 +402,9 @@ internal static class Explain
 
         JsonRun.Explain = new ExplainReportJson(
             path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
-            footprints, em3d, solved is null ? null : Solved.ForExplain(solved), tunables, statistics, distributions);
+            footprints, em3d, solved is null ? null : Solved.ForExplain(solved), tunables, statistics, distributions, nets);
 
-        Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
+        Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints, nets);
         if (em3d is not null && wantMaterials) ExplainEm3d.PrintMaterials(em3d);
         else if (em3d is not null) ExplainEm3d.Print(em3d);
         if (solved is not null) Solved.Print(solved);
@@ -408,7 +418,7 @@ internal static class Explain
     {
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
-        Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
+        Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--nets] [--view <name>]");
         Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu] [--memory-limit <GB>]");
         Console.Error.WriteLine("                            [--tunables [--snp-entries <SNP3,...|all>]] [--component-ports [\"C1,C2\"|\"*\"]]");
         Console.Error.WriteLine("       circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]");
@@ -1905,7 +1915,8 @@ internal static class Explain
         IReadOnlyList<ExplainCellJson>? cells = null,
         ExplainLayersJson? layers = null,
         ExplainExtentsJson? extents = null,
-        IReadOnlyList<ExplainFootprintJson>? footprints = null)
+        IReadOnlyList<ExplainFootprintJson>? footprints = null,
+        IReadOnlyList<ExplainNetJson>? nets = null)
     {
         Console.WriteLine($"{path}  ({DocumentKinds.Name(kind)})");
 
@@ -1933,6 +1944,14 @@ internal static class Explain
 
         if (value is not null)
             Console.WriteLine($"  {value.Expression} = {value.Text}   ({value.Kind})");
+
+        if (nets is not null)
+        {
+            Console.WriteLine($"  nets: {nets.Count}");
+            int nameWidth = nets.Count == 0 ? 0 : nets.Max(n => n.Name.Length);
+            foreach (var net in nets)
+                Console.WriteLine($"    {net.Name.PadRight(nameWidth)}  {net.Shapes,6}  {string.Join(", ", net.Layers)}");
+        }
 
         if (cells is not null)
         {

@@ -13652,6 +13652,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.ImpedanceTool?.SetActiveLayout(doc.ActiveViewModel);
         // brief-review-6: and the Review panel, whose results are held the same way.
         SetReviewLayout(doc.ActiveViewModel);
+        // brief-ipx-1: and the Nets panel, which lists this layout's nets.
+        _factory.NetsTool?.SetActiveLayout(doc.ActiveViewModel);
 
         // wbond.md §10.1 (WB39a/M3): so do the two wBond panels, and that is the milestone — push into
         // a wirebond cell (WB40) and its wires' profile and its arrays' inductance are right there,
@@ -16942,6 +16944,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.LvsTool?.SetActiveLayout(null);
         _factory.ImpedanceTool?.SetActiveLayout(null);
         SetReviewLayout(null);
+        _factory.NetsTool?.SetActiveLayout(null);
 
         // brief-find-instance-panel.md — the Instances panel lists THIS document's placed components,
         // and nothing for a document that is neither a schematic nor a layout (R-fi-3), on the same

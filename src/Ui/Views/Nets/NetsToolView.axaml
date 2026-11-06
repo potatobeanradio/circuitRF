@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:layout="using:CircuitRF.Design.Layout"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Nets.NetsToolView"
+             x:DataType="vm:NetsTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-ipx-1: the filter and the action row are always here, in these places, whatever the list holds (R-ipx1-2d). What
+         changes height (the header) sits below them, so nothing above the list ever moves. -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="4,2">
+
+        <TextBox Grid.Row="0" x:Name="FilterBox" Text="{Binding Panel.FilterText, Mode=TwoWay}" Watermark="Filter nets"
+                 FontSize="12" MinHeight="24" Padding="6,2" IsEnabled="{Binding Panel.IsLayoutActive}"
+                 ToolTip.Tip="Show only the nets whose name contains this"/>
+
+        <WrapPanel Grid.Row="1" x:Name="ActionRow" Orientation="Horizontal" Margin="0,4,0,0">
+            <Button x:Name="ZoomButton" Command="{Binding Panel.ZoomToNetCommand}" Padding="8,3" FontSize="12" Margin="0,0,4,2"
+                    ToolTip.Tip="Frame the selected nets">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="MagnifyScan" Width="14" Height="14"/>
+                    <TextBlock Text="Zoom to net" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="SelectButton" Command="{Binding Panel.SelectShapesCommand}" Padding="8,3" FontSize="12" Margin="0,0,8,2"
+                    ToolTip.Tip="Make the selected nets' shapes the editor's selection, for Properties and Name Net">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="SelectGroup" Width="14" Height="14"/>
+                    <TextBlock Text="Select shapes" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <CheckBox x:Name="DimCheck" Content="Dim other copper" FontSize="12" Margin="0,0,0,2"
+                      IsChecked="{Binding Panel.DimOtherCopper, Mode=TwoWay}" IsEnabled="{Binding Panel.HasSelection}"
+                      ToolTip.Tip="Draw everything but the selected nets at reduced opacity"/>
+        </WrapPanel>
+
+        <TextBlock Grid.Row="2" Text="{Binding Panel.HeaderText}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="2,4,2,2"/>
+
+        <Panel Grid.Row="3">
+            <ListBox x:Name="RowsList" ItemsSource="{Binding Panel.Rows}" SelectionMode="Multiple"
+                     SelectionChanged="OnRowsSelectionChanged" Background="Transparent" BorderThickness="0"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="4,2"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="layout:LayoutNetRow">
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ShapeCount, StringFormat='{}{0:N0}'}" FontSize="11"
+                                       Opacity="0.75" Margin="8,0,2,0" VerticalAlignment="Center" ToolTip.Tip="Shapes carrying this net"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding LayersText}" FontSize="11"
+                                       Opacity="0.65" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding LayersText}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="EmptyLine" Text="{Binding Panel.EmptyText}" IsVisible="{Binding Panel.HasEmptyText}"
+                       FontSize="12" Opacity="0.6" Margin="2,8" TextWrapping="Wrap" VerticalAlignment="Top"/>
+        </Panel>
+    </Grid>
+</UserControl>

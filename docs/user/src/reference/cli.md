@@ -2613,7 +2613,7 @@ What each finding means, and the limits of the causality measurement, are on the
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
-                            [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
+                            [--cells [--all]] [--layers] [--extents] [--nets] [--view &lt;name&gt;]
                             [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]
                             [--tunables [--snp-entries &lt;SNP3,...|all&gt;]] [--component-ports ["C1,C2"|"*"]]
 <span class="prompt">$ </span>circuitrf explain --pdk &lt;kit&gt; [&lt;workspace&gt;] [--python &lt;interp&gt;]</code></pre>
@@ -2956,6 +2956,20 @@ resolves to, and whether the answer came from `--python <interp>` or from your r
 the Python and gdsfactory versions that interpreter reports. `<kit>` is the module name or the kit's folder
 name; with a workspace, the kit's declaration, location and recorded and installed versions are listed
 first. It runs no kit code: the only process it starts is the interpreter answering its own version.
+
+<h3 id="explain-nets"><code>--nets</code> — which nets does this layout name?</h3>
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Board/layout/Board.clay --nets
+<span class="output">  nets         2 named net(s). Counts shapes drawn in this cell, not copper inside its 17 placed parts.
+               via the cell's own shapes
+  nets: 2
+    +3V3      11  BOT, IN3, TOP
+    GND        1  GND</span></code></pre>
+
+The rows of the [Nets panel](layout-editor.html#nets-panel): each net's name, how many shapes carry it, and the layers
+they reach, in natural order so `N2` comes before `N10`. `--json` gives them as the list `result.explain.nets`. It takes a
+`.clay` or a cell folder with a layout, and any other document is refused by kind. A layout that names no net says so and
+exits 0.
 
 <h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 

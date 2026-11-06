@@ -84,6 +84,9 @@ using CircuitRF.Design.Layout;
 // --place <code> (with --clay) drops one component at the origin through the layout palette's own drop, so the
 // picture is what placing it draws.
 //
+// --nets-panel nets|filter|selected|none|many|nolayout shows the Nets panel on a seeded layout and prints where its action row landed.
+// --nets a,b (with --clay) shows the real Nets panel on the editor with those rows selected, --nets-filter x narrows it first,
+// --nets-dim ticks Dim other copper and --nets-zoom presses Zoom to net; the panel is written beside -o as <out>.nets.png.
 // --review (with --clay) runs the editor's own Layout Review and draws its markers on the canvas, as the open Review
 // panel does; each finding prints.
 //
@@ -143,6 +146,10 @@ string? impedance = null, finding = null;
 var impedanceLayers = new List<string>();
 bool impedancePanel = false;
 string? reviewPanel = null;
+string? netsPanel = null;
+string? netsHighlight = null;
+string? netsFilter = null;
+bool netsDim = false, netsZoom = false;
 bool planarMemoryDialog = false;
 bool settingsGeneral = false;
 bool settingsSolvers = false;
@@ -253,6 +260,11 @@ for (int i = 0; i < args.Length; i++)
         case "--impedance-layer" when i + 1 < args.Length: impedanceLayers.Add(args[++i]); break;
         case "--impedance-panel": impedancePanel = true; break;
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
+        case "--nets-panel" when i + 1 < args.Length: netsPanel = args[++i]; break;
+        case "--nets" when i + 1 < args.Length: netsHighlight = args[++i]; break;
+        case "--nets-filter" when i + 1 < args.Length: netsFilter = args[++i]; break;
+        case "--nets-dim": netsDim = true; break;
+        case "--nets-zoom": netsZoom = true; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
         case "--settings-general": settingsGeneral = true; break;
         case "--settings-solvers": settingsSolvers = true; break;
@@ -404,6 +416,13 @@ if (reviewPanel is not null && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
+}
+if (netsPanel is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } netsApp) netsApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowSeededNetsPanel(netsPanel, output, sizeGiven ? width : 320, sizeGiven ? height : 460);
 }
 bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
 if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
@@ -607,6 +626,13 @@ else if (clay is not null)
     layoutCanvas.ZoomToFit();
     if (impedance is not null && !RunImpedance(layoutVm, impedance, finding, impedanceLayers)) return 2;
     if (impedancePanel && output is not null) ShowImpedancePanel(layoutVm, Path.ChangeExtension(output, ".impedance.png"));
+    if (netsHighlight is not null || netsFilter is not null)
+    {
+        // The real panel on the editor, as the dock shows it, its rows chosen in the list. The canvas is captured as -o.
+        if (output is null) return 2;
+        ShowNetsPanelOn(layoutVm, netsFilter, netsHighlight, netsDim, netsZoom, Path.ChangeExtension(output, ".nets.png"));
+        Pump();
+    }
     if (reviewRun)
     {
         // The editor's own review run, its markers on as the open Review panel turns them on.
@@ -2076,6 +2102,123 @@ static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind, Li
     vm.ZoomToImpedance(hit.t, hit.i);
     Console.WriteLine($"selected {hit.t.Id}'s {kind}; {vm.SelectionStatusText}");
     return true;
+}
+
+// --clay ... --nets a,b [--nets-filter x] [--nets-dim] [--nets-zoom]: the real Nets panel on the editor, the named rows selected in
+// its list so the highlight reaches the canvas by the path a click takes. The panel is written beside -o as <out>.nets.png.
+static void ShowNetsPanelOn(LayoutEditorViewModel vm, string? filter, string? nets, bool dim, bool zoom, string path)
+{
+    var tool = new CircuitRF.Ui.ViewModels.Dock.NetsTool();
+    tool.SetActiveLayout(vm);
+    var window = new Window { Width = 320, Height = 620, Content = new CircuitRF.Ui.Views.Nets.NetsToolView { DataContext = tool } };
+    window.Show();
+    void Settle() { for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); } }
+    Settle();
+    var panel = tool.Panel;
+    if (filter is not null) panel.FilterText = filter;
+    Settle();
+    var list = window.GetVisualDescendants().OfType<ListBox>().First(l => l.Name == "RowsList");
+    foreach (string name in (nets ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+    {
+        var row = panel.Rows.FirstOrDefault(r => r.Name == name);
+        if (row is null) { Console.Error.WriteLine($"no net '{name}'; the panel lists: {string.Join(", ", panel.Rows.Take(40).Select(r => r.Name))}"); continue; }
+        list.SelectedItems!.Add(row);
+    }
+    panel.DimOtherCopper = dim;
+    if (zoom) panel.ZoomToNetCommand.Execute(null);
+    Settle();
+    Console.WriteLine($"header: {panel.HeaderText}");
+    foreach (var r in panel.Rows.Take(30)) Console.WriteLine($"  {r.Name,-24} {r.ShapeCount,6}  {r.LayersText}");
+    Console.WriteLine($"overlay nets: {string.Join(", ", vm.Overlay?.NetHighlights.Select(h => $"{h.Net} ({h.Shapes.Count})") ?? [])}");
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+}
+
+// --nets-panel nets|filter|selected|none|many: the panel on a seeded layout, and where its action row landed, so the row can be
+// compared across the states.
+static int ShowSeededNetsPanel(string seed, string path, double w, double h)
+{
+    LayerKey top = new(1, 0), bottom = new(2, 0);
+    var view = new LayoutView { DisplayUnit = LayoutUnit.Mm };
+    var vm = new LayoutEditorViewModel(view)
+    {
+        Technology = new Technology
+        {
+            Layers =
+            [
+                new LayerDef { Key = top, Name = "Top Copper", Color = new CircuitRF.Design.Theming.Rgba(200, 60, 60), ZOrder = 2 },
+                new LayerDef { Key = bottom, Name = "Bottom Copper", Color = new CircuitRF.Design.Theming.Rgba(60, 90, 200), ZOrder = 1 },
+            ],
+        },
+    };
+    void Add(string net, LayerKey layer, long x) =>
+        view.Shapes.Add(new RectShape { Layer = layer, X1 = x, Y1 = 0, X2 = x + 1000, Y2 = 1000, Net = net });
+    if (seed == "many")
+        for (int i = 0; i < 5000; i++) Add($"N{i}", top, i * 2000);
+    else if (seed != "none")
+    {
+        string[] nets = ["+3V3", "GND", "N2", "N10", "N11", "RF_IN", "RF_OUT", "A_VERY_LONG_NET_NAME_THAT_DOES_NOT_FIT_ON_ONE_ROW_OF_THE_PANEL"];
+        for (int i = 0; i < nets.Length; i++)
+        {
+            for (int k = 0; k <= i * 7 % 5; k++) Add(nets[i], top, (i * 10 + k) * 2000);
+            if (i % 2 == 0) Add(nets[i], bottom, i * 2000);
+        }
+        view.Instances.Add(new LayoutInstance { CellRef = "Part" });
+    }
+    view.NotifyChanged();
+
+    var tool = new CircuitRF.Ui.ViewModels.Dock.NetsTool();
+    tool.SetActiveLayout(seed == "nolayout" ? null : vm);
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Nets.NetsToolView { DataContext = tool } };
+    window.Show();
+    void Settle() { for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); } }
+    Settle();
+
+    var panel = tool.Panel;
+    var list = window.GetVisualDescendants().OfType<ListBox>().First(l => l.Name == "RowsList");
+    switch (seed)
+    {
+        case "filter": panel.FilterText = "rf"; break;
+        case "selected":
+            list.SelectedItems!.Add(panel.Rows[1]);
+            list.SelectedItems!.Add(panel.Rows[3]);
+            break;
+        case "edit":
+            // The list is replaced by a document change and by a filter; the real list box has to come back holding the same nets.
+            list.SelectedItems!.Add(panel.Rows[3]);
+            Settle();
+            string Held() => $"list [{string.Join(", ", list.SelectedItems!.OfType<LayoutNetRow>().Select(r => r.Name))}] panel [{string.Join(", ", panel.SelectedRows.Select(r => r.Name))}] overlay [{string.Join(", ", vm.Overlay.NetHighlights.Select(n => $"{n.Net}:{n.Shapes.Count}"))}]";
+            Console.WriteLine($"selected:       {Held()}");
+            view.Shapes.Add(new RectShape { Layer = top, X1 = 0, Y1 = 5000, X2 = 1000, Y2 = 6000, Net = panel.SelectedRows[0].Name });
+            view.NotifyChanged();
+            Settle();
+            Console.WriteLine($"after an edit:  {Held()}");
+            panel.FilterText = "N";
+            Settle();
+            Console.WriteLine($"filter keeps:   {Held()}");
+            panel.FilterText = "RF";
+            Settle();
+            Console.WriteLine($"filter hides:   {Held()}");
+            panel.FilterText = "";
+            Settle();
+            Console.WriteLine($"filter cleared: {Held()}");
+            list.SelectedItems!.Add(panel.Rows[0]);
+            Settle();
+            Console.WriteLine($"click again:    {Held()}");
+            break;
+    }
+    Settle();
+
+    Console.WriteLine($"{seed}: header '{panel.HeaderText}'; empty '{panel.EmptyText}'; rows {panel.Rows.Count:N0}; realised {list.GetRealizedContainers().Count()}; selected {panel.SelectedRows.Count}");
+    foreach (var name in new[] { "FilterBox", "ZoomButton", "SelectButton", "DimCheck" })
+    {
+        var control = window.GetVisualDescendants().OfType<Control>().First(c => c.Name == name);
+        var at = control.TranslatePoint(new Point(0, 0), window)!.Value;
+        Console.WriteLine($"  {name} x={at.X:0.#} y={at.Y:0.#} w={control.Bounds.Width:0.#} h={control.Bounds.Height:0.#} enabled={control.IsEffectivelyEnabled}");
+    }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
 }
 
 // --impedance-panel: the real panel on the editor, as the dock shows it, its export counted, scrolled to Export.

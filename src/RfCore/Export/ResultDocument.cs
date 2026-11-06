@@ -2767,7 +2767,13 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainStatisticsJson?              Statistics = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainDistributionsJson?           Distributions = null);
+        ExplainDistributionsJson?           Distributions = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainNetJson>?      Nets = null);
+
+    /// <summary><c>explain --nets</c>: one row of the Nets panel (brief-ipx-1 R-ipx1-3). What the counts leave out is the
+    /// <c>nets</c> step of <c>walks</c>.</summary>
+    public sealed record ExplainNetJson(string Name, int Shapes, IReadOnlyList<string> Layers);
 
     /// <summary>
     /// <c>explain --analysis</c>: the distribution calls the design holds — a kit's models, a VAR's

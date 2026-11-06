@@ -70,7 +70,7 @@ Fourteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `import voxels` | a label volume (`.nii[.gz]`, DiscMaterial `.h5`, raw, or a `.node`/`.ele` mesh voxelised) + `--into x.c3d` | `AnatomyImport.PlanVoxels` + `ApplyVoxels` | the volume copied beside the `.c3d` and one `VoxelBody` (sar.md §13) |
 | `import surfaces` | closed surfaces (STL, OBJ, PLY) or a folder of them + `--into x.c3d` | `AnatomyImport.PlanSurfaces` + `ApplySurfaces` | each file copied beside the `.c3d` and one `Mesh` per surface, outermost first |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
-| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` / `--tunables`, and `--setup` and `--object` (one object's resolved appearance) for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
+| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--nets` / `--footprints` / `--tunables`, and `--setup` and `--object` (one object's resolved appearance) for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
 | `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, a 3D `.cem`, or a `.c3d` (and its field plots) | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup, §13.8.1 for a field plot |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` — or a `.cnl` + `--to-schematic` | the extraction the GUI's own Simulate performs, or `NetlistSchematic.Build` | one `.cnl`, or the text on stdout; a drawn `.csch` — §14, §14.2 |
@@ -1192,6 +1192,13 @@ deliberately (§11.3).
   and the field is **absent, not zero**. The technology walk is reported as a walk (R-rnd3-7), and
   where it resolves to nothing that is the answer, with the **fallback palette named** — that is what
   `render` will draw with, and a caller needs to know the colours it gets are not the process's.
+- **`--nets`** *(a `.clay` or a cell with a layout)* — the nets a layout names: name, shape count and the layers reached (a
+  via adds the two conductors its stackup entry joins), in natural order so `N2` precedes `N10`. **The Nets panel's rows, from
+  the one function the panel calls**, `LayoutNets.Of` in `src/Design`, so the two cannot disagree (brief-ipx-1 R-ipx1-3). It
+  counts the cell's own shapes and flattens nothing: a net reaches copper inside a placed instance only through the schematic,
+  the board netlist or a walk of the flattened copper, and none of those is a list built on every edit. The `nets` step of
+  `walks` says what that leaves out. A layout naming no net is an answer and exits 0; a document kind with no layout is a
+  refusal naming the kind.
 - **`--extents`** *(a `.clay`, `.csch`, `.csym` or a cell)* — how big the document is, **from the same
   function `render --fit` frames on** (R-rnd3-9): `CircuitRF.Render.DocumentExtents`. If the two could
   disagree the number would be worse than useless, because a caller uses this one to compute a
@@ -1336,11 +1343,13 @@ Per §3.2, with `diagnostics` carrying the findings and `result` carrying the re
 
                          "extents":{"x0","y0","x1","y1","width","height","window","unit","scale",
                                     "empty","note",
-                                    "perLayer":[{"name","x0","y0","x1","y1","window"}]} } }
+                                    "perLayer":[{"name","x0","y0","x1","y1","window"}]},
+
+                         "nets":[{"name","shapes","layers":[…]}] } }
 ```
 
-Exactly one of `analyses` / `expression` / `reference` / `cells` / `layers` / `extents` is ever
-present — the six are refused together. `walks` is always present, because "which workspace, which
+Exactly one of `analyses` / `expression` / `reference` / `cells` / `layers` / `extents` / `nets` is ever
+present — the seven are refused together. `walks` is always present, because "which workspace, which
 technology" is the context every other answer is read against; `--layers` adds a `layers` STEP to it
 carrying the technology and the defined/used counts, so the block below needs no heading of its own.
 Coordinates and shape counts are **absent rather than zero** wherever there is nothing to measure or
@@ -1508,7 +1517,7 @@ be found by its name.
 |---|---|
 | `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em` / `opt` (`analysis=optimize`), selected by an argument — one tool, not seven. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
 | `check` | `check` |
-| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
+| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--nets`, `--footprints` and `--tunables` |
 | `create` | `new workspace` / `new cell` / `new view3d` (`what=view3d fromLayout=true`) |
 | `import` | `import part` / `import model` / `import pdk` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5, brief-gdf-1): every mode brings something in, so an export still never lands here |
 | `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |

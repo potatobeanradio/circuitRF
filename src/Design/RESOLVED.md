@@ -28382,3 +28382,14 @@ publish is partial whatever the scope now, since a run over every analysis lacks
 
 Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Inspected: a polar cut from a `Local` evaluation with a shunt C at 0.5 pF and 8 pF on a synthetic coupled two-port, through UiSnapshot: the lobes drop about 5 dB, read off the rings, and the
 floor, rings and reference stay.
+
+## How a net reaches copper inside a placed instance (brief-ipx-1 R-ipx1-1c, 2026-11-05)
+
+It does not, through anything stored. `LayoutInstance` has no pin-to-net map, and a land pattern is one cell shared by every
+placement of it, so the board reader drops a pad's net (`PcbReader.PadNetDroppedReason`) and `RailArtwork.PadsFor` reads stated nets
+off the root's shapes only. A pad gets its net from the schematic's binding, the board netlist, or the `CopperPieces` walk of the
+flattened copper. That walk is a polygon union and a connected-component pass over the whole board, so it cannot back a list rebuilt
+on every edit. `LayoutNets.Of` therefore counts the open cell's own shapes and flattens nothing, and `LayoutNetList.Scope` says what
+that leaves out, in the Nets panel's header and in the `nets` step of `explain --nets`. A board whose nets exist only on footprint
+pads, with no tracks, reports no named nets beside that sentence. On a Gerber set the nets stated by a composited layer's objects
+are gone before this list is read, as the reader's own note says, so such a board can list its vias and little else.

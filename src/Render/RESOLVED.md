@@ -5824,3 +5824,13 @@ A film is a strip on its band and not a band: `StackupScene.Films`, tested befor
 name keeps to the height the strips leave, because the rule for whether a name fits is stated over the room it actually has. The drag's
 refused ghost is `theme.Refusal` at reduced alpha, since brief 5 had no refusing target and so no refused colour. A film's thickness
 prints in the technology's display unit, as a band's does, so `0.05 µm` where the brief's example spelled it `50 nm`.
+
+## The Nets panel's highlight (brief-ipx-1 R-ipx1-2, 2026-11-05)
+
+A net can be most of a board and a user arrows down the list, so a frame draws one merged path per layer per net and never walks the
+net's shapes; `LayoutRenderResult.NetHighlightDrawCalls` is what holds that. The merged paths live on `LayoutNetHighlight`, in a path
+space of their own, because the frame's origin moves with the view. **Merging needs one winding per shape.** Under a winding fill two
+shapes of opposite direction cancel where they overlap, and a trace ending on a pad is the ordinary case, so Dim other copper showed a
+hole exactly where they met; `AddPathReverse` on a negative signed area fixes it, and a polygon's holes survive because they are wound
+opposite to its outer ring. Dimming is a wash of the canvas colour over what is drawn, not the board drawn again, so it costs one
+rectangle and leaves the tile cache alone. The highlight's fill therefore takes the layer's colour and opacity but not its fill pattern.

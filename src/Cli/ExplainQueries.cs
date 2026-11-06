@@ -532,6 +532,54 @@ internal static class ExplainQueries
                             .Select(v => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
 
 
+    // ── --nets ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-ipx-1 R-ipx1-3 — the Nets panel's rows, from the one function the panel calls (<see cref="LayoutNets.Of"/>). What
+    /// they leave out is reported as the <c>nets</c> step of the walk. A document kind with no layout is a refusal naming the
+    /// kind, as <c>--extents</c>'s is.
+    /// </summary>
+    public static (IReadOnlyList<ExplainNetJson> Rows, int Exit) Nets(
+        string path, DocumentKind kind, ViewType? askedView, List<ResolutionStepJson> walks)
+    {
+        string clay;
+        switch (kind)
+        {
+            case DocumentKind.Layout:
+                clay = Path.GetFullPath(path);
+                break;
+
+            case DocumentKind.Cell when askedView is null or ViewType.Layout:
+            {
+                string cellDir = Path.GetFullPath(path);
+                var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
+                if (primary.ResolvedName is not { Length: > 0 } file)
+                    return ([], JsonRun.Fail(CliDiagnostics.ExplainCellHasNoView(cellDir, CellFolder.SubFolderName(ViewType.Layout))));
+                clay = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), file);
+                break;
+            }
+
+            default:
+                return ([], JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable(
+                    "--nets", DocumentKinds.Name(kind), "the nets a layout names")));
+        }
+
+        LayoutView view;
+        try { view = LayoutPersistence.LoadFromFile(clay); }
+        catch (Exception ex) { return ([], JsonRun.Fail(CliDiagnostics.ExplainUnreadable(clay, ex.Message))); }
+
+        var (res, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, null, new TechnologyCache());
+        var list = LayoutNets.Of(view, res.Tech);
+
+        walks.Add(new ResolutionStepJson(
+            "nets", clay,
+            (list.Rows.Count == 0 ? LayoutNets.NoNamedNets : $"{list.Rows.Count} named net(s).")
+                + (list.Scope is { } scope ? $" {scope}" : ""),
+            "the cell's own shapes"));
+
+        return ([.. list.Rows.Select(r => new ExplainNetJson(r.Name, r.ShapeCount, r.Layers))], 0);
+    }
+
     // ── --footprints ─────────────────────────────────────────────────────────
 
     /// <summary>

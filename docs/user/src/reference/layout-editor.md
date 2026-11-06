@@ -1631,6 +1631,31 @@ page's footer says which, beside Z0 in Ω.
 The same analysis and the same PDF are available headlessly as
 [`circuitrf impedance`](cli.html#impedance).
 
+## The Nets panel {#nets-panel}
+
+**View ▸ Panels ▸ Nets** lists the nets the active layout names and shows where each one runs. It follows the layout you
+are working in. A board imported with its nets, from a `.kicad_pcb` or from a Gerber set with its board netlist, needs
+nothing else; on a layout you drew, **Name Net…** on the canvas's right-click menu names them.
+
+Each row shows the net's name, how many shapes carry it, and the layers those shapes reach, with a via adding the two
+conductors it joins. The list is in natural order, so `N2` comes before `N10`, and **Filter nets** narrows it to the names
+containing what you type. A layout that names no net says so.
+
+**The counts are this cell's own shapes.** A placed part keeps its pads in a cell that every placement of it shares, so
+its copper carries no net of its own. Where the layout places parts, the line above the list says that their copper is not
+counted, and it is not outlined either.
+
+| Do this | To get this |
+|---|---|
+| Select a row | That net's copper is outlined on every visible layer. Hold <kbd>⌘</kbd> or <kbd>⇧</kbd> to select several. Moving through the list with the arrow keys moves the outline. |
+| **Dim other copper** | Everything else is drawn at reduced opacity. |
+| **Zoom to net** | Frames the selected nets' shapes on visible layers. |
+| **Select shapes** | Makes those shapes the editor's selection, so Properties and Name Net work on them. Shapes on a hidden or locked layer are left out. |
+
+The outline is not the selection and not part of the layout. It adds no undo step and marks nothing as changed, and it
+never appears in an export, a copied picture or [`circuitrf render`](cli.html#render). It goes when the panel closes.
+[`circuitrf explain --nets`](cli.html#explain-nets) prints the same rows.
+
 ## Layout Review {#layout-review}
 
 A **Layout Review** is help for a person reviewing a board. A [design-rule check](#drc) answers whether

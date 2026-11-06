@@ -470,7 +470,11 @@ public readonly record struct LayoutRenderResult(
     /// <summary>R-dfr33-1-2 — the document indices of ports whose name this frame drew SHORTENED to its number or
     /// left OUT because no clear space was within reach. The canvas shows such a port's name on hover. Empty when
     /// every name was drawn in full.</summary>
-    IReadOnlyList<int>? PortNamesNotInFull = null);
+    IReadOnlyList<int>? PortNamesNotInFull = null,
+    /// <summary>brief-ipx-1 R-ipx1-2f — draw calls this frame spent on the Nets panel's highlighted nets: at most two per
+    /// layer per net, whatever the net's shape count, which is what keeps a net of very many shapes from costing a repaint
+    /// proportional to the board.</summary>
+    int NetHighlightDrawCalls = 0);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -489,6 +493,9 @@ internal sealed class LayoutFrameCounters
     public int InstancesDrawn;
     public int FillPaintsBuilt;
     public int VerticesEmitted;
+
+    /// <summary>See <see cref="LayoutRenderResult.NetHighlightDrawCalls"/>.</summary>
+    public int NetHighlightDrawCalls;
 
     /// <summary>Cells rasterized this frame by the raster tier. Kept apart from
     /// <see cref="DrawCalls"/> deliberately: a build is amortized over every placement it serves and
@@ -1038,6 +1045,12 @@ public static partial class LayoutRenderer
                     DrawPortGlyphs(canvas, deferredPorts, conductorAt, ps, scaleUm, opts, counters,
                                    view.DbuPerMicron, tech);
 
+                // brief-ipx-1 R-ipx1-2: the Nets panel's nets, above the artwork and below the selection, so what Select
+                // shapes selects still reads as selected on top of them.
+                if (opts.Overlay?.NetHighlights is { Count: > 0 } netHighlights)
+                    DrawNetHighlights(canvas, netHighlights, opts.Overlay.DimOtherCopper, layerMap, theme, ps, vp, scaleUm,
+                                      view.DbuPerMicron, counters);
+
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
                     DrawSelectionOutlines(canvas, view, selected, dragOverrides, theme, ps, scaleUm,
@@ -1149,7 +1162,8 @@ public static partial class LayoutRenderer
                 VerticesEmitted: counters.VerticesEmitted,
                 TilesBuilt: counters.TilesBuilt,
                 TilesBlitted: counters.TilesBlitted,
-                PortNamesNotInFull: counters.PortNamesNotInFull is { Count: > 0 } notInFull ? notInFull.ToArray() : []);
+                PortNamesNotInFull: counters.PortNamesNotInFull is { Count: > 0 } notInFull ? notInFull.ToArray() : [],
+                NetHighlightDrawCalls: counters.NetHighlightDrawCalls);
         }
         finally
         {

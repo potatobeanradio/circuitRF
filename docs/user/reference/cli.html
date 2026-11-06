@@ -3403,7 +3403,7 @@ about parts you did not author. Naming the file is what checks it.</p>
 <h2 id="explain"><code>explain</code> — what did circuitRF decide?</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
-                            [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
+                            [--cells [--all]] [--layers] [--extents] [--nets] [--view &lt;name&gt;]
                             [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]
                             [--tunables [--snp-entries &lt;SNP3,...|all&gt;]] [--component-ports ["C1,C2"|"*"]]
 <span class="prompt">$ </span>circuitrf explain --pdk &lt;kit&gt; [&lt;workspace&gt;] [--python &lt;interp&gt;]</code></pre>
@@ -3703,6 +3703,17 @@ resolves to, and whether the answer came from <code>--python &lt;interp&gt;</cod
 the Python and gdsfactory versions that interpreter reports. <code>&lt;kit&gt;</code> is the module name or the kit's folder
 name; with a workspace, the kit's declaration, location and recorded and installed versions are listed
 first. It runs no kit code: the only process it starts is the interpreter answering its own version.</p>
+<h3 id="explain-nets"><code>--nets</code> — which nets does this layout name?</h3>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Board/layout/Board.clay --nets
+<span class="output">  nets         2 named net(s). Counts shapes drawn in this cell, not copper inside its 17 placed parts.
+               via the cell's own shapes
+  nets: 2
+    +3V3      11  BOT, IN3, TOP
+    GND        1  GND</span></code></pre>
+<p>The rows of the <a href="layout-editor.html#nets-panel">Nets panel</a>: each net's name, how many shapes carry it, and the layers
+they reach, in natural order so <code>N2</code> comes before <code>N10</code>. <code>--json</code> gives them as the list <code>result.explain.nets</code>. It takes a
+<code>.clay</code> or a cell folder with a layout, and any other document is refused by kind. A layout that names no net says so and
+exits 0.</p>
 <h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.clay --extents
 <span class="output">  extents      0 -0.003 .. 0.02 0.00393846  (0.02 x 0.00693846 m, scale 1E-06)

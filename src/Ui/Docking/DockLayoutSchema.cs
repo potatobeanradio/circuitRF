@@ -422,6 +422,13 @@ public static class DockPanelIds
     public const string Review = "Review";
 
     /// <summary>
+    /// brief-ipx-1's Nets panel: the nets the active layout names, each with its shape count and layers, and the copper of those
+    /// selected outlined on the canvas. Absent from both shipped default layouts, like Impedance and Review: View ▸ Panels ▸ Nets
+    /// puts it on screen, and it is then captured and restored with every other panel.
+    /// </summary>
+    public const string Nets = "Nets";
+
+    /// <summary>
     /// brief-tuneopt-4's Tuning panel — sliders over the focused schematic's tune-enabled values, with
     /// the Data Display following them live.
     ///
@@ -475,7 +482,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances, Impedance, Tuning, Sensitivity, Optimizer, Yield, Review,
+        WBondInductance, History, Instances, Impedance, Tuning, Sensitivity, Optimizer, Yield, Review, Nets,
     ];
 
     /// <summary>

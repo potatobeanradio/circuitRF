@@ -1386,8 +1386,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void SetSelection(IEnumerable<int> indices, bool clearOtherKind = true)
     {
         var distinct = new List<int>();
+        var seen = new HashSet<int>();   // a net can be most of a board (brief-ipx-1 R-ipx1-2c)
         foreach (var i in indices)
-            if (i >= 0 && i < Model.Shapes.Count && !distinct.Contains(i))
+            if (i >= 0 && i < Model.Shapes.Count && seen.Add(i))
                 distinct.Add(i);
 
         _selectedIndices.Clear();
@@ -4771,6 +4772,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             LvsMarkers = BuildLvsMarkers(),
             Impedance = BuildImpedanceOverlay(),
             ReviewMarkers = BuildReviewMarkers(),
+            NetHighlights = _netHighlights,
+            DimOtherCopper = _dimOtherCopper,
             ImpedanceScope = BuildImpedanceScopeOverlay(),
             ArtworkProbe = _artworkProbe,
             Ratsnest = RatsnestLines(),

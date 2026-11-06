@@ -113,6 +113,12 @@ public static class ColorRole
     /// </summary>
     public const string LayoutReviewFinding = "Layout.ReviewFinding";
 
+    /// <summary>
+    /// brief-ipx-1 R-ipx1-2a: the outline of the nets selected in the Nets panel. Its own role, apart from
+    /// <see cref="LayoutSelection"/>: a highlighted net is not a selected one, and Select shapes can put both on screen.
+    /// </summary>
+    public const string LayoutNetHighlight = "Layout.NetHighlight";
+
     // ── Stackup cross-section (docs/sonnet-briefs/brief-stackup-render-1-scene.md §7) ────────────
     //
     // The Technology Editor's stackup drawing. Eight roles, and deliberately no more: a conductor's
@@ -400,7 +406,7 @@ public static class ColorRole
         LayoutRulerAnnotationLine, LayoutRulerAnnotationText,
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
-        LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived, LayoutReviewFinding,
+        LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived, LayoutReviewFinding, LayoutNetHighlight,
         StackupBackground, StackupBandEdge, StackupDielectricFill, StackupGroundAccent,
         StackupLabelInk, StackupOnBandInk, StackupGripper, StackupDragGhost,
         HarmonicaBackground, HarmonicaAxisLine, HarmonicaAxisText, HarmonicaReadoutText,

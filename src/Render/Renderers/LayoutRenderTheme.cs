@@ -63,6 +63,9 @@ public sealed class LayoutRenderTheme
     /// <summary>brief-review-6 Layout Review finding markers — see <see cref="ColorRole.LayoutReviewFinding"/>.</summary>
     public SKColor ReviewFinding { get; init; }
 
+    /// <summary>brief-ipx-1 the Nets panel's highlighted nets — see <see cref="ColorRole.LayoutNetHighlight"/>.</summary>
+    public SKColor NetHighlight { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -94,6 +97,7 @@ public sealed class LayoutRenderTheme
             DrcWarning       = SK(ColorRole.LayoutDrcWarning),
             DrcWaived        = SK(ColorRole.LayoutDrcWaived),
             ReviewFinding    = SK(ColorRole.LayoutReviewFinding),
+            NetHighlight     = SK(ColorRole.LayoutNetHighlight),
         };
     }
 

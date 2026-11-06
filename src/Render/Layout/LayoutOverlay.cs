@@ -215,6 +215,16 @@ public sealed record class LayoutOverlay
     public IReadOnlyList<ReviewFindingMarker> ReviewMarkers { get; init; } = [];
 
     /// <summary>
+    /// brief-ipx-1 R-ipx1-2: the nets selected in the Nets panel, outlined over the artwork. The state of a list box and not
+    /// part of the document: it changes on every arrow key, no command writes it, and every export passes
+    /// <c>Overlay = null</c>, so no picture of the layout ever carries it.
+    /// </summary>
+    public IReadOnlyList<LayoutNetHighlight> NetHighlights { get; init; } = [];
+
+    /// <summary>R-ipx1-2b: draw everything but <see cref="NetHighlights"/> at reduced opacity. Means nothing with none.</summary>
+    public bool DimOtherCopper { get; init; }
+
+    /// <summary>
     /// brief-impedance-3 R-imp3-3a: the Impedance panel's results over the artwork — each reviewed
     /// trace's centre line coloured by its Z0, and a marker at each finding. The same system layer as
     /// <see cref="DrcMarkers"/>: never a <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never
