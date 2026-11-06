@@ -74,7 +74,7 @@
                                          FontSize="12"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
                             <RadioButton x:Name="FieldsRadio"
-                                         Content="Fields (SAR, B1)"
+                                         Content="Fields (SAR, B1, pattern)"
                                          GroupName="AnalysisType"
                                          FontSize="12"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
@@ -185,7 +185,8 @@
                                ItemsSource="{Binding FieldsBody.Blocks}" Text="{Binding FieldsBody.Block, Mode=TwoWay}"
                                PlaceholderText="an EM Field Data block, e.g. EM1 or X1.EM1"/>
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Frequency:" FontSize="12" VerticalAlignment="Center"/>
-                    <TextBox   Grid.Row="1" Grid.Column="1" FontSize="12" Text="{Binding FieldsBody.Freq}"
+                    <ComboBox  Grid.Row="1" Grid.Column="1" FontSize="12" IsEditable="True" HorizontalAlignment="Stretch"
+                               ItemsSource="{Binding FieldsBody.Frequencies}" Text="{Binding FieldsBody.Freq, Mode=TwoWay}"
                                PlaceholderText="one its 3D run kept fields at"/>
                     <ComboBox  Grid.Row="1" Grid.Column="2" FontSize="12" ItemsSource="{x:Static vm:FieldsBodyViewModel.FreqUnits}"
                                SelectedItem="{Binding FieldsBody.FreqUnit}"/>
@@ -197,9 +198,9 @@
                                PlaceholderText="each drive's amplitude, e.g. W1,W2 (empty: 1 each)"/>
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="Per watt:" FontSize="12" VerticalAlignment="Center"/>
                     <ComboBox  Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" ItemsSource="{x:Static vm:FieldsBodyViewModel.Norms}"
-                               SelectedItem="{Binding FieldsBody.Norm}"/>
+                               SelectedItem="{Binding FieldsBody.Norm}" IsEnabled="{Binding FieldsBody.HasSarFields}"/>
                     <CheckBox  Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Content="Averaged SAR"
-                               IsChecked="{Binding FieldsBody.Average}"/>
+                               IsChecked="{Binding FieldsBody.Average}" IsEnabled="{Binding FieldsBody.HasSarFields}"/>
                 </Grid>
             </Border>
 

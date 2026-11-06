@@ -294,6 +294,52 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(Directory.GetFiles(Path.Combine(_root, "results"), "*.s*p"));
     }
 
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — a run after a mesh-only pass does not mesh again, and neither does a second pass.</summary>
+    [CircuitRF.Ui.Tests.Em3d.PalaceFact]
+    public void MeshOnly_ThenARun_ReusesTheMesh()
+    {
+        string cem = MeshBoard([1_000_000, 500_000, 2_000_000, 500_000, 2_000_000, 1_000_000, 1_000_000, 1_000_000]);
+        Assert.Equal(0, RunCli(RepoRoot(), "em", cem, "--mesh-only").Item1);
+        string msh = Path.Combine(Directory.GetDirectories(Path.Combine(_root, "results")).Single(), "model.msh");
+        var made = File.GetLastWriteTimeUtc(msh);
+
+        var (again, secondOut, _) = RunCli(RepoRoot(), "em", cem, "--mesh-only");
+        Assert.Equal(0, again);
+        Assert.Contains("the mesh already beside this unchanged script", secondOut, StringComparison.Ordinal);
+
+        var (exit, stdout, stderr) = RunCli(RepoRoot(), "em", cem);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        Assert.Contains("its mesh was reused", stdout + stderr, StringComparison.Ordinal);
+        Assert.Equal(made, File.GetLastWriteTimeUtc(msh));
+    }
+
+    /// <summary>brief-dfr36-1 — a thermal setup's mesh with no solve: no temperatures and no record, and a second pass reuses it.</summary>
+    [CircuitRF.Ui.Tests.Em3d.PalaceFact]
+    public void MeshOnly_OnAThermalSetup_MakesItsMesh_AndWritesNoResult()
+    {
+        string example = Path.Combine(RepoRoot(), "examples", "Thermal Channel vs Surface");
+        foreach (string f in Directory.EnumerateFiles(example, "*", SearchOption.AllDirectories))
+        {
+            string to = Path.Combine(_root, Path.GetRelativePath(example, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to);
+        }
+        string c3d = Path.Combine(_root, "One Finger", "3d", "One Finger.c3d");
+
+        var (exit, stdout, stderr) = RunCli(RepoRoot(), "em", c3d, "--mesh-only");
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        Assert.Matches(@"Meshed:\s+[\d,]+ tetrahedra", stdout);
+        Assert.Contains("a solve takes about", stdout + stderr, StringComparison.Ordinal);
+        string run = Directory.GetDirectories(Path.Combine(_root, "results")).Single();
+        Assert.True(File.Exists(Path.Combine(run, "model.msh")));
+        Assert.False(File.Exists(Path.Combine(run, "status.json")));
+        Assert.False(File.Exists(Path.Combine(run, "temperature.bin")));
+
+        Assert.Contains("the mesh already beside this unchanged script", RunCli(RepoRoot(), "em", c3d, "--mesh-only").Item2, StringComparison.Ordinal);
+    }
+
     /// <summary>A board Gmsh stops on exits 1 with Gmsh's words and the objects named, and the dry run named it first.</summary>
     [CircuitRF.Ui.Tests.Em3d.PalaceFact]
     public void MeshOnly_OnABoardGmshStopsOn_ExitsOne_WithItsWordsAndTheObject_AndTheDryRunNamedItFirst()

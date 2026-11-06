@@ -71,7 +71,8 @@ public sealed partial class EmSetupEditorViewModel
         "A lumped gap port across each chosen part's own pads, built on the board's copper and checked before meshing: the " +
         "sheet's ends land on the closest copper (a landing rectangle where that copper is a cap or an arc), and nothing it " +
         "touches bridges two nets. A part with more pads gets one port per signal pad against its own ground pad. A finished " +
-        "driven run also writes <setup>_cosim.cnl: the board's N-port with each part's model across its port.";
+        "driven run also writes <setup>_cosim.cnl: the board's N-port with each part's model across its port. With Create SnP schematic " +
+        "on, the same circuit is also made as a <setup>_cosim cell.";
 
     /// <summary>Builds and verifies the ports as a run would, off the UI thread (a board's elaboration and every part's port
     /// is seconds of work): the document is read as it stands when Check is pressed, and the panel stays usable meanwhile.

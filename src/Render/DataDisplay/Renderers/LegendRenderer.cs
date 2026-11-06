@@ -68,7 +68,7 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.Legend != LegendPlacement.Below || !Draws(plot)) return 0;
             var m = Metrics.For(plot, lw);
             var (x0, x1) = PlotRenderer.PlotRegionX(plot, (width, width));
-            var (_, rows) = Grid(m, x1 - x0, Count(plot));
+            var (_, rows) = Grid(m, x1 - x0, Listings(plot).Count);
             return rows * m.RowH + m.Pad;
         }
 
@@ -190,7 +190,7 @@ namespace CircuitRF.Render.DataDisplay
                 for (int i = 0; i < entries.Count; i++)
                 {
                     float cy = pad * 0.5f + rowH * (i + 0.5f);
-                    rows.Add(new Row(entries[i].Trace, entries[i].Label, pad, cy, room, SKRect.Create(0, cy - rowH * 0.5f, box.Width, rowH)));
+                    rows.Add(new Row(entries[i].Trace, entries[i].Label, pad, cy, room, SKRect.Create(0, cy - rowH * 0.5f, box.Width, rowH), entries[i].Curve));
                 }
                 DrawFrame(canvas, box, theme, transparentBackground);
                 DrawRows(canvas, rows, m, font, fallback, theme);
@@ -229,7 +229,7 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>One legend entry as laid out: where its sample starts, its centre line, the room its text has,
         /// and the rectangle a click on it hits.</summary>
-        private readonly record struct Row(Trace Trace, string Label, float X, float Cy, float TextRoom, SKRect Hit);
+        private readonly record struct Row(Trace Trace, string Label, float X, float Cy, float TextRoom, SKRect Hit, int Curve = -1);
 
         private static (List<Row> Rows, SKRect? Box) Layout(
             (double W, double H) canvasSize, Plot plot, TransformSet tf, Metrics m, SKFont font, SKFont fallback,
@@ -255,7 +255,7 @@ namespace CircuitRF.Render.DataDisplay
                     float x  = (float)x0 + c * cellW;
                     float cy = h - band + pad * 0.5f + rowH * (r + 0.5f);
                     rows.Add(new Row(entries[i].Trace, entries[i].Label, x, cy, cellW - gap - sample - gap,
-                                     SKRect.Create(x, cy - rowH * 0.5f, cellW, rowH)));
+                                     SKRect.Create(x, cy - rowH * 0.5f, cellW, rowH), entries[i].Curve));
                 }
                 return (rows, null);
             }
@@ -277,7 +277,7 @@ namespace CircuitRF.Render.DataDisplay
             {
                 float cy = box.Top + pad * 0.5f + rowH * (i + 0.5f);
                 rows.Add(new Row(entries[i].Trace, entries[i].Label, box.Left + pad, cy, maxText,
-                                 SKRect.Create(box.Left, cy - rowH * 0.5f, boxW, rowH)));
+                                 SKRect.Create(box.Left, cy - rowH * 0.5f, boxW, rowH), entries[i].Curve));
             }
             return (rows, box);
         }
@@ -302,26 +302,45 @@ namespace CircuitRF.Render.DataDisplay
             float baseline = font.Size * 0.35f;
             foreach (var r in rows)
             {
-                DrawSample(canvas, r.Trace, r.X, r.X + sample, r.Cy, (float)m.Lw, theme);
+                DrawSample(canvas, r.Trace, r.X, r.X + sample, r.Cy, (float)m.Lw, theme, r.Curve);
                 string s = Fit(r.Label, r.TextRoom, font, fallback);
                 RendererText.DrawLeftTextWithFallback(canvas, s, r.X + sample + gap, r.Cy + baseline, font, fallback, text);
             }
         }
 
         /// <summary>Each listed trace and the name its axis gives it — on a Rect plot the Y-axis label,
-        /// on Smith and Polar the label strip's.</summary>
-        internal static List<(Trace Trace, string Label)> Entries(Plot plot, bool showSource, Func<Trace, string?>? aliasFor)
+        /// on Smith and Polar the label strip's. A pattern cut over a sweep is one entry per value: the value first, since a long name is what gets cut,
+        /// and alone when nothing else on the plot needs telling apart (brief-cosim-pattern-5 R-cp5-5).</summary>
+        internal static List<(Trace Trace, string Label, int Curve)> Entries(Plot plot, bool showSource, Func<Trace, string?>? aliasFor)
         {
-            var minimal = TraceLabeler.ComputeMinimalLabels(plot.Traces, showSource, aliasFor);
-            var list    = new List<(Trace, string)>();
-            for (int i = 0; i < plot.Traces.Count; i++)
+            var minimal  = TraceLabeler.ComputeMinimalLabels(plot.Traces, showSource, aliasFor);
+            var listings = Listings(plot);
+            bool oneTrace = listings.Select(l => l.Trace).Distinct().Count() == 1;
+            var list     = new List<(Trace, string, int)>(listings.Count);
+            foreach (var (t, curve) in listings)
             {
-                var t = plot.Traces[i];
-                if (t.IsContourTrace || t.ExcludeFromAxisLabels) continue;
-                string name = i < minimal.Count ? minimal[i] : t.ShortDescription;
-                list.Add((t, plot.PlotType == PlotType.Rect ? t.RectYLabel(name, false) : name));
+                int i = plot.Traces.IndexOf(t);
+                string name = i >= 0 && i < minimal.Count ? minimal[i] : t.ShortDescription;
+                name = plot.PlotType == PlotType.Rect ? t.RectYLabel(name, false) : name;
+                list.Add((t, curve < 0 ? name : oneTrace ? t.FamilyCurveLabel(curve) : $"{t.FamilyCurveLabel(curve)}: {name}", curve));
             }
             return list;
+        }
+
+        /// <summary>What a legend has a row for: a trace (curve −1), or each curve of a pattern cut over a sweep. The back branch of such a cut is the same curves at
+        /// the same values, so it adds none while a front branch is there to name them.</summary>
+        private static List<(Trace Trace, int Curve)> Listings(Plot plot)
+        {
+            var listed = Listed(plot).ToList();
+            bool hasFront = listed.Exists(t => t.LabelsFamilyCurves && !t.MirrorPatternAngle);
+            var rows = new List<(Trace, int)>(listed.Count);
+            foreach (var t in listed)
+            {
+                if (!t.LabelsFamilyCurves) { rows.Add((t, -1)); continue; }
+                if (t.MirrorPatternAngle && hasFront) continue;
+                for (int k = 0; k < t.FamilyCurves.Count; k++) rows.Add((t, k));
+            }
+            return rows;
         }
 
         // ---- Layout ------------------------------------------------------
@@ -334,13 +353,6 @@ namespace CircuitRF.Render.DataDisplay
                 double f = plot.Axes.FontSizeTicks * 0.9 * lw;
                 return new Metrics(lw, f, f * 1.5, f * 0.5, f * 2.2, f * 0.5);
             }
-        }
-
-        private static int Count(Plot plot)
-        {
-            int n = 0;
-            foreach (var _ in Listed(plot)) n++;
-            return n;
         }
 
         /// <summary>Columns and rows of the BELOW grid across a plotting region <paramref name="width"/> wide: as many
@@ -363,10 +375,10 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>A short horizontal run of the trace's line — its colour, width and line type — or,
         /// for a trace drawn as points only, one point.</summary>
-        private static void DrawSample(SKCanvas canvas, Trace trace, float x0, float x1, float y, float lw, RenderTheme theme)
+        private static void DrawSample(SKCanvas canvas, Trace trace, float x0, float x1, float y, float lw, RenderTheme theme, int curve = -1)
         {
             var   props = trace.Properties;
-            var   color = theme.ToSKColor(props.LineColor, props.LineOpacity);
+            var   color = theme.ToSKColor(curve < 0 ? props.LineColor : trace.FamilyCurveColor(curve), props.LineOpacity);
             float sw    = Math.Max(0.5f, lw * (float)props.LineWidth);
 
             if (!props.LineEnabled)

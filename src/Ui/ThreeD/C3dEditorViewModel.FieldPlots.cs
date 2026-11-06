@@ -240,7 +240,7 @@ public sealed partial class C3dEditorViewModel
     {
         var scene = Viewer.Scene;
         double perDbu = C3dLowering.Metres(1, Document.DbuPerMicron);
-        var clip = Viewer.View.Clip;
+        var clip = Viewer.ToolbarClip;
         if (clip.Enabled && clip.IsAxis)
         {
             int a = (int)clip.Axis;

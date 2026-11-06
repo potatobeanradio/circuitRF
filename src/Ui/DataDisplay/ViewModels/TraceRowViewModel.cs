@@ -3617,7 +3617,10 @@ public partial class TraceRowViewModel : ViewModelBase
         // Sync the expression text field to the picker-authored shorthand.
         _trace.Expression = null;
         _trace.Expression = _trace.BuildPickerExpression();
+        bool labelled = _trace.LabelsFamilyCurves;
         _parent.RebuildAndNotify();
+        // brief-cosim-pattern-5 R-cp5-5 — the moment a cut becomes one curve per sweep value, only a legend says which is which. Once, so the Off segment stays the user's.
+        if (!labelled && _trace.LabelsFamilyCurves && _parent.Legend == LegendPlacement.Off) _parent.Legend = LegendPlacement.Inside;
     }
 
     /// <inheritdoc cref="SeedSlice.DefaultXAxis"/>

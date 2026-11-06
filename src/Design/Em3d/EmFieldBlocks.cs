@@ -10,6 +10,12 @@ using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Em3d;
 
+/// <summary>What a Fields analysis can ask of one block's record: the frequencies it stores, and whether it holds a far field and a field set.</summary>
+public sealed record EmFieldBlockData(string Path, IReadOnlyList<double> StoredHz, bool HasFarField, bool HasFieldSet);
+
+/// <summary>R-cp6-5 — an element directly joining the nodes of two gap ports of one block.</summary>
+public sealed record GapPortBridge(string Part, string Block, string PortA, string PortB);
+
 /// <summary>One setting of a result, with the setup's value now where they can be compared.</summary>
 public sealed record EmRunSetting(string Field, string? Recorded, string? Now, bool Differs);
 
@@ -46,6 +52,58 @@ public static class EmFieldBlocks
             return Paths(lib, tb);
         }
         catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+    }
+
+    /// <summary>R-cp6-4 — what each block of a schematic's record holds, read from the record alone, for the analysis editor. A block whose record
+    /// cannot be read is left out, and so is every block of a schematic that does not extract: the controls still take typed text.</summary>
+    public static IReadOnlyList<EmFieldBlockData> Data(SchematicEditModel model)
+    {
+        try
+        {
+            var (lib, tb) = SchematicCircuit.FromSchematic(model, "fields", model.SchematicDirectory);
+            var found = new List<EmFieldBlockData>();
+            void Walk(IEnumerable<Instance> instances, string prefix, HashSet<string> visiting)
+            {
+                foreach (var inst in instances)
+                {
+                    string path = prefix + inst.InstanceName;
+                    if (inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? file = inst.Overrides.FirstOrDefault(o => o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))?.Expression.Trim('"');
+                        if (file is { Length: > 0 } && EmResultRecord.Load(file).Record is { } r)
+                            found.Add(new EmFieldBlockData(path, [.. r.Frequencies.FarFieldHz.Union(r.Frequencies.FieldSetHz).Order()],
+                                                           r.Frequencies.FarFieldHz.Count > 0, r.Frequencies.FieldSetHz.Count > 0));
+                    }
+                    else if (lib.Find(inst.Reference) is { } cell && visiting.Add(cell.Name))
+                    {
+                        Walk(cell.Instances, path + ".", visiting);
+                        visiting.Remove(cell.Name);
+                    }
+                }
+            }
+            Walk(tb.Instances, "", []);
+            return found;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+    }
+
+    /// <summary>R-cp6-5 — every two-terminal element between the nodes of two gap ports of an EM Field Data block, by the record's port kinds. A part
+    /// of several terminals is not asked about: an amplifier's signal pins stand on gap ports' nodes by design. A record with no port kinds gives nothing.</summary>
+    public static IReadOnlyList<GapPortBridge> GapPortBridges(ElaboratedNetlist nl)
+    {
+        var found = new List<GapPortBridge>();
+        foreach (var block in nl.Components)
+        {
+            if (block.Model is not CircuitRF.Core.Devices.SnpModel { RecordPath: { } path } || EmResultRecord.Load(path).Record is not { } record) continue;
+            var ports = record.Ports.OrderBy(p => p.Number).ToList();
+            var gaps = new Dictionary<int, string>();
+            for (int k = 0; k < ports.Count && k < block.Nodes.Length; k++)
+                if (ports[k].Kind == EmResultPort.Gap && block.Nodes[k] > 0) gaps.TryAdd(block.Nodes[k], ports[k].Name);
+            foreach (var part in nl.Components)
+                if (!ReferenceEquals(part, block) && part.Nodes is [var a, var b] && a != b && gaps.TryGetValue(a, out var portA) && gaps.TryGetValue(b, out var portB))
+                    found.Add(new GapPortBridge(part.InstancePath, block.InstancePath, portA, portB));
+        }
+        return found;
     }
 
     /// <summary>

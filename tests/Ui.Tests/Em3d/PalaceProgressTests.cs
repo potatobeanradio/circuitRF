@@ -392,6 +392,51 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
     private static string F0Log(string run)
         => Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "f0", run, "palace.log");
 
+    // ── designer round 36 — a long run says what it is doing ───────────────────────────────────
+
+    [Fact]
+    public void AnEigenmodeRun_SaysItsLinearSolves_ThenEachRefinedMode_WithFrequencyAndQ()
+    {
+        var (_, seen) = Feed(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "eigen", "cavity-cu", "palace.log"), 0, 1e-3);
+        var stages = seen.Select(p => p.Stage).Distinct().ToList();
+        Assert.Contains("Eigenmode search: linear solve 16", stages);
+        Assert.Contains(stages, s => s.StartsWith("Eigenmodes: 1 found, refining 1 of 1", StringComparison.Ordinal));
+        // The log's own table says 8.885 GHz and Q 7806 for this mode; its printed eigenvalue and shift, at four figures, land just short.
+        Assert.Contains("Eigenmodes: 1 found (mode 1 at 8.884 GHz, Q 7805)", stages);
+    }
+
+    [Fact]
+    public void ALongAdaptiveSweep_SaysItsPace_AndOncePortOneIsDone_WhatIsLeft()
+    {
+        double now = 0;
+        var rec = new Recorder();
+        var tracker = new PalaceStageTracker(0, 1e-4, new RunControl { Progress = rec, MinReportIntervalMs = 0 }) { Clock = () => now };
+        tracker.Begin();
+        tracker.Line("elements 1000 1000 1000 1000".PadLeft(30));
+        tracker.Line("Adding excitation index 1 (1/8):");
+        now = 3 * 1800;
+        tracker.Line("Greedy iteration 1 (n = 3): ω* = 2.4e+00 GHz (1.0e+00), error = 1.0e-02, memory = 0/2");
+        Assert.Contains("port 1 of 8: 3 frequencies solved, 30 min each, model change", rec.All[^1].Stage);
+        now = 8 * 3600;
+        tracker.Line("Adding excitation index 2 (2/8):");
+        now += 3 * 1800;
+        tracker.Line("Greedy iteration 1 (n = 3): ω* = 2.4e+00 GHz (1.0e+00), error = 1.0e-02, memory = 0/2");
+        Assert.Contains("port 2 of 8: 3 frequencies solved, 30 min each, about 55 h left, model change", rec.All[^1].Stage);
+    }
+
+    [Fact]
+    public void AShortAdaptiveSweep_ShowsNoPace()
+    {
+        var rec = new Recorder();
+        double now = 0;
+        var tracker = new PalaceStageTracker(0, 1e-4, new RunControl { Progress = rec, MinReportIntervalMs = 0 }) { Clock = () => now };
+        tracker.Begin();
+        tracker.Line("Adding excitation index 1 (1/2):");
+        now = 90;
+        tracker.Line("Greedy iteration 1 (n = 3): ω* = 2.4e+00 GHz (1.0e+00), error = 1.0e-02, memory = 0/2");
+        Assert.DoesNotContain(" each", rec.All[^1].Stage);
+    }
+
     private static (PalaceStageTracker, List<RunProgress>) Feed(string log, int maxPasses, double tol)
         => FeedLines(File.ReadAllLines(log), maxPasses, tol);
 

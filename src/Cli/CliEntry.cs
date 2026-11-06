@@ -1834,9 +1834,9 @@ static int RunEm(string[] args)
             ? CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name) + " --solver names an EM solver, which a thermal setup never uses."
             : CircuitRF.Design.ThreeD.C3dThermal.CemRefusal));
 
-    // brief-dfr35-1 R-dfr35-1-5 — only a 3D EM setup's mesh is Gmsh's and a run's first step; a planar one meshes in --dry-run.
-    if (meshOnly && (!setup.Is3D || setup.IsThermal))
-        return JsonRun.Fail(CliDiagnostics.EmMeshOnlyNeeds3D(Path.GetFileName(cemPath), setup.IsThermal));
+    // brief-dfr35-1 R-dfr35-1-5 — a 3D EM or thermal setup's mesh is Gmsh's and a run's first step; a planar one meshes in --dry-run.
+    if (meshOnly && !setup.Is3D && !setup.IsThermal)
+        return JsonRun.Fail(CliDiagnostics.EmMeshOnlyNeeds3D(Path.GetFileName(cemPath)));
     // brief-em3d-21 R-em3d21-6a — --solver chooses between 3D solvers; it never makes a planar setup 3D.
     if (solver is not null && !setup.Is3D)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));

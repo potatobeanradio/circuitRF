@@ -38,6 +38,22 @@ public sealed class EditorRound5TreeTests : IDisposable
     }
 
     [Fact]
+    public void ADoubleClickedRow_BringsPropertiesForward_OnlyWhenNothingIsBeneathIt()
+    {
+        var vm = Open(Doc(), out _);
+        int requests = 0;
+        vm.PropertiesRequested += _ => requests++;
+        var row = Row(vm, "a");
+
+        Assert.True(vm.ShowPropertiesOfRow(row));
+        Assert.Equal(1, requests);
+
+        row.Children.Add(Row(vm, "b"));                                    // now it opens: the double-click is its expander's
+        Assert.False(vm.ShowPropertiesOfRow(row));
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
     public void TheAirBoxsTick_IsSavedWithTheDocument_AndUndoable()
     {
         var vm = Open(Doc(), out string path);

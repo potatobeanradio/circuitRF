@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Collections.Concurrent;
 using Avalonia;
 using Avalonia.Headless;
@@ -39,6 +40,8 @@ internal static class Snapshot3D
         string? path = null, output = null, only = null, hide = null, hover = null, select = null, section = null;
         bool undo = false;
         bool live = false;
+        bool mesh = false;
+        string? meshPlane = null;
         int w = 1200, h = 800;
         bool realistic = false, fit = false, list = false;
         bool? ortho = null;
@@ -74,6 +77,8 @@ internal static class Snapshot3D
                 case "--select" when i + 1 < args.Length: select = args[++i]; break;
                 case "--section" when i + 1 < args.Length: section = args[++i]; break;
                 case "--undo": undo = true; break;
+                case "--mesh": mesh = true; break;
+                case "--mesh-plane" when i + 1 < args.Length: meshPlane = args[++i]; break;
                 default: Console.Error.WriteLine($"unknown option {args[i]}"); return 2;
             }
         }
@@ -163,6 +168,30 @@ internal static class Snapshot3D
                      "finished drawing the plots");
                 Console.WriteLine($"Selected {row.Name} ({row.Kind})");
                 if (vm.FieldPlot(row.Name) is { } plot && vm.FieldPlotProblem(plot) is { } why) Console.WriteLine($"  draws nothing: {why}");
+            }
+
+            // brief-dfr36-1 — the mesh on disk for the active setup, as the toolbar's toggle draws it, on its own plane when one is named.
+            if (mesh || meshPlane is not null)
+            {
+                if (meshPlane is not null)
+                {
+                    var parts = meshPlane.Split(':');
+                    vm.Viewer.MeshPlaneAxis = Enum.Parse<ClipAxis3D>(parts[0], ignoreCase: true);
+                    vm.Viewer.MeshPlanePosition = double.Parse(parts[1], CultureInfo.InvariantCulture);
+                    vm.Viewer.MeshPlaneEnabled = true;
+                }
+                vm.Viewer.MeshCurrencyQuietMs = 0;
+                vm.Viewer.ShowMesh = vm.Viewer.CanShowMesh;
+                if (vm.Viewer.ShowMesh)
+                {
+                    Pump(() => vm.Viewer.MeshOverlay.Lines.Length > 0 && (meshPlane is null || vm.Viewer.SectionOverlay.Lines.Length > 0), "drew the mesh");
+                    var settle = Stopwatch.StartNew();
+                    while (settle.ElapsedMilliseconds < 1500) { while (posted.TryDequeue(out var job)) job(); Thread.Sleep(20); }
+                }
+                Console.WriteLine($"CanShowMesh={vm.Viewer.CanShowMesh} FieldsAvailable={vm.Viewer.FieldsAvailable} ClipEnabled={vm.Viewer.ClipEnabled}");
+                Console.WriteLine($"Tip: {vm.Viewer.MeshTip}");
+                Console.WriteLine($"{vm.Viewer.MeshText} | plane: {vm.Viewer.MeshPlaneText} | section lines: {vm.Viewer.SectionOverlay.Lines.Length / 2}");
+                Console.WriteLine($"Stale: {vm.Viewer.MeshStaleText ?? "(current)"}");
             }
 
             bool overlay = select is not null || section is not null;

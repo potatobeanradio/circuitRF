@@ -504,7 +504,7 @@ lifts the disk floor. `explain` on a 3D setup reports both, and takes
 `--adopt <file.sNp>` solves nothing: it writes the `.cemr` record of a result from before records existed, beside its
 Touchstone, and refuses when no `.npy` matches it. `explain <file.cemr>` reads a record back, and `-o` moves the Touchstone alone.
 
-`--mesh-only` runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
+`--mesh-only` runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits **0** on a mesh, **1**
 on a refusal or a mesher failure, and **130** when cancelled. `--dry-run` also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.

@@ -32,6 +32,7 @@ public partial class WorkspaceViewModel
     public void OpenOrActivate3DView(string cemPath)
     {
         string full = Path.GetFullPath(cemPath);
+        bool showMesh = _meshToShow.Remove(full);       // brief-dfr36-1 R-dfr36-1-4 — this .cem's panel made a mesh to look at
         // brief-em3d-49 R-em3d49-1c — a .cem whose geometry is a 3D view: Show 3D opens the EDITOR on it, with this .cem
         // shown read-only among its setups — the ports and boundaries this setup will use are the document's.
         try
@@ -43,7 +44,10 @@ public partial class WorkspaceViewModel
                 OpenOrActivateC3dEditor(geometry);
                 if (_openDocsByPath.TryGetValue(CircuitRF.Ui.ThreeD.C3dEditorDocument.KeyFor(geometry), out var d) &&
                     d is CircuitRF.Ui.ThreeD.C3dEditorDocument editor)
+                {
+                    editor.ViewModel.Viewer.ShowMeshWhenAvailable = showMesh;
                     editor.ViewModel.ShowExternalSetup(full, cem);
+                }
                 return;
             }
         }
@@ -58,6 +62,7 @@ public partial class WorkspaceViewModel
             vm.PostMessage = (text, warning) => { if (warning) Messages.Warning(text, full); else Messages.Info(text, full); };
             vm.IsPerspective = false;                  // orthographic, as the 3D editor opens; a stored camera wins
             vm.RestoreCamera(StoredCamera(full));
+            vm.ShowMeshWhenAvailable = showMesh;
             // Export glTF is enabled by what the view has drawn, and the first scene arrives after the tab is active.
             vm.SceneAdopted += ExportGltfCommand.NotifyCanExecuteChanged;
             var doc = new Viewer3DDocument(vm);
@@ -114,6 +119,21 @@ public partial class WorkspaceViewModel
     {
         if (_openDocsByPath.TryGetValue(Viewer3DDocument.KeyFor(cemPath), out var d) && d is Viewer3DDocument v)
             v.ViewModel.Invalidate();
+    }
+
+    /// <summary>brief-dfr36-1 R-dfr36-1-4 — the .cem files whose panel made a mesh with no view open to show it: Show 3D turns it on.</summary>
+    private readonly HashSet<string> _meshToShow = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A .cem's mesh-only pass finished: an open view turns the mesh on now, and a view opened later does when it opens.</summary>
+    private void ShowCemMesh(string cemPath)
+    {
+        string full = Path.GetFullPath(cemPath);
+        if (_openDocsByPath.TryGetValue(Viewer3DDocument.KeyFor(full), out var d) && d is Viewer3DDocument v)
+        {
+            v.ViewModel.ShowMeshWhenAvailable = true;
+            v.ViewModel.RefreshSolverOverlays();
+        }
+        else _meshToShow.Add(full);
     }
 
     private void Refresh3DViewOverlays(string cemPath)

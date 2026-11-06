@@ -34,6 +34,13 @@ public sealed record EmergeGpuStalled(int Samples, bool Unusable = false) : Emer
 /// <summary>The driver's <c>{"stage": "meshed", …}</c> line: the mesh's exact counts, before any solve.</summary>
 public sealed record EmergeMeshCounts(long Tetrahedra, long Edges, long Triangles) : EmergeLogEvent;
 
+/// <summary>Designer round 36 — a step of the minutes before and after Gmsh, which EMerge names only in passing: the driver's
+/// <c>{"stage": "geometry"}</c>, and EMerge's boundary-condition and mesh-data lines.</summary>
+public sealed record EmergeSetupStep(string Words) : EmergeLogEvent;
+
+/// <summary><c>Starting frequency domain simulation (#tets = N)</c>: assembling the matrices of the first frequencies.</summary>
+public sealed record EmergeAssembling : EmergeLogEvent;
+
 /// <summary><c>Pass k: …</c> — a pass of EMerge's adaptive mesh refinement.</summary>
 public sealed record EmergeRefinementPass(int Pass) : EmergeLogEvent;
 
@@ -87,6 +94,9 @@ public static class EmergeLog
         if (!m.Success) return null;
         string said = m.Groups[2].Value.Trim();
         if (said.StartsWith("Calling GMSH mesher", StringComparison.Ordinal)) return new EmergeMeshing();
+        if (said.StartsWith("Generating default boundary conditions", StringComparison.Ordinal)) return new EmergeSetupStep("preparing the boundary conditions");
+        if (said.StartsWith("Generating internal mesh data", StringComparison.Ordinal)) return new EmergeSetupStep("building its mesh data");
+        if (said.StartsWith("Starting frequency domain simulation", StringComparison.Ordinal)) return new EmergeAssembling();
         if (MeshDone.Match(said) is { Success: true } done) return new EmergeMeshDone(Long(done.Groups[1]), Long(done.Groups[2]));
         if (Pass.Match(said) is { Success: true } pass) return new EmergeRefinementPass(int.Parse(pass.Groups[1].Value, CultureInfo.InvariantCulture));
         if (Batch.Match(said) is { Success: true } batch)
@@ -112,6 +122,8 @@ public static class EmergeLog
         {
             using var doc = JsonDocument.Parse(json);
             var r = doc.RootElement;
+            if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var geo) && geo.GetString() == "geometry")
+                return new EmergeSetupStep("building the geometry");
             if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var st) && st.GetString() == "gpu-stalled")
                 return new EmergeGpuStalled(r.TryGetProperty("samples", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 0,
                                             r.TryGetProperty("unusable", out var u) && u.ValueKind == JsonValueKind.True);
@@ -212,8 +224,13 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
     /// <see cref="OperationCanceledException"/> stops the run (the memory gate's refusal).</summary>
     public Action<EmergeMeshCounts>? OnMeshed { get; init; }
 
-    private int _jobs;
-    private bool _solving, _adaptive;
+    private int _jobs, _batchDone;
+    private bool _solving, _adaptive, _meshing;
+    private IReadOnlyList<string> _batch = [];
+
+    /// <summary>A batch's frequencies, and which of them is being solved: a factorisation here can take many minutes.</summary>
+    private string BatchText()
+        => $"{SolvingLabel}: {(_batchDone > 0 ? $"frequency {_batchDone} of {_batch.Count} in " : "")}{string.Join(", ", _batch)}{ErrorText()}";
 
     public void Begin() => control?.BeginStage(StartingLabel);
 
@@ -222,7 +239,14 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
         switch (EmergeLog.Read(line))
         {
             case EmergeMeshing:
+                _meshing = true;
                 control?.BeginStage(MeshingLabel);
+                break;
+            case EmergeSetupStep step:
+                control?.SetStageLabel($"{(_meshing ? MeshingLabel : StartingLabel)}: {step.Words}");
+                break;
+            case EmergeAssembling when !_solving:
+                control?.SetStageLabel($"{SolvingLabel}: assembling the matrices");
                 break;
             case EmergeMeshDone d:
                 Tetrahedra = d.Tetrahedra;
@@ -253,7 +277,9 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
             case EmergeSweepBatch b:
                 _adaptive = true;
                 Solving(0);
-                control?.SetStageLabel($"{SolvingLabel}: {string.Join(", ", b.Frequencies)}" + ErrorText());
+                _batch = b.Frequencies;
+                _batchDone = 0;
+                control?.SetStageLabel(BatchText());
                 break;
             case EmergeSweepError e:
                 Samples = e.Samples;
@@ -272,6 +298,10 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
                 break;
             case EmergeFactorising when _jobs > 0:
                 control?.TickStage();
+                break;
+            case EmergeFactorising when _adaptive && _batchDone < _batch.Count:
+                _batchDone++;
+                control?.SetStageLabel(BatchText());
                 break;
             case EmergePostProcessing when !_adaptive:
                 control?.SetStageLabel(PostLabel);

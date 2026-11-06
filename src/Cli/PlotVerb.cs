@@ -56,6 +56,10 @@ internal static class PlotVerb
         public string? Cut;      // a phi in degrees, or "all" for the whole pattern as a family
         public int?    Port;     // a 1-based PORT NUMBER on a `port` axis, never an index
         public double? FreqHz;   // pins the freq axis to its nearest sample
+        // brief-cosim-pattern-5 R-cp5-5 — any other axis by its own name: L1=3n pins the sample nearest it, L1=all keeps every value as a family.
+        // Whether the cube has that axis is known only once the file is read, so an unknown key is refused then.
+        public List<(string Axis, string Value)> AxisPins = [];
+        public bool OverSweep;   // set when this cut came out as one curve per sweep value: what a legend is needed for
 
         public string? Probe;
         public string? With;
@@ -86,7 +90,7 @@ internal static class PlotVerb
         {
             RefPowerDbm = RefPowerDbm,
             Text = Text, I = I, J = J, YText = YText, Secondary = Secondary, Raw = Raw,
-            Cut = cut, Port = Port, FreqHz = FreqHz,
+            Cut = cut, Port = Port, FreqHz = FreqHz, AxisPins = AxisPins,
             Probe = Probe, With = With,
         };
         // brief-yield-8 R-ya8-6 — the statistical pictures, rewritten through the trace card's own function.
@@ -161,6 +165,7 @@ internal static class PlotVerb
 
         // The legend (R-dfr26-6-2): off, in the plot box's corner, or in a band under the plot.
         public LegendPlacement      Legend;
+        public bool                 LegendStated;
 
         // One trace per cut instead of two (owner request, 2026-09-11). Plot-level rather than
         // per-trace because it is a statement about how every cut on this plot is DRAWN, and a plot
@@ -326,6 +331,9 @@ internal static class PlotVerb
             }
         }
 
+        // R-cp5-5 — a cut's curves over a sweep are told apart by the legend, so one opens unless --legend said otherwise.
+        if (!o.LegendStated && o.Traces.Exists(t => t.OverSweep)) o.Legend = LegendPlacement.Inside;
+
         // --spec-lines draws the goals the RESULT records (brief-yield-8 R-ya8-3); a result recording none would leave
         // a picture with nothing the flag asked for in it.
         if (o.SpecLines == true && SpecLineResolve.GoalsOf(data).Count == 0)
@@ -378,6 +386,7 @@ internal static class PlotVerb
             "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
             "                      branch drawn at -theta, on a --radial db polar plot\n" +
             "                      cut=all keeps every phi as a family\n" +
+            "                      a parametric sweep's axis: one curve per value; L1=3n pins a value, L1=all keeps the family\n" +
             "  cube= takes the trace card's own shorthand — S[:,1,0], Pout, mag(V[:,\"X1.drain\"])\n" +
             "  a statistic of a Monte Carlo result, rewritten as the trace card's Statistics menu does:\n" +
             "                      stat=histogram|cdf|quantile|yieldsens [over=<axis>] [bins=n] [percent=1]\n" +
@@ -555,6 +564,7 @@ internal static class PlotVerb
                     o.AngleLabels = true; continue;
 
                 case "--legend" when i + 1 < args.Length:
+                    o.LegendStated = true;
                     if (!Enum.TryParse(args[++i], ignoreCase: true, out o.Legend) || !Enum.IsDefined(o.Legend)
                         || int.TryParse(args[i], out _))
                         return JsonRun.Fail(CliDiagnostics.PlotLegendMalformed(args[i]));
@@ -803,7 +813,8 @@ internal static class PlotVerb
                     break;
                 }
                 default:
-                    return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnknownKey(raw, key)));
+                    spec.AxisPins.Add((field[..eq].Trim(), value));
+                    break;
             }
         }
 
@@ -905,6 +916,11 @@ internal static class PlotVerb
     private static (TraceConfig? Trace, int? Refusal) BuildYTrace(
         TraceSpec spec, string text, DataSet data, string sourceRef, int index, PlotType plotType)
     {
+        // A key no trace option claims has to name an axis of this trace's own cube. Nothing else takes one.
+        foreach (var (axis, _) in spec.AxisPins)
+            if (spec.Probe is not null || spec.Metric is not null || BareCubeName(text) is not { Length: > 0 } pinned || !data.Contains(pinned)
+                || AxisNamed(data[pinned], axis) is null)
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnknownKey(spec.Raw, axis.ToLowerInvariant())));
 
         // An axis function (mean_over, histogram, cdf, … — YA-5 R-ya5-6) reads whole cubes, so the trace is an
         // EXPRESSION, evaluated once by the trace card's own evaluator; its one remaining axis is the X. Checked
@@ -1101,17 +1117,27 @@ internal static class PlotVerb
                         : ""));
             }
 
+            // R-cp5-5 — a cut over a sweep is one curve per value, over the innermost sweep axis no key pinned. There is one family
+            // to a trace, so any other axis has to be pinned, and a pin nobody asked for is said rather than drawn as if it were the plot.
+            int familyDim = -1;
+            for (int d = pcube.Rank - 1; d >= 0 && familyDim < 0 && !wholePattern; d--)
+                if (IsSweepAxis(pcube.Axes[d]) && !spec.AxisPins.Any(p => Same(p.Axis, pcube.Axes[d].Name))) familyDim = d;
+            spec.OverSweep = familyDim >= 0 || spec.AxisPins.Exists(p => Same(p.Value, "all"));
+
             var ptok = new string[pcube.Rank];
             for (int d = 0; d < pcube.Rank; d++)
             {
                 var ax = pcube.Axes[d];
+                if (AxisPinToken(spec, ax, out string? pin) is { } badPin) return (null, badPin);
                 ptok[d] = ax.Name switch
                 {
                     "theta" => ":",
                     "phi"   => wholePattern ? "~" : phiIndex.ToString(CultureInfo.InvariantCulture),
                     "port"  => PortToken(ax, spec.Port),
                     "freq"  => FreqToken(ax, spec.FreqHz),
-                    _       => "0",
+                    _ when pin is not null => pin,
+                    _ when d == familyDim => "~",
+                    _ => FirstOfSweepAxis(ax),
                 };
             }
             if (spec.Port is { } wantPort && !HasAxis(pcube, "port"))
@@ -1127,7 +1153,7 @@ internal static class PlotVerb
         }
         // `port=`/`freq=` alone are the same convenience without a cut — they pin one named axis on
         // a cube whose other axes are already one sample deep, which every metric cube is.
-        else if (spec.Port is not null || spec.FreqHz is not null)
+        else if (spec.Port is not null || spec.FreqHz is not null || spec.AxisPins.Count > 0)
         {
             if (text.Contains('['))
                 return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortsWithSlice(spec.Raw)));
@@ -1145,8 +1171,12 @@ internal static class PlotVerb
                 var ax = qcube.Axes[d];
                 if (ax.Name == "port" && spec.Port is not null) { qtok[d] = PortToken(ax, spec.Port); continue; }
                 if (ax.Name == "freq" && spec.FreqHz is not null) { qtok[d] = FreqToken(ax, spec.FreqHz); continue; }
+                if (AxisPinToken(spec, ax, out string? pin) is { } badPin) return (null, badPin);
+                if (pin is not null) { qtok[d] = pin; continue; }
                 // The first axis nobody pinned is the sweep. Anything after it is pinned, exactly as
-                // the parser's own positional convention would have resolved a bare name.
+                // the parser's own positional convention would have resolved a bare name. A port pinned here is
+                // a port number as everywhere else; "0" is not one.
+                if (xTaken && ax.Name == "port") { qtok[d] = PortToken(ax, null); continue; }
                 qtok[d] = xTaken ? "0" : ":";
                 xTaken  = true;
             }
@@ -1406,6 +1436,44 @@ internal static class PlotVerb
         }
         got = values.Length > 0 ? values[best] : double.NaN;
         return best;
+    }
+
+    private static bool Same(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase);
+
+    private static Axis? AxisNamed(DataCube cube, string name) => cube.Axes.FirstOrDefault(a => Same(a.Name, name));
+
+    /// <summary>An axis a sweep put on a pattern: more than one numeric sample, and none of the axes a pattern, a corner run or a trial run has of its own.</summary>
+    private static bool IsSweepAxis(Axis axis)
+        => axis.Length > 1 && axis.Labels is null
+           && axis.Name is not ("theta" or "phi" or "port" or "freq" or "corner" or CircuitRF.Core.Expressions.Evaluator.TrialAxis);
+
+    /// <summary>A sweep axis nothing pinned and no family is iterating: its first value, and it says so.</summary>
+    private static string FirstOfSweepAxis(Axis axis)
+    {
+        if (IsSweepAxis(axis))
+            Console.Error.WriteLine($"[circuitRF] {axis.Name} pinned to its first value, {axis.Values[0].ToString("G6", CultureInfo.InvariantCulture)}{(axis.Unit is { Length: > 0 } u ? " " + u : "")}; " +
+                                    $"name another with {axis.Name}=<value> in the trace");
+        return "0";
+    }
+
+    /// <summary>The token for an axis the trace pins by name (R-cp5-5): <c>all</c> a family, otherwise the nearest sample's index, reported as <see cref="FreqToken"/> reports one.
+    /// Returns the refusal when the value is not a number.</summary>
+    private static int? AxisPinToken(TraceSpec spec, Axis axis, out string? token)
+    {
+        token = null;
+        foreach (var (name, value) in spec.AxisPins)
+        {
+            if (!Same(name, axis.Name)) continue;
+            if (Same(value, "all")) { token = "~"; return null; }
+            if (!CircuitRF.Core.Netlist.Spice.SpiceNumber.TryParse(value, out double want))
+                return JsonRun.Fail(CliDiagnostics.PlotTraceAxisValueMalformed(spec.Raw, axis.Name, value));
+            int at = NearestIndex(axis.Values, want, out double got);
+            Console.Error.WriteLine($"[circuitRF] {axis.Name} pinned to {got.ToString("G6", CultureInfo.InvariantCulture)}{(axis.Unit is { Length: > 0 } u ? " " + u : "")}"
+                                    + (Math.Abs(got - want) > 1e-9 * Math.Abs(got) ? " (nearest sample)" : ""));
+            token = at.ToString(CultureInfo.InvariantCulture);
+            return null;
+        }
+        return null;
     }
 
     /// <summary>

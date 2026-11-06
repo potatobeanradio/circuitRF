@@ -1375,6 +1375,22 @@ running macOS 27.0, Palace 0.18.1 and Gmsh 4.15.2; yours will differ.
   metal would fill the whole cavity with fine elements; order 2 is what resolves the notch, and *Direct* is what
   makes it fast. The example's `README.md` gives what each alternative measured.
 
+**Seeing the mesh before solving.** The grid button beside **Run Analysis**, or *Simulate ▸ Mesh Only*, makes the active
+setup's mesh and stops. It works on Palace setups and on thermal setups, whose mesh Gmsh also makes; a thermal setup driven from
+a circuit runs that circuit's harmonic balance first, because its currents decide the faces in its mesh. The triangle button
+beside the eye button then shows any mesh on disk for the active setup, whether a run, a stopped run or a mesh pass made it, and
+its tooltip says which. No fields are needed. [EM setup ▸ Looking at a 3D mesh](em-setup.html#mesh-3d) has what a pass writes and
+when Simulate reuses its mesh.
+
+The triangle button draws the boundary triangles. The **mesh plane** button beside it opens the mesh's own plane: tick *Show the
+tetrahedra on a plane*, then choose its axis and drag it through the model. It is separate from the clip plane and from every
+field plot's plane, so moving one never moves another. While the clip plane is off, the mesh plane also cuts the solids so the
+section can be seen, and the arrows button keeps the other side; while the clip plane is on, the clip plane does that cutting
+and the mesh plane stays where it is. A clip-plane field plot stays on its own plane throughout.
+
+When the model or the setup has changed so that a run would mesh again, the line under the view says so, and the mesh is drawn
+as it was made. For a thermal setup driven from a circuit, that line says a run decides, because only its harmonic balance can.
+
 ## The lid's resonance {#lid}
 
 A lid turns a package into a **cavity**, and a cavity has resonant modes. The lowest, for a cavity much
@@ -1587,6 +1603,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd+C**, **Ctrl/Cmd+V** in the object tree | Copy the selected rows; paste a 3D copy ([Copy and Paste](#copy-paste)). In the view, Ctrl/Cmd+C copies the picture |
 | **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
 | double-click an edge | Its tangent chain (**Shift** adds it) |
+| double-click a row in the object tree | Bring **Properties** forward for that row, when nothing is listed beneath it; a row that opens just opens or closes |
 | **M** | Measure |
 | **Alt** (**Option**) | Suspend geometry snapping while held |
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
@@ -1787,7 +1804,7 @@ order a pane presents them, with the rules each one follows.
 - **Simulate** (*Simulate ▸ Run* with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
   same progress, Cancel and messages as a `.cem`, and opens its results in the Data Display. Afterwards the
   run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
-  mesh the run made (it is greyed until there are fields to plot); if the 3D view, or any file the run was solved from,
+  mesh the run made, or one made with [no solve](#simulate); if the 3D view, or any file the run was solved from,
   has changed since, a selected field plot's Properties say so and name it (`Fields are from the run at 14:02;
   'Board.clay' has changed since`) and the fields are still shown. A run keeps, beside its result, the document it solved
   and a hash of every file it read: each placed layout and the sub-cells it flattens, a layout's paired `.wBond`, each

@@ -819,9 +819,17 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     partial void OnClipPositionChanged(double value) => ApplyClip();
     partial void OnClipFlipChanged(bool value) => ApplyClip();
 
+    /// <summary>brief-dfr36-1 — the plane the toolbar's clip controls state, which a field's slice and the FDTD grid are cut on. What
+    /// the view actually cuts solids on is <c>View.Clip</c>: this, unless it is off and the mesh's plane is showing.</summary>
+    public ClipPlane3D ToolbarClip { get; private set; } = new() { Axis = ClipAxis3D.Z };
+
+    /// <summary>What cuts the solids: the clip plane when it is on, else the mesh's own plane when it is showing, since a plane inside
+    /// opaque solids could not otherwise be seen. A field plot on its own plane is drawn unclipped either way.</summary>
+    private void CutView() => View.Clip = !ClipEnabled && ShowMesh && MeshPlaneEnabled ? MeshPlane : ToolbarClip;
+
     private void ApplyClip()
     {
-        var c = View.Clip;
+        var c = ToolbarClip;
         c.Enabled = ClipEnabled;
         if (ClipAxis == ClipAxis3D.View && (c.Axis != ClipAxis3D.View || c.ViewNormal == Vector3.Zero))
             c.ViewNormal = View.Camera.Forward;
@@ -838,8 +846,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         c.Flip = ClipFlip;
         var (lo, hi) = c.Range(Scene.BoundsMin, Scene.BoundsMax);
         c.Offset = (float)(lo + (hi - lo) * ClipPosition);
-        View.Clip = c;
-        View.ShowMeshSection = ShowMesh && ClipEnabled;
+        ToolbarClip = c;
+        CutView();
         FrameRequested?.Invoke();
         ScheduleClipOverlays();
         // brief-em3d-96 — a ClipPlane plot cuts on its own plane: the view's section never rebuilds it.
@@ -908,13 +916,140 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showMesh;
     [ObservableProperty] private bool _showGrid;
 
-    /// <summary>The mesh toggle is enabled only beside fields to plot: the mesh a run made, and that run's fields (owner
-    /// request, 2026-09-28).</summary>
-    public bool CanShowMesh => MeshAvailable && FieldsAvailable;
+    /// <summary>brief-dfr36-1 D1 — any mesh on disk for this setup: a finished run's, a stopped run's or a mesh-only pass's. The mesh is
+    /// looked at to judge it before solving, so it needs no fields.</summary>
+    public bool CanShowMesh => MeshAvailable;
 
-    public string MeshTip => CanShowMesh ? "Show the mesh Gmsh made (boundary triangles, and the tetrahedra the clip plane cuts)"
-                           : _lastSetup is { Is3D: false } ? "The planar mesh is shown in the layout view"
-                           : "Simulate first: the mesh is shown with the run's fields";
+    public string MeshTip => CanShowMesh ? $"Show the mesh Gmsh made, {_meshOrigin}: its boundary triangles, or the tetrahedra on the mesh plane beside this."
+                           : _lastSetup is { IsThermal: false, Is3D: false } ? "The planar mesh is shown in the layout view"
+                           : _lastSetup is { } setup && Em3dRunService.MeshButtonRefusal(setup) is { } refusal ? refusal
+                           : "No mesh yet: Mesh makes one without solving, and Simulate makes one first";
+
+    /// <summary>Who made the mesh on disk, in the tooltip's words.</summary>
+    private string _meshOrigin = "";
+
+    private static string MeshOriginOf(string meshPath)
+    {
+        var madeUtc = File.GetLastWriteTimeUtc(meshPath);
+        string when = madeUtc.ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+        if (C3dRunStatus.Read(Path.GetDirectoryName(meshPath)!) is not { } run || (run.Finished is { } end && madeUtc > end))
+            return $"at {when} by a mesh-only pass";
+        string started = run.Started.ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+        if (madeUtc < run.Started) return $"at {when} and reused by the run at {started}";
+        return run.Partial ? $"at {when} by a run that did not finish" : $"at {when} by the run at {started}";
+    }
+
+    // ── brief-dfr36-1 — the mesh's own plane ─────────────────────────────────────────────────
+    //
+    // The tetrahedra are cut here, apart from the toolbar's clip plane and from any field plot's plane, so moving one never moves
+    // another. The Lines pipeline does not read the view's clip plane, so that plane never removes the section; opaque solids in front
+    // of it do hide it, which is why this plane cuts the solids itself while the clip plane is off (CutView).
+
+    [ObservableProperty] private bool _meshPlaneEnabled;
+    [ObservableProperty] private ClipAxis3D _meshPlaneAxis = ClipAxis3D.Z;
+    /// <summary>0..1 across the scene's extent along the axis.</summary>
+    [ObservableProperty] private double _meshPlanePosition = 0.5;
+    /// <summary>Which side of the plane is kept, when it is the mesh's plane that cuts the solids.</summary>
+    [ObservableProperty] private bool _meshPlaneFlip;
+
+    public IReadOnlyList<ClipAxis3D> MeshPlaneAxes { get; } = [ClipAxis3D.X, ClipAxis3D.Y, ClipAxis3D.Z];
+
+    partial void OnMeshPlaneEnabledChanged(bool value) => ApplyMeshPlane();
+    partial void OnMeshPlaneAxisChanged(ClipAxis3D value) => ApplyMeshPlane();
+    partial void OnMeshPlanePositionChanged(double value) => ApplyMeshPlane();
+    partial void OnMeshPlaneFlipChanged(bool value) => ApplyMeshPlane();
+
+    /// <summary>On a plane, the mesh is that plane's tetrahedra alone: the boundary wireframe is not clipped, so the half the plane cuts
+    /// away would be drawn in front of the section.</summary>
+    private void ShowMeshDrawing()
+    {
+        View.ShowMesh = ShowMesh && !MeshPlaneEnabled;
+        View.ShowMeshSection = ShowMesh && MeshPlaneEnabled;
+    }
+
+    private void ApplyMeshPlane()
+    {
+        ShowMeshDrawing();
+        CutView();
+        OnPropertyChanged(nameof(MeshPlaneText));
+        FrameRequested?.Invoke();
+        ScheduleClipOverlays();
+    }
+
+    /// <summary>The mesh's plane where it now stands, scene-local.</summary>
+    public ClipPlane3D MeshPlane
+    {
+        get
+        {
+            var plane = new ClipPlane3D { Enabled = true, Axis = MeshPlaneAxis, Flip = MeshPlaneFlip };
+            var (lo, hi) = plane.Range(Scene.BoundsMin, Scene.BoundsMax);
+            plane.Offset = (float)(lo + (hi - lo) * MeshPlanePosition);
+            return plane;
+        }
+    }
+
+    /// <summary>Where the plane is, in world millimetres.</summary>
+    public string MeshPlaneText
+    {
+        get
+        {
+            var plane = MeshPlane;
+            var at = Scene.ToWorld(plane.Unflipped * plane.Offset);
+            double metres = MeshPlaneAxis switch { ClipAxis3D.X => at.X, ClipAxis3D.Y => at.Y, _ => at.Z };
+            return string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{MeshPlaneAxis} = {metres * 1e3:0.###} mm");
+        }
+    }
+
+    // ── brief-dfr36-1 R-dfr36-1-3 — is the mesh shown still the model's? ──────────────────────
+
+    /// <summary>Set when the mesh shown is no longer what a run would use, or when only a run can tell.</summary>
+    [ObservableProperty] private string? _meshStaleText;
+
+    /// <summary>Asked on the UI thread for the question to put off it: whether a run would reuse the mesh, or null when there is
+    /// nothing to ask. The editor's assembles the document; the default reads the problem the scene was built from.</summary>
+    public Func<Func<Em3dMeshCurrency>?>? MeshCurrencySource { get; set; }
+
+    private CancellationTokenSource? _meshCurrencyCts;
+
+    /// <summary>The model or the setup may have changed: asked again shortly, and only while the mesh is on screen.</summary>
+    public void ScheduleMeshCurrency()
+    {
+        _meshCurrencyCts?.Cancel();
+        if (!ShowMesh || !MeshAvailable || (MeshCurrencySource ?? SceneMeshCurrency)() is not { } ask) { MeshStaleText = null; return; }
+        var cts = _meshCurrencyCts = new CancellationTokenSource();
+        string made = _meshOrigin;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(MeshCurrencyQuietMs, cts.Token).ConfigureAwait(false);
+                var currency = ask();
+                _post(() => { if (!cts.IsCancellationRequested && !_disposed) MeshStaleText = MeshStaleSentence(currency, made); });
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                // An answer that could not be reached is not "current".
+                _post(() => { if (!cts.IsCancellationRequested && !_disposed) MeshStaleText = MeshStaleSentence(Em3dMeshCurrency.Unknown, made); });
+            }
+        });
+    }
+
+    /// <summary>How long the model must be quiet before the mesh is compared with it; zero under a test.</summary>
+    public int MeshCurrencyQuietMs { get; set; } = 400;
+
+    private Func<Em3dMeshCurrency>? SceneMeshCurrency()
+    {
+        if (_lastSetup is not { } setup || Scene.Problem is not { } problem || _resultsRoot() is not { } root) return null;
+        return () => Em3dRunService.MeshCurrency(problem, setup, root);
+    }
+
+    internal static string? MeshStaleSentence(Em3dMeshCurrency currency, string made) => currency switch
+    {
+        Em3dMeshCurrency.Stale => $"The mesh was made {made}; the model or the setup has changed since. It is drawn as it was made, and a run meshes again.",
+        Em3dMeshCurrency.Unknown => $"The mesh was made {made}. Whether it is still current is decided when a run starts.",
+        _ => null,
+    };
     public string GridTip => GridAvailable ? "Show the FDTD grid on the clip plane and where it meets the metal"
                                            : "The FDTD grid is shown for an openEMS setup";
 
@@ -923,9 +1058,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnShowMeshChanged(bool value)
     {
-        View.ShowMesh = value;
-        View.ShowMeshSection = value && ClipEnabled;
+        ShowMeshDrawing();
+        CutView();
         if (value) LoadMesh();
+        ScheduleMeshCurrency();
         FrameRequested?.Invoke();
     }
 
@@ -962,6 +1098,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// the FDTD grid.</summary>
     public void RefreshSolverOverlays()
     {
+        _meshOrigin = MeshPath() is { } onDisk ? MeshOriginOf(onDisk) : "";
         MeshAvailable = MeshPath() is not null;
         OnPropertyChanged(nameof(MeshTip));
         if (MeshAvailable && ShowMeshWhenAvailable) { ShowMeshWhenAvailable = false; ShowMesh = true; }
@@ -972,6 +1109,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             MeshText = "";
         }
         if (ShowMesh) LoadMesh();
+        ScheduleMeshCurrency();
 
         // brief-emi-1 — the grid shown is circuitRF's own FDTD grid, which an FDTD solver's run is placed on.
         GridAvailable = _lastSetup is { } gridSetup && Em3dSolvers.Of(gridSetup.Solver3D).Any(d => d.Method == Em3dSolverFit.Fdtd)
@@ -1029,28 +1167,35 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     /// <summary>The clip-dependent overlays — the mesh's section and the grid — rebuilt off the UI
     /// thread when the plane or the scene moves; a newer request cancels an older one.</summary>
+    private (MshMesh?, Vector4, object?, bool) _sectionKey;
+
     private void ScheduleClipOverlays()
     {
         _overlayCts?.Cancel();
         var cts = _overlayCts = new CancellationTokenSource();
+        CutView();                                 // the scene's bounds, which the mesh's plane is placed in, may have moved
         var scene = Scene;
-        var clip = View.Clip;
+        var clip = ToolbarClip;
         var mesh = _mesh;
-        bool wantSection = ShowMesh && ClipEnabled && mesh is not null;
+        bool wantSection = ShowMesh && MeshPlaneEnabled && mesh is not null;
+        var plane = MeshPlane;
+        bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
+        // Only the mesh's own plane, the mesh, the scene or the theme rebuild it: dragging the clip plane must not re-cut a large mesh.
+        (MshMesh?, Vector4, object?, bool) sectionKey = wantSection ? (mesh, plane.Equation, scene.Geometry, dark) : default;
+        bool buildSection = wantSection && sectionKey != _sectionKey;
         bool wantGrid = ShowGrid && GridAvailable && scene.Problem is not null;
         var setup = _lastSetup;
         var grid = _grid is { } cached && ReferenceEquals(cached.Scene.Geometry, scene.Geometry) ? cached.Grid : null;
-        bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
-        if (!wantSection) SectionOverlay = Scene3DOverlay.None;
+        if (!wantSection) { SectionOverlay = Scene3DOverlay.None; _sectionKey = default; }
         if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; GridFeedLabels = []; OnPropertyChanged(nameof(GridLabels)); }
-        if (!wantSection && !wantGrid) { FrameRequested?.Invoke(); return; }
+        if (!buildSection && !wantGrid) { FrameRequested?.Invoke(); return; }
         Task.Run(() =>
         {
             try
             {
                 Scene3DVertex[]? section = null;
-                if (wantSection)
-                    section = Render.Scene3D.MeshOverlay.Section(mesh!, scene, MeshToMetres, clip,
+                if (buildSection)
+                    section = Render.Scene3D.MeshOverlay.Section(mesh!, scene, MeshToMetres, plane,
                         dark ? Scene3DVertex.Pack(255, 210, 90, 255) : Scene3DVertex.Pack(170, 90, 0, 255), cts.Token);
                 FdtdGridDrawing? drawing = null;
                 if (wantGrid)
@@ -1067,7 +1212,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested) return;
-                    if (section is not null) SectionOverlay = new Scene3DOverlay(section, ++_overlayVersion);
+                    if (section is not null) { SectionOverlay = new Scene3DOverlay(section, ++_overlayVersion); _sectionKey = sectionKey; }
                     if (drawing is not null)
                     {
                         GridOverlay = new Scene3DOverlay(drawing.Lines, ++_overlayVersion);

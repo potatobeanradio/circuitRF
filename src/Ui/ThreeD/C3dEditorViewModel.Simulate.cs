@@ -232,6 +232,9 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The shell runs a setup: its name (null: the active one). Set by the workspace.</summary>
     public Func<C3dEditorViewModel, string?, Task>? RunRequested { get; set; }
 
+    /// <summary>brief-dfr36-1 R-dfr36-1-1 — mesh the setup named (null: the active one) with no solve, through the run's own path.</summary>
+    public Func<C3dEditorViewModel, string?, Task>? MeshRequested { get; set; }
+
     public string SetupsHeading => SetupItems.Count == 0
         ? "No setups. Add one to simulate this 3D view."
         : $"{SetupItems.Count} setup{(SetupItems.Count == 1 ? "" : "s")} · active: {ActiveSetupName ?? "none"}";
@@ -373,6 +376,7 @@ public sealed partial class C3dEditorViewModel
             vm.EmbeddedCommit = (_, after, description) => CommitSetupFromPanel(name, after, description);
         }
         vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
+        vm.MeshRequested = _ => MeshRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
         // brief-dfr31-1 R-dfr31-1-4 — the terminal picker lists this view's pieces of metal (from the elaboration the view
         // already holds, grouped off the UI thread), a row's Pick takes the next object clicked in the view, and the bodies
         // a row names are selected in the view while it is edited.
@@ -558,11 +562,22 @@ public sealed partial class C3dEditorViewModel
 
     private bool CanSimulateActive() => SimulateBlockedReason is null;
 
+    /// <summary>brief-dfr36-1 R-dfr36-1-1 — Mesh: the active setup's mesh with no solve. A solve's memory check does not apply to it.</summary>
+    [RelayCommand(CanExecute = nameof(CanMeshActive))]
+    public Task MeshActive() => MeshRequested?.Invoke(this, null) ?? Task.CompletedTask;
+
+    /// <summary>Why Mesh is off for the active setup: no setup, a planar one, or a solver Gmsh does not mesh for. Null otherwise.</summary>
+    public string? MeshBlockedReason => ActiveRunSetup is { } setup ? Em3dRunService.MeshButtonRefusal(setup) : SimulateRefusal();
+
+    private bool CanMeshActive() => MeshBlockedReason is null;
+
     /// <summary>Re-asks <see cref="SimulateBlockedReason"/>: the active setup, its solvers, or what is installed changed.</summary>
     public void RefreshSimulateGate()
     {
         OnPropertyChanged(nameof(SimulateBlockedReason));
         SimulateActiveCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(MeshBlockedReason));
+        MeshActiveCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Why the active setup cannot be run now, or null.</summary>
@@ -1936,6 +1951,7 @@ public sealed partial class C3dEditorViewModel
     {
         FieldsStaleText = StaleText(ActiveRunSetup, IsExternalActive ? "" : ActiveSetupName);
         ScheduleSolveStatus();                     // brief-em3d-98 — every edit path comes through here
+        Viewer.ScheduleMeshCurrency();             // brief-dfr36-1 — and a mesh on screen may no longer be the model's
     }
 
     /// <summary>brief-em3d-83 — the banner for plot <paramref name="p"/>: ITS setup's run, which need not be the active one (a plot

@@ -336,7 +336,7 @@ in 3D, the solver's (<code>Setup.palace</code>), in the workspace's <code>result
 <code>.sNp</code>, <code>.npy</code> or <code>.cemr</code> you do type is removed, and the same structure re-run with a coupled pair goes from
 <code>.s2p</code> to <code>.s4p</code> on its own. The <code>…</code> button browses; a path inside the workspace is stored relative so the
 workspace stays portable. <strong>A run replaces the result of the same name, so a new name is how an earlier
-result is kept</strong>, and each name has its own <code>_sim</code> cell and co-simulation netlist. A result outside <code>results/</code>
+result is kept</strong>, and each name has its own <code>_sim</code> or <code>_cosim</code> cell and co-simulation netlist. A result outside <code>results/</code>
 is not in a Data Display's list of sources: choose <strong>Add from file…</strong> in a trace's source list to plot it.</p>
 <p><strong>Layout</strong> — the <code>.clay</code> this setup analyses, and the <code>…</code> button re-points it. Re-pointing re-derives the
 cross-section, the ports and the mesh against the new artwork, and it is undoable.</p>
@@ -365,7 +365,7 @@ records the region, so the file itself says it describes only part of the board.
 <tbody>
 <tr>
 <td><strong>Mesh</strong></td>
-<td>Meshes and stops. No solve. This is the cheap &quot;is my mesh sane?&quot; answer — press it as often as you like.</td>
+<td>Meshes and stops. No solve. This is the cheap &quot;is my mesh sane?&quot; answer — press it as often as you like. On a <a href="#mesh-3d">3D setup</a> it makes the Gmsh mesh a run would solve on.</td>
 </tr>
 <tr>
 <td><strong>Simulate</strong></td>
@@ -1182,6 +1182,8 @@ between a port and its <code>TermG</code>.</p>
 has just rewritten, so it picks up the new result unchanged. If the port count changed, its <code>SnP</code> is
 pointed at the new file and Messages says when its <code>TermG</code>s no longer match. A cell of that name that
 reads something else is left alone, and Messages says so. <code>circuitrf em</code> honours the same tick.</p>
+<p>A run with <strong>component ports</strong> makes a <code>_cosim</code> cell in place of the <code>_sim</code> one, because a <code>TermG</code> on a part's port would have no part on it: each part
+stands on its own port, with the analyses and a Data Display. <a href="cosimulation.html#pattern">Co-simulation</a> describes it.</p>
 <p>Without the tick, place an <a href="components.html#snp">SnP component</a> yourself and point its <code>File</code>
 parameter at the written path. Re-running updates the file in place, so the schematic picks the new
 result up the way it picks up any changed source.</p>
@@ -1484,8 +1486,14 @@ cancel line but the line saying it stopped. <code>circuitrf em</code> prints the
 below t)</em> — how much the frequency model still changes when a new frequency is solved, falling as samples are
 added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
 the number of samples is not known in advance); <em>Sweep: evaluating frequencies</em> with a count; <em>Reading
-results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
-A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
+results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which. At a minute
+or more a frequency the row also says the time each one takes, and from the second port on about how long the rest will
+take at that pace. An eigenmode run shows <em>Eigenmode search: linear solve k</em>, then <em>Eigenmodes: n found, refining i of n</em>
+with the last refined mode's frequency and Q, and the solver iteration of the solve under way.</p>
+<p><code>palace.log</code>, <code>gmsh.log</code> and <code>emerge.log</code> in the run's folder carry circuitRF's own lines, beginning <code>[circuitRF</code> and the
+date, time and UTC offset: when the program started, every five minutes while it runs, and how it ended, with its exit code. Pressing
+Stop or reaching a limit is written before the program is stopped, so a last line such as <code>setsid: child 1054 did not exit normally</code> after that line is the stop, not a crash.</p>
+<p>A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
 the last figure, and the run is marked not converged; a Sweep tolerance of 0 solves every frequency instead.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
 out or compressed, the larger figure that counts it is shown beside it. If Palace prints
@@ -2326,6 +2334,18 @@ near 1: those are the line between its two ports, not resonances. Each cell also
 the modes within 0.15 % of Palace's; the example's README compares the two.</p>
 <p>The result is <code>results/&lt;name&gt;.palace_eig.npy</code> and no Touchstone file; <code>circuitrf em</code> prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.</p>
+<h3 id="mesh-3d">Looking at a 3D mesh before solving</h3>
+<p><strong>Mesh</strong> on a 3D setup's panel, the grid button beside <strong>Run Analysis</strong> on a 3D view's toolbar, and <em>Simulate ▸ Mesh Only</em>
+all make the mesh a run of that setup would solve on, and stop before any solver starts. A pass uses the run's folder, memory
+limit and progress row, and is cancelled from that row. It writes no result, so a result already in the folder stays as it was.
+Messages gives the tetrahedra, the count estimated before meshing and the memory a solve of that mesh would need. Palace must
+be installed, since the pass checks the same things a run checks. The 3D view turns the mesh on when the pass finishes, and
+<strong>Show 3D</strong> does when a <code>.cem</code>'s view is not open yet.</p>
+<p><strong>A current mesh is never made twice.</strong> Simulate and Mesh compare the Gmsh script they would write with the one the mesh in
+the folder was made from. When the two match, the mesh is reused and Messages says so; when they differ, it is made again.
+A change to the sweep, or to anything else that leaves the geometry and the element sizes alone, keeps the mesh.</p>
+<p>The button is greyed, with the reason on its tooltip, on a setup that runs only on openEMS or EMerge: openEMS has a grid, and
+EMerge meshes inside its own run, so neither leaves a mesh to reuse.</p>
 <h3 id="palace-fields">Fields for the 3D view</h3>
 <p>A Palace run also saves the solved <strong>fields</strong>, which the 3D view's field plots draw on a clip plane, on
 surfaces or on chosen faces. <strong>Save fields at (GHz)</strong> in the setup panel's Palace section — <code>SaveFieldsGHz</code>

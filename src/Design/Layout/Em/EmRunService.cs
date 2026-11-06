@@ -633,6 +633,19 @@ public static class EmRunService
     /// the same body — only what builds the problem differs. A planar setup is refused: a <c>.c3d</c> has no
     /// stackup for a planar kernel.
     /// </summary>
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — the mesh in <paramref name="setup"/>'s run folder against the document as it is now, by
+    /// the door a run takes: the problem it would assemble, or the thermal lowering, and the script that gives.</summary>
+    public static CircuitRF.Design.Em3d.Em3dMeshCurrency MeshCurrency(EmSetup setup, CircuitRF.Design.ThreeD.C3dDocument document, string documentPath,
+                                                                      string? workspaceCws, string resultsRoot,
+                                                                      CircuitRF.Design.ThreeD.C3dElaborator? elaborator = null, bool fromCem = false)
+    {
+        if (setup.IsThermal)
+            return CircuitRF.Design.Thermal.ThermalRunService.MeshCurrency(setup, document, documentPath, workspaceCws, resultsRoot, elaborator);
+        var generated = CircuitRF.Design.ThreeD.C3dProblemAssembly.Assemble(setup, document, documentPath, workspaceCws, elaborator, fromCem);
+        return generated.Problem is { } problem ? CircuitRF.Design.Em3d.Em3dRunService.MeshCurrency(problem, setup, resultsRoot)
+                                                : CircuitRF.Design.Em3d.Em3dMeshCurrency.Stale;
+    }
+
     public static EmRunResult RunThreeDView(
         EmSetup            setup,
         CircuitRF.Design.ThreeD.C3dDocument document,
@@ -704,7 +717,8 @@ public static class EmRunService
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
             result = WithCoSim(result, setup, resultsRoot, assembled, document);
-            return WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
+            // R-cp6-2 — a run with component ports has made its _cosim cell: a TermG on a part's port has no part on it.
+            return result.CoSim is not null ? result : WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
         }
         catch (OperationCanceledException)
         {
@@ -740,7 +754,8 @@ public static class EmRunService
 
     /// <summary>
     /// brief-emb-1 R-emb1-7 — a finished driven run whose setup built component ports writes <c>&lt;setup&gt;_cosim.cnl</c> in the
-    /// workspace the results root belongs to, beside where the <c>_sim</c> cell goes; whatever else the setup asks.
+    /// workspace the results root belongs to, whatever else the setup asks, and with its Create schematic on the same circuit as a
+    /// <c>&lt;setup&gt;_cosim</c> cell (R-cp6-2).
     /// </summary>
     private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot,
                                          CircuitRF.Design.Layout.Em3d.Em3dGenerationResult? assembled, CircuitRF.Design.ThreeD.C3dDocument document)
@@ -753,8 +768,15 @@ public static class EmRunService
             return result with { CoSim = new EmCoSimResult(EmSnpSchematicOutcome.NotCreated, null,
                 "No co-simulation netlist was written: this run wrote no Touchstone, and its board block reads one.") };
         string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
-        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, problem.Ports, document, build);
-        return result with { CoSim = cosim };
+        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, problem.Ports, document, build);
+        if (!setup.CreateSnpSchematic) return result with { CoSim = cosim };
+        return result with
+        {
+            CoSim = cosim,
+            SnpSchematic = cosim.Text is { } text
+                ? EmCoSimNetlist.CreateCell(workspace, setup, text, snp, result.RecordPath)
+                : new EmSnpSchematicResult(EmSnpSchematicOutcome.NotCreated, EmCoSimNetlist.CellNameFor(setup), null, $"No schematic was created for this run. {cosim.Sentence}"),
+        };
     }
 
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>

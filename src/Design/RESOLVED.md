@@ -28383,6 +28383,26 @@ publish is partial whatever the scope now, since a run over every analysis lacks
 Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Inspected: a polar cut from a `Local` evaluation with a shunt C at 0.5 pF and 8 pF on a synthetic coupled two-port, through UiSnapshot: the lobes drop about 5 dB, read off the rings, and the
 floor, rings and reference stay.
 
+## brief-cosim-pattern-5 — A parametric sweep wraps the pattern
+
+**An unkeyed warning does not survive a sweep.** `FieldCosimulation.Run` used `nl.AddWarning`, and `MergeDiagnosticsFrom` replays only keyed entries, because unkeyed ones are taken to come from elaboration. So every far-field check would have vanished under a sweep, and the keyed notes would have reported the first point's |Γ| as if it were the sweep's. A swept run now has one note describing the sweep, and each warning is keyed and names its point.
+
+**`plot`'s `cut=` pinned any axis it did not know to index 0, silently.** A cut of `[L1, freq, theta, phi, port]` drew the first value alone and looked complete. That axis is now the family, and a second sweep axis is pinned with a line on stderr saying which value.
+
+**The family mechanism did not label anything.** Its comment says so: one colour, no legend, one trace drawn N times. That is right for a curve tracer and unreadable for cuts that cross, and three reds on the first picture showed it. `Trace.LabelsFamilyCurves` covers a family along an angle over anything but φ or a trial, and every other family draws as it did. The legend is off by default, so a family with no legend would still carry no values: `plot` opens one unless `--legend` is stated, and the trace card opens one when its axis role makes the family, once.
+
+**`--whole-plane` was dropped silently on a family.** `ResolveFamily` never read `PatternWholePlane`, so the picture was the front half with no sign of it. Each curve is the plane now, through `TryWholePlaneCompanion`, with the same outwards-in walk so no chord crosses the disc.
+
+**A failed point lost its unit.** `NaNLike` rebuilt each cube without its `Unit`, and stacking takes the unit from the first point, so a sweep whose first point failed would draw `U` as a bare number. It keeps it now, which changes nothing for an envelope's cubes but their first-point-failed unit.
+
+**A far field's size is 72 bytes a direction only with the Ludwig-3 pair.** The pair exists when the pattern has a polarization to reference; a random-field test fixture has 56. The stated figure is the larger, so the summary does not understate it. A real export at 2° with 3 points was 3.56 MB against a stated 3.5 MB.
+
+**A seed on a single frequency.** `SeedSlice` always took `freq` as X, so a metric at one frequency under a sweep opened as one dot. With one frequency and a sweep around it the sweep is X now, and a pattern keeps its old seed, since its X is an angle the seed cannot choose. This also applies to an S-parameter sweep at one frequency.
+
+**`plot`'s positional branch wrote `0` for a port.** A port token is a port number, so `cube=…,L1=5n` was refused with "Port 0 is not a port". It writes the first port's number now, which also repairs `freq=` alone on a cube whose port comes after the X.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs` and `tests/Ui.Tests/Cli/PatternPlotCliTests.cs`. Inspected: a polar cut at 1, 5 and 9 nH on a synthetic two-port through UiSnapshot, the rect form and a 3D surface pinned by `L1=5n` through `plot`: three distinct curves, front and back halves matching, a legend reading `L1 = 5 nH`, nothing clipped. Not run against a solved 3D result: every number here is the circuit's and a sum already gated in CP-3.
+
 ## How a net reaches copper inside a placed instance (brief-ipx-1 R-ipx1-1c, 2026-11-05)
 
 It does not, through anything stored. `LayoutInstance` has no pin-to-net map, and a land pattern is one cell shared by every
@@ -28506,3 +28526,118 @@ guard bounds the read's own memory, and every `Set` is released once played, so 
 
 Gates: `tests/Ui.Tests/Ipc2581/Ipc2581ImportTests.cs` and the `Ipc2581_*` rows in `tests/Ui.Tests/ConvertCliVerbTests.cs`.
 
+## brief-cosim-pattern-6 — the run makes the schematic
+
+**The drawing had already moved.** `NetlistSchematic.Build` was in `src/Design` from AA-6, and `src/Cli/NetlistToSchematic.cs` was already arguments and reporting, so R-cp6-2's move needed no code. The source scan holds both callers to it.
+
+**A hierarchical part gives no cell.** `Build` refuses a netlist that defines a sub-cell, so a board whose part's model is a cell gets `_cosim.cnl` and a sentence saying so, and no cell. Drawing those needs a symbol per definition, which `ExactPlacement.Cells` could carry.
+
+**`_cosim` is never repointed, unlike `_sim`.** An EM Field Data block's File names no port count, and a changed port set means changed wiring that someone may have edited. So a re-run with other ports leaves a cell whose block no longer matches its result, and running it says so through the block's own refusal.
+
+**The netlist's comments are notes on the sheet.** Without that, a placeholder part and the stored frequencies would be said only in a file the cell does not open. They are one `EditableText` per comment line, since the sheet draws each as one line.
+
+**The display's cube names depend on the analysis count.** A one-analysis bench publishes `S`, and beside a second analysis it is `SP1.S`, so a far-field cell's S11 reads `SP1.S` and a cell with no pattern takes `_sim`'s display, which reads `S`. The gate reads every trace's cube and axes against a real evaluation.
+
+**A polar plot clips a custom title**, since it fills its square and draws the title above its top edge, and a table draws none. So only the rectangular plot has one, the polar trace's label says the plane, and the table's column carries the unit.
+
+**The check reads two-terminal elements only.** `EmCoSimNetlist` itself wires an amplifier's signal pins to two gap ports' nodes, which is right, so a rule on any shared element would flag the netlist the run wrote. It is on an EM Field Data block only: a plain SnP has no record to give its port kinds.
+
+**Measured once, with a scratch board not kept.** A 30 mm microstrip with a connector and two gap-port parts, EMerge Draft, 3,845 tetrahedra, 3 points, about 4 s. `em` made the cell. `fields` on it and on the same circuit written by hand, with other instance names, wrote byte-identical `.npy` files. A second `em` left an edited cell's bytes alone and said so. `check` was clean on the cell and warned once when L1 was moved between two gap nodes. The same board on Palace at its defaults, with the default air box and refinement passes, had not finished when stopped at 20 minutes, on a mesh 2.7× the estimate. No part values were compared against a loaded run here; those are CP-3's gates.
+
+**No worked example ships.** The brief makes one conditional on a small board meeting G4-G5 quickly enough. CP-3's dipole meets G4's limits on EMerge with `EdgeRefinement` 0.02 in 6 s, but that is a dipole in free space. No board has been measured against those gates, and the scratch board here ran at Draft with no reference.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.Cell.cs`. Inspected: the analysis editor on a far-field and a SAR record through UiSnapshot, with every control in the same place and norm and average grey on the first; the cell's sheet through `render`; its Data Display through UiSnapshot.
+
+## brief-cosim-pattern-7 — planar results as EM Field Data blocks
+
+**R-cp7-1 first stopped the work: a planar run did not keep what an edge port's weight needs. The owner chose to keep it in the run**, over internal gaps only, a power-scaled weight on one port, or leaving planar refused.
+
+**CP-3 had been summing planar results with the wrong weights, silently.** `PortFarFieldSet.Read` looked for `Etheta`, `Ephi`, `S` and `Z0`, and a planar `.npy` has all four, so an EM Field Data block on a planar record ran `a_k·√Z0·(1 + S_kk)·E_k` and published it. The tables below have what that did.
+
+**The weights.** A planar pattern is `Y = BᵀZ⁻¹B`'s column, its gap at 1 V and every other gap at 0 V, so the sum is `E = Σ_k V_k·E_k` with the gaps' voltages and no S term. `PortFarFieldSet.Weights` is the one statement of both this and the 3D sum, from the same waves. From the block's waves at a plane (`PlanarPortBox.ToGap`): renormalise to the line's `Z_c`, put the lead back, then `a_e = (a_i − a22·b_i)/a21`, `b_e = a11·a_e + a21·b_i`, `V_gap = √Z0·(a_e + b_e)`. The `Z_c` step uses power waves on the series path and pseudo-waves on the grounded path or a conducting stack, as `DeembedAt` does, so the result says which. An internal gap or a declined edge port has an identity box. `b_e = S_raw·a_e` closes to 1e-15. The sign `a21` carries is a continuation, but every port's voltage flips with it, so a ratio to the drive changes only the phase of the whole pattern.
+
+**What the run keeps now.** `__PortBoxA11`, `A21`, `A22`, `Zc` and `Peel` (`γ·ℓ` of the lead) on `[freq, port]` at the pattern's frequencies, and `__PortBoxPseudoWave`, in the `planar` group, only when a pattern was asked for. **No raw S or Y is kept, against what the first report here expected:** `|a_e|² − |b_e|²` is what the raw structure takes at that gap. The record gains `FarFieldExcitation`, `TerminatedZ0` or `ShortedOthers`, asked of the data so an adopted record answers too; a record from before it is read the same way. `FormatVersion` stays 1. A result from before the boxes runs when its record says every port is a `Gap`, whose plane is its gap, and is otherwise asked for again. A calibration group's boxes are N×N in a modal basis and are not kept: the run writes `__PortCalibrationGroup` and the block refuses it by name.
+
+**Gain and accepted power.** What the circuit accepts, with the block's share replaced by what the structure takes: `accepted − Σ(|a|²−|b|²) + Σ(|a_e|²−|b_e|²)`. R-ant-5 and R-ant-6 then hold with no special case. A one-port block driven directly reproduces the run's own `GainDbi`, `RealizedGainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` to 1e-6, and a lossless network leaves the gain alone and takes realized gain down by its own mismatch. Its worth is measured: on a one-port patch, scaling the stored pattern by power at the plane is 0.36 dB off the box's level, and on a patch with 100 Ω on a stub, radiated power is 25.9 % of what the gaps take and 28.5 % of what the planes take, because the box holds loss.
+
+**Which ports.**
+- A pattern takes `Edge` and `InternalDeltaGap`, including a two-cut gap returning through drawn metal. An `Internal` port stands on a via, and `CanCompute` refuses any vertical basis, so one such port stops the whole pattern. **This is the default for a label inside metal**: the first real run built a via under its port and made no pattern, so the docs say to set the type.
+- A gap between two in-plane pads cannot be a port: a delta gap cuts metal, so a label in a 1 mm air gap or on a pad's facing edge is refused. A part site has to be drawn as continuous metal with an internal gap across it.
+- `ComponentPorts` on a layout setup is refused (`ComponentPortsOnLayoutRefusal`), so a planar block's ports are the labelled ones and the run makes no `_cosim` cell.
+- The port axis holds on a real two-port: a uniform line's two ports give mirror patterns of one peak.
+
+**Measured with a scratch harness, not kept.** FR-4, 2.4 GHz, each run under a second. A delta-gap load can be stamped in the matrix, `Z + Z_L·BBᵀ`, which the kernel's settings cannot state. That reference shares the matrix with the sum, so it tests the weights and polarity and not the model. On an edge port the independent reference is the line's own current: fit forward and backward waves to `LineCurrent` over the middle 60 % of a uniform line and read Γ at the plane, with no S involved.
+
+Two internal gaps on a 40 mm strip, port 2 loaded, against the stamped load (pattern is within 20 dB of the peak; CP-3's limits are 0.05 dB and 0.2 dB):
+
+| Load | `Σ V_k·E_k` peak, pattern | CP-3's formula peak, pattern |
+|---|---|---|
+| 200 Ω | 5e-15 dB, 4e-14 dB | 1.99 dB, 2.20 dB |
+| 100 Ω | 8e-15 dB, 4e-14 dB | 1.85 dB, 3.36 dB |
+| 5 nH | 1e-13 dB, 3e-13 dB | 0.08 dB, 19.9 dB |
+| 1 pF | 4e-14 dB, 5e-14 dB | 2.07 dB, 2.36 dB |
+
+A strip-fed patch, port 1 an edge port and port 2 an internal gap on a far stub, against the stamped load:
+
+| Load | Box weights | Circuit voltage used at the gap | CP-3's formula |
+|---|---|---|---|
+| 100 Ω | under 1e-4 dB; \|ΔS11\| 1e-14 | peak 6.30 dB, pattern 8.24 dB | peak 1.50 dB, pattern 1.72 dB |
+| 200 Ω | under 1e-4 dB; \|ΔS11\| 1e-14 | peak 4.62 dB, pattern 6.09 dB | peak 0.84 dB, pattern 1.14 dB |
+
+An 80 mm line with two edge ports, a load stated at port 2's plane, and Γ read from the current. The error is |ΔΓ| at the plane:
+
+| Load at the plane | Box weights | Circuit voltage used at the gap | CP-3's formula |
+|---|---|---|---|
+| `Z_c` | 0.007 | 1.53 | 1.02 |
+| open | 0.059 | 0.60 | 0.71 |
+| short | 0.052 | 1.87 | 0.68 |
+| Γ = 0.5j | 0.031 | 1.18 | 0.81 |
+
+With the grounded edge-port return the box weights read 0.018, 0.049 and 0.066 on the first three. So the transform does put the load at the reference plane on both paths. A lead's own radiation stays in the pattern, as it is in every stored per-port pattern already.
+
+**The 3D comparison does not reach G4's limits, and is not a pass of them.** The shipped patch with a stub, two edge ports, the block's circuit the same on each: planar (the kernel's 2 points) against openEMS (ground made the floor, 3.75 to 7.75 GHz, 357,200 cells with the PML, 5 min), 5.75 GHz, each by its own sum. 50 Ω on port 2 is each solver's baseline, since that port's wave is near zero:
+
+| Load on port 2 | \|ΔS11\| | Directivity, planar / openEMS | Gain, planar / openEMS | Pattern shape, θ ≤ 60° |
+|---|---|---|---|---|
+| 50 Ω | 0.070 | 6.72 / 6.81 dBi | −2.63 / −1.95 dBi | 1.06 dB |
+| 200 Ω | 0.074 | 7.90 / 8.03 dBi | −6.16 / −5.04 dBi | 2.87 dB |
+| 15 Ω | 0.121 | 6.51 / 6.58 dBi | 0.61 / 1.57 dBi | 0.67 dB |
+| 2 nH | 0.083 | 6.59 / 6.35 dBi | 3.86 / 4.67 dBi | 0.32 dB |
+
+Against each solver's own 50 Ω, the peak moves −8.09 / −7.99 dB at 200 Ω, 5.34 / 6.05 dB at 15 Ω, and **1.65 / −0.80 dB at 2 nH, which disagree in sign**. Within 20 dB of the peak the shape differs by 11.6-12.6 dB in every row, at θ = 89°, where the planar factors go to zero over an infinite plane, so that much is the baseline's. The two are not one structure: planar has an infinite substrate, whose surface wave is why its gain is lower, and takes its port off at a de-embedded plane, while openEMS has a 0.76 mm vertical sheet in series with the circuit, which a 72 Ω reactance feels. Directivity, resistive loads and the shape agree as two solvers do here. That does not test the sum to its limits, and a reactive load on an edge port's plane is where to be careful. A delta gap has no 3D counterpart outside a part's pads, so this could not be run on one. The owner accepted this comparison as it stands, since two different EM results are expected to give different patterns.
+
+**R-cp7-3, each power term when summed.** Port 2 at 200 Ω on the two-gap strip, against the same term from the summed currents:
+
+| Term | From the summed fields or currents | `Σ\|V_k\|²` × each port's stored term | Published? |
+|---|---|---|---|
+| `PowerRadiated` | 4.93e-5 W | 44.4e-5 W, 9.54 dB off | Yes, as `∫U dΩ` of the summed pattern over the hemisphere |
+| `PowerSurfaceWave` | 5.51e-6 W | 47.8e-6 W, 9.39 dB off | Omitted by name: quadratic in the current spectrum, with cross terms |
+| `PowerConductor`, `PowerFilm` | not measured: the harness passed no loss inputs | | Omitted by name: `½∫Re(Z_s)\|J\|²` has cross terms by its own formula |
+| `PowerDielectricAndGround` | 6.10e-4 W | 20.5e-4 W, 5.27 dB off | Omitted through the registry's own predicate: a residual of those |
+| `PowerAccepted` | 6.65e-4 W at the gaps | 25.4e-4 W, 5.83 dB off | Yes, as above |
+
+`Em3dRadiation.Terms`' sentences say the problem has no laterally infinite substrate, which is false here, so `PlanarSumTerms` has its own. It keeps kernel B's tighter efficiency tolerance, since a planar result's powers come from one solve. The hemisphere needed nothing: `PortFarFieldSet.Hemisphere` reads it off the θ axis.
+
+**A test that failed and is not this work's.** `FarFieldStageTests.PlanarFarFieldGroup_IsByteIdenticalToThePreSplitGolden` reads a golden with no `PowerFilm`, which the registry gained with the resistive films (4dc26bb06). It fails on that key before it compares any cube. Regenerating a golden is a decision of its own, so it was left.
+
+Gates: `tests/Ui.Tests/Sar/PlanarFarFieldCosimTests.cs`, on real solves. Inspected end to end through the built CLI: `em` wrote `ShortedOthers` and the cubes, and `fields`, `check` and `explain` read the record. No UI changed.
+
+## Designer round 36 (2026-11-05): what a long 3D run says while it runs
+
+**An eigenmode run had no progress at all.** `PalaceStageTracker` knew greedy iterations, frequencies and static terminals, and an eigenmode run prints none of them, so the row stayed on its opening label for the whole run. Palace's own lines are enough: `Configuring SLEPc eigenvalue solver`, `Shift-and-invert σ = f GHz (s)`, `GMRES solver converged`, `Found n converged eigenvalues`, `Eigenvalue k, Quasi-Newton converged in n iterations (a+bi)` and the `KSP residual norm` lines.
+
+A mode's frequency is b × f/s. **Its Q is |a+bi|/2|a|, not b/2|a|**: the two agree at high Q and part at low Q (a mode the table prints at Q 1.1 read 0.98 from b/2|a|). The `Found` line's eigenvalue is in another form on a lossless problem (a PEC cavity printed 21.68 for a mode the table has elsewhere), so only its count is read. The `KSP` line moves the label at most once every 5 s: `circuitrf em` prints every label change, and one line per iteration would flood a run's stderr.
+
+**In a field run the second mode's refinement sat at residual 0.1 past 200 iterations, where the first took 46-61.** That is Palace working, not a hang, and it is the case the live iteration count exists for. Asking for one mode avoids it.
+
+**`setsid: child N did not exit normally: No such file or directory` is how the Stop button looks on a Linux subsystem run.** `WslProcessGroup.Stop` signals the group, the wrapper shell dies of the signal, and `setsid -w` reports that with whatever `errno` was left over. Nothing in the log could tell it from a crash, and no solver stamps its log. `PalaceRun.RunProcess`, the one loop every mesher and solver runs in, now writes `[circuitRF <time with offset>]` lines: started, every 5 min, and how it ended. The stop's line is written BEFORE the kill, so what the dying process prints reads after it. They go to the file only: not the tail a failure quotes, and not the progress parser.
+
+**An adaptive sweep's pace is circuitRF's clock, the one exception to "every figure is Palace's", and is only shown at a minute or more a solve**, so the committed stage goldens are unaffected. A field run spent about 6 h on port 1 of 8 with nothing saying the whole run would take about two days. Before port 1 ends only the time per frequency is stated, since an adaptive sweep's sample count is not known in advance.
+
+**EMerge's first minutes were one label.** On a 1.3 M tetrahedron board, "Starting EMerge" lasted 3 min 37 s and building its mesh data another 39 s. The driver now reports `{"stage": "geometry"}`, EMerge's own boundary-condition and mesh-data lines name their steps, and a batch of an adaptive sweep says which of its frequencies is being solved.
+
+**A 3D view's ports are translated with the `.cem` AS SAVED** (`C3dHierarchy.PortsFromLayouts` reads the file) while Show 3D reads the panel's working copy, so a Return changed and not saved showed in one and not the other. Remaking the view kept leaving the port out until something happened to save the setup, and a restart's save prompt is what does. New 3D View from Layout now offers Save / Use Saved / Cancel for a dirty `.cem` as it does for a dirty layout, and Update Ports from Layout warns. This cause is inferred from the code and the report: the workspace as sent holds the final state, and with its saved layout both Returns translate port 1.
+
+**Air box edits, measured on the two field boards in the Debug build with an idle machine:** about 0.6 s from the edit to the adopted scene, and the box, the panel's figure and the modelled extent agree to the micrometre on every face tried (`zmax`, `xmin`, `ymin`). The drawn box is `RecordsView.Box` and the panel reads the distance from that same box, so they cannot differ once a scene is adopted. Between the edit and the adoption the view still shows the old box, which on a machine with every core in a solve can be long. A mismatch that outlasts adoption has not been reproduced.
+
+**An imported dielectric with no Material is not empty.** The row's own εr and tanδ are what the solve uses; the Material column is blank because no artwork names a laminate, by the rule in `GerberStackupMapping` (R-gi2-5). Nothing was changed.

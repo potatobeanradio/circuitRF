@@ -18,6 +18,16 @@ namespace CircuitRF.Core.Devices;
 /// <summary>One file of a result that does not hold up.</summary>
 public sealed record EmResultProblem(string What, string Path, string Sentence);
 
+/// <summary>What every other port was doing in a result's stored pattern, which decides how a circuit's waves weigh it (brief-cosim-pattern-7).</summary>
+public static class EmFarFieldExcitation
+{
+    /// <summary>Driven at 1 V with every other port terminated in its Z0: a 3D run.</summary>
+    public const string TerminatedZ0 = "TerminatedZ0";
+
+    /// <summary>A delta gap at 1 V with every other gap at 0 V: a planar run.</summary>
+    public const string ShortedOthers = "ShortedOthers";
+}
+
 /// <summary>What each file of a result carries, and whether the files of one result hold together.</summary>
 public static class EmResultIntegrity
 {
@@ -188,6 +198,12 @@ public sealed class EmFieldDataRecord
     public string Solver { get; init; } = "";
 
     public required IReadOnlyList<string> PortNames { get; init; }
+
+    /// <summary>Each port's kind as the record states it, in port order; a null where it does not say.</summary>
+    public IReadOnlyList<string?> PortKinds { get; init; } = [];
+
+    /// <summary>What every other port was doing in a stored pattern; null on a record written before this was stated.</summary>
+    public string? FarFieldExcitation { get; init; }
     public required int FarFieldPoints { get; init; }
     public required int FieldSetPoints { get; init; }
 
@@ -209,6 +225,7 @@ public sealed class EmFieldDataRecord
         public FilesDto? Files { get; set; }
         public List<PortDto>? Ports { get; set; }
         public FrequenciesDto? Frequencies { get; set; }
+        public string? FarFieldExcitation { get; set; }
     }
 
     private sealed class SolverDto
@@ -227,6 +244,7 @@ public sealed class EmFieldDataRecord
     {
         public int Number { get; set; }
         public string Name { get; set; } = "";
+        public string? Kind { get; set; }
     }
 
     private sealed class FrequenciesDto
@@ -294,11 +312,13 @@ public sealed class EmFieldDataRecord
         if (problems.Count > 0)
             return (null, $"'{name}' does not hold together: {string.Join("; ", problems.Select(p => p.Sentence))}. Run its EM setup again.", watched);
 
-        var ports = (dto.Ports ?? []).OrderBy(p => p.Number).Select(p => p.Name).ToList();
+        var ordered = (dto.Ports ?? []).OrderBy(p => p.Number).ToList();
+        var ports = ordered.Select(p => p.Name).ToList();
         if (ports.Count == 0) return (null, $"'{name}' lists no ports.", watched);
         return (new EmFieldDataRecord
         {
-            RecordPath = path, SnpPath = snp, PortNames = ports, FarFieldPoints = farField, FieldSetPoints = fieldSet,
+            RecordPath = path, SnpPath = snp, PortNames = ports, PortKinds = [.. ordered.Select(p => p.Kind)], FarFieldExcitation = dto.FarFieldExcitation,
+            FarFieldPoints = farField, FieldSetPoints = fieldSet,
             NpyPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, files.Npy)), Solver = dto.Solver?.Name ?? "",
             FieldsFolder = files.Fields is { Length: > 0 } f ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, f)) : null,
         }, null, watched);

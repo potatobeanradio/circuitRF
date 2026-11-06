@@ -259,7 +259,7 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>The plane a layer cuts on: a ClipPlane plot's own, or the view's clip plane.</summary>
     private ClipPlane3D PlaneOf(FieldLayer layer) => layer.Request is { On: C3dFieldPlotOn.ClipPlane } p
-        ? p.Mip && layer.MipPlane is { } mip ? mip : p.Plane : View.Clip;
+        ? p.Mip && layer.MipPlane is { } mip ? mip : p.Plane : ToolbarClip;
 
     /// <summary>The plane the focused layer cuts on.</summary>
     private ClipPlane3D FieldPlane => PlaneOf(_focused);

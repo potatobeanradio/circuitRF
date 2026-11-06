@@ -204,6 +204,10 @@ public sealed partial class EmResultRecord
     public List<EmResultPort> Ports { get; set; } = [];
     public EmResultFrequencies Frequencies { get; set; } = new();
 
+    /// <summary>What every other port was doing in the stored pattern (<see cref="EmFarFieldExcitation"/>); null when the result holds no far field.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FarFieldExcitation { get; set; }
+
     /// <summary>The whole setup, as a <c>.cem</c> holds it. Null on an adopted result: its settings were not recorded.</summary>
     public JsonElement? Setup { get; set; }
 
@@ -307,6 +311,7 @@ public sealed partial class EmResultRecord
                 FarFieldHz = [.. FarFieldOf(r.Data)],
                 FieldSetHz = r.Fields is null ? [] : [.. r.Fields.Frequencies.Select(f => f.Hz)],
             },
+            FarFieldExcitation = ExcitationOf(r.Data),
             Setup = EmSetupPersistence.ToEmbedded(r.Setup),
             ThreeDView = r.ThreeDViewText,
             Geometry = new EmResultGeometry
@@ -324,6 +329,12 @@ public sealed partial class EmResultRecord
     private static string ProductVersion()
         => typeof(EmResultRecord).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion is { } v
             ? v.Split('+')[0] : "";
+
+    /// <summary>A far field beside the planar kernel's diagnostics is that kernel's. Asked of the data, so a result that names no solver answers too.</summary>
+    private static string? ExcitationOf(DataSet data)
+        => !data.Groups.Contains(CircuitRF.Engine.Mom.PlanarFarField.Group) ? null
+         : data.Groups.Contains(CircuitRF.Engine.Mom.PlanarKernel.DiagnosticsGroup) ? EmFarFieldExcitation.ShortedOthers
+         : EmFarFieldExcitation.TerminatedZ0;
 
     private static double[] SweepOf(DataSet data)
     {
@@ -433,6 +444,7 @@ public sealed partial class EmResultRecord
                 FarFieldHz = [.. FarFieldOf(data)],
                 FieldSetHz = manifest is null ? [] : [.. manifest.Frequencies.Select(f => f.Hz)],
             },
+            FarFieldExcitation = ExcitationOf(data),
             Geometry = new EmResultGeometry
             {
                 GeometryHash = provenance?.GeometryHash, MeshHash = provenance?.MeshHash, PortHash = provenance?.PortHash,

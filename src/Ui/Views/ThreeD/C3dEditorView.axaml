@@ -347,6 +347,13 @@
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="PlayCircleOutline" Width="18" Height="18"/>
                 </Button>
+                <!-- brief-dfr36-1 R-dfr36-1-1 — the active setup's mesh with no solve. Greyed in place, with the reason, on a setup with
+                     no Gmsh mesh; it is stopped from its progress row in the Messages panel, as a run is. -->
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.MeshActiveCommand}"
+                        ToolTip.Tip="{Binding ViewModel.MeshBlockedReason, TargetNullValue='Mesh: the mesh a run of the active setup would solve on, with no solve. Simulate reuses it while it is current.'}"
+                        ToolTip.ShowOnDisabled="True" Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="GridLarge" Width="18" Height="18"/>
+                </Button>
 
                 <Border IsVisible="{Binding ViewModel.IsEditable}" Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
@@ -389,8 +396,8 @@
                     <mi:MaterialIcon Kind="TextureBox" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- The run's tools, in the toolbar with the rest (owner request, 2026-09-28: they had a row of their own under
-                     it). The mesh: disabled until a run has meshed AND left fields to plot, with the tooltip saying so
-                     (R-em3d28-3b) — in the editor and the viewer alike. -->
+                     it). The mesh: disabled until a mesh is on disk, with the tooltip saying who made it (brief-dfr36-1) — in the
+                     editor and the viewer alike. -->
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
                 <!-- brief-em3d-91 R-em3d91-3 — Hide / Show Selection (H). A Button, not a ToggleButton: a checked style would
                      compete with the three-way backdrop. The glyph never changes; the backdrop says the state — the accent when
@@ -407,6 +414,32 @@
                               ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-dfr36-1 — the mesh's own plane, apart from the clip plane and every field plot's plane. -->
+                <Button IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}" ToolTip.ShowOnDisabled="True"
+                        ToolTip.Tip="Mesh plane: the tetrahedra on a plane of their own. The clip plane and the field plots' planes do not move it.">
+                    <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft">
+                            <StackPanel Spacing="6" MinWidth="220">
+                                <CheckBox Content="Show the tetrahedra on a plane" IsChecked="{Binding ViewModel.Viewer.MeshPlaneEnabled}"
+                                          ToolTip.Tip="With the mesh on, the tetrahedra this plane cuts. It also cuts the solids so they can be seen, unless the clip plane is on, which then does the cutting."/>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.MeshPlaneAxes}" SelectedItem="{Binding ViewModel.Viewer.MeshPlaneAxis}"
+                                              IsEnabled="{Binding ViewModel.Viewer.MeshPlaneEnabled}" MinWidth="70"
+                                              ToolTip.Tip="The plane's normal"/>
+                                    <ToggleButton IsChecked="{Binding ViewModel.Viewer.MeshPlaneFlip}" IsEnabled="{Binding ViewModel.Viewer.MeshPlaneEnabled}"
+                                                  ToolTip.Tip="Keep the other side of the plane">
+                                        <mi:MaterialIcon Kind="SetSplit" Width="16" Height="16"/>
+                                    </ToggleButton>
+                                    <TextBlock Text="{Binding ViewModel.Viewer.MeshPlaneText}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Slider Classes="compact" Minimum="0" Maximum="1" Value="{Binding ViewModel.Viewer.MeshPlanePosition}"
+                                        IsEnabled="{Binding ViewModel.Viewer.MeshPlaneEnabled}"
+                                        ToolTip.Tip="Drag the mesh plane through the model"/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
                 <!-- brief-em3d-75 R-em3d75-4d / -4e — a thermal run's two readings that add nothing to the document. -->
                 <Button Command="{Binding ViewModel.StartTemperatureAlongCommand}"
                         IsVisible="{Binding ViewModel.ShowThermalRunTools}"
@@ -586,6 +619,7 @@
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.SelectionText}" TextWrapping="Wrap"
                                      IsVisible="{Binding ViewModel.Viewer.SelectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.MeshText}" IsVisible="{Binding ViewModel.Viewer.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.MeshStaleText}" TextWrapping="Wrap" IsVisible="{Binding ViewModel.Viewer.MeshStaleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.FieldText}" IsVisible="{Binding ViewModel.Viewer.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Viewer.PictureText}" IsVisible="{Binding ViewModel.Viewer.PictureText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <!-- brief-em3d-106 R-em3d106-1d — the realistic view's environment and exposure, and what fell back. -->

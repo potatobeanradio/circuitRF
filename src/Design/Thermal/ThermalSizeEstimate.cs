@@ -54,11 +54,17 @@ public sealed record ThermalSizeEstimate(long Elements, long Unknowns, ThermalSo
         }
         long tets = (long)Math.Ceiling(Math.Max(elements, input.Solids.Count));
         long unknowns = (long)Math.Ceiling(tets * (z.Order == 2 ? P2NodesPerTet : P1NodesPerTet));
+        return Of(tets, unknowns, options);
+    }
+
+    /// <summary>brief-dfr36-1 R-dfr36-1-2 — the solver and the memory for a known count, which a mesh on disk gives exactly.</summary>
+    public static ThermalSizeEstimate Of(long elements, long unknowns, ThermalSolveOptions options)
+    {
         var solver = options.Solver != ThermalSolverKind.Auto ? options.Solver
                    : unknowns < options.DirectBelow ? ThermalSolverKind.Direct : ThermalSolverKind.Iterative;
         long bytes = solver == ThermalSolverKind.Direct
             ? (long)(401e6 * Math.Pow(unknowns / 89761.0, 1.44))
             : (long)(2.8e3 * unknowns);
-        return new ThermalSizeEstimate(tets, unknowns, solver, bytes);
+        return new ThermalSizeEstimate(elements, unknowns, solver, bytes);
     }
 }

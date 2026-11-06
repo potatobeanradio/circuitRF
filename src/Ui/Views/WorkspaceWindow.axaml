@@ -530,6 +530,7 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Run"  Command="{Binding RunAnalysisCommand}"  Gesture="Meta+R"/>
                         <NativeMenuItem Header="Stop" Command="{Binding StopAnalysisCommand}" Gesture="Meta+OemPeriod"/>
+                        <NativeMenuItem Header="Mesh Only" Command="{Binding MeshOnlyCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -1619,6 +1620,11 @@
                 <MenuItem Header="_Stop"
                           Command="{Binding StopAnalysisCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="Stop" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Mesh Only"
+                          Command="{Binding MeshOnlyCommand}"
+                          ToolTip.Tip="The mesh a run of the 3D view's active setup would solve on, with no solve.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

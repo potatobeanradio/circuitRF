@@ -1494,7 +1494,7 @@ cell thick), reading only those cells.
 result as its own solution, `<f> GHz, fields 'F1' (circuit port 1 driven)`, drawn with no scale of its own. After a GUI run the
 Messages pane has an **Open in 3D view** action that opens it with that result drawn and selected. The analysis is in the
 Analysis editor (*Fields (SAR, B1)*), and headless it is `circuitrf fields` (`cli.md` §28) or MCP `run analysis=fields`. No
-parametric sweep wraps it (the sweep engine refuses the type).
+parametric sweep wraps a field set (§11.12).
 
 **Port impedances.** The circuit reads the block's `.sNp`, and the Touchstone writer records only the first port's Z0. A field set
 whose ports have different Z0s would be recombined in the manifest's Z0s against an S-block read in one Z0. Every co-simulation
@@ -1665,7 +1665,54 @@ draws those traces dimmed as it does an analysis outside the goals' scope. The f
 **The goal editor** lists a pattern's functions when the block's record has a far field and SAR's when it has a field set (`GoalTemplates.RecordHolds`). A block it cannot read (no record yet, a
 path through a variable, a block inside a sub-cell) says nothing, so both are offered and the run says what is wrong. A `freq=all` analysis offers no pattern function, since it would refuse them.
 
+### 11.12 A parametric sweep around the pattern (CP-5)
+
+A point is one circuit solve and a sum, so a sweep is those stacked on an axis: `F1.farfield.U [L1, freq, theta, phi, port]`, the sweep's own unit on its axis, a nested sweep's in front of it.
+
+**The layering.** The sweep engine is in `src/Engine` and a far field is read in `src/Design`, so `ParametricSweepEngine.Run` takes `runOtherInner`, consulted for an inner it does not dispatch. `CircuitEvaluation` supplies it for a chain that bottoms out in a fields analysis and for nothing else, so every other chain, and a caller with no runner, is refused as before.
+
+**One function decides.** `FieldCosimulation.PlanSweep` is what the run calls before its first point, what the run summary sizes with, and what `explain --analysis` reports, so a refusal reads the same in all three. An analysis that would run a field set is refused: its volumes are written per run and its cube average is a long solve per run. The test is the plan and not the record, so a result holding both sweeps its pattern at `freq=all` or at a frequency with no field set, where those reasons do not apply, and the refusal names `freq=all` when there is a far field to take.
+
+**A failed point** follows the envelope's rule: NaN, a warning naming its value, the others kept. All failed is the run's failure. A refusal common to every point is made once by `PlanSweep` and never reaches that loop.
+
+**What a run says is per sweep.** A point's |Γ| and power checks would be the first point's alone once keyed diagnostics merge, and an unkeyed warning would be dropped, so a swept run has one note describing the sweep and each warning names its point. The point's text is on `nl.WireThermal.Drive`, where the engine already keeps it for nested axes.
+
+**A value that moves `freq=`** fails its point. A stacked cube has one frequency axis, so a second frequency would be labelled as the first; `freq=all` is how to see every frequency. The check compares the resolved frequency against the first point's, so it also catches a variable reached through another.
+
+**Size.** A direction costs 72 bytes across the pattern's cubes at one frequency and one point, measured against what they take (`FieldsSweepSize`), so a 1° sphere is 4.7 MB per frequency per point. The summary states the total and a run warns above 2 GB, naming `freq=` when the analysis is at `freq=all`.
+
+**A scalar function refuses** under a sweep and names the cube, since it has one number per point: `RealizedGainDbi(F1)` points at `F1.farfield.RealizedGainDbi` over `L1`. The goal editor does not offer them on a swept analysis.
+
+**The plot.** An ordinary family is one colour with no legend, which suits a curve tracer and not curves that cross, so a family along an angle over anything but φ or a trial (`Trace.LabelsFamilyCurves`) has a colour and a legend row per curve, as `L1 = 5 nH`. The first curve keeps the trace's colour and the rest follow the wheel, so a back branch authored from the same colour matches curve for curve and adds no rows. A whole-plane cut draws the plane per curve. A legend opens when a cut becomes such a family, once: `plot` unless `--legend` is stated, and the trace card when its axis role changes, which leaves the Off segment the user's. `plot`'s `cut=` makes the innermost sweep axis the family and says which others it pinned; a key naming an axis pins it (`L1=5n`) or keeps it (`L1=all`). A metric cube at one frequency seeds along the sweep (`SeedSlice`). A 3D surface pins the axis with its existing selector.
+
 ---
+
+### 11.13 The run makes the schematic (CP-6)
+
+`EmCoSimNetlist.Text` writes an `EmFieldData` block on the run's record when the run kept a far field or a field set (`RecordFor`), and an `SnP` otherwise. With a far field and at least one
+`Port` line it adds `analysis F1 type=fields block=BOARD drive=1` at the stored frequency nearest the sweep's centre, with a comment naming the stored frequencies. A tie takes the lower.
+
+With the setup's `CreateSnpSchematic` on, a finished driven run with component ports draws that text as `<setup>_cosim` (`CreateCell`), by `NetlistSchematic.Build`, the drawing `netlist --to-schematic` uses, and
+the text's comments become notes on the sheet. It makes no `_sim` cell, whose TermG on a part's port has no part on it. `_cosim.cnl` is written regardless. A run with no component ports still makes `_sim`. `Build` refuses a
+netlist holding a sub-cell definition, so a board whose part is a hierarchical cell gets the netlist and a sentence and no cell.
+
+**An existing cell is never written to**, unlike `_sim`, whose SnP is repointed when the port count changes. A record's name holds no port count, and a change in ports is a change in the wiring that someone may have edited.
+
+**A part between two gap ports' nodes** is a `check` warning (`EmFieldBlocks.GapPortBridges`), from the record's port kinds. It looks only at two-terminal elements, since a multi-terminal part's signal pins stand on gap ports' nodes by design, and only at
+an EM Field Data block, since a plain SnP has no record to say what its ports are. An adopted record whose Touchstone stated no port kinds gives no finding.
+
+
+### 11.14 Planar results (CP-7)
+
+A planar pattern is a delta gap at 1 V with every other gap at 0 V, so its sum is `E = Σ_k V_k·E_k` over the gaps' voltages, where a 3D result's is over incident waves. The record's `FarFieldExcitation` (`ShortedOthers`, `TerminatedZ0`) says which, and `PortFarFieldSet.Weights` is both, from the same waves.
+
+**A plane is not a gap.** The block's S is de-embedded and the pattern is not, so `PlanarPortBox.ToGap` undoes `DeembedAt` for each port: `Z_c`, the lead, the error box. The run keeps each box beside the pattern, in `__PortBox*` in the `planar` group. An internal gap's is an identity. A calibration group's is not kept, and the block refuses that result by name.
+
+**The power at the gaps is the box's own wave**, `|a_e|² − |b_e|²`, so no raw S or Y is kept. What the circuit accepts has the block's share replaced by that, so a block driven directly gives the run's own gain and realized gain, and a lossless network leaves the gain alone.
+
+**What cannot be summed is omitted by name.** Surface-wave, conductor and film power are quadratic in the currents, so per-port numbers leave out the cross terms, and the dielectric residual goes with them. `PowerRadiated` is the integral of the summed pattern.
+
+Measurements and the comparison against openEMS are in `src/Design/RESOLVED.md`. Gates: `tests/Ui.Tests/Sar/PlanarFarFieldCosimTests.cs`.
 
 ## 12. B1 and SAR as goals: tuning, the optimizer, yield and multi-channel drive (SAR-10)
 

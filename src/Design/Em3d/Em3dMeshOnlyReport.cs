@@ -9,3 +9,16 @@ namespace CircuitRF.Design.Em3d;
 /// <param name="RunDirectory">The run's own folder, holding the script, its log and the mesh.</param>
 /// <param name="Warnings">Gmsh's distinct warnings, in its words.</param>
 public sealed record Em3dMeshOnlyReport(long? Elements, long? Estimated, bool Reused, string RunDirectory, IReadOnlyList<string> Warnings);
+
+/// <summary>brief-dfr36-1 R-dfr36-1-3 — a mesh on disk against the model as it is now.</summary>
+public enum Em3dMeshCurrency
+{
+    /// <summary>A run would reuse it.</summary>
+    Current,
+
+    /// <summary>A run would mesh again.</summary>
+    Stale,
+
+    /// <summary>Only a run can tell: a thermal setup driven from a circuit lowers from that circuit's harmonic balance.</summary>
+    Unknown,
+}

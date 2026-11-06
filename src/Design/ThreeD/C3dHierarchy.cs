@@ -1004,6 +1004,14 @@ public static class C3dHierarchy
         "port(s)). Each is the sheet a 3D run of the layout would build; delete any you do not want.";
 
     /// <summary>
+    /// Designer round 36 — what is said of ports that could not be translated, with the way back: a view made without one needs only
+    /// Update Ports from Layout once the cause is fixed, and nothing else said so, so a port was chased by deleting and remaking the view.
+    /// </summary>
+    public static string PortsLeftOutSentence(IReadOnlyList<string> leftOut)
+        => $"Ports left out: {string.Join("; ", leftOut)}. Once that is fixed, Update Ports from Layout (an instance's right-click menu) " +
+           "adds them; the 3D view need not be made again.";
+
+    /// <summary>
     /// R-pw1-4/5 — every <c>Layout</c> instance's port labels, translated now into <paramref name="doc"/>'s frame (the
     /// instance's placement applied) with the first 3D <c>.cem</c> naming that layout, else the default driven setup
     /// (R-pw1-6). Every instance's labels, numbered as the labels number them: two instances may both state a port 1, and

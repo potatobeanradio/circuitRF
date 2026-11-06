@@ -183,18 +183,8 @@ public static class PalaceRun
         foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(runDir);
         string hash = Sha256(lowering.Geo!);
 
-        // The script asked for may have been meshed straight-sided after its curving ran past the cap (brief-emb-2): its hash
-        // is then beside the straight script, and that mesh is the one to reuse rather than curving for another five minutes.
-        bool hashed = File.Exists(hashPath) && File.Exists(mshPath) && File.Exists(entPath) &&
-                      File.ReadAllText(hashPath).Trim() == hash && File.Exists(geoPath);
-        string? onDisk = hashed ? File.ReadAllText(geoPath) : null;
-        bool reuse = hashed && onDisk == lowering.Geo;
-        string? note = null;
-        if (hashed && !reuse && straight is not null && GmshGeoWriter.Curves(lowering) && straight() is { Ok: true } s0 && onDisk == s0.Geo)
-        {
-            reuse = true;
-            note = CurvingNote(curvingMinutes, reused: true);
-        }
+        bool reuse = HasMeshOf(runDir, lowering, straight, out bool straightSided);
+        string? note = reuse && straightSided ? CurvingNote(curvingMinutes, reused: true) : null;
         if (!reuse)
         {
             foreach (string stale in new[] { hashPath, mshPath, entPath })
@@ -292,6 +282,27 @@ public static class PalaceRun
             if (File.Exists(logPath)) foreach (string line in File.ReadLines(logPath)) gmshLog.Line(line);
         }
         return PalaceStep.Done(reuse) with { Tetrahedra = gmshLog?.Tetrahedra, Note = note };
+    }
+
+    /// <summary>
+    /// brief-dfr36-1 R-dfr36-1-3 — whether <paramref name="runDir"/> already holds the mesh of this script: the one test a run makes
+    /// before meshing, and what a 3D view reads to say a mesh shown is no longer the model's.
+    /// The script asked for may have been meshed straight-sided after its curving ran past the cap (brief-emb-2): its hash is then
+    /// beside the straight script, and that mesh is the one to reuse rather than curving for another five minutes.
+    /// </summary>
+    public static bool HasMeshOf(string runDir, GmshLowering lowering, Func<GmshLowering>? straight, out bool straightSided)
+    {
+        straightSided = false;
+        string geoPath = Path.Combine(runDir, GmshGeoWriter.GeoFile), hashPath = Path.Combine(runDir, MeshHashFile);
+        if (!File.Exists(hashPath) || !File.Exists(Path.Combine(runDir, GmshGeoWriter.MeshFile)) ||
+            !File.Exists(Path.Combine(runDir, GmshGeoWriter.EntitiesFile)) || !File.Exists(geoPath) ||
+            File.ReadAllText(hashPath).Trim() != Sha256(lowering.Geo!))
+            return false;
+        string onDisk = File.ReadAllText(geoPath);
+        if (onDisk == lowering.Geo) return true;
+        if (straight is null || !GmshGeoWriter.Curves(lowering) || straight() is not { Ok: true } flat || onDisk != flat.Geo) return false;
+        straightSided = true;
+        return true;
     }
 
     /// <summary>brief-emb-2 R-emb2-6 — Gmsh's command line: at verbosity 5, which names every stage as it starts, the
@@ -1244,11 +1255,25 @@ public static class PalaceRun
                 lines++;
             }
         }
+        // Designer round 36 — no solver stamps its log, so the log alone could not say when anything happened, or whether a last
+        // line such as "setsid: child 1054 did not exit normally" was a crash or the Stop button. circuitRF's lines say; they go
+        // to the file only, never to the tail or the progress parser.
+        var running = Stopwatch.StartNew();
+        void Stamp(string words)
+        {
+            lock (gate)
+            {
+                if (closed) return;
+                log.WriteLine(LogStamp(DateTimeOffset.Now, words));
+                log.Flush();
+            }
+        }
 
         Process? p;
         try { p = Em3dProcessLauncher.Start(psi, kind); }
         catch (Exception e) { return new(-1, false, e.Message, []); }
         if (p is null) return new(-1, false, "the operating system started nothing", []);
+        Stamp($"{Path.GetFileName(exe)} started.");
 
         bool watchMemory = watch is not null && sampleMemory;
         long? Ceiling() => watch?.CeilingLifted?.Invoke() == true ? null : watch?.CeilingBytes;
@@ -1325,19 +1350,29 @@ public static class PalaceRun
                 }
                 ProcessRun Stopped(ProcessStop why)
                 {
+                    Stamp($"circuitRF is stopping it after {Took(running.Elapsed)}: {(why.Reason == ProcessStopReason.Memory ? "the memory limit" : "the disk space floor")}. " +
+                          "Any line after this one comes from stopping it.");
                     Stop(p);
                     lock (gate) return new(-1, false, null, [.. tail], peak, memoryNote, why, peakFootprint);
                 }
+                ProcessRun Cancelled()
+                {
+                    Stamp($"Stop was pressed after {Took(running.Elapsed)}. Any line after this one comes from stopping it.");
+                    Stop(p);
+                    return new(-1, true, null, []);
+                }
+                var marked = Stopwatch.StartNew();
                 while (!p.WaitForExit(100))
                 {
-                    if (ct.IsCancellationRequested)
-                    {
-                        Stop(p);
-                        return new(-1, true, null, []);
-                    }
+                    if (ct.IsCancellationRequested) return Cancelled();
                     try { Drain(); watch?.OnTick?.Invoke(); }
-                    catch (OperationCanceledException) { Stop(p); return new(-1, true, null, []); }
+                    catch (OperationCanceledException) { return Cancelled(); }
                     if (Sample() is { } over) return Stopped(over);
+                    if (marked.Elapsed >= LogStampInterval)
+                    {
+                        marked.Restart();
+                        Stamp($"Still running after {Took(running.Elapsed)}.");
+                    }
                     if (diskRead.ElapsedMilliseconds >= 1000)
                     {
                         diskRead.Restart();
@@ -1356,6 +1391,7 @@ public static class PalaceRun
                                            new(ProcessStopReason.Memory, Math.Max(job.Peak, peakFootprint ?? 0), jobCeiling, Meshing()), peakFootprint);
                 try { Drain(); }
                 catch (OperationCanceledException) { return new(-1, true, null, []); }
+                Stamp($"{Path.GetFileName(exe)} ended with exit code {p.ExitCode} after {Took(running.Elapsed)}.");
                 lock (gate) return new(p.ExitCode, false, null, [.. tail], peak, memoryNote, PeakFootprint: peakFootprint);
             }
         }
@@ -1364,6 +1400,19 @@ public static class PalaceRun
             lock (gate) closed = true;
         }
     }
+
+    /// <summary>How often a running program's log gets a line saying the time.</summary>
+    internal static TimeSpan LogStampInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>One of circuitRF's lines in a program's log: the wall clock with its offset, then what happened.</summary>
+    internal static string LogStamp(DateTimeOffset at, string words)
+        => $"[circuitRF {at.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)}] {words}";
+
+    /// <summary>A run's length for a log line: "42 s", "12 min 05 s", "3 h 07 min".</summary>
+    internal static string Took(TimeSpan t)
+        => t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes:00} min"
+         : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes} min {t.Seconds:00} s"
+         : $"{(int)t.TotalSeconds} s";
 
     private static void Kill(Process p)
     {

@@ -348,6 +348,9 @@ internal static class DocumentSchema
         differs from the setup now. `em --adopt <file.sNp>` writes a record for a result from before records existed, with
         Setup null ("settings not recorded") and Adopted true.
 
+        FarFieldExcitation says what every other port was doing in the stored pattern: TerminatedZ0 for a 3D run, ShortedOthers for
+        a planar one. A fields analysis weighs the pattern by it.
+
         A schematic reads a result through it: an EM Field Data block (`EmFieldData:EM1 a b File="x.cemr"`) names a record, takes its
         port count and names from Ports, and stamps the Touchstone in Files. The block is refused when the record holds neither a far
         field nor a field set, and when a file it names is missing, truncated or from another run.
@@ -988,7 +991,8 @@ internal static class DocumentSchema
             across each part's own pads on a placed layout, numbered after the drawn ports. circuitRF builds
             it on the copper facing the gap (with a landing rectangle where that copper is a cap or an arc,
             in the solved problem only) and verifies it before meshing; `explain --component-ports` lists
-            them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground.
+            them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground, and with
+            CreateSnpSchematic draws it as a "<setup>_cosim" cell in place of the "_sim" cell.
             A gap port, not a pad-to-plane port at each pad: a part between two pad-to-plane ports carries
             its current down one sheet, along the plane and up the other — a loop that is not on the board —
             so a hand-drawn pair of them is a different, approximate model of the part.

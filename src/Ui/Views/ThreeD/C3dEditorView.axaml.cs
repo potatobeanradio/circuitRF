@@ -63,6 +63,8 @@ public partial class C3dEditorView : UserControl
         SweepCard.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitSweepStep(), RoutingStrategies.Bubble, handledEventsToo: true);
         ObjectTree.TemplateApplied += OnObjectTreeTemplateApplied;
         ObjectTree.AddHandler(PointerPressedEvent, OnTreePointerPressedTunnel, RoutingStrategies.Tunnel);
+        // The double-click is read off the press, handled or not, as a setup card's is: the first press selects the row.
+        ObjectTree.AddHandler(PointerPressedEvent, OnTreeDoublePressedTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
         // 3D editor groups — Ctrl/Cmd+G and Ctrl/Cmd+Shift+G on the tree's rows, as on the view (only the pane sees its keys).
         ObjectTree.AddHandler(KeyDownEvent, OnTreeGroupKey, RoutingStrategies.Tunnel);
         // brief-em3d-91 — H on the tree's rows, where a multi-selection is usually made; never while a text field (the rename
@@ -278,19 +280,33 @@ public partial class C3dEditorView : UserControl
     private void OnTreePointerPressedTunnel(object? sender, PointerPressedEventArgs e)
     {
         if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Shift) ||
-            !e.GetCurrentPoint(ObjectTree).Properties.IsLeftButtonPressed || e.Source is not Visual source) return;
-        foreach (var v in source.GetSelfAndVisualAncestors())
+            !e.GetCurrentPoint(ObjectTree).Properties.IsLeftButtonPressed || e.Source is not Visual source ||
+            TreeRowOf(source) is not { } row || ObjectTree.SelectedItems is not { } selected) return;
+        if (selected.Contains(row)) selected.Remove(row); else selected.Add(row);
+        e.Handled = true;
+    }
+
+    /// <summary>A plain double-click on a row brings the Properties Inspector forward, after the press has finished routing
+    /// so the tree taking its focus does not follow it. The view model decides which rows do.</summary>
+    private void OnTreeDoublePressedTunnel(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.ClickCount != 2 || e.KeyModifiers != KeyModifiers.None ||
+            !e.GetCurrentPoint(ObjectTree).Properties.IsLeftButtonPressed || e.Source is not Visual source ||
+            TreeRowOf(source) is not { } row) return;
+        Dispatcher.UIThread.Post(() => _vm?.ShowPropertiesOfRow(row));
+    }
+
+    /// <summary>The row <paramref name="pressed"/> lies in; null on a row's tick or expander, which are left to themselves, and
+    /// outside the rows.</summary>
+    private C3dTreeItem? TreeRowOf(Visual pressed)
+    {
+        foreach (var v in pressed.GetSelfAndVisualAncestors())
         {
-            if (v is Avalonia.Controls.Primitives.ToggleButton) return;          // a tick (CheckBox) or the expander
-            if (v is TreeViewItem { DataContext: C3dTreeItem row })
-            {
-                if (ObjectTree.SelectedItems is not { } selected) return;
-                if (selected.Contains(row)) selected.Remove(row); else selected.Add(row);
-                e.Handled = true;
-                return;
-            }
-            if (ReferenceEquals(v, ObjectTree)) return;
+            if (v is Avalonia.Controls.Primitives.ToggleButton) return null;     // a tick (CheckBox) or the expander
+            if (v is TreeViewItem { DataContext: C3dTreeItem row }) return row;
+            if (ReferenceEquals(v, ObjectTree)) return null;
         }
+        return null;
     }
 
     /// <summary>The user changed the tree's selection: the view model keeps the order and selects in the scene.</summary>

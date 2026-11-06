@@ -83,6 +83,24 @@ public sealed class ProcessLimitsTests : IDisposable
     }
 
     [NonWindowsFact("the stand-in is a shell script")]
+    public void TheLog_SaysWhenARunEnded_AndWhetherStopWasPressed()
+    {
+        string finished = Path.Combine(_root, "finished.txt");
+        PalaceRun.RunProcess(Script("echo hello\nexit 3\n"), finished, Em3dProcessKind.Solver, null, default, null);
+        var lines = File.ReadAllLines(finished);
+        Assert.Matches(@"^\[circuitRF \d{4}-\d\d-\d\d \d\d:\d\d:\d\d [-+]\d\d:\d\d\] .* started\.$", lines[0]);
+        Assert.Equal("hello", lines[1]);
+        Assert.Contains("ended with exit code 3 after 0 s.", lines[2]);
+
+        // The stamp comes first, so what the program prints as it dies reads as the stop it is.
+        string stopped = Path.Combine(_root, "stopped.txt");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        var run = PalaceRun.RunProcess(Script("sleep 300\n"), stopped, Em3dProcessKind.Solver, null, cts.Token, null);
+        Assert.True(run.Cancelled);
+        Assert.Contains("Stop was pressed after 0 s. Any line after this one comes from stopping it.", File.ReadAllText(stopped));
+    }
+
+    [NonWindowsFact("the stand-in is a shell script")]
     public void AForcedRun_ReadingAboveTheCeiling_IsNotStopped()
     {
         var watch = new ProcessWatch(null, 0)

@@ -54,9 +54,25 @@ internal static class Em3dRadiation
             "the whole of what the structure dissipated — metal and dielectric together — and both are published."),
         EfficiencyTolerance);
 
+    /// <summary>
+    /// brief-cosim-pattern-7 R-cp7-3 — a recombined planar pattern's terms. The radiated power sums, as the integral of the summed pattern. The surface-wave and conductor powers are
+    /// quadratic in the currents, so each port's stored number leaves out the cross terms between ports (9.4 dB off on a measured two-gap strip), and the currents are not kept. Each is
+    /// omitted by name, and the dielectric residual goes with them through the registry's own predicate.
+    /// </summary>
+    public static FarFieldExternalTerms PlanarSumTerms(string solver, double acceptedW) => new(
+        solver, acceptedW,
+        "Front-to-back cannot be computed: " + PlanarFarFieldPattern.ThetaRangeNote,
+        EmSuitability.No(
+            "A recombined planar pattern does not itemise a surface-wave term: that power is quadratic in the currents, so the run's number for each port cannot be added up for a " +
+            "circuit, and the currents are not kept. PowerAccepted minus PowerRadiated is every loss together, and both are published."),
+        EmSuitability.No(
+            "A recombined planar pattern does not itemise its conductor or film loss, for the same reason: each is quadratic in the currents, and the currents are not kept. " +
+            "PowerAccepted minus PowerRadiated is every loss together, and both are published."));
+
     /// <summary>What one point's metrics are read from, so a metric asked for alone (brief-cosim-pattern-4) is the cube's number.</summary>
-    public static PlanarMetricContext Context(string solver, Em3dPatternPoint point, double referenceInputPowerDbm)
-        => new(point.Pattern, Terms(solver, point.AcceptedW), point.Reflection, PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm });
+    public static PlanarMetricContext Context(string solver, Em3dPatternPoint point, double referenceInputPowerDbm, bool planarSum = false)
+        => new(point.Pattern, planarSum ? PlanarSumTerms(solver, point.AcceptedW) : Terms(solver, point.AcceptedW), point.Reflection,
+               PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm });
 
     /// <summary>
     /// Assembles the points — row-major <c>[freq, port]</c>, frequencies ascending, ports as
@@ -67,7 +83,7 @@ internal static class Em3dRadiation
     /// </summary>
     public static List<string> Publish(DataSet data, string solver, PlanarFarFieldGrid grid, IReadOnlyList<int> portNumbers,
                                        IReadOnlyList<double> freqs, IReadOnlyList<Em3dPatternPoint> points,
-                                       double referenceInputPowerDbm, bool hemisphere, string? frequencies = null, string? origin = null)
+                                       double referenceInputPowerDbm, bool hemisphere, string? frequencies = null, string? origin = null, bool planarSum = false)
     {
         var slices = new List<FarFieldSlice>(freqs.Count);
         int n = portNumbers.Count;
@@ -80,7 +96,7 @@ internal static class Em3dRadiation
             {
                 var pt = points[i * n + k];
                 pats[k] = pt.Pattern;
-                (mets[k], pols[k]) = FarFieldStage.Evaluate(Context(solver, pt, referenceInputPowerDbm));
+                (mets[k], pols[k]) = FarFieldStage.Evaluate(Context(solver, pt, referenceInputPowerDbm, planarSum));
             }
             slices.Add(new FarFieldSlice(freqs[i], pats, mets, pols));
         }

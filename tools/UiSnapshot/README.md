@@ -190,7 +190,7 @@ starts no Avalonia platform at all:
 ```
 dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png [--size WxH] [--realistic] \
     [--fit] [--ortho|--perspective] [--yaw deg] [--pitch deg] [--distance mm] [--target x,y,z] \
-    [--only a+b] [--hide a+b] [--list] [--hover name] [--live] [--select row]
+    [--only a+b] [--hide a+b] [--list] [--hover name] [--live] [--select row] [--mesh] [--mesh-plane x:0.5]
 ```
 
 | Option | Means |
@@ -206,6 +206,8 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png 
 | `--hover` | The first object whose name contains this is drawn hovered, as the pointer over it draws it. |
 | `--live` | Plan the picture as the live view is planned rather than as Export Picture: the realistic view then draws the hover and the selection too. |
 | `--section x,y,z:x,y,z` | Section Through… as a person runs it: each point (world mm) hovered (the viewer's own snap, printed) and clicked. The pick before the second click is written to `<out>.pick.png`; the picture is the view the command leaves. `--undo` then undoes once and writes `<out>.undo.png`. |
+| `--mesh` | The mesh on disk for the active setup, as the toolbar's toggle draws it, with the toggle's state, tooltip and whether it is stale printed. Needs no fields. |
+| `--mesh-plane x:0.5` | With the mesh, the tetrahedra cut by the mesh's own plane: an axis and a position 0..1 across the scene. The clip plane stays as it is. |
 | `--select` | Select the Object Tree row of this name (a field plot, an object) first, and lay the 2D overlay over the picture as Copy and Export Picture do: the selection's chrome and a selected clip-plane plot's plane. Only this option starts the headless Avalonia platform. A plot that draws nothing prints why. |
 
 A field plot draws from the workspace's `results/` folder beside its `.cws`, as the application reads it.

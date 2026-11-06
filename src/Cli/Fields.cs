@@ -74,8 +74,11 @@ internal static class Fields
         if (names.Count == 0) names = fields;
         if (names.Count == 0)
             return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, "the design declares no enabled fields analysis (analysis <name> type=fields block=<instance> freq=<f> …)."));
+        // A parametric sweep's own name runs its chain, as naming the analysis inside it does.
         foreach (string n in names)
-            if (!fields.Contains(n, StringComparer.OrdinalIgnoreCase))
+            if (!fields.Contains(n, StringComparer.OrdinalIgnoreCase)
+                && !(tb.Analyses.FirstOrDefault(a => a.Name.Equals(n, StringComparison.OrdinalIgnoreCase)) is { Enabled: true } named
+                     && ChainSelector.BaseOfChain(named, tb) is FieldsAnalysis { Enabled: true }))
                 return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, $"'{n}' is not an enabled fields analysis of this design" +
                                                                    (fields.Count > 0 ? $" (it has {string.Join(", ", fields)})." : ".")));
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
@@ -83,10 +86,12 @@ internal static class Fields
         // Under --json a pattern stays in -o's file, as an envelope's waveforms do: one frequency at 1° is 65,160 directions a cube.
         JsonRun.InlineCubeLimit = 10_000;
 
-        var result = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
-        {
-            Sets = sets, Analyses = names, Control = RunHost.Control, Measurements = true,
-        });
+        var request = new CircuitEvaluationRequest { Sets = sets, Analyses = names, Control = RunHost.Control, Measurements = true };
+        var plan = CircuitEvaluation.Plan(circuit, request);
+        // What a sweep's pattern will take in memory is in its line (brief-cosim-pattern-5 R-cp5-4), said before the run.
+        foreach (string line in plan.Lines) Console.Error.WriteLine($"[circuitRF] {line}");
+        var result = CircuitEvaluation.Execute(plan, request.Control, request.Measurements, [], null);
+        if (plan.Notes.Count > 0) result = result.WithLeadingNotes(plan.Notes);
         foreach (string w in result.Warnings) Console.Error.WriteLine($"[circuitRF] warning: {w}");
         if (result.Status == RunStatus.Cancelled) return 130;
         if (result.Status != RunStatus.Success || result.Results.Count == 0)

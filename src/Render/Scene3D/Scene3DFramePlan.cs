@@ -609,7 +609,7 @@ public sealed class Scene3DFramePlan
                     Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, scene.UnitBox.FirstVertex, scene.UnitBox.VertexCount, BoxSlot(e));
         if (view.ShowMesh && mesh.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay0, 0, mesh.Lines.Length);
-        if (view.ShowMeshSection && view.Clip.Enabled && section.Lines.Length > 0)
+        if (view.ShowMeshSection && section.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay1, 0, section.Lines.Length);
         if (view.ShowGrid && grid.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
@@ -782,7 +782,7 @@ public sealed class Scene3DFramePlan
         {
             if (view.ShowMesh && mesh.Lines.Length > 0)
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay0, 0, mesh.Lines.Length);
-            if (view.ShowMeshSection && view.Clip.Enabled && section.Lines.Length > 0)
+            if (view.ShowMeshSection && section.Lines.Length > 0)
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay1, 0, section.Lines.Length);
             if (view.ShowGrid && grid.Lines.Length > 0)
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);

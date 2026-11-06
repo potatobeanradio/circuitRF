@@ -2843,10 +2843,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public async Task BuildActiveMesh()
     {
         if (MeshRequested is { } mesh) await mesh(this);
-        else BuildActiveMesh(null);
+        else if (!Is3DSetup) BuildActiveMesh(null);    // a 3D setup's mesh is Gmsh's, which only the host can run
     }
 
-    private bool CanMesh() => !IsBusy;
+    private bool CanMesh() => !IsBusy && MeshBlockedReason is null;
 
     /// <param name="control">Progress and cancellation, or null. The host supplies one when it runs
     /// this off the UI thread; a headless caller passes none and meshes inline exactly as before.</param>

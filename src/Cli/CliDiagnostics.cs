@@ -1459,10 +1459,9 @@ internal static class CliDiagnostics
         "em: --mesh-only makes one 3D setup's mesh and writes no result, so it does not take {flag}.", ("flag", flag));
 
     /// <summary>brief-dfr35-1 R-dfr35-1-5 — a setup whose mesh is not the step this option stops after.</summary>
-    public static Diagnostic EmMeshOnlyNeeds3D(string file, bool thermal) => Diagnostic.Create(
+    public static Diagnostic EmMeshOnlyNeeds3D(string file) => Diagnostic.Create(
         "cli.em.mesh-only-needs-3d", DiagnosticSeverity.Error,
-        "em: --mesh-only makes a 3D EM setup's mesh, and '{file}' is {what}.",
-        ("file", file), ("what", thermal ? "a thermal setup" : "a planar setup, which --dry-run meshes"));
+        "em: --mesh-only makes a 3D EM or thermal setup's mesh, and '{file}' is a planar setup, which --dry-run meshes.", ("file", file));
 
     /// <summary>brief-dfr35-1 R-dfr35-1-5 — the mesh's size, for a caller reading diagnostics.</summary>
     public static Diagnostic EmMeshed(long elements, long estimated, int warnings) => Diagnostic.Create(
@@ -1762,6 +1761,15 @@ internal static class CliDiagnostics
         "{path}: WSProbe '{probe}' has both terminals on net '{net}'. A WSProbe splits a node into a " +
         "G side and an L side; with one net on both it measures nothing. Give it two nets, G first.",
         ("path", path), ("probe", probe), ("net", net));
+
+    /// <summary>
+    /// brief-cosim-pattern-6 R-cp6-5 — a part between two gap ports' nodes is in series with the port references, so it is not the board.
+    /// </summary>
+    public static Diagnostic CheckPartBetweenGapPorts(string path, string part, string block, string portA, string portB) => Diagnostic.Create(
+        "fields.part-between-gap-ports", DiagnosticSeverity.Warning,
+        "{path}: '{part}' joins ports '{portA}' and '{portB}' of EM Field Data '{block}', and both are gap ports. A gap port's negative end is a pad " +
+        "and not ground, so this part is in series with both ports' references and is not the board. It belongs from one port's node to ground.",
+        ("path", path), ("part", part), ("block", block), ("portA", portA), ("portB", portB));
 
     /// <summary>
     /// No analysis of any kind will dispatch. <c>SelectTop</c>'s own sentence per kind, forwarded.
@@ -3544,6 +3552,11 @@ internal static class CliDiagnostics
         "plot.trace.freq-malformed", DiagnosticSeverity.Error,
         "plot: in --trace '{trace}', freq='{value}' is not a frequency (2.45G and 2.45e9 both work).",
         ("trace", trace), ("value", value));
+
+    public static Diagnostic PlotTraceAxisValueMalformed(string trace, string axis, string value) => Diagnostic.Create(
+        "plot.trace.axis-value-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', {axis}='{value}' is neither a value of that axis (3n and 3e-9 both work) nor 'all'.",
+        ("trace", trace), ("axis", axis), ("value", value));
 
     public static Diagnostic PlotUnknownVariant(string name) => Diagnostic.Create(
         "plot.variant.unknown", DiagnosticSeverity.Error,

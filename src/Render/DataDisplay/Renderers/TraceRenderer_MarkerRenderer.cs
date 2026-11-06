@@ -29,7 +29,8 @@ namespace CircuitRF.Render.DataDisplay
 
             // ---- Family trace (Phase 7.3b) ----
             // Every curve in the family shares the trace's single line color (no per-curve
-            // stepping, no legend) — the family reads as one trace drawn N times. Its point markers
+            // stepping, no legend) — the family reads as one trace drawn N times — unless it is a pattern cut over
+            // a sweep (Trace.LabelsFamilyCurves), whose curves a reader has to tell apart. Its point markers
             // are drawn on every curve too: a markers-only family is a scatter per sweep point (an
             // envelope run's memory cloud at each drive level, brief ENV-MEAS-3 §5).
             if (trace.IsFamily)
@@ -66,8 +67,11 @@ namespace CircuitRF.Render.DataDisplay
                     StrokeJoin  = SKStrokeJoin.Round
                 };
                 paint.PathEffect = LinePathEffect(props.LineType, strokeW);
-                foreach (var curve in trace.FamilyCurves)
+                bool coloured = trace.LabelsFamilyCurves;
+                for (int k = 0; k < trace.FamilyCurves.Count; k++)
                 {
+                    var curve = trace.FamilyCurves[k];
+                    if (coloured) paint.Color = theme.ToSKColor(trace.FamilyCurveColor(k), props.LineOpacity);
                     using var p = new SKPath();
                     if (curve.Points.Count > LargeTracePoints)
                     {

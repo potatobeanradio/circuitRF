@@ -148,7 +148,7 @@ different steps; that alone moved the dipole's psSAR10g by 0.24 % between runs o
 
 ## Related {#related}
 
-- [Co-simulation](cosimulation.html): capacitors as ports, and B1 and SAR from a schematic with no new EM run.
+- [Co-simulation](cosimulation.html): parts as ports, and B1, SAR and the radiation pattern from a schematic with no new EM run.
 - [Tissues and phantoms](phantoms.html): the materials and the bodies SAR is computed in.
 - [Voxel and mesh import](anatomy-import.html): your own segmented anatomy.
 - [Phone SAR](phone-sar.html): placement against a phantom, band sweeps and reference values.

@@ -70,7 +70,7 @@ in 3D, the solver's (`Setup.palace`), in the workspace's `results/` folder. A re
 `.sNp`, `.npy` or `.cemr` you do type is removed, and the same structure re-run with a coupled pair goes from
 `.s2p` to `.s4p` on its own. The `…` button browses; a path inside the workspace is stored relative so the
 workspace stays portable. **A run replaces the result of the same name, so a new name is how an earlier
-result is kept**, and each name has its own `_sim` cell and co-simulation netlist. A result outside `results/`
+result is kept**, and each name has its own `_sim` or `_cosim` cell and co-simulation netlist. A result outside `results/`
 is not in a Data Display's list of sources: choose **Add from file…** in a trace's source list to plot it.
 
 **Layout** — the `.clay` this setup analyses, and the `…` button re-points it. Re-pointing re-derives the
@@ -96,7 +96,7 @@ records the region, so the file itself says it describes only part of the board.
 
 | Button | What it does |
 |---|---|
-| **Mesh** | Meshes and stops. No solve. This is the cheap "is my mesh sane?" answer — press it as often as you like. |
+| **Mesh** | Meshes and stops. No solve. This is the cheap "is my mesh sane?" answer — press it as often as you like. On a [3D setup](#mesh-3d) it makes the Gmsh mesh a run would solve on. |
 | **Simulate** | Meshes and solves the whole frequency plan, writing the result files. |
 | **Cancel** | Replaces whichever of the two is running. It stops at the next work boundary — a grid row when meshing, a frequency point when solving — so a full-wave run can keep going for tens of seconds after you press it. The button reads *Cancelling…* until it actually stops, and a cancelled run writes nothing. |
 | **Undo / Redo** | Every setting in this panel is undoable, including Change Layout. |
@@ -491,6 +491,9 @@ has just rewritten, so it picks up the new result unchanged. If the port count c
 pointed at the new file and Messages says when its `TermG`s no longer match. A cell of that name that
 reads something else is left alone, and Messages says so. `circuitrf em` honours the same tick.
 
+A run with **component ports** makes a `_cosim` cell in place of the `_sim` one, because a `TermG` on a part's port would have no part on it: each part
+stands on its own port, with the analyses and a Data Display. [Co-simulation](cosimulation.html#pattern) describes it.
+
 Without the tick, place an [SnP component](components.html#snp) yourself and point its `File`
 parameter at the written path. Re-running updates the file in place, so the schematic picks the new
 result up the way it picks up any changed source.
@@ -697,7 +700,16 @@ cancel line but the line saying it stopped. `circuitrf em` prints them to the te
 below t)* — how much the frequency model still changes when a new frequency is solved, falling as samples are
 added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
 the number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
-results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
+results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which. At a minute
+or more a frequency the row also says the time each one takes, and from the second port on about how long the rest will
+take at that pace. An eigenmode run shows *Eigenmode search: linear solve k*, then *Eigenmodes: n found, refining i of n*
+with the last refined mode's frequency and Q, and the solver iteration of the solve under way.
+
+`palace.log`, `gmsh.log` and `emerge.log` in the run's folder carry circuitRF's own lines, beginning `[circuitRF` and the
+date, time and UTC offset: when the program started, every five minutes while it runs, and how it ended, with its exit code. Pressing
+Stop or reaching a limit is written before the program is stopped, so a last line such as `setsid: child 1054 did not exit
+normally` after that line is the stop, not a crash.
+
 A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
 the last figure, and the run is marked not converged; a Sweep tolerance of 0 solves every frequency instead.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
@@ -1427,6 +1439,22 @@ the modes within 0.15 % of Palace's; the example's README compares the two.
 
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
+
+### Looking at a 3D mesh before solving {#mesh-3d}
+
+**Mesh** on a 3D setup's panel, the grid button beside **Run Analysis** on a 3D view's toolbar, and *Simulate ▸ Mesh Only*
+all make the mesh a run of that setup would solve on, and stop before any solver starts. A pass uses the run's folder, memory
+limit and progress row, and is cancelled from that row. It writes no result, so a result already in the folder stays as it was.
+Messages gives the tetrahedra, the count estimated before meshing and the memory a solve of that mesh would need. Palace must
+be installed, since the pass checks the same things a run checks. The 3D view turns the mesh on when the pass finishes, and
+**Show 3D** does when a `.cem`'s view is not open yet.
+
+**A current mesh is never made twice.** Simulate and Mesh compare the Gmsh script they would write with the one the mesh in
+the folder was made from. When the two match, the mesh is reused and Messages says so; when they differ, it is made again.
+A change to the sweep, or to anything else that leaves the geometry and the element sizes alone, keeps the mesh.
+
+The button is greyed, with the reason on its tooltip, on a setup that runs only on openEMS or EMerge: openEMS has a grid, and
+EMerge meshes inside its own run, so neither leaves a mesh to reuse.
 
 ### Fields for the 3D view {#palace-fields}
 

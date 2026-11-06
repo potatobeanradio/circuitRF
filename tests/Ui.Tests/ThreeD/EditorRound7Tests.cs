@@ -57,16 +57,16 @@ public class EditorRound7Tests
     }
 
     [Fact]
-    public void MeshToggle_IsATool_EnabledOnlyWithFields_AndTheStaleSentenceIsTheInspectors()
+    public void MeshToggle_IsATool_EnabledByAMesh_AndTheStaleSentenceIsTheInspectors()
     {
         using var viewer = new Viewer3DViewModel("model.c3d", "model", () => null, (_, _, _) => throw new InvalidOperationException(),
                                                  () => new RecordingBackend(), () => null, a => a());
         var raised = new List<string?>();
         viewer.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
-        viewer.MeshAvailable = true;
         Assert.False(viewer.CanShowMesh);
-        Assert.StartsWith("Simulate first", viewer.MeshTip, StringComparison.Ordinal);
-        viewer.FieldsAvailable = true;
+        Assert.StartsWith("No mesh yet", viewer.MeshTip, StringComparison.Ordinal);
+        viewer.MeshAvailable = true;
+        Assert.False(viewer.FieldsAvailable);
         Assert.True(viewer.CanShowMesh);
         Assert.Contains(nameof(Viewer3DViewModel.CanShowMesh), raised);
 

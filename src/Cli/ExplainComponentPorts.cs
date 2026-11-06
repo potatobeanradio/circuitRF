@@ -57,7 +57,10 @@ internal static class ExplainComponentPorts
         }
         if (build.Ok)
             walks.Add(new ResolutionStepJson("co-simulation netlist", null, EmCoSimNetlist.FileNameFor(setup),
-                "a finished driven run writes it in the workspace beside the _sim cell: the board's N-port, each part from its port's node to ground"));
+                "a finished driven run writes it in the workspace: the board's N-port, each part from its port's node to ground"));
+        if (build.Ok && setup.CreateSnpSchematic)
+            walks.Add(new ResolutionStepJson("co-simulation cell", null, EmCoSimNetlist.CellNameFor(setup),
+                "a finished driven run draws the same circuit as this cell, in place of a _sim cell; an existing cell is left as it is"));
         return build.Ok ? 0 : 1;
     }
 }

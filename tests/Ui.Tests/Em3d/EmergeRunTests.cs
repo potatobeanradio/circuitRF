@@ -76,6 +76,29 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         Assert.Null(EmergeLog.Read("0:00:07.780342  INFO   : Adding PEC to surface tags [58, 59](dim = 2)"));
     }
 
+    [Fact]
+    public void TheMinutesAroundGmsh_AndEachFrequencyOfABatch_AreNamed()
+    {
+        var stages = new List<RunProgress>();
+        var tracker = new EmergeStageTracker(new RunControl { Progress = new Sync(stages.Add), MinReportIntervalMs = 0 }, eigenmode: false);
+        tracker.Begin();
+        foreach (string line in new[]
+                 {
+                     "{\"stage\": \"geometry\"}",
+                     "0:02:08.003528  INFO   :   Generating default boundary conditions.",
+                     "0:03:37.717057  INFO   : Calling GMSH mesher",
+                     "0:06:10.231382  INFO   : Generating internal mesh data.",
+                     "0:06:49.565411  INFO   : Adaptive sweep: solving at ['500.00 MHz', '2.38 GHz']",
+                     "0:06:50.000000  INFO   : [freq-j001] Calling sparse Solver.",
+                 })
+            tracker.Line(line);
+        var names = stages.Select(s => s.Stage).ToList();
+        Assert.Contains("Starting EMerge: building the geometry", names);
+        Assert.Contains("Starting EMerge: preparing the boundary conditions", names);
+        Assert.Contains("Meshing (EMerge): building its mesh data", names);
+        Assert.Equal("Solving (EMerge): frequency 1 of 2 in 500.00 MHz, 2.38 GHz", names[^1]);
+    }
+
     // ── 2. The result reader ───────────────────────────────────────────────────────────────────
 
     [Fact]

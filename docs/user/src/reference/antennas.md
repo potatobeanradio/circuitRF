@@ -204,6 +204,16 @@ not in it:
   span. Every pattern in the result is a whole one, and the s-parameters are untouched: they are
   finished before the first pattern begins.
 
+## Changing part values without another run {#part-values}
+
+A driven 3D run with component ports stores a pattern per port, and a schematic's fields analysis combines them for the parts around the board. So the
+pattern of the antenna as built follows a matching inductor or a tuning capacitor under a slider, a parametric sweep, the optimizer or yield, with no new EM run.
+Tick the parts and turn on **Create SnP schematic when the run finishes**, and the run makes the schematic.
+[Co-simulation](cosimulation.html#pattern) has the steps, what can be placed across a gap, and how closely each solver agrees.
+
+A planar run's pattern recombines the same way, for a matching network on an edge-fed patch or a part on an internal delta gap, from a circuit you draw around an
+EM Field Data block. [A planar result](cosimulation.html#planar) has what differs.
+
 ## Reading the pattern {#pattern}
 
 **θ spans 0…90° only, and the axis stops there rather than being padded.** With an infinite ground plane

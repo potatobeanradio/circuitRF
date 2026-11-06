@@ -649,8 +649,19 @@ public static class CircuitEvaluation
                 // The WHOLE chain, not just this analysis: the sweeps below this one are run by
                 // ParametricSweepEngine's own re-elaboration loop and are never dispatched here, so
                 // describing the dispatched analysis alone reports one axis for a run with several.
-                return (ParametricSweepRunSummary.Describe(psa, tb),
-                        ParametricSweepRunSummary.TotalPoints(psa, tb), true);
+            {
+                string summary = ParametricSweepRunSummary.Describe(psa, tb);
+                long points = ParametricSweepRunSummary.TotalPoints(psa, tb);
+                // brief-cosim-pattern-5 R-cp5-4 — a pattern's size is said before the run, and warned about when it is large.
+                if (ChainSelector.BaseOfChain(psa, tb) is FieldsAnalysis swept)
+                {
+                    var size = CircuitRF.Design.Em3d.FieldCosimulation.PlanSweep(swept, nl, points);
+                    summary += $", {size.Sentence}";
+                    if (CircuitRF.Design.Em3d.FieldCosimulation.SweepSizeWarning(swept, size) is { } tooBig)
+                        nl.AddWarningOnce($"fields-sweep-size:{psa.Name}", tooBig);
+                }
+                return (summary, points, true);
+            }
 
             case DcAnalysis:
                 return ($"DC '{analysis.Name}': operating point", 1, false);
@@ -805,8 +816,20 @@ public static class CircuitEvaluation
                 // `nl` is the netlist this service elaborated to pick the analysis with; a sweep
                 // stamps a fresh one per point and disposes it, so this is the only route from an
                 // engine diagnostic raised inside a sweep to the Messages panel.
+            {
+                // brief-cosim-pattern-5 R-cp5-1 — the engine cannot read a far field, so this layer runs its points. Any other chain hands it nothing and
+                // is refused as ever. A refusal here is the run's, before the first point, and not one NaN point per value.
+                Func<Analysis, ElaboratedNetlist, RunControl?, DataSet>? fieldsPoint = null;
+                if (ChainSelector.BaseOfChain(psa, tb) is FieldsAnalysis swept)
+                {
+                    CircuitRF.Design.Em3d.FieldCosimulation.PlanSweep(swept, nl, 1);
+                    fieldsPoint = CircuitRF.Design.Em3d.FieldCosimulation.SweepPoints(fields?.Output ?? FieldsOutput.Written);
+                    if (fields is not null)
+                        fields.Metrics[resultName ?? swept.Name] = CircuitRF.Design.Em3d.FieldCosimulation.SweptMetrics(swept, psa);
+                }
                 return ParametricSweepEngine.Run(psa, lib, tb,
-                    baseDirectory: baseDirectory, control: control, diagnosticsInto: nl);
+                    baseDirectory: baseDirectory, control: control, diagnosticsInto: nl, runOtherInner: fieldsPoint);
+            }
 
             // brief-sar-9 — an EM block's per-port fields recombined by this circuit's waves; no EM run
             case FieldsAnalysis fa:

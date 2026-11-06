@@ -791,6 +791,7 @@ public sealed class PlanarKernel
         // brief-em3d-31 — the far-field group is written by the solver-agnostic stage, which the 3D
         // solvers drive too; the three publishers moved there unchanged.
         FarFieldStage.Publish(ds, sweep.FarField, sweep.Metrics, sweep.Polarization);
+        PlanarPortBoxes.Publish(ds, sweep, ports);
 
         return ds;
     }
