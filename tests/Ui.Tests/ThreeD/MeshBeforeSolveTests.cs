@@ -1,6 +1,7 @@
 // brief-dfr36-1 — the mesh seen before a solve: the toggle needs a mesh and no fields, the mesh has its own plane, a Mesh click is
 // refused on a setup with no Gmsh mesh, and a run's reuse test and the view's are one.
 
+using System.Collections.Concurrent;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Thermal;
@@ -73,6 +74,109 @@ public sealed class MeshBeforeSolveTests : IDisposable
         viewer.MeshPlaneAxis = ClipAxis3D.Y;
         Assert.Equal(clip.Equation, viewer.ToolbarClip.Equation);
         Assert.Equal(clip.Equation, viewer.View.Clip.Equation);
+    }
+
+    /// <summary>A viewer showing a one-tetrahedron mesh on its plane, with the cut standing in and the posts run by <see cref="Drain"/>.</summary>
+    private (Viewer3DViewModel Viewer, BlockingCollection<(ClipPlane3D Plane, CancellationToken Token, SemaphoreSlim Go)> Cuts) ViewerOnAPlane()
+    {
+        var setup = new EmSetup { Name = "P", Solver3D = Em3dSolverId.Palace };
+        string dir = Em3dRunService.RunDirectory(_root, setup, Em3dSolverId.Palace);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, GmshGeoWriter.MeshFile),
+            "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n" +
+            "$Elements\n1\n1 4 2 1 1 1 2 3 4\n$EndElements\n");
+        var cuts = new BlockingCollection<(ClipPlane3D, CancellationToken, SemaphoreSlim)>();
+        var viewer = new Viewer3DViewModel("model.c3d", "model", () => null, (_, _, _) => throw new InvalidOperationException(),
+                                           () => new RecordingBackend(), () => _root, _posts.Enqueue)
+        {
+            MeshSectionCutter = (_, _, plane, _, token) =>
+            {
+                var go = new SemaphoreSlim(0);
+                cuts.Add((plane, token, go));
+                go.Wait(TimeSpan.FromSeconds(30), token);
+                return [];
+            },
+        };
+        viewer.SetRunSetup(setup);
+        viewer.MeshPlaneEnabled = true;
+        viewer.ShowMesh = true;
+        return (viewer, cuts);
+    }
+
+    private readonly ConcurrentQueue<Action> _posts = new();
+
+    /// <summary>Runs what has been posted, as the UI thread would, until <paramref name="until"/> holds.</summary>
+    private void Drain(Func<bool> until)
+    {
+        Assert.True(SpinWait.SpinUntil(() => { while (_posts.TryDequeue(out var post)) post(); return until(); }, TimeSpan.FromSeconds(30)));
+    }
+
+    /// <summary>The slider moves faster than a mesh is cut: each cut still finishes and shows mid-drag, and the next takes the plane as
+    /// it then stands.</summary>
+    [Fact]
+    public void DraggingTheMeshPlane_ShowsEachCutAsItFinishes()
+    {
+        var (viewer, cuts) = ViewerOnAPlane();
+        using (viewer)
+        {
+            (ClipPlane3D Plane, CancellationToken Token, SemaphoreSlim Go) cut = default;
+            Drain(() => cuts.TryTake(out cut));
+            long shown = viewer.SectionOverlay.Version;
+            cut.Go.Release();
+            Drain(() => viewer.SectionOverlay.Version != shown);
+
+            viewer.MeshPlanePosition = 0.6;
+            var at6 = viewer.MeshPlane;
+            Drain(() => cuts.TryTake(out cut));
+            Assert.Equal(at6.Equation, cut.Plane.Equation);
+            shown = viewer.SectionOverlay.Version;
+
+            viewer.MeshPlanePosition = 0.7;
+            viewer.MeshPlanePosition = 0.8;
+            var at8 = viewer.MeshPlane;
+            Assert.False(cut.Token.IsCancellationRequested);
+            cut.Go.Release();
+            Drain(() => viewer.SectionOverlay.Version != shown);
+
+            Drain(() => cuts.TryTake(out cut));
+            Assert.Equal(at8.Equation, cut.Plane.Equation);
+            Assert.Equal(at8.Equation, viewer.View.Clip.Equation);
+            cut.Go.Release();
+        }
+    }
+
+    /// <summary>At a bad frame rate the plane holds while the slider moves, its readout does not, and it lands when the slider rests.
+    /// Faster frames bring the following back.</summary>
+    [Fact]
+    public void ABadFrameRate_HoldsThePlaneUntilTheSliderRests()
+    {
+        var (viewer, cuts) = ViewerOnAPlane();
+        using (viewer)
+        {
+            (ClipPlane3D Plane, CancellationToken Token, SemaphoreSlim Go) cut = default;
+            Drain(() => cuts.TryTake(out cut));
+            long shown = viewer.SectionOverlay.Version;
+            cut.Go.Release();
+            Drain(() => viewer.SectionOverlay.Version != shown);
+
+            viewer.MeshPlaneQuietMs = 300;
+            viewer.FrameTook(Viewer3DViewModel.MeshPlaneLiveLimitMs * 2);
+            var held = viewer.View.Clip.Equation;
+            string readout = viewer.MeshPlaneText;
+            viewer.MeshPlanePosition = 0.9;
+            Assert.NotEqual(readout, viewer.MeshPlaneText);
+            Assert.Equal(held, viewer.View.Clip.Equation);
+            Assert.Empty(cuts);
+
+            Drain(() => cuts.TryTake(out cut));
+            Assert.Equal(viewer.MeshPlane.Equation, cut.Plane.Equation);
+            Assert.Equal(viewer.MeshPlane.Equation, viewer.View.Clip.Equation);
+            cut.Go.Release();
+
+            for (int i = 0; i < 12; i++) { viewer.FrameTook(1); viewer.MeshCutTook(1); }
+            viewer.MeshPlanePosition = 0.2;
+            Assert.Equal(viewer.MeshPlane.Equation, viewer.View.Clip.Equation);
+        }
     }
 
     /// <summary>A click on a setup with no Gmsh mesh is refused with its reason, in the words the toolbar's tooltip uses.</summary>

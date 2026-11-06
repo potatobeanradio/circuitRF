@@ -1383,7 +1383,8 @@ its tooltip says which. No fields are needed. [EM setup ▸ Looking at a 3D mesh
 when Simulate reuses its mesh.
 
 The triangle button draws the boundary triangles. The **mesh plane** button beside it opens the mesh's own plane: tick *Show the
-tetrahedra on a plane*, then choose its axis and drag it through the model. It is separate from the clip plane and from every
+tetrahedra on a plane*, then choose its axis and drag it through the model. The view follows the slider as you drag; when the
+mesh is too slow to redraw at a usable rate, the readout follows and the plane moves when the slider rests. It is separate from the clip plane and from every
 field plot's plane, so moving one never moves another. While the clip plane is off, the mesh plane also cuts the solids so the
 section can be seen, and the arrows button keeps the other side; while the clip plane is on, the clip plane does that cutting
 and the mesh plane stays where it is. A clip-plane field plot stays on its own plane throughout.

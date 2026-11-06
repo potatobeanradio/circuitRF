@@ -825,7 +825,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     /// <summary>What cuts the solids: the clip plane when it is on, else the mesh's own plane when it is showing, since a plane inside
     /// opaque solids could not otherwise be seen. A field plot on its own plane is drawn unclipped either way.</summary>
-    private void CutView() => View.Clip = !ClipEnabled && ShowMesh && MeshPlaneEnabled ? MeshPlane : ToolbarClip;
+    private void CutView() => View.Clip = !ClipEnabled && ShowMesh && MeshPlaneEnabled ? MeshPlaneAt(_drawnMeshPlanePosition) : ToolbarClip;
 
     private void ApplyClip()
     {
@@ -956,7 +956,13 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnMeshPlaneEnabledChanged(bool value) => ApplyMeshPlane();
     partial void OnMeshPlaneAxisChanged(ClipAxis3D value) => ApplyMeshPlane();
-    partial void OnMeshPlanePositionChanged(double value) => ApplyMeshPlane();
+    partial void OnMeshPlanePositionChanged(double value)
+    {
+        if (!MeshPlaneTooSlowToFollow) { ApplyMeshPlane(); return; }
+        OnPropertyChanged(nameof(MeshPlaneText));
+        _meshPlaneQuiet?.Dispose();
+        _meshPlaneQuiet = new System.Threading.Timer(_ => _post(ApplyMeshPlane), null, MeshPlaneQuietMs, Timeout.Infinite);
+    }
     partial void OnMeshPlaneFlipChanged(bool value) => ApplyMeshPlane();
 
     /// <summary>On a plane, the mesh is that plane's tetrahedra alone: the boundary wireframe is not clipped, so the half the plane cuts
@@ -969,6 +975,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     private void ApplyMeshPlane()
     {
+        if (_disposed) return;
+        _meshPlaneQuiet?.Dispose();
+        _meshPlaneQuiet = null;
+        _drawnMeshPlanePosition = MeshPlanePosition;
         ShowMeshDrawing();
         CutView();
         OnPropertyChanged(nameof(MeshPlaneText));
@@ -977,16 +987,38 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>The mesh's plane where it now stands, scene-local.</summary>
-    public ClipPlane3D MeshPlane
+    public ClipPlane3D MeshPlane => MeshPlaneAt(MeshPlanePosition);
+
+    private ClipPlane3D MeshPlaneAt(double position)
     {
-        get
-        {
-            var plane = new ClipPlane3D { Enabled = true, Axis = MeshPlaneAxis, Flip = MeshPlaneFlip };
-            var (lo, hi) = plane.Range(Scene.BoundsMin, Scene.BoundsMax);
-            plane.Offset = (float)(lo + (hi - lo) * MeshPlanePosition);
-            return plane;
-        }
+        var plane = new ClipPlane3D { Enabled = true, Axis = MeshPlaneAxis, Flip = MeshPlaneFlip };
+        var (lo, hi) = plane.Range(Scene.BoundsMin, Scene.BoundsMax);
+        plane.Offset = (float)(lo + (hi - lo) * position);
+        return plane;
     }
+
+    /// <summary>A plane that takes longer than this to reach the screen, its cut and a frame together, stops following its slider: it
+    /// holds while the slider moves and lands when the slider rests. 500,000 tetrahedra cut in about 50 ms on a Debug build.</summary>
+    public const double MeshPlaneLiveLimitMs = 150;
+
+    /// <summary>How long the slider must rest before a plane too slow to follow lands on it.</summary>
+    public int MeshPlaneQuietMs { get; set; } = 150;
+
+    /// <summary>Where the plane is drawn: the slider's position, except while a plane too slow to follow waits for the slider to rest.</summary>
+    private double _drawnMeshPlanePosition = 0.5;
+    private System.Threading.Timer? _meshPlaneQuiet;
+    private double _meshCutMs, _frameMs;
+
+    private bool MeshPlaneTooSlowToFollow => ShowMesh && MeshPlaneEnabled && _meshCutMs + _frameMs > MeshPlaneLiveLimitMs;
+
+    /// <summary>How long a frame took from being planned to being presented, as the pane measures it.</summary>
+    public void FrameTook(double milliseconds) => _frameMs = Smoothed(_frameMs, milliseconds);
+
+    /// <summary>How long a cut of the mesh took.</summary>
+    internal void MeshCutTook(double milliseconds) => _meshCutMs = Smoothed(_meshCutMs, milliseconds);
+
+    /// <summary>A running average, so one stall does not end a drag's following, and a measurement made while holding brings it back.</summary>
+    private static double Smoothed(double average, double sample) => average == 0 ? sample : (average + sample) / 2;
 
     /// <summary>Where the plane is, in world millimetres.</summary>
     public string MeshPlaneText
@@ -1174,57 +1206,109 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _overlayCts?.Cancel();
         var cts = _overlayCts = new CancellationTokenSource();
         CutView();                                 // the scene's bounds, which the mesh's plane is placed in, may have moved
+        ScheduleSection();
         var scene = Scene;
         var clip = ToolbarClip;
-        var mesh = _mesh;
-        bool wantSection = ShowMesh && MeshPlaneEnabled && mesh is not null;
-        var plane = MeshPlane;
-        bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
-        // Only the mesh's own plane, the mesh, the scene or the theme rebuild it: dragging the clip plane must not re-cut a large mesh.
-        (MshMesh?, Vector4, object?, bool) sectionKey = wantSection ? (mesh, plane.Equation, scene.Geometry, dark) : default;
-        bool buildSection = wantSection && sectionKey != _sectionKey;
         bool wantGrid = ShowGrid && GridAvailable && scene.Problem is not null;
         var setup = _lastSetup;
         var grid = _grid is { } cached && ReferenceEquals(cached.Scene.Geometry, scene.Geometry) ? cached.Grid : null;
-        if (!wantSection) { SectionOverlay = Scene3DOverlay.None; _sectionKey = default; }
-        if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; GridFeedLabels = []; OnPropertyChanged(nameof(GridLabels)); }
-        if (!buildSection && !wantGrid) { FrameRequested?.Invoke(); return; }
+        if (!wantGrid)
+        {
+            GridOverlay = Scene3DOverlay.None; GridLabels = []; GridFeedLabels = []; OnPropertyChanged(nameof(GridLabels));
+            FrameRequested?.Invoke();
+            return;
+        }
+        bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         Task.Run(() =>
         {
             try
             {
-                Scene3DVertex[]? section = null;
-                if (buildSection)
-                    section = Render.Scene3D.MeshOverlay.Section(mesh!, scene, MeshToMetres, plane,
-                        dark ? Scene3DVertex.Pack(255, 210, 90, 255) : Scene3DVertex.Pack(170, 90, 0, 255), cts.Token);
-                FdtdGridDrawing? drawing = null;
-                if (wantGrid)
+                if (grid is null)
                 {
-                    if (grid is null)
-                    {
-                        grid = FdtdGrid.Build(scene.Problem!, CemOpenEms.ResolveGrid(setup?.OpenEms, CemPath));   // brief-sar-3 — a relative GridLines.File
-                        var built = grid;
-                        _post(() => { if (ReferenceEquals(Scene.Geometry, scene.Geometry)) _grid = (scene, built); });
-                    }
-                    drawing = FdtdGridOverlay.Build(grid, scene, clip, dark, cts.Token);
+                    grid = FdtdGrid.Build(scene.Problem!, CemOpenEms.ResolveGrid(setup?.OpenEms, CemPath));   // brief-sar-3 — a relative GridLines.File
+                    var built = grid;
+                    _post(() => { if (ReferenceEquals(Scene.Geometry, scene.Geometry)) _grid = (scene, built); });
                 }
+                var drawing = FdtdGridOverlay.Build(grid, scene, clip, dark, cts.Token);
                 if (cts.IsCancellationRequested) return;
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested) return;
-                    if (section is not null) { SectionOverlay = new Scene3DOverlay(section, ++_overlayVersion); _sectionKey = sectionKey; }
-                    if (drawing is not null)
-                    {
-                        GridOverlay = new Scene3DOverlay(drawing.Lines, ++_overlayVersion);
-                        GridLabels = drawing.Labels;
-                        GridFeedLabels = drawing.FeedLabels;
-                        OnPropertyChanged(nameof(GridLabels));
-                    }
+                    GridOverlay = new Scene3DOverlay(drawing.Lines, ++_overlayVersion);
+                    GridLabels = drawing.Labels;
+                    GridFeedLabels = drawing.FeedLabels;
+                    OnPropertyChanged(nameof(GridLabels));
                     FrameRequested?.Invoke();
                 });
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { _post(() => Notes = "The grid or mesh section could not be drawn: " + ex.Message); }
+            catch (Exception ex) { _post(() => Notes = "The grid could not be drawn: " + ex.Message); }
+        });
+    }
+
+    // A slider moves more often than a large mesh can be cut, so a new plane does not cancel the cut under way, which would leave nothing
+    // drawn until the slider rested. The cut finishes and shows, and the next one takes the plane as it then stands. Only a new mesh,
+    // scene or theme cancels one, since its lines would be of no use.
+    private CancellationTokenSource? _sectionCts;
+    private (MshMesh?, object?, bool) _sectionRun;
+
+    /// <summary>Stands in for the cut under a test.</summary>
+    internal Func<MshMesh, Scene3DModel, ClipPlane3D, uint, CancellationToken, Scene3DVertex[]>? MeshSectionCutter { get; set; }
+
+    private void ScheduleSection()
+    {
+        if (!ShowMesh || !MeshPlaneEnabled || _mesh is not { } mesh)
+        {
+            _sectionCts?.Cancel();
+            _sectionCts = null;
+            SectionOverlay = Scene3DOverlay.None;
+            _sectionKey = default;
+            return;
+        }
+        var scene = Scene;
+        var plane = MeshPlaneAt(_drawnMeshPlanePosition);
+        bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
+        // Only the mesh's own plane, the mesh, the scene or the theme rebuild it: dragging the clip plane must not re-cut a large mesh.
+        (MshMesh?, Vector4, object?, bool) key = (mesh, plane.Equation, scene.Geometry, dark);
+        if (key == _sectionKey) return;
+        (MshMesh?, object?, bool) run = (mesh, scene.Geometry, dark);
+        if (_sectionCts is not null)
+        {
+            if (run == _sectionRun) return;
+            _sectionCts.Cancel();
+        }
+        var cts = _sectionCts = new CancellationTokenSource();
+        _sectionRun = run;
+        uint colour = dark ? Scene3DVertex.Pack(255, 210, 90, 255) : Scene3DVertex.Pack(170, 90, 0, 255);
+        var cut = MeshSectionCutter ?? ((m, s, p, c, t) => Render.Scene3D.MeshOverlay.Section(m, s, MeshToMetres, p, c, t));
+        Task.Run(() =>
+        {
+            try
+            {
+                long started = System.Diagnostics.Stopwatch.GetTimestamp();
+                var lines = cut(mesh, scene, plane, colour, cts.Token);
+                double ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                _post(() =>
+                {
+                    if (!ReferenceEquals(cts, _sectionCts) || _disposed) return;
+                    _sectionCts = null;
+                    MeshCutTook(ms);
+                    SectionOverlay = new Scene3DOverlay(lines, ++_overlayVersion);
+                    _sectionKey = key;
+                    FrameRequested?.Invoke();
+                    ScheduleSection();
+                });
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _post(() =>
+                {
+                    if (!ReferenceEquals(cts, _sectionCts)) return;
+                    _sectionCts = null;
+                    Notes = "The mesh section could not be drawn: " + ex.Message;
+                });
+            }
         });
     }
 
@@ -1283,6 +1367,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _debounce?.Dispose();
         _stallTimer?.Dispose();
         _overlayCts?.Cancel();
+        _sectionCts?.Cancel();
+        _meshPlaneQuiet?.Dispose();
         _animation?.Dispose();
         foreach (var layer in _layers) layer.Dispose();
         _own.Dispose();

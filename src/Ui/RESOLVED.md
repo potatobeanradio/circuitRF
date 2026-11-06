@@ -41959,3 +41959,10 @@ The owner answered D1 yes, asked for the mesh and field planes to be separate, a
 - **The boundary wireframe is off while the plane shows.** It is not clipped either, so the half the plane cuts away would be drawn in front of the section.
 - **Dragging the clip plane does not re-cut the mesh.** `_sectionKey` rebuilds the section only for a new mesh, plane, scene or theme.
 - **The toolbar shifted once, when the buttons were added.** Mesh and Mesh plane add a button each, so what stands to their right sits further along than before. Neither is ever hidden, so nothing moves at run time; a setup Mesh cannot run greys it in place. The setup panel's Mesh is now always shown for the same reason.
+
+## The mesh plane's slider did not follow a drag (2026-11-06)
+
+- **A new plane cancelled the cut under way, and a slider moves more often than a large mesh can be cut.** One cut of 501,898 tetrahedra takes about 50 ms on a Debug build and 23 ms on Release; pointer moves arrive every 8 to 16 ms. Through the real view model on a real mesh, 203 slider moves in 2 s gave 0 redraws of the section, and it appeared only when the slider stopped. The solids' cut moved meanwhile, because it needs no build.
+- **The cut now finishes and shows, and the next takes the plane as it then stands.** The same drag gives 37 redraws in 2 s on Debug. Only a new mesh, scene or theme cancels a cut. The section left the task it shared with the FDTD grid, whose cancel-the-older rule stays: moving the clip plane used to be able to cancel a cut of the mesh too.
+- **Bad frame rate is measured, as cut time plus frame time.** The pane times each frame from being planned to being presented (`FrameTook`). Above `MeshPlaneLiveLimitMs` (150 ms, about 7 frames a second) the readout keeps following while the plane, the solids' cut and the section hold, and they land after the slider has rested for 150 ms. The limit sits well above the Debug figure on 500,000 tetrahedra, about 50 ms plus a frame, so that a board this size follows on the build the owner runs. Each landing is measured too, so following comes back when the rate does. Axis, side and the tick apply at once.
+

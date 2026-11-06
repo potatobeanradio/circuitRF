@@ -11,7 +11,7 @@
          changes height (the header) sits below them, so nothing above the list ever moves. -->
     <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="4,2">
 
-        <TextBox Grid.Row="0" x:Name="FilterBox" Text="{Binding Panel.FilterText, Mode=TwoWay}" Watermark="Filter nets"
+        <TextBox Grid.Row="0" x:Name="FilterBox" Text="{Binding Panel.FilterText, Mode=TwoWay}" PlaceholderText="Filter nets"
                  FontSize="12" MinHeight="24" Padding="6,2" IsEnabled="{Binding Panel.IsLayoutActive}"
                  ToolTip.Tip="Show only the nets whose name contains this"/>
 

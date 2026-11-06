@@ -462,6 +462,7 @@ public sealed class Viewer3DPane : Control
     }
 
     private bool _dirty;
+    private long _frameStarted;
 
     /// <summary>The UI thread's whole per-frame cost: present what is finished, plan the next.</summary>
     private void OnTick()
@@ -496,7 +497,8 @@ public sealed class Viewer3DPane : Control
         catch (Exception ex) { _done = _busy = false; Faulted(ex); return; }
         _done = false;
         _busy = false;
-        _vm!.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
+        _vm!.FrameTook(System.Diagnostics.Stopwatch.GetElapsedTime(_frameStarted).TotalMilliseconds);
+        _vm.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
         SyncTrackingTimer();
         FramePresented?.Invoke();
     }
@@ -535,6 +537,7 @@ public sealed class Viewer3DPane : Control
             _nextImage = (int)(_frame % SwapchainImages);
             _frame++;
             _busy = true;
+            _frameStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             _go.Set();
             return true;
         }
