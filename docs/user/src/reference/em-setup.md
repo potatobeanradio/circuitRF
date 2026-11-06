@@ -96,7 +96,7 @@ records the region, so the file itself says it describes only part of the board.
 
 | Button | What it does |
 |---|---|
-| **Mesh** | Meshes and stops. No solve. This is the cheap "is my mesh sane?" answer — press it as often as you like. |
+| **Mesh** | Meshes and stops. No solve. This is the cheap "is my mesh sane?" answer — press it as often as you like. On a [3D setup](#mesh-3d) it makes the Gmsh mesh a run would solve on. |
 | **Simulate** | Meshes and solves the whole frequency plan, writing the result files. |
 | **Cancel** | Replaces whichever of the two is running. It stops at the next work boundary — a grid row when meshing, a frequency point when solving — so a full-wave run can keep going for tens of seconds after you press it. The button reads *Cancelling…* until it actually stops, and a cancelled run writes nothing. |
 | **Undo / Redo** | Every setting in this panel is undoable, including Change Layout. |
@@ -1439,6 +1439,22 @@ the modes within 0.15 % of Palace's; the example's README compares the two.
 
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
+
+### Looking at a 3D mesh before solving {#mesh-3d}
+
+**Mesh** on a 3D setup's panel, the grid button beside **Run Analysis** on a 3D view's toolbar, and *Simulate ▸ Mesh Only*
+all make the mesh a run of that setup would solve on, and stop before any solver starts. A pass uses the run's folder, memory
+limit and progress row, and is cancelled from that row. It writes no result, so a result already in the folder stays as it was.
+Messages gives the tetrahedra, the count estimated before meshing and the memory a solve of that mesh would need. Palace must
+be installed, since the pass checks the same things a run checks. The 3D view turns the mesh on when the pass finishes, and
+**Show 3D** does when a `.cem`'s view is not open yet.
+
+**A current mesh is never made twice.** Simulate and Mesh compare the Gmsh script they would write with the one the mesh in
+the folder was made from. When the two match, the mesh is reused and Messages says so; when they differ, it is made again.
+A change to the sweep, or to anything else that leaves the geometry and the element sizes alone, keeps the mesh.
+
+The button is greyed, with the reason on its tooltip, on a setup that runs only on openEMS or EMerge: openEMS has a grid, and
+EMerge meshes inside its own run, so neither leaves a mesh to reuse.
 
 ### Fields for the 3D view {#palace-fields}
 

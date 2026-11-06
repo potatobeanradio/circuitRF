@@ -320,12 +320,13 @@
                      button that STARTED the work is the one that turns into Cancel. Simulate is
                      disabled meanwhile (CanRun is gated on IsBusy), so the two long operations can
                      never overlap and mesh the same problem twice at once. -->
-                <!-- Not on a 3D setup: Gmsh meshes a 3D run inside Simulate, and this button's mesh is the planar or
-                     cross-section kernel's, which no 3D run reads (owner report, 2026-09-28). -->
+                <!-- brief-dfr36-1 R-dfr36-1-4 — on a 3D setup it runs Gmsh with no solve, and greys with the reason on a solver
+                     Gmsh does not mesh for. -->
                 <Button Name="MeshButton" Margin="4,0,0,0"
                         IsVisible="{Binding ViewModel.ShowMeshButton}"
                         Command="{Binding ViewModel.BuildActiveMeshCommand}"
-                        ToolTip.Tip="Compute the mesh only — no solve.">
+                        ToolTip.ShowOnDisabled="True"
+                        ToolTip.Tip="{Binding ViewModel.MeshButtonTip}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="GridLarge" Width="14" Height="14"/>
                         <TextBlock Text="Mesh"/>

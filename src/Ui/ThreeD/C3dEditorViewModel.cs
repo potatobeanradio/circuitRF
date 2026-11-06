@@ -170,6 +170,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.FrameRequested += OnViewerFrame;
         Viewer.CursorResolved += OnCursorResolvedForOperation;
         Viewer.DescribeSuffix = NotModelledSuffix;              // brief-em3d-93 — "(not modelled)" on the hover
+        Viewer.MeshCurrencySource = MeshCurrencyQuestion;       // brief-dfr36-1 R-dfr36-1-3
         Viewer.MaterialHoverContext = HoverContextOf;           // brief-em3d-94 — the lines that apply to what the object is
         Viewer.DescribeGroup = HoverGroupName;                  // 3D editor groups — the group a click takes, named on the hover
         // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
@@ -287,6 +288,21 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     /// <summary>The scene from an elaboration: what <see cref="Build"/> does once the document has been elaborated, and all that a
     /// display-only rebuild does (brief-em3d-108). Called under the elaboration lock: it shares the tessellation cache.</summary>
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — the document taken here, on the UI thread; the mesh compared with it off this thread, by the
+    /// door a run takes, so the view's answer and the run's cannot differ.</summary>
+    private Func<CircuitRF.Design.Em3d.Em3dMeshCurrency>? MeshCurrencyQuestion()
+    {
+        if (ActiveRunSetup is not { } setup || ResultsRootProvider?.Invoke() is not { } root) return null;
+        var document = RunDocument();
+        string path = TopFilePath;
+        string? workspace = _workspaceCws();
+        bool fromCem = IsExternalActive;
+        return () =>
+        {
+            lock (_elaborating) return EmRunService.MeshCurrency(setup, document, path, workspace, root, _elaborator, fromCem);
+        };
+    }
+
     private Scene3DModel Assemble(long generation, C3dDocument doc, C3dElaboration e, C3dSceneInputs inputs, RecordsView records)
     {
         var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;

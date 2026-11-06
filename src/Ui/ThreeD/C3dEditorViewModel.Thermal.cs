@@ -606,7 +606,7 @@ public sealed partial class C3dEditorViewModel
     public string? SetTemperatureOnClip(bool on)
     {
         if (on && PlotTemperatureRefusal() is { } why) return why;
-        if (on && !Viewer.View.Clip.Enabled) Viewer.ClipEnabled = true;
+        if (on && !Viewer.ClipEnabled) Viewer.ClipEnabled = true;
         ShowTemperaturePlot(C3dFieldPlotOn.ClipPlane, on);
         return null;
     }

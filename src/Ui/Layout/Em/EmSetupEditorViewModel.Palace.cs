@@ -96,11 +96,16 @@ public sealed partial class EmSetupEditorViewModel
     /// solver options, the radiation pattern).</summary>
     public bool ShowCircuitRfSolverControls => !Is3DSetup;
 
-    /// <summary>The Mesh button. It meshes for circuitRF's own kernels (the planar MoM mesh or the cross-section
-    /// grid) and no 3D solver reads either: Gmsh meshes a 3D run as part of Simulate. Shown on a 3D setup it
-    /// answered with a mesh the run never uses, or with "no cross-section" in a .c3d (owner report, 2026-09-28). Off while
-    /// a mesh is in flight, when its Cancel takes the cell.</summary>
-    public bool ShowMeshButton => !Is3DSetup && !IsMeshing;
+    /// <summary>The Mesh button. On a planar setup it meshes for circuitRF's own kernels; brief-dfr36-1 R-dfr36-1-4 — on a 3D setup, the Gmsh
+    /// mesh a run would solve on, with no solve. Off while a mesh is in flight, when its Cancel takes the cell.</summary>
+    public bool ShowMeshButton => !IsMeshing;
+
+    /// <summary>Why Mesh is greyed on this 3D setup (its solver is one Gmsh does not mesh for), or null.</summary>
+    public string? MeshBlockedReason => Is3DSetup ? CircuitRF.Design.Em3d.Em3dRunService.MeshButtonRefusal(Working) : null;
+
+    public string MeshButtonTip => MeshBlockedReason ?? (Is3DSetup
+        ? "Make the mesh a run would solve on, with no solve. An unchanged mesh is reused, by this and by Simulate."
+        : "Compute the mesh only — no solve.");
 
     /// <summary>The Stackup group. A .c3d setup has no layout and no technology — its geometry is the 3D model — so
     /// the group could only ever show an empty header there. A .cem 3D setup keeps it: the generator builds its
@@ -151,6 +156,9 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowConductorsGroup));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
         OnPropertyChanged(nameof(ShowMeshButton));
+        OnPropertyChanged(nameof(MeshBlockedReason));
+        OnPropertyChanged(nameof(MeshButtonTip));
+        BuildActiveMeshCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ShowRadiationPattern));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         OnPropertyChanged(nameof(ReferenceInputPowerEnabled));

@@ -721,8 +721,31 @@ public static partial class Em3dRunService
     public const string MeshOnlySource = "mesh-only";
 
     /// <summary>brief-dfr35-1 R-dfr35-1-5 — why a setup with no Palace leg has nothing for <c>--mesh-only</c> to make.</summary>
-    public static string MeshOnlyRefusal(string solver)
-        => $"--mesh-only makes the mesh Gmsh writes for Palace, and this setup runs on {solver}, which meshes in its own run or not at all.";
+    /// <param name="asked">What was asked for, as the caller spells it: the option, or the 3D view's button.</param>
+    public static string MeshOnlyRefusal(string solver, string asked = "--mesh-only")
+        => $"{asked} makes the mesh Gmsh writes for Palace, and this setup runs on {solver}, which meshes in its own run or not at all.";
+
+    /// <summary>brief-dfr36-1 R-dfr36-1-1 — why a 3D view's Mesh cannot run <paramref name="setup"/>, or null: a thermal setup is
+    /// meshed by Gmsh too, and an EM setup needs a solver Gmsh meshes for.</summary>
+    public static string? MeshButtonRefusal(EmSetup setup)
+    {
+        if (setup.IsThermal) return null;
+        if (!setup.Is3D) return $"This setup is a planar analysis, and {C3dSetups.PlanarRefusal}.";
+        return Em3dSolvers.FirstWith(setup.Solver3D, c => c.GmshMesh) is not null ? null
+            : MeshOnlyRefusal(Em3dSolvers.Names(Em3dSolvers.Of(setup.Solver3D)), "Mesh");
+    }
+
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — whether a run of <paramref name="setup"/> on <paramref name="problem"/> would reuse the mesh
+    /// in its folder: the script it would write against the one that mesh was made from.</summary>
+    public static Em3dMeshCurrency MeshCurrency(Em3dProblem problem, EmSetup setup, string resultsRoot)
+    {
+        var settings = PalaceSettings.Resolve(setup.Palace);
+        var lowering = GmshGeoWriter.Write(problem, settings);
+        if (!lowering.Ok) return Em3dMeshCurrency.Stale;
+        return PalaceRun.HasMeshOf(RunDirectory(resultsRoot, setup, PalaceSolver.Id), lowering,
+                                   () => GmshGeoWriter.Write(problem, settings with { StraightSided = true }), out _)
+            ? Em3dMeshCurrency.Current : Em3dMeshCurrency.Stale;
+    }
 
     /// <summary>The diagnostic source of a run stopped at its memory ceiling.</summary>
     public const string MemoryCeilingSource = "memory-ceiling";

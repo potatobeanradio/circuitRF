@@ -163,6 +163,7 @@ public partial class WorkspaceViewModel
             vm.SolveStatusesChecked += () => OnC3dSolveStatusesChecked(vm);     // brief-em3d-98 — the tree row and a float's title
             vm.ActiveSetupChanged += () => OnC3dSolveStatusesChecked(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
+            vm.MeshRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName, meshOnly: true);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
             // brief-sar-12 — Place Against Phantom… is modal; Band Sweep… is not, since its runs go on for as long as they take.
             vm.ShowPlacementDialog = async dvm =>
@@ -577,7 +578,9 @@ public partial class WorkspaceViewModel
     /// brief-em3d-49 R-em3d49-5a — a 3D view's setup run: the same path a .cem's run takes (discovery, progress, cancel,
     /// refusals, the Data Display), with the geometry the document itself — elaborated and assembled with the setup.
     /// </summary>
-    internal async Task RunC3dSetupAsync(C3dEditorViewModel c3d, string? setupName)
+    /// <param name="meshOnly">brief-dfr36-1 R-dfr36-1-1 — make the setup's mesh and stop: the same folder, ceiling, cancel and progress
+    /// row, no result and no question about replacing one. When it is the active setup's, the view turns the mesh on.</param>
+    internal async Task RunC3dSetupAsync(C3dEditorViewModel c3d, string? setupName, bool meshOnly = false)
     {
         // 3D editor bugs round 2 — a scratch design is saved before it runs (Simulate offers the Save As): a run belongs to a file on disk.
         if (c3d.IsScratch)
@@ -591,8 +594,9 @@ public partial class WorkspaceViewModel
         }
         var (setup, fromCem, refusal) = c3d.RunSetupFor(setupName);
         if (setup is null) { Messages.Warning(refusal ?? "Nothing to simulate."); return; }
+        if (meshOnly && CircuitRF.Design.Em3d.Em3dRunService.MeshButtonRefusal(setup) is { } noMesh) { Messages.Warning(noMesh); return; }
         // brief-em3d-98 R-em3d98-7 — one line before replacing a complete, current result (the setup run, active or not).
-        if (!fromCem && (setupName ?? c3d.ActiveSetupName) is { } embedded && !await ConfirmRerunAsync(c3d, embedded)) return;
+        if (!meshOnly && !fromCem && (setupName ?? c3d.ActiveSetupName) is { } embedded && !await ConfirmRerunAsync(c3d, embedded)) return;
         var document = c3d.RunDocument();
         string path = c3d.TopFilePath;
         string? cws = CurrentWorkspacePath;
@@ -605,11 +609,20 @@ public partial class WorkspaceViewModel
             device: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred,
             memoryCeilingBytes: CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.CeilingBytes,
             emergeDevice: CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred,
-            target: fromCem ? null : new EmRunTarget { SetupPath = path, EmbeddedSetup = setupName ?? c3d.ActiveSetupName }));
+            target: fromCem ? null : new EmRunTarget { SetupPath = path, EmbeddedSetup = setupName ?? c3d.ActiveSetupName }), meshOnly);
+        if (ok && meshOnly && (setupName is null || setupName == c3d.ActiveSetupName)) c3d.Viewer.ShowMeshWhenAvailable = true;
         // brief-em3d-98 R-em3d98-6 — whichever setup ran, and however it ended (a cancelled run's status changed too).
         if (ok) c3d.RunFinished();
         else c3d.RefreshSolveStatusNow();
     }
+
+    /// <summary>Simulate ▸ Mesh Only: the 3D view's active setup. Refused with its reason, in Messages, on a setup with no Gmsh mesh.</summary>
+    [RelayCommand(CanExecute = nameof(CanMeshOnly))]
+    private Task MeshOnly()
+        => _factory.DocumentDock?.ActiveDockable is CircuitRF.Ui.ThreeD.C3dEditorDocument c3d
+            ? RunC3dSetupAsync(c3d.ViewModel, null, meshOnly: true) : Task.CompletedTask;
+
+    private bool CanMeshOnly() => _factory.DocumentDock?.ActiveDockable is CircuitRF.Ui.ThreeD.C3dEditorDocument;
 
     /// <summary>
     /// Simulate ▸ Setup Analyses… with a 3D view active (and the editor's tune button): the analysis list a schematic
@@ -975,6 +988,7 @@ public partial class WorkspaceViewModel
         ThreeDMeasureCommand.NotifyCanExecuteChanged();
         ThreeDMaterialsCommand.NotifyCanExecuteChanged();
         RunAnalysisCommand.NotifyCanExecuteChanged();
+        MeshOnlyCommand.NotifyCanExecuteChanged();
         RaiseThreeDSelectionChanged();
     }
 

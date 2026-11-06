@@ -461,8 +461,8 @@ setup's refusals and notes, the mesh, the field) are always shown.
   measurement; **Esc** ends it. Measuring changes nothing and adds no undo step.
 - **Clip plane** (**C**). A plane along an axis or the view direction, dragged through the model. It
   shows inside a package, under a lid, or through a via's clearance.
-- **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
-  plane cuts.
+- **Mesh.** The mesh Gmsh made, once one is on disk for the setup, with or without fields: the boundary triangles, or
+  the tetrahedra on the mesh's own plane. [Looking at a 3D mesh before solving](em-setup.html#mesh-3d) makes one with no solve.
 - **Grid.** For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal. A cylindrical
   grid is drawn as it is: on a clip plane across its axis, a circle at each radius and a spoke at each angle; on a
   plane along it, the radii as lines along the axis; on the metal, where its circles, spokes and planes cross it.

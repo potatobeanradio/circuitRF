@@ -889,7 +889,8 @@ failure (Gmsh's words, the objects named and where they are), 130 on cancellatio
 
 What it does not do: it starts no solver and writes no result, no Touchstone and no `status.json`, so a result already in that
 folder keeps its record. The size a solve would need is a note rather than a refusal, since meshing is what was asked; Gmsh keeps its
-memory ceiling. A planar or thermal setup is refused by name (`cli.em.mesh-only-needs-3d`), as is `--dry-run`, `--component`,
+memory ceiling. A thermal setup stops the same way in `ThermalRunService`, after a circuit-driven one's harmonic balance, since
+its currents decide the faces in the script. A planar setup is refused by name (`cli.em.mesh-only-needs-3d`), as is `--dry-run`, `--component`,
 `--bands` or `-o` beside it (`cli.em.mesh-only-takes`). A comparison meshes Palace's script; a setup with no Palace leg is refused,
 because EMerge meshes inside its own run and openEMS has a grid. `tools/MeshReplay` runs this over a folder of setups.
 

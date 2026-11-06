@@ -633,6 +633,19 @@ public static class EmRunService
     /// the same body — only what builds the problem differs. A planar setup is refused: a <c>.c3d</c> has no
     /// stackup for a planar kernel.
     /// </summary>
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — the mesh in <paramref name="setup"/>'s run folder against the document as it is now, by
+    /// the door a run takes: the problem it would assemble, or the thermal lowering, and the script that gives.</summary>
+    public static CircuitRF.Design.Em3d.Em3dMeshCurrency MeshCurrency(EmSetup setup, CircuitRF.Design.ThreeD.C3dDocument document, string documentPath,
+                                                                      string? workspaceCws, string resultsRoot,
+                                                                      CircuitRF.Design.ThreeD.C3dElaborator? elaborator = null, bool fromCem = false)
+    {
+        if (setup.IsThermal)
+            return CircuitRF.Design.Thermal.ThermalRunService.MeshCurrency(setup, document, documentPath, workspaceCws, resultsRoot, elaborator);
+        var generated = CircuitRF.Design.ThreeD.C3dProblemAssembly.Assemble(setup, document, documentPath, workspaceCws, elaborator, fromCem);
+        return generated.Problem is { } problem ? CircuitRF.Design.Em3d.Em3dRunService.MeshCurrency(problem, setup, resultsRoot)
+                                                : CircuitRF.Design.Em3d.Em3dMeshCurrency.Stale;
+    }
+
     public static EmRunResult RunThreeDView(
         EmSetup            setup,
         CircuitRF.Design.ThreeD.C3dDocument document,

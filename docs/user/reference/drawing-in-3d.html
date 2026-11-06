@@ -1945,6 +1945,19 @@ solver, chosen so each finishes in under five minutes. Every wall here is metal,
 metal would fill the whole cavity with fine elements; order 2 is what resolves the notch, and <em>Direct</em> is what
 makes it fast. The example's <code>README.md</code> gives what each alternative measured.</li>
 </ul>
+<p><strong>Seeing the mesh before solving.</strong> The grid button beside <strong>Run Analysis</strong>, or <em>Simulate ▸ Mesh Only</em>, makes the active
+setup's mesh and stops. It works on Palace setups and on thermal setups, whose mesh Gmsh also makes; a thermal setup driven from
+a circuit runs that circuit's harmonic balance first, because its currents decide the faces in its mesh. The triangle button
+beside the eye button then shows any mesh on disk for the active setup, whether a run, a stopped run or a mesh pass made it, and
+its tooltip says which. No fields are needed. <a href="em-setup.html#mesh-3d">EM setup ▸ Looking at a 3D mesh</a> has what a pass writes and
+when Simulate reuses its mesh.</p>
+<p>The triangle button draws the boundary triangles. The <strong>mesh plane</strong> button beside it opens the mesh's own plane: tick <em>Show the
+tetrahedra on a plane</em>, then choose its axis and drag it through the model. It is separate from the clip plane and from every
+field plot's plane, so moving one never moves another. While the clip plane is off, the mesh plane also cuts the solids so the
+section can be seen, and the arrows button keeps the other side; while the clip plane is on, the clip plane does that cutting
+and the mesh plane stays where it is. A clip-plane field plot stays on its own plane throughout.</p>
+<p>When the model or the setup has changed so that a run would mesh again, the line under the view says so, and the mesh is drawn
+as it was made. For a thermal setup driven from a circuit, that line says a run decides, because only its harmonic balance can.</p>
 <h2 id="lid">The lid's resonance</h2>
 <p>A lid turns a package into a <strong>cavity</strong>, and a cavity has resonant modes. The lowest, for a cavity much
 wider than it is tall, has its electric field pointing from the floor up to the lid, strongest in the
@@ -2407,7 +2420,7 @@ neighbour's face lying in the same plane and overlapping it is refused rather th
 <li><strong>Simulate</strong> (<em>Simulate ▸ Run</em> with the 3D view active, or the toolbar's Run button — the workspace toolbar's). Runs the active setup with the
 same progress, Cancel and messages as a <code>.cem</code>, and opens its results in the Data Display. Afterwards the
 run's fields are drawn by the field plots, on the geometry the run solved, and the toolbar's mesh button shows the
-mesh the run made (it is greyed until there are fields to plot); if the 3D view, or any file the run was solved from,
+mesh the run made, or one made with <a href="#simulate">no solve</a>; if the 3D view, or any file the run was solved from,
 has changed since, a selected field plot's Properties say so and name it (<code>Fields are from the run at 14:02; 'Board.clay' has changed since</code>) and the fields are still shown. A run keeps, beside its result, the document it solved
 and a hash of every file it read: each placed layout and the sub-cells it flattens, a layout's paired <code>.wBond</code>, each
 nested 3D view, the technology and the material libraries it looks through, and — for a thermal run driven from a

@@ -179,12 +179,28 @@ public static partial class ThermalRunService
             if (lowering is null) return Refuse(why!);
             notes.AddRange(lowering.Notes);
             string runDir = RunDirectory(resultsRoot, setup);
-            record.Started = C3dRunStatus.Begin(runDir);
-            record.Directory = runDir;
+            // brief-dfr36-1 — no status.json for a mesh: it is not a run's result, and beginning one drops the record of the result here.
+            bool meshOnly = control?.MeshOnly == true;
+            if (!meshOnly)
+            {
+                record.Started = C3dRunStatus.Begin(runDir);
+                record.Directory = runDir;
+            }
             var meshed = Mesh(runDir, lowering, gmsh.Installation.Path, control, ct, notes, out var mesh, out string? meshError);
             if (meshed.Cancelled) return Stop(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
             if (meshed.Refused) return Refuse(meshed.Message!);
             if (mesh is null) return Stop(EmRunStatus.EngineError, EmDiagnostics.SolveFailed(meshError ?? meshed.Message ?? "the mesh could not be read."));
+            // brief-dfr36-1 R-dfr36-1-2 — stopped here, after the mesh is read, with what a solve of it would need.
+            if (meshOnly)
+            {
+                var sizing = new ThermalSolveOptions { Solver = SolverOf(t) };
+                var size = ThermalSizeEstimate.Of(mesh.TetCount, mesh.NodeCount, sizing);
+                notes.Add($"At {mesh.NodeCount:N0} unknowns a solve takes about {size.MemoryBytes / 1e6:N0} MB on the {size.Solver.ToString().ToLowerInvariant()} solver.");
+                return new EmRunResult(EmRunStatus.Ok, null, null, null, null, null, null, warnings, KernelName: $"Gmsh {gmsh.Installation.DescribeVersion()}", Notes: notes,
+                                       Errors: errors,
+                                       MeshOnly: new Em3dMeshOnlyReport(mesh.TetCount, ThermalSizeEstimate.Of(lowering.Input, sizing).Elements, meshed.Reused, runDir,
+                                                                        PalaceRun.GmshWarningLines(Path.Combine(runDir, PalaceRun.GmshLogFile))));
+            }
 
             // ── the problem's fixed parts: conductivities and the mesh's measures ──
             var tech = e.Technology;
@@ -212,7 +228,7 @@ public static partial class ThermalRunService
 
             var options = new ThermalSolveOptions
             {
-                Solver = t.Mesh?.Solver switch { ThermalMeshSolver.Direct => ThermalSolverKind.Direct, ThermalMeshSolver.Iterative => ThermalSolverKind.Iterative, _ => ThermalSolverKind.Auto },
+                Solver = SolverOf(t),
                 KOfT = kOfT,
                 NewtonTolerance = t.Balance?.Tolerance ?? 1e-6,
                 NewtonMaxIterations = t.Balance?.MaxIterations ?? 30,
@@ -478,6 +494,25 @@ public static partial class ThermalRunService
         public C3dProbeStat Stat { get; init; } = C3dProbeStat.Avg;
 
         public double Stated => Stat switch { C3dProbeStat.Max => Max, C3dProbeStat.Min => Min, _ => Avg };
+    }
+
+    private static ThermalSolverKind SolverOf(CemThermal t)
+        => t.Mesh?.Solver switch { ThermalMeshSolver.Direct => ThermalSolverKind.Direct, ThermalMeshSolver.Iterative => ThermalSolverKind.Iterative, _ => ThermalSolverKind.Auto };
+
+    /// <summary>brief-dfr36-1 R-dfr36-1-3 — whether a run of thermal setup <paramref name="setup"/> would reuse the mesh in its folder. A
+    /// setup driven from a circuit is Unknown: the ports its currents enter, and so the faces in its script, come from that circuit's
+    /// harmonic balance, which nothing here runs.</summary>
+    public static Em3dMeshCurrency MeshCurrency(EmSetup setup, C3dDocument document, string documentPath, string? workspaceCws, string resultsRoot,
+                                                C3dElaborator? elaborator = null)
+    {
+        var t = setup.Thermal ?? new CemThermal();
+        if ((t.Currents ?? []).Any(c => c.FromCircuit is not null)) return Em3dMeshCurrency.Unknown;
+        var drawn = (elaborator ?? new C3dElaborator()).Elaborate(document, Path.GetFullPath(documentPath), workspaceCws, new C3dElaborationOptions(null,
+            setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC));
+        if (!drawn.Ok) return Em3dMeshCurrency.Stale;
+        var e = C3dModelled.Filter(document, drawn);
+        if (!e.Ok || e.Technology is null || ThermalLowerings.Build(document, e, t, 1, out _) is not { } lowering) return Em3dMeshCurrency.Stale;
+        return PalaceRun.HasMeshOf(RunDirectory(resultsRoot, setup), lowering.Gmsh, null, out _) ? Em3dMeshCurrency.Current : Em3dMeshCurrency.Stale;
     }
 
     private static PalaceStep Mesh(string runDir, ThermalLowering lowering, string gmsh, RunControl? control, CancellationToken ct,

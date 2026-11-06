@@ -9178,8 +9178,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>The memory dialog, opened from a row or the confirmation, reporting to this window's Messages.</summary>
     private Task RaiseSubsystemMemoryAsync() => Views.Dialogs.WslMemoryDialog.OpenFromRow(Messages);
 
+    /// <param name="meshOnly">brief-dfr36-1 — the run's path as far as its mesh: <see cref="RunControl.MeshOnly"/>, and the outcome is the
+    /// mesh's size and what a solve of it would need.</param>
     private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup,
-                                             Func<EmSetup, RunControl, string, EmRunResult>? run)
+                                             Func<EmSetup, RunControl, string, EmRunResult>? run, bool meshOnly = false)
     {
         var baseDir = CurrentWorkspacePath is { } cws
             ? Path.GetDirectoryName(cws)!
@@ -9193,6 +9195,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var owningWorkspace = CurrentWorkspacePath;
 
         var setup  = runSetup ?? vm.Working.Clone();
+        // brief-dfr36-1 — a pass over a run of this setup would replace the mesh in the folder that run is solving from.
+        if (meshOnly && _emWorkInFlight.Contains($"the EM run '{setup.Name}'"))
+        {
+            Messages.Warning($"'{setup.Name}' is running, and it is using this setup's mesh. Mesh it when the run has finished.");
+            return false;
+        }
         // brief-em3d-49 — a .cem whose LayoutRef names a 3D view (brief 42) runs that document, as `em` does.
         string? cemThreeD = run is null && CurrentWorkspacePath is var cwsNow
             ? EmSetupResolver.ResolveLayoutPath(vm.FilePath, vm.Working.LayoutRef, cwsNow) : null;
@@ -9236,7 +9244,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // point costs tens of seconds, so the first thing a user sees after pressing Simulate must
         // not be an empty bar — the point count and whether adaptive sampling is in play are the two
         // facts that tell them how long to expect and how to read the result.
-        Messages.Info(EmRunStartText(setup, pointCount, kernel));
+        Messages.Info(meshOnly ? $"Meshing '{setup.Name}', with no solve." : EmRunStartText(setup, pointCount, kernel));
 
         var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
         var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
@@ -9259,6 +9267,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             control = new RunControl
             {
                 Token = cts.Token,
+                MeshOnly = meshOnly,
                 // Adaptive sampling decides how many points it actually solves as it goes, so there
                 // is no honest denominator for it — it is reported indeterminate with a live count
                 // rather than against a budget the run will usually stop well short of.
@@ -9485,6 +9494,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return false;
         }
 
+        // brief-dfr36-1 R-dfr36-1-2 — a mesh is not a result: its size, and nothing a solve would have posted or opened.
+        if (result.MeshOnly is { } meshed)
+        {
+            sweepLive.Finish(MessageLevel.Success, EmMeshOnlySummary(meshed), keepBar: false);
+            foreach (string warning in meshed.Warnings) Messages.Warning(warning);
+            Messages.Info("The mesh", Path.Combine(meshed.RunDirectory, CircuitRF.Design.Em3d.GmshGeoWriter.MeshFile));
+            return true;
+        }
+
         // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
         // — only the appended summary text remains.
         sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount), keepBar: false);
@@ -9609,6 +9627,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task MeshEmSetupAsync(EmSetupEditorViewModel vm)
     {
+        // brief-dfr36-1 R-dfr36-1-4 — a 3D setup's mesh is Gmsh's, made by the run's own path and stopped there.
+        if (vm.Is3DSetup)
+        {
+            if (await RunEmSetupAsync(vm, null, null, meshOnly: true)) ShowCemMesh(vm.FilePath);
+            return;
+        }
         string name = vm.Working.Name;
         var live = Messages.BeginProgress($"Meshing '{name}'");
 
@@ -9894,6 +9918,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// the cross-section kernel has nothing to model, so a setup with the box ticked that resolves
     /// to kernel A is told that, rather than being told something it will not do.</para>
     /// </summary>
+    /// <summary>brief-dfr36-1 R-dfr36-1-2/3 — a mesh-only pass's outcome: its tetrahedra against the estimate, and whether it was reused.</summary>
+    internal static string EmMeshOnlySummary(CircuitRF.Design.Em3d.Em3dMeshOnlyReport mesh)
+    {
+        string size = mesh.Elements is { } n ? $"{n.ToString("N0", CultureInfo.CurrentCulture)} tetrahedra" : "the tetrahedra were not counted";
+        string estimate = mesh.Estimated is { } e ? $" against {e.ToString("N0", CultureInfo.CurrentCulture)} estimated" : "";
+        return $"{size}{estimate}" + (mesh.Reused ? ". The mesh already there is current, so it was reused." : ".");
+    }
+
     internal static string EmRunStartText(EmSetup setup, int pointCount, EmAnalysisKind kernel)
     {
         string points = pointCount > 0

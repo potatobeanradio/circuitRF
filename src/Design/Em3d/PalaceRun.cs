@@ -183,18 +183,8 @@ public static class PalaceRun
         foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(runDir);
         string hash = Sha256(lowering.Geo!);
 
-        // The script asked for may have been meshed straight-sided after its curving ran past the cap (brief-emb-2): its hash
-        // is then beside the straight script, and that mesh is the one to reuse rather than curving for another five minutes.
-        bool hashed = File.Exists(hashPath) && File.Exists(mshPath) && File.Exists(entPath) &&
-                      File.ReadAllText(hashPath).Trim() == hash && File.Exists(geoPath);
-        string? onDisk = hashed ? File.ReadAllText(geoPath) : null;
-        bool reuse = hashed && onDisk == lowering.Geo;
-        string? note = null;
-        if (hashed && !reuse && straight is not null && GmshGeoWriter.Curves(lowering) && straight() is { Ok: true } s0 && onDisk == s0.Geo)
-        {
-            reuse = true;
-            note = CurvingNote(curvingMinutes, reused: true);
-        }
+        bool reuse = HasMeshOf(runDir, lowering, straight, out bool straightSided);
+        string? note = reuse && straightSided ? CurvingNote(curvingMinutes, reused: true) : null;
         if (!reuse)
         {
             foreach (string stale in new[] { hashPath, mshPath, entPath })
@@ -292,6 +282,27 @@ public static class PalaceRun
             if (File.Exists(logPath)) foreach (string line in File.ReadLines(logPath)) gmshLog.Line(line);
         }
         return PalaceStep.Done(reuse) with { Tetrahedra = gmshLog?.Tetrahedra, Note = note };
+    }
+
+    /// <summary>
+    /// brief-dfr36-1 R-dfr36-1-3 — whether <paramref name="runDir"/> already holds the mesh of this script: the one test a run makes
+    /// before meshing, and what a 3D view reads to say a mesh shown is no longer the model's.
+    /// The script asked for may have been meshed straight-sided after its curving ran past the cap (brief-emb-2): its hash is then
+    /// beside the straight script, and that mesh is the one to reuse rather than curving for another five minutes.
+    /// </summary>
+    public static bool HasMeshOf(string runDir, GmshLowering lowering, Func<GmshLowering>? straight, out bool straightSided)
+    {
+        straightSided = false;
+        string geoPath = Path.Combine(runDir, GmshGeoWriter.GeoFile), hashPath = Path.Combine(runDir, MeshHashFile);
+        if (!File.Exists(hashPath) || !File.Exists(Path.Combine(runDir, GmshGeoWriter.MeshFile)) ||
+            !File.Exists(Path.Combine(runDir, GmshGeoWriter.EntitiesFile)) || !File.Exists(geoPath) ||
+            File.ReadAllText(hashPath).Trim() != Sha256(lowering.Geo!))
+            return false;
+        string onDisk = File.ReadAllText(geoPath);
+        if (onDisk == lowering.Geo) return true;
+        if (straight is null || !GmshGeoWriter.Curves(lowering) || straight() is not { Ok: true } flat || onDisk != flat.Geo) return false;
+        straightSided = true;
+        return true;
     }
 
     /// <summary>brief-emb-2 R-emb2-6 — Gmsh's command line: at verbosity 5, which names every stage as it starts, the

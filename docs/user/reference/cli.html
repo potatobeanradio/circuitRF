@@ -799,7 +799,7 @@ lifts the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 <code>--memory-limit</code> too.</p>
 <p><code>--adopt &lt;file.sNp&gt;</code> solves nothing: it writes the <code>.cemr</code> record of a result from before records existed, beside its
 Touchstone, and refuses when no <code>.npy</code> matches it. <code>explain &lt;file.cemr&gt;</code> reads a record back, and <code>-o</code> moves the Touchstone alone.</p>
-<p><code>--mesh-only</code> runs a 3D setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
+<p><code>--mesh-only</code> runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits <strong>0</strong> on a mesh, <strong>1</strong>
 on a refusal or a mesher failure, and <strong>130</strong> when cancelled. <code>--dry-run</code> also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.</p>
