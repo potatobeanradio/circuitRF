@@ -1465,6 +1465,12 @@ public sealed class PlanarSolveResult
     /// </summary>
     public PlanarFarFieldSet? FarField { get; init; }
 
+    /// <summary>The feed lead peeled off each port, metres, in port order; null when the path grew none (<see cref="PlanarPortBoxes"/>).</summary>
+    public IReadOnlyList<double>? PortPeelLengthsM { get; init; }
+
+    /// <summary>Whether the run renormalised in pseudo-waves rather than power waves, as <c>DeembedAt</c> decided (<see cref="PlanarPortBoxes"/>).</summary>
+    public bool PseudoWaveReference { get; init; }
+
     /// <summary>
     /// <b>ANT-5 — every metric ANT-4's patterns imply</b>, or null when no pattern was produced. One
     /// report per (requested frequency, port), each carrying both the numbers and the REFUSALS, so a
@@ -4658,6 +4664,8 @@ public static class PlanarSolve
 
         return new PlanarSolveResult
         {
+            PortPeelLengthsM = peelM,
+            PseudoWaveReference = fillSt.EdgePortReturn == PlanarEdgePortReturn.Ground || problem.EffectiveStack.Conducts,
             Points        = points,
             CoreFillCount = cores,
             UnknownCount  = mesh.Bases.Count,

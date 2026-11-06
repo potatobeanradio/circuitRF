@@ -28435,3 +28435,77 @@ are gone before this list is read, as the reader's own note says, so such a boar
 **No worked example ships.** The brief makes one conditional on a small board meeting G4-G5 quickly enough. CP-3's dipole meets G4's limits on EMerge with `EdgeRefinement` 0.02 in 6 s, but that is a dipole in free space. No board has been measured against those gates, and the scratch board here ran at Draft with no reference.
 
 Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.Cell.cs`. Inspected: the analysis editor on a far-field and a SAR record through UiSnapshot, with every control in the same place and norm and average grey on the first; the cell's sheet through `render`; its Data Display through UiSnapshot.
+
+## brief-cosim-pattern-7 — planar results as EM Field Data blocks
+
+**R-cp7-1 first stopped the work: a planar run did not keep what an edge port's weight needs. The owner chose to keep it in the run**, over internal gaps only, a power-scaled weight on one port, or leaving planar refused.
+
+**CP-3 had been summing planar results with the wrong weights, silently.** `PortFarFieldSet.Read` looked for `Etheta`, `Ephi`, `S` and `Z0`, and a planar `.npy` has all four, so an EM Field Data block on a planar record ran `a_k·√Z0·(1 + S_kk)·E_k` and published it. The tables below have what that did.
+
+**The weights.** A planar pattern is `Y = BᵀZ⁻¹B`'s column, its gap at 1 V and every other gap at 0 V, so the sum is `E = Σ_k V_k·E_k` with the gaps' voltages and no S term. `PortFarFieldSet.Weights` is the one statement of both this and the 3D sum, from the same waves. From the block's waves at a plane (`PlanarPortBox.ToGap`): renormalise to the line's `Z_c`, put the lead back, then `a_e = (a_i − a22·b_i)/a21`, `b_e = a11·a_e + a21·b_i`, `V_gap = √Z0·(a_e + b_e)`. The `Z_c` step uses power waves on the series path and pseudo-waves on the grounded path or a conducting stack, as `DeembedAt` does, so the result says which. An internal gap or a declined edge port has an identity box. `b_e = S_raw·a_e` closes to 1e-15. The sign `a21` carries is a continuation, but every port's voltage flips with it, so a ratio to the drive changes only the phase of the whole pattern.
+
+**What the run keeps now.** `__PortBoxA11`, `A21`, `A22`, `Zc` and `Peel` (`γ·ℓ` of the lead) on `[freq, port]` at the pattern's frequencies, and `__PortBoxPseudoWave`, in the `planar` group, only when a pattern was asked for. **No raw S or Y is kept, against what the first report here expected:** `|a_e|² − |b_e|²` is what the raw structure takes at that gap. The record gains `FarFieldExcitation`, `TerminatedZ0` or `ShortedOthers`, asked of the data so an adopted record answers too; a record from before it is read the same way. `FormatVersion` stays 1. A result from before the boxes runs when its record says every port is a `Gap`, whose plane is its gap, and is otherwise asked for again. A calibration group's boxes are N×N in a modal basis and are not kept: the run writes `__PortCalibrationGroup` and the block refuses it by name.
+
+**Gain and accepted power.** What the circuit accepts, with the block's share replaced by what the structure takes: `accepted − Σ(|a|²−|b|²) + Σ(|a_e|²−|b_e|²)`. R-ant-5 and R-ant-6 then hold with no special case. A one-port block driven directly reproduces the run's own `GainDbi`, `RealizedGainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` to 1e-6, and a lossless network leaves the gain alone and takes realized gain down by its own mismatch. Its worth is measured: on a one-port patch, scaling the stored pattern by power at the plane is 0.36 dB off the box's level, and on a patch with 100 Ω on a stub, radiated power is 25.9 % of what the gaps take and 28.5 % of what the planes take, because the box holds loss.
+
+**Which ports.**
+- A pattern takes `Edge` and `InternalDeltaGap`, including a two-cut gap returning through drawn metal. An `Internal` port stands on a via, and `CanCompute` refuses any vertical basis, so one such port stops the whole pattern. **This is the default for a label inside metal**: the first real run built a via under its port and made no pattern, so the docs say to set the type.
+- A gap between two in-plane pads cannot be a port: a delta gap cuts metal, so a label in a 1 mm air gap or on a pad's facing edge is refused. A part site has to be drawn as continuous metal with an internal gap across it.
+- `ComponentPorts` on a layout setup is refused (`ComponentPortsOnLayoutRefusal`), so a planar block's ports are the labelled ones and the run makes no `_cosim` cell.
+- The port axis holds on a real two-port: a uniform line's two ports give mirror patterns of one peak.
+
+**Measured with a scratch harness, not kept.** FR-4, 2.4 GHz, each run under a second. A delta-gap load can be stamped in the matrix, `Z + Z_L·BBᵀ`, which the kernel's settings cannot state. That reference shares the matrix with the sum, so it tests the weights and polarity and not the model. On an edge port the independent reference is the line's own current: fit forward and backward waves to `LineCurrent` over the middle 60 % of a uniform line and read Γ at the plane, with no S involved.
+
+Two internal gaps on a 40 mm strip, port 2 loaded, against the stamped load (pattern is within 20 dB of the peak; CP-3's limits are 0.05 dB and 0.2 dB):
+
+| Load | `Σ V_k·E_k` peak, pattern | CP-3's formula peak, pattern |
+|---|---|---|
+| 200 Ω | 5e-15 dB, 4e-14 dB | 1.99 dB, 2.20 dB |
+| 100 Ω | 8e-15 dB, 4e-14 dB | 1.85 dB, 3.36 dB |
+| 5 nH | 1e-13 dB, 3e-13 dB | 0.08 dB, 19.9 dB |
+| 1 pF | 4e-14 dB, 5e-14 dB | 2.07 dB, 2.36 dB |
+
+A strip-fed patch, port 1 an edge port and port 2 an internal gap on a far stub, against the stamped load:
+
+| Load | Box weights | Circuit voltage used at the gap | CP-3's formula |
+|---|---|---|---|
+| 100 Ω | under 1e-4 dB; \|ΔS11\| 1e-14 | peak 6.30 dB, pattern 8.24 dB | peak 1.50 dB, pattern 1.72 dB |
+| 200 Ω | under 1e-4 dB; \|ΔS11\| 1e-14 | peak 4.62 dB, pattern 6.09 dB | peak 0.84 dB, pattern 1.14 dB |
+
+An 80 mm line with two edge ports, a load stated at port 2's plane, and Γ read from the current. The error is |ΔΓ| at the plane:
+
+| Load at the plane | Box weights | Circuit voltage used at the gap | CP-3's formula |
+|---|---|---|---|
+| `Z_c` | 0.007 | 1.53 | 1.02 |
+| open | 0.059 | 0.60 | 0.71 |
+| short | 0.052 | 1.87 | 0.68 |
+| Γ = 0.5j | 0.031 | 1.18 | 0.81 |
+
+With the grounded edge-port return the box weights read 0.018, 0.049 and 0.066 on the first three. So the transform does put the load at the reference plane on both paths. A lead's own radiation stays in the pattern, as it is in every stored per-port pattern already.
+
+**The 3D comparison does not reach G4's limits, and is not a pass of them.** The shipped patch with a stub, two edge ports, the block's circuit the same on each: planar (the kernel's 2 points) against openEMS (ground made the floor, 3.75 to 7.75 GHz, 357,200 cells with the PML, 5 min), 5.75 GHz, each by its own sum. 50 Ω on port 2 is each solver's baseline, since that port's wave is near zero:
+
+| Load on port 2 | \|ΔS11\| | Directivity, planar / openEMS | Gain, planar / openEMS | Pattern shape, θ ≤ 60° |
+|---|---|---|---|---|
+| 50 Ω | 0.070 | 6.72 / 6.81 dBi | −2.63 / −1.95 dBi | 1.06 dB |
+| 200 Ω | 0.074 | 7.90 / 8.03 dBi | −6.16 / −5.04 dBi | 2.87 dB |
+| 15 Ω | 0.121 | 6.51 / 6.58 dBi | 0.61 / 1.57 dBi | 0.67 dB |
+| 2 nH | 0.083 | 6.59 / 6.35 dBi | 3.86 / 4.67 dBi | 0.32 dB |
+
+Against each solver's own 50 Ω, the peak moves −8.09 / −7.99 dB at 200 Ω, 5.34 / 6.05 dB at 15 Ω, and **1.65 / −0.80 dB at 2 nH, which disagree in sign**. Within 20 dB of the peak the shape differs by 11.6-12.6 dB in every row, at θ = 89°, where the planar factors go to zero over an infinite plane, so that much is the baseline's. The two are not one structure: planar has an infinite substrate, whose surface wave is why its gain is lower, and takes its port off at a de-embedded plane, while openEMS has a 0.76 mm vertical sheet in series with the circuit, which a 72 Ω reactance feels. Directivity, resistive loads and the shape agree as two solvers do here. That does not test the sum to its limits, and a reactive load on an edge port's plane is where to be careful. A delta gap has no 3D counterpart outside a part's pads, so this could not be run on one. The owner accepted this comparison as it stands, since two different EM results are expected to give different patterns.
+
+**R-cp7-3, each power term when summed.** Port 2 at 200 Ω on the two-gap strip, against the same term from the summed currents:
+
+| Term | From the summed fields or currents | `Σ\|V_k\|²` × each port's stored term | Published? |
+|---|---|---|---|
+| `PowerRadiated` | 4.93e-5 W | 44.4e-5 W, 9.54 dB off | Yes, as `∫U dΩ` of the summed pattern over the hemisphere |
+| `PowerSurfaceWave` | 5.51e-6 W | 47.8e-6 W, 9.39 dB off | Omitted by name: quadratic in the current spectrum, with cross terms |
+| `PowerConductor`, `PowerFilm` | not measured: the harness passed no loss inputs | | Omitted by name: `½∫Re(Z_s)\|J\|²` has cross terms by its own formula |
+| `PowerDielectricAndGround` | 6.10e-4 W | 20.5e-4 W, 5.27 dB off | Omitted through the registry's own predicate: a residual of those |
+| `PowerAccepted` | 6.65e-4 W at the gaps | 25.4e-4 W, 5.83 dB off | Yes, as above |
+
+`Em3dRadiation.Terms`' sentences say the problem has no laterally infinite substrate, which is false here, so `PlanarSumTerms` has its own. It keeps kernel B's tighter efficiency tolerance, since a planar result's powers come from one solve. The hemisphere needed nothing: `PortFarFieldSet.Hemisphere` reads it off the θ axis.
+
+**A test that failed and is not this work's.** `FarFieldStageTests.PlanarFarFieldGroup_IsByteIdenticalToThePreSplitGolden` reads a golden with no `PowerFilm`, which the registry gained with the resistive films (4dc26bb06). It fails on that key before it compares any cube. Regenerating a golden is a decision of its own, so it was left.
+
+Gates: `tests/Ui.Tests/Sar/PlanarFarFieldCosimTests.cs`, on real solves. Inspected end to end through the built CLI: `em` wrote `ShortedOthers` and the cubes, and `fields`, `check` and `explain` read the record. No UI changed.

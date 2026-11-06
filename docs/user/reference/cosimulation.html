@@ -231,8 +231,8 @@ tune phase(W2) min=-180 deg max=0 deg opt=1</code></pre>
 accepted or available, so &quot;maximise <code>B1pMin</code> with <code>psSAR</code> at most so much per W total&quot; is an ordinary optimizer problem:
 a channel's amplitude and phase are the parts of a complex variable, and ordinary tunables.</p>
 <h2 id="pattern">5. The radiation pattern</h2>
-<p>A 3D run with component ports stores a pattern per port. A fields analysis combines them for the parts in the schematic, so the pattern of the
-antenna as built follows every part value with no new EM run.</p>
+<p>A 3D run with component ports stores a pattern per port, and so does a <a href="#planar">planar run</a>. A fields analysis combines them for the parts in the schematic, so the
+pattern of the antenna as built follows every part value with no new EM run.</p>
 <ol>
 <li>In the 3D setup, tick the parts in <strong>Component ports</strong>, turn on <strong>Radiation pattern</strong> and tick <strong>Create SnP schematic when the run finishes</strong>.</li>
 <li><strong>Simulate.</strong> The run makes a cell named after the setup with <code>_cosim</code> on the end, and writes the same circuit as <code>&lt;setup&gt;_cosim.cnl</code>. The cell holds an
@@ -249,6 +249,21 @@ nor a field set gets an SnP in place of the block. A run with no component ports
 <a href="em-setup.html#snp-schematic">A schematic to start from</a>.</p>
 <p>To wire a circuit by hand, place an EM Field Data block as in <a href="#schematic">The schematic side</a> and add a Fields analysis. <code>RealizedGainDbi(F1)</code>,
 <code>GainDbi</code>, <code>DirectivityDbi</code>, <code>RadiationEfficiency</code>, <code>TrpDbm</code> and <code>PeakEirpDbm</code> read the pattern in a <code>measure</code> or <code>goal</code> line.</p>
+<h3 id="planar">A planar result</h3>
+<p>A planar run with <strong>Radiation pattern</strong> on works the same way: place an EM Field Data block on its record and add a Fields analysis. The run makes no <code>_cosim</code>
+cell, since component ports are built only in a 3D view, so the block's pins are the setup's own ports and the circuit is yours to draw. The hemisphere stays a hemisphere.</p>
+<ul>
+<li><strong>A port for a part is an Internal delta gap.</strong> Draw the part's site as continuous metal, put a port on it and set its type to <strong>Internal delta gap</strong> in the EM
+setup's port list. Two pads with a real gap between them cannot be a port, because a delta gap cuts metal. An <strong>Internal</strong> port goes down a via to the plane, and any via
+in the structure stops the run producing a pattern.</li>
+<li><strong>An edge port is recombined at its reference plane.</strong> A circuit on it sees the de-embedded S, and the run keeps what relates that plane to the port's gap. The pattern
+still holds the current on any feed the solver grew.</li>
+<li><strong>Gain and efficiency read as the run's own do.</strong> With nothing around the block they are the numbers the run wrote. With parts around it, what the parts dissipate is
+added to what the structure takes, and realized gain includes the mismatch at the circuit's drive.</li>
+<li><strong>Three power terms are omitted by name</strong>: <code>PowerSurfaceWave</code>, <code>PowerConductor</code> with <code>PowerFilm</code>, and <code>PowerDielectricAndGround</code>. Each is quadratic in the currents,
+so a port's number from the run cannot be added up for a circuit. <code>PowerAccepted</code> and <code>PowerRadiated</code> are published, and their difference is every loss together.</li>
+<li><strong>Refused:</strong> ports in a calibration group, and a result from before this was kept, unless every port is an internal gap. Run it again.</li>
+</ul>
 <h3 id="gap">What can be placed across a gap</h3>
 <p>The N-port has one common reference, but a <strong>gap port's negative end is a pad, not ground</strong>. So where a part goes depends on the port's kind:</p>
 <table>

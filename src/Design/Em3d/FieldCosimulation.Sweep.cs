@@ -114,7 +114,7 @@ public static partial class FieldCosimulation
     {
         nl.AddNoteOnce($"fields:{fa.Name}:sweep",
                        $"Fields '{fa.Name}' at {fa.FrequencyText}: the pattern of '{fa.Block}' with this circuit around it, recombined at each sweep point from its {far.PortCount} ports' " +
-                       $"stored patterns and referred to 1 V at circuit port {port}. Gain is per watt accepted and realized gain includes mismatch, as for a 3D run." +
+                       $"stored patterns and referred to 1 V at circuit port {port}. Gain is per watt accepted and realized gain includes mismatch, as for a {(far.Planar ? "planar" : "3D")} run." +
                        (fa.PerAvailable ? " norm=available does not apply to the pattern." : ""));
         foreach (string note in planNotes) nl.AddNoteOnce($"fields:{fa.Name}:{note}", note);
         foreach (string warning in warnings) nl.AddWarningOnce($"fields:{fa.Name}:{point}:{warning}", $"At {point}: {warning}");

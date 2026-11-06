@@ -1701,6 +1701,19 @@ netlist holding a sub-cell definition, so a board whose part is a hierarchical c
 **A part between two gap ports' nodes** is a `check` warning (`EmFieldBlocks.GapPortBridges`), from the record's port kinds. It looks only at two-terminal elements, since a multi-terminal part's signal pins stand on gap ports' nodes by design, and only at
 an EM Field Data block, since a plain SnP has no record to say what its ports are. An adopted record whose Touchstone stated no port kinds gives no finding.
 
+
+### 11.14 Planar results (CP-7)
+
+A planar pattern is a delta gap at 1 V with every other gap at 0 V, so its sum is `E = Σ_k V_k·E_k` over the gaps' voltages, where a 3D result's is over incident waves. The record's `FarFieldExcitation` (`ShortedOthers`, `TerminatedZ0`) says which, and `PortFarFieldSet.Weights` is both, from the same waves.
+
+**A plane is not a gap.** The block's S is de-embedded and the pattern is not, so `PlanarPortBox.ToGap` undoes `DeembedAt` for each port: `Z_c`, the lead, the error box. The run keeps each box beside the pattern, in `__PortBox*` in the `planar` group. An internal gap's is an identity. A calibration group's is not kept, and the block refuses that result by name.
+
+**The power at the gaps is the box's own wave**, `|a_e|² − |b_e|²`, so no raw S or Y is kept. What the circuit accepts has the block's share replaced by that, so a block driven directly gives the run's own gain and realized gain, and a lossless network leaves the gain alone.
+
+**What cannot be summed is omitted by name.** Surface-wave, conductor and film power are quadratic in the currents, so per-port numbers leave out the cross terms, and the dielectric residual goes with them. `PowerRadiated` is the integral of the summed pattern.
+
+Measurements and the comparison against openEMS are in `src/Design/RESOLVED.md`. Gates: `tests/Ui.Tests/Sar/PlanarFarFieldCosimTests.cs`.
+
 ## 12. B1 and SAR as goals: tuning, the optimizer, yield and multi-channel drive (SAR-10)
 
 SAR-9 made a field set a function of the schematic's values. SAR-10 lets everything that already varies those values read the

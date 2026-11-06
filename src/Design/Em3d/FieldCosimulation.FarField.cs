@@ -3,6 +3,8 @@
 //
 //     E = Σ_k  a_k · √Z0_k · (1 + S_kk) · E^V_k
 //
+// A planar result stores a delta gap at 1 V with every other gap at 0 V (brief-cosim-pattern-7), so its sum is Σ_k V_k · E_k over the gaps' voltages. PortFarFieldSet.Weights is both.
+//
 // and E over the circuit's drive-port voltage is the pattern of the whole circuit at 1 V there, which is what the cubes of a 3D run mean.
 // Everything after the sum is Em3dRadiation.Publish, so a metric means what it means for a 3D run: gain is per watt accepted and realized
 // gain includes mismatch. The waves are Weigh's and only their ratios are read, so its power scale cancels against the drive's voltage.
@@ -64,7 +66,7 @@ public static partial class FieldCosimulation
         }
 
         var published = new DataSet();
-        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, far.ReferenceInputPowerDbm, far.Hemisphere);
+        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, far.ReferenceInputPowerDbm, far.Hemisphere, planarSum: far.Planar);
         foreach (string group in published.Groups)
             foreach (var (name, cube) in published.CubesIn(group))
                 data.Add($"{group}.{name}", cube);
@@ -75,7 +77,7 @@ public static partial class FieldCosimulation
             ? $"driven from circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))} together ({Pct(first.Accepts)} of their available power accepted) and referred to 1 V at port {drives[0].Port}"
             : $"driven from circuit port {drives[0].Port} (|Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted) and referred to 1 V there";
         lines.Add($"Fields '{fa.Name}' at {where}: the pattern of '{fa.Block}' with this circuit around it, recombined from its {n} ports' stored patterns, {drivenBy}. " +
-                  "Gain is per watt accepted and realized gain includes mismatch, as for a 3D run.");
+                  $"Gain is per watt accepted and realized gain includes mismatch, as for a {(far.Planar ? "planar" : "3D")} run.");
         // The first of Publish's sentences describes a run that excited each port; the rest (refusals, polarization) are about the cubes.
         lines.AddRange(sentences.Skip(1));
         lines.AddRange(checks);
@@ -87,11 +89,10 @@ public static partial class FieldCosimulation
     {
         int n = far.PortCount;
         double hz = far.FrequenciesHz[i];
-        Complex root = RfCore.RFNetwork.ComplexSqrt(far.Z0);
-        var s = far.S[i];
+        var weights = far.Weights(i, w.A, w.B, out double structureW);
         var eTheta = new Complex[far.Grid.DirectionCount];
         var ePhi = new Complex[far.Grid.DirectionCount];
-        for (int k = 0; k < n; k++) far.AddWeighted(i, k, w.A[k] * root * (1 + s[k, k]), eTheta, ePhi);
+        for (int k = 0; k < n; k++) far.AddWeighted(i, k, weights[k], eTheta, ePhi);
 
         Complex v = DriveVoltage(w);
         if (!(v.Magnitude > 0))
@@ -105,7 +106,12 @@ public static partial class FieldCosimulation
 
         // ½ because these are peak voltages, as a 3D run's ½·Re(V·I*) at 1 V is; |a|² is the wave's power in √W only as a ratio to the drive's.
         perVolt = 0.5 / (v.Magnitude * v.Magnitude);
-        return new Em3dPatternPoint(FarFieldStage.Pattern(far.Grid, eTheta, ePhi, w.Drive.DrivenPort, hz), w.AcceptedW * perVolt, w.Reflection);
+        // What the circuit accepts, with the block's part of it as the solved structure takes it (R-ant-5): the same on a 3D result, where the structure is the block. On a
+        // planar one the power between a gap and its plane is in the pattern's excitation, so a lossless circuit gives the gain of the run that stored the pattern.
+        double blockW = 0;
+        for (int k = 0; k < n; k++) blockW += w.A[k].Magnitude * w.A[k].Magnitude - w.B[k].Magnitude * w.B[k].Magnitude;
+        double acceptedW = far.Planar ? w.AcceptedW - blockW + structureW : w.AcceptedW;
+        return new Em3dPatternPoint(FarFieldStage.Pattern(far.Grid, eTheta, ePhi, w.Drive.DrivenPort, hz), acceptedW * perVolt, w.Reflection);
     }
 
     /// <summary>R-cp3-7 — the checks, each a note, and a warning when it fails.</summary>
@@ -126,16 +132,21 @@ public static partial class FieldCosimulation
                          "reads is not the run's.");
 
         // The block's own balance, and not the drive's: a lossy part in the circuit lowers what reaches the block, never what the block radiates of it.
-        double delivered = pDel * perVolt;
+        far.Weights(i, w.A, w.B, out double structureW);
+        double delivered = structureW * perVolt;
         if (delivered > 0)
         {
             double ratio = radiatedPerVolt / delivered;
             notes.Add($"Check at {at}: the pattern radiates {Pct(ratio)} of the power delivered into the block.");
             if (ratio > 1 + Em3dRadiation.EfficiencyTolerance)
                 warnings.Add($"Fields '{fa.Name}' at {at}: the pattern radiates {Pct(ratio)} of the power delivered into the block, past the {Pct(1 + Em3dRadiation.EfficiencyTolerance)} " +
-                             "a 3D run's own balance allows. A pattern is only as good as the field its absorbing faces leave unreflected: move the air box further out, or refine the mesh, and run it again.");
+                             (far.Planar
+                                 ? "a 3D run's own balance allows. A planar result's powers come from one solve, so its ports' calibration is in doubt here: read the DeembedErrorFloor result."
+                                 : "a 3D run's own balance allows. A pattern is only as good as the field its absorbing faces leave unreflected: move the air box further out, or refine the mesh, and run it again."));
         }
 
+        // A planar pattern is not divided by its port's voltage, so this is a 3D result's question only.
+        if (far.Planar) return;
         for (int k = 0; k < n; k++)
         {
             double small = (1 + s[k, k]).Magnitude;

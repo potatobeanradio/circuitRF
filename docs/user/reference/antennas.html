@@ -831,6 +831,8 @@ finished before the first pattern begins.</li>
 pattern of the antenna as built follows a matching inductor or a tuning capacitor under a slider, a parametric sweep, the optimizer or yield, with no new EM run.
 Tick the parts and turn on <strong>Create SnP schematic when the run finishes</strong>, and the run makes the schematic.
 <a href="cosimulation.html#pattern">Co-simulation</a> has the steps, what can be placed across a gap, and how closely each solver agrees.</p>
+<p>A planar run's pattern recombines the same way, for a matching network on an edge-fed patch or a part on an internal delta gap, from a circuit you draw around an
+EM Field Data block. <a href="cosimulation.html#planar">A planar result</a> has what differs.</p>
 <h2 id="pattern">Reading the pattern</h2>
 <p><strong>θ spans 0…90° only, and the axis stops there rather than being padded.</strong> With an infinite ground plane
 the field below the plane is not small — it is identically zero — so half a sphere of structural zeros

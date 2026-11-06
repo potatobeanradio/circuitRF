@@ -156,8 +156,8 @@ a channel's amplitude and phase are the parts of a complex variable, and ordinar
 
 ## 5. The radiation pattern {#pattern}
 
-A 3D run with component ports stores a pattern per port. A fields analysis combines them for the parts in the schematic, so the pattern of the
-antenna as built follows every part value with no new EM run.
+A 3D run with component ports stores a pattern per port, and so does a [planar run](#planar). A fields analysis combines them for the parts in the schematic, so the
+pattern of the antenna as built follows every part value with no new EM run.
 
 1. In the 3D setup, tick the parts in **Component ports**, turn on **Radiation pattern** and tick **Create SnP schematic when the run finishes**.
 2. **Simulate.** The run makes a cell named after the setup with `_cosim` on the end, and writes the same circuit as `<setup>_cosim.cnl`. The cell holds an
@@ -175,6 +175,22 @@ nor a field set gets an SnP in place of the block. A run with no component ports
 
 To wire a circuit by hand, place an EM Field Data block as in [The schematic side](#schematic) and add a Fields analysis. `RealizedGainDbi(F1)`,
 `GainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` read the pattern in a `measure` or `goal` line.
+
+### A planar result {#planar}
+
+A planar run with **Radiation pattern** on works the same way: place an EM Field Data block on its record and add a Fields analysis. The run makes no `_cosim`
+cell, since component ports are built only in a 3D view, so the block's pins are the setup's own ports and the circuit is yours to draw. The hemisphere stays a hemisphere.
+
+- **A port for a part is an Internal delta gap.** Draw the part's site as continuous metal, put a port on it and set its type to **Internal delta gap** in the EM
+  setup's port list. Two pads with a real gap between them cannot be a port, because a delta gap cuts metal. An **Internal** port goes down a via to the plane, and any via
+  in the structure stops the run producing a pattern.
+- **An edge port is recombined at its reference plane.** A circuit on it sees the de-embedded S, and the run keeps what relates that plane to the port's gap. The pattern
+  still holds the current on any feed the solver grew.
+- **Gain and efficiency read as the run's own do.** With nothing around the block they are the numbers the run wrote. With parts around it, what the parts dissipate is
+  added to what the structure takes, and realized gain includes the mismatch at the circuit's drive.
+- **Three power terms are omitted by name**: `PowerSurfaceWave`, `PowerConductor` with `PowerFilm`, and `PowerDielectricAndGround`. Each is quadratic in the currents,
+  so a port's number from the run cannot be added up for a circuit. `PowerAccepted` and `PowerRadiated` are published, and their difference is every loss together.
+- **Refused:** ports in a calibration group, and a result from before this was kept, unless every port is an internal gap. Run it again.
 
 ### What can be placed across a gap {#gap}
 

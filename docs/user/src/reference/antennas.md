@@ -211,6 +211,9 @@ pattern of the antenna as built follows a matching inductor or a tuning capacito
 Tick the parts and turn on **Create SnP schematic when the run finishes**, and the run makes the schematic.
 [Co-simulation](cosimulation.html#pattern) has the steps, what can be placed across a gap, and how closely each solver agrees.
 
+A planar run's pattern recombines the same way, for a matching network on an edge-fed patch or a part on an internal delta gap, from a circuit you draw around an
+EM Field Data block. [A planar result](cosimulation.html#planar) has what differs.
+
 ## Reading the pattern {#pattern}
 
 **θ spans 0…90° only, and the axis stops there rather than being padded.** With an infinite ground plane
