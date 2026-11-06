@@ -20,6 +20,11 @@
 // without one of the lines it always prints, turns the parser off for the rest of the run: the
 // tracker falls back to an indeterminate stage counting lines, and the run's notes say the log format
 // was not recognised. That is the path a new Palace version takes before it is validated.
+//
+// Designer round 36 — an eigenmode run prints no greedy iteration and no frequency, so it sat on one label until it ended. Its
+// own lines give the search's linear solves, the modes found and each mode as it is refined, and a mode's frequency and Q from
+// the eigenvalue and the shift Palace printed. A pace on a long adaptive sweep (a minute or more a solve) is circuitRF's clock,
+// not Palace's figure, and is worded as a pace.
 
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -75,6 +80,24 @@ public sealed record PalaceTerminalSolve(int Ordinal, int Count, int Index) : Pa
 /// <summary>brief-em3d-22 — Palace's linear solver stopped without reaching its tolerance.</summary>
 public sealed record PalaceLinearNotConverged(double RelativeResidual) : PalaceLogEvent;
 
+/// <summary>Designer round 36 — <c>Configuring SLEPc eigenvalue solver:</c>: an eigenmode search begins.</summary>
+public sealed record PalaceEigenStart : PalaceLogEvent;
+
+/// <summary><c>Shift-and-invert σ = f GHz (s)</c>: the target in GHz and in Palace's scaled units, which give a mode's frequency.</summary>
+public sealed record PalaceEigenShift(double GHz, double Scaled) : PalaceLogEvent;
+
+/// <summary><c>GMRES solver converged in n iterations</c> during an eigenmode search: one linear solve finished.</summary>
+public sealed record PalaceLinearSolveDone : PalaceLogEvent;
+
+/// <summary><c>k (restart r) KSP residual norm e</c> during an eigenmode search: the solve in progress, at iteration k.</summary>
+public sealed record PalaceLinearIteration(int Iteration) : PalaceLogEvent;
+
+/// <summary><c>Found n converged eigenvalues (first = …)</c>: the search's result, before any refinement.</summary>
+public sealed record PalaceEigenFound(int Count) : PalaceLogEvent;
+
+/// <summary><c>Eigenvalue k, Quasi-Newton converged in n iterations (a+bi)</c>: mode k (from 0) refined, with its eigenvalue.</summary>
+public sealed record PalaceEigenRefined(int Index, double Real, double Imaginary) : PalaceLogEvent;
+
 /// <summary>The log stopped matching: from here on the parser emits nothing.</summary>
 public sealed record PalaceLogUnrecognised(long Line, string Reason) : PalaceLogEvent;
 
@@ -109,10 +132,16 @@ public sealed class PalaceLogProgress
     private static readonly Regex TimeTotal  = new($@"^Total\s+({Num})\s+({Num})\s+({Num})\s*$", RegexOptions.CultureInvariant);
     private static readonly Regex MemTotal   = new($@"^Total\s+({Num})([KMGT]?)\s+({Num})([KMGT]?)\s+({Num})([KMGT]?)\s*$", RegexOptions.CultureInvariant);
 
+    private static readonly Regex EigenShift = new($@"^\s*Shift-and-invert σ = ({Num}) GHz \(({Num})\)", RegexOptions.CultureInvariant);
+    private static readonly Regex EigenFound = new(@"^\s*Found (\d+) converged eigenvalues?\b", RegexOptions.CultureInvariant);
+    private static readonly Regex EigenRefined = new($@"^Eigenvalue (\d+), Quasi-Newton converged in \d+ iterations? \(({Num})([-+](?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)i\)", RegexOptions.CultureInvariant);
+    private static readonly Regex LinearDone = new(@"^\w+ solver converged in \d+ iterations?\b", RegexOptions.CultureInvariant);
+    private static readonly Regex KspLine = new(@"^\s*(\d+) \(restart \d+\) KSP residual norm\b", RegexOptions.CultureInvariant);
+
     private enum Block { None, TimeTable, MemoryTable, CompletedIndicator, CompletedMaxIts }
 
     private long _line;
-    private bool _off, _sawMesh;
+    private bool _off, _sawMesh, _eigen;
     private Block _block;
     private int _blockLines;
     private int _completedIts;
@@ -275,6 +304,24 @@ public sealed class PalaceLogProgress
             (_block, _blockLines) = (Block.MemoryTable, 0);
             return null;
         }
+        return Eigen(line);
+    }
+
+    /// <summary>An eigenmode run's lines. Nothing here turns the parser off: they add to a run that works without them.</summary>
+    private PalaceLogEvent? Eigen(string line)
+    {
+        if (line.StartsWith("Configuring SLEPc eigenvalue solver", StringComparison.Ordinal))
+        {
+            _eigen = true;
+            return new PalaceEigenStart();
+        }
+        if (!_eigen) return null;
+        if (line.Contains("KSP residual norm", StringComparison.Ordinal))
+            return KspLine.Match(line) is { Success: true } k ? new PalaceLinearIteration(I(k.Groups[1].Value)) : null;
+        if (LinearDone.IsMatch(line)) return new PalaceLinearSolveDone();
+        if (EigenShift.Match(line) is { Success: true } sh) return new PalaceEigenShift(D(sh.Groups[1].Value), D(sh.Groups[2].Value));
+        if (EigenFound.Match(line) is { Success: true } f) return new PalaceEigenFound(I(f.Groups[1].Value));
+        if (EigenRefined.Match(line) is { Success: true } r) return new PalaceEigenRefined(I(r.Groups[1].Value), D(r.Groups[2].Value), D(r.Groups[3].Value));
         return null;
     }
 
@@ -355,6 +402,11 @@ public sealed class PalaceStageTracker
     private string _phase = "";
     private bool _degraded;
     private string _excitation = "";          // ", port i of n" when Palace names more than one excitation
+    private double? _eigenGHzPerScaled;
+    private int _eigenSolves, _eigenIteration, _eigenRefined;
+    private int? _eigenFound;
+    private string? _eigenLast;
+    private long _eigenShown;
 
     /// <param name="maxRefinementPasses">The setup's <c>AdaptiveMaxIterations</c>: Palace makes up
     /// to that many plus one solves — the total the stage states, because it is the one Palace was
@@ -383,7 +435,11 @@ public sealed class PalaceStageTracker
                                            _peak, _seconds, !_parser.Unrecognised);
 
     /// <summary>The stage every Palace run opens on.</summary>
-    public void Begin() => _control?.BeginStage(PassLabel());
+    public void Begin()
+    {
+        _started = Now();
+        _control?.BeginStage(PassLabel());
+    }
 
     /// <summary>One line of Palace's output.</summary>
     public void Line(string line)
@@ -416,6 +472,7 @@ public sealed class PalaceStageTracker
                 // Each excitation samples, and sweeps, on its own: a new stage, from the start.
                 _excitation = PortOf(x.Ordinal, x.Count);
                 _phase = x.Sampling ? "" : "sweeping";
+                if (x.Sampling) _portsPace = (x.Ordinal, x.Count, Now());
                 break;
             case PalaceGreedyIteration g:
                 // Palace solves the sweep's two ends before iteration 1: iteration 8 is "converged with 10 frequency samples".
@@ -478,6 +535,31 @@ public sealed class PalaceStageTracker
                                  "solve are not trustworthy.";
                 if (!_warnings.Contains(warning)) _warnings.Add(warning);
                 break;
+            case PalaceEigenStart:
+                _phase = "eigen";
+                _control?.BeginStage(EigenSearchLabel);
+                break;
+            case PalaceEigenShift sh when sh.Scaled != 0:
+                _eigenGHzPerScaled = sh.GHz / sh.Scaled;
+                break;
+            case PalaceLinearSolveDone when _phase == "eigen":
+                _eigenSolves++;
+                _eigenIteration = 0;
+                ShowEigen();
+                break;
+            case PalaceLinearIteration li when _phase == "eigen":
+                _eigenIteration = li.Iteration;
+                if (Environment.TickCount64 - _eigenShown >= 5000) ShowEigen();
+                break;
+            case PalaceEigenFound found when _phase == "eigen":
+                _eigenFound = found.Count;
+                ShowEigen();
+                break;
+            case PalaceEigenRefined refined when _phase == "eigen":
+                _eigenRefined = refined.Index + 1;
+                _eigenLast = EigenModeText(refined.Index + 1, refined.Real, refined.Imaginary, _eigenGHzPerScaled);
+                ShowEigen();
+                break;
             case PalaceElapsed t:
                 _seconds = t.Seconds;
                 break;
@@ -493,6 +575,30 @@ public sealed class PalaceStageTracker
                 _control?.TickStage(_parser.Lines);
                 break;
         }
+    }
+
+    /// <summary>What an eigenmode run's stage opens on.</summary>
+    public const string EigenSearchLabel = "Eigenmode search";
+
+    /// <summary>"mode 1 at 2.38 GHz, Q 4.3", from a refined eigenvalue a+bi: f is b in Palace's scaled units, Q is |a+bi|/2|a|, which is what Palace's table prints.</summary>
+    public static string EigenModeText(int mode, double real, double imaginary, double? ghzPerScaled)
+        => $"mode {mode}" + (ghzPerScaled is { } g ? $" at {(imaginary * g).ToString("G4", CultureInfo.InvariantCulture)} GHz" : "") +
+           (real != 0 ? $", Q {QText(Math.Sqrt(real * real + imaginary * imaginary) / (2 * Math.Abs(real)))}" : "");
+
+    private static string QText(double q) => q.ToString(q >= 100 ? "0" : "G3", CultureInfo.InvariantCulture);
+
+    /// <summary>The eigenmode stage's words: the search's linear solves until modes are found, then each mode as it is refined,
+    /// with the solve in progress's iteration, which is the figure that moves on a run where one solve takes minutes.</summary>
+    private void ShowEigen()
+    {
+        _eigenShown = Environment.TickCount64;
+        string live = _eigenIteration > 0 ? $", solver iteration {_eigenIteration}" : "";
+        string text = _eigenFound is not { } n
+            ? $"{EigenSearchLabel}: linear solve {_eigenSolves + 1}{live}"
+            : _eigenRefined < n
+                ? $"Eigenmodes: {n} found, refining {_eigenRefined + 1} of {n}{live}{(_eigenLast is { } m ? $" ({m})" : "")}"
+                : $"Eigenmodes: {n} found{(_eigenLast is { } last ? $" ({last})" : "")}";
+        _control?.SetStageLabel(text);
     }
 
     /// <summary>The stage name while the log is unrecognised.</summary>
@@ -564,7 +670,40 @@ public sealed class PalaceStageTracker
         _control?.TickStage(step, SamplingText(error));
     }
 
-    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol, _solved);
+    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol, _solved, Pace());
+
+    /// <summary>
+    /// Designer round 36 — how long a frequency is taking, and once a port has finished how long the rest should take at its
+    /// pace, so an eight-port run at half an hour a solve says so on its first day rather than its second. Only at a minute or
+    /// more a solve: below that nobody is waiting on the figure. Null until there is something to say.
+    /// </summary>
+    private string? Pace()
+    {
+        if (_solved <= 0 || _portsPace is not { } pp) return null;
+        double inPort = Now() - pp.Since;
+        double each = inPort / _solved;
+        if (each < 60) return null;
+        string text = $"{PaceWords(each)} each";
+        if (pp.Ordinal > 1)
+        {
+            double perPort = (pp.Since - _started) / (pp.Ordinal - 1);
+            double left = perPort * (pp.Count - pp.Ordinal + 1) - inPort;
+            if (left > 0) text += $", about {PaceWords(left)} left";
+        }
+        return text;
+    }
+
+    /// <summary>A length of time as a pace reads it: minutes under two hours, then hours.</summary>
+    public static string PaceWords(double seconds)
+        => seconds < 7200 ? $"{Math.Round(seconds / 60).ToString("0", CultureInfo.InvariantCulture)} min"
+                          : $"{(seconds / 3600).ToString(seconds < 36000 ? "0.#" : "0", CultureInfo.InvariantCulture)} h";
+
+    /// <summary>Test seam: seconds on a clock that only moves forward.</summary>
+    internal Func<double> Clock { get; init; } = () => Environment.TickCount64 / 1000.0;
+
+    private double Now() => Clock();
+    private double _started;
+    private (int Ordinal, int Count, double Since)? _portsPace;
 
     /// <summary>
     /// A port's sampling hit Palace's limit before the model settled, so its S-parameters come from a model short of the
@@ -587,8 +726,9 @@ public sealed class PalaceStageTracker
     /// </summary>
     /// <param name="solved">How many frequencies this port has solved so far, when known: the one figure that moves on a run
     /// where each solve takes minutes, and what tells a long sweep from a stuck one.</param>
-    public static string SamplingText(string port, double error, double tolerance, int? solved = null)
-        => $"{SamplingLabel}{port}: {(solved is { } n ? $"{n} frequencies solved, " : "")}{ModelChangeWords} {Sci(error)} (done below {Sci(tolerance)})";
+    /// <param name="pace">A long run's pace (<see cref="Pace"/>), when there is one.</param>
+    public static string SamplingText(string port, double error, double tolerance, int? solved = null, string? pace = null)
+        => $"{SamplingLabel}{port}: {(solved is { } n ? $"{n} frequencies solved, " : "")}{(pace is null ? "" : pace + ", ")}{ModelChangeWords} {Sci(error)} (done below {Sci(tolerance)})";
 
     /// <summary>", port i of n" for the i-th of n excitations — circuitRF excites every port, one at a time — and empty
     /// for one.</summary>

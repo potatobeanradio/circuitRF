@@ -151,6 +151,7 @@ string? netsHighlight = null;
 string? netsFilter = null;
 bool netsDim = false, netsZoom = false;
 bool planarMemoryDialog = false;
+bool unsavedSetupDialog = false;     // the question New 3D View from Layout asks of an EM setup with unsaved edits
 bool settingsGeneral = false;
 bool settingsSolvers = false;
 bool reviewRun = false;
@@ -266,6 +267,7 @@ for (int i = 0; i < args.Length; i++)
         case "--nets-dim": netsDim = true; break;
         case "--nets-zoom": netsZoom = true; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
+        case "--unsaved-setup-dialog": unsavedSetupDialog = true; break;
         case "--settings-general": settingsGeneral = true; break;
         case "--settings-solvers": settingsSolvers = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
@@ -371,6 +373,18 @@ if (planarMemoryDialog && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowPlanarMemoryDialog(output);
+}
+if (unsavedSetupDialog && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    var dialog = new CircuitRF.Ui.Views.Dialogs.SaveChangesDialog(
+        "'Setup.cem' has unsaved changes, and a 3D view takes its ports from the setup as saved. Save them first?",
+        dontSaveLabel: "Use Saved", title: "Unsaved EM Setup");
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(output);
+    return 0;
 }
 if (cellOwnValues is { } ownCsch && select is { } ownInstance && output is not null)
 {

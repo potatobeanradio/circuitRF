@@ -132,6 +132,7 @@ def main(argv):
     install_thin_conductor_split(warnings)
     import time
     started = time.time()
+    report(stage="geometry")
     try:
         sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
     except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's

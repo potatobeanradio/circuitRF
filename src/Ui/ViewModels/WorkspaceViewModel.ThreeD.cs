@@ -23,6 +23,7 @@ using CircuitRF.Render.Scene3D.Export;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Viewer3D;
 using CircuitRF.Ui.Views.Dialogs;
@@ -178,6 +179,8 @@ public partial class WorkspaceViewModel
             // brief-em3d-101 — an image's notes and warnings go to Messages; Replace Image… and Resolve Path… open the picker.
             vm.PostMessage = (text, warning) => { if (warning) Messages.Warning(text, vm.FilePath); else Messages.Info(text, vm.FilePath); };
             vm.Viewer.PostMessage = vm.PostMessage;    // brief-dfr31-5 R-dfr31-5-3 — a build that failed says so once
+            vm.UnsavedSetupFiles = () => [.. UnsavedSetupsNaming(clay => vm.Elaboration?.FilesRead.Contains(Path.GetFullPath(clay), StringComparer.OrdinalIgnoreCase) == true)
+                                                 .Select(d => Path.GetFileName(d.FilePath))];
             vm.PickImageFile = async title =>
                 (await CircuitRF.Ui.Views.ThreeD.ImageFilePicker.PickAsync(HostWindowOf(doc) ?? ResolveOwner(null), title, multiple: false)).FirstOrDefault();
             // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.
@@ -402,7 +405,7 @@ public partial class WorkspaceViewModel
         if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
         if (made.PortsNote is { } portsNote) Messages.Info(portsNote);
         foreach (string moved in made.PortsMoved) Messages.Info(moved);
-        if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out: {string.Join("; ", made.PortsLeftOut)}.");
+        if (made.PortsLeftOut.Count > 0) Messages.Warning(C3dHierarchy.PortsLeftOutSentence(made.PortsLeftOut));
         OpenOrActivateC3dEditor(path);
     }
 
@@ -437,8 +440,36 @@ public partial class WorkspaceViewModel
                     return false;
             }
         }
+        foreach (var setup in UnsavedSetupsNaming(p => Path.GetFullPath(p).StartsWith(layoutDir, StringComparison.OrdinalIgnoreCase)))
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"'{Path.GetFileName(setup.FilePath)}' has unsaved changes, and a 3D view takes its ports from the setup as saved. " +
+                "Save them first?",
+                dontSaveLabel: "Use Saved", title: "Unsaved EM Setup");
+            await dlg.ShowDialog(owner);
+            switch (dlg.Result)
+            {
+                case Views.Dialogs.SaveChangesResult.Save:
+                    setup.ViewModel.SaveCommand.Execute(null);
+                    if (setup.IsDirty) return false;   // the save failed, and the panel has said why
+                    break;
+                case Views.Dialogs.SaveChangesResult.DontSave:
+                    break;
+                default:
+                    return false;
+            }
+        }
         return true;
     }
+
+    /// <summary>
+    /// Designer round 36 — the open EM setups with unsaved edits whose layout <paramref name="layout"/> accepts. A 3D view's ports are
+    /// translated with the .cem as saved, so a Return changed in the panel and not saved left a port out of every new 3D view until a
+    /// restart's save prompt happened to write it.
+    /// </summary>
+    private List<EmSetupDocument> UnsavedSetupsNaming(Func<string, bool> layout)
+        => [.. _openDocsByPath.Values.OfType<EmSetupDocument>()
+                .Where(d => d.IsDirty && EmSetupLayoutPathOf(d.FilePath) is { } clay && layout(clay))];
 
     /// <summary>
     /// brief-dfr26-1 R-dfr26-1-6 — New 3D View from Layout for a layout FILE: the layout editor's toolbar and the EM setup

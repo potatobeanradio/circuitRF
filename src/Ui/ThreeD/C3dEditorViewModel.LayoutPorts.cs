@@ -26,6 +26,9 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Raised when a check has finished (tests wait on it).</summary>
     public event Action? LayoutPortsChecked;
 
+    /// <summary>The open EM setups naming a layout this view places that have unsaved edits, by file name. Set by the workspace.</summary>
+    public Func<IReadOnlyList<string>>? UnsavedSetupFiles { get; set; }
+
     private string LayoutPortStamp()
     {
         string baseDir = Path.GetDirectoryName(FilePath)!;
@@ -88,13 +91,16 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string UpdatePortsFromLayout()
     {
+        // Designer round 36 — the ports are translated with each .cem as saved, so an unsaved Return would silently not count.
+        if (UnsavedSetupFiles?.Invoke() is { Count: > 0 } unsaved)
+            PostMessage?.Invoke($"Ports were taken from {string.Join(", ", unsaved)} as saved; it has unsaved changes. " +
+                                "Save it and update the ports again to use them.", true);
         var translated = C3dHierarchy.PortsFromLayouts(Document, FilePath, _workspaceCws(), _technologies);
         C3dPortUpdate? update = null;
         ChangeRecords("Update ports from layout", d => update = C3dHierarchy.UpdatePorts(d, translated));
         foreach (string note in translated.Notes) PostMessage?.Invoke(note, false);
         if (translated.LeftOut.Count > 0)
-            PostMessage?.Invoke("Ports left out: " +
-                                string.Join("; ", translated.LeftOut) + ".", true);
+            PostMessage?.Invoke(C3dHierarchy.PortsLeftOutSentence(translated.LeftOut), true);
         _layoutPortStamp = null;
         _postedStalePorts.Clear();
         StaleLayoutPorts = [];

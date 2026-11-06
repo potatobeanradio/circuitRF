@@ -1244,11 +1244,25 @@ public static class PalaceRun
                 lines++;
             }
         }
+        // Designer round 36 — no solver stamps its log, so the log alone could not say when anything happened, or whether a last
+        // line such as "setsid: child 1054 did not exit normally" was a crash or the Stop button. circuitRF's lines say; they go
+        // to the file only, never to the tail or the progress parser.
+        var running = Stopwatch.StartNew();
+        void Stamp(string words)
+        {
+            lock (gate)
+            {
+                if (closed) return;
+                log.WriteLine(LogStamp(DateTimeOffset.Now, words));
+                log.Flush();
+            }
+        }
 
         Process? p;
         try { p = Em3dProcessLauncher.Start(psi, kind); }
         catch (Exception e) { return new(-1, false, e.Message, []); }
         if (p is null) return new(-1, false, "the operating system started nothing", []);
+        Stamp($"{Path.GetFileName(exe)} started.");
 
         bool watchMemory = watch is not null && sampleMemory;
         long? Ceiling() => watch?.CeilingLifted?.Invoke() == true ? null : watch?.CeilingBytes;
@@ -1325,19 +1339,29 @@ public static class PalaceRun
                 }
                 ProcessRun Stopped(ProcessStop why)
                 {
+                    Stamp($"circuitRF is stopping it after {Took(running.Elapsed)}: {(why.Reason == ProcessStopReason.Memory ? "the memory limit" : "the disk space floor")}. " +
+                          "Any line after this one comes from stopping it.");
                     Stop(p);
                     lock (gate) return new(-1, false, null, [.. tail], peak, memoryNote, why, peakFootprint);
                 }
+                ProcessRun Cancelled()
+                {
+                    Stamp($"Stop was pressed after {Took(running.Elapsed)}. Any line after this one comes from stopping it.");
+                    Stop(p);
+                    return new(-1, true, null, []);
+                }
+                var marked = Stopwatch.StartNew();
                 while (!p.WaitForExit(100))
                 {
-                    if (ct.IsCancellationRequested)
-                    {
-                        Stop(p);
-                        return new(-1, true, null, []);
-                    }
+                    if (ct.IsCancellationRequested) return Cancelled();
                     try { Drain(); watch?.OnTick?.Invoke(); }
-                    catch (OperationCanceledException) { Stop(p); return new(-1, true, null, []); }
+                    catch (OperationCanceledException) { return Cancelled(); }
                     if (Sample() is { } over) return Stopped(over);
+                    if (marked.Elapsed >= LogStampInterval)
+                    {
+                        marked.Restart();
+                        Stamp($"Still running after {Took(running.Elapsed)}.");
+                    }
                     if (diskRead.ElapsedMilliseconds >= 1000)
                     {
                         diskRead.Restart();
@@ -1356,6 +1380,7 @@ public static class PalaceRun
                                            new(ProcessStopReason.Memory, Math.Max(job.Peak, peakFootprint ?? 0), jobCeiling, Meshing()), peakFootprint);
                 try { Drain(); }
                 catch (OperationCanceledException) { return new(-1, true, null, []); }
+                Stamp($"{Path.GetFileName(exe)} ended with exit code {p.ExitCode} after {Took(running.Elapsed)}.");
                 lock (gate) return new(p.ExitCode, false, null, [.. tail], peak, memoryNote, PeakFootprint: peakFootprint);
             }
         }
@@ -1364,6 +1389,19 @@ public static class PalaceRun
             lock (gate) closed = true;
         }
     }
+
+    /// <summary>How often a running program's log gets a line saying the time.</summary>
+    internal static TimeSpan LogStampInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>One of circuitRF's lines in a program's log: the wall clock with its offset, then what happened.</summary>
+    internal static string LogStamp(DateTimeOffset at, string words)
+        => $"[circuitRF {at.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)}] {words}";
+
+    /// <summary>A run's length for a log line: "42 s", "12 min 05 s", "3 h 07 min".</summary>
+    internal static string Took(TimeSpan t)
+        => t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes:00} min"
+         : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes} min {t.Seconds:00} s"
+         : $"{(int)t.TotalSeconds} s";
 
     private static void Kill(Process p)
     {

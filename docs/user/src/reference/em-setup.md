@@ -700,7 +700,16 @@ cancel line but the line saying it stopped. `circuitrf em` prints them to the te
 below t)* — how much the frequency model still changes when a new frequency is solved, falling as samples are
 added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
 the number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
-results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
+results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which. At a minute
+or more a frequency the row also says the time each one takes, and from the second port on about how long the rest will
+take at that pace. An eigenmode run shows *Eigenmode search: linear solve k*, then *Eigenmodes: n found, refining i of n*
+with the last refined mode's frequency and Q, and the solver iteration of the solve under way.
+
+`palace.log`, `gmsh.log` and `emerge.log` in the run's folder carry circuitRF's own lines, beginning `[circuitRF` and the
+date, time and UTC offset: when the program started, every five minutes while it runs, and how it ended, with its exit code. Pressing
+Stop or reaching a limit is written before the program is stopped, so a last line such as `setsid: child 1054 did not exit
+normally` after that line is the stop, not a crash.
+
 A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
 the last figure, and the run is marked not converged; a Sweep tolerance of 0 solves every frequency instead.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped

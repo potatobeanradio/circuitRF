@@ -1486,8 +1486,14 @@ cancel line but the line saying it stopped. <code>circuitrf em</code> prints the
 below t)</em> — how much the frequency model still changes when a new frequency is solved, falling as samples are
 added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
 the number of samples is not known in advance); <em>Sweep: evaluating frequencies</em> with a count; <em>Reading
-results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
-A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
+results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which. At a minute
+or more a frequency the row also says the time each one takes, and from the second port on about how long the rest will
+take at that pace. An eigenmode run shows <em>Eigenmode search: linear solve k</em>, then <em>Eigenmodes: n found, refining i of n</em>
+with the last refined mode's frequency and Q, and the solver iteration of the solve under way.</p>
+<p><code>palace.log</code>, <code>gmsh.log</code> and <code>emerge.log</code> in the run's folder carry circuitRF's own lines, beginning <code>[circuitRF</code> and the
+date, time and UTC offset: when the program started, every five minutes while it runs, and how it ended, with its exit code. Pressing
+Stop or reaching a limit is written before the program is stopped, so a last line such as <code>setsid: child 1054 did not exit normally</code> after that line is the stop, not a crash.</p>
+<p>A port that reaches Palace's limit on solved frequencies before its model settles gets a warning naming the port and
 the last figure, and the run is marked not converged; a Sweep tolerance of 0 solves every frequency instead.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
 out or compressed, the larger figure that counts it is shown beside it. If Palace prints

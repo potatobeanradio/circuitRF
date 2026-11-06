@@ -1418,7 +1418,7 @@ public static class Em3dGenerator
                 return $"Port {p.Number}'s Return states the same layer (a coplanar return), but on '{band.Layer.Name}' beside its " +
                        $"line's end {string.Join("; ", sides.Select(s => $"on the {SideName(s.Dir)} side {s.G.Why}"))}. A coplanar " +
                        "return runs from the line across a straight gap to ground metal on the same layer. Draw that ground, or " +
-                       "choose a plane above or below as the Return.";
+                       "set the port's Return to Automatic or to a plane above or below.";
             var pick = usable.MinBy(s => Math.Abs(s.G.GroundEdge - s.G.LineEdge));
             var (lineEdge, groundEdge, ground, _) = pick.G;
 
