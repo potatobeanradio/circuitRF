@@ -28702,3 +28702,26 @@ once per analysis. It goes straight to the netlist because a sweep's warnings ar
 and MCP keep every sentence. It classifies text deliberately: the sentences come from the engine across several solvers, and a sentence it
 fails to recognise is simply shown, so the failure mode is one extra row and never a hidden one. A check that fails also raises a warning,
 so folding the check's note hides nothing. An EM run folds the same sentences; its other notes are untouched.
+
+**What can drive a fields analysis.** A driver is what the S-parameter engine makes a port of (`SParameterEngine.IsSParamPort`): a top-level
+Term, TermG or P1Tone. P1Tone and Term gave the same delivered power. A VTone, ITone, PnTone or MOD_Source is not a port, and the analysis needs
+one: it sends a wave in from a port's Z0, so an ideal source has no incident wave to define, and a multi-tone or modulated source has no one
+frequency to recombine at. The editor lists them anyway and the run refuses them by kind, since someone looking for their source should find it
+and read why not. `drive=` also takes a port's instance name, and the editor's list writes the number back so existing files read as before.
+
+**Drive rows carry their own amplitude.** `drive=` and `weights=` are parallel comma lists, and a remove button over a separate list of amplitudes would
+move the amplitude after the removed one onto the wrong port with nothing to show for it, so the editor edits them a row at a time and writes the same two
+keys. A row's combo is not editable; what a file states that is not a driver (an expression, a number no port has) is added to that row's list, so opening and
+saving a file loses nothing.
+
+**A P1Tone's Pavl and Phase as its drive amplitude.** An empty `weights=` item on a P1Tone now means √Pavl at its Phase, so `weights=` keeps empty items in
+position (`1,,W3`) where it used to drop them, which would have moved the amplitudes after them. Pavl is in watts and a stated amplitude has no units, so a
+P1Tone taking its Pavl beside any drive that does not is refused rather than read as if 1 meant 1 W. Results stay per watt. This changes a multi-drive file that
+left P1Tones' amplitudes empty, whose Pavls used to be ignored.
+
+**One block per analysis, kept on purpose.** Running every block from one analysis was considered and not done: a single-number goal such as
+`RealizedGainDbi(F1)` has to be one number, each block usually needs its own drive port, and blocks can have different solved frequencies.
+
+**The Block list cannot depend on the whole schematic reading back.** `EmFieldBlocks.Paths` round-trips the schematic through the netlist reader, so a fault anywhere in it
+emptied the list, which was harmless while the control took typed text. Non-editable, that would have left no way to name a block, so a failure falls back to the blocks on
+the schematic's own sheet.

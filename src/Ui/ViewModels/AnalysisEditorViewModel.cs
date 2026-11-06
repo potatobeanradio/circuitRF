@@ -181,6 +181,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         EnvBody        = new EnvBodyViewModel(model);
         FieldsBody.BlockSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Paths(model);
         FieldsBody.DataSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Data(model);
+        FieldsBody.UseDrivers(CircuitRF.Design.Em3d.FieldDrivers.Of(model), choose: true);
         LoadEmSetups(null);
         ValidateName();
     }
@@ -270,7 +271,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                 FieldsBody = FieldsBodyViewModel.From(fa);
                 FieldsBody.BlockSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Paths(model);
                 FieldsBody.DataSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Data(model);
-        FieldsBody.DataSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Data(model);
+                FieldsBody.UseDrivers(CircuitRF.Design.Em3d.FieldDrivers.Of(model));
                 SpBody     = new SpBodyViewModel(model);
                 HbBody     = SeededHb(model);
                 LpBody     = SeededLp(model, workspaceRoot);

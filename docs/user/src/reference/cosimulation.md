@@ -45,8 +45,8 @@ each; the same coil with lumped capacitors in the EM model needed 72,000 steps f
 Place an **EM Field Data** block in a test bench and pick the run's `.cemr` for its **File**. Its pins are named after the
 run's ports, in the run's order, so there is no port count to set. Draw the circuit around them: the capacitors, the match,
 the feed. Then add a **Fields (SAR, B1, pattern)** analysis in the Analysis editor. Its **Block** control lists the schematic's EM
-Field Data blocks, those inside sub-cells included, and its **Frequency** control lists what the block's record stores, with
-**All** when it holds a far field. Both still take typed text. **Per watt** and **Averaged SAR** are grey when the record holds no field set, since
+Field Data blocks, those inside sub-cells included, starting on the first and greyed when there is only one (an analysis reads one block, so a second block takes a second analysis), and its **Frequency** control lists what the block's record stores, with
+**All** when it holds a far field. Frequency still takes typed text. **Per watt** and **Averaged SAR** are grey when the record holds no field set, since
 they act only on SAR and B1:
 
 <pre><code>analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1 [norm=accepted|available] [average=yes|no]</code></pre>
@@ -55,8 +55,8 @@ they act only on SAR and B1:
 |---|---|---|
 | `block` | the EM Field Data block's instance name (`X1.EM1` inside a cell) | required |
 | `freq`, `freqUnit` | a frequency the record stores, or `all` for every frequency of its far field | required |
-| `drive` | the circuit port that drives; every other circuit port is terminated in its Z0 | required |
-| `weights` | with several drives, each one's complex amplitude ([multi-channel](#multichannel)) | 1 each |
+| `drive` | the circuit port that drives, by number or by instance name; every other circuit port is terminated in its Z0 | required |
+| `weights` | with several drives, each one's relative complex amplitude, with no units ([multi-channel](#multichannel)) | 1 each, or a P1Tone's Pavl and Phase |
 | `norm` | per watt **accepted** at the drive, or per watt **available** from it | accepted |
 | `average` | `no` skips the cube-averaged SAR, the step that costs the most | yes |
 
@@ -69,6 +69,10 @@ result drawn and selected. Its solution is labelled `<f> GHz, fields 'F1' (circu
 The Messages pane gives the run one line for the pattern's notes, what each metric means and why any was not published, with **Details…**
 to read them. A check that fails is a warning of its own, and so is a drive port that delivers no power to the block, which leaves the results empty.
 A frequency the block's record does not store is flagged under the **Frequency** control and refused if you run it.
+
+**What can drive.** The **Drive port** control lists the schematic's Term, TermG and P1Tone by name and port number. **+** adds a port to drive together
+with it, with an amplitude for each, and **x** removes one. They all drive alike, and a port has to be on the part of the circuit the block is connected to. A VTone, ITone, PnTone or MOD_Source is listed too, and
+flagged: none of them is a circuit port, and a run refuses them, because the analysis sends one wave in from a port's Z0 at the frequency it recombines.
 
 A fields analysis has no **Simulate by** choice, because the block already holds the EM result. On one, `model=em` and
 `--em on` start no EM run of the schematic's layout; they switch only EM-capable parts the circuit places, as a part set
@@ -157,6 +161,11 @@ amplitude for each:
 analysis F1 type=fields block=EM1 freq=298 freqUnit=MHz drive=1,2 weights=1,W2
 tune mag(W2) min=0.5 max=2 opt=1
 tune phase(W2) min=-180 deg max=0 deg opt=1</code></pre>
+
+Only the ratios between amplitudes matter, and power goes as amplitude squared: for a power ratio write `sqrt(P)` from watts or `10^(PdBm/20)` from dBm,
+with any of them a variable. Leave a P1Tone's amplitude empty and it takes its own **Pavl** and **Phase**, so the P1Tones' settings set the ratios. That
+needs every drive to be a P1Tone with an empty amplitude: Pavl is in watts and a relative amplitude is not, so a mix is refused. Results stay per watt
+whatever the Pavl.
 
 The circuit is solved once with every drive at its weight. **Per watt** then means per watt of the drives' total,
 accepted or available, so "maximise `B1pMin` with `psSAR` at most so much per W total" is an ordinary optimizer problem:

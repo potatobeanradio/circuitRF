@@ -48,7 +48,8 @@ public static partial class FieldCosimulation
             waves[f] = Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives));
         }
         string where = at.Count == 1 ? MaterialDispersion.Hz(freqs[0]) : $"{at.Count} frequencies, {MaterialDispersion.Hz(freqs[0])} to {MaterialDispersion.Hz(freqs[^1])}";
-        WarnIfNothingReachesTheBlock(fa, nl, waves, where);
+        double firstHz = freqs[0];
+        WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
         CosimPatternMetrics? Metrics(Em3dPatternPoint? point) => fa.AtEveryFrequency ? null : new CosimPatternMetrics(fa, far, at[0], waves[0], point);
 
         if (output == FieldsOutput.OnDemand)

@@ -1179,6 +1179,11 @@ public static class SParameterEngine
     /// <summary>Returns true for models that act as s-param ports (Port, Term, or P1Tone).</summary>
     private static bool IsSParamPort(ComponentModel m) => m is PortModel or TermModel or P1ToneModel;
 
+    /// <summary>The circuit's ports, by number, with the instance that is each: the top-level Term, TermG and P1Tone.</summary>
+    public static IReadOnlyList<(int Port, string Instance)> CircuitPorts(ElaboratedNetlist netlist) =>
+        [.. netlist.Components.Where(c => IsSParamPort(c.Model) && !c.InstancePath.Contains('.'))
+                              .Select(c => (GetPortNum(c), c.InstancePath)).OrderBy(p => p.Item1)];
+
     /// Stamp all components (two-phase: non-mutual first so InductorModel.LastBranchIndex
     /// is set before MutualInductanceModel reads it).
     /// Buried Term/Port/P1Tone components (dotted InstancePath = inside a sub-cell) are silently

@@ -1,4 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
+        xmlns:mi="using:Material.Icons.Avalonia"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:analyses="using:CircuitRF.Ui.Views.Analyses"
         xmlns:vm="using:CircuitRF.Ui.ViewModels"
@@ -178,12 +179,12 @@
                     CornerRadius="6"
                     Padding="10,10"
                     IsVisible="False">
-                <Grid x:Name="FieldsBodyGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,14,Auto,Auto,Auto,Auto"
+                <Grid x:Name="FieldsBodyGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,14,Auto,Auto,Auto"
                       RowSpacing="6" ColumnSpacing="8">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Block:" FontSize="12" VerticalAlignment="Center"/>
-                    <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" IsEditable="True" HorizontalAlignment="Stretch"
-                               ItemsSource="{Binding FieldsBody.Blocks}" Text="{Binding FieldsBody.Block, Mode=TwoWay}"
-                               PlaceholderText="an EM Field Data block, e.g. EM1 or X1.EM1"/>
+                    <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" HorizontalAlignment="Stretch"
+                               ItemsSource="{Binding FieldsBody.Blocks}" SelectedItem="{Binding FieldsBody.Block}" IsEnabled="{Binding FieldsBody.CanChooseBlock}"
+                               PlaceholderText="no EM Field Data block found"/>
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Frequency:" FontSize="12" VerticalAlignment="Center"/>
                     <ComboBox  Grid.Row="1" Grid.Column="1" FontSize="12" IsEditable="True" HorizontalAlignment="Stretch"
                                ItemsSource="{Binding FieldsBody.Frequencies}" Text="{Binding FieldsBody.Freq, Mode=TwoWay}"
@@ -192,16 +193,34 @@
                                SelectedItem="{Binding FieldsBody.FreqUnit}"/>
                     <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
                                Text="{Binding FieldsBody.FreqProblem}" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Drive port:" FontSize="12" VerticalAlignment="Center"/>
-                    <TextBox   Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Text="{Binding FieldsBody.Drive}"
-                               PlaceholderText="1, or several: 1,2"/>
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Weights:" FontSize="12" VerticalAlignment="Center"/>
-                    <TextBox   Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Text="{Binding FieldsBody.Weights}"
-                               PlaceholderText="each drive's amplitude, e.g. W1,W2 (empty: 1 each)"/>
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Per watt:" FontSize="12" VerticalAlignment="Center"/>
-                    <ComboBox  Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" ItemsSource="{x:Static vm:FieldsBodyViewModel.Norms}"
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Drive port:" FontSize="12" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                    <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Spacing="2">
+                        <ItemsControl ItemsSource="{Binding FieldsBody.Drives}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:FieldDriveRowViewModel">
+                                    <Grid ColumnDefinitions="*,150,Auto" RowDefinitions="Auto,14" ColumnSpacing="4">
+                                        <ComboBox FontSize="12" HorizontalAlignment="Stretch" ItemsSource="{Binding Items}" SelectedItem="{Binding Driver}"/>
+                                        <TextBox Grid.Column="1" FontSize="12" Text="{Binding Weight}" PlaceholderText="{Binding AmplitudeHint}"
+                                                 ToolTip.Tip="This drive's complex amplitude, with no units: a number or an expression, such as W2 or polar(1,-90). Only the ratios between drives matter. Empty is 1, or a P1Tone's Pavl and Phase."/>
+                                        <Button Grid.Column="2" Padding="6,3" VerticalAlignment="Center" Command="{Binding RemoveCommand}" IsEnabled="{Binding CanRemove}"
+                                                ToolTip.Tip="Remove this drive">
+                                            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                        </Button>
+                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+                                                   Text="{Binding Problem}" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Padding="6,3" HorizontalAlignment="Right" Command="{Binding FieldsBody.AddDriveCommand}"
+                                ToolTip.Tip="Add a drive: the ports listed are driven together, each at its amplitude">
+                            <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Per watt:" FontSize="12" VerticalAlignment="Center"/>
+                    <ComboBox  Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" ItemsSource="{x:Static vm:FieldsBodyViewModel.Norms}"
                                SelectedItem="{Binding FieldsBody.Norm}" IsEnabled="{Binding FieldsBody.HasSarFields}"/>
-                    <CheckBox  Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Content="Averaged SAR"
+                    <CheckBox  Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Content="Averaged SAR"
                                IsChecked="{Binding FieldsBody.Average}" IsEnabled="{Binding FieldsBody.HasSarFields}"/>
                 </Grid>
             </Border>

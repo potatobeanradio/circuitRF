@@ -46,6 +46,12 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
     private readonly double                   _freqHz;
     private readonly double                   _phaseRad;   // RADIANS — see the class doc
 
+    /// <summary>The available power it states, in dBm: <c>Pavl</c>, before any <see cref="DriveScale"/>.</summary>
+    public double PavlDbm => _pavlDbm;
+
+    /// <summary>The phase it states, in radians.</summary>
+    public double PhaseRad => _phaseRad;
+
     // Set by SetToneContext() before each HB run.
     private double _fc;           // band-center frequency (Hz); 0 = S-param mode
     private double _driveFreqHz;  // frequency at which to stamp the V-drive

@@ -2407,6 +2407,9 @@ static int ShowAnalysisDialog(string csch, string? name, string path)
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
     Console.WriteLine($"Simulate by: {vm.SimulateByOptions[vm.SimulateByIndex]}; EM setup: {vm.EmSetupOptions[vm.EmSetupIndex]} " +
                       $"(choosable: {vm.EmSetupChoosable})");
+    if (vm.IsFields)
+        foreach (var row in vm.FieldsBody.Drives)
+            Console.WriteLine($"Drive: {row.Driver}; amplitude: '{row.Weight}'; list: {string.Join(" | ", row.Items)}; problem: {row.Problem ?? "none"}");
     dialog.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
     return 0;

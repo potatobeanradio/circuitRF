@@ -119,6 +119,7 @@ public partial class AnalysisEditorDialog : Window
         FieldsBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.Fields;
         EnvBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.ENV;
         UpdateSimulateBy();
+        if (kind == AnalysisEditorViewModel.AnalysisKind.Fields) Vm.FieldsBody.PickBlock();
     }
 
     /// <summary>Grey for a fields analysis, keeping what was chosen for the other kinds in case the type is changed back.</summary>

@@ -42,8 +42,8 @@ public static class EmFieldBlocks
         return found;
     }
 
-    /// <summary>The blocks of a schematic as it stands in the editor, extracted as Simulate extracts it. A schematic that does not extract
-    /// lists none: the control still takes typed text.</summary>
+    /// <summary>The blocks of a schematic as it stands in the editor, extracted as Simulate extracts it. The Block control takes nothing else, so
+    /// a schematic that does not extract, for a reason elsewhere in it, still lists the blocks on its own sheet.</summary>
     public static IReadOnlyList<string> Paths(SchematicEditModel model)
     {
         try
@@ -51,7 +51,10 @@ public static class EmFieldBlocks
             var (lib, tb) = SchematicCircuit.FromSchematic(model, "fields", model.SchematicDirectory);
             return Paths(lib, tb);
         }
-        catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            return [.. model.Components.Where(c => c.Symbol == SymbolKind.EmFieldData).Select(c => c.InstanceName)];
+        }
     }
 
     /// <summary>R-cp6-4 — what each block of a schematic's record holds, read from the record alone, for the analysis editor. A block whose record

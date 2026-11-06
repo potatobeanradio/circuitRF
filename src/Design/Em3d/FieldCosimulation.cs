@@ -159,7 +159,7 @@ public static partial class FieldCosimulation
                     throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.");
                 control?.ThrowIfCancellationRequested();
                 var waves = SParameterEngine.BlockWaves(nl, hz, fa.Block, drives);
-                WarnIfNothingReachesTheBlock(fa, nl, [Weigh(fa, set, waves)], MaterialDispersion.Hz(hz));
+                WarnIfNothingReachesTheBlock(fa, nl, [Weigh(fa, set, waves)], MaterialDispersion.Hz(hz), d => Weigh(fa, set, SParameterEngine.BlockWaves(nl, hz, fa.Block, d)));
                 if (output == CircuitRF.Design.Circuit.FieldsOutput.OnDemand)
                 {
                     // R-sar10-2 — an optimizer's, yield's or DOE's evaluation: the waves and the tissue matrix's absorbed power, nothing
@@ -300,19 +300,31 @@ public static partial class FieldCosimulation
         => RecombineCore(fa, set, snpPath, drive, notes, warnings, control, fa.Average, fa.Name,
                          CircuitRF.Design.Circuit.FieldsOutput.Written).Data;
 
-    /// <summary>brief-sar-10 — the block's waves for one excitation of the circuit, in each port's Z0, scaled so the drives
-    /// together make <see cref="PalaceDrive.IncidentPowerW"/> available, and what the excitation accepts and reflects.</summary>
-    /// <summary>A drive on a part of the circuit the block is not connected to leaves every cube empty with nothing else wrong, so
-    /// the run says so once, however many frequencies or sweep points it covers. Below -240 dB of incident power is numerical zero.</summary>
-    private static void WarnIfNothingReachesTheBlock(FieldsAnalysis fa, ElaboratedNetlist nl, IReadOnlyList<CosimWaves> waves, string where)
+    /// <summary>A drive on a part of the circuit the block is not connected to leaves every cube empty with nothing else wrong, so the
+    /// run says so once, however many frequencies or sweep points it covers, and tries the other ports to say which would work. Below
+    /// -240 dB of incident power is numerical zero.</summary>
+    private static void WarnIfNothingReachesTheBlock(FieldsAnalysis fa, ElaboratedNetlist nl, IReadOnlyList<CosimWaves> waves, string where,
+                                                     Func<IReadOnlyList<(int Port, Complex Amplitude)>, CosimWaves> drivenFrom)
     {
-        if (!waves.All(w => w.A.Sum(a => a.Magnitude * a.Magnitude) < 1e-24 * w.AvailableW)) return;
-        var first = waves[0];
-        string from = first.Multi ? $"circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))}" : $"circuit port {first.Drive.DrivenPort}";
-        nl.AddWarningOnce($"fields:{fa.Name}:unreached",
-                          $"Fields '{fa.Name}' at {where}: no power from {from} reaches '{fa.Block}', so its results are empty. Drive a port connected to the block.");
+        static bool Reaches(CosimWaves w) => w.A.Sum(a => a.Magnitude * a.Magnitude) >= 1e-24 * w.AvailableW;
+        if (waves.Any(Reaches)) return;
+
+        var ports = SParameterEngine.CircuitPorts(nl);
+        string Named(int port) => ports.FirstOrDefault(p => p.Port == port).Instance is { Length: > 0 } instance ? $"{port} ({instance})" : $"{port}";
+        var driven = waves[0].Drive.Drives.Select(d => d.Port).ToList();
+        var others = ports.Where(p => !driven.Contains(p.Port)).Where(p => Reaches(drivenFrom([(p.Port, Complex.One)]))).ToList();
+        string instead = others.Count switch
+        {
+            0 => "No port of this circuit is: connect a Term, TermG or P1Tone to it.",
+            1 => $"Port {Named(others[0].Port)} is: set Drive port to {others[0].Port}.",
+            _ => $"Ports {string.Join(", ", others.Select(p => Named(p.Port)))} are: set Drive port to one of them.",
+        };
+        string from = driven.Count > 1 ? $"circuit ports {string.Join(", ", driven.Select(Named))} are" : $"circuit port {Named(driven[0])} is";
+        nl.AddWarningOnce($"fields:{fa.Name}:unreached", $"Fields '{fa.Name}' at {where}: {from} not connected to '{fa.Block}', so its results are empty. {instead}");
     }
 
+    /// <summary>brief-sar-10 — the block's waves for one excitation of the circuit, in each port's Z0, scaled so the drives
+    /// together make <see cref="PalaceDrive.IncidentPowerW"/> available, and what the excitation accepts and reflects.</summary>
     internal sealed record CosimWaves(Complex[] A, Complex[] B, SParameterEngine.BlockPortDrive Drive, double AvailableW,
                                       double AcceptedW, Complex Reflection, double DivisorW, bool PerAvailable)
     {
@@ -471,11 +483,12 @@ public static partial class FieldCosimulation
     }
 
     /// <summary>brief-sar-10 R-sar10-4 — the circuit ports <paramref name="fa"/> drives and the incident-wave amplitude of each:
-    /// <c>drive=</c>'s port numbers (or expressions over the globals), <c>weights=</c>'s complex expressions in the same order.</summary>
+    /// <c>drive=</c>'s port numbers (or expressions over the globals), <c>weights=</c>'s complex expressions in the same order. A drive with
+    /// no weight is 1, unless it is a P1Tone: that takes √Pavl at its Phase, in √W, so it can only be compared with other P1Tones doing the same.</summary>
     internal static List<(int Port, Complex Amplitude)> Drives(FieldsAnalysis fa, ElaboratedNetlist nl, string who)
     {
         var ports = SplitList(fa.DriveExpr.Trim().Length == 0 ? "1" : fa.DriveExpr);
-        var weights = SplitList(fa.WeightsExpr);
+        var weights = SplitList(fa.WeightsExpr, keepEmpty: true);
         if (weights.Count > 0 && weights.Count != ports.Count)
             throw new InvalidOperationException($"{who}: drive='{fa.DriveExpr}' names {ports.Count} port{(ports.Count == 1 ? "" : "s")} and " +
                                                 $"weights='{fa.WeightsExpr}' {weights.Count} weight{(weights.Count == 1 ? "" : "s")}: give one weight a port.");
@@ -487,6 +500,7 @@ public static partial class FieldCosimulation
             eval.InjectResolved("globals", name, value);
         }
         var list = new List<(int, Complex)>();
+        var unstated = new List<int>();
         for (int i = 0; i < ports.Count; i++)
         {
             int port;
@@ -496,9 +510,20 @@ public static partial class FieldCosimulation
                 port = int.TryParse(ports[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int d) ? d
                      : (int)Math.Round(eval.Eval(ports[i], scope, null).AsReal());
             }
-            catch (Exception e) { throw new InvalidOperationException($"{who}: drive='{ports[i]}' is not a port number ({e.Message})."); }
+            catch (Exception e)
+            {
+                // The name of the instance is as good as its number, and a source that is not a port is refused by what it is.
+                string name = ports[i];
+                var isPort = SParameterEngine.CircuitPorts(nl).Where(p => p.Instance == name).ToList();
+                if (isPort.Count == 1) port = isPort[0].Port;
+                else if (nl.Components.FirstOrDefault(c => c.InstancePath == name) is { } component && FieldDrivers.Refusal(name, component.Model) is { } refused)
+                    throw new InvalidOperationException($"{who}: {refused}");
+                else throw new InvalidOperationException($"{who}: drive='{name}' is not a port number ({e.Message}).");
+            }
             Complex weight = Complex.One;
-            if (weights.Count > 0)
+            if (weights.Count == 0 || weights[i].Length == 0)
+                unstated.Add(i);
+            else
             {
                 try { weight = eval.Eval(weights[i], scope, null).ToComplex(); }
                 catch (Exception e) { throw new InvalidOperationException($"{who}: weight '{weights[i]}' of port {port} is not a number ({e.Message})."); }
@@ -507,13 +532,30 @@ public static partial class FieldCosimulation
             }
             list.Add((port, weight));
         }
+
+        var named = SParameterEngine.CircuitPorts(nl);
+        string InstanceOf(int port) => named.FirstOrDefault(p => p.Port == port).Instance ?? port.ToString(CultureInfo.InvariantCulture);
+        P1ToneModel? ToneOf(int port) => nl.Components.FirstOrDefault(c => c.InstancePath == InstanceOf(port))?.Model as P1ToneModel;
+        var tones = unstated.Where(i => ToneOf(list[i].Item1) is not null).ToList();
+        if (tones.Count > 0 && tones.Count < list.Count)
+        {
+            int other = Enumerable.Range(0, list.Count).First(i => !tones.Contains(i));
+            throw new InvalidOperationException($"{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its Pavl, in watts, which '{InstanceOf(list[other].Item1)}' " +
+                                                "cannot be compared with. Give every drive a relative amplitude.");
+        }
+        foreach (int i in tones)
+        {
+            var tone = ToneOf(list[i].Item1)!;
+            list[i] = (list[i].Item1, Complex.FromPolarCoordinates(Math.Pow(10, (tone.PavlDbm - 30) / 20), tone.PhaseRad));
+        }
         return list;
     }
 
     /// <summary>A comma-separated list, split only at bracket depth zero, so <c>polar(1,-90)</c> stays one item.</summary>
-    private static List<string> SplitList(string text)
+    public static List<string> SplitList(string text, bool keepEmpty = false)
     {
         var items = new List<string>();
+        if (text.Trim().Length == 0) return items;
         int depth = 0, start = 0;
         for (int i = 0; i <= text.Length; i++)
         {
@@ -525,7 +567,7 @@ public static partial class FieldCosimulation
                 if (ch != ',' || depth != 0) continue;
             }
             string item = text[start..i].Trim();
-            if (item.Length > 0) items.Add(item);
+            if (item.Length > 0 || keepEmpty) items.Add(item);
             start = i + 1;
         }
         return items;

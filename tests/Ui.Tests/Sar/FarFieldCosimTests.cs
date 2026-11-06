@@ -325,7 +325,7 @@ public sealed partial class FarFieldCosimTests : IDisposable
         Assert.All(run.Notes, n => Assert.True(RunNotes.IsDetail(n), n));
         Assert.Contains("|Γ|", run.Summary, StringComparison.Ordinal);
         Assert.DoesNotContain("the pattern of", run.Summary, StringComparison.Ordinal);
-        Assert.DoesNotContain(run.Warnings, w => w.Contains("no power", StringComparison.Ordinal));
+        Assert.DoesNotContain(run.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
 
         var partial = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(
             Bench + Block("a", "b") + "analysis SP1 type=sparam start=1 stop=2 npts=3 Unit=GHz\nanalysis F1 type=fields block=EM1 freq=1.5 freqUnit=GHz drive=1\n", _dir, _dir), new CircuitEvaluationRequest());
@@ -336,7 +336,9 @@ public sealed partial class FarFieldCosimTests : IDisposable
 
         // P2 is the only port the block is on, so driving P1 delivers nothing to it.
         var apart = Run("Port:P1 a 0 Num=1 Z=50 Ohm\nR:R1 a 0 R=50\nPort:P2 b 0 Num=2 Z=50 Ohm\nR:R2 c 0 R=50\n" + Block("b", "c") + Line);
-        Assert.Contains("no power from circuit port 1 reaches 'EM1'", Assert.Single(apart.Warnings, w => w.Contains("no power", StringComparison.Ordinal)), StringComparison.Ordinal);
+        string warned = Assert.Single(apart.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
+        Assert.Contains("circuit port 1 (P1) is not connected to 'EM1'", warned, StringComparison.Ordinal);
+        Assert.Contains("Port 2 (P2) is: set Drive port to 2.", warned, StringComparison.Ordinal);
 
         // The editor says the same before the run does, and leaves an expression to the run.
         var body = new CircuitRF.Ui.ViewModels.FieldsBodyViewModel { Block = "EM1", FreqUnit = "GHz", Freq = "1.5" };
@@ -346,6 +348,126 @@ public sealed partial class FarFieldCosimTests : IDisposable
         Assert.Null(body.FreqProblem);
         body.Freq = "Fcoil";
         Assert.Null(body.FreqProblem);
+    }
+
+    /// <summary>What may drive: a P1Tone is a port like a Term, named by number or instance alike, and a source that is not a port is
+    /// refused by what it is. The editor lists them all, flags the refused ones, and writes the number back for a port.</summary>
+    [Fact]
+    public void ADrive_IsAPortByNumberOrName_AndASourceThatIsNotOneIsRefusedByKind()
+    {
+        WriteResult(2);
+        const string Rest = "R:R2 b 0 R=75\n";
+        string Fields(string drive) => $"analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive={drive}\n";
+        double Delivered(string source, string drive) =>
+            Run(source + Rest + Block("a", "b") + Fields(drive)).Results.Single().Data.Cubes[FieldCosimulation.DeliveredCube].RealValues[0];
+
+        const string Term = "Port:T1 a 0 Num=1 Z=50 Ohm\n", Tone = "P1Tone:T1 a 0 Num=1 Z=50 Ohm Pavl=0 dBm Freq=1 GHz\n";
+        double want = Delivered(Term, "1");
+        Assert.True(want > 0);
+        Assert.Equal(want, Delivered(Tone, "1"), 12);
+        Assert.Equal(want, Delivered(Term, "T1"), 12);
+
+        foreach (var (line, kind) in new[] { ("PnTone:S1 x 0 Freq[1]=1 GHz Pavl[1]=0 dBm Freq[2]=1.1 GHz Pavl[2]=0 dBm Z=50 Ohm\n", "PnTone"), ("V_1Tone:S1 x 0 V=1 Freq=1 GHz\n", "VTone") })
+        {
+            var refused = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(Term + line + Rest + Block("a", "b") + Fields("S1"), _dir, _dir), new CircuitEvaluationRequest());
+            Assert.Equal(RunStatus.EngineError, refused.Status);
+            Assert.Contains($"'S1' is a {kind}, not a circuit port", refused.StatusMessage, StringComparison.Ordinal);
+        }
+
+        var model = new CircuitRF.Design.Schematic.SchematicEditModel();
+        CircuitRF.Design.Schematic.EditableComponent Part(string name, CircuitRF.Design.Schematic.SymbolKind symbol, string? num)
+        {
+            var c = new CircuitRF.Design.Schematic.EditableComponent { InstanceName = name, Symbol = symbol };
+            if (num is not null) c.Parameters.Add(new CircuitRF.Design.Schematic.EditableParameter { Name = "Num", Expression = num, Unit = "" });
+            model.Components.Add(c);
+            return c;
+        }
+        Part("V1", CircuitRF.Design.Schematic.SymbolKind.ToneSource, null);
+        Part("P2", CircuitRF.Design.Schematic.SymbolKind.P1Tone, "2");
+        Part("T1", CircuitRF.Design.Schematic.SymbolKind.TermG, "1");
+        Part("R1", CircuitRF.Design.Schematic.SymbolKind.Resistor, null);
+
+        // A file's three drives open as rows and write back as they were, each amplitude with its port; removing one moves no other.
+        var body = CircuitRF.Ui.ViewModels.FieldsBodyViewModel.From(new CircuitRF.Core.Design.FieldsAnalysis("F1")
+            { Block = "EM1", FreqExpr = "1", DriveExpr = "1,2,5", WeightsExpr = "1,polar(1,-90),W3" });
+        body.UseDrivers(FieldDrivers.Of(model));
+        Assert.Equal(["T1 (port 1)", "P2 (port 2)", "V1 (VTone)"], body.Drives[0].Items);
+        Assert.Equal(["T1 (port 1)", "P2 (port 2)", "5"], [body.Drives[0].Driver, body.Drives[1].Driver, body.Drives[2].Driver]);
+        Assert.Contains("5", body.Drives[2].Items);
+        Assert.Contains("no port 5", body.Drives[2].Problem, StringComparison.Ordinal);
+        Assert.Equal("1,2,5", body.BuildAnalysis("F1", true).DriveExpr);
+        Assert.Equal("1,polar(1,-90),W3", body.BuildAnalysis("F1", true).WeightsExpr);
+        body.Drives[1].RemoveCommand.Execute(null);
+        Assert.Equal("1,5", body.BuildAnalysis("F1", true).DriveExpr);
+        Assert.Equal("1,W3", body.BuildAnalysis("F1", true).WeightsExpr);
+
+        // + takes the next free port and stops when none is left; x stops at the last row.
+        body.Drives[1].RemoveCommand.Execute(null);
+        Assert.True(body.AddDriveCommand.CanExecute(null));
+        body.AddDriveCommand.Execute(null);
+        Assert.Equal("P2 (port 2)", body.Drives[1].Driver);
+        Assert.Equal("1,2", body.BuildAnalysis("F1", true).DriveExpr);
+        Assert.Equal("1,", body.BuildAnalysis("F1", true).WeightsExpr);
+        Assert.Contains("Set every amplitude", body.Drives[1].Problem, StringComparison.Ordinal);
+        Assert.Equal("from Pavl and Phase", body.Drives[1].AmplitudeHint);
+        Assert.Equal("relative amplitude: 1", body.Drives[0].AmplitudeHint);
+        Assert.False(body.AddDriveCommand.CanExecute(null));
+        body.Drives[1].Driver = "T1 (port 1)";
+        Assert.Contains("already driven", body.Drives[1].Problem, StringComparison.Ordinal);
+        body.Drives[1].Driver = "V1 (VTone)";
+        Assert.Contains("not a circuit port", body.Drives[1].Problem, StringComparison.Ordinal);
+        Assert.Equal("V1", body.BuildAnalysis("F1", true).DriveExpr.Split(',')[1]);
+        body.Drives[1].RemoveCommand.Execute(null);
+        Assert.False(body.Drives[0].CanRemove);
+
+        // A new analysis starts on the first port, whatever its number; a schematic with none leaves the number.
+        var fresh = new CircuitRF.Ui.ViewModels.FieldsBodyViewModel();
+        Part("T9", CircuitRF.Design.Schematic.SymbolKind.Term, "0");
+        fresh.UseDrivers(FieldDrivers.Of(model), choose: true);
+        Assert.Equal("T9 (port 0)", fresh.Drives[0].Driver);
+    }
+
+    /// <summary>An empty amplitude on a P1Tone is its Pavl and Phase, a variable's included, and only among P1Tones doing the same: Pavl is in
+    /// watts and a stated amplitude has no units. An empty item keeps its place in the list.</summary>
+    [Fact]
+    public void AnEmptyAmplitude_IsAP1TonesPavlAndPhase_AndOnlyAmongP1TonesDoingTheSame()
+    {
+        WriteResult(2);
+        const string Rest = "R:R1 a n R=25 Ohm\nR:R2 b n R=25 Ohm\nR:R3 x 0 R=50 Ohm\n";
+        string Fields(string weights) => $"analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1,2{(weights.Length > 0 ? $" weights=\"{weights}\"" : "")}\n";
+        static string Tone(string name, string pin, int num, string pavl, string phase = "0 deg") => $"P1Tone:{name} {pin} 0 Num={num} Z=50 Ohm Pavl={pavl} Freq=1 GHz Phase={phase}\n";
+        var terms = "Port:T1 a 0 Num=1 Z=50 Ohm\nPort:T2 b 0 Num=2 Z=50 Ohm\n";
+        double Delivered(string text) => Run(text + Rest + Block("n", "x") + "").Results.Single().Data.Cubes[FieldCosimulation.DeliveredCube].RealValues[0];
+
+        double ratio = Delivered(terms + Fields("1,2"));
+        Assert.NotEqual(Delivered(terms + Fields("")), ratio);
+        Assert.Equal(ratio, Delivered(Tone("T1", "a", 1, "0 dBm") + Tone("T2", "b", 2, "6.0205999 dBm") + Fields("")), 6);
+        Assert.Equal(ratio, Delivered("PdB = 6.0205999\n" + Tone("T1", "a", 1, "0 dBm") + Tone("T2", "b", 2, "PdB dBm") + Fields("")), 6);
+        Assert.Equal(Delivered(terms + Fields("1,polar(1,90)")), Delivered(Tone("T1", "a", 1, "0 dBm") + Tone("T2", "b", 2, "0 dBm", "90 deg") + Fields("")), 6);
+        Assert.Equal(ratio, Delivered(Tone("T1", "a", 1, "30 dBm") + Tone("T2", "b", 2, "30 dBm") + Fields("1,2")), 6);
+        Assert.Equal(ratio, Delivered(terms + Fields(",2")), 6);
+
+        foreach (string mix in new[] { "Port:T1 a 0 Num=1 Z=50 Ohm\n" + Tone("T2", "b", 2, "0 dBm") + Fields(""), Tone("T1", "a", 1, "0 dBm") + Tone("T2", "b", 2, "0 dBm") + Fields("1,") })
+        {
+            var refused = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(mix + Rest + Block("n", "x"), _dir, _dir), new CircuitEvaluationRequest());
+            Assert.Equal(RunStatus.EngineError, refused.Status);
+            Assert.Contains("takes its amplitude from its Pavl", refused.StatusMessage, StringComparison.Ordinal);
+        }
+
+        // The Block control: a new analysis takes the first, one block leaves nothing to choose, and a block a file names stays on show.
+        var fresh = new CircuitRF.Ui.ViewModels.FieldsBodyViewModel { BlockSource = () => ["EM1", "EM2"] };
+        fresh.PickBlock();
+        Assert.Equal("EM1", fresh.Block);
+        Assert.True(fresh.CanChooseBlock);
+        Assert.False(new CircuitRF.Ui.ViewModels.FieldsBodyViewModel { BlockSource = () => ["EM1"] }.CanChooseBlock);
+        Assert.Equal(["EM1", "gone"], new CircuitRF.Ui.ViewModels.FieldsBodyViewModel { BlockSource = () => ["EM1"], Block = "gone" }.Blocks);
+
+        // The control has no typed fallback, so a schematic that does not extract for a reason elsewhere still lists its own blocks.
+        var broken = new CircuitRF.Design.Schematic.SchematicEditModel();
+        broken.Components.Add(new CircuitRF.Design.Schematic.EditableComponent { InstanceName = "EM1", Symbol = CircuitRF.Design.Schematic.SymbolKind.EmFieldData });
+        broken.Components.Add(new CircuitRF.Design.Schematic.EditableComponent { InstanceName = "EM2", Symbol = CircuitRF.Design.Schematic.SymbolKind.EmFieldData });
+        broken.Analyses.Add(new CircuitRF.Core.Design.FieldsAnalysis("F1") { FreqExpr = "1" });
+        Assert.Equal(["EM1", "EM2"], EmFieldBlocks.Paths(broken));
     }
 
     private string RefusalOf(string fields, string around = "Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=50\n", params string[] nets)
