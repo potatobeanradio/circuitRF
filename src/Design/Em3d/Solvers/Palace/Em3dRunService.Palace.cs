@@ -359,10 +359,19 @@ public static partial class Em3dRunService
         control?.BeginStage(ReadingLabel);
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         PalaceRun.PruneIterationFields(post);
+        // The saved fields come over once the results are written, never before: they only feed the 3D view's field plots.
+        void BringFields(string? written)
+        {
+            if (!runner.FieldsPending(runDir)) return;
+            if (written is not null) log.Notes.Add($"The results are written to {written}; the saved fields come next.");
+            var copied = runner.BringFields(runDir, control, ct);
+            if (copied.Note is not null) log.Notes.Add(copied.Note);
+            if (copied.Warning is not null) log.Warnings.Add(copied.Warning);
+        }
         if (problem.IsStatic)
-            return FinishStatic(problem, setup, run.Paths(Me).NpyPath, post, tracker, processes, log, palace, wall.Elapsed);
+            return FinishStatic(problem, setup, run.Paths(Me).NpyPath, post, tracker, processes, log, palace, wall.Elapsed, BringFields);
         if (problem.Type == Em3dProblemType.Eigenmode)
-            return FinishEigen(problem, setup, run.Paths(Me).NpyPath, post, lowering, tracker, processes, log, palace, wall.Elapsed);
+            return FinishEigen(problem, setup, run.Paths(Me).NpyPath, post, lowering, tracker, processes, log, palace, wall.Elapsed, BringFields);
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
         if (readError is not null) return Failed(readError);
@@ -504,6 +513,7 @@ public static partial class Em3dRunService
                                       new EmResultMesh(facts.FinalElements, "elements", facts.DegreesOfFreedom),
                                       (stagedBase, stamp) => WriteSnp(data, stagedBase, setup, problem, lowering, settings, palace, facts, summary,
                                                                       quality, wall.Elapsed, dcLines, stamp));
+        BringFields(published.Snp ?? published.Npy);
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
         log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
@@ -521,7 +531,8 @@ public static partial class Em3dRunService
     /// <c>results/</c> under <c>&lt;key&gt;.palace_es</c> or <c>_ms</c>. No Touchstone: a matrix is not S.
     /// </summary>
     private static Leg FinishStatic(Em3dProblem problem, EmSetup setup, string npyTarget, string post,
-                                    PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
+                                    PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall,
+                                    Action<string?>? bringFields = null)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
         bool es = problem.Type == Em3dProblemType.Electrostatic;
@@ -598,6 +609,7 @@ public static partial class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(npyTarget, data, log);
+        bringFields?.Invoke(npyPath);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
@@ -671,7 +683,8 @@ public static partial class Em3dRunService
     /// whatever Palace wrote (R-em3d23-4d).
     /// </summary>
     private static Leg FinishEigen(Em3dProblem problem, EmSetup setup, string npyTarget, string post, GmshLowering lowering,
-                                   PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
+                                   PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall,
+                                   Action<string?>? bringFields = null)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
         var modes = PalaceRun.ReadModes(Path.Combine(post, PalaceRun.EigFile), out string? error);
@@ -723,6 +736,7 @@ public static partial class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(npyTarget, data, log);
+        bringFields?.Invoke(npyPath);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));

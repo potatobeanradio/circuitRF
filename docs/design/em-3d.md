@@ -1120,8 +1120,9 @@ runs on real Windows are the owner's, logged in `testdata/em3d/f0/README.md` §I
   distribution. A WSL 1 distribution is refused, naming `wsl --set-version <name> 2`.
 - **A run** stages `model.msh` and `config.json` into `~/.circuitrf/runs/<run key>/` through the
   `\\wsl.localhost\` share, runs Palace there under the Spack-linked `mpirun` beside it on the
-  SUBSYSTEM's physical cores, and copies back every CSV, every `palace.json` and any requested field
-  directory. Its memory check uses `free -b` inside and names `.wslconfig`'s `memory=`, with a value from the
+  SUBSYSTEM's physical cores, and copies back every CSV and every `palace.json`. Any requested field
+  directory comes back only AFTER the results are published, as one `tar` stream on wsl.exe's standard
+  output (the share copy is the fallback), counted in MB on its own stage. Its memory check uses `free -b` inside and names `.wslconfig`'s `memory=`, with a value from the
   HOST's memory (less max(2 GB, ¼)), and only where that value would make the run fit; the file is the
   Messages row's reveal link (`EmRunResult.MessageFiles`), printed after the sentence by the CLI.
 - **Cancelling** signals the process group a constant `setsid -w` wrapper leads (TERM, then KILL after

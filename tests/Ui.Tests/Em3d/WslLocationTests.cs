@@ -113,9 +113,10 @@ public sealed class WslLocationTests : IDisposable
         var plan = WslPalaceRunner.Plan("/home/user", runDir);
         Assert.Equal(["model.msh", "config.json"], plan.CopyIn);
         Assert.StartsWith("/home/user/.circuitrf/runs/", plan.LinuxRunDirectory);
-        Assert.Equal(["fields/E.pvtu", "iteration1/palace.json", "palace.json", "port-S.csv", "probe-E.csv"],
+        // The fields are not among the results: they come after the results are published (Gate4c).
+        Assert.Equal(["iteration1/palace.json", "palace.json", "port-S.csv", "probe-E.csv"],
                      WslPalaceRunner.CopyOut(["port-S.csv", "probe-E.csv", "palace.json", "iteration1/palace.json",
-                                              "iteration1/mesh.msh", "fields/E.pvtu", "other/E.pvtu"], ["fields"]));
+                                              "iteration1/mesh.msh", "fields/E.pvtu", "fields/E.csv", "other/E.pvtu"], ["fields"]));
 
         // The run itself, against the fake: what was staged when Palace started, and what came back.
         var wsl = Fake("* Ubuntu Running 2\r\n");
@@ -176,9 +177,90 @@ public sealed class WslLocationTests : IDisposable
             Assert.True(runner is not null, refusal);
             Assert.Equal(savesNone ? [] : ["paraview"], runner!.FieldDirectories);
             Assert.True(runner.Solve(runDir, "{}", palace.Path, 1, null, CancellationToken.None, out _, null, 0).Ok);
+            Assert.Equal(!savesNone, runner.FieldsPending(runDir));
+            runner.BringFields(runDir, null, CancellationToken.None);
         }
         Assert.True(File.Exists(Path.Combine(runDir, "postpro", "port-S.csv")));
         Assert.Equal(!savesNone, File.Exists(Path.Combine(runDir, "postpro", "paraview", "driven", "driven.pvd")));
+    }
+
+    /// <summary>A WSL 8-port run's Touchstone appeared 23 minutes after Palace finished: the saved fields (gigabytes) were
+    /// copied file by file through the share before the results were read, under a stage still saying "solving". The solve
+    /// now brings back only the results; the fields follow, after publishing, as one tar stream counted in MB, and the
+    /// share copy takes over when that stream is not a well-formed archive.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Gate4c_TheFieldsComeAfterTheResults_AsOneCountedStream_OrFileByFileWhenTheStreamFails(bool tarBroken)
+    {
+        var (wsl, runDir) = FieldRun();
+        wsl.TarBroken = tarBroken;
+        var stages = new List<(string Stage, long Done, long Total, string Unit)>();
+        var control = new CircuitRF.Engine.RunControl
+        {
+            Progress = new SyncProgress(p => stages.Add((p.Stage, p.StageCompleted, p.StageTotal, p.StageUnit))),
+            MinReportIntervalMs = 0,
+        };
+        string field = Path.Combine(runDir, "postpro", "paraview", "driven", "Cycle000001", "proc000000.vtu");
+        PalaceFieldCopy copied;
+        using (var runner = new WslPalaceRunner(new WslSession(wsl, "Ubuntu"), "/home/user", null, "none") { FieldDirectories = ["paraview"] })
+        {
+            Assert.True(runner.Solve(runDir, "{}", "/home/user/palace/bin/palace", 1, control, CancellationToken.None, out _, null, 0).Ok);
+            Assert.True(File.Exists(Path.Combine(runDir, "postpro", "port-S.csv")));
+            Assert.False(File.Exists(field));                                   // the results are readable with no field here yet
+            Assert.Contains(stages, s => s.Stage == WslPalaceRunner.ResultsCopyLabel);
+            Assert.True(runner.FieldsPending(runDir));
+
+            copied = runner.BringFields(runDir, control, CancellationToken.None);
+            Assert.False(runner.FieldsPending(runDir));
+        }
+        Assert.Null(copied.Warning);
+        Assert.Contains(tarBroken ? "file by file" : "as one stream", copied.Note);
+        Assert.Equal(3 << 20, new FileInfo(field).Length);
+        Assert.True(File.Exists(Path.Combine(runDir, "postpro", "paraview", "driven", "driven.pvd")));
+        var last = stages.Last(s => s.Stage == WslPalaceRunner.FieldsCopyLabel);
+        Assert.Equal(("MB", 4L, 4L), (last.Unit, last.Done, last.Total));    // 3 MB + a few bytes, rounded up
+        Assert.Contains(wsl.Started, c => c.SkipWhile(a => a != "--exec").Skip(1).Take(4).SequenceEqual(["tar", "-cf", "-", "--"]));
+    }
+
+    /// <summary>A run stopped while its fields come over keeps its results and leaves no partial field folder, which the 3D
+    /// view would otherwise read as the run's fields.</summary>
+    [Fact]
+    public void Gate4d_AFieldCopyStoppedPartWayLeavesNoFieldFolder_AndSaysSo()
+    {
+        var (wsl, runDir) = FieldRun();
+        using var runner = new WslPalaceRunner(new WslSession(wsl, "Ubuntu"), "/home/user", null, "none") { FieldDirectories = ["paraview"] };
+        Assert.True(runner.Solve(runDir, "{}", "/home/user/palace/bin/palace", 1, null, CancellationToken.None, out _, null, 0).Ok);
+
+        var copied = runner.BringFields(runDir, null, new CancellationToken(canceled: true));
+        Assert.Contains("stopped", copied.Warning);
+        Assert.False(Directory.Exists(Path.Combine(runDir, "postpro", "paraview")));
+        Assert.True(File.Exists(Path.Combine(runDir, "postpro", "port-S.csv")));
+    }
+
+    /// <summary>A run directory and a fake distribution whose Palace writes port-S.csv and a 3 MB saved field.</summary>
+    private (FakeWsl Wsl, string RunDir) FieldRun()
+    {
+        string runDir = Path.Combine(_tmp, "run dir");
+        Directory.CreateDirectory(runDir);
+        File.WriteAllText(Path.Combine(runDir, "model.msh"), "$MeshFormat");
+        var wsl = Fake("* Ubuntu Running 2\r\n");
+        wsl.OnStart = (distro, cwd, _) =>
+        {
+            string post = Path.Combine(wsl.Local(distro, cwd!), "postpro");
+            Directory.CreateDirectory(Path.Combine(post, "paraview", "driven", "Cycle000001"));
+            File.WriteAllText(Path.Combine(post, "port-S.csv"), "f (GHz)");
+            File.WriteAllText(Path.Combine(post, "paraview", "driven", "driven.pvd"), "<VTKFile/>");
+            var bytes = new byte[3 << 20];
+            new Random(1).NextBytes(bytes);
+            File.WriteAllBytes(Path.Combine(post, "paraview", "driven", "Cycle000001", "proc000000.vtu"), bytes);
+        };
+        return (wsl, runDir);
+    }
+
+    private sealed class SyncProgress(Action<CircuitRF.Engine.RunProgress> report) : IProgress<CircuitRF.Engine.RunProgress>
+    {
+        public void Report(CircuitRF.Engine.RunProgress value) => report(value);
     }
 
     // ── 5. memory ───────────────────────────────────────────────────────────────────────────────
@@ -416,6 +498,8 @@ internal sealed class FakeWsl(string root) : IWsl
     public List<IReadOnlyList<string>> Commands { get; } = [];
     public List<IReadOnlyList<string>> Started { get; } = [];
     public Action<string, string?, IReadOnlyList<string>>? OnStart { get; set; }
+    /// <summary>The field copy's <c>tar -cf -</c> sends something that is not an archive, as a stream mangled on its way out would.</summary>
+    public bool TarBroken { get; set; }
 
     private const string Home = "/home/user";
 
@@ -449,10 +533,24 @@ internal sealed class FakeWsl(string root) : IWsl
     {
         lock (Started) Started.Add(arguments);
         var (distro, cwd, argv) = Parse(arguments);
+        bool windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        // The field copy's tar: this machine's own tar over the distribution's directory (Windows ships bsdtar as tar.exe).
+        if (argv.Count > 0 && argv[0] == "tar")
+        {
+            var tar = new ProcessStartInfo(TarBroken ? (windows ? "cmd.exe" : "/bin/sh") : windows ? Path.Combine(Environment.SystemDirectory, "tar.exe") : "tar")
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            };
+            tar.Environment["COPYFILE_DISABLE"] = "1";   // no AppleDouble entries from macOS's tar
+            var args = TarBroken
+                ? windows ? new[] { "/c", "echo", "not an archive" } : ["-c", "echo not an archive"]
+                : ["-cf", "-", "-C", Local(distro, cwd!), .. argv.SkipWhile(a => a != "--").Skip(1)];
+            foreach (string a in args) tar.ArgumentList.Add(a);
+            return tar;
+        }
         // The wrapper writes its pid first, as the real one does.
         if (argv.Count > 5 && argv[0] == "setsid") File.WriteAllText(Local(distro, argv[5]), "4242\n");
         OnStart?.Invoke(distro, cwd, argv);
-        bool windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         var psi = new ProcessStartInfo(windows ? "cmd.exe" : "/bin/sh")
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,

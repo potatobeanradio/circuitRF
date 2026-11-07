@@ -25,6 +25,20 @@ internal interface IPalaceRunner : IDisposable
     /// <inheritdoc cref="PalaceRun.FaceModes(string, string, string, int, int, double, CancellationToken, out string?)"/>
     IReadOnlyList<System.Numerics.Complex>? FaceModes(string runDir, string configJson, string palace, int attribute, int count,
                                                       double fHz, CancellationToken ct, out string? note);
+
+    /// <summary>Whether <paramref name="runDir"/>'s saved fields are still where Palace wrote them, to be brought over by
+    /// <see cref="BringFields"/> once the results are published. False where Palace wrote them into the run directory itself.</summary>
+    bool FieldsPending(string runDir) => false;
+
+    /// <summary>The saved fields, brought into <paramref name="runDir"/>'s <c>postpro/</c> AFTER the results are published: they
+    /// are only for the 3D view's field plots, and on a large mesh they are gigabytes the Touchstone must not wait for.</summary>
+    PalaceFieldCopy BringFields(string runDir, RunControl? control, CancellationToken ct) => PalaceFieldCopy.None;
+}
+
+/// <summary>What bringing a run's saved fields over said: a note when they came, a warning when they did not.</summary>
+internal sealed record PalaceFieldCopy(string? Note, string? Warning)
+{
+    public static readonly PalaceFieldCopy None = new(null, null);
 }
 
 /// <summary>Palace on this machine — series 1's route, unchanged.</summary>

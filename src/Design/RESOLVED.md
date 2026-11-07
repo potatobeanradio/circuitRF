@@ -28891,3 +28891,24 @@ Checked on a real evaluation board drawn this way (not in the repo): `PATTERN` r
 counted only what model space reaches; 16 copper polygons with 2 holes, 2 overlaps resolved, nothing left open, 87 vias, 50 unused
 blocks skipped. Its part-number digits read as copper. `check` then reports 6 design-rule errors on that board against the
 technology's own rules, which are the board's and not the import's. Nothing was solved.
+
+## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
+
+- **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was
+  slow about the Touchstone. `WslPalaceRunner.Solve` copied the saved fields back (`postpro/paraview`, on by default) together with the CSVs, one
+  file at a time through the `\\wsl.localhost` share, BEFORE the results were read. Those fields are gigabytes on a large multi-port mesh
+  (`PalaceFieldFiles`: 137 MB per driven port per saved frequency at 147k tetrahedra). The stage still said "solving" and the log said nothing, so
+  the run looked hung with its `postpro` folder half there.
+- **Now.** `Solve` copies only the CSVs and `palace.json` (`CopyOut` excludes the field directories), under `ResultsCopyLabel`. The leg publishes
+  the Touchstone and `.npy` (static and eigenmode runs too), writes one note naming the written file, and only then calls
+  `IPalaceRunner.BringFields`. That copy runs under `FieldsCopyLabel`, counted in MB, and ends with a note giving the size, file count, time and
+  route. A native runner has nothing to bring (default interface members).
+- **Route.** `tar -cf - <field dirs>` in the staging `postpro`, read off wsl.exe's standard output with `System.Formats.Tar`. An entry outside
+  the field directories is refused. The result is then checked against the share's listing, every file present at its own size; any failure
+  falls back to the share copy, and the note says which route was taken and why. **The stream has never run on a real Windows machine.** The
+  fallback and the size check are there because it has not; the first real run's note says whether it held up and how long it took.
+- **A copy that does not finish** (stopped, or a share error) deletes the partial `postpro/paraview` and becomes a warning. The run stays Ok,
+  because its results were already written, and a partial folder would read as the run's fields in the 3D view.
+- **Not a defect, though it looked like one:** the Linux staging directory IS removed when the leg ends, by `using var runner = plan.Runner` in
+  `ExecutePalace`. No explicit `Dispose()` call appears anywhere, which is easy to misread.
+- Gate: `WslLocationTests.Gate4c` (stream, and file by file when the stream is not an archive) and `Gate4d` (stopped part way).
