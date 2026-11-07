@@ -719,3 +719,16 @@ example opens from a copy of the WHOLE workspace**, not its folder: `synthetic-g
 schematic in the sibling `GaNTwoShell` cell, and with only the folder copied the document opened with
 no network and an empty Values table. The lasso is captured mid-drag (`DragBegin` and `DragTo`, never
 `DragEnd`), since its loop is drawn only while the drag is held.
+
+## Open, parked until it recurs: a slow window, then a "killed" report after a close (2026-11-07)
+
+A designer on 1.7.3, Windows x64, reported the application slow, with "Not responding" in the title bar while dragging schematic parts, and little memory or CPU use showing in Task Manager. They closed it, as they describe it normally, and the next launch promoted a report saying the session had been killed without a managed exception. A reboot followed before any stack was taken, so **the cause is unknown** and nothing was changed.
+
+- **The trail is the display a finished run opens.** `addPlot — Smith (now 1)`, then a `.palace_em.npy` load, then `addTrace` on a Rect plot 40 ms later: `AutoOpenOrCreateDataDisplayAsync` switches the plot's type in code, which leaves no note. The last line does not date the death, since nothing notes after it, and EM runs write no breadcrumbs, so a long quiet stretch before these lines is not evidence of anything.
+- **Not reproduced on that path.** The same flow through a real `PlotRenderer.Draw`, on Palace results and on NaN, Inf, zero, DC-row, 40-port and 20,000-point S cubes, finished without a hang or a throw on macOS, 159 ms at worst. A NaN frequency and an empty sweep were not tested.
+- **Unexplained: 18 s between the display's creation and the load's note.** Opening the document and `RefreshAvailableDataSources` run on the UI thread there; reading the file is on a pool thread. Not measured on that machine. It does not explain a slow part drag, because it does not run during one.
+- **A normal close cannot leave this report.** `ProcessExit` deletes the session file, so the process ended some other way. Windows' prompt to close a program that is not responding would do it. If a report follows a close with no such prompt, that is a shutdown bug.
+- **Low CPU does not clear the UI thread:** one pegged thread on 16 logical processors reads about 6%.
+- **Leads, neither shown to apply:** one heavy canvas slowing the whole window through the single compositor (`src/Ui/RESOLVED.md`, "Why one slow canvas stops the whole window"), and `PGHook.dll`, also named in `src/RfCore/RESOLVED.md`.
+
+**If it comes back,** take a stack before anything is restarted: `dotnet-stack report -p <pid>` two or three times during the slowness. First note whether a solver process is still running, whether closing other documents helps, and whether a small example workspace is slow too. An always-on UI-stall note in the trail was considered and not added, since it would run on every user's machine for a question a one-off stack answers better.
