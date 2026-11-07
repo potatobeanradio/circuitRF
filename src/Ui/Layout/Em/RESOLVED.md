@@ -1150,3 +1150,43 @@ Gate: `tests/Ui.Tests/Em/MeshAsMergedShapesUiTests.cs` (7 tests, ~1 s): the pre-
 and without a `PlanarMesh` block, the explicit off, the hash both ways, one undo entry plus invalidate
 without clearing Auto, greyed-not-hidden under the accelerated solve (asserted against the markup), the
 overlay's edge count and pixel count, and the one-count agreement.
+
+## Component ports on a layout's `.cem` panel (brief LCP-3, 2026-11-07)
+
+**One section, two hosts.** `EmComponentPortsContext` (a `.c3d`'s document, path, workspace and elaboration) is gone;
+the list reads `IEmComponentPortsHost` (`EmComponentPortsHost.cs`): `PartsKey`, `PrepareList`, `PrepareCheck`, `Post`.
+`C3dComponentPortsHost` is the old code moved, `C3dProblemAssembly.Assemble` and all. `LayoutComponentPortsHost` reads the
+layout the panel's last refresh resolved and builds through `EmPlanarComponentPorts.Build`, the run's own builder. Each
+`Prepare…` serializes what it reads on the UI thread and the returned function runs on the pool, so neither the projection
+nor the build touches a live layout model off its thread.
+
+**The parts are listed off the UI thread, and only when `PartsKey` moves.** The layout key is the path, the technology and
+each instance's refdes, cell and array shape, not its position: a layout edit refreshes the panel per edit, and a board's
+projection takes seconds, so moving a part must not list them again. A layout edit calls `MarkComponentPortsStale` from the
+workspace's coalesced refresh, which clears the last Check's marks and says the layout changed. It rebuilds nothing.
+
+**An entry naming a part that is not placed now keeps a row, marked, on both hosts.** Before, the rows were the placed parts
+alone and a toggle wrote back only the ticked rows. So on a `.c3d`, a part renamed in its layout lost its entry, Z0 and width
+with it, the next time any box was clicked, and nothing said so. A row is called "not on the layout" only when the listing
+actually read the parts (`EmComponentPartListing.Read`). When nothing could be read (no layout resolved, a 3D view not built
+yet), the named parts get plain rows, because nothing is known either way. An unticked missing row stays until the parts are
+next read, so unticking it moves nothing below it.
+
+**The section is shown by setup type** (`ShowComponentPorts`): hidden on a thermal setup, an electrostatic one and a setup
+that names the cross-section kernel. The electrostatic case now hides it on a `.c3d` too: there are no ports to build there,
+which is `EmComponentPorts.Inapplicable`'s rule. A 3D `.cem` shows the list, and its Check posts
+`ComponentPortsOnLayoutRefusal` until LCP-5. The status line is always laid out (`MinHeight`) rather than toggled.
+
+**The panel says "component port", never "delta gap" (LCP-0 D5).** LCP-1's build notes and `EmPortExtraction`'s notes both
+name the construction. `RefreshPlanar` swaps them, for built component ports only, for the line Check posts
+(`LayoutComponentPortsHost.Describe`). A port the user drew as an internal delta gap keeps its own note. The refusal texts
+are the shared builders' (`EmPartPads`'s "no gap port can be built between them" among them) and are unchanged here.
+
+**Per-part settings live in the Ports list.** A built component port's `EmPortZ0Row` carries `ComponentRefdes`, so
+`CommitPortRow` writes its Z0 into the part's entry and never `PortZ0s`; a width box and, for a part of more than two pads, a
+reference picker write it too. Blank is the default, shown as the placeholder: the setup's Z0 for that port, and the width
+the build used. All three go through `EmComponentPort.Override` (in `src/Design`), which `C3dEditorViewModel.SetComponentPortOverride` now
+calls as well: added beside `*` when the part has no entry, dropped again when it states nothing beside `*`. The pins come
+from the listing, so the planar rows are rebuilt once when it arrives.
+
+Gate: `tests/Ui.Tests/Em/CemComponentPortsPanelTests.cs` (6 tests, ~0.25 s, on LCP-1's board, no solve).

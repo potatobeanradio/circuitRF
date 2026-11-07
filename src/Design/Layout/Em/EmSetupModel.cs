@@ -121,6 +121,39 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
 {
     /// <summary>Overrides nothing: written as its refdes alone.</summary>
     public bool IsPlain => Z0 is null && Reference is null && WidthUm is null;
+
+    /// <summary>
+    /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:
+    /// added beside <c>*</c> when the part had no entry, dropped again when it states nothing beside <c>*</c>. The one rule a
+    /// 3D view's Properties and the setup panel's port rows both write a part's settings through.
+    /// </summary>
+    public static List<EmComponentPort> Override(IReadOnlyList<EmComponentPort> list, string refdes,
+                                                 Func<EmComponentPort, EmComponentPort> change)
+    {
+        var result = list.ToList();
+        int at = result.FindIndex(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase));
+        var entry = change(at >= 0 ? result[at] : new EmComponentPort(refdes));
+        bool all = result.Any(c => c.Refdes == EmSetup.AllComponents);
+        if (at >= 0)
+        {
+            if (entry.IsPlain && all) result.RemoveAt(at);
+            else result[at] = entry;
+        }
+        else if (!entry.IsPlain) result.Add(entry);
+        return result;
+    }
+
+    /// <summary>Why <paramref name="z0"/> cannot be a component port's reference impedance, or null when it can (blank is the default).</summary>
+    public static string? Z0Refusal(string? z0)
+        => z0 is { } zt && zt.Trim().Length > 0 && !(CircuitRF.Design.ThreeD.C3dPorts.TryParseZ0(zt, out var z) && z.Real > 0)
+            ? $"'{zt}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10."
+            : null;
+
+    /// <summary>Why <paramref name="widthUm"/> cannot be a component port's width, or null when it can (null is the default).</summary>
+    public static string? WidthRefusal(double? widthUm)
+        => widthUm is <= 0 || widthUm is double.NaN
+            ? "A port's width is a length greater than zero; leave it blank for the width the pads share."
+            : null;
 }
 
 /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's settings; a null field takes its default.</summary>

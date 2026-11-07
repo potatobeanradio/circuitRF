@@ -755,9 +755,12 @@ else if (c3dSetupPanel is not null)
     var elaboration = new CircuitRF.Design.ThreeD.C3dElaborator().Elaborate(c3dDoc, c3dSetupPanel, panelCws);
     var panelVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(c3dSetupPanel, embedded.Setup!, embedded: true)
     {
-        ComponentPortsContext = new CircuitRF.Ui.Layout.Em.EmComponentPortsContext(() => c3dDoc, () => c3dSetupPanel, () => panelCws, () => elaboration,
-                                                                                    (text, warning) => Console.WriteLine($"message ({(warning ? "warning" : "info")}): {text}")),
+        ComponentPortsHost = new CircuitRF.Ui.Layout.Em.C3dComponentPortsHost(() => c3dDoc, () => c3dSetupPanel, () => panelCws, () => elaboration,
+                                                                               (text, warning) => Console.WriteLine($"message ({(warning ? "warning" : "info")}): {text}")),
     };
+    // The parts are listed off the UI thread: pump until they are.
+    while (!panelVm.ComponentPartsListing.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    Dispatcher.UIThread.RunJobs();
     if (componentPortsCheck)
     {
         // Check runs off the UI thread and finishes on it: pump until it has.
@@ -782,12 +785,28 @@ else if (cem is not null)
         // model of an open .clay), so the panel shows the layout's ports and the stackup's layers.
         ResolveLayout = r => CircuitRF.Design.Layout.Em.EmSetupResolver.Resolve(
             cem, r, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)), new CircuitRF.Design.Layout.TechnologyCache()).Source,
+        PostMessage = (text, warning) => Console.WriteLine($"message ({(warning ? "warning" : "info")}): {text}"),
     };
     setupVm.Refresh();
+    // brief-lcp-3 — the Component ports list is read off the UI thread: pump until it is; --check-component-ports presses Check.
+    while (!setupVm.ComponentPartsListing.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    Dispatcher.UIThread.RunJobs();
+    if (componentPortsCheck)
+    {
+        var checking = setupVm.CheckComponentPortsCommand.ExecuteAsync(null);
+        while (!checking.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    }
+    foreach (var row in setupVm.ComponentPortRows)
+        Console.WriteLine($"{row.Refdes} [{(row.IsIncluded ? "x" : " ")}] {row.PadsText}{(row.IsRefused ? " (left out)" : "")}");
+    foreach (var row in setupVm.PortRows)
+        Console.WriteLine($"port row: {row.Label} Z0 '{row.Text}' ({row.Z0Placeholder}){(row.IsComponent ? $" width '{row.WidthText}' ({row.WidthPlaceholder}) ref {row.ReferenceChoice?.Display}" : "")}");
+    if (setupVm.ShowComponentPorts) Console.WriteLine($"status: {setupVm.ComponentPortsStatus}");
     host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 1200,
                         Content = new EmSetupEditorView { DataContext = new CircuitRF.Ui.Layout.Em.EmSetupDocument(Path.GetFileName(cem), setupVm, cem) } };
     host.Show();
     Pump();
+    if (host.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Name == "ComponentPortsSection") is { IsEffectivelyVisible: true } section)
+        Console.WriteLine($"Component ports section at {section.TranslatePoint(default, host)?.Y:0} px, {section.Bounds.Height:0} px tall");
     foreach (var box in host.GetVisualDescendants().OfType<CheckBox>().Where(b => b.Name is { Length: > 0 } && b.IsEffectivelyVisible))
     {
         var at = box.TranslatePoint(default, host);

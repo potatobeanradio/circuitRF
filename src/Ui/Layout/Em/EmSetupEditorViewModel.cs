@@ -1045,6 +1045,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     private bool _suppressCommit;
 
+    /// <summary>brief-lcp-3 — the layout the last refresh resolved (a <c>.cem</c>'s Component ports list reads it), and the planar
+    /// port rows and component-port build it produced, so the rows can be rebuilt when the parts' pins arrive.</summary>
+    private EmLayoutSource? _componentSource;
+    private IReadOnlyList<EmPortRow>? _lastPlanarPortRows;
+    private EmPlanarComponentPortBuild? _lastComponentBuild;
+
     public EmSetupEditorViewModel(string filePath, EmSetup setup) : this(filePath, setup, embedded: false) { }
 
     /// <summary>
@@ -1059,6 +1065,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         FilePath = filePath;
         Working  = setup;
         IsEmbedded = embedded;
+        // brief-lcp-3 R-lcp3-1 — a .cem's Component ports list reads the layout this panel resolves; a 3D view sets its own host.
+        if (!embedded) _componentPortsHost = new LayoutComponentPortsHost(() => _componentSource, () => PostMessage);
 
         UndoCommand = new RelayCommand(() => UndoRedo.Undo(), () => UndoRedo.CanUndo);
         RedoCommand = new RelayCommand(() => UndoRedo.Redo(), () => UndoRedo.CanRedo);
@@ -1322,6 +1330,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         if (index < 0 || index >= PortRows.Count) return;
 
         var row = PortRows[index];
+        if (row.ComponentRefdes is not null) { CommitComponentPortZ0(row); return; }
         CommitPortZ0Slot(row.PortNumber, row.Text, e => row.Error = e);
     }
 
@@ -2209,6 +2218,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         _geometryCheckSource = null;
         RefreshCore();
+        // brief-lcp-3 — the section follows the setup's type, and the list the parts placed (read again only when they may
+        // have changed: a board's projection is seconds of work).
+        OnPropertyChanged(nameof(ShowComponentPorts));
+        OnPropertyChanged(nameof(ComponentPortsTip));
+        RefreshComponentParts();
         // brief-dfr35-1 R-dfr35-1-7 — off this thread, once this refresh has set the warnings it joins.
         if (_geometryCheckSource is { } checkedSource) GeometryCheck = RefreshGeometryCheckAsync(checkedSource);
     }
@@ -2252,6 +2266,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         ResolvedLayoutPath = null;
         _labelledPortNumbers = [];
+        _componentSource = null;
+        _lastPlanarPortRows = null;
+        _lastComponentBuild = null;
 
         if (IsEmbedded)
         {
@@ -2279,6 +2296,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         LayoutStatus       = Working.LayoutRef;
         ResolvedLayoutPath = source.AbsolutePath;
+        _componentSource   = source;
 
         // Asked of the ARTWORK, and asked HERE rather than in the planar half — the whole point of
         // InternalPortOnTheWrongKernel is to fire when the CROSS-SECTION kernel has been chosen, and
@@ -2465,11 +2483,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var notes = new List<string>(_geometryNotes);
         notes.AddRange(EmFindings.NoteTexts(planar.Findings));
-        notes.AddRange(portLabels.Notes);
-        notes.AddRange(ports.Notes);           // port extraction carries no class
+        // brief-lcp-3 R-lcp3-6 — the panel says "component port" (LCP-0 D5): a built one gets the line Check posts, in place of
+        // the build's note and the extractor's, which name the construction. Only explain and the docs name it.
+        var component = portLabels.ComponentBuild;
+        var componentNotes = component?.Notes.ToHashSet(StringComparer.Ordinal) ?? [];
+        var componentNumbers = component?.Ports.Where(p => p.Ok).Select(p => $"Port {p.Number} (").ToList() ?? [];
+        notes.AddRange(portLabels.Notes.Where(n => !componentNotes.Contains(n)));
+        if (component is not null) notes.AddRange(component.Ports.Where(p => p.Ok).Select(LayoutComponentPortsHost.Describe));
+        notes.AddRange(ports.Notes.Where(n => !componentNumbers.Any(k => n.StartsWith(k, StringComparison.Ordinal))));   // port extraction carries no class
         Notes    = [.. notes];
         Warnings = [.. EmFindings.WarningTexts(planar.Findings)];
 
+        _lastComponentBuild = portLabels.ComponentBuild;
+        _lastPlanarPortRows = ports.Rows;
         RebuildPlanarPortRows(ports.Rows);
         RaiseState();
     }
@@ -2501,6 +2527,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PortRows.Clear();
         for (int i = 0; i < ports.Count; i++)
         {
+            // brief-lcp-3 R-lcp3-3 — a built component port's row is its part's: Z0, width and reference write the entry.
+            if (_lastComponentBuild?.Ports.FirstOrDefault(p => p.Ok && p.Number == ports[i].Number) is { } built)
+            {
+                PortRows.Add(ComponentPortRow(ports[i], built));
+                continue;
+            }
             int slot = ports[i].Number - 1;
             // The EXTRACTOR's own answer for this port, not a second lookup — stated on the label or
             // inferred from the artwork under it. Asking the question a second way here is how the
@@ -3415,4 +3447,33 @@ public sealed partial class EmPortZ0Row : CommunityToolkit.Mvvm.ComponentModel.O
     partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(HasError));
 
     partial void OnKindChanged(PlanarPortKind value) => KindChanged?.Invoke(this);
+
+    // ── brief-lcp-3 R-lcp3-3: a built component port's row ──────────────────────────────────────
+
+    /// <summary>The part this row's port is built on, or null for a port drawn in the layout. A component port's Z0, width and
+    /// reference write the part's entry in the setup, never <see cref="EmSetup.PortZ0s"/>.</summary>
+    public string? ComponentRefdes { get; init; }
+
+    public bool IsComponent => ComponentRefdes is not null;
+
+    /// <summary>What a blank Z0 box means: the setup's reference impedance for this port.</summary>
+    public string Z0Placeholder { get; init; } = "";
+
+    /// <summary>The port's width across its gap, µm; blank is the width the two pads share.</summary>
+    [ObservableProperty] private string _widthText = "";
+
+    /// <summary>The width a blank box builds, µm.</summary>
+    public string WidthPlaceholder { get; init; } = "";
+
+    /// <summary>A part of more than two pads: which pad is the port's negative end.</summary>
+    public bool ShowReference { get; init; }
+
+    public IReadOnlyList<EmPinChoice> ReferenceChoices { get; init; } = [];
+
+    [ObservableProperty] private EmPinChoice? _referenceChoice;
+
+    /// <summary>Raised when the user picks another reference pad. Wired after construction, so seeding raises nothing.</summary>
+    public event Action<EmPortZ0Row>? ReferenceChanged;
+
+    partial void OnReferenceChoiceChanged(EmPinChoice? value) => ReferenceChanged?.Invoke(this);
 }

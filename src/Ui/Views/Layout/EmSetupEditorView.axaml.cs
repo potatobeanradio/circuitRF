@@ -381,8 +381,10 @@ public partial class EmSetupEditorView : UserControl
 
     private void CommitPortRow(object? sender)
     {
-        if (sender is not Control { DataContext: EmPortZ0Row row }) return;
+        if (sender is not Control { DataContext: EmPortZ0Row row } box) return;
         if (DataContext is not EmSetupDocument doc) return;
+        // brief-lcp-3 — a component port row's width box writes the part's entry.
+        if (box.Tag is "ComponentWidth") { doc.ViewModel.CommitComponentPortWidth(row); return; }
         int index = doc.ViewModel.PortRows.IndexOf(row);
         if (index >= 0) doc.ViewModel.CommitPortRow(index);
     }

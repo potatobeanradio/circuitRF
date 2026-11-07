@@ -375,8 +375,8 @@ public sealed partial class C3dEditorViewModel
             vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration, () => FilePath, () => ResultsRootProvider?.Invoke());
         // brief-emb-1 R-emb1-8 — the Component ports list reads this document's placed layouts and builds through the run's own code.
         if (!item.IsExternal)
-            vm.ComponentPortsContext = new EmComponentPortsContext(() => Document, () => FilePath, _workspaceCws, () => Elaboration,
-                                                                   (text, warning) => PostMessage?.Invoke(text, warning));
+            vm.ComponentPortsHost = new C3dComponentPortsHost(() => Document, () => FilePath, _workspaceCws, () => Elaboration,
+                                                              (text, warning) => PostMessage?.Invoke(text, warning));
         if (!item.IsExternal)
         {
             string name = item.Name;
@@ -1033,23 +1033,13 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? SetComponentPortOverride(string refdes, string? z0, double? widthUm)
     {
-        if (z0 is { } zt && (!C3dPorts.TryParseZ0(zt, out var z) || !(z.Real > 0)))
-            return $"'{zt}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10.";
-        if (widthUm is <= 0) return "A port's width is a length greater than zero; leave it blank for the width the pads share.";
+        if (z0 is not null && EmComponentPort.Z0Refusal(z0) is { } z0Why) return z0Why;
+        if (EmComponentPort.WidthRefusal(widthUm) is { } widthWhy) return widthWhy;
         if (ActiveSetupName is not { } name || C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is not { Setup: { } current } item)
             return "No setup is active, so there is no component port to change.";
         var setup = EmSetupPersistence.Deserialize(EmSetupPersistence.Serialize(current));
-        var list = setup.ComponentPorts.ToList();
-        int at = list.FindIndex(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase));
-        var entry = (at >= 0 ? list[at] : new EmComponentPort(refdes)) with { Z0 = z0?.Trim(), WidthUm = widthUm };
-        bool all = list.Any(c => c.Refdes == EmSetup.AllComponents);
-        if (at >= 0)
-        {
-            if (entry.IsPlain && all) list.RemoveAt(at);
-            else list[at] = entry;
-        }
-        else if (!entry.IsPlain) list.Add(entry);
-        setup.ComponentPorts = list;
+        // brief-lcp-3 — the one rule the setup panel's port rows write through too.
+        setup.ComponentPorts = EmComponentPort.Override(setup.ComponentPorts, refdes, e => e with { Z0 = string.IsNullOrWhiteSpace(z0) ? null : z0.Trim(), WidthUm = widthUm });
         ChangeRecords($"Component port {refdes}", d => d.Setups[item.Index] = EmSetupPersistence.ToEmbedded(setup));
         return null;
     }

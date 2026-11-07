@@ -1,36 +1,48 @@
-// brief-emb-1 R-emb1-8 — the 3D setup panel's "Component ports" list: every part placed on the 3D view's layout, a box to
-// include it (writing the setup's ComponentPorts through the panel's one undoable commit), "Every two-terminal part" for `*`,
-// and Check, which builds and verifies the ports exactly as a run would (C3dProblemAssembly.Assemble — the run's own function)
-// and posts each part's verdict to Messages: the same lines `explain --component-ports` and `check` print. The panel itself
-// keeps one short line and marks a part that was left out; the sentences live in Messages, where they can be read and
-// copied without crowding the setup. A picker, not a text box: the parts can be listed, so a misspelt refdes cannot be written.
+// brief-emb-1 R-emb1-8 — the setup panel's "Component ports" list: every placed part, a box to include it (writing the
+// setup's ComponentPorts through the panel's one undoable commit), "Every two-terminal part" for `*`, and Check, which builds
+// and verifies the ports exactly as a run would and posts each part's verdict to Messages. The panel itself keeps one short
+// line and marks a part that was left out; the sentences live in Messages, where they can be read and copied without crowding
+// the setup. A picker, not a text box: the parts can be listed, so a misspelt refdes cannot be written.
+//
+// brief-lcp-3 — one section, two hosts (IEmComponentPortsHost): a 3D view's setup, and a layout's .cem. The list, the boxes,
+// Check and the status line are the same on both. On a Planar .cem each built component port also has a row in the Ports
+// list ("Port 3 · C1"), where its Z0, width and reference pin are set; those write the part's entry, never PortZ0s.
+//
+// An entry naming a part that is not placed keeps a row, marked, so it can be unticked: renaming a part in the layout must
+// not erase its settings without saying so. The parts are read again only when what is placed may have changed
+// (IEmComponentPortsHost.PartsKey), off the UI thread; a layout edit only marks the last Check's verdicts stale.
 
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CircuitRF.Design.Layout.Em;
-using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Mom;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Layout.Em;
 
-/// <summary>What the Component ports list reads of the 3D view it is embedded in: its document, path, workspace and the
-/// elaboration the view already holds (for the list of placed parts), and where Check's verdicts are posted (Messages:
-/// the text, and whether it is a warning).</summary>
-public sealed record EmComponentPortsContext(Func<C3dDocument> Document, Func<string> Path, Func<string?> Workspace,
-                                             Func<C3dElaboration?> Elaboration, Action<string, bool>? Post = null);
-
-/// <summary>One placed part in the list.</summary>
-public sealed partial class EmComponentPortRow(EmSetupEditorViewModel owner, string refdes, int pads) : ObservableObject
+/// <summary>One part in the list: placed, or named by the setup and not placed.</summary>
+public sealed partial class EmComponentPortRow(EmSetupEditorViewModel owner, string refdes, int pads, bool missing = false, bool unread = false)
+    : ObservableObject
 {
     public string Refdes { get; } = refdes;
 
-    /// <summary>"2 pads", or "3 pads: one port per signal pad".</summary>
-    public string PadsText { get; } = pads == 2 ? "2 pads" : $"{pads} pads";
+    /// <summary>The setup names this part and nothing by that name is placed.</summary>
+    public bool IsMissing { get; } = missing;
+
+    /// <summary>"2 pads", "3 pads", or "not on the layout"; nothing when the parts could not be read, which says nothing either way.</summary>
+    public string PadsText { get; } = unread ? "" : missing ? "not on the layout" : pads == 2 ? "2 pads" : $"{pads} pads";
+
+    /// <summary>A placed part with two pads: what <c>*</c> takes.</summary>
+    public bool IsTwoTerminal => !IsMissing && PadsText == "2 pads";
 
     [ObservableProperty] private bool _isIncluded;
 
     /// <summary>The last Check left this part out; why is in Messages.</summary>
     [ObservableProperty] private bool _isRefused;
+
+    /// <summary>Drawn as a warning: left out by the last Check, or not on the layout.</summary>
+    public bool IsMarked => IsRefused || IsMissing;
 
     internal bool Syncing;
 
@@ -38,26 +50,50 @@ public sealed partial class EmComponentPortRow(EmSetupEditorViewModel owner, str
     {
         if (!Syncing) owner.ComponentPortToggled();
     }
+
+    partial void OnIsRefusedChanged(bool value) => OnPropertyChanged(nameof(IsMarked));
+}
+
+/// <summary>One row of a component port's reference picker: a pin of the part, or the default.</summary>
+public sealed record EmPinChoice(string? Pin, string Display)
+{
+    public override string ToString() => Display;
 }
 
 public sealed partial class EmSetupEditorViewModel
 {
-    private EmComponentPortsContext? _componentPortsContext;
+    private IEmComponentPortsHost? _componentPortsHost;
+    private string? _componentPartsKey;
+    private int _componentPartsGeneration;
+    private IReadOnlyList<EmComponentPart> _placedParts = [];
+    private bool _placedPartsRead;
 
-    /// <summary>Set by the 3D view's editor; null on a <c>.cem</c>, which shows no list.</summary>
-    public EmComponentPortsContext? ComponentPortsContext
+    /// <summary>Where the list reads its parts and builds its ports. A 3D view sets its own; a <c>.cem</c> reads the layout this
+    /// panel resolves.</summary>
+    public IEmComponentPortsHost? ComponentPortsHost
     {
-        get => _componentPortsContext;
+        get => _componentPortsHost;
         set
         {
-            _componentPortsContext = value;
+            _componentPortsHost = value;
+            _componentPartsKey = null;
             OnPropertyChanged(nameof(ShowComponentPorts));
-            ListComponentParts();
+            RefreshComponentParts();
         }
     }
 
-    /// <summary>An embedded 3D EM setup: a thermal one has no ports, a <c>.cem</c> builds none (component ports are a 3D view's).</summary>
-    public bool ShowComponentPorts => IsEmbedded && Is3DSetup && !IsThermalSetup && ComponentPortsContext is not null;
+    /// <summary>Set by the workspace on a <c>.cem</c>: posts one line to Messages, and whether it is a warning.</summary>
+    public Action<string, bool>? PostMessage { get; set; }
+
+    /// <summary>The listing the last refresh started, for a caller that has to wait for it.</summary>
+    public Task ComponentPartsListing { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// R-lcp3-2 — by setup type, so the section's place is reserved as the rest of the panel's is: hidden on a thermal setup and an
+    /// electrostatic one (no ports), and on a setup that names the uniform-line kernel, whose ports are the line's two ends.
+    /// </summary>
+    public bool ShowComponentPorts => ComponentPortsHost is not null && !IsThermalSetup && !IsElectrostaticSetup
+                                      && (Is3DSetup || Working.AnalysisKind != EmAnalysisKind.CrossSection);
 
     public ObservableCollection<EmComponentPortRow> ComponentPortRows { get; } = [];
 
@@ -67,74 +103,141 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>What the last Check found, or why the list is empty.</summary>
     [ObservableProperty] private string _componentPortsStatus = "";
 
-    public static string ComponentPortsTip { get; } =
+    /// <summary>R-lcp3-6 — the section's one explanation, for the solver that builds the ports.</summary>
+    public string ComponentPortsTip => Is3DSetup ? ComponentPortsTip3D : ComponentPortsTipPlanar;
+
+    public static string ComponentPortsTip3D { get; } =
         "A lumped gap port across each chosen part's own pads, built on the board's copper and checked before meshing: the " +
         "sheet's ends land on the closest copper (a landing rectangle where that copper is a cap or an arc), and nothing it " +
         "touches bridges two nets. A part with more pads gets one port per signal pad against its own ground pad. A finished " +
         "driven run also writes <setup>_cosim.cnl: the board's N-port with each part's model across its port. With Create SnP schematic " +
         "on, the same circuit is also made as a <setup>_cosim cell.";
 
+    public static string ComponentPortsTipPlanar { get; } =
+        "A component port across each chosen part's own pads. The solver adds a strip of copper between the two pads and puts " +
+        "the port across it, in the gap between the pads; the strip exists in the solved problem only, and nothing is added to " +
+        "the layout. A part with more pads gets one port per signal pad against its own ground pad. Check builds them as a run " +
+        "would and says in Messages why any part is left out. Each port's Z0, width and reference pin are set in its row under Ports.";
+
     /// <summary>Builds and verifies the ports as a run would, off the UI thread (a board's elaboration and every part's port
-    /// is seconds of work): the document is read as it stands when Check is pressed, and the panel stays usable meanwhile.
-    /// The button is disabled until it finishes.</summary>
+    /// is seconds of work): the setup and its geometry are read as they stand when Check is pressed, and the panel stays usable
+    /// meanwhile. The button is disabled until it finishes.</summary>
     [RelayCommand]
     private async Task CheckComponentPorts()
     {
-        if (ComponentPortsContext is not { } ctx) return;
+        if (ComponentPortsHost is not { } host) return;
         foreach (var row in ComponentPortRows) row.IsRefused = false;
         if (Working.ComponentPorts.Count == 0) { ComponentPortsStatus = "No part is chosen."; return; }
-        string path = ctx.Path(), documentText = C3dPersistence.Serialize(ctx.Document());
-        string? workspace = ctx.Workspace();
-        var setup = C3dSetups.ForRun(Working, path);
+        var check = host.PrepareCheck(Working);
         ComponentPortsStatus = "Checking…";
-        var g = await Task.Run(() => C3dProblemAssembly.Assemble(setup, C3dPersistence.Deserialize(documentText), path, workspace));
-        if (g.ComponentPorts is not { } build)
+        EmComponentPortCheck result;
+        try { result = await Task.Run(check); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException)
         {
-            ctx.Post?.Invoke($"Component ports: {g.Refusal ?? "the ports were not built."}", true);
-            ComponentPortsStatus = "Not built; see Messages.";
-            return;
+            result = EmComponentPortCheck.Refused($"Component ports: {e.Message}");
         }
-        foreach (var p in build.Ports)
+        foreach (var p in result.Ports)
         {
-            ctx.Post?.Invoke(p.Ok ? C3dComponentPorts.Describe(p) : p.Refusal!, !p.Ok);
+            host.Post(p.Line, !p.Ok);
             if (!p.Ok && ComponentPortRows.FirstOrDefault(r => r.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)) is { } row)
                 row.IsRefused = true;
         }
-        // The left-out parts were just posted with their reasons; the build's other warnings (no model on the schematic) follow.
-        var refusals = build.Ports.Where(p => p.Refusal is not null).Select(p => p.Refusal!).ToList();
-        foreach (string w in build.Warnings.Where(w => !refusals.Any(r => w.StartsWith(r, StringComparison.Ordinal))))
-            ctx.Post?.Invoke(w, true);
-        if (build.Refusal is { } whole) ctx.Post?.Invoke(whole, true);
-        int ok = build.Ports.Count(p => p.Ok), left = build.Ports.Count - ok;
-        ComponentPortsStatus = build.Refusal is not null || g.Refusal is not null ? "Not built; see Messages."
+        foreach (string w in result.Warnings) host.Post(w, true);
+        if (result.Refusal is { } whole) host.Post(whole, true);
+        int ok = result.Ports.Count(p => p.Ok), left = result.Ports.Count - ok;
+        ComponentPortsStatus = result.NotBuilt ? "Not built; see Messages."
             : left == 0 ? $"{ok} built; details in Messages."
             : $"{ok} built, {left} left out; see Messages.";
+        _componentPortsChecked = true;
     }
 
-    /// <summary>The placed parts, listed off the elaboration the view holds, each ticked as the setup names it.</summary>
-    public void ListComponentParts()
+    private bool _componentPortsChecked;
+
+    /// <summary>R-lcp3-5 — the layout was edited: the last Check's verdicts no longer describe it. Nothing is rebuilt here; on a
+    /// board that is seconds of work, and Check is one press away.</summary>
+    public void MarkComponentPortsStale()
+    {
+        if (!_componentPortsChecked) return;
+        _componentPortsChecked = false;
+        foreach (var row in ComponentPortRows) row.IsRefused = false;
+        ComponentPortsStatus = "The layout has changed since the last Check.";
+    }
+
+    /// <summary>The placed parts, read again when what is placed may have changed (or <paramref name="force"/>), off the UI thread.</summary>
+    public void RefreshComponentParts(bool force = false)
+    {
+        if (ComponentPortsHost is not { } host || !ShowComponentPorts)
+        {
+            _componentPartsKey = null;
+            _componentPartsGeneration++;
+            ComponentPortRows.Clear();
+            return;
+        }
+        string key = host.PartsKey();
+        if (!force && key == _componentPartsKey) return;
+        _componentPartsKey = key;
+        int mine = ++_componentPartsGeneration;
+        Func<EmComponentPartListing> list;
+        try { list = host.PrepareList(); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException)
+        {
+            list = () => EmComponentPartListing.Unread(e.Message);
+        }
+        ComponentPartsListing = ListComponentPartsAsync(list, mine);
+    }
+
+    private async Task ListComponentPartsAsync(Func<EmComponentPartListing> list, int mine)
+    {
+        EmComponentPartListing listing;
+        try { listing = await Task.Run(list); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException)
+        {
+            listing = EmComponentPartListing.Unread($"The parts could not be listed: {e.Message}");
+        }
+        if (mine != _componentPartsGeneration) return;
+        _placedParts = listing.Parts;
+        _placedPartsRead = listing.Read;
+        _componentPortsChecked = false;
+        RebuildComponentPortRows();
+        ComponentPortsStatus = listing.Status ?? "";
+        // The Ports list's component rows name each part's pins in their reference picker.
+        if (_lastPlanarPortRows is { } rows && _lastComponentBuild?.Ports.Any(p => p.Ok) == true) RebuildPlanarPortRows(rows);
+    }
+
+    /// <summary>One row per placed part, then one per part the setup names that is not placed (or, when the parts could not be
+    /// read, that is simply named: it can still be unticked).</summary>
+    private void RebuildComponentPortRows()
     {
         ComponentPortRows.Clear();
-        if (ComponentPortsContext is not { } ctx || !ShowComponentPorts) return;
-        if (ctx.Elaboration() is not { } e) { ComponentPortsStatus = "The 3D view has not been built yet."; return; }
-        foreach (var (refdes, pads, _) in C3dComponentPorts.PlacedParts(e))
-            ComponentPortRows.Add(new EmComponentPortRow(this, refdes, pads));
-        ComponentPortsStatus = ComponentPortRows.Count == 0 ? "No part with a reference designator is placed on this 3D view's layout." : "";
+        foreach (var part in _placedParts)
+            ComponentPortRows.Add(new EmComponentPortRow(this, part.Refdes, part.Pads));
+        foreach (var entry in Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents))
+            if (!ComponentPortRows.Any(r => r.Refdes.Equals(entry.Refdes.Trim(), StringComparison.OrdinalIgnoreCase)))
+                ComponentPortRows.Add(new EmComponentPortRow(this, entry.Refdes.Trim(), 0, missing: _placedPartsRead, unread: !_placedPartsRead));
         SyncComponentPortRows();
     }
 
     /// <summary>The boxes, from the setup (after an undo, or a setup edited elsewhere).</summary>
     private void SyncComponentPortRows()
     {
+        // An undo can bring back an entry for a part that is not placed: it gets its row again. An unticked one keeps its row
+        // until the parts are next read, so unticking it moves nothing below it (R-lcp3-7).
+        if (_componentPartsKey is not null && Working.ComponentPorts.Any(c => c.Refdes != EmSetup.AllComponents
+                && !ComponentPortRows.Any(r => r.Refdes.Equals(c.Refdes.Trim(), StringComparison.OrdinalIgnoreCase))))
+        {
+            RebuildComponentPortRows();
+            return;
+        }
         bool all = Working.ComponentPorts.Any(c => c.Refdes == EmSetup.AllComponents);
+        bool was = _suppressCommit;
         _suppressCommit = true;
         AllComponentParts = all;
-        _suppressCommit = false;
+        _suppressCommit = was;
         foreach (var row in ComponentPortRows)
         {
             row.Syncing = true;
-            row.IsIncluded = all ? row.PadsText == "2 pads"
-                                 : Working.ComponentPorts.Any(c => c.Refdes.Equals(row.Refdes, StringComparison.OrdinalIgnoreCase));
+            bool named = Working.ComponentPorts.Any(c => c.Refdes.Trim().Equals(row.Refdes, StringComparison.OrdinalIgnoreCase));
+            row.IsIncluded = named || (all && row.IsTwoTerminal);
             row.Syncing = false;
         }
     }
@@ -147,10 +250,10 @@ public sealed partial class EmSetupEditorViewModel
         Working.ComponentPorts = value ? [new EmComponentPort(EmSetup.AllComponents), .. Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && !c.IsPlain)]
                                : [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes))];
         SyncComponentPortRows();
-        CommitEdit(before, "Component ports");
+        CommitComponentPorts(before, "Component ports");
     }
 
-    /// <summary>A row's box was clicked: the setup names exactly the ticked parts (an entry's Z0 and Reference are kept).</summary>
+    /// <summary>A row's box was clicked: the setup names exactly the ticked parts (an entry's Z0, Reference and width are kept).</summary>
     internal void ComponentPortToggled()
     {
         string before = SnapshotJson();
@@ -159,10 +262,97 @@ public sealed partial class EmSetupEditorViewModel
         AllComponentParts = false;
         _suppressCommit = false;
         foreach (var row in ComponentPortRows) row.IsRefused = false;
+        _componentPortsChecked = false;
         ComponentPortsStatus = "";
-        CommitEdit(before, "Component ports");
+        CommitComponentPorts(before, "Component ports");
     }
 
     private EmComponentPort Keep(string refdes)
-        => Working.ComponentPorts.FirstOrDefault(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase)) ?? new EmComponentPort(refdes);
+        => Working.ComponentPorts.FirstOrDefault(c => c.Refdes.Trim().Equals(refdes, StringComparison.OrdinalIgnoreCase)) ?? new EmComponentPort(refdes);
+
+    /// <summary>One undo entry. On a <c>.cem</c> the entry's own apply refreshes the panel, so the Ports list shows the ports the
+    /// run would build; the mesh shown no longer has them. A 3D view rebuilds from the committed document itself.</summary>
+    private void CommitComponentPorts(string before, string description)
+    {
+        if (SnapshotJson() == before) return;
+        CommitEdit(before, description);
+        if (!IsEmbedded) InvalidateMesh();
+    }
+
+    // ── R-lcp3-3: a built component port's row in the Ports list ─────────────────────────────────────────────────────────
+
+    /// <summary>A component port row's Z0 box: blank is the setup's reference impedance for that port.</summary>
+    public void CommitComponentPortZ0(EmPortZ0Row row)
+    {
+        if (row.ComponentRefdes is not { } rd || _suppressCommit) return;
+        string text = row.Text.Trim();
+        if (EmComponentPort.Z0Refusal(text) is { } why) { row.Error = why; return; }
+        row.Error = null;
+        SetComponentPortEntry(rd, e => e with { Z0 = text.Length == 0 ? null : text }, $"Component port {rd} Z0");
+    }
+
+    /// <summary>A component port row's width box, µm: blank is the width the two pads share.</summary>
+    public void CommitComponentPortWidth(EmPortZ0Row row)
+    {
+        if (row.ComponentRefdes is not { } rd || _suppressCommit) return;
+        string text = row.WidthText.Trim();
+        double? width = null;
+        if (text.Length > 0)
+        {
+            if (!NumericText.TryParseDouble(text, out double w)) { row.Error = "The width is a number of micrometres, or blank for the width the pads share."; return; }
+            width = w;
+        }
+        if (EmComponentPort.WidthRefusal(width) is { } why) { row.Error = why; return; }
+        row.Error = null;
+        SetComponentPortEntry(rd, e => e with { WidthUm = width }, $"Component port {rd} width");
+    }
+
+    /// <summary>A component port row's reference picker: the part's pad that is the port's negative end.</summary>
+    private void CommitComponentPortReference(EmPortZ0Row row)
+    {
+        if (row.ComponentRefdes is not { } rd || _suppressCommit) return;
+        string? pin = row.ReferenceChoice?.Pin;
+        SetComponentPortEntry(rd, e => e with { Reference = pin }, $"Component port {rd} reference");
+    }
+
+    /// <summary>The part's entry changed through <see cref="EmComponentPort.Override"/> (the rule a 3D view's Properties writes
+    /// through): one undo entry, none when nothing changed.</summary>
+    private void SetComponentPortEntry(string refdes, Func<EmComponentPort, EmComponentPort> change, string description)
+    {
+        string before = SnapshotJson();
+        Working.ComponentPorts = EmComponentPort.Override(Working.ComponentPorts, refdes, change);
+        CommitComponentPorts(before, description);
+    }
+
+    /// <summary>The Ports list's row for a built component port: named by its part, no type (a component port's is not a
+    /// choice), its Z0, width and reference read from the part's entry, blank showing the default as a placeholder.</summary>
+    private EmPortZ0Row ComponentPortRow(EmPortRow port, EmPlanarComponentPort built)
+    {
+        var entry = Keep(built.Refdes);
+        var pins = _placedParts.FirstOrDefault(p => p.Refdes.Equals(built.Refdes, StringComparison.OrdinalIgnoreCase))?.Pins ?? [];
+        var choices = new List<EmPinChoice> { new(null, "Ground pad") };
+        choices.AddRange(pins.Select(p => new EmPinChoice(p, $"Pin {p}")));
+        if (entry.Reference is { Length: > 0 } stated && !choices.Any(c => c.Pin == stated))
+            choices.Add(new EmPinChoice(stated, $"{stated}  — not a pin of {built.Refdes}"));
+        var row = new EmPortZ0Row
+        {
+            PortNumber = port.Number,
+            PortLabel = port.Label,
+            Label = $"Port {port.Number} · {built.Name}",
+            ComponentRefdes = built.Refdes,
+            ShowKind = false,
+            Kind = port.Kind,
+            Problem = port.Problem,
+            Text = entry.Z0 ?? "",
+            Z0Placeholder = FormatComplexOhms(Working.ResolvePortZ0(port.Number - 1)),
+            WidthText = entry.WidthUm?.ToString("G6", CultureInfo.InvariantCulture) ?? "",
+            WidthPlaceholder = built.WidthM > 0 ? (built.WidthM * 1e6).ToString("0.#", CultureInfo.InvariantCulture) : "pads",
+            ShowReference = pins.Count > 2 || entry.Reference is { Length: > 0 },
+            ReferenceChoices = choices,
+            ReferenceChoice = choices.FirstOrDefault(c => c.Pin == entry.Reference) ?? choices[0],
+        };
+        // Wired after construction: seeding the picker from the entry must not commit.
+        row.ReferenceChanged += CommitComponentPortReference;
+        return row;
+    }
 }

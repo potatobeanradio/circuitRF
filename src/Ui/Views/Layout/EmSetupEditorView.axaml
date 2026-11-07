@@ -1131,11 +1131,12 @@
                     <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
                                          Text="{Binding ViewModel.MeshFrequency3DError}"
                                          IsVisible="{Binding ViewModel.MeshFrequency3DError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                    <!-- brief-emb-1 R-emb1-8 — a lumped gap port across each chosen part's own pads; Check builds and verifies
-                         them as a run would and shows each verdict. A picker: the placed parts are listed. -->
+                    <!-- brief-emb-1 R-emb1-8 — a port across each chosen part's own pads; Check builds and verifies them as a
+                         run would and shows each verdict. A picker: the placed parts are listed. brief-lcp-3: the same section
+                         on a 3D view's setup and on a layout's .cem, shown by setup type; its tooltip follows the solver. -->
                     <StackPanel Name="ComponentPortsSection" Margin="0,10,0,0" Spacing="4"
                                 IsVisible="{Binding ViewModel.ShowComponentPorts}"
-                                ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.ComponentPortsTip}">
+                                ToolTip.Tip="{Binding ViewModel.ComponentPortsTip}">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Text="Component ports" FontWeight="SemiBold" VerticalAlignment="Center"/>
                             <Button Grid.Column="1" Content="Check" Padding="10,2"
@@ -1152,7 +1153,7 @@
                                     <DataTemplate x:DataType="em:EmComponentPortRow">
                                         <Grid ColumnDefinitions="90,*" Margin="0,1">
                                             <CheckBox Content="{Binding Refdes}" IsChecked="{Binding IsIncluded}" VerticalAlignment="Center"
-                                                      Classes.refused="{Binding IsRefused}"/>
+                                                      Classes.refused="{Binding IsMarked}"/>
                                             <TextBlock Grid.Column="1" Text="{Binding PadsText}" FontSize="11" Opacity="0.7"
                                                        VerticalAlignment="Center"/>
                                         </Grid>
@@ -1160,8 +1161,8 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <TextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" Opacity="0.7"
-                                   IsVisible="{Binding ViewModel.ComponentPortsStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- R-lcp3-7: always laid out, so a status appearing or clearing moves nothing below it. -->
+                        <TextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" Opacity="0.7" MinHeight="15"/>
                     </StackPanel>
                   </StackPanel>
                 </Border>
@@ -1698,7 +1699,7 @@
                                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="{Binding Label}"
                                                VerticalAlignment="Center"/>
                                     <TextBox Grid.Row="0" Grid.Column="1" Classes="num" Tag="PortRow"
-                                             Text="{Binding Text}"
+                                             Text="{Binding Text}" PlaceholderText="{Binding Z0Placeholder}"
                                              LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"/>
                                     <TextBlock Grid.Row="0" Grid.Column="2" Classes="colhdr" Text="Ω"
                                                VerticalAlignment="Center" HorizontalAlignment="Left"/>
@@ -1721,6 +1722,21 @@
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
+                                    <!-- brief-lcp-3 R-lcp3-3: a component port's width across its gap and, for a part of more
+                                         than two pads, which pad is its negative end; both write the part's entry, and blank is
+                                         the default, shown as the placeholder. It has no type row: a component port's is not a
+                                         choice. -->
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal"
+                                                Spacing="6" Margin="0,2,0,0" IsVisible="{Binding IsComponent}">
+                                        <TextBox Classes="num" Tag="ComponentWidth" Width="86"
+                                                 Text="{Binding WidthText}" PlaceholderText="{Binding WidthPlaceholder}"
+                                                 LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"
+                                                 ToolTip.Tip="The component port's width across its gap, in µm, centred where the pads put it. Blank: the width the two pads share."/>
+                                        <TextBlock Classes="colhdr" Text="µm wide" VerticalAlignment="Center"/>
+                                        <ComboBox FontSize="11" MinWidth="120" IsVisible="{Binding ShowReference}"
+                                                  ItemsSource="{Binding ReferenceChoices}" SelectedItem="{Binding ReferenceChoice}"
+                                                  ToolTip.Tip="The pad that is this component port's negative end. Ground pad: the part's own ground pad."/>
+                                    </StackPanel>
                                     <SelectableTextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" FontSize="10"
                                                Foreground="{DynamicResource CrfWarningBrush}"
                                                Text="{Binding Error}"

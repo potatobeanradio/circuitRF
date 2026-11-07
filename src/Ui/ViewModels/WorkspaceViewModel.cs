@@ -8333,6 +8333,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 RunRequested  = RunEmSetupAsync,
                 MeshRequested = MeshEmSetupAsync,
                 ResultsRootProvider = () => GetResultsRoot(),
+                // brief-lcp-3 — Component ports' Check posts each part's verdict here, as a 3D view's does.
+                PostMessage = (text, warning) => { if (warning) Messages.Warning(text, absolutePath); else Messages.Info(text, absolutePath); },
             };
             vm.SaveError        += m => Messages.Error(m);
             vm.EmSetupSaved     += p => Messages.Success("Saved", p);
@@ -9095,6 +9097,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     continue;
 
                 vm.InvalidateMesh();
+                vm.MarkComponentPortsStale();   // brief-lcp-3 R-lcp3-5 — the last Check no longer describes the layout
                 vm.Refresh();
             }
 
