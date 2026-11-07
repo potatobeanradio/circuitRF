@@ -467,7 +467,9 @@ internal static class CliDiagnostics
         "       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)\n" +
         "       oasis:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties\n" +
         "       --no-coalesce  keep a painted pour's individual strokes\n" +
-        "       --arc-tolerance <len>  a gerber source's arc flattening (default 1um)");
+        "       --arc-tolerance <len>  a gerber source's arc flattening (default 1um)\n" +
+        "       --layer-map <map>  a dxf source's layers: LAYER=target,... (needs --tech)\n" +
+        "       --join-tolerance <len>  with --layer-map: how far apart two open ends may close (default 1um)");
 
     // ── brief-oasis-gdstk.md §7d — --engine ──────────────────────────────────────────────────────────
 
@@ -628,6 +630,17 @@ internal static class CliDiagnostics
     /// <summary>brief-gerber-import-target-technology R-gt-7 — <c>--into-tech</c> and <c>--tech</c> say two different
     /// things about one technology (use it as it is; or donate from it to a new one), so the pair is refused rather
     /// than ordered.</summary>
+    public static Diagnostic ConvertBadJoinTolerance(string text) => Diagnostic.Create(
+        "convert.args.join-tolerance", DiagnosticSeverity.Error,
+        "--join-tolerance wants a length with its unit, e.g. 1um — got '{text}'.", ("text", text));
+
+    public static Diagnostic ConvertLayerMapNeedsTech() => new(
+        "convert.layer-map.needs-tech", DiagnosticSeverity.Error,
+        "--layer-map needs --tech: its targets are layers of a technology, and copper is what the stackup says it is.");
+
+    public static Diagnostic ConvertLayerMapRefused(string reason) => Diagnostic.Create(
+        "convert.layer-map.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
     public static Diagnostic ConvertIntoTechWithTech() => new(
         "convert.into-tech.with-tech", DiagnosticSeverity.Error,
         "--into-tech and --tech cannot be given together: --into-tech imports into that technology and writes none, " +

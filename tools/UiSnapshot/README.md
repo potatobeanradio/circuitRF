@@ -384,6 +384,12 @@ category filter's flyout, and `--filter-all-off` turns its All switch off first.
   leaves it nowhere, so a following `--key Meta+Z` does nothing here; in the application the shell's Edit menu
   serves that key. Click the toolbar's undo button instead.
 
+**The Layer Mapping dialog on a DXF** (brief DFR38-1), with its preview: the real import up to its question, then Cancel. A map fills in the rows as `convert --layer-map` would.
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --dxf-mapping-dialog <file.dxf> [--dxf-mapping-tech <id>] [--dxf-mapping-map <map>] -o out.png
+```
+
 **The Edit Analysis dialog** (brief SDL-6) on one of a schematic's analyses, as the Analyses panel opens it — its Simulate
 by row and EM setup picker; `--select` names the analysis (default: the first that is not a sweep):
 

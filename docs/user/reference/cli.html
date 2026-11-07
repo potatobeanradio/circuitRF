@@ -2438,6 +2438,8 @@ that, and <code>--to</code> is <strong>required</strong> when the output is a fo
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber</code></pre>
 <p>A folder of Gerbers back to a board file:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o recovered.kicad_pcb</code></pre>
+<p>A board drawn as DXF outlines, read as copper and vias — every layer model space reaches needs an answer:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.dxf -o cells --to clay --tech pcb-2layer_RO4350B_20mil_1oz --dxf-units 4 --layer-map "PATTERN=Top Copper,HOLE=Drill,PARTS=ignore,SHELL=Outline"</code></pre>
 <p>A mechanical drawing straight to artwork — no board tool in the middle:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert outline.dxf -o gerbers/ --to gerber</code></pre>
 <p>A mask set to a drawing your mechanical engineer can open, at the DXF version their tool wants:</p>
@@ -2571,8 +2573,8 @@ otherwise.</li>
 <td>What to call the written Gerber file set. Default: the cell's name.</td>
 </tr>
 <tr>
-<td><code>--tech &lt;file.ctech&gt;</code></td>
-<td>The technology to convert against, instead of the one the layout resolves.</td>
+<td><code>--tech &lt;t&gt;</code></td>
+<td>The technology to convert against, instead of the one the layout resolves: a <code>.ctech</code> file, or the id of a technology that ships with circuitRF.</td>
 </tr>
 <tr>
 <td><code>--into-tech &lt;file.ctech&gt;</code></td>
@@ -2597,6 +2599,14 @@ otherwise.</li>
 <tr>
 <td><code>--dxf-units &lt;n&gt;</code></td>
 <td>The <code>$INSUNITS</code> value for a DXF that declares none.</td>
+</tr>
+<tr>
+<td><code>--layer-map &lt;map&gt;</code></td>
+<td>A DXF's layers, as <code>LAYER=target,…</code>, the <a href="layout-editor.html#dxf-board">Layer Mapping dialog</a>'s answers. <code>target</code> is <code>ignore</code>, <code>add</code> or a layer of <code>--tech</code>, which reads as its role: a conductor fills, a drill layer makes vias, the outline closes. <code>target:invert</code> takes a conductor's other parity and <code>target:drawn</code> keeps the entities as they are. Needs <code>--tech</code>. The result is one cell named after the file, with <code>INSERT</code>s flattened. Without the flag a DXF imports a cell per block, every layer as drawn.</td>
+</tr>
+<tr>
+<td><code>--join-tolerance &lt;len&gt;</code></td>
+<td>With <code>--layer-map</code>, how far apart two open ends may close, with its unit. Default <code>1um</code>.</td>
 </tr>
 <tr>
 <td><code>--drill-units &lt;mm or inch&gt;</code></td>
@@ -2677,6 +2687,8 @@ names do not. Convert from GDSII with <code>--tech</code> pointing at the techno
 the names come back. An OASIS file <em>may</em> name its layers; when it does, a name is matched against
 <code>--tech</code> before the number is, and when it does not, OASIS behaves as GDSII does.</p>
 <h3 id="convert-refusals">When it refuses</h3>
+<p><strong>A DXF layer <code>--layer-map</code> does not name is a refusal</strong>, and so is a name model space does not reach. The
+refusal lists the layers it does reach, and nothing is created.</p>
 <div class="callout note">
 <span class="label">A drill file that does not state its format is a refusal, not a guess</span>
 <p>Many Excellon files do not say whether their coordinates are inches or millimetres, or whether

@@ -45,7 +45,10 @@ public enum LayerMatchKind
 /// the dialog. A Gerber set is the case that needs it: every file carries the board's own stem
 /// (<c>&lt;board&gt;.gtl</c>, <c>&lt;board&gt;.ssb</c>, …), so for anything the identification
 /// cascade could not name, every row's name is the same word and the EXTENSION is the only thing
-/// that says which layer is being asked about.</para></summary>
+/// that says which layer is being asked about.</para>
+///
+/// <para><see cref="Reading"/> is non-null only on a DXF import's row, which is what offers the Ignore
+/// action and the Read as column (brief DFR38-1).</para></summary>
 public sealed record LayerMappingRow(
     LayerKey Source,
     string? SourceName,
@@ -55,7 +58,8 @@ public sealed record LayerMappingRow(
     LayoutFragment.LayerReconciliationChoice Choice,
     string? SourceDetail = null,
     IReadOnlyList<string>? StackupConductors = null,
-    LayerStackupChoice? Stackup = null);
+    LayerStackupChoice? Stackup = null,
+    Interchange.DxfLayerReading? Reading = null);
 
 /// <summary>
 /// R-rail27-1b — where an unclassified imported layer goes in the STACKUP, which is a different
@@ -177,6 +181,7 @@ public static class LayoutLayerMapping
                     destTech?.Layers.FirstOrDefault(l => l.Key == t)?.Name is { Length: > 0 } tn
                         ? tn : $"{t.Layer}/{t.Datatype}",
                 { Action: LayoutFragment.LayerReconciliationAction.AddToTechnology } => "added",
+                { Action: LayoutFragment.LayerReconciliationAction.Ignore } => "ignored",
                 _ => "(unknown)",
             };
 

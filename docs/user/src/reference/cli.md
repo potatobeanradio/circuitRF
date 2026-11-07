@@ -1642,6 +1642,10 @@ A folder of Gerbers back to a board file:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o recovered.kicad_pcb</code></pre>
 
+A board drawn as DXF outlines, read as copper and vias — every layer model space reaches needs an answer:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.dxf -o cells --to clay --tech pcb-2layer_RO4350B_20mil_1oz --dxf-units 4 --layer-map "PATTERN=Top Copper,HOLE=Drill,PARTS=ignore,SHELL=Outline"</code></pre>
+
 A mechanical drawing straight to artwork — no board tool in the middle:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert outline.dxf -o gerbers/ --to gerber</code></pre>
@@ -1769,13 +1773,15 @@ are the same bytes when neither includes a camera.
 | `--step <name>` | Which step of an IPC-2581 file to import. A file holding several is refused until one is named, and the refusal lists them. |
 | `--list-steps` | Every step of an IPC-2581 file with its layer and net counts, writing nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
-| `--tech <file.ctech>` | The technology to convert against, instead of the one the layout resolves. |
+| `--tech <t>` | The technology to convert against, instead of the one the layout resolves: a `.ctech` file, or the id of a technology that ships with circuitRF. |
 | `--into-tech <file.ctech>` | A Gerber set, a board file or an IPC-2581 file into a `clay` folder **using** this technology: the cells reference it, nothing is added to it, and no `.ctech` is written. Refused together with `--tech`, and for any other source. See [below](#convert-tech). |
 | `--workspace <file.cws>` | The workspace a `.clay`'s references resolve against. Default: the nearest one above it. |
 | `--keep-cells <dir>` | Keep the cells the import produced instead of discarding them. |
 | `--dbu <n>` | Database units per micron for an imported design. Default `1000` — one DBU is one nanometre. |
 | `--dxf-version <v>` | `AC1015` (R2000), `AC1018` (R2004), `AC1032` (R2018, the default). |
 | `--dxf-units <n>` | The `$INSUNITS` value for a DXF that declares none. |
+| `--layer-map <map>` | A DXF's layers, as `LAYER=target,…`, the [Layer Mapping dialog](layout-editor.html#dxf-board)'s answers. `target` is `ignore`, `add` or a layer of `--tech`, which reads as its role: a conductor fills, a drill layer makes vias, the outline closes. `target:invert` takes a conductor's other parity and `target:drawn` keeps the entities as they are. Needs `--tech`. The result is one cell named after the file, with `INSERT`s flattened. Without the flag a DXF imports a cell per block, every layer as drawn. |
+| `--join-tolerance <len>` | With `--layer-map`, how far apart two open ends may close, with its unit. Default `1um`. |
 | `--drill-units <mm or inch>` | Excellon coordinate units, when the file does not say. Applies to **every** drill file in the set. |
 | `--drill-format <int>:<dec>` | Excellon digit counts, e.g. `2:4`. Applies to every drill file in the set. |
 | `--drill-zeros <leading or trailing>` | Excellon zero suppression. Applies to every drill file in the set. |
@@ -1829,6 +1835,9 @@ the names come back. An OASIS file *may* name its layers; when it does, a name i
 `--tech` before the number is, and when it does not, OASIS behaves as GDSII does.
 
 ### When it refuses {#convert-refusals}
+
+**A DXF layer `--layer-map` does not name is a refusal**, and so is a name model space does not reach. The
+refusal lists the layers it does reach, and nothing is created.
 
 <div class="callout note">
 <span class="label">A drill file that does not state its format is a refusal, not a guess</span>

@@ -295,7 +295,9 @@ internal static class ToolCatalog
         new("scalePoints", "--scale-points", OptKind.Str,    "A picture's scale from two pixel points and their distance: x0,y0,x1,y1=12.7mm."),
         new("layerMap",    "--layer-map",    OptKind.Str,
             "A picture's colours: #rrggbb=<layer>[+<layer>]|drill|outline|silk|background|ignore, comma-separated; a colour "
-          + "not named is ignored. Without it the automatic map is used and returned in layers, in this spelling."),
+          + "not named is ignored. Without it the automatic map is used and returned in layers, in this spelling. "
+          + "A dxf source instead takes LAYER=target,... where target is ignore, add or a layer of tech, optionally target:invert "
+          + "or target:drawn: a layer on a conductor fills, a drill layer makes vias, the outline layer closes, and a layer not named is refused."),
         new("preset",      "--preset",       OptKind.Str,    "A saved image-trace preset (map and options) by name."),
         new("minFeature",  "--min-feature",  OptKind.Number, "Specks smaller than this many square pixels are dropped."),
         new("simplify",    "--simplify",     OptKind.Number, "Outline simplification tolerance, pixels."),
@@ -1076,6 +1078,8 @@ internal static class ToolCatalog
                         new("oasStandardProperties", "--oas-standard-properties", OptKind.Flag, "Write OASIS's standard properties."),
                         new("dxfVersion", "--dxf-version", OptKind.Str,  "AC1015, AC1018 or AC1032."),
                         new("dxfUnits",   "--dxf-units",   OptKind.Integer, "The DXF units code."),
+                        new("joinTolerance", "--join-tolerance", OptKind.Str,
+                            "With layerMap: how far apart two open ends may close, a length with its unit. Default 1um."),
                         new("drillUnits", "--drill-units", OptKind.Str,  "mm or inch."),
                         new("drillFormat","--drill-format",OptKind.Str,  "Excellon coordinate format, as int:dec."),
                         new("drillZeros", "--drill-zeros", OptKind.Str,  "leading or trailing suppression."),

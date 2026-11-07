@@ -153,6 +153,8 @@ string? netsHighlight = null;
 string? netsFilter = null;
 bool netsDim = false, netsZoom = false;
 bool planarMemoryDialog = false;
+string? dxfMappingDialog = null;     // brief DFR38-1: the Layer Mapping dialog and its preview on a DXF
+string? dxfMappingTech = null, dxfMappingMap = null;
 bool unsavedSetupDialog = false;     // the question New 3D View from Layout asks of an EM setup with unsaved edits
 bool settingsGeneral = false;
 bool settingsSolvers = false;
@@ -271,6 +273,9 @@ for (int i = 0; i < args.Length; i++)
         case "--nets-dim": netsDim = true; break;
         case "--nets-zoom": netsZoom = true; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
+        case "--dxf-mapping-dialog" when i + 1 < args.Length: dxfMappingDialog = Path.GetFullPath(args[++i]); break;
+        case "--dxf-mapping-tech" when i + 1 < args.Length: dxfMappingTech = args[++i]; break;
+        case "--dxf-mapping-map" when i + 1 < args.Length: dxfMappingMap = args[++i]; break;
         case "--unsaved-setup-dialog": unsavedSetupDialog = true; break;
         case "--settings-general": settingsGeneral = true; break;
         case "--settings-solvers": settingsSolvers = true; break;
@@ -384,6 +389,12 @@ if (args.Contains("--messages") && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return ShowMessagesPanel(output, sizeGiven ? width : 700, sizeGiven ? height : 260);
+}
+if (dxfMappingDialog is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ShowDxfMappingDialog(dxfMappingDialog, dxfMappingTech ?? "pcb-2layer_RO4350B_20mil_1oz", dxfMappingMap, output, width, height, sizeGiven);
 }
 if (planarMemoryDialog && output is not null)
 {
@@ -2374,6 +2385,37 @@ static int ShowMessagesPanel(string path, double w, double h)
 // --planar-memory-dialog: the question Simulate asks before a planar run past this machine's memory — the verdict from
 // PlanarMemoryCheck on a de-embedded 36,000-unknown run with 2 GB of calibration standards, in the dialog
 // WorkspaceViewModel.ConfirmEmMemory opens for it.
+// --dxf-mapping-dialog <file.dxf> [--dxf-mapping-tech <id>] [--dxf-mapping-map <map>]: brief DFR38-1 — the real import up to
+// its question, the real dialog on the answer it asks for, and Cancel: the temporary folder it was given stays empty.
+static int ShowDxfMappingDialog(string dxf, string techId, string? map, string path, double width, double height, bool sizeGiven)
+{
+    var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(techId);
+    string scratch = Directory.CreateTempSubdirectory("uisnapshot-dxf-").FullName;
+    using var stream = File.OpenRead(dxf);
+    CircuitRF.Design.Layout.Interchange.DxfImport.Import(stream, scratch, tech, 1000, rawUnits => CircuitRF.Design.Layout.Interchange.DxfUnits.Millimeters,
+        resolveMapping: request =>
+        {
+            if (map is not null)
+            {
+                var (rows, refusal) = CircuitRF.Design.Layout.Interchange.DxfBoardReading.ApplyMap(map, request.Rows, tech);
+                if (rows is null) { Console.WriteLine(refusal); return null; }
+                request = request with { Rows = rows };
+            }
+            var dialog = new CircuitRF.Ui.Views.Dialogs.LayerMappingDialog("Import DXF — Layer Mapping", tech, request);
+            if (sizeGiven) { dialog.Width = width; dialog.Height = height; }
+            dialog.Show();
+            for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+            dialog.StartPreview().GetAwaiter().GetResult();
+            for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+            dialog.CaptureRenderedFrame()!.Save(path);
+            Console.WriteLine($"wrote {path}");
+            return null;
+        });
+    Console.WriteLine($"cancelled: {Directory.GetFileSystemEntries(scratch).Length} item(s) created");
+    Directory.Delete(scratch, recursive: true);
+    return 0;
+}
+
 static int ShowPlanarMemoryDialog(string path)
 {
     const int n = 36_000, cells = 18_000;

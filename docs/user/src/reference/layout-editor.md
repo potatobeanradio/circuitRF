@@ -1036,6 +1036,37 @@ resolved once, at export, to the height that occupies the same fraction of the d
 size occupied of a nominal viewport — legible when the recipient zooms to extents, which is what the
 mode meant on screen.
 
+#### A board drawn as outlines {#dxf-board}
+
+A board published as DXF is a drawing of outlines, one DXF layer per purpose. **File ▸ Import ▸ DXF** reads
+it as a board when the **Layer Mapping** dialog says what its layers are. The table lists what model space
+reaches, with its counts, and the preview below it shows what your answers would import; **Cancel** creates
+nothing.
+
+| Mapped to | Read as | What it becomes |
+|---|---|---|
+| A stackup conductor | **Filled** | `LINE`, `ARC` and open polylines chain into loops, with `CIRCLE`s and closed polylines beside them. The outermost region is copper, what it encloses is not, and so on inward. |
+| A stackup conductor | **Filled, inverted** | The same loops at the other parity: what the outermost loops enclose is the copper. |
+| A via or drill layer | **Vias** | A plated via from each `CIRCLE`, across the layer's stack entry. A circle on the copper at the same point is its pad; otherwise the pad is the hole's size. Anything else on the layer is reported and stays as drawn. |
+| The board outline | **Board outline** | The layer's outlines close into the board's edge. |
+| Any of these | **As drawn** | Each entity stays the shape it is. |
+
+**Ignore** leaves a layer out. Other layers stay as drawn. `HATCH` and `SOLID` entities, polylines with a
+width and text stay as drawn on a filled layer too.
+
+Overlapping collinear lines count once, and two loops drawn sharing an edge become one polygon. **Close gaps
+up to** (1 µm by default) joins two open ends that close. A wider gap could be two nets, so its outline is
+listed by coordinates and stays an outline.
+
+Answering the dialog imports one cell named after the file, with `INSERT`s flattened, whatever each layer reads
+as. Blocks model space does not reach get no cell, and the preview's notes say how many are skipped. A file the
+dialog does not open for, or one holding only blocks, keeps a cell per block, in a folder named after the file.
+
+A layer matched by name starts on **As drawn** unless the file draws its copper with `LINE` or `ARC` entities.
+circuitRF's own exports never do, so a layout exported to DXF comes back as it went out, without the dialog if
+every layer matches. A technology layer's `DxfLayerName` names a DXF layer for you; nothing is guessed from a layer's name beyond
+that and an exact match.
+
 ### Gerber and Excellon {#gerber}
 
 Import **and** export. A board goes out to the fab house as artwork plus drill, and the same set comes

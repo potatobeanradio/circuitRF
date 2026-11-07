@@ -19,7 +19,11 @@ namespace CircuitRF.Design.Layout.Interchange;
 /// <summary>One imported shape, still carrying its raw DXF layer NAME — DxfImport resolves this to a
 /// real <see cref="LayerKey"/> via <see cref="DxfLayerReconciliation"/> before any reconciliation runs,
 /// mirroring the format-specific/orchestration split GdsiiReader/GdsiiImport already established.</summary>
-public sealed record DxfImportedShape(LayoutShape Shape, string LayerName);
+/// <param name="Entity">The DXF entity type, set only for the two whose reading depends on it: a
+/// <c>LINE</c> or an <c>ARC</c> is a two-point zero-width path, the same shape an open polyline makes, and
+/// circuitRF's writer draws copper with neither (<see cref="DxfBoardReading"/>). <c>HATCH</c> and
+/// <c>SOLID</c> are set too: they state a fill, so a fill reading keeps them as drawn.</param>
+public sealed record DxfImportedShape(LayoutShape Shape, string LayerName, string? Entity = null);
 
 /// <summary>brief-dxf-layer-colors.md R-col-3 — one row of the file's own <c>LAYER</c> table, parsed
 /// (never guessed) so import can carry the author's real colour/visibility intent instead of always
@@ -40,6 +44,11 @@ public sealed class DxfStructure
     public string Name { get; init; } = "";
     public List<DxfImportedShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = []; // CellRef = raw referenced block name (unresolved)
+
+    /// <summary>Each of <see cref="Instances"/>' own DXF layer, in the same order. A block's entity on
+    /// layer <c>0</c> takes the layer of the <c>INSERT</c> that places it, so a flatten needs this; a
+    /// hierarchical import has no use for it, since a cell's shape keeps the layer the block gave it.</summary>
+    public List<string> InstanceLayers { get; } = [];
 }
 
 public sealed class DxfReader
@@ -176,8 +185,37 @@ public sealed class DxfReader
             }
         }
 
+        RenameBlockNamedLikeModelSpace(blocks, modelSpace);
         blocks.Add(modelSpace);
         Structures = blocks;
+    }
+
+    /// <summary>
+    /// A DXF import's drawing is a cell called <see cref="ModelSpaceName"/>, so exporting that cell writes a
+    /// BLOCK of the same name, placed by one INSERT. Read back, the two structures shared a name and so one
+    /// cell folder, and the thin model space overwrote the block holding every shape. The block gets a name of
+    /// its own here, and the INSERTs follow it.
+    /// </summary>
+    private static void RenameBlockNamedLikeModelSpace(List<DxfStructure> blocks, DxfStructure modelSpace)
+    {
+        int at = blocks.FindIndex(b => string.Equals(b.Name, ModelSpaceName, StringComparison.OrdinalIgnoreCase));
+        if (at < 0) return;
+
+        string name = ModelSpaceName + "_2";
+        for (int n = 3; blocks.Any(b => string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase)); n++)
+            name = $"{ModelSpaceName}_{n}";
+
+        var old = blocks[at];
+        var renamed = new DxfStructure { Name = name };
+        renamed.Shapes.AddRange(old.Shapes);
+        renamed.Instances.AddRange(old.Instances);
+        renamed.InstanceLayers.AddRange(old.InstanceLayers);
+        blocks[at] = renamed;
+
+        foreach (var s in blocks.Append(modelSpace))
+            foreach (var inst in s.Instances)
+                if (string.Equals(inst.CellRef, old.Name, StringComparison.OrdinalIgnoreCase))
+                    inst.CellRef = name;
     }
 
     private void ParseHeaderBody(List<DxfGroup> body)
@@ -322,12 +360,12 @@ public sealed class DxfReader
                     break;
 
                 case "LINE":
-                    into.Shapes.Add(ParseLine(body));
+                    into.Shapes.Add(ParseLine(body) with { Entity = type });
                     i++;
                     break;
 
                 case "ARC":
-                    into.Shapes.Add(ParseArc(body));
+                    into.Shapes.Add(ParseArc(body) with { Entity = type });
                     i++;
                     break;
 
@@ -347,12 +385,12 @@ public sealed class DxfReader
                     break;
 
                 case "SOLID":
-                    into.Shapes.Add(ParseSolid(body));
+                    into.Shapes.Add(ParseSolid(body) with { Entity = type });
                     i++;
                     break;
 
                 case "HATCH":
-                    foreach (var s in ParseHatch(body)) into.Shapes.Add(s);
+                    foreach (var s in ParseHatch(body)) into.Shapes.Add(s with { Entity = type });
                     i++;
                     break;
 
@@ -364,6 +402,7 @@ public sealed class DxfReader
 
                 case "INSERT":
                     into.Instances.Add(ParseInsert(body));
+                    into.InstanceLayers.Add(GetStr(body, 8, "0"));
                     i++;
                     break;
 

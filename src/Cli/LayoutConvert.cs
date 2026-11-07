@@ -74,6 +74,10 @@ public static class LayoutConvert
         public DxfAcadVersion AcadVersion = DxfAcadVersion.R2018;
         public int? InsUnits;
 
+        // brief DFR38-1 R-dfr38-1-7 — the Layer Mapping dialog's answers for a DXF, and its join tolerance.
+        public string? LayerMap;
+        public double JoinToleranceMicrons = DxfBoardReading.DefaultJoinToleranceMicrons;
+
         // Excellon
         public GerberUnit? DrillUnit;
         public GerberZeroOmission? DrillZeros;
@@ -214,6 +218,15 @@ public static class LayoutConvert
                 case "--accept-inferred-drill-format": o.AcceptInferredDrillFormat = true; break;
                 case "--open-archives": o.OpenArchives = true; break;
                 case "--no-coalesce": o.NoCoalesce = true; break;
+                case "--join-tolerance" when i + 1 < args.Length:
+                {
+                    // A unit is required, the rule every layout length on this CLI follows.
+                    string text = args[++i].Trim();
+                    if (text.Length == 0 || !char.IsLetter(text[^1]) || !LayoutUnits.TryParse(text, LayoutUnit.Um, 1000, out long nm) || nm < 0)
+                        return JsonRun.Fail(CliDiagnostics.ConvertBadJoinTolerance(text));
+                    o.JoinToleranceMicrons = nm / 1000.0;
+                    break;
+                }
                 case "--arc-tolerance" when i + 1 < args.Length:
                 {
                     // A unit is required, the rule every layout length on this CLI follows.
@@ -287,6 +300,16 @@ public static class LayoutConvert
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotGerber(intoFrom is { } f ? Name(f) : "not recognised"));
             if (o.Output is null || (o.To ?? DetectTarget(o.Output)) != Fmt.Clay)
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotClay());
+        }
+
+        // R-dfr38-1-7. One flag: a picture's layers are colours and a DXF's are names, and the source says
+        // which this is. Taken off the picture flags here, since any left there are refused on a DXF.
+        if (o.Picture.LayerMap is { } layerMap && (o.From ?? DetectSource(o.Input)) == Fmt.Dxf)
+        {
+            o.LayerMap = layerMap;
+            o.Picture.LayerMap = null;
+            o.Picture.LayoutFlags.Remove("--layer-map");
+            if (o.TechPath is null) return JsonRun.Fail(CliDiagnostics.ConvertLayerMapNeedsTech());
         }
 
         // brief-ipx-4 R-ipx4-3b/c. Import only, and the two step flags belong to this source alone.
@@ -805,7 +828,13 @@ public static class LayoutConvert
         Technology? destTech = null;
         if (o.TechPath is { } tp)
         {
-            try { destTech = TechPersistence.LoadFromFile(tp); }
+            // A shipped technology by its id, as `new workspace --tech` takes one; a file of that name comes first.
+            try
+            {
+                destTech = !File.Exists(tp) && TechnologyCatalog.Find(tp) is { } shipped
+                    ? TechnologyCatalog.Load(shipped)
+                    : TechPersistence.LoadFromFile(tp);
+            }
             catch (Exception ex)
             {
                 JsonRun.Report(CliDiagnostics.ConvertTechnologyUnreadable(tp, ex.Message));
@@ -913,9 +942,19 @@ public static class LayoutConvert
     private static Source? ImportDxf(Options o, string staging, Technology? destTech, string name)
     {
         using var stream = File.OpenRead(o.Input!);
+        // With no --layer-map there is no answer to give, and the import is the one it has always been.
+        string? mapRefusal = null;
+        Func<DxfMappingRequest, DxfMappingAnswer?>? answer = o.LayerMap is not { } map ? null : request =>
+        {
+            var (rows, refusal) = DxfBoardReading.ApplyMap(map, request.Rows, destTech!);
+            mapRefusal = refusal;
+            return rows is null ? null : new DxfMappingAnswer(rows, o.JoinToleranceMicrons);
+        };
         var r = DxfImport.Import(stream, staging, destTech, o.DbuPerMicron,
-            resolveUnits: o.InsUnits is { } iu ? _ => iu : null);
+            resolveUnits: o.InsUnits is { } iu ? _ => iu : null, resolveMapping: answer,
+            importName: o.LayerMap is null ? null : name);
         Report(r.Messages);
+        if (mapRefusal is { } said) { JsonRun.Report(CliDiagnostics.ConvertLayerMapRefused(said)); return null; }
         if (r.Cancelled) return Refused();
 
         // Model space is the drawing itself; a BLOCK is a definition something else places. The
@@ -1517,6 +1556,9 @@ public static class LayoutConvert
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");
+        Console.Error.WriteLine("       --layer-map <map>  a dxf source: LAYER=target,... where target is ignore, add or a layer of --tech,");
+        Console.Error.WriteLine("                          optionally target:invert or target:drawn. A layer not named is refused.");
+        Console.Error.WriteLine("       --join-tolerance <len>  with --layer-map: how far apart two open ends may close (default 1um)");
         Console.Error.WriteLine("       gerber, board or ipc2581 source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
         Console.Error.WriteLine("       ipc2581 source (found by its root element, or .cvg):  --step <name>  --list-steps  every step with its layers and nets, writing nothing");
         Console.Error.WriteLine("       picture source (png, jpeg, bmp, gif, webp; --from image):  --scale <len>/px | --dpi <n> |");

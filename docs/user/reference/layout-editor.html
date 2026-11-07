@@ -1567,6 +1567,59 @@ the drawing, cannot be styled, and does not appear in anything that enumerates d
 resolved once, at export, to the height that occupies the same fraction of the drawing that its point
 size occupied of a nominal viewport — legible when the recipient zooms to extents, which is what the
 mode meant on screen.</p>
+<h4 id="dxf-board">A board drawn as outlines</h4>
+<p>A board published as DXF is a drawing of outlines, one DXF layer per purpose. <strong>File ▸ Import ▸ DXF</strong> reads
+it as a board when the <strong>Layer Mapping</strong> dialog says what its layers are. The table lists what model space
+reaches, with its counts, and the preview below it shows what your answers would import; <strong>Cancel</strong> creates
+nothing.</p>
+<table>
+<thead>
+<tr>
+<th>Mapped to</th>
+<th>Read as</th>
+<th>What it becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A stackup conductor</td>
+<td><strong>Filled</strong></td>
+<td><code>LINE</code>, <code>ARC</code> and open polylines chain into loops, with <code>CIRCLE</code>s and closed polylines beside them. The outermost region is copper, what it encloses is not, and so on inward.</td>
+</tr>
+<tr>
+<td>A stackup conductor</td>
+<td><strong>Filled, inverted</strong></td>
+<td>The same loops at the other parity: what the outermost loops enclose is the copper.</td>
+</tr>
+<tr>
+<td>A via or drill layer</td>
+<td><strong>Vias</strong></td>
+<td>A plated via from each <code>CIRCLE</code>, across the layer's stack entry. A circle on the copper at the same point is its pad; otherwise the pad is the hole's size. Anything else on the layer is reported and stays as drawn.</td>
+</tr>
+<tr>
+<td>The board outline</td>
+<td><strong>Board outline</strong></td>
+<td>The layer's outlines close into the board's edge.</td>
+</tr>
+<tr>
+<td>Any of these</td>
+<td><strong>As drawn</strong></td>
+<td>Each entity stays the shape it is.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ignore</strong> leaves a layer out. Other layers stay as drawn. <code>HATCH</code> and <code>SOLID</code> entities, polylines with a
+width and text stay as drawn on a filled layer too.</p>
+<p>Overlapping collinear lines count once, and two loops drawn sharing an edge become one polygon. <strong>Close gaps
+up to</strong> (1 µm by default) joins two open ends that close. A wider gap could be two nets, so its outline is
+listed by coordinates and stays an outline.</p>
+<p>Answering the dialog imports one cell named after the file, with <code>INSERT</code>s flattened, whatever each layer reads
+as. Blocks model space does not reach get no cell, and the preview's notes say how many are skipped. A file the
+dialog does not open for, or one holding only blocks, keeps a cell per block, in a folder named after the file.</p>
+<p>A layer matched by name starts on <strong>As drawn</strong> unless the file draws its copper with <code>LINE</code> or <code>ARC</code> entities.
+circuitRF's own exports never do, so a layout exported to DXF comes back as it went out, without the dialog if
+every layer matches. A technology layer's <code>DxfLayerName</code> names a DXF layer for you; nothing is guessed from a layer's name beyond
+that and an exact match.</p>
 <h3 id="gerber">Gerber and Excellon</h3>
 <p>Import <strong>and</strong> export. A board goes out to the fab house as artwork plus drill, and the same set comes
 back in as a cell you can edit, crop and mesh — your own, or someone else's.</p>

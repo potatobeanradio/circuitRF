@@ -3074,7 +3074,7 @@ static int PrintHelp()
     Console.WriteLine("  --cell <name>           which cell, when the source holds several");
     Console.WriteLine("  --name <stem>           what to call the written file set (gerber)");
     Console.WriteLine("  --list-cells            report what the input holds, write nothing");
-    Console.WriteLine("  --tech <file.ctech>     the technology to convert against");
+    Console.WriteLine("  --tech <file|id>        the technology to convert against");
     Console.WriteLine("  --keep-cells <dir>      keep the cells an import produced");
     Console.WriteLine("  --engine native|gdstk   the GDSII reader or writer for a gdsii end (default native)");
     Console.WriteLine("  --oas-compression 6     an oasis target's CBLOCK level, 0 (stored) to 9");
@@ -3082,6 +3082,11 @@ static int PrintHelp()
     Console.WriteLine("  --oas-standard-properties   write OASIS's standard properties");
     Console.WriteLine("                          (oasis and --engine gdstk need the gdstk worker)");
     Console.WriteLine("  --dxf-version AC1032    AC1015 | AC1018 | AC1032   --dxf-units <n>");
+    Console.WriteLine("  --layer-map <map>       a dxf source: LAYER=target,... where target is ignore,");
+    Console.WriteLine("                          add or a layer of --tech, optionally target:invert or");
+    Console.WriteLine("                          target:drawn. Every layer model space reaches needs one");
+    Console.WriteLine("  --join-tolerance <len>  with --layer-map: how far apart two open ends may close,");
+    Console.WriteLine("                          with its unit (default 1um)");
     Console.WriteLine("  --drill-units mm|inch   --drill-format <int>:<dec>");
     Console.WriteLine("  --drill-zeros leading|trailing");
     Console.WriteLine("  --accept-inferred-drill-format   proceed on a guessed Excellon format");

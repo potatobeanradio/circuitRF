@@ -28,6 +28,15 @@ public static class DxfImport
     /// When null (no interactive prompt available), defaults to millimeters
     /// (<see cref="DxfUnits.DefaultPromptUnits"/>) per the brief's own stated default.
     /// <paramref name="resolveLayerMapping"/> mirrors <c>GdsiiImport.Import</c>'s identical parameter.
+    /// <paramref name="resolveMapping"/> is the DXF board form of it (brief DFR38-1), which takes the rows
+    /// as model space reaches them and offers Ignore and a reading per layer. It needs a technology and
+    /// is not called without one. An answer makes the import one cell of flattened model space
+    /// (<see cref="DxfBoardReading"/>), with no cell for a block model space does not reach, unless it says
+    /// <see cref="DxfMappingAnswer.KeepBlocks"/>; with no answer to give, this method writes the cells it has
+    /// always written, every block included, byte for byte.
+    /// <paramref name="importName"/> is what the cells are grouped under, which File ▸ Import takes from the
+    /// file: one cell is called that, several go in a folder of that name (<see cref="ImportFolder"/>). Null
+    /// leaves them in <paramref name="parentDir"/> under the file's own names.
     /// </summary>
     public static ImportResult Import(
         Stream dxfStream,
@@ -35,7 +44,9 @@ public static class DxfImport
         Technology? destTech,
         int destDbuPerMicron,
         Func<int, int?>? resolveUnits = null,
-        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null)
+        Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
+        Func<DxfMappingRequest, DxfMappingAnswer?>? resolveMapping = null,
+        string? importName = null)
     {
         if (LooksLikeBinaryDxf(dxfStream))
             return new ImportResult(true, [], new Dictionary<string, string>(), [],
@@ -84,7 +95,16 @@ public static class DxfImport
         // R-col-3: the file's own parsed LAYER table (reader.LayerTable) rides along so BuildSourceLayers
         // can populate each source LayerDef's real colour instead of defaulting to black.
         var allNames = rescaled.SelectMany(s => s.Shapes.Select(sh => sh.LayerName)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var (sourceLayers, keyByName) = DxfLayerReconciliation.BuildSourceLayers(allNames, reader.LayerTable, destTech);
+
+        // Flattened before any key is minted, because an INSERT's layer can name a layer no entity does, and
+        // those names go last so every key the hierarchical import uses is the one it always was.
+        var flattened = resolveMapping is not null && destTech is not null ? DxfBoardReading.Flatten(rescaled) : null;
+        var keyedNames = flattened is null
+            ? allNames
+            : [.. allNames, .. flattened.Shapes.Select(s => s.LayerName).Distinct(StringComparer.OrdinalIgnoreCase)
+                                               .Where(n => !allNames.Contains(n, StringComparer.OrdinalIgnoreCase))];
+
+        var (sourceLayers, keyByName) = DxfLayerReconciliation.BuildSourceLayers(keyedNames, reader.LayerTable, destTech);
         if (DxfLayerReconciliation.OffLayerNote(allNames, reader.LayerTable) is { } offNote) messages.Add(offNote);
         foreach (var s in rescaled)
             foreach (var sh in s.Shapes)
@@ -106,7 +126,42 @@ public static class DxfImport
             : r).ToList();
 
         IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
-        if (rows.Count > 0 && LayoutLayerMapping.RequiresConfirmation(rows) && resolveLayerMapping is not null)
+
+        // A file with nothing in model space is a block library: there is no board to read, and every block
+        // is what the import is for. It keeps the table it has always had.
+        if (flattened is { Shapes.Count: > 0 })
+        {
+            foreach (var sh in flattened.Shapes) sh.Shape.Layer = keyByName[sh.LayerName];
+            var reachRows = LayoutLayerMapping.Propose([.. flattened.Shapes.Select(s => s.Shape)], sourceLayers, destTech)
+                .Select(r => r.Match == LayerMatchKind.NoMatch
+                    ? r with { Choice = new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology) }
+                    : r).ToList();
+            var (starting, needsAnswer) = DxfBoardReading.StartingRows(reachRows, flattened.Shapes, keyByName, destTech!);
+
+            var answer = resolveMapping!(new DxfMappingRequest(starting, needsAnswer, (r, tol) =>
+            {
+                var read = DxfBoardReading.Read(flattened.Shapes, r, sourceLayers, destTech!, destDbuPerMicron, tol);
+                var preview = new LayoutView { DbuPerMicron = destDbuPerMicron };
+                preview.Shapes.AddRange(read.Shapes);
+                return new DxfBoardPreview(preview, [.. read.Messages, .. BlockReport(rescaled, flattened)]);
+            }));
+            if (answer is null)
+                return new ImportResult(true, [], new Dictionary<string, string>(), [], messages);
+
+            if (!answer.KeepBlocks || answer.Rows.Any(r => r.Reading is not (null or DxfLayerReading.AsDrawn)))
+                return WriteBoard(reader, rescaled, flattened, answer, sourceLayers, destTech!, destDbuPerMicron, parentDir, importName, messages);
+        }
+        else if (flattened is not null && rows.Count > 0 && LayoutLayerMapping.RequiresConfirmation(rows))
+        {
+            var answer = resolveMapping!(new DxfMappingRequest(rows, true,
+                (_, _) => new DxfBoardPreview(new LayoutView { DbuPerMicron = destDbuPerMicron }, [])));
+            if (answer is null)
+                return new ImportResult(true, [], new Dictionary<string, string>(), [], messages);
+            choices = LayoutLayerMapping.BuildChoices(answer.Rows);
+            if (answer.Rows.Any(r => r.Reading is not (null or DxfLayerReading.AsDrawn)))
+                messages.Add("Model space is empty, so no board was read: the blocks are imported as drawn.");
+        }
+        else if (rows.Count > 0 && LayoutLayerMapping.RequiresConfirmation(rows) && resolveLayerMapping is not null)
         {
             choices = resolveLayerMapping(rows);
             if (choices is null)
@@ -118,6 +173,13 @@ public static class DxfImport
         // §8-equivalent — block name <-> cell name mapping, reported both ways.
         var blockNames = rescaled.Select(s => s.Name).ToList();
         var cellNameByBlock = DxfNaming.NameCellsForImport(blockNames);
+        if (importName is not null)
+        {
+            if (rescaled.Count == 1)
+                cellNameByBlock = new Dictionary<string, string> { [rescaled[0].Name] = ImportFolder.UniqueName(parentDir, importName) };
+            else
+                parentDir = ImportFolder.Create(parentDir, importName);
+        }
         foreach (var s in rescaled)
             if (cellNameByBlock[s.Name] != s.Name)
                 messages.Add($"DXF block \"{s.Name}\" → cell \"{cellNameByBlock[s.Name]}\".");
@@ -178,6 +240,57 @@ public static class DxfImport
             messages.Add($"{count} unsupported {type} entit{(count == 1 ? "y" : "ies")} skipped — not imported.");
 
         return new ImportResult(false, createdDirs, cellNameByBlock, layersToAdd, messages);
+    }
+
+    /// <summary>What becoming one cell does to the file's blocks, for the preview and the report alike.</summary>
+    private static List<string> BlockReport(IReadOnlyList<DxfStructure> rescaled, DxfBoardReading.Flattened flattened)
+    {
+        var report = new List<string>();
+        int blocks = rescaled.Count(s => s.Name != DxfReader.ModelSpaceName);
+        int skipped = blocks - flattened.ReachedBlocks.Count;
+        if (flattened.ReachedBlocks.Count > 0)
+            report.Add($"{flattened.ReachedBlocks.Count} block(s) flattened into the cell.");
+        if (skipped > 0)
+            report.Add($"{skipped} block(s) model space does not reach were skipped.");
+        foreach (var missing in flattened.MissingBlocks)
+            report.Add($"Block \"{missing}\" is inserted but not defined in the file, so nothing was placed for it.");
+        return report;
+    }
+
+    /// <summary>The answered form: one cell, model space flattened and read as the rows say. The block cells a
+    /// hierarchical import would write are all inside it or unused, and the report says how many of each.</summary>
+    private static ImportResult WriteBoard(
+        DxfReader reader, IReadOnlyList<DxfStructure> rescaled, DxfBoardReading.Flattened flattened, DxfMappingAnswer answer,
+        IReadOnlyList<LayerDef> sourceLayers, Technology destTech, int destDbuPerMicron, string parentDir, string? importName, List<string> messages)
+    {
+        var read = DxfBoardReading.Read(flattened.Shapes, answer.Rows, sourceLayers, destTech, destDbuPerMicron,
+                                        answer.JoinToleranceMicrons);
+        messages.AddRange(read.Messages);
+        messages.Add(LayoutLayerMapping.SummarizeMapping(answer.Rows, destTech));
+
+        messages.AddRange(BlockReport(rescaled, flattened));
+
+        string cellName = importName is null
+            ? DxfNaming.NameCellsForImport([DxfReader.ModelSpaceName])[DxfReader.ModelSpaceName]
+            : ImportFolder.UniqueName(parentDir, importName);
+        var names = new Dictionary<string, string> { [DxfReader.ModelSpaceName] = cellName };
+        string cellDir = CellFolder.CreateCellFolder(parentDir, cellName);
+
+        var view = new LayoutView { DbuPerMicron = destDbuPerMicron };
+        view.Shapes.AddRange(read.Shapes);
+
+        string layoutFileName = cellName + ".clay";
+        LayoutPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), layoutFileName), view);
+
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.PrimaryLayout = layoutFileName;
+        CellPersistence.SaveToFile(ccellPath, ccell);
+
+        foreach (var (type, count) in reader.UnsupportedEntityCounts.OrderByDescending(kv => kv.Value))
+            messages.Add($"{count} unsupported {type} entit{(count == 1 ? "y" : "ies")} skipped — not imported.");
+
+        return new ImportResult(false, [cellDir], names, read.LayersToAdd, messages);
     }
 
     /// <summary>The official 22-byte "AutoCAD Binary DXF" sentinel (§2's own out-of-scope statement:
@@ -252,9 +365,10 @@ public static class DxfImport
         {
             var rescaled = new DxfStructure { Name = s.Name };
             foreach (var sh in s.Shapes)
-                rescaled.Shapes.Add(new DxfImportedShape(RescaleShape(sh.Shape, ratio), sh.LayerName));
+                rescaled.Shapes.Add(sh with { Shape = RescaleShape(sh.Shape, ratio) });
             foreach (var inst in s.Instances)
                 rescaled.Instances.Add(RescaleInstance(inst, ratio));
+            rescaled.InstanceLayers.AddRange(s.InstanceLayers);
             result.Add(rescaled);
         }
         return result;

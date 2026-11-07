@@ -2,10 +2,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Renderers;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -59,6 +61,15 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
     /// </summary>
     public ObservableCollection<LayerStackupItem> StackupOptions { get; } = [];
 
+    /// <summary>
+    /// Brief DFR38-1's column, <b>"Read as"</b>: a DXF row mapped to copper, a drill layer or the outline.
+    /// Empty for every other row and every other caller, and the column then costs nothing.
+    /// </summary>
+    public ObservableCollection<DxfReadingItem> ReadingOptions { get; } = [];
+
+    private readonly Technology? _readingTech;
+
+    [ObservableProperty] private DxfReadingItem? _selectedReading;
     [ObservableProperty] private LayerActionItem _selectedAction;
     [ObservableProperty] private LayerPickerItem? _selectedMapTarget;
     [ObservableProperty] private LayerStackupItem? _selectedStackup;
@@ -76,8 +87,29 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
 
     partial void OnShowReconciliationChanged(bool value) => OnPropertyChanged(nameof(ShowMapTargetCombo));
 
-    partial void OnSelectedActionChanged(LayerActionItem value) => OnPropertyChanged(nameof(ShowMapTargetCombo));
+    partial void OnSelectedActionChanged(LayerActionItem value)
+    {
+        OnPropertyChanged(nameof(ShowMapTargetCombo));
+        OfferReadings(null);
+    }
 
+    partial void OnSelectedMapTargetChanged(LayerPickerItem? value) => OfferReadings(null);
+
+    /// <summary>True only for a row with more than one way to read it.</summary>
+    public bool ShowReadingCombo => ReadingOptions.Count > 1;
+
+    /// <summary>The readings this row's target allows, <paramref name="keep"/> selected or else the first. Items
+    /// before selection, in this one path, or the combo clears what it cannot find.</summary>
+    private void OfferReadings(DxfLayerReading? keep)
+    {
+        if (Row.Reading is null) return;
+        var target = SelectedAction.Action == LayoutFragment.LayerReconciliationAction.MapToExisting ? SelectedMapTarget?.Key : null;
+        ReadingOptions.Clear();
+        foreach (var reading in DxfBoardReading.Offered(_readingTech, target))
+            ReadingOptions.Add(new DxfReadingItem(reading, DxfBoardReading.Label(reading)));
+        SelectedReading = ReadingOptions.FirstOrDefault(o => o.Reading == keep) ?? ReadingOptions[0];
+        OnPropertyChanged(nameof(ShowReadingCombo));
+    }
     /// <summary>The choice as it currently stands in the UI — read at OK time.</summary>
     public LayoutFragment.LayerReconciliationChoice CurrentChoice => new(
         SelectedAction.Action,
@@ -88,9 +120,14 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
     public LayerStackupChoice? CurrentStackup =>
         StackupOptions.Count == 0 ? Row.Stackup : SelectedStackup?.Choice;
 
-    public LayerMappingRowViewModel(LayerMappingRow row, IReadOnlyList<LayerPickerItem> availableLayers, bool techResolved)
+    /// <summary>The reading as it currently stands — null on every row that was not asked.</summary>
+    public DxfLayerReading? CurrentReading => Row.Reading is null ? null : SelectedReading?.Reading ?? DxfLayerReading.AsDrawn;
+
+    public LayerMappingRowViewModel(LayerMappingRow row, IReadOnlyList<LayerPickerItem> availableLayers, bool techResolved,
+                                    Technology? readingTech = null)
     {
         Row = row;
+        _readingTech = readingTech;
 
         Actions =
         [
@@ -99,6 +136,8 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
         ];
         if (techResolved)
             Actions.Add(new LayerActionItem(LayoutFragment.LayerReconciliationAction.AddToTechnology, "Add to technology"));
+        if (row.Reading is not null)
+            Actions.Add(new LayerActionItem(LayoutFragment.LayerReconciliationAction.Ignore, "Ignore"));
 
         MapTargets = new ObservableCollection<LayerPickerItem>(availableLayers);
 
@@ -118,10 +157,18 @@ public sealed partial class LayerMappingRowViewModel : ObservableObject
             _selectedStackup = StackupOptions[0];
         }
 
-        _selectedMapTarget = (row.Proposed is { } proposed ? availableLayers.FirstOrDefault(l => l.Key == proposed) : null)
+        // The row's own answer first: a row can arrive mapped to something other than what was proposed.
+        _selectedMapTarget = ((row.Choice.MapTarget ?? row.Proposed) is { } proposed ? availableLayers.FirstOrDefault(l => l.Key == proposed) : null)
             ?? availableLayers.FirstOrDefault();
         _selectedAction = Actions.FirstOrDefault(a => a.Action == row.Choice.Action) ?? Actions[0];
+        OfferReadings(row.Reading);
     }
+}
+
+/// <summary>Combo item wrapping one <i>"read as"</i> answer (brief DFR38-1).</summary>
+public sealed record DxfReadingItem(DxfLayerReading Reading, string Label)
+{
+    public override string ToString() => Label;
 }
 
 /// <summary>Combo item wrapping one <i>"in the stackup as"</i> answer (R-rail27-1b).</summary>
@@ -155,7 +202,7 @@ public static class LayerMappingRows
         IReadOnlyList<LayerMappingRow> rows, Technology? destTech, bool allowAddToTechnology)
     {
         var targets = Targets(destTech);
-        return rows.Select(r => new LayerMappingRowViewModel(r, targets, allowAddToTechnology)).ToList();
+        return rows.Select(r => new LayerMappingRowViewModel(r, targets, allowAddToTechnology, destTech)).ToList();
     }
 }
 
@@ -177,6 +224,17 @@ public partial class LayerMappingDialog : Window
     private List<ComboBoxItem> _choiceItems = [];
     private Technology? _workspaceTech;
     private string? _workspaceRoot;
+
+    // The DXF import's preview (brief DFR38-1 R-dfr38-1-6). Null for every other caller.
+    private DxfMappingRequest? _dxf;
+    private Technology? _dxfTech;
+    private int _previewGeneration;
+    private readonly Avalonia.Threading.DispatcherTimer _previewDelay = new() { Interval = TimeSpan.FromMilliseconds(120) };
+
+    /// <summary>The join tolerance as typed, in microns, or the default where the box does not read as a number.</summary>
+    public double JoinToleranceMicrons =>
+        double.TryParse(JoinToleranceBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double um) && um >= 0
+            ? um : DxfBoardReading.DefaultJoinToleranceMicrons;
 
     public LayerMappingDialog() => InitializeComponent();
 
@@ -236,6 +294,74 @@ public partial class LayerMappingDialog : Window
         {
             if (TechnologyCombo.SelectedIndex is >= 0 and var i && i < _choices.Count) ShowChoice(_choices[i]);
         };
+    }
+
+    /// <summary>
+    /// A DXF import's form (brief DFR38-1): the table's rows are what model space reaches, each with Ignore and
+    /// a reading, over a preview drawn by the layout editor's renderer from what those answers would import.
+    /// Nothing is written until the import returns from the dialog.
+    /// </summary>
+    public LayerMappingDialog(string titleText, Technology destTech, DxfMappingRequest request) : this()
+    {
+        Title = titleText;
+        TitleText.Text = titleText;
+        _format = "DXF";
+        _dxf = request;
+        _dxfTech = destTech;
+        Height = 820;
+
+        ShowTable("DXF", destTech, request.Rows, allowAddToTechnology: true);
+        ReadingHeader.IsVisible = true;
+        JoinToleranceRow.IsVisible = true;
+        PreviewPane.IsVisible = true;
+        ContentGrid.RowDefinitions[1].Height = new GridLength(1.4, GridUnitType.Star);
+
+        JoinToleranceBox.Text = DxfBoardReading.DefaultJoinToleranceMicrons.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        JoinToleranceBox.TextChanged += (_, _) => RestartPreviewDelay();
+        _previewDelay.Tick += (_, _) => { _previewDelay.Stop(); StartPreview(); };
+        PreviewHost.SizeChanged += (_, _) => RestartPreviewDelay();
+        Closed += (_, _) => { _previewDelay.Stop(); _previewGeneration++; };
+    }
+
+    private void RestartPreviewDelay()
+    {
+        if (_dxf is null) return;
+        _previewDelay.Stop();
+        _previewDelay.Start();
+    }
+
+    private List<LayerMappingRow> SettledRows() => _rowVms
+        .Select(r => r.Row with { Choice = r.CurrentChoice, Stackup = r.CurrentStackup, Reading = r.CurrentReading })
+        .ToList();
+
+    /// <summary>Reads and rasters on a worker, as the import chooser's previews do: everything it touches is
+    /// private to that one call, and only the newest result is shown. The task is for a headless capture to wait on.</summary>
+    public Task StartPreview()
+    {
+        if (_dxf is not { } request) return Task.CompletedTask;
+
+        int generation = ++_previewGeneration;
+        var rows = SettledRows();
+        double tolerance = JoinToleranceMicrons;
+        var tech = _dxfTech;
+        double scaling = RenderScaling;
+        // The host's bounds: an Image with no source yet arranges to nothing, so its own would never grow.
+        int pxW = (int)(PreviewHost.Bounds.Width * scaling), pxH = (int)(PreviewHost.Bounds.Height * scaling);
+        var theme = LayoutRenderTheme.FromTheme(ThemeService.Active,
+            ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light);
+
+        return Task.Run(() =>
+        {
+            var preview = request.Preview(rows, tolerance);
+            var bitmap = ComponentPreviewRenderer.RenderFootprint(preview.View, tech, theme, pxW, pxH, scaling);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (generation != _previewGeneration) { bitmap?.Dispose(); return; }
+                (PreviewImage.Source as IDisposable)?.Dispose();
+                PreviewImage.Source = bitmap;
+                PreviewNotes.Text = string.Join("\n", preview.Messages);
+            });
+        });
     }
 
     private ImportTechnologyChoice? SelectedChoice =>
@@ -336,14 +462,19 @@ public partial class LayerMappingDialog : Window
     {
         UpdateSummary();
         if (e.PropertyName == nameof(LayerMappingRowViewModel.SelectedStackup)) RegateTechnologies();
+        if (e.PropertyName is nameof(LayerMappingRowViewModel.SelectedReading) or nameof(LayerMappingRowViewModel.SelectedAction)
+                           or nameof(LayerMappingRowViewModel.SelectedMapTarget))
+            RestartPreviewDelay();
     }
 
     private void UpdateSummary()
     {
         int shapeTotal = _rowVms.Sum(r => r.Row.ShapeCount);
-        int mapped = _rowVms.Count(r => r.SelectedAction.Action != LayoutFragment.LayerReconciliationAction.KeepUnknown);
-        int unknown = _rowVms.Count - mapped;
-        SummaryText.Text = $"{shapeTotal} shape(s) · {_rowVms.Count} layer(s) → {mapped} mapped, {unknown} unknown";
+        int ignored = _rowVms.Count(r => r.SelectedAction.Action == LayoutFragment.LayerReconciliationAction.Ignore);
+        int mapped = _rowVms.Count(r => r.SelectedAction.Action != LayoutFragment.LayerReconciliationAction.KeepUnknown) - ignored;
+        int unknown = _rowVms.Count - mapped - ignored;
+        SummaryText.Text = $"{shapeTotal} shape(s) · {_rowVms.Count} layer(s) → {mapped} mapped, {unknown} unknown"
+                         + (ignored > 0 ? $", {ignored} ignored" : "");
     }
 
     private void OnMapAllUnmatchedClick(object? sender, RoutedEventArgs e)
@@ -370,9 +501,7 @@ public partial class LayerMappingDialog : Window
 
     private void OnOkClick(object? sender, RoutedEventArgs e)
     {
-        var settled = _rowVms
-            .Select(r => r.Row with { Choice = r.CurrentChoice, Stackup = r.CurrentStackup })
-            .ToList();
+        var settled = SettledRows();
 
         ImportTechnologyTarget? target = null;
         if (_request is not null && SelectedChoice is { } choice)

@@ -28836,3 +28836,58 @@ Gmsh's peak on the whole board went from 9.65 to 9.38 GB; the build itself peaks
 
 **A mesh refusal's remedy names a via only where its elements touch one.** It always said to set the via entry's Fill to Solid, which on a board edge or a pour changes nothing.
 
+## A board drawn as DXF outlines imports as copper and vias (brief DFR38-1)
+
+Decided before building: the existing File ▸ Import ▸ DXF, with the mapping deciding (D1); even-odd by nesting with
+the outermost loop filled, and an Invert per layer (D2); open ends close only within a stated tolerance, 1 µm by
+default, and the rest are listed by coordinates (D3).
+
+**The mapping alone cannot mean "fill this", and that is what holds a round trip.** A layout exported from here comes back
+with layers named as the technology names them, so they all match. Its pad on a pour is two closed polylines, and an
+even-odd fill would punch the pad out; its via is two circles. So a reading is a separate answer on the row
+(`LayerMappingRow.Reading`). What tells a drawing of outlines from one of ours is that `DxfWriter` draws copper with
+`LWPOLYLINE`, `HATCH` and `CIRCLE`, never `LINE` or `ARC` (a ruler's `LINE` is on `RULER`). A name-matched row therefore starts
+as drawn unless the file strokes a layer mapped to copper or the outline; a row mapped by hand starts on its target's reading.
+All matched and no strokes means no dialog, as before. `DxfMappingRequest.NeedsAnswer` carries that.
+
+**One cell for any answered import; the byte-for-byte gate holds only where nobody was asked.** R-dfr38-1-2 and the gate disagree for a drawing
+mapped as drawn. This first shipped with the gate winning, so a board left on the dialog's defaults wrote 53 cells to the workspace root, 50 of
+them blocks it never used. The owner ruled for one cell, so any answer now flattens model space into one cell named after the file, whatever each
+layer reads as. A cell per block remains where no question was put: `convert` with no `--layer-map` (no callback), a file that matched
+throughout (`DxfMappingAnswer.KeepBlocks`, how an export from here returns) and a block library with nothing in model space. File ▸ Import
+puts those in a folder named after the file, the rule the board import already follows. A key an `INSERT`'s layer alone needs is minted last, so
+every key the hierarchical path uses is the one it always was.
+
+**A block's entity on layer 0 takes its `INSERT`'s layer.** The flatten needs the `INSERT`'s own layer, which `LayoutInstance`
+does not hold, so `DxfStructure.InstanceLayers` runs parallel to `Instances`. A hierarchical import ignores it.
+
+**Which closed walks come out does not matter.** After the splits, joins and shared-edge removal, every point has an even
+number of edges, and even-odd counts boundary crossings mod 2, which is the same for any decomposition of the same edges.
+So `DxfCopperLoops` need not recover the loops the drawing meant, and adjacent or nested loops read correctly from the
+edges alone.
+
+**One split rule covers overlaps and T junctions.** Each segment splits at every point lying on it, within 2 DBU. A collinear overlap
+then leaves one edge drawn twice between two points. That edge stays once if its ends are even (the overlap at a board edge) and
+goes if its ends are odd (two loops each drawn in full, sharing it).
+
+**Ends join by merging points, not by a closing segment.** A closing segment would add an edge up to a micron long for the mesher to resolve.
+
+**An open outline stays one zero-width path per edge.** The renderer strokes width 0 as a hairline, `GetFillPath` hands back the
+centreline, and the fill closes it, so one path of three or more points draws as the area it encloses. A gap would look like copper.
+
+**`--layer-map` was already a picture flag**, taken by `PictureFlags.Take` before `convert`'s own switch, and any left there are
+refused on another source. A picture's layers are colours and a DXF's are names, so the source decides: a DXF source's value
+moves to `Options.LayerMap` before that refusal.
+
+**A DXF imported, exported and imported again came back empty, before any of this.** An import's drawing is a cell called `$MODEL`, so
+exporting it writes a block of that name placed by one `INSERT`. Read back, model space and the block were two structures with one name,
+hence one cell folder, and the thin model space overwrote the block holding every shape. `DxfReader` now gives such a block a name of its own and
+the `INSERT`s follow, which also repairs files already exported. Found by running the board through the loop.
+
+**A via with no drawn pad has `PadSize == DrillSize`.** A drawing of outlines states no pad. A `CIRCLE` on the filled copper at the same point is
+one, through `DrillViaPairing`, and is consumed so the fill does not punch it out.
+
+Checked on a real evaluation board drawn this way (not in the repo): `PATTERN` reads 196 shapes, against 354 before the rows
+counted only what model space reaches; 16 copper polygons with 2 holes, 2 overlaps resolved, nothing left open, 87 vias, 50 unused
+blocks skipped. Its part-number digits read as copper. `check` then reports 6 design-rule errors on that board against the
+technology's own rules, which are the board's and not the import's. Nothing was solved.

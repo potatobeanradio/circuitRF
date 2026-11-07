@@ -277,7 +277,14 @@ public static class LayoutFragment
 
     // ── Layer reconciliation (R-L1f-3) ──────────────────────────────────────
 
-    public enum LayerReconciliationAction { KeepUnknown, MapToExisting, AddToTechnology }
+    public enum LayerReconciliationAction
+    {
+        KeepUnknown, MapToExisting, AddToTechnology,
+
+        /// <summary>Leave this layer's shapes out. Offered by a DXF import only (brief DFR38-1): a paste or
+        /// a retarget that dropped shapes would lose work the user can see.</summary>
+        Ignore,
+    }
 
     public readonly record struct LayerReconciliationChoice(LayerReconciliationAction Action, LayerKey? MapTarget = null);
 
@@ -306,6 +313,9 @@ public static class LayoutFragment
 
         foreach (var shape in shapes)
         {
+            if (choices is not null && choices.TryGetValue(shape.Layer, out var dropped) &&
+                dropped.Action == LayerReconciliationAction.Ignore) continue;
+
             var clone = LayoutGeometry.Clone(shape);
             clone.Generated = null;   // a pasted copy of generated copper is the designer's
             if (clone is LabelShape pastedPort) pastedPort.SchematicId = null;   // brief-sdl-5: so is a port label's link

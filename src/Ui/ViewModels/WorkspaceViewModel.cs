@@ -5235,7 +5235,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                             .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "DXF", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
-                    });
+                    },
+                    // A file whose layers all matched by name and which strokes no copper asks nothing,
+                    // which is how a design exported from here comes back unchanged.
+                    resolveMapping: request => !request.NeedsAnswer
+                        ? new CircuitRF.Design.Layout.Interchange.DxfMappingAnswer(request.Rows, KeepBlocks: true)
+                        : Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveDxfMappingAsync(window, techRes.Tech!, request))
+                            .GetAwaiter().GetResult(),
+                    importName: Path.GetFileNameWithoutExtension(files[0].Path.LocalPath));
             });
         }
         catch (Exception ex)
@@ -5255,6 +5263,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ApplyImportToTechnology(techRes, result.LayersToAdd, stackup: null);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from DXF.");
+    }
+
+    private static async Task<CircuitRF.Design.Layout.Interchange.DxfMappingAnswer?> ResolveDxfMappingAsync(
+        Window owner, Technology tech, CircuitRF.Design.Layout.Interchange.DxfMappingRequest request)
+    {
+        var dialog = new LayerMappingDialog("Import DXF — Layer Mapping", tech, request);
+        var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
+        return result is null ? null
+            : new CircuitRF.Design.Layout.Interchange.DxfMappingAnswer(result.Rows, dialog.JoinToleranceMicrons);
     }
 
     // ── Import Board (docs/sonnet-briefs/brief-L4d-kicad-pcb-import.md) ──────────────────────────
