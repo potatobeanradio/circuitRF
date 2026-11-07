@@ -7,6 +7,23 @@ Geometry.OCCBooleanPreserveNumbering = 1;
 Geometry.OCCBoundsUseStl = 1;
 e = 0.001;
 
+Macro CrfMap
+  crft = StrCat(crfn, "[] = {");
+  For crfi In {0:#crfl[]-1}
+    crfr = 0;
+    For crfk In {0:#frag[]-1}
+      If (frag[crfk] < crfl[crfi])
+        crfr += 1;
+      EndIf
+    EndFor
+    If (crfi)
+      crft = StrCat(crft, ", ");
+    EndIf
+    crft = StrCat(crft, Sprintf("crfb[%g]", crfr));
+  EndFor
+  Printf(StrCat(crft, "};")) >> "built-19bc4d85535c406b.map";
+Return
+If (!FileExists("built-19bc4d85535c406b.map"))
 // ---- solids, in construction order -------------------------------------------------------
 // RO4350: Dielectric, RO4350B, order 1
 v = newv; Box(v) = {-3000, -4000, 35, 9000, 8000, 508};
@@ -52,46 +69,61 @@ ex[] = Extrude {0, 0, 35} { Surface{bs[]}; };
 s3[] = {ex[1]};
 
 // ---- disjoint by construction order: each solid loses what a higher-order solid takes -----
-s1[] = BooleanDifference{ Volume{s1[]}; Delete; }{ Volume{s2[], s3[]}; };
+s1[] = BooleanDifference{ Volume{s1[]}; }{ Volume{s2[], s3[]}; };
 
 // ---- the air box, and the background: what no solid claims inside it --------------------
 bx = newv; Box(bx) = {-3000, -4000, 35, 9000, 8000, 3543};
-bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[], s1[], s2[], s3[]}; };
-// Conductors are voids: their surfaces carry Palace's conductivity boundary.
-Recursive Delete { Volume{s2[], s3[]}; }
+bg[] = BooleanDifference{ Volume{bx}; }{ Volume{s0[], s1[], s2[], s3[]}; };
 
 // ---- sheets and port sheets --------------------------------------------------------------
 
 // ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------
-frag[] = BooleanFragments{ Volume{s0[], s1[], bg[]}; Delete; }{ };
+frag[] = BooleanFragments{ Volume{s0[], s1[], bg[]}; }{ };
+If (#frag[] == 0)
+  frag[] = {s0[], s1[], bg[]};
+EndIf
+crfv[] = Volume{:};
+crfx[] = frag[];
+crfx[] -= crfv[];
+frag[] -= crfx[];
+crfs = #frag[] != (#s0[] + #s1[] + #bg[]);
+crfj = 0;
+crfc = #s0[];
+s0[] = {};
+For crfi In {0:crfc-1}
+  s0[] += frag[crfj + crfi];
+EndFor
+crfj += crfc;
+crfc = #s1[];
+s1[] = {};
+For crfi In {0:crfc-1}
+  s1[] += frag[crfj + crfi];
+EndFor
+crfj += crfc;
+crfc = #bg[];
+bg[] = {};
+For crfi In {0:crfc-1}
+  bg[] += frag[crfj + crfi];
+EndFor
+crfj += crfc;
+Hide {:}
+Recursive Show { Volume{frag[]}; }
+Geometry.OCCExportOnlyVisible = 1;
+Save "built-19bc4d85535c406b.brep";
+Printf("// which of built-19bc4d85535c406b.brep's volumes each list holds") > "built-19bc4d85535c406b.map";
+crfn = "s0"; crfl[] = s0[];
+Call CrfMap;
+crfn = "s1"; crfl[] = s1[];
+Call CrfMap;
+crfn = "bg"; crfl[] = bg[];
+Call CrfMap;
+Printf("crfBuiltComplete = 1;") >> "built-19bc4d85535c406b.map";
+Delete Model;
+EndIf
+crfb[] = ShapeFromFile("built-19bc4d85535c406b.brep");
+Include "built-19bc4d85535c406b.map";
 allV[] = Volume{:};
 allS[] = Surface{:};
-// ---- a sheet right across a solid splits it: the solid takes its pieces (brief-dfr35-1) -----
-made[] = allV[];
-made[] -= {s0[], s1[], bg[]};
-Macro CrfSplit
-  crfp[] = {};
-  crfg[] -= allV[];
-  If (#crfg[])
-    crfp[] = Volume In BoundingBox{crfx0 - e, crfy0 - e, crfz0 - e, crfx1 + e, crfy1 + e, crfz1 + e};
-    crfo[] = crfp[];
-    crfo[] -= made[];
-    crfp[] -= crfo[];
-    made[] -= crfp[];
-  EndIf
-Return
-crfg[] = s0[]; crfx0 = -3000; crfy0 = -4000; crfz0 = 35; crfx1 = 6000; crfy1 = 4000; crfz1 = 543;
-Call CrfSplit;
-s0[] -= crfg[];
-s0[] += crfp[];
-crfg[] = s1[]; crfx0 = -3000; crfy0 = -4000; crfz0 = 543; crfx1 = 6000; crfy1 = 4000; crfz1 = 3578;
-Call CrfSplit;
-s1[] -= crfg[];
-s1[] += crfp[];
-crfg[] = bg[]; crfx0 = -3000; crfy0 = -4000; crfz0 = 35; crfx1 = 6000; crfy1 = 4000; crfz1 = 3578;
-Call CrfSplit;
-bg[] -= crfg[];
-bg[] += crfp[];
 single[] = CombinedBoundary{ Volume{allV[]}; };
 For k In {0:#single[]-1}
   single[k] = Abs(single[k]);

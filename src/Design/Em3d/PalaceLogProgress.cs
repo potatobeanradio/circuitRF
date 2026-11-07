@@ -814,7 +814,8 @@ public sealed class GmshLogProgress(RunControl? control)
         }
         if (said.StartsWith("Reading ", StringComparison.Ordinal))
         {
-            Show("building the geometry");
+            // brief-em3d-140 — the second "Reading" of a run that built the geometry, or the only one of a run that did not.
+            Show(said.Contains(GmshGeoWriter.BuiltPrefix, StringComparison.Ordinal) ? "reading the built geometry" : "building the geometry");
             return;
         }
         if (GeometryStep.Match(said) is { Success: true } step)

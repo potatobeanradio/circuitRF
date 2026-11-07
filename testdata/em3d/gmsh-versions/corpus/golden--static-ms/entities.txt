@@ -3,21 +3,19 @@ group 1 1 0
 group 2 1 0
 group 3 6 0
 group 4 6 0
-group 5 3 0
-group 6 1 0
-group 7 3 0
+group 5 2 0
+group 6 2 0
+group 7 0 0
 group 8 1 0
-group 9 0 0
-group 10 1 0
-group 11 1 0
+group 9 1 0
+group 10 2 0
+group 11 2 0
 group 12 2 0
 group 13 2 0
-group 14 2 0
-group 15 2 0
-group 16 3 0
-group 17 1 0
-all_volumes 4
-classified_volumes 4
-all_surfaces 35
-single_sided 30
+group 14 1 0
+group 15 1 0
+all_volumes 2
+classified_volumes 2
+all_surfaces 29
+single_sided 26
 unclassified_single_sided 0

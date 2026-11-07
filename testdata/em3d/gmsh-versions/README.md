@@ -39,6 +39,13 @@ admit one.
 
 ## Results
 
+**The corpus was rewritten on 2026-11-06 for the build-once script (brief-em3d-140). Two builds have run it, and both passed
+64 of 64: the reference, 4.15.2 with OCC 7.9.3, and 4.15.2 with OCC 7.8.1, the upstream macOS arm64 wheel (largest element
+difference +3.8 %).** The rows below measured the scripts before that change. It adds `Geometry.OCCExportOnlyVisible`,
+`FileExists`, `Delete Model`, and a `.brep` written by `Save` and read back by `ShapeFromFile`. Run `run.sh` on the other versions
+before relying on them. The one table that changed is `palace--WavePorts_Launch--Palace`, whose `all_surfaces` is 42
+against 44: two sheet pieces that bound no volume are no longer saved, and neither belonged to a group.
+
 Measured 2026-10-15. *Max Δ elements* is the largest element-count difference from 4.15.2 over the 64 scripts.
 
 | Version | OCC | Build | Scripts passed | Max Δ elements | Result |

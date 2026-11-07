@@ -64,14 +64,6 @@
     },
     {
       "Attribute": 8,
-      "Name": "via/1/fill",
-      "Dimension": 3,
-      "Kind": "Volume",
-      "Expected": 1,
-      "Material": "Air"
-    },
-    {
-      "Attribute": 9,
       "Name": "background",
       "Dimension": 3,
       "Kind": "Background",
@@ -80,7 +72,7 @@
       "Material": "Air"
     },
     {
-      "Attribute": 10,
+      "Attribute": 9,
       "Name": "port/1",
       "Dimension": 2,
       "Kind": "Port",
@@ -89,7 +81,7 @@
       "Port": 1
     },
     {
-      "Attribute": 11,
+      "Attribute": 10,
       "Name": "port/2",
       "Dimension": 2,
       "Kind": "Port",
@@ -98,7 +90,7 @@
       "Port": 2
     },
     {
-      "Attribute": 12,
+      "Attribute": 11,
       "Name": "airbox/xmin",
       "Dimension": 2,
       "Kind": "Face",
@@ -107,7 +99,7 @@
       "Boundary": "Absorbing"
     },
     {
-      "Attribute": 13,
+      "Attribute": 12,
       "Name": "airbox/xmax",
       "Dimension": 2,
       "Kind": "Face",
@@ -116,7 +108,7 @@
       "Boundary": "Absorbing"
     },
     {
-      "Attribute": 14,
+      "Attribute": 13,
       "Name": "airbox/ymin",
       "Dimension": 2,
       "Kind": "Face",
@@ -125,7 +117,7 @@
       "Boundary": "Absorbing"
     },
     {
-      "Attribute": 15,
+      "Attribute": 14,
       "Name": "airbox/ymax",
       "Dimension": 2,
       "Kind": "Face",
@@ -134,7 +126,7 @@
       "Boundary": "Absorbing"
     },
     {
-      "Attribute": 16,
+      "Attribute": 15,
       "Name": "airbox/zmin",
       "Dimension": 2,
       "Kind": "Face",
@@ -143,7 +135,7 @@
       "Boundary": "Absorbing"
     },
     {
-      "Attribute": 17,
+      "Attribute": 16,
       "Name": "airbox/zmax",
       "Dimension": 2,
       "Kind": "Face",

@@ -28769,3 +28769,47 @@ A list of surfaces on one object says it once. Gate: `tests/Ui.Tests/Em3d/HoleTo
 
 **The whole board then meshed and solved.** A four-layer board placed whole, 2 GHz, Draft, 13 ports: 927,863 tetrahedra in 45 minutes, Gmsh peak 9.65 GB; Palace 24 min 44 s at one process, 1,398,988 unknowns, 8.9 GB by its own report and a 16.0 GB footprint. Largest |Sij − Sji| 4e-8, power lost per driven port 0.5-1.2 %. The estimates before it said 19.2 GB and, from the mesh, 25.0 GB, and the note said the run would probably be stopped: it needed about 2.4 GB of extra swap. Recalibrating that is R-em3d140-6.
 
+
+## Brief 140: a whole board's geometry in minutes, not most of an hour (2026-11-06)
+
+**Nearly all of the 46 minutes was deleting, not cutting.** Sampling the largest pour's cut alone showed the process inside `OCC_Internals::_unbind` throughout. To unbind a sub-shape Gmsh looks for it in every other shape of the model, once per sub-shape, so a cut with `Delete` costs its input's size times the model's. A boolean with no `Delete` skips that entirely, and so does the `synchronize` that had to remove what they left. Nothing here depends on the shapes being planar, so a planar-only option would add nothing for this cost, and none was built.
+
+**What the script does now.** It runs its booleans with no `Delete`, saves the fragment's volumes as `built-<hash>.brep`, writes `built-<hash>.map` naming them, discards the model with `Delete Model`, and imports the file. Everything after that (the surface queries, the groups, the entity table, the fields) is unchanged. A conductor is no longer cut by anything: it is a void, and two overlapping voids leave the same space.
+
+| The candidates, by hand on the board (28,028 points) | Build CPU to the fragment's end | Table |
+|---|---|---|
+| The script as it was | about 46 min with everything after the fragment, from the run's stamps | reference |
+| (d) No `Delete`, and read the result back | 277 s, and 18 s for all that follows | identical |
+| (d) + (c), each cut naming only the solids touching its outline | 270 s | not compared; dropped |
+| (d) + `OCCParallel` | 331 s wall, 1,243 s CPU | not compared; rejected |
+| (d) + no conductor cut at all, which is what (a) would have saved without any 2D work | 164 s to the fragment, 190 s saved and read | +5 faces, below |
+
+(a), (b) and (e) were not run: the target was met without them, and (a) and (b) work only for planar geometry. What is left of the build is the background difference (about 100 s) and the fragment (about 50 s), which is the most a planar-only route could still save.
+
+| End to end, as a run does it | Geometry before | Geometry now | Whole `gmsh -3` before | Now | Elements before / now |
+|---|---|---|---|---|---|
+| Four-layer board, whole, 28,028 points, by the CLI | about 46 min | 3 min 43 s | 45-47 min | 4 min 56 s | 1,592,000 / 1,591,415 |
+| The same board's crop, 9,959 points | about 4 min | 53 s | 268 s | 74 s | 661,662 / 661,727 |
+| A ten-layer crop, 5,111 points | | 20 s | 526 s | 96 s | 424,891 / 426,199 |
+
+Gmsh's peak on the whole board went from 9.65 to 9.38 GB; the build itself peaks at about 2.5 GB. The saved B-rep is 107 MB beside a 126 MB mesh, and one is kept per run folder.
+
+**The entity tables.** Every corpus script writes the table it wrote before, the wire-bond and package scripts included, except `palace--WavePorts_Launch--Palace`'s `all_surfaces`, 42 against 44: a sheet piece that bounds no volume is no longer saved, and those two belonged to no group. On the boards, a via clipped by the crop or board edge now has its flat face in six pieces rather than one, split at the layer heights: +5 faces in that via's own group, all of one conductor. On the ten-layer crop one via gained 32 and two others gained 2, in their own groups; those were counted and not inspected. The count is a floor there, and the mesh did not grow. The corpus's `golden--via` and `golden--static-ms` tables were stale against their own goldens before this change, so those two were compared with the previous writer's current scripts, and are identical.
+
+**|ΔS| between a mesh from the old script and one from the new, same configuration.** Round-wire output network 1.4e-5 over 101 points; connector launch 0, the same mesh; coupled microstrip with wave ports 5.0e-4 over 21 points. The package example was refused for memory at ten processes and was not solved; its table is identical.
+
+**Reuse.** The hash covers only the statements that build the shapes. Changing the mesh frequency on the whole board ran with no `Difference` line, in 118 s against 296 s. A map has a last line a stopped Gmsh will not have written, and only a whole pair is kept. A file Gmsh then cannot read is removed, or every later run would stop on it.
+
+**The fragment gives no map, but it does give an order.** It returns each input's volumes in input order, then any sheet pieces bounding no volume. So a list's volumes are its place in that output, with no box to guess from, and a sheet right across a solid is counted by fragmenting that solid alone. A saved file holds its solids in tag order and reading it back numbers them in that order, which is what the map records. One volume and no sheet returns nothing, since there is nothing to fragment: a cavity filling its box.
+
+**The time note.** 1.284e-4 × points^1.4 seconds holds the three boards within 5 %, and their solids explain nothing further. Under a minute it says nothing; past ten minutes, about 58,000 points, it names Crop to New Cell. It is in the run's notes and in `explain`'s Palace row. R-em3d140-5 was not built: the brief skips it when the board comes in under 5 minutes.
+
+**The order-1 memory estimate now targets the peak footprint**, which is what a run's limit is held against; Palace's own table reads less than half of it. The per-unknown figure holds to about 400,000 tetrahedra. Above that a line through two measured peaks takes over: 538,281 tetrahedra at 17.4 GB on three processes, and 927,863 at 18.64 GB on one. It reads 16.0 GB for 475,064 tetrahedra's measured 15.9. The ten-layer crop's 218,437 unknowns, 2.5 GB by Palace's table on one process, stays on the per-unknown figure at 4.7 GB. Order 2 and the direct solver have no measurement to move them.
+
+**The 16.0 GB recorded for this board was not its peak.** It was the warning a run prints on crossing 90 % of memory. Sampled for the whole run, the footprint sits at 14-15 GB and peaks at 18.64 GB near the end, past this machine's 17.2 GB. So the earlier "will probably be stopped" was right, and a first calibration on 16.0 GB proved it: the estimate fell below memory, no question was asked, `--force` by its documented rule then keeps the limit, and Palace was stopped at 17.3 GB after 3 min 18 s. The board now reads 18.6 GB from its mesh instead of 25.0, still past memory, so Simulate asks and `--force` lifts the limit. Before meshing it reads 15.6 GB, since that estimate's element count is low on this board's short edges.
+
+**The solve.** Run directly, one process, on the new mesh: 29 min 7 s, with largest |ΔS| 9.5e-4 against the previous mesh's result over all 169 entries (|S11| 0.47 at port 11). It was not run through `circuitrf em` to the end: the one attempt was the stop above, and the estimate changed after it.
+
+**Not verified: Gmsh versions other than 4.15.2 with OCC 7.9.3.** The script now relies on `Geometry.OCCExportOnlyVisible`, `FileExists`, `Delete Model` and a B-rep round trip. `testdata/em3d/gmsh-versions/run.sh` has to run on the rest of the tested list.
+
+**A flat tetrahedron now remakes the mesh once (found on this board at a mesh sized for 2.2 GHz).** Gmsh left one tetrahedron of exactly zero volume, 6V/L³ about 1e-15, which the mesh check refused correctly: a geometry with every conductor cut gave the same element, so dropping those cuts did not cause it. It is the mesher's, not the board's. A second seed moved it to another place on a planar face, the HXT 3D mesher left one on an inner plane (in 487 s), and Netgen's optimiser stopped Gmsh with a bus error. It cannot be repaired afterwards, because all four corners can lie on a face two volumes share, where flipping the diagonal breaks conformity with the other side. The usual mesher left none at 1.8, 2.0, 2.5 and 3.0 GHz; the Delaunay surface mesher (`Mesh.Algorithm = 5`) left none at those or at 2.2, in the same 2 minutes, with about 5 % more elements. It is the retry and not the default, so a clean mesh and its golden keep their bytes. On that board at 2.2 GHz the run remade its mesh in 4 min 4 s with no flat element, and a second run reused it. S-parameters on a Delaunay-surface mesh were not compared with the usual mesher's. The retry costs one more mesh and no geometry, and the check still refuses a mesh that keeps a flat element, such as a through-hole pad's many.

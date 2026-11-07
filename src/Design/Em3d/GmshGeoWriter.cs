@@ -12,14 +12,19 @@
 // testable with no solver installed and what lets a re-run reuse a mesh.
 //
 // THE RECIPE (overview §1e, confirmed by F0 Q5 — docs/design/em-3d-f0-findings.md):
-//   1. Every solid is cut by every higher-precedence solid it overlaps (Em3dPrecedence: metal over
-//      dielectric, then construction order), so the volumes are disjoint BEFORE any fragment. A conductor is then deleted: it is a VOID whose
-//      surface carries Palace's conductivity boundary. What no solid claims inside the box is the
-//      background, which is air: the box minus every solid, in ONE BooleanDifference (brief-em3d-137).
+//   0. BUILD ONCE, THEN IMPORT (brief-em3d-140). Steps 1 and 2 run with no Delete at all, the result is saved as a B-rep with
+//      the lists that name its volumes, and the model is thrown away and read back. A deletion is the expensive part of
+//      a Gmsh boolean, not the boolean: each sub-shape it unbinds is looked for in every other shape of the model, so a
+//      board's script spent 40 of its 46 minutes there. Nothing about this depends on the shapes being planar. The
+//      saved files are named by a hash of the statements that build them, so a run that changes only a frequency, a
+//      mesh size or a quality starts from them.
+//   1. Every dielectric is cut by every higher-precedence solid it overlaps (Em3dPrecedence: metal over
+//      dielectric, then construction order), so the volumes are disjoint BEFORE any fragment. A conductor is cut by nothing
+//      and left out of what is saved: it is a VOID whose surface carries Palace's conductivity boundary. What no solid claims
+//      inside the box is the background, which is air: the box minus every solid, in ONE BooleanDifference (brief-em3d-137).
 //   2. Sheets and port sheets are plane surfaces, and ONE BooleanFragments imprints them and the
-//      shared faces. With OCCBooleanPreserveNumbering a volume it leaves whole keeps its tag, so a VOLUME
-//      group is its construction tags, checked to have survived. A sheet reaching right across a solid
-//      splits it, and that solid's tag is replaced by its pieces' (brief-dfr35-1 R-dfr35-1-9).
+//      shared faces. It returns each input's volumes in input order, so a VOLUME group is its position in that list, and a
+//      sheet reaching right across a solid (brief-dfr35-1 R-dfr35-1-9) is counted by fragmenting that solid alone.
 //   3. SURFACES cannot be followed by tag through a fragment, so each is recovered from what
 //      circuitRF knows of it: a tight BoundingBox query around geometry it placed itself (F0 Q5's
 //      caveat 1: OCCBoundsUseStl, or a curved face's box is loose). Classification is set algebra and
@@ -88,8 +93,10 @@ public sealed record Em3dGroup(
 /// mesh — or the reason the problem cannot be lowered.</summary>
 /// <param name="KernelFiles">brief-em3d-65 R-em3d65-2a — the B-rep of each kernel solid the script imports, to be written
 /// beside it; empty for a problem with none.</param>
+/// <param name="Built">brief-em3d-140 — the built geometry's file name with no extension, the same for every script that
+/// builds the same shapes; null for a script that does not save one (the thermal writer's).</param>
 public sealed record GmshLowering(string? Geo, IReadOnlyList<Em3dGroup> Groups, string? GroupsJson, string? Refusal,
-                                  IReadOnlyList<Em3dKernelFile>? KernelFiles = null)
+                                  IReadOnlyList<Em3dKernelFile>? KernelFiles = null, string? Built = null)
 {
     public bool Ok => Refusal is null;
 }
@@ -102,6 +109,12 @@ public static partial class GmshGeoWriter
     /// <summary>brief-dfr31-6 — which group each surface tag belongs to or bounds, read when Gmsh fails.</summary>
     public const string FacesFile    = "faces.txt";
     public const string GroupsFile   = "groups.json";
+    /// <summary>brief-em3d-140 R-em3d140-3 — the built geometry beside the script: <c>built-&lt;hash&gt;.brep</c> and the
+    /// <c>.map</c> naming its volumes, whose last line is <see cref="BuiltMapComplete"/>.</summary>
+    public const string BuiltPrefix  = "built-";
+    public const string BuiltBrepExtension = ".brep", BuiltMapExtension = ".map";
+    /// <summary>The map's last line: without it the Gmsh that wrote the pair was stopped first, and neither is kept.</summary>
+    public const string BuiltMapComplete = "crfBuiltComplete = 1;";
 
     /// <summary>The script's length unit, metres — Palace's <c>Model.L0</c>.</summary>
     public const double LengthUnitM = 1e-6;
@@ -255,6 +268,8 @@ public static partial class GmshGeoWriter
         L($"e = {Num(Eps)};");
         L();
 
+        // brief-em3d-140 — everything from here to the fragment is the build, and its bytes are the built geometry's name.
+        int buildStart = g.Length;
         L("// ---- solids, in construction order -------------------------------------------------------");
         for (int i = 0; i < problem.Solids.Count; i++)
         {
@@ -276,6 +291,9 @@ public static partial class GmshGeoWriter
         if (precedence.Shift > 0) L("// metal takes precedence over dielectric: every metal is ranked above every dielectric (em-3d.md §6.3a)");
         for (int i = 0; i < problem.Solids.Count; i++)
         {
+            // brief-em3d-140 — a conductor is cut by nothing: it is a void, and two voids that overlap leave the same space as
+            // two that have been cut apart, for a tenth of the time on a board's pours and vias.
+            if (problem.Solids[i].Role == Em3dRole.Conductor) continue;
             var tools = new List<int>();
             int pi = precedence.Of(problem.Solids[i]);
             for (int j = 0; j < problem.Solids.Count; j++)
@@ -286,7 +304,7 @@ public static partial class GmshGeoWriter
                 if (higher && Overlap(bounds[i], bounds[j])) tools.Add(j);
             }
             if (tools.Count == 0) continue;
-            L($"s{i}[] = BooleanDifference{{ Volume{{s{i}[]}}; Delete; }}{{ Volume{{{string.Join(", ", tools.Select(j => $"s{j}[]"))}}}; }};");
+            L($"s{i}[] = BooleanDifference{{ Volume{{s{i}[]}}; }}{{ Volume{{{string.Join(", ", tools.Select(j => $"s{j}[]"))}}}; }};");
         }
         L();
 
@@ -299,14 +317,10 @@ public static partial class GmshGeoWriter
         // re-processed the whole background, cavities and all: 580 s of a ten-layer board's 650 s of geometry, against
         // 8 s for this. The wrong region that chaining was meant to avoid was a plane's clockwise hole (PlanarRings).
         // With no solid there is nothing to cut, and Gmsh takes an empty tool list as a syntax error: a document of sheets alone.
-        L(problem.Solids.Count == 0 ? "bg[] = {bx};" : $"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{allSolids}}}; }};");
+        L(problem.Solids.Count == 0 ? "bg[] = {bx};" : $"bg[] = BooleanDifference{{ Volume{{bx}}; }}{{ Volume{{{allSolids}}}; }};");
+        // Conductors are voids, whose surfaces carry Palace's conductivity boundary: they are simply not saved.
         var conductors = Enumerable.Range(0, problem.Solids.Count)
                                    .Where(i => problem.Solids[i].Role == Em3dRole.Conductor).ToList();
-        if (conductors.Count > 0)
-        {
-            L("// Conductors are voids: their surfaces carry Palace's conductivity boundary.");
-            L($"Recursive Delete {{ Volume{{{string.Join(", ", conductors.Select(i => $"s{i}[]"))}}}; }}");
-        }
         L();
 
         L("// ---- sheets and port sheets --------------------------------------------------------------");
@@ -333,11 +347,14 @@ public static partial class GmshGeoWriter
         var surfaces = Enumerable.Range(0, problem.Sheets.Count).Select(k => $"h{k}[]")
                                  .Concat(portIndex.Select(k => $"p{k}[]")).ToList();
         L("// ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------");
-        L($"frag[] = BooleanFragments{{ Volume{{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}}; Delete; }}" +
-          (surfaces.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", surfaces)}}}; Delete; }};"));
+        L($"frag[] = BooleanFragments{{ Volume{{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}}; }}" +
+          (surfaces.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", surfaces)}}}; }};"));
+        string built = BuiltPrefix + PalaceRun.Sha256(g.ToString(buildStart, g.Length - buildStart))[..16];
+        g.Insert(buildStart, BuiltMapMacro(built) + $"If (!FileExists(\"{built}{BuiltMapExtension}\"))\n");
+        EmitBuiltSave(g, built, [.. meshed.Select(i => $"s{i}"), "bg"], surfaces,
+                      [.. Enumerable.Range(0, problem.Solids.Count).Where(i => problem.Solids[i].Primitive is Em3dShapeSolid).Select(i => $"ns{i}")]);
         L("allV[] = Volume{:};");
         L("allS[] = Surface{:};");
-        EmitSplitVolumes(g, meshed, bounds, box.Min, box.Max);
         L("single[] = CombinedBoundary{ Volume{allV[]}; };");
         L("For k In {0:#single[]-1}");
         L("  single[k] = Abs(single[k]);");
@@ -668,7 +685,118 @@ public static partial class GmshGeoWriter
         L("Mesh.MshFileVersion = 2.2;");
         L("Mesh.Binary = 1;");
 
-        return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null, kernelFiles);
+        return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null, kernelFiles, built);
+    }
+
+    /// <summary>
+    /// The line that remakes a mesh on Gmsh's Delaunay surface mesher. Gmsh's 3D mesher occasionally leaves one flat tetrahedron,
+    /// usually on a planar face whose triangles are not Delaunay. It is rare and moves with the seed, and the HXT 3D mesher
+    /// leaves one too; on a four-layer board at five mesh sizes this line left none, for about 5 % more elements in the same
+    /// time. So it is what a run retries with, not what it starts with.
+    /// </summary>
+    public const string DelaunaySurfacesLine = "Mesh.Algorithm = 5;";
+
+    /// <summary>
+    /// brief-em3d-140 R-em3d140-4 — seconds to build a geometry of <paramref name="outlinePoints"/>, measured on three boards: 28,028
+    /// points 217 s, 9,959 points 53 s, 5,111 points 20 s, each within 5 %. Their solids (442, 154, 190) explain nothing further.
+    /// </summary>
+    public static double ExpectedBuildSeconds(int outlinePoints) => 1.284e-4 * Math.Pow(outlinePoints, 1.4);
+
+    /// <summary>brief-em3d-140 R-em3d140-4 — what the geometry will cost, said before it is paid; null under a minute, where the
+    /// reader has nothing to decide, and past ten minutes it names the remedy.</summary>
+    public static string? BuildTimeNote(GmshLowering lowering)
+    {
+        if (lowering.Geo is not { } geo) return null;
+        int points = Regex.Count(geo, @"^Point\(p \+ ", RegexOptions.Multiline);
+        double seconds = ExpectedBuildSeconds(points);
+        if (seconds < 60) return null;
+        string note = $"Building the geometry should take about {Math.Round(seconds / 60).ToString(CultureInfo.InvariantCulture)} min " +
+                      $"({points.ToString("N0", CultureInfo.InvariantCulture)} outline points).";
+        return seconds <= 600 ? note : note + " Crop to New Cell makes a smaller region to run.";
+    }
+
+    /// <summary>brief-em3d-140 — writes one list of the built geometry into its map, each tag as its place in the saved file:
+    /// a file holds its solids in tag order, and reading it back numbers them from one in that order.</summary>
+    private static string BuiltMapMacro(string built)
+    {
+        var m = new StringBuilder();
+        void L(string line) => m.Append(line).Append('\n');
+        L("Macro CrfMap");
+        L("  crft = StrCat(crfn, \"[] = {\");");
+        L("  For crfi In {0:#crfl[]-1}");
+        L("    crfr = 0;");
+        L("    For crfk In {0:#frag[]-1}");
+        L("      If (frag[crfk] < crfl[crfi])");
+        L("        crfr += 1;");
+        L("      EndIf");
+        L("    EndFor");
+        L("    If (crfi)");
+        L("      crft = StrCat(crft, \", \");");
+        L("    EndIf");
+        L("    crft = StrCat(crft, Sprintf(\"crfb[%g]\", crfr));");
+        L("  EndFor");
+        L($"  Printf(StrCat(crft, \"}};\")) >> \"{built}{BuiltMapExtension}\";");
+        L("Return");
+        return m.ToString();
+    }
+
+    /// <summary>
+    /// brief-em3d-140 — the end of the build and the start of what every run does. <c>frag[]</c> holds each input's volumes in
+    /// input order and then any sheet pieces that bound no volume, so each list takes its count of it. Only a sheet right
+    /// across a solid makes a count differ from the list's own, and then that solid is fragmented alone to learn it, rather
+    /// than guessing from boxes. What is saved is the fragment's volumes; what the build left behind goes with the model.
+    /// </summary>
+    private static void EmitBuiltSave(StringBuilder g, string built, IReadOnlyList<string> lists, IReadOnlyList<string> surfaces,
+                                      IReadOnlyList<string> kernelCounts)
+    {
+        void L(string line) => g.Append(line).Append('\n');
+        string brep = built + BuiltBrepExtension, map = built + BuiltMapExtension;
+        // One volume and no sheet is nothing to fragment, and Gmsh returns nothing for it: a cavity that fills its box.
+        L("If (#frag[] == 0)");
+        L($"  frag[] = {{{string.Join(", ", lists.Select(n => $"{n}[]"))}}};");
+        L("EndIf");
+        L("crfv[] = Volume{:};");
+        L("crfx[] = frag[];");
+        L("crfx[] -= crfv[];");
+        L("frag[] -= crfx[];");
+        L($"crfs = #frag[] != ({string.Join(" + ", lists.Select(n => $"#{n}[]"))});");
+        L("crfj = 0;");
+        foreach (string n in lists)
+        {
+            L($"crfc = #{n}[];");
+            if (surfaces.Count > 0)
+            {
+                L("If (crfs)");
+                L($"  crfq[] = BooleanFragments{{ Volume{{{n}[]}}; }}{{ Surface{{{string.Join(", ", surfaces)}}}; }};");
+                L("  crfv[] = Volume{:};");
+                L("  crfo[] = crfq[];");
+                L("  crfo[] -= crfv[];");
+                L("  crfq[] -= crfo[];");
+                L("  crfc = #crfq[];");
+                L("EndIf");
+            }
+            L($"{n}[] = {{}};");
+            L("For crfi In {0:crfc-1}");
+            L($"  {n}[] += frag[crfj + crfi];");
+            L("EndFor");
+            L("crfj += crfc;");
+        }
+        L("Hide {:}");
+        L("Recursive Show { Volume{frag[]}; }");
+        L("Geometry.OCCExportOnlyVisible = 1;");
+        L($"Save \"{brep}\";");
+        L($"Printf(\"// which of {brep}'s volumes each list holds\") > \"{map}\";");
+        foreach (string n in lists)
+        {
+            L($"crfn = \"{n}\"; crfl[] = {n}[];");
+            L("Call CrfMap;");
+        }
+        foreach (string n in kernelCounts) L($"Printf(\"{n} = %g;\", {n}) >> \"{map}\";");
+        L($"Printf(\"{BuiltMapComplete}\") >> \"{map}\";");
+        L("Delete Model;");
+        L("EndIf");
+        L($"crfb[] = ShapeFromFile(\"{brep}\");");
+        L($"Include \"{map}\";");
     }
 
     /// <summary>
@@ -1283,44 +1411,6 @@ public static partial class GmshGeoWriter
     /// its group (the group's face is that terminal's surface).</summary>
     internal static bool SharesAnotherTerminalsFace(Em3dProblem problem, Em3dPort p)
         => p.FaceGroup is { } g && problem.Ports.Any(q => q.FaceGroup == g && q.Number < p.Number);
-
-    /// <summary>An axis-aligned rectangle with one zero axis — a port sheet.</summary>
-    /// <summary>
-    /// brief-dfr35-1 R-dfr35-1-9 — a sheet reaching right across a solid cuts it in two, and the fragment then gives the pieces
-    /// new tags: on a crop whose edges met a port's sheet on both sides, the dielectric's tag was simply gone. Each solid that
-    /// lost its tag takes the volumes the fragment made inside its own box, smallest solid first and the background last, so a
-    /// piece goes to the tightest box that holds it. Nothing changes for a solid the fragment left whole.
-    /// </summary>
-    private static void EmitSplitVolumes(StringBuilder g, IReadOnlyList<int> meshed,
-                                         IReadOnlyList<(double X0, double Y0, double Z0, double X1, double Y1, double Z1)> bounds,
-                                         Point3 boxMin, Point3 boxMax)
-    {
-        void L(string line) => g.Append(line).Append('\n');
-        L("// ---- a sheet right across a solid splits it: the solid takes its pieces (brief-dfr35-1) -----");
-        L($"made[] = allV[];");
-        L($"made[] -= {{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}};");
-        L("Macro CrfSplit");
-        L("  crfp[] = {};");
-        L("  crfg[] -= allV[];");
-        L("  If (#crfg[])");
-        L("    crfp[] = Volume In BoundingBox{crfx0 - e, crfy0 - e, crfz0 - e, crfx1 + e, crfy1 + e, crfz1 + e};");
-        L("    crfo[] = crfp[];");
-        L("    crfo[] -= made[];");
-        L("    crfp[] -= crfo[];");
-        L("    made[] -= crfp[];");
-        L("  EndIf");
-        L("Return");
-        void Split(string list, double x0, double y0, double z0, double x1, double y1, double z1)
-        {
-            L($"crfg[] = {list}; crfx0 = {Um(x0)}; crfy0 = {Um(y0)}; crfz0 = {Um(z0)}; crfx1 = {Um(x1)}; crfy1 = {Um(y1)}; crfz1 = {Um(z1)};");
-            L("Call CrfSplit;");
-            L($"{list} -= crfg[];");
-            L($"{list} += crfp[];");
-        }
-        foreach (int i in meshed.OrderBy(i => (bounds[i].X1 - bounds[i].X0) * (bounds[i].Y1 - bounds[i].Y0) * (bounds[i].Z1 - bounds[i].Z0)))
-            Split($"s{i}[]", bounds[i].X0, bounds[i].Y0, bounds[i].Z0, bounds[i].X1, bounds[i].Y1, bounds[i].Z1);
-        Split("bg[]", boxMin.X, boxMin.Y, boxMin.Z, boxMax.X, boxMax.Y, boxMax.Z);
-    }
 
     private static void EmitRectangle(StringBuilder g, string list, Point3 min, Point3 max)
     {

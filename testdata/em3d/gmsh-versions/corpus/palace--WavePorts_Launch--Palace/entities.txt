@@ -16,6 +16,6 @@ group 14 1 0
 group 15 1 0
 all_volumes 3
 classified_volumes 3
-all_surfaces 44
+all_surfaces 42
 single_sided 34
 unclassified_single_sided 0

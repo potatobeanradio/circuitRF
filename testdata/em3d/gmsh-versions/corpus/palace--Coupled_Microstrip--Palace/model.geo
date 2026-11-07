@@ -7,6 +7,23 @@ Geometry.OCCBooleanPreserveNumbering = 1;
 Geometry.OCCBoundsUseStl = 1;
 e = 0.001;
 
+Macro CrfMap
+  crft = StrCat(crfn, "[] = {");
+  For crfi In {0:#crfl[]-1}
+    crfr = 0;
+    For crfk In {0:#frag[]-1}
+      If (frag[crfk] < crfl[crfi])
+        crfr += 1;
+      EndIf
+    EndFor
+    If (crfi)
+      crft = StrCat(crft, ", ");
+    EndIf
+    crft = StrCat(crft, Sprintf("crfb[%g]", crfr));
+  EndFor
+  Printf(StrCat(crft, "};")) >> "built-b99c86a545351d0c.map";
+Return
+If (!FileExists("built-b99c86a545351d0c.map"))
 // ---- solids, in construction order -------------------------------------------------------
 // laminate: Dielectric, PTFE-glass laminate, order 1
 v = newv; Box(v) = {0, -4500, 0, 15000, 9000, 508};
@@ -16,7 +33,7 @@ s0[] = {v};
 
 // ---- the air box, and the background: what no solid claims inside it --------------------
 bx = newv; Box(bx) = {0, -4500, 0, 15000, 9000, 3508};
-bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[]}; };
+bg[] = BooleanDifference{ Volume{bx}; }{ Volume{s0[]}; };
 
 // ---- sheets and port sheets --------------------------------------------------------------
 // sheet strip_a: Copper, 0 um thick
@@ -81,7 +98,58 @@ c = newcl; Curve Loop(c) = {l:l + 3};
 s = news; Plane Surface(s) = {c}; p2[] = {s};
 
 // ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------
-frag[] = BooleanFragments{ Volume{s0[], bg[]}; Delete; }{ Surface{h0[], h1[], p0[], p2[]}; Delete; };
+frag[] = BooleanFragments{ Volume{s0[], bg[]}; }{ Surface{h0[], h1[], p0[], p2[]}; };
+If (#frag[] == 0)
+  frag[] = {s0[], bg[]};
+EndIf
+crfv[] = Volume{:};
+crfx[] = frag[];
+crfx[] -= crfv[];
+frag[] -= crfx[];
+crfs = #frag[] != (#s0[] + #bg[]);
+crfj = 0;
+crfc = #s0[];
+If (crfs)
+  crfq[] = BooleanFragments{ Volume{s0[]}; }{ Surface{h0[], h1[], p0[], p2[]}; };
+  crfv[] = Volume{:};
+  crfo[] = crfq[];
+  crfo[] -= crfv[];
+  crfq[] -= crfo[];
+  crfc = #crfq[];
+EndIf
+s0[] = {};
+For crfi In {0:crfc-1}
+  s0[] += frag[crfj + crfi];
+EndFor
+crfj += crfc;
+crfc = #bg[];
+If (crfs)
+  crfq[] = BooleanFragments{ Volume{bg[]}; }{ Surface{h0[], h1[], p0[], p2[]}; };
+  crfv[] = Volume{:};
+  crfo[] = crfq[];
+  crfo[] -= crfv[];
+  crfq[] -= crfo[];
+  crfc = #crfq[];
+EndIf
+bg[] = {};
+For crfi In {0:crfc-1}
+  bg[] += frag[crfj + crfi];
+EndFor
+crfj += crfc;
+Hide {:}
+Recursive Show { Volume{frag[]}; }
+Geometry.OCCExportOnlyVisible = 1;
+Save "built-b99c86a545351d0c.brep";
+Printf("// which of built-b99c86a545351d0c.brep's volumes each list holds") > "built-b99c86a545351d0c.map";
+crfn = "s0"; crfl[] = s0[];
+Call CrfMap;
+crfn = "bg"; crfl[] = bg[];
+Call CrfMap;
+Printf("crfBuiltComplete = 1;") >> "built-b99c86a545351d0c.map";
+Delete Model;
+EndIf
+crfb[] = ShapeFromFile("built-b99c86a545351d0c.brep");
+Include "built-b99c86a545351d0c.map";
 allV[] = Volume{:};
 allS[] = Surface{:};
 single[] = CombinedBoundary{ Volume{allV[]}; };
@@ -182,6 +250,76 @@ Printf("all_surfaces %g", #allS[]) >> "entities.txt";
 Printf("single_sided %g", #single[]) >> "entities.txt";
 Printf("unclassified_single_sided %g", #rest[]) >> "entities.txt";
 
+// ---- the face table: whose each surface is, so a mesher error can name the object (brief-dfr31-6) ----
+Printf("# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes> | b <surface> <x0 y0 z0 x1 y1 z1>;...") > "faces.txt";
+Macro CrfFaces
+  crft = "";
+  For crfk In {0:#crfl[]-1}
+    crft = StrCat(crft, Sprintf(" %g", Fabs(crfl[crfk])));
+  EndFor
+  Printf(StrCat(crfh, crft)) >> "faces.txt";
+Return
+crfv[] = {s0[]};
+crfg[] = crfv[];
+crfg[] -= allV[];
+crfv[] -= crfg[];
+crfl[] = {};
+If (#crfv[])
+  crfl[] = Boundary{ Volume{crfv[]}; };
+EndIf
+crfh = "v 1";
+Call CrfFaces;
+crfv[] = {bg[]};
+crfg[] = crfv[];
+crfg[] -= allV[];
+crfv[] -= crfg[];
+crfl[] = {};
+If (#crfv[])
+  crfl[] = Boundary{ Volume{crfv[]}; };
+EndIf
+crfh = "v 2";
+Call CrfFaces;
+crfl[] = {w0[]};
+crfh = "f 3";
+Call CrfFaces;
+crfl[] = {w1[]};
+crfh = "f 4";
+Call CrfFaces;
+crfl[] = {q0[]};
+crfh = "f 5";
+Call CrfFaces;
+crfl[] = {q2[]};
+crfh = "f 6";
+Call CrfFaces;
+crfl[] = {f0[]};
+crfh = "f 7";
+Call CrfFaces;
+crfl[] = {f1[]};
+crfh = "f 8";
+Call CrfFaces;
+crfl[] = {f2[]};
+crfh = "f 9";
+Call CrfFaces;
+crfl[] = {f3[]};
+crfh = "f 10";
+Call CrfFaces;
+crfl[] = {f4[]};
+crfh = "f 11";
+Call CrfFaces;
+crfl[] = {f5[]};
+crfh = "f 12";
+Call CrfFaces;
+crfb = "b";
+For crfk In {0:#allS[]-1}
+  crfbb[] = BoundingBox Surface{allS[crfk]};
+  crfb = StrCat(crfb, Sprintf(" %g %.1f %.1f %.1f %.1f %.1f %.1f;", allS[crfk], crfbb[0], crfbb[1], crfbb[2], crfbb[3], crfbb[4], crfbb[5]));
+  If (crfk % 200 == 199)
+    Printf(crfb) >> "faces.txt";
+    crfb = "b";
+  EndIf
+EndFor
+Printf(crfb) >> "faces.txt";
+
 // ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------
 // Largest element per material: 0.1 of its wavelength at 12 GHz;
 // 0.2 of the smallest at conductors and sheets; at most 1/4 of each port
@@ -203,6 +341,6 @@ Field[10] = Box; Field[10].VIn = 20; Field[10].VOut = 2498.270483333; Field[10].
 Field[11] = Min; Field[11].FieldsList = {1, 2, 4, 6, 7, 8, 9, 10};
 Background Field = 11;
 Mesh.ElementOrder = 2;
-Mesh.HighOrderOptimize = 2;
+Mesh.SecondOrderLinear = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.Binary = 1;

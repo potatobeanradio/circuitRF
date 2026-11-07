@@ -278,9 +278,124 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         var low = GmshGeoWriter.Write(problem, settings);
         Assert.True(low.Ok, low.Refusal);
 
-        var lines = low.Geo!.Split('\n').Where(l => l.StartsWith("bg[] = ", StringComparison.Ordinal)).ToList();
+        var lines = low.Geo!.Split('\n').Where(l => l.StartsWith("bg[] = Boolean", StringComparison.Ordinal)).ToList();
         string every = string.Join(", ", Enumerable.Range(0, problem.Solids.Count).Select(i => $"s{i}[]"));
-        Assert.Equal([$"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{every}}}; }};"], lines);
+        Assert.Equal([$"bg[] = BooleanDifference{{ Volume{{bx}}; }}{{ Volume{{{every}}}; }};"], lines);
+    }
+
+    // ── brief-em3d-140. The geometry is built once ──────────────────────────────────────────────
+
+    [Fact]
+    public void TheBuildDeletesNothing_AndItsNameFollowsTheShapesAlone()
+    {
+        var (problem, settings) = Lowerable("via");
+        var low = GmshGeoWriter.Write(problem, settings);
+        string geo = low.Geo!;
+        Assert.DoesNotContain("Delete;", geo[..geo.IndexOf("Delete Model;", StringComparison.Ordinal)]);
+        Assert.DoesNotContain("Recursive Delete", geo);
+        Assert.Equal(low.Built, GmshGeoWriter.Write(problem with { MeshFrequencyHz = 11e9 }, settings).Built);
+        Assert.NotEqual(geo, GmshGeoWriter.Write(problem with { MeshFrequencyHz = 11e9 }, settings).Geo);
+        var moved = problem with { Boundary = problem.Boundary with { Min = problem.Boundary.Min with { Z = problem.Boundary.Min.Z - 1e-4 } } };
+        Assert.NotEqual(low.Built, GmshGeoWriter.Write(moved, settings).Built);
+    }
+
+    [GmshFact]
+    public void ARunThatChangesOnlyTheMeshSize_CutsNothing_AndAnUnreadableBuildIsBuiltAgain()
+    {
+        var (problem, settings) = Lowerable("small-microstrip");
+        string dir = Dir("built");
+        var first = GmshGeoWriter.Write(problem, settings);
+        Assert.True(PalaceRun.Mesh(dir, first, Gmsh(), null, default).Ok);
+        Assert.True(PalaceRun.HasBuiltGeometry(dir, first));
+        Assert.Contains("Difference", File.ReadAllText(Path.Combine(dir, PalaceRun.GmshLogFile)));
+        Assert.Equal(first.Geo, File.ReadAllText(Path.Combine(dir, GmshGeoWriter.GeoFile)));   // a clean mesh is not remade
+
+        var second = GmshGeoWriter.Write(problem with { MeshFrequencyHz = 2 * problem.Frequency.StopHz }, settings);
+        Assert.True(PalaceRun.Mesh(dir, second, Gmsh(), null, default).Ok);
+        Assert.DoesNotContain("Difference", File.ReadAllText(Path.Combine(dir, PalaceRun.GmshLogFile)));
+
+        string brep = Path.Combine(dir, first.Built + GmshGeoWriter.BuiltBrepExtension);
+        File.WriteAllText(brep, "not a B-rep");
+        var third = GmshGeoWriter.Write(problem with { MeshFrequencyHz = 3 * problem.Frequency.StopHz }, settings);
+        Assert.False(PalaceRun.Mesh(dir, third, Gmsh(), null, default).Ok);
+        Assert.False(File.Exists(brep));
+        Assert.True(PalaceRun.Mesh(dir, third, Gmsh(), null, default).Ok);
+        Assert.True(PalaceRun.HasBuiltGeometry(dir, third));
+    }
+
+    [Fact]
+    public void AMapWithoutItsLastLine_IsNotABuiltGeometry()
+    {
+        var (problem, settings) = Lowerable("small-microstrip");
+        var low = GmshGeoWriter.Write(problem, settings);
+        string dir = Dir("stopped");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, low.Built + GmshGeoWriter.BuiltBrepExtension), "");
+        File.WriteAllText(Path.Combine(dir, low.Built + GmshGeoWriter.BuiltMapExtension), "s0[] = {crfb[0]};\n");
+        Assert.False(PalaceRun.HasBuiltGeometry(dir, low));
+        File.AppendAllText(Path.Combine(dir, low.Built + GmshGeoWriter.BuiltMapExtension), GmshGeoWriter.BuiltMapComplete + "\n");
+        Assert.True(PalaceRun.HasBuiltGeometry(dir, low));
+    }
+
+    [Theory]
+    [InlineData(28_028, 217)]
+    [InlineData(9_959, 53)]
+    [InlineData(5_111, 20)]
+    public void TheExpectedBuildTime_HoldsTheMeasuredBoards(int points, double seconds)
+        => Assert.InRange(GmshGeoWriter.ExpectedBuildSeconds(points), 0.95 * seconds, 1.05 * seconds);
+
+    [Fact]
+    public void TheBuildTimeNote_SaysNothingForASmallScript_AndNamesTheRemedyPastTenMinutes()
+    {
+        static GmshLowering Of(int points) => new(string.Concat(Enumerable.Repeat("Point(p + 0) = {0, 0, 0};\n", points)), [], null, null);
+        Assert.Null(GmshGeoWriter.BuildTimeNote(Of(1_000)));
+        Assert.DoesNotContain("Crop to New Cell", GmshGeoWriter.BuildTimeNote(Of(28_028)));
+        Assert.Contains("Crop to New Cell", GmshGeoWriter.BuildTimeNote(Of(80_000)));
+    }
+
+    /// <summary>R-em3d140-6 — the estimate targets the peak footprint: at or just above what each large run measured.</summary>
+    [Theory]
+    [InlineData(927_863, 1, 18.64)]
+    [InlineData(538_281, 3, 17.4)]
+    [InlineData(475_064, 3, 15.9)]
+    public void TheOrderOneMemoryEstimate_HoldsTheMeasuredPeakFootprints(long tetrahedra, int processes, double gigabytes)
+    {
+        double bytes = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, 1, 0) * Em3dSizeEstimate.PalaceProcessFactor(processes);
+        Assert.InRange(bytes / 1e9, gigabytes * 0.995, gigabytes * 1.05);
+    }
+
+    /// <summary>The board was stopped at a 17.2 GB limit while its estimate read 16 GB: nobody was asked, and --force could not
+    /// lift the limit. Past memory it reads past memory, so the question is asked and --force answers it.</summary>
+    [Fact]
+    public void ARunThatPassesMemory_IsPricedPastIt_SoItCanBeForced()
+    {
+        var settings = PalaceSettings.Resolve(new CemPalace()) with { ElementOrder = 1, AdaptiveMaxIterations = 0 };
+        Assert.True(Em3dRunService.MeshMemoryVerdict(956_060, settings, (long)17.18e9, processes: 1).PastMemory);
+    }
+
+    /// <summary>A wire's Ruled ThruSections and a kernel lid through the saved B-rep: the table the old script wrote, and what a
+    /// second run reads comes to the same one. Round wires depend on this as much as a board does.</summary>
+    [GmshFact]
+    public void AWireBondPackage_WritesTheSameEntityTable_BuiltAndRead()
+    {
+        string corpus = Path.Combine(RepoRoot(), "testdata", "em3d", "gmsh-versions", "corpus", "palace--Package--Driven");
+        string dir = Dir("package");
+        Directory.CreateDirectory(dir);
+        foreach (string f in Directory.GetFiles(corpus))
+            if (Path.GetFileName(f) != GmshGeoWriter.EntitiesFile) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
+        string reference = File.ReadAllText(Path.Combine(corpus, GmshGeoWriter.EntitiesFile));
+        Assert.Contains("Ruled ThruSections", File.ReadAllText(Path.Combine(dir, GmshGeoWriter.GeoFile)));
+        for (int run = 0; run < 2; run++)
+        {
+            var info = new ProcessStartInfo(Gmsh(), [GmshGeoWriter.GeoFile, "-2", "-o", "m.msh"]) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var gmsh = Process.Start(info)!;
+            gmsh.ErrorDataReceived += (_, _) => { };
+            gmsh.BeginErrorReadLine();
+            gmsh.StandardOutput.ReadToEnd();
+            gmsh.WaitForExit();
+            Assert.Equal(0, gmsh.ExitCode);
+            Assert.Equal(reference, File.ReadAllText(Path.Combine(dir, GmshGeoWriter.EntitiesFile)));
+        }
     }
 
     // ── 4c. Sheet claim order ───────────────────────────────────────────────────────────────────

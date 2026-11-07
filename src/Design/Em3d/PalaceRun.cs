@@ -185,6 +185,7 @@ public static class PalaceRun
 
         bool reuse = HasMeshOf(runDir, lowering, straight, out bool straightSided);
         string? note = reuse && straightSided ? CurvingNote(curvingMinutes, reused: true) : null;
+        if (reuse && HasDelaunaySurfaces(File.ReadAllText(geoPath))) note = Joined(note, FlatElementNote(reused: true));
         if (!reuse)
         {
             foreach (string stale in new[] { hashPath, mshPath, entPath })
@@ -203,6 +204,10 @@ public static class PalaceRun
                 Directory.CreateDirectory(stage);
                 WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), lowering.Geo!);
                 foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(stage);
+                // brief-em3d-140 R-em3d140-3 — a geometry already built for these same statements: the script reads it and builds nothing.
+                if (HasBuiltGeometry(runDir, lowering))
+                    foreach (string ext in BuiltExtensions)
+                        File.Copy(Path.Combine(runDir, lowering.Built + ext), Path.Combine(stage, lowering.Built + ext), overwrite: true);
 
                 // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
                 int cuts = System.Text.RegularExpressions.Regex.Count(lowering.Geo!, "BooleanDifference");
@@ -242,6 +247,23 @@ public static class PalaceRun
                     run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
                                      Watch(limits, gmshLog.Line, physicalBytes, stage));
                 }
+                // A flat tetrahedron the mesher left: once more on the Delaunay surface mesher, from the geometry just saved. A mesh
+                // still holding one is refused by the check the run makes next, with its place.
+                if (!run.Cancelled && run.Stopped is null && run.StartFailure is null && run.ExitCode == 0 && lowering.Built is not null &&
+                    Em3dMeshCheck.Check(Path.Combine(stage, GmshGeoWriter.MeshFile), lowering.Groups) is { ZeroVolume: > 0 })
+                {
+                    note = Joined(note, FlatElementNote(reused: false));
+                    string delaunay = File.ReadAllText(Path.Combine(stage, GmshGeoWriter.GeoFile)) + GmshGeoWriter.DelaunaySurfacesLine + "\n";
+                    WriteText(geoPath, delaunay);
+                    WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), delaunay);
+                    foreach (string partial in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
+                        File.Delete(Path.Combine(stage, partial));
+                    gmshLog = new GmshLogProgress(control) { GeometryCuts = cuts };
+                    gmshLog.Begin();
+                    Interlocked.Increment(ref _gmsh);
+                    run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
+                                     Watch(limits, gmshLog.Line, physicalBytes, stage));
+                }
                 if (run.Cancelled) return new(false, true, false, null);
                 if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped, PeakFootprintBytes = run.PeakFootprint };
                 if (run.StartFailure is { } why)
@@ -265,6 +287,8 @@ public static class PalaceRun
             }
             finally
             {
+                try { KeepBuiltGeometry(stage, runDir, lowering, logPath); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
                 try { Directory.Delete(stage, recursive: true); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             }
@@ -301,10 +325,56 @@ public static class PalaceRun
             File.ReadAllText(hashPath).Trim() != Sha256(lowering.Geo!))
             return false;
         string onDisk = File.ReadAllText(geoPath);
+        // A mesh remade on the Delaunay surface mesher is this script's mesh too: the hash beside it is this script's.
+        if (HasDelaunaySurfaces(onDisk)) onDisk = onDisk[..^(GmshGeoWriter.DelaunaySurfacesLine.Length + 1)];
         if (onDisk == lowering.Geo) return true;
         if (straight is null || !GmshGeoWriter.Curves(lowering) || straight() is not { Ok: true } flat || onDisk != flat.Geo) return false;
         straightSided = true;
         return true;
+    }
+
+    private static bool HasDelaunaySurfaces(string geo) => geo.EndsWith(GmshGeoWriter.DelaunaySurfacesLine + "\n", StringComparison.Ordinal);
+
+    private static string Joined(string? first, string second) => first is null ? second : first + " " + second;
+
+    /// <summary>What a run says when a flat element made it remake the mesh, or when it reuses that mesh.</summary>
+    internal static string FlatElementNote(bool reused)
+        => reused
+            ? "The reused mesh was made on Gmsh's Delaunay surface mesher, because its usual one left a zero-volume element."
+            : "Gmsh left a zero-volume element, so the mesh was made again on its Delaunay surface mesher, which adds about 5 % more elements.";
+
+    private static readonly string[] BuiltExtensions = [GmshGeoWriter.BuiltBrepExtension, GmshGeoWriter.BuiltMapExtension];
+
+    /// <summary>brief-em3d-140 R-em3d140-3 — whether <paramref name="dir"/> holds a whole built geometry for this script: the
+    /// B-rep, and a map with its last line. A Gmsh stopped while writing them leaves a map without one.</summary>
+    public static bool HasBuiltGeometry(string dir, GmshLowering lowering)
+    {
+        if (lowering.Built is not { } built) return false;
+        string map = Path.Combine(dir, built + GmshGeoWriter.BuiltMapExtension);
+        return File.Exists(Path.Combine(dir, built + GmshGeoWriter.BuiltBrepExtension)) && File.Exists(map)
+            && File.ReadLines(map).LastOrDefault() == GmshGeoWriter.BuiltMapComplete;
+    }
+
+    /// <summary>
+    /// brief-em3d-140 R-em3d140-3 — keeps what Gmsh built beside the script, whatever happened after: a mesh that failed or a run
+    /// stopped while meshing starts from it next time. One geometry is kept, since a board's is as large as its mesh. A file
+    /// Gmsh could not read is removed, or every later run would stop on it.
+    /// </summary>
+    private static void KeepBuiltGeometry(string stage, string runDir, GmshLowering lowering, string logPath)
+    {
+        if (lowering.Built is not { } built) return;
+        bool unreadable = File.Exists(logPath) && File.ReadLines(logPath).Any(l =>
+            l.StartsWith("Error", StringComparison.Ordinal) && l.Contains(built, StringComparison.Ordinal));
+        if (unreadable)
+        {
+            foreach (string ext in BuiltExtensions) File.Delete(Path.Combine(runDir, built + ext));
+            return;
+        }
+        if (HasBuiltGeometry(runDir, lowering) || !HasBuiltGeometry(stage, lowering)) return;
+        foreach (string old in Directory.EnumerateFiles(runDir, GmshGeoWriter.BuiltPrefix + "*"))
+            File.Delete(old);
+        foreach (string ext in BuiltExtensions)
+            File.Move(Path.Combine(stage, built + ext), Path.Combine(runDir, built + ext), overwrite: true);
     }
 
     /// <summary>brief-emb-2 R-emb2-6 — Gmsh's command line: at verbosity 5, which names every stage as it starts, the

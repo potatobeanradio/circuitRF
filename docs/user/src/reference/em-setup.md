@@ -657,7 +657,8 @@ error estimate says the answer needs them. Simulate then runs Gmsh on the model 
 using the same *Cores* setting as the planar solver (as MPI processes). A 3D result is named after its
 solver — `results/<name>.palace.sNp` and `<name>.palace_em.npy` — so it never replaces a planar or an
 openEMS result, and the folder `results/<name>.palace/` holds everything the run made (the geometry
-script, the mesh, the Palace configuration, both programs' logs). An unchanged model reuses its mesh.
+script, the mesh, the Palace configuration, both programs' logs). An unchanged model reuses its mesh, and a run that changes only a frequency, a mesh size or a quality
+reads the geometry it built last time (`built-*.brep`) rather than building it again.
 
 Before it solves, circuitRF checks that every surface in the mesh belongs to exactly the object it was
 made for — each port sheet, each conductor, each face of the air box. **Any mismatch refuses the run,
@@ -676,8 +677,8 @@ smaller crop — each with the estimate it would give, and saying which of them 
 **100 %** Simulate asks before going on: run with a remedy that fits, such as fewer MPI processes, which keeps the memory
 limit; **Simulate Anyway**, which lifts it and lets the run swap; or don't run. The question says how much the run may swap and how
 much room the startup disk has for it. Headless, `circuitrf em` warns and runs with its limit, needs `--force` past **150 %**, and
-`--force` lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory per
-unknown circuitRF has measured.
+`--force` lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory
+circuitRF has measured for a run of that size.
 
 **A setup on the Direct linear solver is checked as Direct**: it needs about two to three times the
 iterative solver's memory (on a four-layer via transition, 6.2 GB against 3.0 GB at 193 k unknowns). When

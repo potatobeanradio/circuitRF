@@ -71,7 +71,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 4.8846153846153835E-06
     },
     {
       "Attribute": 9,
@@ -80,7 +81,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 4.8846153846153835E-06
     },
     {
       "Attribute": 10,
@@ -137,12 +139,13 @@
     },
     {
       "Attribute": 16,
-      "Name": "U1/Backside Metal",
+      "Name": "U1/Backside Metal/1",
       "Dimension": 2,
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 2.976190476190468E-06
     },
     {
       "Attribute": 17,
@@ -151,7 +154,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 2.8779358253390595E-06
     },
     {
       "Attribute": 18,

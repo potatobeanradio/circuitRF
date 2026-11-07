@@ -89,6 +89,35 @@ public sealed class MeshRobustnessTests : IDisposable
         Assert.StartsWith("The reused mesh is the one made when", again.Note);
     }
 
+    /// <summary>A flat element makes the run remake the mesh once on the Delaunay surface mesher, say so, and reuse that mesh next
+    /// time. The stand-in for Gmsh writes the committed mesh with a flat tetrahedron until the script asks for that mesher.</summary>
+    [Fact]
+    public void AFlatElement_RemakesTheMeshOnDelaunaySurfaces_AndTheNextRunReusesIt()
+    {
+        if (OperatingSystem.IsWindows()) return;            // the stand-in is a shell script
+        string flat = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "mesh-check", "flat-and-orphan.msh");
+        string fake = Path.Combine(_root, "fake-gmsh");
+        File.WriteAllText(fake, $$"""
+            #!/bin/sh
+            printf 'group 1 1 0\nall_volumes 0\nclassified_volumes 0\nunclassified_single_sided 0\n' > entities.txt
+            if grep -q "{{GmshGeoWriter.DelaunaySurfacesLine}}" model.geo; then printf 'x' > model.msh; else cp "{{flat}}" model.msh; fi
+            exit 0
+            """.Replace("\r", ""));
+        File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var low = new GmshLowering("// stand-in\n", [new("board", 1, 3, Em3dGroupKind.Volume, 1, false)], "{}", null, Built: "built-x");
+        string run = Path.Combine(_root, "flat");
+
+        var step = PalaceRun.Mesh(run, low, fake, null, default);
+        Assert.True(step.Ok, step.Message);
+        Assert.Equal(PalaceRun.FlatElementNote(reused: false), step.Note);
+        Assert.EndsWith(GmshGeoWriter.DelaunaySurfacesLine + "\n", File.ReadAllText(Path.Combine(run, GmshGeoWriter.GeoFile)));
+        Assert.Equal("x", File.ReadAllText(Path.Combine(run, GmshGeoWriter.MeshFile)));
+
+        var again = PalaceRun.Mesh(run, low, fake, null, default);
+        Assert.True(again.Reused);
+        Assert.Equal(PalaceRun.FlatElementNote(reused: true), again.Note);
+    }
+
     // ── R-emb2-2 ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>An EM problem builds a plated via without its air core and says so per entry; a thermal problem's lowering

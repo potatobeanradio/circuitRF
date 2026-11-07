@@ -38,7 +38,7 @@
     },
     {
       "Attribute": 5,
-      "Name": "B1/Bottom Copper",
+      "Name": "B1/Bottom Copper/1",
       "Dimension": 2,
       "Kind": "Conductor",
       "Expected": 1,

@@ -1449,7 +1449,8 @@ error estimate says the answer needs them. Simulate then runs Gmsh on the model 
 using the same <em>Cores</em> setting as the planar solver (as MPI processes). A 3D result is named after its
 solver — <code>results/&lt;name&gt;.palace.sNp</code> and <code>&lt;name&gt;.palace_em.npy</code> — so it never replaces a planar or an
 openEMS result, and the folder <code>results/&lt;name&gt;.palace/</code> holds everything the run made (the geometry
-script, the mesh, the Palace configuration, both programs' logs). An unchanged model reuses its mesh.</p>
+script, the mesh, the Palace configuration, both programs' logs). An unchanged model reuses its mesh, and a run that changes only a frequency, a mesh size or a quality
+reads the geometry it built last time (<code>built-*.brep</code>) rather than building it again.</p>
 <p>Before it solves, circuitRF checks that every surface in the mesh belongs to exactly the object it was
 made for — each port sheet, each conductor, each face of the air box. <strong>Any mismatch refuses the run,
 naming the object</strong>; a boundary is never guessed onto a face. It then reads the mesh itself: a tetrahedron with no
@@ -1466,8 +1467,8 @@ smaller crop — each with the estimate it would give, and saying which of them 
 <strong>100 %</strong> Simulate asks before going on: run with a remedy that fits, such as fewer MPI processes, which keeps the memory
 limit; <strong>Simulate Anyway</strong>, which lifts it and lets the run swap; or don't run. The question says how much the run may swap and how
 much room the startup disk has for it. Headless, <code>circuitrf em</code> warns and runs with its limit, needs <code>--force</code> past <strong>150 %</strong>, and
-<code>--force</code> lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory per
-unknown circuitRF has measured.</p>
+<code>--force</code> lifts the limit anywhere past 100 %. A warning never stops a run on its own: the estimate uses the highest memory
+circuitRF has measured for a run of that size.</p>
 <p><strong>A setup on the Direct linear solver is checked as Direct</strong>: it needs about two to three times the
 iterative solver's memory (on a four-layer via transition, 6.2 GB against 3.0 GB at 193 k unknowns). When
 Direct will not fit and Iterative would, the question before the run offers it. Its default

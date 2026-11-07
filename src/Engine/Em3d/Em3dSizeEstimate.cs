@@ -80,6 +80,17 @@ public static class Em3dSizeEstimate
     public const double PalaceBytesPerUnknownOrder1 = 6.6e9 / 178_142.0;
 
     /// <summary>
+    /// brief-em3d-140 R-em3d140-6 — past about 400,000 tetrahedra an order-1 iterative run's memory is this line, not the
+    /// per-unknown figure above, on the same unknowns and eight-rank footing. <b>It targets the PEAK FOOTPRINT</b>, swapped and
+    /// compressed pages included, because that is what a run's memory limit is held against: Palace's own table reads less than
+    /// half of it. It is the line through two measured peaks, scaled to one process by <see cref="PalaceProcessFactor"/>:
+    /// 538,281 tetrahedra at 17.4 GB on three processes, and 927,863 at 18.64 GB on one. It reads just above 475,064
+    /// tetrahedra's 15.9 GB on three, and the per-unknown figure still holds the ten-layer crop's 218,437 unknowns (2.5 GB
+    /// by Palace's table on one process, 4.7 GB read here).
+    /// </summary>
+    public const double PalaceLargeOrder1FixedBytes = 7.31e9, PalaceLargeOrder1BytesPerUnknown = 21_970;
+
+    /// <summary>
     /// Palace's peak memory per unknown with the DIRECT linear solver (SuperLU, Palace.LinearSolver: Direct) at order 2, ten
     /// ranks, as Palace reports it: a four-layer via transition, 6.2 GB for 192,984 unknowns and 4.7 GB for 148,348 (31.7 KB
     /// an unknown, so linear over that range). The same meshes on the iterative solver took 3.0 and 2.3 GB. The factor's
@@ -313,9 +324,11 @@ public static class Em3dSizeEstimate
     /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed (measured on the iterative solver, and
     /// borrowed for the direct one: what it multiplies is mostly the error estimator, which the two share).</summary>
     public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses, bool direct = false)
-        => (long)Math.Round(unknowns * (direct
-                                ? order == 1 ? PalaceDirectBytesPerUnknownOrder1 : PalaceDirectBytesPerUnknownOrder2
-                                : order == 1 ? PalaceBytesPerUnknownOrder1 : PalaceBytesPerUnknownOrder2)
+        => (long)Math.Round((direct
+                                ? unknowns * (order == 1 ? PalaceDirectBytesPerUnknownOrder1 : PalaceDirectBytesPerUnknownOrder2)
+                                : order == 1
+                                    ? Math.Min(unknowns * PalaceBytesPerUnknownOrder1, PalaceLargeOrder1FixedBytes + unknowns * PalaceLargeOrder1BytesPerUnknown)
+                                    : unknowns * PalaceBytesPerUnknownOrder2)
                             * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
 
     /// <summary>…for a field or, with <paramref name="isStatic"/>, a static potential — null for a static order-1 run,

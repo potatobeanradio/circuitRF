@@ -578,6 +578,14 @@ out of the question. **Gmsh is used, and only as a separate program:**
 - **Thin metal is a sheet**, carrying a finite-conductivity or impedance boundary, wherever its
   thickness is small against both skin depth scale and the neighbouring dimensions. This is the
   single largest mesh saving available.
+- **The geometry is built once, then read.** The script runs its booleans with no `Delete`, saves the
+  fragment's volumes as `built-<hash>.brep` with a `.map` naming them, discards the model and imports the file.
+  Deleting a shape is the expensive part of a Gmsh boolean: it searches the whole model once per sub-shape, so
+  the cost grows with the square of the outline count. A four-layer board with 28,028 outline points went from
+  46 minutes of geometry to under 4, and nothing in this depends on the shapes being planar: wire bonds,
+  spheres and imported B-reps pass through the same file. The hash covers only the statements that build
+  the shapes, so a run that changes a frequency, a mesh size or a quality reads the file instead. A conductor
+  is cut by nothing, since two overlapping voids leave the same space as two cut apart.
 - **Gmsh is user-installed** and found like every other external program here (§7.1); circuitRF's
   installers carry no copy, so they carry no GPL source-offer obligation either. Gmsh publishes native
   builds for Windows, macOS and Linux, so it is not part of the Windows problem.
@@ -597,8 +605,8 @@ import/export. Choosing Gmsh means OCCT is already in the pipeline, out of proce
 cost. Gmsh's fragment operation reports which output entities came from which input **only through
 its API**, which circuitRF may not link; a `.geo` script gets the fragment's output list and no map.
 F0 measured the substitute the first series adopts (`brief-em3d-0-overview.md` §1e): conductors made
-voids and dielectrics made disjoint before the fragment, so every volume keeps its tag
-(`Geometry.OCCBooleanPreserveNumbering`, verified), and every surface recovered by a bounding-box
+voids and dielectrics made disjoint before the fragment, the fragment's output list read in input
+order so each solid knows its volumes, and every surface recovered by a bounding-box
 query against what circuitRF knows of it, counted against what it expected. It works, with caveats
 that belong to the writer (`em-3d-f0-findings.md` Q5) — above all that OCCT's own boxes are loose on
 curved faces, so the queries need `Geometry.OCCBoundsUseStl`. The background is the box minus every

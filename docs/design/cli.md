@@ -884,8 +884,9 @@ circuitrf em <setup.cem | view.c3d> --dry-run [--setup <name>] [--device auto|cp
 sentence about imported outlines when they make it low) and the memory limits. One diagnostic,
 `em.dry-run.estimate`, restates those numbers in a line, which is what the MCP server sends as an `em`
 run's first progress notification (§11.6). The planar factor time is the dense `c·N³` the mesh budget
-quotes, or the accelerated solve's near-field factor; the fill is not in it, and Palace has no time
-estimate to state. It solves nothing and writes nothing; a planar dry run meshes as `check` does.
+quotes, or the accelerated solve's near-field factor; the fill is not in it, and Palace has no solve-time
+estimate to state. A 3D setup's size row does give the geometry build's time when it passes a minute,
+from the script's outline points, and names Crop to New Cell past ten. It solves nothing and writes nothing; a planar dry run meshes as `check` does.
 `--component`, `--bands` and `--solver` are refused beside it (`cli.em.dry-run-needs-setup`): the first
 two are not one setup file, and `explain` sizes the setup's own solver. MCP: `run analysis=em
 dryRun=true`.

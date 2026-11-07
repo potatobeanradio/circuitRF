@@ -137,7 +137,7 @@
     },
     {
       "Attribute": 16,
-      "Name": "U1/Backside Metal",
+      "Name": "U1/Backside Metal/1",
       "Dimension": 2,
       "Kind": "Conductor",
       "Expected": 1,

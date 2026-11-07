@@ -232,9 +232,15 @@ public static partial class Em3dRunService
         }
 
         // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
+        // brief-em3d-140 — the geometry's cost before it is paid, or that it is already paid for.
         PalaceStep meshed;
         // brief-emb-2 R-emb2-1 — a script that curves its elements gets a straight-sided twin, made only if the cap is reached.
         GmshLowering Straight() => GmshGeoWriter.Write(problem, settings with { StraightSided = true });
+        if (!PalaceRun.HasMeshOf(runDir, lowering, Straight, out _))
+        {
+            if (PalaceRun.HasBuiltGeometry(runDir, lowering)) log.Notes.Add($"The geometry is unchanged since the last run, so it was read from {runDir} and not built again.");
+            else if (GmshGeoWriter.BuildTimeNote(lowering) is { } buildTime) log.Notes.Add(buildTime);
+        }
         try
         {
             meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, limits, physical,

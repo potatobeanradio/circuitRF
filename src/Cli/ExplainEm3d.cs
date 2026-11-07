@@ -431,7 +431,9 @@ internal static class ExplainEm3d
                 (est.OutlineDominates
                     ? " The estimate is low on imported outlines with many short edges, and this one has them: the " +
                       "count Gmsh reports when the run meshes is the figure to go by."
-                    : ""));
+                    : "") +
+                // brief-em3d-140 R-em3d140-4 — and what the geometry costs before the first element.
+                (GmshGeoWriter.BuildTimeNote(GmshGeoWriter.Write(p, settings)) is { } buildTime ? " " + buildTime : ""));
         }
         return setup.Solver3D.Runs(EmergeSolver.Id)
             ? [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0), EmergeSize(p)]

@@ -51,7 +51,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold-tin solder (80/20)"
+      "Material": "Gold-tin solder (80/20)",
+      "ThicknessM": 2.34375E-05
     },
     {
       "Attribute": 7,
@@ -60,7 +61,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 9.375E-06
     },
     {
       "Attribute": 8,
@@ -69,7 +71,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 9.424083769633508E-06
     },
     {
       "Attribute": 9,
@@ -78,7 +81,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 10,
@@ -87,7 +91,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 11,
@@ -96,7 +101,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 12,
@@ -105,7 +111,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 13,
@@ -114,7 +121,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 14,
@@ -123,7 +131,8 @@
       "Kind": "Conductor",
       "Expected": 1,
       "AtLeast": true,
-      "Material": "Gold"
+      "Material": "Gold",
+      "ThicknessM": 1.27E-05
     },
     {
       "Attribute": 15,
