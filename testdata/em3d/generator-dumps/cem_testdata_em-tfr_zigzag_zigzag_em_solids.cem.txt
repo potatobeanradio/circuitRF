@@ -1,0 +1,45 @@
+refusal (none)
+note The sweep's 0 Hz point is answered by circuitRF's conduction solve of the conductors, not by the 3D solver.
+note 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Resistive film 'Resistor' on 'Metal1' is a sheet at σ = 4E+05 S/m × t = 50 nm (a thickness well under a skin depth, picked because the layer states none), 50 Ω/sq: for a sheet only the product is physical. It stays a sheet beside solid metal, because a film's own thickness is a mesh nobody should be asked to pay for.
+note Dielectric 'MIM Dielectric' exists only where 'Nitride' is drawn, and nothing is drawn there, so it is not in the 3D problem.
+note Port 1 ('1') at (0, 0 µm) was taken to be on the conductor's low-x (left) end (inferred from the nearest conductor boundary), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (800, 0 µm) was taken to be on the conductor's high-x (right) end (inferred from the nearest conductor boundary), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a wave port returning through 'Backside Metal' (the air box's floor), below the line: the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a wave port returning through 'Backside Metal' (the air box's floor), below the line: the nearest ground-reference plane with metal under the port.
+note Port 1's wave-port region is clipped to the air box's xmin face; the box is smaller than the sizing rule asks for there.
+note Port 1 is a wave port on the air box's xmin face: 800 × 706 µm (13.6986 line widths × 8 heights, the sizing rule's), its reference plane on the face.
+note Port 2's wave-port region is clipped to the air box's xmax face; the box is smaller than the sizing rule asks for there.
+note Port 2 is a wave port on the air box's xmax face: 800 × 706 µm (13.6986 line widths × 8 heights, the sizing rule's), its reference plane on the face.
+note The air box's floor is 'Backside Metal' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it. The AirBox ZMin padding does not apply to a floor on the plane.
+note 'Metal1/1' and 1 other conductor(s) are under 3 skin depths thick at 1 GHz, so Thin Metal Correction gives the faces that thickness (2.85 µm on 'Metal1/1'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
+solid GaAs GaAs Dielectric 1 box (0,-0.0004,3E-06) (0.0008,0.00039999999999999996,0.000106)
+solid Air Air Dielectric 2 box (0,-0.0004,0.0001062) (0.0008,0.00039999999999999996,0.000109)
+solid air Air Air 3 box (0,-0.0004,0.000109) (0.0008,0.00039999999999999996,0.000709)
+solid Metal1/1 Gold Conductor 4 extrude 0.00010300000000000001 0.000106 [0.00030000000000000003,-2E-05 0.00032,-2E-05 0.00032,2E-05 0.00030000000000000003,2E-05 0.00030000000000000003,3.65E-05 0,3.65E-05 0,-3.65E-05 0.00030000000000000003,-3.65E-05]
+solid Metal1/2 Gold Conductor 5 extrude 0.00010300000000000001 0.000106 [0.0008,3.65E-05 0.0005,3.65E-05 0.0005,2E-05 0.00048,2E-05 0.00048,-2E-05 0.0005,-2E-05 0.0005,-3.65E-05 0.0008,-3.65E-05]
+sheet Metal1/Resistor/1 Film Resistor 6 0.000106 5.0000000000001215E-08 [0.00038,6E-05 0.00042,6E-05 0.00042,-2E-05 0.00048,-2E-05 0.00048,2E-05 0.00046,2E-05 0.00046,0.0001 0.00034,0.0001 0.00034,2E-05 0.00032,2E-05 0.00032,-2E-05 0.00038,-2E-05]
+material Gold 1 - 0 1 41000000
+material Film Resistor 1 - 0 1 400000.00000000006
+material GaAs 12.9 - 0.0006 1 0
+material MIM Dielectric 6.8 - 0.001 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Wave Metal1/1 airbox/zmin (0,-0.0004,3E-06) (0,0.00039999999999999996,0.000709) (0,0,1) 50 0 (0,-2.710505431213761E-20,0.000356) (1,0,0) 0 - (0,0,3E-06)->(0,0,0.00010300000000000001)
+port 2 port/2 Wave Metal1/2 airbox/zmin (0.0008,-0.0004,3E-06) (0.0008,0.00039999999999999996,0.000709) (0,0,1) 50 0 (0.0008,-2.710505431213761E-20,0.000356) (-1,0,0) 0 - (0.0008,0,3E-06)->(0.0008,0,0.00010300000000000001)
+box (0,-0.0004,3E-06) (0.0008,0.00039999999999999996,0.000709) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Pec, YMax = Pec, ZMin = Pec, ZMax = Pec }
+freq 1000000000 40000000000 5 Linear 20
+type Driven eigen 3 1000000000
+ground 
+origin Air Dielectric Air - -
+origin GaAs Dielectric GaAs - -
+origin Metal1/1 Conductor Metal1 LayerKey { Layer = 1, Datatype = 0 } -
+origin Metal1/2 Conductor Metal1 LayerKey { Layer = 1, Datatype = 0 } -
+origin Metal1/Resistor/1 Conductor Metal1 LayerKey { Layer = 4, Datatype = 0 } a resistive film of 50 Ω/sq
+origin air Air - - -
+material-source Air stackup entry 'Air' (its own numbers)
+material-source Film Resistor technology 'MMIC GaAs (2 Layer Metal + MIM, 100um)' Materials
+material-source GaAs stackup entry 'GaAs' (its own numbers)
+material-source Gold technology 'MMIC GaAs (2 Layer Metal + MIM, 100um)' Materials
+material-source MIM Dielectric stackup entry 'MIM Dielectric' (its own numbers)
+no-alpha 
+unknown-temperature 

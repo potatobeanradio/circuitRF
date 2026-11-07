@@ -534,7 +534,8 @@ public static class Em3dGenerator
                                    PlanarExtractor.StackBand? floorPlane, double floorZ, List<Em3dPort> ports,
                                    List<WaveSpec> waves)
         {
-            var signal = bands.Where(b => pieces.ContainsKey(b.Index) && !b.Layer.IsGroundReference).ToList();
+            var signal = bands.Where(b => pieces.TryGetValue(b.Index, out var onBand) &&
+                                          (!b.Layer.IsGroundReference || APortDrivesATraceOn(b, onBand))).ToList();
             if (signal.Count == 0)
                 return "This layout draws metal only on ground-reference conductors, so there is no signal " +
                        "conductor for a port to drive.";
@@ -561,7 +562,7 @@ public static class Em3dGenerator
                 // A translated port (portsEach) that refuses is left out ALONE — its sheet, return and notes rolled back —
                 // and every other port is still built; a solve refuses on the first, as it always has.
                 int portsBefore = ports.Count, wavesBefore = waves.Count, notesBefore = _notes.Count, movedBefore = _portsMoved.Count;
-                if (OnePort(portIndex) is not { } refusal) continue;
+                if ((OnePort(portIndex) ?? EdgePortSheet.SheetClash(ports, portsBefore)) is not { } refusal) continue;
                 if (!portsEach) return refusal;
                 ports.RemoveRange(portsBefore, ports.Count - portsBefore);
                 waves.RemoveRange(wavesBefore, waves.Count - wavesBefore);
@@ -767,7 +768,9 @@ public static class Em3dGenerator
                 // brief-dfr32-2 R-dfr32-2-3 — a sheet on a curved edge meets a straight face: the metal outside the sheet's
                 // plane, across its width, is cut away. Not for a sheet moved in to where its return begins (the line runs
                 // on past it by design) nor a wave port (its face is the air box's).
-                if (!wave && edgeAt == faceAt &&
+                // Nor where another port stands in that metal: the cut would take the copper it is on, and move its edge to this one.
+                if (!wave && edgeAt == faceAt && !extracted.Ports.Any(o => o.Number != p.Number && o.LayerIndex == p.LayerIndex &&
+                                                                          StandsBeyond(o, p.Side, edgeAt, lo, hi)) &&
                     EdgePortSheet.FlushTo(piece.Poly, p.Side, edgeAt, lo, hi, out double cut, out double faceLo,
                                           out double faceHi) is { } flush)
                 {
@@ -827,6 +830,41 @@ public static class Em3dGenerator
                     }, edgeAt, hi - lo, zHi - zLo, above));
                 return null;
             }
+        }
+
+        /// <summary>Whether a port's point is outside the plane <paramref name="at"/> of a sheet across [<paramref name="lo"/>,
+        /// <paramref name="hi"/>] on <paramref name="side"/>: in the metal a flat cut there would remove.</summary>
+        private static bool StandsBeyond(PlanarPort other, PlanarPortSide side, double at, double lo, double hi)
+        {
+            bool alongX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+            double n = alongX ? other.Location.X : other.Location.Y, t = alongX ? other.Location.Y : other.Location.X;
+            double outward = side is PlanarPortSide.MinX or PlanarPortSide.MinY ? at - n : n - at;
+            return outward > 1e-3 * (hi - lo) && t >= lo && t <= hi;
+        }
+
+        /// <summary>
+        /// Designer feedback round 38 — whether a port label is committed to a trace on this ground-reference conductor, so
+        /// that the conductor is a level ports can be on. A technology marks a whole layer as ground, and a four-layer board's
+        /// bottom copper often carries a line in a clearance of its pour. The largest piece on the layer is the plane: a port on
+        /// it, or on a layer holding one piece, is still refused, since a port returns through a plane rather than drives it.
+        /// </summary>
+        private bool APortDrivesATraceOn(PlanarExtractor.StackBand band, List<Piece> onBand)
+        {
+            var copper = onBand.Where(q => !q.IsFilm).ToList();
+            if (copper.Count < 2) return false;
+            var plane = copper.MaxBy(q => q.Poly.Area())!;
+            double perDbu = 1 / (source.DbuPerMicron * 1e6);
+            foreach (var label in PortLabels.Shapes.OfType<LabelShape>())
+            {
+                if (!label.IsPort || !band.Layer.DrawingLayers.Contains(label.PortLayer ?? label.Layer)) continue;
+                double x = label.X * perDbu, y = label.Y * perDbu;
+                if (plane.Poly.Contains(x, y)) continue;
+                if (copper.Any(q => !ReferenceEquals(q, plane) &&
+                                    (q.Poly.Contains(x, y) ||
+                                     EmPortExtraction.BoundaryDistance(q.Poly, x, y) <= EmPortExtraction.CharacteristicHalfWidth(q.Poly))))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -1482,8 +1520,50 @@ public static class Em3dGenerator
             across.Sort();
             for (int i = 0; i + 1 < across.Count; i += 2)
                 if (v >= across[i] - eps && v <= across[i + 1] + eps)
-                    return (at, across[i], across[i + 1]);
+                {
+                    double lo = across[i], hi = across[i + 1];
+                    // Designer feedback round 38 — the metal just inside can run past the end of the edge the port stands on,
+                    // on a stepped end. The edge is then what the port drives, as the layout draws it (LayoutPortDirection.EdgeAt),
+                    // and the metal past it stays. A facet of a curve or one riser of a staircase is too short to be that edge,
+                    // and the sheet stays across the metal.
+                    // The corners' own slant reads a hair wider just inside, and a sheet ending 1.6 nm past the copper's corner
+                    // leaves edges of that length for the mesher, so the sheet takes the run's ends exactly.
+                    if (StraightRunAt(poly, at, v, alongX, eps) is { } run && run.Hi - run.Lo >= MinEdgeRunOfWidth * (hi - lo))
+                        (lo, hi) = (Math.Max(lo, run.Lo), Math.Min(hi, run.Hi));
+                    return (at, lo, hi);
+                }
             return null;
+        }
+
+        /// <summary>How long a straight run of outline must be, as a share of the metal across it, to be the edge a port drives.</summary>
+        private const double MinEdgeRunOfWidth = 0.1;
+
+        /// <summary>The chain of outline segments lying on the plane <paramref name="at"/> that holds <paramref name="v"/>, or
+        /// null when none does: an arc, an oblique cut.</summary>
+        private static (double Lo, double Hi)? StraightRunAt(PlanarPolygon poly, double at, double v, bool alongX, double eps)
+        {
+            var spans = new List<(double Lo, double Hi)>();
+            void Ring(IReadOnlyList<EmPoint> ring)
+            {
+                for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+                {
+                    double n1 = alongX ? ring[j].X : ring[j].Y, n2 = alongX ? ring[i].X : ring[i].Y;
+                    if (Math.Abs(n1 - at) > eps || Math.Abs(n2 - at) > eps) continue;
+                    double t1 = alongX ? ring[j].Y : ring[j].X, t2 = alongX ? ring[i].Y : ring[i].X;
+                    if (t1 != t2) spans.Add(t1 < t2 ? (t1, t2) : (t2, t1));
+                }
+            }
+            Ring(poly.Outer);
+            foreach (var h in poly.HoleRings) Ring(h);
+            spans.Sort();
+            (double Lo, double Hi)? current = null;
+            foreach (var s in spans)
+            {
+                if (current is { } c && s.Lo <= c.Hi + eps) { current = (c.Lo, Math.Max(c.Hi, s.Hi)); continue; }
+                if (current is { } done && v >= done.Lo - eps && v <= done.Hi + eps) return done;
+                current = s;
+            }
+            return current is { } last && v >= last.Lo - eps && v <= last.Hi + eps ? last : null;
         }
 
         /// <summary>Where the line (second coordinate = <paramref name="c"/>) crosses the polygon's

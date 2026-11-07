@@ -590,7 +590,7 @@ public static class Em3dLayoutSolids
                 var regions = BoardRegions(drawnOutline, out int lines);
                 foreach (var region in regions)
                     if (drills.Any(d => WithinDrill(region, d))) drilledAway++;
-                    else _outline.Add(region);
+                    else _outline.Add(RobustBoard(region));
                 if (lines > 0)
                     Notes.Add($"{lines} shape(s) on the board-outline layer are a line drawn around the board (a Gerber " +
                               "outline's strokes, merged): the board is the region the line encloses, not the line.");
@@ -1583,6 +1583,20 @@ public static class Em3dLayoutSolids
             var holes = rings.Skip(1).ToList();
             return ReferenceEquals(outer, poly.Outer) && holes.Zip(poly.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
                 ? poly : new PlanarPolygon(outer, poly.Holes is null ? null : holes);
+        }
+
+        /// <summary>Designer feedback round 38 — the board's own outline as Robust meshing leaves it: a rounded corner read from a
+        /// Gerber outline holds points under a micrometre apart, and four of them on the board's side make a flat element. Done
+        /// here, before anything reads the outline, so a conductor, a via's clip and the laminate all meet the same edge.</summary>
+        private PlanarPolygon RobustBoard(PlanarPolygon region)
+        {
+            if (!options.RobustMeshing) return region;
+            IReadOnlyList<EmPoint> Clean(IReadOnlyList<EmPoint> ring)
+                => Em3dOutlineCleanup.Clean(ring, q => (q.X, q.Y), Em3dOutlineCleanup.MaxToleranceM, _robust);
+            var outer = Clean(region.Outer);
+            var holes = region.HoleRings.Select(Clean).ToList();
+            return ReferenceEquals(outer, region.Outer) && holes.Zip(region.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
+                ? region : new PlanarPolygon(outer, region.Holes is null ? null : holes);
         }
 
         /// <summary>brief-emb-2 R-emb2-2 — whether a via of <paramref name="entry"/> is built as a tube with an air core: a plated

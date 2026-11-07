@@ -434,6 +434,17 @@ public static class EmPortExtraction
                 }
             }
 
+            // Designer feedback round 38 — a port committed to a conductor that is not a level here, over metal on two levels
+            // that are. Naming only those two sent the designer looking at layers the port was never on.
+            if (poly is not null && containing.Count > 1 && viaLevel is null &&
+                OwnConductorOffTheLevels(label, problem, technology) is { } committedElsewhere)
+            {
+                string portProblem = OffTheLevels(number, label, committedElsewhere, dbuPerMicron, displayUnit);
+                firstProblem ??= portProblem;
+                rows.Add(new EmPortRow(number, label, null, portProblem, kind));
+                continue;
+            }
+
             if (poly is not null && containing.Count > 1 && viaLevel is null)
             {
                 string portProblem =
@@ -453,15 +464,11 @@ public static class EmPortExtraction
 
             if (poly is null)
             {
-                string portProblem =
-                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
-                    "is not on any conductor of this EM setup's signal layers. " +
-                    (OwnConductorOffTheLevels(label, problem, technology) is { } seatedOn
-                        ? $"It is committed to '{seatedOn.Name}'" +
-                          (seatedOn.IsGroundReference ? ", a ground reference, which a port returns through rather than drives. " : ", which is not one of them. ") +
-                          "Drag it onto the end of the signal trace it belongs to — that re-seats it on that trace's layer."
-                        : "Move it onto the metal, or check that the artwork it names is on a layer bound to a " +
-                          "signal conductor in the technology's stackup.");
+                string portProblem = OwnConductorOffTheLevels(label, problem, technology) is { } seatedOn
+                    ? OffTheLevels(number, label, seatedOn, dbuPerMicron, displayUnit)
+                    : $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
+                      "is not on any conductor of this EM setup's signal layers. Move it onto the metal, or check that the " +
+                      "artwork it names is on a layer bound to a signal conductor in the technology's stackup.";
                 firstProblem ??= portProblem;
                 rows.Add(new EmPortRow(number, label, null, portProblem, kind));
                 continue;
@@ -928,6 +935,14 @@ public static class EmPortExtraction
         return conductor;
     }
 
+    /// <summary>A port committed to a conductor this setup does not treat as a level: where it is and how to re-seat it.</summary>
+    private static string OffTheLevels(int number, LabelShape label, StackupLayer conductor, int dbuPerMicron, LayoutUnit displayUnit) =>
+        $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
+        "is not on any conductor of this EM setup's signal layers. " +
+        $"It is committed to '{conductor.Name}'" +
+        (conductor.IsGroundReference ? ", a ground reference, which a port returns through rather than drives. " : ", which is not one of them. ") +
+        "Drag it onto the end of the signal trace it belongs to — that re-seats it on that trace's layer.";
+
     /// <summary>The polygon of level <paramref name="level"/> whose boundary is nearest the point, and how far.</summary>
     private static (PlanarPolygon Poly, double Distance)? NearestOn(PlanarProblem problem, int level, double x, double y)
     {
@@ -1002,7 +1017,7 @@ public static class EmPortExtraction
     /// <summary>Distance from a point OUTSIDE <paramref name="poly"/> to its nearest boundary
     /// point — the outer ring's segments and every hole's, since a label in a hole is outside the
     /// metal and the hole wall is the nearest copper to it.</summary>
-    private static double BoundaryDistance(PlanarPolygon poly, double x, double y)
+    internal static double BoundaryDistance(PlanarPolygon poly, double x, double y)
     {
         double best = RingDistance(poly.Outer, x, y);
         foreach (var h in poly.HoleRings) best = Math.Min(best, RingDistance(h, x, y));
@@ -1034,7 +1049,7 @@ public static class EmPortExtraction
     /// <c>s</c> is <c>s/4</c>. Unlike a bounding-box dimension it does not grow when the SAME trace
     /// is drawn longer, or bent, which is the property the reach needs.
     /// </summary>
-    private static double CharacteristicHalfWidth(PlanarPolygon poly)
+    internal static double CharacteristicHalfWidth(PlanarPolygon poly)
     {
         double perimeter = RingLength(poly.Outer);
         foreach (var h in poly.HoleRings) perimeter += RingLength(h);

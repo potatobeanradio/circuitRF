@@ -158,12 +158,15 @@ public sealed class MaterialsEditorRedesignTests : IDisposable
     }
 
     /// <summary>Every generic material states what it is — a conductor or a dielectric — so none reads as "states nothing"
-    /// in the editor, and GaN and SiC state their permittivity.</summary>
+    /// in the editor, and GaN and SiC state their permittivity. The silicon grades state both a conductivity and a permittivity
+    /// on purpose, since a substrate's conductivity is its loss, so an object made of one says which it is by its Role.</summary>
     [Fact]
     public void EveryGenericMaterial_StatesItsRole()
     {
         var lib = MaterialLibraries.LoadGeneric();
-        Assert.All(lib, m => Assert.Contains(C3dMaterialRole.Implied(m), new[] { C3dImpliedRole.Conductor, C3dImpliedRole.Dielectric }));
+        Assert.All(lib, m => Assert.Contains(C3dMaterialRole.Implied(m), m.Name.StartsWith("Silicon, ", StringComparison.Ordinal)
+            ? new[] { C3dImpliedRole.Ambiguous }
+            : new[] { C3dImpliedRole.Conductor, C3dImpliedRole.Dielectric }));
         Assert.Equal(9.5, lib.Single(m => m.Name == "Gallium nitride").Epsr);
         Assert.Equal(9.7, lib.Single(m => m.Name == "Silicon carbide (4H, semi-insulating)").Epsr);
     }

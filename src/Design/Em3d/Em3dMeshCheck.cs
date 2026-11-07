@@ -39,14 +39,18 @@ public static class Em3dMeshCheck
     public const double ZeroVolumeRelative = 1e-8;
 
     /// <summary>What an element-level sentence advises.</summary>
-    public const string ElementRemedy = "set the via entry's Fill to Solid, enable robust meshing, or leave the part out of the model.";
+    public const string ElementRemedy = "simplify the outline there, enable robust meshing, or leave the part out of the model.";
+
+    /// <summary>What an element-level sentence advises when the elements touch a via, whose barrel may be a hollow tube.</summary>
+    public const string ElementRemedyVia = "set the via entry's Fill to Solid, enable robust meshing, or leave the part out of the model.";
 
     /// <summary>What an orphan-triangle sentence advises.</summary>
     public const string OrphanRemedy =
         "enable robust meshing, or move it so that it lies on the metal's face or clear of it.";
 
     /// <summary>What a sentence advises when the run already had Robust meshing on.</summary>
-    public const string ElementRemedyRobustOn = "set the via entry's Fill to Solid, or leave the part out of the model.",
+    public const string ElementRemedyRobustOn = "simplify the outline there, or leave the part out of the model.",
+                        ElementRemedyViaRobustOn = "set the via entry's Fill to Solid, or leave the part out of the model.",
                         OrphanRemedyRobustOn = "move it so that it lies on the metal's face or clear of it.";
 
     /// <summary>Bad elements clustered pairwise at most; past this the rest are counted, not placed.</summary>
@@ -66,6 +70,14 @@ public static class Em3dMeshCheck
         try { mesh = MshReader.Read(mshPath); }
         catch (Exception e) when (e is InvalidDataException or IOException) { return null; }
         return Check(mesh, groups, lengthUnitM, robustMeshing);
+    }
+
+    /// <summary>A via's Fill is advice only where the elements touch a via: on a board edge or a pour it changes nothing.</summary>
+    private static string Remedy(IEnumerable<string> where, bool robustMeshing)
+    {
+        bool via = where.Any(n => n.StartsWith("via/", StringComparison.Ordinal) || n.Contains("/via/", StringComparison.Ordinal));
+        return via ? (robustMeshing ? ElementRemedyViaRobustOn : ElementRemedyVia)
+                   : (robustMeshing ? ElementRemedyRobustOn : ElementRemedy);
     }
 
     /// <summary>The check on a mesh already read.</summary>
@@ -151,7 +163,7 @@ public static class Em3dMeshCheck
                             : z > 0 ? (z == 1 ? "1 zero-volume element" : $"{z} zero-volume elements")
                                     : (v == 1 ? "1 inverted element" : $"{v} inverted elements");
                 sentences.Add($"{what} {(members.Count == 1 ? "lies" : "lie")} in {List(where)} around " +
-                              $"({Mm(members.Average(e => e.Cx) * mm)}, {Mm(members.Average(e => e.Cy) * mm)}) mm; {(robustMeshing ? ElementRemedyRobustOn : ElementRemedy)}");
+                              $"({Mm(members.Average(e => e.Cx) * mm)}, {Mm(members.Average(e => e.Cy) * mm)}) mm; {Remedy(where, robustMeshing)}");
             }
             if (bad.Count > placed.Count)
                 sentences.Add($"{bad.Count - placed.Count} more such elements lie elsewhere in the mesh.");

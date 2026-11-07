@@ -16,6 +16,7 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.ThreeD;
 
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class MeshBeforeSolveTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("crf-mesh-before-solve-").FullName;

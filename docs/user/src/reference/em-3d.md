@@ -147,7 +147,11 @@ full description.
   box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its
   return) centred on the port, cut short where the edge ends. The run's notes say which, and why. A sheet across a
   whole edge can reach metal the port was never near, such as a via on a pour's edge; when that refuses the run,
-  the refusal names **Use edge width** as the way to narrow it.
+  the refusal names **Use edge width** as the way to narrow it. On a stepped end, the edge is the straight run the
+  port stands on, and the copper beside it stays. Two ports on one sheet are refused, naming both.
+
+  A port can drive a line on a layer the stackup marks as ground, such as a trace in a clearance of a bottom pour, when
+  the port is on that layer. A port on the layer's largest piece, the plane itself, is refused.
 
   **A port on a curved edge.** A port on a round pad's arc has a flat sheet against a curved outline, which leaves
   slivers between the two that the mesher has to resolve. The run cuts the pad flat across the sheet's width, at

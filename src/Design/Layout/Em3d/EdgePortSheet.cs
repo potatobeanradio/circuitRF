@@ -11,6 +11,7 @@
 // port's point. Either is clipped to the edge, so on a short edge 2 × H is the edge anyway.
 
 using Clipper2Lib;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em3d;
@@ -159,6 +160,47 @@ public static class EdgePortSheet
             PlaneX = acrossX ? c : hint.PlaneX,
             PlaneY = acrossX ? hint.PlaneY : c,
         };
+    }
+
+    /// <summary>
+    /// Designer feedback round 38 — the refusal for two lumped port sheets lying on one surface, or null. A surface of the mesh
+    /// belongs to one port, so the geometry kernel keeps one sheet and the other selects nothing: without this the run meshes
+    /// and then stops on an empty group, which names neither the other port nor the place. Each sheet from index
+    /// <paramref name="from"/> on is compared with the ones before it.
+    /// </summary>
+    public static string? SheetClash(IReadOnlyList<Em3dPort> ports, int from = 1)
+    {
+        for (int i = Math.Max(from, 1); i < ports.Count; i++)
+            for (int j = 0; j < i; j++)
+                if (SharedSurface(ports[j], ports[i]) is { } where)
+                    return $"Ports {ports[j].Number} and {ports[i].Number} lie on one sheet, {where}. A surface of the mesh can " +
+                           "belong to only one port. Move one to an edge of its own, or uncheck Use edge width (the port's " +
+                           "Properties) and state a Width that keeps them apart.";
+        return null;
+    }
+
+    private static string? SharedSurface(Em3dPort a, Em3dPort b)
+    {
+        const double tol = 1e-9;
+        static bool Flat(Em3dPort p) => p.Kind == Em3dPortKind.Lumped && p.Annulus is null && p.FaceGroup is null && p.Cylinder is null && p.Quad is null;
+        if (!Flat(a) || !Flat(b)) return null;
+        double[] al = [a.Min.X, a.Min.Y, a.Min.Z], ah = [a.Max.X, a.Max.Y, a.Max.Z];
+        double[] bl = [b.Min.X, b.Min.Y, b.Min.Z], bh = [b.Max.X, b.Max.Y, b.Max.Z];
+        for (int axis = 0; axis < 3; axis++)
+        {
+            if (ah[axis] - al[axis] > tol || bh[axis] - bl[axis] > tol || Math.Abs(al[axis] - bl[axis]) > tol) continue;
+            int u = (axis + 1) % 3, v = (axis + 2) % 3;
+            double uLo = Math.Max(al[u], bl[u]), uHi = Math.Min(ah[u], bh[u]);
+            double vLo = Math.Max(al[v], bl[v]), vHi = Math.Min(ah[v], bh[v]);
+            if (uHi - uLo <= tol || vHi - vLo <= tol) continue;
+            static string Um(double m) => (m * 1e6).ToString("G7", System.Globalization.CultureInfo.InvariantCulture);
+            // The extent along the board, not up it: z is the same dielectric for both.
+            int along = u == 2 ? v : u;
+            (double lo, double hi) = along == u ? (uLo, uHi) : (vLo, vHi);
+            string[] name = ["x", "y", "z"];
+            return $"at {name[axis]} = {Um(al[axis])} µm from {name[along]} = {Um(lo)} µm to {Um(hi)} µm";
+        }
+        return null;
     }
 
     /// <summary>Clipper's integer grid for <see cref="FlushTo"/>: 0.1 nm, so a board metres across stays far inside a long.</summary>

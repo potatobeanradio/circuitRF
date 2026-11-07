@@ -12,6 +12,7 @@ note Port 1 is a wave port on the air box's xmin face: 800 × 706.25 µm (13.732
 note Port 2's wave-port region is clipped to the air box's xmax face; the box is smaller than the sizing rule asks for there.
 note Port 2 is a wave port on the air box's xmax face: 800 × 706.25 µm (13.7329 line widths × 8 heights, the sizing rule's), its reference plane on the face.
 note The air box's floor is 'Backside Metal' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it. The AirBox ZMin padding does not apply to a floor on the plane.
+note 'via/1' and 3 other conductor(s) are under 3 skin depths thick at 1 GHz, so Thin Metal Correction gives the faces that thickness (1.88 µm on 'via/1'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
 solid GaAs GaAs Dielectric 1 box (0,-0.0004,3E-06) (0.0008,0.00039999999999999996,0.00010300000000000001)
 solid TFR Isolation TFR Isolation Dielectric 2 box (0,-0.0004,0.00010300000000000001) (0.0008,0.00039999999999999996,0.00010325)
 solid Air Air Dielectric 3 box (0,-0.0004,0.00010645000000000001) (0.0008,0.00039999999999999996,0.00010925000000000001)

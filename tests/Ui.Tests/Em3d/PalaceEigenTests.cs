@@ -318,7 +318,9 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
                                                            "config.json", SearchOption.AllDirectories))
         {
             string text = File.ReadAllText(golden);
-            Assert.DoesNotContain("WavePort", text, StringComparison.Ordinal);
+            // The film reference's sheet case is driven through a wave port, which its setup states.
+            if (Path.GetFileName(Path.GetDirectoryName(golden)) != "film-sheet")
+                Assert.DoesNotContain("WavePort", text, StringComparison.Ordinal);
             Assert.DoesNotContain("Eigenmode", text, StringComparison.Ordinal);
         }
 

@@ -4,6 +4,7 @@ note Port 2 ('2') at (640, 0 µm) was taken to be on the conductor's high-x (rig
 note Port 1 at its line's end is a vertical lumped sheet 72 µm wide and 104.85 µm tall from 'Metal3' down to 'Backside Metal' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note Port 2 at its line's end is a vertical lumped sheet 72 µm wide and 104.85 µm tall from 'Metal3' down to 'Backside Metal' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note The air box's floor is 'Backside Metal' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+note 'Metal3/1' is under 3 skin depths thick at 1 GHz, so Thin Metal Correction gives the faces that thickness (2.87 µm on 'Metal3/1'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
 solid Silicon High-resistivity silicon Dielectric 1 box (-0.00064,-0.0006760000000000001,3E-06) (0.00128,0.0006760000000000001,0.00010300000000000001)
 solid ILD1 ILD1 Dielectric 2 box (-0.00064,-0.0006760000000000001,0.00010300000000000001) (0.00128,0.0006760000000000001,0.00010400000000000001)
 solid ILD2 Lower ILD2 Lower Dielectric 3 box (-0.00064,-0.0006760000000000001,0.00010400000000000001) (0.00128,0.0006760000000000001,0.00010545)

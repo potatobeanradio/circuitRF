@@ -17,6 +17,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 //  the curving cap's restart runs a stand-in for Gmsh that takes a second.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class MeshRobustnessTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("emb2-").FullName;
@@ -219,6 +220,22 @@ public sealed class MeshRobustnessTests : IDisposable
         var on = Em3dMeshCheck.Check(msh, groups, robustMeshing: true)!;
         Assert.Equal(r.Sentences.Count, on.Sentences.Count);
         Assert.All(on.Sentences, x => Assert.DoesNotContain("robust", x, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A via's Fill is offered only where the elements touch a via: elsewhere it changes nothing.</summary>
+    [Fact]
+    public void TheElementRemedy_NamesAViaOnlyWhereTheElementsTouchOne()
+    {
+        string msh = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "mesh-check", "flat-and-orphan.msh");
+        var mesh = MshReader.Read(msh);
+        List<Em3dGroup> Groups(string metal) =>
+        [
+            new("board", 1, 3, Em3dGroupKind.Volume, 1, false),
+            new(metal, 2, 2, Em3dGroupKind.Conductor, 1, true),
+            new("port/1", 3, 2, Em3dGroupKind.Port, 1, true),
+        ];
+        Assert.Contains(Em3dMeshCheck.Check(mesh, Groups("via/1")).Sentences, x => x.EndsWith(Em3dMeshCheck.ElementRemedyVia, StringComparison.Ordinal));
+        Assert.DoesNotContain(Em3dMeshCheck.Check(mesh, Groups("Top Copper (1 oz)/6")).Sentences, x => x.Contains("via entry", StringComparison.Ordinal));
     }
 
     // ── R-emb2-5 ───────────────────────────────────────────────────────────────────────────────

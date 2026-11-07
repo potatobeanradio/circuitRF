@@ -253,6 +253,7 @@ src/Design/Cells/CellCreate.cs|The template's Data Display names no data source 
 src/Design/Cells/CellFolder.cs|Invalid cell name '{cellName}': {reason}
 src/Design/Cells/CellPersistence.cs|.ccell format_version {cell.FormatVersion} does not match 
 src/Design/Cells/CellPersistence.cs|Failed to deserialize .ccell file.
+src/Design/Cells/AtomicFile.cs|'{Path.GetFileName(path)}' is read-only.
 src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected ',' or ')' at position {p.Index}.
 src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected '{c}' at position {Index}.
 src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected a layer or an operation at position {p.Index}.
@@ -1256,7 +1257,8 @@ src/Design/Em3d/FieldCosimulation.Sweep.cs|{who}: this value moves freq= to {Mat
 src/Design/Em3d/FieldCosimulation.cs|Fields '{fa.Name}': every drive's weight is zero, so nothing is driven.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{fa.DriveExpr}' names {ports.Count} port{(ports.Count == 1 ? 
-src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{ports[i]}' is not a port number ({e.Message}).
+src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{name}' is not a port number ({e.Message}).
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its Pavl, in watts, which '{InstanceOf(list[other].Item1)}' 
 src/Design/Em3d/FieldCosimulation.cs|{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: the circuit has no instance '{fa.Block}'.
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not a number ({e.Message}).

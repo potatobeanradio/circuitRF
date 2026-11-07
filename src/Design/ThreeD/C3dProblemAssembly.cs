@@ -569,6 +569,7 @@ public static class C3dProblemAssembly
             ports.AddRange(sources is null ? C3dModelled.Renumber(modelled, off, notes) : modelled.Select(m => m.Resolved));
             if (sources is not null && portDocument.Ports.Count > ports.Count)
                 notes.Add($"{portDocument.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
+            if (EdgePortSheet.SheetClash(ports) is { } oneSheet) return No(oneSheet, e.Warnings);
         }
 
         // ── brief-sar-3 R-sar3-3 — lumped elements: a port's gap, by the port's own rules, carrying R, L and C ──────
