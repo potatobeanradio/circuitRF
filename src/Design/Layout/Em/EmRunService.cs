@@ -275,9 +275,11 @@ public static class EmRunService
         // Refused by name rather than silently re-routed to the planar kernel. Re-routing would be a
         // guess at intent that costs minutes of solve time, and the remedy is one dropdown.
         if (choice.Ok && choice.Kind == EmAnalysisKind.CrossSection
-            && EmPortExtraction.AnyNonEdgePort(EmComponentPorts.Collect(source).Shapes))
+            && EmPortExtraction.AnyNonEdgePort(EmComponentPorts.Collect(source, setup).Shapes))
             return new EmExtractPhase(geometry, crossSection, planar, choice, findings,
-                                      EmDiagnostics.InternalPortNeedsFullWave(choice.KernelName));
+                                      EmPlanarComponentPorts.Build(setup, source) is { Labels.Count: > 0 }
+                                          ? EmDiagnostics.ComponentPortsNeedFullWave(choice.KernelName)
+                                          : EmDiagnostics.InternalPortNeedsFullWave(choice.KernelName));
 
         findings.Add(choice.Reason);
 
@@ -377,12 +379,14 @@ public static class EmRunService
         // preview of the bare extraction would be a preview of a structure the run does not solve,
         // and the port's own footprint would be missing from the mesh.
         // brief-dfr26-7 R-dfr26-7-3: the top level's port labels and every port a placed component declares.
-        var portLabels = EmComponentPorts.Collect(source);
+        // brief-lcp-1 R-lcp1-4: and the setup's component ports, a delta gap across each part's strip.
+        var portLabels = EmComponentPorts.Collect(source, setup);
+        findings.AddRange(portLabels.Warnings.Select(EmFinding.Warn));
         if (portLabels.Refusal is { } duplicate)
             return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings, duplicate);
         findings.AddRange(EmFindings.AsNotes(portLabels.Notes));
         var ports = EmPortExtraction.Extract(
-            portLabels.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
+            portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup),
             source.View.DisplayUnit,
             EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
@@ -612,7 +616,7 @@ public static class EmRunService
         try
         {
             var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice, target);
-            return WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source));
+            return WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
         }
         catch (OperationCanceledException)
         {
@@ -1023,12 +1027,14 @@ public static class EmRunService
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
         // by name rather than guessed (R-res-5).
         // brief-dfr26-7 R-dfr26-7-3: the top level's port labels and every port a placed component declares.
-        var portLabels = EmComponentPorts.Collect(source);
+        // brief-lcp-1 R-lcp1-4: and the setup's component ports, a delta gap across each part's strip.
+        var portLabels = EmComponentPorts.Collect(source, setup);
         notes.AddRange(portLabels.Notes);
+        warnings.AddRange(portLabels.Warnings);
         var ports = portLabels.Refusal is { } duplicate
             ? EmPortExtractionResult.No(duplicate)
             : EmPortExtraction.Extract(
-                portLabels.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
+                portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup),
                 source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 

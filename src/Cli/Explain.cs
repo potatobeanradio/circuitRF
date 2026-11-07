@@ -1225,11 +1225,12 @@ internal static class Explain
         EmPortKindMigration.ApplyInMemory(source.View.Shapes, setup.PortKinds);
 
         // brief-dfr26-7 R-dfr26-7-3: the ports a placed component declares are the run's ports too.
-        var portLabels = EmComponentPorts.Collect(source);
+        // brief-lcp-1 R-lcp1-4: and the setup's component ports, as the run reads them.
+        var portLabels = EmComponentPorts.Collect(source, setup);
         var ports = portLabels.Refusal is { } duplicate
             ? EmPortExtractionResult.No(duplicate)
             : EmPortExtraction.Extract(
-                portLabels.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
+                portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup),
                 source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 

@@ -20,7 +20,37 @@ public static class EmComponentPorts
 {
     /// <summary>The labels to extract ports from, the refusal when two name one number, and one note per
     /// component port.</summary>
-    public sealed record Result(IReadOnlyList<LayoutShape> Shapes, string? Refusal, IReadOnlyList<string> Notes);
+    public sealed record Result(IReadOnlyList<LayoutShape> Shapes, string? Refusal, IReadOnlyList<string> Notes)
+    {
+        /// <summary>brief-lcp-1 — what the run warns about: a component port left out, with its reason.</summary>
+        public IReadOnlyList<string> Warnings { get; init; } = [];
+
+        /// <summary>brief-lcp-1 — the setup's component ports on a planar run, when it names any.</summary>
+        public EmPlanarComponentPortBuild? ComponentBuild { get; init; }
+
+        /// <summary>R-lcp1-5 — the reference impedance by slot: a component port's own Z0 for its slot, the setup's elsewhere.</summary>
+        public Func<int, System.Numerics.Complex> Z0For(EmSetup setup)
+            => ComponentBuild is { } b ? b.Z0For(setup) : setup.ResolvePortZ0;
+    }
+
+    /// <summary>
+    /// brief-lcp-1 R-lcp1-4 — <see cref="Collect(EmLayoutSource)"/>, plus the delta-gap label of every component port
+    /// <paramref name="setup"/> names on a planar run (<see cref="EmPlanarComponentPorts"/>). The one entry point every caller
+    /// that extracts ports on a setup's behalf takes, so the run, the preflight, the panel's Refresh and <c>explain</c> read one
+    /// list. A setup with no component ports — or a 3D one, which builds a sheet rather than a strip — gets exactly
+    /// <see cref="Collect(EmLayoutSource)"/>.
+    /// </summary>
+    public static Result Collect(EmLayoutSource source, EmSetup setup)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        var found = Collect(source);
+        if (found.Refusal is not null || EmPlanarComponentPorts.Build(setup, source) is not { } build) return found;
+        var notes = new List<string>(found.Notes);
+        notes.AddRange(build.Notes);
+        if (build.Refusal is { } refusal)
+            return new Result(found.Shapes, refusal, notes) { Warnings = build.Warnings, ComponentBuild = build };
+        return new Result([.. found.Shapes, .. build.Labels], null, notes) { Warnings = build.Warnings, ComponentBuild = build };
+    }
 
     /// <summary>One component-declared port: its label in top-level coordinates and the instance it came from.</summary>
     public sealed record ComponentPort(LabelShape Label, string Owner);

@@ -95,6 +95,22 @@ public static class EmDiagnostics
         ("kernelName", kernelName));
 
     /// <summary>
+    /// brief-lcp-1 R-lcp1-6 — <see cref="InternalPortNeedsFullWave"/>'s refusal, in the words of a setup that names component
+    /// ports: what the user asked for is a port across a part, not an internal port, so the sentence says that. Same id,
+    /// same remedy.
+    /// </summary>
+    public static Diagnostic ComponentPortsNeedFullWave(string kernelName) => Diagnostic.Create(
+        "em.port.internal-needs-full-wave",
+        DiagnosticSeverity.Error,
+        "This EM setup names component ports, and the analysis it resolved to is the {kernelName}. A component port " +
+        "is a port across a placed part's pads, cut in a strip joining them, and the uniform-line kernel never meshes " +
+        "the layout at all: it solves a cross-section and forms the network of a length-L line in closed form, so its " +
+        "only ports are the two ends of that line. There is nowhere for a component port to be, and running anyway " +
+        "would publish an answer without the ports you asked for. Set Analysis to the full-wave planar kernel, or " +
+        "clear the setup's component ports.",
+        ("kernelName", kernelName));
+
+    /// <summary>
     /// brief-em3d-3 — a 3D setup handed to a path that only knows the planar solvers: the planar
     /// preflight, or a Solver3D value no backend answers to. Refused rather than run, because running
     /// the planar kernel instead would write a result for a solver the setup did not ask for. (Its id

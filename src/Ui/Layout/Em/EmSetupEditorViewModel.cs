@@ -2285,7 +2285,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // the planar refresh does not run then. It needs no problem and no mesh: whether a port is an
         // internal one is a question about the label and the metal under it.
         // brief-dfr26-7 R-dfr26-7-3: a placed component's EM port counts, as it does in the run.
-        var labelled = EmComponentPorts.Collect(source).Shapes;
+        // brief-lcp-1 R-lcp1-4: and the setup's component ports, as the run reads them.
+        var labelled = EmComponentPorts.Collect(source, Working).Shapes;
         _layoutHasNonEdgePort = EmPortExtraction.AnyNonEdgePort(labelled);
         // brief-dfr28-4 — the 3D port table's rows are the port labels as the 3D generator numbers them, read here off
         // the artwork: the planar rows below come from an extraction that refuses a board of many levels, and with
@@ -2434,11 +2435,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         // brief-dfr26-7 R-dfr26-7-3: the top level's port labels and every port a placed component declares —
         // the set the run extracts, so the panel lists the ports the run solves.
-        var portLabels = EmComponentPorts.Collect(source);
+        // brief-lcp-1 R-lcp1-4: and the setup's component ports, a delta gap across each part's strip.
+        var portLabels = EmComponentPorts.Collect(source, Working);
         var ports = portLabels.Refusal is { } duplicate
             ? EmPortExtractionResult.No(duplicate)
             : EmPortExtraction.Extract(
-                portLabels.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
+                portLabels.Shapes, planar.Problem!, source.DbuPerMicron, portLabels.Z0For(Working),
                 source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 

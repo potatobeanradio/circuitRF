@@ -371,9 +371,10 @@ public static class EmSnpSchematic
     /// end and faces left. A port with no direction, stated or inferred from the artwork, faces away from the middle
     /// of the ports.
     /// </summary>
-    public static IReadOnlyDictionary<int, EmPortFace> FacesOf(EmLayoutSource source)
+    /// <param name="setup">The setup run: its component ports are ports too (brief-lcp-1 R-lcp1-4). Null reads the layout's own.</param>
+    public static IReadOnlyDictionary<int, EmPortFace> FacesOf(EmLayoutSource source, EmSetup? setup = null)
     {
-        var shapes = EmComponentPorts.Collect(source).Shapes;
+        var shapes = (setup is null ? EmComponentPorts.Collect(source) : EmComponentPorts.Collect(source, setup)).Shapes;
         var numbered = EmPortExtraction.NumberPorts(shapes);
         var lookup = LayoutPortDirection.LookupFor(shapes);
         var faces = new Dictionary<int, EmPortFace>();

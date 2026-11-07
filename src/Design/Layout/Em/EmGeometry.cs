@@ -63,10 +63,15 @@ public static class EmGeometry
         ArgumentNullException.ThrowIfNull(source);
 
         var flat = Flatten(source.View, source.AbsolutePath, source.Technology);
+
+        // brief-lcp-1 R-lcp1-4: a component port on a planar run is a strip joining the part's pads, in the solved problem
+        // only. Added here so every caller that hands geometry to an extractor sees the same strips.
+        if (EmPlanarComponentPorts.Build(setup, source) is { Strips.Count: > 0 } components)
+            flat = flat with { Shapes = [.. flat.Shapes, .. components.Strips] };
         if (setup.SolveRegion is null) return flat;
 
         // brief-dfr26-7 R-dfr26-7-3: a placed component's EM port has to lie inside the region as a drawn one does.
-        var clip = EmSolveRegionClip.Apply(flat.Shapes, EmComponentPorts.Collect(source).Shapes, setup.SolveRegion,
+        var clip = EmSolveRegionClip.Apply(flat.Shapes, EmComponentPorts.Collect(source, setup).Shapes, setup.SolveRegion,
                                            source.DbuPerMicron, source.Technology);
         var notes = new List<string>(flat.Notes);
         if (clip.Note is { } note) notes.Add(note);

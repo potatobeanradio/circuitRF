@@ -122,7 +122,7 @@ public static class EmPortExtraction
         {
             if (shape is not LabelShape { IsPort: true } l) continue;
             count++;
-            if (TryParseNumber(l.Text, out int n)) explicitNumbers.TryAdd(n, l);
+            if (TryNumberOf(l, out int n)) explicitNumbers.TryAdd(n, l);
             else pending.Add(l);
         }
         return AssignNumbers(explicitNumbers, pending, count);
@@ -158,7 +158,7 @@ public static class EmPortExtraction
         ArgumentNullException.ThrowIfNull(shapes);
         var seen = new Dictionary<int, LabelShape>();
         foreach (var s in shapes)
-            if (s is LabelShape { IsPort: true } l && TryParseNumber(l.Text, out int n) && !seen.TryAdd(n, l))
+            if (s is LabelShape { IsPort: true } l && TryNumberOf(l, out int n) && !seen.TryAdd(n, l))
                 return DuplicateNumber(n, seen[n], l, dbuPerMicron, displayUnit);
         return null;
     }
@@ -279,7 +279,7 @@ public static class EmPortExtraction
         var pending         = new List<LabelShape>();
         foreach (var l in labels)
         {
-            if (TryParseNumber(l.Text, out int n))
+            if (TryNumberOf(l, out int n))
             {
                 if (explicitNumbers.TryGetValue(n, out var first))
                     return EmPortExtractionResult.No(DuplicateNumber(n, first, l, dbuPerMicron, displayUnit));
@@ -868,6 +868,16 @@ public static class EmPortExtraction
     /// port, not a refusal.
     /// </summary>
     internal static bool TryParseNumber(string? text, out int number)
+        => TryParseNumberCore(text, out number);
+
+    /// <summary>
+    /// A port label's number: the one a component port states apart from its text (brief-lcp-1 R-lcp1-5 — its text is the
+    /// part's name, which may read as a number, P1), else <see cref="TryParseNumber"/> of its text.
+    /// </summary>
+    internal static bool TryNumberOf(LabelShape label, out int number)
+        => EmPlanarComponentPorts.StatedNumber(label, out number) || TryParseNumber(label.Text, out number);
+
+    private static bool TryParseNumberCore(string? text, out int number)
     {
         number = 0;
         if (text is null) return false;

@@ -44,7 +44,7 @@ public static class EmCellCache
 
         sb.Append("dbu\t").Append(source.DbuPerMicron.ToString(CultureInfo.InvariantCulture)).Append('\n');
 
-        AppendLayout(sb, source);
+        AppendLayout(sb, source, setup);
 
         sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
         sb.Append("stackup\n").Append(Stackup(tech)).Append('\n');
@@ -74,7 +74,7 @@ public static class EmCellCache
     {
         var sb = new StringBuilder(Scheme3D).Append('\n');
         sb.Append("dbu\t").Append(source.DbuPerMicron.ToString(CultureInfo.InvariantCulture)).Append('\n');
-        AppendLayout(sb, source);
+        AppendLayout(sb, source, setup);
         sb.Append("c3d\n").Append(ResolvedText(resolved)).Append('\n');
         sb.Append("inputs\n").Append(InputsText(inputs ?? [], workspaceDir)).Append('\n');
         sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
@@ -146,7 +146,7 @@ public static class EmCellCache
     }
 
     /// <summary>The copper on every solved layer, flattened, then the port labels — the part of a key a layout makes.</summary>
-    private static void AppendLayout(StringBuilder sb, EmLayoutSource source)
+    private static void AppendLayout(StringBuilder sb, EmLayoutSource source, EmSetup setup)
     {
         var tech = source.Technology;
         var solved = SolvedLayers(tech);
@@ -162,8 +162,11 @@ public static class EmCellCache
         sb.Append("copper\n").Append(LayoutPersistence.Serialize(copper)).Append('\n');
 
         var ports = new LayoutView { DbuPerMicron = source.DbuPerMicron };
-        foreach (var s in EmComponentPorts.Collect(source).Shapes)
+        // brief-lcp-1 R-lcp1-4: a planar setup's component ports are ports, and their strips are copper of the solved problem.
+        var collected = EmComponentPorts.Collect(source, setup);
+        foreach (var s in collected.Shapes)
             if (s is LabelShape { IsPort: true }) ports.Shapes.Add(s);
+        if (collected.ComponentBuild is { Strips.Count: > 0 } components) ports.Shapes.AddRange(components.Strips);
         sb.Append("ports\n").Append(LayoutPersistence.Serialize(ports)).Append('\n');
     }
 

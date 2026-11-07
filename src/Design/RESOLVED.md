@@ -28912,3 +28912,35 @@ technology's own rules, which are the board's and not the import's. Nothing was 
 - **Not a defect, though it looked like one:** the Linux staging directory IS removed when the leg ends, by `using var runner = plan.Runner` in
   `ExecutePalace`. No explicit `Dispose()` call appears anywhere, which is easy to misread.
 - Gate: `WslLocationTests.Gate4c` (stream, and file by file when the stream is not an archive) and `Gate4d` (stopped part way).
+
+## Component ports on a planar run: a strip and a delta gap (brief LCP-1, 2026-11-07)
+
+- **The pads, without a `.c3d`.** `EmPartPads` (`Layout/Em`) holds the board projection, the entry selection (`*`, an override beside it, a
+  part named twice) and R-emb1-5's pairing, taking a `LayoutView`, its path, its technology and a world transform. `C3dComponentPorts` calls
+  it with its instance frame's transform and keeps only its frames, landings and verification. `ComponentPortBuildTests` passed unchanged.
+- **`EmPlanarComponentPorts.Build(setup, source)`** returns per part a `RectShape` strip on the pads' layer (pad centre to pad centre, across
+  the width the pads share or `WidthUm`) and an `InternalDeltaGap` label at the middle of the air left between the two conductors across
+  that width, pointing from the positive pad to the negative one. Null for a setup with no `ComponentPorts` and for a 3D setup. Cached per
+  `EmLayoutSource` object, keyed on the list, the levels, the region and the view's shape and instance counts.
+- **One entry point.** `EmComponentPorts.Collect(source, setup)` adds the labels; `EmGeometry.ForSetup` adds the strips. The run, the
+  preflight, the kernel guard, the panel's Refresh, `FacesOf`, `EmCellCache`'s key and `explain`'s port walk all moved to it. `explain`
+  (`src/Cli/Explain.cs`) was not on the brief's list; it moved too, or it would see the strips and not the gaps. `Em3dGenerator` stays on the
+  setup-free form.
+- **First finding: the gap's row.** `PlanarPort.TryResolveOnLayer` gives an internal gap no end-face test (`EndsHere` is always true when
+  `internalGap`). Its transverse walk takes every contiguous row where both cells beside the cut are metal and paired, and R-pw1-1's span
+  does not apply to a gap (`EdgeSpan` is edge ports only). On the strip the cut lands in the air between the conductors, where only the strip
+  is metal, and the strip's long edges are hard gridlines, so the row stops at the strip. It would widen only where copper lies against the
+  strip's side at the cut. The builder refuses that case ("lies against its strip"). Not covered: curved copper a fraction of a cell beside
+  the strip, whose row centre the mesher may read as metal. That merges the two in the mesh for any planar run, port or not.
+- **A port's number is not its text.** The label's text is the part's name, because the `.cemr` and the Touchstone `Port[N] =` line both read
+  label text. Read as a number, a refdes like `P1` would claim port 1. `EmPortExtraction.TryNumberOf` asks
+  `EmPlanarComponentPorts.StatedNumber` (a weak table on the label object) before the text. Numbers start after the highest number
+  `NumberPorts` gives the layout's own and part-declared ports, one per built port in list order, so a left-out part leaves no hole.
+  `NumberGap` would refuse a hole anyway.
+- **Z0** reaches extraction through `Result.Z0For(setup)`: a built port's own Z0 for its slot, `ResolvePortZ0` elsewhere. `PortZ0s` is not
+  written.
+- **The uniform-line refusal** keeps its id (`em.port.internal-needs-full-wave`). When the setup's component ports built anything it uses
+  `EmDiagnostics.ComponentPortsNeedFullWave`, which speaks of component ports.
+- **Measured on the gate fixture** (1100 µm line, two series parts, no vias, 1-3 GHz, cells/λ 10): built vs hand-drawn twin, max |ΔS| = 0
+  exactly; both ports shorted vs solid metal, 5e-14; |S33| = 0.42, |S31| = 0.58. Below the fit floor (1-3 MHz), DCFLOAT's terminal-pair
+  sources already drive a gap port, and with both parts shorted |S21| > 0.99. Gate: `PlanarComponentPortTests` (11 tests, 2 s).

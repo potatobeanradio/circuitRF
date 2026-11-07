@@ -739,7 +739,9 @@ public sealed class EmSetup
     public List<EmPort3D> Ports3D { get; set; } = [];
 
     /// <summary>brief-emb-1 R-emb1-2 — the component ports this setup builds on the parts placed on its 3D view's layout, numbered
-    /// after the document's own ports in list order. A <c>.c3d</c>'s setups only: a <c>.cem</c> on a layout refuses them.</summary>
+    /// after the document's own ports in list order. On a planar <c>.cem</c> each is a strip across the part's gap cut by a delta
+    /// gap, in the solved problem only (brief-lcp-1, <see cref="EmPlanarComponentPorts"/>); a 3D <c>.cem</c> on a layout still
+    /// refuses them until brief-lcp-5.</summary>
     public List<EmComponentPort> ComponentPorts { get; set; } = [];
 
     /// <summary>The <see cref="EmComponentPort.Refdes"/> that names every placed two-terminal part.</summary>
