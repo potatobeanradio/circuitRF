@@ -1332,11 +1332,20 @@ internal static class Check
         }
 
         CircuitRF.Design.Layout.Em3d.Em3dGenerationResult generated;
-        try { generated = CircuitRF.Design.Layout.Em3d.Em3dGenerator.Generate(setup, source, tech); }
+        try { generated = Em3dSetupProblem.Of(setup, source, tech, workspaceCws: DocumentKinds.AncestorCws(path)); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckEmRefused(path, ex.Message)); return; }
 
+        // brief-lcp-5 R-lcp5-4 — a 3D .cem on a layout builds its component ports in a 3D view of it: reported as a .cem naming a
+        // 3D view reports them, under the .cem's own ids, and their warnings not again among the problem's.
+        var parts = generated.ComponentPorts;
+        if (parts is not null)
+        {
+            foreach (var p in parts.Ports.Where(p => p.Ok)) f.Add(CliDiagnostics.CheckCemComponentPort(path, C3dComponentPorts.Describe(p)));
+            foreach (string w in parts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
+        }
         foreach (string note in generated.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));
-        foreach (string warning in generated.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+        foreach (string warning in generated.Warnings)
+            if (parts?.Warnings.Contains(warning) != true) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
         // brief-dfr35-1 R-dfr35-1-7 — the short edges: no board tried with one stopped Gmsh, so said here and not among the warnings.
         foreach (string note in CircuitRF.Design.Layout.Em3d.Em3dGeometryCheck.NoteSentences(generated.GeometryFindings)) f.Add(CliDiagnostics.CheckEmNote(path, note));
         if (generated.Problem is not { } problem)

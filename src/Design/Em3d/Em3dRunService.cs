@@ -223,7 +223,7 @@ public static partial class Em3dRunService
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
                                     EmergeDevice emergeDevice = EmergeDevice.Auto, EmRunTarget? target = null)
-        => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
+        => Run(setup, s => CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
                confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes, emergeDevice: emergeDevice, target: target);
 
     /// <summary>

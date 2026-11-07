@@ -999,7 +999,7 @@ public static partial class Em3dRunService
         if (source.Technology is null || !setup.Solver3D.Runs(PalaceSolver.Id)) return Em3dMemoryVerdict.Unknown;
         var settings = PalaceSettings.Resolve(setup.Palace);
         if (settings.Problems().Count > 0) return Em3dMemoryVerdict.Unknown;
-        var generated = Em3dGenerator.Generate(setup, source, source.Technology);
+        var generated = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(setup, source, source.Technology);
         return generated.Problem is { } p && generated.Ok
             ? PalaceMemoryVerdict(p, setup, source, settings, MachineMemory.PhysicalBytes)
             : Em3dMemoryVerdict.Unknown;
@@ -1014,7 +1014,7 @@ public static partial class Em3dRunService
                                                         PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null,
                                                         int? processes = null)
         => PalaceMemoryVerdict(problem, setup,
-                               source.Technology is { } tech ? s => Em3dGenerator.Generate(s, source, tech) : null,
+                               source.Technology is { } tech ? s => CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(s, source, tech) : null,
                                settings, physicalBytes, scope, processes);
 
     /// <summary>brief-em3d-42 — the same check, regenerating the half-padding remedy through

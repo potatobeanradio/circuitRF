@@ -213,6 +213,15 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png 
 
 A field plot draws from the workspace's `results/` folder beside its `.cws`, as the application reads it.
 
+**A `.cem`'s Show 3D** (the setup panel's own viewer, fed the setup and the layout the `.cem` resolves), on the same GPU capture:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --cem-3d <file.cem> -o out.png [--size WxH] [--yaw deg] [--pitch deg] [--list]
+```
+
+The scene's notes are printed first to last; `--list` prints every object's name, kind and bounds (mm). The camera is the viewer's
+opening fit, then `--yaw`/`--pitch`. A setup naming component ports draws their sheets and landings (brief LCP-5).
+
 **A 3D view's setup cards beside its Properties panel** (the real `C3dSetupAnalysesView` and `C3dPropertiesView` on one
 editor view model, results from the workspace's `results/` folder):
 

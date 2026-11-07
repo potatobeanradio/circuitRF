@@ -272,7 +272,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (!inputs.Setup.Is3D) return BuildPlanar(gen, inputs, source, tech, ct);
         // brief-dfr26-1 R-dfr26-1-5 — ports that refuse do not blank the picture of a 3D setup either: the geometry is
         // drawn without them and the refusal is the banner. A solve still refuses (EmRunService never asks for this).
-        var g = Em3dGenerator.Generate(inputs.Setup, source, tech, portsOptional: true);
+        // brief-lcp-5 R-lcp5-4 — the problem a run of the setup makes, by the one door: a setup naming component ports is built in
+        // a 3D view of the layout, and draws their sheets and landings as a .c3d does.
+        var g = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(inputs.Setup, source, tech, portsOptional: true);
         ct.ThrowIfCancellationRequested();
         var notes = new List<string>();
         if (g.PortRefusal is { } portRefusal) notes.Add(WouldNotRunNote + portRefusal);
@@ -284,7 +286,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             // a problem that would run.
             var preview = inputs.Setup.Clone();
             preview.Ports3D = [.. preview.Ports3D.Select(p => p with { Kind = Em3dPortKind.Lumped })];
-            var lumped = Em3dGenerator.Generate(preview, source, tech);
+            var lumped = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(preview, source, tech);
             if (lumped.Problem is not null)
             {
                 notes.Add(WouldNotRunNote + g.Refusal);
@@ -330,6 +332,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         preview.Solver3D = Em3dSolvers.Default;
         preview.Problem3D = Em3dProblemType.Driven;
         preview.Ports3D = [];
+        // A planar setup's component ports are a strip and a delta gap in its own solve, not a 3D sheet: its look in 3D is the
+        // layout's (brief-lcp-5).
+        preview.ComponentPorts = [];
         // Ports that would refuse a solve do not blank the picture: it exists for a look, and a layout with no port
         // labels yet, or one whose ports cannot be built in 3D, is exactly when the geometry is worth seeing. Nor do
         // wires with no pad under them — a wBond pushed to a fresh layout has wires and no artwork yet.

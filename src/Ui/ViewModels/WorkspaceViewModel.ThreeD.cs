@@ -494,10 +494,9 @@ public partial class WorkspaceViewModel
     /// </summary>
     public Task NewThreeDViewFromLayoutForLayoutAsync(string clayPath)
     {
-        string? cellDir = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(clayPath)));
-        if (cellDir is null || !File.Exists(Path.Combine(cellDir, CircuitRF.Design.Cells.CellFolder.CcellFileName)))
+        if (C3dHierarchy.CellDirOfLayout(clayPath) is not { } cellDir)
         {
-            Messages.Error($"New 3D View from Layout: '{Path.GetFileName(clayPath)}' is not saved in a cell, and a 3D view is made in its layout's cell.");
+            Messages.Error($"New 3D View from Layout: {C3dHierarchy.NotInCellRefusal(clayPath)}");
             return Task.CompletedTask;
         }
         return NewThreeDViewFromLayoutAsync(cellDir);

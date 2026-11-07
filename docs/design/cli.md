@@ -910,7 +910,7 @@ its currents decide the faces in the script. A planar setup is refused by name (
 `--bands` or `-o` beside it (`cli.em.mesh-only-takes`). A comparison meshes Palace's script; a setup with no Palace leg is refused,
 because EMerge meshes inside its own run and openEMS has a grid. `tools/MeshReplay` runs this over a folder of setups.
 
-### 8.11 Component ports: `--component-ports` (brief-emb-1, brief-lcp-2)
+### 8.11 Component ports: `--component-ports` (brief-emb-1, brief-lcp-2, brief-lcp-5)
 
 ```
 circuitrf em board.c3d [--setup <name>] --component-ports "C1,C2,L2"|"*"
@@ -933,13 +933,18 @@ naming it, and the rest run. Two containers, two constructions:
   width they share, cut by an internal delta gap in the middle of the air between the two conductors, built and verified
   by `EmPlanarComponentPorts.Build` (LCP-1). The strip and the gap exist in the solved problem only; the `.clay` is
   never touched.
+- **On a layout, 3D** — a 3D `.cem` whose LayoutRef names a `.clay` — the 3D view's construction, on the 3D view
+  New 3D View from Layout would make of that cell, built in memory for this setup alone (`Em3dSetupProblem.Of`, LCP-5).
+  Nothing is written. The `.clay` must be saved in a cell and be its cell's layout; a `SolveRegion` beside component
+  ports is refused (a placed cell takes the whole layout); and the setup's drawn ports must each build as the generator
+  builds them, since a `.cem`'s port cannot be moved afterwards as a `.c3d`'s can. A 3D view solves the copper that is
+  drawn, so a board whose ground is only its stackup's refuses its drawn ports there.
 
 **It owns no construction**: every line comes out of the function the run, `check` and the setup panel's Check call, so
 the headless verdict is the GUI's. Which setups cannot take component ports at all is one rule,
 `EmComponentPorts.Inapplicable`, and `em`, `em --dry-run` and `explain` refuse by the kept id
-(`em.component-ports.refused`): a thermal setup and an electrostatic one have no ports, and a 3D `.cem` on a layout
-does not build them yet (it names the 3D-view route; LCP-5 lifts it). A magnetostatic setup takes them: its ports are
-its current sources.
+(`em.component-ports.refused`): a thermal setup and an electrostatic one have no ports. A magnetostatic setup takes
+them: its ports are its current sources.
 
 `explain --component-ports` builds them and walks one line per port — refdes, pads (with their nets), conductors, gap,
 width and verdict, plus a 3D port's landings — and with a list builds that list instead of the setup's. It solves

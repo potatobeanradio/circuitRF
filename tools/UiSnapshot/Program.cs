@@ -142,6 +142,8 @@ if (Array.IndexOf(args, "--symbol") is >= 0 and var si && si + 1 < args.Length)
 
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
+// --cem-3d is a .cem's Show 3D, on the same GPU capture (SnapshotCem3D.cs).
+if (args.Contains("--cem-3d")) return SnapshotCem3D.Run(args);
 
 string? impedance = null, finding = null;
 var impedanceLayers = new List<string>();

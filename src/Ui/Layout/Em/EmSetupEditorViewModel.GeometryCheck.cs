@@ -27,7 +27,7 @@ public sealed partial class EmSetupEditorViewModel
             said = await Task.Run(() =>
             {
                 var copy = source with { View = LayoutPersistence.Deserialize(layout) };
-                return Em3dGeometryCheck.Sentences(Em3dGenerator.Generate(setup, copy, technology).GeometryFindings);
+                return Em3dGeometryCheck.Sentences(CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(setup, copy, technology).GeometryFindings);
             });
         }
         // A setup the generator cannot build says so when it runs; this only adds to the panel when it has something to add.

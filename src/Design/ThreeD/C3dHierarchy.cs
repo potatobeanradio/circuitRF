@@ -82,6 +82,10 @@ public sealed record C3dLayoutPorts(IReadOnlyList<C3dLayoutPort> Ports, IReadOnl
 /// <summary>R-pw1-4 — one <c>.c3d</c> port whose rectangle differs from what its layout's port label now translates to.</summary>
 public sealed record C3dStalePort(int Number, long OldWidthDbu, long NewWidthDbu, C3dLayoutPort Translated);
 
+/// <summary>brief-lcp-5 R-lcp5-1 — a layout's 3D view for one setup, in memory: the document, the path it would have had, or why
+/// none can be made; and what translating its ports noted.</summary>
+public sealed record C3dSetupView(C3dDocument? Document, string Path, string? Refusal, IReadOnlyList<string> Notes);
+
 /// <summary>R-pw1-5 — what Update Ports from Layout did: the records it moved, and the labels it added as new records,
 /// each with the number it got (different from the label's own when that number was taken).</summary>
 public sealed record C3dPortUpdate(IReadOnlyList<int> Updated, IReadOnlyList<(C3dLayoutPort From, int Number)> Added)
@@ -883,17 +887,8 @@ public static class C3dHierarchy
         try { view = LayoutPersistence.LoadFromFile(clay); }
         catch (Exception e) { return new(null, $"'{clay}' cannot be read: {e.Message}", [], []); }
 
-        string c3dDir = Path.GetDirectoryName(Path.GetFullPath(c3dPath))!;
         var (tech, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, workspaceCws, cache);
-        var doc = new C3dDocument
-        {
-            DbuPerMicron = view.DbuPerMicron,
-            DisplayUnit = view.DisplayUnit,
-            SnapDbu = view.SnapDbu,
-            TechRef = tech.ResolvedPath is { } tp ? Path.GetRelativePath(c3dDir, tp).Replace('\\', '/') : null,
-            Instances = [new C3dInstance { Name = InstancePrefix + "1", CellRef = ExternalCellRef.MakeCellRef(c3dDir, cellDir), View = C3dInstanceView.Layout }],
-            Look = C3dLook.ForNewDocument(),
-        };
+        var doc = DocumentFor(view, cellDir, c3dPath, tech);
 
         // Every .cem naming this layout: the workspace's own finder when there is a workspace, else the cell's em/ folder.
         IEnumerable<string> cems = workspaceCws is { } cws && File.Exists(cws)
@@ -934,6 +929,71 @@ public static class C3dHierarchy
         // brief-sdl-8 D4 — a layout made from the cell's schematic brings one linked VAR per name that drives it.
         var linked = view.GeneratedPlacements.Count > 0 ? AddLinkedVariables(doc, cellDir) : [];
         return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote, PortsMoved = moved, LinkedVariables = linked };
+    }
+
+    /// <summary>The document New 3D View from Layout starts from: one instance <c>U1</c> of the cell's layout at the origin, the
+    /// layout's display unit, DBU and snap, and its technology relative to <paramref name="c3dPath"/>. No setup and no port.</summary>
+    private static C3dDocument DocumentFor(LayoutView view, string cellDir, string c3dPath, TechResolution tech)
+    {
+        string c3dDir = Path.GetDirectoryName(Path.GetFullPath(c3dPath))!;
+        return new C3dDocument
+        {
+            DbuPerMicron = view.DbuPerMicron,
+            DisplayUnit = view.DisplayUnit,
+            SnapDbu = view.SnapDbu,
+            TechRef = tech.ResolvedPath is { } tp ? Path.GetRelativePath(c3dDir, tp).Replace('\\', '/') : null,
+            Instances = [new C3dInstance { Name = InstancePrefix + "1", CellRef = ExternalCellRef.MakeCellRef(c3dDir, cellDir), View = C3dInstanceView.Layout }],
+            Look = C3dLook.ForNewDocument(),
+        };
+    }
+
+    /// <summary>brief-dfr26-1 R-dfr26-1-6 — what is said of a layout that is not saved in a cell, when a 3D view of it is asked
+    /// for: a 3D view is made in its layout's cell.</summary>
+    public static string NotInCellRefusal(string clayPath)
+        => $"'{Path.GetFileName(clayPath)}' is not saved in a cell, and a 3D view is made in its layout's cell.";
+
+    /// <summary>The cell folder a layout file is saved in (the folder its layout subfolder sits in), or null when it is in none.</summary>
+    public static string? CellDirOfLayout(string clayPath)
+    {
+        string? cellDir = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(clayPath)));
+        return cellDir is not null && File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName)) ? cellDir : null;
+    }
+
+    /// <summary>
+    /// brief-lcp-5 R-lcp5-1 — the 3D view <see cref="NewFromLayout"/> would make of <paramref name="source"/>'s layout, for
+    /// <paramref name="setup"/> alone: no other <c>.cem</c> is scanned, nothing is written, and the document is given the path
+    /// it would have had in the cell's 3D folder, so its relative CellRef and TechRef resolve. Its ports are the setup's drawn
+    /// ports, translated STRICTLY (R-lcp5-2): a <c>.c3d</c>'s port is a rectangle its user can move afterwards, so New 3D View
+    /// leaves a bad one out and moves one to where a pulled-back plane starts, but a <c>.cem</c>'s user cannot, so a port the
+    /// generator would refuse is this view's refusal. The setup's component ports are not built here; they are the assembly's.
+    /// </summary>
+    public static C3dSetupView ViewForSetup(EmSetup setup, EmLayoutSource source, Technology tech, string? workspaceCws,
+                                            TechnologyCache? cache = null)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(source);
+        string clay = Path.GetFullPath(source.AbsolutePath);
+        if (CellDirOfLayout(clay) is not { } cellDir) return new(null, "", NotInCellRefusal(clay), []);
+        // The view's instance takes its cell's layout, so it must be this one: a .cem naming another .clay of the cell would
+        // otherwise be solved on a layout it does not name.
+        if (ViewFile(cellDir, C3dInstanceView.Layout) is not { } primary || !Same(Norm(primary), Norm(clay)))
+            return new(null, "", $"'{Path.GetFileName(clay)}' is not its cell's layout view, and a 3D view of the cell places that " +
+                                 "layout; component ports in 3D are built on the cell's layout.", []);
+        string cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string c3dPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.ThreeD), cellName + C3dPersistence.Extension);
+        var (resolved, _) = TechnologyResolver.ResolveForDocument(source.View.TechRef, clay, workspaceCws, cache ?? new TechnologyCache());
+        var doc = DocumentFor(source.View, cellDir, c3dPath, resolved);
+
+        var ports = new Dictionary<int, C3dPort>();
+        var leftOut = new List<string>();
+        var notes = new List<string>();
+        var drawn = setup.Clone();
+        drawn.ComponentPorts = [];
+        if (TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true) is { } refused)
+            return new(null, c3dPath, refused, notes);
+        foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
+        doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
+        return new(doc, c3dPath, null, notes);
     }
 
     /// <summary>
@@ -1178,24 +1238,30 @@ public static class C3dHierarchy
         TranslateWith(setup, source, tech, view, placement, ports, leftOut, moved);
     }
 
-    private static void TranslateWith(EmSetup setup, EmLayoutSource source, Technology tech, LayoutView view,
-                                      C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut,
-                                      List<string> moved)
+    /// <param name="strict">brief-lcp-5 R-lcp5-2 — a <c>.cem</c>'s own ports, which its user cannot move: the generator's strict
+    /// build, and the first port that cannot be one rectangle refuses. Returns the refusal; null otherwise, and always when not
+    /// strict.</param>
+    private static string? TranslateWith(EmSetup setup, EmLayoutSource source, Technology tech, LayoutView view,
+                                         C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut,
+                                         List<string> moved, bool strict = false)
     {
         // One port that cannot be built leaves out that port alone, and a plane pulled back from a line's end puts the
         // port where the plane begins (Em3dGenerator's portsEach): the .c3d's ports are rectangles the user can move.
         // Designer feedback round 34 — a .c3d instance always takes the whole layout, so the setup's solve region is not
         // this view's: applied here it refused the generation for a port outside it, and every port was left out.
-        if (setup.SolveRegion is not null)
+        // brief-lcp-5 R-lcp5-2 — and the generator builds the drawn ports only: component ports are the view's assembly's to build.
+        if (setup.SolveRegion is not null || setup.ComponentPorts.Count > 0)
         {
             setup = setup.Clone();
             setup.SolveRegion = null;
+            setup.ComponentPorts = [];
         }
-        var g = Em3dGenerator.Generate(setup, source, tech, portsEach: true);
+        var g = Em3dGenerator.Generate(setup, source, tech, portsEach: !strict);
         if (g.Problem is not { } problem)
         {
+            if (strict) return g.Refusal ?? "the setup's ports could not be built.";
             leftOut.Add($"{setup.Name}: its ports ({g.Refusal})");
-            return;
+            return null;
         }
         foreach (var lo in g.PortsLeftOut)
             leftOut.Add($"{setup.Name}: port {lo.Port} ({lo.Why})");
@@ -1221,6 +1287,9 @@ public static class C3dHierarchy
             int flat = ca.X == cb.X ? 0 : ca.Y == cb.Y ? 1 : ca.Z == cb.Z ? 2 : -1;
             if (p.Annulus is not null || flat < 0)
             {
+                if (strict)
+                    return $"Port {p.Number} ({p.Name}) cannot be placed in a 3D view of the layout, where component ports are built: " +
+                           (p.Annulus is not null ? "a coaxial annulus is not one rectangle." : "it is not flat.");
                 leftOut.Add($"{setup.Name}: port {p.Number} ({p.Name}) — " + (p.Annulus is not null ? "a coaxial annulus is not one rectangle" : "it is not flat"));
                 continue;
             }
@@ -1241,5 +1310,6 @@ public static class C3dHierarchy
                 Z0 = C3dPorts.FormatZ0(p.Z0),
             };
         }
+        return null;
     }
 }

@@ -1852,16 +1852,14 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
     if (solver is { } chosen) setup.Solver3D = chosen;
     // brief-emb-1 R-emb1-8 — the setup's component ports for this run, in memory only: nothing is written back.
-    // brief-lcp-2 R-lcp2-1 — on a .c3d, a .cem naming one, or a planar .cem on a layout (a strip and a delta gap, LCP-1); the
-    // kept id refuses what still cannot take them: a thermal or electrostatic setup, and a 3D .cem on a layout.
+    // brief-lcp-2 R-lcp2-1 — on a .c3d, a .cem naming one, a planar .cem on a layout (a strip and a delta gap, LCP-1), or a 3D
+    // .cem on a layout (an in-memory 3D view of it, LCP-5); the kept id refuses what cannot take them: a thermal or electrostatic setup.
     if (componentPorts is not null)
     {
         var entries = CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
         if (entries.Count == 0)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--component-ports takes reference designators, \"C1,C2,L2\", or \"*\" for every placed two-terminal part."));
-        bool onThreeDView = isC3d || CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(
-            cemPath, setup.LayoutRef, workspace is null ? WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cemPath)) : Path.GetFullPath(workspace)));
-        if (EmComponentPorts.Inapplicable(setup, onThreeDView) is { } cannot)
+        if (EmComponentPorts.Inapplicable(setup) is { } cannot)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts(cannot));
         setup.ComponentPorts = entries;
         foreach (var band in bandSetups) band.ComponentPorts = [.. entries];

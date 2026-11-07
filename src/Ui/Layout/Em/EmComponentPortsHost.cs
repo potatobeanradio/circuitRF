@@ -137,13 +137,25 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
 
     public Func<EmComponentPortCheck> PrepareCheck(EmSetup setup)
     {
-        // A thermal or electrostatic setup has no ports, and a 3D setup on a layout does not build them yet: the one rule
-        // em, explain and check read.
-        if (EmComponentPorts.Inapplicable(setup, onThreeDView: false) is { } inapplicable)
+        // A thermal or electrostatic setup has no ports: the one rule em, explain and check read.
+        if (EmComponentPorts.Inapplicable(setup) is { } inapplicable)
             return () => EmComponentPortCheck.Refused(inapplicable);
         if (source() is not { } s) return () => EmComponentPortCheck.Refused("Component ports: the layout has not resolved, so no port can be built.");
         string text = LayoutPersistence.Serialize(s.View);
         var copy = setup.Clone();
+        // brief-lcp-5 — a 3D setup builds them in a 3D view of the layout, by the run's own door, and says so as a 3D view's does.
+        if (setup.Is3D)
+            return () =>
+            {
+                if (s.Technology is not { } tech) return EmComponentPortCheck.Refused("Component ports: the layout's technology does not resolve.");
+                var g = Em3dSetupProblem.Of(copy, s with { View = LayoutPersistence.Deserialize(text) }, tech);
+                if (g.ComponentPorts is not { } built)
+                    return EmComponentPortCheck.Refused($"Component ports: {g.Refusal ?? "the ports were not built."}");
+                var lines = built.Ports.Select(p => new EmComponentPortVerdict(p.Refdes, p.Ok, p.Ok ? C3dComponentPorts.Describe(p) : p.Refusal!)).ToList();
+                var refused = built.Ports.Where(p => p.Refusal is not null).Select(p => p.Refusal!).ToList();
+                var others = built.Warnings.Where(w => !refused.Any(r => w.StartsWith(r, StringComparison.Ordinal))).ToList();
+                return new(lines, others, built.Refusal, built.Refusal is not null || g.Refusal is not null);
+            };
         return () =>
         {
             var at = s with { View = LayoutPersistence.Deserialize(text) };
@@ -159,22 +171,59 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
     public void Post(string text, bool warning) => post()?.Invoke(text, warning);
 
     /// <summary>brief-lcp-4 — the marks: <see cref="EmPlanarComponentPorts.Build"/> on a serialized copy, the builder a run
-    /// calls, so a mark sits where the run's port is. A setup that cannot take component ports on a layout (thermal,
-    /// electrostatic, a 3D <c>.cem</c> until LCP-5) builds none.</summary>
+    /// calls, so a mark sits where the run's port is. A setup that cannot take component ports (thermal, electrostatic) builds
+    /// none. brief-lcp-5 R-lcp5-7 — a 3D setup's are the sheets of the 3D view its run builds (<see cref="Em3dSetupProblem"/>),
+    /// each drawn as the same marker at the sheet's centre, pointing from its positive pad to its negative one.</summary>
     public EmComponentPortMarksJob? PrepareMarks(EmSetup setup)
     {
         if (source() is not { } s) return null;
-        if (setup.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(setup, onThreeDView: false) is not null)
+        if (setup.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(setup) is not null)
             return new(s.View, s.View.EditCount, () => []);
         long at = s.View.EditCount;
         string text = LayoutPersistence.Serialize(s.View);
         var copy = setup.Clone();
+        if (setup.Is3D)
+            return new(s.View, at, () =>
+            {
+                if (s.Technology is not { } tech) return [];
+                var at3 = s with { View = LayoutPersistence.Deserialize(text) };
+                return Em3dSetupProblem.Of(copy, at3, tech).ComponentPorts is { } built ? SheetMarks(built, at3) : [];
+            });
         return new(s.View, at, () =>
         {
             var build = EmPlanarComponentPorts.Build(copy, s with { View = LayoutPersistence.Deserialize(text) });
             return build is null ? []
                 : [.. build.Ports.Where(p => p.Ok).Select(p => new LayoutComponentPortMark(p.Number, p.Name, p.Refdes, p.Gap!, p.Strip!))];
         });
+    }
+
+    /// <summary>brief-lcp-5 R-lcp5-7 — one mark per built 3D sheet: the gap at the sheet's centre in the layout's frame (the view
+    /// places the layout at its origin, at the layout's DBU), across the sheet's width, pointing from the positive pad to the
+    /// negative one, and the sheet's rectangle as what the marker measures and a hover covers.</summary>
+    internal static IReadOnlyList<LayoutComponentPortMark> SheetMarks(C3dComponentPortBuild built, EmLayoutSource source)
+    {
+        var parts = EmPartPads.Project(source.View, source.AbsolutePath, source.Technology, C3dTransform.Identity).Parts
+                              .GroupBy(p => p.Refdes, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var marks = new List<LayoutComponentPortMark>();
+        foreach (var p in built.Ports)
+        {
+            if (p is not { Ok: true, Port: { } port } || !parts.TryGetValue(p.Refdes, out var part)) continue;
+            var pos = part.Pads.FirstOrDefault(d => d.Pin == p.Pin);
+            var neg = part.Pads.FirstOrDefault(d => d.Pin == p.ReferencePin);
+            if (pos?.Layer is not { } layer || neg is null) continue;
+            long x0 = port.Rect.Min.U, y0 = port.Rect.Min.V, x1 = x0 + port.Rect.Size.U, y1 = y0 + port.Rect.Size.V;
+            var strip = new RectShape { Layer = layer, X1 = Math.Min(x0, x1), Y1 = Math.Min(y0, y1), X2 = Math.Max(x0, x1), Y2 = Math.Max(y0, y1) };
+            long across = p.AlongX ? strip.Y2 - strip.Y1 : strip.X2 - strip.X1;
+            var direction = p.AlongX ? (pos.Cx < neg.Cx ? LayoutRotation.R0 : LayoutRotation.R180)
+                                     : (pos.Cy < neg.Cy ? LayoutRotation.R90 : LayoutRotation.R270);
+            var gap = new LabelShape
+            {
+                Layer = layer, PortLayer = layer, X = (strip.X1 + strip.X2) / 2, Y = (strip.Y1 + strip.Y2) / 2, Text = port.Name,
+                Height = Math.Max(1, across / 2), IsPort = true, PortKind = CircuitRF.Engine.Mom.PlanarPortKind.InternalDeltaGap, PortDirection = direction,
+            };
+            marks.Add(new LayoutComponentPortMark(port.Number, port.Name, p.Refdes, gap, strip));
+        }
+        return marks;
     }
 
     /// <summary>A built port's line in Messages. LCP-0 D5: the panel says "component port"; only explain and the docs name the

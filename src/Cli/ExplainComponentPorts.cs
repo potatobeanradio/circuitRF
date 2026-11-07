@@ -3,6 +3,7 @@
 // function the run calls, so what this reports is what a run would solve or refuse.
 // brief-lcp-2 R-lcp2-2 — and `explain x.cem --component-ports`: a .cem naming a 3D view walks as a .c3d does, and a planar .cem
 // on a layout walks EmPlanarComponentPorts.Build, the function its run calls — a delta gap across a strip, nothing meshed.
+// brief-lcp-5 — a 3D .cem on a layout walks Em3dSetupProblem.Of, its run's problem: the ports of an in-memory 3D view of it.
 
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
@@ -38,7 +39,7 @@ internal static class ExplainComponentPorts
                 $"setup '{embedded.Name}' names no ComponentPorts; give them in the setup, or here as --component-ports \"C1,C2\" or \"*\""));
             return 0;
         }
-        if (EmComponentPorts.Inapplicable(setup, onThreeDView: true) is { } cannot)
+        if (EmComponentPorts.Inapplicable(setup) is { } cannot)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts(cannot));
         return Walk3D(C3dProblemAssembly.Assemble(setup, doc, full, DocumentKinds.AncestorCws(full)), setup, full, walks);
     }
@@ -61,7 +62,7 @@ internal static class ExplainComponentPorts
         string? cws = DocumentKinds.AncestorCws(full);
         string? layout = EmSetupResolver.ResolveLayoutPath(full, setup.LayoutRef, cws);
         bool onThreeDView = C3dSetups.IsThreeDView(layout);
-        if (EmComponentPorts.Inapplicable(setup, onThreeDView) is { } cannot)
+        if (EmComponentPorts.Inapplicable(setup) is { } cannot)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts(cannot));
 
         if (onThreeDView)
@@ -73,14 +74,25 @@ internal static class ExplainComponentPorts
             return Walk3D(C3dProblemAssembly.Assemble(setup, doc, layout!, cws, fromCem: true), setup, full, walks);
         }
 
-        var resolution = EmSetupResolver.Resolve(full, setup.LayoutRef, cws, new TechnologyCache());
+        var cache = new TechnologyCache();
+        var resolution = EmSetupResolver.Resolve(full, setup.LayoutRef, cws, cache);
         if (resolution.Source is not { } source)
         {
-            walks.Add(new ResolutionStepJson("component ports", full, "not built: its layout did not resolve", PlanarHow));
+            walks.Add(new ResolutionStepJson("component ports", full, "not built: its layout did not resolve", setup.Is3D ? How : PlanarHow));
             return 1;
         }
         // The layout's placed PCells rebuilt in memory, as check and the run see them; nothing is written.
         using var generated = GeneratedCells.PrepareForCheck(source.View, source.AbsolutePath, JsonRun.Report);
+        // brief-lcp-5 R-lcp5-4 — a 3D .cem on a layout builds them in an in-memory 3D view of it, the problem its run solves.
+        if (setup.Is3D)
+        {
+            if (source.Technology is not { } tech)
+            {
+                walks.Add(new ResolutionStepJson("component ports", full, $"not built: {EmDiagnostics.NoTechnology(setup.LayoutRef).Render()}", How));
+                return 1;
+            }
+            return Walk3D(Em3dSetupProblem.Of(setup, source, tech, workspaceCws: cws, cache: cache), setup, full, walks);
+        }
         var build = EmPlanarComponentPorts.Build(setup, source)!;
         if (build.Refusal is { } refused)
             walks.Add(new ResolutionStepJson("component ports", full, $"refused: {refused}", PlanarHow));

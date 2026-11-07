@@ -176,7 +176,7 @@ internal sealed record Em3dSetupSource(
                 EmDiagnostics.NoTechnology(setup.LayoutRef).Render());
 
         Stage("generating the 3D problem from the layout");
-        var generated = Em3dGenerator.Generate(setup, source, tech);
+        var generated = Em3dSetupProblem.Of(setup, source, tech, workspaceCws: DocumentKinds.AncestorCws(full));
         Stage("generated the 3D problem");
         return new Em3dSetupSource(full, setup, resolution, generated,
             generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null);

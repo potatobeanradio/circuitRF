@@ -35,13 +35,11 @@ public static class EmComponentPorts
 
     /// <summary>
     /// brief-lcp-2 R-lcp2-1 — why <paramref name="setup"/> cannot take component ports at all, or null when it can: a thermal
-    /// setup and an electrostatic one have no ports to add them to, and a 3D setup on a layout (not on a 3D view) does not build
-    /// them yet. A magnetostatic setup takes them: its ports are its current sources. The one rule <c>em --component-ports</c>,
-    /// <c>explain</c> and <c>check</c> read.
+    /// setup and an electrostatic one have no ports to add them to. A magnetostatic setup takes them: its ports are its current
+    /// sources. brief-lcp-5 — a 3D setup on a layout takes them too, built in an in-memory 3D view of it (Em3dSetupProblem). The
+    /// one rule <c>em --component-ports</c>, <c>explain</c>, <c>check</c> and the setup panel read.
     /// </summary>
-    /// <param name="onThreeDView">Whether the setup runs on a 3D view: a <c>.c3d</c>'s own setup, or a <c>.cem</c> whose
-    /// LayoutRef names one.</param>
-    public static string? Inapplicable(EmSetup setup, bool onThreeDView)
+    public static string? Inapplicable(EmSetup setup)
     {
         ArgumentNullException.ThrowIfNull(setup);
         string name = setup.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup";
@@ -50,8 +48,6 @@ public static class EmComponentPorts
         if (setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Electrostatic)
             return $"{name} is an electrostatic solve, which has no ports: component ports apply to a driven, eigenmode or " +
                    "magnetostatic setup.";
-        if (setup.Is3D && !onThreeDView)
-            return CircuitRF.Design.Layout.Em3d.Em3dGenerator.ComponentPortsOnLayoutRefusal;
         return null;
     }
 

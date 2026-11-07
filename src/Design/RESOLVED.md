@@ -28944,3 +28944,42 @@ technology's own rules, which are the board's and not the import's. Nothing was 
 - **Measured on the gate fixture** (1100 µm line, two series parts, no vias, 1-3 GHz, cells/λ 10): built vs hand-drawn twin, max |ΔS| = 0
   exactly; both ports shorted vs solid metal, 5e-14; |S33| = 0.42, |S31| = 0.58. Below the fit floor (1-3 MHz), DCFLOAT's terminal-pair
   sources already drive a gap port, and with both parts shorted |S21| > 0.99. Gate: `PlanarComponentPortTests` (11 tests, 2 s).
+
+## Component ports on a 3D .cem on a layout: an in-memory 3D view (brief LCP-5, 2026-11-07)
+
+- **One door.** `ThreeD/Em3dSetupProblem.Of(setup, source, tech)` answers "the 3D problem this setup makes of its layout". A setup with no
+  `ComponentPorts` is `Em3dGenerator.Generate`'s, byte for byte. A setup naming them is built in the 3D view New 3D View from Layout would
+  make of the cell (`C3dHierarchy.ViewForSetup`), then `C3dProblemAssembly.Assemble(fromCem: true)`. The run (`Em3dRunService.Run`), the
+  Palace memory check and its half-padding remedy, `check`, `explain`, `em --dry-run` (via `Em3dSetupSource.From`), the panel's geometry
+  check and Check, the layout marks and Show 3D all call it. `Em3dGenerator.Generate` now THROWS on a setup with component ports: a caller
+  that reached it would solve the board with the ports silently missing, which is worse than an exception in a test.
+- **The view.** One instance `U1` of the cell's layout at the origin, the layout's DBU, unit, snap and technology (the skeleton is
+  `DocumentFor`, shared with `NewFromLayout`), at the path the view would have had (`<cell>/3d/<cell>.c3d`), so its relative refs resolve.
+  No other `.cem` is scanned and nothing is written. The elaborator reads the caller's `LayoutView` from memory (`LayoutsInMemory`), so an
+  open editor's unsaved edits are what is solved, as the generator path solves them.
+- **Strict drawn ports.** `TranslateWith` takes `strict`: the generator's strict build, and a port that is not one rectangle refuses. New
+  3D View stays lenient (a `.c3d` port can be moved afterwards; a `.cem`'s cannot). `TranslateWith` always clears `ComponentPorts` (and
+  `SolveRegion`) on the clone it hands the generator, so New 3D View on a layout whose `.cem` names component ports no longer leaves that
+  setup's ports out with a refusal.
+- **Refusals, before meshing.** A `.clay` not saved in a cell (`C3dHierarchy.NotInCellRefusal`, the sentence New 3D View from Layout uses,
+  now in one place); a `.clay` that is not its cell's layout view (the instance would place a different file); a `SolveRegion` beside
+  component ports (`Em3dSetupProblem.RegionRefusal`), since a placed cell takes the whole layout.
+- **Finding: a 3D view solves drawn copper.** The generator builds a drawn port to the stackup's ground reference whether or not that
+  plane is drawn. The view lowers only what is drawn, so on a board whose ground is only its stackup's (LCP-1's planar gate board) the drawn
+  edge ports refuse ("touches … on its top edge and nothing on its bottom"). This is the `.c3d` path's own rule, not something this brief
+  added; the gate board for LCP-5 adds a drawn Bottom Copper plane, and `CemComponentPortsPanelTests` now asserts the refusal on the
+  undrawn-ground board.
+- **One note dropped.** The elaborator's "A placed cell contributes geometry only … a layout's port shapes and a layout's .cem solve region
+  are not part of its instance" is true of a `.c3d`'s instance and false here (the drawn ports were carried, the region refused), so
+  `Em3dSetupProblem` leaves it out.
+- **Marks (R-lcp5-7).** `LayoutComponentPortsHost.SheetMarks`: the view places the layout at its origin at the layout's DBU, so a sheet's
+  `C3dPort.Rect` is already in layout DBU. The gap is the sheet's centre, the direction runs from the positive pad's centre to the negative
+  one's along the gap axis (the pads from `EmPartPads.Project`), and the strip is the sheet's rectangle. On the gate board they match the
+  Planar marks' number, position and direction exactly.
+- **A planar setup's look in 3D** clears its component ports: they are a strip and a delta gap in the planar solve, not a 3D sheet.
+- **Not here:** a 3D `.cem` run on a layout writes no `_cosim.cnl` yet (the result goes through `RunCore`, not `RunThreeDView`'s
+  `WithCoSim`). LCP-7 owns it; the panel's 3D tooltip already promises it.
+- Gate: `tests/Ui.Tests/Em3d/LayoutComponentPort3DTests.cs` (6 tests, ~1 s): `.cem` vs New 3D View's document of one layout give identical
+  ports, solids, landings and Gmsh script; no component ports equals the generator; the three refusals; the mesh script is stable across a
+  no-op (so `MeshCurrency` agrees); the marks; `explain --component-ports` and `em --dry-run` as processes, writing nothing. Show 3D was
+  looked at with `UiSnapshot --cem-3d` (new): the two edge sheets and two flat gap sheets with their arrows.

@@ -162,7 +162,7 @@ public static class DocEm3dFixtures
                                                  new TechnologyCache());
         var source = resolution.Source
             ?? throw new InvalidOperationException($"{cem}: {string.Join(" ", resolution.Diagnostics)}");
-        var generated = Em3dGenerator.Generate(setup, source, source.Technology!);
+        var generated = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(setup, source, source.Technology!);
         if (!generated.Ok) throw new InvalidOperationException($"{cem}: {generated.Refusal}");
 
         return new FigureScene(new SectionView(generated, source.Technology, view,

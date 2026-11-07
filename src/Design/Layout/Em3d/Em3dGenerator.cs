@@ -289,12 +289,6 @@ public static class Em3dGenerator
     /// <param name="padsOptional">True for a picture, never for a solve: wires are drawn on a layout with no conductor
     /// artwork, and a wire end over no conductor lands on an undrawn pad (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>);
     /// the refusal is in <see cref="Em3dGenerationResult.PadRefusal"/>.</param>
-    /// <summary>brief-emb-1 — a 3D <c>.cem</c> on a layout asking for component ports (a planar one builds them, brief-lcp-1).</summary>
-    public const string ComponentPortsOnLayoutRefusal =
-        "This 3D setup names ComponentPorts, which a 3D run builds in a 3D view of the layout: make one with " +
-        "'new view3d <cell> --from-layout' (Design ▸ New 3D View from Layout) and run this setup there, or point the .cem's LayoutRef at " +
-        "that .c3d. A planar setup on the layout builds them as it is.";
-
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
                                                 Em3dWireSource? wires = null, bool displaySlabs = false,
                                                 bool portsOptional = false, bool padsOptional = false,
@@ -303,10 +297,10 @@ public static class Em3dGenerator
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        // brief-emb-1 R-emb1-2 — component ports are built in a 3D view of the layout, where the lowered conductors they land on
-        // have names; a .cem on the layout itself places its ports from its port labels.
+        // brief-lcp-5 R-lcp5-4 — component ports are built in a 3D view of the layout, where the lowered conductors they land on
+        // have names: CircuitRF.Design.ThreeD.Em3dSetupProblem.Of is the door, and nothing reaches here with them.
         if (setup.ComponentPorts.Count > 0)
-            return new Em3dGenerationResult(null, ComponentPortsOnLayoutRefusal, []);
+            throw new ArgumentException("A setup naming component ports is built by Em3dSetupProblem.Of, not the generator.", nameof(setup));
         return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
     }
 
