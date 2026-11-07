@@ -241,6 +241,43 @@ public static class Em3dOutlineCleanup
         return result ?? rings;
     }
 
+    /// <summary>
+    /// How near an edge, metres, a vertex cut on it may lie and still be on it: a few steps of the picometre grid a drill is clipped on.
+    /// </summary>
+    public const double CutVertexToleranceM = 5e-12;
+
+    /// <summary>
+    /// <paramref name="ring"/> with each of <paramref name="vertices"/> that lies on one of its edges made a corner of it (the same list
+    /// when none does). Clipping a drill against a slanted board edge rounds the crossing to the grid, a picometre off that edge. Gmsh's
+    /// geometry kernel holds to a tenth of that, so the via's side and the board's would be two faces parting at about 10⁻⁵°, and the
+    /// mesher stops on them. With the crossing a corner of both, they are one edge.
+    /// </summary>
+    public static IReadOnlyList<T> InsertOnEdges<T>(IReadOnlyList<T> ring, Func<T, (double X, double Y)> xy, IReadOnlyList<T> vertices, double tolerance)
+    {
+        List<T>? result = null;
+        int n = ring.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var (a, c) = (xy(ring[i]), xy(ring[(i + 1) % n]));
+            double dx = c.X - a.X, dy = c.Y - a.Y, length = Math.Sqrt(dx * dx + dy * dy);
+            result?.Add(ring[i]);
+            if (length <= tolerance) continue;
+            List<(double T, T Vertex)>? on = null;
+            foreach (var v in vertices)
+            {
+                var q = xy(v);
+                double along = ((q.X - a.X) * dx + (q.Y - a.Y) * dy) / length;
+                if (along <= tolerance || along >= length - tolerance) continue;
+                if (Math.Abs((q.X - a.X) * dy - (q.Y - a.Y) * dx) / length > tolerance) continue;
+                (on ??= []).Add((along, v));
+            }
+            if (on is null) continue;
+            result ??= [.. ring.Take(i + 1)];
+            result.AddRange(on.OrderBy(x => x.T).Select(x => x.Vertex));
+        }
+        return result ?? ring;
+    }
+
     /// <summary><paramref name="ring"/> with its removable points removed (the same list when none is), counted into
     /// <paramref name="stats"/>. A ring keeps at least three points. With <paramref name="edges"/>, a point on one of them
     /// stays unless both its neighbours lie on that same one (brief-dfr31-6).</summary>

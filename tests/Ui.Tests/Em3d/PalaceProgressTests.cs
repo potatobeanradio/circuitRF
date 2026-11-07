@@ -134,6 +134,23 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>brief-dfr31-5 R-dfr31-5-5 — the sampling row says what the figure measures and which way is done, and the
     /// bar's tooltip says the rest.</summary>
+    /// <summary>While Gmsh only reads its script it is building the geometry, which on a whole board is nearly all of its time.</summary>
+    [Fact]
+    public void GmshBuildingTheGeometry_IsNotCalledMeshing()
+    {
+        var log = new GmshLogProgress(null) { GeometryCuts = 150 };
+        log.Line("Info    : Reading 'model.geo'...");
+        Assert.Equal("building the geometry", log.Stage);
+        log.Line("Info    : [  0%] Difference");
+        log.Line("Info    : [ 10%] Difference - Making faces");
+        log.Line("Info    : [  0%] Difference");
+        Assert.Equal("building the geometry, cutting solid 2 of 150", log.Stage);
+        log.Line("Info    : [ 60%] Fragments");
+        Assert.Equal("building the geometry, joining the solids", log.Stage);
+        log.Line("Info    : Meshing 1D...");
+        Assert.Equal("meshing curves", log.Stage);
+    }
+
     [Fact]
     public void TheSamplingText_SaysModelChangeAndDoneBelowTheTolerance()
     {

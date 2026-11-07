@@ -236,6 +236,9 @@ public static class Em3dLayoutSolids
         private readonly Dictionary<int, (double Bottom, double Top)> _dielZ = [];
         private readonly Dictionary<int, List<PlanarPolygon>> _filmPolys = [];
         private readonly List<PlanarPolygon> _outline = [];
+
+        /// <summary>Where <see cref="ClipDisc"/> cut a board edge, for <see cref="ShareCutVertices"/>.</summary>
+        private readonly HashSet<EmPoint> _cutVertices = [];
         private readonly List<PlanarPolygon> _closedOutlineStrokes = [];
         /// <summary>Zero-width paths that close on themselves, off the outline layers — what an import leaves when it
         /// draws the board's edge on every copper layer instead of the outline layer.</summary>
@@ -1042,6 +1045,23 @@ public static class Em3dLayoutSolids
 
             if (fullExtent is null && (bounded > 0 || _slabBounds.Count > 0))
                 Notes.Add(SlabBoundNote());
+            ShareCutVertices(solids, sheets);
+        }
+
+        /// <summary>Makes each crossing <see cref="ClipDisc"/> cut on a board edge a corner of everything else lying along that edge
+        /// (<see cref="Em3dOutlineCleanup.InsertOnEdges"/>). The drill's clip still reads the board as drawn.</summary>
+        private void ShareCutVertices(List<Em3dSolid> solids, List<Em3dSheet> sheets)
+        {
+            if (_cutVertices.Count == 0) return;
+            List<Point2> cuts = [.. _cutVertices.Select(q => new Point2(q.X, q.Y))];
+            IReadOnlyList<Point2> On(IReadOnlyList<Point2> ring) =>
+                Em3dOutlineCleanup.InsertOnEdges(ring, q => (q.X, q.Y), cuts, Em3dOutlineCleanup.CutVertexToleranceM);
+            for (int i = 0; i < solids.Count; i++)
+                if (solids[i].Primitive is Em3dExtrudedPolygon e)
+                    solids[i] = solids[i] with { Primitive = e with { Outline = On(e.Outline), Holes = [.. e.Holes.Select(On)] } };
+            for (int i = 0; i < sheets.Count; i++)
+                if (sheets[i].Frame is null)
+                    sheets[i] = sheets[i] with { Outline = On(sheets[i].Outline), Holes = [.. sheets[i].Holes.Select(On)] };
         }
 
         // ── Lateral bounds (SlabLateralBound) ───────────────────────────────────────────────────────
@@ -1475,8 +1495,14 @@ public static class Em3dLayoutSolids
             var tree = new PolyTree64();
             Clipper.BooleanOp(ClipType.Intersection, [disc], board, tree, FillRule.EvenOdd);
 
+            var drawn = new HashSet<(long, long)>(disc.Concat(board.SelectMany(path => path)).Select(q => (q.X, q.Y)));
             var result = new List<PlanarPolygon>();
-            static List<EmPoint> RingOf(Path64 path) => [.. path.Select(q => new EmPoint(q.X / ClipScale, q.Y / ClipScale))];
+            List<EmPoint> RingOf(Path64 path)
+            {
+                foreach (var q in path)
+                    if (!drawn.Contains((q.X, q.Y))) _cutVertices.Add(new EmPoint(q.X / ClipScale, q.Y / ClipScale));
+                return [.. path.Select(q => new EmPoint(q.X / ClipScale, q.Y / ClipScale))];
+            }
             void Walk(PolyPath64 node)
             {
                 for (int i = 0; i < node.Count; i++)

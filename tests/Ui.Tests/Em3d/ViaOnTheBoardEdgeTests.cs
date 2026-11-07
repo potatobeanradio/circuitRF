@@ -55,6 +55,65 @@ public sealed class ViaOnTheBoardEdgeTests : IDisposable
         return (setup, new EmLayoutSource("/nowhere/edge.clay", view, tech, Dbu), tech);
     }
 
+    /// <summary>The same board with its top edge slanted, so the edge is on no axis and the via at (2, y) mm on it is cut where
+    /// the clip has to round the crossing.</summary>
+    private static (EmSetup Setup, EmLayoutSource Source, Technology Tech) SlantedBoard()
+    {
+        var (setup, source, tech) = Board(2, 2.6585);
+        long[] outline = [0, 0, Mm(4), 0, Mm(4), Mm(2), 0, 3317 * Dbu];
+        var shapes = source.View.Shapes;
+        for (int i = 0; i < shapes.Count; i++)
+            if (shapes[i] is RectShape { X1: 0, Y1: 0 } full)
+                shapes[i] = new PolygonShape { Layer = full.Layer, Net = full.Net, Xy = outline };
+        return (setup, source, tech);
+    }
+
+    private static IEnumerable<Point2> Corners(Em3dSolid s) => s.Primitive is Em3dExtrudedPolygon e ? e.Outline : [];
+
+    /// <summary>Where the slanted edge cuts the via, the via and every solid along that edge share a corner, coordinate for coordinate.
+    /// Rounded apart by a picometre, the two sides are two faces parting at 10⁻⁵°, and Gmsh stops on them.</summary>
+    [Fact]
+    public void WhereASlantedEdgeCutsAVia_TheViaAndTheBoardShareTheCorner()
+    {
+        var (setup, source, tech) = SlantedBoard();
+        var g = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(g.Ok, g.Refusal);
+        var via = g.Problem!.Solids.Single(s => s.Name == "via/1");
+        var slabs = g.Problem.Solids.Where(s => s.Role == Em3dRole.Dielectric).ToList();
+        Assert.NotEmpty(slabs);
+        var crossings = Corners(via).Where(q => Math.Abs(q.Y - (2e-3 + (4e-3 - q.X) * 1.317 / 4)) < 1e-9).ToList();
+        Assert.Equal(2, crossings.Count);
+        foreach (var slab in slabs)
+            foreach (var q in crossings)
+                Assert.Contains(q, Corners(slab));
+        Assert.DoesNotContain(g.GeometryFindings, f => f.Kind == Em3dGeometryKind.NearFaces);
+    }
+
+    /// <summary>The check before meshing names two sides starting from one point and parting by a picometre.</summary>
+    [Fact]
+    public void TheGeometryCheck_NamesASideAPicometreOffAnother()
+    {
+        var (setup, source, tech) = SlantedBoard();
+        var g = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(g.Ok, g.Refusal);
+        var problem = g.Problem!;
+        var via = problem.Solids.Single(s => s.Name == "via/1");
+        var e = (Em3dExtrudedPolygon)via.Primitive;
+        // The crossing whose neighbour along the edge is a board corner: lifted off the edge by 0.7 pm, as an unshared crossing is.
+        var ring = e.Outline.ToList();
+        var board = (Em3dExtrudedPolygon)problem.Solids.First(s => s.Role == Em3dRole.Dielectric).Primitive;
+        int k = ring.FindIndex(q => board.Outline.Contains(q) && board.Outline.Contains(ring[(ring.IndexOf(q) + 1) % ring.Count]));
+        Assert.True(k >= 0);
+        var (a, b) = (ring[k], ring[(k + 1) % ring.Count]);
+        double l = Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2));
+        ring[(k + 1) % ring.Count] = new Point2(b.X + 0.7e-12 * (a.Y - b.Y) / l, b.Y + 0.7e-12 * (b.X - a.X) / l);
+        var solids = problem.Solids.Select(s => s.Name == via.Name ? s with { Primitive = e with { Outline = ring } } : s).ToList();
+
+        var found = Em3dGeometryCheck.Check(problem with { Solids = solids }, 0);
+
+        Assert.Contains(found, f => f.Kind == Em3dGeometryKind.NearFaces && f.Sentence.Contains("part by 0.7 pm", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// R-dfr28-1-3 — the via centred on the board's top edge meshes. Built as a cylinder, its tube and air fill stood half in
     /// the air padding and Gmsh stopped on "a segment and a facet intersect"; now the barrel is the disc's part on the board

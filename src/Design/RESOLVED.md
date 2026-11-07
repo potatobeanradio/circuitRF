@@ -28752,3 +28752,20 @@ an answer has not been measured.
 
 **The refusal.** `GmshSurfaceLines` falls back to the "No elements in surface" tags when no error names a surface, so "error 2" now names the object.
 A list of surfaces on one object says it once. Gate: `tests/Ui.Tests/Em3d/HoleTouchingOutlineTests.cs`.
+
+## Designer round 37, whole board: a via cut by a slanted board edge stopped Gmsh (2026-11-06)
+
+**Fourth cause of "overlapping facets".** The first fix on this board was proved on a `.cem` with a solve region. The whole board in a `.c3d` has 285 cylinders against that crop's 63, and three edge-cut vias of its own. `ClipDisc` clips on a picometre grid, so where the disc crosses a slanted board edge the crossing is rounded up to about a picometre off that edge. The via then holds a side from the board corner to the crossing, and the board holds a side from the same corner past it. OpenCASCADE holds points the same at 10⁻⁷ of a unit, and the script's unit is the micrometre, so 0.1 pm: these are two faces. Gmsh stops on them.
+
+**The measured proof.** Via 278's crossing was 0.69 pm off a chord, 1.53 µm from the shared corner, which predicts 2.60e-5°. Gmsh reported 2.72e-5° on the board and 2.63e-5° with only the slabs and that via, a script that reproduces the failure in 6 s. An axis-aligned edge never does this, because the crossing lands on the edge's own coordinate.
+
+**The fix.** `ShareCutVertices`, last in `BuildSolids`, makes each crossing a corner of every outline lying along that edge (`Em3dOutlineCleanup.InsertOnEdges`). The two sides are then one edge, coordinate for coordinate. It runs after Robust meshing, which would otherwise remove the new corner as collinear.
+
+**The check had this as "the same point".** `Em3dGeometryCheck` treated anything within `SameM` (half a nanometre) as exact, a limit from the layout's grid and not from the kernel's. Two sides of different objects starting from one point and parting by more than `KernelM` are now `NearFaces`. On the unfixed board it names via 278 and via 283 at both crossings in a 4 s dry run.
+
+**A meshing test on a synthetic slanted edge proves nothing here.** Whether the wedge stops Gmsh depends on which way the rounding falls and how the facets land, so a fixture can mesh on the unfixed code. The gates are the shared corner itself and the check, and each was seen to fail with its half of the change off.
+
+**The progress row called the geometry build "Meshing (Gmsh)".** On this board that was 46 of 47 minutes in which no element was made. `GmshLogProgress` now says "building the geometry", with the cut number and then "joining the solids". The cost itself is `docs/briefs/brief-em3d-140-whole-board-geometry-build.md`.
+
+**The whole board then meshed and solved.** A four-layer board placed whole, 2 GHz, Draft, 13 ports: 927,863 tetrahedra in 45 minutes, Gmsh peak 9.65 GB; Palace 24 min 44 s at one process, 1,398,988 unknowns, 8.9 GB by its own report and a 16.0 GB footprint. Largest |Sij − Sji| 4e-8, power lost per driven port 0.5-1.2 %. The estimates before it said 19.2 GB and, from the mesh, 25.0 GB, and the note said the run would probably be stopped: it needed about 2.4 GB of extra swap. Recalibrating that is R-em3d140-6.
+

@@ -764,6 +764,13 @@ public sealed class GmshLogProgress(RunControl? control)
         ("Meshing order 2", "second-order elements"), ("Writing ", "writing the mesh"),
     ];
 
+    private static readonly Regex GeometryStep = new(@"^\[\s*(\d+)%\]\s+(Difference|Fragments)\s*$", RegexOptions.CultureInvariant);
+
+    /// <summary>The solids the script cuts from each other, for the row while Gmsh builds the geometry; zero leaves the count out.</summary>
+    public int GeometryCuts { get; init; }
+
+    private int _cutsStarted;
+
     /// <summary>brief-emb-2 R-emb2-6 — the stage Gmsh last named, as the progress row shows it after "Meshing (Gmsh): ".</summary>
     public string? Stage { get; private set; }
 
@@ -803,6 +810,21 @@ public sealed class GmshLogProgress(RunControl? control)
         if (Tets.Match(t) is { Success: true } made)
         {
             Tetrahedra = (Tetrahedra ?? 0) + long.Parse(made.Groups[1].Value, CultureInfo.InvariantCulture);
+            return;
+        }
+        if (said.StartsWith("Reading ", StringComparison.Ordinal))
+        {
+            Show("building the geometry");
+            return;
+        }
+        if (GeometryStep.Match(said) is { Success: true } step)
+        {
+            if (step.Groups[2].Value == "Fragments") Show("building the geometry, joining the solids");
+            else if (step.Groups[1].Value == "0")
+            {
+                _cutsStarted++;
+                Show(GeometryCuts > 0 ? $"building the geometry, cutting solid {_cutsStarted} of {GeometryCuts}" : "building the geometry, cutting the solids");
+            }
             return;
         }
         if (HighOrderNodes.Match(said) is { Success: true } ho)

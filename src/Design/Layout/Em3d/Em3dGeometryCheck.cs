@@ -45,6 +45,9 @@ public static class Em3dGeometryCheck
     /// <summary>Two points this close, metres, are the same point: half the layout's smallest step. A gap of 1 nm is two faces, and meshes.</summary>
     private const double SameM = Em3dOutlineCleanup.SameM;
 
+    /// <summary>What Gmsh's geometry kernel holds two points the same at, metres: its 10⁻⁷ of a unit, and the script's unit is the micrometre.</summary>
+    private const double KernelM = 1e-13;
+
     /// <summary>Gmsh's own default for two facets lying on each other (<c>Mesh.AngleToleranceFacetOverlap</c>), degrees.</summary>
     public const double FacetAngleDegrees = 0.1;
 
@@ -199,6 +202,9 @@ public static class Em3dGeometryCheck
                         // Exactly on each other: the fragment merges two objects' faces, and within one object it is a cut of no width.
                         if (same && near.Overlap > 2 * toleranceM)
                             Add(Em3dGeometryKind.Sliver, ra, null, mx, my, $"its outline lies on itself for {Length(near.Overlap)}, a cut of no width,");
+                        else if (!same && near.Smallest <= KernelM && near.Largest > KernelM)
+                            Add(Em3dGeometryKind.NearFaces, ra, rb.Object, mx, my,
+                                $"its side and '{rb.Object}''s start from one point and part by {near.Largest * 1e12:0.##} pm, which is two faces to the mesher,");
                     }
                     else if (near.Overlap > 2 * toleranceM)
                         Add(Em3dGeometryKind.NearFaces, ra, same ? null : rb.Object, mx, my,

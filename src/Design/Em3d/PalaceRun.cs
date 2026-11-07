@@ -205,7 +205,8 @@ public static class PalaceRun
                 foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(stage);
 
                 // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
-                gmshLog = new GmshLogProgress(control);
+                int cuts = System.Text.RegularExpressions.Regex.Count(lowering.Geo!, "BooleanDifference");
+                gmshLog = new GmshLogProgress(control) { GeometryCuts = cuts };
                 gmshLog.Begin();
                 // brief-emb-2 R-emb2-1 — a script that curves its elements is watched: past the cap on its high-order stage
                 // Gmsh is stopped (a cancellation thrown from the tick kills the tree) and the mesh is made straight-sided.
@@ -235,7 +236,7 @@ public static class PalaceRun
                     WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), flat.Geo!);
                     foreach (string partial in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
                         if (File.Exists(Path.Combine(stage, partial))) File.Delete(Path.Combine(stage, partial));
-                    gmshLog = new GmshLogProgress(control);
+                    gmshLog = new GmshLogProgress(control) { GeometryCuts = cuts };
                     gmshLog.Begin();
                     Interlocked.Increment(ref _gmsh);
                     run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
