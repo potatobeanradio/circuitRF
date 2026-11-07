@@ -289,6 +289,8 @@ for (int i = 0; i < args.Length; i++)
         case "--layer-list": layerList = true; break;
         case "--inspector": layoutInspector = true; break;
         case "--editor": c3dEditor = true; break;
+        case "--edit-text": break;
+        case "--mesh-plane-panel": break;   // with --c3d-setups --editor: the mesh plane's drop-down, opened as a click does
         case "--untick" when i + 1 < args.Length: c3dUntick.Add(args[++i]); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
@@ -610,6 +612,16 @@ else if (c3dSetups is not null)
     host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 700, Content = c3dContent };
     host.Show();
     Pump();
+    if (args.Contains("--mesh-plane-panel") && c3dContent is CircuitRF.Ui.Views.ThreeD.C3dEditorView c3dEditorView)
+    {
+        var planeButton = c3dEditorView.FindControl<Button>("MeshPlaneButton")!;
+        Console.WriteLine($"mesh available: {c3dVm.Viewer.CanShowMesh}");
+        planeButton.Flyout!.ShowAt(planeButton);
+        for (var w = System.Diagnostics.Stopwatch.StartNew(); w.Elapsed < TimeSpan.FromSeconds(8) && !c3dVm.Viewer.MeshText.StartsWith("Mesh:", StringComparison.Ordinal);)
+        { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+        Console.WriteLine($"mesh plane on: {c3dVm.Viewer.MeshPlaneEnabled}, mesh shown: {c3dVm.Viewer.ShowMesh}; {c3dVm.Viewer.MeshText}");
+        Pump();
+    }
     if (c3dVm.FieldPlot(c3dRow ?? "") is { } shownPlot) Console.WriteLine($"plot {shownPlot.Name}: {c3dVm.FieldPlotProblem(shownPlot) ?? "draws"}");
 }
 else if (clay is not null)
@@ -1535,6 +1547,14 @@ Window VendorView()
         grid.Children.Add(pe);
         var window = new Window { Width = sizeGiven ? width : 1200, Height = sizeGiven ? height : 720, Content = grid };
         window.Opened += (_, _) => Dispatcher.UIThread.Post(doc.RequestZoomToFit);
+        // --edit-text: the inline editor open on the schematic's first text, as a double-click opens it.
+        if (args.Contains("--edit-text") && model.CanvasObjects.OfType<EditableText>().FirstOrDefault() is { } editedText)
+            window.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                var view = grid.Children.OfType<CircuitRF.Ui.Views.Content.SchematicView>().First();
+                typeof(CircuitRF.Ui.Views.Content.SchematicView).GetMethod("OnCanvasTextDoubleTapped", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                    .Invoke(view, [null, editedText]);
+            }, DispatcherPriority.Background);
         return window;
     }
     if (csym is not null)

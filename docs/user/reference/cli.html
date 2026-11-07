@@ -51,6 +51,8 @@
 <li><a href="#hb"><code>hb</code> — harmonic balance</a></li>
 <li><a href="#lp"><code>lp</code> — loadpull</a></li>
 <li><a href="#lpp"><code>lpp</code> — loadpull pursuit</a></li>
+<li><a href="#env"><code>env</code> — the circuit envelope</a></li>
+<li><a href="#fields"><code>fields</code> — far field, SAR and B1 from a schematic</a></li>
 <li><a href="#em"><code>em</code> — electromagnetic extraction</a></li>
 <li><a href="#convert"><code>convert</code> — layout interchange</a></li>
 <li><a href="#new"><code>new</code> — a workspace or a cell</a></li>
@@ -201,6 +203,18 @@ convention behind both.</p>
 <td><code>.cnl</code> or <code>.csch</code></td>
 <td>Loadpull <strong>pursuit</strong> — searches for the optima</td>
 <td>Optima + the follow-on grid; <code>-o</code> as <code>hb</code>; <code>--out-grid</code> writes a <code>.gam</code></td>
+</tr>
+<tr>
+<td><code>env</code></td>
+<td><code>.cnl</code> or <code>.csch</code></td>
+<td>The circuit envelope: a modulated signal through the circuit</td>
+<td>Each IProbe's power, gain, efficiency and ACLR to stdout; <code>-o .mat/.npy/.txt</code> for the waveforms and spectra</td>
+</tr>
+<tr>
+<td><code>fields</code></td>
+<td><code>.cnl</code> or <code>.csch</code></td>
+<td>A <code>fields</code> analysis: an EM Field Data block's saved results recombined by the circuit, with no EM run</td>
+<td>The far field's metrics, or SAR and B1, to stdout; <code>-o .mat/.npy/.txt</code> for the pattern</td>
 </tr>
 <tr>
 <td><code>em</code></td>
@@ -780,6 +794,33 @@ run that answered a different question and said nothing about it.</p>
 termination it looked at, and printing nothing there reads as &quot;the search found nothing&quot; when what
 actually happened is &quot;nothing it tried reached compression&quot;.</p>
 <hr />
+<h2 id="env"><code>env</code> — the circuit envelope</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf env &lt;design.cnl|.csch&gt; [-a name] [--set var=expr] [--stop 200e-6] [--step auto]
+             [--accuracy draft|standard|fine] [--envelope auto|single|lattice]
+             [--segments auto|&lt;n&gt;] [--warmup auto|&lt;s&gt;] [-o out.{mat,npy,txt}]</code></pre>
+<p>Runs the design's <code>type=env</code> analysis, and the whole sweep when a <code>parametric_sweep</code> wraps it. A <code>MOD_Source</code> supplies the
+signal. Every labeled net records its voltage, and every <a href="components.html#iprobe">IProbe</a> the power delivered through it.
+<a href="simulations.html#envelope-records">What a run records</a> lists every cube. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
+about a minute on 10 cores.</p>
+<p>To plot the power spectrum at an IProbe, write the cubes and plot <code>PSD</code>. Its <code>branch</code> axis is named after the IProbes, and it is
+already in dBm/Hz, so it takes <code>y=real</code>:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf env amp.csch --stop 100e-6 -o amp.npy
+<span class="prompt">$ </span>circuitrf plot amp.npy -o spectrum.svg --freq-unit MHz --ylabel "dBm/Hz" --legend inside \
+    --trace 'cube=PSD["Iout",:],y=real,label=Iout' --trace 'cube=PSD["Iin",:],y=real,label=Iin'</code></pre>
+<p>Exit <strong>0</strong> when it ran, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
+<h2 id="fields"><code>fields</code> — far field, SAR and B1 from a schematic</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf fields &lt;bench.cnl|.csch&gt; [-a name]... [--set var=expr]... [-o out.{mat,npy,txt}]</code></pre>
+<p>Runs every enabled <code>type=fields</code> analysis, or the ones <code>-a</code> names. Each reads an <a href="cosimulation.html">EM Field Data block</a>'s saved
+per-port results and recombines them with the waves the circuit delivers to its ports, so it starts no EM run and a part changed
+with <code>--set</code> re-runs in seconds. A far field gives <code>F1.farfield.U</code>, <code>Etheta</code>, <code>Ephi</code> and every antenna metric. A field set gives SAR and
+B1 at one frequency. Either gives the circuit's <code>F1.S</code> and <code>F1.Z0</code>.</p>
+<p>A pattern stays out of the <code>--json</code> document for its size, so write it with <code>-o</code> and plot that file. A pattern is a polar plot in
+decibels, one cut per bearing:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf fields "Antenna Bench.csch" -a F1 -o f1.npy
+<span class="prompt">$ </span>circuitrf plot f1.npy -o pattern.svg --type polar --radial db --db-unit dBi --whole-plane --legend below \
+    --trace "cube=F1.farfield.U,cut=0,y=db10,label=phi 0" --trace "cube=F1.farfield.U,cut=90,y=db10,label=phi 90"
+<span class="prompt">$ </span>circuitrf plot f1.npy -o surface.svg --type surface --view iso --trace "cube=F1.farfield.U,cut=all,y=db10"</code></pre>
+<p><a href="#plot">Plot flags</a> has the rest. Exit <strong>0</strong> when every fields analysis ran, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
 <h2 id="em"><code>em</code> — electromagnetic extraction</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
 <p><code>em</code> is the only verb that does not take a <code>.cnl</code>. It takes a <strong><code>.cem</code> EM setup</strong> — the document the
@@ -792,8 +833,12 @@ EMerge run is <code>auto</code> unless <code>--device</code> says otherwise, wha
 for a driven problem large enough to be faster on it (<a href="em-solvers.html#emerge-gpu">EMerge on a GPU</a>), the CPU
 otherwise.
 <code>--device gpu</code> is refused on a run that uses neither Palace nor EMerge.</p>
-<p><code>--cores &lt;n&gt;</code> is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. Fewer
-processes take less memory and solve more slowly. A run that does not say uses one process per physical core.</p>
+<p><code>--cores &lt;n&gt;</code> is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. A run that
+does not say uses one process per physical core, and <a href="#solver"><code>solver list</code></a> says how many this machine has. Each Palace
+process holds its own share of the mesh and its own solver data, so more processes take more memory and fewer take less, more
+slowly. The memory estimate in <code>--dry-run</code> and <code>explain</code> does not follow the count, so when a run stops at its memory limit, lower
+<code>--cores</code> before coarsening the mesh. <code>explain --cores &lt;n&gt;</code> and <code>em --dry-run --cores &lt;n&gt;</code> report the processes a run would start and warn
+when that is more than this machine has, which a run refuses.</p>
 <p>A 3D run's solver is stopped if its memory reaches this computer's (<code>--memory-limit &lt;GB&gt;</code> sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits <strong>1</strong>.
 <code>--force</code> lifts the memory limit once the run's estimate is past this computer's memory (below that it keeps the limit), and never
@@ -1089,6 +1134,8 @@ tested it, where it is and how it was found, and the command that would install 
 sparse solver it would use (<em>fast sparse solver</em>, or the single-threaded baseline with what to install) and
 whether its GPU sparse solver is installed. <code>--capability gpu</code> also asks Palace whether it solves on a GPU, which
 costs a one-element solve. Read-only: it installs and builds nothing.</li>
+<li><strong><code>list</code></strong> ends with this machine's physical and logical cores and its memory (<code>machine</code> in <code>--json</code>), which is what
+<a href="#em-inputs"><code>em --cores</code></a> is chosen against.</li>
 <li><strong><code>list</code></strong> adds an <code>update:</code> line for an EMerge circuitRF installed when it has tested a newer one (<code>update</code> in
 <code>--json</code>). <code>solver install emerge --yes</code> installs it beside the older one, and new runs use it.</li>
 <li><strong><code>install &lt;tool&gt;</code></strong> prints what it would fetch, from where, where it would go and what it cost when measured,
@@ -3994,6 +4041,10 @@ from. A cube the file does not hold is refused, listing the ones it does.</p>
 <tr>
 <td><code>--angle-labels</code></td>
 <td>Print the bearing every 30° outside the disc, with a spoke to each, the way an antenna-range plot is drawn. Polar only, either radial mode. The disc shrinks to make room rather than the numbers overprinting the outer ring.</td>
+</tr>
+<tr>
+<td><code>--legend off\|inside\|below\|floating</code></td>
+<td>Where the legend goes.</td>
 </tr>
 <tr>
 <td><code>--write-cdd &lt;path&gt;</code></td>

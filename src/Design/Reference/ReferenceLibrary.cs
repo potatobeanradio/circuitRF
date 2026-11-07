@@ -68,6 +68,10 @@ public static class ReferenceLibrary
         ModelLibraryTopic,
         // brief vendorlib-15 R-vl15-4b: for a device maker deciding whether to publish a protected model.
         "protected-models",
+        // What each analysis records and how to read it (an envelope run's PSD at an IProbe), and the far field of a fields
+        // analysis: a tool's schema names the run, and neither names the cubes a plot has to ask for.
+        "simulations",
+        "cosimulation",
         ComponentNotesTopic,
     ];
 

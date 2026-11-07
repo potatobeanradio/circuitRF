@@ -59,6 +59,7 @@ public partial class SchematicView : UserControl
         // box (tunnel — a single-line TextBox takes Up/Down for its own caret), and a press on a row
         // chooses it before the press can take the box's focus.
         InlineEditBox.AddHandler(InputElement.KeyDownEvent, OnVendorInlineKeyDown, RoutingStrategies.Tunnel);
+        InlineEditBox.AddHandler(InputElement.KeyDownEvent, OnCanvasTextInlineKeyDown, RoutingStrategies.Tunnel);
         VendorInlineList.AddHandler(InputElement.PointerPressedEvent, OnVendorInlinePointerPressed,
                                     RoutingStrategies.Tunnel);
         // The highlighted row stays in view — on opening (the placed part, often far down a same-kind
@@ -1394,6 +1395,8 @@ public partial class SchematicView : UserControl
         double zoom     = SchematicCanvasCtrl.CurrentZoom;
         double fontSize = Math.Max(zoom * fontWorldSize, 9.0);   // no upper cap — matches renderer
         InlineEditBox.FontSize = fontSize;
+        // Only a text on the canvas holds several lines; every other inline edit is one value.
+        InlineEditBox.AcceptsReturn = Vm is { IsCanvasTextInlineEditing: true };
 
         double width = CalcInlineEditWidth(initialText, fontSize);
         InlineEditBox.Width  = width;
@@ -1433,6 +1436,20 @@ public partial class SchematicView : UserControl
         vm.MoveVendorInlineSelection(e.Key == Key.Down ? 1 : -1);
         if (vm.SelectedVendorInlineMatch is { } item) VendorInlineList.ScrollIntoView(item);
         e.Handled = true;
+    }
+
+    /// <summary>On a canvas text Enter still commits, as it does on every inline edit, and Shift+Enter starts a new line.
+    /// Taken on the way down: a box that accepts returns would otherwise take a plain Enter as a line of its own.</summary>
+    private void OnCanvasTextInlineKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (Vm is not { IsCanvasTextInlineEditing: true } || e.Key is not (Key.Return or Key.Enter)) return;
+        e.Handled = true;
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { CommitAndDismissInlineEdit(); return; }
+        string text = InlineEditBox.Text ?? "";
+        int from = Math.Min(InlineEditBox.SelectionStart, InlineEditBox.SelectionEnd);
+        int to   = Math.Max(InlineEditBox.SelectionStart, InlineEditBox.SelectionEnd);
+        InlineEditBox.Text = text[..from] + "\n" + text[to..];
+        InlineEditBox.SelectionStart = InlineEditBox.SelectionEnd = InlineEditBox.CaretIndex = from + 1;
     }
 
     private void OnVendorInlinePointerPressed(object? sender, PointerPressedEventArgs e)

@@ -171,6 +171,8 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<SolverJson>? Solvers = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        MachineJson? Machine = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         OptimizeReportJson? Optimize = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         YieldReportJson? Yield = null,
@@ -372,6 +374,8 @@ namespace RfCore.Export
     /// <param name="Capabilities">Each capability a run could ask of it, probed on the program found.
     /// Empty when nothing was found or the tool has none to probe.</param>
     /// <param name="Install">The command that would install it here, when one would.</param>
+    public sealed record MachineJson(int PhysicalCores, bool CoresMeasured, string CoresHow, int LogicalCores, double MemoryGB, string Note);
+
     public sealed record SolverJson(
         string Tool,
         string Name,
@@ -3149,7 +3153,14 @@ namespace RfCore.Export
     /// <param name="Refusal">Why the 3D problem could not be built; every other row is then empty.</param>
     /// <param name="Device"><c>cpu</c> or <c>gpu</c>.</param>
     /// <param name="Why">What chose it, and what it implies for the process count.</param>
-    public sealed record Em3dDeviceJson(string Device, string Why);
+    public sealed record Em3dDeviceJson(string Device, string Why)
+    {
+        /// <summary>How many Palace processes a run would start, when the count is this device's to say.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? Processes { get; init; }
+
+        /// <summary>The physical cores of this machine, the most processes a CPU run may start.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? PhysicalCores { get; init; }
+    }
 
     /// <summary>brief-emi-4 R-emi4-4 — what EMerge is told for a setup that runs it: the EMerge section resolved, every
     /// object and what it becomes in EMerge's input, and the element sizes; or why EMerge's lowering refuses it.</summary>

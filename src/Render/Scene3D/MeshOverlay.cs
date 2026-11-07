@@ -21,6 +21,18 @@ public static class MeshOverlay
     private static Vector3 Node(MshMesh m, int i, Scene3DModel scene, double toMetres)
         => scene.ToLocal(m.Nodes[3 * i] * toMetres, m.Nodes[3 * i + 1] * toMetres, m.Nodes[3 * i + 2] * toMetres);
 
+    /// <summary>
+    /// A mesh edge's key is its two node numbers, and <c>long</c>'s own hash XORs the two halves. A mesh numbers
+    /// neighbouring nodes close together, so nearly every edge hashes to a small number and the set degenerates to long
+    /// chains: 7.9 s against about 60 ms on a 430,000-triangle boundary. The multiply spreads them.
+    /// </summary>
+    internal sealed class EdgeKeys : IEqualityComparer<long>
+    {
+        public static readonly EdgeKeys Instance = new();
+        public bool Equals(long a, long b) => a == b;
+        public int GetHashCode(long key) => (int)(((ulong)key * 0x9E3779B97F4A7C15UL) >> 32);
+    }
+
     /// <summary>The boundary triangles' edges, each once, coloured by physical group.</summary>
     public static Scene3DVertex[] BoundaryWireframe(MshMesh mesh, Scene3DModel scene, double toMetres, bool dark = false)
     {
@@ -32,7 +44,7 @@ public static class MeshOverlay
             if (dark && g == 0) c = (220, 220, 225);
             colour[groups[g]] = Scene3DVertex.Pack(c.R, c.G, c.B, 255);
         }
-        var seen = new HashSet<long>();
+        var seen = new HashSet<long>(mesh.TriangleCount * 3 / 2, EdgeKeys.Instance);
         var outv = new List<Scene3DVertex>(mesh.TriangleCount * 3);
         var t = mesh.Triangles;
         for (int k = 0; k < mesh.TriangleCount; k++)

@@ -40,6 +40,43 @@ public sealed class SchematicTextToolTests
     }
 
     [Fact]
+    public void TextTool_ShiftEnter_StartsALine_AndEnterPlacesOneTextOfThem()
+    {
+        var model = new SchematicEditModel();
+        var vm = new SchematicViewModel(model);
+        vm.SetTextTool();
+        vm.OnPointerPressed(0, 0, KeyModifiers.None);
+        vm.OnTextInput("one");
+        vm.OnKeyDown(Key.Enter, KeyModifiers.Shift);
+        vm.OnTextInput("two");
+        Assert.True(vm.IsTypingText);
+        vm.OnKeyDown(Key.Enter, KeyModifiers.Shift);   // a trailing line break is not kept
+        vm.OnKeyDown(Key.Enter, KeyModifiers.None);
+
+        var text = Assert.IsType<EditableText>(Assert.Single(model.CanvasObjects));
+        Assert.Equal("one\ntwo", text.Text);
+        var (_, y0, _, y1) = SymbolGeometry.BboxOf(text.ToPrimitive());
+        Assert.Equal(2 * SymbolGeometry.TextBoxSize(new TextPrimitive { Content = "one", FontSize = text.FontSize }).H, y1 - y0, 6);
+    }
+
+    /// <summary>The inline box shows all its text with no scrollbar: it draws in the face its width is measured in, it is as wide as
+    /// its longest line, and that width holds its padding and border as well as the text.</summary>
+    [Fact]
+    public void InlineBox_FitsItsLongestLine_InTheFaceItMeasures_WithNoScrollbar()
+    {
+        var box = new CircuitRF.Ui.Controls.SchematicInlineEditBox();
+        Assert.Contains("IBMPlexSans-Regular", box.FontFamily.ToString(), StringComparison.Ordinal);
+        Assert.Equal(Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden, Avalonia.Controls.ScrollViewer.GetHorizontalScrollBarVisibility(box));
+
+        const double size = 9;
+        const string longest = "Gate bias from the 3.3 V rail through R4.";
+        double width = CircuitRF.Ui.Controls.SchematicInlineEditBox.WidthFor("short\n" + longest + "\nshort", size);
+        Assert.Equal(CircuitRF.Ui.Controls.SchematicInlineEditBox.WidthFor(longest, size), width, 6);
+        using var font = new SkiaSharp.SKFont(CircuitRF.Render.SkiaFonts.PlexRegular, (float)size);
+        Assert.True(width >= font.MeasureText(longest) + 2 * CircuitRF.Ui.Controls.SchematicInlineEditBox.LeftPad + 2);
+    }
+
+    [Fact]
     public void TextTool_Escape_AbandonsTheText_AndReturnsToSelect()
     {
         var model = new SchematicEditModel();

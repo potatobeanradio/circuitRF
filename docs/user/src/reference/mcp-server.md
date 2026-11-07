@@ -102,7 +102,7 @@ the same documents.
 
 | Tool | Runs |
 |---|---|
-| `run` | `sparam`, `dc`, `hb`, `env`, `lp`, `lpp`, `em`, `opt` or a `yield` run (Monte Carlo, yield, corners, centering, DOE, sensitivity), chosen by `analysis` |
+| `run` | `sparam`, `dc`, `hb`, [`env`](cli.html#env), [`fields`](cli.html#fields), `lp`, `lpp`, `em`, `opt` or a `yield` run (Monte Carlo, yield, corners, centering, DOE, sensitivity), chosen by `analysis` |
 | `check` | `check` |
 | `explain` | `explain`, including `--cells`, `--layers`, `--extents` and `--footprints` |
 | `create` | `new workspace` or `new cell` |
@@ -111,7 +111,7 @@ the same documents.
 | `render` | `render` — one tool over every document kind, as the verb is |
 | `read` | `read` |
 | `netlist` | `netlist` — the extraction a schematic runs as |
-| `plot` | `plot` — one picture from one result file. It takes `attachImage` too |
+| `plot` | `plot` — one picture from one result file, an antenna pattern (`type=polar radial=db`) and a power spectrum among them. It takes `attachImage` too |
 | `find` | `find` — the workspaces, cells, views and analyses under a directory |
 | `recognize` | [`recognize`](cli.html#recognize) — a board's artwork, or a picture, read as a circuit |
 | `lvs` | [`lvs`](cli.html#lvs) — does a cell's artwork implement its schematic |
@@ -119,7 +119,7 @@ the same documents.
 | `review` | [`review`](cli.html#review) — the Layout Review's checks over a board |
 | `model` | [`model`](cli.html#model) — the Model Composer's nouns, chosen by `noun` |
 | `history` | [`history checkpoint`, `list` or `restore`](history.html) — the correction nouns (`rename`, `retitle`, `correct`, `review`) are on the verb but not on this server |
-| `solver` | [`solver list`](cli.html#solver) — which 3D solvers are installed and what each build can do |
+| `solver` | [`solver list`](cli.html#solver) — which 3D solvers are installed and what each build can do, and this machine's cores and memory, which `run`'s `cores` is chosen against |
 | `reference` | `reference` |
 | `job` | No verb: the status, cancellation and result of a run started with `async=true` |
 | `batch` | No verb: it holds a restore-point batch open across several calls, which a process that exits after one command cannot |

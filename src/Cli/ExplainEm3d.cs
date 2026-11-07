@@ -29,13 +29,18 @@ internal static class ExplainEm3d
     /// <param name="device">brief-em3d-136 — the device a run would use (<c>explain --device</c>, as <c>em --device</c>).</param>
     /// <param name="memoryLimitBytes">brief-emi-10 — the limit a run would be given (<c>explain --memory-limit</c>, as
     /// <c>em --memory-limit</c>); null for this machine's memory.</param>
-    public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu, long? memoryLimitBytes = null)
+    /// <param name="maxCores">The processes a run given <c>em --cores</c> would start; one past this machine's physical cores is the
+    /// run's own refusal, reported here as a warning.</param>
+    public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu, long? memoryLimitBytes = null, int? maxCores = null)
     {
         // EMB-5 R-emb5-3 — sizing (an openEMS grid, a SAR plan) is the report's own long step; a cancelled call stops here.
         if (RunHost.Control is { } control) { control.ThrowIfCancellationRequested(); control.BeginStage("sizing the 3D problem for each solver"); }
         var r = BuildCore(src, device);
         RunHost.Control?.ThrowIfCancellationRequested();
-        if (Device(src.Setup, device, r.Solvers) is { } d) r = r with { Device = d };
+        if (Device(src.Setup, device, r.Solvers, maxCores) is { } d) r = r with { Device = d };
+        if (Em3dSolvers.Any(src.Setup.Solver3D, c => c.Gpu)
+            && Em3dRunService.PalaceRankRefusal(device, maxCores, CircuitRF.Engine.Em3d.PhysicalCores.Current, r.Device?.Processes) is { } tooMany)
+            r = r with { Warnings = [.. r.Warnings, tooMany] };
         if (src.Generated is { WantsDc: true }) r = r with { DcRow = DcRow() };
         if (!src.Setup.Solver3D.IsNone && !src.Setup.IsThermal)
             r = r with { Limits = Em3dMemoryLimit.Describe(MachineMemory.PhysicalBytes, memoryLimitBytes,
@@ -381,12 +386,18 @@ internal static class ExplainEm3d
     /// brief-em3d-136 R-em3d136-4c — which device a run's Palace would use and why, or null when the setup runs no Palace
     /// (the report is then unchanged). A GPU's process count comes from the readiness check's own GPU verdict.
     /// </summary>
-    private static Em3dDeviceJson? Device(EmSetup setup, PalaceDevice device, IReadOnlyList<Em3dSolverJson> solvers)
+    private static Em3dDeviceJson? Device(EmSetup setup, PalaceDevice device, IReadOnlyList<Em3dSolverJson> solvers, int? maxCores)
     {
         if (!Em3dSolvers.Any(setup.Solver3D, c => c.Gpu)) return null;
         if (device == PalaceDevice.Cpu)
+        {
+            int physical = CircuitRF.Engine.Em3d.PhysicalCores.Count, processes = maxCores ?? physical;
             return new("cpu", "the default: a headless run solves on the CPU unless --device gpu asks for a GPU (the GUI " +
-                              "uses this machine's Device setting); one Palace process per physical core, or the Cores setting.");
+                              $"uses this machine's Device setting); {processes} Palace process{(processes == 1 ? "" : "es")}: one per physical " +
+                              $"core ({physical} here), or --cores. Each holds its own share of the mesh and its own solver data, so more " +
+                              "processes take more memory and fewer take less, more slowly; the memory estimate does not follow the count.")
+            { Processes = processes, PhysicalCores = physical };
+        }
         var verdict = solvers.FirstOrDefault(s => s.Tool == SolverDiscovery.Palace.Name)?.Capabilities
                              .FirstOrDefault(c => c.Capability == nameof(SolverCapability.Gpu));
         return new("gpu", verdict is { Available: true, Devices: { } n }

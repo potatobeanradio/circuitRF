@@ -1740,7 +1740,7 @@ static int RunEm(string[] args)
         if (solverName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--solver"));
         if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
         if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
-        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText);
+        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores);
     }
 
     // The scratch folder Settings ▸ Solvers names, read now so a change there reaches the next run (an MCP server runs many

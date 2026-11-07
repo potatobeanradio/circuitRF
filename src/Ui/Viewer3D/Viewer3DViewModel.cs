@@ -78,7 +78,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>The file _mesh was read from, AS IT WAS: a re-run rewrites the same path, so the path
     /// alone would keep showing the old mesh and its old count.</summary>
     private MeshStamp? _meshStamp;
-    private MeshStamp? _meshLoading;
+    private (MeshStamp?, object?, bool)? _meshLoading;
+    private (MshMesh?, object?, bool) _meshDrawn;
     /// <summary>The FDTD grid and the scene it was built for. Written by whichever overlay task builds
     /// it first, cancelled or not — a clip-plane drag cancels every task before its successor, and a
     /// cache filled only on completion would rebuild the grid on every tick of the drag.</summary>
@@ -954,7 +955,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<ClipAxis3D> MeshPlaneAxes { get; } = [ClipAxis3D.X, ClipAxis3D.Y, ClipAxis3D.Z];
 
-    partial void OnMeshPlaneEnabledChanged(bool value) => ApplyMeshPlane();
+    partial void OnMeshPlaneEnabledChanged(bool value)
+    {
+        // The plane draws the mesh's tetrahedra, so turning it on with the mesh off would show nothing at all.
+        if (value && CanShowMesh && !ShowMesh) ShowMesh = true;
+        ApplyMeshPlane();
+    }
     partial void OnMeshPlaneAxisChanged(ClipAxis3D value) => ApplyMeshPlane();
     partial void OnMeshPlanePositionChanged(double value)
     {
@@ -1137,7 +1143,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (!MeshAvailable && ShowMesh) ShowMesh = false;
         if (_meshStamp is not null && (MeshPath() is not { } now || MeshStamp.Of(now) != _meshStamp))
         {
-            _mesh = null; _meshStamp = null;
+            _mesh = null; _meshStamp = null; _meshDrawn = default;
             MeshText = "";
         }
         if (ShowMesh) LoadMesh();
@@ -1154,32 +1160,44 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>The mesh is in GmshGeoWriter's units (Palace's L0).</summary>
     public const double MeshToMetres = GmshGeoWriter.LengthUnitM;
 
+    /// <summary>Stands in for building the mesh's lines under a test.</summary>
+    internal Func<MshMesh, Scene3DModel, bool, Scene3DVertex[]>? MeshWireframeBuilder { get; set; }
+
     private void LoadMesh()
     {
         if (MeshPath() is not { } path) return;
         var scene = Scene;
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         var stamp = MeshStamp.Of(path);
-        if (_mesh is not null && stamp is not null && _meshStamp == stamp)
+        // Read already: the lines drawn are still right unless the scene or the theme moved, and a new set is built off this
+        // thread like the first. On a large mesh building them takes long enough to be felt, and turning the mesh back on
+        // needs none of it. The old lines stay on screen until the new ones arrive.
+        var known = _mesh is not null && stamp is not null && _meshStamp == stamp ? _mesh : null;
+        (MshMesh?, object?, bool) drawing = (known, scene.Geometry, dark);
+        if (known is not null && drawing == _meshDrawn)
         {
-            MeshOverlay = new Scene3DOverlay(Render.Scene3D.MeshOverlay.BoundaryWireframe(_mesh, scene, MeshToMetres, dark), ++_overlayVersion);
             ScheduleClipOverlays();
             return;
         }
-        if (stamp is not null && _meshLoading == stamp) return;      // already being read
-        _meshLoading = stamp;
-        MeshText = "Reading the mesh…";
+        (MeshStamp?, object?, bool) request = (stamp, scene.Geometry, dark);
+        if (stamp is not null && _meshLoading == request) return;    // already being built
+        _meshLoading = request;
+        if (known is null) MeshText = "Reading the mesh…";
         Task.Run(() =>
         {
             try
             {
-                var m = MshReader.Read(path);
-                var lines = Render.Scene3D.MeshOverlay.BoundaryWireframe(m, scene, MeshToMetres, dark);
+                var m = known ?? MshReader.Read(path);
+                var lines = MeshWireframeBuilder?.Invoke(m, scene, dark)
+                            ?? Render.Scene3D.MeshOverlay.BoundaryWireframe(m, scene, MeshToMetres, dark);
                 _post(() =>
                 {
-                    if (_meshLoading == stamp) _meshLoading = null;
+                    // A newer request (a scene or theme that moved meanwhile) has this mesh's lines coming.
+                    if (_meshLoading != request) return;
+                    _meshLoading = null;
                     if (_disposed) return;
                     _mesh = m; _meshStamp = stamp;
+                    _meshDrawn = (m, scene.Geometry, dark);
                     MeshOverlay = new Scene3DOverlay(lines, ++_overlayVersion);
                     MeshText = $"Mesh: {m.TetCount:N0} tetrahedra, {m.TriangleCount:N0} boundary triangles, {m.NodeCount:N0} nodes";
                     ScheduleClipOverlays();
@@ -1190,7 +1208,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             {
                 _post(() =>
                 {
-                    if (_meshLoading == stamp) _meshLoading = null;
+                    if (_meshLoading != request) return;
+                    _meshLoading = null;
                     MeshText = "The mesh could not be read: " + ex.Message;
                 });
             }

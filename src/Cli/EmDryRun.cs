@@ -18,7 +18,7 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static class EmDryRun
 {
-    public static int Run(string input, string? setupName, string? device, string? memoryLimit)
+    public static int Run(string input, string? setupName, string? device, string? memoryLimit, int? maxCores = null)
     {
         int checkExit = Check.Run([input]);
         RunHost.Control?.ThrowIfCancellationRequested();
@@ -27,6 +27,7 @@ internal static class EmDryRun
         if (setupName is not null) { explainArgs.Add("--setup"); explainArgs.Add(setupName); }
         if (device is not null) { explainArgs.Add("--device"); explainArgs.Add(device); }
         if (memoryLimit is not null) { explainArgs.Add("--memory-limit"); explainArgs.Add(memoryLimit); }
+        if (maxCores is { } cores) { explainArgs.Add("--cores"); explainArgs.Add(cores.ToString(CultureInfo.InvariantCulture)); }
         int explainExit = Explain.Run([.. explainArgs]);
 
         if (Line(JsonRun.Check, JsonRun.Explain) is { } line)

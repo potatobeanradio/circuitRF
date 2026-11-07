@@ -133,6 +133,15 @@ internal static class Solver
                 Console.WriteLine($"  no install recipe for this machine; recipes exist for {SolverRecipes.PlatformsFor(tool)}");
         }
         JsonRun.Solvers = report;
+        var cores = CircuitRF.Engine.Em3d.PhysicalCores.Current;
+        double memoryGB = Math.Round(CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes / 1e9, 1);
+        const string coresNote = "A 3D run defaults to one Palace process per physical core; em --cores <n> sets fewer and refuses more. "
+                               + "Each Palace process holds its own share of the mesh and its own solver data, so more processes take more "
+                               + "memory and fewer take less, more slowly. A run past its memory is stopped.";
+        JsonRun.Machine = new MachineJson(cores.Count, cores.Measured, cores.How, Environment.ProcessorCount, memoryGB, coresNote);
+        Console.WriteLine($"This machine: {cores.Count} physical core{(cores.Count == 1 ? "" : "s")} ({cores.How}), " +
+                          $"{Environment.ProcessorCount} logical, {memoryGB:0.#} GB of memory.");
+        Console.WriteLine($"  {coresNote}");
         return 0;
     }
 

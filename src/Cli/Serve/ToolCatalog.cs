@@ -512,7 +512,9 @@ internal static class ToolCatalog
                   + "(channel power, ACPR1/ACPR2 per carrier), PSD, AM-AM/AM-PM, IMD for two carriers, Pavg_dBm, Gt_dB, "
                   + "DE_pct, NMSE_dB and PAPR_dB; Pin_avg_dBm and Pdc_W are scalars. The time waveforms (V, I) and spectra are in "
                   + "the shape and in -o's file; ask for them with all, only or group. Runs the parametric sweep when one wraps it. "
-                  + "Minutes, not seconds: 200 us of an NR 20 MHz signal is about a minute on 10 cores."),
+                  + "Minutes, not seconds: 200 us of an NR 20 MHz signal is about a minute on 10 cores. To plot the power spectrum "
+                  + "at an IProbe, write output=<f.npy> and plot it: cube=PSD[\"Iout\",:],y=real with freqUnit=MHz. PSD is already in dBm/Hz, "
+                  + "so y=real rather than db10, and its branch axis is named after the IProbes. 'reference simulations' lists every cube."),
                 new("lp", ["lp"],
                     [new("path", true, "The .cnl to run.")],
                     [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions, .. EmOptions],
@@ -531,8 +533,9 @@ internal static class ToolCatalog
                   + "its ports. A far field (a 3D run with Radiation pattern) gives F1.farfield.U, Etheta, Ephi and every antenna metric, at one "
                   + "frequency or freq=all. A field set (Sar.PerPortFields) gives SAR, B1± and their scalars at one frequency, per watt at the "
                   + "drive port. Either gives the circuit's F1.S and F1.Z0. Starts no EM run, so a part value changed with set re-runs in seconds. "
-                  + "A pattern stays out of the document for its size: write it with output and read or plot that file. Every enabled fields "
-                  + "analysis unless analysis names one."),
+                  + "A pattern stays out of the document for its size: write it with output and read or plot that file: plot type=polar "
+                  + "radial=db dbUnit=dBi trace=cube=F1.farfield.U,cut=0,y=db10. Every enabled fields analysis unless analysis names one. "
+                  + "'reference cosimulation' has the workflow and every metric."),
                 // brief-tuneopt-11 R-to11-5: the `opt` verb, so the document is the verb's `--json`
                 // object and nothing here reshapes it. The final result by default; showIterations
                 // asks for each iteration too.
@@ -714,7 +717,10 @@ internal static class ToolCatalog
                        + "with force past its size check keeps none."),
                      new("cores", "--cores", OptKind.Integer,
                          "How many Palace processes or solver threads this run may use: Settings ▸ Solvers ▸ Cores for this run only. "
-                       + "Fewer processes take less memory and solve more slowly. Default: one per physical core."),
+                       + "Default: one per physical core; 'solver' says how many this machine has, and more than that is refused. Each "
+                       + "Palace process holds its own share of the mesh and its own solver data, so more processes take more memory and "
+                       + "fewer take less, more slowly. dryRun's memory estimate does not follow the count: when a run stops at its memory "
+                       + "limit, lower this before coarsening the mesh."),
                      new("component", "--component", OptKind.Str,
                          "Extract one built-in component's drawn part instead of a .cem: its type and parameters as on a "
                        + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "
@@ -822,6 +828,9 @@ internal static class ToolCatalog
                             "A 3D setup's report as a run with this device would see it: auto (default), cpu or gpu."),
                         new("memoryLimitGB", "--memory-limit", OptKind.Number,
                             "A 3D setup's report with the memory ceiling a run given this limit (GB) would keep."),
+                        new("cores", "--cores", OptKind.Integer,
+                            "A 3D setup's report as a run given this many cores would see it: result.explain.em3d.device.processes and "
+                          + "physicalCores, and a warning when it is more than this machine has, which a run refuses."),
                     ],
                     ""),
             ]),
@@ -1315,7 +1324,8 @@ internal static class ToolCatalog
         // edit it and carry on with `render`.
         new("plot",
             "Draw one picture from one result file, with no data display to author first: .svg, "
-          + ".pdf or .png. Give a trace per curve. Ask read first for the cube names and their axes.",
+          + ".pdf or .png. Give a trace per curve. Ask read first for the cube names and their axes. An antenna pattern is a polar "
+          + "plot with radial=db and a cut= on its trace; without radial=db its decibels fall outside the disc and it draws no curve.",
             null, null,
             [
                 new("", [ "plot" ],
@@ -1332,12 +1342,33 @@ internal static class ToolCatalog
                           + "refused alongside a bracketed slice. y is db20 (S, V, I), db10 (power), mag, phase, real or "
                           + "imag; a bare db is refused as ambiguous. "
                           + "axis is left (default) or right. label=\"As built\" names the trace: it replaces the "
-                          + "generated name in the legend, the axis title and the marker box. At least one is required — a plot with no trace is "
-                          + "refused, not drawn empty."),
+                          + "generated name in the legend, the axis title and the marker box. A cube already in dB (PSD, VSD) takes y=real. "
+                          + "A labelled axis pins by name: cube=PSD[\"Iout\",:]. An antenna pattern: cube=farfield.U (F1.farfield.U from a "
+                          + "fields analysis), cut=<phi deg> for the plane at that bearing or cut=all for every phi, port=<n> for a port "
+                          + "of a per-port far field, freq=2.45G for one frequency; decibels unless y says. ref=<dBm> reads a dBm level "
+                          + "against another input power. At least one is required — a plot with no trace is refused, not drawn empty."),
                         new("type", "--type", OptKind.Str,
-                            "rect (default), smith, polar or table."),
+                            "rect (default), smith, polar, table or surface (a 3D antenna pattern: trace cut=all)."),
                         new("freqUnit", "--freq-unit", OptKind.Str,
                             "Hz, kHz, MHz or GHz. Default GHz. It is also the unit x is read in."),
+                        new("radial", "--radial", OptKind.Str,
+                            "A polar plot's radius: linear (default) or db, which makes it an antenna pattern plot. Refused on any other type."),
+                        new("dbFloor", "--db-floor", OptKind.Number, "A db plot's centre, in dB relative to the outer ring. Default -40."),
+                        new("dbRing", "--db-ring", OptKind.Number, "A db plot's ring spacing, dB. Default 10."),
+                        new("dbRef", "--db-ref", OptKind.Str,
+                            "A db plot's outer ring: peak (the data's own, normalised; the default) or a level in dB."),
+                        new("dbUnit", "--db-unit", OptKind.Str, "What a db plot's radial numbers are in: dBi, dB(W/sr)."),
+                        new("wholePlane", "--whole-plane", OptKind.Flag,
+                            "Draw each cut= as one trace across -theta max to +theta max instead of two. Needs type=polar radial=db."),
+                        new("angleLabels", "--angle-labels", OptKind.Flag,
+                            "A polar plot's bearing every 30 degrees outside the disc, with a spoke to each."),
+                        new("legend", "--legend", OptKind.Str, "Where the legend goes: off, inside, below or floating."),
+                        new("view", "--view", OptKind.Str, "A surface plot's camera: iso, broadside, phi0 or phi90."),
+                        new("rotate", "--rotate", OptKind.Str, "A surface plot's camera turned further, as azimuth,elevation in degrees."),
+                        new("zoom", "--zoom", OptKind.Number, "A surface plot's camera zoom. Default 1."),
+                        new("colorMap", "--color-map", OptKind.Str, "A surface plot's colour map, by name; a name it does not know is refused with the list."),
+                        new("specLines", "--spec-lines", OptKind.Flag, "Draw the limits of the goals the result records. The default."),
+                        new("noSpecLines", "--no-spec-lines", OptKind.Flag, "Leave out the limits of the goals the result records."),
                         new("title",   "--title",   OptKind.Str, "Plot title."),
                         new("xlabel",  "--xlabel",  OptKind.Str, "X axis label."),
                         new("ylabel",  "--ylabel",  OptKind.Str, "Left Y axis label."),
@@ -1852,7 +1883,8 @@ internal static class ToolCatalog
             "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge) are installed here and what each build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
           + "how many it finds; for EMerge, its sparse-solver tier and whether GPU solving is enabled, with the command "
-          + "that enables it. Ask before writing a 3D setup that needs one. Reads "
+          + "that enables it. result.machine is this machine's physical and logical cores and its memory, which is what "
+          + "run's cores is chosen against: more Palace processes take more memory. Ask before writing a 3D setup that needs one. Reads "
           + "no file and writes nothing.",
             null, null,
             [

@@ -14,7 +14,8 @@ public enum TreeDropAction
     /// <summary>A loose file from another workspace's tree: copy it in (R-mw3-11).</summary>
     File,
 
-    /// <summary>A <c>.cws</c>: open that workspace in a window of its own (R-mw3-12).</summary>
+    /// <summary>A <c>.cws</c>, or a folder holding one: open that workspace — in this window when it has none open, otherwise in a
+    /// window of its own (R-mw3-12).</summary>
     OpenWorkspace,
 
     /// <summary>An ordinary OS file drop: bookmark it, which is what the tree did before MW3.</summary>
@@ -100,6 +101,16 @@ public static class TreeDrop
     public static TreeDropIntent ForDroppedPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return TreeDropIntent.None;
+
+        // A folder holding a .cws IS that workspace, as File > Open Workspace reads a folder. A folder dragged from a file
+        // manager can arrive with a trailing separator, whose file name is empty.
+        string trimmed = Path.TrimEndingDirectorySeparator(path);
+        if (Directory.Exists(trimmed))
+        {
+            string inside = Path.Combine(trimmed, ".cws");
+            return new TreeDropIntent(File.Exists(inside) ? TreeDropAction.OpenWorkspace : TreeDropAction.KnownFile,
+                                      File.Exists(inside) ? inside : path);
+        }
 
         // ".cws" is the whole file name in a workspace folder, and an extension anywhere else.
         bool isCws = Path.GetFileName(path).Equals(".cws", StringComparison.OrdinalIgnoreCase)

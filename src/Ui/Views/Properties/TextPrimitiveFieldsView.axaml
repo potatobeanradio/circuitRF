@@ -11,10 +11,12 @@
     <StackPanel Spacing="4">
 
         <Grid ColumnDefinitions="56,*">
-            <TextBlock Grid.Column="0" Text="Content" VerticalAlignment="Center" FontSize="11"
+            <TextBlock Grid.Column="0" Text="Content" VerticalAlignment="Top" Margin="0,3,0,0" FontSize="11"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
             <TextBox Grid.Column="1"
                      Text="{Binding TextContent, Mode=TwoWay}"
+                     AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="140"
+                     ToolTip.Tip="Enter starts a new line."
                      FontSize="11" Padding="4,2"/>
         </Grid>
 

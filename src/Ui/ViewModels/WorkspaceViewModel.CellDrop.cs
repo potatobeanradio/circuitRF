@@ -397,4 +397,11 @@ public partial class WorkspaceViewModel
     /// never copied — copying a workspace into a workspace is not a thing.
     /// </summary>
     public static void OpenDroppedWorkspace(string cwsPath) => App.OpenWorkspaceInNewWindow(cwsPath);
+
+    /// <summary>A workspace dropped on this window: here when it has none open, otherwise a window of its own.</summary>
+    public void OpenDroppedWorkspaceHere(string cwsPath)
+    {
+        if (CurrentWorkspacePath is null) OpenWorkspacePath(cwsPath);
+        else OpenDroppedWorkspace(cwsPath);
+    }
 }

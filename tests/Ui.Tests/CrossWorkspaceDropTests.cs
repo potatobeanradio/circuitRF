@@ -392,6 +392,21 @@ public sealed class CrossWorkspaceDropTests : IDisposable
     // ── §6.6 — a .cws opens, and copies nothing ───────────────────────────────
 
     [Fact]
+    public void ADroppedWorkspaceFolderOpensItsWorkspace_AndAnyOtherFolderStaysABookmark()
+    {
+        BuildSharedTechFixture();
+        string cws = Path.Combine(_wsA, ".cws");
+
+        // A file manager can hand over a folder with a trailing separator.
+        foreach (string dropped in new[] { _wsA, _wsA + Path.DirectorySeparatorChar })
+            Assert.Equal(new TreeDropIntent(TreeDropAction.OpenWorkspace, cws), TreeDrop.ForDroppedPath(dropped));
+
+        string plain = Path.Combine(_wsA, "not-a-workspace");
+        Directory.CreateDirectory(plain);
+        Assert.Equal(new TreeDropIntent(TreeDropAction.KnownFile, plain), TreeDrop.ForDroppedPath(plain));
+    }
+
+    [Fact]
     public void R_mw3_12_ADroppedCwsOpensAWorkspace_AndIsNeverCopied()
     {
         BuildSharedTechFixture();

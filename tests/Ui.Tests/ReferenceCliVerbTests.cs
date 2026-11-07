@@ -106,8 +106,8 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
     public void TheTopicSetIsCurated_AndDoesNotCarryTheCliPage()
     {
         Assert.DoesNotContain("cli", ReferenceLibrary.TopicNames);
-        // 12 since brief vendorlib-15 added protected-models, which that brief asks to be served.
-        Assert.True(ReferenceLibrary.TopicNames.Count < 13,
+        // 14 since simulations and cosimulation joined, so an agent can find the cubes of an envelope or far-field run to plot.
+        Assert.True(ReferenceLibrary.TopicNames.Count < 15,
                     "the topic set has grown past a curated one; R-aut6-2 says reading is the expensive direction.");
     }
 

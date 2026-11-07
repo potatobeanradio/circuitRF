@@ -175,6 +175,13 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     [RelayCommand]
     private void OpenRecent(string path) => _actions?.OpenWorkspacePath(path);
 
+    /// <summary>A dropped workspace: into this window when it has none open, otherwise a window of its own.</summary>
+    public void OpenDroppedWorkspace(string cwsPath)
+    {
+        if (!HasWorkspace && _actions is { } actions) actions.OpenWorkspacePath(cwsPath);
+        else WorkspaceViewModel.OpenDroppedWorkspace(cwsPath);
+    }
+
     /// <summary>
     /// Opens a recent workspace in a window of its own — the recent list's counterpart to
     /// File ▸ Open Workspace in New Window…, without the picker, since the row already names the path.

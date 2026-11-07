@@ -19,6 +19,8 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#hb"><code>hb</code> — harmonic balance</a></li>
 <li><a href="#lp"><code>lp</code> — loadpull</a></li>
 <li><a href="#lpp"><code>lpp</code> — loadpull pursuit</a></li>
+<li><a href="#env"><code>env</code> — the circuit envelope</a></li>
+<li><a href="#fields"><code>fields</code> — far field, SAR and B1 from a schematic</a></li>
 <li><a href="#em"><code>em</code> — electromagnetic extraction</a></li>
 <li><a href="#convert"><code>convert</code> — layout interchange</a></li>
 <li><a href="#new"><code>new</code> — a workspace or a cell</a></li>
@@ -123,6 +125,8 @@ convention behind both.</p>
 | `hb` | `.cnl` or `.csch` | Harmonic balance, single- or multi-tone | Spectra tables to stdout; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
+| `env` | `.cnl` or `.csch` | The circuit envelope: a modulated signal through the circuit | Each IProbe's power, gain, efficiency and ACLR to stdout; `-o .mat/.npy/.txt` for the waveforms and spectra |
+| `fields` | `.cnl` or `.csch` | A `fields` analysis: an EM Field Data block's saved results recombined by the circuit, with no EM run | The far field's metrics, or SAR and B1, to stdout; `-o .mat/.npy/.txt` for the pattern |
 | `em` | `.cem`, or a `.c3d` with `--setup` | The EM kernel or 3D solver the setup resolves to | A Touchstone `.sNp`, a grouped `.npy` **and** a `.cemr` result record, where **Simulate** writes them |
 | `solver list`, `install`, `remove` | **nothing** — a tool name | The install assistant **Settings ▸ Solvers** runs | What each 3D solver's row shows, to stdout; an install or a removal, only with `--yes` |
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
@@ -478,6 +482,45 @@ actually happened is "nothing it tried reached compression".
 
 ---
 
+## `env` — the circuit envelope {#env}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf env &lt;design.cnl|.csch&gt; [-a name] [--set var=expr] [--stop 200e-6] [--step auto]
+             [--accuracy draft|standard|fine] [--envelope auto|single|lattice]
+             [--segments auto|&lt;n&gt;] [--warmup auto|&lt;s&gt;] [-o out.{mat,npy,txt}]</code></pre>
+
+Runs the design's `type=env` analysis, and the whole sweep when a `parametric_sweep` wraps it. A `MOD_Source` supplies the
+signal. Every labeled net records its voltage, and every [IProbe](components.html#iprobe) the power delivered through it.
+[What a run records](simulations.html#envelope-records) lists every cube. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
+about a minute on 10 cores.
+
+To plot the power spectrum at an IProbe, write the cubes and plot `PSD`. Its `branch` axis is named after the IProbes, and it is
+already in dBm/Hz, so it takes `y=real`:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf env amp.csch --stop 100e-6 -o amp.npy
+<span class="prompt">$ </span>circuitrf plot amp.npy -o spectrum.svg --freq-unit MHz --ylabel "dBm/Hz" --legend inside \
+    --trace 'cube=PSD["Iout",:],y=real,label=Iout' --trace 'cube=PSD["Iin",:],y=real,label=Iin'</code></pre>
+
+Exit **0** when it ran, **1** refused or failed, **130** cancelled.
+
+## `fields` — far field, SAR and B1 from a schematic {#fields}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf fields &lt;bench.cnl|.csch&gt; [-a name]... [--set var=expr]... [-o out.{mat,npy,txt}]</code></pre>
+
+Runs every enabled `type=fields` analysis, or the ones `-a` names. Each reads an [EM Field Data block](cosimulation.html)'s saved
+per-port results and recombines them with the waves the circuit delivers to its ports, so it starts no EM run and a part changed
+with `--set` re-runs in seconds. A far field gives `F1.farfield.U`, `Etheta`, `Ephi` and every antenna metric. A field set gives SAR and
+B1 at one frequency. Either gives the circuit's `F1.S` and `F1.Z0`.
+
+A pattern stays out of the `--json` document for its size, so write it with `-o` and plot that file. A pattern is a polar plot in
+decibels, one cut per bearing:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf fields "Antenna Bench.csch" -a F1 -o f1.npy
+<span class="prompt">$ </span>circuitrf plot f1.npy -o pattern.svg --type polar --radial db --db-unit dBi --whole-plane --legend below \
+    --trace "cube=F1.farfield.U,cut=0,y=db10,label=phi 0" --trace "cube=F1.farfield.U,cut=90,y=db10,label=phi 90"
+<span class="prompt">$ </span>circuitrf plot f1.npy -o surface.svg --type surface --view iso --trace "cube=F1.farfield.U,cut=all,y=db10"</code></pre>
+
+[Plot flags](#plot) has the rest. Exit **0** when every fields analysis ran, **1** refused or failed, **130** cancelled.
+
 ## `em` — electromagnetic extraction {#em}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
@@ -495,8 +538,12 @@ for a driven problem large enough to be faster on it ([EMerge on a GPU](em-solve
 otherwise.
 `--device gpu` is refused on a run that uses neither Palace nor EMerge.
 
-`--cores <n>` is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. Fewer
-processes take less memory and solve more slowly. A run that does not say uses one process per physical core.
+`--cores <n>` is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. A run that
+does not say uses one process per physical core, and [`solver list`](#solver) says how many this machine has. Each Palace
+process holds its own share of the mesh and its own solver data, so more processes take more memory and fewer take less, more
+slowly. The memory estimate in `--dry-run` and `explain` does not follow the count, so when a run stops at its memory limit, lower
+`--cores` before coarsening the mesh. `explain --cores <n>` and `em --dry-run --cores <n>` report the processes a run would start and warn
+when that is more than this machine has, which a run refuses.
 
 A 3D run's solver is stopped if its memory reaches this computer's (`--memory-limit <GB>` sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits **1**.
@@ -776,6 +823,8 @@ same removal. A build machine installs a solver this way.
   sparse solver it would use (*fast sparse solver*, or the single-threaded baseline with what to install) and
   whether its GPU sparse solver is installed. `--capability gpu` also asks Palace whether it solves on a GPU, which
   costs a one-element solve. Read-only: it installs and builds nothing.
+- **`list`** ends with this machine's physical and logical cores and its memory (`machine` in `--json`), which is what
+  [`em --cores`](#em-inputs) is chosen against.
 - **`list`** adds an `update:` line for an EMerge circuitRF installed when it has tested a newer one (`update` in
   `--json`). `solver install emerge --yes` installs it beside the older one, and new runs use it.
 - **`install <tool>`** prints what it would fetch, from where, where it would go and what it cost when measured,
@@ -3189,6 +3238,7 @@ from. A cube the file does not hold is refused, listing the ones it does.
 | `--trace …,ref=<dBm>` | Read a dBm **level** (`TrpDbm`, `PeakEirpDbm`) against this conducted input power instead of the one the run published. An exact dB shift — no re-run. Inert on anything that is not a level. |
 | `--whole-plane` | Draw each `cut=` as **one** trace spanning −θ<sub>max</sub> … +θ<sub>max</sub>, by fetching the φ + 180° half alongside it — instead of the default two traces per cut. Needs `--type polar --radial db`. |
 | `--angle-labels` | Print the bearing every 30° outside the disc, with a spoke to each, the way an antenna-range plot is drawn. Polar only, either radial mode. The disc shrinks to make room rather than the numbers overprinting the outer ring. |
+| `--legend off\|inside\|below\|floating` | Where the legend goes. |
 | `--write-cdd <path>` | Also write the data display this drew. |
 
 ```text

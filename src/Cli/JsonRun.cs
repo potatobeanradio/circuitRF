@@ -76,6 +76,7 @@ internal static class JsonRun
         public ImpedanceLineJson? ImpedanceLine;
         public IReadOnlyList<RenderFieldPlotJson>? FieldPlots;
         public IReadOnlyList<SolverJson>? Solvers;
+        public MachineJson? Machine;
         public ScratchJson? Scratch;
         public OptimizeReportJson? Optimize;
         public YieldReportJson? Yield;
@@ -266,6 +267,7 @@ internal static class JsonRun
 
     /// <summary>What <c>solver list</c> found — each external solver and what its build can do.</summary>
     public static IReadOnlyList<SolverJson>? Solvers { get => S.Solvers; set => S.Solvers = value; }
+    public static MachineJson? Machine { get => S.Machine; set => S.Machine = value; }
 
     /// <summary>Where an <c>em</c> run put its temporary files (<see cref="ScratchJson"/>). Carried with the cubes, and
     /// on a refused run too — the refusal is often the reason to ask.</summary>
@@ -358,6 +360,7 @@ internal static class JsonRun
         ImpedanceLine       = null;
         FieldPlots          = null;
         Solvers             = null;
+        Machine             = null;
         Scratch             = null;
         Optimize            = null;
         Yield               = null;
@@ -621,7 +624,7 @@ internal static class JsonRun
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
-                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: optimize,
+                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Machine: Machine, Optimize: optimize,
                                      Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,

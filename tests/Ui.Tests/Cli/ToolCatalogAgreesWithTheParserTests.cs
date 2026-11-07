@@ -126,6 +126,55 @@ public sealed class ToolCatalogAgreesWithTheParserTests : IDisposable
         return m.Options.Single(o => o.Json == option).Description;
     }
 
+    /// <summary>What the plot verb takes, the plot tool offers: an antenna pattern needs radial=db, and with no way to ask for it
+    /// over the server a pattern drew an empty disc. Read from the parser so a new flag cannot reach one side only.</summary>
+    [Fact]
+    public void EveryPlotFlagIsOnThePlotTool_AndAPatternPlotsThroughIt()
+    {
+        string source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Cli", "PlotVerb.cs"));
+        var flags = System.Text.RegularExpressions.Regex.Matches(source, "case \"(--[a-z0-9-]+)\"").Select(m => m.Groups[1].Value).Distinct().ToList();
+        Assert.Contains("--radial", flags);
+        var offered = ToolCatalog.Tools.Single(t => t.Name == "plot").Modes.SelectMany(m => m.Options).Select(o => o.Cli).ToHashSet();
+        Assert.Empty(flags.Where(f => !offered.Contains(f)));
+
+        string npy = Path.Combine(_root, "run.npy"), png = Path.Combine(_root, "pattern.png");
+        RfCore.Export.DataSetExporter.Export(CircuitRF.Ui.Tests.DataDisplay.PatternFixture.Data, npy, RfCore.Export.ExportFormat.Npy);
+        using var server = new InProcessServe(_root);
+        string plotted = server.Call("plot", new JsonObject
+        {
+            ["path"] = npy, ["output"] = png, ["type"] = "polar", ["radial"] = "db", ["dbUnit"] = "dB(W/sr)", ["legend"] = "below",
+            ["trace"] = new JsonArray("cube=farfield.U,cut=0,port=1,y=db10"),
+        });
+        Assert.True(ExitOf(plotted) == 0, plotted);
+        Assert.True(new FileInfo(png).Length > 0);
+    }
+
+    /// <summary>An agent chooses cores against what the machine has, and is told what they cost in memory.</summary>
+    [Fact]
+    public void SolverReportsTheMachinesCores_AndADryRunReadsCores()
+    {
+        using var server = new InProcessServe(_root);
+        var machine = JsonNode.Parse(server.Call("solver", new JsonObject()))!["result"]!["machine"]!;
+        int physical = machine["physicalCores"]!.GetValue<int>();
+        Assert.Equal(CircuitRF.Engine.Em3d.PhysicalCores.Count, physical);
+        Assert.Contains("more memory", machine["note"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.True(machine["memoryGB"]!.GetValue<double>() > 0);
+
+        string shipped = Path.Combine(RepoRoot(), "examples", "3D Eigenmode", "Cavity", "3d", "Cavity.c3d");
+        string c3d = Path.Combine(_root, "Cavity.c3d");
+        File.Copy(shipped, c3d);
+        JsonNode? Em3d(int cores) => JsonNode.Parse(server.Call("explain", new JsonObject { ["path"] = c3d, ["cores"] = cores }))!["result"]!["explain"]!["em3d"];
+        Assert.Equal(1, Em3d(1)!["device"]!["processes"]!.GetValue<int>());
+        Assert.Contains(Em3d(physical + 1)!["warnings"]!.AsArray(), w => w!.GetValue<string>().Contains("physical", StringComparison.Ordinal));
+    }
+
+    private static string RepoRoot()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, "circuitRF.slnx"))) return d.FullName;
+        throw new InvalidOperationException("no repo root above the test binaries");
+    }
+
     /// <summary>The values a description names between two markers: parenthetical asides dropped, then split on commas
     /// and "or".</summary>
     private static IReadOnlyList<string> Documented(string tool, string mode, string option, string after, string until)

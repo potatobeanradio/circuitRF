@@ -112,6 +112,45 @@ public sealed class MeshBeforeSolveTests : IDisposable
         Assert.True(SpinWait.SpinUntil(() => { while (_posts.TryDequeue(out var post)) post(); return until(); }, TimeSpan.FromSeconds(30)));
     }
 
+    /// <summary>The mesh's lines are never built on the window's thread, and turning the mesh back on builds none at all: on a large
+    /// mesh that build is what froze the window.</summary>
+    [Fact]
+    public void TurningTheMeshBackOn_BuildsNothing_AndNoBuildRunsOnTheWindowsThread()
+    {
+        var (viewer, _) = ViewerOnAPlane();
+        using (viewer)
+        {
+            int builds = 0, window = Environment.CurrentManagedThreadId;
+            var threads = new ConcurrentBag<int>();
+            viewer.ShowMesh = false;
+            Drain(() => viewer.MeshText.StartsWith("Mesh:", StringComparison.Ordinal));
+            viewer.MeshWireframeBuilder = (_, _, _) => { Interlocked.Increment(ref builds); threads.Add(Environment.CurrentManagedThreadId); return []; };
+
+            viewer.ShowMesh = true;   // the same mesh, scene and theme
+            for (int k = 0; k < 20; k++) { while (_posts.TryDequeue(out var post)) post(); Thread.Sleep(1); }
+            Assert.Equal(0, builds);
+
+            // A mesh that changed on disk is built again, off this thread.
+            var setup = new EmSetup { Name = "P", Solver3D = Em3dSolverId.Palace };
+            File.AppendAllText(Path.Combine(Em3dRunService.RunDirectory(_root, setup, Em3dSolverId.Palace), GmshGeoWriter.MeshFile), "\n");
+            viewer.RefreshSolverOverlays();
+            Drain(() => builds > 0);
+            Assert.DoesNotContain(window, threads);
+        }
+    }
+
+    /// <summary>Mesh edges join nearby node numbers, and long's own hash XORs the two numbers, so they all collide. A boundary of
+    /// 430,000 triangles took 7.9 s to walk that way and takes 57 ms now.</summary>
+    [Fact]
+    public void MeshEdgeKeys_SpreadEdgesBetweenNearbyNodes()
+    {
+        var hashes = new HashSet<int>();
+        for (long a = 0; a < 20_000; a++)
+            for (long b = a + 1; b <= a + 5; b++)
+                hashes.Add(MeshOverlay.EdgeKeys.Instance.GetHashCode(a << 32 | b));
+        Assert.True(hashes.Count > 99_000, $"{hashes.Count} distinct hashes of 100,000 edges");
+    }
+
     /// <summary>The slider moves faster than a mesh is cut: each cut still finishes and shows mid-drag, and the next takes the plane as
     /// it then stands.</summary>
     [Fact]

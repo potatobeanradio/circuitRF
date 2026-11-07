@@ -880,11 +880,12 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         bool ctrl = (modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
 
-        // Typing a text owns the keyboard: Escape abandons it, Enter places it, Backspace edits it,
-        // and nothing else may act as a shortcut — characters arrive through OnTextInput.
+        // Typing a text owns the keyboard: Escape abandons it, Enter places it, Shift+Enter starts a new
+        // line, Backspace edits it, and nothing else may act as a shortcut — characters arrive through OnTextInput.
         if (_isTypingText)
         {
             if (key == Key.Escape)                     { _textBuffer = ""; SetSelectTool(); }
+            else if (key is Key.Enter or Key.Return && modifiers.HasFlag(KeyModifiers.Shift)) { _textBuffer += "\n"; RebuildOverlay(); }
             else if (key is Key.Enter or Key.Return)   CommitText();
             else if (key == Key.Back && _textBuffer.Length > 0) { _textBuffer = _textBuffer[..^1]; RebuildOverlay(); }
             return true;
@@ -1001,7 +1002,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(_textBuffer))
             Execute(new PlaceCanvasObjectCommand(EditModel, new EditableText
             {
-                Text     = _textBuffer,
+                Text     = _textBuffer.TrimEnd('\n'),
                 X        = _textAnchorX,
                 Y        = _textAnchorY,
                 FontSize = EditableText.DefaultFontSize,
@@ -1012,6 +1013,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         _textBuffer   = "";
         RebuildOverlay();
     }
+
+    /// <summary>The inline editor is on a canvas text, the one inline edit that holds several lines.</summary>
+    public bool IsCanvasTextInlineEditing => _inlineEditKind == InlineEditKind.CanvasText;
 
     /// <summary>Double-click on a text: open the inline editor on its content, at its box's top-left.</summary>
     public void BeginCanvasTextEdit(string textId, double screenX, double screenY)
@@ -5646,9 +5650,10 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
             case InlineEditKind.CanvasText:
             {
-                if (EditModel.FindCanvasObject(targetId ?? "") is not EditableText txt || txt.Text == newVal) break;
+                string written = newVal.Replace("\r\n", "\n").TrimEnd('\n');
+                if (EditModel.FindCanvasObject(targetId ?? "") is not EditableText txt || txt.Text == written) break;
                 Execute(new SetCanvasObjectPropertyCommand<string>(
-                    EditModel, txt, "Text", txt.Text, newVal, v => txt.Text = v));
+                    EditModel, txt, "Text", txt.Text, written, v => txt.Text = v));
                 break;
             }
             case InlineEditKind.WireNetLabel:

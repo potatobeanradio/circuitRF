@@ -119,7 +119,7 @@ the same documents.</p>
 <tbody>
 <tr>
 <td><code>run</code></td>
-<td><code>sparam</code>, <code>dc</code>, <code>hb</code>, <code>env</code>, <code>lp</code>, <code>lpp</code>, <code>em</code>, <code>opt</code> or a <code>yield</code> run (Monte Carlo, yield, corners, centering, DOE, sensitivity), chosen by <code>analysis</code></td>
+<td><code>sparam</code>, <code>dc</code>, <code>hb</code>, <a href="cli.html#env"><code>env</code></a>, <a href="cli.html#fields"><code>fields</code></a>, <code>lp</code>, <code>lpp</code>, <code>em</code>, <code>opt</code> or a <code>yield</code> run (Monte Carlo, yield, corners, centering, DOE, sensitivity), chosen by <code>analysis</code></td>
 </tr>
 <tr>
 <td><code>check</code></td>
@@ -155,7 +155,7 @@ the same documents.</p>
 </tr>
 <tr>
 <td><code>plot</code></td>
-<td><code>plot</code> — one picture from one result file. It takes <code>attachImage</code> too</td>
+<td><code>plot</code> — one picture from one result file, an antenna pattern (<code>type=polar radial=db</code>) and a power spectrum among them. It takes <code>attachImage</code> too</td>
 </tr>
 <tr>
 <td><code>find</code></td>
@@ -187,7 +187,7 @@ the same documents.</p>
 </tr>
 <tr>
 <td><code>solver</code></td>
-<td><a href="cli.html#solver"><code>solver list</code></a> — which 3D solvers are installed and what each build can do</td>
+<td><a href="cli.html#solver"><code>solver list</code></a> — which 3D solvers are installed and what each build can do, and this machine's cores and memory, which <code>run</code>'s <code>cores</code> is chosen against</td>
 </tr>
 <tr>
 <td><code>reference</code></td>

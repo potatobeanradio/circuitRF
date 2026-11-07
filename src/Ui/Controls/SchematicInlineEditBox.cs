@@ -1,6 +1,7 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using CircuitRF.Ui.Renderers;
@@ -40,6 +41,12 @@ public class SchematicInlineEditBox : TextBox
     /// The box's text left edge sits this far right of its <c>Margin.Left</c> — its own left padding.
     /// </summary>
     public const double LeftPad = 4.0;
+
+    /// <summary>What the box's width holds besides its text: the padding on both sides and the border.</summary>
+    private const double Chrome = 2 * LeftPad + 4.0;
+
+    private static readonly FontFamily PlexRegular =
+        new("avares://CircuitRF.Ui/Assets/Fonts/IBM_Plex_Sans/static/IBMPlexSans-Regular.ttf#IBM Plex Sans");
 
     /// <summary>The box's top padding, between <c>Margin.Top</c> and the text's own line box.</summary>
     public const double TopPad = 2.0;
@@ -89,8 +96,8 @@ public class SchematicInlineEditBox : TextBox
     {
         string measured = text ?? "";
         using var font = new SKFont(SkiaFonts.PlexRegular, (float)Math.Max(1.0, fontSize));
-        double textWidth = measured.Length == 0 ? 0 : font.MeasureText(measured);
-        return InlineEdit.WidthFromMeasuredText(textWidth, fontSize);
+        double textWidth = measured.Length == 0 ? 0 : SymbolGeometry.TextLines(measured).Max(l => font.MeasureText(l));
+        return InlineEdit.WidthFromMeasuredText(textWidth, fontSize) + Chrome;
     }
 
     /// <summary>
@@ -128,6 +135,11 @@ public class SchematicInlineEditBox : TextBox
         MinHeight = 0;
         HorizontalAlignment = HorizontalAlignment.Left;
         VerticalAlignment = VerticalAlignment.Top;
+        // The face WidthFor measures and the canvas draws labels in, so the box fits its text and lines up with what it replaces.
+        FontFamily = PlexRegular;
+        // Never a scrollbar: the box is sized to its text.
+        ScrollViewer.SetHorizontalScrollBarVisibility(this, ScrollBarVisibility.Hidden);
+        ScrollViewer.SetVerticalScrollBarVisibility(this, ScrollBarVisibility.Hidden);
     }
 
     /// <summary>Shows the box over one label and sizes it to the seeded text.</summary>

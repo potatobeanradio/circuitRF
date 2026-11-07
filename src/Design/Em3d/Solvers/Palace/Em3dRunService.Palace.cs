@@ -931,7 +931,7 @@ public static partial class Em3dRunService
     /// when the Cores setting is what sets the count (it is lower than the GPU count): a count derived from GPUs is
     /// not a core count, and two GPUs on a one-core machine are no reason to refuse.
     /// </summary>
-    internal static string? PalaceRankRefusal(PalaceDevice device, int? maxCores, PhysicalCoreReading cores, int? gpus)
+    public static string? PalaceRankRefusal(PalaceDevice device, int? maxCores, PhysicalCoreReading cores, int? gpus)
         => device == PalaceDevice.Cpu || maxCores is { } cap && cap < Math.Max(1, gpus ?? 1)
             ? RankRefusal(maxCores, cores)
             : null;

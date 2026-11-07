@@ -668,7 +668,7 @@ public partial class ProjectTreeView : UserControl
                 var cws = dropped.Path;
                 RunAfterDragCompletes(() =>
                 {
-                    ViewModels.WorkspaceViewModel.OpenDroppedWorkspace(cws);
+                    tool.OpenDroppedWorkspace(cws);
                     return Task.CompletedTask;
                 });
                 continue;

@@ -654,7 +654,7 @@ decision O2), never the floor. `explain` reports the ceiling and the floor a run
 **`--cores <n>`** is the headless spelling of Settings ▸ Solvers ▸ Cores for this run: it reaches `EmRunService.Run` as the
 same argument the GUI fills from `em_max_cores`, so one past this machine's physical cores gets the run's own refusal. Until
 it existed a run's memory refusal advised fewer processes and nothing headless could take that advice, since the preference
-file belongs to `src/Ui`. The MCP `run` tool spells it `cores`.
+file belongs to `src/Ui`. The MCP `run` tool spells it `cores`. `solver` reports the count it is chosen against as `result.machine`, and `explain --cores` / `em --dry-run --cores` report the processes a run would start, warning with the run's own refusal. Palace's memory estimate does not follow the count.
 
 **A 3D result carries its solver in its name** (em-3d.md §4.5), so running a second solver on one setup
 never overwrites the first: `<key>.palace.sNp`, the `.npy` key `<key>.palace_em`, and a run directory

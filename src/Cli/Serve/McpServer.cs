@@ -323,7 +323,14 @@ internal sealed class McpServer
                 "Modulated signals (ACLR/ACPR, AM-AM/AM-PM, two-carrier IMD): drive the circuit with a MOD_Source " +
                 "(MOD_Source:S1 in 0 Fc=2 GHz Pavg=10 dBm Carrier[1]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"; " +
                 "'reference components' lists its keys), add analysis ENV1 type=env Stop=200e-6 ('reference analyses " +
-                "type=env'), and run analysis=env. A minute or more, not seconds.\n" +
+                "type=env'), and run analysis=env. A minute or more, not seconds. An IProbe in series with a load records the power " +
+                "delivered through it; run with output=<f.npy>, then plot path=<f.npy> freqUnit=MHz trace=cube=PSD[\"Iout\",:],y=real " +
+                "for its power spectrum in dBm/Hz. 'reference simulations' lists every cube an envelope run records.\n" +
+                // The far field: without a pointer an agent never learns the analysis exists, or that a pattern needs radial=db.
+                "Far field: a 3D em setup with RadiationPattern true writes farfield.U and the antenna metrics. To put a matching network " +
+                "around it with no new EM run, set ComponentPorts, place its .cemr as an EM Field Data block, add analysis F1 type=fields " +
+                "block=EM1 freq=868 freqUnit=MHz drive=1 and run analysis=fields output=<f.npy>. Plot a pattern with plot type=polar " +
+                "radial=db dbUnit=dBi trace=cube=F1.farfield.U,cut=0,y=db10. 'reference cosimulation' has the workflow.\n" +
                 // brief-artsch-7 R-as7-7: a board's artwork as a circuit, in the order an agent uses it.
                 "Artwork to circuit: 1. recognize path=<.clay> -> the report and the parts table; writes nothing. " +
                 "2. recognize partsOut=<p.csv>, edit Kind/Value there, pass it back as parts=<p.csv>. 3. recognize " +

@@ -414,15 +414,27 @@
                               ToolTip.Tip="{Binding ViewModel.Viewer.MeshTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
                 </ToggleButton>
-                <!-- brief-dfr36-1 — the mesh's own plane, apart from the clip plane and every field plot's plane. -->
-                <Button IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}" ToolTip.ShowOnDisabled="True"
-                        ToolTip.Tip="Mesh plane: the tetrahedra on a plane of their own. The clip plane and the field plots' planes do not move it.">
+                <!-- brief-dfr36-1 — the mesh's own plane, apart from the clip plane and every field plot's plane. The toggle and its
+                     drop-down follow the Realistic toggle and its Look panel: the panel has a close button and the viewport keeps
+                     taking the pointer and the wheel while it is open (code-behind: OverlayInputPassThroughElement), so the view can be
+                     panned and orbited with the slider still there. Opening it turns the plane on, as opening Look turns that view on. -->
+                <ToggleButton IsChecked="{Binding ViewModel.Viewer.MeshPlaneEnabled}" IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}" ToolTip.ShowOnDisabled="True"
+                              ToolTip.Tip="Mesh plane: the tetrahedra on a plane of their own. The clip plane and the field plots' planes do not move it.">
                     <mi:MaterialIcon Kind="VectorSquare" Width="16" Height="16"/>
+                </ToggleButton>
+                <Button x:Name="MeshPlaneButton" Padding="1,4" Margin="-3,0,0,0" IsEnabled="{Binding ViewModel.Viewer.CanShowMesh}" ToolTip.ShowOnDisabled="True"
+                        ToolTip.Tip="Where the mesh plane stands: its axis, its side and a slider. Stays open while you pan and orbit. Opening it turns the plane on.">
+                    <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
                     <Button.Flyout>
-                        <Flyout Placement="BottomEdgeAlignedLeft">
+                        <Flyout Placement="BottomEdgeAlignedRight" Opened="OnMeshPlaneOpened">
                             <StackPanel Spacing="6" MinWidth="220">
-                                <CheckBox Content="Show the tetrahedra on a plane" IsChecked="{Binding ViewModel.Viewer.MeshPlaneEnabled}"
-                                          ToolTip.Tip="With the mesh on, the tetrahedra this plane cuts. It also cuts the solids so they can be seen, unless the clip plane is on, which then does the cutting."/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="Mesh plane" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Padding="2" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0"
+                                            VerticalAlignment="Center" Click="OnMeshPlaneClose" ToolTip.Tip="Close this panel; the plane stays as it is">
+                                        <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <ComboBox ItemsSource="{Binding ViewModel.Viewer.MeshPlaneAxes}" SelectedItem="{Binding ViewModel.Viewer.MeshPlaneAxis}"
                                               IsEnabled="{Binding ViewModel.Viewer.MeshPlaneEnabled}" MinWidth="70"
