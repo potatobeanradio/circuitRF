@@ -2223,6 +2223,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowComponentPorts));
         OnPropertyChanged(nameof(ComponentPortsTip));
         RefreshComponentParts();
+        // brief-lcp-4 R-lcp4-4 — and the marks the layout draws, once the layout and the setup have settled, off this thread.
+        ScheduleComponentPortMarks();
         // brief-dfr35-1 R-dfr35-1-7 — off this thread, once this refresh has set the warnings it joins.
         if (_geometryCheckSource is { } checkedSource) GeometryCheck = RefreshGeometryCheckAsync(checkedSource);
     }

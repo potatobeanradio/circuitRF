@@ -1190,3 +1190,36 @@ calls as well: added beside `*` when the part has no entry, dropped again when i
 from the listing, so the planar rows are rebuilt once when it arrives.
 
 Gate: `tests/Ui.Tests/Em/CemComponentPortsPanelTests.cs` (6 tests, ~0.25 s, on LCP-1's board, no solve).
+
+## Component ports drawn on the layout (brief LCP-4, 2026-11-07)
+
+**The marks are pushed, like the mesh, and the layout decides nothing.** `EmSetupEditorViewModel.ScheduleComponentPortMarks` (called
+at the end of every `Refresh`) waits `ComponentPortMarksSettle` (400 ms), then builds through `LayoutComponentPortsHost.PrepareMarks`:
+`EmPlanarComponentPorts.Build` on a serialized copy, on the pool, the builder the run calls. A key of the layout's identity and
+`EditCount` plus the list, levels, region and kind skips a rebuild when a panel commit changed nothing they depend on. The workspace
+(`WorkspaceViewModel.ComponentPortMarks.cs`) keeps one owner `.cem` per open layout: the most recently activated, or the first to
+build when none is. Closing the owner clears the layout's marks and cancels anything still in flight.
+
+**A build copied before an edit must not land after it.** The edit clears the marks at once (`Model.Changed`), but the build's
+continuation and the workspace's Background-priority refresh race. So `LayoutView.EditCount` (incremented in `NotifyChanged`) is
+recorded at the copy, and `LayoutEditorViewModel.ShowComponentPortMarks` refuses a non-empty list whose count is not the model's. A
+drag edits nothing until it is dropped, so nothing is built during one; the marks are also hidden while any drag override is drawn.
+
+**A delta gap's marker needs the conductor under it, and under a component port's gap there is air.** `DrawPortMarker` measures
+the width across the conductor at the label (`GapHint`), and the strip is not in the layout. `DrawPortGlyphs` therefore takes the
+marks as extra ports (negative indices, which no shape has) with a lookup that answers each strip at its own point
+(`StripConductorLookup`). Their names are placed with the drawn ports' names, so none overlaps. A negative index never reaches
+`PortNamesNotInFull`; the mark has its own hover line.
+
+**A press on a mark has to pick the part itself.** Instance hit-testing walks the cell's geometry, and a two-pad footprint has none
+in its gap, so a press on the mark found nothing and started a marquee. `BuildPickStack` adds the part (by `DisplayRefDes`) as the
+top instance pick when the press is on a mark's strip. Removing that line fails the gate's press test.
+
+**The read-only cue is a dash.** The brackets are the delta-gap glyph, dashed (`ComponentPortDashDevicePixels`), so the glyph keeps
+its meaning while reading as different from a drawn port. Judged from a UiSnapshot of an axis-aligned, a rotated and a three-pad
+part (`--clay … --component-ports <cem>`).
+
+**A 3D `.cem` draws none yet.** `PrepareMarks` returns an empty list while `EmComponentPorts.Inapplicable` refuses a 3D setup on a
+layout; LCP-5's R-lcp5-7 supplies them.
+
+Gate: `tests/Ui.Tests/Em/LayoutComponentPortMarksTests.cs` (3 tests, ~0.3 s, LCP-1's board, no solve).

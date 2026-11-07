@@ -41,6 +41,11 @@ schematic's reference to the result survives a re-run.
 **R-lcp5-6 — Reachable from what exists.** The CLI refusal from LCP-2 and `ComponentPortsOnLayoutRefusal` both go. A setup's 3D port
 table (`Ports3D`) applies to its drawn ports as today, not to component ports.
 
+**R-lcp5-7 — Marks on the layout.** LCP-4 draws a `.cem`'s component ports on its layout from
+`LayoutComponentPortsHost.PrepareMarks`, which builds none for a 3D `.cem` while `Inapplicable` refuses it. Once the ports build, it
+returns a `LayoutComponentPortMark` per port whose gap point and direction are the sheet's, so a 3D `.cem` draws the same marker a
+Planar one does.
+
 ## Gates
 
 **No Palace.** Assert the assembled problem, which needs no mesh:

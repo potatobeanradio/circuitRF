@@ -8346,6 +8346,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // R-em-15/17: the mesh "renders automatically in the layout view" (D2), and is dropped
             // there the moment the setup's own state says it is no longer current.
             vm.AnalysisRefreshed += () => PushEmMeshToLayout(vm);
+            // brief-lcp-4 R-lcp4-1 — and its component ports, once built (WorkspaceViewModel.ComponentPortMarks.cs).
+            vm.ComponentPortMarksChanged += () => PushComponentPortMarks(vm);
             // Solve region ▸ Draw on layout… — the drag happens on the layout's own canvas.
             vm.DrawSolveRegionRequested = () => ArmEmSolveRegionPick(vm);
             vm.Refresh();
@@ -17099,6 +17101,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Designer round 32 — back on a 3D design after saving its layout: the scene follows even if the watcher missed the save.
         if (activeDockable is ThreeD.C3dEditorDocument c3dDoc) c3dDoc.ViewModel.RecheckInputs();
 
+        // brief-lcp-4 R-lcp4-1 — the most recently active .cem's component ports are the ones its layout draws.
+        if (activeDockable is EmSetupDocument activeCem) ClaimComponentPortMarks(activeCem.ViewModel);
+        if (activeDockable is LayoutDocument activeLayout) RefreshComponentPortMarksFor(activeLayout);
+
         // The activated editor view should grab keyboard focus so shortcuts (Select All, nudges, …)
         // work without a preliminary click on the canvas. The view focuses its canvas on the event, or
         // — if it binds after this fires (first open) — by consuming the pending flag on DataContext change.
@@ -17944,6 +17950,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         };
         if (closedFilePath is not null)
             _factory.ProjectTreeTool?.SetFileDirty(closedFilePath, false);
+        // brief-lcp-4 R-lcp4-1 — a closed .cem's component ports leave its layout.
+        if (dockable is EmSetupDocument closedCem) ReleaseComponentPortMarks(closedCem.ViewModel);
         if (dockable is LayoutDocument scratchLayout)
             _scratchLayouts.Remove(scratchLayout);
         if (dockable is WBondDocument scratchWBond)

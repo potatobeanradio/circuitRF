@@ -156,6 +156,57 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// there is nothing here to compute and nothing for a user to move.</summary>
     [ObservableProperty] private IReadOnlyList<Engine.Mom.PlanarPortResolution> _planarReferencePlanes = [];
 
+    /// <summary>brief-lcp-4 R-lcp4-1 — the component ports the most recently active <c>.cem</c> on this layout built, drawn
+    /// with the ports. The layout holds no opinion about them: they are pushed (<see cref="ShowComponentPortMarks"/>), cleared
+    /// by an edit (R-lcp4-4, R-em-17) and by closing that <c>.cem</c>, never hit-tested, never written.</summary>
+    [ObservableProperty] private IReadOnlyList<LayoutComponentPortMark> _componentPortMarks = [];
+
+    /// <summary>The <c>.cem</c> whose marks are shown (its file name, for the hover), or null when none are.</summary>
+    public string? ComponentPortMarksSetup { get; private set; }
+
+    /// <summary>
+    /// brief-lcp-4 — shows <paramref name="marks"/>, built from a copy of this layout taken at <paramref name="atEditCount"/>
+    /// (<see cref="LayoutView.EditCount"/>). Refused, returning false, when the layout has been edited since: the marks would
+    /// be about artwork that has moved, and the edit already cleared the last ones. Empty clears.
+    /// </summary>
+    public bool ShowComponentPortMarks(string? setup, IReadOnlyList<LayoutComponentPortMark> marks, long atEditCount)
+    {
+        if (atEditCount != Model.EditCount) return false;
+        ComponentPortMarksSetup = marks.Count == 0 ? null : setup;
+        ComponentPortMarks = marks;
+        return true;
+    }
+
+    /// <summary>brief-lcp-4 R-lcp4-3 — the placed part whose component port's mark is under the press, or null.</summary>
+    private int? ComponentPartAt(long x, long y, long tolDbu)
+    {
+        if (ComponentPortMarks.Count == 0 || !PortsVisible) return null;
+        long tol = Math.Max(tolDbu, 0);
+        foreach (var m in ComponentPortMarks)
+        {
+            var bb = m.Region;
+            if (x < bb.MinX - tol || x > bb.MaxX + tol || y < bb.MinY - tol || y > bb.MaxY + tol) continue;
+            for (int i = 0; i < Model.Instances.Count; i++)
+                if (string.Equals(Model.Instances[i].DisplayRefDes, m.Refdes, StringComparison.OrdinalIgnoreCase))
+                    return i;
+        }
+        return null;
+    }
+
+    /// <summary>The hover line for the component port under (<paramref name="wx"/>, <paramref name="wy"/>), or null.</summary>
+    internal string? ComponentPortTipAt(double wx, double wy, long tolDbu)
+    {
+        if (ComponentPortMarks.Count == 0 || !PortsVisible) return null;
+        long x = (long)Math.Round(wx), y = (long)Math.Round(wy), tol = Math.Max(tolDbu, 0);
+        foreach (var m in ComponentPortMarks)
+        {
+            var bb = m.Region;
+            if (x >= bb.MinX - tol && x <= bb.MaxX + tol && y >= bb.MinY - tol && y <= bb.MaxY + tol)
+                return m.HoverText(ComponentPortMarksSetup);
+        }
+        return null;
+    }
+
     // ── Technology (L0c) ───────────────────────────────────────────────────────
 
     /// <summary>The resolved technology, or null when unresolved (missing/corrupt/no default) —
@@ -539,6 +590,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             PlanarMeshReport = null;
             PlanarCurrentDensity  = null;
             PlanarReferencePlanes = [];
+            // brief-lcp-4 R-lcp4-4 — and the component ports: they sit on the parts, and an edit may have moved one. The .cem
+            // builds them again once the edit settles; until then none is drawn over artwork it no longer describes.
+            ComponentPortMarks = [];
 
             // ── THE PORT TYPES ARE NOT MESH, AND THERE IS NOTHING LEFT TO INVALIDATE ─────────
             //
@@ -1765,6 +1819,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (!(i >= 0 && i < Model.Shapes.Count && Model.Shapes[i] is LabelShape { IsPort: true }))
                 artwork.Add(i);
         var instances = LayoutHitTest.HitInstanceStack(Model, DrawTechnology, InstanceBaseDir, px, py, tolDbu);
+
+        // brief-lcp-4 R-lcp4-3 — a component port's mark is not a pick: a press on it picks its PART, which is what moves it,
+        // ranked where a port would be. A two-pad footprint has no artwork in its gap, so the part is added here when the
+        // instance walk missed it.
+        if (ComponentPartAt(px, py, tolDbu) is int part)
+        {
+            picks.Add(new LayoutPick(LayoutPickKind.Instance, part));
+            instances = [.. instances.Where(i => i != part)];
+        }
         var before = new Dictionary<int, List<int>>();   // artwork position -> instances ranked above it
         var after = new List<int>();
         foreach (int inst in instances)

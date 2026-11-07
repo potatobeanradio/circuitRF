@@ -159,6 +159,7 @@ bool unsavedSetupDialog = false;     // the question New 3D View from Layout ask
 bool settingsGeneral = false;
 bool settingsSolvers = false;
 bool reviewRun = false;
+string? componentPortsCem = null;   // brief-lcp-4: --clay with a .cem's component ports drawn as the open .cem pushes them
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
@@ -284,6 +285,7 @@ for (int i = 0; i < args.Length; i++)
         case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
+        case "--component-ports" when i + 1 < args.Length: componentPortsCem = Path.GetFullPath(args[++i]); break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--layer-list": layerList = true; break;
@@ -695,6 +697,23 @@ else if (clay is not null)
         Await(run);
         if (run.Result is { } review)
             foreach (var f in review.Findings) Console.WriteLine($"{f.CheckId} {f.LayerName}: {f.Sentence}");
+    }
+    if (componentPortsCem is not null)
+    {
+        // brief-lcp-4: the .cem builds its component ports on this editor's model and pushes them, as the workspace does.
+        var cemVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(componentPortsCem, CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(componentPortsCem))
+        {
+            ResolveLayout = _ => new CircuitRF.Design.Layout.Em.EmLayoutSource(clay, layoutVm.Model, layoutVm.Technology, layoutVm.Model.DbuPerMicron),
+            ComponentPortMarksSettle = TimeSpan.Zero,
+        };
+        cemVm.Refresh();
+        Await(cemVm.ComponentPortMarksBuilding);
+        layoutVm.ShowComponentPortMarks(Path.GetFileName(componentPortsCem), cemVm.ComponentPortMarks, cemVm.ComponentPortMarksEditCount);
+        foreach (var m in cemVm.ComponentPortMarks)
+            Console.WriteLine($"mark {m.Text} {m.Name}: gap at ({m.Gap.X}, {m.Gap.Y}) {m.Gap.PortDirection}, strip {m.Strip.X1},{m.Strip.Y1}..{m.Strip.X2},{m.Strip.Y2}");
+        foreach (var n in cemVm.Warnings.Concat(cemVm.Notes).Where(n => n.Contains("component port", StringComparison.OrdinalIgnoreCase) || n.Contains("left out", StringComparison.OrdinalIgnoreCase)))
+            Console.WriteLine($"note {n}");
+        Pump();
     }
 }
 else if (image is not null)

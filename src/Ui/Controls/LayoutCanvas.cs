@@ -571,6 +571,8 @@ public sealed class LayoutCanvas : Control
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
             PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,
             PlanarPorts = _viewModel?.PlanarReferencePlanes ?? [],
+            // brief-lcp-4 — the open .cem's component ports. Set here and nowhere else: no render or export carries them.
+            ComponentPortMarks = _viewModel?.ComponentPortMarks,
             EmSolveRegion = _viewModel?.EmSolveRegionOutline,
             // SL3 R-sl3-9 — chrome for an instance whose cell's interface changed. Read from the VM's
             // last scan, never computed here: a hash reads the cell's .ccell from disk.
@@ -2015,6 +2017,8 @@ public sealed class LayoutCanvas : Control
         string? tip = !buttonDown && _portNamesNotInFull.Count > 0
             ? _viewModel?.PortNameTipAt(wx, wy, HitTolDbu(), _portNamesNotInFull)
             : null;
+        // brief-lcp-4 R-lcp4-3 — a component port names itself and its part on hover; it is not a label to pick up.
+        if (tip is null && !buttonDown) tip = _viewModel?.ComponentPortTipAt(wx, wy, HitTolDbu());
         if (tip == _portNameTip) return;
         _portNameTip = tip;
         ToolTip.SetTip(this, tip);

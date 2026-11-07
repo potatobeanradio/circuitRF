@@ -52,7 +52,20 @@ public interface IEmComponentPortsHost
 
     /// <summary>Posts one line to Messages; <paramref name="warning"/> marks it as one.</summary>
     void Post(string text, bool warning);
+
+    /// <summary>brief-lcp-4 — on the UI thread: captures what the layout's component-port marks are built from; the job's
+    /// <see cref="EmComponentPortMarksJob.Build"/> runs off it. Null when this container draws its ports itself (a 3D view
+    /// does, in 3D) or the layout has not resolved.</summary>
+    EmComponentPortMarksJob? PrepareMarks(EmSetup setup);
 }
+
+/// <summary>brief-lcp-4 — one build of the marks a layout draws for a setup's component ports.</summary>
+/// <param name="View">The layout the marks are about: the open editor's own model when it is open.</param>
+/// <param name="EditCount">That layout's <see cref="LayoutView.EditCount"/> when it was copied: marks built from an older copy
+/// are dropped.</param>
+/// <param name="Build">Builds the ports on the copy, as a run would, and returns the built ones; refused parts are not drawn
+/// (R-lcp4-5).</param>
+public sealed record EmComponentPortMarksJob(LayoutView View, long EditCount, Func<IReadOnlyList<LayoutComponentPortMark>> Build);
 
 /// <summary>brief-emb-1 — a 3D view's embedded setup: its document, path and workspace, and the elaboration the view holds.</summary>
 public sealed class C3dComponentPortsHost(Func<C3dDocument> document, Func<string> path, Func<string?> workspace,
@@ -93,6 +106,9 @@ public sealed class C3dComponentPortsHost(Func<C3dDocument> document, Func<strin
     }
 
     public void Post(string text, bool warning) => post?.Invoke(text, warning);
+
+    /// <summary>A 3D view draws its component ports in its own scene.</summary>
+    public EmComponentPortMarksJob? PrepareMarks(EmSetup setup) => null;
 }
 
 /// <summary>brief-lcp-3 — a layout's <c>.cem</c>: the layout the panel resolved at its last refresh.</summary>
@@ -141,6 +157,25 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
     }
 
     public void Post(string text, bool warning) => post()?.Invoke(text, warning);
+
+    /// <summary>brief-lcp-4 — the marks: <see cref="EmPlanarComponentPorts.Build"/> on a serialized copy, the builder a run
+    /// calls, so a mark sits where the run's port is. A setup that cannot take component ports on a layout (thermal,
+    /// electrostatic, a 3D <c>.cem</c> until LCP-5) builds none.</summary>
+    public EmComponentPortMarksJob? PrepareMarks(EmSetup setup)
+    {
+        if (source() is not { } s) return null;
+        if (setup.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(setup, onThreeDView: false) is not null)
+            return new(s.View, s.View.EditCount, () => []);
+        long at = s.View.EditCount;
+        string text = LayoutPersistence.Serialize(s.View);
+        var copy = setup.Clone();
+        return new(s.View, at, () =>
+        {
+            var build = EmPlanarComponentPorts.Build(copy, s with { View = LayoutPersistence.Deserialize(text) });
+            return build is null ? []
+                : [.. build.Ports.Where(p => p.Ok).Select(p => new LayoutComponentPortMark(p.Number, p.Name, p.Refdes, p.Gap!, p.Strip!))];
+        });
+    }
 
     /// <summary>A built port's line in Messages. LCP-0 D5: the panel says "component port"; only explain and the docs name the
     /// construction, so this is not <see cref="EmPlanarComponentPorts.Describe"/>.</summary>

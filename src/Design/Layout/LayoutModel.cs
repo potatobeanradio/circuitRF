@@ -1428,7 +1428,13 @@ public sealed class LayoutView
                 SpatialIndex.Apply(Shapes, info);
                 if (info.Kind == LayoutChangeKind.Full) SpatialIndex.MarkInstancesDirty();
             }
+            EditCount++;
             Changed?.Invoke(this, info);
         }
     }
+
+    /// <summary>brief-lcp-4 R-lcp4-4 — how many times <see cref="NotifyChanged"/> has run. Something built off the UI thread
+    /// from a copy of this view records the count it copied at, and is dropped when the count has moved since: work started
+    /// before an edit must not land over the edited artwork.</summary>
+    public long EditCount { get; private set; }
 }

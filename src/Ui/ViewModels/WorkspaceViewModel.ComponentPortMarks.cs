@@ -1,0 +1,94 @@
+// brief-lcp-4 — a .cem's component ports, drawn on the open layout it analyses.
+//
+// R-lcp4-1: the .cem pushes; the layout holds no opinion. One .cem's marks show on a layout at a time — the most recently
+// active one on it (its "owner" here). A .cem that has never been active on a layout with no owner takes it when its marks
+// are built, so opening one .cem beside its layout shows its marks without a click. Closing the owner clears them.
+//
+// R-lcp4-4: the marks are cleared by the layout's own edit (LayoutEditorViewModel's Model.Changed) and come back when the
+// .cem's debounced build lands. A build copied before an edit is refused at the layout (LayoutView.EditCount), so it never
+// lands over the edit.
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Avalonia.Threading;
+using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Em;
+
+namespace CircuitRF.Ui.ViewModels;
+
+public partial class WorkspaceViewModel
+{
+    /// <summary>Per open layout (absolute path): the <c>.cem</c> (absolute path) whose component ports it shows.</summary>
+    private readonly Dictionary<string, string> _componentPortMarksOwner = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The open layout editor <paramref name="vm"/> analyses, and that layout's path; null when it is not open.</summary>
+    private (LayoutEditorViewModel Layout, string Path)? OpenLayoutOfEmSetup(EmSetupEditorViewModel vm)
+    {
+        if (vm.IsEmbedded || vm.Working.LayoutRef is not { Length: > 0 } layoutRef
+            || ResolveEmLayoutPath(vm.FilePath, layoutRef) is not { } target)
+            return null;
+        foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+            if (open.FilePath is { } fp && string.Equals(Path.GetFullPath(fp), target, StringComparison.OrdinalIgnoreCase))
+                return (open.ViewModel, target);
+        return null;
+    }
+
+    private bool IsOpenEmSetup(EmSetupEditorViewModel vm)
+        => _openDocsByPath.Values.OfType<EmSetupDocument>().Any(d => ReferenceEquals(d.ViewModel, vm));
+
+    /// <summary>The <c>.cem</c> built its marks: they show when it owns its layout, or nothing does.</summary>
+    private void PushComponentPortMarks(EmSetupEditorViewModel vm)
+    {
+        if (!IsOpenEmSetup(vm) || OpenLayoutOfEmSetup(vm) is not var (layout, path)) return;
+        if (_componentPortMarksOwner.TryGetValue(path, out var owner)
+            && !string.Equals(owner, vm.FilePath, StringComparison.OrdinalIgnoreCase))
+            return;
+        _componentPortMarksOwner[path] = vm.FilePath;
+        // Built from another copy of the layout (the .cem resolved it before the editor opened): build again from the editor's.
+        if (vm.ComponentPortMarks.Count > 0 && !ReferenceEquals(vm.ComponentPortMarksView, layout.Model)) return;
+        layout.ShowComponentPortMarks(Path.GetFileName(vm.FilePath), vm.ComponentPortMarks, vm.ComponentPortMarksEditCount);
+    }
+
+    /// <summary>A <c>.cem</c> became the active document: its marks replace any other setup's on its layout.</summary>
+    private void ClaimComponentPortMarks(EmSetupEditorViewModel vm)
+    {
+        if (OpenLayoutOfEmSetup(vm) is not var (layout, path)) return;
+        _componentPortMarksOwner[path] = vm.FilePath;
+        if (!ReferenceEquals(vm.ComponentSourceView, layout.Model))
+        {
+            // The .cem read the layout from disk before the editor was open; it reads the editor's now, and its build pushes.
+            Dispatcher.UIThread.Post(vm.Refresh, DispatcherPriority.Background);
+            layout.ShowComponentPortMarks(null, [], layout.Model.EditCount);
+            return;
+        }
+        PushComponentPortMarks(vm);
+    }
+
+    /// <summary>A layout became the active document: a <c>.cem</c> on it that read the layout before the editor opened reads
+    /// the editor's model now, so its marks have somewhere to go.</summary>
+    private void RefreshComponentPortMarksFor(LayoutDocument layoutDoc)
+    {
+        foreach (var cem in _openDocsByPath.Values.OfType<EmSetupDocument>().ToList())
+            if (cem.ViewModel.Working.ComponentPorts.Count > 0
+                && OpenLayoutOfEmSetup(cem.ViewModel) is var (layout, _)
+                && ReferenceEquals(layout, layoutDoc.ViewModel)
+                && !ReferenceEquals(cem.ViewModel.ComponentSourceView, layout.Model))
+                Dispatcher.UIThread.Post(cem.ViewModel.Refresh, DispatcherPriority.Background);
+    }
+
+    /// <summary>A <c>.cem</c> closed: nothing it built may land, and its marks leave its layout (R-lcp4-1).</summary>
+    private void ReleaseComponentPortMarks(EmSetupEditorViewModel vm)
+    {
+        vm.CancelComponentPortMarks();
+        foreach (var (path, owner) in _componentPortMarksOwner.ToList())
+        {
+            if (!string.Equals(owner, vm.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            _componentPortMarksOwner.Remove(path);
+            foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+                if (open.FilePath is { } fp && string.Equals(Path.GetFullPath(fp), path, StringComparison.OrdinalIgnoreCase))
+                    open.ViewModel.ShowComponentPortMarks(null, [], open.ViewModel.Model.EditCount);
+        }
+    }
+}

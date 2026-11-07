@@ -263,6 +263,11 @@ public readonly struct LayoutRenderOptions
     /// is a readonly struct, which may not carry field initialisers.)</summary>
     public IReadOnlyList<PlanarPortResolution>? PlanarPorts { get; init; }
 
+    /// <summary>brief-lcp-4 — the component ports the open <c>.cem</c> built on this layout, drawn with the ports and hidden
+    /// with them. Null or empty draws none, and only the interactive canvas sets it: they are not in the layout, so no
+    /// render, picture or export ever carries one (R-lcp4-6).</summary>
+    public IReadOnlyList<LayoutComponentPortMark>? ComponentPortMarks { get; init; }
+
     /// <summary>
     /// L5b export (owner request: "copy/paste the DRC markers, just like the mesh"). Copies
     /// <see cref="ShowPlanarMesh"/>'s own contract: false by default, so every export/one-shot render
@@ -1041,9 +1046,12 @@ public static partial class LayoutRenderer
                 if (designators.Count > 0)
                     DrawDesignators(canvas, designators, opts, ps, scaleUm, counters, tech);
 
-                if (deferredPorts.Count > 0 && !opts.HidePorts)
+                // brief-lcp-4 — the open .cem's component ports join the frame's ports, so their names are placed among
+                // the drawn ports' names and none sits over another.
+                var componentMarks = ComponentPortGlyphs(opts, layerMap, theme);
+                if ((deferredPorts.Count > 0 || componentMarks is not null) && !opts.HidePorts)
                     DrawPortGlyphs(canvas, deferredPorts, conductorAt, ps, scaleUm, opts, counters,
-                                   view.DbuPerMicron, tech);
+                                   view.DbuPerMicron, tech, componentMarks);
 
                 // brief-ipx-1 R-ipx1-2: the Nets panel's nets, above the artwork and below the selection, so what Select
                 // shapes selects still reads as selected on top of them.
@@ -3379,7 +3387,7 @@ public static partial class LayoutRenderer
     private static void DrawInternalGapMarker(SKCanvas canvas, LabelShape label,
         LayoutPortDirection.PortHint hint, PathSpace ps, double scaleUm,
         SKColor layerColor, SKColor background, LayoutFrameCounters counters,
-        (double Cut, double Back, double Fwd)? meshHalfWidth = null)
+        (double Cut, double Back, double Fwd)? meshHalfWidth = null, bool readOnly = false)
     {
         var color = TintForContrast(layerColor, background, PortMarkerContrastTintAmount);
 
@@ -3420,6 +3428,12 @@ public static partial class LayoutRenderer
             StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels),
             StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round,
             Color = color.WithAlpha(255),
+            // brief-lcp-4 R-lcp4-2 — a component port's brackets are dotted: the one difference from a drawn gap port, so it
+            // does not read as a label that can be picked up. It is the setup's, and the part is what moves it.
+            PathEffect = readOnly
+                ? SKPathEffect.CreateDash([DevicePixelsToPathSpace(scaleUm, ComponentPortDashDevicePixels),
+                                           DevicePixelsToPathSpace(scaleUm, ComponentPortDashDevicePixels)], 0)
+                : null,
         };
         using var path = new SKPath();
 
@@ -3476,6 +3490,43 @@ public static partial class LayoutRenderer
             counters.DrawCalls++;
         }
     }
+
+    /// <summary>brief-lcp-4 — the dash of a component port's brackets, in device pixels.</summary>
+    internal const float ComponentPortDashDevicePixels = 3f;
+
+    /// <summary>brief-lcp-4 — the component ports to draw, each with its conductor layer's drawn colour; null when there are
+    /// none, or when a drag is under way: a mark over artwork being moved would be about where the part was.</summary>
+    private static List<(LayoutComponentPortMark Mark, SKColor Color)>? ComponentPortGlyphs(
+        LayoutRenderOptions opts, Dictionary<LayerKey, LayerDef>? layerMap, LayoutRenderTheme theme)
+    {
+        if (opts.ComponentPortMarks is not { Count: > 0 } marks) return null;
+        if (opts.Overlay is { } o && (o.DragOverrides.Count > 0 || o.InstanceDragOverrides.Count > 0)) return null;
+        var list = new List<(LayoutComponentPortMark, SKColor)>(marks.Count);
+        foreach (var m in marks)
+        {
+            var color = layerMap is not null && layerMap.TryGetValue(m.Gap.Layer, out var def)
+                ? new SKColor(def.Color.R, def.Color.G, def.Color.B)
+                : theme.RulerAnnotationLine;
+            list.Add((m, color));
+        }
+        return list;
+    }
+
+    /// <summary>brief-lcp-4 — a conductor lookup that also answers each mark's strip, inside the strip and on its layer. The
+    /// strip is in the solved problem, not the layout, so the frame's own lookup would find air at the cut.</summary>
+    private static LayoutPortDirection.ConductorLookup StripConductorLookup(
+        IReadOnlyList<(LayoutComponentPortMark Mark, SKColor Color)> marks, LayoutPortDirection.ConductorLookup? inner)
+        => (x, y, onLayer) =>
+        {
+            foreach (var (m, _) in marks)
+            {
+                var s = m.Strip;
+                if ((onLayer is null || onLayer == s.Layer)
+                    && x >= Math.Min(s.X1, s.X2) && x <= Math.Max(s.X1, s.X2) && y >= Math.Min(s.Y1, s.Y2) && y <= Math.Max(s.Y1, s.Y2))
+                    return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(s), null, s);
+            }
+            return inner?.Invoke(x, y, onLayer);
+        };
 
     /// <summary>One port met by the layer loop, held back for <see cref="DrawPortGlyphs"/>. The
     /// colour is its LAYER's, unmodified — the contrast tint is applied once, inside the marker, and
@@ -3548,16 +3599,40 @@ public static partial class LayoutRenderer
     /// </summary>
     private static void DrawPortGlyphs(SKCanvas canvas, List<DeferredPort> ports,
         LayoutPortDirection.ConductorLookup? conductorAt, PathSpace ps, double scaleUm,
-        LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron, Technology? tech = null)
+        LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron, Technology? tech = null,
+        IReadOnlyList<(LayoutComponentPortMark Mark, SKColor Color)>? componentMarks = null)
     {
+        // brief-lcp-4 R-lcp4-2 — a component port is one more port in this pass, drawn as a delta gap is, on the strip the
+        // run adds: the strip is not in the layout, so the lookup answers it at the mark's own point and nowhere else. Its
+        // index is negative, which no shape has, and it is read-only (see DrawInternalGapMarker).
+        HashSet<int>? readOnly = null;
+        var markConductorAt = conductorAt;
+        if (componentMarks is { Count: > 0 })
+        {
+            ports = [.. ports];
+            readOnly = [];
+            double devicePxPerDbu = scaleUm * ps.DbuToUm;
+            for (int i = 0; i < componentMarks.Count; i++)
+            {
+                var (mark, color) = componentMarks[i];
+                var label = LayoutGeometry.Clone(mark.Gap) as LabelShape ?? mark.Gap;
+                label.Text = mark.Text;
+                ports.Add(new DeferredPort(-1 - i, DisplayLabel(label, devicePxPerDbu), color));
+                readOnly.Add(-1 - i);
+            }
+            markConductorAt = StripConductorLookup(componentMarks, conductorAt);
+        }
+
         // brief-dfr32-2 R-dfr32-2-4/5 — every name at a fixed screen size beside its mark, none over another
         // (LayoutRenderer.PortNames). The knockout, the names and their leaders are all this one placement.
         var colorOf = new Dictionary<int, SKColor>();
         foreach (var (index, _, layerColor) in ports) colorOf[index] = layerColor;
         var omitted = new List<int>();
-        var names = PlacePortNames(ports.Select(p => (p.Index, p.Label)), conductorAt, ps.DbuToUm * scaleUm, tech,
+        var names = PlacePortNames(ports.Select(p => (p.Index, p.Label)), markConductorAt, ps.DbuToUm * scaleUm, tech,
                                    dbuPerMicron, omitted);
         foreach (var name in names) if (name.Shortened) omitted.Add(name.Index);
+        // A component port's name is not a shape's: the hover over it is the mark's own (LayoutComponentPortMark.HoverText).
+        omitted.RemoveAll(i => i < 0);
         if (omitted.Count > 0) (counters.PortNamesNotInFull ??= []).AddRange(omitted);
 
         using var knockout = new SKPath();
@@ -3574,9 +3649,10 @@ public static partial class LayoutRenderer
             using var exclusion = ExclusionOf(knockout, canvas);
             canvas.ClipPath(exclusion, SKClipOperation.Intersect, antialias: true);
         }
-        foreach (var (_, label, layerColor) in ports)
-            DrawPortMarker(canvas, label, conductorAt, ps, scaleUm, layerColor,
-                           opts.Theme.Background, counters, opts.PlanarMesh, dbuPerMicron, tech);
+        foreach (var (index, label, layerColor) in ports)
+            DrawPortMarker(canvas, label, index < 0 ? markConductorAt : conductorAt, ps, scaleUm, layerColor,
+                           opts.Theme.Background, counters, opts.PlanarMesh, dbuPerMicron, tech,
+                           readOnly: readOnly?.Contains(index) == true);
         foreach (var name in names)
         {
             if (name.Leader is not { } l) continue;
@@ -3713,7 +3789,8 @@ public static partial class LayoutRenderer
         LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, double scaleUm, SKColor layerColor, SKColor background,
         LayoutFrameCounters counters,
-        PlanarMeshReport? mesh = null, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, Technology? tech = null)
+        PlanarMeshReport? mesh = null, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, Technology? tech = null,
+        bool readOnly = false)
     {
         if (LayoutPortDirection.Resolve(conductorAt, label) is not { } hint) return;
 
@@ -3739,7 +3816,7 @@ public static partial class LayoutRenderer
         {
             DrawInternalGapMarker(canvas, label, GapHint(conductorAt, label, hint),
                                   ps, scaleUm, layerColor, background, counters,
-                                  MeshGapHalfWidth(mesh, label, hint, dbuPerMicron));
+                                  MeshGapHalfWidth(mesh, label, hint, dbuPerMicron), readOnly);
             return;
         }
 

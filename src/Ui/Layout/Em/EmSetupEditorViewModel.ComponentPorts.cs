@@ -279,6 +279,93 @@ public sealed partial class EmSetupEditorViewModel
         if (!IsEmbedded) InvalidateMesh();
     }
 
+    // ── brief-lcp-4: the marks the layout draws ────────────────────────────────────────────────────────────────────────────
+    //
+    // The ports this setup builds, for the layout to draw (R-lcp4-1). Built as the run builds them, on a copy of the layout,
+    // off the UI thread, once the layout or the setup has settled: a burst of edits builds once, after the last. Refresh asks
+    // for a build; one already made for the same layout state and the same list is kept. A drag edits nothing until it is
+    // dropped, so nothing is built during one (R-lcp4-4).
+
+    /// <summary>The built ports' marks, and the layout and edit they were built from. Empty when none are built.</summary>
+    public IReadOnlyList<LayoutComponentPortMark> ComponentPortMarks { get; private set; } = [];
+
+    /// <summary>The layout <see cref="ComponentPortMarks"/> describe, or null.</summary>
+    public LayoutView? ComponentPortMarksView { get; private set; }
+
+    /// <summary>That layout's <see cref="LayoutView.EditCount"/> when it was copied.</summary>
+    public long ComponentPortMarksEditCount { get; private set; }
+
+    /// <summary>Raised on the UI thread when <see cref="ComponentPortMarks"/> has been built again.</summary>
+    public event Action? ComponentPortMarksChanged;
+
+    /// <summary>How long the layout and the setup must be still before the marks are built.</summary>
+    public TimeSpan ComponentPortMarksSettle { get; set; } = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>The build the last request started, for a caller that has to wait for it.</summary>
+    public Task ComponentPortMarksBuilding { get; private set; } = Task.CompletedTask;
+
+    /// <summary>The layout the list reads, for the workspace to tell whether it is the open editor's.</summary>
+    internal LayoutView? ComponentSourceView => _componentSource?.View;
+
+    private int _marksGeneration;
+    private string? _marksKey;
+
+    /// <summary>Asks for the marks to be built once things settle. Kept when nothing they depend on has changed.</summary>
+    public void ScheduleComponentPortMarks()
+    {
+        string key = ComponentPortMarksKey();
+        if (key == _marksKey) return;
+        _marksKey = key;
+        int mine = ++_marksGeneration;
+        ComponentPortMarksBuilding = BuildComponentPortMarksAsync(mine);
+    }
+
+    /// <summary>The setup is closing: nothing in flight may publish, and nothing is shown.</summary>
+    public void CancelComponentPortMarks()
+    {
+        _marksGeneration++;
+        _marksKey = null;
+        ComponentPortMarks = [];
+        ComponentPortMarksView = null;
+    }
+
+    /// <summary>What the marks depend on: the layout as it stands, and the parts of the setup that move a port.</summary>
+    private string ComponentPortMarksKey()
+    {
+        var view = _componentSource?.View;
+        string viewKey = view is null ? "" : $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(view)}/{view.EditCount}";
+        return viewKey + "#" + ShowComponentPorts + "#" + Is3DSetup + "#" + Working.AnalysisKind + "#"
+             + string.Join(";", Working.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}"))
+             + "#" + string.Join(",", Working.AnalysisLevelNames) + "#" + Working.SolveRegion?.Describe();
+    }
+
+    private async Task BuildComponentPortMarksAsync(int mine)
+    {
+        if (ComponentPortMarksSettle > TimeSpan.Zero) await Task.Delay(ComponentPortMarksSettle);
+        if (mine != _marksGeneration) return;
+
+        EmComponentPortMarksJob? job = null;
+        if (ComponentPortsHost is { } host && ShowComponentPorts)
+        {
+            try { job = host.PrepareMarks(Working); }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException) { job = null; }
+        }
+
+        IReadOnlyList<LayoutComponentPortMark> marks = [];
+        if (job is not null)
+        {
+            try { marks = await Task.Run(job.Build); }
+            // A part the build cannot read is Check's to report; the layout simply draws nothing for it.
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException) { marks = []; }
+        }
+        if (mine != _marksGeneration) return;
+
+        ComponentPortMarks = marks;
+        ComponentPortMarksView = job?.View;
+        ComponentPortMarksEditCount = job?.EditCount ?? 0;
+        ComponentPortMarksChanged?.Invoke();
+    }
+
     // ── R-lcp3-3: a built component port's row in the Ports list ─────────────────────────────────────────────────────────
 
     /// <summary>A component port row's Z0 box: blank is the setup's reference impedance for that port.</summary>
