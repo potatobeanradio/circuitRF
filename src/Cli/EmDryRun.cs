@@ -18,7 +18,11 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static class EmDryRun
 {
-    public static int Run(string input, string? setupName, string? device, string? memoryLimit, int? maxCores = null)
+    /// <param name="componentPorts">brief-lcp-2 — <c>em --component-ports</c>'s list: the ports a run would build in place of the
+    /// setup's own, walked by <c>explain --component-ports</c> (built and verified, nothing meshed for them, nothing written).
+    /// <c>check</c>'s half reads the file as it is.</param>
+    public static int Run(string input, string? setupName, string? device, string? memoryLimit, int? maxCores = null,
+                          string? componentPorts = null)
     {
         int checkExit = Check.Run([input]);
         RunHost.Control?.ThrowIfCancellationRequested();
@@ -28,6 +32,7 @@ internal static class EmDryRun
         if (device is not null) { explainArgs.Add("--device"); explainArgs.Add(device); }
         if (memoryLimit is not null) { explainArgs.Add("--memory-limit"); explainArgs.Add(memoryLimit); }
         if (maxCores is { } cores) { explainArgs.Add("--cores"); explainArgs.Add(cores.ToString(CultureInfo.InvariantCulture)); }
+        if (componentPorts is not null) { explainArgs.Add("--component-ports"); explainArgs.Add(componentPorts); }
         int explainExit = Explain.Run([.. explainArgs]);
 
         if (Line(JsonRun.Check, JsonRun.Explain) is { } line)

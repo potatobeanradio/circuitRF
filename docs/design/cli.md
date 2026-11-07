@@ -910,23 +910,48 @@ its currents decide the faces in the script. A planar setup is refused by name (
 `--bands` or `-o` beside it (`cli.em.mesh-only-takes`). A comparison meshes Palace's script; a setup with no Palace leg is refused,
 because EMerge meshes inside its own run and openEMS has a grid. `tools/MeshReplay` runs this over a folder of setups.
 
-### 8.11 Component ports: `--component-ports` (brief-emb-1)
+### 8.11 Component ports: `--component-ports` (brief-emb-1, brief-lcp-2)
 
 ```
 circuitrf em board.c3d [--setup <name>] --component-ports "C1,C2,L2"|"*"
-circuitrf explain board.c3d --component-ports ["C1,C2"|"*"]
+circuitrf em board.cem --component-ports "C1,C2,L2"|"*" [--dry-run]
+circuitrf explain board.c3d|board.cem --component-ports ["C1,C2"|"*"]
+circuitrf check board.c3d|board.cem
 ```
 
-A setup's `ComponentPorts` for one run, in memory only (nothing is written back), as `--solver` is: one lumped gap port
-across each named part's own pads on the 3D view's placed layout, numbered after the drawn ports. `"*"` is every placed
-two-terminal part. A `.cem` on a layout refuses the flag (`em.component-ports.refused`): the ports are built in a 3D view.
-**It owns no construction**: the ports are built and verified by `C3dComponentPorts` inside
-`C3dProblemAssembly.Assemble`, the function the run, `check` and the setup panel's Check all call, so the headless
-verdict is the GUI's. A finished driven run also writes `<setup>_cosim.cnl` in the workspace (reported as the `cosim`
-output), the board's N-port with each part from its port's node to ground. `explain --component-ports` builds them
-without meshing and walks each port (refdes, pads, conductors, gap, width, landings, verdict); with a list it builds that
-list instead of the setup's. MCP: the `run` tool's `componentPorts` (analysis `em`) and the `explain` tool's
-`componentPorts=true`.
+A setup's `ComponentPorts` for one run, in memory only (nothing is written back), as `--solver` is: one gap port across
+each named part's own pads on the placed layout, numbered after the drawn ports and named by the part (`! Port[3] = C1` in
+the Touchstone header). `"*"` is every placed two-terminal part. A part that cannot be built is left out with a warning
+naming it, and the rest run. Two containers, two constructions:
+
+- **On a 3D view** — a `.c3d`'s own setup, or a `.cem` whose LayoutRef names a `.c3d` — each is a lumped port sheet in
+  the part's gap, built and verified by `C3dComponentPorts` inside `C3dProblemAssembly.Assemble`. A finished driven run
+  also writes `<setup>_cosim.cnl` in the workspace (reported as the `cosim` output), the board's N-port with each part
+  from its port's node to ground; a part with no model on the board's schematic is a warning, since the netlist carries
+  a placeholder for it.
+- **On a layout, planar** — a `.cem` whose LayoutRef names a `.clay` — each is a strip joining the two pads across the
+  width they share, cut by an internal delta gap in the middle of the air between the two conductors, built and verified
+  by `EmPlanarComponentPorts.Build` (LCP-1). The strip and the gap exist in the solved problem only; the `.clay` is
+  never touched.
+
+**It owns no construction**: every line comes out of the function the run, `check` and the setup panel's Check call, so
+the headless verdict is the GUI's. Which setups cannot take component ports at all is one rule,
+`EmComponentPorts.Inapplicable`, and `em`, `em --dry-run` and `explain` refuse by the kept id
+(`em.component-ports.refused`): a thermal setup and an electrostatic one have no ports, and a 3D `.cem` on a layout
+does not build them yet (it names the 3D-view route; LCP-5 lifts it). A magnetostatic setup takes them: its ports are
+its current sources.
+
+`explain --component-ports` builds them and walks one line per port — refdes, pads (with their nets), conductors, gap,
+width and verdict, plus a 3D port's landings — and with a list builds that list instead of the setup's. It solves
+nothing; a 3D one lowers its geometry, a planar one does not even mesh, and its line says "a delta gap across a strip",
+because this is where a user or agent sees what was built. `em --dry-run --component-ports` hands the list to that walk,
+so the dry run reports the ports a run would build and writes nothing; its `check` half reads the file as it is.
+`check` reports each built port at info and each part left out at warning, a list that cannot be built at all at error:
+on a `.c3d` as `check.c3d.port` / `check.c3d.component-port` / `check.c3d.port-refused`, on a `.cem` as
+`check.cem.component-port` / `check.cem.component-port-warning` / `check.cem.component-port-refused`, without repeating
+the preflight's copies of the same lines. MCP: the `run` tool's `componentPorts` (analysis `em`) and the `explain` tool's
+`componentPorts=true`; `ToolCatalogAgreesWithTheParserTests` reads the flag from both verbs' parsers, so neither tool can
+lag behind its verb.
 
 ## 9. Adding a verb
 

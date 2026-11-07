@@ -1740,7 +1740,7 @@ static int RunEm(string[] args)
         if (solverName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--solver"));
         if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
         if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
-        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores);
+        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores, componentPorts);
     }
 
     // The scratch folder Settings ▸ Solvers names, read now so a change there reaches the next run (an MCP server runs many
@@ -1852,13 +1852,17 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
     if (solver is { } chosen) setup.Solver3D = chosen;
     // brief-emb-1 R-emb1-8 — the setup's component ports for this run, in memory only: nothing is written back.
+    // brief-lcp-2 R-lcp2-1 — on a .c3d, a .cem naming one, or a planar .cem on a layout (a strip and a delta gap, LCP-1); the
+    // kept id refuses what still cannot take them: a thermal or electrostatic setup, and a 3D .cem on a layout.
     if (componentPorts is not null)
     {
         var entries = CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
         if (entries.Count == 0)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--component-ports takes reference designators, \"C1,C2,L2\", or \"*\" for every placed two-terminal part."));
-        if (!isC3d && !CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(cemPath, setup.LayoutRef, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cemPath)))))
-            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(CircuitRF.Design.Layout.Em3d.Em3dGenerator.ComponentPortsOnLayoutRefusal));
+        bool onThreeDView = isC3d || CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(
+            cemPath, setup.LayoutRef, workspace is null ? WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cemPath)) : Path.GetFullPath(workspace)));
+        if (EmComponentPorts.Inapplicable(setup, onThreeDView) is { } cannot)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(cannot));
         setup.ComponentPorts = entries;
         foreach (var band in bandSetups) band.ComponentPorts = [.. entries];
     }

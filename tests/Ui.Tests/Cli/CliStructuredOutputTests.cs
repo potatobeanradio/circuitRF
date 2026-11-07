@@ -435,6 +435,10 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.cdd.trace-unbound",
         "check.cell.no-primary",
         "check.cell.primary-missing",
+        // brief-lcp-2 R-lcp2-3: a .cem's component ports, at a .c3d's severities.
+        "check.cem.component-port",
+        "check.cem.component-port-refused",
+        "check.cem.component-port-warning",
         "check.cmc.refused",
         "check.cmc.summary",
         "check.cmc.warning",
@@ -444,6 +448,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.elaboration.failed",
         "check.elaboration.note",
         "check.elaboration.warning",
+        "check.em-result.disagrees",
+        "check.em-result.summary",
         "check.em.count",   // brief-sdl-6
         "check.em.kind",    // brief-sdl-10
         "check.em.mesh-auto-kept",
@@ -534,11 +540,15 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.args.pin-malformed",
         "cli.args.set-malformed",
         "cli.args.unknown-option",
+        "cli.em.adopt-refused",
         "cli.em.component-refused",
+        "cli.em.cores",
         "cli.em.device-without-palace",
         "cli.em.dry-run-needs-setup",   // EMB-5 R-emb5-1/R-emb5-2
         "cli.em.freq-without-component",
         "cli.em.memory-limit",
+        "cli.em.mesh-only-needs-3d",
+        "cli.em.mesh-only-takes",
         "cli.em.model-refused",           // brief-sdl-6 R-sdl6-1/2
         "cli.em.setup-unreadable",
         "cli.em.solver-on-planar",
@@ -612,6 +622,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.args.dxf-version",
         // brief-oasis-gdstk.md §7d — --engine native|gdstk on a gdsii source or target.
         "convert.args.engine",
+        "convert.args.join-tolerance",
         "convert.args.list-cells-not-applicable",
         "convert.args.multiple-inputs",
         // brief-oasis-gdstk.md §10a — the OASIS writer's options.
@@ -654,6 +665,11 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.into-tech.not-clay",
         "convert.into-tech.not-gerber",
         "convert.into-tech.with-tech",
+        "convert.ipc2581.step-flags",
+        "convert.ipc2581.step-listed",
+        "convert.ipc2581.target",
+        "convert.layer-map.needs-tech",
+        "convert.layer-map.refused",
         "convert.layout.unreadable",
         "convert.note",
         "convert.oasis.flags-not-oasis",
@@ -679,6 +695,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // brief-emb-1 R-emb1-8: `em --component-ports` that cannot be applied.
         "em.component-ports.refused",
         "em.dry-run.estimate",   // EMB-5 R-emb5-1/R-emb5-2
+        "em.mesh-only.meshed",
+        "em.mesh-only.warning",
         "em.run.error",
         "em.run.note",
         "em.run.warning",
@@ -729,6 +747,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "export.cell.not-found",
         "export.refused",
         "export.warning",
+        "fields.part-between-gap-ports",
         "find.args.multiple-roots",
         "find.args.root-required",
         "find.args.unknown-option",
@@ -961,6 +980,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // brief-yield-8 R-ya8-6 — the statistical pictures.
         "plot.spec-lines.no-goals",
         "plot.trace.axis-unknown",
+        "plot.trace.axis-value-malformed",
         "plot.trace.cube-is-scalar",
         "plot.trace.cube-required",
         "plot.trace.cut-malformed",

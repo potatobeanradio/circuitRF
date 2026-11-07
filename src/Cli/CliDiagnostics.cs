@@ -1527,6 +1527,19 @@ internal static class CliDiagnostics
     public static Diagnostic CheckThreeDComponentPortWarning(string path, string text) => Diagnostic.Create(
         "check.c3d.component-port", DiagnosticSeverity.Warning, "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary>brief-lcp-2 R-lcp2-3 — a <c>.cem</c>'s component port, built: what <c>check.c3d.port</c> says of a <c>.c3d</c>'s.</summary>
+    public static Diagnostic CheckCemComponentPort(string path, string text) => Diagnostic.Create(
+        "check.cem.component-port", DiagnosticSeverity.Info, "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-lcp-2 R-lcp2-3 — a <c>.cem</c>'s component port's warning: a part left out of the run, or (on a 3D view) a
+    /// part with no model on the board's schematic.</summary>
+    public static Diagnostic CheckCemComponentPortWarning(string path, string text) => Diagnostic.Create(
+        "check.cem.component-port-warning", DiagnosticSeverity.Warning, "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-lcp-2 R-lcp2-3 — a <c>.cem</c>'s component ports that cannot be built at all, which the run refuses.</summary>
+    public static Diagnostic CheckCemComponentPortRefused(string path, string text) => Diagnostic.Create(
+        "check.cem.component-port-refused", DiagnosticSeverity.Error, "{path}: {text}", ("path", path), ("text", text));
+
     /// <summary>brief-em3d-49 — a face boundary that cannot be placed.</summary>
     public static Diagnostic CheckThreeDFaceBoundary(string path, string reason) => Diagnostic.Create(
         "check.c3d.face-boundary", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));

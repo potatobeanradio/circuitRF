@@ -386,7 +386,7 @@ internal static class DocumentSchema
             circuitrf check ws
             circuitrf em    ws/thru/em/thru.cem
 
-        Six things that are not obvious from the field list:
+        Seven things that are not obvious from the field list:
 
           * LayoutRef names the geometry document: a .clay or a .c3d. It is relative to the
             WORKSPACE folder (the one holding .cws), not to the .cem. The technology is the
@@ -406,6 +406,16 @@ internal static class DocumentSchema
             which in the run's notes.
           * DispersionCorrection: a new setup made in the GUI writes true, but a file that OMITS it
             reads false. Write it. Every other omitted flag reads as the GUI's default.
+          * ComponentPorts puts a port across a placed part with none drawn: ["C1", "L2"], "*" for
+            every placed two-terminal part, or {"Refdes", "Z0", "Reference", "WidthUm"} entries. On a
+            planar setup each is a strip joining the part's two pads across the width they share, cut
+            by an internal delta gap in the middle of the air between them (a gap port), built and
+            verified before meshing, in the solved problem only: the .clay is not touched. Its number
+            follows the drawn ports, its name is the part's (the Touchstone header reads
+            Port[3] = C1), and an entry's Z0 is its own port's. A part that cannot be built is left out
+            with a warning naming it, and the rest run. A .cem naming a .c3d builds them as the 3D
+            view does; a 3D .cem on a .clay refuses them. `explain --component-ports` lists what would
+            be built, and `em --component-ports "C1,C2"` applies a list for one run.
 
         Every field the reader understands follows, with its default.
         """;

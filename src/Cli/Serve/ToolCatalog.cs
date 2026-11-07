@@ -675,12 +675,14 @@ internal static class ToolCatalog
                      new("setup", "--setup", OptKind.Str,
                          "Which of a .c3d's embedded setups to run, by name. Needed when it embeds several; "
                        + "explain lists them."),
-                     // brief-emb-1 R-emb1-8 — `em --component-ports`.
+                     // brief-emb-1 R-emb1-8 — `em --component-ports`; brief-lcp-2 R-lcp2-4 — a .cem's as well as a .c3d's.
                      new("componentPorts", "--component-ports", OptKind.StrList,
-                         "A .c3d's component ports for this run only: reference designators of parts placed on its layout, or [\"*\"] "
-                       + "for every two-terminal part. Each gets a lumped gap port across its own pads, built and verified before "
-                       + "meshing; a finished driven run also writes <setup>_cosim.cnl, the board's N-port with each part across its "
-                       + "port. explain componentPorts=true shows what would be built."),
+                         "Component ports for this run only, on a .c3d or a .cem: reference designators of parts placed on its layout, "
+                       + "or [\"*\"] for every two-terminal part. Each gets a gap port across its own pads, built and verified before "
+                       + "meshing and never written to the file: a lumped port on a 3D setup (a .c3d, or a .cem naming one), a delta gap "
+                       + "across a strip joining the two pads on a planar .cem. A 3D .cem on a layout, a thermal setup and an "
+                       + "electrostatic one are refused. A finished driven 3D run also writes <setup>_cosim.cnl, the board's N-port with "
+                       + "each part across its port. explain componentPorts=true shows what would be built."),
                      // brief-sar-12 R-sar12-3 — a .c3d's band sweep: one setup per band from its template, run in turn.
                      new("bands", "--bands", OptKind.Str,
                          "Run a .c3d's band sweep, by name: one setup per band made from its template (each at that SAR "
@@ -820,10 +822,11 @@ internal static class ToolCatalog
                             "Which view of a cell folder: schematic, symbol or layout. Spelled as render spells it."),
                         new("setup",   "--setup",   OptKind.Str,
                             "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
-                        // brief-emb-1 R-emb1-8 — `explain --component-ports`.
+                        // brief-emb-1 R-emb1-8 — `explain --component-ports`; brief-lcp-2 R-lcp2-4 — a .cem's as well.
                         new("componentPorts", "--component-ports", OptKind.Flag,
-                            "A 3D view's component ports, built as a run would build them and verified, without meshing: per port its "
-                          + "refdes, pads, conductors, gap, width, landing rectangles and verdict."),
+                            "An EM setup's component ports (a .c3d's or a .cem's), built as a run would build them and verified, "
+                          + "without meshing: per port its refdes, pads, conductors, gap, width and verdict, with the landing "
+                          + "rectangles of a 3D one; a planar .cem's line says it is a delta gap across a strip."),
                         new("device",  "--device",  OptKind.Str,
                             "A 3D setup's report as a run with this device would see it: auto (default), cpu or gpu."),
                         new("memoryLimitGB", "--memory-limit", OptKind.Number,
@@ -864,7 +867,8 @@ internal static class ToolCatalog
                         new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups and its port labels as ports; a layout made from the cell's schematic also brings one VAR per cell parameter and schematic VAR, linked by name. Required."),
                         new("name", "--name", OptKind.Str, "The .c3d's name. Default: the cell's."),
                     ],
-                    "A .c3d of the cell's layout, ready for component ports and a 3D run."),
+                    "A .c3d of the cell's layout, ready for a 3D run. Component ports need no 3D view: a planar .cem on the layout "
+                  + "names them too."),
                 // brief vendorlib-10 R-vl10-4 — Export to Library. A mode of `create` rather than an eighteenth tool: what
                 // it makes is a new document (a model folder), and the surface is a standing cost (R-aut5-4).
                 new("libraryPart", ["export", "part"],

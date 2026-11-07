@@ -312,8 +312,10 @@ internal static class Explain
 
         if (wantComponentPorts)
             exit |= kind == DocumentKind.ThreeD ? ExplainComponentPorts.Walk(path, setupName, componentPortList, walks)
+                  // brief-lcp-2 R-lcp2-2 — a .cem's too: on the 3D view it names, or a strip and a delta gap on its layout.
+                  : kind == DocumentKind.EmSetup ? ExplainComponentPorts.WalkCem(path, componentPortList, walks)
                   : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--component-ports", DocumentKinds.Name(kind),
-                                                                           "the component ports a 3D view's setup builds on its layout's parts"));
+                                                                           "the component ports an EM setup (.c3d or .cem) builds on its layout's parts"));
 
         if (wantMaterials && kind is not (DocumentKind.ThreeD or DocumentKind.EmSetup))
             exit |= JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--materials", DocumentKinds.Name(kind),

@@ -289,10 +289,11 @@ public static class Em3dGenerator
     /// <param name="padsOptional">True for a picture, never for a solve: wires are drawn on a layout with no conductor
     /// artwork, and a wire end over no conductor lands on an undrawn pad (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>);
     /// the refusal is in <see cref="Em3dGenerationResult.PadRefusal"/>.</param>
-    /// <summary>brief-emb-1 — a <c>.cem</c> on a layout asking for component ports.</summary>
+    /// <summary>brief-emb-1 — a 3D <c>.cem</c> on a layout asking for component ports (a planar one builds them, brief-lcp-1).</summary>
     public const string ComponentPortsOnLayoutRefusal =
-        "This setup names ComponentPorts, which are built in a 3D view of the layout: make one with " +
-        "'new view3d <cell> --from-layout' (Design ▸ New 3D View from Layout) and run this setup there, or point the .cem's LayoutRef at that .c3d.";
+        "This 3D setup names ComponentPorts, which a 3D run builds in a 3D view of the layout: make one with " +
+        "'new view3d <cell> --from-layout' (Design ▸ New 3D View from Layout) and run this setup there, or point the .cem's LayoutRef at " +
+        "that .c3d. A planar setup on the layout builds them as it is.";
 
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
                                                 Em3dWireSource? wires = null, bool displaySlabs = false,

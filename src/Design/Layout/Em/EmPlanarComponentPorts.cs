@@ -51,6 +51,12 @@ public sealed record EmPlanarComponentPort(
     Complex? Z0, double GapM, double WidthM, bool AlongX, string? Refusal)
 {
     public bool Ok => Refusal is null && Gap is not null;
+
+    /// <summary>brief-lcp-2 R-lcp2-2 — the stackup conductor both pads are on; null when refused.</summary>
+    public string? Conductor { get; init; }
+
+    /// <summary>brief-lcp-2 R-lcp2-2 — the positive and negative pads' nets, as the board projection reads them.</summary>
+    public (string? Positive, string? Negative) Nets { get; init; }
 }
 
 /// <summary>The component ports a planar setup asks for, built against one layout.</summary>
@@ -220,7 +226,12 @@ public static class EmPlanarComponentPorts
                 int number = next++;
                 Numbers.AddOrUpdate(built.Value.Gap, new StrongBox<int>(number));
                 results.Add(new EmPlanarComponentPort(rd, name, pos.Pad.Pin, neg.Pad.Pin, built.Value.Strip, built.Value.Gap, number, z0,
-                                                      built.Value.GapM, built.Value.WidthM, built.Value.AlongX, null));
+                                                      built.Value.GapM, built.Value.WidthM, built.Value.AlongX, null)
+                {
+                    Conductor = source.Technology?.Stackup.Layers
+                        .FirstOrDefault(l => l.Kind == StackupKind.Conductor && pos.Pad.Layer is { } pl && l.DrawingLayers.Contains(pl))?.Name,
+                    Nets = (pos.Pad.Net, neg.Pad.Net),
+                });
             }
         }
 
@@ -450,8 +461,11 @@ public static class EmPlanarComponentPorts
     {
         if (!p.Ok) return $"{p.Refdes}: refused — {p.Refusal}";
         double dbu = C3dLowering.Metres(1, source.DbuPerMicron);
-        return $"{p.Name}: component port {p.Number}, pad {p.Pin} to pad {p.ReferencePin}, a {Um(p.WidthM)} µm strip across " +
-               $"{Um(p.GapM)} µm of air along {(p.AlongX ? "x" : "y")}, cut at ({Mm(p.Gap!.X * dbu)}, {Mm(p.Gap.Y * dbu)}) mm; " +
+        static string Pad(string? pin, string? net) => net is { Length: > 0 } n ? $"pad {pin} (net {n})" : $"pad {pin}";
+        string on = p.Conductor is { Length: > 0 } c ? $" on '{c}'" : "";
+        return $"{p.Name}: component port {p.Number}, a delta gap across a strip, {Pad(p.Pin, p.Nets.Positive)} to " +
+               $"{Pad(p.ReferencePin, p.Nets.Negative)}{on}, gap {Um(p.GapM)} µm of air along {(p.AlongX ? "x" : "y")}, " +
+               $"{Um(p.WidthM)} µm wide, cut at ({Mm(p.Gap!.X * dbu)}, {Mm(p.Gap.Y * dbu)}) mm; verified; " +
                "in the solved problem only, not written to the layout.";
     }
 }

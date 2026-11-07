@@ -149,6 +149,22 @@ public sealed class ToolCatalogAgreesWithTheParserTests : IDisposable
         Assert.True(new FileInfo(png).Length > 0);
     }
 
+    /// <summary>brief-lcp-2 R-lcp2-4 — <c>--component-ports</c> on <c>em</c> and <c>explain</c> is on the run and explain tools, read
+    /// from each verb's parser, and neither tool describes it as a .c3d's alone.</summary>
+    [Fact]
+    public void TheComponentPortsFlag_IsOnBothTools_ForACemToo()
+    {
+        foreach (var (file, tool, mode) in new[] { ("CliEntry.cs", "run", "em"), ("Explain.cs", "explain", "") })
+        {
+            string source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Cli", file));
+            Assert.Matches("case \"--component-ports\"", source);
+            var option = ToolCatalog.Tools.Single(t => t.Name == tool).Modes.Single(m => m.Selector == mode).Options
+                .Single(o => o.Cli == "--component-ports");
+            Assert.Contains(".cem", option.Description, StringComparison.Ordinal);
+            Assert.DoesNotContain("A .c3d's", option.Description, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>An agent chooses cores against what the machine has, and is told what they cost in memory.</summary>
     [Fact]
     public void SolverReportsTheMachinesCores_AndADryRunReadsCores()

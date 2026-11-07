@@ -3501,3 +3501,17 @@ Gate: `tests/Ui.Tests/Examples/AntennaCoSimExampleTests.cs`.
 **Far field and envelope over MCP: the run was there, the picture was not.** `run analysis=fields` and `analysis=env` worked, but the `plot` tool offered no `radial`, so a pattern could only be drawn on a linear disc, where its decibels fall outside and no curve appears, with exit 0. Fourteen plot flags were missing from the tool (`--radial`, the `--db-*` four, `--whole-plane`, `--angle-labels`, `--legend`, the surface camera and colour map, the spec lines), and `surface` was absent from `type`. `ToolCatalogAgreesWithTheParserTests` now reads every `case "--…"` out of `PlotVerb.cs`, so a new flag cannot reach one side only. `simulations` and `cosimulation` joined the reference topics, because no tool's schema names the cubes a plot has to ask for; `cli.md` also had no `env` or `fields` section. `PSD` is already in dBm/Hz, so it takes `y=real`, and `y=db10` would take the log of a log.
 
 **Choosing `--cores`.** Nothing reported the core count, so an agent could not choose against it. `solver` returns `result.machine`. Palace's memory estimate takes no process count, so it does not follow `--cores`, and the tool says so: a run that stops at its limit should lower `--cores` before coarsening the mesh. `em --dry-run` dropped `--cores` without a word, so it could pass a run that was then refused; it now goes through `explain --cores`, which warns with the run's own refusal. EMerge and openEMS take no such refusal, because the device row exists only where Palace can run.
+
+---
+
+## Component ports on a layout's `.cem` (LCP-2, 2026-11-07)
+
+**`em --dry-run` dropped `--component-ports` without a word**, on a `.c3d` too: the dry run returns before the setup is read, and `EmDryRun` passed only `--setup`, `--device`, `--memory-limit` and `--cores` to `explain`. It now hands the list to `explain --component-ports`, so the dry run reports the ports a run would build. Its `check` half still reads the file as it is, so a list given only on the command line is not in the planar mesh figures.
+
+**Which setups cannot take component ports is one rule** (`EmComponentPorts.Inapplicable`): thermal and electrostatic setups have no ports, and a 3D `.cem` on a layout does not build them until LCP-5. Magnetostatic setups are allowed, because their ports are their current sources and `C3dProblemAssembly` already builds component ports for them. `em`, `em --dry-run` and `explain` refuse by `em.component-ports.refused`. `check` keeps the run's own severities, so an electrostatic setup naming ports in its file is still the assembly's note, not an error.
+
+**On a `.cem`, `check` reports the ports under `check.cem.*` and skips the preflight's copies.** `EmRunService.Preflight` already returned the build's notes and warnings as `check.em.*` findings, and repeating them under the new ids would print each part twice. Check filters them by text against the same cached build (`EmPlanarComponentPorts.Build` caches per source and setup, so the preflight reads that one build).
+
+**`DiagnosticIds_AreTheCommittedSet` was red at HEAD**: 16 declared ids had never been listed (`check.em-result.*`, `cli.em.adopt-refused`, `cli.em.cores`, the `--mesh-only` four, `convert.ipc2581.*`, `convert.layer-map.*`, `convert.args.join-tolerance`, `fields.part-between-gap-ports`, `plot.trace.axis-value-malformed`). All of them are added now.
+
+Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgreesWithTheParserTests.TheComponentPortsFlag_IsOnBothTools_ForACemToo`.

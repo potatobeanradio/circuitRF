@@ -34,6 +34,28 @@ public static class EmComponentPorts
     }
 
     /// <summary>
+    /// brief-lcp-2 R-lcp2-1 — why <paramref name="setup"/> cannot take component ports at all, or null when it can: a thermal
+    /// setup and an electrostatic one have no ports to add them to, and a 3D setup on a layout (not on a 3D view) does not build
+    /// them yet. A magnetostatic setup takes them: its ports are its current sources. The one rule <c>em --component-ports</c>,
+    /// <c>explain</c> and <c>check</c> read.
+    /// </summary>
+    /// <param name="onThreeDView">Whether the setup runs on a 3D view: a <c>.c3d</c>'s own setup, or a <c>.cem</c> whose
+    /// LayoutRef names one.</param>
+    public static string? Inapplicable(EmSetup setup, bool onThreeDView)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        string name = setup.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup";
+        if (setup.IsThermal)
+            return $"{name} is a thermal setup, which has no ports: component ports apply to an EM setup.";
+        if (setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Electrostatic)
+            return $"{name} is an electrostatic solve, which has no ports: component ports apply to a driven, eigenmode or " +
+                   "magnetostatic setup.";
+        if (setup.Is3D && !onThreeDView)
+            return CircuitRF.Design.Layout.Em3d.Em3dGenerator.ComponentPortsOnLayoutRefusal;
+        return null;
+    }
+
+    /// <summary>
     /// brief-lcp-1 R-lcp1-4 — <see cref="Collect(EmLayoutSource)"/>, plus the delta-gap label of every component port
     /// <paramref name="setup"/> names on a planar run (<see cref="EmPlanarComponentPorts"/>). The one entry point every caller
     /// that extracts ports on a setup's behalf takes, so the run, the preflight, the panel's Refresh and <c>explain</c> read one

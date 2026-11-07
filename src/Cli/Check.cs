@@ -1150,8 +1150,16 @@ internal static class Check
         if (C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(full, setup.LayoutRef, cws)))
         {
             var src = Em3dSetupSource.FromCemOnThreeDView(full, setup, cws);
+            // brief-lcp-2 R-lcp2-3 — its component ports as a .c3d's are reported, under the .cem's own ids.
+            var viewParts = src.Generated?.ComponentPorts;
+            if (viewParts is not null)
+            {
+                foreach (var p in viewParts.Ports.Where(p => p.Ok)) f.Add(CliDiagnostics.CheckCemComponentPort(path, C3dComponentPorts.Describe(p)));
+                foreach (string w in viewParts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
+            }
             foreach (string note in src.Generated?.Notes ?? []) f.Add(CliDiagnostics.CheckEmNote(path, note));
-            foreach (string warning in src.Generated?.Warnings ?? []) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
+            foreach (string warning in src.Generated?.Warnings ?? [])
+                if (viewParts?.Warnings.Contains(warning) != true) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
             if (src.Refusal is { } refused) { f.Add(CliDiagnostics.CheckEmRefused(path, refused)); return; }
             var p3 = src.Generated!.Problem!;
             var bad = p3.Validate();
@@ -1207,6 +1215,20 @@ internal static class Check
         // `PlanarSolve.LevelSeparationNotes`, which is what the GUI's own Simulate calls. It also
         // writes no FILES, so it runs on a read-only tree and on a workspace another process has
         // open, which is the property that makes `check` usable at all.
+        // brief-lcp-2 R-lcp2-3 — the setup's component ports, built as its run builds them (EmPlanarComponentPorts.Build, cached,
+        // so the preflight below reads this same build): each port at info, each part left out at warning, a list that cannot
+        // be built at all at error — CheckComponentPorts' severities on a .c3d. The preflight's copies of those lines are not
+        // repeated.
+        var parts = EmPlanarComponentPorts.Build(setup, resolution.Source);
+        if (parts is not null)
+        {
+            foreach (var p in parts.Ports.Where(p => p.Ok))
+                f.Add(CliDiagnostics.CheckCemComponentPort(path, EmPlanarComponentPorts.Describe(p, resolution.Source)));
+            foreach (string w in parts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
+            if (parts.Refusal is { } refusedParts) f.Add(CliDiagnostics.CheckCemComponentPortRefused(path, refusedParts));
+        }
+        bool Reported(string text) => parts is not null && (parts.Notes.Contains(text) || parts.Warnings.Contains(text));
+
         EmPreflightResult pre;
         try { pre = EmRunService.Preflight(setup, resolution.Source, RunHost.Control); }
         catch (OperationCanceledException) { throw; }
@@ -1217,7 +1239,7 @@ internal static class Check
         }
 
         foreach (var finding in pre.Findings)
-            f.Add(CliDiagnostics.CheckEmFinding(path, finding.Text, finding.IsWarning));
+            if (!Reported(finding.Text)) f.Add(CliDiagnostics.CheckEmFinding(path, finding.Text, finding.IsWarning));
 
         // A mesh field the file states and Auto then discards (PlanarMeshSettings.Resolved): the
         // mesh notes report the value USED, so without this nothing says why it differs. Only when
@@ -1264,7 +1286,10 @@ internal static class Check
             });
         }
 
-        if (pre.Refusal is { } refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
+        if (pre.Refusal is { } refusal)
+        {
+            if (refusal != parts?.Refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
+        }
         // UnknownCount is what is SOLVED — the merged count under Mesh as Merged Shapes — which is the
         // number the panel and an `em` run quote. Bases.Count is the elemental rooftop count, and
         // quoting it here while the JSON two lines up quoted the other was one verb disagreeing with
