@@ -104,6 +104,7 @@ internal static partial class Reference
              "ship with circuitRF: the id 'create' and 'new workspace --tech' take, the stackup top to " +
              "bottom, the layers drawn on it and the material libraries it names. Name one to get just it.",
              ByteLength(TechnologiesText())),
+            (ExamplesTopic, ExamplesTitle, ExamplesSummary, ByteLength(ExamplesText())),
             (ShippedMaterialsTopic, "Shipped materials",
              "Generated from the material libraries that ship with circuitRF: every material's name, " +
              "role, electrical and thermal values and source, and how a technology uses one.",
@@ -159,6 +160,9 @@ internal static partial class Reference
         if (string.Equals(topic, TechnologiesTopic, StringComparison.OrdinalIgnoreCase))
             return Technologies(item);
 
+        if (string.Equals(topic, ExamplesTopic, StringComparison.OrdinalIgnoreCase))
+            return Examples(item);
+
         if (string.Equals(topic, ShippedMaterialsTopic, StringComparison.OrdinalIgnoreCase))
             return item is null ? ShippedMaterials() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
 
@@ -210,6 +214,7 @@ internal static partial class Reference
         Console.WriteLine("  circuitrf reference components <TYPE>   one primitive");
         Console.WriteLine("  circuitrf reference analyses <TYPE>     one analysis directive");
         Console.WriteLine("  circuitrf reference technologies <ID>   one shipped technology");
+        Console.WriteLine("  circuitrf reference examples <NAME>     one shipped example workspace");
         return 0;
     }
 

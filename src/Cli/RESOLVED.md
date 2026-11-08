@@ -3523,3 +3523,14 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
   verbs side by side) gives check's `.cem` the same list.
 - **An EMerge setup's one-line estimate quoted Palace's and openEMS's figures.** The line now restates the setup's own
   solvers' rows only; a solver with no estimate of its own leaves the line to the memory and disk limits.
+
+## The shipped examples, reachable by an agent (2026-11-07)
+
+- **An agent could not see the examples at all.** They live beside the executable (or in `Contents/Resources` on
+  macOS), outside any serve root, and no topic or tool named them. `reference examples` lists them from the menu's own
+  index, and `new example` / `create what=example` copies one under the root. Detail: `docs/design/cli.md` §40.
+- **Automatic for new examples.** Nothing lists the examples except `examples/examples.json`, which the menu already
+  needs; an indexed example appears in the topic, the resource and the copy verb with no edit here.
+- **Measuring the topic for the topic list costs one small file**: the list's text reads the index only. The README,
+  the file list and `find`'s cell description are read only when one example is named.
+

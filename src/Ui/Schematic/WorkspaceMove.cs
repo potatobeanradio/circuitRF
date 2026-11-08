@@ -186,6 +186,17 @@ public static class WorkspaceMove
                         // business. Not re-derived, not normalised, not written.
                         if (ReferenceUnmoved(newTarget, cap.AbsTarget, newBase, cap.BaseDir)) continue;
 
+                        // BOTH ends moved — the whole workspace was copied or moved — and the spelling
+                        // already stored still reaches the relocated target. It is left as written:
+                        // re-deriving it would trade a working `../../Board` for the shortest spelling
+                        // `..`, rewriting a file the copy had no reason to touch (and making a copied
+                        // shipped example differ from the one `circuitrf new example` copies).
+                        if (!string.Equals(newTarget, cap.AbsTarget, StringComparison.Ordinal)
+                            && !string.Equals(newBase, cap.BaseDir, StringComparison.Ordinal)
+                            && site.Resolve(slot.Stored, newBase) is { } stillReaches
+                            && string.Equals(Normalize(stillReaches), newTarget, StringComparison.Ordinal))
+                            continue;
+
                         string next = site.Store(newTarget, newBase, slot.Stored);
                         if (string.Equals(next, slot.Stored, StringComparison.Ordinal)) continue;
 

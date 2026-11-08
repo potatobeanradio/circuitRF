@@ -1946,7 +1946,8 @@ per line, so a script can consume them directly:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf new workspace &lt;dir&gt; [--name N] [--tech &lt;id&gt;|none] [--length-unit um|mm|mil]
                         [--vendor-library &lt;name&gt;=&lt;folder&gt;]...
-<span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]</code></pre>
+<span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]
+<span class="prompt">$ </span>circuitrf new example &lt;dir&gt; &lt;name&gt;</code></pre>
 
 These create the **first correct document** — the thing that is awkward to write by hand because the
 folder structure and the primacy files have to be right before anything will open it.
@@ -1988,6 +1989,19 @@ answering it — never a guess.</p>
 `set-parameter`: once a document exists, the way to change it is to **write** it. Every format
 circuitRF owns is readable, versioned JSON — see [File formats](file-formats.html) — and that file
 *is* the interface.
+
+<h3 id="new-example"><code>new example</code> — a copy of a shipped example</h3>
+
+`new example` is **File ▸ New ▸ Examples** without the window: it copies one of the
+[example workspaces](#reference-examples) to `<dir>/<name>`, where you can run it and change it. The
+shipped copy is never written to. A folder that already exists is refused, never overwritten, with
+the same sentence the menu gives.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf new example ~/designs Loadpull
+<span class="output">/home/you/designs/Loadpull/.cws
+/home/you/designs/Loadpull/README.md</span></code></pre>
+
+`<name>` is the example's folder name or its menu title, ignoring case.
 
 <h3 id="new-add"><code>new</code> is one verb with a noun</h3>
 
@@ -3428,10 +3442,20 @@ questions a design starts with:
 | `component-index` | every type token in one line — its nets, its category and what it is. A few kB, against the full catalogue's ~100 kB: read it first, then `components <TYPE>` | — |
 | `technologies` | every technology that ships, by the id `new workspace --tech` takes, with its stackup top to bottom, the layers drawn on each entry and the material libraries it names | `technologies <id>` |
 | `shipped-materials` | every material in the libraries that ship — role, εr and tanδ or σ₂₀ and α₂₀, thermal conductivity and source — and how a technology uses one | — |
+| `examples` | every [example workspace](#reference-examples) that ships, with what it shows and where it is | `examples <name>` |
 
-Like `components`, all three are generated from the data they describe every time you ask: the
-technologies are read from the embedded `.ctech` files through the same reader as your own, and the
-materials from the embedded `.cmat` libraries.
+Like `components`, all four are generated from the data they describe every time you ask: the
+technologies are read from the embedded `.ctech` files through the same reader as your own, the
+materials from the embedded `.cmat` libraries, and the examples from the index that
+**File ▸ New ▸ Examples** reads.
+
+<h3 id="reference-examples">The example workspaces</h3>
+
+`reference examples` lists the worked designs that ship with circuitRF, the same ones
+**File ▸ New ▸ Examples** offers. `reference examples <name>` gives one example's README (what each
+bench shows and the order to run them in), every file in it, and its cells with the analyses each
+declares. Copy one with [`new example`](#new-example) to run it or change it. An example added to
+circuitRF appears here as soon as it is in the menu; nothing else lists them.
 
 Asking for a topic prints it as its own Markdown, so it redirects cleanly:
 

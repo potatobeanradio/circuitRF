@@ -1355,3 +1355,19 @@ Left in place on purpose: `WorkspaceRestore.TryWrite` writes only `.gitignore` a
 `WBondGeometryEmbedding` writes a `.clay` into a new folder, where there is no earlier text to lose.
 
 Gate: `CellRewriteAtomicTests`, which puts a folder where the temp file goes, so an in-place write would get through.
+
+## A whole-workspace copy rewrote references that still resolved (2026-11-07)
+
+`WorkspaceCopy`'s comment says a reference whose target and base both moved "re-derives to the identical spelling and is
+not written at all". It did not: `WorkspaceMove.Apply` re-derived it with the site's `Store`, which picks the SHORTEST
+spelling. The Hierarchy example's `Board/3d/Board.c3d` places its own cell's layout as `"CellRef": "../../Board"`, the
+spelling New 3D View from Layout and the example's authoring both write, and every copy of the example (File ▸ New ▸
+Examples, Save Workspace As) rewrote it to `".."` and re-serialised the whole file with `WriteIndented`. Both spellings
+name the same folder, so nothing broke; the copy simply differed from its source for no reason.
+
+`Apply` now leaves a reference alone when both ends moved and the stored spelling still resolves, against the new base,
+to the relocated target. A reference whose base or target alone moved is re-derived as before. Found by
+`ExamplesCliTests.TheHeadlessCopyOfEveryExampleIsTheGuisCopy_ByteForByte`, which compares the GUI's copy with
+`circuitrf new example`'s; the move, copy and archive tests (`TreeMove*`, `WorkspaceCopyTests`, `WorkspaceArchive*`,
+`CellRewriteAtomicTests`) pass unchanged.
+

@@ -4998,3 +4998,27 @@ they are the directive's two files, listed in `--json`'s `outputs` as `touchston
 ran (the usable-band warning is a warning), 1 on a refusal, 130 on a cancellation. No new diagnostic ids. Gate:
 `tests/Ui.Tests/TrlAnalysisTests.cs`, which compares the verb run as a process with the in-process run byte for byte.
 
+## 40. The shipped examples: `reference examples` and `new example`
+
+`circuitrf reference examples [name]` is a generated reference topic, so it is also the MCP resource
+`circuitrf://reference/examples` and a `reference` tool call, and the surface gains no tool (R-aut5-4). The list is the
+index File ▸ New ▸ Examples reads (`ExampleWorkspaces.All`, from `examples/examples.json`), read at every call; nothing
+lists the examples a second time, and `ExampleWorkspacesTests` already refuses a workspace folder nobody indexed, so an
+example added to the menu reaches an agent with no other edit. Each row is the folder name, the menu title, the summary
+and the shipped directory. A name (the folder or the title, ignoring case, exact) adds the example's `README.md`
+verbatim, every file a copy carries, and the cells with their analyses as `find` describes a workspace (`Find.Describe`).
+An unknown name is `reference.example.unknown`, listing the real ones.
+
+The shipped directory is reported but is outside a serve root and may be inside an application bundle, so it is for
+reading. `circuitrf new example <dir> <name>` (MCP `create what=example path=<dir> name=<name>`) copies it to
+`<dir>/<name>`: positional like `new cell`, a missing parent made as `new workspace` makes one, an existing folder refused
+with the GUI's sentence (`ExampleWorkspaces.InstallRefusal`, which `ExampleWorkspaceInstall.Refusal` now forwards to).
+Outputs are `workspace`, `cws` and `readme`. A file that did not arrive is `new.example.not-copied`, exit 1, never rolled
+back.
+
+**The copy owns no rules.** The skip list and the walk Save Workspace As copies by moved from
+`WorkspaceArchiveScanner`/`WorkspaceCopy` (src/Ui) to `WorkspaceTree` (src/Design), and both GUI classes forward to it.
+What could not move is `WorkspaceCopy`'s reference repair, which needs the GUI's reference registry. For a shipped example
+that repair must write nothing, and `ExamplesCliTests` installs every example both ways and compares the trees byte for
+byte; an example that fails it stores a reference in a spelling the repair rewrites. Gate: `ExamplesCliTests`.
+

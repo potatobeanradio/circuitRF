@@ -27,115 +27,19 @@ public static class WorkspaceArchiveScanner
     public const string ResultsFolder = DocumentFileRefs.ResultsFolder;
 
     // ── Skip rules ────────────────────────────────────────────────────────────
+    //
+    // The rules shared with a COPY live in `WorkspaceTree` (src/Design), so `circuitrf new example`
+    // copies by the same rules Save Workspace As does. What is left here is the one predicate only the
+    // archive has.
 
-    /// <summary>
-    /// Directories neither an archive nor a copy ever carries: the workspace's history, and the
-    /// clutter a file manager leaves behind.
-    /// </summary>
-    private static readonly string[] SkippedDirectories =
-    [
-        RepositoryFolderName,
-        "__MACOSX", ".Spotlight-V100", ".Trashes", ".fseventsd", ".TemporaryItems",
-    ];
+    /// <inheritdoc cref="WorkspaceTree.RepositoryFolderName"/>
+    public const string RepositoryFolderName = WorkspaceTree.RepositoryFolderName;
 
-    /// <summary>
-    /// Directories no generic walk descends into — <see cref="SkippedDirectories"/> plus
-    /// <c>.generated-cells</c>. A copy leaves the generated cells out (<see cref="IsSkipped"/>), and
-    /// an archive offers them as one row of their own built from the LIVE cells only
-    /// (<see cref="AddGeneratedCells"/>), so neither needs the walk to enumerate a folder that can
-    /// hold thousands of cells just to decide about them one file at a time.
-    /// </summary>
-    private static readonly string[] PrunedDirectories =
-    [
-        GeneratedCellStore.ReservedFolderName,
-        .. SkippedDirectories,
-    ];
-
-    /// <summary>
-    /// The workspace's own history (RC-5 R-rc5-18, <c>docs/design/revision-control.md</c> §9A).
-    ///
-    /// <para><b>It is excluded in the brief that first puts one inside the folder this scanner
-    /// walks</b>, and that timing is the requirement rather than a detail. The moment a restore point
-    /// creates one, an archive would otherwise carry the whole history — <b>including every earlier
-    /// version of every file kept, and files no longer in the workspace at all.</b> A designer who
-    /// imported a customer's artwork, finished with it, deleted it, and then archived the workspace
-    /// for a different customer would ship that artwork, with nothing in the visible file tree
-    /// showing it.</para>
-    ///
-    /// <para><b>That is disclosure, and unlike every loss in the architecture it cannot be undone by
-    /// anyone at any later time.</b> RC-8 adds the CHOICE to include history; the exclusion is not
-    /// RC-8's to defer — an archive that carried history because nobody told the scanner is that
-    /// failure arrived at through pure inattention, and it would ship in the first build that keeps a
-    /// restore point.</para>
-    ///
-    /// <para><b>Both consumers want the same answer here, and that is what makes it the trap's other
-    /// half.</b> It sits in the SHARED list, so <c>WorkspaceCopy.Run</c> stops copying the repository
-    /// too — which is right for §9A.1's identical reason, a copy made for a different customer must
-    /// not carry the first customer's deleted files (R-rc5-19). Read this beside
-    /// <see cref="IsSkippedFromArchive"/>'s note on <c>.cwsuser</c>, where the two consumers want
-    /// OPPOSITE answers: one shared list, two consumers, and the correct resolution differs by
-    /// entry.</para>
-    /// </summary>
-    public const string RepositoryFolderName = ".git";
-
-    private static readonly string[] SkippedFileNames =
-    [
-        ".DS_Store", "Thumbs.db", "desktop.ini", ".localized",
-    ];
-
-    private static readonly string[] SkippedExtensions =
-    [
-        ".tmp", ".temp", ".bak", ".swp", ".crdownload", ".source",
-    ];
-
-    /// <summary>
-    /// True for a path a COPY (<c>WorkspaceCopy.Run</c>, Save Workspace As) leaves out: everything
-    /// both consumers leave out, plus <c>.generated-cells</c>.
-    ///
-    /// <para><b>The generated cells are the second entry where the two consumers want different
-    /// answers</b> (brief generated-cells-1). A copy is the same person on the same machine with the
-    /// same kits, and the GUI rebuilds every cell on open — so the cache stays behind as it always
-    /// has. An ARCHIVE goes to somebody who may not have the kit (a vendor PDK is licensed, and its
-    /// row is the sender's choice) and to command-line runs that rebuild nothing, and for them the
-    /// generated cells are the only copy of that artwork — so <see cref="IsSkippedFromArchive"/> does
-    /// not skip them and the scan offers the live ones as a row. Read beside
-    /// <see cref="IsSkippedFromArchive"/>'s note on <c>.cwsuser</c>, which differs the other way.</para>
-    /// </summary>
-    public static bool IsSkipped(string relativePath)
-        => IsSkippedByBoth(relativePath) || IsGeneratedCellsPath(relativePath);
+    /// <inheritdoc cref="WorkspaceTree.IsSkipped"/>
+    public static bool IsSkipped(string relativePath) => WorkspaceTree.IsSkipped(relativePath);
 
     /// <summary>True when any segment of <paramref name="relativePath"/> is the generated-cells folder.</summary>
-    internal static bool IsGeneratedCellsPath(string relativePath)
-        => relativePath.Split('/', '\\').Any(
-               s => string.Equals(s, GeneratedCellStore.ReservedFolderName, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>True for a path neither an archive nor a copy carries, whatever the user ticks.</summary>
-    private static bool IsSkippedByBoth(string relativePath)
-    {
-        foreach (var segment in relativePath.Split('/', '\\'))
-        {
-            if (segment.Length == 0) continue;
-            if (SkippedDirectories.Contains(segment, StringComparer.OrdinalIgnoreCase)) return true;
-            // AppleDouble sidecars ("._Foo.csch") — metadata for a file that is itself archived.
-            if (segment.StartsWith("._", StringComparison.Ordinal)) return true;
-        }
-
-        var name = Path.GetFileName(relativePath);
-        if (SkippedFileNames.Contains(name, StringComparer.OrdinalIgnoreCase)) return true;
-        if (SkippedExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase)) return true;
-        // AtomicFile's in-flight temp ("<name>.crf-tmp-1234") — present only during a write.
-        if (name.Contains(".crf-tmp", StringComparison.OrdinalIgnoreCase)) return true;
-
-        // circuitRF's own per-SESSION bookkeeping, dropped in a workspace root: SL4's advisory lock
-        // (".crf-open.json") and SL2's write probe (".crf-write-probe-…"). Neither describes the
-        // DESIGN, both are meaningless on the recipient's machine, and the lock carries a user name
-        // and a host name — so archiving one would put a colleague's account into a file sent
-        // outside the company, and would greet the recipient with a notice about a session that has
-        // nothing to do with them. Matched by prefix so the next one is covered before it exists.
-        if (name.StartsWith(".crf-", StringComparison.OrdinalIgnoreCase)) return true;
-
-        return false;
-    }
+    internal static bool IsGeneratedCellsPath(string relativePath) => WorkspaceTree.IsGeneratedCellsPath(relativePath);
 
     /// <summary>
     /// True for a path an ARCHIVE leaves out: what both consumers leave out, plus the one thing an
@@ -161,7 +65,7 @@ public static class WorkspaceArchiveScanner
     /// docking.</para>
     /// </summary>
     public static bool IsSkippedFromArchive(string relativePath)
-        => IsSkippedByBoth(relativePath) ||
+        => WorkspaceTree.IsSkippedByBoth(relativePath) ||
            string.Equals(Path.GetFileName(relativePath),
                          CircuitRF.Design.Workspace.WorkspaceUserPersistence.FileName,
                          StringComparison.OrdinalIgnoreCase);
@@ -858,57 +762,13 @@ public static class WorkspaceArchiveScanner
         return total;
     }
 
-    internal static IEnumerable<string> EnumerateFilesSafe(string dir)
-    {
-        if (!Directory.Exists(dir)) yield break;
+    internal static IEnumerable<string> EnumerateFilesSafe(string dir) => WorkspaceTree.EnumerateFilesSafe(dir);
 
-        // Manual walk rather than EnumerateFiles(AllDirectories): one unreadable subfolder must not
-        // abort the whole enumeration, which is exactly what the recursive overload does.
-        var stack = new Stack<string>();
-        stack.Push(dir);
+    internal static long SizeOf(string file) => WorkspaceTree.SizeOf(file);
 
-        while (stack.Count > 0)
-        {
-            var current = stack.Pop();
+    internal static string Rel(string root, string path) => WorkspaceTree.Rel(root, path);
 
-            string[] files;
-            try { files = Directory.GetFiles(current); }
-            catch { continue; }
-            foreach (var f in files) yield return f;
-
-            string[] subs;
-            try { subs = Directory.GetDirectories(current); }
-            catch { continue; }
-            foreach (var s in subs)
-            {
-                var name = Path.GetFileName(s);
-                if (PrunedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
-                stack.Push(s);
-            }
-        }
-    }
-
-    internal static long SizeOf(string file)
-    {
-        try { return new FileInfo(file).Length; }
-        catch { return -1; }
-    }
-
-    internal static string Rel(string root, string path) =>
-        Path.GetRelativePath(root, path).Replace('\\', '/');
-
-    internal static bool IsInside(string path, string root)
-    {
-        try
-        {
-            var full = Path.GetFullPath(path);
-            var r    = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            return full.StartsWith(r, DocumentFileRefs.PathComparer == StringComparer.Ordinal
-                                        ? StringComparison.Ordinal
-                                        : StringComparison.OrdinalIgnoreCase);
-        }
-        catch { return false; }
-    }
+    internal static bool IsInside(string path, string root) => WorkspaceTree.IsInside(path, root);
 
     private static string UniqueName(HashSet<string> used, string name)
     {

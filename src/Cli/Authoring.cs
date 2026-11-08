@@ -51,6 +51,7 @@ public static class Authoring
             "workspace" => NewWorkspace(args[1..]),
             "cell"      => NewCell(args[1..]),
             "view3d"    => NewView3d(args[1..]),
+            "example"   => NewExample(args[1..]),
             _           => UnknownNoun(noun),
         };
     }
@@ -195,6 +196,85 @@ public static class Authoring
             return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return JsonRun.Fail(CliDiagnostics.NewRefused(ex.Message));
+        }
+    }
+
+    // ── new example ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>new example &lt;dir&gt; &lt;name&gt;</c> — File ▸ New ▸ Examples, headlessly: one shipped example
+    /// copied to <c>&lt;dir&gt;/&lt;name&gt;</c>, to run and change. <c>reference examples</c> lists them.
+    ///
+    /// <para>The index, the lookup, the refusals and the copy are all <see cref="ExampleWorkspaces"/>'
+    /// — the refusal is the one the GUI's own install gives, and the files are chosen by the walk and
+    /// skip rules Save Workspace As copies by (<see cref="WorkspaceTree"/>). The GUI also repairs the
+    /// copy's references, which for a shipped example writes nothing; <c>ExamplesCliTests</c>
+    /// compares the two copies byte for byte.</para>
+    ///
+    /// <para>Positional like <c>new cell</c>: where it goes, then which one. The destination folder is
+    /// the example's own name, never a caller's choice, so the README's paths and a later
+    /// <c>reference examples &lt;name&gt;</c> name the same thing.</para>
+    /// </summary>
+    private static int NewExample(string[] args)
+    {
+        string? parentDir = null, name = null;
+        foreach (string a in args)
+        {
+            if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.NewUnknownOption(a)); return NewUsage(); }
+            if (parentDir is null)  parentDir = a;
+            else if (name is null)  name = a;
+            else { JsonRun.Report(CliDiagnostics.NewCellExtraArgument(a)); return NewUsage(); }
+        }
+        if (parentDir is null || name is null) { JsonRun.Report(CliDiagnostics.NewExampleArgsRequired()); return NewUsage(); }
+
+        var all = ExampleWorkspaces.All();
+        if (all.Count == 0) return JsonRun.Fail(CliDiagnostics.ExamplesNotInstalled());
+        if (ExampleWorkspaces.Find(all, name) is not { } example)
+            return JsonRun.Fail(CliDiagnostics.NewExampleUnknown(name, string.Join(", ", all.Select(e => e.Folder))));
+
+        parentDir = Path.GetFullPath(parentDir);
+
+        // As `new workspace` (R-aut11-4): a missing parent is made, the example itself never overwritten.
+        if (!Directory.Exists(parentDir))
+        {
+            try { Directory.CreateDirectory(parentDir); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                          or NotSupportedException)
+                { return JsonRun.Fail(CliDiagnostics.NewParentNotCreated(parentDir, ex.Message)); }
+
+            Console.Error.WriteLine($"[circuitRF] created the parent directory {parentDir}");
+            JsonRun.Note(CliDiagnostics.NewParentCreated(parentDir));
+        }
+
+        if (ExampleWorkspaces.InstallRefusal(example, parentDir) is { } refusal)
+            return JsonRun.Fail(CliDiagnostics.NewRefused(refusal));
+
+        try
+        {
+            var copied = ExampleWorkspaces.Install(example, parentDir);
+            string dest = ExampleWorkspaces.DestinationFor(example, parentDir);
+            string cws  = Path.Combine(dest, DocumentKinds.CwsFileName);
+
+            // A file that did not arrive is reported, never rolled back — the GUI's contract.
+            foreach (string failure in copied.Failures)
+                JsonRun.Report(CliDiagnostics.NewExampleFileNotCopied(failure));
+
+            Console.WriteLine(cws);
+            JsonRun.AddOutput("workspace", dest);
+            JsonRun.AddOutput("cws", cws);
+            string readme = Path.Combine(dest, "README.md");
+            if (File.Exists(readme))
+            {
+                Console.WriteLine(readme);
+                JsonRun.AddOutput("readme", readme);
+            }
+            Console.Error.WriteLine($"[circuitRF] {example.Title}: {copied.FileCount} file(s) copied.");
+            return copied.Failures.Count == 0 ? 0 : 1;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                      or InvalidOperationException)
         {
             return JsonRun.Fail(CliDiagnostics.NewRefused(ex.Message));
         }
@@ -820,6 +900,7 @@ public static class Authoring
         Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none] [--length-unit um|mm|mil] [--vendor-library <name>=<folder>]...");
         Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout,3d]");
         Console.Error.WriteLine("       circuitrf new view3d <cell-dir> --from-layout [--name N]");
+        Console.Error.WriteLine("       circuitrf new example <dir> <name>     ('circuitrf reference examples' lists them)");
         return 1;
     }
 

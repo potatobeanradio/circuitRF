@@ -2781,7 +2781,8 @@ per line, so a script can consume them directly:</p>
 <h2 id="new"><code>new</code> — a workspace or a cell</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf new workspace &lt;dir&gt; [--name N] [--tech &lt;id&gt;|none] [--length-unit um|mm|mil]
                         [--vendor-library &lt;name&gt;=&lt;folder&gt;]...
-<span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]</code></pre>
+<span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]
+<span class="prompt">$ </span>circuitrf new example &lt;dir&gt; &lt;name&gt;</code></pre>
 <p>These create the <strong>first correct document</strong> — the thing that is awkward to write by hand because the
 folder structure and the primacy files have to be right before anything will open it.</p>
 <p>They are not a second implementation. <code>new workspace</code> calls the same function <strong>File ▸ New
@@ -2815,6 +2816,15 @@ answering it — never a guess.</p>
 <code>set-parameter</code>: once a document exists, the way to change it is to <strong>write</strong> it. Every format
 circuitRF owns is readable, versioned JSON — see <a href="file-formats.html">File formats</a> — and that file
 <em>is</em> the interface.</p>
+<h3 id="new-example"><code>new example</code> — a copy of a shipped example</h3>
+<p><code>new example</code> is <strong>File ▸ New ▸ Examples</strong> without the window: it copies one of the
+<a href="#reference-examples">example workspaces</a> to <code>&lt;dir&gt;/&lt;name&gt;</code>, where you can run it and change it. The
+shipped copy is never written to. A folder that already exists is refused, never overwritten, with
+the same sentence the menu gives.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf new example ~/designs Loadpull
+<span class="output">/home/you/designs/Loadpull/.cws
+/home/you/designs/Loadpull/README.md</span></code></pre>
+<p><code>&lt;name&gt;</code> is the example's folder name or its menu title, ignoring case.</p>
 <h3 id="new-add"><code>new</code> is one verb with a noun</h3>
 <p><code>new workspace</code> and <code>new cell</code> are two nouns of one verb, not two verbs. It reads better and, more to
 the point, the number of top-level verbs is a cost every reader of <code>--help</code> pays.</p>
@@ -4237,11 +4247,23 @@ questions a design starts with:</p>
 <td>every material in the libraries that ship — role, εr and tanδ or σ₂₀ and α₂₀, thermal conductivity and source — and how a technology uses one</td>
 <td>—</td>
 </tr>
+<tr>
+<td><code>examples</code></td>
+<td>every <a href="#reference-examples">example workspace</a> that ships, with what it shows and where it is</td>
+<td><code>examples &lt;name&gt;</code></td>
+</tr>
 </tbody>
 </table>
-<p>Like <code>components</code>, all three are generated from the data they describe every time you ask: the
-technologies are read from the embedded <code>.ctech</code> files through the same reader as your own, and the
-materials from the embedded <code>.cmat</code> libraries.</p>
+<p>Like <code>components</code>, all four are generated from the data they describe every time you ask: the
+technologies are read from the embedded <code>.ctech</code> files through the same reader as your own, the
+materials from the embedded <code>.cmat</code> libraries, and the examples from the index that
+<strong>File ▸ New ▸ Examples</strong> reads.</p>
+<h3 id="reference-examples">The example workspaces</h3>
+<p><code>reference examples</code> lists the worked designs that ship with circuitRF, the same ones
+<strong>File ▸ New ▸ Examples</strong> offers. <code>reference examples &lt;name&gt;</code> gives one example's README (what each
+bench shows and the order to run them in), every file in it, and its cells with the analyses each
+declares. Copy one with <a href="#new-example"><code>new example</code></a> to run it or change it. An example added to
+circuitRF appears here as soon as it is in the menu; nothing else lists them.</p>
 <p>Asking for a topic prints it as its own Markdown, so it redirects cleanly:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf reference netlist &gt; netlist.md</code></pre>
 <h3 id="reference-components">The component catalogue</h3>

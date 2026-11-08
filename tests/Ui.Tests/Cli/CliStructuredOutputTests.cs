@@ -704,6 +704,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "em.setup.warning",
         "em.solve-count",         // brief-sdl-6 D5
         "em.variable-unreached",  // brief-sdl-6 D4
+        "examples.not-installed",
         "explain.analysis.none",
         "explain.analysis.not-found",
         // RND-3's three questions are OPTIONS on this verb, not verbs of their own (R-rnd3-1), so
@@ -908,6 +909,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.args.cell-args-required",
         "new.args.cell-extra-argument",
         "new.args.directory-required",
+        "new.args.example-args-required",
         "new.args.multiple-directories",
         "new.args.noun-required",
         "new.args.unknown-noun",
@@ -916,6 +918,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.args.view3d",
         "new.cell.exists",
         // brief-dfr22-1: `new workspace --length-unit` — an unknown unit, and a unit with no technology to carry it.
+        "new.example.not-copied",
+        "new.example.unknown",
         "new.length-unit.no-technology",
         "new.length-unit.unknown",
         "new.name.invalid",
@@ -1113,6 +1117,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "reference.args.too-many",
         "reference.args.unknown-option",
         "reference.component.unknown",
+        "reference.example.unknown",
         "reference.resource.unknown",
         "reference.technology.unknown",
         "reference.topic.unknown",

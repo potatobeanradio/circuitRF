@@ -36,9 +36,10 @@ public sealed record ExampleWorkspace(string Folder, string Title, string Summar
 /// pressed — the two can disagree on a partial install, and the menu is the wrong place to find
 /// out.</para>
 ///
-/// <para>Framework-free and read-only. Nothing here copies anything; see
-/// <c>ExampleWorkspaceInstall</c> for that half, which lives in <c>src/Ui</c> because it is built on
-/// <c>WorkspaceCopy</c>.</para>
+/// <para>Framework-free. Reading the index writes nothing. <see cref="Install"/> is the headless
+/// copy <c>circuitrf new example</c> makes; File ▸ New ▸ Examples is <c>ExampleWorkspaceInstall</c>
+/// in <c>src/Ui</c>, which shares <see cref="InstallRefusal"/> and copies through
+/// <c>WorkspaceCopy</c> so the copy's references are also repaired.</para>
 /// </summary>
 public static class ExampleWorkspaces
 {
@@ -134,6 +135,77 @@ public static class ExampleWorkspaces
             if (File.Exists(Path.Combine(candidate, IndexFileName))) return Path.GetFullPath(candidate);
         }
         return null;
+    }
+
+    // ── Finding one by name ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// The example a caller named — by its folder or its menu title, ignoring case — or null.
+    /// Exact, never a nearest match: a caller that asked for one example and was handed another would
+    /// study the wrong design and say nothing about it.
+    /// </summary>
+    public static ExampleWorkspace? Find(IReadOnlyList<ExampleWorkspace> all, string name)
+    {
+        string wanted = name.Trim();
+        return all.FirstOrDefault(e => string.Equals(e.Folder, wanted, StringComparison.OrdinalIgnoreCase))
+            ?? all.FirstOrDefault(e => string.Equals(e.Title,  wanted, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ── Installing one ───────────────────────────────────────────────────────
+
+    /// <summary>Where <paramref name="example"/> would land under <paramref name="parentDir"/>: a
+    /// folder named after the example, as File ▸ New ▸ Examples puts it.</summary>
+    public static string DestinationFor(ExampleWorkspace example, string parentDir)
+        => Path.Combine(parentDir, example.Folder);
+
+    /// <summary>
+    /// The sentence explaining why <paramref name="example"/> cannot be installed under
+    /// <paramref name="parentDir"/>, or null when it can. Asked BEFORE anything is created, so a
+    /// refusal never leaves a half-made workspace. Shared by File ▸ New ▸ Examples
+    /// (<c>ExampleWorkspaceInstall</c>) and <c>circuitrf new example</c>.
+    ///
+    /// <para><b>An existing folder is a refusal, not an overwrite and not a rename.</b> Installing the
+    /// same example twice into one place is a thing people do; overwriting would discard what they
+    /// changed in the first copy, and silently landing in <c>S-Parameters 2</c> puts a folder
+    /// somewhere they did not name.</para>
+    /// </summary>
+    public static string? InstallRefusal(ExampleWorkspace? example, string? parentDir)
+    {
+        if (example is null) return "There is no example to install.";
+        if (!File.Exists(example.CwsPath))
+            return $"The '{example.Title}' example is not installed with this copy of circuitRF.";
+
+        if (string.IsNullOrWhiteSpace(parentDir))
+            return "Choose a folder to put the example in.";
+
+        if (WorkspaceCreate.UnwritableParentRefusal(
+                parentDir, $"The '{example.Title}' example cannot be created there") is { } readOnly)
+            return readOnly;
+
+        string dest = DestinationFor(example, parentDir);
+        if (Directory.Exists(dest) || File.Exists(dest))
+            return $"'{dest}' already exists. Choose a different folder, or rename what is there — "
+                 + "circuitRF will not write over a workspace you may have changed.";
+
+        return WorkspaceTree.CopyRefusal(example.Directory, dest);
+    }
+
+    /// <summary>
+    /// Copies <paramref name="example"/> into <paramref name="parentDir"/> by
+    /// <see cref="WorkspaceTree.CopyFiles"/> — the headless install <c>circuitrf new example</c>
+    /// performs. File ▸ New ▸ Examples also repairs the copy's references (<c>WorkspaceCopy</c>,
+    /// in <c>src/Ui</c>); a shipped example references nothing outside itself and is stored in the
+    /// spelling that repair would write, so the two copies are the same bytes —
+    /// <c>ExamplesCliTests</c> compares them for every example.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Refused; see <see cref="InstallRefusal"/>.</exception>
+    public static WorkspaceTreeCopyResult Install(ExampleWorkspace example, string parentDir)
+    {
+        if (InstallRefusal(example, parentDir) is { } refusal)
+            throw new InvalidOperationException(refusal);
+
+        return WorkspaceTree.CopyFiles(Path.GetFullPath(example.Directory),
+                                       Path.GetFullPath(DestinationFor(example, parentDir)));
     }
 
     private sealed class IndexFile

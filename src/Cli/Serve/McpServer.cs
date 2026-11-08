@@ -257,6 +257,12 @@ internal sealed class McpServer
                 "'find' says what is already here. 'netlist' extracts the .cnl a schematic runs as, " +
                 "which is also the reference to check your own authoring against; with toSchematic it " +
                 "runs the other way and draws a .cnl you wrote as a readable .csch.\n" +
+                // The shipped examples are worked answers; an agent cannot find them by browsing, because
+                // they live beside the executable, outside the root.
+                "Worked designs ship with circuitRF: 'reference examples' lists each with what it shows; " +
+                "'reference examples <name>' gives one's README, files, " +
+                "cells and analyses; 'create what=example path=<dir> name=<name>' copies it under the root " +
+                "to read, run and change. Start from the nearest one.\n" +
                 "\n" +
                 // The 3D EM half: nothing above it so much as names a .cem, so an agent learned that
                 // circuitRF solves cavity resonances only by noticing one enum value in a 54 kB topic.

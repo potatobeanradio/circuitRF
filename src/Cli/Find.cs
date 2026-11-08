@@ -214,7 +214,7 @@ internal static class Find
 
     // ── one workspace ────────────────────────────────────────────────────────
 
-    private static FoundWorkspaceJson Describe(string workspaceDir, bool analyses)
+    internal static FoundWorkspaceJson Describe(string workspaceDir, bool analyses)
     {
         string? tech = null;
         try

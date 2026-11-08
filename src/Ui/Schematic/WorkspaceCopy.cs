@@ -82,29 +82,7 @@ public static class WorkspaceCopy
     /// change between the two.
     /// </summary>
     public static string? Refusal(string? sourceRoot, string? destRoot)
-    {
-        if (string.IsNullOrWhiteSpace(sourceRoot) || !Directory.Exists(sourceRoot))
-            return "There is no workspace folder to copy.";
-
-        if (!File.Exists(Path.Combine(sourceRoot, CwsFileName)))
-            return $"'{sourceRoot}' is not a circuitRF workspace (no {CwsFileName} found).";
-
-        if (string.IsNullOrWhiteSpace(destRoot))
-            return "Choose where to save the copy.";
-
-        if (Directory.Exists(destRoot) || File.Exists(destRoot))
-            return $"'{destRoot}' already exists. Choose a name that is not in use.";
-
-        // Copying a workspace into itself walks its own output. The destination does not exist yet,
-        // so this is a question about the PATH, not about what is on disk — and the New Workspace
-        // dialog's own "not inside another workspace" check does not cover it: a subfolder of the
-        // workspace has no `.cws` of its own.
-        if (WorkspaceArchiveScanner.IsInside(destRoot, sourceRoot))
-            return "A workspace cannot be copied into itself. Choose a location outside "
-                 + $"'{Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar))}'.";
-
-        return null;
-    }
+        => WorkspaceTree.CopyRefusal(sourceRoot, destRoot);
 
     // ── The copy ──────────────────────────────────────────────────────────────
 
@@ -126,40 +104,9 @@ public static class WorkspaceCopy
         // leave alone.
         var capture = WorkspaceMove.Capture([from]);
 
-        var failures = new List<string>();
-        int files    = 0;
-        long bytes   = 0;
-
-        Directory.CreateDirectory(to);
-
-        foreach (string file in WorkspaceArchiveScanner.EnumerateFilesSafe(from))
-        {
-            string rel = WorkspaceArchiveScanner.Rel(from, file);
-            if (WorkspaceArchiveScanner.IsSkipped(rel)) continue;
-
-            string target = Path.Combine(to, rel.Replace('/', Path.DirectorySeparatorChar));
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(file, target, overwrite: true);
-                files++;
-                bytes += Math.Max(0, WorkspaceArchiveScanner.SizeOf(target));
-            }
-            catch (Exception ex)
-            {
-                failures.Add($"{rel}: {ex.Message}");
-            }
-        }
-
-        // An empty folder carries meaning here — the user made it, and a copy that quietly drops it
-        // is a copy that changed the project tree. EnumerateFilesSafe only yields files.
-        foreach (string dir in EnumerateDirectoriesSafe(from))
-        {
-            string rel = WorkspaceArchiveScanner.Rel(from, dir);
-            if (WorkspaceArchiveScanner.IsSkipped(rel)) continue;
-            try { Directory.CreateDirectory(Path.Combine(to, rel.Replace('/', Path.DirectorySeparatorChar))); }
-            catch (Exception ex) { failures.Add($"{rel}: {ex.Message}"); }
-        }
+        // The files themselves: the same walk and skip rules `circuitrf new example` copies by.
+        var tree     = WorkspaceTree.CopyFiles(from, to);
+        var failures = new List<string>(tree.Failures);
 
         // The destination is new to this process, and Apply is about to ask questions about it:
         // StoreCellRef routes through ExternalCellRef, whose alias table and workspace walk-up are
@@ -171,31 +118,6 @@ public static class WorkspaceCopy
         var rewrite = WorkspaceMove.Apply(capture, from, to);
         failures.AddRange(rewrite.Failures);
 
-        return new WorkspaceCopyResult(files, bytes, rewrite.RewrittenFiles, failures);
-    }
-
-    /// <summary>Every directory under <paramref name="root"/>, pruning what the copy skips, and
-    /// surviving one unreadable branch — the directory twin of
-    /// <c>WorkspaceArchiveScanner.EnumerateFilesSafe</c>.</summary>
-    private static IEnumerable<string> EnumerateDirectoriesSafe(string root)
-    {
-        var stack = new Stack<string>();
-        stack.Push(root);
-
-        while (stack.Count > 0)
-        {
-            string current = stack.Pop();
-
-            string[] subs;
-            try { subs = Directory.GetDirectories(current); }
-            catch { continue; }
-
-            foreach (string s in subs)
-            {
-                if (WorkspaceArchiveScanner.IsSkipped(WorkspaceArchiveScanner.Rel(root, s))) continue;
-                yield return s;
-                stack.Push(s);
-            }
-        }
+        return new WorkspaceCopyResult(tree.FileCount, tree.Bytes, rewrite.RewrittenFiles, failures);
     }
 }

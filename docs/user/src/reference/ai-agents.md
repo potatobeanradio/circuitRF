@@ -116,6 +116,7 @@ usually needs them:
 
 | Topic | When | What it gives |
 |---|---|---|
+| `examples` | before starting a design | the worked designs that ship with circuitRF; name one for its README, files and analyses, then copy it with `create what=example` |
 | `technologies` | before creating the workspace | every shipped technology: its id, stackup and materials |
 | `netlist` | before the first `.cnl` | the instance line, analysis and measurement syntax |
 | `analyses` | before declaring any analysis | every `type=` and every key it accepts, with defaults |
@@ -146,21 +147,25 @@ for clients that support them.
 
 The order below keeps every expensive step behind a cheap check.
 
-1. **Create the workspace on the technology.** Use `create` with `what=workspace` and a `tech`.
-   Every later document in the workspace resolves that technology.
-2. **Synthesise an ideal prototype** as a `.cnl` of ideal L and C, and `run` it. This proves that
+1. **Start from the nearest example**, if one is close. `reference examples` lists them; `create`
+   with `what=example` copies one under the server's root, where the agent can read every file, run
+   its benches and change it. The example's README says what each bench shows and in what order to
+   run them.
+2. **Otherwise create the workspace on the technology.** Use `create` with `what=workspace` and a
+   `tech`. Every later document in the workspace resolves that technology.
+3. **Synthesise an ideal prototype** as a `.cnl` of ideal L and C, and `run` it. This proves that
    the topology and values can meet the spec before anything physical is drawn.
-3. **Rebuild it from realisable elements**: microstrip, vias and capacitors the process can make.
+4. **Rebuild it from realisable elements**: microstrip, vias and capacitors the process can make.
    Run it again, including tolerance corners. Each spec line becomes one `measure`: `max_over` and
    `min_over` give the worst value of a quantity over a frequency band, for example
    `measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)`. The agent reads them back with
    `read`. See [Measurements](measurements.html).
-4. **Draw the layout** (`.clay`). Run `check` for DRC, `render` it to look at, and run `impedance`
+5. **Draw the layout** (`.clay`). Run `check` for DRC, `render` it to look at, and run `impedance`
    to compare each drawn line's Z0 with what the circuit model assumed.
-5. **Write the EM setup** (`.cem`) and run `check` on it. Its notes report what the solver will mesh
+6. **Write the EM setup** (`.cem`) and run `check` on it. Its notes report what the solver will mesh
    and how large the problem is. See the next section.
-6. **Run EM** once the size is acceptable, then `read` the Touchstone and compare it with step 3.
-7. **Export** the artwork with `convert`, for example a `.clay` in and a `.gds` out.
+7. **Run EM** once the size is acceptable, then `read` the Touchstone and compare it with step 4.
+8. **Export** the artwork with `convert`, for example a `.clay` in and a `.gds` out.
 
 ## Yield: tolerances, Monte Carlo and the worst trial {#yield}
 

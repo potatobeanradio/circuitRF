@@ -136,6 +136,11 @@ usually needs them:</p>
 </thead>
 <tbody>
 <tr>
+<td><code>examples</code></td>
+<td>before starting a design</td>
+<td>the worked designs that ship with circuitRF; name one for its README, files and analyses, then copy it with <code>create what=example</code></td>
+</tr>
+<tr>
 <td><code>technologies</code></td>
 <td>before creating the workspace</td>
 <td>every shipped technology: its id, stackup and materials</td>
@@ -235,8 +240,12 @@ for clients that support them.</p>
 <h2 id="flow">The design flow that works</h2>
 <p>The order below keeps every expensive step behind a cheap check.</p>
 <ol>
-<li><strong>Create the workspace on the technology.</strong> Use <code>create</code> with <code>what=workspace</code> and a <code>tech</code>.
-Every later document in the workspace resolves that technology.</li>
+<li><strong>Start from the nearest example</strong>, if one is close. <code>reference examples</code> lists them; <code>create</code>
+with <code>what=example</code> copies one under the server's root, where the agent can read every file, run
+its benches and change it. The example's README says what each bench shows and in what order to
+run them.</li>
+<li><strong>Otherwise create the workspace on the technology.</strong> Use <code>create</code> with <code>what=workspace</code> and a
+<code>tech</code>. Every later document in the workspace resolves that technology.</li>
 <li><strong>Synthesise an ideal prototype</strong> as a <code>.cnl</code> of ideal L and C, and <code>run</code> it. This proves that
 the topology and values can meet the spec before anything physical is drawn.</li>
 <li><strong>Rebuild it from realisable elements</strong>: microstrip, vias and capacitors the process can make.
@@ -248,7 +257,7 @@ Run it again, including tolerance corners. Each spec line becomes one <code>meas
 to compare each drawn line's Z0 with what the circuit model assumed.</li>
 <li><strong>Write the EM setup</strong> (<code>.cem</code>) and run <code>check</code> on it. Its notes report what the solver will mesh
 and how large the problem is. See the next section.</li>
-<li><strong>Run EM</strong> once the size is acceptable, then <code>read</code> the Touchstone and compare it with step 3.</li>
+<li><strong>Run EM</strong> once the size is acceptable, then <code>read</code> the Touchstone and compare it with step 4.</li>
 <li><strong>Export</strong> the artwork with <code>convert</code>, for example a <code>.clay</code> in and a <code>.gds</code> out.</li>
 </ol>
 <h2 id="yield">Yield: tolerances, Monte Carlo and the worst trial</h2>

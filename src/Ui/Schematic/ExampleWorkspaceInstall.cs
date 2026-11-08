@@ -39,34 +39,14 @@ public static class ExampleWorkspaceInstall
 {
     /// <summary>Where <paramref name="example"/> would land under <paramref name="parentDir"/>.</summary>
     public static string DestinationFor(ExampleWorkspace example, string parentDir)
-        => Path.Combine(parentDir, example.Folder);
+        => ExampleWorkspaces.DestinationFor(example, parentDir);
 
     /// <summary>
-    /// The sentence explaining why this cannot be installed here, or null when it can.
-    ///
-    /// <para>Asked BEFORE anything is created, so a refusal never leaves a half-made workspace —
-    /// the four steps of a copy have no rollback.</para>
+    /// The sentence explaining why this cannot be installed here, or null when it can — the one
+    /// <c>circuitrf new example</c> gives too (<see cref="ExampleWorkspaces.InstallRefusal"/>).
     /// </summary>
     public static string? Refusal(ExampleWorkspace? example, string? parentDir)
-    {
-        if (example is null) return "There is no example to install.";
-        if (!File.Exists(example.CwsPath))
-            return $"The '{example.Title}' example is not installed with this copy of circuitRF.";
-
-        if (string.IsNullOrWhiteSpace(parentDir))
-            return "Choose a folder to put the example in.";
-
-        if (WorkspaceCreate.UnwritableParentRefusal(
-                parentDir, $"The '{example.Title}' example cannot be created there") is { } readOnly)
-            return readOnly;
-
-        string dest = DestinationFor(example, parentDir);
-        if (Directory.Exists(dest) || File.Exists(dest))
-            return $"'{dest}' already exists. Choose a different folder, or rename what is there — "
-                 + "circuitRF will not write over a workspace you may have changed.";
-
-        return WorkspaceCopy.Refusal(example.Directory, dest);
-    }
+        => ExampleWorkspaces.InstallRefusal(example, parentDir);
 
     /// <summary>
     /// Copies <paramref name="example"/> into <paramref name="parentDir"/>. Blocking and

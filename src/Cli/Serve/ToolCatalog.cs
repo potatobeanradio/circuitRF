@@ -852,6 +852,7 @@ internal static class ToolCatalog
 
         new("create",
             "Create a correct initial document — a workspace, a cell folder with its view files, a 3D view of a cell's layout, "
+          + "a copy of a shipped example workspace to run and change, "
           + "or a model in a model library exported from a cell or a Model Composer model (Export to Library).",
             "what",
             "What to create.",
@@ -872,6 +873,15 @@ internal static class ToolCatalog
                     ],
                     [new("views", "--views", OptKind.StrList, "Which views to create: schematic, symbol, layout, 3d (an empty .c3d whose units come from the cell's layout, else the technology; a 3D view of an existing layout places it as an instance with View Layout), or none (the cell folder alone). Default schematic.")],
                     "A cell folder and one empty-but-valid file per view."),
+                // File ▸ New ▸ Examples. A mode of `create` rather than a tool: what it makes is a workspace.
+                new("example", ["new", "example"],
+                    [
+                        new("path", true,  "The folder the copy goes in; the workspace lands at <path>/<name>."),
+                        new("name", false, "The example's name, as 'reference examples' lists it."),
+                    ],
+                    [],
+                    "A copy of a shipped example workspace, to run and change: its README says what each bench shows "
+                  + "and the order to run them. An existing folder is refused, never overwritten."),
                 // brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout.
                 new("view3d", ["new", "view3d"],
                     [new("cell", true, "The cell folder whose layout the 3D view places.")],
@@ -1911,8 +1921,9 @@ internal static class ToolCatalog
 
         new("reference",
             "What may be written in circuitRF's documents: the reference pages, the generated " +
-            "catalogue of every netlist primitive (start from 'component-index'), and the " +
-            "technologies and materials that ship with circuitRF. " +
+            "catalogue of every netlist primitive (start from 'component-index'), the " +
+            "technologies and materials that ship with circuitRF, and its example workspaces " +
+            "('examples': worked designs to study and copy). " +
             "No arguments lists the topics and their sizes. Reads no file and writes nothing.",
             null, null,
             [
@@ -1920,11 +1931,12 @@ internal static class ToolCatalog
                     [
                         new("topic", false,
                             "Which topic. Omit for the list. 'component-index' lists every primitive in a line each; " +
-                            "'technologies' and 'shipped-materials' are what ships.",
+                            "'technologies', 'shipped-materials' and 'examples' are what ships.",
                             Required: false),
                         new("type",  false,
                             "With topic 'components', one primitive's .cnl type token — MLIN, SDD, FET_Statz. " +
-                            "With 'analyses', one type= token; with 'technologies', one technology id.",
+                            "With 'analyses', one type= token; with 'technologies', one technology id; with 'examples', " +
+                            "one example's name (its README, files, cells and analyses).",
                             Required: false),
                     ],
                     [

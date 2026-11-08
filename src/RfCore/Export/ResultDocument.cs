@@ -3819,7 +3819,37 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ReferenceTechnologyJson>? Technologies = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ReferenceMaterialJson>? Materials = null);
+        IReadOnlyList<ReferenceMaterialJson>? Materials = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceExampleJson>? Examples = null);
+
+    /// <summary>One example workspace that ships with circuitRF, from the index File ▸ New ▸ Examples
+    /// reads (<c>examples/examples.json</c>).</summary>
+    /// <param name="Name">The example's folder name: what <c>new example</c> and <c>reference examples
+    /// &lt;name&gt;</c> take, and the folder a copy lands in.</param>
+    /// <param name="Title">The menu's title for it.</param>
+    /// <param name="Summary">The menu's one-line description of what it shows.</param>
+    /// <param name="Directory">Where the shipped copy is on this machine. Read-only: copy it with
+    /// <c>new example</c> before running or editing it.</param>
+    /// <param name="Readme">With a name only: the example's <c>README.md</c> — what each bench shows,
+    /// the order to run them in, and what to change for your own design.</param>
+    /// <param name="Files">With a name only: every file a copy carries, relative to the workspace.</param>
+    /// <param name="Workspace">With a name only: the cells, their views and their declared analyses,
+    /// as <c>find</c> reports a workspace.</param>
+    public sealed record ReferenceExampleJson(
+        string  Name,
+        string  Title,
+        string  Summary,
+        string  Directory,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Readme = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceExampleFileJson>? Files = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        FoundWorkspaceJson? Workspace = null);
+
+    /// <param name="Path">Relative to the example's workspace folder, with forward slashes.</param>
+    public sealed record ReferenceExampleFileJson(string Path, long Bytes);
 
     /// <summary>One row of the component INDEX — the type token and enough to choose it, without its
     /// parameters. The full catalogue is ~150 kB; the index is what a client reads first.</summary>

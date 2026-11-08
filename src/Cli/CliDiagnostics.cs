@@ -774,11 +774,11 @@ internal static class CliDiagnostics
 
     public static Diagnostic NewNounRequired() => new(
         "new.args.noun-required", DiagnosticSeverity.Error,
-        "new: say what to create — 'new workspace' or 'new cell'.");
+        "new: say what to create — 'new workspace', 'new cell', 'new view3d' or 'new example'.");
 
     public static Diagnostic NewUnknownNoun(string noun) => Diagnostic.Create(
         "new.args.unknown-noun", DiagnosticSeverity.Error,
-        "new: there is nothing called '{noun}' to create. Known: workspace, cell, view3d.", ("noun", noun));
+        "new: there is nothing called '{noun}' to create. Known: workspace, cell, view3d, example.", ("noun", noun));
 
     public static Diagnostic NewUnknownOption(string option) => Diagnostic.Create(
         "new.args.unknown-option", DiagnosticSeverity.Error,
@@ -853,6 +853,26 @@ internal static class CliDiagnostics
     /// rather than re-worded, so the GUI and the verb refuse in the same words.</summary>
     public static Diagnostic NewRefused(string reason) => Diagnostic.Create(
         "new.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    /// <summary><c>new example</c> without its two arguments.</summary>
+    public static Diagnostic NewExampleArgsRequired() => new(
+        "new.args.example-args-required", DiagnosticSeverity.Error,
+        "new example: a folder to put the example in and the example's name are required. "
+      + "'circuitrf reference examples' lists them.");
+
+    /// <summary><c>new example</c> naming an example that does not ship — refused LISTING the real ones.</summary>
+    public static Diagnostic NewExampleUnknown(string name, string known) => Diagnostic.Create(
+        "new.example.unknown", DiagnosticSeverity.Error,
+        "No example '{name}'. Examples: {known}", ("name", name), ("known", known));
+
+    /// <summary>One file of an example that did not arrive in the copy. Reported, never rolled back.</summary>
+    public static Diagnostic NewExampleFileNotCopied(string failure) => Diagnostic.Create(
+        "new.example.not-copied", DiagnosticSeverity.Error, "Not copied: {failure}", ("failure", failure));
+
+    /// <summary>This installation carries no examples (a supported state, not a defect).</summary>
+    public static Diagnostic ExamplesNotInstalled() => new(
+        "examples.not-installed", DiagnosticSeverity.Error,
+        "This copy of circuitRF has no example workspaces installed.");
 
     public static Diagnostic NewCellExists(string name) => Diagnostic.Create(
         "new.cell.exists", DiagnosticSeverity.Error,
@@ -2231,16 +2251,20 @@ internal static class CliDiagnostics
 
     /// <summary>A technology id that does not ship, listing the ones that do — the same list
     /// <c>new workspace --tech</c>'s refusal prints.</summary>
+    public static Diagnostic ReferenceUnknownExample(string name, string known) => Diagnostic.Create(
+        "reference.example.unknown", DiagnosticSeverity.Error,
+        "No example '{name}'. Examples: {known}", ("name", name), ("known", known));
+
     public static Diagnostic ReferenceUnknownTechnology(string id, string known) => Diagnostic.Create(
         "reference.technology.unknown", DiagnosticSeverity.Error,
         "No shipped technology '{id}'. Technologies: {known}", ("id", id), ("known", known));
 
     /// <summary>A second argument on a topic that does not have items. Only <c>components</c>,
-    /// <c>analyses</c> and <c>technologies</c> do.</summary>
+    /// <c>analyses</c>, <c>technologies</c> and <c>examples</c> do.</summary>
     public static Diagnostic ReferenceItemNotForTopic(string topic) => Diagnostic.Create(
         "reference.args.item-not-for-topic", DiagnosticSeverity.Error,
         "reference: '{topic}' is one page and names nothing inside it. Only 'components', " +
-        "'analyses' and 'technologies' take a name.",
+        "'analyses', 'technologies' and 'examples' take a name.",
         ("topic", topic));
 
     /// <summary>A type named with no topic. Reachable from a tool call, where the two arguments are
