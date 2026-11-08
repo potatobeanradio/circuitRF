@@ -30,7 +30,7 @@ from typing import Any, Callable, Iterable
 
 import circuitrf_pcell as crf
 
-from .dlo import DloGen, Numeric, Tech
+from .dlo import DloGen, Numeric, PCellWrapper, Tech
 from .hostglue import install_host_module_for
 
 __all__ = ["register_kit", "KitRegistration"]
@@ -664,6 +664,13 @@ def register_kit(package: str, registry: Any = None, prefix: str = "",
 
     kit_tech = Tech.get()
 
+    # The cells the kit's own registration glue wrapped, when it has glue: that IS the kit's list of
+    # cells, so a shared base it never registers (one its devices subclass, which draws nothing of its
+    # own) is not offered. Matched by name, since glue may load a module from a copy of its file.
+    # A kit with no glue keeps the structural walk below.
+    wrapped = {(c.__module__, c.__qualname__) for c in PCellWrapper.registered
+               if c.__module__ == package or c.__module__.startswith(package + ".")}
+
     for info in pkgutil.iter_modules(getattr(root, "__path__", [])):
         module_name = f"{package}.{info.name}"
         try:
@@ -675,6 +682,8 @@ def register_kit(package: str, registry: Any = None, prefix: str = "",
         for cls in _cells_in(module):
             generator_id = f"{prefix}{cls.__name__}"
             if wanted is not None and generator_id not in wanted:
+                continue
+            if wrapped and (cls.__module__, cls.__qualname__) not in wrapped:
                 continue
             try:
                 params, defaults, specs, recipes = _declare(cls, kit_tech, package)
