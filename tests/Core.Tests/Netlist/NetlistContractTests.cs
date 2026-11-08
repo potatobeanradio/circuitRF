@@ -254,7 +254,7 @@ public class NetlistContractTests
     {
         // The ones that deliberately return null, and why, are documented in InstanceNetContract.
         var exempt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "SnP", "wBond", "ExtDevice", "VerilogA" };
+            { "SnP", ComponentModelFactory.DeembedTypeName, "wBond", "ExtDevice", "VerilogA" };
 
         var unstated = new List<string>();
         foreach (var type in ComponentModelFactory.PrimitiveTypeNames)

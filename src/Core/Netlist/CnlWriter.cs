@@ -307,7 +307,8 @@ public static class CnlWriter
         // always produced an absolute one that happened not to need the resolution branch.
         if (reference is not null
             && (reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
-                || reference.Equals(Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+                || reference.Equals(Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase)
+                || reference.Equals(Devices.ComponentModelFactory.DeembedTypeName, StringComparison.OrdinalIgnoreCase))
             && ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
             && !IsQuoted(ov.Expression))
             return $"{ov.Name}=\"{ov.Expression}\"";

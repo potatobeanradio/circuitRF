@@ -1271,6 +1271,43 @@ The symbol is dynamic; the pin arrangement, the pitch and the floating-reference
 
 {{table: components/Snp}}
 
+### Deembed {#deembed}
+
+The opposite of an SnP. It reads a Touchstone file the same way and has the same parameters, but instead of adding the
+file's network to the circuit it **removes** it: it is the network that, cascaded with the file's, gives a plain
+connection.
+
+**Wire it as you would wire the SnP that adds the network.** Ports 1…N/2 are one side, N/2+1…N the other, as in the
+file. Draw the chain that would put the fixture in, then swap the SnP for a Deembed and the part for the measurement:
+
+```
+Port:P1  p1 0 Num=1 Z=50 Ohm
+SnP:A    p1 x  File="fixture_A.s2p" NumPorts=2      ; adds fixture A: what an instrument sees
+SnP:DUT  x  p2 File="part.s2p"      NumPorts=2
+
+Port:P1  p1 0 Num=1 Z=50 Ohm
+Deembed:DA p1 x File="fixture_A.s2p" NumPorts=2      ; removes it again
+SnP:M      x  y File="measured.s2p"  NumPorts=2
+Deembed:DB y  p2 File="fixture_B.s2p" NumPorts=2     ; and fixture B on the other side
+```
+
+- **Any even number of ports.** A six-port that sits between a transistor's outer and inner gate, drain and source
+  terminals de-embeds the transistor to its inner terminals. An odd count is refused when the netlist is read.
+- **An SnP and a Deembed on the same file cancel**, at every frequency of the sweep, not only the file's own points,
+  because both read it through the same interpolation with the same `InterpMode`, `InterpDomain` and `ExtrapMode`.
+  Below and above the file's band both hold its end values, or both extrapolate, so they still cancel.
+- **It works in every analysis an SnP works in**: DC (at 0 Hz), S-parameters, harmonic balance at every harmonic,
+  loadpull, sweeps, tuning and optimization. In an **envelope** run it is not fitted as an SnP is: it undoes a network,
+  so it would have to advance what that network delays, which no causal model can. It is approximated around each
+  harmonic instead, and the run says so.
+- **It has gain.** The network that undoes a lossy one has gain wherever that one has loss, so a stability run with
+  `NDF=yes` refuses it by name.
+- **Where it cannot be built, the run stops and says where.** A fixture that does not pass from one side to the other
+  at some frequency has nothing to undo there: a series capacitor at 0 Hz is the usual case, and the message names the
+  instance and the frequency. Apply bias outside the part being de-embedded, or use a file whose lowest frequency
+  still passes through.
+- It takes no `SdB_<i>_<j>`, `Sdeg_<i>_<j>` or `Reciprocal`; set an offset on the SnP whose network it removes.
+
 ### SPICE Model or Subcircuit {#spicemodel}
 
 {{symbol: spicemodel}}

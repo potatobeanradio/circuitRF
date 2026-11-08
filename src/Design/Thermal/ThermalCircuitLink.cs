@@ -229,7 +229,8 @@ public static class ThermalCircuitLink
         string Expected() => results.Count == 0
             ? "this 3D view has no EM setup, so it has no S-parameter result for a circuit to use"
             : "this 3D view's EM results are " + string.Join(", ", results.Select(r => $"'{r.BasePath}.sNp' (setup '{r.Setup}')"));
-        var snps = nl.Components.Where(c => c.Model is SnpModel).ToList();
+        // brief-de-2 — a Deembed reads a Touchstone file too, but it undoes that network: it is never a 3D view's EM result.
+        var snps = nl.Components.Where(c => c.Model is SnpModel { Inverse: false }).ToList();
         if (named is not null)
         {
             var ec = nl.Components.FirstOrDefault(c => c.InstancePath == named);
@@ -239,7 +240,7 @@ public static class ThermalCircuitLink
                           (snps.Count == 0 ? " (and no S-parameter block at all)." : $"; its S-parameter blocks are {List(snps)}.");
                 return null;
             }
-            if (ec.Model is not SnpModel snp)
+            if (ec.Model is not SnpModel { Inverse: false } snp)
             {
                 refusal = $"Instance '{named}' is not an S-parameter block, so its model is not this 3D view's EM result.";
                 return null;
@@ -290,7 +291,7 @@ public static class ThermalCircuitLink
         {
             var results = ResultPaths(doc, c3dPath, resultsRoot);
             var bases = results.Select(r => r.BasePath).ToList();
-            var instances = nl.Components.Where(c => c.Model is SnpModel m && IsResultOf(m.FilePath, bases)).Select(c => c.InstancePath).ToList();
+            var instances = nl.Components.Where(c => c.Model is SnpModel { Inverse: false } m && IsResultOf(m.FilePath, bases)).Select(c => c.InstancePath).ToList();
             string? problem = sel.Selected is null ? $"The circuit runs no HB: {sel.Why}" : null;
             var inst = Instance(nl, fc.Instance, results, out string? instWhy);
             if (inst is null) return new Survey(path, analyses, instances, sel.Selected?.Name, null, [], problem ?? instWhy);

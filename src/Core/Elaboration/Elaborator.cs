@@ -1458,7 +1458,8 @@ public sealed class Elaborator
         if (inst.Reference.Equals("MOD_Source", StringComparison.OrdinalIgnoreCase))
             return ResolveModSourceParameters(inst, parentScope);
         if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase)
-            || inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+            || inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals(ComponentModelFactory.DeembedTypeName, StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
         // A .cmodel path is not an expression, for SnP's reason.
         if (inst.Reference.Equals(ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))

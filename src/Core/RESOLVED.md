@@ -4298,3 +4298,41 @@ space, skipped the line with a warning. Simulate goes through that text, so the 
 the schematic that placed it; the `define Filter Board (IN OUT)` line always read. Cell names with spaces are legal and common
 in the examples. `CnlWriter.TypeToken` quotes a type that holds whitespace (`"Filter Board":X1`) and the reader takes the
 quoted form. Gate: `tests/Core.Tests/Netlist/SpacedCellNameTests.cs`.
+
+## Deembed: one model class, the cascade stamp, and what an SnP and a Deembed cancel to (brief-de-2, 2026-11-07)
+
+`Deembed:X … File="f.s2p" NumPorts=N` builds an `SnpModel` with `Inverse = true` (the EM Field Data precedent), so every
+engine site that reads a block's port branches through `is SnpModel` works unchanged. It reads its file through the SnP's
+own `TouchstoneCache` interpolator with the SnP's settings and inverts that interpolated S at each frequency.
+
+- **It stamps the inverse's CASCADE matrix, not an S-matrix.** The inverse of an ordinary fixture often has no S-matrix
+  (src/RfCore/RESOLVED.md, DE-1): a series 100 Ω in 50 Ω undoes to a series −100 Ω that shorts the two reference
+  terminations together. The stamp is 2K rows of `[b1; a1] = T·[a2; b2]` in power waves, one branch current per port
+  flowing into the block, exactly the branch layout the SnP has.
+- **What the pair cancels to is the SnP's accuracy, not the Deembed's.** On the 2- and 4-port test networks, and on the
+  6-port at its own grid points, `SnP(f)` then `Deembed(f)` is a through connection to ≤ 1e-12 (measured 1e-15). On the 6-port
+  (a FET's extrinsic network, nearly a through connection) at 9.91 GHz the residue was 1.4e-10 and 2.2e-10 in the two
+  orders. The cause is the SnP's existing Z stamp: there |Z| is 2.4e7 Ω, under the 1e6·Z0 switch to its S-wave stamp, and
+  the SnP ALONE is off its own interpolated S by 2.0e-10, while the Deembed reproduces the inverse of that S exactly. The
+  gate therefore bounds the pair by twice the SnP's own error (a rounding error of a stamp depends on the matrix around it).
+  Lowering that switch, or stamping every SnP as S, would remove it, and would move existing SnP results by up to that
+  amount; not done here.
+- **DC comparisons need gmin off.** The paired circuit has more nodes than the part alone, and gmin's 1e-12 S on each was
+  the whole 2.6e-11 V difference. With gmin 0 the two agree to 1e-16.
+
+Sites that read a block's FILE rather than its stamp, and what each does with a Deembed:
+
+| Site | Done |
+|---|---|
+| `EnvelopeSnpFit.Apply` | Not fitted: a Deembed undoes a network, so it would have to advance what that network delays, which no causal rational model can. It keeps its stamp, taken to first order around each harmonic, and the run warns once by name |
+| `SParameterEngine.BlockWaves` | Matches `SnpModel { Inverse: false }` only; a Deembed is not an EM result |
+| `ThermalCircuitLink` (finding the block that is a 3D view's result) | Excludes `Inverse` blocks; the list of input files still includes a Deembed's file |
+| `EmFieldBlocks`, `FieldCosimulation` | No change: they key on `RecordPath`, which a Deembed never has |
+| Sensitivity, yield, tunables, `check`'s entry list | No change: they key on the `SnP` type string. The factory refuses `SdB_i_j`/`Sdeg_i_j`/`Reciprocal` on a Deembed by name |
+| `ActivityFor` (NDF) | Always `BlackBox`, with a note saying it is the inverse of its file's network and has gain wherever that network has loss |
+| `NonlinearDcEngine`/`HbEngine` SDD control-current validators | Name the block "Deembed" in their messages |
+| `ProtectPartition.OutsideTypes` | Lists `Deembed` beside `SnP`: a data block stays in the wrapper |
+
+A 0 Hz point where the fixture has no DC path (a series capacitor) is refused naming the instance and the frequency, with
+where to put the bias. `LinearDcEngine` raises it as an exception rather than returning it as a refusal, as it does any
+stamp-time refusal.

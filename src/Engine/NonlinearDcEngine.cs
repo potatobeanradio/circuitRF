@@ -787,7 +787,7 @@ public sealed class NonlinearDcEngine
             VcvsModel   vcvs  => ValidateSinglePortBranch(sddName, n, port, vcvs.LastBranchIndex, "VCVS"),
             // L, SRLC and PRLC — every model carrying an inductor branch (IInductiveBranch).
             IInductiveBranch ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex, target.ComponentType),
-            SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  "SnP"),
+            SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  snp.Inverse ? "Deembed" : "SnP"),
             ZPortModel  zp    => ValidateMultiPortBranch(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
             _ => throw new InvalidOperationException(
                 $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +

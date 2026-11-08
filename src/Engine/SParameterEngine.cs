@@ -153,7 +153,7 @@ public static class SParameterEngine
             driven.Add(j);
         }
         var block = netlist.Components.FirstOrDefault(c => string.Equals(c.InstancePath, instancePath, StringComparison.Ordinal));
-        if (block?.Model is not SnpModel snp)
+        if (block?.Model is not SnpModel { Inverse: false } snp)
             throw new InvalidOperationException(block is null
                 ? $"The circuit has no instance '{instancePath}'."
                 : $"'{instancePath}' is a {block.ComponentType}, not an S-parameter block.");

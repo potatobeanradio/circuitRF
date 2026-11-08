@@ -2832,7 +2832,7 @@ public sealed class HbEngine
             SeriesProbeModelBase probe => ValidateSinglePortBranchHb(sddName, n, port, probe.LastBranchIndex, target.ComponentType),
             // L, SRLC and PRLC — every model carrying an inductor branch (IInductiveBranch).
             IInductiveBranch ind => ValidateSinglePortBranchHb(sddName, n, port, ind.LastBranchIndex, target.ComponentType),
-            SnpModel    snp   => ValidateMultiPortBranchHb(sddName, n, port, snp.PortBranchIndices,  "SnP"),
+            SnpModel    snp   => ValidateMultiPortBranchHb(sddName, n, port, snp.PortBranchIndices,  snp.Inverse ? "Deembed" : "SnP"),
             ZPortModel  zp    => ValidateMultiPortBranchHb(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
             _ => throw new InvalidOperationException(
                 $"HB: SDD '{sddName}': C[{n}]={target.InstancePath} references " +

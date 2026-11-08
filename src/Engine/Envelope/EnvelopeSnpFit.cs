@@ -221,6 +221,16 @@ public static class EnvelopeSnpFit
                 if (NotAffine(ec, ws, bandHz)) FitSystemBlock(nl, sub, i, ec, topHz, stampHz, bandHz, generic: true);
                 continue;
             }
+            // brief-de-2 — a Deembed undoes a network, so it advances whatever that network delays, and no causal rational
+            // model can do that: a fit would be wrong or unstable. It keeps its stamp, approximated around each harmonic, and
+            // the run says so.
+            if (snp.Inverse)
+            {
+                nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath,
+                    $"Deembed '{ec.InstancePath}': not fitted for the envelope (it undoes a network, so it would have to advance " +
+                    $"what that network delays, which no causal model does); {FirstOrder}");
+                continue;
+            }
             // brief-sens-2: the fit is of the FILE; a block with entry offsets is refused by name rather than fitted
             // unperturbed, which would silently drop them.
             if (snp.OffsetsNotAppliedBy(ec.InstancePath, "the envelope's rational fit") is { } offsets)

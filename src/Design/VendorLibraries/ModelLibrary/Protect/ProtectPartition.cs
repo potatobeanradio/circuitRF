@@ -100,7 +100,7 @@ public static class ProtectPartition
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "SnP", CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, "TLIN", "CLIN", "SpiceModel", "VerilogA", "ExtDevice",
+            "SnP", CircuitRF.Core.Devices.ComponentModelFactory.DeembedTypeName, CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, "TLIN", "CLIN", "SpiceModel", "VerilogA", "ExtDevice",
         };
         foreach (var kind in Enum.GetValues<SymbolKind>())
             if (TechnologyBound.Is(kind))

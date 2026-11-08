@@ -41,6 +41,14 @@ public sealed class SnpModel : ComponentModel
     /// brief-em3d-79 reads it to find the instance whose model is a 3D view's EM result.</summary>
     public string FilePath => _filePath;
 
+    /// <summary>
+    /// brief-de-2 — true for a <c>Deembed</c>: the block is the network that UNDOES the file's, <c>F⁻¹</c>, wired as an SnP
+    /// on the same file would be. It reads the file through the same interpolator with the same settings and inverts that
+    /// interpolated S at each frequency, so an SnP and a Deembed on one file cancel to rounding at every frequency, the
+    /// file's own or not. False stamps exactly as an SnP always has.
+    /// </summary>
+    public bool Inverse { get; init; }
+
     /// <summary>The <c>.cemr</c> of an EM Field Data block, absolute; null on a plain SnP, which is a Touchstone file and nothing more.
     /// What the Fields analysis finds its data through (brief-cosim-pattern-2 R-cp2-3).</summary>
     public string? RecordPath { get; }
@@ -102,7 +110,7 @@ public sealed class SnpModel : ComponentModel
     {
         if (_snp is not null) return _snp;
 
-        string who = Describe(c.InstancePath);
+        string who = Who(c.InstancePath);
 
         if (string.IsNullOrWhiteSpace(_filePath))
             throw new FileNotFoundException(
@@ -157,6 +165,11 @@ public sealed class SnpModel : ComponentModel
     internal static string Describe(string instancePath)
         => string.IsNullOrWhiteSpace(instancePath) ? "SnP" : $"SnP '{instancePath}'";
 
+    /// <summary><see cref="Describe"/>, saying "Deembed" for an inverse block, so every refusal the two share names the right part.</summary>
+    private string Who(string instancePath)
+        => !Inverse ? Describe(instancePath)
+         : string.IsNullOrWhiteSpace(instancePath) ? ComponentModelFactory.DeembedTypeName : $"{ComponentModelFactory.DeembedTypeName} '{instancePath}'";
+
     // ── The NDF passivation contract (brief-wsprobe-6 §3) ────────────────────
 
     /// <summary>
@@ -182,6 +195,14 @@ public sealed class SnpModel : ComponentModel
     /// </summary>
     public override Activity ActivityFor(ElaboratedComponent c, IReadOnlyList<double> freqsHz)
     {
+        // brief-de-2 D6 — the network that undoes a lossy one has gain wherever that one has loss, so there is nothing to
+        // measure: it is never passive, and saying why is the whole note.
+        if (Inverse)
+        {
+            _passivationNote = "it is a Deembed, the inverse of the network in its file, and has gain wherever that network has loss";
+            return Activity.BlackBox;
+        }
+
         const double Tol = 1e-6;
         try
         {
@@ -213,6 +234,8 @@ public sealed class SnpModel : ComponentModel
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
+        if (Inverse) { StampInverse(mna, c, omega); return; }
+
         var snp    = LoadSnp(c);
         var interp = LoadInterpolator(c);
         double hz  = omega / (2.0 * Math.PI);
@@ -270,6 +293,77 @@ public sealed class SnpModel : ComponentModel
 
             for (int j = 0; j < n; j++)
                 mna.AddBranchConstraint(branches[k], branches[j], -zMat[k, j]);
+        }
+    }
+
+    /// <summary>
+    /// brief-de-2 — stamps <c>F⁻¹</c> in its CASCADE form, never its S-matrix. The inverse of an ordinary fixture often has no
+    /// S-matrix (a series 100 Ω in 50 Ω has det S = 0, and the series −100 Ω that undoes it shorts the two reference terminations
+    /// into each other); its cascade matrix needs only the fixture to transmit from one side to the other
+    /// (<see cref="NetworkInverse.TryInverseCascade"/>).
+    ///
+    /// <para>One branch current per port, flowing from the port node into the block, exactly as the SnP stamp has, so every
+    /// reader of <see cref="PortBranchIndices"/> works. With the power waves of <see cref="IdealSBlockModel.StampWaveConstraints"/>,
+    /// <c>a = (v + Z0·i)/√Re Z0</c> and <c>b = (v − Z0*·i)/√Re Z0</c>, the 2K rows are</para>
+    /// <code>
+    ///   row r &lt; K :   b_r       − Σ_j T[r, j]·a_(K+j) − Σ_j T[r, K+j]·b_(K+j) = 0
+    ///   row r ≥ K :   a_(r−K)   − Σ_j T[r, j]·a_(K+j) − Σ_j T[r, K+j]·b_(K+j) = 0
+    /// </code>
+    /// <para>which is <c>[b1; a1] = T·[a2; b2]</c>. Every port shares the file's one reference impedance, so the common
+    /// 1/√Re Z0 is left out. Row r is given port r's branch: each row then carries a nonzero coefficient on its own branch
+    /// for a through-like block, which is what a de-embedding fixture is.</para>
+    /// </summary>
+    private void StampInverse(IMnaContext mna, ElaboratedComponent c, double omega)
+    {
+        var snp    = LoadSnp(c);
+        var interp = LoadInterpolator(c);
+        double hz  = omega / (2.0 * Math.PI);
+        var sMat   = interp.Evaluate(hz);
+
+        if (!NetworkInverse.TryInverseCascade(sMat, out var t, out var why))
+        {
+            string at = hz == 0 ? "0 Hz" : $"{hz / 1e9:G6} GHz";
+            string dc = hz == 0
+                ? " At 0 Hz this usually means the network has no DC path through it (a series capacitor): apply the bias outside " +
+                  "the part being de-embedded, or use a file whose lowest frequency still passes through."
+                : "";
+            throw new InvalidOperationException(
+                $"{Who(c.InstancePath)}: the network in '{Path.GetFileName(_filePath)}' cannot be undone at {at}: {why}.{dc}");
+        }
+
+        int n = _portCount, k = n / 2;
+        int refNode = c.ReferenceNode;
+        Complex z0 = snp.Z0;
+        Complex fwd  = z0;                                                 // a = v + Z0·i
+        Complex back = z0.Imaginary == 0.0 ? z0 : Complex.Conjugate(z0);  // b = v − Z0*·i
+
+        var br = new int[n];
+        for (int p = 0; p < n; p++) { br[p] = mna.AddBranch(); PortBranchIndices[p] = br[p]; }
+        for (int p = 0; p < n; p++) mna.AddBranchCurrent(br[p], c.Nodes[p], refNode);
+
+        // Adds wA·a_p + wB·b_p to a row.
+        void Wave(int row, int p, Complex wA, Complex wB)
+        {
+            Complex onV = wA + wB;
+            if (onV != Complex.Zero)
+            {
+                mna.AddConstraint(row, c.Nodes[p], onV);
+                mna.AddConstraint(row, refNode, -onV);   // dropped by the context when the reference is ground
+            }
+            Complex onI = wA * fwd - wB * back;
+            if (onI != Complex.Zero) mna.AddBranchConstraint(row, br[p], onI);
+        }
+
+        for (int r = 0; r < n; r++)
+        {
+            int row = br[r];
+            if (r < k) Wave(row, r, Complex.Zero, Complex.One);       // b_r
+            else       Wave(row, r - k, Complex.One, Complex.Zero);   // a_(r−K)
+            for (int j = 0; j < k; j++)
+            {
+                if (t[r, j] != Complex.Zero)     Wave(row, k + j, -t[r, j], Complex.Zero);
+                if (t[r, k + j] != Complex.Zero) Wave(row, k + j, Complex.Zero, -t[r, k + j]);
+            }
         }
     }
 

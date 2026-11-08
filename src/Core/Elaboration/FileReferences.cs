@@ -42,7 +42,7 @@ public static class FileReferences
         bool Is(string r) => reference.Equals(r, StringComparison.OrdinalIgnoreCase);
         bool Named(string p) => parameterName.Equals(p, StringComparison.OrdinalIgnoreCase);
 
-        if (Is("SnP") || Is(EmFieldDataRecord.TypeName) || Is(ComponentModelFactory.ComposedFetTypeName) || Is(ComponentModelFactory.ComposedCoreTypeName))
+        if (Is("SnP") || Is(ComponentModelFactory.DeembedTypeName) || Is(EmFieldDataRecord.TypeName) || Is(ComponentModelFactory.ComposedFetTypeName) || Is(ComponentModelFactory.ComposedCoreTypeName))
             return Named("File") ? FileValueKind.Path : FileValueKind.None;
         if (Is("VerilogA"))
             return Named(ComponentModelFactory.VerilogAFileParam) ? FileValueKind.Path : FileValueKind.None;

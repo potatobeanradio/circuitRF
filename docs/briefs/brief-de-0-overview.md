@@ -78,7 +78,9 @@ why brief 1's continuity rules are requirements and not refinements.
 ## Gates, for the whole series
 
 1. **Cancellation (D2).** `Port — SnP(f) — Deembed(f) — Port` and `Port — Deembed(f) — SnP(f) — Port` equal a through
-   connection with max |ΔS| ≤ 1e-12. Check at the file's points, at points between them, below and above its band, for a
+   connection with max |ΔS| ≤ 1e-12. *As built (DE-2):* that holds wherever the SnP itself stamps its file to rounding. Where
+   it does not (a near-through network whose |Z| is under the SnP's 1e6·Z0 switch to its S stamp), the residue is the SnP's
+   own error, ~2e-10, and the gate bounds the pair by it (`src/Core/RESOLVED.md`). Check at the file's points, at points between them, below and above its band, for a
    2-, 4- and 6-port file. Put a part X behind the pair, and the DC node voltages and an HB spectrum match X alone to the
    engines' own tolerance.
 2. **TRL round trip.** Synthetic standards and a synthetic measured DUT, made by circuitRF from known fixtures, give back the

@@ -1934,12 +1934,15 @@ public sealed class CnlReader
         // so the Elaborator recognises them as parameterized types.
 
         bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
+        // brief-de-2 — a Deembed is an SnP's opposite and reads exactly as one: a Touchstone File resolved against this
+        // netlist's folder, the same ignored keys, the same N-or-N+1 nets. Its port count must also be even.
+        bool isDeembed = typeName.Equals(CircuitRF.Core.Devices.ComponentModelFactory.DeembedTypeName, StringComparison.OrdinalIgnoreCase);
 
         // wBond's File names a .wBond design, and a relative one resolves exactly as an SnP's does —
         // against this netlist's source directory. It used to reach the elaborator as written, and
         // the headless run verbs set no elaborator base, so it resolved against the PROCESS's
         // working directory: one .cnl ran from its own folder and failed from anywhere else.
-        bool resolvesFile = isSnP || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase)
+        bool resolvesFile = isSnP || isDeembed || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase)
                             || typeName.Equals(CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase);
         // A VerilogA's File is the same (brief vendorlib-15): a model library's .cnl names its compiled device
         // model-relative, and Export's self-check reads that .cnl with the model folder as its source directory. It is
@@ -1971,7 +1974,7 @@ public sealed class CnlReader
                 var pexpr = tok[(eq + 1)..];
 
                 // SnP: silently ignore Temp, CheckPassivity, Noise, SaveCurrent, Mode
-                if (isSnP && IsIgnoredSnpParam(pname))
+                if ((isSnP || isDeembed) && IsIgnoredSnpParam(pname))
                     { i++; continue; }
 
                 // SnP/wBond File: resolve relative path to absolute using source directory
@@ -2061,8 +2064,8 @@ public sealed class CnlReader
 
         // SnP: validate NumPorts vs net count, extract floating reference if N+1 nets
         string? refNetBinding = null;
-        if (isSnP)
-            ValidateSnpNets(nets, overrides, out refNetBinding);
+        if (isSnP || isDeembed)
+            ValidateSnpNets(nets, overrides, isDeembed ? CircuitRF.Core.Devices.ComponentModelFactory.DeembedTypeName : "SnP", out refNetBinding);
 
         var inst = new Instance(instanceName, typeName, nets, overrides)
                    { RefNetBinding = refNetBinding };
@@ -2072,7 +2075,7 @@ public sealed class CnlReader
             _testBench!.Instances.Add(inst);
     }
 
-    private void ValidateSnpNets(List<string> nets, List<ParameterAssignment> overrides,
+    private void ValidateSnpNets(List<string> nets, List<ParameterAssignment> overrides, string label,
         out string? refNetBinding)
     {
         refNetBinding = null;
@@ -2080,10 +2083,13 @@ public sealed class CnlReader
         var numPortsOv = overrides.FirstOrDefault(
             ov => ov.Name.Equals("NumPorts", StringComparison.OrdinalIgnoreCase));
         if (numPortsOv is null)
-            throw new CnlReadException(_lineNumber, "", "SnP: NumPorts parameter is required");
+            throw new CnlReadException(_lineNumber, "", $"{label}: NumPorts parameter is required");
         if (!int.TryParse(numPortsOv.Expression, out int numPorts) || numPorts < 1)
             throw new CnlReadException(_lineNumber, "",
-                $"SnP: NumPorts must be a positive integer, got '{numPortsOv.Expression}'");
+                $"{label}: NumPorts must be a positive integer, got '{numPortsOv.Expression}'");
+        if (label != "SnP" && numPorts % 2 != 0)
+            throw new CnlReadException(_lineNumber, "",
+                $"{label}: NumPorts={numPorts}; a Deembed needs an even number of ports, one side matching the other");
 
         // Validate Type (hard error on anything other than "touchstone")
         var typeOv = overrides.FirstOrDefault(
@@ -2093,7 +2099,7 @@ public sealed class CnlReader
             var typeStr = typeOv.Expression.Trim('"');
             if (!typeStr.Equals("touchstone", StringComparison.OrdinalIgnoreCase))
                 throw new CnlReadException(_lineNumber, "",
-                    $"SnP: Type must be \"touchstone\" in v1, got \"{typeStr}\"");
+                    $"{label}: Type must be \"touchstone\" in v1, got \"{typeStr}\"");
         }
 
         if (nets.Count == numPorts)
@@ -2109,7 +2115,7 @@ public sealed class CnlReader
         else
         {
             throw new CnlReadException(_lineNumber, "",
-                $"SnP: NumPorts={numPorts} but {nets.Count} nets (expected {numPorts} or {numPorts + 1})");
+                $"{label}: NumPorts={numPorts} but {nets.Count} nets (expected {numPorts} or {numPorts + 1})");
         }
     }
 

@@ -63,7 +63,7 @@ public static class ComponentModelFactory
     private static readonly HashSet<string> _parameterizedTypes =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SnP", EmFieldDataRecord.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
+            "SnP", DeembedTypeName, EmFieldDataRecord.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
             "Tuner", "P1Tone", "PnTone", "MOD_Source",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
@@ -118,6 +118,9 @@ public static class ComponentModelFactory
             ComposedFetTypeName, ComposedCoreTypeName,
         };
 
+    /// <summary>The <c>.cnl</c> token of the block that REMOVES the network in a Touchstone file: an SnP's opposite (brief-de-2).</summary>
+    public const string DeembedTypeName = "Deembed";
+
     /// <summary>The <c>.cnl</c> token of a placed <c>.cmodel</c> (D3).</summary>
     public const string ComposedFetTypeName  = "ComposedFET";
 
@@ -151,6 +154,8 @@ public static class ComponentModelFactory
 
         if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
+        if (typeName.Equals(DeembedTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateDeembedModel(parameters);
         if (typeName.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
             return CreateEmFieldDataModel(parameters);
         if (typeName.Equals(ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))
@@ -738,6 +743,28 @@ public static class ComponentModelFactory
         return CreateSnpModel(parameters, record.PortCount, record.SnpPath, record.RecordPath);
     }
 
+    /// <summary>
+    /// brief-de-2 — a Deembed is an <see cref="SnpModel"/> with <see cref="SnpModel.Inverse"/> set: the same file, read through
+    /// the same interpolator with the same settings, so an SnP and a Deembed on one file cancel to rounding. Its port count is
+    /// even (one side matching the other), and it takes no S-parameter entry offsets: perturbing a network before it is
+    /// undone is not something anyone can reason about, so the keys are refused rather than ignored.
+    /// </summary>
+    private static SnpModel CreateDeembedModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.TryGetValue("NumPorts", out var np) || np.Kind != ValueKind.Real)
+            throw new InvalidOperationException($"{DeembedTypeName}: NumPorts parameter is missing or not a number");
+        int ports = (int)np.AsReal();
+        if (ports < 2 || ports % 2 != 0)
+            throw new ParameterRefusalException(
+                $"{DeembedTypeName}: NumPorts={ports}; a Deembed needs an even number of ports, one side matching the other.");
+        foreach (var name in parameters.Keys)
+            if (SnpPerturbation.IsPerturbationParameter(name))
+                throw new ParameterRefusalException(
+                    $"{DeembedTypeName}: '{name}' sets an S-parameter offset, which a Deembed does not take; set it on the SnP whose " +
+                    "network this one removes, or take it off.");
+        return CreateSnpModel(parameters, ports, null, null, inverse: true);
+    }
+
     private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters)
     {
         if (!parameters.TryGetValue("NumPorts", out var np) || np.Kind != ValueKind.Real)
@@ -745,7 +772,8 @@ public static class ComponentModelFactory
         return CreateSnpModel(parameters, (int)np.AsReal(), null, null);
     }
 
-    private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters, int portCount, string? touchstone, string? recordPath)
+    private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters, int portCount, string? touchstone, string? recordPath,
+                                           bool inverse = false)
     {
         // A missing or blank File is NOT refused here. This factory sees resolved parameters and has
         // no idea which instance they came from, so its refusal could only say "SnP:" — and that is
@@ -780,7 +808,8 @@ public static class ComponentModelFactory
                 ? OutOfRangePolicy.WarnExtrapolate
                 : OutOfRangePolicy.WarnClamp;
 
-        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat, SnpOffsetsOf(parameters, portCount, filePath), recordPath);
+        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat,
+                            inverse ? null : SnpOffsetsOf(parameters, portCount, filePath), recordPath) { Inverse = inverse };
     }
 
     /// <summary>

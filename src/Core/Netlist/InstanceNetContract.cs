@@ -227,6 +227,7 @@ public static class InstanceNetContract
         "SDD"      => "SddPortCount",
         "Z_PORT"   => "ZPortCount",
         "SNP"      => "NumPorts",
+        "DEEMBED"  => "NumPorts",
         "SWITCH"   => "Throws",
         "WBOND"    => "Arrays",
         "VERILOGA" => "Pins",
@@ -249,6 +250,9 @@ public static class InstanceNetContract
         ["SnP"] =
             "NumPorts=N binds N nets, or N+1 where the extra trailing net is a floating reference. " +
             "Both counts are legal and the reader tells them apart by how many were written.",
+        [ComponentModelFactory.DeembedTypeName] =
+            "NumPorts=N binds N nets, or N+1 where the extra trailing net is a floating reference, as on an SnP. " +
+            "N is even: ports 1 to N/2 are one side of the network it removes, the rest the other.",
         [EmFieldDataRecord.TypeName] =
             "One net per port of the result record its File names, in the record's order, or one more where the extra trailing net " +
             "is a floating reference, as on an SnP. The record states the count, so there is none until one is chosen.",
