@@ -323,9 +323,10 @@ ordinary layout label with its port flag set, which is why a layout carrying por
   direction of current into the structure, which is a hard π in S₂₁: smooth, plausible, and completely
   invisible in a magnitude plot. So it is named and refused: *"Port 1 is ambiguous… Move the label."*
   Every resolved port reports the cut it landed on and which way current flows in. **Read that report.**
-- **The type and the reference impedance live in the EM setup**, per port, not on the shape. A layout is
-  geometry; how you drive it is an analysis setting. The same artwork can be an edge-driven filter in
-  one setup and a structure with a gap in the middle in another, without editing the drawing.
+- **The type lives on the label; the reference impedance lives in the EM setup**, per port. A cut across
+  the middle of a trace is a different port from one driven at its end, so it is drawn; 50 Ω against 75 Ω
+  is one port measured twice, so one layout can be measured at either by two setups. Where every kind
+  of port is stored is [Where a port is stored](em-setup.html#port-storage).
 
 ### The three port types
 
@@ -499,17 +500,8 @@ The run reports the area it got.</p>
 
 **EM Setup panel → Ports.** Each port gets a row with its reference impedance and a **type** dropdown —
 Edge, Internal delta gap or Internal. The rows come from the port labels in your layout, so the port *count* is
-the geometry's; the type and the impedance are yours.
-
-<div class="callout note">
-<span class="label">Two EM setups on one layout may disagree, and that is allowed</span>
-<p>Because the type belongs to the analysis, nothing stops two <code>.cem</code> files that reference
-the same layout from calling the same port different things — a gap in the middle of a trace in one, a
-pair of edge ports in the other. That is a legitimate thing to want.</p>
-<p>The layout can only draw one of them. It follows <strong>the setup you last worked in</strong>, and
-if that takes the marks off a different setup that disagreed, the Messages panel says so and names
-both. If the marks are not what you expect, that line tells you which setup they belong to.</p>
-</div>
+the geometry's. The impedance is the setup's; a type chosen in the row is written to the port's label, so every
+setup on that layout sees the same type.
 
 **The type only appears for a full-wave planar analysis.** Both internal port types are full-wave
 features, and the uniform-line (quasi-static) kernel has neither — the row shows a reference impedance
@@ -545,6 +537,24 @@ Three rules the panel enforces:
 A gap in the middle of a conductor is a **series** source: it drives the two halves in antiphase, so a
 gap at the centre of a symmetric line gives S₁₃ = −S₂₃, not +. That sign is real physics, not a
 convention you can flip, and it is why the direction is required rather than guessed.
+
+### Component ports {#component-ports}
+
+A **component port** is a port across a placed part's own two pads, named in the EM setup by the part's
+reference designator ([Component ports](em-setup.html#component-ports)). Nothing is drawn for it, and on this
+engine it is an internal delta-gap port.
+
+A delta gap cuts metal, and between a part's two pads there is none: the part itself bridges them on the
+board, and the solver does not mesh it. So the setup's problem gains **a strip of metal across the part's gap**,
+on the pads' layer and as wide as the two pads share across it, and the strip is **cut at its middle by an
+internal delta gap**. The port's + side is one pad, its − side the other, and its current flows through the
+strip. The strip and the cut exist in the solved problem only; the layout is not changed, and the run's notes
+say what was built for each part.
+
+A part is left out, with a warning naming it and why, when no such strip can be built: its pads do not face
+each other along x or y, they share no width across the gap, they are on one net or on one piece of copper
+already, they are on two copper layers, or the strip would touch other copper. Its S-parameters are
+reported at the cut, as any delta gap's are, and it is not de-embedded.
 
 ### Auto-ports and the feed extension {#feed}
 

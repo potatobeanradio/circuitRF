@@ -176,9 +176,9 @@ a channel's amplitude and phase are the parts of a complex variable, and ordinar
 A 3D run with component ports stores a pattern per port, and so does a [planar run](#planar). A fields analysis combines them for the parts in the schematic, so the
 pattern of the antenna as built follows every part value with no new EM run.
 
-1. In the 3D setup, tick the parts in **Component ports**, turn on **Radiation pattern** and tick **Create SnP schematic when the run finishes**.
+1. In the EM setup, tick the parts in **Component ports**, turn on **Radiation pattern** and tick **Create SnP schematic when the run finishes**.
 2. **Simulate.** The run makes a cell named after the setup with `_cosim` on the end, and writes the same circuit as `<setup>_cosim.cnl`. The cell holds an
-   EM Field Data block on the run's record, a `Port` for each of the 3D view's own ports and each connector, and each part from its port's node to ground,
+   EM Field Data block on the run's record, a `Port` for each of the setup's drawn ports and each connector, and each part from its port's node to ground,
    with its model from the board's schematic. A part with no model there is a placeholder variable, named in a note on the sheet and by `check`.
 3. **Set the values and simulate the cell.** It has an S-parameter analysis over the sweep and `analysis F1 type=fields block=BOARD drive=1` at the stored
    frequency nearest the sweep's centre, with a note naming every stored frequency. Its [Data Display](data-display.html) holds S11, a polar cut of
@@ -202,9 +202,11 @@ A planar setup with **component ports** makes the `_cosim` cell and netlist as a
 by part. Without them the block's pins are the setup's own ports and the circuit is yours to draw. A via anywhere stops a planar pattern, and most boards with parts have
 vias: the run then says so, and its `_cosim` circuit reads the Touchstone through an SnP block instead.
 
-- **A port for a part is an Internal delta gap.** Draw the part's site as continuous metal, put a port on it and set its type to **Internal delta gap** in the EM
-  setup's port list. Two pads with a real gap between them cannot be a port, because a delta gap cuts metal. An **Internal** port goes down a via to the plane, and any via
-  in the structure stops the run producing a pattern.
+- **A port for a part is a component port, or a delta gap you draw.** A [component port](em-setup.html#component-ports) needs nothing drawn: the solver adds a strip
+  across the part's gap in the solved problem and cuts it with an internal delta gap. A port you draw yourself has to sit on metal, because a delta gap cuts metal:
+  draw the part's site as continuous metal, put a port on it and set its type to **Internal delta gap**. An **Internal** port goes down a via to the plane, and any
+  via in the structure stops the run producing a pattern.
+- **A planar and a 3D answer differ.** They are different solvers, and the difference grows with frequency; neither is a check on the other.
 - **An edge port is recombined at its reference plane.** A circuit on it sees the de-embedded S, and the run keeps what relates that plane to the port's gap. The pattern
   still holds the current on any feed the solver grew.
 - **Gain and efficiency read as the run's own do.** With nothing around the block they are the numbers the run wrote. With parts around it, what the parts dissipate is
@@ -227,9 +229,9 @@ A part with more pads connects each signal pin to its port's node and its ground
 
 **A two-port file on a gap port.** A two-port part file goes with port 1 on the node and port 2 on ground, so its series impedance stands across the gap.
 Any **shunt branch in the file does not reach the board's ground plane**: port 1's stands across the gap, and port 2's is shorted out. A file whose
-pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the 3D model, and so is their capacitance to the plane.
+pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the EM model, and so is their capacitance to the plane.
 
-**The part's body is not in the 3D model**, with this method or any other that uses a gap port.
+**The part's body is not in the EM model**, with this method or any other that uses a gap port.
 
 **A part not fitted.** A part whose **Disable** is *Open* in the board's schematic leaves its port open in the generated netlist and cell, and one set to *Short* shorts its port. Neither gets a placeholder value.
 

@@ -565,6 +565,11 @@ not, as `result.scratch`: `folder`, `source` (`preference` or `system`), `exists
 own helpers still use (the parallel runtime's session files for a Palace run on several processes). A named folder
 that is not there, such as a drive that is not connected, refuses the run before meshing and exits **1**.
 
+`--component-ports "C1,C2"` (or `"*"`) runs a `.cem` or a `.c3d`'s setup with those
+[component ports](em-setup.html#component-ports) for this run only; nothing is written back to the setup. A part
+that cannot be built is left out with a warning naming it, and the rest run. A thermal or electrostatic setup has no
+ports and refuses the flag. With `--dry-run` it reports the ports a run would build and writes nothing.
+
 A `.c3d` runs too — `circuitrf em <view.c3d> --setup <name>` — and a **thermal** setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes `<cell> <setup>.thermal.npy` and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -3012,11 +3017,13 @@ them — and they are folded into the block's one summary line, so a 15-port boa
 ahead of the parts you asked about. `--snp-entries SNP3,SNP4` lists the named blocks' entries, and
 `--snp-entries all` lists every block's.
 
-<h3 id="explain-component-ports"><code>--component-ports</code> — which ports would a 3D run build?</h3>
+<h3 id="explain-component-ports"><code>--component-ports</code> — which ports would a run build?</h3>
 
-On a `.c3d`, `--component-ports` lists each [component port](em-3d.html) as a run would build it — its pads,
-conductors, gap, width, landings and verdict — without meshing. With no list it reports the setup's own;
-`--component-ports "C1,C2"` (or `"*"`) reports that list instead, as `em --component-ports` would run it.
+On a `.c3d` or a `.cem`, `--component-ports` lists each [component port](em-setup.html#component-ports) as a run
+would build it — its pads, conductors, gap, width and verdict, and on a 3D setup its landings — without solving.
+On a Planar `.cem` it describes the strip the solver adds across the part's gap and the delta gap that cuts it. With no
+list it reports the setup's own; `--component-ports "C1,C2"` (or `"*"`) reports that list instead, as
+`em --component-ports` would run it.
 
 <h3 id="explain-pdk"><code>--pdk</code> — which interpreter does a gdsfactory kit use?</h3>
 

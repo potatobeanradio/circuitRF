@@ -247,10 +247,14 @@ port numbered <code>PortNum</code>, wherever the part is placed, turned or mirro
 port above. A planar setup takes it as an internal port to ground. Its number is checked against the
 board's own port labels and every other component's: a number used twice is refused, naming both.</p>
 <p><a id="part-ports"></a><strong>A port across each part's own pads</strong> (<code>ComponentPorts</code>). To co-simulate a board with the
-parts placed on it, each part needs a port of the board's N-port at its own pads. A 3D setup of a
-<a href="drawing-in-3d.html">3D view</a> that places the board's layout names them by reference designator — <code>[&quot;C1&quot;, &quot;C2&quot;, &quot;L2&quot;]</code>,
-or <code>&quot;*&quot;</code> for every placed two-terminal part — in its <strong>Component ports</strong> list (tick the parts; <strong>Check</strong> shows what
-would be built) or with <code>em &lt;view.c3d&gt; --component-ports &quot;C1,C2&quot;</code> for one run. Each is a lumped <strong>gap</strong> port between
+parts placed on it, each part needs a port of the board's N-port at its own pads. The setup names them by reference
+designator — <code>[&quot;C1&quot;, &quot;C2&quot;, &quot;L2&quot;]</code>, or <code>&quot;*&quot;</code> for every placed two-terminal part — in its <strong>Component ports</strong> list (tick
+the parts; <strong>Check</strong> shows what would be built) or with <code>em &lt;view.c3d&gt; --component-ports &quot;C1,C2&quot;</code> for one run. That
+setup is a 3D setup of a <a href="drawing-in-3d.html">3D view</a> that places the board's layout, or a <code>.cem</code> on the layout,
+Planar or 3D: the list is stored in the setup that names it, never in the layout
+(<a href="em-setup.html#port-storage">Where a port is stored</a>), and on a 3D <code>.cem</code> it is built in the 3D view described
+here, made in memory. <a href="em-setup.html#component-ports">Component ports</a> has the Planar construction and the limits.
+In 3D each is a lumped <strong>gap</strong> port between
 the part's two pads: its ends at the closest copper facing the gap across the port's width — the pad, a trace's
 round cap, a zone's arc — and where that copper is not one straight face, a <strong>landing</strong> rectangle extends it to one,
 reaching back into solid copper across the whole width. So a port between pads that end in rounded or scalloped
@@ -276,7 +280,10 @@ pads, conductors, gap, width, landings and verdict without meshing. A finished d
 view's own ports and each connector, and each part's model from the board's schematic from its port's node to
 ground — a part with no model there is a placeholder value, named in a comment and by <code>check</code>. With its radiation pattern on, part values
 then move the pattern with no new run: <a href="cosimulation.html#pattern">Co-simulation</a>. A 3D view of a
-cell's layout is made by <strong>Design ▸ New 3D View from Layout</strong>, or <code>new view3d &lt;cell&gt; --from-layout</code>.</p>
+cell's layout is made by <strong>Design ▸ New 3D View from Layout</strong>, or <code>new view3d &lt;cell&gt; --from-layout</code>. New 3D View brings in
+the component ports of each <code>.cem</code> on that layout, a Planar <code>.cem</code>'s as a 3D setup of its own named after it. After
+that, the two are separate: changing the parts in one leaves the other alone. Each part is checked again in 3D and
+may be left out there.</p>
 <p><strong>Why a gap port, and not a pad-to-plane port at each pad.</strong> A part between two pad-to-plane ports carries its
 current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is
 not on the board. A gap port puts the part where it is, across its own pads, and the co-simulation connects it from

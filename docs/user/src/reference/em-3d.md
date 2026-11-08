@@ -176,10 +176,14 @@ full description.
   board's own port labels and every other component's: a number used twice is refused, naming both.
 
   <a id="part-ports"></a>**A port across each part's own pads** (`ComponentPorts`). To co-simulate a board with the
-  parts placed on it, each part needs a port of the board's N-port at its own pads. A 3D setup of a
-  [3D view](drawing-in-3d.html) that places the board's layout names them by reference designator — `["C1", "C2", "L2"]`,
-  or `"*"` for every placed two-terminal part — in its **Component ports** list (tick the parts; **Check** shows what
-  would be built) or with `em <view.c3d> --component-ports "C1,C2"` for one run. Each is a lumped **gap** port between
+  parts placed on it, each part needs a port of the board's N-port at its own pads. The setup names them by reference
+  designator — `["C1", "C2", "L2"]`, or `"*"` for every placed two-terminal part — in its **Component ports** list (tick
+  the parts; **Check** shows what would be built) or with `em <view.c3d> --component-ports "C1,C2"` for one run. That
+  setup is a 3D setup of a [3D view](drawing-in-3d.html) that places the board's layout, or a `.cem` on the layout,
+  Planar or 3D: the list is stored in the setup that names it, never in the layout
+  ([Where a port is stored](em-setup.html#port-storage)), and on a 3D `.cem` it is built in the 3D view described
+  here, made in memory. [Component ports](em-setup.html#component-ports) has the Planar construction and the limits.
+  In 3D each is a lumped **gap** port between
   the part's two pads: its ends at the closest copper facing the gap across the port's width — the pad, a trace's
   round cap, a zone's arc — and where that copper is not one straight face, a **landing** rectangle extends it to one,
   reaching back into solid copper across the whole width. So a port between pads that end in rounded or scalloped
@@ -205,7 +209,10 @@ full description.
   view's own ports and each connector, and each part's model from the board's schematic from its port's node to
   ground — a part with no model there is a placeholder value, named in a comment and by `check`. With its radiation pattern on, part values
   then move the pattern with no new run: [Co-simulation](cosimulation.html#pattern). A 3D view of a
-  cell's layout is made by **Design ▸ New 3D View from Layout**, or `new view3d <cell> --from-layout`.
+  cell's layout is made by **Design ▸ New 3D View from Layout**, or `new view3d <cell> --from-layout`. New 3D View brings in
+  the component ports of each `.cem` on that layout, a Planar `.cem`'s as a 3D setup of its own named after it. After
+  that, the two are separate: changing the parts in one leaves the other alone. Each part is checked again in 3D and
+  may be left out there.
 
   **Why a gap port, and not a pad-to-plane port at each pad.** A part between two pad-to-plane ports carries its
   current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is

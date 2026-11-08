@@ -78,9 +78,10 @@ Two kinds of part stop the run, by name:
   stands for it, so it cannot be connected to the EM result. Give it a footprint, or replace it with a line
   model.
 - **A part that is not copper**, such as a footprinted capacitor or a transistor. Its pads are copper, but
-  the part between them is not, and joining its own model to the EM result needs ports at its pads. A
-  layout's planar EM setup makes none — only a 3D view's setup does. Run that analysis by circuit models
-  for now.
+  the part between them is not, and joining its own model to the EM result needs a port at its pads with
+  the part's model across it, which an EM cell does not build. Run that analysis by circuit models, or run
+  the layout's EM setup with [component ports](em-setup.html#component-ports) and simulate the co-simulation
+  netlist it writes.
 
 ## Reusing it as a part {#as-a-part}
 

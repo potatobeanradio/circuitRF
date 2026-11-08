@@ -199,10 +199,10 @@ public static class EmModelSwitch
         if (notCopper.Count > 0)
         {
             // brief-sdl-6 R-sdl6-2, stopped and reported (src/Design/RESOLVED.md): the co-simulation netlist puts a part's
-            // model across COMPONENT ports at its pads, and only a 3D view's setup makes those; a planar .cem has none.
+            // model across COMPONENT ports at its pads. A .cem makes those (LCP-1/5), but an EM cell's re-planned run does not.
             refusal = $"{Join(notCopper)} {(notCopper.Count == 1 ? "is a part" : "are parts")}, not copper: simulating " +
                       $"{(notCopper.Count == 1 ? "it" : "them")} with the EM result needs component ports at the pads and each " +
-                      "part's model across them, and a planar EM setup (.cem) makes no component ports. Run this analysis by " +
+                      "part's model across them, which an EM cell does not build. Run this analysis by " +
                       "circuit models.";
             return null;
         }

@@ -16,7 +16,9 @@ keywords: EM, electromagnetic, cem, ports, mesh, extraction, simulate layout, su
 <li><a href="#analysis">Analysis</a></li>
 <li><a href="#conductors">Conductors</a></li>
 <li><a href="#frequency">Frequency</a></li>
-<li><a href="#ports">Ports</a></li>
+<li><a href="#ports">Ports</a>
+  <ul><li><a href="#port-storage">Where a port is stored</a></li>
+  <li><a href="#component-ports">Component ports</a></li></ul></li>
 <li><a href="#mesh">Mesh — the uniform-line kernel</a></li>
 <li><a href="#surface-mesh">Surface mesh — the full-wave kernel</a></li>
 <li><a href="#solver">Solver options</a>
@@ -235,6 +237,72 @@ so an interior gap would mean nothing there.
 
 Which type to use, what an internal port costs you, auto-ports, and how the reference impedance
 interacts with de-embedding are in the engine chapter: [Ports](mom-engine.html#ports).
+
+### Where a port is stored {#port-storage}
+
+**A port you draw lives in the document you draw it in. A component port is not drawn, and lives in the
+setup that names it.**
+
+| Port | Where it is stored | How you move it |
+|---|---|---|
+| A port label drawn on a layout | The `.clay` | Drag it in the layout |
+| A port drawn in a 3D view | The `.c3d` | Drag it, or edit it in the Properties Inspector |
+| A port a placed part declares ([TESTPAD](components.html#testpad) `Centre = Port`) | The part's own layout | Move the part |
+| **A [component port](#component-ports)** | **The `.cem`, or the `.c3d`'s setup** | **Move the part** |
+
+A `.cem` also stores *settings* for the drawn ports, by number: each one's reference impedance (`PortZ0s`) and, on
+a 3D setup, its row of the port table (`Ports3D`). These are settings of a port, not the port: the position and
+the type of a drawn port are the `.clay`'s, and a type chosen in the port list is written to the label. So one
+layout can be measured at 50 Ω by one setup and at 75 Ω by another.
+
+### Component ports {#component-ports}
+
+<a id="component-ports-list"></a>A **component port** is a port across a placed part's own pads, with nothing
+drawn for it. **Component ports** (`ComponentPorts`) lists every part placed on the setup's layout with its pad
+count. It is there on a Planar setup and on a driven 3D one, in a `.cem` or in a 3D view's setup, and not on a
+thermal, electrostatic or cross-section setup. A ticked part gets a port across its pads, numbered after the drawn
+ports; **Every two-terminal part** writes `"*"`. **Check** builds and verifies the ports exactly as a run would and
+posts each part's port and verdict to Messages, a part left out as a warning saying why; the list marks that part.
+Each built port has a row in the port list, *Port 3 · C1*, whose Z₀, width and, for a part of more than two pads,
+reference pin are written into that part's entry. In the file it is `"ComponentPorts": ["C1", "L2"]`,
+`"ComponentPorts": "*"`, or entries that state more: `{ "Refdes": "U2", "Z0": "50", "Reference": "GND", "WidthUm": 600 }`,
+an entry beside `"*"` overriding that part. An entry naming a part that is not placed keeps its row, marked,
+and Check names it. While the `.cem` is open, the layout it names shows each of its component ports as a dashed
+gap mark with its number; clicking a mark selects the part.
+
+**On Planar, a component port is a gap port.** The planar solver cannot span the air between two pads, so it adds
+a strip of metal across the part's gap, as wide as the two pads share, in the solved problem only, and cuts it at
+the middle with an internal delta gap. The layout is not changed. The engine chapter has it in its own terms:
+[Component ports](mom-engine.html#component-ports).
+
+**On a 3D setup** it is a lumped gap sheet between the two pads, built as
+[A port across each part's own pads](em-3d.html#part-ports) describes. A 3D `.cem` builds it in the 3D view
+**New 3D View from Layout** would make of its cell, in memory, so its `.clay` must be saved in a cell as that
+cell's layout. Nothing is written.
+
+**Into a 3D view.** New 3D View brings in the component ports of each `.cem` on that layout. After that, the two are
+separate: changing the parts in one leaves the other alone. A 3D `.cem`'s list goes into its copied setup. A Planar
+`.cem` with component ports becomes a 3D setup of its own, named after it, with its sweep and its list, each entry's
+Z₀, width and reference included; the drawn ports' settings stay in the `.cem`. Each part is checked again in 3D, and a
+part that cannot be a 3D port is left out there with a warning.
+
+**Planar and 3D are not promised to match.** They are different solvers, and their answers for one board and one set
+of component ports differ, more as the frequency rises. Treat them as two models of the board, not as one checking
+the other.
+
+**Limits.**
+
+- A part whose pads do not face each other along x or y is left out, and so is a part placed at an angle that is not a
+  multiple of 90°.
+- A Planar run refuses a board whose vias are farther apart than 0.1 λ at the top of the sweep, unless the
+  [vertical (via) kernel](#solver) is on. Boards with ground vias reach this often.
+- A via anywhere in a Planar problem stops its radiation pattern; the run says so, and its co-simulation netlist reads
+  the Touchstone instead ([A planar result](cosimulation.html#planar)).
+- On a 3D `.cem`, component ports cannot be combined with a **Solve Region**.
+- The marks appear on a layout only while a `.cem` naming component ports is open.
+
+A run with component ports writes `<setup>_cosim.cnl` and, with **Create SnP schematic** ticked, a `_cosim` cell:
+[A schematic to start from](#snp-schematic).
 
 ## Mesh — the uniform-line kernel {#mesh}
 
@@ -610,15 +678,8 @@ A conductor the correction leaves alone keeps a warning: on an eigenmode problem
 the solver's own expression would overflow, more than 700 skin depths thick at its top. A kernel solid or a sphere has no single thickness
 to use, and gets neither the correction nor this warning.
 
-<a id="component-ports-list"></a>**Component ports** (`ComponentPorts`), below Robust meshing in a 3D view's setup, lists
-every part placed on the view's layout with its pad count. A ticked part gets a lumped gap port across its own pads,
-numbered after the view's own ports; **Every two-terminal part** writes `"*"`. **Check** builds and verifies the ports
-exactly as a run would and posts each part's port, gap, landings and verdict to Messages, a part left out as a warning
-saying why; the list marks that part. In the file it is `"ComponentPorts": ["C1", "L2"]`, `"ComponentPorts": "*"`, or
-entries that state more: `{ "Refdes": "U2", "Z0": "50", "Reference": "GND", "WidthUm": 600 }`, an entry beside `"*"`
-overriding that part. A `.cem` on a layout refuses it: component ports are built in a
-3D view of the layout. How they are built and what a run writes from them is
-[A port across each part's own pads](em-3d.html#part-ports).
+**Component ports** (`ComponentPorts`), below Robust meshing on a driven 3D setup, is the list
+[Component ports](#component-ports) describes; on a 3D setup **Check** also posts each port's landings.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
 every box is a field of the `.cem` — nothing here lives only in the panel.

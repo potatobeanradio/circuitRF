@@ -855,6 +855,10 @@ when none is named, and prints it as a <code>Scratch:</code> line beside the sol
 not, as <code>result.scratch</code>: <code>folder</code>, <code>source</code> (<code>preference</code> or <code>system</code>), <code>exists</code>, and <code>systemTemp</code>, which a solver's
 own helpers still use (the parallel runtime's session files for a Palace run on several processes). A named folder
 that is not there, such as a drive that is not connected, refuses the run before meshing and exits <strong>1</strong>.</p>
+<p><code>--component-ports &quot;C1,C2&quot;</code> (or <code>&quot;*&quot;</code>) runs a <code>.cem</code> or a <code>.c3d</code>'s setup with those
+<a href="em-setup.html#component-ports">component ports</a> for this run only; nothing is written back to the setup. A part
+that cannot be built is left out with a warning naming it, and the rest run. A thermal or electrostatic setup has no
+ports and refuses the flag. With <code>--dry-run</code> it reports the ports a run would build and writes nothing.</p>
 <p>A <code>.c3d</code> runs too — <code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> — and a <strong>thermal</strong> setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -3771,10 +3775,12 @@ and ignored.</p>
 them — and they are folded into the block's one summary line, so a 15-port board does not list 450 rows
 ahead of the parts you asked about. <code>--snp-entries SNP3,SNP4</code> lists the named blocks' entries, and
 <code>--snp-entries all</code> lists every block's.</p>
-<h3 id="explain-component-ports"><code>--component-ports</code> — which ports would a 3D run build?</h3>
-<p>On a <code>.c3d</code>, <code>--component-ports</code> lists each <a href="em-3d.html">component port</a> as a run would build it — its pads,
-conductors, gap, width, landings and verdict — without meshing. With no list it reports the setup's own;
-<code>--component-ports &quot;C1,C2&quot;</code> (or <code>&quot;*&quot;</code>) reports that list instead, as <code>em --component-ports</code> would run it.</p>
+<h3 id="explain-component-ports"><code>--component-ports</code> — which ports would a run build?</h3>
+<p>On a <code>.c3d</code> or a <code>.cem</code>, <code>--component-ports</code> lists each <a href="em-setup.html#component-ports">component port</a> as a run
+would build it — its pads, conductors, gap, width and verdict, and on a 3D setup its landings — without solving.
+On a Planar <code>.cem</code> it describes the strip the solver adds across the part's gap and the delta gap that cuts it. With no
+list it reports the setup's own; <code>--component-ports &quot;C1,C2&quot;</code> (or <code>&quot;*&quot;</code>) reports that list instead, as
+<code>em --component-ports</code> would run it.</p>
 <h3 id="explain-pdk"><code>--pdk</code> — which interpreter does a gdsfactory kit use?</h3>
 <p><code>explain --pdk &lt;kit&gt; [&lt;workspace&gt;]</code> says which Python interpreter a <a href="gdsfactory-kits.html">gdsfactory kit</a>
 resolves to, and whether the answer came from <code>--python &lt;interp&gt;</code> or from your recorded preference, then
