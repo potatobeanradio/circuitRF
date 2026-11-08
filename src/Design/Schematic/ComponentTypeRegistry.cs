@@ -437,6 +437,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
             IsCommon: true),
+        // brief-de-3 — the network that removes a Touchstone file's. DataFiles for SnP's reason: what is placed is a file.
+        [SymbolKind.Deembed]       = new("Deembed", "DE",
+            Category: ComponentCategory.DataFiles,
+            SearchTerms: ["Deembed", "de-embed", "deembedding", "de-embedding", "inverse", "fixture removal", "remove fixture",
+                          "TRL", "calibration", "Touchstone", "s2p", "intrinsic"]),
         // A saved EM result, placed as a block. DataFiles for SnP's reason: what is placed is a file a run left.
         [SymbolKind.EmFieldData]   = new("EM Field Data", "EM",
             Category: ComponentCategory.DataFiles,
@@ -933,7 +938,7 @@ public static class ComponentTypeRegistry
         // The three variadic boxes. Their pin geometry is generated from N — SymbolPortDefs.For
         // takes the count — and PortCountParameterIsExercisedTests holds that agreement.
         // An EM Field Data block's NumPorts is hidden: it remembers the pins it is drawn with, and the record decides the count.
-        SymbolKind.Snp or SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.EmFieldData => "NumPorts",
+        SymbolKind.Snp or SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.EmFieldData or SymbolKind.Deembed => "NumPorts",
         // A Verilog-A model's terminal count is the MODEL's, filled in from the file it names.
         SymbolKind.VerilogA                                  => "Pins",
         // 1 common port plus `Throws` throws. See the remarks above for why both tiles answer.
@@ -1168,6 +1173,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ModSource     => "MOD_Source",
         SymbolKind.Snp           => "SnP",
         SymbolKind.EmFieldData   => EmFieldDataRecord.TypeName,
+        SymbolKind.Deembed       => ComponentModelFactory.DeembedTypeName,
         // Sentinel, like Var and Meas: no ComponentModelFactory entry exists and none can. A
         // SpiceModel resolves at EXTRACTION to whatever its file describes — a primitive for a
         // .model card, a subcircuit cell for a .subckt — so this string never reaches the engine.
@@ -2391,6 +2397,24 @@ public static class ComponentTypeRegistry
                     new("File",        "",              "",  true,  UnitDimension.None),
                     new("RefNode",     "false",         "",  false, UnitDimension.None),
                     new("PinConfig",   "Standard",      "",  false, UnitDimension.None),
+                    new("Pitch",       "Loose",         "",  false, UnitDimension.None),
+                    new("InterpMode",  "CubicSpline",   "",  false, UnitDimension.None),
+                    new("InterpDomain","MA",            "",  false, UnitDimension.None),
+                    new("ExtrapMode",  "NearestEdge",   "",  false, UnitDimension.None),
+                ];
+            }
+
+            // brief-de-3 — a Deembed: SnP's parameters, read the same way, so an SnP and a Deembed on one file cancel. Its pins default
+            // to SplitLR, ports 1…N/2 down the left and the rest down the right in order, so port k faces port N/2+k across the box:
+            // the two sides of the network it removes. No S-parameter offsets (brief-de-2 D7).
+            case SymbolKind.Deembed:
+            {
+                int n = portCount >= 2 && portCount % 2 == 0 ? portCount : 2;
+                return [
+                    new("NumPorts",    $"{n}",         "",  false, UnitDimension.None),
+                    new("File",        "",              "",  true,  UnitDimension.None),
+                    new("RefNode",     "false",         "",  false, UnitDimension.None),
+                    new("PinConfig",   "SplitLR",       "",  false, UnitDimension.None),
                     new("Pitch",       "Loose",         "",  false, UnitDimension.None),
                     new("InterpMode",  "CubicSpline",   "",  false, UnitDimension.None),
                     new("InterpDomain","MA",            "",  false, UnitDimension.None),

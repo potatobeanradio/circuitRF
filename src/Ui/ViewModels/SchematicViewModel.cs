@@ -5641,7 +5641,12 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (newName != param.Name || expr != param.Expression || unit != param.Unit)
                 {
                     var comp = EditModel.FindComponent(targetId ?? "");
-                    if (comp?.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData && param.Name == "File")
+                    if (comp?.Symbol is SymbolKind.Deembed && param.Name == "File"
+                        && SnpPathPolicy.Resolve(expr, WorkspaceRoot, EditModel.SchematicDirectory) is { } probe
+                        && RfCore.TouchstoneIO.TryGetPortCount(probe, out int ports, out _)
+                        && DeembedFile.OddPortsRefusal(probe, ports) is { } odd)
+                        _messageSink?.Post(Messages.MessageLevel.Warning, $"{comp.InstanceName}: {odd}");
+                    else if (comp?.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed && param.Name == "File")
                         Execute(new SetSnpFileCommand(EditModel, comp, expr, WorkspaceRoot));
                     else
                         Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));

@@ -1273,6 +1273,8 @@ The symbol is dynamic; the pin arrangement, the pitch and the floating-reference
 
 ### Deembed {#deembed}
 
+{{symbol: deembed}}
+
 The opposite of an SnP. It reads a Touchstone file the same way and has the same parameters, but instead of adding the
 file's network to the circuit it **removes** it: it is the network that, cascaded with the file's, gives a plain
 connection.
@@ -1307,6 +1309,13 @@ Deembed:DB y  p2 File="fixture_B.s2p" NumPorts=2     ; and fixture B on the othe
   instance and the frequency. Apply bias outside the part being de-embedded, or use a file whose lowest frequency
   still passes through.
 - It takes no `SdB_<i>_<j>`, `Sdeg_<i>_<j>` or `Reciprocal`; set an offset on the SnP whose network it removes.
+
+In the schematic it is in the palette under **Data Files**, and it is placed, pointed at a file and laid out exactly as an SnP
+is: **Browse…** sets the port count from the file, and a file with an odd number of ports is refused with a message. Its pins
+default to **SplitLR**, ports 1…N/2 down the left and the rest down the right in order, so each port faces its partner on the
+other side. It is always drawn as its own box, marked S⁻¹.
+
+{{table: components/Deembed}}
 
 ### SPICE Model or Subcircuit {#spicemodel}
 

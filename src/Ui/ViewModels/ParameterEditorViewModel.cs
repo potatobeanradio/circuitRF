@@ -546,7 +546,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     // ── SnP panel ─────────────────────────────────────────────────────────────
 
-    public bool IsSnp => _target?.Symbol == SymbolKind.Snp;
+    /// <summary>The Touchstone panel: an SnP's, and a Deembed's (brief-de-3), which reads its file the same way.</summary>
+    public bool IsSnp => _target?.Symbol is SymbolKind.Snp or SymbolKind.Deembed;
+
+    /// <summary>The symbol picker, an SnP's alone: a Deembed is always its own box, marked S⁻¹.</summary>
+    public bool IsSnpSymbolPicker => _target?.Symbol == SymbolKind.Snp;
 
     /// <summary>A block whose File is the point of it, so its file label has the two checkboxes.</summary>
     public bool IsDataFileBlock => IsSnp || IsEmFieldData;
@@ -735,6 +739,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         }
         else if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
         {
+            // brief-de-3 — a Deembed takes an even port count or nothing: its pins are not redrawn for a file it cannot use.
+            if (target.Symbol == SymbolKind.Deembed && DeembedFile.OddPortsRefusal(path, n) is { } odd)
+            {
+                schematic.MessageSink?.Post(Messages.MessageLevel.Warning, $"{target.InstanceName}: {odd}");
+                return odd;
+            }
             var numPorts = newParams.FirstOrDefault(p => p.Name == "NumPorts");
             if (numPorts is not null) numPorts.Expression = n.ToString();
         }
@@ -754,11 +764,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     private void RefreshSnpProperties()
     {
-        if (_target?.Symbol != SymbolKind.Snp) return;
+        if (_target?.Symbol is not (SymbolKind.Snp or SymbolKind.Deembed)) return;
         string file = _target.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression ?? "";
         bool refNode = (_target.Parameters.FirstOrDefault(p => p.Name == "RefNode")?.Expression ?? "false")
             .Equals("true", StringComparison.OrdinalIgnoreCase);
-        string cfgStr    = _target.Parameters.FirstOrDefault(p => p.Name == "PinConfig")?.Expression ?? "Standard";
+        string cfgStr    = _target.Parameters.FirstOrDefault(p => p.Name == "PinConfig")?.Expression
+                           ?? (_target.Symbol == SymbolKind.Deembed ? "SplitLR" : "Standard");
         string pitchStr  = _target.Parameters.FirstOrDefault(p => p.Name == "Pitch")?.Expression ?? "Loose";
         // "Cubic" is the pre-2026-08-13 stored value (kept working by ComponentModelFactory's
         // fallback-to-cubic-spline default); treat it the same as "CubicSpline" here too.
@@ -1109,7 +1120,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         Rows.Clear();
         SwitchRows.Clear();
         VariableRows.Clear();
-        if (_schematicVm is not null && comp.Symbol is not (SymbolKind.Snp or SymbolKind.EmFieldData))
+        if (_schematicVm is not null && comp.Symbol is not (SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed))
         {
             AdoptCellDeclaredParameters(comp);
             var (cellVars, emSetups) = AdoptCellVariablesAndModel(comp);
@@ -1217,13 +1228,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             ConfigureTestPadRows();
         }
 
-        if (comp.Symbol == SymbolKind.Snp) AdoptDefaultSnpParameters(comp);
+        if (comp.Symbol is SymbolKind.Snp or SymbolKind.Deembed) AdoptDefaultSnpParameters(comp);
 
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(ShowModelSwitches));
         OnPropertyChanged(nameof(ShowVariables));
         OnPropertyChanged(nameof(IsSnp));
+        OnPropertyChanged(nameof(IsSnpSymbolPicker));
         OnPropertyChanged(nameof(IsEmFieldData));
         OnPropertyChanged(nameof(IsDataFileBlock));
         OnPropertyChanged(nameof(IsSpiceModel));
@@ -1244,7 +1256,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         RefreshMicrostripSubstrate();
         UpdateCanRemoveTopGroup();
         RefreshFootprintPanel();
-        if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (comp.Symbol is SymbolKind.Snp or SymbolKind.Deembed) RefreshSnpProperties();
         if (comp.Symbol == SymbolKind.EmFieldData) RefreshEmFieldDataProperties();
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (IsVendorModelComponent(comp)) RefreshVendorModel();
@@ -1275,7 +1287,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private static void AdoptDefaultSnpParameters(EditableComponent comp)
     {
-        var defaults = ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, comp.PortCount);
+        var defaults = ComponentTypeRegistry.DefaultParameters(comp.Symbol, comp.PortCount);
         foreach (var d in defaults)
         {
             if (comp.Parameters.Any(p => p.Name.Equals(d.Name, StringComparison.Ordinal))) continue;
@@ -2321,7 +2333,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // A READOUT of the instance, so it follows every change to it — including an undo of a
         // footprint change, and including the Custom… picker's own write.
         RefreshFootprintPanel();
-        if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (_target.Symbol is SymbolKind.Snp or SymbolKind.Deembed) RefreshSnpProperties();
         if (_target.Symbol == SymbolKind.EmFieldData) RefreshEmFieldDataProperties();
         if (_target.Symbol == SymbolKind.VerilogA) RefreshVerilogAPanel();
         // The Match panel is a READOUT of the design, so it has to follow every change to it —
@@ -2528,7 +2540,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private static List<EditableParameter> VisibleParams(EditableComponent comp)
     {
         // SnP uses a custom panel; generic rows are always empty.
-        if (comp.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData) return [];
+        if (comp.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed) return [];
         return comp.Parameters
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
             // A SpiceModel's panel owns File/Name/PinConfig/Pitch, so they are not rows and must not

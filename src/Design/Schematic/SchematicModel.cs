@@ -656,6 +656,12 @@ public enum SymbolKind
     /// so the Fields analysis can name it. Engine token <c>EmFieldData</c>.
     /// </summary>
     EmFieldData,
+
+    /// <summary>
+    /// The network that REMOVES a Touchstone file's (brief-de-3): an SnP's opposite, with SnP's box, pins and file, and an S⁻¹ mark
+    /// across its body. Ports 1…N/2 one side, the rest the other; N is even. Engine token <c>Deembed</c>.
+    /// </summary>
+    Deembed,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
@@ -759,7 +765,7 @@ public sealed class SchematicComponent
             double halfH = SymbolPortDefs.SddBodyRect(portCount).HalfH;
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
-        if (symbol is SymbolKind.Snp or SymbolKind.EmFieldData)
+        if (symbol is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed)
         {
             double halfH = glyphHalfH
                 ?? SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose).HalfH;

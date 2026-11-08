@@ -201,6 +201,8 @@ public static class BuiltInSymbols
             }
             case SymbolKind.EmFieldData:
                 return PrimitivesForEmFieldData(portCount > 0 ? portCount : 2, null);
+            case SymbolKind.Deembed:
+                return PrimitivesForDeembed(portCount > 0 ? portCount : 2, refNode: false, SnpPinConfig.SplitLR, SnpPitch.Loose);
             case SymbolKind.VerilogA:
             {
                 int n = portCount > 0 ? portCount : 2;
@@ -1521,6 +1523,38 @@ public static class BuiltInSymbols
             wave.StrokeTier = SymbolStrokeTier.Thick;
             prims.Add(wave);
         }
+        return new Symbol(prims, box.Pins);
+    }
+
+    /// <summary>
+    /// The Deembed block (brief-de-3): the SnP's box, pins and pin geometry for the same parameters, with S⁻¹ across its body, so a
+    /// glance tells a block that removes a network from one that adds it. The superscript is drawn as a second, smaller, raised
+    /// text rather than as U+207B, which not every face the renderer may fall back to carries.
+    /// </summary>
+    public static Symbol PrimitivesForDeembed(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch,
+                                              IReadOnlyList<string?>? portLabels = null)
+    {
+        if (portLabels is null || portLabels.All(string.IsNullOrWhiteSpace))
+        {
+            var key = (n, refNode, cfg, pitch);
+            if (!_deembedCache.TryGetValue(key, out var cached))
+                _deembedCache[key] = cached = BuildDeembedSymbol(n, refNode, cfg, pitch, null);
+            return cached;
+        }
+        return BuildDeembedSymbol(n, refNode, cfg, pitch, portLabels);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _deembedCache = new();
+
+    private static Symbol BuildDeembedSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch, IReadOnlyList<string?>? portLabels)
+    {
+        var box = BuildSnpSymbol(n, refNode, cfg, pitch, portLabels);
+        float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, cfg, pitch);
+        var prims = new List<SymbolPrimitive>(box.Primitives)
+        {
+            Txt("S", -8, cy + 4, fontSize: 56, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Middle),
+            Txt("−1", -6, cy - 18, fontSize: 32, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Middle),
+        };
         return new Symbol(prims, box.Pins);
     }
 

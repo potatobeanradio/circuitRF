@@ -732,3 +732,14 @@ A designer on 1.7.3, Windows x64, reported the application slow, with "Not respo
 - **Leads, neither shown to apply:** one heavy canvas slowing the whole window through the single compositor (`src/Ui/RESOLVED.md`, "Why one slow canvas stops the whole window"), and `PGHook.dll`, also named in `src/RfCore/RESOLVED.md`.
 
 **If it comes back,** take a stack before anything is restarted: `dotnet-stack report -p <pid>` two or three times during the slowness. First note whether a solver process is still running, whether closing other documents helps, and whether a small example workspace is slow too. An always-on UI-stall note in the trail was considered and not added, since it would run on every user's machine for a question a one-off stack answers better.
+
+## `--figures` after many page edits recaptures far more than the edit, and can stop on an unrelated fixture (brief-de-3, 2026-11-07)
+
+Adding one symbol (`deembed`, through `SymbolArtworkGenerator`) needs its two SVGs before
+`DocsFactoryTests.EverySymbolFigureExistsInBothVariantsAndDrawsSomething` passes. `DocGen --out docs/user --figures`
+was the route: it captures what pages whose `.md` hash differs from `_figure-stamps.txt` cite. On this tree that was not
+one page: many pages had been edited (and their HTML regenerated with `--page`, which captures nothing) since their last
+capture, so the run recaptured 124 unrelated figures, then threw in `DocImageRecognitionFixtures.LayoutPicture` ("Reading
+the board's picture produced no parts"), so no stamps were written. The figures were restored with `git checkout` and the
+two symbol SVGs kept. `--page` does not combine with `--figures`. For one new symbol, `--figure <id>` is the narrow form
+when the symbol has a catalog id; otherwise expect `--figures` to touch every page edited since the last full capture.

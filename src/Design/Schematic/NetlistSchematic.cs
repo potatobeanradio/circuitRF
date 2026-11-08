@@ -710,7 +710,7 @@ public static class NetlistSchematic
                              .ToString(System.Globalization.CultureInfo.InvariantCulture),
             });
 
-        if (inst.RefNetBinding is not null && kind == SymbolKind.Snp
+        if (inst.RefNetBinding is not null && kind is SymbolKind.Snp or SymbolKind.Deembed
             && !comp.Parameters.Any(p => p.Name == "RefNode"))
             comp.Parameters.Add(new EditableParameter { Name = "RefNode", Expression = "true", ShowOnSchematic = false });
 
@@ -796,7 +796,7 @@ public static class NetlistSchematic
             return null;
         }
 
-        if (kind == SymbolKind.Snp && inst.RefNetBinding is { } refNet)
+        if (kind is SymbolKind.Snp or SymbolKind.Deembed && inst.RefNetBinding is { } refNet)
         {
             if (nets.Count + 1 == pins) return [.. nets, refNet];
         }

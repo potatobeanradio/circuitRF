@@ -91,6 +91,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Mutual,          "mutual",            2),
         (SymbolKind.Snp,             "snp",               2),
         (SymbolKind.EmFieldData,     "emfielddata",       2),
+        (SymbolKind.Deembed,         "deembed",           2),
         // The UNCONFIGURED glyph, which is what the palette tile shows and therefore what the
         // reader is choosing between. A placed one draws as whatever its file describes — a diode,
         // a four-port box — and no single figure can stand for that; the page says so in words.

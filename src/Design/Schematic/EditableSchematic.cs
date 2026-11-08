@@ -321,6 +321,9 @@ public static class SymbolPortDefs
             case SymbolKind.EmFieldData:
                 return GenerateSnpPorts(portCount >= 1 ? portCount : 2,
                     refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
+            case SymbolKind.Deembed:
+                return GenerateSnpPorts(portCount >= 1 ? portCount : 2,
+                    refNode: false, cfg: SnpPinConfig.SplitLR, pitch: SnpPitch.Loose);
             // VerilogA: a generic box whose terminal count is the MODEL's, not the symbol's. Pins
             // run down the left side then the right, in the order the model declares them — which
             // is the order its own netlist line uses, so pin 1 is the model's first terminal.
@@ -911,14 +914,14 @@ public sealed class EditableComponent
         IsSnpBox ? GetEffectiveSnpPortDefs().Length : PortCount;
 
     /// <summary>The kinds drawn as the Touchstone box: pins from the port count, and for an SnP also from its layout parameters.</summary>
-    internal bool IsSnpBox => Symbol is SymbolKind.Snp or SymbolKind.EmFieldData;
+    internal bool IsSnpBox => Symbol is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed;
 
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
         // An SnP drawn as a built-in part (brief vendorlib-11): port k is that glyph's pin k.
         if (SnpGlyph.Of(this) is { } glyph) return SymbolPortDefs.For(glyph, PortCount);
         bool refNode = GetBoolParam("RefNode");
-        SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+        SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", Symbol == SymbolKind.Deembed ? SnpPinConfig.SplitLR : SnpPinConfig.Standard);
         SnpPitch pitch   = GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose);
         return SymbolPortDefs.GenerateSnpPorts(PortCount, refNode, cfg, pitch);
     }
@@ -1010,6 +1013,11 @@ public sealed class EditableComponent
             GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose),
             SnpPortLabels),
         SymbolKind.EmFieldData => BuiltInSymbols.PrimitivesForEmFieldData(PortCount, SnpPortLabels),
+        SymbolKind.Deembed => BuiltInSymbols.PrimitivesForDeembed(
+            PortCount, GetBoolParam("RefNode"),
+            GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.SplitLR),
+            GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose),
+            SnpPortLabels),
         SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
             => BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")),
         SymbolKind.Match      => BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()),
@@ -1078,7 +1086,7 @@ public sealed class EditableComponent
                 return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
             }
 
-            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp or SymbolKind.EmFieldData)
+            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed)
             {
                 var p = Parameters.FirstOrDefault(q => q.Name == "NumPorts");
                 if (p is not null && int.TryParse(p.Expression, out int n) && n >= 1)
@@ -1690,7 +1698,7 @@ public sealed class SchematicEditModel
         var comps = Components.Select(c =>
         {
             // An SnP's port names, from its file's header (a stat per render; the header is read when the file changes).
-            if (c.Symbol == SymbolKind.Snp)
+            if (c.Symbol is SymbolKind.Snp or SymbolKind.Deembed)
                 c.SnpPortLabels = RfCore.TouchstonePortNames.FromFile(
                     SnpPathPolicy.Resolve(c.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression,
                                           HostWorkspaceRoot, SchematicDirectory),

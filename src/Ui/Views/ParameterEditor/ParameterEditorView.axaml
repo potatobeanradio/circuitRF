@@ -1438,7 +1438,7 @@
                     </Grid>
                     <!-- The symbol (brief vendorlib-11): the SnP's own box, or a built-in part's glyph whose pin k is
                          port k — what Export to Library writes for a part it converted. Verilog-A's picker, in shape. -->
-                    <StackPanel Spacing="2">
+                    <StackPanel Spacing="2" IsVisible="{Binding IsSnpSymbolPicker}">
                         <TextBlock Text="Symbol" FontSize="11"/>
                         <Button Name="SnpSymbolButton" Background="Transparent" HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Stretch" Padding="4" ToolTip.Tip="Choose the symbol">
