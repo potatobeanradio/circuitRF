@@ -2584,6 +2584,18 @@ normalisation applied to a `.param`/`.subckt` DECLARATION of that name — circu
 ordinal, so a file writing `.PARAM TEMP=40` and `{TEMP}` would otherwise declare one name and
 reference another.
 
+## An `ExtDevice` ran at its worker's 300 K whatever the design's `temp` (2026-11-08)
+
+`CreateVerilogAModel` sends the device temperature to a worker, in kelvin, under
+`DeviceWorkerProvider.ReservedTemperatureKey`. `CreateExternalDeviceModel` sent none, and the factory did not even pass
+it the ambient, so the OSDI worker set every kit device up at its own default of 300 K: a kit resistor read the same at
+any `temp`. The ambient now goes the same way when the provider is a `DeviceWorkerProvider`, which lifts the key out
+at `create`. An in-process provider is not sent it, by the `__` rule beside it, and `Temp`/`Dtemp` are not read on this
+path, where they are the provider's own names. The default ambient, 26.85 °C, is exactly 300 K, so a design that states
+no `temp` gets the numbers it got before. On a kit's compiled resistor R(T)/R(27 °C) now follows the model's own
+`tc1`/`tc2` and matches an independent SPICE simulator to 1e-6 at -40, 26.85 and 85 °C. Gate: `ExtDeviceTemperatureTests`,
+the fake OSDI model's `crf_rc`, whose conductance doubles from 300 K to 400 K.
+
 ## An OSDI model's nodes were all electrical, and every terminal always connected (2026-09-03)
 
 Two defects in the OSDI worker, both of which present as silence rather than as an error, found while
