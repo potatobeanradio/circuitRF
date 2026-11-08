@@ -415,7 +415,8 @@ internal static class DocumentSchema
             Port[3] = C1), and an entry's Z0 is its own port's. A part that cannot be built is left out
             with a warning naming it, and the rest run. A .cem naming a .c3d builds them as the 3D
             view does; a 3D .cem on a .clay builds them in a 3D view of its cell's layout made in
-            memory (the .clay must be saved in a cell, and a SolveRegion beside them is refused).
+            memory (the .clay must be saved in a cell). With a SolveRegion, a part outside it is left
+            out with a warning, on either kind of setup.
             `explain --component-ports` lists what would be built, and `em --component-ports "C1,C2"`
             applies a list for one run.
 

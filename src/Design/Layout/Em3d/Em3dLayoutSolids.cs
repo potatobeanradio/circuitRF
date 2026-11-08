@@ -43,8 +43,8 @@ namespace CircuitRF.Design.Layout.Em3d;
 /// no metal but what the layout draws.</param>
 public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool Instance)
 {
-    /// <summary>A <c>.cem</c> run's region: the setup's SolveRegion (the generator's case). Null takes the
-    /// whole layout.</summary>
+    /// <summary>A <c>.cem</c> run's region: the setup's SolveRegion (the generator's case, and an instance's when the 3D view
+    /// is the in-memory one a <c>.cem</c> with component ports is built through). Null takes the whole layout.</summary>
     public EmSetup? RegionSetup { get; init; }
 
     /// <summary>False when the <c>.cem</c>'s AirBox ZMin states a boundary other than PEC, which steps the
@@ -280,8 +280,10 @@ public static class Em3dLayoutSolids
             _perDbu = 1.0 / (source.DbuPerMicron * 1e6);
 
             // ── The geometry: flattened, then the solve region (R-em3d3-5h) ─────────────────
-            // An instance takes the whole layout: the solve region is a .cem's, and a sub-cell's .cem is not consulted.
-            var geometry = options.RegionSetup is { } regionSetup && !options.Instance
+            // An instance takes the whole layout: the solve region is a .cem's, and a sub-cell's .cem is not consulted. The one
+            // instance that carries a region is the in-memory view a 3D .cem with component ports is built through, whose
+            // elaborator hands its own layout the .cem's region (C3dElaborator.LayoutRegions).
+            var geometry = options.RegionSetup is { } regionSetup
                 ? EmGeometry.ForSetup(regionSetup, source)
                 : EmGeometry.Flatten(source.View, source.AbsolutePath, source.Technology);
             Notes.AddRange(geometry.Notes);

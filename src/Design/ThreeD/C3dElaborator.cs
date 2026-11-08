@@ -384,6 +384,13 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     /// </summary>
     public IReadOnlyDictionary<string, LayoutView>? LayoutsInMemory { get; init; }
 
+    /// <summary>
+    /// A <c>.cem</c>'s solve region for a placed layout, by full path: the in-memory view a 3D <c>.cem</c> with component ports
+    /// is built through (Em3dSetupProblem) places the <c>.cem</c>'s own layout, and solves only the part of it the region
+    /// encloses, as the generator would. Null, or a layout not named, takes the whole layout, as every other instance does.
+    /// </summary>
+    public IReadOnlyDictionary<string, EmSolveRegion>? LayoutRegions { get; init; }
+
     /// <summary>brief-sdl-8 D3 — the top document's cell as an EM evaluation states it (its parameters, and each schematic
     /// VAR a 3D VAR is linked to by name), with <see cref="TopOverrides"/> their values at this point. Null reads the cell
     /// from disk and binds no override, as the editor and a plain run do.</summary>
@@ -662,8 +669,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         // view kept drawing the old wires. The sub-cells the flatten read are checked on a hit, for the same reason.
         LayoutView? inMemory = LayoutsInMemory?.GetValueOrDefault(Path.GetFullPath(path));
         string stamp = inMemory is null ? Stamp(path) : "memory:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(inMemory);
+        EmSolveRegion? region = LayoutRegions?.GetValueOrDefault(Path.GetFullPath(path));
         string key = string.Create(CultureInfo.InvariantCulture,
-            $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}|{options.Conductors}");
+            $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}|{options.Conductors}|{region?.Describe()}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
@@ -686,7 +694,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
-                                               { RobustMeshing = options.RobustMeshing, Conductors = options.Conductors, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional });
+                                               { RobustMeshing = options.RobustMeshing, Conductors = options.Conductors, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional,
+                                                 RegionSetup = region is null ? null : new EmSetup { SolveRegion = region } });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         made = made with { FilesStamp = FilesStamp(made.Files) };

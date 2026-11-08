@@ -91,7 +91,7 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.Equal(Geo(generated, setup), Geo(one, setup));
     }
 
-    /// <summary>Gate 3 — each refusal: a loose .clay, a solve region beside component ports, and a drawn port the strict build
+    /// <summary>Gate 3 — each refusal: a loose .clay, a drawn port outside the solve region, and a drawn port the strict build
     /// refuses where New 3D View would have left it out.</summary>
     [Fact]
     public void TheRefusals()
@@ -102,9 +102,13 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.Equal(C3dHierarchy.NotInCellRefusal(loose),
                      Em3dSetupProblem.Of(setup, board.Source() with { AbsolutePath = loose }, board.Tech).Refusal);
 
+        // Port 2 at x = 12 mm, outside a region ending at 6 mm: the generator's sentence, as the same .cem with no component ports.
         var region = setup.Clone();
-        region.SolveRegion = new EmSolveRegion(-100, -1000, 12100, 1000);
-        Assert.Equal(Em3dSetupProblem.RegionRefusal(region), Em3dSetupProblem.Of(region, board.Source(), board.Tech).Refusal);
+        region.SolveRegion = EmSolveRegion.FromCorners(-100, -2000, 6000, 2000);
+        var outside = Em3dSetupProblem.Of(region, board.Source(), board.Tech);
+        Assert.Null(outside.Problem);
+        Assert.Contains("Port 2", outside.Refusal);
+        Assert.Contains("solve region", outside.Refusal);
 
         // Port 3 in the air: a .c3d's New 3D View leaves it out and goes on; a .cem's own port cannot be moved, so it refuses.
         var stray = new LabelShape
@@ -143,6 +147,29 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         var alone = Em3dSetupProblem.Of(Driven(["C1", "C2"]), source, board.Tech);
         Assert.True(alone.Ok, alone.Refusal);
         Assert.Equal(2, alone.Problem!.Ports.Count);
+    }
+
+    /// <summary>A solve region beside component ports solves the region, as a Planar .cem does: the copper is cut at its edge, a part
+    /// inside it gets its port and a part outside it is left out by name.</summary>
+    [Fact]
+    public void ASolveRegion_LeavesOutThePartsOutsideIt()
+    {
+        var source = board.Source();
+        source.View.Shapes.RemoveAll(s => s is LabelShape { IsPort: true });
+        var setup = Driven(["C1", "C2"]);
+        setup.SolveRegion = EmSolveRegion.FromCorners(-100, -2000, 6000, 2000);
+        var g = Em3dSetupProblem.Of(setup, source, board.Tech);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.Contains(g.Notes, n => n.Contains("Solve region", StringComparison.Ordinal));
+        Assert.Equal(["C1"], g.ComponentPorts!.Ports.Where(p => p.Ok).Select(p => p.Refdes));
+        Assert.Contains("solve region", Assert.Single(g.ComponentPorts.Ports, p => p.Refdes == "C2").Refusal);
+        Assert.Equal(1, g.Problem!.Ports.Count);
+        setup.SolveRegion = null;
+        var whole = Em3dSetupProblem.Of(setup, source, board.Tech);
+        Assert.True(whole.Ok, whole.Refusal);
+        // The board is 12 mm long and the region keeps its first 6 mm: the box shrinks by at least what was cut.
+        Assert.True(g.Problem.Boundary.Max.X <= whole.Problem!.Boundary.Max.X - 6e-3,
+                    $"region box ends at {g.Problem.Boundary.Max.X} m, whole layout's at {whole.Problem.Boundary.Max.X} m");
     }
 
     /// <summary>A list the setup cannot use (an electrostatic setup that kept one) is not a reason to build through the view: it is
