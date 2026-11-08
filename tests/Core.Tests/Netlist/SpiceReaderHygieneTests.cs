@@ -214,6 +214,20 @@ public sealed class SpiceReaderHygieneTests
                                       .Overrides.Single(o => o.Name == "R").Expression);
     }
 
+    /// <summary><c>temper</c> is the dialect's other name for the same variable, as a model card's temperature law writes it.</summary>
+    [Fact]
+    public void H10b_TemperIsTheSameVariable()
+    {
+        var r = Read("""
+            .subckt part a b
+            R1 a b {1k*((temper+273)/300)**0.7}
+            .ends part
+            """);
+
+        Assert.Equal("1000*((temp+273)/300)^0.7", Cell(r, "part").Instances.Single()
+                                                      .Overrides.Single(o => o.Name == "R").Expression);
+    }
+
     /// <summary>A file that also DECLARES the name is aligned to the same spelling — circuitRF's scopes are ordinal.</summary>
     [Fact]
     public void H11_ADeclaredTempIsAlignedToTheSameSpelling()
