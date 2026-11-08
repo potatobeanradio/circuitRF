@@ -337,7 +337,9 @@ optimisation.
 A symbol's `format`/`template` state the element (`X`, or a primitive `D`/`Q`/`R`/`C`/`M`) and the name it
 calls. An `X` symbol is paired with the subcircuit of that name only when exactly one definition matches
 the name (case-insensitively) and the terminal count (pins plus stated extra terminals); several are
-resolved by the kit's canonical library, then by the files its nominal corner sections reach; anything
+resolved by the kit's canonical library, then by the files its nominal corner sections reach, then, for
+one library shipped once per simulator with a copy per directory, by the kit's main library tree (the
+directory defining strictly the most subcircuits); anything
 still ambiguous, or nothing found, leaves the part unpaired — never handed a name-alike. A primitive
 symbol is pointed at the one file declaring its card. Test, regression and LVS folders never define a part,
 by any pairing. The name-likeness matcher remains for sources that state nothing (catalogs, cell trees,

@@ -460,7 +460,7 @@ public static class PdkImporter
             if (primitive)
             {
                 cardFiles ??= CardFiles(report);
-                cardFile = CardFileFor(symbol.CalledName!, cardFiles, report);
+                cardFile = CardFileFor(symbol.CalledName!, cardFiles, subcircuits, report);
             }
 
             report.Parts.Add(new PdkPart(
@@ -641,10 +641,13 @@ public static class PdkImporter
     /// <summary>
     /// The one file a card is declared in — the kit's canonical library when several declare it, then
     /// the one the kit's NOMINAL corner reads (the tie-break <see cref="StatedSubcircuitFor"/> makes, for
-    /// a kit stating one card file per corner), and nothing when that still leaves more than one,
-    /// because picking between two definitions of one name is the guess the kit did not make.
+    /// a kit stating one card file per corner), then the one on the kit's main library tree when the
+    /// others are copies for another simulator (<see cref="OnTheMainTree"/>), and nothing when that
+    /// still leaves more than one, because picking between two definitions of one name is the guess
+    /// the kit did not make.
     /// </summary>
-    private static string? CardFileFor(string card, Dictionary<string, List<string>> cardFiles, PdkImportReport report)
+    private static string? CardFileFor(string card, Dictionary<string, List<string>> cardFiles,
+                                       List<SubcircuitDef> subcircuits, PdkImportReport report)
     {
         if (!cardFiles.TryGetValue(card, out var files) || files.Count == 0) return null;
         if (files.Count == 1) return files[0];
@@ -658,7 +661,39 @@ public static class PdkImporter
             .Where(f => ResolveAssetPath(report.RootPath, report.KitRoot, f) is { } full
                         && reached.Contains(Path.GetFullPath(full)))
             .ToList();
-        return nominal.Count == 1 ? nominal[0] : null;
+        if (nominal.Count == 1) return nominal[0];
+        return OnTheMainTree(nominal.Count > 1 ? nominal : preferred.Count > 1 ? preferred : files, subcircuits);
+    }
+
+    /// <summary>
+    /// The one of several equally good definitions that lies on the kit's MAIN library tree, or null.
+    ///
+    /// <para><b>The shape this resolves.</b> A kit supporting several simulators ships the same library
+    /// once per simulator, each copy in a directory of its own beside its own corner files. The copies
+    /// share a file name, so the canonical-library test keeps them all, and each is its own tree's
+    /// nominal, so the nominal-corner test does too. Every part the kit defines in more than one tree
+    /// was left unpaired by those two alone — measured on a real kit, every device but the three it
+    /// defines in one tree only. The copies are not alternatives: circuitRF reads one tree, and the
+    /// corner flavour is derived from it afterwards (<see cref="RestrictToUsedFlavours"/>).</para>
+    ///
+    /// <para>The main tree is the directory defining strictly the most subcircuits — the fact
+    /// <see cref="PreferTheKitsMainLibrary"/> already orders by. Candidates all in one directory are
+    /// variants rather than copies, two trees of equal size are a tie, and more than one candidate on
+    /// the main tree is a variant question again: each of those stays unpaired.</para>
+    /// </summary>
+    private static string? OnTheMainTree(IReadOnlyList<string> tied, List<SubcircuitDef> subcircuits)
+    {
+        var size = tied.Select(DirectoryOf).Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(
+            d => d,
+            d => subcircuits.Count(s => DirectoryOf(s.SourceRelativePath).Equals(d, StringComparison.OrdinalIgnoreCase)),
+            StringComparer.OrdinalIgnoreCase);
+        if (size.Count < 2) return null;
+
+        var ranked = size.OrderByDescending(kv => kv.Value).ToList();
+        if (ranked[0].Value == ranked[1].Value) return null;
+
+        var onMain = tied.Where(f => DirectoryOf(f).Equals(ranked[0].Key, StringComparison.OrdinalIgnoreCase)).ToList();
+        return onMain.Count == 1 ? onMain[0] : null;
     }
 
     /// <summary>
@@ -764,7 +799,8 @@ public static class PdkImporter
     /// case-insensitive) and the terminal count must equal the symbol's pins plus its stated extra
     /// terminals — or the pins alone, which extraction accepts as well (a definition that leaves the
     /// body to its own default); the stated count is preferred when both exist. Several matching
-    /// definitions are resolved only by the kit's own canonical library;
+    /// definitions are resolved only by the kit's own canonical library, its nominal corner, and — for
+    /// one library shipped once per simulator — its main library tree (<see cref="OnTheMainTree"/>);
     /// still more than one, or none, leaves the part unpaired — a symbol that STATES what it calls and
     /// is handed something else would build a circuit the kit never described.</para>
     /// </summary>
@@ -789,7 +825,11 @@ public static class PdkImporter
             .Where(s => ResolveAssetPath(report.RootPath, report.KitRoot, s.SourceRelativePath) is { } full
                         && reached.Contains(Path.GetFullPath(full)))
             .ToList();
-        return nominal.Count == 1 ? nominal[0] : null;
+        if (nominal.Count == 1) return nominal[0];
+
+        var tied = nominal.Count > 1 ? nominal : preferred.Count > 1 ? preferred : matches;
+        string? main = OnTheMainTree([.. tied.Select(s => s.SourceRelativePath)], subcircuits);
+        return main is null ? null : tied.Single(s => s.SourceRelativePath == main);
     }
 
     /// <summary>
