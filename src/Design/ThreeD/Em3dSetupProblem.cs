@@ -28,8 +28,10 @@ public static class Em3dSetupProblem
            "builds component ports in a 3D view of the whole layout, which has no solve region: remove the SolveRegion, or the " +
            "component ports.";
 
-    /// <summary>Whether <paramref name="setup"/>'s problem is built through a 3D view of its layout rather than the generator.</summary>
-    public static bool ThroughView(EmSetup setup) => setup.ComponentPorts.Count > 0;
+    /// <summary>Whether <paramref name="setup"/>'s problem is built through a 3D view of its layout rather than the generator. A list
+    /// the setup cannot use (a thermal or electrostatic setup that kept one from before) is not a reason to go through the view:
+    /// such a setup is the generator's, as it would be with no list.</summary>
+    public static bool ThroughView(EmSetup setup) => setup.ComponentPorts.Count > 0 && EmComponentPorts.Inapplicable(setup) is null;
 
     /// <summary>
     /// The 3D problem <paramref name="setup"/> makes of <paramref name="source"/>. A setup with no component ports is
@@ -45,7 +47,12 @@ public static class Em3dSetupProblem
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        if (!ThroughView(setup)) return Em3dGenerator.Generate(setup, source, tech, portsOptional: portsOptional);
+        if (!ThroughView(setup))
+        {
+            var plain = setup;
+            if (plain.ComponentPorts.Count > 0) { plain = setup.Clone(); plain.ComponentPorts = []; }
+            return Em3dGenerator.Generate(plain, source, tech, portsOptional: portsOptional);
+        }
         var built = ThroughThreeDView(setup, source, tech, workspaceCws, cache);
         if (built.Problem is not null || !portsOptional) return built;
         var drawn = setup.Clone();

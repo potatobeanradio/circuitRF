@@ -146,7 +146,7 @@ public static class EmPlanarComponentPorts
     private static string KeyOf(EmSetup setup, EmLayoutSource source)
         => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}"))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe()
-           + "#" + source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.DbuPerMicron;
+           + "#" + source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron;
 
     private sealed record Region(int Index, LayerKey Layer, Em3dExtrudedPolygon Poly, Paths64 Dbu);
 
@@ -174,7 +174,15 @@ public static class EmPlanarComponentPorts
         var padLayers = placed.Parts.SelectMany(p => p.Pads).Select(p => p.Layer).OfType<LayerKey>().ToHashSet();
         var regions = new List<Region>();
         foreach (var layer in padLayers)
-            regions.AddRange(Regions(flat.Where(s => s.Layer == layer && s is not LabelShape and not BitmapShape), layer, dbu, regions.Count));
+        {
+            // Every drawing layer bound to the pad's conductor is that conductor's copper: a second layer drawn onto the same
+            // metal joins the pads, touches the strip or lies against the cut exactly as copper on the pad's own layer does.
+            var same = source.Technology?.Stackup.Layers
+                           .FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(layer))?.DrawingLayers;
+            var onConductor = same is { Count: > 0 } ? same.ToHashSet() : [layer];
+            regions.AddRange(Regions(flat.Where(s => onConductor.Contains(s.Layer) && s is not LabelShape and not BitmapShape), layer, dbu,
+                                     regions.Count));
+        }
 
         var groundNets = new HashSet<string>(EmPartPads.GroundNames, StringComparer.OrdinalIgnoreCase);
         bool IsGround(PartPad p) => p.Net is { } n ? groundNets.Contains(n) : groundNets.Contains(p.Pin);
@@ -187,7 +195,7 @@ public static class EmPlanarComponentPorts
         foreach (var entry in selection.Wanted)
         {
             string rd = entry.Refdes;
-            if (ambiguous.Contains(rd)) { results.Add(Refused(rd, $"{rd} is placed more than once on this layout, so which one is meant is not known.")); continue; }
+            if (ambiguous.Contains(rd)) { results.Add(Refused(rd, EmPartPads.PlacedMoreThanOnce(rd))); continue; }
             if (!parts.TryGetValue(rd, out var part))
             {
                 results.Add(Refused(rd, $"{rd} is no part placed on this layout" + EmPartPads.KnownParts(parts.Keys) + "."));
@@ -465,8 +473,12 @@ public static class EmPlanarComponentPorts
             return null;
         }
 
-        // The label: across the strip at the gap, pointing from the positive pad to the negative one.
-        var direction = ax ? (posLow ? LayoutRotation.R0 : LayoutRotation.R180) : (posLow ? LayoutRotation.R90 : LayoutRotation.R270);
+        // The label: across the strip at the gap, pointing AT the positive pad. A delta gap's direction is the way positive port
+        // current crosses the cut, and positive port current enters the part's circuit at its + terminal, as an edge port's
+        // arrow points into the line it drives. Pointing it at the negative pad put + on the wrong pad: every component port
+        // came out with its sign reversed against the 3D build and against the circuit (S31 = -0.75 where a hand analysis of a
+        // shunt part on the input node gives +0.75).
+        var direction = ax ? (posLow ? LayoutRotation.R180 : LayoutRotation.R0) : (posLow ? LayoutRotation.R270 : LayoutRotation.R90);
         long gx = ax ? D(g) : (v0 + v1) / 2, gy = ax ? (v0 + v1) / 2 : D(g);
         var gap = new LabelShape
         {

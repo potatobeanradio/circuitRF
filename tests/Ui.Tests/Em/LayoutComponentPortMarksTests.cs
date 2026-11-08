@@ -60,6 +60,20 @@ public sealed class LayoutComponentPortMarksTests(PlanarComponentPortTests.Board
         Assert.Equal((Um(4000), Um(200)), (moved.Gap.X, moved.Gap.Y));
     }
 
+    /// <summary>A setup that stops building ports (switched to a kernel that has none) clears the marks after the layout has been
+    /// edited: it pushes an empty list with no layout copy to count edits from, and an empty list is never about artwork.</summary>
+    [Fact]
+    public void AnEmptyList_Clears_WhateverEditItWasMadeAt()
+    {
+        var (layout, cem) = Open();
+        layout.Model.Instances[0].Y += Um(200);
+        layout.Model.NotifyChanged();
+        Assert.True(Build(layout, cem));
+        Assert.NotEmpty(layout.ComponentPortMarks);
+        Assert.True(layout.ShowComponentPortMarks("lcp4.cem", [], 0));
+        Assert.Empty(layout.ComponentPortMarks);
+    }
+
     /// <summary>R-lcp4-3 — a mark is not a pick: a press on it selects its part (whose two pads leave only air under the mark),
     /// and dragging moves the part, with no label edited.</summary>
     [Fact]

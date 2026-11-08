@@ -604,15 +604,23 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             => Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir) + Path.DirectorySeparatorChar,
                                                  StringComparison.OrdinalIgnoreCase);
 
-        // The 3D run's own rule for where its Touchstone lands — the one the thermal link matches by.
+        // The 3D run's own rule for where its Touchstone lands — the one the thermal link matches by —
+        // and a .cem's (EmRunService.ResolveSnpBasePath, where Simulate and `circuitrf em` write it).
         // An EM Field Data block names the run's record, which sits beside the Touchstone under the same stem.
         static bool IsWrittenByAnEmSetupOf(string workspace, string result)
-            => Directory.EnumerateFiles(workspace, "*.c3d", SearchOption.AllDirectories).Any(c3d =>
-                   CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(
-                       result.EndsWith(".cemr", StringComparison.OrdinalIgnoreCase) ? Path.ChangeExtension(result, ".s4p") : result,
-                       CircuitRF.Design.Thermal.ThermalCircuitLink.ResultPaths(
-                           CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3d), c3d,
-                           Path.Combine(workspace, "results")).Select(r => r.BasePath)));
+        {
+            string snp = result.EndsWith(".cemr", StringComparison.OrdinalIgnoreCase) ? Path.ChangeExtension(result, ".s4p") : result;
+            string resultsRoot = Path.Combine(workspace, "results");
+            return Directory.EnumerateFiles(workspace, "*.c3d", SearchOption.AllDirectories).Any(c3d =>
+                       CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(snp,
+                           CircuitRF.Design.Thermal.ThermalCircuitLink.ResultPaths(
+                               CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3d), c3d,
+                               resultsRoot).Select(r => r.BasePath)))
+                || Directory.EnumerateFiles(workspace, "*.cem", SearchOption.AllDirectories).Any(cem =>
+                       CircuitRF.Design.Thermal.ThermalCircuitLink.IsResultOf(snp,
+                           [CircuitRF.Design.Layout.Em.EmRunService.ResolveSnpBasePath(resultsRoot,
+                               CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(cem))]));
+        }
     }
 
     // ══ 5. Every document an example ships is REACHABLE ═════════════════════

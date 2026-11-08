@@ -131,6 +131,10 @@ public sealed partial class EmSetupEditorViewModel
         foreach (var row in ComponentPortRows) row.IsRefused = false;
         if (Working.ComponentPorts.Count == 0) { ComponentPortsStatus = "No part is chosen."; return; }
         var check = host.PrepareCheck(Working);
+        // What this Check is about: a layout edit (MarkComponentPortsStale) or a change to the list while it runs makes its
+        // verdicts history, posted to Messages but not shown as the current state of the parts.
+        int generation = ++_componentCheckGeneration;
+        string listAtStart = ComponentPortsKey(Working);
         ComponentPortsStatus = "Checking…";
         EmComponentPortCheck result;
         try { result = await Task.Run(check); }
@@ -138,14 +142,20 @@ public sealed partial class EmSetupEditorViewModel
         {
             result = EmComponentPortCheck.Refused($"Component ports: {e.Message}");
         }
+        bool current = generation == _componentCheckGeneration && listAtStart == ComponentPortsKey(Working);
         foreach (var p in result.Ports)
         {
             host.Post(p.Line, !p.Ok);
-            if (!p.Ok && ComponentPortRows.FirstOrDefault(r => r.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)) is { } row)
+            if (current && !p.Ok && ComponentPortRows.FirstOrDefault(r => r.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)) is { } row)
                 row.IsRefused = true;
         }
         foreach (string w in result.Warnings) host.Post(w, true);
         if (result.Refusal is { } whole) host.Post(whole, true);
+        if (!current)
+        {
+            ComponentPortsStatus = "The layout or the list has changed since this Check started; press Check again.";
+            return;
+        }
         int ok = result.Ports.Count(p => p.Ok), left = result.Ports.Count - ok;
         ComponentPortsStatus = result.NotBuilt ? "Not built; see Messages."
             : left == 0 ? $"{ok} built; details in Messages."
@@ -154,11 +164,15 @@ public sealed partial class EmSetupEditorViewModel
     }
 
     private bool _componentPortsChecked;
+    private int _componentCheckGeneration;
+
+    private static string ComponentPortsKey(EmSetup setup) => string.Join("|", setup.ComponentPorts);
 
     /// <summary>R-lcp3-5 — the layout was edited: the last Check's verdicts no longer describe it. Nothing is rebuilt here; on a
     /// board that is seconds of work, and Check is one press away.</summary>
     public void MarkComponentPortsStale()
     {
+        _componentCheckGeneration++;          // a Check still running is about the layout before this edit
         if (!_componentPortsChecked) return;
         _componentPortsChecked = false;
         foreach (var row in ComponentPortRows) row.IsRefused = false;
@@ -393,6 +407,11 @@ public sealed partial class EmSetupEditorViewModel
         }
         if (EmComponentPort.WidthRefusal(width) is { } why) { row.Error = why; return; }
         row.Error = null;
+        // The box shows six significant digits: a value that still reads as the stored one is the stored one, so leaving the box
+        // does not round a width that was written with more.
+        if (width is { } typed && Keep(rd).WidthUm is { } stored &&
+            typed.ToString("G6", CultureInfo.InvariantCulture) == stored.ToString("G6", CultureInfo.InvariantCulture))
+            width = stored;
         SetComponentPortEntry(rd, e => e with { WidthUm = width }, $"Component port {rd} width");
     }
 

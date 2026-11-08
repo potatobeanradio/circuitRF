@@ -50,6 +50,17 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
         Assert.All(vm.ComponentPortRows, r => Assert.True(r.IsIncluded));
     }
 
+    /// <summary>An entry beside <c>*</c> stays when it comes to state nothing: <c>*</c> takes two-pad parts only, so the entry may be
+    /// what selects a part of more pads, and tabbing through an untouched box must not drop it.</summary>
+    [Fact]
+    public void AnEntryBesideEveryPart_IsNeverDropped()
+    {
+        IReadOnlyList<EmComponentPort> list = [new(EmSetup.AllComponents), new("U1", Z0: "50")];
+        var cleared = EmComponentPort.Override(list, "U1", e => e with { Z0 = null });
+        Assert.Equal(["*", "U1"], cleared.Select(c => c.Refdes));
+        Assert.Equal(cleared, EmComponentPort.Override(cleared, "U1", e => e));
+    }
+
     /// <summary>R-lcp3-3 — a built component port has a row in the Ports list named by its part, with no type; its Z0 and width
     /// write the part's entry (never PortZ0s), one undo entry each.</summary>
     [Fact]

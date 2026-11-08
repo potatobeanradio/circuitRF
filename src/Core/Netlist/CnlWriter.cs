@@ -194,6 +194,13 @@ public static class CnlWriter
     }
 
     /// <summary>
+    /// An instance's type as the line writes it: quoted when it holds whitespace, which a cell's name may (<c>Filter Board</c>).
+    /// Unquoted, the reader took <c>Filter</c> for half a statement and skipped the line, so such a cell placed in a schematic
+    /// dropped out of every simulation of it with only a warning.
+    /// </summary>
+    internal static string TypeToken(string type) => type.Any(char.IsWhiteSpace) ? $"\"{type}\"" : type;
+
+    /// <summary>
     /// Standard instances: R, L, C, Port, V, V_1Tone, SnP, … and anything not handled specially.
     /// Emits: Type:Name  net1 net2 …  [refnet]  param=val [unit] …
     /// For SnP (N-or-N+1 rule): RefNetBinding is appended after signal nets when non-null.
@@ -201,7 +208,7 @@ public static class CnlWriter
     private static string FormatStandardInstance(Instance inst)
     {
         var sb = new StringBuilder();
-        sb.Append($"{inst.Reference}:{inst.InstanceName}");
+        sb.Append($"{TypeToken(inst.Reference)}:{inst.InstanceName}");
 
         foreach (var net in inst.NetBindings)
             sb.Append($"  {net}");
@@ -224,7 +231,7 @@ public static class CnlWriter
     private static string FormatSddInstance(Instance inst)
     {
         var sb = new StringBuilder();
-        sb.Append($"{inst.Reference}:{inst.InstanceName}");
+        sb.Append($"{TypeToken(inst.Reference)}:{inst.InstanceName}");
 
         foreach (var net in inst.NetBindings)
             sb.Append($"  {net}");
@@ -248,7 +255,7 @@ public static class CnlWriter
     private static string FormatZPortInstance(Instance inst)
     {
         var sb = new StringBuilder();
-        sb.Append($"{inst.Reference}:{inst.InstanceName}");
+        sb.Append($"{TypeToken(inst.Reference)}:{inst.InstanceName}");
 
         foreach (var net in inst.NetBindings)
             sb.Append($"  {net}");
@@ -273,7 +280,7 @@ public static class CnlWriter
     private static string FormatTunerInstance(Instance inst)
     {
         var sb = new StringBuilder();
-        sb.Append($"{inst.Reference}:{inst.InstanceName}");
+        sb.Append($"{TypeToken(inst.Reference)}:{inst.InstanceName}");
 
         foreach (var net in inst.NetBindings)
             sb.Append($"  {net}");

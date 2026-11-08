@@ -142,10 +142,12 @@ public static class C3dComponentPorts
     /// <summary>
     /// R-emb1-2/3/4 — the component ports <paramref name="setup"/> names, built on <paramref name="drawn"/> (the document's
     /// elaboration as the run makes it) and verified. Numbered from <paramref name="firstNumber"/> in list order. Null when the
-    /// setup names none. Reads the placed layouts' files; writes nothing.
+    /// setup names none. Reads the placed layouts' files, or the layout <paramref name="layoutsInMemory"/> holds for a path (the
+    /// elaborator's own lookup, so the pads come from the same layout as the copper); writes nothing.
     /// </summary>
     public static C3dComponentPortBuild? Build(EmSetup setup, C3dDocument document, C3dElaboration drawn, int firstNumber,
-                                               TechnologyCache? cache = null)
+                                               TechnologyCache? cache = null,
+                                               IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null)
     {
         if (setup.ComponentPorts.Count == 0) return null;
         cache ??= new TechnologyCache();
@@ -163,7 +165,7 @@ public static class C3dComponentPorts
         var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var frame in frames)
         {
-            if (Board(frame, cache, notes) is not { } board) continue;
+            if (Board(frame, cache, notes, layoutsInMemory) is not { } board) continue;
             if (board.Refusal is { } br) return Refuse($"The board '{Path.GetFileName(frame.DocumentPath)}' cannot be projected: {br}");
             foreach (var part in board.Parts)
                 if (!parts.TryAdd(part.Refdes, part)) ambiguous.Add(part.Refdes);
@@ -366,10 +368,12 @@ public static class C3dComponentPorts
     private sealed record BoardParts(IReadOnlyList<Part> Parts, string? Refusal);
 
     /// <summary>One placed layout's parts: the projection's pads, each with its footprint shape's outline, in world metres.</summary>
-    private static BoardParts? Board(C3dInstanceFrame frame, TechnologyCache cache, List<string> notes)
+    private static BoardParts? Board(C3dInstanceFrame frame, TechnologyCache cache, List<string> notes,
+                                     IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null)
     {
         LayoutView view;
-        try { view = LayoutPersistence.LoadFromFile(frame.DocumentPath); }
+        if (layoutsInMemory?.GetValueOrDefault(Path.GetFullPath(frame.DocumentPath)) is { } inMemory) view = inMemory;
+        else try { view = LayoutPersistence.LoadFromFile(frame.DocumentPath); }
         catch (Exception e) { return new BoardParts([], $"it cannot be read: {e.Message}"); }
         var (tech, _) = TechnologyResolver.ResolveForDocument(view.TechRef, frame.DocumentPath, null, cache);
         var placed = EmPartPads.Project(view, frame.DocumentPath, tech.Tech, frame.World);

@@ -1127,11 +1127,18 @@ internal static class Check
             f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
     }
 
+    /// <summary>brief-lcp-2 — <c>em --dry-run --component-ports</c>'s list, for the <c>.cem</c> this check reads: the estimate is
+    /// then made of the problem the run would solve, not of the file's own list. Async-local, because <c>serve</c> runs verbs
+    /// side by side; null everywhere else.</summary>
+    internal static readonly AsyncLocal<IReadOnlyList<EmComponentPort>?> ComponentPortsOverride = new();
+
     private static void CheckEmSetup(string path, Findings f, TechnologyCache cache)
     {
         EmSetup setup;
         try { setup = EmSetupPersistence.LoadFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+        if (ComponentPortsOverride.Value is { Count: > 0 } wanted && EmComponentPorts.Inapplicable(setup) is null)
+            setup.ComponentPorts = [.. wanted];
 
         // brief-em3d-73 D1 — a thermal setup lives in its .c3d; the run refuses a .cem holding one, and so does check.
         if (setup.IsThermal) { f.Add(CliDiagnostics.CheckEmRefused(path, C3dThermal.CemRefusal)); return; }

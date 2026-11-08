@@ -85,6 +85,32 @@ public sealed class CoSimNetlistTests : IDisposable
         Assert.Contains(lines, l => l.StartsWith("; C1 is Open in the board's schematic", StringComparison.Ordinal));
     }
 
+    /// <summary>A part whose value is an expression of the board's own variables — a cell parameter here — reads them in the
+    /// co-simulation netlist too: the netlist states them, so it elaborates rather than naming what it never defines.</summary>
+    [Fact]
+    public void APartValuedByTheBoardsParameter_CarriesThatParameter()
+    {
+        string cell = Path.Combine(_root, "Board");
+        Directory.CreateDirectory(Path.Combine(cell, "schematic"));
+        File.WriteAllText(Path.Combine(cell, ".ccell"),
+            """{ "FormatVersion": 1, "Parameters": [ { "Name": "Cshunt", "DefaultExpression": "1.5", "Unit": "pF", "Dimension": "Capacitance", "ShowOnSchematic": true } ], "IsTestBench": false, "Terminals": [], "NumPorts": 0 }""");
+        File.WriteAllText(Path.Combine(cell, "schematic", "Board.csch"),
+            """{ "FormatVersion": 2, "CellName": "Board", "GridSize": 100, "GridSnap": true, "Components": [ { "InstanceName": "C1", "Symbol": "Capacitor", "X": 0, "Y": 400, "Rotation": "R0", "MirrorX": false, "Disable": "None", "Parameters": [ { "Name": "C", "Expression": "Cshunt", "Unit": "", "ShowOnSchematic": true, "Dimension": "Capacitance" } ] }, { "InstanceName": "GND1", "Symbol": "Ground", "X": 0, "Y": 600, "Rotation": "R0", "MirrorX": false, "Disable": "None", "Parameters": [] } ], "Wires": [], "NetLabels": [], "Dots": [], "CanvasObjects": [], "View": { "PanX": 0, "PanY": 0, "Zoom": 1 } }""");
+        Touchstone(Path.Combine(_root, "results", "board.s2p"), 2);
+
+        var models = EmCoSimNetlist.ModelsFor(Path.Combine(cell, "layout", "Board.clay"));
+        Assert.Contains(models.Variables, v => v.Name == "Cshunt");
+        var ports = new List<EmCoSimPort> { new(1, "P1", "50", null), new(2, "C1", "50", Component("C1")) };
+        var setup = new EmSetup { Name = "board Driven", Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz") };
+        string text = EmCoSimNetlist.Text(setup, "results/board.s2p", ports, models);
+        Assert.Contains("C=Cshunt", text, StringComparison.Ordinal);
+
+        string cnl = Path.Combine(_root, "board_cosim.cnl");
+        File.WriteAllText(cnl, text);
+        var (lib, tb) = CnlReader.ReadFile(cnl);
+        Assert.NotNull(new Elaborator(lib).Elaborate(tb));
+    }
+
     private static EmCoSimPart Component(string refdes) => new(refdes, "1", "2", ["1", "2"], null, null, (null, null), false);
 
     private static void Touchstone(string path, int n)

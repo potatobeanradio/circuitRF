@@ -356,6 +356,12 @@ public sealed class CnlReader
 
     private static bool IsInstanceLine(string line)
     {
+        // A quoted type — a cell whose name holds a space: "Filter Board":X1 … (CnlWriter.TypeToken).
+        if (line.StartsWith('"'))
+        {
+            int close = line.IndexOf('"', 1);
+            return close > 1 && close + 1 < line.Length && line[close + 1] == ':';
+        }
         // An instance line has a ':' before the first whitespace
         int space = line.IndexOfAny([' ', '\t']);
         int colon = line.IndexOf(':');
@@ -1889,10 +1895,13 @@ public sealed class CnlReader
         if (tokens.Count == 0) return;
 
         var typeAndName = tokens[0];
-        int colon = typeAndName.IndexOf(':');
+        // A quoted type ("Filter Board":X1): the colon is the one after the closing quote, and the quotes are not the name.
+        int colon = typeAndName.StartsWith('"') && typeAndName.IndexOf('"', 1) is > 1 and var q
+            ? (q + 1 < typeAndName.Length && typeAndName[q + 1] == ':' ? q + 1 : -1)
+            : typeAndName.IndexOf(':');
         if (colon < 0) return;
 
-        var typeName     = typeAndName[..colon];
+        var typeName     = typeAndName[..colon].Trim('"');
         var instanceName = typeAndName[(colon + 1)..];
 
         // Legacy V:→Vdc remap for backward compatibility.

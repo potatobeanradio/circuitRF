@@ -77,6 +77,10 @@ public sealed record EmCoSimModels(IReadOnlyDictionary<string, Instance> Instanc
 
     /// <summary>The parts the board's schematic marks Short: each one's port is shorted.</summary>
     public IReadOnlySet<string> Shorted { get; init; } = new HashSet<string>();
+
+    /// <summary>The board schematic's own variables — its VARs and its cell parameters at their defaults, as its extraction
+    /// states them. A part whose value is an expression (<c>C=Cshunt</c>) reads them, so the netlist carries them.</summary>
+    public IReadOnlyList<Variable> Variables { get; init; } = [];
 }
 
 /// <summary>What writing the co-simulation netlist did.</summary>
@@ -130,6 +134,8 @@ public static class EmCoSimNetlist
     public static string Text(EmSetup setup, string snpStored, IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models, EmCoSimRecord? record = null)
     {
         var tb = new TestBench(setup.Name) { Technology = models.Technology };
+        // A part's value may be an expression of the board's variables; without them the circuit names what it never defines.
+        foreach (var v in models.Variables) tb.GlobalVariables.Add(v);
         var comments = new List<string>();
         int n = ports.Count;
         tb.Instances.Add(record is not null
@@ -316,6 +322,7 @@ public static class EmCoSimNetlist
             {
                 Open = Marked(DisableState.Open),
                 Shorted = Marked(DisableState.Short),
+                Variables = [.. extracted.TestBench.GlobalVariables],
             };
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or ArgumentException

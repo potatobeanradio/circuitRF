@@ -167,11 +167,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary>
     /// brief-lcp-4 — shows <paramref name="marks"/>, built from a copy of this layout taken at <paramref name="atEditCount"/>
     /// (<see cref="LayoutView.EditCount"/>). Refused, returning false, when the layout has been edited since: the marks would
-    /// be about artwork that has moved, and the edit already cleared the last ones. Empty clears.
+    /// be about artwork that has moved, and the edit already cleared the last ones. Empty clears, whatever edit it was made at:
+    /// clearing is never about artwork, and a setup that stops building ports has no layout copy to state an edit count from.
     /// </summary>
     public bool ShowComponentPortMarks(string? setup, IReadOnlyList<LayoutComponentPortMark> marks, long atEditCount)
     {
-        if (atEditCount != Model.EditCount) return false;
+        if (marks.Count > 0 && atEditCount != Model.EditCount) return false;
         ComponentPortMarksSetup = marks.Count == 0 ? null : setup;
         ComponentPortMarks = marks;
         return true;

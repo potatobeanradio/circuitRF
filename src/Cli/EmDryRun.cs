@@ -20,11 +20,16 @@ internal static class EmDryRun
 {
     /// <param name="componentPorts">brief-lcp-2 — <c>em --component-ports</c>'s list: the ports a run would build in place of the
     /// setup's own, walked by <c>explain --component-ports</c> (built and verified, nothing meshed for them, nothing written).
-    /// <c>check</c>'s half reads the file as it is.</param>
+    /// <c>check</c>'s half reads a <c>.cem</c> with the same list, so the estimate is of the problem the run would solve.</param>
     public static int Run(string input, string? setupName, string? device, string? memoryLimit, int? maxCores = null,
                           string? componentPorts = null)
     {
-        int checkExit = Check.Run([input]);
+        // The estimate is the run's: check meshes the problem with the list the run would build, not the file's own.
+        var entries = componentPorts is null ? null : CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
+        Check.ComponentPortsOverride.Value = entries;
+        int checkExit;
+        try { checkExit = Check.Run([input]); }
+        finally { Check.ComponentPortsOverride.Value = null; }
         RunHost.Control?.ThrowIfCancellationRequested();
 
         var explainArgs = new List<string> { input };
@@ -66,7 +71,11 @@ internal static class EmDryRun
 
         if (explain?.Em3d is { } em3d)
         {
-            foreach (var row in em3d.Size.Where(r => r.Kind != "unavailable"))
+            // The setup's own solvers only: an EMerge setup's estimate quoted Palace's and openEMS's figures, which no run of it
+            // would see. A setup naming no solver keeps every row.
+            var rows = em3d.Size.Where(r => r.Kind != "unavailable").ToList();
+            var own = rows.Where(r => em3d.Solver.Contains(r.Backend, StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var row in own.Count > 0 || em3d.Size.Any(r => em3d.Solver.Contains(r.Backend, StringComparison.OrdinalIgnoreCase)) ? own : rows)
                 parts.Add($"{row.Backend}: {row.Note}");
             if (em3d.Limits is { Count: > 0 } limits) parts.Add(string.Join(" ", limits));
         }

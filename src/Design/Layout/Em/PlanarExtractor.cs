@@ -1358,11 +1358,22 @@ public static class PlanarExtractor
                       "with no area to mesh, and anything not bound to a stackup conductor or via " +
                       "entry is not metal as far as this technology is concerned. (A Path that " +
                       "carries a width is outlined and meshed.)");
+        // A layer the technology names as soldermask, paste, silkscreen, courtyard, assembly or the board outline is never metal:
+        // every land pattern draws on them, so warning that each might be a resistor sent every board with parts on it four
+        // warnings it had no reason to act on. They are named in one note; any other unbound layer keeps its warning.
+        var notMetal = NonElectricalLayers(tech);
+        var quiet = new List<string>();
         foreach (var (key, hasArea) in ignoredLayers)
             if (hasArea && tech.Layers.FirstOrDefault(l => l.Key == key) is { } ignoredDef)
+            {
+                if (notMetal.Contains(key)) { quiet.Add($"'{ignoredDef.Name}'"); continue; }
                 notes.Add(EmFinding.Warn($"The shapes on '{ignoredDef.Name}' are not in this run: the layer is bound to no conductor or " +
                                          "via and is not a resistor film. If they are a resistor, define the film on its conductor " +
                                          "(Technology ▸ Stackup); as drawn, it is an open between its contacts."));
+            }
+        if (quiet.Count > 0)
+            notes.Add($"The shapes on {string.Join(", ", quiet)} are not in this run: the technology names {(quiet.Count == 1 ? "that layer" : "those layers")} " +
+                      "as soldermask, paste, silkscreen, courtyard, assembly or the board outline, none of which is metal.");
         // MIM-1 — the two things still ignorable on a via-bound layer, each named rather than
         // folded into the sentence above, which would send the user to re-bind a layer that is
         // already bound.
@@ -3132,5 +3143,19 @@ public static class PlanarExtractor
                 list.Add(b);
             }
         return map;
+    }
+    /// <summary>The drawing layers the technology names as a surface role that is never metal (soldermask, paste, silkscreen,
+    /// courtyard, assembly, both sides) or as the board outline.</summary>
+    private static HashSet<LayerKey> NonElectricalLayers(Technology tech)
+    {
+        var set = new HashSet<LayerKey>(CircuitRF.Design.Layout.Em3d.Em3dGenerator.BoardOutlineLayers(tech));
+        var roles = CircuitRF.Design.Layout.Footprints.SurfaceRoles.For(tech);
+        foreach (var side in new[] { roles.Top, roles.Bottom })
+            foreach (var key in new[] { side.Soldermask, side.Paste, side.Silkscreen, side.Courtyard, side.Assembly })
+                if (key is { } k) set.Add(k);
+        // A layer bound to a conductor is metal whatever its name says.
+        foreach (var layer in tech.Stackup.Layers)
+            foreach (var k in layer.DrawingLayers) set.Remove(k);
+        return set;
     }
 }

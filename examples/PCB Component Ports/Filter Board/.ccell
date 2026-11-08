@@ -1,0 +1,33 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "Cshunt",
+      "DefaultExpression": "1.5",
+      "Unit": "pF",
+      "Dimension": "Capacitance",
+      "ShowOnSchematic": true
+    },
+    {
+      "Name": "Lseries",
+      "DefaultExpression": "8.2",
+      "Unit": "nH",
+      "Dimension": "Inductance",
+      "ShowOnSchematic": true
+    }
+  ],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "IN",
+      "LayoutPin": "IN"
+    },
+    {
+      "Port": 2,
+      "Name": "OUT",
+      "LayoutPin": "OUT"
+    }
+  ],
+  "NumPorts": 2
+}

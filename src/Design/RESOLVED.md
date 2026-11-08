@@ -29032,3 +29032,49 @@ technology's own rules, which are the board's and not the import's. Nothing was 
   closed by C1 and a three-pad part's 3-port file through `sparam` on the written `.cnl` against
   S' = S_ee + S_ek Γ (I − S_kk Γ)⁻¹ S_ke, to 1e-6; gates 3-4: LCP-1's board run with Create SnP schematic on writes `board_cosim.cnl`,
   makes `board_cosim` and no `board_sim`, warns for C1 and C2, and the netlist simulates). No EM solve beyond the 2 s board.
+
+## LCP review: polarity, the 3D route's pads, duplicate parts, the co-simulation's variables (2026-11-07)
+
+Found by reviewing the LCP series and by building the **PCB Component Ports** example on it, as a user would.
+
+- **Every Planar component port had its sign reversed.** `EmPlanarComponentPorts.Construct` pointed the gap label from the
+  positive pad to the negative one, as brief LCP-1 specified. An `InternalDeltaGap`'s direction is the way positive port
+  current crosses the cut, and positive port current enters the circuit at the + terminal (an edge port's arrow points into
+  the line it drives), so + landed on the negative pad. On the example board, with C1 shunt on the input node, a hand analysis
+  at 0.5 GHz gives S31 = +0.75, S41 = +0.50 and S51 = +0.25. Palace gave those values; Planar gave all three negative. A
+  co-simulated two-terminal part cannot see the sign, which is why the filter curves agreed and nothing caught it; a raw
+  Touchstone read or a polarised model across a port can. The gap now points AT the positive pad, and LCP-5's 3D sheet marks
+  (`LayoutComponentPortsHost.SheetMarks`) follow so the two still draw alike. Gate:
+  `PlanarComponentPortTests.ThePositivePad_IsThePortsPlus` (the sign of S31 on LCP-1's series board from which pad is +), and
+  gate 3, renamed `TheGapPointsAtPadOne`, with its expectations reversed.
+- **A 3D `.cem` read its part pads from the file and its copper from memory.** `C3dComponentPorts.Board` loaded the placed
+  layout from disk while `Em3dSetupProblem` handed the elaborator the caller's view, so an unsaved move (or an EM cell's
+  in-memory re-plan) refused every part ("lands on no conductor") and solved the board without them, with a warning only.
+  `Build` now takes `layoutsInMemory` and `Assemble` passes the elaborator's own. Gate:
+  `LayoutComponentPort3DTests.ThePads_ComeFromTheLayoutInMemory`.
+- **A 3D `.cem` whose only ports were component ports was refused**, with the generator's "no port labels" sentence (naming the
+  planar kernel). `C3dHierarchy.ViewForSetup` now translates drawn ports only when there are any; the assembly refuses only when
+  nothing is left to drive. Gate: `ComponentPortsAlone_AreEnough`.
+- **A refdes placed twice crashed the projection** (`ToDictionary` on a board with a schematic), and without a schematic the
+  second part was refused for the wrong reason. `EmPartPads.Project` now refuses such a part by name
+  (`EmPartPads.PlacedMoreThanOnce`). Gate: `PlanarComponentPortTests.ARefdesPlacedTwice_IsRefusedByName`.
+- **A thermal or electrostatic 3D `.cem` that kept a list went through the in-memory view**, which solves drawn copper only.
+  `Em3dSetupProblem.ThroughView` now honours `EmComponentPorts.Inapplicable` and such a setup is the generator's, its list
+  cleared on a clone. Gate: `AnInapplicableList_IsTheGeneratorsProblem`.
+- **The Planar build's copper regions are built from every drawing layer bound to the pad's conductor**, not the pad's layer
+  alone, so a second layer on the same metal is seen by the three adjacency checks. And its cache key now includes
+  `LayoutView.EditCount`, so a move on the same source object cannot reuse old strips.
+- **New 3D View from a Planar `.cem` changed a blank Z0's meaning.** Blank on Planar is the setup's own impedance for that port
+  number (`ResolvePortZ0`); in 3D it is 50 Ω. Where the Planar setup resolves a built port to anything else, the copied entry
+  now states it (`C3dHierarchy.BlankZ0sResolved`); the common all-50 Ω setup is copied as it was, with no build.
+- **The co-simulation netlist named variables it never defined.** A board whose parts are valued by its cell parameters or
+  VARs (`C=Cshunt`) wrote `C:C1 p3 0 C=Cshunt` and no `Cshunt`, so the `_cosim` cell failed with "Unresolved name". Since
+  parameterised part values are what the examples teach, every such board hit it. `EmCoSimModels.Variables` carries the board
+  extraction's global variables into the netlist. Gate: `CoSimNetlistTests.APartValuedByTheBoardsParameter_CarriesThatParameter`.
+- **Silkscreen, soldermask, courtyard and the board outline each got a warning** that the layer "is not a resistor film … an
+  open between its contacts", four on every board with land patterns. `PlanarExtractor` now names the layers the technology
+  gives those roles (`SurfaceRoles`, `Em3dGenerator.BoardOutlineLayers`, less any bound to a conductor) in one note; any other
+  unbound layer keeps its warning. Gate: `PlanarComponentPortTests.Silkscreen_IsANote_NotAWarning`.
+- **Left as found:** the 3D in-memory view resolves its technology by walking up from the file, so under a session technology
+  override the solids and the translated ports could come from different technologies. No shipped path sets one for a `.cem`
+  run; noted rather than changed.

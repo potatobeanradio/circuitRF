@@ -108,8 +108,8 @@ internal static class ExplainComponentPorts
 
     private const string PlanarHow =
         "built on the part's own pads from the board projection netlist --placement reads: a strip joining its two pads across " +
-        "the width they share, cut by an internal delta gap in the middle of the air between the two conductors, pointing from " +
-        "the positive pad to the negative one; verified before meshing (pads on two conductors, facing, on an analysis level, " +
+        "the width they share, cut by an internal delta gap in the middle of the air between the two conductors, pointing at " +
+        "the positive pad, the way positive port current crosses the cut; verified before meshing (pads on two conductors, facing, on an analysis level, " +
         "inside the solve region, no third conductor on the strip, no copper against it at the cut); in the solved problem " +
         "only, never written to the layout";
 

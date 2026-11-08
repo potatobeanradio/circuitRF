@@ -1223,3 +1223,27 @@ part (`--clay … --component-ports <cem>`).
 layout; LCP-5's R-lcp5-7 supplies them.
 
 Gate: `tests/Ui.Tests/Em/LayoutComponentPortMarksTests.cs` (3 tests, ~0.3 s, LCP-1's board, no solve).
+
+## LCP review: the panel's component-port rows and the layout marks (2026-11-07)
+
+- **Tabbing through a component port's blank Z0 or width box removed the part beside `*`.** `EmComponentPort.Override` dropped
+  an entry that came to state nothing when `*` was on, but `*` takes two-pad parts only, so a three-pad part ticked beside it
+  lost its port, and LostFocus commits even when nothing was typed. An existing entry is now changed in place and never
+  dropped; an unchanged entry makes no undo entry (the snapshot comparison already skipped it). The `.c3d` Properties page
+  writes through the same function. Gate: `CemComponentPortsPanelTests.AnEntryBesideEveryPart_IsNeverDropped`.
+- **The width box rounded a stored width on LostFocus**: it shows six significant digits and wrote them back. A typed value
+  that reads as the stored one is now the stored one.
+- **Marks stayed on the layout after the `.cem` stopped building ports** (switched to the cross-section kernel, thermal or
+  electrostatic, or its layout unresolved) once the layout had been edited: the empty list was pushed with edit count 0 and
+  refused as stale. `ShowComponentPortMarks` applies the edit-count test to a non-empty list only. Gate:
+  `LayoutComponentPortMarksTests.AnEmptyList_Clears_WhateverEditItWasMadeAt`.
+- **The marks' owner was recorded by file path**, which Save As changes, so after one the marks never returned and closing the
+  `.cem` left them on the layout; and Change Layout left the old layout drawing ports of a setup that no longer analysed it.
+  The owner is the view model now, and each push or claim releases (and clears) any other layout that setup owned.
+- **A Check still running when the layout or the list changed landed as current.** Check records a generation and the list
+  when it starts; a layout edit or a list change makes its verdicts history: posted to Messages, not shown on the rows, and
+  the status says to press Check again.
+- **Open, recorded rather than done:** a 3D `.cem` shows no per-part Z0, width or reference rows (R-lcp3-3 asked for them; its
+  build is the 3D assembly's, which the panel does not run), and the panel's synchronous Refresh still runs the Planar build on
+  the UI thread once per refresh, because its cache is keyed by the source object Refresh makes fresh each time. Keying it by
+  the layout view and its edit count would serve stale strips to any caller that edits a view without `NotifyChanged`.

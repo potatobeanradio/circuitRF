@@ -58,14 +58,14 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
         }
     }
 
-    /// <summary>Gate 3 — the gap points from pad 1 (the positive end) to pad 2, whatever the placement: R0, R90 and mirrored
-    /// each give the direction the transformed pads say.</summary>
+    /// <summary>Gate 3 — the gap points at pad 1 (the positive end), the way positive port current crosses the cut, whatever the
+    /// placement: R0, R90 and mirrored each give the direction the transformed pads say.</summary>
     [Theory]
-    [InlineData(0, false, LayoutRotation.R0)]
-    [InlineData(90, false, LayoutRotation.R90)]
-    [InlineData(0, true, LayoutRotation.R180)]
-    [InlineData(270, true, LayoutRotation.R90)]
-    public void TheGapPointsFromPadOneToPadTwo(double rotation, bool mirror, LayoutRotation expected)
+    [InlineData(0, false, LayoutRotation.R180)]
+    [InlineData(90, false, LayoutRotation.R270)]
+    [InlineData(0, true, LayoutRotation.R0)]
+    [InlineData(270, true, LayoutRotation.R270)]
+    public void TheGapPointsAtPadOne(double rotation, bool mirror, LayoutRotation expected)
     {
         var source = board.Source(extraParts: [Place("Cap", "C9", 6000, 6000, rotation, mirror)]);
         var build = EmPlanarComponentPorts.Build(Setup(["C9"]), source)!;
@@ -74,6 +74,25 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
         Assert.Equal(expected, c9.Gap!.PortDirection);
         Assert.Equal(PlanarPortKind.InternalDeltaGap, c9.Gap.PortKind);
         Assert.Equal("C9", c9.Gap.Text);
+    }
+
+    /// <summary>The port's + is its positive pad, in the solved answer and not only in the label: port 1 drives current from left
+    /// to right through C1's gap (the board is one series loop of the four ports), so S31 is positive at the lowest frequency
+    /// exactly when C1's positive pad is its left one. The gap once pointed the other way and every component port's sign was
+    /// reversed against the 3D build and the circuit.</summary>
+    [Fact]
+    public void ThePositivePad_IsThePortsPlus()
+    {
+        var build = EmPlanarComponentPorts.Build(Setup(["C1", "C2"]), board.Source())!;
+        var c1 = Assert.Single(build.Ports, p => p.Refdes == "C1");
+        var pads = EmPartPads.Project(board.Source().View, board.ClayPath, board.Tech, CircuitRF.Design.ThreeD.C3dTransform.Identity)
+                             .Parts.Single(p => p.Refdes == "C1").Pads;
+        bool plusOnTheLeft = pads.Single(p => p.Pin == c1.Pin).Cx < pads.Single(p => p.Pin != c1.Pin).Cx;
+        var (s, n) = S(board.ComponentRun);
+        double s31 = s[2 * n].Real;
+        output.WriteLine($"C1 + pad {(plusOnTheLeft ? "left" : "right")}, S31 = {s[2 * n]}");
+        Assert.True(Math.Abs(s31) > 0.3, $"|S31| = {Math.Abs(s31)}");
+        Assert.Equal(plusOnTheLeft, s31 > 0);
     }
 
     /// <summary>Gate 4 — a sweep reaching below the lowest fittable frequency stays sane on the trace held only by gap ports:
@@ -123,6 +142,28 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
         Assert.Contains("solve region", Refusal(board.Source(), region, "C2"));
         // The gap's row would reach past the strip: pad 1's copper runs on beside the strip, past the gap's middle.
         Assert.Contains("lies against its strip", Refusal(board.Source(extra: [Rect(3000, 550, 4200, 900)]), Setup(["C1", "C2"]), "C1"));
+    }
+
+    /// <summary>Two parts sharing a refdes are refused by name, never a crash and never another part's reason.</summary>
+    [Fact]
+    public void ARefdesPlacedTwice_IsRefusedByName()
+    {
+        var build = EmPlanarComponentPorts.Build(Setup(["C1", "C2"]), board.Source(extraParts: [Place("Cap", "C1", 6000, 6000)]))!;
+        var c1 = Assert.Single(build.Ports, p => p.Refdes == "C1");
+        Assert.Equal(EmPartPads.PlacedMoreThanOnce("C1"), c1.Refusal);
+        Assert.True(Assert.Single(build.Ports, p => p.Refdes == "C2").Ok);
+    }
+
+    /// <summary>Artwork on a layer the technology names as silkscreen is never metal: it is one note, not a warning that it might be
+    /// an unbound resistor, which every board with land patterns used to get; a truly unbound layer keeps its warning.</summary>
+    [Fact]
+    public void Silkscreen_IsANote_NotAWarning()
+    {
+        var silk = new RectShape { Layer = new LayerKey(5, 0), X1 = Um(1000), Y1 = Um(1000), X2 = Um(2000), Y2 = Um(1500) };
+        var pre = EmRunService.Preflight(Setup([]), board.Source(extra: [silk]));
+        Assert.DoesNotContain(EmFindings.WarningTexts(pre.Findings), w => w.Contains("Silk Top", StringComparison.Ordinal));
+        Assert.Contains(EmFindings.NoteTexts(pre.Findings), n => n.Contains("'Silk Top'", StringComparison.Ordinal) &&
+                                                                  n.Contains("none of which is metal", StringComparison.Ordinal));
     }
 
     /// <summary>Gate 6 — a setup with no component ports gets exactly what it got: the same labels, the same geometry, the

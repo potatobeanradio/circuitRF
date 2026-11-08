@@ -4290,3 +4290,11 @@ W/h = 2 it reads `Cg` 8-14 % low and `Cp` 1.5-3.2 fF low; at W/h = 2 with S/W = 
 even-mode fit's two branches also step at S/W = 0.3 (about 30 % in `Ce` at W/h = 1), and nothing smooths that either.
 The 50 Ω line on the schematic-to-layout substrate is W/h = 2.17, so a gap placed there warns by default. Gate:
 `tests/Core.Tests/Devices/Microstrip/MicrostripGapTests.cs`, region by region at the README's own bounds.
+
+## A cell whose name holds a space, placed in a schematic, did not simulate (2026-11-07)
+
+The extraction wrote `Filter Board:X1  n1  n2 …` and the reader, which recognises an instance by a colon before the first
+space, skipped the line with a warning. Simulate goes through that text, so the instance dropped out of every simulation of
+the schematic that placed it; the `define Filter Board (IN OUT)` line always read. Cell names with spaces are legal and common
+in the examples. `CnlWriter.TypeToken` quotes a type that holds whitespace (`"Filter Board":X1`) and the reader takes the
+quoted form. Gate: `tests/Core.Tests/Netlist/SpacedCellNameTests.cs`.

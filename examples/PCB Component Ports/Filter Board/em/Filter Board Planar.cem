@@ -1,0 +1,30 @@
+{
+  "FormatVersion": 1,
+  "Name": "Filter Board Planar",
+  "LayoutRef": "Filter Board/layout/Filter Board.clay",
+  "Frequency": {
+    "StartExpr": "0.5",
+    "StopExpr": "6",
+    "StepExpr": "0.25",
+    "Mode": "StepSize",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+  },
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": false,
+    "EdgeCells": 3
+  },
+  "ConductorThicknessCorrection": true,
+  "RobustMeshing": true,
+  "CreateSnpSchematic": true,
+  "ComponentPorts": [
+    "C1",
+    "L1",
+    "C2"
+  ]
+}

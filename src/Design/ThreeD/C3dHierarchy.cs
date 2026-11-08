@@ -946,7 +946,7 @@ public static class C3dHierarchy
                 made.Name = setup.Name;
                 made.Frequency = setup.Frequency;
                 made.AdditionalFrequencies = [.. setup.AdditionalFrequencies];
-                made.ComponentPorts = [.. setup.ComponentPorts];
+                made.ComponentPorts = BlankZ0sResolved(setup, clay, view, tech.Tech);
                 setup = made;
             }
             if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(cem);
@@ -1003,6 +1003,33 @@ public static class C3dHierarchy
     }
 
     /// <summary>
+    /// A Planar setup's component-port list as a 3D setup must state it. A blank Z0 on Planar is the setup's own impedance for
+    /// that port's number (<see cref="EmSetup.ResolvePortZ0"/>), and in 3D it is 50 Ω; so where the Planar setup resolves a
+    /// built port to something else, the entry states it. A setup whose ports all resolve to 50 Ω is copied as it is.
+    /// </summary>
+    private static List<EmComponentPort> BlankZ0sResolved(EmSetup planar, string clay, LayoutView view, Technology? tech)
+    {
+        var list = planar.ComponentPorts.ToList();
+        // The common case, every port at 50 Ω, needs no build to know it.
+        if (tech is null || Enumerable.Range(0, 256).All(slot => planar.ResolvePortZ0(slot) == new System.Numerics.Complex(50, 0)))
+            return list;
+        EmPlanarComponentPortBuild? build;
+        try { build = EmPlanarComponentPorts.Build(planar, new EmLayoutSource(clay, view, tech, view.DbuPerMicron)); }
+        catch (Exception e) when (e is IOException or InvalidOperationException or ArgumentException) { return list; }
+        if (build is null) return list;
+        foreach (var port in build.Ports.Where(p => p.Ok && p.Z0 is null))
+        {
+            var z = planar.ResolvePortZ0(port.Number - 1);
+            if (z == new System.Numerics.Complex(50, 0)) continue;
+            string text = z.Imaginary == 0
+                ? z.Real.ToString("R", CultureInfo.InvariantCulture)
+                : $"{z.Real.ToString("R", CultureInfo.InvariantCulture)}{(z.Imaginary < 0 ? "-" : "+")}j{Math.Abs(z.Imaginary).ToString("R", CultureInfo.InvariantCulture)}";
+            list = EmComponentPort.Override(list, port.Refdes, e => e with { Z0 = text });
+        }
+        return list;
+    }
+
+    /// <summary>
     /// brief-lcp-5 R-lcp5-1 — the 3D view <see cref="NewFromLayout"/> would make of <paramref name="source"/>'s layout, for
     /// <paramref name="setup"/> alone: no other <c>.cem</c> is scanned, nothing is written, and the document is given the path
     /// it would have had in the cell's 3D folder, so its relative CellRef and TechRef resolve. Its ports are the setup's drawn
@@ -1032,7 +1059,11 @@ public static class C3dHierarchy
         var notes = new List<string>();
         var drawn = setup.Clone();
         drawn.ComponentPorts = [];
-        if (TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true) is { } refused)
+        // A board whose only ports are its component ports has no drawn port to translate, and the generator would refuse it for
+        // that; the assembly refuses only when nothing at all is left to drive, as a .c3d's does.
+        var collected = EmComponentPorts.Collect(source);
+        bool anyDrawn = collected.Refusal is not null || collected.Shapes.Any(s => s is LabelShape { IsPort: true });
+        if (anyDrawn && TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true) is { } refused)
             return new(null, c3dPath, refused, notes);
         foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];

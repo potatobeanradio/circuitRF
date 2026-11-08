@@ -48,8 +48,10 @@ public static class EmPartPads
         bool upright = Math.Abs(w.M20) < 1e-12 && Math.Abs(w.M21) < 1e-12 && Math.Abs(w.M02) < 1e-12 && Math.Abs(w.M12) < 1e-12;
         (double X, double Y) World(long x, long y) => (w.M00 * x * per + w.M01 * y * per + w.Tx, w.M10 * x * per + w.M11 * y * per + w.Ty);
 
+        // GroupBy, not ToDictionary: two parts sharing a refdes (C1 and c1, or one copied) is a board to refuse by name, not a crash.
         var hasModel = projection.HasSchematic
-            ? projection.Parts.ToDictionary(p => p.Refdes, p => p.Value is not null || p.Description is not null, StringComparer.OrdinalIgnoreCase)
+            ? projection.Parts.GroupBy(p => p.Refdes, StringComparer.OrdinalIgnoreCase)
+                              .ToDictionary(g => g.Key, g => g.Any(p => p.Value is not null || p.Description is not null), StringComparer.OrdinalIgnoreCase)
             : null;
         // A part the schematic marks Open or Short has no value to want: the netlist leaves its port open or shorts it.
         var marked = EmCoSimNetlist.ModelsFor(clayPath);
@@ -59,7 +61,9 @@ public static class EmPartPads
             string rd = group.Key;
             bool? model = hasModel is null ? false : hasModel.TryGetValue(rd, out bool m) ? m : false;
             if (model == false && (marked.Open.Contains(rd) || marked.Shorted.Contains(rd))) model = true;
-            var inst = view.Instances.FirstOrDefault(i => string.Equals(i.DisplayRefDes, rd, StringComparison.OrdinalIgnoreCase));
+            var named = view.Instances.Where(i => string.Equals(i.DisplayRefDes, rd, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (named.Count > 1) { parts.Add(new PlacedPart(rd, [], PlacedMoreThanOnce(rd), model)); continue; }
+            var inst = named.FirstOrDefault();
             if (!upright) { parts.Add(new PlacedPart(rd, [], $"{rd}'s layout is placed tilted in this 3D view; component ports are built on a layout lying flat.", model)); continue; }
             if (inst is null) continue;
             if (inst.Rows > 1 || inst.Cols > 1) { parts.Add(new PlacedPart(rd, [], $"{rd} is an arrayed placement; a component port is built on one part's pads.", model)); continue; }
@@ -92,6 +96,10 @@ public static class EmPartPads
         }
         return new PlacedParts(parts, null, [.. projection.Notes]);
     }
+
+    /// <summary>Why a refdes that two placed parts share gets no component port.</summary>
+    public static string PlacedMoreThanOnce(string refdes)
+        => $"{refdes} is placed more than once on this layout, so which one is meant is not known.";
 
     /// <summary>The footprint shape a pin's pad is: on its layer, holding its point; the one named for the pin, else the smallest.</summary>
     private static LayoutShape? PadShape(LayoutView sub, LayoutPin pin)

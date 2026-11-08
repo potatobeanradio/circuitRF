@@ -862,3 +862,31 @@ Gates: `tests/Ui.Tests/Examples/AntennaCoSimExampleTests.cs`, and `ExampleWorksp
 
 **Connecting the schematic is what let `lvs` run on it, and that exposed a false error.** `C2` is drawn with **Disable** Open and its land pattern is on the board, so `lvs` reported a layout part with no counterpart. An unfitted site is an ordinary thing to build, so `lvs.device.not-fitted` reports it as a note and the pads stay copper. A P1 label added to the layout changes no solve, since a 3D view takes no port labels from a layout it places: the mesh and ports came out the same, and S magnitudes agreed to 2e-7.
 
+
+## PCB Component Ports (2026-11-07)
+
+Built through the commands a user runs (`new workspace`, `new cell`, Update Layout from Schematic through
+`tools/UpdateLayoutHarness`, `new view3d --from-layout`, `em`, `lvs`, `check`), to exercise the LCP series end to end. What
+building it found, beyond the fixes recorded in `src/Design`, `src/Ui/Layout/Em`, `src/Cli` and `src/Core`:
+
+- **Run times, 10-core Mac:** Planar 2 min 36 s (13 of 23 points solved adaptively, about 12 s each, almost all fixed cost:
+  the Green's function and the four de-embedding standards; 1,086 unknowns with the edge mesh off), Palace 3 min 34 s (one
+  pass, 32,871 tetrahedra), EMerge 6 s (6,359 tetrahedra). With 200 mil lines, the edge mesh on and Palace's three passes,
+  Planar took 4.5 min (5,566 unknowns, 2 min a point before adaptive sampling) and Palace passed 30 min, so the board was
+  shortened to 100 mil lines and the passes cut to one.
+- **The default top padding absorbs power on a microstrip.** A driven setup's unstated ZMax is 100 % of the content's height
+  (2026-11-01), here 0.578 mm above the copper while the sides get 20 H. Palace then read |S11| −0.84 dB at 6 GHz in the
+  stopband against −0.29 dB with 5 mm stated on the top and sides, and −0.09 dB on Planar. The example states its air box.
+  The same mechanism may be part of the 3D-reads-more-loss difference LCP-0 left open; not investigated further.
+- **Planar against 3D:** Palace and EMerge agree within 0.4 dB; Planar is within 0.7 dB to the cutoff and 2-3 dB deeper in the
+  stopband. In the raw 5-ports the difference sits mostly on the two edge ports (S11 phase drifting to about 20° at 6 GHz),
+  much less on the component ports. A wave-port test on a scratch copy (lines to the board edge, XMin/XMax padding 0) was
+  refused: only the trace meets the wave port's region, the ground plane having become the PEC floor. Left open.
+- **Update Layout from Schematic overlaps a shunt part's pad with the series part's** at a three-way node (C1, L1 and the end
+  of TL1 meet at one pin point). Electrically right, so the example keeps it; moving C1 along TL1 opens the schematic joint.
+- **A layout pin on an instance's copper alone reads as open in `lvs`**: the pins sit on short drawn launches, as Hierarchy's do.
+- **`new cell --views symbol` writes a symbol with no pins**, and placing that cell then gives an instance with no pins; the
+  GUI's offer to generate a symbol fires only when there is no symbol file. Filter Board's symbol is the two-pin box
+  Hierarchy's Board uses.
+- **The EM button writes `<workspace>/em/`,** while `ExampleWorkspacesTests` wants a `.cem` in a cell's `em/` folder; the
+  example's is in `Filter Board/em/`, which every walk resolves. That test also now accepts a bench reading a `.cem`'s result.

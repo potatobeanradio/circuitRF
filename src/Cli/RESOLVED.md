@@ -3515,3 +3515,11 @@ Gate: `tests/Ui.Tests/Examples/AntennaCoSimExampleTests.cs`.
 **`DiagnosticIds_AreTheCommittedSet` was red at HEAD**: 16 declared ids had never been listed (`check.em-result.*`, `cli.em.adopt-refused`, `cli.em.cores`, the `--mesh-only` four, `convert.ipc2581.*`, `convert.layer-map.*`, `convert.args.join-tolerance`, `fields.part-between-gap-ports`, `plot.trace.axis-value-malformed`). All of them are added now.
 
 Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgreesWithTheParserTests.TheComponentPortsFlag_IsOnBothTools_ForACemToo`.
+
+## `em --dry-run`: the estimate is the run's (2026-11-07)
+
+- **`--component-ports` reached explain only**, so a planar `.cem`'s estimate left out the strips and gap ports a run would add
+  and a list in the file contradicted the one on the line. `Check.ComponentPortsOverride` (async-local, because `serve` runs
+  verbs side by side) gives check's `.cem` the same list.
+- **An EMerge setup's one-line estimate quoted Palace's and openEMS's figures.** The line now restates the setup's own
+  solvers' rows only; a solver with no estimate of its own leaves the line to the memory and disk limits.

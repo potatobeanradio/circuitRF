@@ -124,8 +124,10 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
 
     /// <summary>
     /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:
-    /// added beside <c>*</c> when the part had no entry, dropped again when it states nothing beside <c>*</c>. The one rule a
-    /// 3D view's Properties and the setup panel's port rows both write a part's settings through.
+    /// added beside <c>*</c> when the part had no entry. An entry already in the list is changed in place and never dropped, even
+    /// when it comes to state nothing beside <c>*</c>: <c>*</c> takes two-pad parts only, so the entry may be what selects a part
+    /// of more pads, and a plain refdes beside <c>*</c> is harmless. The one rule a 3D view's Properties and the setup panel's port
+    /// rows both write a part's settings through.
     /// </summary>
     public static List<EmComponentPort> Override(IReadOnlyList<EmComponentPort> list, string refdes,
                                                  Func<EmComponentPort, EmComponentPort> change)
@@ -133,12 +135,7 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
         var result = list.ToList();
         int at = result.FindIndex(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase));
         var entry = change(at >= 0 ? result[at] : new EmComponentPort(refdes));
-        bool all = result.Any(c => c.Refdes == EmSetup.AllComponents);
-        if (at >= 0)
-        {
-            if (entry.IsPlain && all) result.RemoveAt(at);
-            else result[at] = entry;
-        }
+        if (at >= 0) result[at] = entry;
         else if (!entry.IsPlain) result.Add(entry);
         return result;
     }

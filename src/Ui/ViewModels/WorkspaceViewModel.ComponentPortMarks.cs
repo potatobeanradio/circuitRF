@@ -20,8 +20,9 @@ namespace CircuitRF.Ui.ViewModels;
 
 public partial class WorkspaceViewModel
 {
-    /// <summary>Per open layout (absolute path): the <c>.cem</c> (absolute path) whose component ports it shows.</summary>
-    private readonly Dictionary<string, string> _componentPortMarksOwner = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Per open layout (absolute path): the <c>.cem</c> whose component ports it shows. Held by its view model, not its
+    /// path, which Save As changes.</summary>
+    private readonly Dictionary<string, EmSetupEditorViewModel> _componentPortMarksOwner = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The open layout editor <paramref name="vm"/> analyses, and that layout's path; null when it is not open.</summary>
     private (LayoutEditorViewModel Layout, string Path)? OpenLayoutOfEmSetup(EmSetupEditorViewModel vm)
@@ -41,11 +42,13 @@ public partial class WorkspaceViewModel
     /// <summary>The <c>.cem</c> built its marks: they show when it owns its layout, or nothing does.</summary>
     private void PushComponentPortMarks(EmSetupEditorViewModel vm)
     {
-        if (!IsOpenEmSetup(vm) || OpenLayoutOfEmSetup(vm) is not var (layout, path)) return;
-        if (_componentPortMarksOwner.TryGetValue(path, out var owner)
-            && !string.Equals(owner, vm.FilePath, StringComparison.OrdinalIgnoreCase))
+        if (!IsOpenEmSetup(vm)) return;
+        var target = OpenLayoutOfEmSetup(vm);
+        LeaveOtherLayouts(vm, target?.Path);
+        if (target is not var (layout, path)) return;
+        if (_componentPortMarksOwner.TryGetValue(path, out var owner) && !ReferenceEquals(owner, vm))
             return;
-        _componentPortMarksOwner[path] = vm.FilePath;
+        _componentPortMarksOwner[path] = vm;
         // Built from another copy of the layout (the .cem resolved it before the editor opened): build again from the editor's.
         if (vm.ComponentPortMarks.Count > 0 && !ReferenceEquals(vm.ComponentPortMarksView, layout.Model)) return;
         layout.ShowComponentPortMarks(Path.GetFileName(vm.FilePath), vm.ComponentPortMarks, vm.ComponentPortMarksEditCount);
@@ -54,8 +57,10 @@ public partial class WorkspaceViewModel
     /// <summary>A <c>.cem</c> became the active document: its marks replace any other setup's on its layout.</summary>
     private void ClaimComponentPortMarks(EmSetupEditorViewModel vm)
     {
-        if (OpenLayoutOfEmSetup(vm) is not var (layout, path)) return;
-        _componentPortMarksOwner[path] = vm.FilePath;
+        var target = OpenLayoutOfEmSetup(vm);
+        LeaveOtherLayouts(vm, target?.Path);
+        if (target is not var (layout, path)) return;
+        _componentPortMarksOwner[path] = vm;
         if (!ReferenceEquals(vm.ComponentSourceView, layout.Model))
         {
             // The .cem read the layout from disk before the editor was open; it reads the editor's now, and its build pushes.
@@ -82,9 +87,16 @@ public partial class WorkspaceViewModel
     private void ReleaseComponentPortMarks(EmSetupEditorViewModel vm)
     {
         vm.CancelComponentPortMarks();
+        LeaveOtherLayouts(vm, null);
+    }
+
+    /// <summary>Every layout <paramref name="vm"/> owns other than <paramref name="keep"/> is released and its marks cleared: a
+    /// setup pointed at another layout (Change Layout, or its undo) no longer speaks for the one it left.</summary>
+    private void LeaveOtherLayouts(EmSetupEditorViewModel vm, string? keep)
+    {
         foreach (var (path, owner) in _componentPortMarksOwner.ToList())
         {
-            if (!string.Equals(owner, vm.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!ReferenceEquals(owner, vm) || string.Equals(path, keep, StringComparison.OrdinalIgnoreCase)) continue;
             _componentPortMarksOwner.Remove(path);
             foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
                 if (open.FilePath is { } fp && string.Equals(Path.GetFullPath(fp), path, StringComparison.OrdinalIgnoreCase))

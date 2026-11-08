@@ -198,8 +198,8 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
     }
 
     /// <summary>brief-lcp-5 R-lcp5-7 — one mark per built 3D sheet: the gap at the sheet's centre in the layout's frame (the view
-    /// places the layout at its origin, at the layout's DBU), across the sheet's width, pointing from the positive pad to the
-    /// negative one, and the sheet's rectangle as what the marker measures and a hover covers.</summary>
+    /// places the layout at its origin, at the layout's DBU), across the sheet's width, pointing at the positive pad as a Planar
+    /// gap does, and the sheet's rectangle as what the marker measures and a hover covers.</summary>
     internal static IReadOnlyList<LayoutComponentPortMark> SheetMarks(C3dComponentPortBuild built, EmLayoutSource source)
     {
         var parts = EmPartPads.Project(source.View, source.AbsolutePath, source.Technology, C3dTransform.Identity).Parts
@@ -214,8 +214,8 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
             long x0 = port.Rect.Min.U, y0 = port.Rect.Min.V, x1 = x0 + port.Rect.Size.U, y1 = y0 + port.Rect.Size.V;
             var strip = new RectShape { Layer = layer, X1 = Math.Min(x0, x1), Y1 = Math.Min(y0, y1), X2 = Math.Max(x0, x1), Y2 = Math.Max(y0, y1) };
             long across = p.AlongX ? strip.Y2 - strip.Y1 : strip.X2 - strip.X1;
-            var direction = p.AlongX ? (pos.Cx < neg.Cx ? LayoutRotation.R0 : LayoutRotation.R180)
-                                     : (pos.Cy < neg.Cy ? LayoutRotation.R90 : LayoutRotation.R270);
+            var direction = p.AlongX ? (pos.Cx < neg.Cx ? LayoutRotation.R180 : LayoutRotation.R0)
+                                     : (pos.Cy < neg.Cy ? LayoutRotation.R270 : LayoutRotation.R90);
             var gap = new LabelShape
             {
                 Layer = layer, PortLayer = layer, X = (strip.X1 + strip.X2) / 2, Y = (strip.Y1 + strip.Y2) / 2, Text = port.Name,

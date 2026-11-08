@@ -119,6 +119,48 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.Null(refused.ComponentPorts);
     }
 
+    /// <summary>The parts' pads come from the layout the caller holds, as the copper does: everything moved 2 mm in memory only
+    /// still builds both ports, where the pads used to be read from the file and landed on no copper.</summary>
+    [Fact]
+    public void ThePads_ComeFromTheLayoutInMemory()
+    {
+        var source = board.Source();
+        foreach (var shape in source.View.Shapes) LayoutGeometry.TranslateBy(shape, 0, 2_000_000);
+        foreach (var inst in source.View.Instances) LayoutGeometry.TranslateBy(inst, 0, 2_000_000);
+        var moved = Em3dSetupProblem.Of(Driven(["C1", "C2"]), source, board.Tech);
+        Assert.True(moved.Ok, moved.Refusal);
+        Assert.Equal(["C1", "C2"], moved.ComponentPorts!.Ports.Where(p => p.Ok).Select(p => p.Refdes));
+        Assert.Equal(4, moved.Problem!.Ports.Count);
+    }
+
+    /// <summary>A board whose only ports are its component ports builds them, as a Planar setup and a .c3d do: there is no drawn
+    /// port to translate, and that is not a refusal.</summary>
+    [Fact]
+    public void ComponentPortsAlone_AreEnough()
+    {
+        var source = board.Source();
+        source.View.Shapes.RemoveAll(s => s is LabelShape { IsPort: true });
+        var alone = Em3dSetupProblem.Of(Driven(["C1", "C2"]), source, board.Tech);
+        Assert.True(alone.Ok, alone.Refusal);
+        Assert.Equal(2, alone.Problem!.Ports.Count);
+    }
+
+    /// <summary>A list the setup cannot use (an electrostatic setup that kept one) is not a reason to build through the view: it is
+    /// the generator's problem, as with no list.</summary>
+    [Fact]
+    public void AnInapplicableList_IsTheGeneratorsProblem()
+    {
+        var setup = Driven(["C1", "C2"]);
+        setup.Problem3D = Em3dProblemType.Electrostatic;
+        Assert.False(Em3dSetupProblem.ThroughView(setup));
+        var plain = setup.Clone();
+        plain.ComponentPorts = [];
+        var one = Em3dSetupProblem.Of(setup, board.Source(), board.Tech);
+        var generated = Em3dGenerator.Generate(plain, board.Source(), board.Tech);
+        Assert.Equal(generated.Refusal, one.Refusal);
+        Assert.Equal(generated.Notes, one.Notes);
+    }
+
     /// <summary>Gate 5 — two builds of one unchanged setup give one mesh script, so a mesh made by a run reads as current.</summary>
     [Fact]
     public void TheMeshScript_IsStable_AcrossANoOp()
