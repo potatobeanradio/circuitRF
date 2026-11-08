@@ -404,6 +404,12 @@ public sealed class PdkWorkerPerTargetDiscoveryTests : IDisposable
 
         var replayed = PdkPartInstaller.Install(report, mine).Settings;
 
-        Assert.Same(mine, replayed);
+        // Replayed where the recording names this machine. The fixture describes Windows x64, Linux x64 and macOS, so on
+        // a host it has no entry for (Linux on arm64) the settings are re-derived instead, by design: an entry written
+        // where this machine is not cannot run here.
+        if (PdkPartInstaller.ManifestFrom(mine, KitDir, "SampleKit")?.LaunchForThisMachine() is not null)
+            Assert.Same(mine, replayed);
+        else
+            Assert.NotSame(mine, replayed);
     }
 }

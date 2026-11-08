@@ -928,3 +928,11 @@ circuitRF writes the key on every row (`"LayoutPin": []` for a cell with no layo
 therefore changed them, and `TerminalMapTests.EveryShippedCcellReSerializesUnchanged` failed. Each row now carries
 `"LayoutPin": []`, which is what saving the cell would write. A shipped `.ccell` written by hand should be checked
 by that test before it is committed.
+
+## Three PDK PCells tests read a cache a fresh clone does not have (2026-11-08)
+
+`PdkPCellExampleTests`' port-width, EM-setup and port-label tests loaded the placed spiral's artwork from the
+example's own `.generated-cells` folder. That folder is git-ignored, so the tests passed only where the example had
+been opened or another test had built it first, and failed on a fresh clone with a missing directory. They now copy
+the example to scratch and rebuild its generated cells there (`RebuiltExampleCopy`), as
+`TheCommittedSpiralRebuildsFromAnEmptyCache_WithoutRepointingAnything` already did.

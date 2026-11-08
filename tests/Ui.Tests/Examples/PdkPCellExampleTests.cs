@@ -562,10 +562,11 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
     /// midpoint there rather than the pin, and the port reports the whole part as its excitation
     /// width. One terminal came out right and one 25× wide, from one pin half a line width out.</para>
     /// </summary>
-    [Fact]
+    [PythonFact]
     public void APortOnThePlacedCoilTakesItsWidthFromThePin_NotTheInstanceBox()
     {
-        string clay = Path.Combine(ExampleRoot(), "SpiralInductor", "layout", "SpiralInductor.clay");
+        string root = RebuiltExampleCopy();
+        string clay = Path.Combine(root, "SpiralInductor", "layout", "SpiralInductor.clay");
         var view = LayoutPersistence.LoadFromFile(clay);
         var tech = Tech();
         var lookup = LayoutConductorLookup.LookupFor(view, tech, Path.GetDirectoryName(clay)!);
@@ -672,6 +673,33 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(Via, layers);
         Assert.Equal(2, cell.Pins.Count);
         Assert.All(cell.Pins, p => Assert.Equal(coil, p.Layer));
+    }
+
+    /// <summary>
+    /// The example copied to scratch with its generated cells rebuilt, which is what a clone has once a
+    /// generator has run. A test reading the placed cell's artwork must not read the example's own
+    /// cache: it is git-ignored, so on a fresh clone it exists only when something earlier happened to
+    /// build it, and the test fails with a missing directory.
+    /// </summary>
+    private string RebuiltExampleCopy()
+    {
+        string copy = Path.Combine(Path.GetTempPath(), "crf-pdkex-" + Guid.NewGuid().ToString("N")[..12]);
+        _scratch.Add(copy);
+        CopyDirectory(ExampleRoot(), copy);
+        try { Directory.Delete(Path.Combine(copy, GeneratedCellStore.ReservedFolderName), true); }
+        catch (DirectoryNotFoundException) { /* already absent, which is the clone's own state */ }
+
+        PCellRegistry.ClearResolvers();
+        using (var resolver = new PCellWorkerResolver(
+                   copy,
+                   findInterpreter: (_, _) => new PythonInterpreter(PythonRunner.Interpreter!, [], "test", "supplied by the test"),
+                   report: output.WriteLine))
+        {
+            PCellRegistry.AddResolver(resolver);
+            GeneratedCellsLifecycle.RegenerateAll(copy, _ => null, output.WriteLine);
+        }
+        PCellRegistry.ClearResolvers();
+        return copy;
     }
 
     private static void CopyDirectory(string from, string to)
@@ -1497,9 +1525,10 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
     /// inside a placed instance is artwork, not a port, and the run refuses with "this layout has
     /// no port labels".</para>
     /// </summary>
-    [Fact]
+    [PythonFact]
     public void TheSpiralCarriesAnEmSetup_OverBothMetalLevels()
     {
+        string root = RebuiltExampleCopy();
         string cem = Path.Combine(ExampleRoot(), "SpiralInductor", "em", "SpiralInductor.cem");
         Assert.True(File.Exists(cem), $"'{cem}' is missing: the example demonstrates no EM run.");
 
@@ -1514,7 +1543,7 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(setup.AnalysisLevelNames);
 
         // The via posts the two levels exist for.
-        string clay = Path.Combine(ExampleRoot(), "SpiralInductor", "layout", "SpiralInductor.clay");
+        string clay = Path.Combine(root, "SpiralInductor", "layout", "SpiralInductor.clay");
         var view     = LayoutPersistence.LoadFromFile(clay);
         var instance = Assert.Single(view.Instances);
         string cellDir = RefPath.Resolve(Path.GetDirectoryName(clay)!, instance.CellRef);
@@ -1542,10 +1571,11 @@ public sealed class PdkPCellExampleTests(ITestOutputHelper output) : IDisposable
     /// from the pin — the defect the test above this one exists for — so the anchors are asserted
     /// against the pins rather than against the numbers that happen to be in the file.
     /// </summary>
-    [Fact]
+    [PythonFact]
     public void TheSpiralsPortLabelsSitOnItsPins()
     {
-        string clay = Path.Combine(ExampleRoot(), "SpiralInductor", "layout", "SpiralInductor.clay");
+        string root = RebuiltExampleCopy();
+        string clay = Path.Combine(root, "SpiralInductor", "layout", "SpiralInductor.clay");
         var view = LayoutPersistence.LoadFromFile(clay);
 
         var labels = view.Shapes.OfType<LabelShape>().Where(l => l.IsPort).ToList();

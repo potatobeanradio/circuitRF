@@ -136,6 +136,10 @@ public sealed class OwningRootPathTests : IDisposable
             ["ResolveWBondParameters"]     = [("wBond", "File"), ("wBond", "MaterialLibrary")],
             ["ResolveModSourceParameters"] = [("MOD_Source", "Carrier[1]")],
             ["TunableCatalog"]             = [("SnP", "File")],
+            // A fixture file a TRL analysis writes is the string a Deembed's File takes, resolved by that rule.
+            ["TrlRun"]                     = [("Deembed", "File")],
+            ["Trl"]                        = [("Deembed", "File")],
+            ["GoalTemplates"]              = [("EmFieldData", "File")],
         };
         foreach (var (site, entries) in bySite)
             foreach (var (reference, param) in entries)

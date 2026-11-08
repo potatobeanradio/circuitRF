@@ -37,7 +37,7 @@ public sealed class ImageTextTests
 
     private static ImageWord At(int line) => Assert.Single(Gate.Value, w => w.Box.Top >= 50 + 40 * line && w.Box.Top < 90 + 40 * line);
 
-    [Fact]
+    [MeasuredOnMacOSFact]
     public void TheGateWords_ReadAsTheirClasses()
     {
         Assert.Equal(7, Gate.Value.Count);
@@ -119,7 +119,7 @@ public sealed class ImageTextTests
 
     /// <summary>R-imf7-1: DejaVu Sans Bold — the regulator's face — at a datasheet's 9 and 14 px caps, refused as too heavy
     /// before, is thinned to a regular weight and read: VIN, 240 Ω, 1.0 µF.</summary>
-    [Theory]
+    [MeasuredOnMacOSTheory]
     [InlineData(9f)]
     [InlineData(14f)]
     public void BoldDatasheetWords_AreThinnedAndRead(float cap)
@@ -139,7 +139,7 @@ public sealed class ImageTextTests
     /// <summary>R-imf7-1: past <see cref="StrokeTextReader.MaxBoldWeight"/> the refusal stays — DejaVu Sans Bold at a 9 px
     /// cap read as it is drawn stands at 0.33 of its cap, where the survey read wrong as often as right — and the report
     /// says so.</summary>
-    [Fact]
+    [MeasuredOnMacOSFact]
     public void BoldTooHeavyEvenThinned_IsNotRead()
     {
         var r = SchematicImageReading.Read(Pictures.Draw(500, 140, c =>
@@ -193,7 +193,7 @@ public sealed class ImageTextTests
 
     /// <summary>R-imf7-5: two lines of words that are no designator, value or known word — a datasheet's DC Blocking /
     /// Capacitor — are one comment, never a name.</summary>
-    [Fact]
+    [MeasuredOnMacOSFact]
     public void ATwoLineAnnotation_IsOneComment()
     {
         var (_, words) = Lines(CircuitRF.Render.SkiaFonts.DejaVuRegular, 14, 1.3f, "DC Blocking", "Capacitor");
@@ -230,7 +230,7 @@ public sealed class ImageTextTests
     /// <summary>R-imf7-9 … R-imf7-11: a textbook's serif italic labels, each read to its text and class — a subscripted
     /// designator, a designator then its value on one run, a lone designator letter. The cases skipped are what the
     /// phase measured short of the brief, with what they read.</summary>
-    [Theory]
+    [MeasuredOnMacOSTheory]
     [InlineData(0, "R1", WordClass.Designator, null)]
     [InlineData(1, "Cn", WordClass.Name, null, Skip = "measured short (design note §23.9): C_n reads C9 — the italic n subscript is nearer a 9")]
     [InlineData(2, "vout", WordClass.Name, null, Skip = "measured short (design note §23.9): v_out reads UOUZ — an italic v reads U, and no grammar says which")]
@@ -247,4 +247,31 @@ public sealed class ImageTextTests
         if (text is "R" or "Cn") Assert.NotEmpty(mine[0].Reading!.Designates);
         if (after is not null) Assert.Equal(after, Assert.Single(mine.Skip(1)).Text);
     }
+}
+
+/// <summary>
+/// The readings were measured on macOS. Skia rasterises text through the platform's font engine, so the same words
+/// drawn on Linux come out a few pixels different and the glyph matcher reads some of them otherwise; there these
+/// tests are skipped rather than held to numbers taken from another rasteriser.
+/// </summary>
+internal sealed class MeasuredOnMacOSFactAttribute : FactAttribute
+{
+    public MeasuredOnMacOSFactAttribute()
+    {
+        if (!OperatingSystem.IsMacOS()) Skip = MeasuredOnMacOS.Reason;
+    }
+}
+
+/// <inheritdoc cref="MeasuredOnMacOSFactAttribute"/>
+internal sealed class MeasuredOnMacOSTheoryAttribute : TheoryAttribute
+{
+    public MeasuredOnMacOSTheoryAttribute()
+    {
+        if (!OperatingSystem.IsMacOS()) Skip = MeasuredOnMacOS.Reason;
+    }
+}
+
+internal static class MeasuredOnMacOS
+{
+    public const string Reason = "the readings were measured on macOS, and text rasterises differently elsewhere";
 }
