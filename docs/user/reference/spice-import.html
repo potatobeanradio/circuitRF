@@ -225,7 +225,9 @@ would be this transistor wearing default numbers.</li>
 </ul>
 <p>In each of those the suggested route is the same: run the model through
 <a href="components.html#veriloga">the VerilogA component</a>, which takes its parameters from the model file
-itself rather than from a card.</p>
+itself rather than from a card. For a card inside an imported kit, a compiled model can instead be
+declared as the card's stand-in, and the card's own values run on it — see
+<a href="pdk-integration.html#stand-ins">A model the kit's own simulator builds in</a>.</p>
 <p><strong>The card does not say enough to build anything</strong> — refused for being incomplete, not unsupported:</p>
 <ul>
 <li>A <code>BEAD</code> stating only a DC resistance. What could be built is a resistor of a few milliohms, which

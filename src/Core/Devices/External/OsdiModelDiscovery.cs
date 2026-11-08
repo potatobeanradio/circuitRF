@@ -22,6 +22,12 @@ public sealed record OsdiModel(string FilePath, IReadOnlyList<OsdiModule> Module
 {
     /// <summary>Module names, exactly as the artefact declares them.</summary>
     public IReadOnlyList<string> TypeIds => [.. Modules.Select(m => m.TypeId)];
+
+    /// <summary>
+    /// The built-in model cards a kit's manifest declared one of this artefact's modules to stand in
+    /// for (<see cref="DeviceWorkerStandIn"/>). Empty for an artefact found only by discovery.
+    /// </summary>
+    public IReadOnlyList<DeviceWorkerStandIn> StandIns { get; init; } = [];
 }
 
 /// <summary>
@@ -55,7 +61,8 @@ public static class OsdiModelDiscovery
     public const int DefaultMaxFiles = 64;
 
     /// <summary>
-    /// Every <c>.osdi</c> found under <paramref name="roots"/>, with the modules it implements.
+    /// Every <c>.osdi</c> found under <paramref name="roots"/>, with the modules it implements. A root
+    /// that names a file is that one artefact.
     ///
     /// <para>An artefact that cannot be loaded or described contributes <b>nothing and no exception</b>
     /// — a half-built or foreign-architecture file sitting beside good ones must not cost the others.
@@ -168,7 +175,17 @@ public static class OsdiModelDiscovery
 
         foreach (string root in roots)
         {
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) continue;
+            if (string.IsNullOrWhiteSpace(root)) continue;
+
+            // A FILE root is that one artefact: what a manifest's stand-in names.
+            if (File.Exists(root))
+            {
+                string one = Path.GetFullPath(root);
+                if (seen.Add(one) && ++count <= maxFiles) yield return one;
+                continue;
+            }
+
+            if (!Directory.Exists(root)) continue;
 
             // MATERIALIZED INSIDE THE TRY, and told to skip what it cannot read.
             //

@@ -94,6 +94,34 @@ public sealed record DeviceWorkerVariant(
 public sealed record DeviceWorkerPart(string Id, string NetlistFile, string CellName);
 
 /// <summary>
+/// A compiled Verilog-A model that stands in for a model the kit's own simulator BUILDS IN, declared
+/// as <c>standIns</c>.
+///
+/// <para><b>Why this is declared rather than found.</b> A <c>.model</c> card names a built-in by a
+/// type word and a level (<c>npn</c>, <c>level = 9</c>), not by a module, and a kit ships no source
+/// for a built-in because its own simulator needs none. Which compiled module computes the same
+/// thing, and where its parameter names and terminal order differ from the card's, is knowledge
+/// about two models circuitRF does not have, so it is stated here as data.</para>
+/// </summary>
+/// <param name="Model">The card's type word this stands in for, compared without case.</param>
+/// <param name="Level">The <c>level</c> the card must also state, or null for any card of
+/// <paramref name="Model"/>. A level that matched picks the model and is not forwarded to it.</param>
+/// <param name="File">The compiled <c>.osdi</c>. A relative path resolves as every other path in the
+/// manifest does (<see cref="DeviceWorkerManifest.ResolveFile"/>).</param>
+/// <param name="Module">The module inside <paramref name="File"/>.</param>
+/// <param name="Parameters">Card or instance names the module spells differently, each to the
+/// module's spelling; a null target drops that name. Every other name passes as written.</param>
+/// <param name="Terminals">For each module terminal in its own order, the 1-based node of the element
+/// line it takes. Empty is the element line's own order.</param>
+public sealed record DeviceWorkerStandIn(
+    string                               Model,
+    string?                              Level,
+    string                               File,
+    string                               Module,
+    IReadOnlyDictionary<string, string?> Parameters,
+    IReadOnlyList<int>                   Terminals);
+
+/// <summary>
 /// A kit's answer to "how do I evaluate these devices?", read from a
 /// <see cref="FileName"/> file beside the kit.
 ///
@@ -109,7 +137,7 @@ public sealed class DeviceWorkerManifest
     private DeviceWorkerManifest(
         string providerName, IReadOnlyList<DeviceWorkerLaunch> launches, string directory, string baseDirectory,
         IReadOnlyList<DeviceWorkerVariant> variants, IReadOnlyList<DeviceWorkerPart> parts,
-        IReadOnlyList<string> fileParameters)
+        IReadOnlyList<string> fileParameters, IReadOnlyList<DeviceWorkerStandIn> standIns)
     {
         ProviderName  = providerName;
         Launches      = launches;
@@ -118,6 +146,7 @@ public sealed class DeviceWorkerManifest
         Variants      = variants;
         Parts         = parts;
         FileParameters = fileParameters;
+        StandIns      = standIns;
     }
 
     /// <summary>Name a netlist refers to this provider by. Matches the kit it was imported from.</summary>
@@ -160,6 +189,12 @@ public sealed class DeviceWorkerManifest
     /// </summary>
     public IReadOnlyList<string> FileParameters { get; }
 
+    /// <summary>
+    /// Compiled models declared to stand in for built-in model cards, declared as <c>standIns</c>.
+    /// Empty for the ordinary kit, whose cards circuitRF builds or a compiled module names.
+    /// </summary>
+    public IReadOnlyList<DeviceWorkerStandIn> StandIns { get; }
+
     // ── reading ───────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -175,7 +210,7 @@ public sealed class DeviceWorkerManifest
     /// </summary>
     private static bool HasNonWorkerContent(JsonElement root)
     {
-        foreach (var name in new[] { "parts", "variants", "fileParameters", "baseDirectory" })
+        foreach (var name in new[] { "parts", "variants", "fileParameters", "baseDirectory", "standIns" })
             if (root.TryGetProperty(name, out var v) &&
                 v.ValueKind is JsonValueKind.Array or JsonValueKind.String &&
                 (v.ValueKind != JsonValueKind.Array || v.GetArrayLength() > 0) &&
@@ -303,8 +338,15 @@ public sealed class DeviceWorkerManifest
                     if (ReadPart(e) is { } part) parts.Add(part);
             }
 
+            var standIns = new List<DeviceWorkerStandIn>();
+            if (root.TryGetProperty("standIns", out var ss) && ss.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in ss.EnumerateArray())
+                    if (ReadStandIn(e) is { } standIn) standIns.Add(standIn);
+            }
+
             return new DeviceWorkerManifest(provider, launches, directory, baseDirectory, variants, parts,
-                                            ReadStringArray(root, "fileParameters"));
+                                            ReadStringArray(root, "fileParameters"), standIns);
         }
     }
 
@@ -357,6 +399,36 @@ public sealed class DeviceWorkerManifest
         return id.Length == 0 || file.Length == 0 || cell.Length == 0
             ? null
             : new DeviceWorkerPart(id, file, cell);
+    }
+
+    /// <summary>
+    /// Reads one stand-in declaration, or null when it names no model type, no file or no module —
+    /// all three are needed to route a card, so a partial one is dropped like a partial part.
+    /// </summary>
+    private static DeviceWorkerStandIn? ReadStandIn(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return null;
+
+        string Str(string name) =>
+            element.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.String or JsonValueKind.Number
+                ? (v.ValueKind == JsonValueKind.Number ? v.GetRawText() : v.GetString() ?? "").Trim()
+                : "";
+
+        string model = Str("model"), level = Str("level"), file = Str("file"), module = Str("module");
+        if (model.Length == 0 || file.Length == 0 || module.Length == 0) return null;
+
+        var parameters = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (element.TryGetProperty("parameters", out var ps) && ps.ValueKind == JsonValueKind.Object)
+            foreach (var p in ps.EnumerateObject())
+                parameters[p.Name.Trim()] = p.Value.ValueKind == JsonValueKind.String &&
+                                            p.Value.GetString() is { Length: > 0 } to ? to.Trim() : null;
+
+        var terminals = new List<int>();
+        if (element.TryGetProperty("terminals", out var ts) && ts.ValueKind == JsonValueKind.Array)
+            foreach (var t in ts.EnumerateArray())
+                terminals.Add(t.ValueKind == JsonValueKind.Number && t.TryGetInt32(out int k) ? k : 0);   // 0 is out of range: refused where it is used
+
+        return new DeviceWorkerStandIn(model, level.Length > 0 ? level : null, file, module, parameters, terminals);
     }
 
     private static List<string> ReadStringArray(JsonElement element, string name)

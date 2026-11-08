@@ -177,6 +177,12 @@ public static class PdkPartInstaller
         var kitManifest = haveRoot ? ManifestFrom(settings, report.RootPath, kit) : null;
         var fileParams  = kitManifest?.FileParameters ?? [];
 
+        // The compiled models the settings declare as stand-ins for built-in cards join the artefacts
+        // found above. After the settings, because they are what declares them; the synthesis above
+        // never needs them.
+        if (kitManifest is { StandIns.Count: > 0 })
+            osdiModels = WithStandIns(osdiModels, kitManifest, diags);
+
         // Said AFTER the manifest is settled, because one may have just been derived — reporting the
         // question before answering it would tell the user something that stopped being true two
         // lines later. Both branches are stated, so the report answers either way.
@@ -315,6 +321,50 @@ public static class PdkPartInstaller
         }
 
         return [];
+    }
+
+    /// <summary>
+    /// <paramref name="found"/> with each stand-in the manifest declares attached to the artefact its
+    /// file names — asked of the worker first when discovery did not find that file, because the
+    /// module's own parameter spellings come from there. A stand-in whose file is missing or will not
+    /// load, or whose module the file does not declare, is said once here and routes nothing.
+    /// </summary>
+    private static IReadOnlyList<OsdiModel> WithStandIns(
+        IReadOnlyList<OsdiModel> found, DeviceWorkerManifest manifest, List<string> diags)
+    {
+        var models = found.ToList();
+        string worker = ShippedOsdiWorker() ?? OsdiWorkerCommand;   // a missing worker is said by Find
+
+        foreach (var s in manifest.StandIns)
+        {
+            string path = manifest.ResolveFile(s.File);
+            if (!File.Exists(path))
+            {
+                diags.Add($"The stand-in for '{s.Model}' cards names '{s.File}', which was not found; " +
+                          "those cards are not routed to it.");
+                continue;
+            }
+            path = Path.GetFullPath(path);
+
+            int at = models.FindIndex(m => string.Equals(m.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            if (at < 0)
+            {
+                var described = OsdiModelDiscovery.Find([path], worker, diags);
+                if (described.Count == 0) continue;
+                models.Add(described[0]);
+                at = models.Count - 1;
+            }
+
+            if (!models[at].TypeIds.Contains(s.Module, StringComparer.OrdinalIgnoreCase))
+            {
+                diags.Add($"The stand-in for '{s.Model}' cards names the module '{s.Module}', which " +
+                          $"'{Path.GetFileName(path)}' does not declare. It declares: " +
+                          $"{string.Join(", ", models[at].TypeIds)}.");
+                continue;
+            }
+            models[at] = models[at] with { StandIns = [.. models[at].StandIns, s] };
+        }
+        return models;
     }
 
     /// <summary>A folder, then each ancestor up to <paramref name="levels"/>; deepest first.</summary>

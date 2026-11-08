@@ -228,7 +228,9 @@ Refusals fall into two groups.
 
 In each of those the suggested route is the same: run the model through
 {{anchor: components#veriloga|the VerilogA component}}, which takes its parameters from the model file
-itself rather than from a card.
+itself rather than from a card. For a card inside an imported kit, a compiled model can instead be
+declared as the card's stand-in, and the card's own values run on it — see
+{{anchor: pdk-integration#stand-ins|A model the kit's own simulator builds in}}.
 
 **The card does not say enough to build anything** — refused for being incomplete, not unsupported:
 

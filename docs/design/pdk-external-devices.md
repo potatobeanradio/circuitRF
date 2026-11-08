@@ -149,6 +149,19 @@ ranking-without-filtering once made a Linux-only kit answer a Windows search wit
 | A packaged part with a circuit | an ordinary **cell instance** | a worker evaluates *one* device; a package is several plus passives |
 | Written natively in the kit's netlist | rewritten to `ExtDevice` before the cells are copied | the kit names its own compiled types; whatever isn't a primitive or a kit cell is one |
 
+**A card naming a model the kit's own simulator BUILDS IN is the fourth case, and it is declared.** A
+`.model` card is written for a module (`hv_nmos_card mdla_va`) or for a built-in (`q1 npn level = 9`).
+The first is routed to the compiled artefact declaring that module. The second runs on circuitRF's own
+physics when the card translates; when it does not, a compiled model stands in for it only where the
+kit's settings say so — `standIns` in the manifest (`DeviceWorkerStandIn`): the card's type and level,
+the `.osdi` and module, and where the two disagree, the parameter names and the terminal order. None
+of that is derivable, because it relates two models circuitRF has neither of, so it is data like the
+rest of the manifest. The declared file joins the kit's compiled models at install
+(`PdkPartInstaller.WithStandIns`), so a reopen finds it as it finds them. A card name the module does
+not declare is refused by name rather than dropped, and a run that reaches a card nothing can build is
+refused with the sentence saying what to declare (`ExtractionResult.UnbuiltDevices`), before the
+elaborator can call the card a cell "not found".
+
 **Circuit beats device, and a failure on that path is terminal** — a netlist-backed part is never
 quietly re-emitted as an `ExtDevice`, because that would answer with something the user did not place.
 

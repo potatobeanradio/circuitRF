@@ -313,6 +313,65 @@ pin does not stop a run. If you are modelling self-heating deliberately, build t
 yourself, between the thermal node and an ambient source — the models do not build it for you, and a
 non-zero thermal diagonal in the model is self-heating feedback, not a reference.</p>
 </div>
+<h3 id="stand-ins">A model the kit's own simulator builds in</h3>
+<p>An open kit's model cards often name a model its own simulator <strong>builds in</strong> rather than a compiled
+one: a type word and a level, such as <code>.model q1 npn level = 9</code>. A kit ships no source for a built-in,
+because its simulator needs none. Where circuitRF implements that model itself, the card runs on
+circuitRF's own physics; where it does not, the device is refused by name, and so is any run that
+reaches it. The refusal quotes the declaration below with the card's own type and level filled in.</p>
+<p>If you have a compiled Verilog-A model of the same thing — one you built once with a Verilog-A
+compiler, for instance — declare it as the card's <strong>stand-in</strong> in the kit's settings. Those are the
+<code>Settings</code> object of the kit's entry under <code>PdkRefs</code> in the workspace's <code>.cws</code>, or the kit's own
+<code>device-provider.json</code>:</p>
+<pre><code class="language-json">&quot;standIns&quot;: [
+  { &quot;model&quot;: &quot;npn&quot;, &quot;level&quot;: &quot;9&quot;,
+    &quot;file&quot;: &quot;/path/to/bipolar.osdi&quot;, &quot;module&quot;: &quot;bipolar_module&quot;,
+    &quot;parameters&quot;: { &quot;dtemp&quot;: &quot;trise&quot;, &quot;vbe_max&quot;: null },
+    &quot;terminals&quot;: [1, 2, 3, 4, 5] }
+]
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>The card's type word, compared without case.</td>
+</tr>
+<tr>
+<td><code>level</code></td>
+<td>The level the card must also state. Leave it out to cover every level of <code>model</code>; a declaration with a level wins over one without. The level that matched picks the model and is not passed to it.</td>
+</tr>
+<tr>
+<td><code>file</code></td>
+<td>The compiled <code>.osdi</code>. A relative path resolves against the kit, as every path in these settings does.</td>
+</tr>
+<tr>
+<td><code>module</code></td>
+<td>The module inside <code>file</code> that runs the card.</td>
+</tr>
+<tr>
+<td><code>parameters</code></td>
+<td>Optional. Names on the card or the instance line that the module spells differently, each to the module's name; <code>null</code> drops a name the module has no use for. Any other name passes as written.</td>
+</tr>
+<tr>
+<td><code>terminals</code></td>
+<td>Optional. For each of the module's terminals in its own order, the 1-based node of the element line it takes. Left out, the line's own node order is the module's.</td>
+</tr>
+</tbody>
+</table>
+<p>The card's values then reach the module under the instance's own: the card is the model, the line is
+this device's geometry. <strong>A name the card states that the module does not declare is refused by
+name</strong>, all of them at once, rather than dropped — a dropped parameter would run a different model
+with nothing to say so. Map it to the module's name for it, or to <code>null</code> once you know it does not
+matter.</p>
+<p>The device runs through the kit's compiled-model worker, so the kit's settings must name one. An
+import names it whenever the kit has compiled models of its own; for a kit with none, add an entry
+under <code>workers</code> with the <code>osdi-worker</code> command and the stand-in's file as its argument.</p>
 <h3 id="on-macos">On macOS</h3>
 <p>Vendor model libraries usually ship Linux and Windows builds only. A Linux library cannot be loaded on
 macOS at all — that is a binary-format and OS-ABI mismatch, not an instruction-set one, so nothing at the

@@ -89,10 +89,10 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
         return report;
     }
 
-    private PdkPartInstaller.InstallOutcome Install(PdkImportReport report)
+    private PdkPartInstaller.InstallOutcome Install(PdkImportReport report, System.Text.Json.Nodes.JsonNode? settings = null)
     {
         DeviceWorkerManifest.ToolsDirectory = Path.GetDirectoryName(FixturePaths.Require(WorkerRel))!;
-        var outcome = PdkPartInstaller.Install(report);
+        var outcome = PdkPartInstaller.Install(report, settings);
         PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
         return outcome;
     }
@@ -399,6 +399,142 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
         model.Components.Add(Place("FAMILY_v1"));
 
         Assert.Empty(NetExtractor.Extract(model, "tb").Conflicts);
+    }
+
+    // ── a built-in card, run on a declared stand-in ───────────────────────────
+
+    /// <summary>
+    /// A bipolar card at a level circuitRF has no built-in for, the shape a kit writes for its own
+    /// simulator's built-in models. The instance writes collector, base, emitter; the stand-in below
+    /// takes them as base, collector, emitter (the sample module's G, D, S) so the terminal map is a
+    /// real permutation, and its card names differ from the module's where the map says so.
+    /// </summary>
+    private const string BuiltInNetlist = """
+        .subckt myrc a b gval=0.002
+        Q1 a b 0 q_card area=gval
+        .ends
+
+        .model q_card npn level = 9  is = 1e-3  vth = 0.4  vbe_max = 1.6
+        """;
+
+    private const string StandIn = """
+        { "model": "NPN", "level": 9, "file": "FILE", "module": "crf_fet",
+          "parameters": { "is": "beta", "area": "ggs", "vbe_max": null },
+          "terminals": [2, 1, 3] }
+        """;
+
+    /// <summary>The fresh import's own settings, with <paramref name="standIn"/> declared — what a user
+    /// writes into the workspace's recorded settings for the kit.</summary>
+    private System.Text.Json.Nodes.JsonNode WithStandIn(PdkImportReport report, string standIn)
+    {
+        var settings = Install(report).Settings ?? new System.Text.Json.Nodes.JsonObject();
+        settings["standIns"] = System.Text.Json.Nodes.JsonNode.Parse($"[{standIn}]");
+        return settings;
+    }
+
+    [FixtureFact(WorkerRel, HowTo)]
+    public void ABuiltInCard_RunsOnTheDeclaredStandIn_ItsNamesAndTerminalsMapped()
+    {
+        var report = BuildKit(BuiltInNetlist);
+        var outcome = Install(report, WithStandIn(report, StandIn.Replace("FILE", "models/fake_osdi.osdi")));
+
+        var (inst, conflicts) = ExtractDevice();
+
+        Assert.Empty(conflicts);
+        Assert.Equal("ExtDevice", inst.Reference);
+        Assert.Equal("crf_fet", Value(inst, "Type"));
+        Assert.Equal("fake_osdi.osdi",
+                     Path.GetFileName(DeviceWorkerProviderResolver.SplitOverride(Value(inst, "Provider")!).Library));
+
+        // Module terminal k takes the line's node terminals[k]: G = base, D = collector, S = emitter.
+        Assert.Equal(["b", "a", "0"], inst.NetBindings);
+
+        // Renamed, passed as written, dropped, and the level that picked the model kept back.
+        Assert.Equal(1e-3, double.Parse(Value(inst, "beta")!, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(0.4,  double.Parse(Value(inst, "vth")!,  System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal("gval", Value(inst, "ggs"));
+        Assert.DoesNotContain(inst.Overrides, o => o.Name is "is" or "area" or "vbe_max" or "level");
+
+        // And the routed name starts the worker against that artefact, which serves the module.
+        var manifest = PdkPartInstaller.ManifestFrom(outcome.Settings, KitDir, Kit)!;
+        using var launched = new DeviceWorkerProviderResolver([(Kit, manifest)]).Resolve(Value(inst, "Provider")!) as IDisposable;
+        Assert.Contains(((IExternalDeviceProvider)launched!).Describe(), d => d.TypeId == "crf_fet");
+    }
+
+    /// <summary>
+    /// The compiled model is the user's build, not the kit's, so discovery does not find it: the
+    /// declared file is asked for its modules on its own, and a relative path resolves against the kit
+    /// as every other path in the settings does. Settings declaring nothing but the stand-in are valid.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void AStandInOutsideTheKit_IsDescribedFromItsDeclaredPath()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "build"));
+        File.Copy(FixturePaths.Require(ModelRel), Path.Combine(_root, "build", "mine.osdi"));
+        var report = BuildKit(BuiltInNetlist, withArtefact: false);
+
+        var outcome = Install(report, System.Text.Json.Nodes.JsonNode.Parse(
+            $"{{ \"standIns\": [{StandIn.Replace("FILE", "../build/mine.osdi")}] }}"));
+
+        Assert.Equal("mine.osdi", Path.GetFileName(Assert.Single(outcome.OsdiModels!).FilePath));
+        var (inst, conflicts) = ExtractDevice();
+        Assert.Empty(conflicts);
+        Assert.Equal("crf_fet", Value(inst, "Type"));
+    }
+
+    /// <summary>
+    /// With no stand-in declared the card is refused, and the RUN is refused with the sentence saying
+    /// what to declare — instead of reaching the elaborator, whose "cell not found" names the card and
+    /// nothing else.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void WithNoStandIn_TheRunIsRefusedSayingWhatToDeclare()
+    {
+        Install(BuildKit(BuiltInNetlist));
+
+        var model = new SchematicEditModel { SchematicDirectory = Path.GetTempPath() };
+        model.Components.Add(Place());
+        var ext = NetExtractor.Extract(model, "tb");
+
+        string said = Assert.Single(ext.UnbuiltDevices);
+        Assert.Contains("LEVEL=9", said, StringComparison.Ordinal);
+        Assert.Contains("\"standIns\": [{ \"model\": \"npn\", \"level\": \"9\"", said, StringComparison.Ordinal);
+        Assert.Contains(said, ext.Conflicts);
+        Assert.Contains(said, ext.RunRefusal!, StringComparison.Ordinal);
+    }
+
+    /// <summary>A kit file's cells are all read, and a card device in one the design never places refuses
+    /// nothing: only the circuit actually reached is the run's business.</summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void AnUnbuildableCardInACellNotPlaced_RefusesNothing()
+    {
+        Install(BuildKit(Netlist + "\n" + BuiltInNetlist.Replace("myrc", "unplaced")));
+
+        var model = new SchematicEditModel { SchematicDirectory = Path.GetTempPath() };
+        model.Components.Add(Place());
+        var ext = NetExtractor.Extract(model, "tb");
+
+        Assert.Contains(ext.Conflicts, c => c.Contains("q_card", StringComparison.Ordinal));
+        Assert.Empty(ext.UnbuiltDevices);
+        Assert.Null(ext.RunRefusal);
+    }
+
+    /// <summary>
+    /// A card name the module does not declare, and the map does not translate, is refused by name
+    /// at extraction — never dropped, which would run a different model in silence.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void ACardNameTheStandInCannotTake_IsRefusedByName()
+    {
+        var report = BuildKit(BuiltInNetlist);
+        Install(report, WithStandIn(report, StandIn.Replace("FILE", "models/fake_osdi.osdi")
+                                                   .Replace(", \"vbe_max\": null", "")));
+
+        var (inst, conflicts) = ExtractDevice();
+
+        Assert.NotEqual("ExtDevice", inst.Reference);
+        Assert.Contains(conflicts, c => c.Contains("vbe_max", StringComparison.Ordinal)
+                                     && c.Contains("crf_fet", StringComparison.Ordinal));
     }
 
     // ── it actually evaluates ─────────────────────────────────────────────────
