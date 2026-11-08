@@ -630,21 +630,26 @@ static void emit_describe(Sb *s) {
  * "no parameters" — it is a null dereference inside the model, during setup_instance, before any
  * of circuitRF's code runs again. It presents as the worker dying with no output at all.
  *
- * This cost a real compiled model to find: the test fixture never asks for a simulator parameter,
- * so nothing here could catch it, and every synthetic test passed. A model that asks for a name
- * absent from this list falls back to its own default, which is why a short honest list is safe
- * and a null one is not. */
+ * This cost a real compiled model to find: the test fixture then asked for no simulator parameter,
+ * so nothing here could catch it and every synthetic test passed (its `crf_rc` now asks for two).
+ * A model that asks for a name absent from this list falls back to its own default, which is why a
+ * short honest list is safe and a null one is not. */
 /* `minr` is here because real compact models ask for it: the smallest resistance the host is willing
  * to treat as a resistance rather than as a short. Both physics-based GaN families surveyed carry a
  * 1 mOhm fallback of their own, so the value below is chosen to MATCH that fallback — this is
  * exactness rather than a fix, and a model that finds the name now behaves the same way it did when
  * it did not. */
+/* `shrink` is NOT answered. It is an optional geometry shrink; R3 reads it as a PERCENTAGE with 0 as
+ * its own default, and this list answered 1.0, so every such resistor came out 1 % short and narrow.
+ * The reference SPICE simulator does not answer it either, so the model's default stands there too.
+ * Leaving it out is also right for a model that reads it as a factor, which an answer of 0 would
+ * zero. */
 static char  *g_sim_names[] = {
-    "gmin", "imax", "imelt", "minr", "scale", "shrink", "tnom",
+    "gmin", "imax", "imelt", "minr", "scale", "tnom",
     "simulatorVersion", "sourceScaleFactor", "iteration", NULL,
 };
 static double g_sim_vals[] = {
-    1e-12,  1.0,    1.0,     1e-3,   1.0,     1.0,      27.0,
+    1e-12,  1.0,    1.0,     1e-3,   1.0,     27.0,
     1.0,               1.0,                 1.0,
 };
 

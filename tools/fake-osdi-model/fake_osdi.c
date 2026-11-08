@@ -43,6 +43,8 @@ typedef struct {
     double c;     /* model param */
     double tc;    /* model param, 1/K */
     double tnom;  /* model param, K   */
+    double shrink;/* model param, %   — defaulted from $simparam, used in nothing */
+    double gmin;  /* model param, S   — defaulted from $simparam, used in nothing */
 } RcModel;
 
 typedef struct {
@@ -78,17 +80,30 @@ static void *rc_access(void *inst, void *model, uint32_t id, uint32_t flags) {
         case 2: return m ? (void *)&m->tc   : NULL;
         case 3: return m ? (void *)&m->tnom : NULL;
         case 4: return i ? (void *)&i->mult : NULL;
-        case 5: return i ? (void *)&i->temp_k : NULL;   /* opvar, read-only in practice */
+        case 5: return m ? (void *)&m->shrink : NULL;
+        case 6: return m ? (void *)&m->gmin   : NULL;
+        case 7: return i ? (void *)&i->temp_k : NULL;   /* opvar, read-only in practice */
         default: return NULL;
     }
 }
 
+/* `$simparam(name, fallback)` as compiled code does it: scan the host's NULL-terminated names. */
+static double simparam(const OsdiSimParas *sim, const char *name, double fallback) {
+    for (char **n = sim->names; *n; n++)
+        if (strcmp(*n, name) == 0) return sim->vals[n - sim->names];
+    return fallback;
+}
+
 static void rc_setup_model(void *handle, void *model, OsdiSimParas *sim, OsdiInitInfo *res) {
-    (void)handle; (void)sim;
+    (void)handle;
     RcModel *m = (RcModel *)model;
     /* A host that sets no parameter must get the model's own defaults, so they are established
      * here rather than assumed to be zero-initialised into something useful. */
     if (m->tnom == 0.0) m->tnom = 300.0;
+    /* Defaults the HOST supplies, the way a compiled resistor defaults its geometry shrink, so
+     * `defaults` shows what this host answers: gmin, which it does, and shrink, which it must not. */
+    if (m->shrink == 0.0) m->shrink = simparam(sim, "shrink", 0.0);
+    if (m->gmin   == 0.0) m->gmin   = simparam(sim, "gmin",   0.0);
     res->flags = 0; res->num_errors = 0; res->errors = NULL;
 }
 
@@ -167,6 +182,8 @@ static char *rc_name_c[]    = { (char *)"c"    };
 static char *rc_name_tc[]   = { (char *)"tc"   };
 static char *rc_name_tnom[] = { (char *)"tnom" };
 static char *rc_name_mult[] = { (char *)"mult" };
+static char *rc_name_shrink[] = { (char *)"shrink" };
+static char *rc_name_gmin[] = { (char *)"gmin" };
 static char *rc_name_temp[] = { (char *)"temp_k" };
 
 static OsdiParamOpvar rc_params[] = {
@@ -175,6 +192,8 @@ static OsdiParamOpvar rc_params[] = {
     { rc_name_tc,   0, (char *)"tempco of g",         (char *)"1/K",PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { rc_name_tnom, 0, (char *)"nominal temperature", (char *)"K",  PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { rc_name_mult, 0, (char *)"multiplier",          (char *)"",   PARA_TY_REAL | PARA_KIND_INST,  1 },
+    { rc_name_shrink, 0, (char *)"geometry shrink",   (char *)"%",  PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { rc_name_gmin, 0, (char *)"host conductance floor", (char *)"S", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { rc_name_temp, 0, (char *)"temperature seen",    (char *)"K",  PARA_TY_REAL | PARA_KIND_OPVAR, 1 },
 };
 
@@ -1019,7 +1038,7 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .noise_sources  = NULL,
         .num_noise_src  = 0,
 
-        .num_params          = 5,   /* g0, c, tc, tnom, mult */
+        .num_params          = 7,   /* g0, c, tc, tnom, mult, shrink, gmin */
         .num_instance_params = 1,   /* mult */
         .num_opvars          = 1,   /* temp_k */
         .param_opvar         = rc_params,
