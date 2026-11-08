@@ -192,6 +192,8 @@ s11    = SP1.S[:, 1, 1]        S11
 </code></pre>
 <p><code>SP1.S[:, 2, 1]</code> is <strong>S21</strong>, not &quot;row 2 column 1 by zero-based index.&quot; A port outside <code>1..nPorts</code>
 is a clear error listing the available ports.</p>
+<p>The same <code>(i, j)</code> works on any result cube whose axes are ports: a <a href="simulations.html#trl">TRL calibration</a>'s
+fixtures, <code>CAL.SA(2, 1)</code> and <code>CAL.SB(2, 2)</code>, read exactly as <code>SP1.S(2, 1)</code> does.</p>
 <h2 id="wsprobe">WSProbe accessors</h2>
 <p>A run with a <a href="components.html#wsprobe">WSProbe</a> in it carries one <code>wsp</code> matrix plus a named set of
 outputs per probe, and both are reachable by accessor:</p>

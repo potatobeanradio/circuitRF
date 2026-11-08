@@ -29098,3 +29098,11 @@ Two traps cost a debugging round each while building that check, and both will c
 
 The usable-band warning names its points as runs ("1-1.75 GHz", "1 GHz and 8 GHz"). An earlier form gave the first and last
 untrusted frequency, which turned two points at the band's two ends into "1 GHz to 8 GHz", reading as the whole band.
+
+## A Deembed run before the TRL bench that writes its fixture (brief-de-5, 2026-11-07)
+
+Running the example's de-embed bench before its calibration failed with only "Touchstone file not found". When the missing
+file is one a `trl` analysis in the workspace writes, the failure now adds which analysis on which bench writes it and to
+run that first (`TrlRun.WriterOf`, appended in `CircuitEvaluation`'s per-analysis catch and in the CLI run verbs'
+`FailureMessage`). It reads the workspace's schematics only on that failure, and only those whose text holds a `"trl"`
+analysis. Gate: `TrlExampleTests.DeembedDut_RunBeforeTheCalibration_NamesTheBenchToRunFirst`.

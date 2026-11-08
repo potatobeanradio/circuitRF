@@ -187,6 +187,9 @@ s11    = SP1.S[:, 1, 1]        S11
 `SP1.S[:, 2, 1]` is **S21**, not "row 2 column 1 by zero-based index." A port outside `1..nPorts`
 is a clear error listing the available ports.
 
+The same `(i, j)` works on any result cube whose axes are ports: a [TRL calibration](simulations.html#trl)'s
+fixtures, `CAL.SA(2, 1)` and `CAL.SB(2, 2)`, read exactly as `SP1.S(2, 1)` does.
+
 ## WSProbe accessors {#wsprobe}
 
 A run with a [WSProbe](components.html#wsprobe) in it carries one `wsp` matrix plus a named set of

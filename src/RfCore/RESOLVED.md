@@ -1137,3 +1137,9 @@ pinch-off is not reciprocal at all (S21 ≠ S12 by 6 dB), so "passive at this bi
   line every answer was wrong (`TrlCalibrationTests.WithoutContinuityTracking_…`). A fixture file whose S21 flips between two
   samples interpolates through zero, and the Deembed reads its file by interpolation. Tracked, both fixtures come back to
   1e-10 through 333° of line.
+
+## TRL's usable band at its exact edges (brief-de-5, 2026-11-07)
+
+A Line cut for exactly the 8:1 band reads 20° and 160° at its edges only to rounding, which can fall either side from one
+runtime to the next and turn the band's end points into a warning. `TrlCalibration` counts a point within 1e-6° of an edge
+(`UsableEdgeSlackDeg`) as inside. `DataCube.Mag` on a real cube is now its absolute value (`src/Core/RESOLVED.md`).

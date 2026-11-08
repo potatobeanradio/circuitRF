@@ -325,7 +325,8 @@ public sealed class DeembedTests(ITestOutputHelper output) : IDisposable
             R:R2 b 0 R=50 Ohm
             """);
         var nl = new Elaborator(lib).Elaborate(tb);
-        var ex = Assert.Throws<InvalidOperationException>(() => LinearDcEngine.Run(nl));
+        var ex = Assert.Throws<DeviceRefusalException>(() => LinearDcEngine.Run(nl));
+        Assert.Equal("deembed.not-invertible", ex.Diagnostic.Id);
         output.WriteLine(ex.Message);
         Assert.Contains("Deembed 'DB'", ex.Message);
         Assert.Contains("0 Hz", ex.Message);
@@ -357,5 +358,58 @@ public sealed class DeembedTests(ITestOutputHelper output) : IDisposable
         output.WriteLine(ex.Message);
         Assert.Contains("DX", ex.Message);
         Assert.Contains("inverse of the network", ex.Message);
+    }
+
+    // ── A path through a floating network, grounded at both ends (DE-5) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// A FET's six-port behind a Deembed of itself, with a linear core inside it whose source is the inner source (pin 6 of
+    /// the SnP). <paramref name="source"/> is the net the device's outer source and the Deembed's pin 6 share. The core alone
+    /// sits on ports 3 and 4, its source on ground: the answer the pair should give on ports 1 and 2.
+    /// </summary>
+    private (SNP S, IReadOnlyList<string> Warnings) FetBehindItsNetwork(string source)
+    {
+        string file = Write("fet6.s6p", Net6, Grid);
+        var (lib, tb) = new CnlReader().Read($"""
+            Port:P1 g1 0 Num=1 Z=50 Ohm
+            Port:P2 d1 0 Num=2 Z=50 Ohm
+            Deembed:DE g1 d1 0 G D {source} File="{file}" NumPorts=6
+            SnP:F G D {source} GI DI SI File="{file}" NumPorts=6
+            C:Cgs1 GI SI C=0.5 pF
+            C:Cgd1 GI DI C=0.1 pF
+            R:Rds1 DI SI R=300 Ohm
+            VCCS:Gm1 DI SI GI SI G=50 mS
+            Port:P3 g2 0 Num=3 Z=50 Ohm
+            Port:P4 d2 0 Num=4 Z=50 Ohm
+            C:Cgs2 g2 0 C=0.5 pF
+            C:Cgd2 g2 d2 C=0.1 pF
+            R:Rds2 d2 0 R=300 Ohm
+            VCCS:Gm2 d2 0 g2 0 G=50 mS
+            """);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        return (DataSetBuilder.ToSnp(SParameterEngine.Run(nl, Grid)), nl.Warnings);
+    }
+
+    private static double CoreError(SNP s) => s.Matrices.Max(m =>
+        Enumerable.Range(0, 2).SelectMany(i => Enumerable.Range(0, 2).Select(j => (m[i, j] - m[i + 2, j + 2]).Magnitude)).Max());
+
+    [Fact]
+    public void ADevicesSourceOnANetOfItsOwn_ToThePartSidePin_ReturnsTheCore()
+    {
+        var (s, warnings) = FetBehindItsNetwork("S0");
+        output.WriteLine($"max |dS| {CoreError(s):E2}");
+        Assert.True(CoreError(s) < 1e-12);
+        Assert.DoesNotContain(warnings, w => w.Contains("both on ground"));
+    }
+
+    [Fact]
+    public void BothEndsOfAPath_OnGround_IsNamed_BecauseThePathIsNotRemoved()
+    {
+        var (s, warnings) = FetBehindItsNetwork("0");
+        output.WriteLine($"max |dS| {CoreError(s):E2}");
+        Assert.True(CoreError(s) > 1e-2);   // ground takes up the difference between the two currents
+        var w = Assert.Single(warnings, w => w.Contains("both on ground"));
+        Assert.Contains("Deembed 'DE'", w);
+        Assert.Contains("pins 3 and 6", w);
     }
 }

@@ -526,7 +526,7 @@ static int RunSparam(string[] args)
     // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
     catch (Exception ex) when (ex is not OperationCanceledException)
     {
-        return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
+        return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input)));
     }
 }
 
@@ -692,7 +692,7 @@ static int RunDc(string[] args)
 
         return result.Converged ? 0 : 2;
     }
-    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input))); }
 }
 
 /// <summary>
@@ -948,7 +948,7 @@ static int RunHb(string[] args)
 
         return Converged(ds) ? 0 : 2;
     }
-    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input))); }
 }
 
 // ── Loadpull / loadpull-pursuit ───────────────────────────────────────────────
@@ -1202,7 +1202,7 @@ static int RunLoadpull(string[] args, bool pursuit)
 
         return LoadpullExitCode(ds);
     }
-    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input))); }
 }
 
 /// <summary>
@@ -1977,7 +1977,7 @@ static int RunEm(string[] args)
                                                         RunHost.Cancellation, EmProgressToStderr(), maxCores: maxCores, confirmMemory: force ? _ => true : null,
                                                         device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input))); }
             if (ReportEmRun(bandResult, bandRun, cemPath) is var code and not 0) return code;
         }
         foreach (string line in CircuitRF.Design.ThreeD.C3dBandSweeps.TableText(
@@ -2001,7 +2001,7 @@ static int RunEm(string[] args)
     // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
     catch (Exception ex) when (ex is not OperationCanceledException)
     {
-        return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
+        return JsonRun.Fail(CliDiagnostics.RunFailed(FailureMessage(ex, input)));
     }
 
     return ReportEmRun(result, setup, cemPath);
@@ -3229,4 +3229,15 @@ static int PrintHelp()
     return 0;
 }
 
+
+    /// <summary>A run's failure, with the bench to run first when the missing file is a fixture a TRL analysis in the
+    /// workspace writes (brief-de-5) — as Simulate reports it.</summary>
+    private static string FailureMessage(Exception ex, string input)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+            if (e is FileNotFoundException { FileName: { Length: > 0 } missing } && !File.Exists(missing)
+                && CircuitRF.Design.Circuit.TrlRun.WriterOf(missing, CircuitSource.ReferenceBaseOf(input)) is { } writer)
+                return ex.Message + " " + writer;
+        return ex.Message;
+    }
 }

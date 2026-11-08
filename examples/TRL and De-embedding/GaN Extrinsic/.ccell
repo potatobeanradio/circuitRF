@@ -1,0 +1,32 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "IsTestBench": false,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "G"
+    },
+    {
+      "Port": 2,
+      "Name": "D"
+    },
+    {
+      "Port": 3,
+      "Name": "S"
+    },
+    {
+      "Port": 4,
+      "Name": "GI"
+    },
+    {
+      "Port": 5,
+      "Name": "DI"
+    },
+    {
+      "Port": 6,
+      "Name": "SI"
+    }
+  ],
+  "NumPorts": 6
+}

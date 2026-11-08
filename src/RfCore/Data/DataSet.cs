@@ -228,6 +228,14 @@ namespace RfCore.Data
         /// <summary>Z(i,j) trace over frequency.</summary>
         public DataCube Z(int i, int j) => ParameterTrace("Z", i, j);
 
+        /// <summary>The (i, j) trace of any cube with port axes <c>i</c> and <c>j</c> (a TRL fixture's <c>SA</c>), by 1-based
+        /// port number, every other axis kept — as <see cref="S"/> reads <c>S</c>.</summary>
+        public DataCube PortTrace(string cubeName, int i, int j) => ParameterTrace(cubeName, i, j);
+
+        /// <summary>Whether <paramref name="cubeName"/> is a cube with both port axes, <c>i</c> and <c>j</c>.</summary>
+        public bool HasPortAxes(string cubeName)
+            => Contains(cubeName) && this[cubeName].Axes.Any(a => a.Name == "i") && this[cubeName].Axes.Any(a => a.Name == "j");
+
         private DataCube ParameterTrace(string cubeName, int i, int j)
         {
             var cube     = this[cubeName];

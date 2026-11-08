@@ -890,3 +890,32 @@ building it found, beyond the fixes recorded in `src/Design`, `src/Ui/Layout/Em`
   Hierarchy's Board uses.
 - **The EM button writes `<workspace>/em/`,** while `ExampleWorkspacesTests` wants a `.cem` in a cell's `em/` folder; the
   example's is in `Filter Board/em/`, which every walk resolves. That test also now accepts a bench reading a `.cem`'s result.
+
+## TRL and De-embedding (brief-de-5, 2026-11-07)
+
+Built with `new workspace`/`new cell`, the schematics drawn by a scratch generator from the reference catalogue's pin
+positions, every measurement written by a `Lab` bench through `circuitrf sparam`, and the three Data Displays by
+`TrlExampleTests.BuildTheDisplays` (`CRF_AUTHOR_TRL=1`) from Simulate's own results. `TrlExampleTests` reruns the Lab
+benches against the committed files, calibrates and de-embeds (2e-10 from the DUT cell, the Touchstone precision), checks
+FET Deembed's intrinsic Cgs and Rds flat (0.4 % and 0.00 % over 1-20 GHz, against 17 % and 57 % as measured), and resolves
+every trace of the three displays. All in under a second.
+
+- **The brief's FET wiring was wrong, and plausibly so.** It put the Deembed's pin 6 and the device's source both on
+  ground. Pins 3 and 6 are the two ends of the source lead through a floating six-port; with both on ground the cascade
+  pairs nothing (ground takes the difference between the two currents), so the lead is not removed. Cgs still came out
+  within a few percent of flat, which is why it nearly passed; Rds fell from 310 to 92 Ω over the band. A known linear
+  core behind SnP(F) and Deembed(F) gave |ΔS| 0.55 that way and 8e-15 with the device's source on a net of its own to pin
+  6. The run now warns on both ends of a path on ground (`src/Core/RESOLVED.md`); the README states the rule.
+- **The Line is cut for exactly 20° and 160° at 1 and 8 GHz** (a quarter wave at 4.5 GHz, the README's formula). At the
+  edges that is equality to rounding, so `TrlCalibration` now counts a point within 1e-6° of an edge as inside.
+- **The fixtures are a result and are not committed**; `fixtures/` is ignored at the repo root and left out of the packaged
+  tree. Run in the wrong order, Deembed DUT failed with the bare missing-file message, so the benches you run are
+  numbered (`1 TRL Calibration`, `2 Deembed DUT`, `3 FET Deembed`) to sort first in the tree in run order, the README
+  opens with the order, and the refusal names the bench to run first (`src/Design/RESOLVED.md`).
+- **`ExampleWorkspacesTests`' file-reference gate** accepts a reference that a TRL analysis of the same example writes, as
+  it already accepted one an EM setup writes.
+- **The extrinsic values are the elaborated device's at N=8**, read from `circuitrf elab`; the stored `GaNTwoShell` values
+  are per finger and differ from the fitted Lg/Ld/Ls besides. The bias chokes are 10 µH, outside the Deembed; below 1 GHz
+  they show in Cgs (10 fF at 0.5 GHz), which the README says.
+- **A unit of `m` on a variable-valued length is milli**, as documented (`reference units`): the first Line Standard was
+  1000× short until its `L` row lost the unit, the variable already being in metres.

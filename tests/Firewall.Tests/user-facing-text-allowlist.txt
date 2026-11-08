@@ -1600,3 +1600,13 @@ src/Design/Em3d/CosimPatternMetrics.cs|Fields '{fa.Name}': theta {G(thetaDeg)}, 
 src/Design/Em3d/FieldCosimulation.FarField.cs|'{metric}' reads a far field, and fields analysis '{fa.Name}' has none at its frequency: '{record}' holds a field set there. 
 src/Design/Em3d/FieldCosimulation.FarField.cs|Fields '{fa.Name}': circuit port {w.Drive.DrivenPort}'s voltage is zero at {MaterialDispersion.Hz(hz)}, so the pattern 
 src/Design/Em3d/FieldCosimulation.FarField.cs|{metric}({fa.Name}) is one number, and fields analysis '{fa.Name}' has freq=all, which is every frequency '{record}' holds. 
+# ── Internal invariants, not refusals (2026-11-07) ───────────────────────────────────
+# Argument checks on a pure function's contract. Every product path calls NetworkInverse's Try* forms, which return
+# their reason instead (the Deembed and TRL refusals built from it are coded: DeembedDiagnostics, TrlDiagnostics), and
+# the generator's check guards a call that Em3dSetupProblem.Of routes around before any user input reaches it.
+src/Design/Layout/Em3d/Em3dGenerator.cs|A setup naming component ports is built by Em3dSetupProblem.Of, not the generator.
+src/RfCore/NetworkInverse.cs|A network can only be undone when it has an even number of ports, one side matching the other; this one has {s.RowCount}.
+src/RfCore/NetworkInverse.cs|An S-matrix must be square; this one is {s.RowCount}×{s.ColCount}.
+src/RfCore/NetworkInverse.cs|Both networks must have the same port count ({2 * k} and {y.RowCount}).
+src/RfCore/NetworkInverse.cs|The two networks resonate against each other at their junction (condition number {Fmt(c1)}).
+src/RfCore/NetworkInverse.cs|The two networks resonate against each other at their junction (condition number {Fmt(c2)}).

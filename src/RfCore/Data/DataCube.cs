@@ -334,9 +334,16 @@ namespace RfCore.Data
             return new DataCube(AxesArray(), buf, noCopy: true);
         }
 
+        /// <summary>The element-wise magnitude. A real cube's is its absolute value: mag(-2) is 2, as on a scalar.</summary>
         public DataCube Mag()
         {
-            if (DataKind == DataKind.Real) return this;
+            if (DataKind == DataKind.Real)
+            {
+                if (Array.TrueForAll(_realData!, v => !(v < 0))) return this;   // already a magnitude
+                var abs = RealValues;
+                for (int i = 0; i < abs.Length; i++) abs[i] = Math.Abs(abs[i]);
+                return new DataCube(AxesArray(), abs, noCopy: true);
+            }
             var buf = new double[_complexData!.Length];
             for (int i = 0; i < buf.Length; i++) buf[i] = _complexData[i].Magnitude;
             return new DataCube(AxesArray(), buf, noCopy: true);

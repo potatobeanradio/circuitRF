@@ -397,7 +397,7 @@
       comment, which is why only the directory matters.
     -->
     <None Include="../../examples/**/*.*"
-          Exclude="../../examples/**/results/**/*.*;../../examples/**/*.npy;../../examples/**/.DS_Store;../../examples/**/.generated-cells/**/*.*;../../examples/**/.cwsuser;../../examples/**/.crf-*;../../examples/**/*.crf-tmp-*">
+          Exclude="../../examples/**/results/**/*.*;../../examples/TRL and De-embedding/fixtures/**/*.*;../../examples/**/*.npy;../../examples/**/.DS_Store;../../examples/**/.generated-cells/**/*.*;../../examples/**/.cwsuser;../../examples/**/.crf-*;../../examples/**/*.crf-tmp-*">
       <Link>examples/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

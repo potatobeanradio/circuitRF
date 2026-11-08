@@ -385,6 +385,13 @@ public static class CircuitEvaluation
         }
     }
 
+    private static T? FirstOf<T>(Exception? ex) where T : Exception
+    {
+        for (; ex is not null; ex = ex.InnerException)
+            if (ex is T t) return t;
+        return null;
+    }
+
     /// <summary>brief-sar-10 — one evaluation's fields analyses: how they run, what they wrote, and the recombined field each
     /// leaves for the field measurements, by result name — open until the measurements are evaluated, then disposed.</summary>
     private sealed class FieldsRun(FieldsOutput output, string? label) : IDisposable
@@ -462,7 +469,12 @@ public static class CircuitEvaluation
             {
                 if (ex is CircuitRF.Design.Em3d.PlainSnpFieldsBlockException plain) plainSnps.Add(new PlainSnpFieldsBlock(plain.Block, plain.SnpPath));
                 // A fields refusal already opens by naming its analysis.
-                errors.Add(ex.Message.StartsWith($"Fields '{pa.ResultName}'", StringComparison.Ordinal) ? ex.Message : $"'{pa.ResultName}': {ex.Message}");
+                string message = ex.Message;
+                // A Deembed whose fixture a TRL bench in this workspace writes, run before that bench (brief-de-5).
+                if (FirstOf<FileNotFoundException>(ex) is { FileName: { Length: > 0 } missing } && !File.Exists(missing)
+                    && TrlRun.WriterOf(missing, plan.BaseDirectory) is { } writer)
+                    message += " " + writer;
+                errors.Add(message.StartsWith($"Fields '{pa.ResultName}'", StringComparison.Ordinal) ? message : $"'{pa.ResultName}': {message}");
                 convergence.Add(new AnalysisConvergence(pa.ResultName, false, ex.Message));
             }
         }

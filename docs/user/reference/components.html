@@ -2448,29 +2448,35 @@ harmonic instead, and the run says so.</li>
 at some frequency has nothing to undo there: a series capacitor at 0 Hz is the usual case, and the message names the
 instance and the frequency. Apply bias outside the part being de-embedded, or use a file whose lowest frequency
 still passes through.</li>
+<li><strong>A path through the network needs a net at each end.</strong> Pins k and N/2+k are the two ends of one path. Put both on
+ground and the current leaving one is no longer the current entering the other, so that path is not removed: for a
+FET's six-port, the outer source (pin 3) goes to ground and the inner source (pin 6) to the device's source, on a net
+of its own. A run with both ends of a path on ground warns, naming the pins.</li>
 <li>It takes no <code>SdB_&lt;i&gt;_&lt;j&gt;</code>, <code>Sdeg_&lt;i&gt;_&lt;j&gt;</code> or <code>Reciprocal</code>; set an offset on the SnP whose network it removes.</li>
 </ul>
 <p>In the schematic it is in the palette under <strong>Data Files</strong>, and it is placed, pointed at a file and laid out exactly as an SnP
 is: <strong>Browse…</strong> sets the port count from the file, and a file with an odd number of ports is refused with a message. Its pins
 default to <strong>SplitLR</strong>, ports 1…N/2 down the left and the rest down the right in order, so each port faces its partner on the
 other side. It is always drawn as its own box, marked S⁻¹.</p>
+<p>The <strong>TRL and De-embedding</strong> example (<em>File ▸ New ▸ Examples</em>) uses it three ways: two fixtures off a filter, and a 6-port
+off a GaN FET to show its intrinsic Cgs, Cgd, gm and Rds flat with frequency.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
 <tr><td>2</td><td>2</td></tr>
 </tbody></table>
-<p class="small">The nets of an instance line, in this order. How many there are is set by <code>NumPorts</code>; the table shows <code>NumPorts&nbsp;=&nbsp;2</code>.</p>
+<p class="small">The nets of an instance line, in this order. How many there are is set by <code>NumPorts</code>; the table shows <code>NumPorts&nbsp;=&nbsp;2</code>. Not interchangeable: terminals 1 to N/2 are one side of the network its file holds and N/2+1 to N the other, in the file&#39;s order. Wire it exactly as an SnP on the same file would be wired to ADD that network, then swap the SnP for the Deembed and the part for its measurement: a fixture&#39;s instrument side faces the port and its part side faces the measured block. An SnP and a Deembed on one file, joined side to side in either order, are a through connection.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>NumPorts</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td></tr>
-<tr><td>RefNode</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>PinConfig</td><td><code>SplitLR</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>Pitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>InterpMode</td><td><code>CubicSpline</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>InterpDomain</td><td><code>MA</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>ExtrapMode</td><td><code>NearestEdge</code></td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>NumPorts</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>The file&#39;s port count, read from it: even, half on each side of the network.</td></tr>
+<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The Touchstone file holding the network to remove: the fixture an SnP on the same file would add. It needs an even number of ports. A TRL analysis&#39;s fixtureA and fixtureB paths go here unchanged.</td></tr>
+<tr><td>RefNode</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PinConfig</td><td><code>SplitLR</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Pitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>InterpMode</td><td><code>CubicSpline</code></td><td>&mdash;</td><td>&mdash;</td><td>As on an SnP. The block inverts the S an SnP on the same file would stamp with these settings, so the two cancel between the file&#39;s points and outside its band too.</td></tr>
+<tr><td>InterpDomain</td><td><code>MA</code></td><td>&mdash;</td><td>&mdash;</td><td>As on an SnP. The block inverts the S an SnP on the same file would stamp with these settings, so the two cancel between the file&#39;s points and outside its band too.</td></tr>
+<tr><td>ExtrapMode</td><td><code>NearestEdge</code></td><td>&mdash;</td><td>&mdash;</td><td>As on an SnP. The block inverts the S an SnP on the same file would stamp with these settings, so the two cancel between the file&#39;s points and outside its band too.</td></tr>
 </tbody></table>
 <h3 id="spicemodel">SPICE Model or Subcircuit</h3>
 <figure class="symbol"><span class="frame">

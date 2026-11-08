@@ -95,6 +95,11 @@ namespace RfCore
         /// <summary>The usable interval of the Line's extra electrical length, in degrees, modulo 180°.</summary>
         public const double UsableFromDeg = 20, UsableToDeg = 160;
 
+        /// <summary>How far past an edge of the usable interval a point may lie and still count as inside it, in degrees.
+        /// A line cut for exactly the 8:1 band (90° at the band's centre) reads 20° and 160° at its edges only to
+        /// rounding, which falls either side of the edge from one runtime to the next.</summary>
+        private const double UsableEdgeSlackDeg = 1e-6;
+
         /// <summary>
         /// Solves for both fixtures at every frequency of the three files, which must share one grid, be two-ports of
         /// S-parameters and share one reference impedance. Returns the result, or a refusal sentence and no result.
@@ -200,7 +205,7 @@ namespace RfCore
                 loss[k] = -20 * Math.Log10(lf.Magnitude);
                 gamma[k] = gm;
                 double m = ((deg[k] % 180) + 180) % 180;
-                usable[k] = m >= UsableFromDeg && m <= UsableToDeg;
+                usable[k] = m >= UsableFromDeg - UsableEdgeSlackDeg && m <= UsableToDeg + UsableEdgeSlackDeg;
 
                 prev2L = prevL; prevL = lf;
                 prev2F = prevF; prevF = f;

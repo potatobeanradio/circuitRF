@@ -578,6 +578,14 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                 // ship (see the class header) — so it must name exactly what one of the example's own
                 // 3D views writes when its EM setup runs (Thermal Output Wires' amplifier, on its
                 // output wires' S-parameters).
+                // A TRL calibration's fixture file is the other: what one of the example's own trl analyses writes,
+                // which a Deembed downstream of it reads (TRL and De-embedding).
+                if (resolved is not null && !File.Exists(resolved) && IsWrittenByATrlAnalysisOf(example.Directory, resolved))
+                {
+                    checkedRefs++;
+                    continue;
+                }
+
                 if (resolved is not null && IsUnder(resolved, Path.Combine(example.Directory, "results")))
                 {
                     Assert.True(IsWrittenByAnEmSetupOf(example.Directory, resolved),
@@ -603,6 +611,13 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
         static bool IsUnder(string path, string dir)
             => Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir) + Path.DirectorySeparatorChar,
                                                  StringComparison.OrdinalIgnoreCase);
+
+        // Where TrlRun writes a fixture: its stored path, resolved as an SnP's File is, against the workspace root.
+        static bool IsWrittenByATrlAnalysisOf(string workspace, string file)
+            => Directory.EnumerateFiles(workspace, "*.csch", SearchOption.AllDirectories)
+                   .SelectMany(c => SchematicPersistence.LoadFromFile(c).Item1.Analyses.OfType<CircuitRF.Core.Design.TrlAnalysis>())
+                   .SelectMany(t => new[] { t.FixtureAPath, t.FixtureBPath })
+                   .Any(f => string.Equals(SnpPathPolicy.Resolve(f, workspace, null), file, StringComparison.Ordinal));
 
         // The 3D run's own rule for where its Touchstone lands — the one the thermal link matches by —
         // and a .cem's (EmRunService.ResolveSnpBasePath, where Simulate and `circuitrf em` write it).

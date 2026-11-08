@@ -1310,12 +1310,19 @@ Deembed:DB y  p2 File="fixture_B.s2p" NumPorts=2     ; and fixture B on the othe
   at some frequency has nothing to undo there: a series capacitor at 0 Hz is the usual case, and the message names the
   instance and the frequency. Apply bias outside the part being de-embedded, or use a file whose lowest frequency
   still passes through.
+- **A path through the network needs a net at each end.** Pins k and N/2+k are the two ends of one path. Put both on
+  ground and the current leaving one is no longer the current entering the other, so that path is not removed: for a
+  FET's six-port, the outer source (pin 3) goes to ground and the inner source (pin 6) to the device's source, on a net
+  of its own. A run with both ends of a path on ground warns, naming the pins.
 - It takes no `SdB_<i>_<j>`, `Sdeg_<i>_<j>` or `Reciprocal`; set an offset on the SnP whose network it removes.
 
 In the schematic it is in the palette under **Data Files**, and it is placed, pointed at a file and laid out exactly as an SnP
 is: **Browse…** sets the port count from the file, and a file with an odd number of ports is refused with a message. Its pins
 default to **SplitLR**, ports 1…N/2 down the left and the rest down the right in order, so each port faces its partner on the
 other side. It is always drawn as its own box, marked S⁻¹.
+
+The **TRL and De-embedding** example (*File ▸ New ▸ Examples*) uses it three ways: two fixtures off a filter, and a 6-port
+off a GaN FET to show its intrinsic Cgs, Cgd, gm and Rds flat with frequency.
 
 {{table: components/Deembed}}
 

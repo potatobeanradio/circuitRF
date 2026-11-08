@@ -1060,6 +1060,14 @@ public static class ComponentTypeRegistry
         SymbolKind.Tfr =>
             "Interchangeable: the two ends of the film.",
 
+        // brief-de-0 D1 — the wiring rule, which no pin name can carry.
+        SymbolKind.Deembed =>
+            "Not interchangeable: terminals 1 to N/2 are one side of the network its file holds and N/2+1 to N the "
+          + "other, in the file's order. Wire it exactly as an SnP on the same file would be wired to ADD that network, "
+          + "then swap the SnP for the Deembed and the part for its measurement: a fixture's instrument side faces the "
+          + "port and its part side faces the measured block. An SnP and a Deembed on one file, joined side to side "
+          + "in either order, are a through connection.",
+
         SymbolKind.Airbridge =>
             "Terminals 1 and 2 are the bridge's two landings, and 3 and 4 the two ends of the line it "
           + "crosses; each pair is interchangeable. Tie 3 and 4 to ground for a bridge over a ground strap.",
@@ -1394,6 +1402,7 @@ public static class ComponentTypeRegistry
          : PlanarLineParameterDescription(kind, parameterName) is { Length: > 0 } plDesc ? plDesc
          : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
+         : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -1413,6 +1422,18 @@ public static class ComponentTypeRegistry
                       + "result small.",
             _       => "",
         };
+
+    /// <summary>A Deembed's rows (brief-de-3): what each means for the network it removes, which no SnP row says.</summary>
+    private static string DeembedParameterDescription(string parameterName) => parameterName switch
+    {
+        "File"         => "The Touchstone file holding the network to remove: the fixture an SnP on the same file would add. "
+                        + "It needs an even number of ports. A TRL analysis's fixtureA and fixtureB paths go here unchanged.",
+        "NumPorts"     => "The file's port count, read from it: even, half on each side of the network.",
+        "InterpMode" or "InterpDomain" or "ExtrapMode"
+                       => "As on an SnP. The block inverts the S an SnP on the same file would stamp with these settings, "
+                        + "so the two cancel between the file's points and outside its band too.",
+        _              => "",
+    };
 
     /// <summary>A composed FET's rows (brief-modelcomposer-1, -9, -21).</summary>
     private static string ComposedFetParameterDescription(string parameterName) => parameterName switch

@@ -327,8 +327,7 @@ public sealed class SnpModel : ComponentModel
                 ? " At 0 Hz this usually means the network has no DC path through it (a series capacitor): apply the bias outside " +
                   "the part being de-embedded, or use a file whose lowest frequency still passes through."
                 : "";
-            throw new InvalidOperationException(
-                $"{Who(c.InstancePath)}: the network in '{Path.GetFileName(_filePath)}' cannot be undone at {at}: {why}.{dc}");
+            throw new DeviceRefusalException(DeembedDiagnostics.CannotUndo(Who(c.InstancePath), Path.GetFileName(_filePath), at, why!, dc));
         }
 
         int n = _portCount, k = n / 2;

@@ -33,22 +33,21 @@ public static class TrlRun
         string FileOf(string key, string instance)
         {
             if (string.IsNullOrWhiteSpace(instance))
-                throw new InvalidOperationException($"{who}: {key}= names no SnP block.");
+                throw new TrlRefusalException(TrlDiagnostics.NoBlockNamed(a.Name, key));
             var ec = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, instance, StringComparison.Ordinal));
             if (ec is null)
             {
                 var snps = nl.Components.Where(c => c.Model is SnpModel { Inverse: false, RecordPath: null }).Select(c => c.InstancePath).ToList();
-                throw new InvalidOperationException($"{who}: {key}={instance} names no instance on this bench" +
-                    (snps.Count == 0 ? ", which has no SnP block." : $"; its SnP blocks are {string.Join(", ", snps)}."));
+                throw new TrlRefusalException(TrlDiagnostics.NoInstance(a.Name, key, instance, string.Join(", ", snps)));
             }
             if (ec.Model is not SnpModel { Inverse: false, RecordPath: null } snp)
-                throw new InvalidOperationException($"{who}: {key}={instance} is a {ec.ComponentType}; it must be an SnP holding the measured {key}.");
+                throw new TrlRefusalException(TrlDiagnostics.NotAnSnp(a.Name, key, instance, ec.ComponentType));
             if (snp.PortCount != 2)
-                throw new InvalidOperationException($"{who}: {key}={instance} is a {snp.PortCount}-port SnP; TRL reads two-ports.");
+                throw new TrlRefusalException(TrlDiagnostics.NotTwoPort(a.Name, key, instance, snp.PortCount));
             if (string.IsNullOrWhiteSpace(snp.FilePath))
-                throw new InvalidOperationException($"{who}: {key}={instance} has no Touchstone file set.");
+                throw new TrlRefusalException(TrlDiagnostics.NoFile(a.Name, key, instance));
             if (!File.Exists(snp.FilePath))
-                throw new InvalidOperationException($"{who}: {key}={instance}'s file was not found: '{snp.FilePath}'.");
+                throw new TrlRefusalException(TrlDiagnostics.FileMissing(a.Name, key, instance, snp.FilePath));
             return snp.FilePath;
         }
 
@@ -56,14 +55,14 @@ public static class TrlRun
         var thru = TouchstoneCache.Get(thruPath);
         var (result, refusal) = TrlCalibration.Solve(thru, TouchstoneCache.Get(reflectPath), TouchstoneCache.Get(linePath),
                                                      a.ReflectIsOpen ? TrlReflect.Open : TrlReflect.Short);
-        if (result is null) throw new InvalidOperationException($"{who}: {refusal}.");
+        if (result is null) throw new TrlRefusalException(TrlDiagnostics.SolveRefused(a.Name, refusal!));
 
         string storedA = string.IsNullOrWhiteSpace(fixtureA) ? a.FixtureAPath : fixtureA.Trim();
         string storedB = string.IsNullOrWhiteSpace(fixtureB) ? a.FixtureBPath : fixtureB.Trim();
         string pathA = Path.GetFullPath(Elaborator.ResolveFileReference(storedA, baseDirectory));
         string pathB = Path.GetFullPath(Elaborator.ResolveFileReference(storedB, baseDirectory));
         if (string.Equals(pathA, pathB, StringComparison.Ordinal))
-            throw new InvalidOperationException($"{who}: fixtureA and fixtureB are the same file, '{storedA}'.");
+            throw new TrlRefusalException(TrlDiagnostics.SameFixtureFile(a.Name, storedA));
 
         string Header(string which, string side) =>
             $" {which} from TRL '{a.Name}' (Thru {a.Thru}, Reflect {a.Reflect}, Line {a.Line}): {side}. " +
@@ -86,6 +85,30 @@ public static class TrlRun
         }
 
         return Pack(result);
+    }
+
+    /// <summary>
+    /// The sentence a run adds when a file it needs is missing and a TRL analysis in the workspace is what writes it: a
+    /// Deembed duplicated from a bench whose fixtures were never made. Reads the workspace's schematics only on that failure.
+    /// Null when no TRL analysis there writes <paramref name="missingFile"/>.
+    /// </summary>
+    public static string? WriterOf(string missingFile, string? workspaceRoot)
+    {
+        if (string.IsNullOrEmpty(workspaceRoot) || !Directory.Exists(workspaceRoot)) return null;
+        string want = Path.GetFullPath(missingFile);
+        foreach (string csch in Directory.EnumerateFiles(workspaceRoot, "*.csch", SearchOption.AllDirectories))
+        {
+            try
+            {
+                if (!File.ReadAllText(csch).Contains("\"trl\"", StringComparison.Ordinal)) continue;
+                foreach (var t in CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(csch).Item1.Analyses.OfType<TrlAnalysis>())
+                    foreach (string f in new[] { t.FixtureAPath, t.FixtureBPath })
+                        if (string.Equals(Path.GetFullPath(Elaborator.ResolveFileReference(f, workspaceRoot)), want, StringComparison.Ordinal))
+                            return $"It is a fixture file TRL '{t.Name}' writes, on {Path.GetFileNameWithoutExtension(csch)}: run that first.";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+        }
+        return null;
     }
 
     private static void WriteFixture(SNP fixture, string path, string header)

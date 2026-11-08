@@ -7,6 +7,11 @@
       "Summary": "A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template's own Data Display. Stability factors K and mu are written as measurement expressions."
     },
     {
+      "Folder": "TRL and De-embedding",
+      "Title": "TRL and De-embedding",
+      "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."
+    },
+    {
       "Folder": "Hierarchy",
       "Title": "Hierarchy",
       "Summary": "A 9 dB attenuator built as cells inside cells: a parameterised pi pad placed twice on a board, simulated from a test bench, laid out with Update Layout from Schematic at both levels, and assembled in 3D from 3D views of other cells you can push into."

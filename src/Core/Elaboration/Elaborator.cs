@@ -193,6 +193,9 @@ public sealed class Elaborator
         // reads the component list.
         PinUnreferencedThermalNodes(netlist);
 
+        // Post-flatten: a Deembed path grounded at both ends is not removed, and nothing else says so.
+        WarnDeembedPathsGroundedAtBothEnds(netlist);
+
         // Post-flatten: resolve mutual inductance references now that all inductors exist.
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel m)
@@ -268,6 +271,26 @@ public sealed class Elaborator
     /// <para>INTERNAL thermal nodes are deliberately left alone. The user cannot wire one, so an
     /// internal node with no reference is the provider's own bug, and pinning it would hide it.</para>
     /// </summary>
+    private static void WarnDeembedPathsGroundedAtBothEnds(ElaboratedNetlist netlist)
+    {
+        foreach (var ec in netlist.Components)
+        {
+            if (ec.Model is not SnpModel { Inverse: true } snp) continue;
+            int k = snp.PortCount / 2;
+            if (k < 1 || ec.Nodes.Length < 2 * k) continue;
+            var both = Enumerable.Range(0, k)
+                .Where(i => ec.Nodes[i] == ec.ReferenceNode && ec.Nodes[i + k] == ec.ReferenceNode)
+                .Select(i => $"{i + 1} and {i + 1 + k}").ToList();
+            if (both.Count == 0) continue;
+            netlist.AddWarningOnce($"deembed-grounded-path:{ec.InstancePath}",
+                $"{ComponentModelFactory.DeembedTypeName} '{ec.InstancePath}': pins {string.Join(", ", both)} are both on ground. " +
+                "They are the two ends of one path through the network it removes, and with ground at both ends the current " +
+                "leaving one is not the current entering the other, so that path is not removed and the result is wrong. " +
+                "Put the pin on the part's side on the part's own terminal, on a net of its own (for a FET, the device's " +
+                "source), and keep the other pin on ground.");
+        }
+    }
+
     private void PinUnreferencedThermalNodes(ElaboratedNetlist netlist)
     {
         var thermalOwners = new Dictionary<int, string>();

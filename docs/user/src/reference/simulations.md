@@ -854,7 +854,7 @@ calibration.
 
 The analysis's result holds `SA` and `SB` (the two fixtures, as S cubes), `LineDeg` (the Line's extra length over the Thru,
 in degrees), `LineLossDb`, `Gamma` (the solved reflect) and `Usable` (1 inside the band, 0 outside), to plot like any other
-result.
+result. A measurement reads a fixture's entry by port number, as it reads S: `abs(CAL.SA(2, 1))`.
 
 ```
 SnP:THRU     t1 t2 File="measurements/thru.s2p"    NumPorts=2
@@ -864,6 +864,11 @@ analysis CAL type=trl thru=THRU reflect=REFLECT line=LINE reflectType=short fixt
 ```
 
 From the command line, `circuitrf trl bench.csch` runs it ([`trl`](cli.html#trl)).
+
+A Deembed whose fixture file a TRL analysis in the workspace writes, run before that analysis, stops naming the bench to
+run first. The worked example is **TRL and De-embedding** (*File ▸ New ▸ Examples*): a calibration from synthetic
+standards, a filter de-embedded with its results and laid over the filter itself, and a GaN FET de-embedded to its
+intrinsic plane.
 
 ---
 

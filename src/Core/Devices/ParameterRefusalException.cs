@@ -1,3 +1,5 @@
+using CircuitRF.Diagnostics;
+
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
@@ -6,4 +8,13 @@ namespace CircuitRF.Core.Devices;
 /// which does not know which instance it is building; the elaborator, which does, rethrows it with the
 /// instance path in front, so <c>check</c> and a run name the line as well as the keys.
 /// </summary>
-public sealed class ParameterRefusalException(string message) : InvalidOperationException(message);
+public sealed class ParameterRefusalException : InvalidOperationException
+{
+    public ParameterRefusalException(string message) : base(message) { }
+
+    /// <summary>A coded refusal; its message is the diagnostic rendered, so every caller reading the message is unchanged.</summary>
+    public ParameterRefusalException(Diagnostic diagnostic) : base(diagnostic.Render()) => Diagnostic = diagnostic;
+
+    /// <summary>The coded refusal, when it was thrown as one.</summary>
+    public Diagnostic? Diagnostic { get; }
+}

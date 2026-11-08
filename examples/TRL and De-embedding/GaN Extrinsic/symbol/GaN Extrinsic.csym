@@ -1,0 +1,112 @@
+{
+  "FormatVersion": 6,
+  "GridSize": 100,
+  "PortCount": 6,
+  "Primitives": [
+    {
+      "$type": "Rect",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "Filled": false,
+      "Cx": 0,
+      "Cy": 0,
+      "W": 240,
+      "H": 560
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -120,
+      "Y1": -200,
+      "X2": -200,
+      "Y2": -200
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -120,
+      "Y1": 0,
+      "X2": -200,
+      "Y2": 0
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -120,
+      "Y1": 200,
+      "X2": -200,
+      "Y2": 200
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 120,
+      "Y1": -200,
+      "X2": 200,
+      "Y2": -200
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 120,
+      "Y1": 0,
+      "X2": 200,
+      "Y2": 0
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 120,
+      "Y1": 200,
+      "X2": 200,
+      "Y2": 200
+    }
+  ],
+  "Pins": [
+    {
+      "LocalX": -200,
+      "LocalY": -200,
+      "PortIndex": 0,
+      "Name": "G"
+    },
+    {
+      "LocalX": -200,
+      "LocalY": 0,
+      "PortIndex": 1,
+      "Name": "D"
+    },
+    {
+      "LocalX": -200,
+      "LocalY": 200,
+      "PortIndex": 2,
+      "Name": "S"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": -200,
+      "PortIndex": 3,
+      "Name": "GI",
+      "NameAlign": "Right"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": 0,
+      "PortIndex": 4,
+      "Name": "DI",
+      "NameAlign": "Right"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": 200,
+      "PortIndex": 5,
+      "Name": "SI",
+      "NameAlign": "Right"
+    }
+  ]
+}

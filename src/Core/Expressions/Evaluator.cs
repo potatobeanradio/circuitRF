@@ -325,6 +325,14 @@ public sealed partial class Evaluator
             return new Value(ds.S(pi, pj));
         }
 
+        // ── Y(i, j), Z(i, j), a TRL fixture's SA(i, j): any cube with port axes, by port number, as S ──
+        if (cl.Args.Length == 2 && ds.HasPortAxes(accessorName))
+        {
+            int pi = (int)EvalExpr(cl.Args[0], scope).AsReal();
+            int pj = (int)EvalExpr(cl.Args[1], scope).AsReal();
+            return new Value(ds.PortTrace(accessorName, pi, pj));
+        }
+
         // ── P("probe"[, k]) / Pt("probe") — power through an IProbe (brief ENV-MEAS-2) ──
         // Taken when the first argument is a string and no cube is literally named P / Pt; a DataSet that
         // holds one keeps the generic positional path below (no analysis emits one).
@@ -782,6 +790,8 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("abs", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        // abs is mag (expressions.md): a result cube takes the same element-wise magnitude.
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Mag());
         return v.Kind == ValueKind.Real
             ? new Value(Math.Abs(v.AsReal()))
             : new Value(Complex.Abs(v.AsComplex()));

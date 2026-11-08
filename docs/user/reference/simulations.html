@@ -984,13 +984,17 @@ of your band, <code>f_mid = (f_low + f_high) / 2</code>, is a good choice; cover
 calibration.</p>
 <p>The analysis's result holds <code>SA</code> and <code>SB</code> (the two fixtures, as S cubes), <code>LineDeg</code> (the Line's extra length over the Thru,
 in degrees), <code>LineLossDb</code>, <code>Gamma</code> (the solved reflect) and <code>Usable</code> (1 inside the band, 0 outside), to plot like any other
-result.</p>
+result. A measurement reads a fixture's entry by port number, as it reads S: <code>abs(CAL.SA(2, 1))</code>.</p>
 <pre><code>SnP:THRU     t1 t2 File=&quot;measurements/thru.s2p&quot;    NumPorts=2
 SnP:REFLECT  r1 r2 File=&quot;measurements/reflect.s2p&quot; NumPorts=2
 SnP:LINE     l1 l2 File=&quot;measurements/line.s2p&quot;    NumPorts=2
 analysis CAL type=trl thru=THRU reflect=REFLECT line=LINE reflectType=short fixtureA=&quot;fixtures/A.s2p&quot; fixtureB=&quot;fixtures/B.s2p&quot;
 </code></pre>
 <p>From the command line, <code>circuitrf trl bench.csch</code> runs it (<a href="cli.html#trl"><code>trl</code></a>).</p>
+<p>A Deembed whose fixture file a TRL analysis in the workspace writes, run before that analysis, stops naming the bench to
+run first. The worked example is <strong>TRL and De-embedding</strong> (<em>File ▸ New ▸ Examples</em>): a calibration from synthetic
+standards, a filter de-embedded with its results and laid over the filter itself, and a GaN FET de-embedded to its
+intrinsic plane.</p>
 <hr />
 <h2 id="tuning">Tuning</h2>
 <p>The <strong>Tuning</strong> panel puts a slider on any value you choose and re-simulates as you move it, with every

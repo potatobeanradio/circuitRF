@@ -4336,3 +4336,25 @@ Sites that read a block's FILE rather than its stamp, and what each does with a 
 A 0 Hz point where the fixture has no DC path (a series capacitor) is refused naming the instance and the frequency, with
 where to put the bias. `LinearDcEngine` raises it as an exception rather than returning it as a refusal, as it does any
 stamp-time refusal.
+
+## Found building the TRL and De-embedding example (brief-de-5, 2026-11-07)
+
+- **A Deembed path grounded at both ends is not removed, and now warns.** Pins k and N/2+k are the two ends of one path
+  through the network. With both on ground, the current leaving one is not tied to the current entering the other (ground
+  absorbs the difference), so the cascade is not a through connection on that path. On a FET's floating six-port with
+  pins 3 and 6 grounded, a known core came back with |ΔS| 0.55; with the device's source on its own net to pin 6, 8e-15.
+  `Elaborator.WarnDeembedPathsGroundedAtBothEnds` names the instance and the pin pairs (keyed once per instance). Gates:
+  `DeembedTests.BothEndsOfAPath_OnGround_IsNamed_BecauseThePathIsNotRemoved` and its own-net counterpart.
+- **`abs()` refused a result cube** ("Value is Cube, not Complex") although the expression reference gives `abs` and `mag`
+  as one function; `abs` now takes the cube as `mag` does. `mag` of a REAL cube returned it signed (`DataCube.Mag` passed a
+  real cube through); it is now the absolute value, as on a scalar. Gate: `AbsOnACubeTests`.
+- **`X(i, j)` by port number worked only on a cube named `S`.** `CAL.SA(2,1)` (a TRL fixture) failed with "Expected 3
+  slice arguments, got 2". Any qualified cube with port axes `i` and `j` now takes the pair as `S` does
+  (`DataSet.PortTrace`). Note `SP1.Y`/`SP1.Z` exist only in the written results file, not in the measurement context, so
+  `SP1.Y(1,2)` in a measurement is still "no cube named Y". Gate: `PortPairOnAnyMatrixTests`.
+- **The DE series' refusals are coded diagnostics** (`UserFacingTextGateTests` had failed since DE-1 on 17 new thrown
+  sentences). The user-facing ones became `DeembedDiagnostics` (here) and `TrlDiagnostics` (`src/Design/Circuit`), thrown as
+  `DeviceRefusalException`, `ParameterRefusalException` (which gained a `Diagnostic` constructor; it is still caught and
+  re-prefixed by message) and `TrlRefusalException`. Each renders the sentence it replaced, so every catch site and test
+  reading the message is unchanged. The six `ArgumentException` contract checks in `NetworkInverse` and `Em3dGenerator`
+  went on the allowlist: product code calls the `Try*` forms, which return their reason.

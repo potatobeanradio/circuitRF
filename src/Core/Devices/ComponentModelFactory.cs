@@ -752,16 +752,13 @@ public static class ComponentModelFactory
     private static SnpModel CreateDeembedModel(IReadOnlyDictionary<string, Value> parameters)
     {
         if (!parameters.TryGetValue("NumPorts", out var np) || np.Kind != ValueKind.Real)
-            throw new InvalidOperationException($"{DeembedTypeName}: NumPorts parameter is missing or not a number");
+            throw new DeviceRefusalException(DeembedDiagnostics.NumPortsMissing());
         int ports = (int)np.AsReal();
         if (ports < 2 || ports % 2 != 0)
-            throw new ParameterRefusalException(
-                $"{DeembedTypeName}: NumPorts={ports}; a Deembed needs an even number of ports, one side matching the other.");
+            throw new ParameterRefusalException(DeembedDiagnostics.NumPortsOdd(ports));
         foreach (var name in parameters.Keys)
             if (SnpPerturbation.IsPerturbationParameter(name))
-                throw new ParameterRefusalException(
-                    $"{DeembedTypeName}: '{name}' sets an S-parameter offset, which a Deembed does not take; set it on the SnP whose " +
-                    "network this one removes, or take it off.");
+                throw new ParameterRefusalException(DeembedDiagnostics.OffsetRefused(name));
         return CreateSnpModel(parameters, ports, null, null, inverse: true);
     }
 
