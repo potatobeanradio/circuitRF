@@ -869,7 +869,10 @@ public static partial class Em3dRunService
         => EmResultStaging.PublishRun(new EmPublishRequest(
                 run.Paths(solver), problem.Ports.Count, data, run.Setup, run.Target, Em3dSolvers.Get(solver).DisplayName, version, device, mesh,
                 RecordPorts(problem, run.Generated), writeSnp)
-            { Fields = fields, Staging = staging, ThreeDViewText = run.ThreeDViewText }, run.Log.Errors);
+            {
+                Fields = fields, Staging = staging, ThreeDViewText = run.ThreeDViewText,
+                PartPorts = EmPartsOpen.PositionsOf(RecordPorts(problem, run.Generated), p => p.Part is not null && p.Kind == EmResultPort.Gap),
+            }, run.Log.Errors);
 
     /// <summary>R-cp1-1 — the problem's ports as the record states them: a part's gap port, a port with a real return, or a wave port.</summary>
     internal static IReadOnlyList<EmResultPort> RecordPorts(Em3dProblem problem, Em3dGenerationResult? generated)

@@ -36,6 +36,10 @@ internal sealed record EmPublishRequest(
     public EmResultStaging? Staging { get; init; }
 
     public string? ThreeDViewText { get; init; }
+
+    /// <summary>The ports of parts (not connectors), 1-based in the result's port order, which <see cref="EmPartsOpen"/> leaves open
+    /// in the result's <see cref="EmPartsOpen.Group"/>; empty when the run has none.</summary>
+    public IReadOnlyCollection<int> PartPorts { get; init; } = [];
 }
 
 public sealed class EmResultStaging : IDisposable
@@ -131,6 +135,7 @@ public sealed class EmResultStaging : IDisposable
             {
                 if (r.Data.Groups.Count > 0)
                 {
+                    EmPartsOpen.Add(r.Data, r.PartPorts);
                     stagedNpy = staging.Staged(npy);
                     DataSetExporter.Export(r.Data, stagedNpy, ExportFormat.Npy);
                 }

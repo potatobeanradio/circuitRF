@@ -16716,6 +16716,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     {
                         container.Inspector.AddTraceCommand.Execute(null);
                         populated = container.Inspector.Traces.Count > 0;
+                        // An EM result with component ports: the board with the parts' pads open, as the 3D view draws it.
+                        if (populated) PointAtPartsOpen(container.Inspector, entry.Data);
                     }
                 }
             }

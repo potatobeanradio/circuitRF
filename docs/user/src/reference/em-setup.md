@@ -305,6 +305,12 @@ the other.
 A run with component ports writes `<setup>_cosim.cnl` and, with **Create SnP schematic** ticked, a `_cosim` cell:
 [A schematic to start from](#snp-schematic).
 
+**Each part's port is one more port of the result.** In the Touchstone each one is terminated in its Z0 when you read
+S directly, so a series part's pads are bridged by 50 Ω: S(2,1) across a series capacitor reads a few dB, where the
+board with nothing fitted reads tens of dB down. The Data Display a run opens plots the board as it is drawn instead, with
+every part's port open: the `PartsOpen` group of `<name>_em.npy`, which holds `S` and `Z0` over the other ports. A
+connector's port is a real port and stays in it. To see the board with its parts fitted, run the `_cosim` netlist.
+
 ## Mesh — the uniform-line kernel {#mesh}
 
 This group appears for the **cross-section** kernel. It meshes a 2D cross-section, so its knobs are about
@@ -521,7 +527,8 @@ unless that name says otherwise:
 - **The `<name>_em.npy` dataset**, carrying what Touchstone cannot: the per-kernel diagnostics group — Z_c, γ,
   ε_eff, attenuation and per-unit-length RLGC for the cross-section kernel, and the calibration's own
   residual and usability flags for the full-wave one. Open it in the [Data Display](data-display.html)
-  like any other run.
+  like any other run. A run with component ports adds the `PartsOpen` group: the other ports'
+  S with every part's port open ([Component ports](#component-ports)).
 - **The field set `<name>.fields/`**, when the run keeps per-port fields.
 - **The result record `<name>.cemr`**, which says how the result was made: the whole setup as this run used
   it, the ports, the sweep, the solver and the mesh. `circuitrf explain <name>.cemr` prints those settings and

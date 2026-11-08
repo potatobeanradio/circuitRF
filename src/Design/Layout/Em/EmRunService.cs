@@ -1289,7 +1289,10 @@ public static class EmRunService
                                                        ports.Ports, ports.SourceLabels,
                                                        source.DbuPerMicron, source.View.DisplayUnit), stamp);
                 return null;
-            }), errors);
+            })
+            {
+                PartPorts = EmPartsOpen.PositionsOf(ports.Ports, p => portLabels.ComponentBuild?.Ports.Any(c => c.Ok && !c.Connector && c.Number == p.Number) == true),
+            }, errors);
 
         // brief-lcp-7 R-lcp7-2 — the component ports this run solved, for its co-simulation netlist; R-lcp7-4 — and why that netlist
         // reads the Touchstone when a pattern was asked for and none could be stored.
