@@ -290,7 +290,8 @@ public static class Authoring
     /// brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout, headlessly: the document
     /// <see cref="C3dHierarchy.NewFromLayout"/> makes (the one place it is made, and the call the GUI's command makes), written
     /// with <see cref="CellCreate.WriteThreeDView"/>. The cell's own layout is placed as an instance with View Layout, its 3D
-    /// setups are copied in as embedded setups and its port labels come in as ports, exactly as the GUI's does. The name the
+    /// setups are copied in as embedded setups, each Planar <c>.cem</c> with component ports becomes a 3D setup carrying them
+    /// (brief-lcp-6), and its port labels come in as ports, exactly as the GUI's does. The name the
     /// dialog asks for is <c>--name</c>, defaulting to the cell's; the workspace is the cell's nearest ancestor one.
     /// </summary>
     private static int NewView3d(string[] args)
@@ -340,8 +341,8 @@ public static class Authoring
         Console.WriteLine(path);
         JsonRun.AddOutput("3d", path);
         void Note(string text) { Console.Error.WriteLine("note: " + text); JsonRun.Note(CliDiagnostics.NewView3dNote(text)); }
-        if (made.SetupsCopied.Count > 0)
-            Note($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
+        // brief-lcp-6 R-lcp6-6 — one line per setup, with the component ports it carries, on stderr and in --json.
+        foreach (var setup in made.Setups) Note(setup.Describe());
         if (made.PortsNote is { } portsNote) Note(portsNote);
         foreach (string moved in made.PortsMoved) Note(moved);
         // brief-sdl-8 D4 — the names that drive a schematic-made layout, as VARs of the view linked to them.

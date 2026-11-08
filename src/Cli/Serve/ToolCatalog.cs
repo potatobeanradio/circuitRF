@@ -864,7 +864,7 @@ internal static class ToolCatalog
                 new("view3d", ["new", "view3d"],
                     [new("cell", true, "The cell folder whose layout the 3D view places.")],
                     [
-                        new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups and its port labels as ports; a layout made from the cell's schematic also brings one VAR per cell parameter and schematic VAR, linked by name. Required."),
+                        new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups, each Planar .cem with component ports made a 3D setup carrying that list (copied once: the two are separate afterwards), and its port labels as ports; a layout made from the cell's schematic also brings one VAR per cell parameter and schematic VAR, linked by name. Required."),
                         new("name", "--name", OptKind.Str, "The .c3d's name. Default: the cell's."),
                     ],
                     "A .c3d of the cell's layout, ready for a 3D run. Component ports need no 3D view: a .cem on the layout, planar or "

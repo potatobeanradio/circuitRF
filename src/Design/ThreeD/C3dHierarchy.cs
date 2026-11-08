@@ -64,6 +64,31 @@ public sealed record C3dFromLayout(C3dDocument? Document, string? Refusal, IRead
     /// <summary>brief-sdl-8 D4 — the VARs added because the layout was made from the cell's schematic, each linked by name to
     /// a cell parameter or a schematic VAR: what drives the layout drives any 3D-only body that uses one of them.</summary>
     public IReadOnlyList<string> LinkedVariables { get; init; } = [];
+
+    /// <summary>brief-lcp-6 R-lcp6-6 — every setup that came across, in <see cref="SetupsCopied"/>'s order, with the
+    /// <c>.cem</c> it came from and the component ports it carries.</summary>
+    public IReadOnlyList<C3dSetupCopied> Setups { get; init; } = [];
+}
+
+/// <summary>brief-lcp-6 R-lcp6-6 — one setup New 3D View from Layout brought in: its name in the <c>.c3d</c>, the <c>.cem</c>
+/// it came from, whether that <c>.cem</c> was Planar (so the setup was made, not copied), and its component port list.</summary>
+public sealed record C3dSetupCopied(string Name, string Cem, bool FromPlanar, IReadOnlyList<EmComponentPort> ComponentPorts)
+{
+    /// <summary>One sentence for the Messages panel and <c>new view3d</c>.</summary>
+    public string Describe()
+    {
+        string from = Path.GetFileName(Cem);
+        string head = FromPlanar
+            ? $"Made 3D setup '{Name}' from the Planar setup {from}, with its sweep and the default 3D solver"
+            : $"Copied 3D setup '{Name}' from {from} as an embedded setup";
+        if (ComponentPorts.Count == 0) return head + ".";
+        var named = ComponentPorts.Select(c => c.Refdes == EmSetup.AllComponents ? "every placed two-terminal part" : c.Refdes);
+        string tail = $", carrying {ComponentPorts.Count} component port entr{(ComponentPorts.Count == 1 ? "y" : "ies")} " +
+                      $"({string.Join(", ", named)})";
+        return head + tail + (FromPlanar
+            ? ". Each is built as a sheet in 3D, and a part that cannot be is named when the setup is first checked."
+            : ".");
+    }
 }
 
 /// <summary>One placed layout's port label, translated into the <c>.c3d</c>'s frame: the instance, the label's own port
@@ -877,6 +902,10 @@ public static class C3dHierarchy
     /// unit, DBU and snap, the layout's technology as <c>TechRef</c> (relative to <paramref name="c3dPath"/>), and a
     /// copy of every 3D <c>.cem</c> naming the layout as an embedded setup — its ports translated to parent-level ports
     /// where each is one axis-aligned rectangle, else left out and listed. Writes nothing.
+    /// <para>brief-lcp-6 — a Planar <c>.cem</c> with component ports becomes a new 3D setup of its own name: its sweep, its
+    /// component port list, the default 3D solver, and none of its planar mesh settings. One setup per <c>.cem</c>, never a
+    /// merged list, and copied once: the two files share nothing afterwards. The list is copied, not its verdict; creating the
+    /// view builds no component port, so a part that cannot be a sheet is named when the 3D setup is first checked.</para>
     /// </summary>
     public static C3dFromLayout NewFromLayout(string cellDir, string c3dPath, string? workspaceCws, TechnologyCache? cache = null)
     {
@@ -902,17 +931,30 @@ public static class C3dHierarchy
         var names = new HashSet<string>(StringComparer.Ordinal);
         var ports = new Dictionary<int, C3dPort>();
         var moved = new List<string>();
+        var setups = new List<C3dSetupCopied>();
         foreach (string cem in cems.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
         {
             EmSetup setup;
             try { setup = EmSetupPersistence.LoadFromFile(cem); }
             catch { continue; }
-            if (!setup.Is3D) continue;
+            bool fromPlanar = !setup.Is3D;
+            if (fromPlanar)
+            {
+                // brief-lcp-6 R-lcp6-2 — a Planar .cem crosses only for its component ports, and only what a 3D solver reads.
+                if (setup.ComponentPorts.Count == 0) continue;
+                var made = DefaultPortSetup(setup.LayoutRef);
+                made.Name = setup.Name;
+                made.Frequency = setup.Frequency;
+                made.AdditionalFrequencies = [.. setup.AdditionalFrequencies];
+                made.ComponentPorts = [.. setup.ComponentPorts];
+                setup = made;
+            }
             if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(cem);
             string baseName = setup.Name;
             for (int n = 2; !names.Add(setup.Name); n++) setup.Name = $"{baseName} {n}";
             doc.Setups.Add(EmSetupPersistence.ToEmbedded(setup));
             copied.Add(setup.Name);
+            setups.Add(new C3dSetupCopied(setup.Name, cem, fromPlanar, [.. setup.ComponentPorts]));
             TranslatePorts(setup, cem, workspaceCws, cache, view, ports, leftOut, moved);
         }
         // R-pw1-6 — a layout no 3D setup names still brings in its ports, translated with a default driven setup.
@@ -928,7 +970,8 @@ public static class C3dHierarchy
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
         // brief-sdl-8 D4 — a layout made from the cell's schematic brings one linked VAR per name that drives it.
         var linked = view.GeneratedPlacements.Count > 0 ? AddLinkedVariables(doc, cellDir) : [];
-        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote, PortsMoved = moved, LinkedVariables = linked };
+        return new C3dFromLayout(doc, null, copied, leftOut)
+            { PortsNote = portsNote, PortsMoved = moved, LinkedVariables = linked, Setups = setups };
     }
 
     /// <summary>The document New 3D View from Layout starts from: one instance <c>U1</c> of the cell's layout at the origin, the

@@ -28983,3 +28983,23 @@ technology's own rules, which are the board's and not the import's. Nothing was 
   ports, solids, landings and Gmsh script; no component ports equals the generator; the three refusals; the mesh script is stable across a
   no-op (so `MeshCurrency` agrees); the marks; `explain --component-ports` and `em --dry-run` as processes, writing nothing. Show 3D was
   looked at with `UiSnapshot --cem-3d` (new): the two edge sheets and two flat gap sheets with their arrows.
+
+## New 3D View carries a .cem's component ports (brief LCP-6, 2026-11-07)
+
+- **One place.** Every route (the `.cem` window's button, the layout toolbar, the Project tree, Design ▸ New 3D View from Layout,
+  `new view3d --from-layout`, MCP `create what=view3d`) reaches `C3dHierarchy.NewFromLayout`, so the rule lives there alone.
+- **A Planar `.cem` with component ports** becomes a setup built on `DefaultPortSetup` (default 3D solver, driven): its name, `Frequency`,
+  `AdditionalFrequencies` (the rest of the sweep, so a segmented plan is not cut to its first segment) and `ComponentPorts`, entries and all.
+  Planar mesh settings, adaptive sampling and the drawn ports' `PortZ0s` do not cross: the last matches what the default driven setup
+  already gave a layout with no 3D `.cem`, so a drawn port's Z0 in the view is the 3D default either way. The setup also translates the
+  drawn port labels, through `TranslatePorts`, so it counts as a copied setup and `PortsNote` (the default-setup note) does not fire.
+  A Planar `.cem` with no component ports is skipped as before.
+- **R-lcp6-1 was already true.** `TranslateWith` has cleared `ComponentPorts` on its clone since LCP-5; the embedded copy keeps its list.
+- **Reporting.** `C3dFromLayout.Setups` (`C3dSetupCopied`: name, source `.cem`, `FromPlanar`, list) replaces the one "Copied N 3D setup(s)"
+  line: the GUI posts `Describe()` once per setup to Messages, `new view3d` prints it as a `note:` and adds it to `--json` as a
+  `new.view3d.note` (no new diagnostic id).
+- **No check at creation (R-lcp6-5).** Nothing is built; a part that cannot be a sheet is named the first time the 3D setup is checked.
+- **Test trap:** `FrequencySpec` is a class with no value equality, so `Assert.Equal` on two equal sweeps fails; compare its fields.
+- Gate: `tests/Ui.Tests/Em3d/NewViewComponentPortsTests.cs` (gates 1-5, documents only) and
+  `AuthoringCliVerbTests.NewView3dFromLayout_WritesTheSameBytesAsTheCallTheGuiMakes` (gate 6: its cell now carries a Planar `.cem` with
+  C1 and C2, and the CLI's note names the setup).

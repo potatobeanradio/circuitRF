@@ -24,6 +24,7 @@ using System.Text.RegularExpressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
@@ -227,7 +228,13 @@ public sealed class AuthoringCliVerbTests : IDisposable
                 Layer = top, PortLayer = top, X = 0, Y = 150_000, Text = "1", Height = 100_000, IsPort = true,
                 PortKind = CircuitRF.Engine.Mom.PlanarPortKind.Edge, PortDirection = LayoutRotation.R0,
             });
-            CellCreate.WriteLayoutView(Path.Combine(ws, "Line"), "Line", view);
+            string clay = CellCreate.WriteLayoutView(Path.Combine(ws, "Line"), "Line", view);
+            // brief-lcp-6 gate 6 — a Planar .cem with component ports, which both routes make into a 3D setup.
+            EmSetupPersistence.SaveToFile(Path.Combine(ws, "line.cem"), new EmSetup
+            {
+                Name = "line", LayoutRef = Path.GetRelativePath(ws, clay).Replace('\\', '/'), AnalysisKind = CircuitRF.Engine.Mom.EmAnalysisKind.Planar,
+                ComponentPorts = [new EmComponentPort("C1"), new EmComponentPort("C2", Z0: "25")],
+            });
             return Path.Combine(ws, "Line");
         }
         string cliCell = Make(Dir("cli3dl")), guiCell = Make(Dir("gui3dl"));
@@ -245,6 +252,9 @@ public sealed class AuthoringCliVerbTests : IDisposable
         var doc = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(cliPath);
         Assert.Equal(CircuitRF.Design.ThreeD.C3dInstanceView.Layout, Assert.Single(doc.Instances).View);
         Assert.Equal(1, Assert.Single(doc.Ports).Number);
+        var setup = EmSetupPersistence.FromEmbedded(Assert.Single(doc.Setups));
+        Assert.Equal(["C1", "C2"], setup.ComponentPorts.Select(c => c.Refdes));
+        Assert.Contains(Assert.Single(made.Setups).Describe(), run.StdErr, StringComparison.Ordinal);
     }
 
     /// <summary>An imported part, byte for byte against <see cref="ComponentImport.Import"/> — the

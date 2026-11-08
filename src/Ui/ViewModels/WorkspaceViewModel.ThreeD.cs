@@ -419,7 +419,7 @@ public partial class WorkspaceViewModel
         _factory.ProjectTreeTool?.Refresh();
         RefreshCellEditorFileLists(cellDir);
         Messages.Success("Created", path);
-        if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
+        foreach (var setup in made.Setups) Messages.Info(setup.Describe());   // brief-lcp-6 R-lcp6-6 — one line per setup
         if (made.PortsNote is { } portsNote) Messages.Info(portsNote);
         foreach (string moved in made.PortsMoved) Messages.Info(moved);
         if (made.PortsLeftOut.Count > 0) Messages.Warning(C3dHierarchy.PortsLeftOutSentence(made.PortsLeftOut));
