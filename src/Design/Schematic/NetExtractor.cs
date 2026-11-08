@@ -106,8 +106,19 @@ public static class NetExtractor
         /// </summary>
         public IReadOnlyList<string> DroppedInstances { get; init; } = [];
 
-        /// <summary>Why a run must not go ahead with this extraction, or null. <see cref="DroppedInstances"/>.</summary>
-        public string? RunRefusal => RefusalFor(DroppedInstances);
+        /// <summary>
+        /// Every device inside a kit cell this circuit REACHES that names a <c>.model</c> card nothing can build — no
+        /// compiled model implementing or standing in for it, and no built-in — each as the conflict that says why and
+        /// what to declare. Each is ALSO among <see cref="Conflicts"/>. A run refuses while any is here: left as the kit
+        /// wrote it, the device fails elaboration as a cell "not found", which names the card and nothing else.
+        /// </summary>
+        public IReadOnlyList<string> UnbuiltDevices { get; init; } = [];
+
+        /// <summary>Why a run must not go ahead with this extraction, or null. <see cref="DroppedInstances"/>,
+        /// then <see cref="UnbuiltDevices"/>.</summary>
+        public string? RunRefusal => RefusalFor(DroppedInstances)
+            ?? (UnbuiltDevices.Count == 0 ? null
+                : "Not simulated: a device inside a placed kit part cannot be built. " + string.Join(" ", UnbuiltDevices));
 
         /// <summary><see cref="RunRefusal"/> for a list of dropped instances.</summary>
         public static string? RefusalFor(IReadOnlyList<string> dropped) => dropped.Count == 0 ? null
@@ -235,8 +246,30 @@ public static class NetExtractor
             PartRangeWarnings = VendorLibraries.VendorPartRange.Warnings(tb, imports.VendorParts),
             PartRefusals = imports.VendorRefusals,
             DroppedInstances = imports.DroppedInstances,
+            UnbuiltDevices = ReachedUnbuilt(tb, lib, imports.UnbuiltCards),
             PartTunables = PartTunablesOf(model, tb.Tuning, imports, lib, conflicts),
         };
+    }
+
+    /// <summary>
+    /// The sentences of the unbuilt card devices (<see cref="NetlistImports.UnbuiltCards"/>) the circuit actually
+    /// reaches. A kit file's cells are all copied, and most of them are never instantiated: those say their
+    /// conflict and refuse nothing.
+    /// </summary>
+    private static List<string> ReachedUnbuilt(TestBench tb, Library lib, IReadOnlyDictionary<string, string> unbuilt)
+    {
+        var said = new List<string>();
+        if (unbuilt.Count == 0) return said;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var todo = new Stack<IEnumerable<Instance>>([tb.Instances]);
+        while (todo.TryPop(out var instances))
+            foreach (var inst in instances)
+            {
+                if (lib.Find(inst.Reference) is { } cell) { if (seen.Add(cell.Name)) todo.Push(cell.Instances); }
+                else if (unbuilt.TryGetValue(inst.Reference, out string? why) && !said.Contains(why)) said.Add(why);
+            }
+        return said;
     }
 
     /// <summary>
@@ -997,6 +1030,10 @@ public static class NetExtractor
         /// <summary>The vendor parts this extraction refused, each as the conflict it added.</summary>
         public List<string> VendorRefusals { get; } = [];
 
+        /// <summary>Each <c>.model</c> card a kit cell's device names and nothing could build, to the conflict
+        /// that said why (<see cref="BindNativeDeviceTypes"/>, <see cref="ExtractionResult.UnbuiltDevices"/>).</summary>
+        public Dictionary<string, string> UnbuiltCards { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Each placed library model's emitted top cell, or why it could not be, keyed on its model folder —
         /// so two instances of one part read its <c>.cnl</c> once (brief vendorlib-9 R-vl9-3b).</summary>
         public Dictionary<string, (string? Top, string? Problem)> Models { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -1219,7 +1256,7 @@ public static class NetExtractor
     private static void BindNativeDeviceTypes(
         Library kitLibrary, string provider, EditableComponent comp,
         IReadOnlyList<SpiceModelCard> modelCards, IReadOnlyList<OsdiModel> osdiModels,
-        IReadOnlyDictionary<string, string> vaSources, List<string> conflicts)
+        IReadOnlyDictionary<string, string> vaSources, Dictionary<string, string> unbuilt, List<string> conflicts)
     {
         // The per-instance model-library override travels in the provider NAME, because that is what
         // the registry keys on — the same rule the leaf provider-backed path follows.
@@ -1241,11 +1278,18 @@ public static class NetExtractor
                 var card = modelCards.FirstOrDefault(
                     c => c.Name.Equals(inst.Reference, StringComparison.OrdinalIgnoreCase));
 
+                int said = conflicts.Count;
                 var routed = card is null
                     ? AsExtDevice(inst, BindByTypeName(inst, providerRef))
                     : RouteCardDevice(inst, card, provider, modelLibrary, osdiModels, vaSources, conflicts);
 
-                if (routed is null) continue;   // reported; left as written so the failure names it
+                // Reported, and left as written. The sentence is kept by card the first time it is said
+                // (a repeat is not said again), for a run that reaches this device to refuse with it.
+                if (routed is null)
+                {
+                    if (card is not null && conflicts.Count > said) unbuilt.TryAdd(card.Name, conflicts[^1]);
+                    continue;
+                }
                 cell.Instances[i] = routed;
             }
         }
@@ -1261,8 +1305,10 @@ public static class NetExtractor
     /// <summary>
     /// A device naming a <c>.model</c> card, in the order brief-gdf-1b §3 (D4) sets: a COMPILED model
     /// implementing the card's type first, because the kit or the user compiled it and that is the
-    /// kit's own statement of the model; then circuitRF's own physics, when the card translates onto
-    /// a built-in; then a refusal carrying the translation's own sentence.
+    /// kit's own statement of the model — the module the card names, else one the kit's settings
+    /// declare as the stand-in for the built-in the card names (<see cref="DeviceWorkerStandIn"/>);
+    /// then circuitRF's own physics, when the card translates onto a built-in; then a refusal carrying
+    /// the translation's own sentence and the stand-in that would answer it.
     ///
     /// <para><b>Why the built-in is second and not absent.</b> A diode, bipolar or sheet-resistor card
     /// is a device the kit's own simulator builds in; the kit ships no source for it, so sending the
@@ -1276,8 +1322,11 @@ public static class NetExtractor
         IReadOnlyList<OsdiModel> osdiModels, IReadOnlyDictionary<string, string> vaSources,
         List<string> conflicts)
     {
-        if (OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType) is not null)
-            return AsExtDevice(inst, RouteToCompiledModel(inst, card, provider, modelLibrary, osdiModels, conflicts));
+        if (OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType) is { } named)
+            return RouteToCompiledModel(inst, card, provider, modelLibrary, named, null, conflicts);
+
+        if (StandInFor(osdiModels, card) is ({ } implementor, { } standIn))
+            return RouteToCompiledModel(inst, card, provider, modelLibrary, implementor, standIn, conflicts);
 
         if (!SpiceModelCardTranslation.IsSupportedType(card.ModelType))
         {
@@ -1289,7 +1338,9 @@ public static class NetExtractor
                   $"File ▸ Manage Libraries."
                 : $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
                   $"'{card.Name}'): there is no compiled model, no source in the kit and no built-in " +
-                  $"for '{card.ModelType}' in kit '{provider}', so nothing can simulate it.");
+                  $"for '{card.ModelType}' in kit '{provider}', so nothing can simulate it. If it is a " +
+                  $"model the kit's own simulator builds in, declare a compiled one in the kit's " +
+                  $"settings to stand in for it: {StandInHint(card)}.");
             return null;
         }
 
@@ -1302,7 +1353,8 @@ public static class NetExtractor
             // Once, however many placed parts reach this kit cell: the cell is shared, so the same
             // instance is met again for every part built from the same library.
             string said = $"'{inst.InstanceName}' names the card '{card.Name}': {refusal} No compiled " +
-                          $"model implementing '{card.ModelType}' was found for kit '{provider}' either.";
+                          $"model implements or stands in for '{card.ModelType}' in kit '{provider}' either; " +
+                          $"to run it on one, declare it in the kit's settings: {StandInHint(card)}.";
             if (!conflicts.Contains(said)) conflicts.Add(said);
             return null;
         }
@@ -1476,7 +1528,8 @@ public static class NetExtractor
 
     /// <summary>
     /// Routes a device that references a <c>.model</c> card to the compiled artefact implementing the
-    /// card's type, or reports why it cannot and returns null.
+    /// card's type, or standing in for it, as an <c>ExtDevice</c>; or reports why it cannot and returns
+    /// null.
     ///
     /// <para><b>Three separate facts have to travel, and each is taken from the one place that knows
     /// it.</b> WHICH FILE comes from the artefact that declares the card's module — carried in the
@@ -1495,14 +1548,16 @@ public static class NetExtractor
     ///
     /// <para><b>A model-library chosen on the instance still wins</b>, because that is a user saying
     /// "evaluate this one against that file" and it can only mean the file it names.</para>
+    ///
+    /// <para><b>A stand-in's card was written for a built-in, not for the module</b>, so its names
+    /// and its terminal order are the built-in's. The declaration's maps translate both; a card name
+    /// left that the module does not declare is refused by name here, all of them at once, rather
+    /// than by the worker one Run at a time.</para>
     /// </summary>
-    private static List<ParameterAssignment>? RouteToCompiledModel(
+    private static Instance? RouteToCompiledModel(
         Instance inst, SpiceModelCard card, string provider, string? modelLibrary,
-        IReadOnlyList<OsdiModel> osdiModels, List<string> conflicts)
+        OsdiImplementor implementor, DeviceWorkerStandIn? standIn, List<string> conflicts)
     {
-        var implementor = OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType);
-        if (implementor is null) return null;   // RouteCardDevice asked first; never reached
-
         var declared = implementor.Parameters;
 
         // BLANK IS NOT UNSET HERE. `ModelLibrary` is declared on every kit part and defaults to an
@@ -1518,10 +1573,23 @@ public static class NetExtractor
             new("Type", implementor.TypeId, null),
         };
 
-        var placed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var placed  = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var unknown = new List<string>();
 
-        void Put(string name, string expression, string? unit)
+        void Put(string name, string expression, string? unit, bool fromCard)
         {
+            // A stand-in's map first: the card is written for the built-in, so its names are the
+            // built-in's. A level that picked the stand-in picked the model and is not a value of it.
+            // What the card still states that the module does not declare is refused below, never
+            // dropped — the stand-in would otherwise compute a different model in silence.
+            if (standIn is not null)
+            {
+                if (standIn.Parameters.TryGetValue(name, out string? to)) { if (to is null) return; name = to; }
+                else if (fromCard && standIn.Level is not null && name.Equals("level", StringComparison.OrdinalIgnoreCase)) return;
+
+                if (fromCard && !declared.Contains(name, StringComparer.OrdinalIgnoreCase)) { unknown.Add(name); return; }
+            }
+
             string spelling = OsdiModelDiscovery.AlignParameterCase(declared, name);
 
             // Never let a kit's own parameter shadow the two selectors above — the device would then
@@ -1534,10 +1602,67 @@ public static class NetExtractor
             else { placed[spelling] = overrides.Count; overrides.Add(new(spelling, expression, unit)); }
         }
 
-        foreach (var (name, value) in card.Parameters) Put(name, value, null);
-        foreach (var ov in inst.Overrides)             Put(ov.Name, ov.Expression, ov.Unit);
+        foreach (var (name, value) in card.Parameters) Put(name, value, null, fromCard: true);
+        foreach (var ov in inst.Overrides)             Put(ov.Name, ov.Expression, ov.Unit, fromCard: false);
 
-        return overrides;
+        if (unknown.Count > 0)
+        {
+            string said = $"The card '{card.Name}' runs on '{implementor.TypeId}' as its declared stand-in, " +
+                          $"and states {string.Join(", ", unknown)}, which that module does not declare. Map " +
+                          "each to the module's name for it, or to null to drop it, in the stand-in's \"parameters\".";
+            if (!conflicts.Contains(said)) conflicts.Add(said);
+            return null;
+        }
+
+        // A stand-in's terminal order: module terminal k takes the element line's node Terminals[k].
+        var nets = inst.NetBindings;
+        if (standIn is { Terminals.Count: > 0 })
+        {
+            if (standIn.Terminals.Any(k => k < 1 || k > inst.NetBindings.Count))
+            {
+                string said = $"'{inst.InstanceName}' writes {inst.NetBindings.Count} node(s), and the stand-in for " +
+                              $"the card '{card.Name}' maps its terminals from nodes " +
+                              $"[{string.Join(", ", standIn.Terminals)}], which the line does not all have.";
+                if (!conflicts.Contains(said)) conflicts.Add(said);
+                return null;
+            }
+            nets = [.. standIn.Terminals.Select(k => inst.NetBindings[k - 1])];
+        }
+
+        return new Instance(inst.InstanceName, ExtDeviceReference, nets, overrides) { RefNetBinding = inst.RefNetBinding };
+    }
+
+    /// <summary>
+    /// The artefact and declaration standing in for the built-in this card names, or null. A
+    /// declaration stating the card's level beats one for every level of its type.
+    /// </summary>
+    private static (OsdiImplementor, DeviceWorkerStandIn)? StandInFor(IReadOnlyList<OsdiModel> models, SpiceModelCard card)
+    {
+        string? level = card.Parameters.FirstOrDefault(kv => kv.Key.Equals("level", StringComparison.OrdinalIgnoreCase)).Value;
+
+        foreach (bool byLevel in new[] { true, false })
+            foreach (var model in models)
+                foreach (var s in model.StandIns)
+                    if (s.Model.Equals(card.ModelType.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                        (s.Level is not null) == byLevel && (s.Level is null || SameNumber(s.Level, level)) &&
+                        OsdiModelDiscovery.ImplementorOf([model], s.Module) is { } implementor)
+                        return (implementor, s);
+        return null;
+
+        static bool SameNumber(string a, string? b)
+            => b is not null && (a.Equals(b.Trim(), StringComparison.OrdinalIgnoreCase) ||
+               double.TryParse(a, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x) &&
+               double.TryParse(b, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y) &&
+               x == y);
+    }
+
+    /// <summary>The stand-in declaration that would route this card, for a refusal to quote.</summary>
+    private static string StandInHint(SpiceModelCard card)
+    {
+        string? level = card.Parameters.FirstOrDefault(kv => kv.Key.Equals("level", StringComparison.OrdinalIgnoreCase)).Value;
+        return $"\"standIns\": [{{ \"model\": \"{card.ModelType.Trim()}\"" +
+               (level is null ? "" : $", \"level\": \"{level}\"") +
+               ", \"file\": \"<compiled .osdi>\", \"module\": \"<its module>\" }]";
     }
 
     /// <summary>
@@ -1993,7 +2118,7 @@ public static class NetExtractor
         {
             definition = ElementDefinition(comp, ccell, element, read,
                                            GetEffectivePortDefs(model, comp, cellRefResolutions).Count(),
-                                           WorkspaceOf(model), conflicts);
+                                           WorkspaceOf(model), imports.UnbuiltCards, conflicts);
             if (definition is null) return null;
             if (lib.Find(definition.Name) is null) lib.Cells.Add(definition);
         }
@@ -2019,7 +2144,7 @@ public static class NetExtractor
                                   read.ModelCards,
                                   PdkKitRegistry.OsdiModelsOf(WorkspaceOf(model), ccell.ExternalProvider),
                                   PdkKitRegistry.VerilogASourcesOf(WorkspaceOf(model), ccell.ExternalProvider),
-                                  conflicts);
+                                  imports.UnbuiltCards, conflicts);
 
         // Copy the whole file's cells, not just the one named: the definition instantiates others
         // beside it, and walking the dependency graph would re-derive what reading the file already
@@ -2141,7 +2266,7 @@ public static class NetExtractor
     /// </summary>
     private static Cell? ElementDefinition(
         EditableComponent comp, CcellFile ccell, string element, NetlistImports.Netlist read,
-        int pins, string? workspaceRoot, List<string> conflicts)
+        int pins, string? workspaceRoot, Dictionary<string, string> unbuilt, List<string> conflicts)
     {
         string cardName = ccell.ExternalNetlistCell!;
 
@@ -2205,7 +2330,8 @@ public static class NetExtractor
         if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
             BindNativeDeviceTypes(built.Library, ccell.ExternalProvider!, comp, read.ModelCards,
                                   PdkKitRegistry.OsdiModelsOf(workspaceRoot, ccell.ExternalProvider),
-                                  PdkKitRegistry.VerilogASourcesOf(workspaceRoot, ccell.ExternalProvider), conflicts);
+                                  PdkKitRegistry.VerilogASourcesOf(workspaceRoot, ccell.ExternalProvider),
+                                  unbuilt, conflicts);
         return cell;
 
         static string Quoted(string v) => v.Any(char.IsWhiteSpace) ? $"'{v}'" : v;

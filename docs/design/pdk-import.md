@@ -226,7 +226,9 @@ every kit at workspace open**, because its palette shows every kit's parts.
 files and reads which modules they declare (`PdkImportReport.VerilogASources`, module → file); they are
 registered with the kit's parts. A device whose card type has no compiled model and no built-in is told to
 compile the kit's source only when the kit ships one for that module, naming the file; otherwise it is told
-there is no compiled model, no source in the kit and no built-in, with no advice to compile anything.
+there is no compiled model, no source in the kit and no built-in, with no advice to compile anything — only
+the `standIns` declaration that would run it on a compiled model of the user's own
+(`pdk-external-devices.md` §3.3).
 
 ---
 

@@ -981,8 +981,7 @@ public static class SpiceModelCardTranslation
                     $"'{card.Name}' is a {card.ModelType.Trim().ToUpperInvariant()} card that states "
                     + $"LEVEL={levelText}. circuitRF implements the level-1 {law} and no other level; a "
                     + "card written for another level uses the same parameter names for a different model, "
-                    + "so it is refused rather than read as level 1. A compiled model of that level, added "
-                    + "in File ▸ Manage Libraries, is used instead when one is found.");
+                    + "so it is refused rather than read as level 1.");
         }
 
         var (parameters, unmapped) = Collect(card, map);

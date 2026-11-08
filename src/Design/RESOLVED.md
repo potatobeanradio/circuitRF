@@ -29224,3 +29224,30 @@ the new labels.
 `SaveFieldsGHz: []`. It is applied by `EmSetup.CreateNew` (File ▸ New ▸ EM Setup, Update Layout from Schematic), the `.c3d`
 editor's Add, and `C3dHierarchy.DefaultPortSetup` (a 3D view made from a layout no 3D `.cem` names). An omitted section still
 means Standard and the sweep's centre, so no existing file changes meaning. A `.c3d` setup card shows the quality beside the name.
+
+## A kit card naming a simulator built-in runs on a declared compiled stand-in (2026-11-08)
+
+An open kit's bipolar subcircuit wrote its device as `Q… c b e s t card` on `.model card npn level = 9`, its own
+simulator's built-in. circuitRF has the level-1 bipolar only, so the card was refused; the device was left as written and
+the run failed with "Cell 'card' not found in libraries". The refusal also said a compiled model "of that level, added in
+File ▸ Manage Libraries, is used instead when one is found", which nothing did: a card is routed by its type word, and no
+module is called `npn`.
+
+- **What a card of this kind needs is declared, not found.** `standIns` in the kit's manifest or recorded settings
+  (`DeviceWorkerStandIn`) names the card's type and level, the `.osdi` and module, and where the two disagree the parameter
+  names and the terminal order. `PdkPartInstaller.WithStandIns` asks the worker for the declared file's modules at install,
+  as discovery does for the kit's own, and attaches the declaration to that artefact (`OsdiModel.StandIns`), so it travels
+  wherever the kit's compiled models already do. `RouteCardDevice` tries it after a module the card names and before
+  circuitRF's own physics: a declaration is the kit's or the user's statement of the model.
+- **Measured on that kit**, with the five-terminal VBIC 1.3 module as the stand-in and `vbe_max`/`vbc_max`/`vce_max` dropped
+  and `dtemp` mapped to `trise`: VBE 0.8 V, VCE 1.5 V, 27 °C, Nx=2 gives Ic 2.8933e-04 A and Ib 2.4813e-07 A, against
+  2.8933e-04 and 2.4843e-07 from the reference simulator's built-in, and identical to a hand-built cell around the same
+  module. Nx=8 and the two other corners agree with that cell to five digits as well.
+- **A card name the module does not declare is refused at extraction, every one at once.** The worker would refuse them
+  too, but one per Run. Dropping them would run a different model in silence.
+- **The run is refused rather than reaching the elaborator** when its circuit reaches a card nothing can build
+  (`ExtractionResult.UnbuiltDevices`, part of `RunRefusal`), with the sentence that quotes the declaration to write. Only
+  reached cells count: a kit file's cells are all copied in, and its other devices' refusals stay warnings. A `.cnl`
+  written from such a design still fails as "not found" when run on its own; the netlist carries no reason.
+- **The same cards write the circuit temperature as `temper`**, which had to be read as `temp` first (`src/Core/RESOLVED.md`,
+  under `TEMP`).
