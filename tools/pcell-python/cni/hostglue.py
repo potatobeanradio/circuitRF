@@ -117,6 +117,12 @@ def _hosts_the_glue_used(exc: BaseException, package: str) -> list[str]:
     where that package was found — not circuitRF's and not the standard library is the host it
     registers with. Python 3.10+ only (``sys.stdlib_module_names``); older interpreters keep the
     original error.
+
+    **A candidate whose own code is on the traceback is the host, and then only those are.** A kit's
+    initialiser imports ordinary libraries beside its host, and an error the host raised in Python
+    passes through the host's frames, so that narrows it to the module that refused. A host written
+    as a native extension leaves no frame, and then every candidate is returned;
+    :func:`install_host_module_for` puts them all back if standing in for them does not help.
     """
     stdlib = getattr(sys, "stdlib_module_names", None)
     if stdlib is None:
@@ -128,10 +134,12 @@ def _hosts_the_glue_used(exc: BaseException, package: str) -> list[str]:
         spec = None
     beside = [os.path.dirname(p) + os.sep for p in (spec.submodule_search_locations or [])] if spec else []
     hosts: list[str] = []
+    on_trace: set[str] = set()
     tb = exc.__traceback__
     while tb is not None:
         scope = tb.tb_frame.f_globals
         name = str(scope.get("__name__", ""))
+        on_trace.add(name.split(".")[0])
         if name.split(".")[0] == root and not name.startswith(package + "."):
             for value in list(scope.values()):
                 if not isinstance(value, types.ModuleType):
@@ -143,7 +151,7 @@ def _hosts_the_glue_used(exc: BaseException, package: str) -> list[str]:
                     continue
                 hosts.append(top)
         tb = tb.tb_next
-    return hosts
+    return [h for h in hosts if h in on_trace] or hosts
 
 
 def install_host_module_for(package: str) -> list[str]:
@@ -159,10 +167,17 @@ def install_host_module_for(package: str) -> list[str]:
     refuses circuitRF's objects (measured: its cell registration takes only its own declaration type),
     so it can only stop the kit from loading. A real host that does no harm is left alone.
 
+    **A stand-in that does not help is taken back.** When the import still fails after an installed
+    module was stood in for, the modules it displaced are put back and the FIRST error is raised: the
+    module was not the cause, and the kit's own error is the one worth reading. Leaving the stand-in
+    would also break that library for every later cell this worker draws.
+
     Returns the names that were stood in for, so a caller can report them. Raises the original error
     if the import fails for any other reason.
     """
     installed: list[str] = []
+    displaced: dict[str, Any] = {}           # module name -> the real module a stand-in replaced
+    first: BaseException | None = None
     for _ in range(MAX_HOST_MODULES):
         loaded = set(sys.modules)
         try:
@@ -180,9 +195,18 @@ def install_host_module_for(package: str) -> list[str]:
         except Exception as exc:                            # noqa: BLE001 - re-raised unless a host
             hosts = [h for h in _hosts_the_glue_used(exc, package) if h not in installed]
             if not hosts:
-                raise
-            # The kit's modules from the failed attempt go with it, so the retry runs the kit from
-            # the start against the stand-ins rather than half against the real host.
+                if first is None:
+                    raise
+                for name, module in displaced.items():
+                    sys.modules[name] = module
+                raise first from None
+            first = first or exc
+            # The real modules are kept to be put back. Then the kit's modules from the failed attempt
+            # go with it, so the retry runs the kit from the start against the stand-ins rather than
+            # half against the real host.
+            for name, module in list(sys.modules.items()):
+                if name.split(".")[0] in hosts:
+                    displaced.setdefault(name, module)
             for name in set(sys.modules) - loaded:
                 if name.split(".")[0] in [package.split(".")[0], *hosts]:
                     del sys.modules[name]

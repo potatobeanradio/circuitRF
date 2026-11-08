@@ -4454,11 +4454,9 @@ a number, but is set to 'rz'"), far from the line that caused it.
   needs it is printed fully bracketed by `SpiceBehaviouralSource.Print`, as the time rule already does. Text the
   parser cannot read, or that holds a node the printer cannot write, is left as it was.
 - Measured on a kit's 2 µm × 20 µm resistor: before, the run stopped with the error above; after,
-  0.1 V / I = 74.114 Ω against the reference simulator's 74.152 Ω. Two things on the `ExtDevice` path are not
-  this fix. It forwards the instance's `m` to the compiled model, which refuses it (the VerilogA path stopped
-  doing that on 2026-10-21), so the run needed the instance's `m` (1 there) removed by hand. And it forwards no temperature, so the
-  model runs at the worker's 300.0 K, not the reference's 300.15 K; 0.15 K at the card's tc1 of 0.0031/K is
-  0.047 %, consistent with the 0.05 % left.
+  0.1 V / I = 74.114 Ω against the reference simulator's 74.152 Ω. That run needed the
+  instance's `m` removed by hand, and the 0.05 % left was the worker's 300.0 K against 300.15 K (0.15 K at the
+  card's tc1 of 0.0031/K is 0.047 %). Both are fixed by the two `ExtDevice` entries of the same date.
 
 Gate: `SpiceExpressionTests.AComparisonIsANumber_AndANumberIsACondition` (every operator and position, 16
 cases), `AComparisonAlreadyInACondition_IsLeftAsWritten`, `ASwitchedTermInASubcircuitEvaluates`.

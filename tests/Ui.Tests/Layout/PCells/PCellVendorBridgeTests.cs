@@ -671,6 +671,51 @@ public sealed class PCellVendorBridgeTests
         Assert.Equal(["plate"], provider.GeneratorIds);
     }
 
+    /// <summary>
+    /// A kit whose initialiser fails on an error of its OWN, with an ordinary library imported beside
+    /// it, reports that error, and the library is still the real one afterwards. The library is not
+    /// on the traceback, so it is a host only by elimination; standing in for it does not cure the
+    /// import, so it is put back and the first error is the one raised.
+    /// </summary>
+    [PythonFact]
+    public void AKitsOwnError_IsReportedAsItself_AndTheLibrariesItImportedAreLeftAlone()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "crf-bug-" + Guid.NewGuid().ToString("N")[..8]);
+        string site = Path.Combine(root, "site");
+        string pkg  = Path.Combine(root, "kit", "bug_kit", "cells");
+        Directory.CreateDirectory(site);
+        Directory.CreateDirectory(pkg);
+        File.WriteAllText(Path.Combine(site, "helperlib.py"), "def area(w, h):\n    return w * h\n");
+        File.WriteAllText(Path.Combine(root, "kit", "bug_kit", "__init__.py"),
+                          "import helperlib\nfrom .cells import plate\nBAD = helperlib.area(2, 3) / 0\n");
+        File.WriteAllText(Path.Combine(pkg, "__init__.py"), "");
+        File.WriteAllText(Path.Combine(pkg, "plate.py"), "x = 1\n");
+        string script = Path.Combine(root, "entry.py");
+        File.WriteAllText(script, """
+            import helperlib
+            from cni.bridge import register_kit
+            print("\n".join(register_kit("bug_kit.cells").problems))
+            print("area", helperlib.area(2, 3))
+            """);
+
+        var info = new System.Diagnostics.ProcessStartInfo(PythonRunner.Interpreter!, [script])
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+        };
+        info.Environment["PYTHONPATH"] = string.Join(Path.PathSeparator,
+            PythonRunner.PackageRoot, Path.Combine(root, "kit"), site);
+        using var p = System.Diagnostics.Process.Start(info)!;
+        string output = p.StandardOutput.ReadToEnd();
+        string error  = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+
+        Assert.True(p.ExitCode == 0, error);
+        Assert.Contains("division by zero", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("_Inert", output, StringComparison.Ordinal);
+        Assert.Contains("area 6", output, StringComparison.Ordinal);
+    }
+
     // ── zero configuration ────────────────────────────────────────────────────
 
     /// <summary>

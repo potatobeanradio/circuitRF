@@ -54,6 +54,15 @@ Gate: `PCellVendorBridgeTests` — a synthetic kit per item, through the product
 whose straight cut would leave it), `ACopy_KeepsTheTagsTheKitSetOnTheOriginal`,
 `ASharedBaseTheKitNeverRegisters_IsNotOffered`. Each fails with its fix reverted.
 
+**Item 2 then stood in for libraries that were not the host.** Every non-kit, non-standard-library module in
+the initialiser's namespace counted as the host, whatever the failure. A kit importing an ordinary library and
+then failing on a bug of its own had that library replaced by an inert module, the retry failed on the stand-in
+("unsupported operand type(s) for /: '_Inert' and 'int'" in place of the kit's own error), and the library
+stayed broken for the rest of the worker. Now a candidate whose code is on the traceback is the host, and only
+those are; a host written as a native extension leaves no frame, so then every candidate still is. And when
+standing in does not cure the import, the displaced modules are put back and the first error is raised. Gate:
+`PCellVendorBridgeTests.AKitsOwnError_IsReportedAsItself_AndTheLibrariesItImportedAreLeftAlone`.
+
 ## Messages rows with a link, a bar or a button drew taller than plain ones (2026-10-31)
 
 A row carrying the file-path link, the progress counter, the expand toggle or the Relaunch button was 3, 3, 4
