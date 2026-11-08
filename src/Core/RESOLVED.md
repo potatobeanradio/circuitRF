@@ -4358,3 +4358,23 @@ stamp-time refusal.
   re-prefixed by message) and `TrlRefusalException`. Each renders the sentence it replaced, so every catch site and test
   reading the message is unchanged. The six `ArgumentException` contract checks in `NetworkInverse` and `Em3dGenerator`
   went on the allowlist: product code calls the `Try*` forms, which return their reason.
+
+## Port ranges: one S matrix per device on a shared bench (2026-11-07)
+
+Owner request: a bench with two S2P parts gives one 4-port `S`; a designer wants each part's own S21. The 4-port
+cube is unchanged; `measure DUT_2 = SP1.S(3:4, 3:4)` makes ports 3 to 4 a matrix of their own, renumbered from
+1, so `DUT_2(2,1)` is the bench's S43. Detail in `docs/design/measurements.md` "Port ranges".
+
+- **The bracket form already accepted `SP1.S[:, 1:2, 1:2]` and silently meant port 2 alone.** A pinned `i`/`j`
+  in brackets is a port number (`ResolvePin`), but a bracket range was the raw end-exclusive 0-based position
+  pair. Two meanings of `1:2` beside each other would have been a trap, so a range on `i`/`j` in brackets is now
+  refused (`measure.ports.bracket-range`), naming the parenthesised form. The Data Display's `a..b` range is a
+  different spelling and was left as it is.
+- **`lo:hi` parses only as a call argument** (`Parser.ParseCallArg`, a `PortRangeExpr` node). A conditional's
+  `?:` is consumed whole by `ParseExpr`, so a colon left after an argument can only open a range.
+- **A bare `DUT_1(2,1)` was an unknown function.** The built-in table's fallback now tries a name in scope
+  holding a cube with `i` and `j` before refusing, so an earlier measurement reads back by port number in a
+  later measure line and in a goal.
+- **No trace parser read `Name(i, j)`.** `TraceExpression.ScanRefs` skipped a cube name followed by `(`, so even
+  `SP1.S(2,1)` typed into a trace found no cube. `PortPairSpelling` rewrites it to the bracket form ahead of both
+  parsers and of `plot --trace`, so the card shows the pinned port rows exactly as a picked trace does.

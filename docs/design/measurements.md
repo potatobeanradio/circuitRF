@@ -156,6 +156,21 @@ axis stays 0-based positional — `SP1.S[0, :, 2, 1]` is S21 at the first sweep 
 
 The shared shorthand grammar is documented in `docs/design/trace-card.md` §5.
 
+### Port ranges: a sub-matrix by port number
+
+`SP1.S(3:4, 3:4)` is ports 3 to 4 of the S cube as a matrix of its own: every other axis kept, `i`/`j`
+holding the selected ports renumbered 1…k (labels carried), so a measurement holding it is read back
+as `DUT_2(2, 1)` — the bench's S43. `lo:hi` is port NUMBERS, both ends included, and selects the ports
+the axis has inside it (Terms 1, 2, 9, 10 give `S(9:10, 9:10)` as a 2-port); a plain number on one side
+pins that port. It is a `PortRangeExpr` argument (`Parser.ParseCallArg`) and is evaluated only as an
+argument of a port matrix — `Analysis.X(…)` where `X` has `i` and `j`, or a name in scope holding such a
+cube (`Evaluator.PortBlock.cs`). Anywhere else it is refused (`measure.ports.range-misplaced`).
+
+**The bracket form refuses a range on `i`/`j`** (`measure.ports.bracket-range`). Brackets count positions
+from 0 with the end excluded while a pinned `i`/`j` is a port number, so `SP1.S[:, 1:2, 1:2]` meant port 2
+alone. The Data Display and `plot --trace` rewrite `Name(i, j)` on a port-matrix cube to
+`Name[:, …, i, j]` before parsing (`PortPairSpelling`), so the card shows its port rows pinned.
+
 ### WSProbe: the reference document's derived metrics
 
 A run carrying a `WSProbe` adds the `wsp` matrix cube, six default cubes per probe and the

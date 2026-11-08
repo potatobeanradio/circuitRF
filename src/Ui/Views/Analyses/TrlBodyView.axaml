@@ -23,11 +23,11 @@
         <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
                    Text="{Binding Problem}" TextTrimming="CharacterEllipsis"/>
         <TextBlock Grid.Row="5" Grid.Column="0" Text="Fixture A:" FontSize="12" VerticalAlignment="Center"/>
-        <TextBox   Grid.Row="5" Grid.Column="1" FontSize="12" Text="{Binding FixtureA}" Watermark="{Binding FixtureAHint}"
+        <TextBox   Grid.Row="5" Grid.Column="1" FontSize="12" Text="{Binding FixtureA}" PlaceholderText="{Binding FixtureAHint}"
                    ToolTip.Tip="Where fixture A is written: port 1 the instrument side, port 2 the part's. Point the Deembed on port 1's side at it."/>
         <Button    Grid.Row="5" Grid.Column="2" Content="Browse…" FontSize="11" Padding="8,3" Click="OnBrowseAClick"/>
         <TextBlock Grid.Row="6" Grid.Column="0" Text="Fixture B:" FontSize="12" VerticalAlignment="Center"/>
-        <TextBox   Grid.Row="6" Grid.Column="1" FontSize="12" Text="{Binding FixtureB}" Watermark="{Binding FixtureBHint}"
+        <TextBox   Grid.Row="6" Grid.Column="1" FontSize="12" Text="{Binding FixtureB}" PlaceholderText="{Binding FixtureBHint}"
                    ToolTip.Tip="Where fixture B is written: port 1 the part's side, port 2 the instrument side. Point the Deembed on port 2's side at it."/>
         <Button    Grid.Row="6" Grid.Column="2" Content="Browse…" FontSize="11" Padding="8,3" Click="OnBrowseBClick"/>
     </Grid>

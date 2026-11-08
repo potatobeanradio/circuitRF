@@ -111,7 +111,8 @@ Pin sweep (one value vs a curve) — see <a href="simulations.html#two-tone-meas
 intermodulation</a>.</p>
 <h3 id="bracket-positional-fast-copypaste">2. Bracket — positional (fast copy/paste)</h3>
 <p>One token per cube axis, in cube-axis order (numpy-style): <code>:</code> keeps the axis, a name or integer
-<em>fixes</em> and drops it, <code>a:b</code> keeps a sub-range.</p>
+<em>fixes</em> and drops it, <code>a:b</code> keeps a sub-range. A range is not allowed on an S matrix's port axes;
+use a <a href="#port-ranges">port range</a> instead.</p>
 <pre><code class="language-text">Pout_W = 0.5 * real( HB1.V[:, &quot;Vout&quot;, 1] * conj(HB1.I[:, &quot;Iout&quot;, 1]) )
 </code></pre>
 <p>or <code>HB1.P(&quot;Iout&quot;)</code>.</p>
@@ -194,6 +195,32 @@ s11    = SP1.S[:, 1, 1]        S11
 is a clear error listing the available ports.</p>
 <p>The same <code>(i, j)</code> works on any result cube whose axes are ports: a <a href="simulations.html#trl">TRL calibration</a>'s
 fixtures, <code>CAL.SA(2, 1)</code> and <code>CAL.SB(2, 2)</code>, read exactly as <code>SP1.S(2, 1)</code> does.</p>
+<h3 id="port-ranges">One S matrix per device: port ranges</h3>
+<p>Simulate two 2-port parts on one bench and the result is a single 4-port <code>S</code>. A port range gives each
+part an S matrix of its own, so you can read each one's gain as S21:</p>
+<pre><code class="language-netlist">measure DUT_1 = SP1.S(1:2, 1:2)     ports 1 and 2, as a 2-port
+measure DUT_2 = SP1.S(3:4, 3:4)     ports 3 and 4, as a 2-port
+measure G1_dB = dB(DUT_1(2, 1))     S21 of the first part
+measure G2_dB = dB(DUT_2(2, 1))     S21 of the second part: the bench's S43
+</code></pre>
+<ul>
+<li><strong><code>lo:hi</code> is port numbers, both ends included.</strong> <code>3:4</code> is ports 3 and 4.</li>
+<li><strong>The result's ports are numbered from 1</strong>, so <code>DUT_2(2, 1)</code> is the bench's S43. Frequency and any
+sweep are kept.</li>
+<li><strong>A range takes the ports the result has inside it.</strong> On a bench whose ports are 1, 2, 9 and 10,
+<code>SP1.S(9:10, 9:10)</code> is a 2-port.</li>
+<li><strong>Rows and columns can differ.</strong> <code>SP1.S(3:4, 1:2)</code> is the coupling from the first part into the
+second. A single number on one side keeps just that port: <code>SP1.S(1:4, 1)</code> is every port's response to a
+signal into port 1.</li>
+<li><strong>It works for any number of ports and on any port matrix</strong>, including <code>Y</code>, <code>Z</code> and a TRL fixture's
+<code>SA</code>.</li>
+<li><strong>Read the new matrix as you would <code>S</code></strong>, in a later measure line, in a goal, or in a
+<a href="data-display.html">Data Display</a> trace: type <code>DUT_2(2,1)</code>, or pick <code>DUT_2</code> under Measurements and
+set its two port rows.</li>
+</ul>
+<p>Port ranges go in the parentheses only. In the bracket form a range counts positions from 0 with the end
+left out, so <code>SP1.S[:, 1:2, 1:2]</code> would mean port 2 alone. A range on a port axis inside brackets is
+therefore an error that tells you to write <code>SP1.S(1:2, 1:2)</code>.</p>
 <h2 id="wsprobe">WSProbe accessors</h2>
 <p>A run with a <a href="components.html#wsprobe">WSProbe</a> in it carries one <code>wsp</code> matrix plus a named set of
 outputs per probe, and both are reachable by accessor:</p>

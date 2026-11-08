@@ -96,6 +96,7 @@ public sealed partial class Evaluator
         ConditionalExpr cd => EvalConditional(cd, scope),
         CallExpr        cl => EvalCall(cl, scope),
         IndexExpr       ix => EvalIndex(ix, scope),
+        PortRangeExpr      => RefusePortRange(),
         _ => throw new ExpressionException($"Unknown AST node: {expr.GetType().Name}")
     };
 
@@ -297,7 +298,7 @@ public sealed partial class Evaluator
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
             "dBm"       => EvalDBm(cl, scope),      // 10·log10(|z|/1e-3)
-            _           => throw new UnknownFunctionException(cl.Name)
+            _           => EvalCallOnPortMatrix(cl, scope)
         };
     }
 
@@ -313,6 +314,10 @@ public sealed partial class Evaluator
 
         if (cl.Args.Length == 0)
             return new Value(ds[accessorName]);
+
+        // ── S(1:2, 1:2) — a block of ports as a matrix of its own (Evaluator.PortBlock.cs) ──
+        if (HasPortRange(cl) && ds.HasPortAxes(accessorName))
+            return EvalPortSelection(ds[accessorName], cl, cl.Name, scope);
 
         // ── S(portI, portJ) — S-parameter pair (1-based port numbers) ─────────
         if (accessorName == "S")
@@ -644,6 +649,7 @@ public sealed partial class Evaluator
                     args[d] = Range.All;
                     break;
                 case IndexTokenKind.Range:
+                    if (axis.Name is "i" or "j") throw BracketPortRange(ix, axis);
                     int lo = (int)EvalExpr(tok.A!, scope).AsReal();
                     int hi = (int)EvalExpr(tok.B!, scope).AsReal();
                     args[d] = new Range(lo, hi);

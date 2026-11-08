@@ -44,6 +44,10 @@ public static class AstWalker
             case CallExpr cl:
                 foreach (var a in cl.Args) Walk(a, refs);
                 break;
+            case PortRangeExpr pr:
+                Walk(pr.Lo, refs);
+                Walk(pr.Hi, refs);
+                break;
             case IndexExpr ix:
                 Walk(ix.Target, refs);
                 foreach (var tok in ix.Tokens)

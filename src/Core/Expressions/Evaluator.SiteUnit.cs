@@ -146,6 +146,7 @@ public sealed partial class Evaluator
             LogicExpr l       => AnyNode(l.Left, test) || AnyNode(l.Right, test),
             ConditionalExpr d => AnyNode(d.Condition, test) || AnyNode(d.Then, test) || AnyNode(d.Else, test),
             CallExpr cl       => cl.Args.Any(a => AnyNode(a, test)),
+            PortRangeExpr pr  => AnyNode(pr.Lo, test) || AnyNode(pr.Hi, test),
             IndexExpr ix      => AnyNode(ix.Target, test)
                                  || ix.Tokens.Any(t => (t.A is { } a && AnyNode(a, test)) || (t.B is { } b && AnyNode(b, test))),
             _                 => false,

@@ -71,7 +71,7 @@ public static class TraceExpression
         xUnit         = null;
         error         = "";
 
-        expression = expression.Trim();
+        expression = PortPairSpelling.Rewrite(expression.Trim(), ds);   // DUT_1(2,1) → DUT_1[:, 2, 1]
         if (string.IsNullOrEmpty(expression))
         {
             error = "Empty expression.";
@@ -375,7 +375,7 @@ public static class TraceExpression
     public static bool TryEvaluateValue(string expression, DataSet ds, out Value value, out string error)
     {
         value = default;
-        expression = expression.Trim();
+        expression = PortPairSpelling.Rewrite(expression.Trim(), ds);
         if (!ScanRefs(expression, ds, out var refs, out var subs, out error)) return false;
         return TryEvaluateWholeValue(expression, ds, refs, subs, out value, out _, out error);
     }

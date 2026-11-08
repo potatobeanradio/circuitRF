@@ -163,11 +163,11 @@ public sealed class Parser
                         Advance();                   // consume '('
                         if (Current.Kind != TokenKind.RParen)
                         {
-                            qArgs.Add(ParseExpr(0));
+                            qArgs.Add(ParseCallArg());
                             while (Current.Kind == TokenKind.Comma)
                             {
                                 Advance();
-                                qArgs.Add(ParseExpr(0));
+                                qArgs.Add(ParseCallArg());
                             }
                         }
                         Expect(TokenKind.RParen, ")");
@@ -181,11 +181,11 @@ public sealed class Parser
                     var args = new List<Expr>();
                     if (Current.Kind != TokenKind.RParen)
                     {
-                        args.Add(ParseExpr(0));
+                        args.Add(ParseCallArg());
                         while (Current.Kind == TokenKind.Comma)
                         {
                             Advance();
-                            args.Add(ParseExpr(0));
+                            args.Add(ParseCallArg());
                         }
                     }
                     Expect(TokenKind.RParen, ")");
@@ -195,6 +195,19 @@ public sealed class Parser
             default:
                 throw new ParseException($"Unexpected token '{t.Text}'", t.Position);
         }
+    }
+
+    /// <summary>
+    /// One call argument: an expression, or a port range <c>lo:hi</c> (<c>SP1.S(1:2, 1:2)</c>). A conditional's
+    /// <c>?:</c> is consumed whole by <see cref="ParseExpr"/>, so a colon left after it can only open a range; the
+    /// evaluator refuses a range anywhere but a port matrix's arguments.
+    /// </summary>
+    private Expr ParseCallArg()
+    {
+        var first = ParseExpr(0);
+        if (Current.Kind != TokenKind.Colon) return first;
+        Advance();
+        return new PortRangeExpr(first, ParseExpr(0));
     }
 
     // ── Postfix cube indexing ─────────────────────────────────────────────────

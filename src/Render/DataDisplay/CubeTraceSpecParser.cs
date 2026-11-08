@@ -29,7 +29,7 @@ namespace CircuitRF.Render.DataDisplay
             transform = CubeTransform.None;
             error     = "";
 
-            text = text.Trim();
+            text = PortPairSpelling.Rewrite(text.Trim(), ds);   // DUT_1(2,1) → DUT_1[:, 2, 1]
             if (string.IsNullOrEmpty(text))
             {
                 error = "Empty specification.";

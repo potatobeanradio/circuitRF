@@ -908,6 +908,9 @@ internal static class PlotVerb
         else if (versusError.Length > 0)
             return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(spec.Raw, spec.Text, versusError)));
 
+        // DUT_1(2,1), as a measure line reads a port matrix, is DUT_1[:, 2, 1] here: the trace card's spelling, so
+        // every branch below — and the .cdd it writes — sees the form it already reads.
+        yText = PortPairSpelling.Rewrite(yText, data);
         var (tc, refusal) = BuildYTrace(spec, yText, data, sourceRef, index, plotType);
         if (tc is not null && xText is not null) tc.XSpec = xText;
         return (tc, refusal);

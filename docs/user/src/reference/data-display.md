@@ -90,7 +90,7 @@ net it taps), and the branch axis of `I` with your IProbe names.
 | `V` | `[node]` → `[node, harmonic]` → `[sweep…, node, harmonic]` | Complex for HB, real for DC |
 | `I` | `[branch]` → `[branch, harmonic]` → `[sweep…, branch, harmonic]` | Complex or real |
 | `S` | `[freq, i, j]`, or `[sweep…, freq, i, j]` | Complex |
-| a measurement | a scalar, or `[sweep…]` | Real or complex |
+| a measurement | a scalar, or `[sweep…]`; a [port range](measurements.html#port-ranges) keeps `S`'s `[freq, i, j]` | Real or complex |
 
 **A trace is a one-dimensional slice through a cube.** Authoring a trace means saying, for each axis of
 the cube, what to do with it: use it as the X axis, iterate it as a family of curves, or pin it to one
@@ -195,6 +195,11 @@ number</strong>, so <code>SP1.S[:, 2, 1]</code> is S21 and <code>SP1.S[:, 1, 1]<
 RF engineer names them. Every other axis (<code>freq</code>, a sweep, <code>harmonic</code>) uses a
 0-based index, and labelled axes use quoted names. A port outside 1..N is reported, not clamped.</p>
 </div>
+
+A port matrix can also be read the way a measure line reads it: `SP1.S(2,1)` is `SP1.S[:, 2, 1]`, and a
+measurement holding one, such as `DUT_2 = SP1.S(3:4, 3:4)`
+([port ranges](measurements.html#port-ranges)), is `DUT_2(2,1)`. The card shows it with its two port rows
+pinned, as if you had picked them.
 
 Validity is checked as you type: exactly one X or none, at most one `~`, and a `~` needs an X. Anything
 else is reported inline under the box rather than silently producing a different curve.

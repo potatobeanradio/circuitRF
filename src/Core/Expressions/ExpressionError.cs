@@ -1,7 +1,14 @@
 namespace CircuitRF.Core.Expressions;
 
 /// <summary>Base for all expression-engine errors (§15). Always names the offending text.</summary>
-public class ExpressionException(string message) : Exception(message);
+public class ExpressionException(string message) : Exception(message)
+{
+    /// <summary>A coded refusal; its message is the diagnostic rendered, so every caller reading the message is unchanged.</summary>
+    public ExpressionException(CircuitRF.Diagnostics.Diagnostic diagnostic) : this(diagnostic.Render()) => Diagnostic = diagnostic;
+
+    /// <summary>The coded refusal, when it was thrown as one.</summary>
+    public CircuitRF.Diagnostics.Diagnostic? Diagnostic { get; }
+}
 
 public class CycleException(string chain)
     : ExpressionException($"Cyclic dependency detected: {chain}")

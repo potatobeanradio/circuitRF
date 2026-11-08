@@ -42,6 +42,12 @@ public sealed record CallExpr(string Name, Expr[] Args) : Expr;
 /// </summary>
 public sealed record StringLiteralExpr(string Value) : Expr;
 
+/// <summary>
+/// A port range <c>lo:hi</c> written as an argument of a port matrix, <c>SP1.S(1:2, 1:2)</c>: the ports numbered
+/// <c>lo</c> to <c>hi</c>, both included, renumbered from 1 in the result. Only a port-matrix argument may hold one.
+/// </summary>
+public sealed record PortRangeExpr(Expr Lo, Expr Hi) : Expr;
+
 /// <summary>Kind of one token inside a cube index: ':' (whole), a pin (int/label), or 'a:b' (range).</summary>
 public enum IndexTokenKind { Whole, Pin, Range }
 

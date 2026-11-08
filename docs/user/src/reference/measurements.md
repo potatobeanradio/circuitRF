@@ -102,7 +102,8 @@ intermodulation](simulations.html#two-tone-meas).
 ### 2. Bracket — positional (fast copy/paste)
 
 One token per cube axis, in cube-axis order (numpy-style): `:` keeps the axis, a name or integer
-*fixes* and drops it, `a:b` keeps a sub-range.
+*fixes* and drops it, `a:b` keeps a sub-range. A range is not allowed on an S matrix's port axes;
+use a [port range](#port-ranges) instead.
 
 ```text
 Pout_W = 0.5 * real( HB1.V[:, "Vout", 1] * conj(HB1.I[:, "Iout", 1]) )
@@ -189,6 +190,36 @@ is a clear error listing the available ports.
 
 The same `(i, j)` works on any result cube whose axes are ports: a [TRL calibration](simulations.html#trl)'s
 fixtures, `CAL.SA(2, 1)` and `CAL.SB(2, 2)`, read exactly as `SP1.S(2, 1)` does.
+
+### One S matrix per device: port ranges {#port-ranges}
+
+Simulate two 2-port parts on one bench and the result is a single 4-port `S`. A port range gives each
+part an S matrix of its own, so you can read each one's gain as S21:
+
+```netlist
+measure DUT_1 = SP1.S(1:2, 1:2)     ports 1 and 2, as a 2-port
+measure DUT_2 = SP1.S(3:4, 3:4)     ports 3 and 4, as a 2-port
+measure G1_dB = dB(DUT_1(2, 1))     S21 of the first part
+measure G2_dB = dB(DUT_2(2, 1))     S21 of the second part: the bench's S43
+```
+
+- **`lo:hi` is port numbers, both ends included.** `3:4` is ports 3 and 4.
+- **The result's ports are numbered from 1**, so `DUT_2(2, 1)` is the bench's S43. Frequency and any
+  sweep are kept.
+- **A range takes the ports the result has inside it.** On a bench whose ports are 1, 2, 9 and 10,
+  `SP1.S(9:10, 9:10)` is a 2-port.
+- **Rows and columns can differ.** `SP1.S(3:4, 1:2)` is the coupling from the first part into the
+  second. A single number on one side keeps just that port: `SP1.S(1:4, 1)` is every port's response to a
+  signal into port 1.
+- **It works for any number of ports and on any port matrix**, including `Y`, `Z` and a TRL fixture's
+  `SA`.
+- **Read the new matrix as you would `S`**, in a later measure line, in a goal, or in a
+  [Data Display](data-display.html) trace: type `DUT_2(2,1)`, or pick `DUT_2` under Measurements and
+  set its two port rows.
+
+Port ranges go in the parentheses only. In the bracket form a range counts positions from 0 with the end
+left out, so `SP1.S[:, 1:2, 1:2]` would mean port 2 alone. A range on a port axis inside brackets is
+therefore an error that tells you to write `SP1.S(1:2, 1:2)`.
 
 ## WSProbe accessors {#wsprobe}
 

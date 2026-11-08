@@ -210,7 +210,7 @@ net it taps), and the branch axis of <code>I</code> with your IProbe names.</p>
 </tr>
 <tr>
 <td>a measurement</td>
-<td>a scalar, or <code>[sweep…]</code></td>
+<td>a scalar, or <code>[sweep…]</code>; a <a href="measurements.html#port-ranges">port range</a> keeps <code>S</code>'s <code>[freq, i, j]</code></td>
 <td>Real or complex</td>
 </tr>
 </tbody>
@@ -490,6 +490,10 @@ number</strong>, so <code>SP1.S[:, 2, 1]</code> is S21 and <code>SP1.S[:, 1, 1]<
 RF engineer names them. Every other axis (<code>freq</code>, a sweep, <code>harmonic</code>) uses a
 0-based index, and labelled axes use quoted names. A port outside 1..N is reported, not clamped.</p>
 </div>
+<p>A port matrix can also be read the way a measure line reads it: <code>SP1.S(2,1)</code> is <code>SP1.S[:, 2, 1]</code>, and a
+measurement holding one, such as <code>DUT_2 = SP1.S(3:4, 3:4)</code>
+(<a href="measurements.html#port-ranges">port ranges</a>), is <code>DUT_2(2,1)</code>. The card shows it with its two port rows
+pinned, as if you had picked them.</p>
 <p>Validity is checked as you type: exactly one X or none, at most one <code>~</code>, and a <code>~</code> needs an X. Anything
 else is reported inline under the box rather than silently producing a different curve.</p>
 <p>The box also accepts a free <strong>expression</strong> across cubes — <code>mag(HB1.V) - mag(HB1.Vref)</code>,
