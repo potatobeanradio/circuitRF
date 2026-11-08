@@ -76,7 +76,7 @@ public sealed class OsdiWorkerTests
 
         // Settable parameters only. The model also declares an OP-VAR, which is an output; offering
         // it would put a writable box in the editor for a value the model computes.
-        Assert.Equal(["g0", "c", "tc", "tnom", "mult"], d.Parameters.Select(x => x.Name).ToArray());
+        Assert.Equal(["g0", "c", "tc", "tnom", "mult", "shrink", "gmin"], d.Parameters.Select(x => x.Name).ToArray());
         Assert.DoesNotContain(d.Parameters, x => x.Name == "temp_k");
     }
 

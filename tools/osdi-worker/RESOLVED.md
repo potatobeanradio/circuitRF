@@ -131,3 +131,60 @@ Gate: `tools/fake-osdi-model`'s `crf_fet` now calls a `pnjlim` entry and keeps o
 code does, so `verify.py` and every C# test that evaluates `crf_fet` through the real worker
 (`OsdiWorkerTests`, `WorkerOpVarProtocolTests`, `ExternalDeviceHbDcConsistencyTests`,
 `ExternalDeviceBatchingTests`) crash on a worker without the fix.
+
+## `$simparam("shrink")` was answered 1.0, so a compiled resistor came out 1 % small (2026-11-08)
+
+An open process kit's compiled R3 resistor, drawn 20 µm × 2 µm, read 74.1482 Ω at 27 °C where an
+independent SPICE simulator reads 74.1518 Ω. Its op-vars gave leff = 19.8 µm and weff = 1.99 µm,
+against 20.0 and 2.01 µm there. R3 declares a model parameter `shrink`, in percent, whose default is
+`$simparam("shrink", 0.0)`, and scales every drawn dimension by (1 − 0.01·shrink). The worker's table
+answered `shrink` with 1.0, so every such device was set up 1 % short and narrow. Stating `shrink=0`
+on the device gave 74.15175 Ω.
+
+**Fix.** `shrink` is no longer in `g_sim_names`, so the model's own default stands. The Verilog-AMS
+LRM lists it among the optional simulator parameters, a shrink of instance geometry, and the
+reference simulator does not answer it (table below). Answering 0 would have fixed R3 too, but would
+zero the geometry of a model that reads it as a factor; leaving it out is right either way.
+
+**Every entry, probed.** One Verilog-A module reads each name with a fallback of −999 and reports
+it as an op-var. It was compiled once and run in both hosts ("—": not answered, the model's
+fallback stands):
+
+| name | reference simulator | this worker |
+|---|---|---|
+| `gdev` | 1e-12 | — |
+| `gmin` | 1e-12 | 1e-12 |
+| `imax` | — | 1 |
+| `imelt` | — | 1 |
+| `iteration` | — | 1 |
+| `minr` | — | 1e-3 |
+| `scale` | — | 1 |
+| `shrink` | — | — (was 1) |
+| `simulatorVersion` | 47 | 1 |
+| `sourceScaleFactor` | 1 | 1 |
+| `tnom` | 27 | 27 |
+
+The rest are left as they are. `scale` 1 is the identity every model defaults to, and `minr` 1e-3
+matches the fallback of the models it was added for. `imax` 1 A equals R3's own default, and nothing
+in the kit's model sources reads `imelt`, `iteration`, `gdev` or `simulatorVersion`. But `imax` and
+`imelt` override a model whose own default differs, where the reference leaves it alone, and
+`iteration` is a constant rather than the solver's count. They are the first place to look if a
+model's linearisation current or first-iteration behaviour ever disagrees.
+
+**Gate.** `tools/fake-osdi-model`'s `crf_rc` gained two model parameters that default from
+`$simparam`, scanning the host's NULL-terminated names as compiled code does: `gmin`, which the
+worker answers, and `shrink`, which it must not. `verify.py` reads both back through `defaults`.
+`shrink == 0` fails against the old worker, which gave 1. `gmin == 1e-12` shows the scan works, so
+the first cannot pass because the scan found nothing. `OsdiWorkerTests.O1` lists the two parameters.
+
+After the fix, with the kit imported fresh and DC through the CLI, the resistor reads 74.15174 Ω at
+27 °C, 87.55906 Ω at 85 °C and 58.85028 Ω at −40 °C, against 74.15175, 87.55907 and 58.85030 Ω from
+the reference (74.1482 at 27 °C before). A MOSFET's drain current is unchanged at 35.9392 µA.
+
+**Found on the way, not fixed: the last 1.75e-7.** The two still differ by 1.750e-7 relative at all
+three temperatures, so the cause scales neither with temperature nor with the temperature
+coefficients. It is R3's weak depletion term. With the model switched linear (`sw_lin=1`) the
+reference gives 74.151741294 Ω, and circuitRF gives 74.151741 Ω, the same current to the last bit
+with or without the switch. So circuitRF's DC answer is the linearised one: the term is about 2e-10 A here,
+which a DC stop rule on the residual can accept after the first Newton step. That is a solver
+tolerance question, not the worker's.

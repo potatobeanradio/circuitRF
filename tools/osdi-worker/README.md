@@ -233,8 +233,8 @@ question above: **this path needs no VM on macOS.**
   1. **`OsdiSimParas` must be NON-NULL and NULL-TERMINATED.** This worker passed four null pointers,
      meaning "no simulator parameters". A model resolves `$simparam("gmin", …)` by SCANNING `names`,
      so a null pointer there is a null dereference *inside the model*, during `setup_instance`. It
-     presented as the worker dying with no output at all. The fixture never asks for a simulator
-     parameter, so nothing here could have caught it.
+     presented as the worker dying with no output at all. The fixture then asked for no simulator
+     parameter, so nothing here could have caught it; `crf_rc` now asks for two (`verify.py`).
   2. **A collapsed TERMINAL must keep the user's net** (fixed in the elaborator, not here). A real
      model collapses its drain terminal onto its internal drain, and its bulk terminal plus three
      internal bulk nodes onto one. Reading "node A follows node B" literally gave the *terminal* the

@@ -64,6 +64,11 @@ assert dflt["tnom"] == 300.0, dflt
 assert dflt["mult"] == 1.0,   dflt
 assert dflt["g0"]   == 0.0,   dflt          # the model defaults it to nothing; reported honestly
 assert "temp" not in dflt,    dflt          # op-var again
+# `$simparam`: gmin is answered by the host, so the model's scan works; shrink must NOT be, as the
+# reference SPICE simulator does not answer it. The worker once answered 1.0, which a compiled
+# resistor reads as a 1 % geometry shrink.
+assert dflt["gmin"]   == 1e-12, dflt
+assert dflt["shrink"] == 0.0,   dflt
 print("DEFAULTS crf_rc:", dflt)
 
 send({"cmd":"defaults","typeId":"crf_fet"}); fv,_=recv()
