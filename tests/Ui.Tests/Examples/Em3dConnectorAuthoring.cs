@@ -42,6 +42,13 @@ public sealed class Em3dConnectorAuthoring
     private readonly Queue<Action> _posted = new();
     private CircuitRF.Design.ThreeD.Occ.GeometryKernel _kernel = null!;
 
+    public Em3dConnectorAuthoring()
+    {
+        // A new setup's solver comes from Settings ▸ Solvers (EmSolverPreference); a test reads the default, never this machine's file.
+        CircuitRF.Ui.Layout.Em.EmSolverPreference.TestOverrideActive = true;
+        (CircuitRF.Ui.Layout.Em.EmSolverPreference.TestLayoutStore, CircuitRF.Ui.Layout.Em.EmSolverPreference.TestThreeDStore) = (null, null);
+    }
+
     public sealed class AuthorFactAttribute : FactAttribute
     {
         public AuthorFactAttribute()

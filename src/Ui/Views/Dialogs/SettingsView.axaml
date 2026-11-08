@@ -601,8 +601,8 @@
                  LAST, so no per-tab figure index above it moves. One row per program a 3D EM run can
                  need — Palace, Gmsh, openEMS — each saying what was found, where, which version,
                  whether circuitRF has validated it and how it was found. The controls live in
-                 Em3dSolverSettingsView, as Revision Control's and Technology's do; its own heading
-                 still reads "3D EM Solvers".
+                 Em3dSolverSettingsView, as Revision Control's and Technology's do. It opens on the
+                 preferred solvers for new setups; it has no heading of its own (owner, 2026-11-08).
 
                  The header is short because of the tab strip's width (see the note at the top of this
                  TabControl): the six headers before it measured 620 px against 692 usable at MinWidth

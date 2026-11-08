@@ -907,7 +907,10 @@ public static class C3dHierarchy
     /// merged list, and copied once: the two files share nothing afterwards. The list is copied, not its verdict; creating the
     /// view builds no component port, so a part that cannot be a sheet is named when the 3D setup is first checked.</para>
     /// </summary>
-    public static C3dFromLayout NewFromLayout(string cellDir, string c3dPath, string? workspaceCws, TechnologyCache? cache = null)
+    /// <param name="solver3D">The solver a 3D setup made from a Planar <c>.cem</c> runs: the GUI's Preferred 3D solver setting.
+    /// Null is <see cref="Em3dSolvers.Default"/>.</param>
+    public static C3dFromLayout NewFromLayout(string cellDir, string c3dPath, string? workspaceCws, TechnologyCache? cache = null,
+                                              Em3dSolverChoice? solver3D = null)
     {
         cache ??= new TechnologyCache();
         if (ViewFile(cellDir, C3dInstanceView.Layout) is not { } clay)
@@ -943,6 +946,7 @@ public static class C3dHierarchy
                 // brief-lcp-6 R-lcp6-2 — a Planar .cem crosses only for its component ports, and only what a 3D solver reads.
                 if (setup.ComponentPorts.Count == 0) continue;
                 var made = DefaultPortSetup(setup.LayoutRef);
+                if (solver3D is { IsNone: false } preferred) made.Solver3D = preferred;
                 made.Name = setup.Name;
                 made.Frequency = setup.Frequency;
                 made.AdditionalFrequencies = [.. setup.AdditionalFrequencies];

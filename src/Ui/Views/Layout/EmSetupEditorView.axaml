@@ -493,10 +493,14 @@
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                         <!-- A 3D view's list ends with Thermal: circuitRF's own thermal solver is a solver choice, not an EM
                              problem (owner request, 2026-09-28), so a thermal setup keeps this picker and hides Problem. -->
-                        <StackPanel Grid.Column="0" Spacing="2">
+                        <StackPanel Grid.Column="0" Grid.ColumnSpan="{Binding ViewModel.SolverColumnSpan}" Spacing="2">
+                            <!-- Owner request, 2026-11-08: the solver's description sits beside the Solver and Problem combos,
+                                 across both rows, wrapping in the width left; a 3D setup's column spans the group, since the
+                                 analysis column is hidden there. -->
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10">
                             <!-- brief-emi-6 R-emi6-2 — a solver that is not installed, or cannot solve this setup, is a
                                  disabled row with its reason as the tooltip; no note text under the controls. -->
-                            <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
+                            <ComboBox Grid.Row="0" Grid.Column="0" Classes="cell" MaxWidth="220" HorizontalAlignment="Left" VerticalAlignment="Top"
                                       ItemsSource="{Binding ViewModel.Solver3DChoiceList}"
                                       SelectedItem="{Binding ViewModel.Solver3DChoice}">
                                 <ComboBox.Styles>
@@ -507,6 +511,17 @@
                                     </Style>
                                 </ComboBox.Styles>
                             </ComboBox>
+                            <!-- brief-em3d-22 R-em3d22-5b: what the 3D setup solves. -->
+                            <StackPanel Grid.Row="1" Grid.Column="0" IsVisible="{Binding ViewModel.ShowProblem3D}" Orientation="Horizontal"
+                                        Spacing="8" Margin="0,6,0,0">
+                                <TextBlock Classes="colhdr" Text="Problem" VerticalAlignment="Center"/>
+                                <ComboBox Classes="cell" MinWidth="180"
+                                          ItemsSource="{x:Static em:EmSetupEditorViewModel.Problem3DChoices}"
+                                          SelectedItem="{Binding ViewModel.Problem3DChoice}"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Classes="colhdr" TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Text="{Binding ViewModel.Solver3DDescription}"/>
+                            </Grid>
                             <!-- Compare…: one box per solver, and the reference among the checked ones. -->
                             <StackPanel Spacing="2" Margin="0,3,0,0" IsVisible="{Binding ViewModel.IsCompareSetup}">
                                 <ItemsControl ItemsSource="{Binding ViewModel.CompareSolverRows}">
@@ -531,8 +546,6 @@
                                               ToolTip.Tip="The solver every other one is compared against."/>
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                                       Text="{Binding ViewModel.Solver3DDescription}"/>
                         </StackPanel>
 
                         <!-- Hidden for a 3D setup: a 3D run reads neither the analysis kind nor the
@@ -557,15 +570,9 @@
                                        Text="{Binding ViewModel.KernelChoiceReason}"/>
                         </StackPanel>
                     </Grid>
-                    <!-- brief-em3d-22 R-em3d22-5b: what the 3D setup solves, and a static problem's
-                         terminals. Each row is a .cem Terminals3D entry, written when a box loses focus. -->
-                    <StackPanel IsVisible="{Binding ViewModel.ShowProblem3D}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
-                        <TextBlock Classes="colhdr" Text="Problem" VerticalAlignment="Center"/>
-                        <ComboBox Classes="cell" MinWidth="180"
-                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.Problem3DChoices}"
-                                  SelectedItem="{Binding ViewModel.Problem3DChoice}"/>
-                    </StackPanel>
-                    <TextBlock IsVisible="{Binding ViewModel.ShowProblem3D}" Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                    <!-- brief-em3d-22 R-em3d22-5b: what the 3D setup solves (its combo is beside the solver's, above), and a
+                         static problem's terminals. Each row is a .cem Terminals3D entry, written when a box loses focus. -->
+                    <TextBlock IsVisible="{Binding ViewModel.ShowProblem3D}" Classes="colhdr" TextWrapping="Wrap" Margin="0,6,0,0"
                                Text="{Binding ViewModel.Problem3DDescription}"/>
                     <!-- brief-dfr31-1 R-dfr31-1-4: each conductor box takes typing (filtered) and lists the problem's pieces of
                          metal (▾); Pick fills the row from a click in the 3D view. Other metal is what an electrostatic solve
@@ -673,21 +680,49 @@
                          One row per port the LAYOUT labels, with its reference impedance beside it
                          (owner request, 2026-09-25): for a 3D setup this is the only place ports are
                          configured, and the Ports group below is hidden. -->
-                    <StackPanel IsVisible="{Binding ViewModel.IsPortKindSetup}" Spacing="2" Margin="0,6,0,0">
-                        <Grid ColumnDefinitions="40,80,90,260,70,70,80,Auto" ColumnSpacing="6">
+                    <!-- ClipToBounds: below the columns' minimums (a window too narrow for its toolbar too), the table is cut at
+                         the group's edge rather than drawn over it. -->
+                    <StackPanel IsVisible="{Binding ViewModel.IsPortKindSetup}" Spacing="2" Margin="0,6,0,0" ClipToBounds="True">
+                        <Grid ColumnSpacing="6">
+                            <!-- The shrinkable columns are star-sized with a minimum and a maximum, so the table fits the panel's width
+                                 instead of drawing past the group's edge in a narrow window; at their maximums they are the old fixed widths.
+                                 The header and every row carry the same definitions, so their columns line up. -->
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40"/>
+                                <ColumnDefinition Width="*" MinWidth="55" MaxWidth="80"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="3.5*" MinWidth="100" MaxWidth="260"/>
+                                <ColumnDefinition Width="*" MinWidth="55" MaxWidth="70"/>
+                                <ColumnDefinition Width="*" MinWidth="55" MaxWidth="70"/>
+                                <ColumnDefinition Width="*" MinWidth="55" MaxWidth="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Port"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="Z₀ (Ω)"/>
                             <TextBlock Grid.Column="2" Classes="colhdr" Text="Kind" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
                             <TextBlock Grid.Column="3" Classes="colhdr" Text="Return" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DReturnTip}"/>
-                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Width (× w)"/>
-                            <TextBlock Grid.Column="5" Classes="colhdr" Text="Height (× h)"/>
-                            <TextBlock Grid.Column="6" Classes="colhdr" Text="Offset (µm)"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" TextWrapping="Wrap" Text="Width (× w)"/>
+                            <TextBlock Grid.Column="5" Classes="colhdr" TextWrapping="Wrap" Text="Height (× h)"/>
+                            <TextBlock Grid.Column="6" Classes="colhdr" TextWrapping="Wrap" Text="Offset (µm)"/>
                         </Grid>
                         <ItemsControl ItemsSource="{Binding ViewModel.Port3DRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="em:Em3dPortRow">
                                     <StackPanel Margin="0,1">
-                                    <Grid ColumnDefinitions="40,80,90,260,70,70,80,Auto" ColumnSpacing="6">
+                                    <Grid ColumnSpacing="6">
+                                        <!-- As the header's: the shrinkable columns are star-sized with a minimum and a maximum, so the table fits the panel's width
+                                             instead of drawing past the group's edge in a narrow window; at their maximums they are the old fixed widths.
+                                             The header and every row carry the same definitions, so their columns line up. -->
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="40"/>
+                                            <ColumnDefinition Width="*" MinWidth="55" MaxWidth="80"/>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="3.5*" MinWidth="100" MaxWidth="260"/>
+                                            <ColumnDefinition Width="*" MinWidth="55" MaxWidth="70"/>
+                                            <ColumnDefinition Width="*" MinWidth="55" MaxWidth="70"/>
+                                            <ColumnDefinition Width="*" MinWidth="55" MaxWidth="80"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Port}" VerticalAlignment="Center"
                                                    ToolTip.Tip="The port's number, as its label in the layout states it."/>
                                         <TextBox Grid.Column="1" Classes="cell" Tag="Port3DZ0" Text="{Binding Z0Text}"

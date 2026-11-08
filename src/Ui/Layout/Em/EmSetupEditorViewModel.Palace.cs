@@ -96,6 +96,10 @@ public sealed partial class EmSetupEditorViewModel
     /// solver options, the radiation pattern).</summary>
     public bool ShowCircuitRfSolverControls => !Is3DSetup;
 
+    /// <summary>The Solver column's span in the group's two-column grid: both columns when the analysis column beside it is hidden
+    /// (a 3D setup), so the solver's description beside the combo has the width (owner request, 2026-11-08).</summary>
+    public int SolverColumnSpan => ShowCircuitRfSolverControls ? 1 : 2;
+
     /// <summary>The Mesh button. On a planar setup it meshes for circuitRF's own kernels; brief-dfr36-1 R-dfr36-1-4 — on a 3D setup, the Gmsh
     /// mesh a run would solve on, with no solve. Off while a mesh is in flight, when its Cancel takes the cell.</summary>
     public bool ShowMeshButton => !IsMeshing;
@@ -155,6 +159,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowReturnPlane));
         OnPropertyChanged(nameof(ShowConductorsGroup));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
+        OnPropertyChanged(nameof(SolverColumnSpan));
         OnPropertyChanged(nameof(ShowMeshButton));
         OnPropertyChanged(nameof(MeshBlockedReason));
         OnPropertyChanged(nameof(MeshButtonTip));

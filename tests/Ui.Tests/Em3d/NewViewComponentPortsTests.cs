@@ -77,6 +77,16 @@ public sealed class NewViewComponentPortsTests : IClassFixture<PlanarComponentPo
         Assert.Equal(2, made.Document!.Ports.Count);
     }
 
+    /// <summary>The 3D setup made from a Planar .cem runs the solver the caller names (the GUI's Preferred 3D solver setting).</summary>
+    [Fact]
+    public void APlanarCemsSetup_RunsTheNamedSolver()
+    {
+        WriteCem("board.cem", PlanarComponentPortTests.Setup(["C1", "C2"]));
+        var made = C3dHierarchy.NewFromLayout(CellDir, C3dPath, Cws, solver3D: Em3dSolverChoice.One(Em3dSolverId.Emerge));
+        var setup = EmSetupPersistence.FromEmbedded(Assert.Single(made.Document!.Setups));
+        Assert.Equal(Em3dSolverChoice.One(Em3dSolverId.Emerge), setup.Solver3D);
+    }
+
     /// <summary>Gate 2 — copied once: an edit to either file leaves the other byte-identical, and the .c3d records no link.</summary>
     [Fact]
     public void TheTwoLists_AreSeparateAfterwards()

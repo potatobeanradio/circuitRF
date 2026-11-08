@@ -1739,8 +1739,8 @@ computes and the S-parameters it exports — is in <a href="wbond.html">the wBon
 </span><figcaption>Settings, Solvers: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - with a path to name it and a line saying what circuitRF found. Blank means search.</figcaption></figure>
 <p>A 3D EM setup runs one of three separately installed solvers — <strong>Palace</strong> (FEM), <strong>openEMS</strong> (FDTD) or
 <strong>EMerge</strong> (FEM) — and Palace's problems are meshed by <strong>Gmsh</strong>. circuitRF includes none of these
-programs. The tab starts with the <strong>Memory limit</strong>, which holds every solver and mesher alike, and the
-<strong>Scratch folder</strong>, then gives each
+programs. The tab starts with the solvers a new setup starts with, then the <strong>Memory limit</strong>, which holds every solver and
+mesher alike, and the <strong>Scratch folder</strong>, then gives each
 program a panel of its own, and each says what circuitRF found: the version, whether
 it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
 Beside each program's name, a green check and <strong>Installed</strong> means a run would find it; a grey <strong>Not Installed</strong>
@@ -1754,6 +1754,16 @@ means it would not. The MPI launcher is part of Palace, so it sits inside Palace
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>Preferred layout solver</strong></td>
+<td>Planar (MoM)</td>
+<td>The solver a new EM setup (<code>.cem</code>) starts with, from File ▸ New ▸ EM Setup or the layout editor's EM button: <strong>Planar (MoM)</strong>, <strong>Palace (FEM)</strong>, <strong>EMerge (FEM)</strong> or <strong>openEMS (FDTD)</strong>. A solver that is not installed is listed greyed and cannot be chosen. An EM setup's own Solver can still be changed afterwards. Thermal is not offered: a thermal setup lives in a 3D view.</td>
+</tr>
+<tr>
+<td><strong>Preferred 3D solver</strong></td>
+<td>Palace (FEM)</td>
+<td>The solver a new analysis setup in a 3D view (<code>.c3d</code>) starts with: Palace, EMerge or openEMS, greyed when not installed, or <strong>Thermal (FEM)</strong>, circuitRF's own thermal solver, greyed when Gmsh is not installed. With Thermal chosen, the Setups panel's <strong>+</strong> adds a thermal setup, as <strong>Add Thermal</strong> does. It also decides the solver of the 3D setup that <strong>New 3D View from Layout</strong> makes from a planar EM setup with component ports; with Thermal chosen that setup uses Palace, since it solves S-parameters.</td>
+</tr>
 <tr>
 <td><strong>Memory limit</strong></td>
 <td>blank (this computer's memory)</td>

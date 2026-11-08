@@ -33,6 +33,9 @@ public sealed class EditorRound1TreeTests : IDisposable
     {
         Snap3DPreference.TestOverrideActive = true;
         Lod3DPreference.TestOverrideActive = true;
+        // A new setup's solver comes from Settings ▸ Solvers (EmSolverPreference); a test reads the default, never this machine's file.
+        CircuitRF.Ui.Layout.Em.EmSolverPreference.TestOverrideActive = true;
+        (CircuitRF.Ui.Layout.Em.EmSolverPreference.TestLayoutStore, CircuitRF.Ui.Layout.Em.EmSolverPreference.TestThreeDStore) = (null, null);
     }
 
     public void Dispose()

@@ -387,6 +387,16 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EmEmergeDevice { get; set; }
 
+    // Owner request, 2026-11-08: the solver a new .cem starts with ("palace", "emerge" or "openems"; absent is Planar) and the
+    // solver a new .c3d setup starts with (the same spellings; absent is Palace). See EmSolverPreference.
+    [JsonPropertyName("em_preferred_layout_solver")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EmPreferredLayoutSolver { get; set; }
+
+    [JsonPropertyName("em_preferred_3d_solver")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EmPreferred3DSolver { get; set; }
+
     // brief-emi-10 R-emi10-4: the memory ceiling, GB, a 3D run's solver and mesher processes are held to, below this machine's
     // memory. Null is Automatic: this machine's memory. Per MACHINE for EmMaxCores' reason exactly, never in the .cem/.c3d,
     // and handed to the run as an argument. See EmMemoryLimitPreference.

@@ -40,6 +40,8 @@ public partial class Em3dSolverSettingsView : UserControl
         // Loaded fires when the tab is first SHOWN, not when the dialog is built: asking three programs
         // their version is not a cost every opening of Settings should pay.
         Loaded += (_, _) => { RefreshAll(); RefreshLocations(); RefreshKernel(); };
+        BuildPreferredSolverBoxes();
+        CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Changed += OnSolverInstallStateChanged;
         KernelTitle.Text = GeometryKernel.SettingsTitle;
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
         CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished += OnInstallFinished;
@@ -52,6 +54,7 @@ public partial class Em3dSolverSettingsView : UserControl
             WslMemoryDialog.Changed -= OnSubsystemMemoryChanged;
             CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished -= OnInstallFinished;
             CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished -= OnRemovalFinished;
+            CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Changed -= OnSolverInstallStateChanged;
         };
     }
 
@@ -118,6 +121,91 @@ public partial class Em3dSolverSettingsView : UserControl
         finally { _loading = false; }
     }
 
+    // ── Owner request, 2026-11-08: the preferred solvers for new setups ─────────────────────────────────────────────────────
+
+    private const string NotInstalledTip = "Not installed. Install it below to choose it.";
+    private const string NoGmshTip = "The thermal solver meshes with Gmsh, which is not installed. Install Gmsh below to choose it.";
+
+    /// <summary>The two combos' rows: Planar then the 3D solvers for a new .cem, the 3D solvers for a new .c3d setup. Each row's Tag
+    /// is its solver (null for Planar); availability is set by <see cref="ShowSolverAvailability"/>.</summary>
+    private void BuildPreferredSolverBoxes()
+    {
+        ComboBoxItem Row(string label, Em3dSolverId? id)
+        {
+            var item = new ComboBoxItem { Content = label, Tag = id };
+            ToolTip.SetShowOnDisabled(item, true);
+            return item;
+        }
+        _loading = true;
+        try
+        {
+            PreferredLayoutSolverBox.Items.Clear();
+            PreferredLayoutSolverBox.Items.Add(Row(CircuitRF.Ui.Layout.Em.EmSolverPreference.PlanarLabel, null));
+            foreach (var id in CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDChoices)
+                PreferredLayoutSolverBox.Items.Add(Row(CircuitRF.Ui.Layout.Em.EmSolverPreference.Label(id), id));
+            Preferred3DSolverBox.Items.Clear();
+            foreach (var id in CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDChoices)
+                Preferred3DSolverBox.Items.Add(Row(CircuitRF.Ui.Layout.Em.EmSolverPreference.Label(id), id));
+            var thermal = Row(CircuitRF.Ui.Layout.Em.EmSolverPreference.ThermalLabel, null);
+            thermal.Tag = CircuitRF.Ui.Layout.Em.EmSolverPreference.ThermalStored;
+            Preferred3DSolverBox.Items.Add(thermal);
+
+            var layout = CircuitRF.Ui.Layout.Em.EmSolverPreference.Layout;
+            Em3dSolverId? layoutId = layout.IsNone ? null : layout.Reference;
+            PreferredLayoutSolverBox.SelectedItem = PreferredLayoutSolverBox.Items.OfType<ComboBoxItem>().First(i => (Em3dSolverId?)i.Tag == layoutId);
+            var threeD = CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeD;
+            bool thermalPreferred = CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDIsThermal;
+            Preferred3DSolverBox.SelectedItem = Preferred3DSolverBox.Items.OfType<ComboBoxItem>()
+                .First(i => thermalPreferred ? i.Tag is string : i.Tag is Em3dSolverId id && id == threeD);
+        }
+        finally { _loading = false; }
+        ShowSolverAvailability();
+    }
+
+    private void OnSolverInstallStateChanged()
+    {
+        // Thermal runs circuitRF's own solver on a Gmsh mesh: it is available when the thermal run's own Gmsh check passes.
+        _ = Task.Run(() => SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh)).Proceeds)
+            .ContinueWith(t => Dispatcher.UIThread.Post(() =>
+            {
+                _thermalAvailable = t.IsCompletedSuccessfully ? t.Result : null;
+                ShowSolverAvailability();
+            }));
+    }
+
+    /// <summary>Whether Gmsh is there for a thermal run; null before the first read (Thermal is then enabled, as every row is).</summary>
+    private bool? _thermalAvailable;
+
+    /// <summary>Greys every 3D solver row the last install read found missing. Before the first read, every row is enabled (as the
+    /// EM Setup panel shows them), not disabled on a guess. A stored choice that is not installed stays shown, greyed.</summary>
+    private void ShowSolverAvailability()
+    {
+        var known = CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Known;
+        foreach (var box in new[] { PreferredLayoutSolverBox, Preferred3DSolverBox })
+            foreach (var item in box.Items.OfType<ComboBoxItem>())
+            {
+                bool installed = item.Tag switch
+                {
+                    Em3dSolverId id => known is null || known.GetValueOrDefault(id),
+                    string          => _thermalAvailable ?? true,
+                    _               => true,
+                };
+                item.IsEnabled = installed;
+                ToolTip.SetTip(item, installed ? null : item.Tag is string ? NoGmshTip : NotInstalledTip);
+            }
+    }
+
+    private void OnPreferredSolverChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || sender is not ComboBox { SelectedItem: ComboBoxItem item } box) return;
+        if (box == PreferredLayoutSolverBox)
+            CircuitRF.Ui.Layout.Em.EmSolverPreference.Layout = item.Tag is Em3dSolverId id ? Em3dSolverChoice.One(id) : Em3dSolverChoice.None;
+        else if (item.Tag is Em3dSolverId id3)
+            CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeD = id3;
+        else if (item.Tag is string)
+            CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDIsThermal = true;
+    }
+
     private (SolverDiscovery Discovery, TextBlock Status, Button Install, StackPanel Removals)[] Rows =>
     [
         (SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall,  PalaceRemovals),
@@ -128,6 +216,7 @@ public partial class Em3dSolverSettingsView : UserControl
 
     private void RefreshAll()
     {
+        _ = CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.RefreshAsync();   // the preferred-solver rows follow it
         foreach (var (discovery, status, install, _) in Rows) Refresh(discovery, status, install);
         RefreshMpi();
         RefreshRemovals();

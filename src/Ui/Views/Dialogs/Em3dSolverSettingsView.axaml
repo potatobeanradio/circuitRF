@@ -61,10 +61,20 @@
   </UserControl.Styles>
 
   <StackPanel Spacing="0">
-    <SelectableTextBlock Text="3D EM Solvers" FontSize="11" FontWeight="SemiBold"
-               Opacity="0.55" Margin="0,0,0,6"/>
-    <SelectableTextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,12"
-               Text="circuitRF includes none of these programs. It can install each from its own upstream (Install … below), or you can install them yourself and check each row. Leave a path blank to search for it."/>
+    <!-- Owner request, 2026-11-08 — the solver a new setup starts with (EmSolverPreference). Every solver is listed; one that is
+         not installed is greyed and cannot be chosen. Rows are built in code from EmSolverPreference's list. -->
+    <Border Classes="group">
+      <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
+        <SelectableTextBlock Grid.Row="0" Grid.Column="0" Text="Preferred layout solver" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,6"/>
+        <ComboBox Grid.Row="0" Grid.Column="1" Name="PreferredLayoutSolverBox" FontSize="11" MinWidth="160" Margin="0,0,0,6"
+                  SelectionChanged="OnPreferredSolverChanged"
+                  ToolTip.Tip="The solver a new EM setup (.cem) starts with. A solver that is not installed cannot be chosen."/>
+        <SelectableTextBlock Grid.Row="1" Grid.Column="0" Text="Preferred 3D solver" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <ComboBox Grid.Row="1" Grid.Column="1" Name="Preferred3DSolverBox" FontSize="11" MinWidth="160"
+                  SelectionChanged="OnPreferredSolverChanged"
+                  ToolTip.Tip="The solver a new analysis setup in a 3D view (.c3d) starts with. A solver that is not installed cannot be chosen."/>
+      </Grid>
+    </Border>
 
     <!-- ── brief-emi-10 R-emi10-4: the memory ceiling every solver and mesher process is held to ─────────
          Per machine (EmMemoryLimitPreference). Blank is Automatic, this machine's memory, which the placeholder shows greyed.

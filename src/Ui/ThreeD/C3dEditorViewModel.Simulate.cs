@@ -503,13 +503,15 @@ public sealed partial class C3dEditorViewModel
 
     private bool _suppressEditorReload;
 
-    /// <summary>Add: a new Palace setup, named S1, S2 …; the first one added becomes the active one.</summary>
+    /// <summary>Add: a new setup on the Preferred 3D solver (Settings ▸ Solvers), named S1, S2 …, or a thermal one (T1, T2 …) when
+    /// Thermal is preferred; the first one added becomes the active one.</summary>
     [RelayCommand]
     public void AddSetup()
     {
+        if (CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDIsThermal) { AddThermalSetup(); return; }
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true,
+        var setup = new EmSetup { Name = name, Solver3D = Em3dSolverChoice.One(CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeD), RobustMeshing = true,
                                   Frequency = EmSetup.NewSetupFrequency(), AirBox = EmSetupPersistence.FromCem(Document.AirBox) }
                     .WithNewSetupSolverDefaults();
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));

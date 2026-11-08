@@ -34,6 +34,9 @@ public sealed class SimulateEditorGateTests : IDisposable
     {
         Snap3DPreference.TestOverrideActive = true;
         Lod3DPreference.TestOverrideActive = true;
+        // A new setup's solver comes from Settings ▸ Solvers (EmSolverPreference); a test reads the default, never this machine's file.
+        CircuitRF.Ui.Layout.Em.EmSolverPreference.TestOverrideActive = true;
+        (CircuitRF.Ui.Layout.Em.EmSolverPreference.TestLayoutStore, CircuitRF.Ui.Layout.Em.EmSolverPreference.TestThreeDStore) = (null, null);
     }
 
     public void Dispose()
@@ -70,6 +73,74 @@ public sealed class SimulateEditorGateTests : IDisposable
         Assert.Equal(Em3dProblemType.Driven, vm.SetupEditor!.ViewModel.Working.Problem3D);
         vm.UndoRedo.Redo();
         Assert.Equal(edited, C3dPersistence.Serialize(vm.Document));
+    }
+
+    /// <summary>A setup panel opened before the 3D view has been built lists the placed parts once it is, with no edit: it read
+    /// "not built yet", showed only the parts its setup names, and stayed so until something refreshed it.</summary>
+    [Fact]
+    public void TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit()
+    {
+        string ws = Path.Combine(_root, "filter");
+        string src = Path.Combine(Em3dTestRoot(), "examples", "PCB Component Ports");
+        foreach (string f in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+        {
+            string to = Path.Combine(ws, Path.GetRelativePath(src, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to);
+        }
+        string path = Path.Combine(ws, "Filter Board", "3d", "Filter Board.c3d");
+        var vm = new C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), () => new PatchRecordingBackend(),
+                                        () => Path.Combine(ws, ".cws"), _posted.Enqueue);
+        _open.Add(vm);
+        vm.RestoreActiveSetup(null);
+        vm.SelectedSetupItem = vm.SetupItems.First(i => !i.IsExternal);
+        var panel = vm.SetupEditor!.ViewModel;
+        panel.ComponentPartsListing.GetAwaiter().GetResult();
+        Assert.DoesNotContain(panel.ComponentPortRows, r => r.Refdes == "TL1");   // not built yet: only the parts the setup names
+
+        vm.Viewer.Resized(W, H);
+        vm.Viewer.Session.EnsureBackend();
+        vm.Start();
+        Settle(vm);
+        panel.ComponentPartsListing.GetAwaiter().GetResult();
+        Assert.Contains(panel.ComponentPortRows, r => r.Refdes == "TL1");          // placed, not named: listed from the view
+    }
+
+    private static string Em3dTestRoot()
+    {
+        var d = new DirectoryInfo(AppContext.BaseDirectory);
+        while (d is not null && !File.Exists(Path.Combine(d.FullName, "circuitrf.slnx"))) d = d.Parent;
+        return d!.FullName;
+    }
+
+    /// <summary>Add starts a setup on the Preferred 3D solver (Settings ▸ Solvers).</summary>
+    [Fact]
+    public void Add_StartsOnThePreferred3DSolver()
+    {
+        try
+        {
+            EmSolverPreference.ThreeD = Em3dSolverId.OpenEms;
+            var vm = Open(Microstrip(Setup("S1")));
+            vm.AddSetup();
+            var added = EmSetupPersistence.FromEmbedded(vm.Document.Setups[^1]);
+            Assert.Equal(("S2", Em3dSolverChoice.One(Em3dSolverId.OpenEms)), (added.Name, added.Solver3D));
+        }
+        finally { EmSolverPreference.TestThreeDStore = null; }
+    }
+
+    /// <summary>With Thermal preferred, Add makes a thermal setup, as Add Thermal does.</summary>
+    [Fact]
+    public void Add_WithThermalPreferred_MakesAThermalSetup()
+    {
+        try
+        {
+            EmSolverPreference.ThreeDIsThermal = true;
+            var vm = Open(Microstrip(Setup("S1")));
+            vm.AddSetup();
+            var added = EmSetupPersistence.FromEmbedded(vm.Document.Setups[^1]);
+            Assert.Equal(("T1", true, true), (added.Name, added.IsThermal, added.Solver3D.IsNone));
+        }
+        finally { EmSolverPreference.TestThreeDStore = null; }
     }
 
     [Fact]

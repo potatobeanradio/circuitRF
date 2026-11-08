@@ -7689,7 +7689,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             // brief-sdl-5 R-sdl5-2a: the setup is made by EmSetupCreate, which Update Layout from Schematic calls too.
-            var created = EmSetupCreate.Create(workspaceDir, name, layoutRef);
+            var created = EmSetupCreate.Create(workspaceDir, name, layoutRef,
+                                               s => s.Solver3D = CircuitRF.Ui.Layout.Em.EmSolverPreference.Layout);
             if (created.Refusal is { } refusal)
             {
                 Messages.Error(refusal);
@@ -7783,7 +7784,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            var created = EmSetupCreate.Create(workspaceDir, stem, EmSetupCreate.LayoutRefOf(workspaceDir, clayPath));
+            var created = EmSetupCreate.Create(workspaceDir, stem, EmSetupCreate.LayoutRefOf(workspaceDir, clayPath),
+                                               s => s.Solver3D = CircuitRF.Ui.Layout.Em.EmSolverPreference.Layout);
             if (created.Refusal is { } refusal)
             {
                 Messages.Error($"Failed to create EM setup: {refusal}");

@@ -412,7 +412,8 @@ public partial class WorkspaceViewModel
         var path = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.ThreeD), name + C3dPersistence.Extension);
         if (File.Exists(path)) { Messages.Error($"A file named '{name}{C3dPersistence.Extension}' already exists."); return; }
         if (!await SaveCellLayoutsBeforeThreeD(cellDir, window)) return;
-        var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache);
+        var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache,
+                                              Em3dSolverChoice.One(CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeD));
         if (made.Document is not { } c3d) { Messages.Error($"New 3D View from Layout: {made.Refusal}"); return; }
         try { CircuitRF.Design.Cells.CellCreate.WriteThreeDView(cellDir, name, c3d); }
         catch (Exception ex) { Messages.Error($"Failed to create the 3D view: {ex.Message}"); return; }

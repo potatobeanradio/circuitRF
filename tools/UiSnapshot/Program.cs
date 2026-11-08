@@ -2569,6 +2569,13 @@ static int ShowSettingsSolvers(string path, double w, double h)
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
     window.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}: install button '{install.Content}', visible {install.IsVisible}");
+    // The preferred-solver combos (owner request, 2026-11-08): each row, whether it can be chosen, and which one is selected.
+    foreach (string name in new[] { "PreferredLayoutSolverBox", "Preferred3DSolverBox" })
+    {
+        var box = view.FindControl<ComboBox>(name)!;
+        Console.WriteLine($"{name}: " + string.Join(", ", box.Items.OfType<ComboBoxItem>().Select(i =>
+            $"{i.Content}{(i.IsEnabled ? "" : " (greyed)")}{(ReferenceEquals(i, box.SelectedItem) ? " [selected]" : "")}")));
+    }
     return 0;
 }
 

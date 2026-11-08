@@ -414,7 +414,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         long gen = Viewer.Scene.Generation;
         CarryCameraAcrossOrigin(gen);
-        if (_elaborations.TryGetValue(gen, out var e)) { Elaboration = e; PostNewRefusals(e); RefreshSetupBodies(); }
+        if (_elaborations.TryGetValue(gen, out var e))
+        {
+            Elaboration = e;
+            PostNewRefusals(e);
+            RefreshSetupBodies();
+            // The setup panel's Component ports list reads the parts from the elaboration: one opened before the view was built
+            // listed nothing until an edit refreshed it. Its key is this elaboration, so an unchanged one lists nothing again.
+            SetupEditor?.ViewModel.RefreshComponentParts();
+        }
         CheckLayoutPorts();
         if (_readStamps.TryGetValue(gen, out var read)) _adoptedReadStamp = read;
         foreach (long old in _readStamps.Keys.Where(k => k <= gen).ToList()) _readStamps.TryRemove(old, out _);

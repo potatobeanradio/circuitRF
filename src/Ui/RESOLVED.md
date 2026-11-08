@@ -41984,3 +41984,34 @@ corner is down (a Box's height step), the plane is fixed as before. Polygon and 
 the only one (a new orientation would flatten an outline already begun; a polyline's first point, which may sit off the plane
 on a snap, stays where it was clicked), and Cylinder, Sphere and Ellipsoid while only their centre is placed. Gates:
 `DrawToolGateTests.APlaneChosenAfterTheFirstCorner_IsTheSheetsPlane` and `…AfterTheFirstPoint_IsThePolygonsCylindersAndSpheresPlane`.
+
+## Preferred solvers for new setups (owner request, 2026-11-08)
+
+Settings ▸ Solvers opens on two combos, stored per user (`EmSolverPreference`, `em_preferred_layout_solver` /
+`em_preferred_3d_solver`): the solver a new `.cem` starts with (Planar, Palace, EMerge, openEMS; absent is Planar) and the one a
+new `.c3d` setup starts with (Palace, EMerge, openEMS or Thermal; absent is Palace). Thermal as the 3D preference makes the editor's
+Add a thermal setup (`AddThermalSetup`), is greyed when the thermal run's own Gmsh check fails, and leaves `ThreeD` at Palace for
+a setup that must solve EM (New 3D View from Layout's from a Planar `.cem`). Thermal is not offered for a `.cem`, because
+`EmRunService` refuses a thermal `.cem` (`C3dThermal.CemRefusal`). The layout one reaches File ▸ New ▸ EM Setup and the layout
+editor's EM button through `EmSetupCreate.Create`'s seed; Update Layout from Schematic's own setup stays Planar, as that flow sets
+it. The 3D one reaches the editor's Add and, as an argument (`src/Design` reads no preference), `C3dHierarchy.NewFromLayout`'s
+setup made from a Planar `.cem`; the CLI's `new view3d` passes none and keeps Palace. A solver the last
+`Em3dSolverInstallState` read found missing is listed greyed and cannot be picked; before the first read every row is enabled,
+as the EM Setup panel treats it. A stored choice that is later uninstalled stays selected, greyed, and new setups still use it.
+`tools/UiSnapshot --settings-solvers` prints each combo's rows and their state. The tab's "3D EM Solvers" heading and its
+explanation paragraph were removed; settings.md still explains that circuitRF ships none of the programs.
+
+## The 3D port table drew past its group; a 3D view's parts list stayed empty until an edit (2026-11-08)
+
+The EM Setup panel's 3D port table (Port, Z₀, Kind, Return, Width, Height, Offset) had fixed columns totalling about 740 px, and
+`BodyScroll` does not scroll sideways, so in a narrower window the grid laid out wider than its group and Avalonia drew the rest
+over the group's border. Z₀, Return, Width, Height and Offset are now star columns with a minimum and their old width as the
+maximum (Return weighted 3.5), so the table fits down to about 490 px of group; the header and every row carry the same
+definitions. Below that the table is clipped at the group's edge (`ClipToBounds`), which is narrower than the panel's toolbar fits.
+
+A `.c3d` setup's Component ports list reads its parts from the view's elaboration (`C3dComponentPortsHost.PartsKey` is that
+object's identity). A panel opened before the view was built listed "The 3D view has not been built yet" and the parts its setup
+names, and nothing told it when the build finished, so the placed parts appeared only when an edit refreshed the panel (empty
+outright with "Every two-terminal part" ticked). `OnSceneAdopted` now calls `RefreshComponentParts` on the open setup panel; an
+unchanged elaboration lists nothing again. A `.cem` resolves its layout inside its own refresh, so its list never had the gap.
+Gate: `SimulateEditorGateTests.TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit`, which fails without the call.
