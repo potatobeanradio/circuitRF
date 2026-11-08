@@ -919,3 +919,12 @@ every trace of the three displays. All in under a second.
   they show in Cgs (10 fF at 0.5 GHz), which the README says.
 - **A unit of `m` on a variable-valued length is milli**, as documented (`reference units`): the first Line Standard was
   1000× short until its `L` row lost the unit, the variable already being in metres.
+
+## The TRL example's `.ccell` files are in the form circuitRF writes (2026-11-08)
+
+The five cells of `TRL and De-embedding` (DUT, Launch A, Launch B, Line Standard, GaN Extrinsic) were written by hand
+with terminal rows carrying no `LayoutPin`. They read correctly, because an absent `LayoutPin` is an empty one, but
+circuitRF writes the key on every row (`"LayoutPin": []` for a cell with no layout). Loading and re-saving them
+therefore changed them, and `TerminalMapTests.EveryShippedCcellReSerializesUnchanged` failed. Each row now carries
+`"LayoutPin": []`, which is what saving the cell would write. A shipped `.ccell` written by hand should be checked
+by that test before it is committed.

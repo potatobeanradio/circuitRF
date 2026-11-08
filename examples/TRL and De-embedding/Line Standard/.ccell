@@ -5,11 +5,13 @@
   "Terminals": [
     {
       "Port": 1,
-      "Name": "IN"
+      "Name": "IN",
+      "LayoutPin": []
     },
     {
       "Port": 2,
-      "Name": "OUT"
+      "Name": "OUT",
+      "LayoutPin": []
     }
   ],
   "NumPorts": 2

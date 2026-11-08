@@ -5,27 +5,33 @@
   "Terminals": [
     {
       "Port": 1,
-      "Name": "G"
+      "Name": "G",
+      "LayoutPin": []
     },
     {
       "Port": 2,
-      "Name": "D"
+      "Name": "D",
+      "LayoutPin": []
     },
     {
       "Port": 3,
-      "Name": "S"
+      "Name": "S",
+      "LayoutPin": []
     },
     {
       "Port": 4,
-      "Name": "GI"
+      "Name": "GI",
+      "LayoutPin": []
     },
     {
       "Port": 5,
-      "Name": "DI"
+      "Name": "DI",
+      "LayoutPin": []
     },
     {
       "Port": 6,
-      "Name": "SI"
+      "Name": "SI",
+      "LayoutPin": []
     }
   ],
   "NumPorts": 6
