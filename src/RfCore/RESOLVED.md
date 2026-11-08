@@ -1118,3 +1118,22 @@ LINEAR terms (a −40 dB entry 3 dB apart differs by 0.003). `SnpPerturbation.Re
 knowing: a passive 3D-EM result is reciprocal only to its solver's accuracy (the coupled-microstrip's 5.5e-3 is on a
 −30 dB entry), so a tolerance much tighter than ~1e-2 would untie real passive structures; and a FET held in
 pinch-off is not reciprocal at all (S21 ≠ S12 by 6 dB), so "passive at this bias" does not imply tied.
+
+## The network inverse and TRL: what the algebra allows (brief-de-1, 2026-11-07)
+
+`NetworkInverse` and `TrlCalibration` are the math under the Deembed component and the `trl` analysis. Three findings:
+
+- **The inverse of a network often has no S-matrix, even when the network is ordinary.** `F⁻¹`'s cascade matrix, in F's
+  own blocks, is `[[S12⁻¹, −S12⁻¹·S11], [S22·S12⁻¹, S21 − S22·S12⁻¹·S11]]` (block inversion of T_F, whose Schur complement is
+  exactly S12), so it needs only S12 invertible. Its S-matrix also needs `S21 − S22·S12⁻¹·S11` invertible, and a series
+  100 Ω in a 50 Ω system fails that (det S = 0): the series −100 Ω that undoes it shorts the two reference terminations into
+  each other. Anything that STAMPS an inverse must use the cascade form. `TryInvert` (the S form) is for files and plots.
+- **TRL is written in the eigenvectors of `Ml·Mt⁻¹`, not in ratios of their entries.** The usual ratio form divides by
+  the fixture's S22, which a perfectly matched fixture does not have. Writing A = [u w]·diag(p, q) and B = A⁻¹·Mt leaves
+  only p and q: the Reflect fixes p/q, and A's reciprocity fixes p·q. The left eigenvectors for B are never needed.
+- **Two signs are free per frequency, and both must be tracked across frequency**: which eigenvalue is e^(−γℓ), and the
+  sign of S21_A's square root. The part de-embedded with the fixtures depends on neither (only products), so dropping the
+  tracking looks harmless. It is not: untracked, fixture A's S21 flipped sign at 7 GHz on the test bench, and above 180° of
+  line every answer was wrong (`TrlCalibrationTests.WithoutContinuityTracking_…`). A fixture file whose S21 flips between two
+  samples interpolates through zero, and the Deembed reads its file by interpolation. Tracked, both fixtures come back to
+  1e-10 through 333° of line.

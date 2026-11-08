@@ -10,9 +10,11 @@ work by the end of this brief.
 
 - `SnpModel` gains `Inverse` (init-only; false by default, and false stamps exactly as today). With it true, `Stamp`
   evaluates the interpolated S exactly as now (`LoadInterpolator(c).Evaluate(hz)`), passes it through
-  `NetworkInverse.Invert(s, NumPorts / 2)`, and stamps the result. **Always use the S-wave stamp**
-  (`IdealSBlockModel.StampWaveConstraints`), never the Z expansion. A thru-like fixture inverts to a thru-like block, and a
-  thru has no Z. The S-wave stamp is exact for any S.
+  `NetworkInverse.TryInverseCascade(s, …)`, and **stamps the cascade form**: 2K constraint rows relating the port waves
+  `[b1; a1] = T·[a2; b2]`, with `a = (V + Z0·I)/(2√Z0)` and `b = (V − Z0·I)/(2√Z0)` per port and one branch current per port, as
+  the SnP stamp has. Do not stamp the inverse's S: DE-1 found it often does not exist. A series 100 Ω in a 50 Ω system has
+  det S = 0, and the series −100 Ω that undoes it has a cascade matrix but no S-matrix (`NetworkInverseTests`). The
+  cascade form needs only the fixture's transmission to be invertible, and it is what cancels an SnP to rounding.
 - `Describe` says `Deembed 'X1.D1'` for an inverse block, so every existing refusal (missing file, folder, not found) names
   it correctly with no further edits.
 - A non-invertible point (DE-1's typed refusal) throws a refusal naming the instance and the frequency in GHz. At 0 Hz the

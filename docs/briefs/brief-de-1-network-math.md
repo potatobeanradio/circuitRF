@@ -35,7 +35,9 @@ is D1. All ports share the file's single reference impedance. A file whose ports
 (Touchstone 2) is renormalised to one first, or refused. Pick the first if `RFNetwork` already renormalises, otherwise
 refuse with a sentence.
 
-**Refusal.** `S21` must be invertible, meaning every outer port reaches the inner side. Use the condition number, not an exact
+**Refusal.** The fixture's transmission must be invertible, meaning every port on one side reaches the other. *As built:* the
+inverse's cascade matrix needs only `S12` invertible, `T(F⁻¹) = [[S12⁻¹, −S12⁻¹·S11], [S22·S12⁻¹, S21 − S22·S12⁻¹·S11]]`, and its
+S-matrix additionally needs `S21 − S22·S12⁻¹·S11` invertible, which a series 100 Ω in 50 Ω is not. So DE-2 stamps the cascade form. Use the condition number, not an exact
 zero: refuse above a threshold you choose and document (1e12 is a reasonable start). The refusal is a typed result that
 carries the frequency, so the model can name the instance (DE-2). A fixture with a series DC block reaches this at 0 Hz.
 
