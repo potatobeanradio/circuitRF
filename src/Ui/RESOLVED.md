@@ -1,5 +1,59 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A kit's PCell library written for another layout tool now runs unmodified (2026-11-08)
+
+Measured on one open PDK's library of 38 device generators, through the default entry circuitRF writes
+(`register_kit("<package>")`, nothing else) and XORed layer by layer against the reference tool drawing
+the same 50 cells. Before: 24 generators offered, 14 missing, one failing to draw, 7 of the 28 drawn
+differing. After: all 38 draw and all 50 are identical, with the tool's own Python module installed on the
+path and without it. Six separate gaps in `tools/pcell-python/cni`, each fixed to the reference API's
+semantics; leaving any one fix out brings its failure back.
+
+1. **Missing names.** `cni.rect` and `cni.text` (imported by name, then used in `isinstance`), the
+   constraint actions `REJECT`/`ACCEPT`/`USE_DEFAULT`, `INT_MAX`/`INT_MIN` and `Polygon.getPoints()`.
+   18 device modules failed to import on the first two alone.
+2. **An installed host broke the import.** Where the host tool's own module is importable, as a tools
+   image has it, the kit's package initialiser registers its cells with it, and the real host refuses
+   circuitRF's `PCellWrapper` (it takes only its own declaration type), so the whole kit failed. Masked on
+   main by item 1: the initialiser stopped at the first missing name, and the retry found the
+   half-imported subpackage in `sys.modules`, so the initialiser never ran again. Any other failure is now
+   checked for a host: the modules in the namespace of the kit's own code outside its device package, at
+   the failing frames, that are not the kit's (its root package, or found where it was found), not
+   circuitRF's and not the standard library. Those are stood in for, the failed attempt's modules dropped,
+   and the import retried. A real host that does no harm is still left alone. Needs Python 3.10+
+   (`sys.stdlib_module_names`); older interpreters keep the original error.
+3. **Booleans consumed their operands.** The reference API leaves them drawn and a kit deletes what it
+   does not want. Two bipolar cells keep the mask rectangles they cut out of their active area, and lost
+   them.
+4. **Holes were dropped when a result fed another boolean.** A polygon went in as its outline only, and
+   the host normalises every ring to a solid, so a hole cannot travel as a ring of its own. A capacitor's
+   guard ring came out as a filled square. A region with holes now goes in as hole-free slabs, cut by the
+   host at its holes' vertex y's (still one clipper): a slab cannot enclose a hole, since any hole it meets
+   spans it from cut to cut. One ring reaching each hole along a straight cut was tried first and dropped:
+   where the cut leaves the region (a U-shaped outline), Clipper2 splits along it and files the sliver as a
+   hole. `fgSize` growing such a region grows the slabs, which is the region grown; shrinking would open a
+   gap along each cut, so it is refused by name.
+5. **`clone()` dropped figure tags.** The reference copy is a deep copy with geometry, net and pin set
+   afresh. A kit tags figures (`fig.col = True`) and sizes its pins from the tagged ones, copies included,
+   so the pins did not grow with the emitter count. A copy now keeps every attribute its constructor does
+   not set.
+6. **Shared base classes were offered as generators.** The structural rule (a cell overrides `genLayout`)
+   misses a base whose `genLayout` calls a method its devices supply. In the reference API a class is a cell
+   only once the kit registers it, and the kit's glue wraps each cell in a `PCellWrapper` to do so. That is
+   now recorded, and `register_kit` offers exactly the package's wrapped classes when there are any, matched
+   by module and name because glue may load a module from a preprocessed copy of its file. A kit with no
+   glue keeps the structural walk. Rejected: "has subclasses" (a device can have a variant subclass), "no
+   parameter declaration of its own" (the bases declare theirs), "has abstract methods" (one base has none).
+   Measured consequence: a class the kit registers is offered even though its devices subclass it, and the
+   reference tool offers and draws it identically; a variant subclass the kit never registers is not
+   offered.
+
+Gate: `PCellVendorBridgeTests` — a synthetic kit per item, through the production provider:
+`TheApisOwnModulesAndConstants_…`, `AKitRegisteringWithAnInstalledTool_StillLoads`,
+`ABoolean_LeavesItsOperandsDrawn_…`, `AHoleSurvives_WhenTheResultFeedsAnotherBoolean` (ring, and the U
+whose straight cut would leave it), `ACopy_KeepsTheTagsTheKitSetOnTheOriginal`,
+`ASharedBaseTheKitNeverRegisters_IsNotOffered`. Each fails with its fix reverted.
+
 ## Messages rows with a link, a bar or a button drew taller than plain ones (2026-10-31)
 
 A row carrying the file-path link, the progress counter, the expand toggle or the Relaunch button was 3, 3, 4

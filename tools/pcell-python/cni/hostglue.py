@@ -15,11 +15,19 @@ it expects by importing it; when that import fails, Python reports the missing m
 layer installs a stand-in under exactly that name and retries. Naming a specific tool in this file
 would put one vendor's identifier into circuitRF for no gain — the mechanism does not need to know
 which host a kit was written against, only that one is missing.
+
+**An installed host is found the same way: from the kit's failure.** Where the host's own Python module
+is importable (a tools image commonly puts it on the path), the glue registers the cells with it — and
+the real host refuses circuitRF's cell wrapper, so the kit's import fails and no cell draws. The kit
+named its host by using it: the modules in the glue's own namespace at the failing frame that are not
+the kit's, not circuitRF's and not the standard library. Those are stood in for and the import retried.
 """
 
 from __future__ import annotations
 
 import importlib
+import importlib.util
+import os
 import sys
 import types
 from typing import Any
@@ -78,9 +86,10 @@ class _InertBase:
 def install_host_module(module_name: str) -> bool:
     """Put an inert stand-in in place for one host module, unless the user genuinely has the real one.
 
-    Returns True when this layer supplied it. **A real installation always wins** — if the user has
-    the actual tool available, its own behaviour is more correct than anything here, and quietly
-    shadowing it would be the kind of substitution that is impossible to debug later.
+    Returns True when this layer supplied it. **A real installation wins here** — if the user has the
+    actual tool available, its own behaviour is more correct than anything here, and quietly shadowing
+    it would be the kind of substitution that is impossible to debug later. The exception is a host
+    the kit has already failed against; see :func:`install_host_module_for`.
     """
     if module_name in sys.modules:
         return False
@@ -90,10 +99,51 @@ def install_host_module(module_name: str) -> bool:
     except ImportError:
         pass
 
+    _stand_in(module_name)
+    return True
+
+
+def _stand_in(module_name: str) -> None:
     module = types.ModuleType(module_name)
     module.__getattr__ = lambda name: _Inert(f"{module_name}.{name}")  # type: ignore[attr-defined]
     sys.modules[module_name] = module
-    return True
+
+
+def _hosts_the_glue_used(exc: BaseException, package: str) -> list[str]:
+    """The installed host modules a kit's registration glue was using when its import failed.
+
+    The glue is the kit's code outside its device package (its package initialiser, typically). A
+    module in the glue's namespace that is not the kit's own — its root package, or anything found
+    where that package was found — not circuitRF's and not the standard library is the host it
+    registers with. Python 3.10+ only (``sys.stdlib_module_names``); older interpreters keep the
+    original error.
+    """
+    stdlib = getattr(sys, "stdlib_module_names", None)
+    if stdlib is None:
+        return []
+    root = package.split(".")[0]
+    try:
+        spec = importlib.util.find_spec(root)
+    except (ImportError, ValueError):
+        spec = None
+    beside = [os.path.dirname(p) + os.sep for p in (spec.submodule_search_locations or [])] if spec else []
+    hosts: list[str] = []
+    tb = exc.__traceback__
+    while tb is not None:
+        scope = tb.tb_frame.f_globals
+        name = str(scope.get("__name__", ""))
+        if name.split(".")[0] == root and not name.startswith(package + "."):
+            for value in list(scope.values()):
+                if not isinstance(value, types.ModuleType):
+                    continue
+                top = value.__name__.split(".")[0]
+                where = getattr(value, "__file__", None) or ""
+                if (top in (root, "cni", "circuitrf_pcell") or top in stdlib or top in hosts
+                        or any(where.startswith(b) for b in beside)):
+                    continue
+                hosts.append(top)
+        tb = tb.tb_next
+    return hosts
 
 
 def install_host_module_for(package: str) -> list[str]:
@@ -105,11 +155,16 @@ def install_host_module_for(package: str) -> list[str]:
     against any host works without circuitRF naming that host — and a kit needing nothing installs
     nothing.
 
+    A host that IS installed is replaced too, once the kit's import has failed using it: the real one
+    refuses circuitRF's objects (measured: its cell registration takes only its own declaration type),
+    so it can only stop the kit from loading. A real host that does no harm is left alone.
+
     Returns the names that were stood in for, so a caller can report them. Raises the original error
-    if the import fails for any reason other than a missing module.
+    if the import fails for any other reason.
     """
     installed: list[str] = []
     for _ in range(MAX_HOST_MODULES):
+        loaded = set(sys.modules)
         try:
             importlib.import_module(package)
             return installed
@@ -122,6 +177,18 @@ def install_host_module_for(package: str) -> list[str]:
             if not install_host_module(missing):
                 raise
             installed.append(missing)
+        except Exception as exc:                            # noqa: BLE001 - re-raised unless a host
+            hosts = [h for h in _hosts_the_glue_used(exc, package) if h not in installed]
+            if not hosts:
+                raise
+            # The kit's modules from the failed attempt go with it, so the retry runs the kit from
+            # the start against the stand-ins rather than half against the real host.
+            for name in set(sys.modules) - loaded:
+                if name.split(".")[0] in [package.split(".")[0], *hosts]:
+                    del sys.modules[name]
+            for name in hosts:
+                _stand_in(name)
+            installed += hosts
 
     raise ImportError(
         f"'{package}' still could not be imported after standing in for {len(installed)} host "

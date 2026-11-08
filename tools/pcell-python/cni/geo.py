@@ -141,13 +141,41 @@ def _rings_of(fig: Any, dbu_per_micron: int) -> list[list[tuple[int, int]]]:
                  (d(b.right), d(b.top)), (d(b.left), d(b.top))]]
 
     if isinstance(fig, Polygon):
-        return [[(d(p.x), d(p.y)) for p in fig.points]]
+        outer = [(d(p.x), d(p.y)) for p in fig.points]
+        holes = [[(d(p.x), d(p.y)) for p in h] for h in getattr(fig, "holes", ())]
+        return _hole_free(outer, holes) if holes else [outer]
 
     raise UnsupportedByCircuitRF(
         f"layer boolean on {type(fig).__name__}: only rectangles and polygons are closed regions "
         "with an unambiguous outline. A path's outline depends on its end style, so it is widened "
         "into a polygon before it can take part in a boolean."
     )
+
+
+def _hole_free(outer: list[tuple[int, int]], holes: list[list[tuple[int, int]]]) -> list[list[tuple[int, int]]]:
+    """A region with holes as hole-free rings whose union is that region, cut by the host.
+
+    The host reads an operand as a union of rings and turns every ring into a solid, so a hole cannot
+    go in as a ring of its own: it would be filled. Cut at each hole vertex's y, a horizontal slab of
+    the region cannot enclose a hole — any hole it meets spans it from cut to cut — so each slab is
+    the outline minus the holes and minus what lies above and below it, asked of the host like any
+    other boolean.
+    """
+    xs = [x for x, _ in outer]
+    ys = [y for _, y in outer]
+    left, right, bottom, top = min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
+
+    def band(lo: int, hi: int) -> list[tuple[int, int]]:
+        return [(left, lo), (right, lo), (right, hi), (left, hi)]
+
+    cuts = [bottom] + sorted({y for h in holes for _, y in h}) + [top]
+    rings = []
+    for lo, hi in zip(cuts, cuts[1:]):
+        for piece in crf.clip("not", [outer], holes + [band(bottom - 1, lo), band(hi, top + 1)]):
+            if piece.holes:                                 # cannot happen; never fill one silently
+                raise UnsupportedByCircuitRF("layer boolean on a region whose holes could not be cut out")
+            rings.append(piece.outer)
+    return rings
 
 
 def _clip(rule: str, subject: Any, clip: Any) -> FigureGroup:
@@ -171,10 +199,8 @@ def _clip(rule: str, subject: Any, clip: Any) -> FigureGroup:
 
     polygons = crf.clip(rule, subject_rings, clip_rings)
 
-    # The operands are consumed: a kit builds temporary figures purely to combine them, and leaving
-    # them in the cell would draw the inputs on top of the answer.
-    for f in subject_figs + clip_figs:
-        f.destroy()
+    # The operands stay drawn, as the API defines it: a kit deletes the ones it does not want and
+    # keeps the rest, so consuming them here deleted artwork the kit kept.
 
     scale = 1.0 / ctx.dbu_per_micron
     result = FigureGroup()
@@ -217,10 +243,9 @@ def fgXor(subject: Any, clip: Any = None, *_a, **_k) -> FigureGroup:
 def fgSize(subject: Any, size: float, layer: Layer | str | None = None, *_a, **_k) -> FigureGroup:
     """Grow (positive ``size``) or shrink (negative) a figure, in MICRONS.
 
-    **The result is a NEW figure and the original is left alone.** This is how a kit derives one layer
-    from another — a well grown out of the diffusion it must enclose — and both pieces are real
-    artwork that has to survive. Consuming the original the way a boolean does would delete the
-    diffusion the moment the well was derived from it.
+    **The result is a NEW figure and the original is left alone,** as with the booleans. This is how a
+    kit derives one layer from another — a well grown out of the diffusion it must enclose — and both
+    pieces are real artwork that has to survive.
 
     ``layer`` is where the result is drawn; omitted, it stays on the subject's own layer. That
     re-layering is the whole point of the derive idiom, so it is an argument rather than a later step.
@@ -235,6 +260,10 @@ def fgSize(subject: Any, size: float, layer: Layer | str | None = None, *_a, **_
     figures = _as_figures(subject)
     if not figures:
         return FigureGroup()
+    if size < 0 and any(getattr(f, "holes", None) for f in figures):
+        # A region with holes goes in as hole-free pieces (_hole_free). Growing the pieces grows the
+        # region; shrinking them opens a gap along every cut. Refused by name rather than drawn wrong.
+        raise UnsupportedByCircuitRF("fgSize shrinking a polygon with holes")
 
     rings = [r for f in figures for r in _rings_of(f, ctx.dbu_per_micron)]
     delta = crf.dbu(size * ctx.dbu_per_micron)

@@ -92,6 +92,109 @@ public sealed class PCellVendorBridgeTests
                     big = Rect(Layer('M1'), Box(0, 0, self.outer, self.outer))
                     cut = Rect(Layer('M1'), Box(m, m, m + self.inner, m + self.inner))
                     fgNot(big, cut)
+                    # The operands stay drawn until the cell deletes them, as the API defines it.
+                    big.destroy()
+                    cut.destroy()
+            """);
+
+        // The API names a kit reaches for beyond cni.dlo's classes: the modules that hold a rectangle
+        // and a label, a constraint's out-of-range action, and a polygon's points read back.
+        File.WriteAllText(Path.Combine(pkg, "names_code.py"), """
+            import cni.rect
+            import cni.text
+            from cni.dlo import *
+
+            class names(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('w', 2.0, 'Width', RangeConstraint(1.0, 10.0, USE_DEFAULT))
+
+                def setupParams(self, params):
+                    self.w = params['w']
+
+                def genLayout(self):
+                    Text(Layer('M1'), 'X', Point(0, 0), 1.0)
+                    body = Polygon(Layer('M1'), [(0, 0), (self.w, 0), (self.w, 1), (0, 1)])
+                    right = max(p.x for p in body.getPoints())
+                    cni.rect.Rect(Layer('M1'), Box(right, 0, right + 1, 1))
+                    for s in self.getShapes():
+                        if isinstance(s, cni.text.Text):
+                            s.destroy()
+            """);
+
+        // An operand the cell keeps: it deletes the square it cut from and keeps the cut, which a
+        // boolean that consumed its operands would have deleted for it.
+        File.WriteAllText(Path.Combine(pkg, "keep_code.py"), """
+            from cni.dlo import Box, DloGen, Layer, Rect
+            from cni.geo import fgNot
+
+            class keep(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('size', '10', 'Size')
+
+                def setupParams(self, params):
+                    self.size = float(params['size'])
+
+                def genLayout(self):
+                    big = Rect(Layer('M1'), Box(0, 0, self.size, self.size))
+                    cut = Rect(Layer('M1'), Box(3, 3, 7, 7))
+                    fgNot(big, cut)
+                    big.destroy()
+            """);
+
+        // A region with a hole fed into a second boolean, as a guard ring is built: a ring cut from a
+        // square, or a U whose straight cut from its first corner to the hole crosses the notch,
+        // ANDed with its own frame, which must give the region back with its hole.
+        File.WriteAllText(Path.Combine(pkg, "chain_code.py"), """
+            from cni.dlo import Box, DloGen, Layer, Polygon, Rect
+            from cni.geo import fgAnd, fgNot
+
+            class chain(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('kind', 'ring', 'Shape')
+
+                def setupParams(self, params):
+                    self.kind = params['kind']
+
+                def genLayout(self):
+                    if self.kind == 'ring':
+                        big = Rect(Layer('M1'), Box(0, 0, 10, 10))
+                        cut = Rect(Layer('M1'), Box(3, 3, 7, 7))
+                        holed = fgNot(big, cut)
+                        big.destroy()
+                        cut.destroy()
+                    else:
+                        holed = Polygon(Layer('M1'),
+                                        [(0, 10), (0, 0), (10, 0), (10, 10), (7, 10), (7, 3), (3, 3), (3, 10)],
+                                        holes=[[(8, 5), (9, 5), (9, 8), (8, 8)]])
+                    frame = Rect(Layer('M1'), Box(0, 0, 10, 10))
+                    fgAnd(holed, frame)
+                    frame.destroy()
+                    holed.destroy()
+            """);
+
+        // A cell that tags figures and finds them again, copies included, as a transistor sizes its
+        // pins from the tagged pieces of every finger.
+        File.WriteAllText(Path.Combine(pkg, "tagged_code.py"), """
+            from cni.dlo import Box, DloGen, Layer, Rect
+
+            class tagged(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('n', 2, 'Copies')
+
+                def setupParams(self, params):
+                    self.n = params['n']
+
+                def genLayout(self):
+                    first = Rect(Layer('M1'), Box(0, 0, 1, 1))
+                    first.col = True
+                    for i in range(1, self.n):
+                        first.clone().moveBy(2 * i, 0)
+                    for f in [f for f in self.getShapes() if f.col]:
+                        Rect(Layer('M1'), f.getBBox().expand(0.25))
             """);
 
 
@@ -261,6 +364,96 @@ public sealed class PCellVendorBridgeTests
     private static PCellWorkerProvider StartProvider(string script, string[] pythonPath)
         => new(ProcessPCellWorkerTransport.Start(PythonRunner.Interpreter!, script, pythonPath));
 
+    /// <summary>
+    /// A kit written to run inside another layout tool: its package initialiser registers its cells
+    /// with that tool's module, wrapping each one, and its devices share a base class that is not a
+    /// device. The tool's module is INSTALLED here, in a directory of its own as a tools image has
+    /// it, and like the real one it refuses any declaration but its own type.
+    /// </summary>
+    private static (string Script, string[] PythonPath) WriteKitWithHostGlue()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "crf-glue-" + Guid.NewGuid().ToString("N")[..8]);
+        string pkg  = Path.Combine(root, "kit", "glue_kit", "cells");
+        string host = Path.Combine(root, "site");
+        Directory.CreateDirectory(pkg);
+        Directory.CreateDirectory(host);
+
+        File.WriteAllText(Path.Combine(host, "layouttool.py"), """
+            class Declaration:
+                pass
+
+            class Library:
+                def register_pcell(self, name, declaration):
+                    if not isinstance(declaration, Declaration):
+                        raise TypeError("expected a Declaration, got " + type(declaration).__name__)
+            """);
+
+        File.WriteAllText(Path.Combine(root, "kit", "glue_kit", "__init__.py"), """
+            import layouttool
+            from cni.dlo import PCellWrapper
+            from .cells import plate_code
+
+            class Lib(layouttool.Library):
+                def __init__(self):
+                    self.register_pcell('plate', PCellWrapper(plate_code.plate()))
+
+            Lib()
+            """);
+        File.WriteAllText(Path.Combine(pkg, "__init__.py"), "");
+
+        // The shared base overrides genLayout (it calls the part a device supplies), so nothing about
+        // the class itself says it is not a device; only the kit's registration does.
+        File.WriteAllText(Path.Combine(pkg, "base_code.py"), """
+            from cni.dlo import DloGen
+
+            class base(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('w', '2', 'Width')
+
+                def setupParams(self, params):
+                    self.w = float(params['w'])
+
+                def genLayout(self):
+                    self.body()
+            """);
+        File.WriteAllText(Path.Combine(pkg, "plate_code.py"), """
+            from cni.dlo import Box, Layer, Rect
+            from .base_code import base
+
+            class plate(base):
+                def body(self):
+                    Rect(Layer('M1'), Box(0, 0, self.w, 1))
+            """);
+
+        string script = Path.Combine(root, "entry.py");
+        File.WriteAllText(script, """
+            import sys
+            import circuitrf_pcell as crf
+            from cni.bridge import register_kit
+
+            result = register_kit("glue_kit.cells")
+            for problem in result.problems:
+                print(problem, file=sys.stderr)
+
+            crf.run()
+            """);
+
+        return (script, [PythonRunner.PackageRoot, Path.Combine(root, "kit"), host]);
+    }
+
+    /// <summary>Twice the signed area of a flat x,y ring.</summary>
+    private static long Area2(long[] xy)
+    {
+        long a = 0;
+        for (int i = 0; i < xy.Length; i += 2)
+        {
+            int j = (i + 2) % xy.Length;
+            a += xy[i] * xy[j + 1] - xy[j] * xy[i + 1];
+        }
+        return a;
+    }
+
     // ── discovery ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -273,7 +466,7 @@ public sealed class PCellVendorBridgeTests
         var (script, pythonPath) = WriteSyntheticKit();
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"],
+        Assert.Equal(["cap", "chain", "keep", "mim", "moved", "names", "pad", "res", "ring", "tagged"],
                      provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
     }
 
@@ -358,9 +551,124 @@ public sealed class PCellVendorBridgeTests
 
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["cap", "chain", "keep", "mim", "moved", "names", "pad", "res", "ring", "tagged"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
         Assert.True(provider.TryGetGenerator("pad", out var generator));
         Assert.Single(generator(new Dictionary<string, PCellValue>(), Tech, NoLayers).Shapes);
+    }
+
+    // ── the API as a kit written for another tool uses it ──────────────────────
+
+    /// <summary>
+    /// The names a kit reaches for besides cni.dlo's classes: <c>cni.rect</c> and <c>cni.text</c>
+    /// holding the very classes it draws with, <c>USE_DEFAULT</c> as a constraint's action, and a
+    /// polygon's points read back. Measured on one open kit, the first two alone stopped 18 of its
+    /// device modules importing.
+    /// </summary>
+    [PythonFact]
+    public void TheApisOwnModulesAndConstants_AreThere_AndAreTheClassesTheCellDrawsWith()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("names", out var generator));
+        var result = generator(new Dictionary<string, PCellValue> { ["w"] = PCellValue.Real(3.0) }, Tech, NoLayers);
+
+        // The label was found by isinstance against cni.text.Text and deleted; the rectangle from
+        // cni.rect sits where the polygon's own points put its right edge.
+        Assert.Equal(2, result.Shapes.Count);
+        var rect = Assert.Single(result.Shapes.OfType<RectShape>());
+        Assert.Equal(3000, rect.X1);
+        Assert.Equal(4000, rect.X2);
+    }
+
+    /// <summary>
+    /// A boolean leaves its operands drawn, as the API defines it; the cell deletes the ones it does
+    /// not want. Consuming them deleted artwork a kit kept: measured, two bipolar cells lost the
+    /// mask rectangles they keep after cutting them out of their active area.
+    /// </summary>
+    [PythonFact]
+    public void ABoolean_LeavesItsOperandsDrawn_AndTheCellDeletesWhatItDoesNotWant()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("keep", out var generator));
+        var result = generator(new Dictionary<string, PCellValue>(), Tech, NoLayers);
+
+        Assert.Equal(2, result.Shapes.Count);
+        Assert.Single(Assert.Single(result.Shapes.OfType<PolygonShape>()).Holes!);
+        var kept = Assert.Single(result.Shapes.OfType<RectShape>());
+        Assert.Equal((3000, 3000, 7000, 7000), (kept.X1, kept.Y1, kept.X2, kept.Y2));
+    }
+
+    /// <summary>
+    /// A boolean's result with a hole keeps the hole when it feeds a second boolean. Measured on one
+    /// open kit, a capacitor's guard ring came out as a filled square. The U case is not convex, and
+    /// a straight cut from its first corner to its hole would cross the notch, outside the region.
+    /// </summary>
+    [PythonTheory]
+    [InlineData("ring", 100L - 16L, 3000L, 7000L)]
+    [InlineData("u", 100L - 28L - 3L, 8000L, 9000L)]
+    public void AHoleSurvives_WhenTheResultFeedsAnotherBoolean(string kind, long areaUm2, long holeMinX, long holeMaxX)
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("chain", out var generator));
+        var result = generator(new Dictionary<string, PCellValue> { ["kind"] = PCellValue.Text(kind) }, Tech, NoLayers);
+
+        var poly = Assert.IsType<PolygonShape>(Assert.Single(result.Shapes));
+        var hole = Assert.Single(poly.Holes!);
+        var hx = hole.Where((_, i) => i % 2 == 0).ToArray();
+        Assert.Equal((holeMinX, holeMaxX), (hx.Min(), hx.Max()));
+        Assert.Equal(areaUm2 * 2_000_000, Math.Abs(Area2(poly.Xy)) - Math.Abs(Area2(hole)));
+    }
+
+    /// <summary>
+    /// A copy keeps the tags the kit set on the original, as the API's own deep copy does — a cell
+    /// that sizes its pins from its tagged figures has to find the copies too.
+    /// </summary>
+    [PythonFact]
+    public void ACopy_KeepsTheTagsTheKitSetOnTheOriginal()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("tagged", out var generator));
+        var result = generator(new Dictionary<string, PCellValue> { ["n"] = PCellValue.Int(3) }, Tech, NoLayers);
+
+        // Three squares and a marker around each one the cell found by its tag.
+        Assert.Equal(6, result.Shapes.Count);
+    }
+
+    /// <summary>
+    /// A kit whose package initialiser registers its cells with an INSTALLED layout tool still loads.
+    /// That tool refuses circuitRF's wrapper, so the import failed and the kit offered nothing; the
+    /// tool the kit used is now stood in for, found from the kit's own failing code, never named.
+    /// </summary>
+    [PythonFact]
+    public void AKitRegisteringWithAnInstalledTool_StillLoads()
+    {
+        var (script, pythonPath) = WriteKitWithHostGlue();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.True(provider.TryGetGenerator("plate", out var generator));
+        var rect = Assert.IsType<RectShape>(Assert.Single(generator(new Dictionary<string, PCellValue>(), Tech, NoLayers).Shapes));
+        Assert.Equal(2000, rect.X2);
+    }
+
+    /// <summary>
+    /// The cells offered are the ones the kit registers. A shared base its devices subclass draws
+    /// through them and is never registered, so it is not offered, though nothing about the class
+    /// itself (it declares parameters and overrides genLayout) tells it from a device.
+    /// </summary>
+    [PythonFact]
+    public void ASharedBaseTheKitNeverRegisters_IsNotOffered()
+    {
+        var (script, pythonPath) = WriteKitWithHostGlue();
+        using var provider = StartProvider(script, pythonPath);
+
+        Assert.Equal(["plate"], provider.GeneratorIds);
     }
 
     // ── zero configuration ────────────────────────────────────────────────────
@@ -393,7 +701,7 @@ public sealed class PCellVendorBridgeTests
             report: problems.Add,
             trust: _ => PCellTrustDecision.Allowed);
 
-        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["cap", "chain", "keep", "mim", "moved", "names", "pad", "res", "ring", "tagged"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
 
         var generator = resolver.Resolve("pad");
         Assert.NotNull(generator);
@@ -752,7 +1060,7 @@ public sealed class PCellVendorBridgeTests
         Assert.Equal("DemoKit", byKit["moved"]);
         Assert.Equal("DemoKit", byKit["cap"]);
         Assert.Equal("DemoKit", byKit["res"]);
-        Assert.Equal(6, byKit.Count);
+        Assert.Equal(10, byKit.Count);
     }
 
     // ── wire version 7: the editor hints a kit already states ─────────────────

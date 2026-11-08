@@ -19,6 +19,7 @@ is why generation runs inside a context.
 from __future__ import annotations
 
 import math
+import sys
 from abc import abstractmethod
 from typing import Any, Iterable, Sequence
 
@@ -32,7 +33,14 @@ __all__ = [
     "Numeric", "octagon", "ulist", "append", "cadr", "caddr", "cadddr",
     "strToOrient", "strToAlignt", "Transform",
     "UnsupportedByCircuitRF", "current_context", "abstractmethod",
+    "REJECT", "ACCEPT", "USE_DEFAULT", "INT_MAX", "INT_MIN",
 ]
+
+
+#: What a constraint does with a value outside it, and the integer bounds a cell starts a min/max
+#: search from: constants of the API a kit's cells name through ``from cni.dlo import *``.
+REJECT, ACCEPT, USE_DEFAULT = 1, 2, 3
+INT_MAX, INT_MIN = sys.maxsize, -sys.maxsize - 1
 
 
 class UnsupportedByCircuitRF(NotImplementedError):
@@ -189,8 +197,8 @@ class _PinEntry:
         self.box = box
         self.layer = layer
         #: The figure carrying this pin, bound when one is drawn for it. None until then, and again
-        #: if that figure is destroyed — a pin whose artwork was consumed by a boolean keeps the last
-        #: box it was known at rather than losing its position altogether.
+        #: if that figure is destroyed — a pin whose artwork the cell deleted keeps the last box it
+        #: was known at rather than losing its position altogether.
         self.figure: "_Figure | None" = None
 
     @property
@@ -257,6 +265,13 @@ class _Figure:
             # capabilities this object does not have, and those failures land far from the cause.
             raise AttributeError(name)
         return _UnsetTag(type(self).__name__, name)
+
+    def _keeps_tags_of(self, original: "_Figure") -> "_Figure":
+        """A copy keeps whatever the kit tagged the original with (``fig.col = True``), as the API's
+        own deep copy does; what the constructor set (geometry, net, pin) stays the copy's own."""
+        for name, value in vars(original).items():
+            vars(self).setdefault(name, value)
+        return self
 
     def getNet(self): return self._net
     def setNet(self, net): self._net = net
@@ -331,7 +346,7 @@ class Rect(_Figure):
     def clone(self) -> "Rect":
         """A second rectangle just like this one. It DRAWS, like any other construction — the kit
         clones a shape in order to have another one, not to hold an unattached copy."""
-        return Rect(self.layer, Box(self.box))
+        return Rect(self.layer, Box(self.box))._keeps_tags_of(self)
 
     def transform(self, t: "Transform", *_a, **_k) -> "Rect":
         # Every orientation in Transform's table maps the axes onto the axes, so a rectangle stays a
@@ -356,10 +371,14 @@ class Polygon(_Figure):
         xs = [p.x for p in self.points]; ys = [p.y for p in self.points]
         return Box(min(xs), min(ys), max(xs), max(ys))
 
+    def getPoints(self, *_) -> PointList:
+        """The outline, as a copy: a cell reads a polygon's points back to measure it."""
+        return PointList([Point(p) for p in self.points])
+
     def clone(self) -> "Polygon":
         """A second polygon just like this one — and, like every construction here, it DRAWS."""
         return Polygon(self.layer, list(self.points),
-                       holes=[list(h) for h in getattr(self, "holes", ())])
+                       holes=[list(h) for h in getattr(self, "holes", ())])._keeps_tags_of(self)
 
     def transform(self, t: "Transform", *_a, **_k) -> "Polygon":
         self.points = PointList([Point(*t.apply(p.x, p.y)) for p in self.points])
@@ -799,10 +818,19 @@ class Tech(TechImpl):
 
 class PCellWrapper:
     """The kit wraps a generator for registration. circuitRF registers them itself, so this only
-    has to carry the class through without doing anything to it."""
+    has to carry the class through without doing anything to it.
+
+    **It also records the class: wrapping a cell is how a kit says that class IS a cell.** A kit's
+    registration glue wraps each device it offers, and no shared base; :mod:`cni.bridge` offers
+    exactly the classes recorded here, when a kit has recorded any.
+    """
+
+    #: Every cell class a kit has wrapped for registration, in order.
+    registered: list[type] = []
 
     def __init__(self, generator, *_a, **_k):
         self.generator = generator
+        PCellWrapper.registered.append(generator if isinstance(generator, type) else type(generator))
 
 
 class DloGen:
