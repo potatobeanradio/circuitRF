@@ -145,9 +145,12 @@ public static class C3dComponentPorts
     /// setup names none. Reads the placed layouts' files, or the layout <paramref name="layoutsInMemory"/> holds for a path (the
     /// elaborator's own lookup, so the pads come from the same layout as the copper); writes nothing.
     /// </summary>
+    /// <param name="layoutRegions">The elaborator's <see cref="C3dElaborator.LayoutRegions"/>: a part on a layout solved only
+    /// inside a region is left out unless every pad lies inside it, as a Planar <c>.cem</c> leaves it out.</param>
     public static C3dComponentPortBuild? Build(EmSetup setup, C3dDocument document, C3dElaboration drawn, int firstNumber,
                                                TechnologyCache? cache = null,
-                                               IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null)
+                                               IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null,
+                                               IReadOnlyDictionary<string, EmSolveRegion>? layoutRegions = null)
     {
         if (setup.ComponentPorts.Count == 0) return null;
         cache ??= new TechnologyCache();
@@ -205,6 +208,7 @@ public static class C3dComponentPorts
                 continue;
             }
             if (part.Why is { } why) { results.Add(Refused(rd, why)); continue; }
+            if (OutsideRegion(part, layoutRegions) is { } outside) { results.Add(Refused(rd, outside)); continue; }
 
             // Each pad on its conductor.
             var lands = new List<(Pad Pad, Em3dSolid Solid)>();
@@ -380,6 +384,23 @@ public static class C3dComponentPorts
         if (placed.Refusal is { } refusal) return new BoardParts([], refusal);
         notes.AddRange(placed.Notes.Select(n => $"{Path.GetFileName(frame.DocumentPath)}: {n}"));
         return new BoardParts([.. placed.Parts.Select(p => new Part(p, frame))], null);
+    }
+
+    /// <summary>Why <paramref name="part"/> is outside its layout's solve region, the Planar sentence (EmPlanarComponentPorts);
+    /// null when its layout has none or every pad lies inside it. The region is in the layout's frame, the pads in the world's,
+    /// so the region's corners go through the instance's placement.</summary>
+    private static string? OutsideRegion(Part part, IReadOnlyDictionary<string, EmSolveRegion>? layoutRegions)
+    {
+        if (layoutRegions?.GetValueOrDefault(Path.GetFullPath(part.Frame.DocumentPath)) is not { } region) return null;
+        var w = part.Frame.World;
+        (double X, double Y) World(double xUm, double yUm) => (w.M00 * xUm * 1e-6 + w.M01 * yUm * 1e-6 + w.Tx,
+                                                              w.M10 * xUm * 1e-6 + w.M11 * yUm * 1e-6 + w.Ty);
+        var (ax, ay) = World(region.XMinUm, region.YMinUm);
+        var (bx, by) = World(region.XMaxUm, region.YMaxUm);
+        double x0 = Math.Min(ax, bx), x1 = Math.Max(ax, bx), y0 = Math.Min(ay, by), y1 = Math.Max(ay, by);
+        const double tol = 1e-15;
+        bool inside = part.Pads.All(p => p.X0 >= x0 - tol && p.X1 <= x1 + tol && p.Y0 >= y0 - tol && p.Y1 <= y1 + tol);
+        return inside ? null : $"{part.Refdes}: the part lies outside this EM setup's solve region {region.Describe()}.";
     }
 
     /// <summary>The conductor a pad lands on: a flat conductor of its layout instance, built from its own copper layer, holding

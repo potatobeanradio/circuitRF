@@ -298,7 +298,8 @@ the other.
   [vertical (via) kernel](#solver) is on. Boards with ground vias reach this often.
 - A via anywhere in a Planar problem stops its radiation pattern; the run says so, and its co-simulation netlist reads
   the Touchstone instead ([A planar result](cosimulation.html#planar)).
-- On a 3D `.cem`, component ports cannot be combined with a **Solve Region**.
+- With a **Solve region**, a part whose pads are not all inside it is left out with a warning naming it, on a Planar
+  or a 3D `.cem`. A drawn port outside the region is still refused.
 - The marks appear on a layout only while a `.cem` naming component ports is open.
 
 A run with component ports writes `<setup>_cosim.cnl` and, with **Create SnP schematic** ticked, a `_cosim` cell:

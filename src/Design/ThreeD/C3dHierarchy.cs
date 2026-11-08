@@ -1324,10 +1324,12 @@ public static class C3dHierarchy
         // Designer feedback round 34 — a .c3d instance always takes the whole layout, so the setup's solve region is not
         // this view's: applied here it refused the generation for a port outside it, and every port was left out.
         // brief-lcp-5 R-lcp5-2 — and the generator builds the drawn ports only: component ports are the view's assembly's to build.
-        if (setup.SolveRegion is not null || setup.ComponentPorts.Count > 0)
+        // A .cem's own view (strict) keeps its region: that view solves only the region, so a drawn port outside it is refused by
+        // the generator's sentence, as the same .cem with no component ports refuses it.
+        if ((setup.SolveRegion is not null && !strict) || setup.ComponentPorts.Count > 0)
         {
             setup = setup.Clone();
-            setup.SolveRegion = null;
+            if (!strict) setup.SolveRegion = null;
             setup.ComponentPorts = [];
         }
         var g = Em3dGenerator.Generate(setup, source, tech, portsEach: !strict);

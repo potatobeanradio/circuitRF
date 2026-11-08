@@ -21,13 +21,6 @@ public static class Em3dSetupProblem
 
     private const string PlacedCellNotePrefix = "A placed cell contributes geometry only";
 
-    /// <summary>R-lcp5-3 — a solve region beside component ports. A placed cell takes the whole layout, so the region could only
-    /// be dropped, and that would solve a different problem from the one on screen.</summary>
-    public static string RegionRefusal(EmSetup setup)
-        => $"{(setup.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup")} names a SolveRegion and ComponentPorts. A 3D run " +
-           "builds component ports in a 3D view of the whole layout, which has no solve region: remove the SolveRegion, or the " +
-           "component ports.";
-
     /// <summary>Whether <paramref name="setup"/>'s problem is built through a 3D view of its layout rather than the generator. A list
     /// the setup cannot use (a thermal or electrostatic setup that kept one from before) is not a reason to go through the view:
     /// such a setup is the generator's, as it would be with no list.</summary>
@@ -57,7 +50,6 @@ public static class Em3dSetupProblem
         if (built.Problem is not null || !portsOptional) return built;
         var drawn = setup.Clone();
         drawn.ComponentPorts = [];
-        drawn.SolveRegion = null;
         var picture = Em3dGenerator.Generate(drawn, source, tech, portsOptional: true);
         return picture with { PortRefusal = built.Refusal };
     }
@@ -65,17 +57,22 @@ public static class Em3dSetupProblem
     private static Em3dGenerationResult ThroughThreeDView(EmSetup setup, EmLayoutSource source, Technology tech, string? workspaceCws,
                                                          TechnologyCache? cache)
     {
-        if (setup.SolveRegion is not null) return new(null, RegionRefusal(setup), []);
         string clay = Path.GetFullPath(source.AbsolutePath);
         workspaceCws ??= WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(clay));
         cache ??= new TechnologyCache();
         var view = C3dHierarchy.ViewForSetup(setup, source, tech, workspaceCws, cache);
         if (view.Document is not { } document) return new(null, view.Refusal, view.Notes);
         // The layout the caller holds is the one solved — the open editor's, with its unsaved edits — not the file.
-        var elaborator = new C3dElaborator(cache) { LayoutsInMemory = new Dictionary<string, LayoutView> { [clay] = source.View } };
+        // Its solve region is the view's layout's: only what it encloses is built, a drawn port outside it was refused above, and
+        // a part outside it is left out as a Planar .cem leaves it out (designer feedback: the two used to be refused together).
+        var elaborator = new C3dElaborator(cache)
+        {
+            LayoutsInMemory = new Dictionary<string, LayoutView> { [clay] = source.View },
+            LayoutRegions = setup.SolveRegion is { } region ? new Dictionary<string, EmSolveRegion> { [clay] = region } : null,
+        };
         var g = C3dProblemAssembly.Assemble(setup, document, view.Path, workspaceCws, elaborator, fromCem: true);
         // The elaborator's note that a placed cell brings no ports is about a .c3d's instance; here the setup's drawn ports were
-        // carried into the view, and its solve region refused beside component ports, so the note would say the opposite.
+        // carried into the view, so the note would say the opposite.
         return g with
         {
             Notes = [ThroughViewNote, .. view.Notes, .. g.Notes.Where(n => !n.StartsWith(PlacedCellNotePrefix, StringComparison.Ordinal))],

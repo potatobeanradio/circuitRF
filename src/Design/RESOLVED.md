@@ -29119,3 +29119,26 @@ file is one a `trl` analysis in the workspace writes, the failure now adds which
 run that first (`TrlRun.WriterOf`, appended in `CircuitEvaluation`'s per-analysis catch and in the CLI run verbs'
 `FailureMessage`). It reads the workspace's schematics only on that failure, and only those whose text holds a `"trl"`
 analysis. Gate: `TrlExampleTests.DeembedDut_RunBeforeTheCalibration_NamesTheBenchToRunFirst`.
+
+## A 3D `.cem` with component ports now solves its Solve Region (designer feedback, 2026-11-08)
+
+A designer drew a solve region on a 3D `.cem` that already had `ComponentPorts: "*"`, and Mesh stopped with R-lcp5-3's
+refusal ("names a SolveRegion and ComponentPorts"). The only way forward was to drop one of the two, but a Planar `.cem`
+already handled both: a part outside the region is left out with a warning. The 3D route now does the same:
+
+- `C3dElaborator.LayoutRegions` (full path → `EmSolveRegion`, beside `LayoutsInMemory`) hands a placed layout a region.
+  `ChildLayoutCached` passes it as `RegionSetup` with the region in its cache key, and `Em3dLayoutSolids` no longer
+  ignores `RegionSetup` on an instance. That is safe because no other instance caller sets it. The clip is the
+  generator's own (`EmGeometry.ForSetup` → `EmSolveRegionClip`), so the board outline is rebuilt and slabs are bounded
+  by it, as on the generator route.
+- `Em3dSetupProblem` passes the `.cem`'s region for its own layout and no longer refuses. Its picture fallback keeps
+  the region.
+- `C3dHierarchy.TranslateWith` keeps the region when `strict`, so a drawn port outside it is refused with the
+  generator's sentence. A `.c3d`'s New 3D View still clears it (designer round 34: an instance takes the whole layout).
+- `C3dComponentPorts.Build` takes the regions and leaves out a part unless every pad lies inside, with
+  `EmPlanarComponentPorts`' sentence. The region is in layout µm, so its corners go through the frame's `World`
+  before comparing with the pads, which are in world metres.
+
+On the designer's board the region keeps 131 shapes whole, cuts 5 and leaves out 51. All five parts (C1, C2, L1-L3) are
+inside it and verify, and the problem has 4 drawn ports plus 5 component ports. Gate:
+`LayoutComponentPort3DTests.ASolveRegion_LeavesOutThePartsOutsideIt`, and `TheRefusals` now checks the drawn-port case.

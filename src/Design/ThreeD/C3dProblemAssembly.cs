@@ -468,7 +468,7 @@ public static class C3dProblemAssembly
         {
             // The pads come from the layout the copper came from: an open editor's, when the elaborator was handed one.
             components = C3dComponentPorts.Build(setup, document, drawn, FirstComponentPortNumber(document),
-                                                 layoutsInMemory: elaborator?.LayoutsInMemory);
+                                                 layoutsInMemory: elaborator?.LayoutsInMemory, layoutRegions: elaborator?.LayoutRegions);
             // A part whose port cannot be built is left out with a warning; the run refuses only when the build itself cannot be
             // made, or when nothing is left to drive.
             if (components is { Refusal: { } whole }) return No(whole, e.Warnings) with { ComponentPorts = components };
