@@ -4407,3 +4407,31 @@ paired when only that kit's SPICE-dialect model tree was copied out.
   174 were standard and I/O cells paired by likeness, unchanged. The MOSFET's DC point agrees with the
   hand-bound value. Gates: `StatedSubcircuitPairingTests` (`…OncePerSimulator…`: the main tree's copy
   for a subcircuit and for a card, and equal trees unpaired).
+
+## A SPICE comparison used as a number did not evaluate (2026-11-08)
+
+The dialect has one kind of value: a comparison is 1 or 0, and a condition is any non-zero number. Open process
+kits use this to switch a term off or clamp a value at zero (`rz=rspec/w-(flag>0)*rq/w`, `a=(a0>0)*a0`).
+circuitRF's evaluators keep Bool apart from Real, so `Bool * Real` threw, the parameter stayed unresolved, and
+what reached the user was the model card downstream refusing the parameter that was assigned from it ("expects
+a number, but is set to 'rz'"), far from the line that caused it.
+
+- **Fixed in the translation, not the evaluator.** Coercing Bool to Real in `Value`/`SddEvaluator` would change
+  circuitRF's own language, where a comparison in arithmetic is a refusal. `SpiceExpression.RewriteTruthValues`
+  (the last step of `Translate`) walks the AST by POSITION: a comparison, `&&`/`||` or `!` where a number is read
+  (an operand of arithmetic or of a comparison, a call argument, a branch, the whole value) becomes
+  `if(cmp,1,0)`; a number where a condition is read (an `if`/ternary condition, an operand of `&&`/`||`/`!`)
+  becomes `x!=0`. Both evaluators accept that form. The second half matters too, because a `.func` or `.param`
+  whose value is a comparison is now a number, and one used as a condition must still read.
+- **An expression that needs neither is returned exactly as written**, so no existing value is reprinted. One that
+  needs it is printed fully bracketed by `SpiceBehaviouralSource.Print`, as the time rule already does. Text the
+  parser cannot read, or that holds a node the printer cannot write, is left as it was.
+- Measured on a kit's 2 µm × 20 µm resistor: before, the run stopped with the error above; after,
+  0.1 V / I = 74.114 Ω against the reference simulator's 74.152 Ω. Two things on the `ExtDevice` path are not
+  this fix. It forwards the instance's `m` to the compiled model, which refuses it (the VerilogA path stopped
+  doing that on 2026-10-21), so the run needed the instance's `m` (1 there) removed by hand. And it forwards no temperature, so the
+  model runs at the worker's 300.0 K, not the reference's 300.15 K; 0.15 K at the card's tc1 of 0.0031/K is
+  0.047 %, consistent with the 0.05 % left.
+
+Gate: `SpiceExpressionTests.AComparisonIsANumber_AndANumberIsACondition` (every operator and position, 16
+cases), `AComparisonAlreadyInACondition_IsLeftAsWritten`, `ASwitchedTermInASubcircuitEvaluates`.
