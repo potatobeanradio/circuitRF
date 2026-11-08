@@ -358,9 +358,9 @@ public static class ComponentModelFactory
     /// ExtDevice: a device supplied by a registered external provider.
     ///
     /// Two reserved parameter names — Provider (which registered provider) and Type (which device
-    /// type it exposes) — select the device. EVERY other parameter is forwarded to the provider
-    /// verbatim, matched by the names the provider's own descriptor declared. circuitRF never
-    /// interprets them, which is what lets one generic component serve any provider.
+    /// type it exposes) — select the device. EVERY other parameter but the multiplier <c>m</c> is
+    /// forwarded to the provider verbatim, matched by the names the provider's own descriptor declared.
+    /// circuitRF never interprets them, which is what lets one generic component serve any provider.
     /// </summary>
     private static ExternalDeviceModel CreateExternalDeviceModel(
         IReadOnlyDictionary<string, Value> parameters)
@@ -404,6 +404,9 @@ public static class ComponentModelFactory
             if (key.StartsWith("__", StringComparison.Ordinal)) continue;
             if (string.Equals(key, providerKey, StringComparison.Ordinal) ||
                 string.Equals(key, typeKey,     StringComparison.Ordinal)) continue;
+            // `m` is circuitRF's own multiplier, as on the VerilogA path: the elaborator applies it to the whole device,
+            // and a model handed it as well either refuses the name or counts the copies twice.
+            if (key.Equals(Elaboration.Elaborator.MultiplierParamName, StringComparison.Ordinal)) continue;
             forwarded[key] = val.Kind == ValueKind.String
                 ? val.AsString()
                 : val.AsReal().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
