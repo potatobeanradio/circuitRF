@@ -124,6 +124,53 @@ public sealed class MetalPrecedenceTests
         Assert.Contains(plan.PickDraws.Take(plan.PickDrawCount), d => !d.Behind);
     }
 
+    /// <summary>A port is ordered by where it is, not by its centroid against the substrate's (which flipped as the camera turned and
+    /// faded a port in and out): one INSIDE the substrate is drawn before it from every side, so the substrate's near face fades it;
+    /// one ON its top face, or just above it on the copper as a component port is, is drawn after it seen from above, crisp, and before
+    /// it seen from below.</summary>
+    [Theory]
+    [InlineData(StandardView3D.Top)]
+    [InlineData(StandardView3D.Bottom)]
+    [InlineData(StandardView3D.Left)]
+    [InlineData(StandardView3D.Right)]
+    public void APort_IsOrderedByWhereItLiesInTheDielectric_FromEverySide(StandardView3D side)
+    {
+        var p = Problem(coverLast: false);
+        Em3dPort Flat(int n, double z) => new(n, $"port/{n}", "pad", "substrate", new(0.4 * mm, -0.1 * mm, z), new(0.6 * mm, 0.1 * mm, z),
+                                              new(1, 0, 0), 50, new Em3dReferencePlane(new(0.4 * mm, 0, z), new(1, 0, 0), 0));
+        var scene = Scene3DBuilder.Build(p with { Ports = [p.Ports[0], Flat(2, 0.2 * mm), Flat(3, 0.2175 * mm)] }, 1);
+        uint Id(string name) => scene.Objects.Single(o => o.Name == name).Id;
+        var cam = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1, Projection3D.Orthographic);
+        cam.SetStandardView(side);
+        var view = new Viewer3DViewState { Camera = cam };
+        view.Adopt(scene, null);
+        Array.Fill(view.Visible, true);
+        var plan = new Scene3DFramePlan();
+        plan.Plan(scene, view, 101, 101, false, true, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+        var order = plan.Draws.Take(plan.DrawCount).Where(d => d.Pipeline == Scene3DPipeline.Translucent).Select(d => d.Object).ToList();
+        int At(string name) => order.IndexOf(Id(name));
+
+        Assert.True(At("port/1") < At("substrate"), $"inside: port/1 at {At("port/1")}, substrate at {At("substrate")}");
+        foreach (string flat in new[] { "port/2", "port/3" })
+        {
+            if (side == StandardView3D.Top) Assert.True(At(flat) > At("substrate"), $"{flat}, seen from above");
+            if (side == StandardView3D.Bottom) Assert.True(At(flat) < At("substrate"), $"{flat}, seen from below");
+        }
+        if (side != StandardView3D.Top) return;
+        // Low from above, round the compass: the port's offset across the board outweighs its height, which is where its centroid
+        // sorted it behind the substrate's.
+        for (int k = 0; k < 4; k++)
+        {
+            cam.Yaw = k * MathF.PI / 2;
+            cam.Pitch = 20 * MathF.PI / 180;
+            view.Camera = cam;
+            plan.Plan(scene, view, 101, 101, false, true, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+            order = plan.Draws.Take(plan.DrawCount).Where(d => d.Pipeline == Scene3DPipeline.Translucent).Select(d => d.Object).ToList();
+            Assert.True(At("port/3") > At("substrate"), $"port/3 at yaw {k * 90}°, 20° above");
+            Assert.True(At("port/1") < At("substrate"), $"port/1 at yaw {k * 90}°, 20° above");
+        }
+    }
+
     /// <summary>A .c3d dielectric reaches the scene as a Body (C3dElaborator's origin), not a Dielectric: a saw-cut package's
     /// lead, its end flush with the mould's side wall, lost that face to the mould in half the pixels and flickered.</summary>
     [Fact]

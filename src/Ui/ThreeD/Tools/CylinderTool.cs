@@ -22,6 +22,16 @@ public sealed class CylinderTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override bool TakesPlaneAtFirstClick => true;
 
+    /// <summary>While only the centre is placed: the radius is measured on the plane, so a plane chosen now is taken.</summary>
+    public override C3dPoint3? PlaneAnchor => Step == 1 ? _plane.FromUv(_centre) : null;
+
+    public override void RetakePlane(DrawingPlane plane)
+    {
+        var c = _plane.FromUv(_centre);
+        _plane = plane;
+        _centre = plane.ToUv(c);
+    }
+
     public override string Prompt => Step switch
     {
         0 => "Cylinder: click the centre on the drawing plane.",

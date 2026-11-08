@@ -441,14 +441,16 @@ public static class EmCoSimNetlist
         static string Full(string p) => Path.GetFullPath(p).Replace('\\', '/');
     }
 
-    /// <summary>The netlist's comments as notes above the drawing: what they say about a placeholder or a frequency is as true of the cell.</summary>
-    private static void AddNotes(SchematicEditModel model, string text)
+    /// <summary>The netlist's comments as notes above the drawing: what they say about a placeholder or a frequency is as true of the cell.
+    /// One text, a line per comment, so the note moves and edits as one (owner request, 2026-11-08): it was a text per line.</summary>
+    internal static void AddNotes(SchematicEditModel model, string text)
     {
         string[] notes = [.. text.Split('\n').Select(l => l.Trim()).TakeWhile(l => l.StartsWith(';')).Select(l => l.TrimStart(';').Trim()).Where(l => l.Length > 0)];
+        if (notes.Length == 0) return;
         double left = model.Components.Min(c => c.X) - 200, top = model.Components.Min(c => c.Y) - 300;
-        const double Pitch = 90;
-        for (int i = 0; i < notes.Length; i++)
-            model.CanvasObjects.Add(new EditableText { Text = notes[i], X = left, Y = top - (notes.Length - i) * Pitch });
+        var note = new EditableText { Text = string.Join("\n", notes), X = left };
+        note.Y = top - CircuitRF.Design.Symbol.SymbolGeometry.TextBoxSize(note.ToPrimitive()).H;   // anchored top-left, its last line just above `top`
+        model.CanvasObjects.Add(note);
     }
 
     /// <summary>The S-parameter analysis covers a band: a run of one frequency has no curve to draw, and its S11 is in the table.</summary>

@@ -50,6 +50,18 @@ public sealed class CoSimC3dBytesTests : IDisposable
         Assert.Equal("Wrote board Driven_cosim.cnl: the board's S6P with 3 part port(s) closed by their models, ready to simulate.", r.Sentence);
     }
 
+    /// <summary>The netlist's comments land on the cell's schematic as ONE text, a line per comment, not a text per line.</summary>
+    [Fact]
+    public void TheCellsNotes_AreOneMultiLineText()
+    {
+        var model = new CircuitRF.Design.Schematic.SchematicEditModel();
+        model.Components.Add(new CircuitRF.Design.Schematic.EditableComponent { Symbol = SymbolKind.Resistor, X = 0, Y = 0 });
+        EmCoSimNetlist.AddNotes(model, "; first line\n; second line\n;\n; third line\n\nR:R1 a 0 R=50\n");
+        var note = Assert.IsType<CircuitRF.Design.Schematic.EditableText>(Assert.Single(model.CanvasObjects));
+        Assert.Equal("first line\nsecond line\nthird line", note.Text);
+        Assert.True(note.GetBoundingBox().MaxY <= -300 + 1e-9);   // above the drawing, as the lines were
+    }
+
     private const string Expected = """
         ; Co-simulation of 'board Driven': the board's 6-port with each part across its own component port (written by
         ; circuitRF from the run). A gap port measures the board with the part's pads open, so each part stands from its

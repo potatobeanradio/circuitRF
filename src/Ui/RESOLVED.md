@@ -41972,3 +41972,15 @@ The owner answered D1 yes, asked for the mesh and field planes to be separate, a
 **A dragged folder never matched `.cws`.** `TreeDrop.ForDroppedPath` tested only the path's name, so a folder fell through to a bookmark. A storage folder's `LocalPath` also ends in a separator, whose `GetFileName` is empty, so it is trimmed first. Only controls under an `AllowDrop` could receive a drag at all, so over a README or an EM setup there was no target; `WorkspaceFileDrop` now sets it on the window, where it inherits, and answers `None` to a drag it will not take. Every document's own handler sets `Handled` when it accepts, which is what that relies on. A press on the bare `OverlayInputPassThroughElement` itself still dismisses a flyout, because the overlay's test asks whether it is an ancestor of the hit; a viewport with children under the pointer passes through.
 
 **The schematic inline box clipped its own text.** Its AXAML asked for `{DynamicResource IBMPlexSans}`, a key nothing defines, so it drew in the default Inter while `WidthFor` measured Plex, and Inter is wider. The width also left out the box's padding and border, which outweigh the caret slack at small sizes. Over 11 strings at 7 sizes, 40 of 77 clipped, "22 pF" at 9 pt among them, and a clipped multi-line box grew a scrollbar. The box now sets the Plex face itself, adds its chrome to the width and hides its scrollbars: 0 of 77 clip. The other three views using that key still draw in Inter and were left as they are.
+
+## A plane chosen after a sheet's first corner was ignored (2026-11-08)
+
+The rectangle tools (Sheet, Box) took the drawing plane at their first click and kept it for the gesture, so choosing XZ in
+the toolbar after the first corner moved the grid but the rubber band and the sheet stayed on XY. While only the first corner
+is down, a plane change is now taken: `C3dDrawTool.PlaneAnchor`/`RetakePlane`, called from `C3dEditorViewModel.SetPlane`. A new
+ORIENTATION goes through the corner (the combo keeps the old offset, which would otherwise have moved the corner to wherever
+that offset happens to put the new plane); a new OFFSET keeps the orientation and moves the corner onto it. Once the second
+corner is down (a Box's height step), the plane is fixed as before. Polygon and Polyline take it while their first vertex is
+the only one (a new orientation would flatten an outline already begun; a polyline's first point, which may sit off the plane
+on a snap, stays where it was clicked), and Cylinder, Sphere and Ellipsoid while only their centre is placed. Gates:
+`DrawToolGateTests.APlaneChosenAfterTheFirstCorner_IsTheSheetsPlane` and `…AfterTheFirstPoint_IsThePolygonsCylindersAndSpheresPlane`.

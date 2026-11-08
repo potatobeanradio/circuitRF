@@ -103,6 +103,14 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
     /// at the snap glyph and not at its shadow on the plane.</summary>
     public virtual bool TakesPlaneAtFirstClick => false;
 
+    /// <summary>The gesture's first point while everything placed so far lies on the plane taken at the first click, so a plane
+    /// chosen now can still be taken (<see cref="RetakePlane"/>); null when the gesture has none or has left the plane.</summary>
+    public virtual C3dPoint3? PlaneAnchor => null;
+
+    /// <summary>Takes <paramref name="plane"/> for the rest of the gesture, the first point moved onto it along its normal.
+    /// Called only while <see cref="PlaneAnchor"/> is not null.</summary>
+    public virtual void RetakePlane(DrawingPlane plane) { }
+
     /// <summary>0 before the first click; the gesture is in progress from then until it finishes or is cancelled.</summary>
     public int Step { get; protected set; }
 

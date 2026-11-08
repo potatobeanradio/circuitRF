@@ -26,6 +26,13 @@ public partial class Em3dSolverSettingsView : UserControl
     /// nothing. Same reason as <see cref="VerilogACompilerSettingsView"/>'s.</summary>
     private bool _loading;
 
+    // Owner request, 2026-11-08: a button keeps its place once its action ends, disabled, until the page is shown
+    // afresh. Tools whose Install was clicked here (one still in progress is also in _installing), and the
+    // homes Uninstall removed here, by tool and version.
+    private readonly HashSet<SolverTool> _installClicked = [];
+    private readonly HashSet<SolverTool> _installing = [];
+    private readonly HashSet<(SolverTool Tool, string Version)> _removed = [];
+
     public Em3dSolverSettingsView()
     {
         InitializeComponent();
@@ -149,6 +156,7 @@ public partial class Em3dSolverSettingsView : UserControl
                     for (int i = 0; i < list.Count; i++)
                     {
                         var (record, bytes, missing) = list[i];
+                        if (_removed.Contains((discovery.Tool, record.Version))) continue;
                         // brief-em3d-26 — a home inside a Linux subsystem distribution says so; one that has
                         // vanished there is offered as the clean-up of circuitRF's record, not as an uninstall.
                         string where = record.Distribution is { } d ? $" in '{d}'" : "";
@@ -171,19 +179,34 @@ public partial class Em3dSolverSettingsView : UserControl
                         button.Click += async (_, _) =>
                         {
                             button.IsEnabled = false;
-                            await CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.RemoveAsync(
+                            var outcome = await CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.RemoveAsync(
                                 u => u.PlanOne(tool, version), TopLevel.GetTopLevel(this) as Window, messages: null,
                                 $"Uninstall {discovery.Name} {version}");
-                            button.IsEnabled = true;
+                            if (outcome?.Status == RemovalStatus.Removed)
+                            {
+                                _removed.Add((tool, version));
+                                button.Content = RemovedLabel(discovery.Name, version);
+                            }
+                            else button.IsEnabled = true;
                         };
                         panel.Children.Add(button);
                     }
+                    // A home removed here keeps a disabled button where its Uninstall was.
+                    foreach (var (_, version) in _removed.Where(r => r.Tool == discovery.Tool).OrderByDescending(r => r.Version))
+                        panel.Children.Add(new Button
+                        {
+                            Content = RemovedLabel(discovery.Name, version), FontSize = 11, Padding = new Avalonia.Thickness(8, 3),
+                            Margin = new Avalonia.Thickness(0, panel.Children.Count == 0 ? 6 : 0, 0, 0),
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, IsEnabled = false,
+                        });
                 }
                 RemoveAll.IsVisible = plan.CanProceed;
                 RemoveAllNote.IsVisible = plan.CanProceed && !OperatingSystem.IsWindows();
             });
         });
     }
+
+    private static string RemovedLabel(string name, string version) => $"Uninstalled {name} {version}";
 
     /// <summary>brief-em3d-25 R-em3d25-2 — every circuitRF-installed solver, after one confirmation.</summary>
     private async void OnRemoveAll(object? sender, RoutedEventArgs e)
@@ -335,7 +358,7 @@ public partial class Em3dSolverSettingsView : UserControl
     private void Refresh(SolverDiscovery discovery, TextBlock status, Button install)
     {
         status.Text = "Checking…";
-        install.IsVisible = false;
+        install.IsEnabled = false;   // kept in place while checking; the answer decides whether it shows
         var (badge, reveal) = Chrome(discovery.Tool);
         string key = discovery.Tool.ToString();
         bool emerge = discovery.Tool == SolverTool.Emerge;
@@ -381,10 +404,15 @@ public partial class Em3dSolverSettingsView : UserControl
                     EmergeDeviceBox.IsEnabled = found;
                     ToolTip.SetTip(EmergeDeviceBox, found ? DeviceTip : NoEmergeDeviceTip);
                 }
-                bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
-                install.IsVisible = offer || updateTo is not null || running;
-                install.IsEnabled = !running;
-                install.Content   = running ? $"{(updateTo is null ? "Installing" : "Updating")} {discovery.Name}… (see Messages)"
+                // Running is set only once the install's plan is made, so a click still waiting on that (or on the
+                // consent dialog) counts as running here too.
+                bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool)
+                            || _installing.Contains(discovery.Tool);
+                bool installed = !running && !offer && updateTo is null && found && _installClicked.Contains(discovery.Tool);
+                install.IsVisible = offer || updateTo is not null || running || installed;
+                install.IsEnabled = !running && !installed;
+                install.Content   = installed ? "Installed"
+                                  : running ? $"{(updateTo is null ? "Installing" : "Updating")} {discovery.Name}… (see Messages)"
                                   : updateTo is not null ? $"Update to {discovery.Name} {updateTo}…"
                                   : $"Install {discovery.Name}…";
                 if (emerge)
@@ -541,14 +569,21 @@ public partial class Em3dSolverSettingsView : UserControl
     {
         if (sender is not Button { Tag: string name } button || !Enum.TryParse<SolverTool>(name, out var tool)) return;
         button.IsEnabled = false;
+        _installClicked.Add(tool);
+        _installing.Add(tool);
+        var (discovery, status, btn, _) = Row(tool);
         try
         {
             var install = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(tool, TopLevel.GetTopLevel(this) as Window, messages: null);
-            var (discovery, status, btn, _) = Row(tool);
             Refresh(discovery, status, btn);
             await install;
         }
-        catch (Exception ex) { ShowStatus(Row(tool).Item2, ex.Message); }
+        catch (Exception ex) { ShowStatus(status, ex.Message); }
+        finally
+        {
+            _installing.Remove(tool);
+            Refresh(discovery, status, btn);
+        }
     }
 
     /// <summary>

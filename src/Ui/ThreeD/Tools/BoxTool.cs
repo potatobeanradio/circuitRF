@@ -1,6 +1,9 @@
 // brief-em3d-45 R-em3d45-3a / -3b — Box (three clicks: corner, opposite corner, height) and Sheet (the first two).
 //
-// THE PLANE IS TAKEN AT THE FIRST CLICK and kept for the gesture, so a plane change mid-gesture cannot bend it.
+// THE PLANE IS TAKEN AT THE FIRST CLICK and kept for the gesture, so a plane change mid-gesture cannot bend it — except
+// while only the first corner is down: a plane chosen then is taken, the corner carried onto it (RetakePlane), because
+// picking the plane after starting is an ordinary order to do things in and nothing has been fixed on the old one yet.
+// Polygon/Polyline (first vertex), Cylinder, Sphere and Ellipsoid (centre) do the same.
 // Corner B is fixed on the plane; the box then rises along the plane's normal to where the cursor's ray passes
 // closest to the normal line through B — or, near a feature, to that feature's own height (IC3dDrawHost.Along),
 // which is how a box rises to exactly the top of a neighbouring pad. Negative heights are allowed.
@@ -26,6 +29,15 @@ public abstract class C3dRectangleTool(IC3dDrawHost host) : C3dDrawTool(host)
     public override IReadOnlyList<string> Dimensions => Step == 1 ? WidthDepth : Corner;
 
     public override bool TakesPlaneAtFirstClick => true;
+
+    public override C3dPoint3? PlaneAnchor => Step == 1 ? Plane.FromUv(A) : null;
+
+    public override void RetakePlane(DrawingPlane plane)
+    {
+        var a = Plane.FromUv(A);
+        Plane = plane;
+        A = plane.ToUv(a);
+    }
 
     protected C3dPoint2? Cursor(in C3dDrawInput input, out string? refusal)
     {

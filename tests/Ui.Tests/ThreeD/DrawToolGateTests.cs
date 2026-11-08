@@ -324,6 +324,54 @@ public sealed class DrawToolGateTests : IDisposable
         Assert.Single(vm.Document.Objects);                                      // only the pad
     }
 
+    /// <summary>A plane chosen after a sheet's first corner is the plane the sheet is drawn on: the new orientation goes through
+    /// that corner, and the second corner and the sheet follow it.</summary>
+    [Fact]
+    public void APlaneChosenAfterTheFirstCorner_IsTheSheetsPlane()
+    {
+        var vm = Open();
+        vm.Arm(C3dToolKind.Sheet);
+        ClickAt(vm, 0, 40, 0);                                   // on XY at z = 0
+        vm.PlaneKind = C3dPlane.XZ;
+        Assert.Equal(new DrawingPlane(C3dPlane.XZ, 40 * Um), vm.Plane);   // through the corner
+        ClickAt(vm, 20, 40, 30);
+        var sheet = Assert.IsType<C3dSheet>(vm.Document.Objects[^1]);
+        Assert.Equal((C3dPlane.XZ, 40 * Um), (sheet.Plane, sheet.Offset));
+    }
+
+    /// <summary>The same for the other tools that take the plane at their first click: a polygon's first vertex, a cylinder's and a
+    /// sphere's centre. What follows is measured on the new plane.</summary>
+    [Fact]
+    public void APlaneChosenAfterTheFirstPoint_IsThePolygonsCylindersAndSpheresPlane()
+    {
+        C3dEditorViewModel Begin(C3dToolKind kind)
+        {
+            var vm = Open();
+            vm.Arm(kind);
+            ClickAt(vm, 0, 40, 0);
+            vm.PlaneKind = C3dPlane.XZ;
+            Assert.Equal(new DrawingPlane(C3dPlane.XZ, 40 * Um), vm.Plane);
+            return vm;
+        }
+
+        var poly = Begin(C3dToolKind.Polygon);
+        ClickAt(poly, 20, 40, 0);
+        ClickAt(poly, 10, 40, 20);
+        poly.Viewer.HandleKey(Key.Enter, KeyModifiers.None, false);
+        var sheet = Assert.IsType<C3dSheet>(poly.Document.Objects[^1]);
+        Assert.Equal((C3dPlane.XZ, 40 * Um, 3), (sheet.Plane, sheet.Offset, sheet.Outline.Count));
+
+        var cyl = Begin(C3dToolKind.Cylinder);
+        ClickAt(cyl, 10, 40, 0);                                 // the radius, on XZ
+        ClickAt(cyl, 0, 60, 0);                                  // the height, along y
+        var c = Assert.IsType<C3dCylinder>(cyl.Document.Objects[^1]);
+        Assert.Equal((C3dAxis.Y, 10 * Um, 20 * Um), (c.Axis, c.Radius, c.Length));
+
+        var sph = Begin(C3dToolKind.Sphere);
+        ClickAt(sph, 0, 40, 15);                                 // straight up from the centre, on XZ
+        Assert.Equal(15 * Um, Assert.IsType<C3dSphere>(sph.Document.Objects[^1]).Radius);
+    }
+
     // ── 3D round 1: Esc steps back one stage; the drag is the tool's; the layout's snap keys ───
 
     private static void Esc(Viewer3DViewModel v) => Assert.True(v.HandleKey(Key.Escape, KeyModifiers.None, false));

@@ -466,6 +466,7 @@ public sealed class PalaceStageTracker
                 _excitation = "";
                 _unknowns = null;       // the refined mesh's count arrives with its own ND line
                 _firstError = double.NaN;
+                _started = Now();       // a pace's "left" is this pass's: every pass solves every port again
                 _control?.BeginStage(PassLabel());
                 break;
             case PalaceExcitation x:
@@ -490,7 +491,7 @@ public sealed class PalaceStageTracker
                 {
                     _phase = "online";
                     _stageDone = 0;
-                    _control?.BeginStage(EvaluatingLabel + _excitation, f.Count, "frequencies");
+                    _control?.BeginStage(EvaluatingLabel + Where(), f.Count, "frequencies");
                 }
                 if (f.Index > _stageDone)
                 {
@@ -670,7 +671,14 @@ public sealed class PalaceStageTracker
         _control?.TickStage(step, SamplingText(error));
     }
 
-    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol, _solved, Pace());
+    private string SamplingText(double error) => SamplingText(Where(), error, _sweepTol, _solved, Pace());
+
+    /// <summary>
+    /// The pass and the port a sweep's stage is in: <c>, refinement pass 1 of 3, port 2 of 9</c>. Palace's mesh refinement solves
+    /// every port again on each pass, so with the port alone the count ran 1 to 9 and started again at 1, which read as a run
+    /// that had nearly finished and restarted. The pass only when there can be more than one.
+    /// </summary>
+    private string Where() => (TotalPasses > 1 ? $", refinement pass {_pass} of {TotalPasses}" : "") + _excitation;
 
     /// <summary>
     /// Designer round 36 — how long a frequency is taking, and once a port has finished how long the rest should take at its

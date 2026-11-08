@@ -628,9 +628,10 @@ public sealed class Scene3DFramePlan
             if (!(batches[i].Translucent || Faded(batches[i].ObjectId)) || !view.IsDrawn(batches[i].ObjectId)) continue;
             if (batches[i].Element >= 0 && _boxed[batches[i].Element]) continue;
             _order[n] = i;
-            _keys[n] = -Vector3.Dot(scene.Objects[batches[i].ObjectId - 1].Centroid - eye, forward);
+            _keys[n] = SortKey(scene.Objects[batches[i].ObjectId - 1], eye, forward);
             n++;
         }
+        OrderPorts(scene, batches, n, forward);
         Array.Sort(_keys, _order, 0, n);
         for (int k = 0; k < n; k++)
         {
@@ -640,6 +641,81 @@ public sealed class Scene3DFramePlan
                           tie: TieOf(scene, b));
         }
         ClearFaded();
+    }
+
+    /// <summary>A translucent object's place in the back-to-front order (ascending: farthest first): its centroid's view depth.
+    /// A port's is then corrected by <see cref="OrderPorts"/>.</summary>
+    private static float SortKey(Scene3DObject o, Vector3 eye, Vector3 forward) => -Vector3.Dot(o.Centroid - eye, forward);
+
+    // ── a port among the translucent volumes it lies in or on ───────────────────────────────────────────────────────────
+    //
+    // Sorted by centroid with the dielectric it lies on and the air box round it, a port came before or after them as the camera
+    // turned, so it faded in and out while orbiting (designer feedback, 2026-11-08). Its order is now fixed by where it is: INSIDE a
+    // volume (overlapping its box on every axis) it is drawn before it, so the volume's near face fades it from every side; ON or
+    // BEYOND one of a volume's faces (overlapping on two axes, past the face on the third: a component port on the copper above a
+    // substrate) it is drawn after the volume when that face looks towards the eye, and before it otherwise. The air box's relations are applied
+    // first and a dielectric's override them: at its opacity the air box barely tints anything, and a port on a board's surface
+    // inside it must still read crisp from above.
+
+    /// <summary>Each port's relation to a volume: <c>Axis</c> −1 inside its box, else the axis along which the port lies on or beyond
+    /// the volume's face, <c>Sign</c> that face's outward direction. A port beside a volume on two axes has none. Built with the scene.</summary>
+    private (int Port, int Volume, sbyte Axis, sbyte Sign, bool Air)[] _portRelations = [];
+    private float[] _objectKey = [];
+    private float _keyStep;
+
+    private void SizePortRelations(Scene3DModel scene)
+    {
+        var objects = scene.Objects;
+        float size = Vector3.Distance(scene.BoundsMin, scene.BoundsMax);
+        float tol = 1e-5f * size;
+        _keyStep = 1e-4f * size;
+        var relations = new List<(int, int, sbyte, sbyte, bool)>();
+        static float At(Vector3 v, int a) => a == 0 ? v.X : a == 1 ? v.Y : v.Z;
+        for (int p = 0; p < objects.Length; p++)
+        {
+            var port = objects[p];
+            if (port.Kind != Scene3DKind.Port) continue;
+            for (int v = 0; v < objects.Length; v++)
+            {
+                var vol = objects[v];
+                if (vol.Kind is not (Scene3DKind.Dielectric or Scene3DKind.Air or Scene3DKind.Body)) continue;
+                sbyte axis = -1, sign = 0;
+                int beyond = 0;
+                for (int a = 0; a < 3; a++)
+                {
+                    if (At(port.Min, a) >= At(vol.Max, a) - tol) { axis = (sbyte)a; sign = 1; beyond++; }
+                    else if (At(port.Max, a) <= At(vol.Min, a) + tol) { axis = (sbyte)a; sign = -1; beyond++; }
+                }
+                if (beyond > 1) continue;                                           // off a corner or an edge: no fixed order
+                relations.Add((p, v, axis, sign, vol.Kind == Scene3DKind.Air));
+            }
+        }
+        _portRelations = [.. relations];
+        _objectKey = new float[objects.Length];
+    }
+
+    /// <summary>Corrects the ports' keys among the <paramref name="n"/> translucent entries (see the section's note). Only volumes
+    /// drawn translucent this frame take part. No allocation.</summary>
+    private void OrderPorts(Scene3DModel scene, Scene3DBatch[] batches, int n, Vector3 forward)
+    {
+        if (_portRelations.Length == 0) return;
+        Array.Fill(_objectKey, float.NaN);
+        for (int k = 0; k < n; k++) _objectKey[batches[_order[k]].ObjectId - 1] = _keys[k];
+        for (int pass = 0; pass < 3; pass++)
+            foreach (var (port, volume, axis, sign, air) in _portRelations)
+            {
+                float kp = _objectKey[port], kv = _objectKey[volume];
+                if (float.IsNaN(kp) || float.IsNaN(kv) || air != (pass == 0)) continue;
+                float f = axis == 0 ? forward.X : axis == 1 ? forward.Y : forward.Z;
+                bool after = axis >= 0 && f * sign < 0;                                  // the face, seen from outside
+                if (pass == 1 && !after || pass == 2 && after) continue;                 // a dielectric's: after, then before
+                _objectKey[port] = after ? Math.Max(kp, kv + _keyStep) : Math.Min(kp, kv - _keyStep);
+            }
+        for (int k = 0; k < n; k++)
+        {
+            int id = (int)batches[_order[k]].ObjectId - 1;
+            if (scene.Objects[id].Kind == Scene3DKind.Port) _keys[k] = _objectKey[id];
+        }
     }
 
     // ── brief-em3d-106 R-em3d106-2: the realistic colour pass ───────────────────────────────────────────────────────────
@@ -802,9 +878,10 @@ public sealed class Scene3DFramePlan
             bool translucent = _chromeOf[id - 1] == Material ? _realTranslucent[id - 1] : b.Translucent;
             if (!(translucent || Faded(id))) continue;
             _order[n] = i;
-            _keys[n] = -Vector3.Dot(scene.Objects[id - 1].Centroid - eye, forward);
+            _keys[n] = SortKey(scene.Objects[id - 1], eye, forward);
             n++;
         }
+        OrderPorts(scene, batches, n, forward);
         Array.Sort(_keys, _order, 0, n);
         for (int k = 0; k < n; k++)
         {
@@ -1307,6 +1384,7 @@ public sealed class Scene3DFramePlan
         for (int k = 0; k < scene.ImageBatches.Length; k++)
             if (scene.ImageBatches[k].Surface) _surfaceOf[scene.ImageBatches[k].ObjectId - 1] = k;
         SizeRealistic(scene);
+        SizePortRelations(scene);
 
         // brief-em3d-48 — the element slots and their boxes' slots are written once per scene; a frame writes only a
         // preview's copies after them.

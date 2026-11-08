@@ -204,6 +204,29 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(3, steps.Last(p => p.Stage == PalaceStageTracker.EvaluatingLabel + ", port 2 of 2").StageCompleted);
     }
 
+    /// <summary>Mesh refinement solves every port again on each pass, so a sweep's stage names the pass with the port: the count
+    /// going from port 2 of 2 back to port 1 of 2 read as a run that had restarted.</summary>
+    [Fact]
+    public void ASweepStage_NamesTheRefinementPass_WhenEveryPassSolvesEveryPort()
+    {
+        var log = new List<string> { " elements    1    1    1    100" };
+        foreach (int pass in new[] { 0, 1 })
+        {
+            if (pass > 0) log.Add($"Adaptive mesh refinement (AMR) iteration {pass}:");
+            foreach (int x in new[] { 1, 2 })
+            {
+                log.Add($"Sweeping excitation index {x} ({x}/2):");
+                log.Add("It 1/1: ω/2π = 1.000e+00 GHz (total elapsed time = 1.00e+00 s)");
+            }
+        }
+        var (_, steps) = FeedLines(log, 2, 1e-4);
+        var sweeps = steps.Select(p => p.Stage).Where(s => s.StartsWith(PalaceStageTracker.EvaluatingLabel, StringComparison.Ordinal)).Distinct();
+        Assert.Equal([PalaceStageTracker.EvaluatingLabel + ", refinement pass 1 of 3, port 1 of 2",
+                      PalaceStageTracker.EvaluatingLabel + ", refinement pass 1 of 3, port 2 of 2",
+                      PalaceStageTracker.EvaluatingLabel + ", refinement pass 2 of 3, port 1 of 2",
+                      PalaceStageTracker.EvaluatingLabel + ", refinement pass 2 of 3, port 2 of 2"], sweeps);
+    }
+
     // ── 4. Unknown wording ──────────────────────────────────────────────────────────────────────
 
     [Theory]

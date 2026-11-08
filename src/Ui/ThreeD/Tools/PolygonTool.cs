@@ -31,6 +31,16 @@ public abstract class C3dChainTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override bool TakesPlaneAtFirstClick => true;
 
+    /// <summary>Only while the first vertex is the only one: a new orientation would flatten an outline already begun.</summary>
+    public override C3dPoint3? PlaneAnchor => Step == 1 ? Points[0] : null;
+
+    /// <summary>A polygon's vertex moves onto the new plane; a polyline's may lie anywhere, so it stays where it was clicked.</summary>
+    public override void RetakePlane(DrawingPlane plane)
+    {
+        Plane = plane;
+        if (OnPlaneOnly) Points[0] = plane.Project(Points[0]);
+    }
+
     /// <summary>A polygon's vertices lie on its plane; a polyline's may be anywhere.</summary>
     protected abstract bool OnPlaneOnly { get; }
 

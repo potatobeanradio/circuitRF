@@ -484,14 +484,28 @@ public sealed class EmSetup
     /// off when absent, because that is what an existing file means; a NEW setup has no prior result
     /// to keep bit-identical, so it takes the more accurate answer.
     /// </summary>
-    public static EmSetup CreateNew(string name, string layoutRef) => new()
+    public static EmSetup CreateNew(string name, string layoutRef) => new EmSetup
     {
         Name                         = name,
         LayoutRef                    = layoutRef,
         Frequency                    = NewSetupFrequency(),
         ConductorThicknessCorrection = true,
         RobustMeshing                = true,
-    };
+    }.WithNewSetupSolverDefaults();
+
+    /// <summary>
+    /// Owner request, 2026-11-08 — what a NEW setup's 3D solver sections start with: the Draft preset (Palace and EMerge)
+    /// and no saved fields (every solver), so a first run is quick and writes S-parameters only. Fields are hundreds of MB
+    /// per frequency per driven port; ticking Save fields brings back the sweep's centre. Only new setups take it: an
+    /// omitted section still means Standard and the sweep's centre, which is what every setup written before this says.
+    /// </summary>
+    public EmSetup WithNewSetupSolverDefaults()
+    {
+        Palace  = new CemPalace  { Quality = PalaceQuality.Draft, SaveFieldsGHz = [] };
+        Emerge  = new CemEmerge  { Quality = PalaceQuality.Draft, SaveFieldsGHz = [] };
+        OpenEms = new CemOpenEms { SaveFieldsGHz = [] };
+        return this;
+    }
 
     /// <summary>
     /// Designer round 32 — the sweep a NEW setup starts with: 0.5 to 8 GHz in 50 MHz steps. The ISM, cellular and

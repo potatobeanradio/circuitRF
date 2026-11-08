@@ -59,6 +59,22 @@ public sealed class SchematicTextToolTests
         Assert.Equal(2 * SymbolGeometry.TextBoxSize(new TextPrimitive { Content = "one", FontSize = text.FontSize }).H, y1 - y0, 6);
     }
 
+    /// <summary>A multi-line text's hit box is as tall as the stack the renderer draws: lines are stacked at the drawing
+    /// face's ascent + descent, so the box's line height has to be that, or the lower lines fall outside it.</summary>
+    [Fact]
+    public void MultiLineText_HitBox_CoversEveryDrawnLine()
+    {
+        using var font = new SkiaSharp.SKFont(SkiaFonts.PlexRegular, 100f);
+        font.GetFontMetrics(out var fm);
+        double drawnLine = -fm.Ascent + fm.Descent;
+
+        var t = new TextPrimitive { Content = "one\ntwo\nthree\nfour\nfive", FontSize = 100, AnchorX = 0, AnchorY = 0,
+                                   Align = SymbolTextAlign.Left, VAlign = SymbolTextVAlign.Top };
+        var (_, y0, _, y1) = SymbolGeometry.BboxOf(t);
+        Assert.Equal(5 * drawnLine, y1 - y0, 0.5);
+        Assert.True(SymbolGeometry.HitTest(t, 50, 4.5 * drawnLine, 0));   // the middle of the last drawn line
+    }
+
     /// <summary>The inline box shows all its text with no scrollbar: it draws in the face its width is measured in, it is as wide as
     /// its longest line, and that width holds its padding and border as well as the text.</summary>
     [Fact]

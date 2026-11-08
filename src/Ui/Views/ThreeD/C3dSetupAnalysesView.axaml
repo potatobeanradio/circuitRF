@@ -123,7 +123,16 @@
                                                Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
                                 </Border>
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
-                                    <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <!-- Owner request, 2026-11-08 — the quality preset, where it is seen at a glance. -->
+                                        <Border Grid.Column="1" IsVisible="{Binding HasQuality}" CornerRadius="3" Padding="5,0" Margin="6,0,0,0"
+                                                VerticalAlignment="Center" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}"
+                                                ToolTip.Tip="The quality preset this setup runs at (Edit… ▸ Quality).">
+                                            <TextBlock Text="{Binding QualityLabel}" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                                        </Border>
+                                    </Grid>
                                     <TextBlock Text="{Binding Summary}" FontSize="10" TextTrimming="CharacterEllipsis"
                                                Foreground="{DynamicResource SystemBaseMediumColor}" ToolTip.Tip="{Binding Summary}"/>
                                     <!-- brief-em3d-98 R-em3d98-5 item 1 — whether the setup has a result of the model as it is now, in

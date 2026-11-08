@@ -342,7 +342,8 @@ straight-sided second-order elements; on an imported board that took Gmsh 10 to 
 more than a quarter of an hour. Genuinely curved geometry keeps curved elements, for at most
 <code>MeshCurvingMinutes</code> (5 by default) before the mesh is made straight-sided, and the run says when it was.</p>
 </li>
-<li><p><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
+<li><p><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> or <em>Accurate</em>. A new setup starts at <em>Draft</em>;
+one that names none runs at <em>Standard</em>.
 These set the element order, the refinement passes and the sweep tolerance together, and any one of
 those can be overridden on its own. The measured cost of each preset is in
 <a href="em-setup.html#solver-3d">EM Setup ▸ Solver</a>. <strong>Which one is enough depends on the structure, not on a

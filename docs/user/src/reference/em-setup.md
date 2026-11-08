@@ -1067,7 +1067,7 @@ filled in overrides the preset for that setting only:
 
 | Setting | Key | What it sets |
 |---|---|---|
-| Quality | `Quality` | Draft, Standard (the default) or Accurate: the four settings marked *by preset* together. |
+| Quality | `Quality` | Draft, Standard or Accurate: the four settings marked *by preset* together. A new setup starts at Draft; a setup that names none runs at Standard. A 3D view's setup card shows it beside the setup's name. |
 | Largest element (λ) | `MaxElementWavelengths` | The largest element in each material, as a fraction of the wavelength in it at the sweep's top frequency; at most 0.5. *By preset.* |
 | At metal | `EdgeRefinement` | The element size along conductor and sheet edges, as a fraction of the size above. *By preset.* |
 | Element order | `ElementOrder` | 1 or 2 (the default). First order is for quick checks. |
@@ -1534,7 +1534,7 @@ A Palace run also saves the solved **fields**, which the 3D view's field plots d
 surfaces or on chosen faces. **Save fields at (GHz)** in the setup panel's Palace section — `SaveFieldsGHz`
 in the `.cem` — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
 blank, and takes a comma list (`2, 6, 10`) or `none`. Untick the check box beside it to save no fields
-(it writes `none`); tick it again to get the frequencies back. A field plot's *Other frequency…* adds one to it. A
+(it writes `none`); tick it again to get the frequencies back. **A new setup starts with it unticked**, so its first run writes S-parameters only; tick it before a run whose fields you want. A field plot's *Other frequency…* adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
 centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.
 

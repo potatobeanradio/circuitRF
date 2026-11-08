@@ -5834,3 +5834,20 @@ shapes of opposite direction cancel where they overlap, and a trace ending on a 
 hole exactly where they met; `AddPathReverse` on a negative signed area fixes it, and a polygon's holes survive because they are wound
 opposite to its outer ring. Dimming is a wash of the canvas colour over what is drawn, not the board drawn again, so it costs one
 rectangle and leaves the tile cache alone. The highlight's fill therefore takes the layer's colour and opacity but not its fill pattern.
+
+## A component port's sheet faded at some camera angles (designer feedback, 2026-11-08)
+
+A designer's 3D view showed its component ports (the checkerboard with the arrow) washed out at some orbits and not others. The
+default view draws dielectrics (alpha 90) and the air box (alpha 20) translucent, and `Scene3DFramePlan` sorted every translucent
+object back to front by its CENTROID. The component ports sit on the top copper, 17.5 µm above the substrate, offset across the
+board from its centroid; at a low angle that offset outweighed the height, the port sorted behind the substrate, and the
+substrate's top face blended over it. Depth ties do not help: a translucent draw writes no depth, so order alone decides.
+
+A first fix drew every port after all other translucent objects, which made a port INSIDE the substrate (a drawn lumped port
+through its thickness) read solid over it, where it should be faded. The kept fix orders a port against each translucent volume
+by where it is (`SizePortRelations`, built with the scene from bounding boxes; `OrderPorts`, per frame, no allocation): inside a
+volume's box, before it; overlapping on two axes and on or beyond the volume's face on the third, after it when that face looks
+towards the eye and before it otherwise; off an edge or a corner, no relation. The air box's relations go first and a dielectric's
+override them, since at alpha 20 the air box barely tints anything. Gate:
+`MetalPrecedenceTests.APort_IsOrderedByWhereItLiesInTheDielectric_FromEverySide`, which fails from top, bottom and side with the
+correction switched off, and covers a port on the face, one 17.5 µm above it at four low angles, and one inside.

@@ -75,6 +75,30 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
         }
     }
 
+    /// <summary>Owner request, 2026-11-08 — the quality preset the setup runs at, beside its name: <c>Draft</c>, or each solver's
+    /// when a Both setup's two differ. Empty for a setup with no preset (openEMS, thermal).</summary>
+    public string QualityLabel
+    {
+        get
+        {
+            if (setup is null || !setup.Is3D || setup.IsThermal) return "";
+            var legs = CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D)
+                .Select(d => (d.DisplayName, Quality: d.Id switch
+                {
+                    Em3dSolverId.Palace => setup.Palace?.Quality ?? PalaceQuality.Standard,
+                    Em3dSolverId.Emerge => setup.Emerge?.Quality ?? PalaceQuality.Standard,
+                    _                   => (PalaceQuality?)null,
+                }))
+                .Where(l => l.Quality is not null).ToList();
+            if (legs.Count == 0) return "";
+            return legs.Select(l => l.Quality).Distinct().Count() == 1
+                ? legs[0].Quality.ToString()!
+                : string.Join(" · ", legs.Select(l => $"{l.DisplayName} {l.Quality}"));
+        }
+    }
+
+    public bool HasQuality => QualityLabel.Length > 0;
+
     /// <summary>The card menu names the card it acts on, as a schematic card's does.</summary>
     public string RunLabel => $"Run {Name}";
     public string RemoveLabel => $"Remove {Name}";
@@ -486,7 +510,8 @@ public sealed partial class C3dEditorViewModel
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
         var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true,
-                                  Frequency = EmSetup.NewSetupFrequency(), AirBox = EmSetupPersistence.FromCem(Document.AirBox) };
+                                  Frequency = EmSetup.NewSetupFrequency(), AirBox = EmSetupPersistence.FromCem(Document.AirBox) }
+                    .WithNewSetupSolverDefaults();
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);

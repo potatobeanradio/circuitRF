@@ -1948,7 +1948,7 @@ filled in overrides the preset for that setting only:</p>
 <tr>
 <td>Quality</td>
 <td><code>Quality</code></td>
-<td>Draft, Standard (the default) or Accurate: the four settings marked <em>by preset</em> together.</td>
+<td>Draft, Standard or Accurate: the four settings marked <em>by preset</em> together. A new setup starts at Draft; a setup that names none runs at Standard. A 3D view's setup card shows it beside the setup's name.</td>
 </tr>
 <tr>
 <td>Largest element (λ)</td>
@@ -2436,7 +2436,7 @@ EMerge meshes inside its own run, so neither leaves a mesh to reuse.</p>
 surfaces or on chosen faces. <strong>Save fields at (GHz)</strong> in the setup panel's Palace section — <code>SaveFieldsGHz</code>
 in the <code>.cem</code> — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
 blank, and takes a comma list (<code>2, 6, 10</code>) or <code>none</code>. Untick the check box beside it to save no fields
-(it writes <code>none</code>); tick it again to get the frequencies back. A field plot's <em>Other frequency…</em> adds one to it. A
+(it writes <code>none</code>); tick it again to get the frequencies back. <strong>A new setup starts with it unticked</strong>, so its first run writes S-parameters only; tick it before a run whose fields you want. A field plot's <em>Other frequency…</em> adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
 centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.</p>
 <pre><code>&quot;Palace&quot;: { &quot;SaveFieldsGHz&quot;: [2.4, 5.8] }

@@ -13,8 +13,12 @@ public static class SymbolGeometry
     private const double Fallback        = 200.0;
     private const double MinHalfSize     = 5.0;   // minimum half-size for a degenerate primitive bbox
     private const double TextAdvance     = 0.58;  // average advance factor (chars × em → world width)
-    private const double TextAscentFrac  = 0.75;  // fraction of FontSize above baseline
-    private const double TextDescentFrac = 0.25;  // fraction of FontSize below baseline
+    // The line box is the drawing face's own: IBM Plex Sans (every weight and slant the renderer
+    // loads) has ascent 1.025 em and descent 0.275 em, so a line is 1.3 em, and SchematicRenderer
+    // stacks lines at that pitch from the font's metrics. A smaller box left the lower lines of a
+    // multi-line text outside its hit box.
+    private const double TextAscentFrac  = 1.025; // fraction of FontSize above baseline
+    private const double TextDescentFrac = 0.275; // fraction of FontSize below baseline
 
     // ── BboxOf — single-primitive AABB ───────────────────────────────────────────
 

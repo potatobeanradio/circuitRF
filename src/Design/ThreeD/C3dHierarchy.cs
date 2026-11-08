@@ -1128,10 +1128,10 @@ public static class C3dHierarchy
 
     /// <summary>R-pw1-6 — the setup a layout's port labels are translated with when no 3D <c>.cem</c> names it: the
     /// default 3D solver, driven, at a new setup's frequencies, every other choice the setup's own default.</summary>
-    public static EmSetup DefaultPortSetup(string layoutPath) => new()
+    public static EmSetup DefaultPortSetup(string layoutPath) => new EmSetup
     {
         Name = "ports", LayoutRef = layoutPath, Solver3D = Em3dSolvers.Default, Frequency = EmSetup.NewSetupFrequency(),
-    };
+    }.WithNewSetupSolverDefaults();
 
     private static string DefaultSetupNote(int count) =>
         $"No 3D setup names this layout, so its port labels were brought in with a default driven setup ({count} " +

@@ -29200,3 +29200,27 @@ S(second, first). Raw `S`, the `.sNp`, the `.cemr` and the `_cosim` netlist are 
 On the designer's result, S(2,1) with C52's port open is −53.9 dB at 0.5 GHz and −49.3 dB at 1 GHz, the same as their
 schematic. Gate: `EmPartsOpenTests`. Its reduction test is independent of the formula: an open port carries no current,
 so the reduced S's Z must be the full Z without that row and column.
+
+## A multi-line text's hit box missed its lower lines (2026-11-08)
+
+`SymbolGeometry.TextBoxSize` sized a line as 1.0 em (ascent 0.75 + descent 0.25), while `SchematicRenderer` stacks lines at the
+drawing face's own metrics. Every IBM Plex Sans weight and slant the renderer loads has hhea ascent 1.025 and descent 0.275, so
+a drawn line is 1.3 em: a five-line note was 6.5 em tall on the canvas and 5 em in its hit box, and the last lines could not be
+clicked. The constants are now the face's. The width estimate (0.58 em a character, against about 0.46-0.48 measured) still
+overestimates, which only makes the box generous. Gate: `SchematicTextToolTests.MultiLineText_HitBox_CoversEveryDrawnLine`.
+
+## Palace's sweep progress counted the ports again on each refinement pass (designer feedback, 2026-11-08)
+
+A nine-port board's progress row ran "port 1 of 9" to "port 9 of 9" and then started at "port 1 of 9" again. Palace's driven mesh
+refinement solves every excitation on every pass, and `PalaceStageTracker` named the port but not the pass in the sweep's stage,
+so the second pass looked like a restart. The sampling and evaluating stages now read `…, refinement pass k of N, port i of n`
+when the setup allows more than one pass, and a pass's pace estimate starts from that pass. Gate:
+`PalaceProgressTests.ASweepStage_NamesTheRefinementPass_WhenEveryPassSolvesEveryPort`; the `A-round-amr` golden was rewritten for
+the new labels.
+
+## New setups start at Draft with no saved fields (owner request, 2026-11-08)
+
+`EmSetup.WithNewSetupSolverDefaults` gives a new setup's Palace and EMerge sections `Quality: Draft` and every 3D section
+`SaveFieldsGHz: []`. It is applied by `EmSetup.CreateNew` (File ▸ New ▸ EM Setup, Update Layout from Schematic), the `.c3d`
+editor's Add, and `C3dHierarchy.DefaultPortSetup` (a 3D view made from a layout no 3D `.cem` names). An omitted section still
+means Standard and the sweep's centre, so no existing file changes meaning. A `.c3d` setup card shows the quality beside the name.

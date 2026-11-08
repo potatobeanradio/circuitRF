@@ -87,6 +87,13 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     /// <summary>Sets the plane. The camera is not touched; the grid and the snap follow at once.</summary>
     public void SetPlane(DrawingPlane plane)
     {
+        // A gesture still on its plane takes the new one. A new orientation goes through the first point, so it stays where it
+        // was clicked; a new offset keeps the orientation and moves the point onto it.
+        if (_tool?.PlaneAnchor is { } anchor)
+        {
+            if (plane.Plane != _plane.Plane) plane = plane with { OffsetDbu = DrawingPlane.Get(anchor, plane.Normal) };
+            _tool.RetakePlane(plane);
+        }
         if (plane == _plane) { SyncPlaneTexts(); return; }
         _plane = plane;
         ApplySnapGrid();
