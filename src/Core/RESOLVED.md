@@ -4378,3 +4378,32 @@ cube is unchanged; `measure DUT_2 = SP1.S(3:4, 3:4)` makes ports 3 to 4 a matrix
 - **No trace parser read `Name(i, j)`.** `TraceExpression.ScanRefs` skipped a cube name followed by `(`, so even
   `SP1.S(2,1)` typed into a trace found no cube. `PortPairSpelling` rewrites it to the bracket form ahead of both
   parsers and of `plot --trace`, so the card shows the pinned port rows exactly as a picked trace does.
+
+## A kit shipping its libraries once per simulator paired no device at all (2026-11-08)
+
+Measured on an open kit imported whole (216 parts): every device symbol that calls a subcircuit by name
+stayed a provider-backed ExtDevice, and a run said the kit supplies no circuit for it. The same symbols
+paired when only that kit's SPICE-dialect model tree was copied out.
+
+- **The kit ships one model library per simulator**, each in its own directory with its own corner files,
+  and the copies share file names. `StatedSubcircuitFor` (and `CardFileFor`, the same three steps for a
+  primitive's card) breaks a tie by the canonical library, which is keyed on the FILE NAME, so every
+  tree's copy passes; then by `NominalCornerFiles`, which walks every tree's corner file, so every copy
+  is its own tree's nominal. Two candidates were left and the part stayed unpaired. Only the 3 devices
+  defined in one tree alone paired, so `RestrictToUsedFlavours` still picked the right corners and
+  nothing looked wrong at import.
+- **`PreferTheKitsMainLibrary` already said which tree is the kit's main one** (the directory defining
+  the most subcircuits) but only the likeness matcher's first-wins rule read that order; the strict
+  stated-name path never did. `OnTheMainTree` is now the last tie-break of both: it applies only when
+  the candidates lie in different directories, one directory defines strictly the most subcircuits, and
+  that directory holds exactly one candidate. Variants in one directory and trees of equal size stay
+  unpaired. A manifest `parts` entry still wins, because the installer checks the discovered definition last.
+- **Not the cause, though named as candidates:** `.if/.else` in the subcircuit body, the `.lib`-section
+  includes, the `@spiceprefix@name @pinlist @model` format and a `body=` extra terminal all read
+  correctly. The kit's other simulator copy also leaves its devices INCOMPLETE (an element letter the
+  reader does not read), but its capacitor and bipolar copies read whole, so completeness alone cannot
+  pick the tree.
+- Result on that kit: 174 → 207 of 216 parts paired, every device to the SPICE-dialect tree. 171 of the
+  174 were standard and I/O cells paired by likeness, unchanged. The MOSFET's DC point agrees with the
+  hand-bound value. Gates: `StatedSubcircuitPairingTests` (`…OncePerSimulator…`: the main tree's copy
+  for a subcircuit and for a card, and equal trees unpaired).

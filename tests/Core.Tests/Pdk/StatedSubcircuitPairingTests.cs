@@ -170,4 +170,86 @@ public sealed class StatedSubcircuitPairingTests : IDisposable
         var part = PdkImporter.Import(_root).Parts.Single(p => p.Id == "dprim");
         Assert.Equal("models/d__tt.lib", part.DefinitionRelativePath);
     }
+
+    /// <summary>
+    /// One library shipped once per simulator, the shape a multi-simulator kit has: each tree holds the
+    /// same-named library beside its own corner file, whose first section includes it. The copies share a
+    /// file name and each is its own tree's nominal, so only the main tree (the one defining the most
+    /// subcircuits; here it also ships a mismatch variant) can decide.
+    /// </summary>
+    private void WriteOneLibraryPerSimulator(bool mainTreeIsLarger, string library)
+    {
+        Write("sim_a/models/corner.lib", mainTreeIsLarger
+            ? ".lib typ\n.include parts.lib\n.endl typ\n.lib typ_mm\n.include parts_mm.lib\n.endl typ_mm\n"
+            : ".lib typ\n.include parts.lib\n.endl typ\n");
+        Write("sim_b/models/corner.lib", ".lib typ\n.include parts.lib\n.endl typ\n");
+        Write("sim_a/models/parts.lib", library);
+        Write("sim_b/models/parts.lib", library);
+        if (mainTreeIsLarger) Write("sim_a/models/parts_mm.lib", library);
+    }
+
+    /// <summary>The symbol of such a kit: the call written as a prefix and a model attribute.</summary>
+    private void WriteModelSymbol() => Write("symbols/amp.sym", """
+        v {version=1.2}
+        K {type=subcircuit
+        format="@spiceprefix@name @pinlist @model g=@g"
+        template="name=M1
+        model=amp_core
+        spiceprefix=X
+        g=2"
+        }
+        B 5 -2.5 -2.5 2.5 2.5 {name=in dir=inout}
+        B 5 37.5 -2.5 42.5 2.5 {name=out dir=inout}
+        """);
+
+    private const string AmpLibrary = """
+        .subckt amp_core in out g=1
+        .if (g > 1)
+        R1 in out {g}
+        .else
+        R1 in out 1
+        .endif
+        .ends amp_core
+        """;
+
+    /// <summary>Every device such a kit defined in both trees was left unpaired; it pairs with the main tree's copy.</summary>
+    [Fact]
+    public void ALibraryShippedOncePerSimulator_PairsWithTheMainTreesCopy()
+    {
+        WriteModelSymbol();
+        WriteOneLibraryPerSimulator(mainTreeIsLarger: true, AmpLibrary);
+
+        var part = Amp();
+        Assert.Equal("amp_core", part.DefinitionCell);
+        Assert.Equal("sim_a/models/parts.lib", part.DefinitionRelativePath);
+    }
+
+    /// <summary>Two trees of equal size are a tie, and a tie is never guessed.</summary>
+    [Fact]
+    public void ALibraryShippedOncePerSimulator_TreesOfEqualSize_StayUnpaired()
+    {
+        WriteModelSymbol();
+        WriteOneLibraryPerSimulator(mainTreeIsLarger: false, AmpLibrary);
+
+        Assert.Null(Amp().DefinitionRelativePath);
+    }
+
+    /// <summary>A primitive part's card, shipped once per simulator, points at the main tree's file.</summary>
+    [Fact]
+    public void APrimitiveCardShippedOncePerSimulator_PointsAtTheMainTreesFile()
+    {
+        Write("symbols/dprim.sym", """
+            v {version=1.2}
+            K {type=diode
+            format="@name @pinlist @model"
+            template="name=D1 model=dcard"
+            }
+            B 5 -2.5 -2.5 2.5 2.5 {name=p dir=inout}
+            B 5 37.5 -2.5 42.5 2.5 {name=n dir=inout}
+            """);
+        WriteOneLibraryPerSimulator(mainTreeIsLarger: true, ".model dcard d is=1e-15\n" + AmpLibrary);
+
+        var part = PdkImporter.Import(_root).Parts.Single(p => p.Id == "dprim");
+        Assert.Equal("sim_a/models/parts.lib", part.DefinitionRelativePath);
+    }
 }
