@@ -3755,6 +3755,15 @@ its internal nodes' rows included. That is equivalent for an internal inductor b
 solution is unchanged. Gate: the `M2` case of `CompiledVerilogATests`, where the `.va` with `m=2` sits 2.8e-14 in S from
 two parallel copies.
 
+## An `ExtDevice`'s `m` was sent to its provider too (2026-11-08)
+
+The same defect on the kit path. `CreateExternalDeviceModel` forwarded everything but `Provider` and `Type`, so a kit
+cell passing its multiplier into its compiled device (`m=m`) was refused with `'<model>' has no parameter named 'm'`,
+even at `m=1`, while the elaborator applied `m` as well. `m` is now kept back there too. `$mfactor` is still not
+passed: the usual Verilog-A compiler gives every model one, but the ABI does not require it (the fake OSDI model has
+none), and passing it on top of the elaborator's scaling would count the copies twice. Gate: `ExtDeviceMultiplierTests`,
+the fake model's `crf_rc` at `m=1` and `m=3`.
+
 ## A `VerilogA`'s relative `File` resolved against the working directory (brief-modelcomposer-28, 2026-10-21)
 
 An SnP's and a `ComposedFET`'s `File` resolve against the workspace root (`Elaborator.ResolveFileReference`); a
