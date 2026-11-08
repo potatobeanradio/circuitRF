@@ -132,6 +132,63 @@ public sealed class SpiceExpressionTests
         Assert.Empty(used);
     }
 
+    // ── truth values ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// In this dialect a comparison is the number 1 or 0 wherever it stands, and any non-zero number is a
+    /// true condition. circuitRF keeps the two kinds apart, so each of these used to fail to evaluate.
+    /// </summary>
+    [Theory]
+    [InlineData("b-(a>0)*c",                      -1.0)]   // multiplied, the comparison on the left
+    [InlineData("b-c*(a>0)",                      -1.0)]   // …and on the right
+    [InlineData("(a<0)*c",                         0.0)]
+    [InlineData("(a>=2)+(a<=2)+(a==2)+(a!=2)",     3.0)]   // every operator
+    [InlineData("-(a<b)",                         -1.0)]
+    [InlineData("max(a>b, c>b)",                   1.0)]   // a function argument
+    [InlineData("((a>0)*(b>c))*c",                 0.0)]   // nested
+    [InlineData("(a>1)==(b>1)",                    1.0)]   // comparisons compared
+    [InlineData("a>b",                             0.0)]   // the whole value
+    [InlineData("(a>0 && b>9)*c",                  0.0)]   // a connective
+    [InlineData("(!(a>9))*c",                      4.0)]
+    [InlineData("if(a>1, b>2, c)*5",               5.0)]   // a comparison as a branch
+    [InlineData("a ? b : c",                       3.0)]   // a number as a condition
+    [InlineData("(a-2) ? b : c",                   4.0)]
+    [InlineData("!(a-2) ? b : c",                  3.0)]
+    [InlineData("(a>1)*(b>2) ? b : c",             3.0)]
+    public void AComparisonIsANumber_AndANumberIsACondition(string written, double expected)
+        => Assert.Equal(expected, Value(SpiceExpression.Rewrite(written)), 12);
+
+    /// <summary>An expression that already reads in circuitRF's terms is not reprinted.</summary>
+    [Fact]
+    public void AComparisonAlreadyInACondition_IsLeftAsWritten()
+        => Assert.Equal("if(a>1,b,c)", SpiceExpression.Rewrite("a > 1 ? b : c"));
+
+    /// <summary>
+    /// The shape that stopped a kit's resistor: a term switched off by a comparison, and a value clamped
+    /// at zero by one. The model card read the switched value by name and refused it as not a number.
+    /// </summary>
+    [Theory]
+    [InlineData("0", 5.0e6, 2.0e-12)]
+    [InlineData("1", 4.5e6, 1.8e-12)]
+    public void ASwitchedTermInASubcircuitEvaluates(string trim, double rc, double area)
+    {
+        var r = SpiceNetlistReader.Read("""
+            .subckt rpart a b w=2u trim=0
+            .param area0 = w*1u-(trim>0)*w*0.1u
+            .param area = (area0>0)*area0
+            .param rc = 10/w-(trim>0)*1/w
+            R1 a b {rc}
+            .ends rpart
+            """);
+
+        var scope = new Scope("test");
+        foreach (var p in Assert.Single(r.Library.Cells).Parameters)
+            scope.Bind(p.Name, p.Name == "trim" ? trim : p.DefaultExpression);
+
+        Assert.Equal(rc,   new Evaluator().Eval("rc",   scope).AsReal(), rc * 1e-12);
+        Assert.Equal(area, new Evaluator().Eval("area", scope).AsReal(), area * 1e-12);
+    }
+
     // ── whitespace ────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -152,6 +152,7 @@ public static class SpiceExpression
         // comparison, which is not what the file says.
         s = SpiceNumber.NormaliseLiterals(s);
         s = RewriteTimeConditions(s, notes);
+        s = RewriteTruthValues(s);
         return StripWhitespace(s);
     }
 
@@ -606,6 +607,59 @@ public static class SpiceExpression
                 return e;
         }
     }
+
+    /// <summary>
+    /// A comparison used as a NUMBER becomes <c>if(cmp,1,0)</c>; a number used as a CONDITION becomes
+    /// <c>x!=0</c>.
+    ///
+    /// <para><b>This dialect has one kind of value and circuitRF has two.</b> Here a comparison is 1 or 0
+    /// and a condition is any non-zero number, so a kit writes <c>r/w-(flag&gt;0)*rq/w</c> to switch a
+    /// term off. circuitRF keeps truth values apart from numbers, in the parameter evaluator and the
+    /// device-equation one alike, so that line evaluated to nothing — and what reached the user was a
+    /// model card refusing a parameter that still read as the bare NAME it was assigned from, nowhere
+    /// near the line that caused it.</para>
+    ///
+    /// <para>Decided on the AST, by POSITION, because the text cannot say where a comparison stands:
+    /// <c>(a&gt;0)*b</c>, <c>b*(a&gt;0)</c>, <c>-(a&gt;0)</c>, <c>max(a&gt;0,b)</c> and <c>(a&gt;0)==(b&gt;0)</c> all use
+    /// one as a number. The whole value is a number too — a <c>.param</c> holds one — so a <c>.func</c>
+    /// returning a comparison returns 1 or 0, and the converse half is what keeps such a function usable
+    /// as a condition. An expression that needs neither is returned exactly as written.</para>
+    /// </summary>
+    public static string RewriteTruthValues(string expr)
+    {
+        if (expr.IndexOfAny(TruthCharacters) < 0 && !expr.Contains("if", StringComparison.Ordinal)) return expr;
+
+        try
+        {
+            Expr ast = Parser.Parse(expr);
+            string before = SpiceBehaviouralSource.Print(ast);
+            string after  = SpiceBehaviouralSource.Print(AsNumber(ast));
+            return after == before ? expr : after;
+        }
+        catch { return expr; }        // unreadable, or holds a node the printer cannot write; left as written
+    }
+
+    private static readonly char[] TruthCharacters = ['<', '>', '=', '!', '&', '|', '?'];
+
+    private static bool IsTruth(Expr e) => e is CompareExpr or LogicExpr or UnaryExpr { Op: "!" };
+
+    private static Expr AsNumber(Expr e) => e switch
+    {
+        _ when IsTruth(e)  => new ConditionalExpr(AsTruth(e), new NumberExpr(1), new NumberExpr(0)),
+        UnaryExpr u        => new UnaryExpr(u.Op, AsNumber(u.Operand)),
+        BinaryExpr b       => new BinaryExpr(b.Op, AsNumber(b.Left), AsNumber(b.Right)),
+        ConditionalExpr cd => new ConditionalExpr(AsTruth(cd.Condition), AsNumber(cd.Then), AsNumber(cd.Else)),
+        CallExpr call      => new CallExpr(call.Name, [.. call.Args.Select(AsNumber)]),
+        _                  => e,
+    };
+
+    private static Expr AsTruth(Expr e) => e switch
+    {
+        CompareExpr c => new CompareExpr(c.Op, AsNumber(c.Left), AsNumber(c.Right)),
+        LogicExpr l   => new LogicExpr(l.Op, AsTruth(l.Left), AsTruth(l.Right)),
+        UnaryExpr { Op: "!" } u => new UnaryExpr("!", AsTruth(u.Operand)),
+        _             => new CompareExpr("!=", AsNumber(e), new NumberExpr(0)),
+    };
 
     private static bool MentionsTime(Expr e)
     {
