@@ -24,7 +24,7 @@ namespace CircuitRF.Ui.Tests.Sar;
 
 public sealed partial class FarFieldCosimTests
 {
-    private static C3dComponentPort Part(string refdes) => new(refdes, "1", "2", new C3dPort { Name = refdes }, 300e-6, 500e-6, true, [], null, false) { PartPins = ["1", "2"] };
+    private static EmCoSimPart Part(string refdes) => new(refdes, "1", "2", ["1", "2"], null, null, (null, null), false);
 
     private static IReadOnlyList<EmCoSimPort> BoardPorts =>
         [new(1, "FEED", "50", null), new(2, "L1", "50", Part("L1")), new(3, "C1", "50", Part("C1"))];

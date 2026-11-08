@@ -681,7 +681,7 @@ internal static class ToolCatalog
                        + "or [\"*\"] for every two-terminal part. Each gets a gap port across its own pads, built and verified before "
                        + "meshing and never written to the file: a lumped port on a 3D setup (a .c3d, a .cem naming one, or a 3D .cem on a "
                        + "layout, built in a 3D view of it made in memory), a delta gap across a strip joining the two pads on a planar "
-                       + ".cem. A thermal setup and an electrostatic one are refused. A finished driven 3D run also writes <setup>_cosim.cnl, the board's N-port with "
+                       + ".cem. A thermal setup and an electrostatic one are refused. A finished planar or driven 3D run also writes <setup>_cosim.cnl, the board's N-port with "
                        + "each part across its port. explain componentPorts=true shows what would be built."),
                      // brief-sar-12 R-sar12-3 — a .c3d's band sweep: one setup per band from its template, run in turn.
                      new("bands", "--bands", OptKind.Str,

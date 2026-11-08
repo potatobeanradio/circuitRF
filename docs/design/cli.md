@@ -932,13 +932,17 @@ naming it, and the rest run. Two containers, two constructions:
 - **On a layout, planar** — a `.cem` whose LayoutRef names a `.clay` — each is a strip joining the two pads across the
   width they share, cut by an internal delta gap in the middle of the air between the two conductors, built and verified
   by `EmPlanarComponentPorts.Build` (LCP-1). The strip and the gap exist in the solved problem only; the `.clay` is
-  never touched.
+  never touched. A finished run writes `<setup>_cosim.cnl` as a 3D view's does (LCP-7): the writer reads ports
+  (`EmCoSimPort`), so the strip's part stands from its port's node to ground exactly as a sheet's does, and a part
+  with no model on the board's schematic is the same warning. With Radiation pattern on and a via in the mesh, no
+  pattern is stored and the run's note says the netlist's board block is an SnP for that reason.
 - **On a layout, 3D** — a 3D `.cem` whose LayoutRef names a `.clay` — the 3D view's construction, on the 3D view
   New 3D View from Layout would make of that cell, built in memory for this setup alone (`Em3dSetupProblem.Of`, LCP-5).
   Nothing is written. The `.clay` must be saved in a cell and be its cell's layout; a `SolveRegion` beside component
   ports is refused (a placed cell takes the whole layout); and the setup's drawn ports must each build as the generator
   builds them, since a `.cem`'s port cannot be moved afterwards as a `.c3d`'s can. A 3D view solves the copper that is
-  drawn, so a board whose ground is only its stackup's refuses its drawn ports there.
+  drawn, so a board whose ground is only its stackup's refuses its drawn ports there. The run writes `<setup>_cosim.cnl`
+  from the in-memory view's ports (`Em3dGenerationResult.CoSimPorts`, LCP-7), as a `.c3d`'s does.
 
 **It owns no construction**: every line comes out of the function the run, `check` and the setup panel's Check call, so
 the headless verdict is the GUI's. Which setups cannot take component ports at all is one rule,

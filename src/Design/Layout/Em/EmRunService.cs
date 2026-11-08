@@ -615,8 +615,14 @@ public static class EmRunService
     {
         try
         {
-            var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice, target);
-            return WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
+            IReadOnlyList<EmCoSimPort>? coSimPorts = null;
+            var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice, target,
+                                 ports => coSimPorts = ports);
+            // brief-lcp-7 R-lcp7-2 — a run that built component ports writes its _cosim netlist, Planar and 3D alike, and with Create
+            // schematic on makes the _cosim cell in place of _sim: a TermG on a part's port has no part on it.
+            result = WithCoSim(result, setup, resultsRoot, coSimPorts);
+            return result.CoSim is not null ? result
+                 : WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
         }
         catch (OperationCanceledException)
         {
@@ -720,7 +726,7 @@ public static class EmRunService
                 CircuitRF.Design.ThreeD.C3dPersistence.Serialize(document));
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
-            result = WithCoSim(result, setup, resultsRoot, assembled, document);
+            result = WithCoSim(result, setup, resultsRoot, assembled?.CoSimPorts);
             // R-cp6-2 — a run with component ports has made its _cosim cell: a TermG on a part's port has no part on it.
             return result.CoSim is not null ? result : WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
         }
@@ -761,18 +767,19 @@ public static class EmRunService
     /// workspace the results root belongs to, whatever else the setup asks, and with its Create schematic on the same circuit as a
     /// <c>&lt;setup&gt;_cosim</c> cell (R-cp6-2).
     /// </summary>
-    private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot,
-                                         CircuitRF.Design.Layout.Em3d.Em3dGenerationResult? assembled, CircuitRF.Design.ThreeD.C3dDocument document)
+    /// <param name="ports">The result's ports with their parts (<see cref="EmCoSimNetlist.PortsOf(IReadOnlyList{CircuitRF.Engine.Em3d.Em3dPort}, CircuitRF.Design.ThreeD.C3dDocument, CircuitRF.Design.ThreeD.C3dComponentPortBuild)"/>
+    /// for a 3D run, brief-lcp-7's Planar overload for a planar one); null when the run built no component port.</param>
+    private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot, IReadOnlyList<EmCoSimPort>? ports)
     {
-        if (assembled is not { ComponentPorts: { } build, Problem: { } problem } || result.Status != EmRunStatus.Ok || result.MeshOnly is not null ||
-            setup.Problem3D != CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
+        if (ports is null || result.Status != EmRunStatus.Ok || result.MeshOnly is not null ||
+            setup.Is3D && setup.Problem3D != CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
             return result;
         string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;
         if (snp is null || !File.Exists(snp))
             return result with { CoSim = new EmCoSimResult(EmSnpSchematicOutcome.NotCreated, null,
                 "No co-simulation netlist was written: this run wrote no Touchstone, and its board block reads one.") };
         string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
-        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, problem.Ports, document, build);
+        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, ports);
         if (!setup.CreateSnpSchematic) return result with { CoSim = cosim };
         return result with
         {
@@ -803,7 +810,8 @@ public static class EmRunService
         CircuitRF.Design.Em3d.PalaceDevice device,
         long?              memoryCeilingBytes,
         CircuitRF.Design.Em3d.EmergeDevice emergeDevice,
-        EmRunTarget?       target)
+        EmRunTarget?       target,
+        Action<IReadOnlyList<EmCoSimPort>>? coSimPorts = null)
     {
         // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
         // wires both once; where a control is supplied its token is authoritative and the bare `ct`
@@ -842,7 +850,8 @@ public static class EmRunService
         if (setup.Is3D && CemCylindricalRefusal(setup) is { } cemCylinder) return cemCylinder;
         if (setup.Is3D)
             return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device,
-                                                            memoryCeilingBytes, emergeDevice, target);
+                                                            memoryCeilingBytes, emergeDevice, target,
+                                                            g => { if (g.CoSimPorts is { } p) coSimPorts?.Invoke(p); });
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //
@@ -929,7 +938,7 @@ public static class EmRunService
 
         if (choice.Kind == EmAnalysisKind.Planar)
             return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores,
-                             confirmMemory, memoryCeilingBytes, target);
+                             confirmMemory, memoryCeilingBytes, target, coSimPorts);
 
         var extraction = crossSection;
         var problem = extraction.Problem!;
@@ -1016,7 +1025,8 @@ public static class EmRunService
         List<string> warnings, List<string> notes, List<string> errors,
         CancellationToken ct, RunControl? control = null, int? maxCores = null,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
-        long? memoryCeilingBytes = null, EmRunTarget? target = null)
+        long? memoryCeilingBytes = null, EmRunTarget? target = null,
+        Action<IReadOnlyList<EmCoSimPort>>? coSimPorts = null)
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
@@ -1281,6 +1291,16 @@ public static class EmRunService
                 return null;
             }), errors);
 
+        // brief-lcp-7 R-lcp7-2 — the component ports this run solved, for its co-simulation netlist; R-lcp7-4 — and why that netlist
+        // reads the Touchstone when a pattern was asked for and none could be stored.
+        if (portLabels.ComponentBuild is { } components && components.Ports.Any(p => p.Ok))
+        {
+            coSimPorts?.Invoke(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, components));
+            if (setup.RadiationPattern && solved.Solve?.FarField is null &&
+                solved.MeshReport.Mesh.Bases.Any(b => b.Direction == PlanarBasisDirection.Z || b.AttachesToGround))
+                notes.Add(PlanarCoSimNoPatternNote);
+        }
+
         return new EmRunResult(EmRunStatus.Ok, solved.Data, null, null, published.Npy, published.Snp, null,
                                warnings, Notes: notes, Errors: errors,
                                Kind: choice.Kind, KernelName: choice.KernelName,
@@ -1288,6 +1308,12 @@ public static class EmRunService
                                CurrentDensity: solved.CurrentDensity, PlanarPorts: solved.Ports,
                                RecordPath: published.Record);
     }
+
+    /// <summary>brief-lcp-7 R-lcp7-4 — a Planar run with component ports asked for a radiation pattern on a board with vias: the planar far
+    /// field does not radiate vertical current, so no pattern is stored and the co-simulation netlist's board is an SnP block.</summary>
+    public const string PlanarCoSimNoPatternNote =
+        "No radiation pattern was stored, so the co-simulation netlist's board block reads the Touchstone rather than EM Field Data: " +
+        "the planar far field does not radiate vertical current, and this board's mesh carries some (a via or a ground attachment).";
 
     /// <summary>The same exporter, the same options, the planar provenance stamp (D9).</summary>
     private static void WritePlanarSnp(

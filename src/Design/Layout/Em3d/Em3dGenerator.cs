@@ -61,6 +61,12 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// co-simulation netlist (R-emb1-7) is written from. Null when the setup names none.</summary>
     public CircuitRF.Design.ThreeD.C3dComponentPortBuild? ComponentPorts { get; init; }
 
+    /// <summary>brief-lcp-7 R-lcp7-1 — <see cref="ComponentPorts"/> as the co-simulation netlist reads them: every port of the problem
+    /// in its order, each component port with its part. Null when the setup names none. Set where the problem is assembled, the one
+    /// place that holds the document its ports are named in, so a layout's 3D <c>.cem</c> (whose 3D view is made in memory) writes
+    /// the netlist a <c>.c3d</c> does.</summary>
+    public IReadOnlyList<CircuitRF.Design.Layout.Em.EmCoSimPort>? CoSimPorts { get; init; }
+
     /// <summary>brief-dfr28-4 R-dfr28-4-5 — each layout port's return, by port number: the layer, the side, and who
     /// decided it. Kept BESIDE the problem, as <see cref="Origins"/> is: <c>explain</c> reads it.</summary>
     public IReadOnlyDictionary<int, Em3dPortReturn> PortReturns { get; init; } = new Dictionary<int, Em3dPortReturn>();

@@ -197,8 +197,10 @@ To wire a circuit by hand, place an EM Field Data block as in [The schematic sid
 
 ### A planar result {#planar}
 
-A planar run with **Radiation pattern** on works the same way: place an EM Field Data block on its record and add a Fields analysis. The run makes no `_cosim`
-cell, since component ports are built only in a 3D view, so the block's pins are the setup's own ports and the circuit is yours to draw. The hemisphere stays a hemisphere.
+A planar run with **Radiation pattern** on works the same way: place an EM Field Data block on its record and add a Fields analysis. The hemisphere stays a hemisphere.
+A planar setup with **component ports** makes the `_cosim` cell and netlist as a 3D one does, each part across its own port, and the block's pins are its component ports
+by part. Without them the block's pins are the setup's own ports and the circuit is yours to draw. A via anywhere stops a planar pattern, and most boards with parts have
+vias: the run then says so, and its `_cosim` circuit reads the Touchstone through an SnP block instead.
 
 - **A port for a part is an Internal delta gap.** Draw the part's site as continuous metal, put a port on it and set its type to **Internal delta gap** in the EM
   setup's port list. Two pads with a real gap between them cannot be a port, because a delta gap cuts metal. An **Internal** port goes down a via to the plane, and any via

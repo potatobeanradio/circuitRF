@@ -29003,3 +29003,32 @@ technology's own rules, which are the board's and not the import's. Nothing was 
 - Gate: `tests/Ui.Tests/Em3d/NewViewComponentPortsTests.cs` (gates 1-5, documents only) and
   `AuthoringCliVerbTests.NewView3dFromLayout_WritesTheSameBytesAsTheCallTheGuiMakes` (gate 6: its cell now carries a Planar `.cem` with
   C1 and C2, and the CLI's note names the setup).
+
+## Co-simulation from a .cem (brief LCP-7, 2026-11-07)
+
+- **The writer reads ports.** `EmCoSimNetlist.Write` takes `IReadOnlyList<EmCoSimPort>`, each component port's part an `EmCoSimPart`
+  (refdes, both pads' pins, every footprint pin in order, `SchematicId`, layout path, nets, connector). `EmCoSimPart.Of` reads one from a
+  `C3dComponentPort` or an `EmPlanarComponentPort`; `PortsOf` has a 3D overload (problem ports + document + build, unchanged) and a Planar
+  one (solved `PlanarPort`s + their labels + the build, matched by number; Z0 is the solved one, written as `50` or `25+j10`).
+  `CoSimC3dBytesTests` holds the old writer's text on a six-port input byte for byte: the "N part port(s)" count is now the
+  non-connector component ports among the result's, which is the same number because a refused port is never a result port.
+- **A layout's 3D `.cem` names its ports where the problem is assembled.** Its 3D view is made in memory inside `Em3dSetupProblem.Of`,
+  so nothing outside holds the document the port names come from. `C3dProblemAssembly.Assemble` sets
+  `Em3dGenerationResult.CoSimPorts` beside `ComponentPorts`, and both doors read that: `RunThreeDView` as before, and
+  `EmRunService.Run` through a callback `Em3dRunService.Run(setup, source, …)` now takes (the memory remedy may assemble twice; the
+  last is what was solved). LCP-5's gap is closed.
+- **Run order.** `EmRunService.Run` now does `WithCoSim` before `WithSnpSchematic`, as `RunThreeDView` always did, so a run with component
+  ports makes `_cosim` and never `_sim`. `WithCoSim`'s driven-only test applies to a 3D setup; a Planar setup has no `Problem3D` to ask.
+- **Planar connectors are by refdes only** (`C3dComponentPorts.IsConnectorRefdes`): a layout has no 3D shell to bridge, so a J part is a
+  Port line and anything else stands across its port.
+- **The no-model warning** is the `.c3d`'s sentence word for word, added to the Planar build's `Warnings` (so the run, `check` and the
+  panel get it with no new plumbing). It names only parts with at least one port built; the `.c3d` builder also names a part whose
+  sheet construction failed.
+- **A via stops a Planar pattern.** With Radiation pattern on, component ports built, no far field stored and a vertical or
+  ground-attached basis in the mesh, the run adds `EmRunService.PlanarCoSimNoPatternNote`, so the `_cosim` circuit's SnP block (rather
+  than EM Field Data) is explained rather than left to the reader. With a pattern stored the record's ports are the gap labels' text,
+  i.e. the parts' names, so the EM Field Data block's pins are the component ports by part with no further change.
+- Gate: `tests/Ui.Tests/Em3d/CoSimC3dBytesTests.cs` (gate 1) and `tests/Ui.Tests/Em/PlanarCoSimTests.cs` (gate 2: a synthetic five-port
+  closed by C1 and a three-pad part's 3-port file through `sparam` on the written `.cnl` against
+  S' = S_ee + S_ek Γ (I − S_kk Γ)⁻¹ S_ke, to 1e-6; gates 3-4: LCP-1's board run with Create SnP schematic on writes `board_cosim.cnl`,
+  makes `board_cosim` and no `board_sim`, warns for C1 and C2, and the netlist simulates). No EM solve beyond the 2 s board.

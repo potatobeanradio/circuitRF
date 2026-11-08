@@ -85,8 +85,7 @@ public sealed class CoSimNetlistTests : IDisposable
         Assert.Contains(lines, l => l.StartsWith("; C1 is Open in the board's schematic", StringComparison.Ordinal));
     }
 
-    private static C3dComponentPort Component(string refdes)
-        => new(refdes, "1", "2", new C3dPort { Name = refdes }, 300e-6, 500e-6, true, [], null, false) { PartPins = ["1", "2"] };
+    private static EmCoSimPart Component(string refdes) => new(refdes, "1", "2", ["1", "2"], null, null, (null, null), false);
 
     private static void Touchstone(string path, int n)
     {

@@ -264,8 +264,10 @@ nor a field set gets an SnP in place of the block. A run with no component ports
 <p>To wire a circuit by hand, place an EM Field Data block as in <a href="#schematic">The schematic side</a> and add a Fields analysis. <code>RealizedGainDbi(F1)</code>,
 <code>GainDbi</code>, <code>DirectivityDbi</code>, <code>RadiationEfficiency</code>, <code>TrpDbm</code> and <code>PeakEirpDbm</code> read the pattern in a <code>measure</code> or <code>goal</code> line.</p>
 <h3 id="planar">A planar result</h3>
-<p>A planar run with <strong>Radiation pattern</strong> on works the same way: place an EM Field Data block on its record and add a Fields analysis. The run makes no <code>_cosim</code>
-cell, since component ports are built only in a 3D view, so the block's pins are the setup's own ports and the circuit is yours to draw. The hemisphere stays a hemisphere.</p>
+<p>A planar run with <strong>Radiation pattern</strong> on works the same way: place an EM Field Data block on its record and add a Fields analysis. The hemisphere stays a hemisphere.
+A planar setup with <strong>component ports</strong> makes the <code>_cosim</code> cell and netlist as a 3D one does, each part across its own port, and the block's pins are its component ports
+by part. Without them the block's pins are the setup's own ports and the circuit is yours to draw. A via anywhere stops a planar pattern, and most boards with parts have
+vias: the run then says so, and its <code>_cosim</code> circuit reads the Touchstone through an SnP block instead.</p>
 <ul>
 <li><strong>A port for a part is an Internal delta gap.</strong> Draw the part's site as continuous metal, put a port on it and set its type to <strong>Internal delta gap</strong> in the EM
 setup's port list. Two pads with a real gap between them cannot be a port, because a delta gap cuts metal. An <strong>Internal</strong> port goes down a via to the plane, and any via

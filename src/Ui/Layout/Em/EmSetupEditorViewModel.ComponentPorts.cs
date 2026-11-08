@@ -117,7 +117,9 @@ public sealed partial class EmSetupEditorViewModel
         "A component port across each chosen part's own pads. The solver adds a strip of copper between the two pads and puts " +
         "the port across it, in the gap between the pads; the strip exists in the solved problem only, and nothing is added to " +
         "the layout. A part with more pads gets one port per signal pad against its own ground pad. Check builds them as a run " +
-        "would and says in Messages why any part is left out. Each port's Z0, width and reference pin are set in its row under Ports.";
+        "would and says in Messages why any part is left out. Each port's Z0, width and reference pin are set in its row under Ports. " +
+        "A finished run also writes <setup>_cosim.cnl: the board's N-port with each part's model across its port. With Create SnP " +
+        "schematic on, the same circuit is also made as a <setup>_cosim cell.";
 
     /// <summary>Builds and verifies the ports as a run would, off the UI thread (a board's elaboration and every part's port
     /// is seconds of work): the setup and its geometry are read as they stand when Check is pressed, and the panel stays usable

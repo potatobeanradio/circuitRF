@@ -13,8 +13,13 @@
 // brief-cosim-pattern-6 — the board is an EM Field Data block on the run's record when the run kept a far field or a field set, and
 // an SnP otherwise. With a setup's Create schematic on, the same text is drawn as a <setup>_cosim cell someone can edit, by
 // NetlistSchematic, the drawing `netlist --to-schematic` uses. An existing cell is never written to.
+//
+// brief-lcp-7 — the writer reads ports (EmCoSimPort, each component port's part as an EmCoSimPart), not a 3D view and its build, so
+// a layout's Planar run writes the same netlist from its strips that a .c3d writes from its sheets. A Planar component port is a
+// delta gap across the part's pads, the same open-pad measurement as a 3D sheet, so the wiring rule above holds for both.
 
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -26,6 +31,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
+using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em;
 
@@ -33,8 +39,33 @@ namespace CircuitRF.Design.Layout.Em;
 /// <param name="Number">Its port number in the Touchstone.</param>
 /// <param name="Name">The 3D view's port name, or the component port's (refdes or refdes.pin).</param>
 /// <param name="Z0">Its reference impedance, as the document writes it.</param>
-/// <param name="Component">The component port it is, or null for one of the 3D view's own ports.</param>
-public sealed record EmCoSimPort(int Number, string Name, string Z0, C3dComponentPort? Component);
+/// <param name="Component">The component port it is, or null for one of the 3D view's or the layout's own ports.</param>
+public sealed record EmCoSimPort(int Number, string Name, string Z0, EmCoSimPart? Component);
+
+/// <summary>
+/// brief-lcp-7 R-lcp7-1 — what the netlist reads of one component port: the part, its two pads, every pin of its footprint in pin
+/// order, where its model is read from and its nets. A <c>.c3d</c>'s sheet and a layout's Planar strip both give it, so the writer
+/// takes neither builder's type.
+/// </summary>
+/// <param name="Refdes">The part.</param>
+/// <param name="Pin">The positive pad's pin.</param>
+/// <param name="ReferencePin">The negative pad's pin.</param>
+/// <param name="PartPins">Every pin of the part, in its footprint's pin order: a multi-pad part's model terminals map onto them.</param>
+/// <param name="SchematicId">The placement's <c>SchematicId</c>: the board schematic's instance the part's model is read from.</param>
+/// <param name="ClayPath">The layout the part is placed on, beside which the board's schematic is looked for.</param>
+/// <param name="Nets">The nets of its two pads, positive first, where the board states them.</param>
+/// <param name="Connector">A connector: its port is a Port line of the circuit, not a part across it.</param>
+public sealed record EmCoSimPart(string Refdes, string? Pin, string? ReferencePin, IReadOnlyList<string> PartPins, string? SchematicId,
+                                 string? ClayPath, (string? Positive, string? Negative) Nets, bool Connector)
+{
+    /// <summary>A <c>.c3d</c>'s component port.</summary>
+    public static EmCoSimPart Of(C3dComponentPort p)
+        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector);
+
+    /// <summary>A layout's Planar component port.</summary>
+    public static EmCoSimPart Of(EmPlanarComponentPort p)
+        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector);
+}
 
 /// <summary>The board schematic's parts: each instance by name, and what a netlist of them needs alongside.</summary>
 public sealed record EmCoSimModels(IReadOnlyDictionary<string, Instance> Instances, Library? Library, string? Technology)
@@ -225,9 +256,37 @@ public static class EmCoSimNetlist
             var own = C3dPorts.OwnerOf(document, source);
             string name = cp?.Port?.Name ?? (own is not null ? C3dPorts.Label(own) : $"port {source}");
             string z0 = cp?.Port?.Z0 ?? own?.Z0 ?? "50";
-            list.Add(new EmCoSimPort(p.Number, name, z0, cp));
+            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp)));
         }
         return list;
+    }
+
+    /// <summary>
+    /// brief-lcp-7 R-lcp7-2 — a Planar run's ports, in the Touchstone's order: each solved port by its number, matched to the
+    /// built component port of that number when there is one, its name the label's text (the layout's own port, or the part's),
+    /// its reference impedance the one the run solved with.
+    /// </summary>
+    /// <param name="labels">The label each port came from, index-aligned with <paramref name="ports"/>.</param>
+    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<PlanarPort> ports, IReadOnlyList<LabelShape> labels, EmPlanarComponentPortBuild build)
+    {
+        var list = new List<EmCoSimPort>();
+        for (int i = 0; i < ports.Count; i++)
+        {
+            var p = ports[i];
+            var cp = build.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
+            string name = cp?.Name ?? (i < labels.Count && labels[i].Text is { Length: > 0 } text ? text : $"P{p.Number}");
+            list.Add(new EmCoSimPort(p.Number, name, Z0Text(p.Z0), cp is null ? null : EmCoSimPart.Of(cp)));
+        }
+        return list;
+    }
+
+    /// <summary>A solved reference impedance as a Port line writes it: ohms, with an imaginary part when there is one.</summary>
+    private static string Z0Text(Complex z)
+    {
+        string re = z.Real.ToString("G15", CultureInfo.InvariantCulture);
+        if (z.Imaginary == 0) return re;
+        string im = Math.Abs(z.Imaginary).ToString("G15", CultureInfo.InvariantCulture);
+        return z.Imaginary > 0 ? $"{re}+j{im}" : $"{re}-j{im}";
     }
 
     /// <summary>
@@ -272,14 +331,14 @@ public static class EmCoSimNetlist
     /// left alone and said. Never throws.
     /// </summary>
     /// <param name="recordPath">The run's result record; null when it wrote none.</param>
-    public static EmCoSimResult Write(string workspaceDir, EmSetup setup, string snpPath, string? recordPath, IReadOnlyList<Em3dPort> problemPorts,
-                                      C3dDocument document, C3dComponentPortBuild build)
+    /// <param name="ports">The result's ports in its order: <see cref="PortsOf(IReadOnlyList{Em3dPort}, C3dDocument, C3dComponentPortBuild)"/>
+    /// for a 3D run, <see cref="PortsOf(IReadOnlyList{PlanarPort}, IReadOnlyList{LabelShape}, EmPlanarComponentPortBuild)"/> for a Planar one.</param>
+    public static EmCoSimResult Write(string workspaceDir, EmSetup setup, string snpPath, string? recordPath, IReadOnlyList<EmCoSimPort> ports)
     {
         string path = Path.Combine(workspaceDir, FileNameFor(setup));
         try
         {
-            var ports = PortsOf(problemPorts, document, build);
-            var models = ModelsFor(build.Ports.Select(p => p.ClayPath).FirstOrDefault(c => c is not null));
+            var models = ModelsFor(ports.Select(p => p.Component?.ClayPath).FirstOrDefault(c => c is not null));
             string stored = Path.GetRelativePath(workspaceDir, Path.GetFullPath(snpPath)).Replace('\\', '/');
             string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir));
             if (File.Exists(path))
@@ -293,7 +352,7 @@ public static class EmCoSimNetlist
             }
             AtomicFile.WriteAllText(path, text);
             return new(EmSnpSchematicOutcome.Created, path,
-                $"Wrote {Path.GetFileName(path)}: the board's S{ports.Count}P with {build.Ports.Count(p => p.Ok && !p.Connector)} part " +
+                $"Wrote {Path.GetFileName(path)}: the board's S{ports.Count}P with {ports.Count(p => p.Component is { Connector: false })} part " +
                 "port(s) closed by their models, ready to simulate.", text);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)

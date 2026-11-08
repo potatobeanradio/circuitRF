@@ -222,8 +222,15 @@ public static partial class Em3dRunService
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
-                                    EmergeDevice emergeDevice = EmergeDevice.Auto, EmRunTarget? target = null)
-        => Run(setup, s => CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
+                                    EmergeDevice emergeDevice = EmergeDevice.Auto, EmRunTarget? target = null,
+                                    Action<Em3dGenerationResult>? assembled = null)
+        => Run(setup, s =>
+               {
+                   // brief-lcp-7 — the problem the run solved, last: its component ports are what the co-simulation netlist is written from.
+                   var g = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(s, source, source.Technology!);
+                   assembled?.Invoke(g);
+                   return g;
+               }, resultsRoot, ct, control, maxCores,
                confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes, emergeDevice: emergeDevice, target: target);
 
     /// <summary>

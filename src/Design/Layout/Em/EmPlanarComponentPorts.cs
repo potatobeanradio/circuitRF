@@ -57,6 +57,20 @@ public sealed record EmPlanarComponentPort(
 
     /// <summary>brief-lcp-2 R-lcp2-2 — the positive and negative pads' nets, as the board projection reads them.</summary>
     public (string? Positive, string? Negative) Nets { get; init; }
+
+    /// <summary>brief-lcp-7 R-lcp7-3 — every pin of the part, in its footprint's pin order: a multi-pad part's model terminals map
+    /// onto them in the co-simulation netlist.</summary>
+    public IReadOnlyList<string> PartPins { get; init; } = [];
+
+    /// <summary>brief-lcp-7 — the placement's <c>SchematicId</c>: the board schematic's instance the part's model is read from.</summary>
+    public string? SchematicId { get; init; }
+
+    /// <summary>brief-lcp-7 — the layout the part is placed on.</summary>
+    public string? ClayPath { get; init; }
+
+    /// <summary>brief-lcp-7 — a connector by its refdes (<see cref="C3dComponentPorts.IsConnectorRefdes"/>): a Port line of the
+    /// co-simulation netlist, not a part across its port. A layout has no 3D shell to bridge, so the refdes is all that says so.</summary>
+    public bool Connector { get; init; }
 }
 
 /// <summary>The component ports a planar setup asks for, built against one layout.</summary>
@@ -169,6 +183,7 @@ public static class EmPlanarComponentPorts
         int next = EmPortExtraction.NumberPorts(EmComponentPorts.Collect(source).Shapes).Select(p => p.Number).DefaultIfEmpty(0).Max() + 1;
 
         var results = new List<EmPlanarComponentPort>();
+        var noModel = new List<string>();
         foreach (var entry in selection.Wanted)
         {
             string rd = entry.Refdes;
@@ -213,6 +228,8 @@ public static class EmPlanarComponentPorts
                 continue;
             }
 
+            bool connector = C3dComponentPorts.IsConnectorRefdes(rd);
+            bool anyBuilt = false;
             foreach (var (pos, neg) in pairs)
             {
                 string name = pairs.Count == 1 ? rd : $"{rd}.{pos.Pad.Pin}";
@@ -231,13 +248,21 @@ public static class EmPlanarComponentPorts
                     Conductor = source.Technology?.Stackup.Layers
                         .FirstOrDefault(l => l.Kind == StackupKind.Conductor && pos.Pad.Layer is { } pl && l.DrawingLayers.Contains(pl))?.Name,
                     Nets = (pos.Pad.Net, neg.Pad.Net),
+                    PartPins = [.. part.Pads.Select(pd => pd.Pin)], SchematicId = part.SchematicId,
+                    ClayPath = source.AbsolutePath, Connector = connector,
                 });
+                anyBuilt = true;
             }
+            if (anyBuilt && part.HasModel == false && !connector) noModel.Add(rd);
         }
 
         foreach (var r in results.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
         foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
+        // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.
+        if (noModel.Count > 0)
+            warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
+                         $"co-simulation netlist will carry a placeholder for {(noModel.Count == 1 ? "it" : "each")}.");
 
         // A part that cannot be built is left out and the others run; the list refuses only when nothing at all is left to drive.
         if (!results.Any(p => p.Ok) && !EmComponentPorts.Collect(source).Shapes.Any(s => s is LabelShape { IsPort: true }))
