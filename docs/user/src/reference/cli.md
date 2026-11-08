@@ -521,6 +521,17 @@ decibels, one cut per bearing:
 
 [Plot flags](#plot) has the rest. Exit **0** when every fields analysis ran, **1** refused or failed, **130** cancelled.
 
+## `trl` — fixture files from TRL standards {#trl}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf trl &lt;bench.cnl|.csch&gt; [-a name]... [--set var=expr]... [--fixture-a path] [--fixture-b path] [-o out.{mat,npy,txt}]</code></pre>
+
+Runs every enabled `type=trl` analysis, or the ones `-a` names ([TRL Calibration](simulations.html#trl)), and writes each one's
+two fixture files where its directive says. `--fixture-a` and `--fixture-b` replace those paths for one analysis. `-o`
+exports the result (`SA`, `SB`, `LineDeg`, `LineLossDb`, `Gamma`, `Usable`); it does not move the fixtures. Under `--json`
+both fixture files are listed in `outputs`.
+
+Exit **0** when it ran, a usable-band warning included, **1** refused or failed, **130** cancelled.
+
 ## `em` — electromagnetic extraction {#em}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>

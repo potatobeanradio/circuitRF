@@ -825,6 +825,48 @@ and per-band `Z[k]` to the whole multi-tone spectrum this way.
 
 ---
 
+## TRL Calibration {#trl}
+
+A TRL calibration finds the two **fixtures** between your instrument and the part you measured (the launches, probes or
+connectors on each side), from three standards measured through those same fixtures. It writes them as two `.s2p` files,
+which two [Deembed](components.html#deembed) blocks then take off any other measurement made through the same fixtures. It
+solves no circuit.
+
+Place three SnP blocks on a test bench, one for each measured standard, and add an analysis of type **TRL Calibration**:
+
+- **Thru**: the two fixtures connected directly. The reference plane is the middle of the Thru.
+- **Reflect**: the same high-reflection standard on both ports, port 1's in S11 and port 2's in S22. You only say whether it
+  is an **open** or a **short**; its exact value is solved for, and reported.
+- **Line**: a longer piece of line between the fixtures. Its impedance becomes the reference impedance of everything you
+  de-embed, so make it the impedance you want to read results in.
+- **Fixture A** and **Fixture B**: where the two files are written. They are resolved exactly as an SnP's File is, so the
+  same text goes into the Deembed's File. Left empty, they are `<analysis name>_A.s2p` and `_B.s2p`.
+
+Fixture A's port 1 is the instrument side and port 2 the part's. Fixture B's port 1 is the part's side and port 2 the
+instrument's. So the chain reads left to right as the measurement did: `Port 1 — Deembed(A) — measured part — Deembed(B) —
+Port 2`, with no flipping.
+
+**The usable band.** TRL tells the two fixtures apart by how much longer the Line is than the Thru. Where that difference is
+near 0° or 180°, the two standards are nearly the same and the answer is unreliable. A run warns about every point
+outside **20° to 160°** (modulo 180°), naming the frequencies. One line covers 8:1. A line that is 90° longer at the middle
+of your band, `f_mid = (f_low + f_high) / 2`, is a good choice; cover a wider band with a second line and a second
+calibration.
+
+The analysis's result holds `SA` and `SB` (the two fixtures, as S cubes), `LineDeg` (the Line's extra length over the Thru,
+in degrees), `LineLossDb`, `Gamma` (the solved reflect) and `Usable` (1 inside the band, 0 outside), to plot like any other
+result.
+
+```
+SnP:THRU     t1 t2 File="measurements/thru.s2p"    NumPorts=2
+SnP:REFLECT  r1 r2 File="measurements/reflect.s2p" NumPorts=2
+SnP:LINE     l1 l2 File="measurements/line.s2p"    NumPorts=2
+analysis CAL type=trl thru=THRU reflect=REFLECT line=LINE reflectType=short fixtureA="fixtures/A.s2p" fixtureB="fixtures/B.s2p"
+```
+
+From the command line, `circuitrf trl bench.csch` runs it ([`trl`](cli.html#trl)).
+
+---
+
 ## Tuning {#tuning}
 
 The **Tuning** panel puts a slider on any value you choose and re-simulates as you move it, with every

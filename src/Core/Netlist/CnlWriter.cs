@@ -375,6 +375,9 @@ public static class CnlWriter
         DcAnalysis dc                 => $"analysis {dc.Name} type=dc",
         FieldsAnalysis fa             => $"analysis {fa.Name} type=fields block={fa.Block} freq=\"{fa.FreqExpr}\" freqUnit={fa.FreqUnit} " +
                                          $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}",
+        TrlAnalysis trl               => $"analysis {trl.Name} type=trl thru={trl.Thru} reflect={trl.Reflect} line={trl.Line} reflectType={trl.ReflectType}" +
+                                         (trl.FixtureA.Length > 0 ? $" fixtureA=\"{trl.FixtureA}\"" : "") +
+                                         (trl.FixtureB.Length > 0 ? $" fixtureB=\"{trl.FixtureB}\"" : ""),
         _                             => $"analysis {analysis.Name}",
     };
 

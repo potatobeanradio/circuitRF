@@ -243,6 +243,17 @@ public static partial class AnalysisDirectiveSchema
             new("norm",     Default: "accepted", Summary: "accepted | available: the drive power every SAR and B1 result is per watt of."),
             new("average",  Default: "yes",  Summary: "yes: averaged SAR too (the setup's masses). no: local SAR and B1 only — the fast path."),
         ]),
+
+        // brief-de-4 — Thru-Reflect-Line calibration from three measured standards on the bench; solves no circuit
+        new("trl", ["calibration", "trl_calibration"],
+        [
+            new("thru",        Required: true, Summary: "Instance name of the SnP block on this bench that holds the measured Thru, a two-port. Its middle is the reference plane."),
+            new("reflect",     Required: true, Summary: "Instance name of the SnP block that holds the measured Reflect: the same standard on both ports, port 1's in S11 and port 2's in S22."),
+            new("line",        Required: true, Summary: "Instance name of the SnP block that holds the measured Line, on the Thru's frequency grid. Its extra length over the Thru should be 20-160 degrees across the band; its impedance becomes the reference impedance."),
+            new("reflectType", Required: true, Summary: "open | short: which side of the Smith chart the Reflect is on. Its exact value is solved for."),
+            new("fixtureA",    Summary: "Where fixture A is written (port 1 the instrument side, port 2 the part's), resolved as an SnP's File. Default <analysis name>_A.s2p."),
+            new("fixtureB",    Summary: "Where fixture B is written (port 1 the part's side, port 2 the instrument's), resolved as an SnP's File. Default <analysis name>_B.s2p."),
+        ]),
     ];
 
     /// <summary>Every directive spec, in the order the reference page should list them.</summary>

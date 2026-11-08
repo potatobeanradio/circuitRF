@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.TrlBodyView"
+             x:DataType="vm:TrlBodyViewModel">
+    <!-- brief-de-4: the three measured standards on this bench, the reflect's side, and where the two fixtures go. -->
+    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,10,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Thru:" FontSize="12" VerticalAlignment="Center"/>
+        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" HorizontalAlignment="Stretch"
+                   ItemsSource="{Binding SnpInstances}" SelectedItem="{Binding Thru}" PlaceholderText="the SnP holding the measured Thru"
+                   ToolTip.Tip="The SnP block holding the measured Thru. The reference plane is its middle."/>
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Reflect:" FontSize="12" VerticalAlignment="Center"/>
+        <ComboBox  Grid.Row="1" Grid.Column="1" FontSize="12" HorizontalAlignment="Stretch"
+                   ItemsSource="{Binding SnpInstances}" SelectedItem="{Binding Reflect}" PlaceholderText="the SnP holding the measured Reflect"
+                   ToolTip.Tip="The SnP block holding the measured Reflect: the same standard on both ports, port 1's in S11 and port 2's in S22."/>
+        <ComboBox  Grid.Row="1" Grid.Column="2" FontSize="12" MinWidth="80"
+                   ItemsSource="{x:Static vm:TrlBodyViewModel.ReflectTypes}" SelectedItem="{Binding ReflectType}"
+                   ToolTip.Tip="Which side of the Smith chart the Reflect is on. Its exact value is solved for."/>
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Line:" FontSize="12" VerticalAlignment="Center"/>
+        <ComboBox  Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" HorizontalAlignment="Stretch"
+                   ItemsSource="{Binding SnpInstances}" SelectedItem="{Binding Line}" PlaceholderText="the SnP holding the measured Line"
+                   ToolTip.Tip="The SnP block holding the measured Line. Its extra length over the Thru should be 20 to 160 degrees across the band, and its impedance becomes the reference impedance."/>
+        <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+                   Text="{Binding Problem}" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="Fixture A:" FontSize="12" VerticalAlignment="Center"/>
+        <TextBox   Grid.Row="5" Grid.Column="1" FontSize="12" Text="{Binding FixtureA}" Watermark="{Binding FixtureAHint}"
+                   ToolTip.Tip="Where fixture A is written: port 1 the instrument side, port 2 the part's. Point the Deembed on port 1's side at it."/>
+        <Button    Grid.Row="5" Grid.Column="2" Content="Browse…" FontSize="11" Padding="8,3" Click="OnBrowseAClick"/>
+        <TextBlock Grid.Row="6" Grid.Column="0" Text="Fixture B:" FontSize="12" VerticalAlignment="Center"/>
+        <TextBox   Grid.Row="6" Grid.Column="1" FontSize="12" Text="{Binding FixtureB}" Watermark="{Binding FixtureBHint}"
+                   ToolTip.Tip="Where fixture B is written: port 1 the part's side, port 2 the instrument side. Point the Deembed on port 2's side at it."/>
+        <Button    Grid.Row="6" Grid.Column="2" Content="Browse…" FontSize="11" Padding="8,3" Click="OnBrowseBClick"/>
+    </Grid>
+</UserControl>

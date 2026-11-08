@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public sealed partial class AnalysisEditorViewModel : ObservableObject
 {
-    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV }
+    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV, TRL }
 
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
@@ -37,7 +37,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Type selection ────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv),
+    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv), nameof(IsTrl),
                               nameof(ShowSweeps), nameof(SimulateByChoosable))]
     private AnalysisKind _type = AnalysisKind.DC;
 
@@ -52,9 +52,15 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     public FieldsBodyViewModel FieldsBody { get; private set; } = new();
     public bool IsEnv => Type == AnalysisKind.ENV;
 
+    /// <summary>brief-de-4 — a TRL calibration: two fixture files from three measured standards on the bench.</summary>
+    public bool IsTrl => Type == AnalysisKind.TRL;
+
+    /// <summary>brief-de-4 — the TRL analysis's body.</summary>
+    public TrlBodyViewModel TrlBody { get; private set; } = null!;
+
     /// <summary>Parametric-sweep chains are supported on every analysis type — including freq-swept
     /// Loadpull and Loadpull-Pursuit over a tone VAR (FreqSweptLoadpull brief, Layers A–E).</summary>
-    public bool ShowSweeps => true;     // a fields analysis too, over a far field (brief-cosim-pattern-5); the run refuses a block with a field set
+    public bool ShowSweeps => !IsTrl;   // not a TRL calibration, which solves no circuit; a fields analysis too, over a far field (brief-cosim-pattern-5); the run refuses a block with a field set
 
     // ── Name + Enabled ────────────────────────────────────────────────────────
 
@@ -74,7 +80,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Whether the choice applies: a fields analysis reads the EM result in its block, so there is no layout to
     /// simulate it by. A part set to EM in its bench stays EM; that is the part's own setting.</summary>
-    public bool SimulateByChoosable => !IsFields;
+    public bool SimulateByChoosable => !IsFields && !IsTrl;
 
     /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
     /// "(choose a setup)" so a picker always has a row to show.</summary>
@@ -182,6 +188,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         FieldsBody.BlockSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Paths(model);
         FieldsBody.DataSource = () => CircuitRF.Design.Em3d.EmFieldBlocks.Data(model);
         FieldsBody.UseDrivers(CircuitRF.Design.Em3d.FieldDrivers.Of(model), choose: true);
+        TrlBody        = new TrlBodyViewModel(model, workspaceRoot);
+        TrlBody.UseName(_name);
         LoadEmSetups(null);
         ValidateName();
     }
@@ -210,6 +218,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         _editingChainNames.AddRange(sweepChain.Select(s => s.Name));
 
         EnvBody = inner is EnvelopeAnalysis env0 ? EnvBodyViewModel.FromAnalysis(env0, model) : new EnvBodyViewModel(model);
+        TrlBody = inner is TrlAnalysis trl0 ? TrlBodyViewModel.From(trl0, model, workspaceRoot) : new TrlBodyViewModel(model, workspaceRoot);
+        TrlBody.UseName(_name);
         switch (inner)
         {
             case EnvelopeAnalysis:
@@ -264,6 +274,14 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                     SweepsExpanded = true;
                 }
 #pragma warning restore CS0618
+                break;
+
+            case TrlAnalysis:
+                _type   = AnalysisKind.TRL;
+                SpBody  = new SpBodyViewModel(model);
+                HbBody  = SeededHb(model);
+                LpBody  = SeededLp(model, workspaceRoot);
+                LppBody = SeededLpp(model, workspaceRoot);
                 break;
 
             case FieldsAnalysis fa:
@@ -329,7 +347,11 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     // ── Validation ────────────────────────────────────────────────────────────
 
-    partial void OnNameChanged(string value) => ValidateName();
+    partial void OnNameChanged(string value)
+    {
+        ValidateName();
+        TrlBody?.UseName(value);
+    }
 
     // When the type changes, refresh the Name to the next free name for the new type —
     // but only if the current name still looks auto-generated (letters-only prefix + digits suffix).
@@ -405,6 +427,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.LPP => "LPP",
             AnalysisKind.Fields => "F",
             AnalysisKind.ENV => "ENV",
+            AnalysisKind.TRL => "CAL",
             _                => "DC",
         };
         for (int n = 1; n <= 999; n++)
@@ -453,6 +476,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.LPP => LppBody.IsValid ? LppBody.BuildAnalysis(name, Enabled) : null,
             AnalysisKind.Fields => FieldsBody.IsValid ? FieldsBody.BuildAnalysis(name, Enabled) : null,
             AnalysisKind.ENV => EnvBody.BuildAnalysis(name, Enabled),
+            AnalysisKind.TRL => TrlBody.IsValid ? TrlBody.BuildAnalysis(name, Enabled) : null,
             _                => null,
         };
         if (inner is null) return null;

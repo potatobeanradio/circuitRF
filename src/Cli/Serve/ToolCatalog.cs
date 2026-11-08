@@ -536,6 +536,18 @@ internal static class ToolCatalog
                   + "A pattern stays out of the document for its size: write it with output and read or plot that file: plot type=polar "
                   + "radial=db dbUnit=dBi trace=cube=F1.farfield.U,cut=0,y=db10. Every enabled fields analysis unless analysis names one. "
                   + "'reference cosimulation' has the workflow and every metric."),
+                // brief-de-4: the `trl` verb — two fixture files from three measured standards on a bench; solves no circuit.
+                new("trl", ["trl"],
+                    [new("path", true, "The .cnl or .csch whose TRL analyses to run.")],
+                    [Analysis, Set, Output,
+                     new("fixtureA", "--fixture-a", OptKind.Path, "Where fixture A is written, replacing the directive's fixtureA (one analysis only)."),
+                     new("fixtureB", "--fixture-b", OptKind.Path, "Where fixture B is written, replacing the directive's fixtureB (one analysis only).")],
+                    "Thru-Reflect-Line calibration: three SnP blocks on the bench holding the measured Thru, Reflect and Line give the two "
+                  + "fixtures between the instrument and the part, written as two .s2p files a Deembed block reads (A: port 1 the instrument "
+                  + "side; B: port 2 the instrument side). The result's SA and SB are the fixtures, LineDeg the Line's extra length over the "
+                  + "Thru (trusted inside 20-160 degrees, with a warning outside), Gamma the solved reflect. The reference plane is the "
+                  + "middle of the Thru, and a part de-embedded with the fixtures is referenced to the Line's impedance. 'reference analyses' "
+                  + "has the directive."),
                 // brief-tuneopt-11 R-to11-5: the `opt` verb, so the document is the verb's `--json`
                 // object and nothing here reshapes it. The final result by default; showIterations
                 // asks for each iteration too.

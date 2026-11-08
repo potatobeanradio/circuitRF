@@ -148,6 +148,49 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
 }
 
 /// <summary>
+/// brief-de-4 — Thru-Reflect-Line calibration: the two fixtures between an instrument and a part, solved from three SnP blocks on
+/// this bench holding the measured standards, written as two Touchstone files a Deembed reads. It solves no circuit: the blocks
+/// are named, not stamped, so they may sit between ports for an S-parameter run to plot the raw standards, or anywhere at all.
+/// Fixture A's port 1 is the instrument side and port 2 the part's; fixture B's port 1 is the part's side and port 2 the
+/// instrument's — the order a measurement chain reads left to right, so <c>Port — Deembed(A) — measured — Deembed(B) — Port</c>.
+/// </summary>
+public sealed class TrlAnalysis(string name) : Analysis(name)
+{
+    /// <summary>The SnP instance holding the measured Thru (its path inside a cell, <c>X1.THRU</c>, where it is nested).</summary>
+    public string Thru { get; init; } = "";
+
+    /// <summary>The SnP instance holding the measured Reflect: the same standard on both ports, port 1's in S11 and port 2's in S22.</summary>
+    public string Reflect { get; init; } = "";
+
+    /// <summary>The SnP instance holding the measured Line.</summary>
+    public string Line { get; init; } = "";
+
+    /// <summary><c>open</c> or <c>short</c>: which side of the Smith chart the Reflect is on. Its exact value is solved for.</summary>
+    public string ReflectType { get; init; } = ReflectShort;
+
+    /// <summary>Where fixture A is written, resolved exactly as an SnP's <c>File</c>; blank for <see cref="DefaultFixture"/>'s.</summary>
+    public string FixtureA { get; init; } = "";
+
+    /// <summary>Where fixture B is written, resolved exactly as an SnP's <c>File</c>; blank for <see cref="DefaultFixture"/>'s.</summary>
+    public string FixtureB { get; init; } = "";
+
+    public const string ReflectOpen = "open", ReflectShort = "short";
+
+    /// <summary>Whether <see cref="ReflectType"/> says open; anything else is a short.</summary>
+    public bool ReflectIsOpen => ReflectType.Trim().Equals(ReflectOpen, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A fixture's file when none is named: <c>&lt;analysis name&gt;_A.s2p</c> or <c>_B.s2p</c>, relative, so resolved as an
+    /// SnP's File is. A function of the name, not a stored value, so a renamed copy left at the defaults writes its own files.</summary>
+    public static string DefaultFixture(string analysisName, char side) => $"{analysisName}_{side}.s2p";
+
+    /// <summary>The stored spelling of fixture A's path, the default when blank.</summary>
+    public string FixtureAPath => string.IsNullOrWhiteSpace(FixtureA) ? DefaultFixture(Name, 'A') : FixtureA.Trim();
+
+    /// <summary>The stored spelling of fixture B's path, the default when blank.</summary>
+    public string FixtureBPath => string.IsNullOrWhiteSpace(FixtureB) ? DefaultFixture(Name, 'B') : FixtureB.Trim();
+}
+
+/// <summary>
 /// S-parameter analysis. Carries one or more frequency-sweep segments; at engine time all
 /// segments are unioned into a single sorted/deduped flat frequency array via <see cref="Expand"/>.
 /// </summary>

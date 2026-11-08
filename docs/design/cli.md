@@ -4987,3 +4987,14 @@ length step floor is raised to the held mesh's smallest element (`opt.em.mesh-st
 `async=true`; nothing makes it a job on its own.
 
 Gate: `tests/Ui.Tests/SchematicSync/EmThreeDCellTests.cs`, no solve: geometry, keys, signatures and solver input.
+
+## 39. `trl` — fixture files from TRL standards (brief-de-4)
+
+`circuitrf trl <bench.cnl|.csch>` runs a bench's `type=trl` analyses. It follows §9's steps 1, 2, 4, 5, 6, 7 and 8, and
+**owns no calibration**: the run is `CircuitEvaluation.Execute`, which dispatches `TrlRun.Run` (`src/Design/Circuit`) exactly
+as Simulate does, so a `--set` reaches the SnP blocks' files as it would reach any run. `--fixture-a`/`--fixture-b` REPLACE the
+directive (§5) and name one analysis's files, so they are refused when more than one runs. There is no `-o` for the fixtures:
+they are the directive's two files, listed in `--json`'s `outputs` as `touchstone`; `-o` exports the DataSet. Exit 0 when it
+ran (the usable-band warning is a warning), 1 on a refusal, 130 on a cancellation. No new diagnostic ids. Gate:
+`tests/Ui.Tests/TrlAnalysisTests.cs`, which compares the verb run as a process with the in-process run byte for byte.
+

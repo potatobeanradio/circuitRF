@@ -29078,3 +29078,23 @@ Found by reviewing the LCP series and by building the **PCB Component Ports** ex
 - **Left as found:** the 3D in-memory view resolves its technology by walking up from the file, so under a session technology
   override the solids and the translated ports could come from different technologies. No shipped path sets one for a `.cem`
   run; noted rather than changed.
+
+## TRL calibration as an analysis: what the end-to-end check measured (brief-de-4, 2026-11-07)
+
+`type=trl` (`TrlRun`, dispatched by `CircuitEvaluation` for Simulate, the `trl` verb and MCP) reads its three SnP blocks from
+the elaborated bench and writes two `.s2p` files at G15. Measured end to end, through files at every step: synthetic standards
+written by an S-parameter run, the `trl` verb, its fixture files, and two Deembed blocks around the synthetic measured part.
+Against the part alone the result is 9.3e-15 when the measured files are written at G17, and 1.4e-10 at the S-parameter verb's
+default 10 digits. That is the floor of the measured files, not of TRL.
+
+Two traps cost a debugging round each while building that check, and both will catch anyone making synthetic standards:
+
+- **A near-zero resistor used as a wire costs about 5e-6 of accuracy.** Joining two nodes with `R=1e-9 Ohm` beside 50 ohm
+  ports puts a 1e9 S conductance into the MNA matrix, a condition number of about 5e10. The de-embedded part was off by
+  1.6e-5. With the nodes simply shared it was off by 1.4e-10. Join nodes by naming them the same.
+- **A bare number in a `.cnl` is SI, so `TLIN … E=20` is 20 radians.** That is 1146 degrees, which reads as 65.9 degrees at
+  1 GHz and advances one radian per 50 MHz step. TRL tracked that line correctly, and its `LineDeg` (1146 degrees, unwrapped)
+  is what gave it away. Write `E=20 deg`.
+
+The usable-band warning names its points as runs ("1-1.75 GHz", "1 GHz and 8 GHz"). An earlier form gave the first and last
+untrusted frequency, which turned two points at the band's two ends into "1 GHz to 8 GHz", reading as the whole band.

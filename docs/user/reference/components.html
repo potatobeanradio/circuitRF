@@ -2431,6 +2431,8 @@ SnP:M      x  y File=&quot;measured.s2p&quot;  NumPorts=2
 Deembed:DB y  p2 File=&quot;fixture_B.s2p&quot; NumPorts=2     ; and fixture B on the other side
 </code></pre>
 <ul>
+<li><strong>Fixture files from your measurements.</strong> A <a href="simulations.html#trl">TRL Calibration</a> turns measured Thru, Reflect and Line
+standards into the two fixture files a pair of Deembeds takes off.</li>
 <li><strong>Any even number of ports.</strong> A six-port that sits between a transistor's outer and inner gate, drain and source
 terminals de-embeds the transistor to its inner terminals. An odd count is refused when the netlist is read.</li>
 <li><strong>An SnP and a Deembed on the same file cancel</strong>, at every frequency of the sweep, not only the file's own points,

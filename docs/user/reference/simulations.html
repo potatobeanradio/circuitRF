@@ -960,6 +960,38 @@ product lands exactly on the grid and the waveform is exactly periodic — close
 <p class="small">Full design + algorithm: <code>docs/design/harmonic-balance.md</code> and the
   harmonic-termination model in <code>docs/design/p1tone-harmonic-terminations.md</code> (in the repo).</p>
 <hr />
+<h2 id="trl">TRL Calibration</h2>
+<p>A TRL calibration finds the two <strong>fixtures</strong> between your instrument and the part you measured (the launches, probes or
+connectors on each side), from three standards measured through those same fixtures. It writes them as two <code>.s2p</code> files,
+which two <a href="components.html#deembed">Deembed</a> blocks then take off any other measurement made through the same fixtures. It
+solves no circuit.</p>
+<p>Place three SnP blocks on a test bench, one for each measured standard, and add an analysis of type <strong>TRL Calibration</strong>:</p>
+<ul>
+<li><strong>Thru</strong>: the two fixtures connected directly. The reference plane is the middle of the Thru.</li>
+<li><strong>Reflect</strong>: the same high-reflection standard on both ports, port 1's in S11 and port 2's in S22. You only say whether it
+is an <strong>open</strong> or a <strong>short</strong>; its exact value is solved for, and reported.</li>
+<li><strong>Line</strong>: a longer piece of line between the fixtures. Its impedance becomes the reference impedance of everything you
+de-embed, so make it the impedance you want to read results in.</li>
+<li><strong>Fixture A</strong> and <strong>Fixture B</strong>: where the two files are written. They are resolved exactly as an SnP's File is, so the
+same text goes into the Deembed's File. Left empty, they are <code>&lt;analysis name&gt;_A.s2p</code> and <code>_B.s2p</code>.</li>
+</ul>
+<p>Fixture A's port 1 is the instrument side and port 2 the part's. Fixture B's port 1 is the part's side and port 2 the
+instrument's. So the chain reads left to right as the measurement did: <code>Port 1 — Deembed(A) — measured part — Deembed(B) — Port 2</code>, with no flipping.</p>
+<p><strong>The usable band.</strong> TRL tells the two fixtures apart by how much longer the Line is than the Thru. Where that difference is
+near 0° or 180°, the two standards are nearly the same and the answer is unreliable. A run warns about every point
+outside <strong>20° to 160°</strong> (modulo 180°), naming the frequencies. One line covers 8:1. A line that is 90° longer at the middle
+of your band, <code>f_mid = (f_low + f_high) / 2</code>, is a good choice; cover a wider band with a second line and a second
+calibration.</p>
+<p>The analysis's result holds <code>SA</code> and <code>SB</code> (the two fixtures, as S cubes), <code>LineDeg</code> (the Line's extra length over the Thru,
+in degrees), <code>LineLossDb</code>, <code>Gamma</code> (the solved reflect) and <code>Usable</code> (1 inside the band, 0 outside), to plot like any other
+result.</p>
+<pre><code>SnP:THRU     t1 t2 File=&quot;measurements/thru.s2p&quot;    NumPorts=2
+SnP:REFLECT  r1 r2 File=&quot;measurements/reflect.s2p&quot; NumPorts=2
+SnP:LINE     l1 l2 File=&quot;measurements/line.s2p&quot;    NumPorts=2
+analysis CAL type=trl thru=THRU reflect=REFLECT line=LINE reflectType=short fixtureA=&quot;fixtures/A.s2p&quot; fixtureB=&quot;fixtures/B.s2p&quot;
+</code></pre>
+<p>From the command line, <code>circuitrf trl bench.csch</code> runs it (<a href="cli.html#trl"><code>trl</code></a>).</p>
+<hr />
 <h2 id="tuning">Tuning</h2>
 <p>The <strong>Tuning</strong> panel puts a slider on any value you choose and re-simulates as you move it, with every
 open Data Display following along. Nothing in the schematic changes until you Push. The whole chapter —

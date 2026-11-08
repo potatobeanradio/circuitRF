@@ -44,7 +44,7 @@
                     <TextBlock Text="Type:"
                                FontSize="12"
                                Opacity="0.75"/>
-                    <!-- Two columns: linear/HB analyses (col 1) and the loadpull family (col 2). -->
+                    <!-- Two columns of four: the circuit solves (DC, S, HB, envelope) and the rest (loadpull, pursuit, fields, TRL). -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                         <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="3">
                             <RadioButton x:Name="DcRadio"
@@ -59,6 +59,11 @@
                                          IsCheckedChanged="OnTypeRadioChanged"/>
                             <RadioButton x:Name="HbRadio"
                                          Content="Harmonic Balance"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="EnvRadio"
+                                         Content="Envelope (modulated)"
                                          GroupName="AnalysisType"
                                          FontSize="12"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
@@ -79,10 +84,11 @@
                                          GroupName="AnalysisType"
                                          FontSize="12"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
-                            <RadioButton x:Name="EnvRadio"
-                                         Content="Envelope (modulated)"
+                            <RadioButton x:Name="TrlRadio"
+                                         Content="TRL Calibration"
                                          GroupName="AnalysisType"
                                          FontSize="12"
+                                         ToolTip.Tip="Two fixture files from measured Thru, Reflect and Line standards, for Deembed blocks"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
                         </StackPanel>
                     </Grid>
@@ -223,6 +229,15 @@
                     <CheckBox  Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Content="Averaged SAR"
                                IsChecked="{Binding FieldsBody.Average}" IsEnabled="{Binding FieldsBody.HasSarFields}"/>
                 </Grid>
+            </Border>
+
+            <!-- ── TRL body (brief-de-4): three measured standards in, two fixture files out ──────────── -->
+            <Border x:Name="TrlBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:TrlBodyView x:Name="TrlBodyViewControl"/>
             </Border>
 
             <!-- ── Envelope body ─────────────────────────────────────────────────── -->

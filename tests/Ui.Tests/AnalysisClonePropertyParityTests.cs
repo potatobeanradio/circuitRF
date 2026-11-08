@@ -44,6 +44,12 @@ public sealed class AnalysisClonePropertyParityTests
             AverageExpr = "no",
         },
 
+        [typeof(TrlAnalysis)] = new TrlAnalysis("CAL1")
+        {
+            Enabled = false, Thru = "X1.THRU", Reflect = "REFL", Line = "LINE2", ReflectType = TrlAnalysis.ReflectOpen,
+            FixtureA = "fix/a.s2p", FixtureB = "fix/b.s2p",
+        },
+
         [typeof(EnvelopeAnalysis)] = new EnvelopeAnalysis("ENV1")
         {
             Enabled = false, StopExpr = "250e-6", StepExpr = "1e-9", Accuracy = "fine", MaxHarmExpr = "6",

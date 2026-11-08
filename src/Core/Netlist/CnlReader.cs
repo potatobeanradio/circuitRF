@@ -113,6 +113,8 @@ public sealed class CnlReader
                 tb.Analyses.Add(psAnalysis!);
             else if (TryParseFieldsDirective(rawLine, out var fieldsAnalysis))
                 tb.Analyses.Add(fieldsAnalysis!);
+            else if (TryParseTrlDirective(rawLine, out var trlAnalysis))
+                tb.Analyses.Add(trlAnalysis!);
             else if (TryParseSParamDirective(rawLine, out var spAnalysis))
             {
                 // Multi-segment: merge consecutive segments with the same analysis name.
@@ -1211,6 +1213,38 @@ public sealed class CnlReader
             WeightsExpr = kv.GetValueOrDefault("weights", ""),
             Norm        = kv.GetValueOrDefault("norm", FieldsAnalysis.NormAccepted),
             AverageExpr = kv.GetValueOrDefault("average", "yes"),
+            Enabled     = ParseEnabledToken(tokens),
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// brief-de-4 — a "Name type=trl thru=… reflect=… line=… reflectType=… [fixtureA=…] [fixtureB=…]" directive as a
+    /// <see cref="TrlAnalysis"/>. The fixture paths are kept as written: they resolve at run time exactly as an SnP's File does.
+    /// </summary>
+    private bool TryParseTrlDirective(string rawLine, out TrlAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq > 0) kv[tokens[i][..eq]] = tokens[i][(eq + 1)..].Trim('"');
+        }
+        if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "trl") return false;
+        string rt = kv.GetValueOrDefault("reflectType", TrlAnalysis.ReflectShort).Trim();
+        if (!rt.Equals(TrlAnalysis.ReflectOpen, StringComparison.OrdinalIgnoreCase) && !rt.Equals(TrlAnalysis.ReflectShort, StringComparison.OrdinalIgnoreCase))
+            throw new CnlReadException(_lineNumber, rawLine, $"TRL '{tokens[0]}': reflectType={rt}; it is open or short.");
+        result = new TrlAnalysis(tokens[0])
+        {
+            Thru        = kv.GetValueOrDefault("thru", ""),
+            Reflect     = kv.GetValueOrDefault("reflect", ""),
+            Line        = kv.GetValueOrDefault("line", ""),
+            ReflectType = rt.ToLowerInvariant(),
+            FixtureA    = kv.GetValueOrDefault("fixtureA", ""),
+            FixtureB    = kv.GetValueOrDefault("fixtureB", ""),
             Enabled     = ParseEnabledToken(tokens),
         };
         return true;

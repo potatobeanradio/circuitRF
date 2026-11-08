@@ -229,6 +229,9 @@ return JsonRun.Finish(exit);
     // brief-sar-9: a schematic's fields analyses — an EM block's per-port fields recombined by the circuit, no EM run. It
     // owns no recombination: the run is CircuitEvaluation's, which dispatches FieldCosimulation as Simulate does.
     "fields" => CircuitRF.Cli.Fields.Run,
+    // brief-de-4: a bench's TRL calibrations — two fixture files from three measured standards. It owns no calibration:
+    // the run is CircuitEvaluation's, which dispatches TrlRun as Simulate does.
+    "trl"    => CircuitRF.Cli.Trl.Run,
     // The Optimizer window's run, headless (brief-tuneopt-11). It owns no optimization: the run is
     // src/Design/Optimization's OptimizationRun, the object the panel drives. Writes nothing to the
     // design's values; --save-preset is its one opt-in write.
@@ -2962,6 +2965,7 @@ static int PrintHelp()
     Console.WriteLine("  lp     <file.cnl|.csch>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
+    Console.WriteLine("  trl    <file.cnl|.csch> [--fixture-a p] [--fixture-b p]  (TRL: two fixture files from Thru, Reflect, Line)");
     Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
     Console.WriteLine("  yield  mc|estimate|trial <file.cnl|.csch>   (Monte Carlo / yield; exit 3 = below --target)");
     Console.WriteLine("  model  new|import|deembed|fit|check-charge|explain|export|validate|report <file.cmc>");

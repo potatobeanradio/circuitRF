@@ -821,6 +821,13 @@ decibels, one cut per bearing:</p>
     --trace "cube=F1.farfield.U,cut=0,y=db10,label=phi 0" --trace "cube=F1.farfield.U,cut=90,y=db10,label=phi 90"
 <span class="prompt">$ </span>circuitrf plot f1.npy -o surface.svg --type surface --view iso --trace "cube=F1.farfield.U,cut=all,y=db10"</code></pre>
 <p><a href="#plot">Plot flags</a> has the rest. Exit <strong>0</strong> when every fields analysis ran, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
+<h2 id="trl"><code>trl</code> — fixture files from TRL standards</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf trl &lt;bench.cnl|.csch&gt; [-a name]... [--set var=expr]... [--fixture-a path] [--fixture-b path] [-o out.{mat,npy,txt}]</code></pre>
+<p>Runs every enabled <code>type=trl</code> analysis, or the ones <code>-a</code> names (<a href="simulations.html#trl">TRL Calibration</a>), and writes each one's
+two fixture files where its directive says. <code>--fixture-a</code> and <code>--fixture-b</code> replace those paths for one analysis. <code>-o</code>
+exports the result (<code>SA</code>, <code>SB</code>, <code>LineDeg</code>, <code>LineLossDb</code>, <code>Gamma</code>, <code>Usable</code>); it does not move the fixtures. Under <code>--json</code>
+both fixture files are listed in <code>outputs</code>.</p>
+<p>Exit <strong>0</strong> when it ran, a usable-band warning included, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
 <h2 id="em"><code>em</code> — electromagnetic extraction</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
 <p><code>em</code> is the only verb that does not take a <code>.cnl</code>. It takes a <strong><code>.cem</code> EM setup</strong> — the document the

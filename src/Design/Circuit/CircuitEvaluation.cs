@@ -672,6 +672,10 @@ public static class CircuitEvaluation
             case DcAnalysis:
                 return ($"DC '{analysis.Name}': operating point", 1, false);
 
+            case TrlAnalysis trl:
+                return ($"TRL '{trl.Name}': fixtures from {trl.Thru}, {trl.Reflect} and {trl.Line} -> " +
+                        $"{trl.FixtureAPath}, {trl.FixtureBPath}", 1, false);
+
             case FieldsAnalysis fa:
                 return ($"Fields '{fa.Name}': recombine '{fa.Block}' at {fa.FrequencyText}, driven from " +
                         $"{(fa.DriveExpr.Contains(',') ? "ports" : "port")} {fa.DriveExpr}", 1, false);
@@ -842,6 +846,10 @@ public static class CircuitEvaluation
                 return CircuitRF.Design.Em3d.FieldCosimulation.Run(fa, nl, notes, control, fields?.Artifacts,
                     fields?.Output ?? FieldsOutput.Written, fields?.Label,
                     fields is null ? null : m => fields.Metrics[resultName ?? fa.Name] = m);
+
+            // brief-de-4 — two fixtures from three measured standards on the bench; no circuit is solved
+            case TrlAnalysis trl:
+                return TrlRun.Run(trl, nl, baseDirectory, notes);
 
             case DcAnalysis:
             {

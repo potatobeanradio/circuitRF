@@ -64,6 +64,7 @@ internal static class Explain
         (a => a is LoadpullPursuitAnalysis,  "loadpull-pursuit", "analysis <name> type=loadpull_pursuit ...",  "lpp"),
         (a => a is EnvelopeAnalysis,         "envelope",         "analysis <name> type=env ...",               "env"),
         (a => a is FieldsAnalysis,           "fields",           "analysis <name> type=fields ...",            "fields"),
+        (a => a is TrlAnalysis,              "TRL",              "analysis <name> type=trl ...",               "trl"),
     ];
 
     public static int Run(string[] args)

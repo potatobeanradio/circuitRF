@@ -16,7 +16,7 @@ namespace CircuitRF.Design.Schematic;
 //    - Id never persisted
 //    - format_version reject-on-mismatch (enforced by the CschFile wrapper)
 //
-//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields".
+//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields" / "trl".
 //  Loadpull ("lp") and Loadpull-Pursuit ("lpp") round-trip here (authoring forms: briefs 05-06).
 //  Their tone serializes as LpToneExpr + LpToneUnit — the same coefficient+unit pair HB uses, so a
 //  VAR tone with or without a unit resolves correctly via the var-unit-wins rule (brief 04b).
@@ -54,7 +54,7 @@ public sealed class CschFrequencySpec
 /// </summary>
 public sealed class CschAnalysis
 {
-    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields".  Unknown tags are skipped on load.</summary>
+    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields" | "trl".  Unknown tags are skipped on load.</summary>
     public string Type    { get; set; } = "";
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
@@ -109,6 +109,13 @@ public sealed class CschAnalysis
     public string?   FieldsWeightsExpr { get; set; }
     public string?   FieldsNorm        { get; set; }
     public string?   FieldsAverageExpr { get; set; }
+    // brief-de-4 — a TRL calibration ("trl"): the three standards' SnP instances, the reflect's side, and the two fixture files.
+    public string?   TrlThru           { get; set; }
+    public string?   TrlReflect        { get; set; }
+    public string?   TrlLine           { get; set; }
+    public string?   TrlReflectType    { get; set; }
+    public string?   TrlFixtureA       { get; set; }
+    public string?   TrlFixtureB       { get; set; }
     // Envelope (type "env") — the remaining env fields reuse HB ones (MaxHarmonicExpr, MaxMixOrderExpr, TolExpr).
     public string?   EnvStop           { get; set; }
     public string?   EnvStep           { get; set; }
@@ -336,6 +343,13 @@ public static class AnalysisSerialization
             FieldsWeightsExpr = f.WeightsExpr.Length > 0 ? f.WeightsExpr : null, FieldsNorm = f.Norm, FieldsAverageExpr = f.AverageExpr,
         },
 
+        TrlAnalysis t => new CschAnalysis
+        {
+            Type = "trl", Name = a.Name, Enabled = a.Enabled, TrlThru = t.Thru, TrlReflect = t.Reflect, TrlLine = t.Line,
+            TrlReflectType = t.ReflectType,
+            TrlFixtureA = t.FixtureA.Length > 0 ? t.FixtureA : null, TrlFixtureB = t.FixtureB.Length > 0 ? t.FixtureB : null,
+        },
+
         SParameterAnalysis sp => new CschAnalysis
         {
             Type    = "sp",
@@ -516,6 +530,12 @@ public static class AnalysisSerialization
         {
             Enabled = dto.Enabled, Block = dto.FieldsBlock ?? "", FreqExpr = dto.FieldsFreqExpr ?? "", FreqUnit = dto.FieldsFreqUnit ?? "Hz",
             DriveExpr = dto.FieldsDriveExpr ?? "1", WeightsExpr = dto.FieldsWeightsExpr ?? "", Norm = dto.FieldsNorm ?? FieldsAnalysis.NormAccepted, AverageExpr = dto.FieldsAverageExpr ?? "yes",
+        },
+
+        "trl" => new TrlAnalysis(dto.Name)
+        {
+            Enabled = dto.Enabled, Thru = dto.TrlThru ?? "", Reflect = dto.TrlReflect ?? "", Line = dto.TrlLine ?? "",
+            ReflectType = dto.TrlReflectType ?? TrlAnalysis.ReflectShort, FixtureA = dto.TrlFixtureA ?? "", FixtureB = dto.TrlFixtureB ?? "",
         },
 
         "sp" when dto.Sweeps is { Count: > 0 } =>

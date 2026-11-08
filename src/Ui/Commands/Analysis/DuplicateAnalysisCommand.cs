@@ -74,6 +74,15 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 WeightsExpr = f.WeightsExpr, Norm = f.Norm, AverageExpr = f.AverageExpr,
             },
 
+        // A copy keeps its fixture paths as written; an empty one follows the copy's own name, so two copies left at the
+        // defaults write different files.
+        TrlAnalysis t =>
+            new TrlAnalysis(newName)
+            {
+                Enabled = a.Enabled, Thru = t.Thru, Reflect = t.Reflect, Line = t.Line, ReflectType = t.ReflectType,
+                FixtureA = t.FixtureA, FixtureB = t.FixtureB,
+            },
+
         SParameterAnalysis sp =>
             new SParameterAnalysis(newName, sp.Sweeps) { Enabled = a.Enabled },
 
