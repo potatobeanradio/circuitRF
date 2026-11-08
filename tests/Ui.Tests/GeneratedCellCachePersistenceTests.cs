@@ -180,6 +180,23 @@ public sealed class GeneratedCellCachePersistenceTests : IDisposable
     }
 
     /// <summary>
+    /// A generated cell's <c>.ccell</c>, terminals included, is written before its <c>.clay</c>, which is what the existence
+    /// check reads as "already generated". It used to be created empty, then the <c>.clay</c>, then the <c>.ccell</c> again
+    /// with the terminals. On a workspace on a mapped drive that last replace was refused ("Access to the path is denied"),
+    /// leaving a cell with artwork and an empty terminal map that every later open reused.
+    /// </summary>
+    [Fact]
+    public void TheTerminalMap_IsWrittenBeforeTheLayout()
+    {
+        string dir = GeneratedCellStore.GetOrCreate(_root, "MLIN", MlinParams(0.0007), null, null, NoLayers);
+        string ccell = Path.Combine(dir, CellFolder.CcellFileName);
+        string clay = Assert.Single(Directory.EnumerateFiles(CellFolder.SubFolderPath(dir, ViewType.Layout)));
+        Assert.Contains("\"Port\"", File.ReadAllText(ccell));
+        Assert.True(File.GetLastWriteTimeUtc(ccell) <= File.GetLastWriteTimeUtc(clay),
+                    $".ccell written at {File.GetLastWriteTimeUtc(ccell):O}, after the .clay at {File.GetLastWriteTimeUtc(clay):O}");
+    }
+
+    /// <summary>
     /// A minimal <c>.ctech</c> carrying one layer, so a single field can be varied against a fixed
     /// rest. Written as text rather than built from <c>Technology</c> because what is under test is
     /// exactly which parts of the FILE are stamped.

@@ -160,7 +160,11 @@ public static class CellFolder
     /// </summary>
     /// <returns>The absolute path of the new cell folder.</returns>
     /// <exception cref="ArgumentException">If cellName fails NameValidator.</exception>
-    public static string CreateCellFolder(string parentDir, string cellName)
+    /// <param name="ccell">The cell's <c>.ccell</c> as it should be written; null writes the empty terminal map below. A caller
+    /// that knows the cell's terminals passes them here rather than rewriting the file it just created: replacing a file
+    /// seconds after creating it is the write Windows refuses with "Access to the path is denied" while a scanner or the
+    /// network share still holds the new file (designer feedback, a workspace on a mapped drive).</param>
+    public static string CreateCellFolder(string parentDir, string cellName, CcellFile? ccell = null)
     {
         var reason = NameValidator.Validate(cellName);
         if (reason is not null)
@@ -178,7 +182,7 @@ public static class CellFolder
         // import, a generated PCell) overwrites it with its own table; a cell someone then DRAWS
         // derives one, because the empty list records what was true at creation and not what is true
         // after a symbol and a layout exist.
-        CellPersistence.SaveToFile(Path.Combine(cellDir, CcellFileName), new CcellFile { Terminals = [] });
+        CellPersistence.SaveToFile(Path.Combine(cellDir, CcellFileName), ccell ?? new CcellFile { Terminals = [] });
 
         return cellDir;
     }

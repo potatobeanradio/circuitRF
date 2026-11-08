@@ -13,7 +13,7 @@ public static class AtomicFile
         try
         {
             File.WriteAllText(tmp, contents);
-            File.Move(tmp, path, overwrite: true);
+            MoveOver(tmp, path);
         }
         catch
         {
@@ -22,6 +22,42 @@ public static class AtomicFile
             // caller can surface the original error to the user.
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore cleanup failure */ }
             throw;
+        }
+    }
+
+    /// <summary>How many times a refused rename over an existing file is tried on Windows, and the first wait between tries
+    /// (doubled each time: 50 + 100 + 200 + 400 ms, under a second in all).</summary>
+    internal const int MoveAttempts = 5;
+    private const int FirstRetryMs = 50;
+
+    /// <summary>
+    /// The rename that makes the write visible. On Windows, replacing a file that another process holds open without
+    /// delete sharing is refused with "Access to the path is denied". An antivirus scanner, the search indexer or a network
+    /// share's client often holds a file for a moment after it is written, so the rename is tried again a few times before
+    /// the error is reported. That error comes from File.Move with no path in it, so the one rethrown names the file.
+    /// Elsewhere a rename needs permission on the folder only, and a refusal is not transient, so it is not retried.
+    /// </summary>
+    private static void MoveOver(string tmp, string path)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(tmp, path, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException
+                                      && e is not (FileNotFoundException or DirectoryNotFoundException or PathTooLongException))
+            {
+                if (OperatingSystem.IsWindows() && attempt < MoveAttempts)
+                {
+                    Thread.Sleep(FirstRetryMs << (attempt - 1));
+                    continue;
+                }
+                if (e is UnauthorizedAccessException && !e.Message.Contains(path, StringComparison.OrdinalIgnoreCase))
+                    throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.", e);
+                throw;
+            }
         }
     }
 

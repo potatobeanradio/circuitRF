@@ -203,19 +203,19 @@ public static class GeneratedCellStore
             return cellDir;
         }
 
+        // R-lvs1-5b: the terminal map is written as DECLARED, from the generator's own pins. A generated cell has no
+        // symbol view of its own — the symbol is the one its generator is registered with — so deriving this later would
+        // have nothing to derive from.
+        //
+        // Each file is written ONCE, and the .clay LAST. The .ccell used to be created empty and then replaced with the
+        // terminals, and on a workspace on a mapped network drive that replace failed with "Access to the path is denied"
+        // while something outside circuitRF still held the new file. It ran after the .clay, so a cell that failed there
+        // had its .clay and an empty terminal map, and the existence check above took it as complete from then on.
         Directory.CreateDirectory(genRoot);
-        CellFolder.CreateCellFolder(genRoot, cellName);
+        CellFolder.CreateCellFolder(genRoot, cellName, new CcellFile { Terminals = TerminalMap.ToBlock(terminals!) });
         _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
 
-        LayoutPersistence.SaveToFile(clayPath, view);
-
-        // R-lvs1-5b: written as DECLARED, from the generator's own pins. A generated cell has no
-        // symbol view of its own — the symbol is the one its generator is registered with — so
-        // deriving this later would have nothing to derive from.
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-        var ccell = CellPersistence.LoadFromFile(ccellPath);
-        ccell.Terminals = TerminalMap.ToBlock(terminals!);
-        CellPersistence.SaveToFile(ccellPath, ccell);
+        LayoutPersistence.SaveToFile(clayPath, view);   // last: its existence is what a hit tests
 
         return cellDir;
     }
@@ -269,7 +269,9 @@ public static class GeneratedCellStore
 
         var copy = Rebased(view, sourceLayoutDir, layoutDir);
         Directory.CreateDirectory(genRoot);
-        if (!Directory.Exists(cellDir)) CellFolder.CreateCellFolder(genRoot, name);
+        // The .ccell it will have, at creation, so WriteCompanions finds it current rather than replacing a file just made.
+        if (!Directory.Exists(cellDir))
+            CellFolder.CreateCellFolder(genRoot, name, File.Exists(sourceCcell) ? VariantCcell(sourceCcell) : null);
         _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
         WriteCompanions(cellDir, name, sourceCell, sourceCcell, schematic, sourceSchematicDir);
         LayoutPersistence.SaveToFile(clayPath, copy);   // last: its existence is what a hit tests
