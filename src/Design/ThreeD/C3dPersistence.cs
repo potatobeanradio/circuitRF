@@ -251,9 +251,11 @@ public static class C3dPersistence
     /// <summary>An embedded setup less the keys that change what happens after a run and never its answer.</summary>
     private static JsonElement WithoutRunInertKeys(JsonElement setup)
     {
-        if (setup.ValueKind != JsonValueKind.Object || !setup.TryGetProperty("CreateSnpSchematic", out _)) return setup;
+        if (setup.ValueKind != JsonValueKind.Object ||
+            !setup.TryGetProperty("CreateSnpSchematic", out _) && !setup.TryGetProperty("IncludeSchematicComponents", out _)) return setup;
         var node = System.Text.Json.Nodes.JsonNode.Parse(setup.GetRawText())!.AsObject();
         node.Remove("CreateSnpSchematic");
+        node.Remove("IncludeSchematicComponents");
         return JsonSerializer.SerializeToElement(node);
     }
 

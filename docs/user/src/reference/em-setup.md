@@ -570,6 +570,49 @@ reads something else is left alone, and Messages says so. `circuitrf em` honours
 A run with **component ports** makes a `_cosim` cell in place of the `_sim` one, because a `TermG` on a part's port would have no part on it: each part
 stands on its own port, with the analyses and a Data Display. [Co-simulation](cosimulation.html#pattern) describes it.
 
+#### Your own schematic, with the EM result in it {#snp-schematic-parts}
+
+Tick **Include pre-existing schematic components** as well, and the cell is made from the **Primary
+schematic of the cell the layout or 3D view belongs to**, with `_sch` on the end, in place of the `_sim`
+or `_cosim` cell. It is your schematic with the board's EM result put into it:
+
+| In your schematic | In the new cell |
+|---|---|
+| Lines, tees, bends and other parts the layout draws as copper | Removed. The SnP block goes where they were |
+| A Port whose `Num` is an EM port's number | Where you put it, joined to that SnP pin |
+| A cell Pin whose `Num` is an EM port's number | The same: a cell made to be placed in a test bench marks the board's ports with Pins |
+| A part on a component port | Where you put it, with its value and size. One pin goes to its SnP pin and the other to ground, which is how a gap port across its pads is closed |
+| A part with a footprint but no component port | Kept, its pins left open: the EM result has no port at its pads |
+| A part that is not on the board (an ideal source, a model with no footprint) | Kept, with its own wires. A pin that was joined only to removed copper is left open |
+| An EM port with no Port of its number | A new Port beside its SnP pin |
+
+Connections to the SnP block are net labels, `p1`, `p2` and so on (`em_p1` when your schematic already
+uses those names), each on a short wire drawn where it touches nothing else on the sheet. A part pin that
+goes to ground and already sits on one of your ground symbols keeps it. Your analyses, variables, measures and goals come with it, so a harmonic-balance or
+loadpull analysis runs on the EM board as it is. An analysis set to run by EM runs by circuit models
+here, since the SnP block already is the EM result. Your schematic's Data Display comes too, reading
+the new cell's results. A schematic with no S-parameter analysis gains one over the setup's sweep, unless
+its board ports are Pins: that cell is placed where the original is placed, so it takes a copy of the
+original's symbol instead.
+
+Every pin left open and every unmatched Port is named in Messages. Before the cell is made, the layout
+is compared with the schematic ([LVS](lvs.html)), and each difference that could put a part on the wrong
+pin is reported: parts are matched to their component ports by name, so a part renamed on one side only
+would otherwise be wired wrong without a word. The cell is still made. With no Primary schematic in the
+cell, the ordinary cell is made and Messages says why.
+
+#### Create now {#snp-schematic-now}
+
+**Create now**, beside the check box, makes the same cell without a run, for a run that finished with the
+box clear. Its SnP block reads the setup's existing Touchstone. With none yet, the cell is still made:
+its block names the file the run will write, and Messages warns that the file does not exist. Include
+pre-existing schematic components applies to Create now whether or not the run's box is ticked.
+
+If the cell already exists, Create now asks. **Replace** writes the new schematic over that cell's
+schematic, leaving its other views and its Data Display as they are; close the schematic first if it is
+open. **Create** makes a cell under the name you type, which starts as the first free one (`board_sim_2`).
+A run never asks: it leaves an existing cell alone.
+
 Without the tick, place an [SnP component](components.html#snp) yourself and point its `File`
 parameter at the written path. Re-running updates the file in place, so the schematic picks the new
 result up the way it picks up any changed source.

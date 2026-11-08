@@ -2131,6 +2131,9 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
         { Console.Error.WriteLine($"warning: {made.Sentence}"); JsonRun.Note(CliDiagnostics.EmRunWarning(made.Sentence)); }
         else
         { Console.Error.WriteLine($"note: {made.Sentence}");    JsonRun.Note(CliDiagnostics.EmRunNote(made.Sentence)); }
+        // brief-isc-1 — what making the cell from the schematic found: a part left open, an unmatched port, an LVS difference.
+        foreach (string warning in made.Warnings)
+        { Console.Error.WriteLine($"warning: {warning}"); JsonRun.Note(CliDiagnostics.EmRunWarning(warning)); }
     }
 
     // brief-emb-1 R-emb1-7 — the co-simulation netlist of a run with component ports, written by the run service.

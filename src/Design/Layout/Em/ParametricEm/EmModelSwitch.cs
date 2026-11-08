@@ -254,7 +254,7 @@ public static class EmModelSwitch
         return new EmSwitched(bench, lib, target, inCells);
     }
 
-    private enum PartKind { Copper, Part, NoLayout }
+    internal enum PartKind { Copper, Part, NoLayout }
 
     /// <summary>
     /// What a placed part is to an EM result: copper when its layout is generated geometry (a line, a tee, a bend — the
@@ -264,7 +264,7 @@ public static class EmModelSwitch
     /// <remarks>A sub-cell is copper only when its reference resolves to a cell folder with a layout view — the test the
     /// planner places it by. A schematic-only sub-cell, or a model-library part (<c>vendormodel://</c>, never a folder),
     /// would be skipped by the planner and so be missing from the EM result; it has no layout, and is refused by name.</remarks>
-    private static PartKind KindOf(EditableComponent c, string? schematicDir)
+    internal static PartKind KindOf(EditableComponent c, string? schematicDir)
     {
         if (c.Footprint is { Length: > 0 }) return PartKind.Part;
         if (SchematicLayoutPlanner.HasPCellGenerator(c.Symbol, c.PortCount, out _)) return PartKind.Copper;

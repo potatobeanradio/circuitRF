@@ -201,6 +201,8 @@ A planar run with **Radiation pattern** on works the same way: place an EM Field
 A planar setup with **component ports** makes the `_cosim` cell and netlist as a 3D one does, each part across its own port, and the block's pins are its component ports
 by part. Without them the block's pins are the setup's own ports and the circuit is yours to draw. A via anywhere stops a planar pattern, and most boards with parts have
 vias: the run then says so, and its `_cosim` circuit reads the Touchstone through an SnP block instead.
+To put the board into the schematic it was drawn from rather than a circuit drawn for it, tick
+[Include pre-existing schematic components](em-setup.html#snp-schematic-parts) as well: the cell is your schematic, its copper replaced by the run's SnP block.
 
 - **A port for a part is a component port, or a delta gap you draw.** A [component port](em-setup.html#component-ports) needs nothing drawn: the solver adds a strip
   across the part's gap in the solved problem and cuts it with an internal delta gap. A port you draw yourself has to sit on metal, because a delta gap cuts metal:

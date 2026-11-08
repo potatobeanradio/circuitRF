@@ -164,6 +164,7 @@ public partial class WorkspaceViewModel
             vm.SolveStatusesChecked += () => OnC3dSolveStatusesChecked(vm);     // brief-em3d-98 — the tree row and a float's title
             vm.ActiveSetupChanged += () => OnC3dSolveStatusesChecked(vm);
             vm.RunRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName);
+            vm.CreateSchematicRequested = (c3d, setupName) => CreateC3dSchematicNowAsync(c3d, setupName);
             vm.MeshRequested = (c3d, setupName) => RunC3dSetupAsync(c3d, setupName, meshOnly: true);
             vm.SetupAnalysesRequested = c3d => _ = ShowC3dSetupAnalysesAsync(c3d, null);
             // brief-sar-12 — Place Against Phantom… is modal; Band Sweep… is not, since its runs go on for as long as they take.

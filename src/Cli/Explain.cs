@@ -800,6 +800,7 @@ internal static class Explain
                 cws is null ? "relative to the .cem's own directory — no ancestor workspace"
                             : "relative to the .cem's ancestor workspace"));
             if (src.Elaboration is { } elaborated) ThreeDWalk(elaborated, walks);
+            SchematicCellWalk(setup, EmSetupResolver.ResolveLayoutPath(full, setup.LayoutRef, cws), ViewType.ThreeD, walks);
             if (setup.Is3D) em3d = ExplainEm3d.Build(src, device, memoryLimit, maxCores);
             return src.Refusal is null ? 0 : 1;
         }
@@ -835,6 +836,7 @@ internal static class Explain
         // brief-dfr28-4 — a 3D setup's ports each find their own return by walking the artwork, and its problem's
         // port rows below say where and who decided; the planar medium's one plane is not what a 3D run uses.
         if (!setup.Is3D) ExplainReturnPlane(setup, resolution, walks);
+        SchematicCellWalk(setup, resolution.LayoutPath, ViewType.Layout, walks);
 
         // brief-em3d-5 R-em3d5-3: a 3D setup reports its problem IN ADDITION to the walks above,
         // generated through the one path `render` draws it through.
@@ -846,6 +848,22 @@ internal static class Explain
         }
 
         return resolution.Source is null ? 1 : 0;
+    }
+
+    /// <summary>
+    /// brief-isc-1 R-isc-5 — with Include pre-existing schematic components on, the schematic the cell is made from: the Primary
+    /// schematic of the cell <paramref name="emDocument"/> belongs to, or that there is none (and the ordinary cell is made).
+    /// </summary>
+    private static void SchematicCellWalk(EmSetup setup, string? emDocument, ViewType own, List<ResolutionStepJson> walks)
+    {
+        if (!setup.IncludeSchematicComponents) return;
+        string? cellDir = emDocument is null ? null : CellFolder.SiblingView(emDocument, own, ViewType.Schematic).CellDir;
+        string? primary = EmCoSimNetlist.PrimarySchematic(cellDir);
+        walks.Add(new ResolutionStepJson("schematic components", cellDir, primary ?? "none: the ordinary schematic is made",
+            primary is null
+                ? "the cell the EM document belongs to has no Primary schematic"
+                : $"the Primary schematic of the EM document's cell; a finished run{(setup.CreateSnpSchematic ? "" : " with Create SnP schematic on")} " +
+                  $"makes {EmSchematicWithParts.CellNameFor(setup)} from it, its copper replaced by the run's SnP block"));
     }
 
     /// <summary>
@@ -879,6 +897,7 @@ internal static class Explain
             PortDirectionWalk(doc, e, walks);
             ResultWalk(doc, full, e, walks);
         }
+        SchematicCellWalk(src.Setup, full, ViewType.ThreeD, walks);
         if (objectName is not null)
         {
             if (src.Elaboration is not { } elaborated) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));

@@ -637,6 +637,7 @@ public static class C3dProblemAssembly
             WantsDc = wantsDc,
             ComponentPorts = components,
             CoSimPorts = components is null ? null : EmCoSimNetlist.PortsOf(problem.Ports, document, components),
+            ResultPorts = EmCoSimNetlist.PortsOf(problem.Ports, document, components),
             GeometryFindings = geometry,
             Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry), .. Em3dThinMetalLoss.ForRun(problem, setup)],
             Wires = e.Wires,

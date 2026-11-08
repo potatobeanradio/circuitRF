@@ -188,6 +188,7 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
+string? cellExistsDialog = null;                       // brief-isc-1
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
@@ -284,6 +285,7 @@ for (int i = 0; i < args.Length; i++)
         case "--settings-solvers": settingsSolvers = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
+        case "--cell-exists-dialog" when i + 1 < args.Length: cellExistsDialog = args[++i]; break;
         case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
@@ -435,6 +437,19 @@ if (emRunSettings is { } runSettingsRecord && output is not null)
     settingsDialog.Show();
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); settingsDialog.UpdateLayout(); }
     settingsDialog.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
+}
+// --cell-exists-dialog <workspace>/<cell>: brief-isc-1 — the question Create now asks when the cell it would make exists.
+if (cellExistsDialog is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    string full = Path.GetFullPath(cellExistsDialog);
+    var dialog = CircuitRF.Ui.Views.Dialogs.CellExistsDialog.Build(Path.GetDirectoryName(full)!, Path.GetFileName(full), _ => { });
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(output);
     Console.WriteLine($"wrote {output}");
     return 0;
 }
@@ -807,6 +822,8 @@ else if (cem is not null)
         ResolveLayout = r => CircuitRF.Design.Layout.Em.EmSetupResolver.Resolve(
             cem, r, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)), new CircuitRF.Design.Layout.TechnologyCache()).Source,
         PostMessage = (text, warning) => Console.WriteLine($"message ({(warning ? "warning" : "info")}): {text}"),
+        // brief-isc-1 — the workspace sets it, so the panel shows Create now; pressing it here makes nothing.
+        CreateSchematicRequested = _ => Task.CompletedTask,
     };
     setupVm.Refresh();
     // brief-lcp-3 — the Component ports list is read off the UI thread: pump until it is; --check-component-ports presses Check.

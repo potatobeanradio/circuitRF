@@ -29251,3 +29251,38 @@ module is called `npn`.
   written from such a design still fails as "not found" when run on its own; the netlist carries no reason.
 - **The same cards write the circuit temperature as `temper`**, which had to be read as `temp` first (`src/Core/RESOLVED.md`,
   under `TEMP`).
+
+## Create SnP schematic from the schematic, and Create now (brief-isc-1, 2026-11-08)
+
+`EmSetup.IncludeSchematicComponents` makes `<stem>_sch` from the Primary schematic of the EM document's cell (`EmSchematicWithParts`),
+in place of `_sim`/`_cosim`; the panel's **Create now** (`EmSchematicNow`) makes whichever cell the setup would make without a run.
+
+- **One decision about a part.** `EmCoSimNetlist.Closures` is the per-port decision `Text` used to make inline (model across the
+  port, multi-pad mapping, Open/Short, placeholder); the netlist and the cell both read it. `CoSimC3dBytesTests` and `PlanarCoSimTests`
+  pass unchanged, and gate 1 simulates the cell against the `_cosim.cnl` of the same ports to 1e-9.
+- **Every solved port reaches the run's tail now, not only a run with component ports.** The callback carries `EmResultPorts`
+  (ports + whether a component port was built); `WithCoSim` still keys on the second, so no `_cosim.cnl` appears for a run without
+  parts. A layout's 3D `.cem` with no component ports is assembled by the generator, which sets no `ResultPorts`, so its ports are
+  read off the problem (`EmCoSimNetlist.PortsOf(Em3dPort[])`). `EmCoSimPort.DocumentNumber` is the label's number (Planar) or the
+  source number (3D): a schematic Port of that `Num` is the one it joins, which is what SDL-5 writes on the label.
+- **Which pins stay joined is decided by geometry, not by extracted net names.** Wire groups (`NetExtractor.ConnectedWireIds`), pins
+  on vertices, pins on one point and labels of one name form classes; a non-ground class touching removed copper or a re-tied pin is
+  cleared; a ground class only when no kept pin is on it, or an off-board part's ground would go with the copper's.
+- **LVS calls a renamed part a WARNING** (`lvs.device.dangling-schematic-id`): it compares by topology. This cell matches parts by
+  name, so `lvs.device.*` warnings are reported with the errors; errors alone missed exactly the case the check is there for.
+- **The block's keep-out has to include labels.** Placed against glyph boxes alone (±200), the SnP's top stub landed on C1's value
+  text in F1; each component's box is widened to cover the labels drawn beside and below it.
+- **A ground placed by code needs `ShowTypeLabel`/`ShowInstanceName` off and a name**, or it draws "GND" beside itself, which a
+  hand-placed ground never does.
+- **A stub drawn straight out of a pin shorted a node to ground** on the shipped PCB Component Ports board: C2's stub ended on
+  the middle of L1's ground stub, and a wire's end on another wire is a connection. Stubs are now placed against a `Sheet` of
+  every pin, wire, label, body and earlier stub, turning or lengthening until clear; `CloseParts_EachGetTheirOwnNode…` extracts
+  the cell and fails with the check disabled. A part pin going to ground that already sits on the user's ground symbol keeps it
+  (its ground class is kept), which also leaves the user's sheet more as it was.
+- **A cell placed in a test bench marks its board ports with Pins**, not Ports (the same example): Pins match by `Num` like Ports,
+  such a cell gains no S-parameter analysis (nothing in it drives one), and it takes a copy of the original's symbol.
+- **The firewall's user-text gate counts a thrown message**, not a returned sentence: `WriteOver`'s "is a file" throw was removed;
+  creating the sub-folder under a file fails on its own and is reported through the same catch.
+
+Tests: `tests/Ui.Tests/Em/EmSchematicWithPartsTests.cs` (9, no solve; F1/F2 from the schematic-driven layout set and the shipped
+PCB Component Ports board).

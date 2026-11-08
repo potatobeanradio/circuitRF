@@ -67,6 +67,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// the netlist a <c>.c3d</c> does.</summary>
     public IReadOnlyList<CircuitRF.Design.Layout.Em.EmCoSimPort>? CoSimPorts { get; init; }
 
+    /// <summary>brief-isc-1 — every port of the problem in its order, with its document number and any part, whether or not the setup
+    /// names component ports: what a cell made from the schematic wires its SnP pins by. Null where no 3D view assembled the problem.</summary>
+    public IReadOnlyList<CircuitRF.Design.Layout.Em.EmCoSimPort>? ResultPorts { get; init; }
+
     /// <summary>brief-dfr28-4 R-dfr28-4-5 — each layout port's return, by port number: the layer, the side, and who
     /// decided it. Kept BESIDE the problem, as <see cref="Origins"/> is: <c>explain</c> reads it.</summary>
     public IReadOnlyDictionary<int, Em3dPortReturn> PortReturns { get; init; } = new Dictionary<int, Em3dPortReturn>();

@@ -22,6 +22,7 @@
 // R-em-21 — no physics here. This file extracts, calls the kernel, writes files, and reports. Every
 // number it touches came from the engine.
 
+using CircuitRF.Design.Cells;
 using CircuitRF.Design.Results;
 using RfCore;
 using RfCore.Data;
@@ -228,6 +229,43 @@ public static class EmRunService
     /// <para>The geometry is flattened exactly as the editor's own Refresh does — the run and the
     /// panel must never disagree about what geometry the setup is pointed at.</para>
     /// </summary>
+    /// <summary>
+    /// brief-isc-1 — the ports a run of <paramref name="setup"/> on <paramref name="source"/> would solve, in its order, found the way the
+    /// run finds them and with nothing solved or meshed: what Create now wires a schematic by when there is no run to read. Null when
+    /// the setup's ports cannot be found (the run would refuse) or the route is the cross-section kernel's.
+    /// </summary>
+    public static EmResultPorts? PlannedPorts(EmSetup setup, EmLayoutSource? source)
+    {
+        if (source?.Technology is null || setup.IsThermal) return null;
+        try
+        {
+            if (setup.Is3D)
+            {
+                var g = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(setup, source, source.Technology);
+                var ports = g.ResultPorts ?? (g.Problem is { } p ? EmCoSimNetlist.PortsOf(p.Ports) : null);
+                return ports is null ? null : new EmResultPorts(ports, g.CoSimPorts is not null);
+            }
+            EmPortKindMigration.ApplyInMemory(source.View.Shapes, setup.PortKinds);
+            double[] freqs = setup.ExpandFrequencies();
+            if (freqs.Length == 0) return null;
+            var pre = Extract(setup, source, freqs.Max());
+            if (pre.EarlyRefusal is not null || !pre.Choice.Ok || pre.Choice.Kind != EmAnalysisKind.Planar || pre.Planar.Problem is not { } problem)
+                return null;
+            var portLabels = EmComponentPorts.Collect(source, setup);
+            if (portLabels.Refusal is not null) return null;
+            var extracted = EmPortExtraction.Extract(
+                portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup), source.View.DisplayUnit,
+                EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
+            if (!extracted.Ok) return null;
+            bool built = portLabels.ComponentBuild is { } components && components.Ports.Any(c => c.Ok);
+            return new EmResultPorts(EmCoSimNetlist.PortsOf(extracted.Ports, extracted.SourceLabels, portLabels.ComponentBuild), built);
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
     private static EmExtractPhase Extract(EmSetup setup, EmLayoutSource source, double fMax)
     {
         var findings = new List<EmFinding>();
@@ -615,14 +653,15 @@ public static class EmRunService
     {
         try
         {
-            IReadOnlyList<EmCoSimPort>? coSimPorts = null;
+            EmResultPorts? resultPorts = null;
             var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice, target,
-                                 ports => coSimPorts = ports);
+                                 ports => resultPorts = ports);
             // brief-lcp-7 R-lcp7-2 — a run that built component ports writes its _cosim netlist, Planar and 3D alike, and with Create
             // schematic on makes the _cosim cell in place of _sim: a TermG on a part's port has no part on it.
-            result = WithCoSim(result, setup, resultsRoot, coSimPorts);
-            return result.CoSim is not null ? result
-                 : WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
+            result = WithCoSim(result, setup, resultsRoot, resultPorts is { ComponentPorts: true } built ? built.Ports : null);
+            string? cellDir = source is null ? null : CellFolder.SiblingView(source.AbsolutePath, ViewType.Layout, ViewType.Schematic).CellDir;
+            return WithCell(result, setup, resultsRoot, cellDir, resultPorts?.Ports,
+                            () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
         }
         catch (OperationCanceledException)
         {
@@ -727,8 +766,9 @@ public static class EmRunService
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
             result = WithCoSim(result, setup, resultsRoot, assembled?.CoSimPorts);
-            // R-cp6-2 — a run with component ports has made its _cosim cell: a TermG on a part's port has no part on it.
-            return result.CoSim is not null ? result : WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
+            // R-cp6-2 — a run with component ports makes its _cosim cell: a TermG on a part's port has no part on it.
+            return WithCell(result, setup, resultsRoot, CellFolder.SiblingView(documentPath, ViewType.ThreeD, ViewType.Schematic).CellDir,
+                            assembled?.ResultPorts, () => EmSnpSchematic.FacesOf(document));
         }
         catch (OperationCanceledException)
         {
@@ -743,6 +783,51 @@ public static class EmRunService
     /// root belongs to (its parent: <c>&lt;workspace&gt;/results</c> in the GUI and headless alike). Only a run that wrote a
     /// Touchstone has anything to make it from; any other says why nothing was made.
     /// </summary>
+    /// <summary>
+    /// The cell a finished run's Create SnP schematic makes: with Include pre-existing schematic components on and a Primary
+    /// schematic in <paramref name="cellDir"/>, <c>&lt;stem&gt;_sch</c> built from it (brief-isc-1); otherwise the <c>_cosim</c> cell of a
+    /// run with component ports, or the <c>_sim</c> cell. One cell per run.
+    /// </summary>
+    /// <param name="cellDir">The cell the EM document belongs to; null for a loose document.</param>
+    /// <param name="ports">Every port the run solved, in its order; null when the route gives none (a cross-section run).</param>
+    private static EmRunResult WithCell(EmRunResult result, EmSetup setup, string resultsRoot, string? cellDir,
+                                        IReadOnlyList<EmCoSimPort>? ports, Func<IReadOnlyDictionary<int, EmPortFace>> faces)
+    {
+        if (!setup.CreateSnpSchematic || result.Status != EmRunStatus.Ok || result.MeshOnly is not null) return result;
+        string? fallback = null;
+        string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;
+        bool hasSnp = snp is not null && File.Exists(snp);
+        // A run with component ports and no Touchstone has said so through its netlist's sentence, and makes no cell.
+        if (result.CoSim is not null && !hasSnp) return result;
+        if (setup.IncludeSchematicComponents)
+        {
+            if (!hasSnp)
+                return result with
+                {
+                    SnpSchematic = new EmSnpSchematicResult(EmSnpSchematicOutcome.NotCreated, EmSchematicWithParts.CellNameFor(setup), null,
+                        "No schematic was created: this run wrote no Touchstone, and an SnP block reads one."),
+                };
+            string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
+            if (EmSchematicWithParts.Create(workspace, setup, cellDir, snp!, ports, SafeFaces(faces), out fallback) is { } made)
+                return result with { SnpSchematic = made };
+        }
+        var withCell = result.CoSim is { } cosim
+            ? result with
+            {
+                SnpSchematic = cosim.Text is { } text
+                    ? EmCoSimNetlist.CreateCell(Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!, setup, text, snp!, result.RecordPath)
+                    : new EmSnpSchematicResult(EmSnpSchematicOutcome.NotCreated, EmCoSimNetlist.CellNameFor(setup), null, $"No schematic was created for this run. {cosim.Sentence}"),
+            }
+            : WithSnpSchematic(result, setup, resultsRoot, faces);
+        return fallback is not null && withCell.SnpSchematic is { } r ? withCell with { SnpSchematic = r with { Sentence = fallback + " " + r.Sentence } } : withCell;
+    }
+
+    private static IReadOnlyDictionary<int, EmPortFace> SafeFaces(Func<IReadOnlyDictionary<int, EmPortFace>> faces)
+    {
+        try { return faces(); }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { return new Dictionary<int, EmPortFace>(); }
+    }
+
     private static EmRunResult WithSnpSchematic(EmRunResult result, EmSetup setup, string resultsRoot,
                                                 Func<IReadOnlyDictionary<int, EmPortFace>> faces)
     {
@@ -779,15 +864,8 @@ public static class EmRunService
             return result with { CoSim = new EmCoSimResult(EmSnpSchematicOutcome.NotCreated, null,
                 "No co-simulation netlist was written: this run wrote no Touchstone, and its board block reads one.") };
         string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
-        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, ports);
-        if (!setup.CreateSnpSchematic) return result with { CoSim = cosim };
-        return result with
-        {
-            CoSim = cosim,
-            SnpSchematic = cosim.Text is { } text
-                ? EmCoSimNetlist.CreateCell(workspace, setup, text, snp, result.RecordPath)
-                : new EmSnpSchematicResult(EmSnpSchematicOutcome.NotCreated, EmCoSimNetlist.CellNameFor(setup), null, $"No schematic was created for this run. {cosim.Sentence}"),
-        };
+        // The cell, when Create schematic asks for one, is WithCell's: brief-isc-1 makes it from the schematic in its place.
+        return result with { CoSim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, ports) };
     }
 
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>
@@ -811,7 +889,7 @@ public static class EmRunService
         long?              memoryCeilingBytes,
         CircuitRF.Design.Em3d.EmergeDevice emergeDevice,
         EmRunTarget?       target,
-        Action<IReadOnlyList<EmCoSimPort>>? coSimPorts = null)
+        Action<EmResultPorts>? coSimPorts = null)
     {
         // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
         // wires both once; where a control is supplied its token is authoritative and the bare `ct`
@@ -851,7 +929,11 @@ public static class EmRunService
         if (setup.Is3D)
             return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device,
                                                             memoryCeilingBytes, emergeDevice, target,
-                                                            g => { if (g.CoSimPorts is { } p) coSimPorts?.Invoke(p); });
+                                                            g =>
+                                                            {
+                                                                var p = g.ResultPorts ?? (g.Problem is { } solved ? EmCoSimNetlist.PortsOf(solved.Ports) : null);
+                                                                if (p is not null) coSimPorts?.Invoke(new EmResultPorts(p, g.CoSimPorts is not null));
+                                                            });
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //
@@ -1026,7 +1108,7 @@ public static class EmRunService
         CancellationToken ct, RunControl? control = null, int? maxCores = null,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
         long? memoryCeilingBytes = null, EmRunTarget? target = null,
-        Action<IReadOnlyList<EmCoSimPort>>? coSimPorts = null)
+        Action<EmResultPorts>? coSimPorts = null)
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
@@ -1296,9 +1378,12 @@ public static class EmRunService
 
         // brief-lcp-7 R-lcp7-2 — the component ports this run solved, for its co-simulation netlist; R-lcp7-4 — and why that netlist
         // reads the Touchstone when a pattern was asked for and none could be stored.
-        if (portLabels.ComponentBuild is { } components && components.Ports.Any(p => p.Ok))
+        // brief-isc-1 — every solved port goes to the caller, so a cell made from the schematic can wire them by number; only a run
+        // that built a component port writes the _cosim netlist.
+        bool componentPortsBuilt = portLabels.ComponentBuild is { } components && components.Ports.Any(p => p.Ok);
+        coSimPorts?.Invoke(new EmResultPorts(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild), componentPortsBuilt));
+        if (componentPortsBuilt)
         {
-            coSimPorts?.Invoke(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, components));
             if (setup.RadiationPattern && solved.Solve?.FarField is null &&
                 solved.MeshReport.Mesh.Bases.Any(b => b.Direction == PlanarBasisDirection.Z || b.AttachesToGround))
                 notes.Add(PlanarCoSimNoPatternNote);

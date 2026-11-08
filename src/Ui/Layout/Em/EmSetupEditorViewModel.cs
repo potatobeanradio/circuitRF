@@ -972,6 +972,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>brief-dfr31-4 — <see cref="EmSetup.CreateSnpSchematic"/>.</summary>
     [ObservableProperty] private bool   _createSnpSchematic;
 
+    /// <summary>brief-isc-1 — <see cref="EmSetup.IncludeSchematicComponents"/>: how the cell is made, after a run with
+    /// <see cref="CreateSnpSchematic"/> on and by Create now alike.</summary>
+    [ObservableProperty] private bool   _includeSchematicComponents;
+
     /// <summary>The dBm TRP and peak EIRP are referenced to — see
     /// <c>EmSetup.ReferenceInputPowerDbm</c>. Live only while the pattern is on, because it is read
     /// by nothing else.</summary>
@@ -1743,6 +1747,33 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // No InvalidateMesh: it decides what happens after a run, never what the run solves.
     }
 
+    partial void OnIncludeSchematicComponentsChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.IncludeSchematicComponents) return;
+        var before = SnapshotJson();
+        Working.IncludeSchematicComponents = value;
+        CommitEdit(before, "Change Include pre-existing schematic components");
+    }
+
+    /// <summary>brief-isc-1 — Create now: the workspace makes the schematic the run would, from the setup's existing Touchstone (or
+    /// naming the one the run will write). Set by the host; the button is hidden without it.</summary>
+    public Func<EmSetupEditorViewModel, Task>? CreateSchematicRequested
+    {
+        get => _createSchematicRequested;
+        set { _createSchematicRequested = value; OnPropertyChanged(nameof(CanCreateSchematicNow)); }
+    }
+    private Func<EmSetupEditorViewModel, Task>? _createSchematicRequested;
+
+    /// <summary>Whether the panel offers Create now: a host that can make the cell.</summary>
+    public bool CanCreateSchematicNow => CreateSchematicRequested is not null;
+
+    [RelayCommand]
+    private async Task CreateSchematicNow()
+    {
+        if (CreateSchematicRequested is { } make) await make(this);
+    }
+
     /// <summary>The check box is shown only where a run writes a Touchstone: a driven setup.</summary>
     public bool ShowCreateSnpSchematic => !IsStaticSetup && !IsEigenmodeSetup && !IsThermalSetup;
 
@@ -2158,6 +2189,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DeembedOutsideCalibrationValidity = Working.DeembedOutsideCalibrationValidity;
         RadiationPattern     = Working.RadiationPattern;
         CreateSnpSchematic   = Working.CreateSnpSchematic;
+        IncludeSchematicComponents = Working.IncludeSchematicComponents;
         ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
         PatternFrequencyText = FormatPatternFrequency(Working.PatternFrequencyGHz);
         PatternFrequencyError = null;

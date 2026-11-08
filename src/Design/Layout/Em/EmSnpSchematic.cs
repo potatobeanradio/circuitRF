@@ -35,6 +35,9 @@ public enum EmSnpSchematicOutcome
 public sealed record EmSnpSchematicResult(
     EmSnpSchematicOutcome Outcome, string CellName, string? SchematicPath, string Sentence)
 {
+    /// <summary>brief-isc-1 — what the cell's making found that the user should look at, one sentence each.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
     /// <summary>True when there is a schematic to open.</summary>
     public bool HasSchematic => SchematicPath is not null && Outcome is EmSnpSchematicOutcome.Created
                                     or EmSnpSchematicOutcome.Current or EmSnpSchematicOutcome.Repointed;
@@ -95,36 +98,59 @@ public static class EmSnpSchematic
     /// </summary>
     /// <param name="faces">The side each port faces, by port number; a port not listed takes
     /// <see cref="FallbackFace"/>.</param>
+    /// <param name="ports">brief-isc-1 — the setup's ports, which count them when there is no Touchstone yet (Create now before a run).</param>
+    /// <param name="replace">brief-isc-1 — write over an existing cell's schematic (Create now's Replace; a run never asks).</param>
+    /// <param name="cellName">brief-isc-1 — another name for the cell (Create now's New name).</param>
     public static EmSnpSchematicResult Create(
-        string workspaceDir, EmSetup setup, string snpPath, IReadOnlyDictionary<int, EmPortFace> faces)
+        string workspaceDir, EmSetup setup, string snpPath, IReadOnlyDictionary<int, EmPortFace> faces,
+        IReadOnlyList<EmCoSimPort>? ports = null, bool replace = false, string? cellName = null)
     {
-        string cellName = CellNameFor(setup);
+        cellName ??= CellNameFor(setup);
         try
         {
             if (NameValidator.Validate(cellName) is { } bad)
                 return new(EmSnpSchematicOutcome.NotCreated, cellName, null,
                            $"No schematic was created for this run: '{cellName}' cannot be a cell name. {bad}");
 
-            var snp = RfCore.TouchstoneIO.ReadFile(snpPath, readComments: false);
-            int n = snp.Ports;
+            int n;
+            Complex[] z;
+            var warnings = new List<string>();
+            bool haveSnp = File.Exists(snpPath);
+            if (haveSnp)
+            {
+                var snp = RfCore.TouchstoneIO.ReadFile(snpPath, readComments: false);
+                n = snp.Ports;
+                z = Enumerable.Range(1, n).Select(k => snp.Z0PerPort is { } per && k - 1 < per.Length ? per[k - 1] : snp.Z0).ToArray();
+            }
+            else if (ports is { Count: > 0 })
+            {
+                n = ports.Count;
+                z = [.. ports.Select(p => ParseZ(p.Z0))];
+                warnings.Add($"No Touchstone exists yet at {SnpPathPolicy.ToStored(Path.GetFullPath(snpPath), workspaceDir)}: the SnP block names it, " +
+                             "and reads it once the setup has been run.");
+            }
+            else
+                return new(EmSnpSchematicOutcome.NotCreated, cellName, null,
+                           $"No schematic was created: there is no Touchstone at {snpPath} yet, and without one the setup's ports could not be counted.");
             if (n < 1)
                 return new(EmSnpSchematicOutcome.NotCreated, cellName, null,
                            $"No schematic was created for this run: {Path.GetFileName(snpPath)} holds no ports.");
 
             string cellDir = Path.Combine(workspaceDir, cellName);
-            if (Directory.Exists(cellDir) || File.Exists(cellDir))
+            bool exists = Directory.Exists(cellDir) || File.Exists(cellDir);
+            if (exists && !replace)
                 return Existing(workspaceDir, cellDir, cellName, snpPath, n);
 
             string stored = SnpPathPolicy.ToStored(Path.GetFullPath(snpPath), workspaceDir);
-            var z = Enumerable.Range(1, n).Select(k => snp.Z0PerPort is { } per && k - 1 < per.Length ? per[k - 1] : snp.Z0).ToArray();
             var model = Build(setup, stored, n, k => faces.TryGetValue(k, out var f) ? f : FallbackFace(k), k => z[k - 1]);
 
-            var created = CellCreate.Create(workspaceDir, cellName, CellViews.Schematic, model);
-            string schematic = created.SchematicPath!;
+            string schematic = exists ? EmSchematicWithParts.WriteOver(cellDir, cellName, model)
+                                      : CellCreate.Create(workspaceDir, cellName, CellViews.Schematic, model).SchematicPath!;
             CellCreate.WriteTemplateDataDisplay(workspaceDir, schematic, null, DataDisplayJson(n, "em_snp.npy"));
 
-            return new(EmSnpSchematicOutcome.Created, cellName, schematic,
-                       $"Created cell {cellName}: an S{n}P of this run with {n} TermG, ready to simulate.");
+            string what = haveSnp ? $"an S{n}P of this run with {n} TermG, ready to simulate."
+                                  : $"an S{n}P of this setup's results with {n} TermG; run the setup to give it its data.";
+            return new(EmSnpSchematicOutcome.Created, cellName, schematic, $"{(exists ? "Replaced" : "Created")} cell {cellName}: {what}") { Warnings = warnings };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException
                                       or JsonException or FormatException or ArgumentException)
@@ -175,6 +201,19 @@ public static class EmSnpSchematic
                    $"Cell {cellName}'s {sameStem.InstanceName} now reads this run's S{n}P.{wiring}");
     }
 
+    /// <summary>A reference impedance as a port states it — <c>50</c>, <c>25+j10</c>, <c>25-j10</c> — 50 Ω when it cannot be read.</summary>
+    internal static Complex ParseZ(string text)
+    {
+        string t = text.Trim().Replace(" ", "");
+        int j = t.IndexOf('j');
+        if (j < 0) return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double r) ? new Complex(r, 0) : new Complex(50, 0);
+        int sign = t.LastIndexOfAny(['+', '-'], j);
+        if (sign <= 0 || !double.TryParse(t[..sign], NumberStyles.Float, CultureInfo.InvariantCulture, out double re)
+            || !double.TryParse(t[(j + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out double im))
+            return new Complex(50, 0);
+        return new Complex(re, t[sign] == '-' ? -im : im);
+    }
+
     private static EmSnpSchematicResult LeftAlone(string cellName, string? schematic)
         => new(EmSnpSchematicOutcome.LeftAlone, cellName, schematic,
                $"A cell named {cellName} already exists and does not read this run's s-parameters, so it was left alone " +
@@ -217,17 +256,7 @@ public static class EmSnpSchematic
         var model = new SchematicEditModel();
 
         var config = PinConfigFor(n, faceOf);
-        var snp = new EditableComponent { Symbol = SymbolKind.Snp, InstanceName = SnpInstanceName, X = 0, Y = 0 };
-        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, n))
-            snp.Parameters.Add(Param(dp, dp.Name switch
-            {
-                "File"      => storedFile,
-                "NumPorts"  => n.ToString(CultureInfo.InvariantCulture),
-                "PinConfig" => config.ToString(),
-                "Pitch"     => nameof(SnpPitch.Loose),
-                _           => dp.Expression,
-            }));
-        model.Components.Add(snp);
+        model.Components.Add(SnpComponent(storedFile, n, config, 0, 0, SnpInstanceName));
 
         var pins = SymbolPortDefs.GenerateSnpPorts(n, refNode: false, config, SnpPitch.Loose);
         double minPinY = pins.Min(p => (double)p.LocalY), maxPinY = pins.Max(p => (double)p.LocalY);
@@ -286,12 +315,28 @@ public static class EmSnpSchematic
         return model;
     }
 
+    /// <summary>The SnP block of a run's Touchstone: <paramref name="n"/> ports in <paramref name="config"/>, loosely pitched.</summary>
+    internal static EditableComponent SnpComponent(string storedFile, int n, SnpPinConfig config, double x, double y, string name)
+    {
+        var snp = new EditableComponent { Symbol = SymbolKind.Snp, InstanceName = name, X = x, Y = y };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, n))
+            snp.Parameters.Add(Param(dp, dp.Name switch
+            {
+                "File"      => storedFile,
+                "NumPorts"  => n.ToString(CultureInfo.InvariantCulture),
+                "PinConfig" => config.ToString(),
+                "Pitch"     => nameof(SnpPitch.Loose),
+                _           => dp.Expression,
+            }));
+        return snp;
+    }
+
     /// <summary>
     /// The SnP pin arrangement that puts the most ports' pins on the side their TermG is on, so the fewest wires go round
     /// the block. Standard wins a tie. DualRow (odd ports left, even right) is what an EM run's own numbering usually
     /// wants — an odd port and the even one after it are the two ends of one path.
     /// </summary>
-    private static SnpPinConfig PinConfigFor(int n, Func<int, EmPortFace> faceOf)
+    internal static SnpPinConfig PinConfigFor(int n, Func<int, EmPortFace> faceOf)
     {
         if (n < 4) return SnpPinConfig.Standard;
         int Score(SnpPinConfig c) => SymbolPortDefs.GenerateSnpPorts(n, refNode: false, c, SnpPitch.Loose)
@@ -320,13 +365,13 @@ public static class EmSnpSchematic
         return key < 0 ? key + 2 * Math.PI : key;
     }
 
-    private static EditableParameter Param(DefaultParam dp, string expression) => new()
+    internal static EditableParameter Param(DefaultParam dp, string expression) => new()
     {
         Name = dp.Name, Expression = expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
     };
 
     /// <summary>A real impedance in ohms as the TermG default writes it, a complex one as <c>complex(re,im)</c>.</summary>
-    private static (string Expression, string Unit) ZText(Complex z, string ohmUnit)
+    internal static (string Expression, string Unit) ZText(Complex z, string ohmUnit)
     {
         string F(double v) => v.ToString("G15", CultureInfo.InvariantCulture);
         return z.Imaginary == 0 ? (F(z.Real), ohmUnit) : ($"complex({F(z.Real)},{F(z.Imaginary)})", "");

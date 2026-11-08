@@ -8334,6 +8334,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 OpenLayoutRequested = (clay, ownWindow) => _ = ShowEmLayoutAsync(clay, ownWindow),
                 RunRequested  = RunEmSetupAsync,
                 MeshRequested = MeshEmSetupAsync,
+                CreateSchematicRequested = CreateEmSchematicNowAsync,
                 ResultsRootProvider = () => GetResultsRoot(),
                 // brief-lcp-3 — Component ports' Check posts each part's verdict here, as a 3D view's does.
                 PostMessage = (text, warning) => { if (warning) Messages.Warning(text, absolutePath); else Messages.Info(text, absolutePath); },
@@ -9735,6 +9736,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                 () => { OpenOrActivateSchematic(Path.GetFullPath(path)); return Task.CompletedTask; }, path);
         else
             Messages.Post(level, made.Sentence, made.SchematicPath);
+        // brief-isc-1 — what the making found: a part left open, an unmatched port, a layout that differs from its schematic.
+        foreach (string warning in made.Warnings) Messages.Warning(warning, made.SchematicPath);
     }
 
     /// <summary>The .npy files an EM run wrote — every one a both-run lists, else its one.</summary>

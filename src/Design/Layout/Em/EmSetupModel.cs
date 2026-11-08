@@ -707,6 +707,13 @@ public sealed class EmSetup
     /// the <c>.cem</c> when off. It changes no answer, so it enters no provenance hash.</summary>
     public bool CreateSnpSchematic { get; set; }
 
+    /// <summary>brief-isc-1 R-isc-1 — with <see cref="CreateSnpSchematic"/> on, make the cell from the Primary schematic of the
+    /// cell the EM document belongs to: its own components kept, the copper the run stands for removed, and the SnP wired to its
+    /// Ports and parts (<see cref="EmSchematicWithParts"/>). A run reads it only when <see cref="CreateSnpSchematic"/> is on; the
+    /// panel's Create now always reads it (<see cref="EmSchematicNow"/>). Off by default; omitted from the <c>.cem</c> when off. It
+    /// changes no answer, so it enters no provenance hash.</summary>
+    public bool IncludeSchematicComponents { get; set; }
+
     /// <summary>
     /// <b>The part of the layout this setup solves — null solves all of it</b>, which is what every
     /// <c>.cem</c> written before the region existed means. Applied by
@@ -822,6 +829,7 @@ public sealed class EmSetup
         if (AdditionalFrequencies.Count > 0) set.Add("AdditionalFrequencies");
         if (PortZ0s.Count > 0 || Port1Z0 != new EmSetup().Port1Z0 || Port2Z0 != new EmSetup().Port2Z0) set.Add("PortZ0s");
         if (CreateSnpSchematic) set.Add("CreateSnpSchematic");
+        if (IncludeSchematicComponents) set.Add("IncludeSchematicComponents");
         return set;
     }
 
@@ -940,6 +948,7 @@ public sealed class EmSetup
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
         CreateSnpSchematic     = CreateSnpSchematic,
+        IncludeSchematicComponents = IncludeSchematicComponents,
         SolveRegion            = SolveRegion,    // record, immutable
         Solver3D               = Solver3D,
         OperatingTempC         = OperatingTempC,

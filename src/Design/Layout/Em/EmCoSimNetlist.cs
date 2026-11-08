@@ -40,7 +40,43 @@ namespace CircuitRF.Design.Layout.Em;
 /// <param name="Name">The 3D view's port name, or the component port's (refdes or refdes.pin).</param>
 /// <param name="Z0">Its reference impedance, as the document writes it.</param>
 /// <param name="Component">The component port it is, or null for one of the 3D view's or the layout's own ports.</param>
-public sealed record EmCoSimPort(int Number, string Name, string Z0, EmCoSimPart? Component);
+/// <param name="DocumentNumber">brief-isc-1 D6 — the number the document gives the port: a Planar label's text, a 3D port's source
+/// number. A schematic Port of that <c>Num</c> is the one it joins. Null reads <paramref name="Number"/>.</param>
+public sealed record EmCoSimPort(int Number, string Name, string Z0, EmCoSimPart? Component, int? DocumentNumber = null)
+{
+    /// <summary>The number a schematic Port matches: <see cref="DocumentNumber"/>, else the Touchstone's.</summary>
+    public int Num => DocumentNumber ?? Number;
+}
+
+/// <summary>brief-isc-1 — every port a run solved, and whether any of them is a built component port (what makes the run write
+/// its <c>_cosim</c> netlist).</summary>
+public sealed record EmResultPorts(IReadOnlyList<EmCoSimPort> Ports, bool ComponentPorts);
+
+/// <summary>brief-isc-1 R-isc-2 — what closes one result port, as the co-simulation netlist and the cell made from the schematic
+/// both read it: there is one decision, made by <see cref="EmCoSimNetlist.Closures"/>.</summary>
+public enum EmCoSimCloseKind
+{
+    /// <summary>The port is a Port of the circuit: a drawn port, a 3D view's port or a connector's.</summary>
+    PortLine,
+    /// <summary>The part's model from the schematic, its terminals on the port's node, ground or nothing.</summary>
+    Model,
+    /// <summary>The part is Open in the schematic: its port stays open.</summary>
+    Open,
+    /// <summary>The part is Short in the schematic: its port is shorted.</summary>
+    Short,
+    /// <summary>No model that this wiring can read: a placeholder value across the port.</summary>
+    Placeholder,
+}
+
+/// <param name="Kind">What closes the port.</param>
+/// <param name="Port">The port (for a multi-pad part, its first).</param>
+/// <param name="Refdes">The part, for every kind but <see cref="EmCoSimCloseKind.PortLine"/>.</param>
+/// <param name="Instance">The instance the netlist places: the rewired model, a Short, or a placeholder.</param>
+/// <param name="Variable">A placeholder's value.</param>
+/// <param name="Comment">What the netlist says about it.</param>
+/// <param name="SchematicName">The schematic component the part is, when the schematic has one.</param>
+public sealed record EmCoSimClose(EmCoSimCloseKind Kind, EmCoSimPort Port, string? Refdes = null, Instance? Instance = null,
+                                  Variable? Variable = null, string? Comment = null, string? SchematicName = null);
 
 /// <summary>
 /// brief-lcp-7 R-lcp7-1 — what the netlist reads of one component port: the part, its two pads, every pin of its footprint in pin
@@ -144,59 +180,30 @@ public static class EmCoSimNetlist
                 [new ParameterAssignment("NumPorts", n.ToString(CultureInfo.InvariantCulture)), new ParameterAssignment("File", snpStored)]));
 
         int portLine = 0;
-        var parts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in ports)
-        {
-            if (p.Component is not { } cp || cp.Connector)
+        foreach (var c in Closures(ports, models))
+            switch (c.Kind)
             {
-                portLine++;
-                tb.Instances.Add(new Instance("P" + portLine.ToString(CultureInfo.InvariantCulture), "Port", [Node(p.Number), "0"],
-                    [new ParameterAssignment("Num", portLine.ToString(CultureInfo.InvariantCulture)), new ParameterAssignment("Z", Z(p.Z0), "Ohm")]));
-                continue;
+                case EmCoSimCloseKind.PortLine:
+                    portLine++;
+                    tb.Instances.Add(new Instance("P" + portLine.ToString(CultureInfo.InvariantCulture), "Port", [Node(c.Port.Number), "0"],
+                        [new ParameterAssignment("Num", portLine.ToString(CultureInfo.InvariantCulture)), new ParameterAssignment("Z", Z(c.Port.Z0), "Ohm")]));
+                    break;
+                case EmCoSimCloseKind.Model:
+                    tb.Instances.Add(c.Instance!);
+                    break;
+                case EmCoSimCloseKind.Open:
+                    comments.Add(c.Comment!);
+                    break;
+                case EmCoSimCloseKind.Short:
+                    tb.Instances.Add(c.Instance!);
+                    comments.Add(c.Comment!);
+                    break;
+                case EmCoSimCloseKind.Placeholder:
+                    tb.GlobalVariables.Add(c.Variable!);
+                    tb.Instances.Add(c.Instance!);
+                    comments.Add(c.Comment!);
+                    break;
             }
-            if (!parts.Add(cp.Refdes)) continue;      // a multi-pad part: placed once, at its first port
-            var mine = ports.Where(q => q.Component is { } c && c.Refdes.Equals(cp.Refdes, StringComparison.OrdinalIgnoreCase)).ToList();
-            var model = models.Instances.GetValueOrDefault(cp.SchematicId ?? cp.Refdes) ?? models.Instances.GetValueOrDefault(cp.Refdes);
-            if (mine.Count == 1 && model is not null && TwoTerminal(model))
-            {
-                tb.Instances.Add(Rewired(model, [Node(p.Number), "0"]));
-                continue;
-            }
-            if (model is not null && mine.Count > 1 && model.NetBindings.Count == cp.PartPins.Count)
-            {
-                // Its terminals in pin order: a signal pin on its port's node, its ground pin (each port's reference) on ground.
-                var nets = cp.PartPins.Select(pin =>
-                    mine.FirstOrDefault(q => q.Component!.Pin == pin) is { } own ? Node(own.Number)
-                    : mine.Any(q => q.Component!.ReferencePin == pin) ? "0"
-                    : $"nc_{cp.Refdes}_{pin}").ToList();
-                tb.Instances.Add(Rewired(model, nets));
-                continue;
-            }
-            // Marked in the schematic as not fitted, or as a link: the part is no value to guess at.
-            if (mine.Count == 1 && models.Open.Contains(cp.SchematicId ?? cp.Refdes))
-            {
-                comments.Add($"{cp.Refdes} is Open in the board's schematic, so its port {Node(p.Number)} is left open.");
-                continue;
-            }
-            if (mine.Count == 1 && models.Shorted.Contains(cp.SchematicId ?? cp.Refdes))
-            {
-                tb.Instances.Add(new Instance(cp.Refdes, "Short", [Node(p.Number), "0"], []));
-                comments.Add($"{cp.Refdes} is Short in the board's schematic, so its port {Node(p.Number)} is shorted.");
-                continue;
-            }
-            // No model, or one this wiring cannot read: a placeholder per port, named in a comment.
-            string why = model is null ? "the board's schematic gives no model for it"
-                       : $"its model has {model.NetBindings.Count} terminal(s) and its footprint {cp.PartPins.Count} pad(s)";
-            foreach (var q in mine)
-            {
-                var (kind, key, value, unit) = Placeholder(cp.Refdes);
-                string name = mine.Count == 1 ? cp.Refdes : $"{cp.Refdes}_{q.Component!.Pin}";
-                string variable = name + "_value";
-                tb.GlobalVariables.Add(new Variable(variable, value, unit));
-                tb.Instances.Add(new Instance(name, kind, [Node(q.Number), "0"], [new ParameterAssignment(key, variable)]));
-                comments.Add($"{name}: {why}, so {variable} is a placeholder; set it to the part's value.");
-            }
-        }
         tb.Analyses.Add(new SParameterAnalysis(EmSnpSchematic.AnalysisName, setup.FrequencyPlan));
         if (record is { FarFieldHz.Count: > 0 })
         {
@@ -223,13 +230,79 @@ public static class EmCoSimNetlist
         return sb.ToString();
     }
 
+    /// <summary>
+    /// brief-isc-1 R-isc-2 — what closes each result port, in port order: a Port line for a drawn or connector port, and for a
+    /// component port the part's model from the board's schematic across it (each part once, at its first port), Open or Short as the
+    /// schematic marks it, or a placeholder. The netlist and the cell made from the schematic both read this, so the two never differ
+    /// about a part.
+    /// </summary>
+    public static IReadOnlyList<EmCoSimClose> Closures(IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models)
+    {
+        var list = new List<EmCoSimClose>();
+        var parts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in ports)
+        {
+            if (p.Component is not { } cp || cp.Connector)
+            {
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.PortLine, p));
+                continue;
+            }
+            if (!parts.Add(cp.Refdes)) continue;      // a multi-pad part: placed once, at its first port
+            var mine = ports.Where(q => q.Component is { } c && c.Refdes.Equals(cp.Refdes, StringComparison.OrdinalIgnoreCase)).ToList();
+            var model = models.Instances.GetValueOrDefault(cp.SchematicId ?? cp.Refdes) ?? models.Instances.GetValueOrDefault(cp.Refdes);
+            if (mine.Count == 1 && model is not null && TwoTerminal(model))
+            {
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.Model, p, cp.Refdes, Rewired(model, [Node(p.Number), "0"]), SchematicName: model.InstanceName));
+                continue;
+            }
+            if (model is not null && mine.Count > 1 && model.NetBindings.Count == cp.PartPins.Count)
+            {
+                // Its terminals in pin order: a signal pin on its port's node, its ground pin (each port's reference) on ground.
+                var nets = cp.PartPins.Select(pin =>
+                    mine.FirstOrDefault(q => q.Component!.Pin == pin) is { } own ? Node(own.Number)
+                    : mine.Any(q => q.Component!.ReferencePin == pin) ? "0"
+                    : $"nc_{cp.Refdes}_{pin}").ToList();
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.Model, p, cp.Refdes, Rewired(model, nets), SchematicName: model.InstanceName));
+                continue;
+            }
+            // Marked in the schematic as not fitted, or as a link: the part is no value to guess at.
+            string key = cp.SchematicId ?? cp.Refdes;
+            if (mine.Count == 1 && models.Open.Contains(key))
+            {
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.Open, p, cp.Refdes,
+                    Comment: $"{cp.Refdes} is Open in the board's schematic, so its port {Node(p.Number)} is left open.", SchematicName: key));
+                continue;
+            }
+            if (mine.Count == 1 && models.Shorted.Contains(key))
+            {
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.Short, p, cp.Refdes, new Instance(cp.Refdes, "Short", [Node(p.Number), "0"], []),
+                    Comment: $"{cp.Refdes} is Short in the board's schematic, so its port {Node(p.Number)} is shorted.", SchematicName: key));
+                continue;
+            }
+            // No model, or one this wiring cannot read: a placeholder per port, named in a comment.
+            string why = model is null ? "the board's schematic gives no model for it"
+                       : $"its model has {model.NetBindings.Count} terminal(s) and its footprint {cp.PartPins.Count} pad(s)";
+            foreach (var q in mine)
+            {
+                var (kind, pkey, value, unit) = Placeholder(cp.Refdes);
+                string name = mine.Count == 1 ? cp.Refdes : $"{cp.Refdes}_{q.Component!.Pin}";
+                string variable = name + "_value";
+                list.Add(new EmCoSimClose(EmCoSimCloseKind.Placeholder, q, cp.Refdes,
+                    new Instance(name, kind, [Node(q.Number), "0"], [new ParameterAssignment(pkey, variable)]),
+                    new Variable(variable, value, unit),
+                    $"{name}: {why}, so {variable} is a placeholder; set it to the part's value.", model?.InstanceName));
+            }
+        }
+        return list;
+    }
+
     /// <summary>A part whose model is two-terminal: two nets, or an SnP of two ports (a two-port measured in series).</summary>
     private static bool TwoTerminal(Instance model) => model.NetBindings.Count == 2;
 
     private static Instance Rewired(Instance model, IReadOnlyList<string> nets)
         => new(model.InstanceName, model.Reference, nets, model.Overrides);
 
-    private static (string Kind, string Key, string Value, string Unit) Placeholder(string refdes)
+    internal static (string Kind, string Key, string Value, string Unit) Placeholder(string refdes)
         => char.ToUpperInvariant(refdes.FirstOrDefault()) switch
         {
             'C' => ("C", "C", "1", "pF"),
@@ -252,20 +325,26 @@ public static class EmCoSimNetlist
     /// The result's ports, from the problem the run solved: each problem port by its document number (a renumbered one by its
     /// source number), matched to the component port of that number when there is one.
     /// </summary>
-    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<Em3dPort> problemPorts, C3dDocument document, C3dComponentPortBuild build)
+    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<Em3dPort> problemPorts, C3dDocument document, C3dComponentPortBuild? build)
     {
         var list = new List<EmCoSimPort>();
         foreach (var p in problemPorts.OrderBy(p => p.Number))
         {
             int source = p.SourceNumber ?? p.Number;
-            var cp = build.Ports.FirstOrDefault(c => c.Port?.Number == source);
+            var cp = build?.Ports.FirstOrDefault(c => c.Port?.Number == source);
             var own = C3dPorts.OwnerOf(document, source);
             string name = cp?.Port?.Name ?? (own is not null ? C3dPorts.Label(own) : $"port {source}");
             string z0 = cp?.Port?.Z0 ?? own?.Z0 ?? "50";
-            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp)));
+            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp), source));
         }
         return list;
     }
+
+    /// <summary>brief-isc-1 — a 3D problem's ports where no 3D view assembled it (a layout's <c>.cem</c> with no component ports): each
+    /// by its document number, named by the problem.</summary>
+    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<Em3dPort> problemPorts)
+        => [.. problemPorts.OrderBy(p => p.Number).Select(p => new EmCoSimPort(p.Number, p.Name is { Length: > 0 } n ? n : $"port {p.SourceNumber ?? p.Number}",
+                                                                              Z0Text(p.Z0), null, p.SourceNumber ?? p.Number))];
 
     /// <summary>
     /// brief-lcp-7 R-lcp7-2 — a Planar run's ports, in the Touchstone's order: each solved port by its number, matched to the
@@ -273,15 +352,17 @@ public static class EmCoSimNetlist
     /// its reference impedance the one the run solved with.
     /// </summary>
     /// <param name="labels">The label each port came from, index-aligned with <paramref name="ports"/>.</param>
-    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<PlanarPort> ports, IReadOnlyList<LabelShape> labels, EmPlanarComponentPortBuild build)
+    public static IReadOnlyList<EmCoSimPort> PortsOf(IReadOnlyList<PlanarPort> ports, IReadOnlyList<LabelShape> labels, EmPlanarComponentPortBuild? build)
     {
         var list = new List<EmCoSimPort>();
         for (int i = 0; i < ports.Count; i++)
         {
             var p = ports[i];
-            var cp = build.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
+            var cp = build?.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
             string name = cp?.Name ?? (i < labels.Count && labels[i].Text is { Length: > 0 } text ? text : $"P{p.Number}");
-            list.Add(new EmCoSimPort(p.Number, name, Z0Text(p.Z0), cp is null ? null : EmCoSimPart.Of(cp)));
+            // brief-isc-1 D6 — a drawn port's number is its label's text (SDL-5 writes the schematic Port's Num there).
+            int? num = cp is null && i < labels.Count && int.TryParse(labels[i].Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : null;
+            list.Add(new EmCoSimPort(p.Number, name, Z0Text(p.Z0), cp is null ? null : EmCoSimPart.Of(cp), num));
         }
         return list;
     }
@@ -304,10 +385,23 @@ public static class EmCoSimNetlist
         if (clayPath is not { Length: > 0 }) return EmCoSimModels.None;
         string layoutDir = Path.GetDirectoryName(Path.GetFullPath(clayPath)) ?? "";
         string cellDir = Path.GetDirectoryName(layoutDir) ?? layoutDir;
-        if (!Directory.Exists(cellDir)) return EmCoSimModels.None;
+        return ModelsForCell(cellDir);
+    }
+
+    /// <summary>brief-isc-1 D2 — the Primary schematic of <paramref name="cellDir"/>, or null when it has none.</summary>
+    public static string? PrimarySchematic(string? cellDir)
+    {
+        if (cellDir is not { Length: > 0 } || !Directory.Exists(cellDir)) return null;
         var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
-        if (primary.ResolvedName is not { Length: > 0 } name) return EmCoSimModels.None;
+        if (primary.ResolvedName is not { Length: > 0 } name) return null;
         string sch = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Schematic), name);
+        return File.Exists(sch) ? sch : null;
+    }
+
+    /// <summary>brief-isc-1 D2 — <see cref="ModelsFor"/> for a cell folder: its Primary schematic, extracted as the board projection reads it.</summary>
+    public static EmCoSimModels ModelsForCell(string? cellDir)
+    {
+        if (PrimarySchematic(cellDir) is not { } sch) return EmCoSimModels.None;
         try
         {
             var (model, _, _) = SchematicPersistence.LoadFromFile(sch);
@@ -386,16 +480,20 @@ public static class EmCoSimNetlist
     /// </summary>
     /// <param name="snpPath">The run's Touchstone, what an existing cell's block may read.</param>
     /// <param name="recordPath">The run's result record, what an existing cell's block may read; null when it wrote none.</param>
-    public static EmSnpSchematicResult CreateCell(string workspaceDir, EmSetup setup, string text, string snpPath, string? recordPath)
+    /// <param name="replace">brief-isc-1 — write over an existing cell's schematic (Create now's Replace; a run never asks).</param>
+    /// <param name="cellName">brief-isc-1 — another name for the cell (Create now's New name).</param>
+    public static EmSnpSchematicResult CreateCell(string workspaceDir, EmSetup setup, string text, string snpPath, string? recordPath,
+                                                  bool replace = false, string? cellName = null)
     {
-        string cellName = CellNameFor(setup);
+        cellName ??= CellNameFor(setup);
         try
         {
             if (NameValidator.Validate(cellName) is { } bad)
                 return new(EmSnpSchematicOutcome.NotCreated, cellName, null, $"No schematic was created for this run: '{cellName}' cannot be a cell name. {bad}");
 
             string cellDir = Path.Combine(workspaceDir, cellName);
-            if (Directory.Exists(cellDir) || File.Exists(cellDir)) return ExistingCell(workspaceDir, cellDir, cellName, snpPath, recordPath);
+            bool exists = Directory.Exists(cellDir) || File.Exists(cellDir);
+            if (exists && !replace) return ExistingCell(workspaceDir, cellDir, cellName, snpPath, recordPath);
 
             var (lib, tb) = new CnlReader().Read(text, cellName, workspaceDir);
             var drawn = NetlistSchematic.Build(lib, tb, CellFolder.SubFolderPath(cellDir, ViewType.Schematic));
@@ -404,14 +502,15 @@ public static class EmCoSimNetlist
                            $"No schematic was created for this run: {string.Join(" ", drawn.Refusals)} {cellName}.cnl states the same circuit.");
             AddNotes(model, text);
 
-            string schematic = CellCreate.Create(workspaceDir, cellName, CellViews.Schematic, model).SchematicPath!;
+            string schematic = exists ? EmSchematicWithParts.WriteOver(cellDir, cellName, model)
+                                      : CellCreate.Create(workspaceDir, cellName, CellViews.Schematic, model).SchematicPath!;
             int circuitPorts = tb.Instances.Count(i => i.Reference.Equals("Port", StringComparison.OrdinalIgnoreCase));
             if (circuitPorts > 0)
                 CellCreate.WriteTemplateDataDisplay(workspaceDir, schematic, null, tb.Analyses.Any(a => a is FieldsAnalysis)
                     ? PatternDisplayJson("em_cosim.npy", tb.Analyses.OfType<SParameterAnalysis>().Any(HasSweep))
                     : EmSnpSchematic.DataDisplayJson(circuitPorts, "em_cosim.npy"));
             return new(EmSnpSchematicOutcome.Created, cellName, schematic,
-                       $"Created cell {cellName}: the board's result with each part on its own port, ready to simulate.");
+                       $"{(exists ? "Replaced" : "Created")} cell {cellName}: the board's result with each part on its own port, ready to simulate.");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or JsonException
                                       or FormatException or ArgumentException or CnlReadException)
@@ -421,7 +520,7 @@ public static class EmCoSimNetlist
     }
 
     /// <summary>A cell of that name exists. Reading it never changes it: the only question is which sentence the run says.</summary>
-    private static EmSnpSchematicResult ExistingCell(string workspaceDir, string cellDir, string cellName, string snpPath, string? recordPath)
+    internal static EmSnpSchematicResult ExistingCell(string workspaceDir, string cellDir, string cellName, string snpPath, string? recordPath)
     {
         string? schematic = null;
         if (Directory.Exists(cellDir) && CellFolder.ResolvePrimary(cellDir, ViewType.Schematic) is { ResolvedName: { Length: > 0 } name })

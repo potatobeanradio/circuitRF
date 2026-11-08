@@ -2179,10 +2179,22 @@
                 <Border Classes="group" IsVisible="{Binding ViewModel.ShowCreateSnpSchematic}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="After the run"/>
-                <CheckBox Name="CreateSnpSchematicCheck" FontSize="11"
+                <Grid ColumnDefinitions="*,Auto">
+                <CheckBox Grid.Column="0" Name="CreateSnpSchematicCheck" FontSize="11"
                           Content="Create SnP schematic when the run finishes"
                           IsChecked="{Binding ViewModel.CreateSnpSchematic}"
                           ToolTip.Tip="Makes a cell named after this setup with _sim on the end: an SnP block reading this run's s-parameter file, a TermG on every port placed on the side its port faces in the layout and turned to face out, an S-parameter analysis over this sweep, and a Data Display of the through paths and the input matches. A cell of that name that already exists is never overwritten; on a re-run it already reads the same file, which the run has just rewritten. A run with component ports makes a cell with _cosim on the end instead: the board's result block with each part on its own port, its analyses and a Data Display."/>
+                <!-- brief-isc-1 — the same cell, made now: for a run that finished with the box clear. -->
+                <Button Grid.Column="1" Name="CreateSchematicNowButton" FontSize="11" Padding="6,2" VerticalAlignment="Center"
+                        Content="Create now"
+                        IsVisible="{Binding ViewModel.CanCreateSchematicNow}"
+                        Command="{Binding ViewModel.CreateSchematicNowCommand}"
+                        ToolTip.Tip="Makes the schematic this setup's run would make, now, without running again: the SnP block reads this setup's existing s-parameter file. With no file yet, the cell is still made, its SnP block names the file the run will write, and Messages says so. If the cell already exists you are asked whether to replace its schematic or make a cell under another name."/>
+                </Grid>
+                <CheckBox Name="IncludeSchematicComponentsCheck" FontSize="11" Margin="20,0,0,0"
+                          Content="Include pre-existing schematic components"
+                          IsChecked="{Binding ViewModel.IncludeSchematicComponents}"
+                          ToolTip.Tip="Makes the cell from the Primary schematic of the cell this layout or 3D view belongs to, with _sch on the end: the lines and other copper the EM result now stands for are removed, every other component stays where it is with its values, and the SnP block is joined by net labels to each Port of the same number and to each part on a component port (one pin to its SnP pin, the other to ground). The schematic's own analyses, variables and goals come with it. Parts and ports that cannot be joined are left open and named in Messages, and the layout is compared with the schematic first so a renamed part or port is reported. With no Primary schematic, the ordinary schematic is made. It applies to Create now as well as to the run."/>
                   </StackPanel>
                 </Border>
 

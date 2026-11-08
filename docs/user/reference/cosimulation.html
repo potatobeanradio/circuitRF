@@ -267,7 +267,9 @@ nor a field set gets an SnP in place of the block. A run with no component ports
 <p>A planar run with <strong>Radiation pattern</strong> on works the same way: place an EM Field Data block on its record and add a Fields analysis. The hemisphere stays a hemisphere.
 A planar setup with <strong>component ports</strong> makes the <code>_cosim</code> cell and netlist as a 3D one does, each part across its own port, and the block's pins are its component ports
 by part. Without them the block's pins are the setup's own ports and the circuit is yours to draw. A via anywhere stops a planar pattern, and most boards with parts have
-vias: the run then says so, and its <code>_cosim</code> circuit reads the Touchstone through an SnP block instead.</p>
+vias: the run then says so, and its <code>_cosim</code> circuit reads the Touchstone through an SnP block instead.
+To put the board into the schematic it was drawn from rather than a circuit drawn for it, tick
+<a href="em-setup.html#snp-schematic-parts">Include pre-existing schematic components</a> as well: the cell is your schematic, its copper replaced by the run's SnP block.</p>
 <ul>
 <li><strong>A port for a part is a component port, or a delta gap you draw.</strong> A <a href="em-setup.html#component-ports">component port</a> needs nothing drawn: the solver adds a strip
 across the part's gap in the solved problem and cuts it with an internal delta gap. A port you draw yourself has to sit on metal, because a delta gap cuts metal:

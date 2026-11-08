@@ -263,6 +263,9 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The shell runs a setup: its name (null: the active one). Set by the workspace.</summary>
     public Func<C3dEditorViewModel, string?, Task>? RunRequested { get; set; }
 
+    /// <summary>brief-isc-1 — make the setup's SnP schematic now, without a run (null: the active setup). Set by the workspace.</summary>
+    public Func<C3dEditorViewModel, string?, Task>? CreateSchematicRequested { get; set; }
+
     /// <summary>brief-dfr36-1 R-dfr36-1-1 — mesh the setup named (null: the active one) with no solve, through the run's own path.</summary>
     public Func<C3dEditorViewModel, string?, Task>? MeshRequested { get; set; }
 
@@ -408,6 +411,8 @@ public sealed partial class C3dEditorViewModel
         }
         vm.EmbeddedSave = () => _ = SaveDocument();
         vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
+        if (CreateSchematicRequested is not null)
+            vm.CreateSchematicRequested = _ => CreateSchematicRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
         vm.MeshRequested = _ => MeshRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
         // brief-dfr31-1 R-dfr31-1-4 — the terminal picker lists this view's pieces of metal (from the elaboration the view
         // already holds, grouped off the UI thread), a row's Pick takes the next object clicked in the view, and the bodies

@@ -415,6 +415,13 @@ dotnet run --project tools/UiSnapshot --no-build -- --analysis-dialog <file.csch
 dotnet run --project tools/UiSnapshot --no-build -- --em-solves-dialog <file.csch> -o out.png
 ```
 
+**Create now's question** when the cell it would make already exists (brief-isc-1): Replace, Create under a typed name (the
+first free one is offered), or Cancel. The argument is the existing cell's folder; nothing is written.
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --cell-exists-dialog <workspace>/<cell> -o out.png
+```
+
 **The Run settings dialog** (brief CP-2) of an EM Field Data block's result record, what differs from its setup now marked:
 
 ```

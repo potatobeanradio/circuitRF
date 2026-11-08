@@ -4388,7 +4388,9 @@ pattern, and stays in that file. Over the protocol it is `run analysis=fields`.
 A parametric sweep around a far field runs when its analysis is named or by default, and naming the sweep runs the same chain (`sar.md` §11.12). The run's line goes to stderr before it starts, with
 the size of its pattern cubes, and `explain --analysis` reports the same size, or the refusal, as `fieldsSweep`. In `plot --trace`, `cut=` over such a cube is one curve per value with a legend, and a key naming an axis pins it: `cube=F1.farfield.U,cut=0,L1=5n`.
 
-A run with component ports writes `<setup>_cosim.cnl`, and with `CreateSnpSchematic` draws it as a `<setup>_cosim` cell, so `em` then `fields` on that cell needs nothing authored in between (`sar.md` §11.13). `check` warns on
+A setup with `IncludeSchematicComponents` as well makes `<setup>_sch` from the Primary schematic of the EM document's cell in place
+of either cell (brief-isc-1), and `em` prints each warning that making it found; `explain` on the `.cem` or `.c3d` names that
+schematic in its walk. A run with component ports writes `<setup>_cosim.cnl`, and with `CreateSnpSchematic` draws it as a `<setup>_cosim` cell, so `em` then `fields` on that cell needs nothing authored in between (`sar.md` §11.13). `check` warns on
 a part between two gap ports' nodes, by the record's port kinds.
 
 ### 28.3 Exit codes
