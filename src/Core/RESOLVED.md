@@ -2579,6 +2579,12 @@ parameter gone.
 name for it. `Elaborator` now binds `temp` into the global scope when nothing else does, so an
 expression naming it resolves everywhere. A design that states its own `temp` is untouched.
 
+**`temper` lands there too (2026-11-08).** It is the dialect's other name for the circuit temperature
+in °C, and a kit's model cards write it inside a temperature law (`tf = '…*((temper+273)/300)**0.7'`).
+Unbound, the whole value reached a compiled model as text and the run stopped at "expects a number".
+It is in the alias table onto `temp` now. A file DECLARING `temper` is not normalised: the dialect
+reserves the name. Gate: `SpiceReaderHygieneTests.H10b_TemperIsTheSameVariable`.
+
 The reader's half is a spelling change (`TEMP` → `temp`, via the alias table) plus the same
 normalisation applied to a `.param`/`.subckt` DECLARATION of that name — circuitRF's scopes are
 ordinal, so a file writing `.PARAM TEMP=40` and `{TEMP}` would otherwise declare one name and

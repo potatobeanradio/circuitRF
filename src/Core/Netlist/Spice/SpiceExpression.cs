@@ -471,6 +471,11 @@ public static class SpiceExpression
     /// matches case-insensitively and emits the spelling given here, so this is what turns the
     /// dialect's <c>TEMP</c> into the lower-case name circuitRF's elaborator reserves for the
     /// ambient.</para>
+    ///
+    /// <para><c>temper</c> is the dialect's other spelling of the same variable — the circuit
+    /// temperature in °C, as a kit's model cards write it inside a temperature law — so it lands on
+    /// the same name. Left alone it is an unbound name, and the whole parameter reaches a compiled
+    /// model as text.</para>
     /// </summary>
     private static readonly (string From, string To)[] Aliases =
     [
@@ -479,6 +484,7 @@ public static class SpiceExpression
         ("arcsin", "asin"),
         ("arccos", "acos"),
         (TemperatureIdentifier, TemperatureIdentifier),
+        ("temper", TemperatureIdentifier),
     ];
 
     /// <summary>
