@@ -257,7 +257,7 @@ public static class ComponentModelFactory
         if (typeName.Equals("AIRBRIDGE", StringComparison.OrdinalIgnoreCase))
             return CreateAirbridgeModel(parameters);
         if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
-            return CreateExternalDeviceModel(parameters);
+            return CreateExternalDeviceModel(parameters, ambientC);
         if (typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase))
             return CreateVerilogAModel(parameters, ambientC);
         if (typeName.Equals("Chain", StringComparison.OrdinalIgnoreCase))
@@ -363,7 +363,7 @@ public static class ComponentModelFactory
     /// circuitRF never interprets them, which is what lets one generic component serve any provider.
     /// </summary>
     private static ExternalDeviceModel CreateExternalDeviceModel(
-        IReadOnlyDictionary<string, Value> parameters)
+        IReadOnlyDictionary<string, Value> parameters, double ambientC)
     {
         // Resolved ONCE, by key, so that a model parameter which merely differs in case from a
         // selector is forwarded rather than swallowed — see ReservedKey.
@@ -411,6 +411,14 @@ public static class ComponentModelFactory
                 ? val.AsString()
                 : val.AsReal().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         }
+
+        // The design's ambient, in KELVIN, through the reserved key CreateVerilogAModel sends it by. Without it a worker
+        // sets the model up at its own default whatever the design states. Only a worker is sent it, since it lifts the
+        // key out at create; an in-process provider is still handed only names it declared (the `__` rule above).
+        // `Temp` and `Dtemp` are not read here: on this path they are the provider's own names, forwarded with the rest.
+        if (provider is DeviceWorkerProvider)
+            forwarded[DeviceWorkerProvider.ReservedTemperatureKey] =
+                Temperature.ToKelvin(ambientC).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
         string label = parameters.TryGetValue("__instanceLabel", out var lv) && lv.Kind == ValueKind.String
                        ? lv.AsString() : typeId;
