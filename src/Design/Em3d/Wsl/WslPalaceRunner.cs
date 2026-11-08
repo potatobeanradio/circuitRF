@@ -241,7 +241,9 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
                 catch (Exception e) when (e is InvalidOperationException or Win32Exception or NotSupportedException) { }
             }
             if (psi.RedirectStandardInput) p.StandardInput.Close();
-            var stderr = psi.RedirectStandardError ? p.StandardError.ReadToEndAsync(CancellationToken.None) : Task.FromResult("");
+            // As bytes: wsl.exe's own messages are UTF-16LE and tar's are UTF-8 relayed through it (WslText.Decode decides).
+            var errBytes = new MemoryStream();
+            var stderr = psi.RedirectStandardError ? p.StandardError.BaseStream.CopyToAsync(errBytes) : Task.CompletedTask;
             using var stop = ct.Register(Kill);
             string root = Path.GetFullPath(toPost).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             try
@@ -271,23 +273,32 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
                         // A link or a device: Palace writes neither, and the manifest check finds anything that should have been a file.
                     }
                 }
+                // The reader stops at the end-of-archive marker, but tar pads its output to a whole record (10 KB by default)
+                // and a Windows pipe holds about 4 KB: left unread, that padding blocks wsl.exe on its write and it never exits.
+                p.StandardOutput.BaseStream.CopyTo(Stream.Null);
             }
             catch (OperationCanceledException) { Kill(); throw; }
             catch (Exception e) when (e is InvalidDataException or IOException or FormatException or ArgumentException
                                           or UnauthorizedAccessException)
             {
+                if (ct.IsCancellationRequested) { Kill(); ct.ThrowIfCancellationRequested(); }
+                // A tar (or wsl.exe) that failed is a better reason than what the reader made of its truncated output.
+                if (p.WaitForExit(TimeSpan.FromSeconds(2)) && p.ExitCode != 0) return Exited();
                 Kill();
-                ct.ThrowIfCancellationRequested();
                 return e.Message;
             }
             p.WaitForExit();
             ct.ThrowIfCancellationRequested();
-            if (p.ExitCode != 0)
+            return p.ExitCode != 0 ? Exited() : null;
+
+            string Exited()
             {
-                string said = stderr.Wait(TimeSpan.FromSeconds(5)) ? stderr.Result.Trim() : "";
+                bool read;
+                try { read = stderr.Wait(TimeSpan.FromSeconds(5)); }
+                catch (AggregateException) { read = false; }
+                string said = read ? WslText.Decode(errBytes.ToArray()).Trim() : "";
                 return $"tar exited {p.ExitCode}" + (said.Length > 0 ? $": {said.Split('\n')[^1].Trim()}" : "");
             }
-            return null;
         }
     }
 

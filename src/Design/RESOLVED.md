@@ -28911,7 +28911,20 @@ technology's own rules, which are the board's and not the import's. Nothing was 
   because its results were already written, and a partial folder would read as the run's fields in the 3D view.
 - **Not a defect, though it looked like one:** the Linux staging directory IS removed when the leg ends, by `using var runner = plan.Runner` in
   `ExecutePalace`. No explicit `Dispose()` call appears anywhere, which is easy to misread.
-- Gate: `WslLocationTests.Gate4c` (stream, and file by file when the stream is not an archive) and `Gate4d` (stopped part way).
+- Gate: `WslLocationTests.Gate4c` (stream, and file by file when the stream is not an archive), `Gate4d` (stopped part way) and
+  `Gate4e` (read to the end).
+- **Review of that commit, same day.** `StreamFields` stopped reading at the end-of-archive marker and then waited for wsl.exe to
+  exit. tar pads its output to a whole 10 KB record, and a Windows pipe holds about 4 KB, so the padding could block wsl.exe on its
+  write: the copy would sit at 100 % for ever. It now reads the stream to its end. `Gate4e`'s fake tar sends the archive twice, more
+  than any pipe holds; without the drain it never ends, on every OS. Two smaller fixes. tar's stderr is now read as bytes through
+  `WslText.Decode`, because wsl.exe's own messages are UTF-16LE. When the reader fails because tar itself failed, the note gives tar's
+  exit code and last line, not the reader's "end of the stream".
+- **Checked against GNU tar 1.34 in a Linux container** (a scratch harness, not committed). An `IWsl` over the container's exec, with the
+  staging home bind-mounted as the share, the real `setsid` wrapper and a fake Palace writing 537 MB in 18 files. Every file arrived
+  byte for byte as one stream, including a path past 100 characters (a GNU long-name entry) and a name with spaces. Stopped at
+  100 MB, the copy returned in 0.4 s with no field folder. The Linux tar outlived the killed client for a moment, then died of
+  SIGPIPE, and the staging folder was removed. With tar missing, the fallback copied every file and named `tar exited 127`. This is
+  not wsl.exe: its relay and the `\\wsl.localhost` share's speed are still unmeasured.
 
 ## Component ports on a planar run: a strip and a delta gap (brief LCP-1, 2026-11-07)
 
