@@ -400,6 +400,53 @@ Colpitts, for example, starts where its transistor's low emitter impedance loads
 resonance of the tank with the transistor off. The harmonics pull the frequency a little too, so raise `MaxHarm` until
 `Fosc` stops moving.
 
+### Phase noise {#oscillator-phase-noise}
+
+`PhaseNoise=yes` computes the oscillation's phase noise from the circuit's own noise sources, so the effect of the
+resonator's Q, the device's flicker noise and the bias can be designed instead of assumed:
+
+```
+analysis OSC1 type=osc Fguess=140 Unit=MHz MaxHarm=9 PhaseNoise=yes PnStart=100 Hz PnStop=10 MHz PnNpts=61
+```
+
+The noise sources are the ones [harmonic-balance noise](#hb-noise) uses: passive parts at their own temperature, each
+device's noise over its own large-signal waveform (shot, channel and flicker, as the model declares them), and a Mixer's
+NF. Every Port and Term is the oscillator's load, a resistance at 290 K.
+
+**Two descriptions, joined.** Far from the carrier, the noise at the carrier's two sidebands comes straight from the
+conversion matrix about the oscillation, and splits into its phase part (`PN`) and its amplitude part (`AN`). Close to
+the carrier, nothing holds the oscillation's phase, so the noise moves its frequency instead. There the analysis uses
+how far the frequency moves for a small current at each noise source, which the oscillator's own solve already knows:
+white noise gives a 1/f² slope, flicker noise a 1/f³ slope. The two are joined at one tenth of the rate at which the
+oscillation's amplitude settles after a disturbance. Both hold there, and if they differ by more than 0.5 dB, the run
+warns.
+
+| Key | Default | |
+|---|---|---|
+| `PhaseNoise` | no | yes adds the cubes below |
+| `PnStart`, `PnStop` | 100 Hz, 10 MHz | The offsets from the carrier, with an optional Hz, kHz, MHz or GHz |
+| `PnNpts` | 61 | Number of offsets |
+| `PnLog` | yes | Offsets evenly spaced in log-frequency, or linearly |
+| `PnPort` | see below | The `Num` of the Port or Term the noise is read at |
+
+With `PnPort` blank, the noise is read across a shunt OscProbe, or at the circuit's one Port or Term when the OscProbe
+is in series. Close to the carrier the phase noise is the same everywhere. Far from it, it depends on where it is read,
+so name the output port.
+
+| Cube | Axes | |
+|---|---|---|
+| `PN` | offset | Phase noise L(f), dBc/Hz, single-sided |
+| `AN` | offset | Amplitude noise, dBc/Hz |
+| `PNc` | offset, part | Each part's phase noise, dBc/Hz; together they make `PN` |
+| `PNpct` | offset, part | Each part's share of `PN`, % |
+| `PNcorner` | — | The flicker corner, Hz: where the 1/f³ and 1/f² slopes cross (NaN without flicker) |
+
+Offsets at or beyond half the carrier are NaN.
+
+**Into a system simulation.** Right-click a `PN` trace's legend entry (or its header in a table) and choose **Copy as
+Phase-Noise Mask**. The clipboard then holds `PhaseNoise="100Hz:-71.19, …"`, ready to paste onto a source an
+[envelope](#envelope) run reads.
+
 From the command line, `circuitrf osc design.csch` runs it ([`osc`](cli.html#osc)).
 
 ## Circuit Envelope (modulated signals) {#envelope}

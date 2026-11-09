@@ -90,6 +90,28 @@ namespace RfCore.Signals
             return v * scale;
         }
 
+        /// <summary>
+        /// The text <see cref="Parse"/> reads, from <paramref name="points"/> (offset Hz, level dBc/Hz): offsets with a k, M or
+        /// G and Hz, levels to 0.01 dB. A point that is not finite, or whose offset does not rise past the one before, is left
+        /// out. Brief NZ-10: an oscillator's computed PN, pasted into a source's mask.
+        /// </summary>
+        public static string Format(IEnumerable<(double OffsetHz, double Dbc)> points)
+        {
+            var parts = new List<string>();
+            double last = 0;
+            foreach (var (f, l) in points)
+            {
+                if (!(f > last) || !double.IsFinite(f) || !double.IsFinite(l)) continue;
+                last = f;
+                (double v, string u) = f >= 1e9 ? (f / 1e9, "GHz") : f >= 1e6 ? (f / 1e6, "MHz") : f >= 1e3 ? (f / 1e3, "kHz") : (f, "Hz");
+                parts.Add(v.ToString("G6", CultureInfo.InvariantCulture) + u + ":" + l.ToString("F2", CultureInfo.InvariantCulture));
+            }
+            return string.Join(", ", parts);
+        }
+
+        /// <summary>The whole key as a source takes it: <c>PhaseNoise="…"</c>.</summary>
+        public static string Assignment(IEnumerable<(double OffsetHz, double Dbc)> points) => "PhaseNoise=\"" + Format(points) + "\"";
+
         /// <summary>L at <paramref name="offsetHz"/> &gt; 0, dBc/Hz.</summary>
         public double At(double offsetHz)
         {

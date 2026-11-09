@@ -520,6 +520,100 @@ active device spends part of each cycle cut off, and the capacitance and conduct
 Colpitts, for example, starts where its transistor's low emitter impedance loads one capacitor, and settles toward the
 resonance of the tank with the transistor off. The harmonics pull the frequency a little too, so raise <code>MaxHarm</code> until
 <code>Fosc</code> stops moving.</p>
+<h3 id="oscillator-phase-noise">Phase noise</h3>
+<p><code>PhaseNoise=yes</code> computes the oscillation's phase noise from the circuit's own noise sources, so the effect of the
+resonator's Q, the device's flicker noise and the bias can be designed instead of assumed:</p>
+<pre><code>analysis OSC1 type=osc Fguess=140 Unit=MHz MaxHarm=9 PhaseNoise=yes PnStart=100 Hz PnStop=10 MHz PnNpts=61
+</code></pre>
+<p>The noise sources are the ones <a href="#hb-noise">harmonic-balance noise</a> uses: passive parts at their own temperature, each
+device's noise over its own large-signal waveform (shot, channel and flicker, as the model declares them), and a Mixer's
+NF. Every Port and Term is the oscillator's load, a resistance at 290 K.</p>
+<p><strong>Two descriptions, joined.</strong> Far from the carrier, the noise at the carrier's two sidebands comes straight from the
+conversion matrix about the oscillation, and splits into its phase part (<code>PN</code>) and its amplitude part (<code>AN</code>). Close to
+the carrier, nothing holds the oscillation's phase, so the noise moves its frequency instead. There the analysis uses
+how far the frequency moves for a small current at each noise source, which the oscillator's own solve already knows:
+white noise gives a 1/f² slope, flicker noise a 1/f³ slope. The two are joined at one tenth of the rate at which the
+oscillation's amplitude settles after a disturbance. Both hold there, and if they differ by more than 0.5 dB, the run
+warns.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PhaseNoise</code></td>
+<td>no</td>
+<td>yes adds the cubes below</td>
+</tr>
+<tr>
+<td><code>PnStart</code>, <code>PnStop</code></td>
+<td>100 Hz, 10 MHz</td>
+<td>The offsets from the carrier, with an optional Hz, kHz, MHz or GHz</td>
+</tr>
+<tr>
+<td><code>PnNpts</code></td>
+<td>61</td>
+<td>Number of offsets</td>
+</tr>
+<tr>
+<td><code>PnLog</code></td>
+<td>yes</td>
+<td>Offsets evenly spaced in log-frequency, or linearly</td>
+</tr>
+<tr>
+<td><code>PnPort</code></td>
+<td>see below</td>
+<td>The <code>Num</code> of the Port or Term the noise is read at</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>PnPort</code> blank, the noise is read across a shunt OscProbe, or at the circuit's one Port or Term when the OscProbe
+is in series. Close to the carrier the phase noise is the same everywhere. Far from it, it depends on where it is read,
+so name the output port.</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Axes</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PN</code></td>
+<td>offset</td>
+<td>Phase noise L(f), dBc/Hz, single-sided</td>
+</tr>
+<tr>
+<td><code>AN</code></td>
+<td>offset</td>
+<td>Amplitude noise, dBc/Hz</td>
+</tr>
+<tr>
+<td><code>PNc</code></td>
+<td>offset, part</td>
+<td>Each part's phase noise, dBc/Hz; together they make <code>PN</code></td>
+</tr>
+<tr>
+<td><code>PNpct</code></td>
+<td>offset, part</td>
+<td>Each part's share of <code>PN</code>, %</td>
+</tr>
+<tr>
+<td><code>PNcorner</code></td>
+<td>—</td>
+<td>The flicker corner, Hz: where the 1/f³ and 1/f² slopes cross (NaN without flicker)</td>
+</tr>
+</tbody>
+</table>
+<p>Offsets at or beyond half the carrier are NaN.</p>
+<p><strong>Into a system simulation.</strong> Right-click a <code>PN</code> trace's legend entry (or its header in a table) and choose <strong>Copy as
+Phase-Noise Mask</strong>. The clipboard then holds <code>PhaseNoise=&quot;100Hz:-71.19, …&quot;</code>, ready to paste onto a source an
+<a href="#envelope">envelope</a> run reads.</p>
 <p>From the command line, <code>circuitrf osc design.csch</code> runs it (<a href="cli.html#osc"><code>osc</code></a>).</p>
 <h2 id="envelope">Circuit Envelope (modulated signals)</h2>
 <p><strong>Computes:</strong> the circuit's response to a <strong>modulated</strong> signal — LTE, NR, several carriers, a pulsed-CW

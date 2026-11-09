@@ -1238,10 +1238,14 @@ public sealed class CnlReader
         var tokens = TokeniseLine(rawLine);
         if (tokens.Count < 2) return false;
         var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? last = null;
         for (int i = 1; i < tokens.Count; i++)
         {
             int eq = tokens[i].IndexOf('=');
-            if (eq > 0) kv[tokens[i][..eq]] = tokens[i][(eq + 1)..].Trim('"');
+            if (eq > 0) kv[last = tokens[i][..eq]] = tokens[i][(eq + 1)..].Trim('"');
+            // Brief NZ-10: "PnStart=100 Hz" — a frequency unit standing alone belongs to the offset before it.
+            else if (last is not null && last.StartsWith("Pn", StringComparison.OrdinalIgnoreCase) && IsOffsetUnit(tokens[i]))
+                kv[last] = kv[last] + " " + tokens[i];
         }
         if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "osc") return false;
         result = new OscillatorAnalysis(tokens[0])
@@ -1255,9 +1259,19 @@ public sealed class CnlReader
             FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample", "1"),
             TolExpr           = kv.GetValueOrDefault("Tol", "1e-6"),
             AguessExpr        = kv.GetValueOrDefault("Aguess", ""),
+            PhaseNoise        = IsYes(kv.GetValueOrDefault("PhaseNoise", "no")),
+            PnStartExpr       = kv.GetValueOrDefault("PnStart", OscillatorAnalysis.DefaultPnStart),
+            PnStopExpr        = kv.GetValueOrDefault("PnStop", OscillatorAnalysis.DefaultPnStop),
+            PnNptsExpr        = kv.GetValueOrDefault("PnNpts", OscillatorAnalysis.DefaultPnNpts),
+            PnLog             = IsYes(kv.GetValueOrDefault("PnLog", "yes")),
+            PnPortExpr        = kv.GetValueOrDefault("PnPort", ""),
             Enabled           = ParseEnabledToken(tokens),
         };
         return true;
+
+        static bool IsYes(string v) => v.Trim().ToLowerInvariant() is "yes" or "true" or "1" or "on";
+        static bool IsOffsetUnit(string t) => t.Equals("Hz", StringComparison.OrdinalIgnoreCase) || t.Equals("kHz", StringComparison.OrdinalIgnoreCase)
+                                              || t.Equals("MHz", StringComparison.OrdinalIgnoreCase) || t.Equals("GHz", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryParseTrlDirective(string rawLine, out TrlAnalysis? result)

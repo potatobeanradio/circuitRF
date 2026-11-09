@@ -12,8 +12,8 @@ namespace CircuitRF.Cli;
 /// <para><b>It owns no solve.</b> The run is <see cref="CircuitEvaluation.Execute"/>, which dispatches the oscillator engine
 /// exactly as Simulate does, and a <c>parametric_sweep</c> wrapping the analysis runs the whole sweep (naming the inner
 /// analysis is promoted to its wrapper, as for <c>hb</c>). <c>--fguess</c>, <c>--maxharm</c>, <c>--tol</c>, <c>--aguess</c>
-/// and <c>--probe</c> REPLACE the directive (<c>cli.md</c> §5); <c>--set var=expr</c> overrides a global before
-/// elaboration.</para>
+/// and <c>--probe</c> REPLACE the directive (<c>cli.md</c> §5), and <c>--phase-noise</c> turns its <c>PhaseNoise</c> on (brief
+/// NZ-10); <c>--set var=expr</c> overrides a global before elaboration.</para>
 ///
 /// <para><b>Exit codes:</b> 0 the oscillation was found · 1 refused (no start-up, no probe) or failed · 130 cancelled.</para>
 /// </summary>
@@ -25,6 +25,7 @@ internal static class Osc
     public static int Run(string[] args)
     {
         string? input = null, output = null, name = null, fguess = null, maxHarm = null, tol = null, aguess = null, probe = null;
+        bool phaseNoise = false;
         var sets = new List<(string Name, string Expr)>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -39,6 +40,7 @@ internal static class Osc
                 case "--tol" when hasValue: tol = args[++i]; break;
                 case "--aguess" when hasValue: aguess = args[++i]; break;
                 case "--probe" when hasValue: probe = args[++i]; break;
+                case "--phase-noise": phaseNoise = true; break;
                 case "--set" when hasValue:
                 {
                     string kv = args[++i];
@@ -58,7 +60,7 @@ internal static class Osc
         {
             int code = JsonRun.Fail(CliDiagnostics.InputRequired(Verb, ".cnl or .csch"));
             Console.Error.WriteLine("Usage: circuitrf osc <file.cnl|.csch> [-a name] [--set var=expr]... [--fguess f] [--maxharm k] [--tol t]");
-            Console.Error.WriteLine("                     [--aguess a] [--probe X1] [-o out.{mat,npy,txt}]");
+            Console.Error.WriteLine("                     [--aguess a] [--probe X1] [--phase-noise] [-o out.{mat,npy,txt}]");
             Console.Error.WriteLine("  --fguess is in the directive's Unit (GHz unless it says otherwise).");
             return code;
         }
@@ -85,7 +87,7 @@ internal static class Osc
         if (sel.Selected is not { } top) return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, sel.Why!));
 
         // §5: an override replaces the directive, so the run is the GUI's run of the edited bench.
-        if ((fguess ?? maxHarm ?? tol ?? aguess ?? probe) is not null
+        if (((fguess ?? maxHarm ?? tol ?? aguess ?? probe) is not null || phaseNoise)
             && ChainSelector.BaseOfChain(top, tb) is OscillatorAnalysis o)
         {
             int i = tb.Analyses.IndexOf(o);
@@ -95,6 +97,8 @@ internal static class Osc
                 Probe = probe ?? o.Probe, FguessExpr = fguess ?? o.FguessExpr, FstartExpr = o.FstartExpr, FstopExpr = o.FstopExpr,
                 Unit = o.Unit, MaxHarmonicExpr = maxHarm ?? o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr,
                 TolExpr = tol ?? o.TolExpr, AguessExpr = aguess ?? o.AguessExpr,
+                PhaseNoise = phaseNoise || o.PhaseNoise, PnStartExpr = o.PnStartExpr, PnStopExpr = o.PnStopExpr,
+                PnNptsExpr = o.PnNptsExpr, PnLog = o.PnLog, PnPortExpr = o.PnPortExpr,
             };
             // Fstart/Fstop left blank follow the new Fguess; stated ones stay as written.
         }

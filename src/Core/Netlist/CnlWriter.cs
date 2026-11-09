@@ -382,7 +382,12 @@ public static class CnlWriter
                                          (osc.FstartExpr.Length > 0 ? $" Fstart=\"{osc.FstartExpr}\"" : "") +
                                          (osc.FstopExpr.Length > 0 ? $" Fstop=\"{osc.FstopExpr}\"" : "") +
                                          $" Unit={osc.Unit} MaxHarm=\"{osc.MaxHarmonicExpr}\" FFTOverSample=\"{osc.FFTOverSampleExpr}\" Tol=\"{osc.TolExpr}\"" +
-                                         (osc.AguessExpr.Length > 0 ? $" Aguess=\"{osc.AguessExpr}\"" : ""),
+                                         (osc.AguessExpr.Length > 0 ? $" Aguess=\"{osc.AguessExpr}\"" : "") +
+                                         // Brief NZ-10: written only when asked for, so an oscillator without it writes what it did before.
+                                         (osc.PhaseNoise
+                                             ? $" PhaseNoise=yes PnStart=\"{osc.PnStartExpr}\" PnStop=\"{osc.PnStopExpr}\" PnNpts=\"{osc.PnNptsExpr}\"" +
+                                               $" PnLog={(osc.PnLog ? "yes" : "no")}" + (osc.PnPortExpr.Length > 0 ? $" PnPort=\"{osc.PnPortExpr}\"" : "")
+                                             : ""),
         TrlAnalysis trl               => $"analysis {trl.Name} type=trl thru={trl.Thru} reflect={trl.Reflect} line={trl.Line} reflectType={trl.ReflectType}" +
                                          (trl.FixtureA.Length > 0 ? $" fixtureA=\"{trl.FixtureA}\"" : "") +
                                          (trl.FixtureB.Length > 0 ? $" fixtureB=\"{trl.FixtureB}\"" : ""),

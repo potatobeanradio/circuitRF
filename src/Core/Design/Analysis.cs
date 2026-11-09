@@ -225,6 +225,25 @@ public sealed class OscillatorAnalysis(string name) : Analysis(name)
     /// <summary><c>Aguess=</c>: the generator amplitude to start from (volts for a shunt probe, amperes for a series one);
     /// blank to ramp up from a small one.</summary>
     public string AguessExpr   { get; init; } = "";
+
+    // ── Brief NZ-10: phase noise ─────────────────────────────────────────────
+
+    /// <summary><c>PhaseNoise=yes</c>: the oscillation's phase and amplitude noise over an offset sweep. Off by default, and a
+    /// run without it is the one from before.</summary>
+    public bool   PhaseNoise   { get; init; }
+    /// <summary><c>PnStart=</c>: the lowest offset from the carrier, with an optional Hz/kHz/MHz/GHz (Hz when bare).</summary>
+    public string PnStartExpr  { get; init; } = DefaultPnStart;
+    /// <summary><c>PnStop=</c>: the highest offset from the carrier, as <see cref="PnStartExpr"/>.</summary>
+    public string PnStopExpr   { get; init; } = DefaultPnStop;
+    /// <summary><c>PnNpts=</c>: how many offsets.</summary>
+    public string PnNptsExpr   { get; init; } = DefaultPnNpts;
+    /// <summary><c>PnLog=</c>: offsets spaced evenly in log-frequency (the default) or linearly.</summary>
+    public bool   PnLog        { get; init; } = true;
+    /// <summary><c>PnPort=</c>: the Num of the Port or Term the noise is read at. Blank reads it across a shunt OscProbe,
+    /// or at the circuit's one Port or Term when the OscProbe is in series.</summary>
+    public string PnPortExpr   { get; init; } = "";
+
+    public const string DefaultPnStart = "100 Hz", DefaultPnStop = "10 MHz", DefaultPnNpts = "61";
 }
 
 /// <summary>

@@ -23,6 +23,9 @@ public sealed record OscParams(
 {
     /// <summary>How many points the start-up search samples across Fstart..Fstop before refining each crossing.</summary>
     public int StartupPoints { get; init; } = 401;
+
+    /// <summary>Brief NZ-10: the phase-noise sweep of <c>PhaseNoise=yes</c>, or null — and a null run is the one from before.</summary>
+    public OscPhaseNoiseParams? PhaseNoise { get; init; }
 }
 
 /// <summary>The small-signal start-up search: the probe's admittance across the span, and where the start-up condition holds.</summary>
@@ -91,7 +94,57 @@ public static class OscEngine
         double aGuess = Num(a.AguessExpr, double.NaN);
         return new OscParams(a.Name, a.Probe.Trim(), guess, start, stop,
             Math.Max(1, (int)Num(a.MaxHarmonicExpr, 7)), Math.Max(1, (int)Num(a.FFTOverSampleExpr, 1)), Num(a.TolExpr, 1e-6),
-            double.IsFinite(aGuess) && aGuess > 0 ? aGuess : null);
+            double.IsFinite(aGuess) && aGuess > 0 ? aGuess : null)
+        {
+            PhaseNoise = a.PhaseNoise ? ResolvePhaseNoise(a, globals) : null,
+        };
+    }
+
+    /// <summary>Brief NZ-10: <c>PnStart</c>, <c>PnStop</c>, <c>PnNpts</c>, <c>PnLog</c> and <c>PnPort</c>, each refused by name
+    /// when it does not resolve.</summary>
+    private static OscPhaseNoiseParams ResolvePhaseNoise(OscillatorAnalysis a, IReadOnlyDictionary<string, Value> globals)
+    {
+        double Eval(string key, string text)
+        {
+            try
+            {
+                var val = HbEngine.BuildEvaluator(globals).EvalExpr(Parser.Parse(text), HbEngine.BuildScope(globals));
+                return val.Kind == ValueKind.Real ? val.AsReal() : val.AsComplex().Real;
+            }
+            catch (ExpressionException)
+            {
+                throw new InvalidOperationException(OscDiagnostics.PnBadKey(a.Name, key, text).Render());
+            }
+        }
+        double Hz(string key, string text)
+        {
+            string t = (text ?? "").Trim().Trim('"').Trim();
+            double scale = 1;
+            foreach (var (suffix, mult) in new[] { ("GHz", 1e9), ("MHz", 1e6), ("kHz", 1e3), ("Hz", 1.0) })
+                if (t.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && t.Length > suffix.Length)
+                {
+                    t = t[..^suffix.Length].Trim();
+                    scale = mult;
+                    break;
+                }
+            double v = t.Length == 0 ? double.NaN : Eval(key, t) * scale;
+            if (!(v > 0) || !double.IsFinite(v))
+                throw new InvalidOperationException(OscDiagnostics.PnBadKey(a.Name, key, text ?? "").Render());
+            return v;
+        }
+        double lo = Hz("PnStart", a.PnStartExpr), hi = Hz("PnStop", a.PnStopExpr);
+        double n = Eval("PnNpts", a.PnNptsExpr);
+        if (!(hi > lo) || !(n >= 2) || n != Math.Floor(n))
+            throw new InvalidOperationException(OscDiagnostics.PnBadSweep(a.Name, lo, hi, a.PnNptsExpr).Render());
+        int? port = null;
+        if (!string.IsNullOrWhiteSpace(a.PnPortExpr))
+        {
+            double pv = Eval("PnPort", a.PnPortExpr);
+            if (pv != Math.Floor(pv) || pv < 0)
+                throw new InvalidOperationException(OscDiagnostics.PnBadKey(a.Name, "PnPort", a.PnPortExpr).Render());
+            port = (int)pv;
+        }
+        return new OscPhaseNoiseParams(lo, hi, (int)n, a.PnLog, port);
     }
 
     /// <summary>The OscProbe an analysis runs on: the one <paramref name="probe"/> names, or the only one there is.</summary>
@@ -108,6 +161,15 @@ public static class OscEngine
             _ => throw new InvalidOperationException(
                      OscDiagnostics.SeveralProbes(analysis, string.Join(", ", all.Select(c => c.InstancePath))).Render()),
         };
+    }
+
+    /// <summary>Brief NZ-10: the instance the phase noise of <paramref name="p"/> is read at — a Port, a Term or the OscProbe —
+    /// or the refusal the run gives, thrown. Null when the analysis does not ask for phase noise.</summary>
+    public static string? PhaseNoiseReadAt(ElaboratedNetlist nl, OscParams p)
+    {
+        if (p.PhaseNoise is not { } pn) return null;
+        var probe = FindProbe(nl, p.Analysis, p.Probe);
+        return OscPhaseNoise.Output(nl, p.Analysis, probe, OscProbeModel.IsShunt(probe), pn.OutPort).Where;
     }
 
     // ── Start-up ──────────────────────────────────────────────────────────────
@@ -244,8 +306,9 @@ public static class OscEngine
         Complex[,]? warm = null;
         int solves = 0;
 
-        // One driven solve: the probe's generator at (A, f), the circuit's immittance at the probe over its scale.
-        (Complex R, Complex[,] V)? Eval(double a, double hz)
+        // One driven solve: the probe's generator at (A, f), the circuit's immittance at the probe over its scale, and the
+        // probe's own voltage at the fundamental.
+        (Complex R, Complex[,] V, Complex Vab)? Eval(double a, double hz)
         {
             model.DriveOmega = 2 * Math.PI * hz;
             model.DriveAmplitude = a;
@@ -267,7 +330,7 @@ public static class OscEngine
             var back = sp.BackSolver!;
             Complex vab = back.GetNodeVoltage(probe.Nodes[0], 1, 0) - back.GetNodeVoltage(probe.Nodes[1], 1, 0);
             Complex w = shunt ? gGen * (a - vab) / vab : -vab / (a + gGen * vab);
-            return (w / scale, sp.V);
+            return (w / scale, sp.V, vab);
         }
 
         try
@@ -318,7 +381,7 @@ public static class OscEngine
                 dv = Math.Clamp(dv, -0.05, 0.05);
 
                 double step = 1;
-                (Complex R, Complex[,] V)? next = null;
+                (Complex R, Complex[,] V, Complex Vab)? next = null;
                 double aN = a, fN = f;
                 var keep = warm;
                 for (int bt = 0; bt < 12; bt++, step *= 0.5)
@@ -345,6 +408,41 @@ public static class OscEngine
             ds.Add("Fosc", new DataCube(Array.Empty<Axis>(), [f]) { Unit = "Hz" });
             ds.Add("Aosc", new DataCube(Array.Empty<Axis>(), [a]) { Unit = unit });
             ds.Add("Startup", new DataCube([new Axis("freq", startup.FreqsHz, "Hz")], startup.Admittance) { Unit = "S" });
+
+            // ── Brief NZ-10: phase noise about this oscillation ──
+            if (p.PhaseNoise is { } pn)
+            {
+                // The outer Newton's Jacobian, by central differences about the answer: what the oscillation's amplitude and
+                // frequency do when the residual is pushed. Each column also records the probe's own level (|V| in shunt, the
+                // loop current in series), so the circuit's immittance can be told apart from the residual's parametrisation.
+                var keep = warm;
+                const double dLnA = 1e-4, dRelF = 1e-5;
+                (Complex R, Complex[,] V, Complex Vab) At(double aa, double ff)
+                {
+                    warm = keep;
+                    return Eval(aa, ff) ?? throw Fail(ff, aa, "the phase-noise sensitivity");
+                }
+                var ap = At(a * Math.Exp(dLnA), f);
+                var am = At(a * Math.Exp(-dLnA), f);
+                var fp = At(a, f * (1 + dRelF));
+                var fm = At(a, f * (1 - dRelF));
+                double Level(double aa, Complex vab) => shunt ? vab.Magnitude : (aa + gGen * vab).Magnitude;
+                Complex rLnA = (ap.R - am.R) / (2 * dLnA);
+                Complex rF   = (fp.R - fm.R) / (2 * dRelF * f);
+                double lvA = (Math.Log(Level(a * Math.Exp(dLnA), ap.Vab)) - Math.Log(Level(a * Math.Exp(-dLnA), am.Vab))) / (2 * dLnA);
+                double lvF = (Math.Log(Level(a, fp.Vab)) - Math.Log(Level(a, fm.Vab))) / (2 * dRelF * f);
+                Complex wLnL = rLnA / lvA;
+                Complex wF   = rF - wLnL * lvF;
+
+                warm = keep;
+                model.DriveOmega = 2 * Math.PI * f; model.DriveAmplitude = a; model.DriveConductance = gGen;
+                var point = engine.RunSinglePoint(Params(p, f, Math.Min(p.Tol, 1e-9 * (shunt ? gGen * a : a))), keep);
+                if (point.Linearization is null || point.BackSolver is null)
+                    throw Fail(f, a, "the phase-noise linearisation");
+                Complex vabC = point.BackSolver.GetNodeVoltage(probe.Nodes[0], 1, 0) - point.BackSolver.GetNodeVoltage(probe.Nodes[1], 1, 0);
+                OscPhaseNoise.Add(ds, nl, new OscPhaseNoiseInputs(p.Analysis, pn, point, probe, shunt, a, f, vabC, gGen, scale,
+                                                                  rLnA, rF, wLnL, wF));
+            }
             return new OscResult(ds, run, f, a, startup, iter);
         }
         finally

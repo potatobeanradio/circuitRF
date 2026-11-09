@@ -2451,7 +2451,8 @@ namespace RfCore.Export
     /// <summary>
     /// <c>explain --analysis</c>'s line for an oscillator analysis (brief NZ-9): the OscProbe and its mode, the start-up search's
     /// span (Hz), the frequency where the small-signal immittance at the probe has a negative real part at a zero of its
-    /// imaginary part and that real part (S in shunt, ohm in series) — or the sentence the run refuses with.
+    /// imaginary part and that real part (S in shunt, ohm in series) — or the sentence the run refuses with. With
+    /// <c>PhaseNoise=yes</c> (brief NZ-10), the offsets (Hz) and the instance the noise is read at.
     /// </summary>
     public sealed record ExplainOscJson(
         string Probe, string Mode, double FstartHz, double FstopHz, double FguessHz,
@@ -2460,7 +2461,13 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         double? StartupReal = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Refusal = null);
+        string? Refusal = null)
+    {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ExplainPhaseNoiseJson? PhaseNoise { get; init; }
+    }
+
+    /// <summary><c>explain --analysis</c>'s phase-noise line for an oscillator (brief NZ-10).</summary>
+    public sealed record ExplainPhaseNoiseJson(double StartHz, double StopHz, int Points, bool Log, string ReadAt);
 
     public sealed record ExplainLoadpullNoiseJson(
         string In, string Out, string Sideband, double RequestedHz, double ReadHz, double InputHz,

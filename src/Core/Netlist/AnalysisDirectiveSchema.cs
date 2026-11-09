@@ -292,6 +292,13 @@ public static partial class AnalysisDirectiveSchema
             new("FFTOverSample", Default: "1",   Summary: "Oversampling factor for the time-domain transform, as HB's."),
             new("Tol",           Default: "1e-6",Summary: "Newton convergence tolerance of every harmonic-balance solve, in amperes, as HB's. The search tightens it to a billionth of the probe generator's own current where that is smaller."),
             new("Aguess",        Summary: "The probe generator's amplitude to start from: volts for a shunt OscProbe, amperes for a series one. Blank ramps it up from a small one until the circuit's negative resistance runs out."),
+            // brief NZ-10 — phase noise from the circuit's own noise sources
+            new("PhaseNoise",    Default: "no",     Summary: "yes: the oscillation's phase noise PN and amplitude noise AN (dBc/Hz, single-sided) over PnStart-PnStop, each part's share (PNc, PNpct) and the flicker corner PNcorner. Close to the carrier from the frequency's sensitivity to each noise source, far from it from the conversion matrix, joined a decade below the rate at which the amplitude settles."),
+            new("PnStart",       Default: "100 Hz", Summary: "Lowest offset from the carrier, with an optional Hz, kHz, MHz or GHz (Hz when bare)."),
+            new("PnStop",        Default: "10 MHz", Summary: "Highest offset from the carrier, as PnStart. Offsets at or beyond half the carrier are NaN."),
+            new("PnNpts",        Default: "61",     Summary: "Number of offsets."),
+            new("PnLog",         Default: "yes",    Summary: "yes: offsets evenly spaced in log-frequency; no: linearly."),
+            new("PnPort",        Summary: "Num of the Port or Term the noise is read at. Blank reads it across a shunt OscProbe, or at the circuit's one Port or Term when the OscProbe is in series."),
         ]),
     ];
 

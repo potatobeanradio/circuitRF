@@ -88,7 +88,8 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
             {
                 Enabled = a.Enabled, Probe = o.Probe, FguessExpr = o.FguessExpr, FstartExpr = o.FstartExpr, FstopExpr = o.FstopExpr,
                 Unit = o.Unit, MaxHarmonicExpr = o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr, TolExpr = o.TolExpr,
-                AguessExpr = o.AguessExpr,
+                AguessExpr = o.AguessExpr, PhaseNoise = o.PhaseNoise, PnStartExpr = o.PnStartExpr, PnStopExpr = o.PnStopExpr,
+                PnNptsExpr = o.PnNptsExpr, PnLog = o.PnLog, PnPortExpr = o.PnPortExpr,
             },
 
         SParameterAnalysis sp => sp.WithSweeps(newName, sp.Sweeps),

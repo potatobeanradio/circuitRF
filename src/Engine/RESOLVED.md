@@ -4271,3 +4271,29 @@ Both found while building NZ-8, both one cause: `Tol` is absolute (1e-6 A at the
   and is off most of the cycle, so the tank falls to L with C1 in series with C2. At a loop gain near 3 it lands 6.8 %
   below (130.89 MHz against 140.41), above the transistor-off resonance (129.09 MHz), from Fguess ±20 % alike. That
   bracket — start-up frequency above, transistor-off resonance below — is the stated pull.
+
+## Brief NZ-10 — oscillator phase noise (`OscPhaseNoise`)
+
+Design note: `docs/design/hb-noise.md` §10. Findings:
+
+- **HB noise centred on its output frequency cannot see an oscillator's phase mode at low MaxHarm.** NZ-5 builds the
+  sidebands `f_out + k·f0`, k = −K…K. Read at `f0 + f_m` with K = 1 that set is `f_m`, `f0 + f_m`, `2f0 + f_m`: the
+  carrier's other sideband `f0 − f_m` (k = −2) is missing, the upper and lower sidebands cannot couple, and the noise of
+  the held oscillation reads 6 dB low with no error anywhere. Phase noise therefore uses a baseband frame — offset `f_m`,
+  sidebands `f_m + k·f0` — which holds both carrier sidebands at any K ≥ 1, and reads the two through two adjoints of the
+  same matrix (`HbNoise.Adjoint`, now shared, at sideband ±1 instead of 0). The far-out gate compares against NZ-5 at
+  MaxHarm = 3, where both sets hold both sidebands; it agrees to 0.002 dB.
+- **The outer residual is not the circuit's immittance, and the difference matters for one number only.** NZ-9's residual
+  is the generator's current over the probe's voltage, at a fixed generator amplitude A, so `∂R/∂ln A` carries a factor
+  `G/(K + G)` (G the generator's conductance, K the circuit's amplitude stiffness) that the circuit's own immittance does
+  not. For the frequency's sensitivity this is harmless: the bordered solve `−M⁻¹·δR` uses R's own derivatives
+  consistently, and a hand derivation that took M to be the circuit's immittance gave a wrong amplitude sensitivity by
+  exactly that factor. For the amplitude's relaxation rate, which places the join, the circuit's immittance is the one
+  meant, so it is recovered from the same four solves by dividing out the probe level's own response to A.
+- **The probe's generator must not be a noise source.** Armed, the OscProbe stamps a conductance at `f0` exactly, which
+  the thermal classification would give 4kT·G of noise. It is claimed and dropped, and once the static sensitivity is taken the
+  probe is disarmed, so a conversion matrix at an offset inside the generator's 1e-9·f0 window (only reachable when there
+  is no relaxation rate to join at) is still the autonomous circuit's.
+- **A static adjoint at `ω_ss = 0` is well posed in two-sided form.** The ±k sideband unknowns are conjugates there, but the
+  complex matrix is the complexification of the real Jacobian, so it is invertible exactly when the held circuit's
+  Jacobian is; a slow real current has `u_{−k} = conj u_k`, which turns `Re(conj μ·δR)` into one complex row per sideband.

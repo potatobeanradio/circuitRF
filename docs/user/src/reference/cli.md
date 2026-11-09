@@ -535,13 +535,14 @@ Exit **0** when it ran, a usable-band warning included, **1** refused or failed,
 
 ## `osc` — a free-running oscillator {#osc}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf osc &lt;design.cnl|.csch&gt; [-a name] [--set var=expr]... [--fguess f] [--maxharm k] [--tol t] [--aguess a] [--probe OP1] [-o out.{mat,npy,txt}]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf osc &lt;design.cnl|.csch&gt; [-a name] [--set var=expr]... [--fguess f] [--maxharm k] [--tol t] [--aguess a] [--probe OP1] [--phase-noise] [-o out.{mat,npy,txt}]</code></pre>
 
 Runs the design's [oscillator analysis](simulations.html#oscillator), or the one `-a` names: the start-up search, then
 harmonic balance with the frequency as an unknown. A parametric sweep wrapping it runs the whole sweep, so a tuning curve
 is one command. `--fguess` (in the directive's `Unit`), `--maxharm`, `--tol`, `--aguess` and `--probe` replace the
-directive's keys. The result is `Fosc`, `Aosc`, `Startup` and the harmonic-balance cubes at the oscillation, with the
-design's measurements beside them.
+directive's keys, and `--phase-noise` turns on its [phase noise](simulations.html#oscillator-phase-noise). The result is
+`Fosc`, `Aosc`, `Startup` and the harmonic-balance cubes at the oscillation, with the design's measurements beside them,
+and `PN`, `AN`, `PNc`, `PNpct` and `PNcorner` with phase noise.
 
 Exit **0** when the oscillation was found, **1** refused (the circuit does not start, or has no OscProbe) or failed,
 **130** cancelled.

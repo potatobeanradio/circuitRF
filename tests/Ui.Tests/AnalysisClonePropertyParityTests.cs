@@ -54,6 +54,7 @@ public sealed class AnalysisClonePropertyParityTests
         {
             Enabled = false, Probe = "X1.OP", FguessExpr = "fv*1.1", FstartExpr = "0.8", FstopExpr = "1.4", Unit = "MHz",
             MaxHarmonicExpr = "11", FFTOverSampleExpr = "2", TolExpr = "1e-9", AguessExpr = "0.3",
+            PhaseNoise = true, PnStartExpr = "1 kHz", PnStopExpr = "fs/4", PnNptsExpr = "31", PnLog = false, PnPortExpr = "2",
         },
 
         [typeof(EnvelopeAnalysis)] = new EnvelopeAnalysis("ENV1")

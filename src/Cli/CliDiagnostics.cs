@@ -1864,6 +1864,13 @@ internal static class CliDiagnostics
         "{path}: {why}",
         ("path", path), ("analysis", analysis), ("why", why));
 
+    /// <summary>Brief NZ-10 — an oscillator's phase-noise keys that do not resolve, or name nowhere to read: the run's own
+    /// refusal, as a finding.</summary>
+    public static Diagnostic CheckOscPhaseNoise(string path, string analysis, string why) => Diagnostic.Create(
+        "check.osc.phase-noise", DiagnosticSeverity.Error,
+        "{path}: {why}",
+        ("path", path), ("analysis", analysis), ("why", why));
+
     public static Diagnostic CheckWsProbeShorted(string path, string probe, string net) => Diagnostic.Create(
         "wsprobe.shorted", DiagnosticSeverity.Warning,
         "{path}: WSProbe '{probe}' has both terminals on net '{net}'. A WSProbe splits a node into a " +

@@ -67,4 +67,84 @@ public static class OscDiagnostics
         "generator still doing work ({r} of the probe's own immittance scale). Give Fguess and Aguess nearer the answer, or " +
         "narrow Fstart/Fstop around the start-up frequency.",
         ("analysis", analysis), ("f", Ghz(hz)), ("a", amplitude), ("r", residual.ToString("E2", CultureInfo.InvariantCulture)));
+
+    // ── Brief NZ-10: phase noise ─────────────────────────────────────────────
+
+    private static string Hz(double hz) => hz.ToString("G6", CultureInfo.InvariantCulture) + " Hz";
+
+    /// <summary>A phase-noise key that does not resolve.</summary>
+    public static Diagnostic PnBadKey(string analysis, string key, string text) => Diagnostic.Create(
+        "osc.pn.bad-key", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': {key}={text} does not resolve. PnStart and PnStop are positive offsets from the " +
+        "carrier (a number or a variable, with an optional Hz, kHz, MHz or GHz), PnNpts a whole number of points and " +
+        "PnPort the Num of a Port or Term.",
+        ("analysis", analysis), ("key", key), ("text", text));
+
+    /// <summary>An offset sweep that is empty.</summary>
+    public static Diagnostic PnBadSweep(string analysis, double startHz, double stopHz, string npts) => Diagnostic.Create(
+        "osc.pn.bad-sweep", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': the phase-noise offsets need PnStart < PnStop and at least two points, and have " +
+        "PnStart={start}, PnStop={stop}, PnNpts={npts}.",
+        ("analysis", analysis), ("start", Hz(startHz)), ("stop", Hz(stopHz)), ("npts", npts));
+
+    /// <summary>Nowhere to read the noise.</summary>
+    public static Diagnostic PnNoOutput(string analysis, string probe) => Diagnostic.Create(
+        "osc.pn.no-output", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': the OscProbe {probe} is in series, so it holds no voltage to read the phase noise " +
+        "across, and the circuit has no single Port or Term to read it at instead. Give PnPort=<Num> of the output port.",
+        ("analysis", analysis), ("probe", probe));
+
+    /// <summary>PnPort naming no port.</summary>
+    public static Diagnostic PnNoPort(string analysis, int num) => Diagnostic.Create(
+        "osc.pn.no-port", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': PnPort={num} names no top-level Port or Term.",
+        ("analysis", analysis), ("num", num));
+
+    /// <summary>No carrier where the noise is read.</summary>
+    public static Diagnostic PnNoCarrier(string analysis, string where) => Diagnostic.Create(
+        "osc.pn.no-carrier", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': the oscillation has no voltage at the fundamental across {where}, so there is no " +
+        "carrier to refer the noise to. Read it where the oscillation is (PnPort=).",
+        ("analysis", analysis), ("where", where));
+
+    public const string PnAboveHalfKey = "osc.pn.above-half";
+    /// <summary>Offsets at or beyond half the carrier.</summary>
+    public static Diagnostic PnAboveHalf(string analysis, double foscHz) => Diagnostic.Create(
+        PnAboveHalfKey, DiagnosticSeverity.Warning,
+        "Oscillator analysis '{analysis}': offsets at or beyond half the carrier ({half}) are NaN. There the upper sideband " +
+        "of one harmonic is the lower sideband of the next, so an offset no longer names one side of the carrier.",
+        ("analysis", analysis), ("half", Hz(foscHz / 2)));
+
+    public const string PnSingularKey = "osc.pn.singular";
+    /// <summary>A conversion matrix that would not factorise.</summary>
+    public static Diagnostic PnSingular(string analysis, double offsetHz) => Diagnostic.Create(
+        PnSingularKey, DiagnosticSeverity.Warning,
+        "Oscillator analysis '{analysis}': the conversion matrix at the offset {f} is singular; the phase noise there is NaN.",
+        ("analysis", analysis), ("f", Hz(offsetHz)));
+
+    public const string PnNoRelaxationKey = "osc.pn.no-relaxation";
+    /// <summary>The amplitude has no restoring force the join can be placed against.</summary>
+    public static Diagnostic PnNoRelaxation(string analysis) => Diagnostic.Create(
+        PnNoRelaxationKey, DiagnosticSeverity.Warning,
+        "Oscillator analysis '{analysis}': the oscillation's amplitude shows no restoring force at the probe, so the offset " +
+        "below which the frequency-sensitivity description holds cannot be placed. The phase noise is the conversion " +
+        "matrix's at every offset.",
+        ("analysis", analysis));
+
+    public const string PnJoinKey = "osc.pn.join";
+    /// <summary>The two descriptions disagree where they are joined.</summary>
+    public static Diagnostic PnJoinMismatch(string analysis, double joinHz, double dbDiff) => Diagnostic.Create(
+        PnJoinKey, DiagnosticSeverity.Warning,
+        "Oscillator analysis '{analysis}': at the join offset {f} the close-in phase noise (from the frequency's sensitivity) " +
+        "and the conversion matrix's differ by {d} dB. Both should hold there; a difference this large means one of them " +
+        "does not: tighten Tol, or raise MaxHarm.",
+        ("analysis", analysis), ("f", Hz(joinHz)), ("d", dbDiff.ToString("F2", CultureInfo.InvariantCulture)));
+
+    public const string PnCornerKey = "osc.pn.corner";
+    /// <summary>A model whose flicker cannot be separated from its white noise.</summary>
+    public static Diagnostic PnCornerUnsplit(string analysis, string parts) => Diagnostic.Create(
+        PnCornerKey, DiagnosticSeverity.Info,
+        "Oscillator analysis '{analysis}': PNcorner is NaN because {parts} report their noise as one density, not as white " +
+        "and flicker parts. PN itself includes their flicker.",
+        ("analysis", analysis), ("parts", parts));
 }

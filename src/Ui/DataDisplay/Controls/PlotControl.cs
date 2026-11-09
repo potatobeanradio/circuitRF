@@ -2724,8 +2724,37 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _inspectorView?.FocusTraceLabel(idx);
             };
             menu.Items.Add(rename);
+            if (PhaseNoiseMaskItem(trace) is { } mask) menu.Items.Add(mask);
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
+        }
+
+        /// <summary>
+        /// Brief NZ-10 — "Copy as Phase-Noise Mask" for an oscillator's phase-noise trace: the curve as a source's
+        /// <c>PhaseNoise="…"</c> key on the clipboard, ready to paste onto a source an envelope run reads. Null for any other
+        /// trace — one curve of a cube named PN over an <c>offset</c> axis, untransformed.
+        /// </summary>
+        private MenuItem? PhaseNoiseMaskItem(Trace trace)
+        {
+            if (PhaseNoiseMaskText(trace) is not { } text) return null;
+            var item = new MenuItem { Header = "Copy as Phase-Noise Mask", Icon = new MaterialIcon { Kind = MaterialIconKind.ContentCopy } };
+            item.Click += async (_, _) =>
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard is not null) await clipboard.SetTextAsync(text);
+            };
+            return item;
+        }
+
+        /// <summary>The <c>PhaseNoise="…"</c> text of a phase-noise trace (see <see cref="PhaseNoiseMaskItem"/>), or null.</summary>
+        internal static string? PhaseNoiseMaskText(Trace trace)
+        {
+            if (!trace.IsCubeBound || trace.IsFamily || trace.CubeName is not { } name) return null;
+            if (name[(name.LastIndexOf('.') + 1)..] != "PN" || trace.CubeXAxisName != "offset") return null;
+            if (trace.Transform != CubeTransform.None || trace.CubeXValues is not { } xs || trace.CubeReal is not { } ys) return null;
+            int n = Math.Min(xs.Count, ys.Count);
+            if (n == 0) return null;
+            return RfCore.Signals.PhaseNoiseMask.Assignment(Enumerable.Range(0, n).Select(i => (xs[i], ys[i])));
         }
 
         private void ShowTraceHeaderContextMenu(Trace trace)
@@ -2781,6 +2810,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (!trace.IsCubeBound && trace.Data is { } d && !d.IsEmpty)
                 menu.Items.Add(matrixTypeMenu);
             menu.Items.Add(matrixFmtMenu);
+            if (PhaseNoiseMaskItem(trace) is { } mask) menu.Items.Add(mask);
             menu.Items.Add(new Separator());
             menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens

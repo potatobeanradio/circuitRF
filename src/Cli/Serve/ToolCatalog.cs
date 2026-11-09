@@ -556,15 +556,18 @@ internal static class ToolCatalog
                      new("maxHarm", "--maxharm", OptKind.Str, "Harmonics of the oscillation, replacing the directive's MaxHarm."),
                      new("tol", "--tol", OptKind.Str, "Harmonic-balance tolerance in amperes, replacing the directive's Tol."),
                      new("aguess", "--aguess", OptKind.Str, "The probe generator's amplitude to start from (V for a shunt OscProbe, A for a series one), replacing Aguess."),
-                     new("probe", "--probe", OptKind.Str, "The OscProbe to use, replacing the directive's Probe.")],
+                     new("probe", "--probe", OptKind.Str, "The OscProbe to use, replacing the directive's Probe."),
+                     new("phaseNoise", "--phase-noise", OptKind.Flag, "Turn the directive's PhaseNoise on: PN, AN, PNc, PNpct and PNcorner over its PnStart-PnStop offsets.")],
                     "A free-running oscillator: harmonic balance with the frequency as an unknown. An auxiliary generator at the circuit's "
                   + "OscProbe (in series in the loop, or Mode=shunt across the resonator) is solved for the amplitude and frequency at which "
                   + "it does no work. First the small-signal immittance at the probe is searched across Fstart-Fstop for a negative real "
                   + "part at a zero of its imaginary part (the start-up condition); a circuit that does not start is refused with that "
                   + "sentence. The result is Fosc (Hz), Aosc (V shunt, A series), Startup [freq] (the small-signal admittance at the probe) "
                   + "and the harmonic-balance cubes at the oscillation (V, I, ToneFreqs), so every HB measurement works. Inside a "
-                  + "parametric_sweep, Fosc against the swept variable is a tuning curve. explain analysis=<name> shows the start-up search "
-                  + "without a run. 'reference analyses' has the directive."),
+                  + "parametric_sweep, Fosc against the swept variable is a tuning curve. With PhaseNoise=yes (or phaseNoise=true) the "
+                  + "oscillation's phase noise PN and amplitude noise AN [offset] in dBc/Hz, each part's share PNc/PNpct [offset, part] and "
+                  + "the flicker corner PNcorner (Hz) are added; PN pastes into a source's PhaseNoise= mask. explain analysis=<name> shows "
+                  + "the start-up search without a run. 'reference analyses' has the directive."),
                 // brief-tuneopt-11 R-to11-5: the `opt` verb, so the document is the verb's `--json`
                 // object and nothing here reshapes it. The final result by default; showIterations
                 // asks for each iteration too.

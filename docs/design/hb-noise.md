@@ -182,3 +182,97 @@ half-multiple of the tone is moved 1e-6 of the tone up (`DegenerateNoiseOffset`)
 The `.spl` reader maps a column only through `LoadpullFomDialect.Map` and skips a header it does not name, every other
 column read at its own position — so `SplReader` from before `NF` reads a file with it (a test shows this with an
 unknown column).
+
+## 10. Oscillator phase noise (brief NZ-10)
+
+Code: `src/Engine/HarmonicBalance/OscPhaseNoise.cs`, called from `OscEngine.Run` after the oscillation is found
+(brief NZ-9, `OscEngine`). User reference: `docs/user/src/reference/simulations.md#oscillator-phase-noise`. The sources
+are §3's: `SParameterNoise.Sources` with every device claimed as cyclostationary, a Mixer's NF, and — the one difference —
+**every top-level Port and Term thermal at T0** through `Re(1/Z)`, because an oscillator's port is its load, not an
+instrument. The OscProbe is claimed and dropped: it is idle (a short or an open) at every frequency a noise is read at.
+
+### 10.1 Far from the carrier
+
+The conversion matrix about the oscillation, at a baseband offset `ω_m` (sidebands `ω_m + k·ω0`), is the autonomous
+circuit's: the probe's generator and its conductance exist at `ω0` exactly and nowhere else. §2's adjoint, read at sideband
+`o` instead of the zero one, gives `a^o_s` with `X_o = Σ_s a^o_sᵀ·u_s`: once at `o = +1` (`X₊`, the upper sideband
+`ω0 + ω_m`) and once at `o = −1` (`X₋` at `ω_m − ω0`, whose conjugate is the lower sideband). The output row is the voltage
+across the read point, and the carrier there is `V1` (full amplitude). The envelope's relative perturbation is
+`α + jφ = δE/V1`, so its phase and amplitude parts at `ω_m` are
+
+```
+φ = (X₊/V1 − X₋/conj V1) / j          α = X₊/V1 + X₋/conj V1
+L = ½·⟨|φ|²⟩                          AN = ½·⟨|α|²⟩
+```
+
+The ½: the sources' densities are single-sided, so `⟨|X|²⟩` is twice the two-sided density, and L is the two-sided phase
+density (half the single-sided). With pure phase modulation this is the single-sideband noise-to-carrier ratio, and
+`L + AN = (S_V(ω0 + ω_m) + S_V(ω0 − ω_m)) / |V1|²` exactly.
+
+### 10.2 Close to the carrier
+
+The autonomous matrix is singular at `ω_m = 0`: a shift of the oscillation in time is a solution. The phase noise there
+is the frequency's random walk, and the frequency's sensitivity comes from the outer Newton of NZ-9 — in the
+generator-held circuit, which is regular.
+
+1. **The residual's sensitivity.** The static conversion matrix of the held circuit (`ω_ss = 0`, the HB Jacobian in
+   two-sided form) and §2's adjoint at sideband `+1`, with the row reading the probe's voltage, give
+   `δV_probe = 2·Σ_s a_sᵀ·u_s` for a slow current with two-sided phasors `u_s` at `k·ω0`. The residual
+   `R = (generator current)/(V·scale)` gives `δR = Σ_s β_sᵀ·u_s`, `β_s = 2·(dR/dV)·a_s`.
+2. **The outer Jacobian.** `M = [[Re R_lnA, Re R_f], [Im R_lnA, Im R_f]]` by central differences about the answer
+   (`ln A ± 1e-4`, `f·(1 ± 1e-5)`, four HB solves). Pushed by `δR`, the oscillation answers
+   `[δln A; δf] = −M⁻¹·[Re δR; Im δR]`: `δf = Re(conj μ_f · δR)`, `μ_f` the second row of `−M⁻¹` as a complex number.
+3. **Real-linear in complex form.** A slow real current has `u_{−k} = conj u_k`, so
+   `δf = Σ_s h_sᵀ·u_s` with `h_s = ½·(conj μ_f·β_s + μ_f·conj β_{−s})`, and likewise for `δln A`.
+4. **The density.** With the sources' covariance `C_st(ω_m)` at the sidebands `ω_m + k·ω0`:
+   `S_δf = ½·Σ_s,t h_sᵀ·C_st·conj h_t` (two-sided, Hz²/Hz), `L = S_δf / f_m²`, `AN = ½·Σ hᴬ·C·hᴬᴴ`.
+
+White sources give `C` independent of `f_m`, hence 1/f_m². A flicker source enters at sideband 0 at `f_m` itself, so
+`C ∝ 1/f_m` there and L goes as 1/f_m³; at other sidebands it is read at the geometric-mean frequency of §4, as in NZ-5.
+
+### 10.3 The join
+
+The close-in description assumes the amplitude has settled, which holds well below the rate it settles at. That rate is
+read from the circuit's own immittance `W` at the probe (the residual over the probe's level — `|V|` in shunt, the loop
+current in series — rather than over the generator's amplitude, which the residual's parametrisation mixes in): with
+`W_lnL` and `W_f` from the same four solves, linearising the slow envelope about the oscillation gives the amplitude's relaxation
+rate
+
+```
+f_AM = −Im(W_lnL · conj W_f) / |W_f|²          (Hz)
+```
+
+(a parallel tank: `A·Y′(A) / (4πC)`). **The rule: below `0.1·f_AM` the close-in description, above it the conversion
+matrix.** No blend, no constant chosen per circuit, and the singular point is never regularised. Both descriptions are
+evaluated at the join offset itself and a difference over 0.5 dB is the warning `osc.pn.join`. With no restoring force
+(`f_AM ≤ 0`) the conversion matrix is used throughout, with the warning `osc.pn.no-relaxation`.
+
+### 10.4 The corner, the output, the refusals
+
+`PNcorner` is where the close-in curve's flicker part (total less the same form with every flicker term dropped) equals
+its white part, by bisection in log-offset from 1 mHz to a quarter of the carrier. NaN with no flicker, or when a batched
+(compiled) model reports its densities as one number, which is said (`osc.pn.corner`).
+
+The noise is read at `PnPort`, else across a shunt probe, else at the circuit's one Port or Term; a series probe with none
+is refused (`osc.pn.no-output`). Offsets at or beyond `f0/2` are NaN (`osc.pn.above-half`): there an offset no longer
+names one side of the carrier.
+
+### 10.5 Gates, as measured (`tests/Engine.Tests/HarmonicBalance/OscPhaseNoiseTests.cs`)
+
+The NZ-9 cubic oscillator: 10 nH ∥ 10 pF, `i = −2e-3·v + 1e-3·v³`, 1 kΩ load at 290 K, MaxHarm=1, f0 = 503.3 MHz,
+A = 1.1547 V, f_AM = 15.9 MHz (join at 1.59 MHz).
+
+1. **Linear resonator, white noise.** `L = S/(16π²C²A²f_m²)`: within **0.0014 dB** from 100 Hz to 10 MHz, both
+   descriptions and across the join; slope −20 dB/decade to better than 0.1 dB/decade.
+2. **Flicker.** `NonlinearC` `C0 = 1 pF, C1 = 0.5 pF/V` from the tank to a node held by a forward-biased diode
+   (`Kf = 1.6e-13, Af = 1`, 1 mA through 4.3 kΩ) and RF-grounded by 1 nF: the diode's flicker moves the node by
+   `Zb·i` and the frequency by `Kv` per volt. Closed form `f_c = Kv²Zb²·Kf·I/2 ÷ (white: the load's term plus the
+   diode's shot and the bias resistor's thermal through the same path)` = 9372.6 Hz; computed **9372.5 Hz**. Slope
+   −29.87 dB/decade a decade and more below the corner, −20.13 above.
+3. **Far-out floor.** At 3, 8.1, 22 and 60 MHz, `L + AN` against NZ-5's `Nout` at `f0 ± f_m` from a driven solve at
+   Fosc started on the oscillation: within **0.002 dB**. NZ-5 centres its sidebands on the output frequency, so at
+   MaxHarm=1 the carrier's other sideband is outside its set and it reads 6 dB low; the gate runs both at MaxHarm=3.
+4. **Contributions** sum to `PN` (to 1e-9 dB) and `PNpct` to 100 %, at every offset on both sides of the join.
+5. **No key, no change.** Without `PhaseNoise` the run writes no phase-noise cube and every other cube bit for bit what a
+   run with the key writes (the phase noise runs after the final solve); the `.cnl` line and the `.csch` record carry no
+   `Pn` key.

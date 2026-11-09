@@ -5012,6 +5012,11 @@ exports it. Exit 0 found, 1 refused or failed (`osc.no-startup`, `osc.no-probe`,
 --analysis` runs the start-up search alone (`OscEngine.Startup`), and `check` reports a missing or ambiguous OscProbe
 (`check.osc.probe`). Gate: `tests/Ui.Tests/OscillatorSurfaceTests.cs`.
 
+**Phase noise (brief NZ-10).** `--phase-noise` turns the directive's `PhaseNoise` on (an override like the others: the
+rest of its `Pn*` keys are kept). `explain --analysis` adds the offsets and the instance the noise is read at, and `check`
+reports keys that do not resolve or name nowhere to read (`check.osc.phase-noise`, the run's own `osc.pn.*` sentence). The
+engine's half is `docs/design/hb-noise.md` §10.
+
 ## 40. The shipped examples: `reference examples` and `new example`
 
 `circuitrf reference examples [name]` is a generated reference topic, so it is also the MCP resource

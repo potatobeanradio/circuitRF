@@ -1819,11 +1819,16 @@ internal static class Explain
             var ec = CircuitRF.Engine.HarmonicBalance.OscEngine.FindProbe(nl, oa.Name, p.Probe);
             probe = ec.InstancePath;
             mode = OscProbeModel.IsShunt(ec) ? OscProbeModel.ModeShunt : OscProbeModel.ModeSeries;
+            // Brief NZ-10: where the phase noise is read, or the run's refusal, before anything solves.
+            ExplainPhaseNoiseJson? pn = p.PhaseNoise is { } q
+                ? new ExplainPhaseNoiseJson(q.StartHz, q.StopHz, q.Npts, q.Log,
+                      CircuitRF.Engine.HarmonicBalance.OscEngine.PhaseNoiseReadAt(nl, p)!)
+                : null;
             var s = CircuitRF.Engine.HarmonicBalance.OscEngine.Startup(nl, p);
             if (s.StartHz is not { } fs)
                 return new ExplainOscJson(probe, mode, f0, f1, fg, Refusal:
-                    CircuitRF.Engine.HarmonicBalance.OscDiagnostics.NoStartup(oa.Name, probe, s.Shunt, f0, f1).Render());
-            return new ExplainOscJson(probe, mode, f0, f1, fg, fs, s.Immittance.Real);
+                    CircuitRF.Engine.HarmonicBalance.OscDiagnostics.NoStartup(oa.Name, probe, s.Shunt, f0, f1).Render()) { PhaseNoise = pn };
+            return new ExplainOscJson(probe, mode, f0, f1, fg, fs, s.Immittance.Real) { PhaseNoise = pn };
         }
         catch (Exception ex) { return new ExplainOscJson(probe, mode, f0, f1, fg, Refusal: ex.Message); }
     }
@@ -2468,6 +2473,9 @@ internal static class Explain
                         ? $"      Start-up: WOULD BE REFUSED — {why}"
                         : $"      Start-up at {G(os.StartupHz!.Value)} GHz: small-signal {(os.Mode == OscProbeModel.ModeShunt ? "conductance" : "resistance")} " +
                           $"{os.StartupReal!.Value.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} {(os.Mode == OscProbeModel.ModeShunt ? "S" : "Ohm")} (negative: the circuit starts)");
+                    if (os.PhaseNoise is { } pn)
+                        Console.WriteLine($"      Phase noise at {pn.Points} offsets {CircuitRF.Design.Circuit.OscSummary.Offset(pn.StartHz)} to " +
+                                          $"{CircuitRF.Design.Circuit.OscSummary.Offset(pn.StopHz)} ({(pn.Log ? "log" : "linear")}), read at {pn.ReadAt}");
                 }
 
                 // NZ-6: a loadpull's noise ports and where NF is read.

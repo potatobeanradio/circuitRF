@@ -133,6 +133,13 @@ public sealed class CschAnalysis
     public string?   OscFstop          { get; set; }
     public string?   OscUnit           { get; set; }
     public string?   OscAguess         { get; set; }
+    // Brief NZ-10 — phase noise; absent (null) unless PhaseNoise is on, so an oscillator without it saves what it did before.
+    public bool?     OscPhaseNoise     { get; set; }
+    public string?   OscPnStart        { get; set; }
+    public string?   OscPnStop         { get; set; }
+    public string?   OscPnNpts         { get; set; }
+    public bool?     OscPnLog          { get; set; }
+    public string?   OscPnPort         { get; set; }
     // Envelope (type "env") — the remaining env fields reuse HB ones (MaxHarmonicExpr, MaxMixOrderExpr, TolExpr).
     public string?   EnvStop           { get; set; }
     public string?   EnvStep           { get; set; }
@@ -380,6 +387,10 @@ public static class AnalysisSerialization
             OscFstart = o.FstartExpr.Length > 0 ? o.FstartExpr : null, OscFstop = o.FstopExpr.Length > 0 ? o.FstopExpr : null,
             OscUnit = o.Unit, MaxHarmonicExpr = o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr, TolExpr = o.TolExpr,
             OscAguess = o.AguessExpr.Length > 0 ? o.AguessExpr : null,
+            OscPhaseNoise = o.PhaseNoise ? true : null,
+            OscPnStart = o.PhaseNoise ? o.PnStartExpr : null, OscPnStop = o.PhaseNoise ? o.PnStopExpr : null,
+            OscPnNpts = o.PhaseNoise ? o.PnNptsExpr : null, OscPnLog = o.PhaseNoise ? o.PnLog : null,
+            OscPnPort = o.PhaseNoise && o.PnPortExpr.Length > 0 ? o.PnPortExpr : null,
         },
 
         TrlAnalysis t => new CschAnalysis
@@ -599,6 +610,9 @@ public static class AnalysisSerialization
             Enabled = dto.Enabled, Probe = dto.OscProbe ?? "", FguessExpr = dto.OscFguess ?? "1", FstartExpr = dto.OscFstart ?? "",
             FstopExpr = dto.OscFstop ?? "", Unit = dto.OscUnit ?? "GHz", MaxHarmonicExpr = dto.MaxHarmonicExpr ?? "7",
             FFTOverSampleExpr = dto.FFTOverSampleExpr ?? "1", TolExpr = dto.TolExpr ?? "1e-6", AguessExpr = dto.OscAguess ?? "",
+            PhaseNoise = dto.OscPhaseNoise ?? false, PnStartExpr = dto.OscPnStart ?? OscillatorAnalysis.DefaultPnStart,
+            PnStopExpr = dto.OscPnStop ?? OscillatorAnalysis.DefaultPnStop, PnNptsExpr = dto.OscPnNpts ?? OscillatorAnalysis.DefaultPnNpts,
+            PnLog = dto.OscPnLog ?? true, PnPortExpr = dto.OscPnPort ?? "",
         },
 
         "trl" => new TrlAnalysis(dto.Name)

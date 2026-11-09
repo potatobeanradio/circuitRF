@@ -1769,7 +1769,15 @@ internal static class Check
             foreach (var oa in tb.Analyses.OfType<OscillatorAnalysis>())
             {
                 try { CircuitRF.Engine.HarmonicBalance.OscEngine.FindProbe(nl, oa.Name, oa.Probe.Trim()); }
-                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscProbe(path, oa.Name, ex.Message)); }
+                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscProbe(path, oa.Name, ex.Message)); continue; }
+                // NZ-10: the phase-noise keys resolve and name somewhere to read — the run's own refusals, as findings.
+                if (!oa.PhaseNoise) continue;
+                try
+                {
+                    var op = CircuitRF.Engine.HarmonicBalance.OscEngine.Resolve(oa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                    CircuitRF.Engine.HarmonicBalance.OscEngine.PhaseNoiseReadAt(nl, op);
+                }
+                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscPhaseNoise(path, oa.Name, ex.Message)); }
             }
 
             // NZ-1: Noise=no on a part that can never be noisy is accepted and does nothing, which is worth a word.

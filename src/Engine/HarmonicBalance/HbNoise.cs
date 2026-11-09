@@ -148,7 +148,7 @@ internal static class HbNoise
     // ── cyclostationary devices ──────────────────────────────────────────────
 
     /// <summary>One device's noise over the waveform: its sources on its circuit nodes, and the density per sample.</summary>
-    private sealed class Device
+    internal sealed class Device
     {
         public required string Label;
         public required int[] Nodes;                    // circuit nodes > 0
@@ -166,7 +166,7 @@ internal static class HbNoise
 
     /// <summary>The density series of source <paramref name="i"/> at frequency <paramref name="hz"/> (geometric-mean rule
     /// for a pair, through <paramref name="other"/>).</summary>
-    private static double[] Series(Device d, int i, int j, double fs, double ft, int count)
+    private static double[] Series(Device d, int i, int j, double fs, double ft, int count, bool whiteOnly = false)
     {
         var x = new double[count];
         if (d.Table is { } table)
@@ -179,13 +179,17 @@ internal static class HbNoise
         {
             double fg = Math.Sqrt(fs * ft);
             for (int t = 0; t < count; t++)
-                x[t] = Math.Sqrt(Math.Max(0, d.Raw![t][i].At(fg)) * Math.Max(0, d.Raw[t][j].At(fg)));
+                x[t] = whiteOnly
+                    ? Math.Sqrt(Math.Max(0, d.Raw![t][i].White) * Math.Max(0, d.Raw[t][j].White))
+                    : Math.Sqrt(Math.Max(0, d.Raw![t][i].At(fg)) * Math.Max(0, d.Raw[t][j].At(fg)));
         }
         return x;
     }
 
-    /// <summary>⟨u_s·u_tᴴ⟩ over the device's nodes, A²/Hz, for sidebands s and t at |f| = <paramref name="fs"/>, <paramref name="ft"/>.</summary>
-    private static Mat<Complex> DeviceAt(Device d, Samples smp, HbSmallSignal.ISidebands sb, int s, int t, double fs, double ft)
+    /// <summary>⟨u_s·u_tᴴ⟩ over the device's nodes, A²/Hz, for sidebands s and t at |f| = <paramref name="fs"/>, <paramref name="ft"/>.
+    /// <paramref name="whiteOnly"/> drops every flicker term (brief NZ-10's corner); a batched model's table does not separate them.</summary>
+    internal static Mat<Complex> DeviceAt(Device d, Samples smp, HbSmallSignal.ISidebands sb, int s, int t, double fs, double ft,
+                                          bool whiteOnly = false)
     {
         int n = d.Nodes.Length;
         var c = new Mat<Complex>(n, n);
@@ -199,7 +203,7 @@ internal static class HbNoise
             else
             {
                 p = TwoSided(d.White![i], diff);
-                if (d.Exponent![i] is double a && !double.IsNaN(a))
+                if (!whiteOnly && d.Exponent![i] is double a && !double.IsNaN(a))
                     p += TwoSided(d.Flicker![i], diff) * Math.Pow(fs * ft, -a / 2);
             }
             p *= d.Mult;
@@ -210,7 +214,7 @@ internal static class HbNoise
         }
         foreach (var (i, j, rho) in d.Corr)
         {
-            Complex f = d.Mult * TwoSided(smp.Bin(Series(d, i, j, fs, ft, smp.Count), diff.Index), diff.Index, diff.Conj);
+            Complex f = d.Mult * TwoSided(smp.Bin(Series(d, i, j, fs, ft, smp.Count, whiteOnly), diff.Index), diff.Index, diff.Conj);
             Complex x = rho * f, xc = Complex.Conjugate(rho) * f;
             foreach (var (u, su) in new[] { (d.Inc[i].A, 1.0), (d.Inc[i].B, -1.0) })
                 foreach (var (v, sv) in new[] { (d.Inc[j].A, 1.0), (d.Inc[j].B, -1.0) })
@@ -228,7 +232,7 @@ internal static class HbNoise
     /// sample (<see cref="ComponentModel.EvaluateNoise"/>), a batched one in ONE call per operating point at every sideband
     /// frequency the sweep visits (<see cref="ComponentModel.NoiseDensitiesOver"/>).
     /// </summary>
-    private static List<Device> Devices(ElaboratedNetlist nl, IReadOnlyList<(NoiseModelRow Row, ElaboratedComponent Ec)> rows,
+    internal static List<Device> Devices(ElaboratedNetlist nl, IReadOnlyList<(NoiseModelRow Row, ElaboratedComponent Ec)> rows,
         Samples smp, int[] ifNodes, double[] sidebandHz)
     {
         var list = new List<Device>();
@@ -453,57 +457,14 @@ internal static class HbNoise
                 continue;
             }
 
-            // 3. The output wave's row and its adjoint at the zero sideband: b = (√Re Z0 / Z0)·(V+ − V−).
+            // 3–5. The output wave's row at the zero sideband, b = (√Re Z0 / Z0)·(V+ − V−), and its adjoint at every sideband.
             Complex z0 = pout.Z(wOut);
             Complex cOut = Math.Sqrt(Math.Max(0, z0.Real)) / z0;
-            var part0 = extractor.LinearPartitionAt(wOut);
-            int size = part0.Size;
-            var r0 = new Complex[size];
-            if (pout.Plus > 0)  r0[pout.Plus - 1]  += cOut;
-            if (pout.Minus > 0) r0[pout.Minus - 1] -= cOut;
-            var w0 = TransposedSolve(part0, r0, positive: true);
-
-            // 4. q = Dᵀ·(e_0 ⊗ P·w), D = J_ss − diag(Y_s); then J_ssᵀ·p = q.
-            var q = new Complex[nc];
-            var y0 = ys[om[Z]];
-            for (int m = 0; m < nInt; m++)
-                for (int t = 0; t < S; t++)
-                {
-                    Complex acc = Complex.Zero;
-                    for (int n = 0; n < nInt; n++)
-                    {
-                        int node = ifNodes[n];
-                        if (node <= 0) continue;
-                        Complex g = w0[node - 1];
-                        Complex dnm = jss[(n * S + Z) * nc + m * S + t];
-                        if (t == Z && n < y0.GetLength(0) && m < y0.GetLength(1)) dnm -= y0[n, m];
-                        acc += g * dnm;
-                    }
-                    q[m * S + t] = acc;
-                }
-            var p = new Complex[nc];
-            lu.Solve(q, p);
-
-            // 5. Per sideband: z_s from A_sᵀ·z_s = Pᵀ·(Y_sᵀ·p_s), and a_s = δ_s0·w − z_s.
-            var a = new Complex[S][];
-            for (int s = 0; s < S; s++)
+            var a = Adjoint(extractor, nInt, S, om, ys, jss, lu, Z, r0 =>
             {
-                var y = ys[om[s]];
-                var b = new Complex[size];
-                for (int m = 0; m < nInt; m++)
-                {
-                    int node = ifNodes[m];
-                    if (node <= 0) continue;
-                    Complex acc = Complex.Zero;
-                    for (int n = 0; n < nInt; n++) acc += p[n * S + s] * y[n, m];
-                    b[node - 1] += acc;
-                }
-                var part = extractor.LinearPartitionAt(Math.Abs(om[s]));
-                var z = TransposedSolve(part, b, positive: om[s] > 0);
-                var row = new Complex[size];
-                for (int i = 0; i < size; i++) row[i] = (s == Z ? w0[i] : Complex.Zero) - z[i];
-                a[s] = row;
-            }
+                if (pout.Plus > 0)  r0[pout.Plus - 1]  += cOut;
+                if (pout.Minus > 0) r0[pout.Minus - 1] -= cOut;
+            });
 
             // 6. The output noise, source by source and sideband by sideband.
             Complex A(int s, int node) => node > 0 ? a[s][node - 1] : Complex.Zero;
@@ -571,12 +532,75 @@ internal static class HbNoise
     }
 
     /// <summary>
+    /// The adjoint of one output read at sideband <paramref name="o"/>: <c>a_s</c> for every sideband, so a node-current
+    /// injection <c>u_s</c> reaches the output as <c>y = Σ_s a_sᵀ·u_s</c> —
+    /// <c>a_s = δ_so·w − z_s</c>, <c>A_oᵀ·w = r</c>, <c>J_ssᵀ·p = Dᵀ·(e_o ⊗ P·w)</c>, <c>A_sᵀ·z_s = Pᵀ·(Y_sᵀ·p_s)</c>.
+    /// <paramref name="fillRow"/> writes the output's row <c>r</c> over the partition's unknowns at <c>ω_o</c>.
+    /// <paramref name="lu"/> factorises <c>J_ssᵀ</c>. Brief NZ-5 reads at the zero sideband; brief NZ-10 at the carrier's
+    /// two sidebands.
+    /// </summary>
+    internal static Complex[][] Adjoint(HbLinearExtractor extractor, int nInt, int S, double[] om,
+        Dictionary<double, Complex[,]> ys, Complex[] jss, HbSmallSignal.DenseLu lu, int o, Action<Complex[]> fillRow)
+    {
+        int nc = nInt * S;
+        int[] ifNodes = extractor.InterfaceNodes;
+        var partO = extractor.LinearPartitionAt(Math.Abs(om[o]));
+        int size = partO.Size;
+        var r0 = new Complex[size];
+        fillRow(r0);
+        var w0 = TransposedSolve(partO, r0, positive: om[o] > 0);
+
+        // q = Dᵀ·(e_o ⊗ P·w), D = J_ss − diag(Y_s); then J_ssᵀ·p = q.
+        var q = new Complex[nc];
+        var y0 = ys[om[o]];
+        for (int m = 0; m < nInt; m++)
+            for (int t = 0; t < S; t++)
+            {
+                Complex acc = Complex.Zero;
+                for (int n = 0; n < nInt; n++)
+                {
+                    int node = ifNodes[n];
+                    if (node <= 0) continue;
+                    Complex g = w0[node - 1];
+                    Complex dnm = jss[(n * S + o) * nc + m * S + t];
+                    if (t == o && n < y0.GetLength(0) && m < y0.GetLength(1)) dnm -= y0[n, m];
+                    acc += g * dnm;
+                }
+                q[m * S + t] = acc;
+            }
+        var p = new Complex[nc];
+        lu.Solve(q, p);
+
+        // Per sideband: z_s from A_sᵀ·z_s = Pᵀ·(Y_sᵀ·p_s), and a_s = δ_so·w − z_s.
+        var a = new Complex[S][];
+        for (int s = 0; s < S; s++)
+        {
+            var y = ys[om[s]];
+            var b = new Complex[size];
+            for (int m = 0; m < nInt; m++)
+            {
+                int node = ifNodes[m];
+                if (node <= 0) continue;
+                Complex acc = Complex.Zero;
+                for (int n = 0; n < nInt; n++) acc += p[n * S + s] * y[n, m];
+                b[node - 1] += acc;
+            }
+            var part = extractor.LinearPartitionAt(Math.Abs(om[s]));
+            var z = TransposedSolve(part, b, positive: om[s] > 0);
+            var row = new Complex[size];
+            for (int i = 0; i < size; i++) row[i] = (s == o ? w0[i] : Complex.Zero) - z[i];
+            a[s] = row;
+        }
+        return a;
+    }
+
+    /// <summary>
     /// A Mixer's NF as a stationary current source across its RF port (brief NZ-5): referred to the port's own matched
     /// termination, so the mixer's equivalent input temperature is <c>T_e = T0·(F_DSB − 1)</c> and the density
     /// <c>4k·T_e/Zrf</c>. An ideal multiplier converts both sidebands equally, so <c>F_DSB = F_SSB/2</c> for an SSB figure;
     /// one below 3 dB SSB is below what a noiseless DSB mixer reaches and is taken as noiseless, with a warning.
     /// </summary>
-    private static Func<double, NoiseCurrents> MixerSource(ElaboratedNetlist nl, ElaboratedComponent ec, MixerModel mx, double nfDb)
+    internal static Func<double, NoiseCurrents> MixerSource(ElaboratedNetlist nl, ElaboratedComponent ec, MixerModel mx, double nfDb)
     {
         double f = Math.Pow(10, nfDb / 10);
         double fDsb = mx.NoiseFigureType == MixerNoiseFigureType.Dsb ? f : f / 2;
@@ -598,7 +622,7 @@ internal static class HbNoise
         return _ => currents;
     }
 
-    private static Mat<Complex> Conj(Mat<Complex> m)
+    internal static Mat<Complex> Conj(Mat<Complex> m)
     {
         var c = new Mat<Complex>(m.RowCount, m.ColCount);
         for (int i = 0; i < m.RowCount; i++)
@@ -611,7 +635,7 @@ internal static class HbNoise
     /// src/Engine/RESOLVED.md), so at <c>+|ω|</c> the answer is <c>conj(y)</c> for <c>conj(b)</c>, and at <c>−|ω|</c>, whose
     /// matrix is <c>conj(A)</c>, it is <c>y</c> itself.
     /// </summary>
-    private static Complex[] TransposedSolve(HbLinearExtractor.LinearPartition part, Complex[] b, bool positive)
+    internal static Complex[] TransposedSolve(HbLinearExtractor.LinearPartition part, Complex[] b, bool positive)
     {
         var x = new Complex[b.Length];
         if (!positive) { part.SolveHermitian(b, x); return x; }
@@ -623,7 +647,7 @@ internal static class HbNoise
     }
 
     /// <summary>Drop one output point's sideband factorisations, as the WSProbe sweep does: none recurs.</summary>
-    private static void Release(HbLinearExtractor extractor, double[] om, double wOut)
+    internal static void Release(HbLinearExtractor extractor, double[] om, double wOut)
     {
         foreach (double w in om) if (Math.Abs(w) >= 1e-12) extractor.InvalidateLinear(Math.Abs(w));
         extractor.InvalidateLinear(wOut);
