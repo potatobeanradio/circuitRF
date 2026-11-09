@@ -325,6 +325,7 @@ public static class PlotConfigLoader
         // (never the "Selected" sentinel: an X side belongs to one dataset, not to whichever
         // source happens to be selected).
         trace.XSpec = traceConfig.XSpec;
+        trace.ExpressionFreqIndex = traceConfig.ExpressionFreqIndex ?? -1;
         trace.Label = string.IsNullOrEmpty(traceConfig.Label) ? null : traceConfig.Label;
         if (!string.IsNullOrEmpty(traceConfig.XSourcePath))
             trace.XSourcePath = sources.ResolveAbs(traceConfig.XSourcePath);

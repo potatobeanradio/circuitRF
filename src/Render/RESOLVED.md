@@ -5851,3 +5851,25 @@ towards the eye and before it otherwise; off an edge or a corner, no relation. T
 override them, since at alpha 20 the air box barely tints anything. Gate:
 `MetalPrecedenceTests.APort_IsOrderedByWhereItLiesInTheDielectric_FromEverySide`, which fails from top, bottom and side with the
 correction switched off, and covers a port on the face, one 17.5 µm above it at four low angles, and one inside.
+
+## Circle functions as trace expressions, a frequency pin, and the unstable side shaded (2026-11-09)
+
+Brief NZ-2. `TraceExpression` evaluated an expression one X sample at a time with a bare `Evaluator`, so a function that
+reads a whole S cube and its analysis (`ga_circle(SP1.S, 12)`) could not run on a trace at all.
+
+- **Evaluated once, with the analysis as context.** `Evaluator.CallsNetworkFunction` sends such an expression down the
+  axis functions' whole-evaluation path, with a `MeasurementContext` of the source's groups. A reference that keeps every
+  axis is bound as the DataSet's OWN cube object: the network functions find their owner by reference
+  (`TryFindOwner`), and a sliced copy is, rightly, refused there.
+- **A frequency pin.** A circle is `[freq, point]`, and a trace has one X. `Trace.ExpressionFreqIndex` (saved as
+  `TraceConfig.ExpressionFreqIndex`, absent = −1 = unchanged) pins `freq`, defaulting to the first frequency when a
+  result needs it; `Trace.ExpressionFreqPin` is what the card's Freq picker lists. A `[freq]` result with a frequency
+  asked for becomes one point (Sopt as a marker). Companions sharing the axis are pinned with it.
+- **The unstable side.** `stab_circle`'s `side` companion sets `Trace.StableSide`, and `TraceRenderer.ShadeUnstableSide`
+  fills the unstable region on a Smith chart: the loop when the outside is stable, the unit disk minus the loop
+  (even-odd) when the inside is, always clipped to |Γ| ≤ 1.
+- **`freq (4 to 4 GHz)`.** A chart drawn at one frequency read its span as "4 to 4"; `Plot.FreqSpanLabel` says
+  `freq (4 GHz)` when the two ends are equal.
+
+Gates: `tests/Ui.Tests/NoiseCirclesPresetTests.cs`. The preset (`NoiseCirclesPreset`) was rendered with UiSnapshot on the
+S-Parameter Noise example's LNA result and on a potentially unstable two-port, and looked at.

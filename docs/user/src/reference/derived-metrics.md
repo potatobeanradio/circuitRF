@@ -4,7 +4,7 @@ slug: reference/derived-metrics.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Derived Metrics
 lede: Stability, passivity, group delay, noise figure and the two-terminal passive readouts — every equation, written out.
-keywords: noise figure, NF, NFmin, noise temperature, Te, Sopt, rn, noise circle, ns_circle, ESR, ESL, Q factor, self-resonance, SRF, Ceff, Leff, capacitance, inductance, stability, mu, Rollett, K factor, MAG, MSG, passivity, group delay, sigma max, decoupling, MLCC, fixture, shunt-through
+keywords: noise figure, NF, NFmin, noise temperature, Te, Sopt, rn, noise circle, ns_circle, ga_circle, gp_circle, stab_circle, stab_side, available gain circle, operating gain circle, ESR, ESL, Q factor, self-resonance, SRF, Ceff, Leff, capacitance, inductance, stability, mu, Rollett, K factor, MAG, MSG, passivity, group delay, sigma max, decoupling, MLCC, fixture, shunt-through
 ---
 
 A **derived metric** is a quantity the Data Display computes from an S-matrix rather than reading out
@@ -209,7 +209,7 @@ on more than two ports, for any output port:
 | `nf(SP1.S[, Γs][, port])` | The noise figure in dB from port 1 to `port` (2 by default), per frequency. With no Γs the source is port 1's own Z0, so `nf(SP1.S)` is the run's `NF`. Γs is a number, such as `0` or `polar(0.3, 45)`, or one value per frequency, such as `SP1.Sopt`. A port comes after a Γs: `nf(SP1.S, 0, 3)`. |
 | `te(SP1.S[, Γs][, port])` | The same as an equivalent input noise temperature, T0·(F − 1), in K. `te(SP1.S)` is the run's `Te`. |
 | `rn(SP1.S)` | Rn normalised to R, Rn/R, per frequency: a Touchstone noise row's rn. A two-port's. |
-| `ns_circle(SP1.S, NFdB[, npts])` | The Γs that give NFdB on a two-port run, as `npts` points (101 by default) round a closed circle, per frequency: a complex `{freq, point}` cube. |
+| `ns_circle(SP1.S, NFdB[, npts])` | The Γs that give NFdB on a two-port run, as `npts` points (101 by default) round a closed circle, per frequency: a complex `{freq, point}` cube. NFdB is a number, or one value per frequency, such as `SP1.NFmin + 0.5`. |
 | `ns_circle(NFdB, NFmin, Sopt, rn[, npts])` | The same circle from noise parameters alone: NFmin in dB, Sopt and rn = Rn/R. Each is a number, or a cube with one value per frequency, so a circle can be drawn from a datasheet's numbers or from cubes that are not a noise run. The cubes' axes lead the result. |
 
 ```
@@ -249,6 +249,49 @@ measure NF2 = ns_circle(SP1.S, 2)
 ```
 
 The trace spec `NF2[~, :]` draws one circle per frequency, and `NF2[0, :]` draws the first one only.
+
+A circle can also be a trace's expression itself, with no measurement: `ns_circle(SP1.S, SP1.NFmin + 0.5)` on a
+Smith chart. The trace card then shows a **Freq** picker, and the trace draws the circle at the frequency it names.
+`SP1.Sopt` with a Freq picked is the one point at that frequency. The
+[Noise and gain circles](#lna-circles) chart is built this way.
+
+## Gain and stability circles {#gain-circles}
+
+An LNA's input match trades noise figure against available gain and stability, all on the source plane. Four
+functions draw the other two beside `ns_circle`. Each takes a two-port run's S cube. A source-plane circle is on
+port 1's Re Z0, the reference `Sopt` is on, and a load-plane circle on port 2's.
+
+| Function | Returns |
+|---|---|
+| `ga_circle(SP1.S, GdB[, npts])` | The Γs that give an available gain of GdB, the load conjugately matched: a `{freq, point}` cube, as `ns_circle`'s. GdB is a number, or one value per frequency, such as `max_gain(SP1.S) - 1`. |
+| `gp_circle(SP1.S, GdB[, npts])` | The Γ<sub>L</sub> that give an operating (power) gain of GdB, the source conjugately matched. |
+| `stab_circle(SP1.S, plane[, npts])` | The [stability circle](#circles) on `plane`, `"source"` or `"load"`, as points. |
+| `stab_side(SP1.S, plane)` | Per frequency, `1` when the inside of that plane's circle is the stable region and `-1` when the outside is. |
+
+```
+g = G / |S21|²        C1 = S11 − Δ·S22*        D = 1 + g·(|S11|² − |Δ|²)
+centre = g·C1* / D                           radius = √(1 − 2K·|S12·S21|·g + |S12·S21|²·g²) / |D|
+```
+
+That is the available-gain circle; the operating-gain circle is the same with ports 1 and 2 exchanged. Every point of
+`ga_circle(SP1.S, x)` has an available gain of x, every point of a source `stab_circle` has |Γout| = 1, and every
+point of a load one |Γin| = 1.
+
+A gain above `max_gain` has no circle at that frequency. Its points are NaN, and the run says once which frequencies
+had none (`measure.circle.none`). A network that is not a two-port is refused naming its shape
+(`measure.circle.not-two-port`). On a Smith chart, a `stab_circle` trace shades its unstable side inside the chart.
+
+### The Noise and gain circles chart {#lna-circles}
+
+One Smith chart of the source plane shows the whole trade: `Sopt` as a marker, three noise circles at NFmin + 0.25,
+0.5 and 1 dB, three available-gain circles at max_gain − 1, 2 and 3 dB, and the source stability circle with its
+unstable side shaded. It is drawn at one frequency, the middle of the sweep, which each trace's Freq picker changes.
+Every circle is an ordinary expression trace, so any of them can be edited afterwards.
+
+It opens in one action on a two-port S-parameter result run with `Noise=yes`:
+
+- in a Data Display, the **Add Noise and Gain Circles** button on the toolbar, with that result as the source;
+- in the Workspace, **Open Noise and Gain Circles** on the result's `.npy`, which opens a new Data Display holding it.
 
 ## The two-terminal passive readouts {#passive}
 

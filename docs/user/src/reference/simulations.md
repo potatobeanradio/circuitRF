@@ -124,7 +124,9 @@ two-port. The names are the ones commonly used for them. The linear noise factor
 A network with more than two ports gets `Cs` only. For the noise figure from port 1 to any other port, or
 from any other source, and for constant-noise-figure circles, use
 [`nf()`, `te()`, `rn()` and `ns_circle()`](derived-metrics.html#noise): `nf(SP1.S, 0, 3)` is the noise
-figure from port 1 to port 3 of a three-port.
+figure from port 1 to port 3 of a three-port. Gain and stability circles to draw beside the noise circles are
+[`ga_circle()`, `gp_circle()` and `stab_circle()`](derived-metrics.html#gain-circles), and the
+[Noise and gain circles](derived-metrics.html#lna-circles) chart shows all of them in one action.
 
 **What is noisy.**
 

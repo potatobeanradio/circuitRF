@@ -943,18 +943,7 @@ namespace RfCore
             var rL = new double[n];
 
             for (int i = 0; i < n; i++)
-            {
-                var m   = s.Matrices[i];
-                var S11 = m[0, 0]; var S12 = m[0, 1];
-                var S21 = m[1, 0]; var S22 = m[1, 1];
-                var delta  = S11 * S22 - S12 * S21;
-                double s22sq = S22.Magnitude * S22.Magnitude;
-                double d2    = delta.Magnitude * delta.Magnitude;
-                double denom = s22sq - d2;
-
-                CL[i] = Complex.Conjugate(S22 - delta * Complex.Conjugate(S11)) / denom;
-                rL[i] = (S12 * S21).Magnitude / Math.Abs(denom);
-            }
+                (CL[i], rL[i]) = RfCore.Data.TwoPortCircles.LoadStability(s.Matrices[i]);
             return (CL, rL);
         }
 
@@ -1056,18 +1045,7 @@ namespace RfCore
             var rS = new double[n];
 
             for (int i = 0; i < n; i++)
-            {
-                var m   = s.Matrices[i];
-                var S11 = m[0, 0]; var S12 = m[0, 1];
-                var S21 = m[1, 0]; var S22 = m[1, 1];
-                var delta  = S11 * S22 - S12 * S21;
-                double s11sq = S11.Magnitude * S11.Magnitude;
-                double d2    = delta.Magnitude * delta.Magnitude;
-                double denom = s11sq - d2;
-
-                CS[i] = Complex.Conjugate(S11 - delta * Complex.Conjugate(S22)) / denom;
-                rS[i] = (S12 * S21).Magnitude / Math.Abs(denom);
-            }
+                (CS[i], rS[i]) = RfCore.Data.TwoPortCircles.SourceStability(s.Matrices[i]);
             return (CS, rS);
         }
 
@@ -1079,15 +1057,8 @@ namespace RfCore
         public static bool[] StableRegionInsideLoad(SNP snp)
         {
             var sNorm = NormalizedS2Port(snp);
-            var (CL, rL) = StabilityCirclesLoad(snp);
-            int n = sNorm.FrequencyCount;
-            var flags = new bool[n];
-            for (int i = 0; i < n; i++)
-            {
-                bool originStable       = sNorm.Matrices[i][0, 0].Magnitude < 1.0; // |S11| < 1
-                bool originInsideCircle = CL[i].Magnitude < rL[i];
-                flags[i] = originStable == originInsideCircle;
-            }
+            var flags = new bool[sNorm.FrequencyCount];
+            for (int i = 0; i < flags.Length; i++) flags[i] = RfCore.Data.TwoPortCircles.StableInsideLoad(sNorm.Matrices[i]);
             return flags;
         }
 
@@ -1097,15 +1068,8 @@ namespace RfCore
         public static bool[] StableRegionInsideSource(SNP snp)
         {
             var sNorm = NormalizedS2Port(snp);
-            var (CS, rS) = StabilityCirclesSource(snp);
-            int n = sNorm.FrequencyCount;
-            var flags = new bool[n];
-            for (int i = 0; i < n; i++)
-            {
-                bool originStable       = sNorm.Matrices[i][1, 1].Magnitude < 1.0; // |S22| < 1
-                bool originInsideCircle = CS[i].Magnitude < rS[i];
-                flags[i] = originStable == originInsideCircle;
-            }
+            var flags = new bool[sNorm.FrequencyCount];
+            for (int i = 0; i < flags.Length; i++) flags[i] = RfCore.Data.TwoPortCircles.StableInsideSource(sNorm.Matrices[i]);
             return flags;
         }
 

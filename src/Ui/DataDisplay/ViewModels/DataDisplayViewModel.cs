@@ -773,6 +773,22 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// brief NZ-2 — the <see cref="NoiseCirclesPreset"/> Smith chart of the selected source's two-port noise result: Sopt,
+    /// noise, available-gain and source stability circles at one frequency, every one an expression trace. A display that
+    /// holds nothing but its empty seeded plot gets the chart in that plot's place. Null, and nothing added, when the
+    /// selected source has no noise result.
+    /// </summary>
+    public async Task<PlotContainerViewModel?> AddNoiseCirclesAsync()
+    {
+        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !NoiseCirclesPreset.Available(entry.Data))
+            return null;
+        var pc = NoiseCirclesPreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        if (pc is null) return null;
+        if (Plots.Count == 1 && Plots[0].Inspector.Traces.Count == 0) InternalRemoveContainer(Plots[0]);
+        return await AddPresetPlotAsync(pc);
+    }
+
+    /// <summary>
     /// Adds a plot a preset built (a contribution Pareto, brief-yield-9 R-ya9-5), placed as Add Plot places one, as
     /// one undo step — the same steps <see cref="AddStatisticsTableAsync"/> takes.
     /// </summary>
@@ -1794,6 +1810,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 : t.Slice.Select(AxisSliceConfig.From).ToList(),
             Expression    = t.Expression,
             XSpec         = t.XSpec,
+            ExpressionFreqIndex = t.ExpressionFreqIndex >= 0 ? t.ExpressionFreqIndex : null,
             XSourcePath   = t.XSourcePath is { Length: > 0 } xp
                 ? ComputeSourceKey(xp, library)
                 : null,

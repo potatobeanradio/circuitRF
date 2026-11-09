@@ -360,6 +360,10 @@ public sealed class TraceConfig
     // existed, so every .cdd written earlier loads unchanged.
     public string?               XSpec         { get; set; }
 
+    /// <summary>The frequency index an expression keeping a <c>freq</c> axis is drawn at (Trace.ExpressionFreqIndex). Null
+    /// when unset, so every .cdd written before it loads unchanged.</summary>
+    public int?                  ExpressionFreqIndex { get; set; }
+
     /// <summary>Absolute path of the X side's data source; null = the same source as the Y side.</summary>
     public string?               XSourcePath   { get; set; }
 

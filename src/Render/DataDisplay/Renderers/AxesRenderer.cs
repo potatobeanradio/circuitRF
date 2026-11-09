@@ -1479,7 +1479,7 @@ namespace CircuitRF.Render.DataDisplay
                     double scale = plot.FreqUnits.Scale();
                     string sMin  = (scale * min).ToString("G4");
                     string sMax  = (scale * max).ToString("G4");
-                    label       = $"freq ({sMin} to {sMax} {plot.FreqUnits.Description()})";
+                    label       = Plot.FreqSpanLabel(sMin, sMax, plot.FreqUnits.Description());
                     paint.Color = multiTrace
                         ? theme.ToSKColor(nonContourTraces[i].Properties.LineColor)
                         : theme.TextColor;

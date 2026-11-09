@@ -222,6 +222,9 @@ public sealed partial class Evaluator
         // from every quantity the Data Display derives from an S cube.
         if (IsNetworkBuiltin(cl.Name)) return EvalNetworkCall(cl, scope);
 
+        // A two-port's gain and stability circles (Evaluator.Circles.cs, brief NZ-2), beside ns_circle.
+        if (IsCircleBuiltin(cl.Name)) return EvalCircleCall(cl, scope);
+
         // The field measurements over a fields analysis (Evaluator.Fields.cs, brief-sar-10).
         if (IsFieldMetric(cl.Name)) return EvalFieldMetric(cl, scope);
 

@@ -87,6 +87,10 @@ public interface ITreeActions
     /// <summary>Open in S-Parameter Viewer on a Touchstone file: its plots and what it states, in the viewer's window.</summary>
     void OpenInSParameterViewer(ProjectTreeNodeViewModel node) { }
 
+    /// <summary>brief NZ-2 — Open Noise and Gain Circles on a result file: a new Data Display holding the noise, gain and
+    /// stability circles of its two-port noise result.</summary>
+    void OpenNoiseCircles(ProjectTreeNodeViewModel node) { }
+
     /// <summary>brief-dfr32-3 — whether a <c>.c3d</c>'s or <c>.cem</c>'s runs hold saved fields now.</summary>
     bool HasSavedFields(ProjectTreeNodeViewModel node) => false;
 

@@ -400,7 +400,8 @@ public sealed partial class Evaluator
                 $"{n} arguments, the first {(first.Kind == ValueKind.Cube ? "a cube" : "a " + first.Kind)}"));
 
         var nf = runForm ? EvalExpr(cl.Args[1], scope) : first;
-        if (nf.Kind != ValueKind.Real) throw new ExpressionException(NoiseFunctionDiagnostics.Figure(cl.Name, nf.Kind.ToString()));
+        if (nf.Kind != ValueKind.Real && !(nf.Kind == ValueKind.Cube && nf.AsCube().DataKind == DataKind.Real))
+            throw new ExpressionException(NoiseFunctionDiagnostics.Figure(cl.Name, nf.Kind.ToString()));
         int npts = n is 3 or 5 ? CirclePointCount(cl, scope, n - 1) : 101;
 
         Axis[] leading;
@@ -413,16 +414,27 @@ public sealed partial class Evaluator
         }
         else (leading, p) = NoiseParameters(cl, scope);
 
-        double f = Math.Pow(10, nf.AsReal() / 10);
+        var levels = PerPointLevels(nf, p.Length, got => NoiseFunctionDiagnostics.Figure(cl.Name, got));
         var pts = new Complex[p.Length * npts];
         for (int b = 0; b < p.Length; b++)
         {
-            var (centre, radius) = NoiseMetrics.NoiseCircle(p[b], f);
+            var (centre, radius) = NoiseMetrics.NoiseCircle(p[b], Math.Pow(10, levels[b] / 10));
             for (int k = 0; k < npts; k++)
                 pts[b * npts + k] = centre + radius * Complex.Exp(new Complex(0, 2 * Math.PI * k / (npts - 1)));
         }
         var point = new Axis("point", [.. Enumerable.Range(0, npts).Select(k => (double)k)]);
         return new Value(new DataCube([.. leading, point], pts));
+    }
+
+    /// <summary>A circle's level (dB) as one value per leading point: a number for all of them, or a real cube with one
+    /// value per point — <c>SP1.NFmin + 0.5</c>, <c>max_gain(SP1.S) - 1</c> — so a circle can follow the frequency.</summary>
+    private static double[] PerPointLevels(Value v, int count, Func<string, CircuitRF.Diagnostics.Diagnostic> refusal)
+    {
+        if (v.Kind == ValueKind.Real) return [.. Enumerable.Repeat(v.AsReal(), count)];
+        if (v.Kind == ValueKind.Cube && v.AsCube().DataKind == DataKind.Real && v.AsCube().BufferLength == count)
+            return v.AsCube().RealValues;
+        throw new ExpressionException(refusal(v.Kind == ValueKind.Cube
+            ? $"{v.AsCube().BufferLength} values, and the S cube has {count} points" : v.Kind.ToString()));
     }
 
     private int CirclePointCount(CallExpr cl, Scope scope, int arg)

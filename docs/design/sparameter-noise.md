@@ -83,6 +83,32 @@ passive part; otherwise it keeps the type-level `ActiveExact` and stays named as
 so a passive block without noise data is thermal at `Temperature.ResolveDeviceC` like any part. Noise data from a file
 is absolute and does not move with it.
 
+### 1.2 Gain and stability circles, and the chart that shows the trade
+
+An LNA's input match trades NF against available gain and stability on the source plane, so `ns_circle` has three
+neighbours (`src/Core/Expressions/Evaluator.Circles.cs`, the math in `src/RfCore/Data/TwoPortCircles.cs`):
+`ga_circle` (constant available gain, source plane), `gp_circle` (constant operating gain, load plane), `stab_circle`
+and `stab_side`. S is put on the real part of each port's own reference first, so Γs is on port 1's Re Z0 (as `Sopt`
+is) and ΓL on port 2's. With `g = G/|S21|²` and `D = 1 + g(|S11|² − |Δ|²)` the available-gain circle has centre
+`g(S11 − ΔS22*)*/D` and radius `√(1 − 2K|S12S21|g + |S12S21|²g²)/|D|`; the operating-gain one exchanges the ports. A
+gain above `max_gain` (MAG, or MSG when the part is not unconditionally stable) has no circle: NaN points and one
+`measure.circle.none` warning per measurement naming the frequencies. `RFNetwork`'s stability circles and stable-side
+flags now call the same per-matrix functions, so the Data Display's derived stability traces and these agree by
+construction. A circle's level may be one value per frequency (`SP1.NFmin + 0.5`, `max_gain(SP1.S) - 1`), which is what
+lets a circle follow the frequency picked.
+
+**On a trace.** An expression calling a network or circle function is evaluated once over the result's own cubes, with
+each whole cube bound as the DataSet's own object so the function finds its analysis (Z0, Cs) as a measurement does
+(`TraceExpression`). A result that keeps `freq` beside another axis is drawn at one frequency, the trace's
+`ExpressionFreqIndex` — the card's Freq picker, saved in the `.cdd` — and a `[freq]` quantity with a frequency asked for
+becomes the one point there (Sopt as a marker). `stab_circle` leaves its `stab_side` as the companion `side`, and a
+Smith chart shades the unstable side of such a trace, clipped to |Γ| ≤ 1.
+
+**The preset** (`src/Render/DataDisplay/NoiseCirclesPreset.cs`) is one Smith chart of these traces: Sopt, NF circles at
+NFmin + 0.25, 0.5 and 1 dB, available-gain circles at max_gain − 1, 2 and 3 dB and the source stability circle, at the
+middle frequency. The gain and stability circles stay out of autoscale, so the unit circle frames the chart. It is the
+Data Display toolbar's bullseye button and the Workspace's **Open Noise and Gain Circles** on a result `.npy`.
+
 ## 2. Conventions
 
 | Quantity | Convention |

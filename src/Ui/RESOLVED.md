@@ -42087,3 +42087,15 @@ carried from the edited analysis by `SParameterAnalysis.WithSweeps`, which now t
 on the analysis's own value, and while the box still says what it said the analysis's own spelling (`on`, `true`) is
 kept, so opening and closing the dialog rewrites nothing; a change writes `yes` or `no` (the default, which the writer
 leaves out). Gate: `SpNoiseCheckBoxTests`.
+
+## A typed expression's trace card names no quantity (2026-11-09)
+
+Every trace card shows the group and quantity pickers, and a typed expression (`ns_circle(S, NFmin + 0.25)`,
+`V[:] - W[:]`) matches none of their items, so `RebuildSignalsCore` fell back to the first group and its first item: each
+of the Noise and gain circles chart's eight traces read "S-Parameters / S(1,1)", as if it were S11, and picking anything
+there would have replaced the circle. `TraceRowViewModel.IsTypedExpression` (an expression with no single-cube identity
+that resolves — `TraceResolve`'s own rule) now leaves both pickers unselected, the group picker saying "Expression", and
+hides the S/Z/Y toggle; a commit that makes a trace such an expression clears them. An INVALID edit still leaves them as
+they were (`ViSymmetricCardTests.SpecEdit_Invalid_BestEffort` holds that). Picking an item still re-aims the trace at it.
+Gate: `ExpressionTracePickerTests`; seen with UiSnapshot on the circles chart's inspector.
+

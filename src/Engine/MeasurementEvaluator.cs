@@ -159,6 +159,7 @@ public sealed class MeasurementEvaluator
         {
             Value result;
             eval.TakeCompanions();
+            eval.TakeNotes();
             try { result = eval.Eval(m.Expression, mScope, m.Unit); }
             catch (Exception ex)
             {
@@ -170,6 +171,11 @@ public sealed class MeasurementEvaluator
                 errors.Add($"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {why}");
                 continue;  // skip bind+emit; later measurements referencing this name report cascade error
             }
+
+            // What an evaluation had to say beside its value (a gain circle that does not exist at some frequencies) is
+            // the run's warning, once per measurement.
+            foreach (var note in eval.TakeNotes())
+                _netlist.AddWarningOnce($"measurement-note:{m.Name}:{note}", $"Measurement '{m.Name}': {note}");
 
             // Inject the result so later measurements can reference this one by name.
             mScope.Bind(m.Name, result.ToString()!);

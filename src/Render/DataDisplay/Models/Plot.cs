@@ -732,9 +732,14 @@ namespace CircuitRF.Render.DataDisplay
                     return $"freq ({u})";
                 string min = (FreqUnits.Scale() * Traces[0].MinFreq).ToString($"G{Axes.NumDigitsXAxis}");
                 string max = (FreqUnits.Scale() * Traces[0].MaxFreq).ToString($"G{Axes.NumDigitsXAxis}");
-                return $"freq ({min} to {max} {u})";
+                return FreqSpanLabel(min, max, u);
             }
         }
+
+        /// <summary>A frequency span as an axis caption: <c>freq (3 to 5 GHz)</c>, or <c>freq (4 GHz)</c> when the span is one
+        /// frequency — a Smith chart drawn at one frequency (brief NZ-2's circles) says which, not "4 to 4".</summary>
+        internal static string FreqSpanLabel(string min, string max, string unit)
+            => min == max ? $"freq ({min} {unit})" : $"freq ({min} to {max} {unit})";
 
         /// <summary>
         /// The X-axis label ONE trace would carry — the cube's X-axis name and unit, or the X spec
@@ -751,7 +756,7 @@ namespace CircuitRF.Render.DataDisplay
                 if (!SupportsComplex) return $"freq ({u})";
                 string mn = (FreqUnits.Scale() * t.MinFreq).ToString($"G{Axes.NumDigitsXAxis}");
                 string mx = (FreqUnits.Scale() * t.MaxFreq).ToString($"G{Axes.NumDigitsXAxis}");
-                return $"freq ({mn} to {mx} {u})";
+                return FreqSpanLabel(mn, mx, u);
             }
 
             string axisName = t.CubeXAxisName;

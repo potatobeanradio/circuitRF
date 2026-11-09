@@ -976,7 +976,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         get
         {
-            if (_trace.IsDerived) return false;
+            if (_trace.IsDerived || IsTypedExpression) return false;
             if (!_trace.IsCubeBound) return _trace.Data is { } d && !d.IsEmpty;
             return _trace.CubeName is { } cubeName
                 && ResolveTraceSourceEntry()?.Data is { } ds
@@ -3300,9 +3300,12 @@ public partial class TraceRowViewModel : ViewModelBase
         // Already suppressed for the whole rebuild by RebuildSignals — see its remarks. Setting the
         // flag back to false HERE (as this used to) would re-open the rest of the method to exactly
         // the write-back the guard exists to absorb.
-        SelectedGroup  = match?.Group ?? AvailableGroups.FirstOrDefault();
+        // A typed expression is none of these items, so the pickers say nothing rather than show the first item
+        // as if the trace were it (S(1,1) on every noise circle). Picking still re-aims the trace at what is picked.
+        bool typed = IsTypedExpression;
+        SelectedGroup  = match?.Group ?? (typed ? null : AvailableGroups.FirstOrDefault());
         FilterSignalsToGroup(SelectedGroup);
-        SelectedSignal = match ?? AvailableSignals.FirstOrDefault();
+        SelectedSignal = match ?? (typed ? null : AvailableSignals.FirstOrDefault());
 
         // Keep per-port Z0 fields fresh when the library changes in place (e.g. auto-refresh) —
         // WITHOUT clearing an override the user set. See RefreshSourceZ0PreservingOverride.
@@ -3981,6 +3984,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(TraceLabelWatermark));
         RefreshWspSection();   // WSP-4: the probe pickers and the readout are card state like the rest
+        RefreshExpressionFreq();   // brief NZ-2: a circle expression's frequency picker
         OnPropertyChanged(nameof(IsContourTrace));
         OnPropertyChanged(nameof(IsSummaryColumn));
         OnPropertyChanged(nameof(IsStandardTrace));
@@ -4156,7 +4160,11 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_trace.CubeName is not null)   // valid single-cube spec
             RebuildSignals();              // re-syncs group + item combos AND axis-role rows to the new cube
         else
-            RebuildAxisRoles();            // best-effort: clear stale rows; combos unchanged
+        {
+            RebuildAxisRoles();            // best-effort: clear stale rows
+            if (IsTypedExpression)         // a valid expression: the combos no longer name the trace;
+                ClearPickersForExpression(); // an invalid one leaves them as they were
+        }
         SyncVersusFromTrace();             // the vs row tracks the typed text like every other control
         OnPropertyChanged(nameof(IsCubeBoundTrace));
         OnPropertyChanged(nameof(ShowAllToggleVisible));

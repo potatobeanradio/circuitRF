@@ -36,7 +36,15 @@ public sealed partial class Evaluator
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
     /// <c>(</c>, not part of a longer identifier.</summary>
-    public static bool CallsAxisFunction(string expression)
+    public static bool CallsAxisFunction(string expression) => CallsAny(expression, AxisFunctions.Contains);
+
+    /// <summary>Whether <paramref name="expression"/> calls a network metric, a noise function or a circle function
+    /// (Evaluator.Network.cs, Evaluator.Circles.cs): each reads a whole S cube and the analysis it came from, so a trace
+    /// evaluates it once over the cubes rather than one sample at a time.</summary>
+    public static bool CallsNetworkFunction(string expression)
+        => CallsAny(expression, n => IsNetworkBuiltin(n) || IsCircleBuiltin(n));
+
+    private static bool CallsAny(string expression, Func<string, bool> named)
     {
         for (int i = 0; i < expression.Length; i++)
         {
@@ -45,7 +53,7 @@ public sealed partial class Evaluator
             while (end < expression.Length && IsNamePart(expression[end])) end++;
             int open = end;
             while (open < expression.Length && expression[open] == ' ') open++;
-            if (open < expression.Length && expression[open] == '(' && AxisFunctions.Contains(expression[i..end])) return true;
+            if (open < expression.Length && expression[open] == '(' && named(expression[i..end])) return true;
             i = end;
         }
         return false;

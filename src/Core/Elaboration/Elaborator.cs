@@ -1479,9 +1479,7 @@ public sealed class Elaborator
             noiseOff = true;
         else if (!(v.Equals("yes", StringComparison.OrdinalIgnoreCase) || v.Equals("true", StringComparison.OrdinalIgnoreCase)
             || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v == "1"))
-            throw new InvalidOperationException(
-                $"'{childPath}': {NoiseParamName}={v} is not yes or no. {NoiseParamName}=no makes the part noiseless in " +
-                $"the S-parameter noise analysis; {NoiseParamName}=yes, the default, leaves it as noisy as its model.");
+            throw new InvalidOperationException(NoiseSwitchDiagnostics.NotYesOrNo(childPath, v).Render());
 
         var rest = inst.Overrides.Where((_, i) => !inst.Overrides[i].Name.Equals(NoiseParamName, StringComparison.OrdinalIgnoreCase));
         return new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, rest) { RefNetBinding = inst.RefNetBinding };

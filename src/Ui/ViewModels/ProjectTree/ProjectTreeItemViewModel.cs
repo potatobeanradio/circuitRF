@@ -370,6 +370,17 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         && CircuitRF.Ui.Recognition.PasteImageAvailability.IsPictureFile(AbsolutePath);
 
     /// <summary>
+    /// brief NZ-2 — True for a result file (<c>.npy</c>), a Known File or inside the workspace folder, which drives
+    /// <i>Open Noise and Gain Circles</i>. Extension only, as <see cref="IsTouchstoneFile"/> is, so building the menu never
+    /// reads a file; a result with no noise is refused by name when the item is chosen.
+    /// </summary>
+    public bool IsResultFile =>
+        !IsDirectory
+        && !IsWarning
+        && (Kind == NodeKind.KnownFile || (Kind == NodeKind.OtherFile && IsInsideWorkspace))
+        && Path.GetExtension(AbsolutePath).Equals(".npy", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// True for a Touchstone file (<c>.s1p</c> … <c>.sNp</c>) — a Known File, or a file inside the workspace folder —
     /// which drives <i>Open in S-Parameter Viewer</i> and opens the viewer on a double-click. Extension only, as
     /// <see cref="IsImageFile"/> is, so building the menu never reads a file; a broken Known File gets no row.
@@ -613,6 +624,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public IRelayCommand CreateTouchstoneFromPlotCommand { get; }
     /// <summary>Opens this Touchstone file in the S-Parameter Viewer.</summary>
     public IRelayCommand OpenInSParameterViewerCommand { get; }
+    /// <summary>brief NZ-2 — a new Data Display of this result's noise, gain and stability circles.</summary>
+    public IRelayCommand OpenNoiseCirclesCommand { get; }
     /// <summary>brief-dfr32-3 R-dfr32-3-2 — moves the saved field files of this 3D view's or EM setup's runs to the Trash.</summary>
     public IRelayCommand DeleteSavedFieldsCommand { get; }
 
@@ -955,6 +968,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         OpenInSParameterViewerCommand = new RelayCommand(
             () => _actions?.OpenInSParameterViewer(this),
             () => _actions is not null && IsTouchstoneFile);
+
+        OpenNoiseCirclesCommand = new RelayCommand(
+            () => _actions?.OpenNoiseCircles(this),
+            () => _actions is not null && IsResultFile);
 
         DeleteSavedFieldsCommand = new RelayCommand(() => _actions?.DeleteSavedFields(this), () => _actions is not null);
 

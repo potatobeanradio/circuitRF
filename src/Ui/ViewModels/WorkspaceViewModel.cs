@@ -10770,6 +10770,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Views.SParameters.SParameterViewerWindow.ShowForFile(path, ResolveOwner(null));
     }
 
+    /// <summary>
+    /// brief NZ-2 — a new Data Display on the result <paramref name="path"/>, holding its Noise and gain circles chart: one
+    /// action from the result's context menu. A result with no two-port noise is refused by name and opens nothing.
+    /// </summary>
+    public async Task OpenNoiseCirclesAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Messages.Error($"'{path}' is no longer there.");
+            return;
+        }
+        var vm  = new DataDisplayDocumentViewModel();
+        vm.Window.GetResultsRootAction = GetResultsRoot;
+        var lib = vm.Window.DataSourceLibrary;
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
+        if (!NoiseCirclesPreset.Available(lib.SelectedEntry?.Data))
+        {
+            Messages.Warning($"{Path.GetFileName(path)} holds no two-port noise result, so there are no noise circles to draw. " +
+                             "Run a two-port S-parameter analysis with Noise=yes.", path);
+            return;
+        }
+
+        var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
+        _scratchDataDisplays.Add(doc);
+        vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        WireDataDisplayLibraryEvents(vm);
+        WireDataDisplayTreeDirty(doc);
+        _factory.OpenDocument(doc);
+        if (vm.Window.DataDisplay is { } dd) await dd.AddNoiseCirclesAsync();
+    }
+
     /// <summary>Opens a <c>.cdd</c> as a Data Display tab, as double-clicking it in the Workspace does — the S-Parameter
     /// Viewer's Save as Data Display lands here.</summary>
     public void OpenDataDisplayDocument(string path)

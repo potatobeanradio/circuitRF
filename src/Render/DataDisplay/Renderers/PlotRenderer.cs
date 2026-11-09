@@ -476,8 +476,13 @@ namespace CircuitRF.Render.DataDisplay
                 else if (TrialRenderer.Handles(trace))
                     TrialRenderer.Draw(canvas, canvasSize, trace, plot, tf, theme, trialCache);
                 else
+                {
+                    // brief NZ-2: a stability circle (stab_circle) shades its unstable side, under the line.
+                    if (plot.PlotType == PlotType.Smith && trace.StableSide != 0)
+                        TraceRenderer.ShadeUnstableSide(canvas, trace, tf, theme);
                     TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                         stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
+                }
                 if (plotIsRect && trace.NormalFit is not null)
                     StatisticsRenderer.DrawNormalFit(canvas, canvasSize, trace, plot, tf, theme);
                 if (dim) canvas.Restore();

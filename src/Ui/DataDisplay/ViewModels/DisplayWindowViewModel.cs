@@ -381,6 +381,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             OnPropertyChanged(nameof(AwaitingRunText));
             AddStatisticsTableCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(AddStatisticsTableTip));
+            AddNoiseCirclesCommand.NotifyCanExecuteChanged();
             RaiseDirtyChanged();
         };
         // A run finishing reloads the selected file in place — it may only now carry its statistics.
@@ -388,6 +389,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         {
             AddStatisticsTableCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(AddStatisticsTableTip));
+            AddNoiseCirclesCommand.NotifyCanExecuteChanged();
         };
 
         UpdateThemeFromSystem();
@@ -524,6 +526,17 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     {
         if (DataDisplay is { } d) await d.AddStatisticsTableAsync();
     }
+
+    /// <summary>brief NZ-2 — the Noise and gain circles chart of the selected source's two-port noise result. Disabled, with
+    /// its tooltip saying what it needs, while the selected source has none.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddNoiseCircles))]
+    private async Task AddNoiseCircles()
+    {
+        if (DataDisplay is { } d) await d.AddNoiseCirclesAsync();
+    }
+
+    /// <summary>Whether the selected source is a two-port S-parameter result with Noise=yes.</summary>
+    public bool CanAddNoiseCircles => NoiseCirclesPreset.Available(DataSourceLibrary.SelectedEntry?.Data);
 
     /// <summary>Whether the selected source is a result with a statistics table — a Monte Carlo or yield run's.</summary>
     public bool CanAddStatisticsTable => StatisticsTablePreset.Available(DataSourceLibrary.SelectedEntry?.Data);

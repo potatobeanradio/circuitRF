@@ -61,7 +61,36 @@ public static class TraceExpression
         out string[]?  xLabels,
         out IReadOnlyDictionary<string, DataCube> companions,
         out string     error)
+        => TryEvaluate(expression, ds, plotType, -1, out xValues, out complexValues, out realValues, out xAxisName,
+                       out xUnit, out xLabels, out companions, out _, out error);
+
+    /// <summary>One frequency of a result that keeps a <c>freq</c> axis beside another: the axis and the index pinned.</summary>
+    public sealed record FreqPin(Axis Freq, int Index);
+
+    /// <summary>
+    /// <see cref="TryEvaluate(string, DataSet, PlotType, out double[], out Complex[], out double[], out string, out string, out string[], out IReadOnlyDictionary{string, DataCube}, out string)"/>
+    /// with a frequency pin (brief NZ-2). An expression evaluated once over its cubes — an axis function's, or a network
+    /// or circle function's (<c>ga_circle(SP1.S, 12)</c>, <c>[freq, point]</c>) — whose result keeps <c>freq</c> beside
+    /// another axis is drawn at one frequency: <paramref name="freqIndex"/>, or the first when it is negative, and
+    /// <paramref name="pinned"/> says which. With <paramref name="freqIndex"/> set, any expression is evaluated once and
+    /// pinned, so a [freq] quantity such as <c>SP1.Sopt</c> becomes the one point at that frequency.
+    /// </summary>
+    public static bool TryEvaluate(
+        string      expression,
+        DataSet     ds,
+        PlotType    plotType,
+        int         freqIndex,
+        out double[]   xValues,
+        out Complex[]? complexValues,
+        out double[]?  realValues,
+        out string     xAxisName,
+        out string?    xUnit,
+        out string[]?  xLabels,
+        out IReadOnlyDictionary<string, DataCube> companions,
+        out FreqPin?   pinned,
+        out string     error)
     {
+        pinned        = null;
         companions    = NoCompanions;
         xValues       = Array.Empty<double>();
         complexValues = null;
@@ -81,11 +110,13 @@ public static class TraceExpression
         if (!ScanRefs(expression, ds, out var uniqueRefs, out var substitutions, out error)) return false;
 
         // A function that reads a whole axis (mean_over, histogram, cdf, …) cannot be evaluated a sample at a
-        // time: the expression is evaluated ONCE over the cubes it names, and its result's one axis is the X.
-        if (Evaluator.CallsAxisFunction(expression))
-            return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions,
+        // time: the expression is evaluated ONCE over the cubes it names, and its result's one axis is the X. Nor can one
+        // that reads a whole S cube and its analysis (a noise or gain circle), and a pinned frequency needs the whole
+        // result to pin.
+        if (Evaluator.CallsAxisFunction(expression) || Evaluator.CallsNetworkFunction(expression) || freqIndex >= 0)
+            return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions, freqIndex,
                                     out xValues, out complexValues, out realValues, out xAxisName, out xUnit, out xLabels,
-                                    out companions, out error);
+                                    out companions, out pinned, out error);
 
         // ── Step 2: Slice each unique ref to a rank-1 array ──────────────────
         foreach (var info in uniqueRefs)
@@ -382,14 +413,41 @@ public static class TraceExpression
 
     private static bool TryEvaluateWhole(
         string expression, DataSet ds, PlotType plotType, List<CubeRefInfo> refs,
-        List<(int start, int end, int pIdx)> substitutions,
+        List<(int start, int end, int pIdx)> substitutions, int freqIndex,
         out double[] xValues, out Complex[]? complexValues, out double[]? realValues,
         out string xAxisName, out string? xUnit, out string[]? xLabels,
-        out IReadOnlyDictionary<string, DataCube> companions, out string error)
+        out IReadOnlyDictionary<string, DataCube> companions, out FreqPin? pinned, out string error)
     {
-        xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null;
+        xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null; pinned = null;
         if (!TryEvaluateWholeValue(expression, ds, refs, substitutions, out var result, out companions, out error))
             return false;
+
+        // A result that keeps freq beside another axis (a circle's [freq, point]), or any result when a frequency is asked
+        // for, is drawn at one frequency; the companions that share the axis are pinned with it.
+        if (result.Kind == ValueKind.Cube && result.AsCube().Axes.FirstOrDefault(a => a.Name == FreqAxis) is { } fAxis
+            && (freqIndex >= 0 || result.AsCube().Rank >= 2))
+        {
+            int k = Math.Clamp(Math.Max(freqIndex, 0), 0, fAxis.Length - 1);
+            pinned = new FreqPin(fAxis, k);
+            result = PinFreq(result.AsCube(), k);
+            if (companions.Count > 0)
+                companions = companions.ToDictionary(c => c.Key, c => PinFreq(c.Value, k) is { Kind: ValueKind.Cube } v
+                    ? v.AsCube()
+                    : new DataCube([new Axis("value", [0.0])], [PinFreq(c.Value, k).AsReal()]));
+            if (result.Kind is ValueKind.Real or ValueKind.Complex)
+            {
+                // One point: the quantity at that frequency, a marker on the chart (Sopt).
+                xValues = [fAxis.Values[k]]; xAxisName = fAxis.Name; xUnit = string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit;
+                if (result.Kind == ValueKind.Complex) complexValues = [result.AsComplex()];
+                else realValues = [result.AsReal()];
+                if (plotType.IsComplex() && realValues != null)
+                {
+                    error = "Smith/Polar needs a complex expression; result is real-valued.";
+                    return false;
+                }
+                return true;
+            }
+        }
 
         if (result.Kind != ValueKind.Cube)
         {
@@ -419,6 +477,19 @@ public static class TraceExpression
         return true;
     }
 
+    private const string FreqAxis = "freq";
+
+    /// <summary><paramref name="cube"/> at index <paramref name="k"/> of its freq axis; a cube without one, unchanged.</summary>
+    private static Value PinFreq(DataCube cube, int k)
+    {
+        int d = cube.Axes.ToList().FindIndex(a => a.Name == FreqAxis);
+        if (d < 0) return new Value(cube);
+        var args = new object[cube.Rank];
+        for (int i = 0; i < args.Length; i++) args[i] = i == d ? Math.Min(k, cube.Axes[i].Length - 1) : Range.All;
+        var s = cube[args];
+        return s.IsCube ? new Value(s.Cube!) : s.IsComplex ? new Value(s.ComplexValue!.Value) : new Value(s.RealValue!.Value);
+    }
+
     /// <summary>Binds each reference as the cube its slice leaves and evaluates the expression once.</summary>
     private static bool TryEvaluateWholeValue(
         string expression, DataSet ds, List<CubeRefInfo> refs, List<(int start, int end, int pIdx)> substitutions,
@@ -434,6 +505,13 @@ public static class TraceExpression
             var cube   = ds[info.CubeName];
             if (cube.Rank == 0) { bound[k] = new Value(cube); continue; }
             var tokens = SliceTokenParser.SplitTokens(info.SliceTokensStr);
+            // A whole cube is bound as the DataSet's own object, so a network function finds the analysis it came from
+            // (and its Z0 and Cs) by reference, as a measurement does.
+            if (tokens.Length == cube.Rank && tokens.All(t => t.Trim() is ":" || t.Trim().Equals("All", StringComparison.OrdinalIgnoreCase)))
+            {
+                bound[k] = new Value(cube);
+                continue;
+            }
             if (tokens.Length != cube.Rank)
             {
                 error = $"'{info.RefStr}': expected {cube.Rank} axis token(s), got {tokens.Length}.";
@@ -469,7 +547,7 @@ public static class TraceExpression
         {
             var ast   = Parser.Parse(sb.ToString());
             var scope = new Scope("te");
-            var ev    = new Evaluator();
+            var ev    = new Evaluator(AnalysisContext(ds));
             for (int k = 0; k < refs.Count; k++)
             {
                 scope.Bind($"__c{k}", "0");
@@ -482,6 +560,20 @@ public static class TraceExpression
         catch (UnknownFunctionException ex) { error = $"Unknown function '{ex.Name}' in '{expression}'."; return false; }
         catch (ExpressionException ex)      { error = ex.Message; return false; }
         return true;
+    }
+
+    /// <summary>Each group of <paramref name="ds"/> as an analysis's results, holding the group's own cube objects — what a
+    /// network function finds the owner of an S cube in.</summary>
+    private static MeasurementContext AnalysisContext(DataSet ds)
+    {
+        var groups = new Dictionary<string, DataSet>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in ds.Groups)
+        {
+            var one = new DataSet();
+            foreach (var (name, cube) in ds.CubesIn(g)) one.Add(name, cube);
+            groups[g] = one;
+        }
+        return new MeasurementContext(groups);
     }
 
     // ── Private helper type ───────────────────────────────────────────────────

@@ -452,10 +452,15 @@ public static class TraceResolve
             string yExpr = VersusSpec.TrySplit(t.Expression, out var ySide, out _, out _)
                 ? ySide : t.Expression;
             if (t.HeldBinRange is { } held) yExpr = TraceStatistics.WithBinRange(yExpr, held.Lo, held.Hi);
-            if (TraceExpression.TryEvaluate(yExpr, ds, plotType,
+            if (TraceExpression.TryEvaluate(yExpr, ds, plotType, t.IsVersus ? -1 : t.ExpressionFreqIndex,
                     out var xVals, out var cz, out var rz,
-                    out var xName, out var xUnit, out var xLabels, out var companions, out var exprErr))
+                    out var xName, out var xUnit, out var xLabels, out var companions, out var freqPin, out var exprErr))
             {
+                // brief NZ-2: the frequency a circle is drawn at, and a stability circle's stable side there.
+                t.ExpressionFreqPin = freqPin;
+                t.StableSide = companions.TryGetValue(CircuitRF.Core.Expressions.Evaluator.StableSideCompanion, out var side)
+                               && side.BufferLength == 1 && side.RealValues[0] is var sv && double.IsFinite(sv)
+                    ? Math.Sign(sv) : 0;
                 // A histogram's own bin width, which its bars are drawn at (R-ya8-1).
                 if (companions.TryGetValue("width", out var w) && w.RealValues is { Length: > 0 } wv && wv[0] > 0)
                     t.BarWidth = wv[0];

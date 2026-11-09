@@ -37,7 +37,8 @@ public static class NoiseFunctionDiagnostics
 
     public static Diagnostic Figure(string name, string got) => Diagnostic.Create(
         "measure.noise.figure", DiagnosticSeverity.Error,
-        "{name}(): the noise figure is a real number in dB, as in {name}(SP1.S, 2); got {got}.",
+        "{name}(): the noise figure is a real number in dB, as in {name}(SP1.S, 2), or one per frequency point, as in " +
+        "{name}(SP1.S, SP1.NFmin + 0.5); got {got}.",
         ("name", name), ("got", got));
 
     public static Diagnostic CirclePoints(string name, string got) => Diagnostic.Create(

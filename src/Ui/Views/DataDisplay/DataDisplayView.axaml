@@ -149,6 +149,13 @@
                     <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                 </Button>
 
+                <Button Command="{Binding ViewModel.Window.AddNoiseCirclesCommand}"
+                        ToolTip.Tip="Add Noise and Gain Circles: Sopt, NF and available-gain circles and the source stability circle on one Smith chart. Needs a two-port S-parameter result with Noise=yes as the source"
+                        ToolTip.ShowOnDisabled="True"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Bullseye" Width="16" Height="16"/>
+                </Button>
+
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
                         ToolTip.Tip="{Binding ViewModel.Window.AddStatisticsTableTip}"
                         ToolTip.ShowOnDisabled="True"

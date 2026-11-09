@@ -553,6 +553,14 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- brief NZ-2 — a result file's noise, gain and stability circles, in one action. -->
+                                        <MenuItem Header="Open Noise and Gain Circles"
+                                                  Command="{Binding OpenNoiseCirclesCommand}"
+                                                  IsVisible="{Binding IsResultFile}"
+                                                  ToolTip.Tip="A new Data Display with this result's Sopt, NF and available-gain circles and source stability circle on one Smith chart. Needs a two-port S-parameter run with Noise=yes.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Bullseye" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- brief-dfr32-3 R-dfr32-3-2 — a solved 3D view's or EM setup's saved fields, to the Trash. -->
                                         <MenuItem Header="Delete Saved Fields"
                                                   Command="{Binding DeleteSavedFieldsCommand}"

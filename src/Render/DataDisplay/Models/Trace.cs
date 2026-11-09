@@ -792,6 +792,21 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public string? XSpec { get; set; }
 
+        /// <summary>
+        /// The frequency an expression whose result keeps a <c>freq</c> axis is drawn at (brief NZ-2): an index into that
+        /// axis, the trace card's Freq picker. −1 (the default) leaves an ordinary expression as it always was, and draws a
+        /// circle function's <c>[freq, point]</c> at the first frequency.
+        /// </summary>
+        public int ExpressionFreqIndex { get; set; } = -1;
+
+        /// <summary>The frequency axis the last resolve pinned and the index it used, or null — what the card's picker
+        /// lists. Resolved from the data, never saved.</summary>
+        public TraceExpression.FreqPin? ExpressionFreqPin { get; set; }
+
+        /// <summary>A stability circle's stable side at the pinned frequency, from <c>stab_circle</c>'s <c>side</c>
+        /// companion: 1 inside, −1 outside, 0 when the trace is not one. A Smith chart shades the other side.</summary>
+        public int StableSide { get; set; }
+
         /// <summary>Data source the <see cref="XSpec"/> resolves against. Null ⇒ the same source as
         /// the Y side (<see cref="SourcePath"/>) — the ordinary case. Set only for a cross-source X
         /// (measured Pout against simulated Gain, say), where the point-count gate is what keeps the
@@ -1841,6 +1856,9 @@ namespace CircuitRF.Render.DataDisplay
             Transform       = src.Transform;
             Expression      = src.Expression;
             XSpec           = src.XSpec;
+            ExpressionFreqIndex = src.ExpressionFreqIndex;
+            ExpressionFreqPin   = src.ExpressionFreqPin;
+            StableSide          = src.StableSide;
             XSourcePath     = src.XSourcePath;
             XSourceAlias    = src.XSourceAlias;
             ExpressionError = src.ExpressionError;

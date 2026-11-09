@@ -156,6 +156,49 @@ namespace CircuitRF.Render.DataDisplay
                 DrawPointMarkers(canvas, trace.Points, props, tf, trace.UseSecondaryAxis, lw, theme);
         }
 
+        /// <summary>The fill opacity of a stability circle's unstable side: enough to read, light enough to see the
+        /// circles drawn over it.</summary>
+        public const float UnstableShadeOpacity = 0.14f;
+
+        /// <summary>
+        /// Shades the unstable side of a stability circle on a Smith chart (brief NZ-2): the trace's closed loop of points,
+        /// inside it when <see cref="Trace.StableSide"/> is −1 and the rest of the unit circle when it is 1, in the line's
+        /// colour at <see cref="UnstableShadeOpacity"/>, clipped to |Γ| ≤ 1. Nothing when a point is not finite.
+        /// </summary>
+        public static void ShadeUnstableSide(SKCanvas canvas, Trace trace, TransformSet tf, RenderTheme theme)
+        {
+            if (trace.Points.Count < 3) return;
+            using var loop = new SKPath();
+            foreach (var pt in trace.Points)
+            {
+                if (!float.IsFinite(pt.X) || !float.IsFinite(pt.Y)) return;
+                var c = tf.ToCanvasPrecise(pt.X, pt.Y, trace.UseSecondaryAxis);
+                if (loop.PointCount == 0) loop.MoveTo((float)c.X, (float)c.Y); else loop.LineTo((float)c.X, (float)c.Y);
+            }
+            loop.Close();
+
+            var o = tf.ToCanvasPrecise(0, 0, trace.UseSecondaryAxis);
+            var e = tf.ToCanvasPrecise(1, 0, trace.UseSecondaryAxis);
+            float r = (float)Math.Abs(e.X - o.X);
+            using var disk = new SKPath();
+            disk.AddCircle((float)o.X, (float)o.Y, r);
+
+            using var region = new SKPath { FillType = SKPathFillType.EvenOdd };
+            if (trace.StableSide > 0) region.AddPath(disk);   // stable inside: the disk outside the loop is unstable
+            region.AddPath(loop);
+
+            using var paint = new SKPaint
+            {
+                Color = theme.ToSKColor(trace.Properties.LineColor, UnstableShadeOpacity),
+                Style = SKPaintStyle.Fill,
+                IsAntialias = true,
+            };
+            canvas.Save();
+            canvas.ClipPath(disk, antialias: true);
+            canvas.DrawPath(region, paint);
+            canvas.Restore();
+        }
+
         /// <summary>One trace's (or one family curve's) point markers, in its marker colour.</summary>
         private static void DrawPointMarkers(SKCanvas canvas, IReadOnlyList<Vector2> points, TraceProperties props, TransformSet tf,
                                              bool useSecondary, float lw, RenderTheme theme)

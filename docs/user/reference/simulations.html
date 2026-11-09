@@ -210,7 +210,9 @@ two-port. The names are the ones commonly used for them. The linear noise factor
 <p>A network with more than two ports gets <code>Cs</code> only. For the noise figure from port 1 to any other port, or
 from any other source, and for constant-noise-figure circles, use
 <a href="derived-metrics.html#noise"><code>nf()</code>, <code>te()</code>, <code>rn()</code> and <code>ns_circle()</code></a>: <code>nf(SP1.S, 0, 3)</code> is the noise
-figure from port 1 to port 3 of a three-port.</p>
+figure from port 1 to port 3 of a three-port. Gain and stability circles to draw beside the noise circles are
+<a href="derived-metrics.html#gain-circles"><code>ga_circle()</code>, <code>gp_circle()</code> and <code>stab_circle()</code></a>, and the
+<a href="derived-metrics.html#lna-circles">Noise and gain circles</a> chart shows all of them in one action.</p>
 <p><strong>What is noisy.</strong></p>
 <ul>
 <li><strong>Every linear passive part</strong> is thermal at its own temperature. That is its <code>Temp</code>, or <code>Dtemp</code> above

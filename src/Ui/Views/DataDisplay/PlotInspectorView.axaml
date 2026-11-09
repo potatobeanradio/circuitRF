@@ -641,7 +641,7 @@
                                         <ComboBox Grid.Column="0"
                                                   ItemsSource="{Binding AvailableGroups}"
                                                   SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
-                                                  PlaceholderText="(load a file…)"
+                                                  PlaceholderText="{Binding GroupPlaceholder}"
                                                   Margin="0,0,3,0"
                                                   MinWidth="20"
                                                   HorizontalAlignment="Stretch"
@@ -679,6 +679,7 @@
                                                   IsVisible="{Binding !IsViSelector}"
                                                   ItemsSource="{Binding AvailableSignals}"
                                                   SelectedItem="{Binding SelectedSignal, Mode=TwoWay}"
+                                                  PlaceholderText="{Binding PickerPlaceholder}"
                                                   Margin="0,0,3,0"
                                                   MinWidth="20"
                                                   HorizontalAlignment="Stretch"
@@ -1683,6 +1684,20 @@
                                                              Foreground="{DynamicResource CrfIconBrush}"
                                                              TextWrapping="Wrap"
                                                              Margin="0,1,0,0"/>
+
+                                        <!-- brief NZ-2: the frequency a circle expression (ga_circle, ns_circle,
+                                             stab_circle) or a pinned quantity (Sopt) is drawn at - the contour
+                                             trace's frequency picker, for an expression. -->
+                                        <Grid ColumnDefinitions="50,*" Margin="0,4,0,0"
+                                              IsVisible="{Binding ShowExpressionFreqPicker}">
+                                            <TextBlock Grid.Column="0" Text="Freq" Classes="label"
+                                                       VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding ExpressionFrequencies}"
+                                                      SelectedIndex="{Binding ExpressionFreqIndex, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="The frequency this trace is drawn at"/>
+                                        </Grid>
 
                                         <!-- Pattern cut: which half of the plane this trace draws.
                                              ONE control, three named states - the two checkboxes it

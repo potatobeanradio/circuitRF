@@ -278,7 +278,7 @@ on more than two ports, for any output port:</p>
 </tr>
 <tr>
 <td><code>ns_circle(SP1.S, NFdB[, npts])</code></td>
-<td>The Γs that give NFdB on a two-port run, as <code>npts</code> points (101 by default) round a closed circle, per frequency: a complex <code>{freq, point}</code> cube.</td>
+<td>The Γs that give NFdB on a two-port run, as <code>npts</code> points (101 by default) round a closed circle, per frequency: a complex <code>{freq, point}</code> cube. NFdB is a number, or one value per frequency, such as <code>SP1.NFmin + 0.5</code>.</td>
 </tr>
 <tr>
 <td><code>ns_circle(NFdB, NFmin, Sopt, rn[, npts])</code></td>
@@ -315,6 +315,59 @@ is a noise parameter of the wrong kind or length (<code>measure.noise.parameter<
 <pre><code>measure NF2 = ns_circle(SP1.S, 2)
 </code></pre>
 <p>The trace spec <code>NF2[~, :]</code> draws one circle per frequency, and <code>NF2[0, :]</code> draws the first one only.</p>
+<p>A circle can also be a trace's expression itself, with no measurement: <code>ns_circle(SP1.S, SP1.NFmin + 0.5)</code> on a
+Smith chart. The trace card then shows a <strong>Freq</strong> picker, and the trace draws the circle at the frequency it names.
+<code>SP1.Sopt</code> with a Freq picked is the one point at that frequency. The
+<a href="#lna-circles">Noise and gain circles</a> chart is built this way.</p>
+<h2 id="gain-circles">Gain and stability circles</h2>
+<p>An LNA's input match trades noise figure against available gain and stability, all on the source plane. Four
+functions draw the other two beside <code>ns_circle</code>. Each takes a two-port run's S cube. A source-plane circle is on
+port 1's Re Z0, the reference <code>Sopt</code> is on, and a load-plane circle on port 2's.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ga_circle(SP1.S, GdB[, npts])</code></td>
+<td>The Γs that give an available gain of GdB, the load conjugately matched: a <code>{freq, point}</code> cube, as <code>ns_circle</code>'s. GdB is a number, or one value per frequency, such as <code>max_gain(SP1.S) - 1</code>.</td>
+</tr>
+<tr>
+<td><code>gp_circle(SP1.S, GdB[, npts])</code></td>
+<td>The Γ<sub>L</sub> that give an operating (power) gain of GdB, the source conjugately matched.</td>
+</tr>
+<tr>
+<td><code>stab_circle(SP1.S, plane[, npts])</code></td>
+<td>The <a href="#circles">stability circle</a> on <code>plane</code>, <code>&quot;source&quot;</code> or <code>&quot;load&quot;</code>, as points.</td>
+</tr>
+<tr>
+<td><code>stab_side(SP1.S, plane)</code></td>
+<td>Per frequency, <code>1</code> when the inside of that plane's circle is the stable region and <code>-1</code> when the outside is.</td>
+</tr>
+</tbody>
+</table>
+<pre><code>g = G / |S21|²        C1 = S11 − Δ·S22*        D = 1 + g·(|S11|² − |Δ|²)
+centre = g·C1* / D                           radius = √(1 − 2K·|S12·S21|·g + |S12·S21|²·g²) / |D|
+</code></pre>
+<p>That is the available-gain circle; the operating-gain circle is the same with ports 1 and 2 exchanged. Every point of
+<code>ga_circle(SP1.S, x)</code> has an available gain of x, every point of a source <code>stab_circle</code> has |Γout| = 1, and every
+point of a load one |Γin| = 1.</p>
+<p>A gain above <code>max_gain</code> has no circle at that frequency. Its points are NaN, and the run says once which frequencies
+had none (<code>measure.circle.none</code>). A network that is not a two-port is refused naming its shape
+(<code>measure.circle.not-two-port</code>). On a Smith chart, a <code>stab_circle</code> trace shades its unstable side inside the chart.</p>
+<h3 id="lna-circles">The Noise and gain circles chart</h3>
+<p>One Smith chart of the source plane shows the whole trade: <code>Sopt</code> as a marker, three noise circles at NFmin + 0.25,
+0.5 and 1 dB, three available-gain circles at max_gain − 1, 2 and 3 dB, and the source stability circle with its
+unstable side shaded. It is drawn at one frequency, the middle of the sweep, which each trace's Freq picker changes.
+Every circle is an ordinary expression trace, so any of them can be edited afterwards.</p>
+<p>It opens in one action on a two-port S-parameter result run with <code>Noise=yes</code>:</p>
+<ul>
+<li>in a Data Display, the <strong>Add Noise and Gain Circles</strong> button on the toolbar, with that result as the source;</li>
+<li>in the Workspace, <strong>Open Noise and Gain Circles</strong> on the result's <code>.npy</code>, which opens a new Data Display holding it.</li>
+</ul>
 <h2 id="passive">The two-terminal passive readouts</h2>
 <p>Six quantities, and they exist for a specific reason: <strong>a capacitor, an inductor or a ferrite bead is
 specified, bought and compared in ESR, C, L, Q and self-resonance — never in S-parameters.</strong> When a

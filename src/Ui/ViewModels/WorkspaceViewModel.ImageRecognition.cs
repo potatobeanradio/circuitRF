@@ -367,6 +367,8 @@ public partial class WorkspaceViewModel : IImageDialogHost
 
     public void OpenInSParameterViewer(ProjectTreeNodeViewModel node) => OpenInSParameterViewer(node.AbsolutePath);
 
+    public void OpenNoiseCircles(ProjectTreeNodeViewModel node) => _ = OpenNoiseCirclesAsync(node.AbsolutePath);
+
     public void CreateTouchstoneFromImageFile(ProjectTreeNodeViewModel node)
     {
         var read = ImageSource.FromFile(node.AbsolutePath);

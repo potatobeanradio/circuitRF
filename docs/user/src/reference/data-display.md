@@ -351,6 +351,11 @@ goal's worst value and each scalar measure, with mean, σ, min, max, median, the
 skew, kurtosis, Cpk and the distance to the limit in σ, and each goal's yield with its confidence
 interval.
 
+**Noise and gain circles.** The bullseye toolbar button adds one Smith chart of the selected two-port noise result's
+source plane: Sopt, NF and available-gain circles and the source stability circle, its unstable side shaded. Each circle
+is an expression trace drawn at the frequency its **Freq** picker names. See
+[The Noise and gain circles chart](derived-metrics.html#lna-circles).
+
 **Draw style.** Any trace on a rectangular plot can be drawn as a line, as bars or as a step; bars stand on
 zero and a family of them stands side by side within each bin.
 

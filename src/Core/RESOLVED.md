@@ -4523,3 +4523,24 @@ The functions were renamed and extended in the same PR, to the names RF simulato
 
 Gates: `NetworkMetricFunctionTests` (every refusal id; nf with no source, te; the explicit circle from numbers and from
 cubes equals the run's) and `SParamNoiseTests.ThreePort_NfAndTeToEachOutputPort_MatchTheReference`.
+
+## Gain and stability circle functions beside ns_circle (2026-11-09)
+
+Brief NZ-2. `ga_circle`, `gp_circle`, `stab_circle`, `stab_side` in `Expressions/Evaluator.Circles.cs`; the math is
+`RfCore.Data.TwoPortCircles`, which `RFNetwork.StabilityCircles*`/`StableRegionInside*` now call too.
+
+- **A note is not a refusal.** "That gain has no circle at 3 of 41 frequencies" is worth saying and is not an error, and
+  the evaluator had no channel for it. `Evaluator.TakeNotes()` is one, beside `TakeCompanions()`; `MeasurementEvaluator`
+  reports each as the run's warning, once per measurement.
+- **The maximum is `max_gain`'s, so it is MSG on a part that is not unconditionally stable.** There a constant-Ga circle
+  exists past MSG mathematically; the brief asks for none, so above `max_gain` is NaN either way, with a 1e-9 relative
+  slack so a circle asked at exactly the maximum is its single point rather than NaN by round-off.
+- **A level per frequency.** `ns_circle`, `ga_circle` and `gp_circle` take one value per frequency as well as a number,
+  so a chart drawn at a picked frequency keeps "NFmin + 0.5" meaning that frequency's NFmin.
+- **`stab_circle` leaves a `side` companion**, its `stab_side`, so a measurement of it also gets `<name>:side`.
+- **The squares in the stability circles are magnitudes squared**, as `RFNetwork` always computed them, so the Data
+  Display's stability traces that now come through `TwoPortCircles` keep their bits.
+
+Gates: `tests/Engine.Tests/Linear/CircleFunctionTests.cs` (closed forms on the `pozar_ex12_5` fixture's device, gains and |Γ| on the
+circles' own points, an unconditionally stable part's whole chart stable, NaN and one warning above the maximum, the
+shape refusal).
