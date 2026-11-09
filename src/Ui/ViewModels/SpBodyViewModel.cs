@@ -80,9 +80,12 @@ public sealed partial class SpBodyViewModel : ObservableObject
 
     // ── FromAnalysis ──────────────────────────────────────────────────────────
 
+    /// <summary>The analysis this body was loaded from, or null for a new one — what an edit carries its other keys from.</summary>
+    public SParameterAnalysis? Source { get; private set; }
+
     public static SpBodyViewModel FromAnalysis(SParameterAnalysis sp, SchematicEditModel model)
     {
-        var vm = new SpBodyViewModel(model);
+        var vm = new SpBodyViewModel(model) { Source = sp };
         vm.Segments.Clear();
         foreach (var sweep in sp.Sweeps)
             vm.AddSegmentInternal(new FrequencySpecViewModel(model, sweep));

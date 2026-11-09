@@ -208,15 +208,19 @@ public static class EnvelopeTangentCheck
     private static Complex Get(Dictionary<long, Complex> d, long k) => d.TryGetValue(k, out var v) ? v : Complex.Zero;
 
     /// <summary>The element's own stamp at <paramref name="w"/>, recorded instead of entered into a run's matrix.</summary>
-    internal static Dictionary<long, Complex> Stamped(ElaboratedComponent ec, double w)
+    internal static Dictionary<long, Complex> Stamped(ElaboratedComponent ec, double w) => Recorded(r => ec.Stamp(r, w));
+
+    /// <summary>Whatever <paramref name="stamp"/> enters, recorded instead of entered into a run's matrix — one element, or
+    /// several that must share one numbering (a Mutual reads the branch its inductors were just given).</summary>
+    internal static Dictionary<long, Complex> Recorded(Action<IMnaContext> stamp)
     {
         var r = new Recorder();
-        ec.Stamp(r, w);
+        stamp(r);
         return r.A;
     }
 
     /// <summary>The element's own matrix entries, rows/columns keyed by node or (offset) branch.</summary>
-    private sealed class Recorder : IMnaContext
+    internal sealed class Recorder : IMnaContext
     {
         public const long B = 1L << 30;
         public readonly Dictionary<long, Complex> A = [];

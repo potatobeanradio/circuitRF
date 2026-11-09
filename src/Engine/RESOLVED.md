@@ -3971,3 +3971,45 @@ ATTEMPT being reported and the point retried, since a NaN point in an I–V fami
 clear stop, and only a retry gives "a second exit at the same point" a meaning. Loadpull's own grid loop and envelope
 are not covered. Gate: `WorkerExitMidRunTests`, with `tools/DeviceWorkerExample --exit-on-eval n` /
 `--exit-when-vgs-above v`.
+
+## S-parameter noise: passive thermal noise and the noise waves (2026-11-09)
+
+`Noise=yes` on a `sparam` directive (`AnalysisSettings.Noise`) adds `Cs` [freq, i, j] (W/Hz, the outgoing noise waves'
+correlation with every port in its own noiseless Z0) and, for a two-port, `NF`, `NFmin` (dB, T0 = 290 K), `Rn` (Ω) and
+`GammaOpt` (on Re Z0 of port 1), each [freq], through `RfCore.Data.NoiseMetrics`. Off, nothing is entered: the same
+cubes, S bit for bit and the same `RunStats`. On, S is still bit-identical and each frequency costs N more
+back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
+
+- **The noise waves come from the engine's own wave extraction.** With no drive, port k's current is `−V_k/Z0_k`, so
+  the Kurokawa `b_k = (V_k − Z0_k*·I_k)/(2√Re Z0_k)` the S loop reads is `(√Re Z0_k/Z0_k)·V_k`. The port-voltage row of
+  `M⁻¹` is one transposed solve per port on the SAME `SparseLU` the S columns used; `SolveTranspose` is Hermitian, so the
+  row is `conj(y)` (the HB small-signal cache's finding, reused). `Cs = D·Σ H·C·Hᴴ·Dᴴ`. A dropped conjugate leaves the
+  diagonals right and mirrors the off-diagonals' phase; `lossy_lc`'s complex off-diagonals catch it. The legacy path
+  (some Re Z0 ≤ 0) terminates nothing and is refused in `Prepare`, before the DC pre-pass (`NoiseDiagnostics`).
+- **Passive parts: Bosma/Twiss on the recorded stamp.** Each part is recorded (`EnvelopeTangentCheck.Recorded`), every
+  node tied to ground through 50 Ω, and `Z_t` taken from the whole recorded system, so branches are eliminated. The
+  part's open-circuit noise is the terminated network's `2kT(Z_t + Z_tᴴ)` less the terminations' `(4kT/R)·Z_t·Z_tᴴ`, and
+  its node currents `C_j = Z_t⁺·C_V·Z_t⁺ᴴ`. Equal to `2kT(Y + Yᴴ)` where Y exists (a resistor, R‖C, R‖L‖C, a lossy
+  inductor and a lossy TLIN agree with the Schur complement of their own stamp to ≤ 5e-15). An ideal tie (a short, an ideal transformer, a 0 V branch) makes `Z_t` singular; the SVD
+  pseudo-inverse (cut 1e-10 of σ_max) drops exactly the injections that drive no node voltage, which the surrounding
+  network cannot see either, so it stays exact (a resistor and a short recorded together, seen through a terminated
+  network). Lossless parts come out at round-off with no special case. Ceilings: a resistor below ~1 nΩ reads as a tie,
+  and one far above 50 Ω loses about log10(R/50) digits to the subtraction (a few 1e-9 relative at 1 GΩ, where its noise
+  no longer matters).
+- **Record before the assembly.** A stamp writes the model's branch index (`LastBranchIndex`, an SnP's port branches);
+  recording one into a scratch numbering after `StampAll` would leave the regularisation and the probes reading the
+  scratch index. The parts are recorded first at each frequency, and `StampAll` writes the real indices back.
+- **A Mutual and its inductors are one recording**, inductors first (`MutualInductanceModel.Coupled` joins them; chains
+  of couplings union). Recorded apart, each inductor's loss would be reduced through its own branch with the coupling
+  missing. A coupled group with members at different temperatures is taken at the hottest (marked `ponytail:`).
+- **Temperature** is `Temperature.ResolveDeviceC` per part (Temp, then Dtemp, then the ambient — 300 K by default, so
+  a design stating nothing is not at T0 = 290 K).
+- **Noiseless.** Ports and independent sources by definition. Nonlinear devices, active or black-box linear parts
+  (a VCCS, an op-amp, a negative resistor), external devices and S-parameter blocks have no noise model here and are
+  named in one `sparam-noise-noiseless` warning.
+
+Gates: `tests/Engine.Tests/Linear/SParamNoiseTests.cs` against closed forms (a matched pad at 290 K and 400 K, Bosma's
+`kT(I − SSᴴ)` entry by entry on a lossy reactive network, coupled lossy inductors and an ideal transformer) and
+`testdata/noise/refs.json` (`gen_noise_refs.py`: numpy nodal and ngspice 47 `.sp … donoise` at 290 K — mixed `Temp=`,
+a Mutual, a VCCS amplifier with 75/50 Ω ports: Cs within 2e-13); serial = parallel bit for bit; a parametric sweep stacks the cubes;
+`circuitrf sparam … -o x.s2p` writes the noise block.

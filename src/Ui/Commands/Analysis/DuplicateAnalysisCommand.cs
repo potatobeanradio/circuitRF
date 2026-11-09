@@ -83,8 +83,7 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 FixtureA = t.FixtureA, FixtureB = t.FixtureB,
             },
 
-        SParameterAnalysis sp =>
-            new SParameterAnalysis(newName, sp.Sweeps) { Enabled = a.Enabled },
+        SParameterAnalysis sp => sp.WithSweeps(newName, sp.Sweeps),
 
         EnvelopeAnalysis env =>
             new EnvelopeAnalysis(newName)

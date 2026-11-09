@@ -1,0 +1,13 @@
+; VCCS amplifier (60 mS, noiseless) with resistive input, load and feedback,
+; 290 K; port 1 at 75 ohm, port 2 at 50 ohm.
+; Expected: ngspice .sp donoise = numpy nodal.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=75.0 Ohm
+Port:P2  out 0  Num=2 Z=50.0 Ohm
+R:Rg  p1  in  R=8.0 Ohm
+R:Rin  in  0  R=150.0 Ohm
+C:Cin  in  0  C=0.4 pF
+R:Rf  in  out  R=600.0 Ohm
+VCCS:G1  out  0  in  0  G=60.0 mS
+R:RL  out  0  R=250.0 Ohm
+analysis SP1 type=sparam start=0.5 stop=5.0 npts=10 Unit=GHz

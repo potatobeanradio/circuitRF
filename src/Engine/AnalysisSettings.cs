@@ -392,4 +392,25 @@ public sealed class AnalysisSettings
         copy._wspMarginThresholdDb = thresholdDb;
         return copy;
     }
+
+    /// <summary>
+    /// The <c>Noise=</c> key of a <c>sparam</c> directive: the S-parameter run also emits the
+    /// noise-wave correlation <c>Cs</c> and, for a two-port, <c>NF</c>, <c>NFmin</c>, <c>Rn</c> and
+    /// <c>GammaOpt</c> (<see cref="SParameterNoise"/>). Off by default, and off leaves a run exactly
+    /// as it was.
+    /// </summary>
+    public bool Noise
+    {
+        get => _noise;
+        init => _noise = value;
+    }
+    private bool _noise;
+
+    /// <summary>These settings with <see cref="Noise"/> set, as <see cref="WithMarginThreshold"/> does for its key.</summary>
+    public AnalysisSettings WithNoise(bool noise)
+    {
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._noise = noise;
+        return copy;
+    }
 }

@@ -34,6 +34,10 @@ public sealed class MutualInductanceModel : ComponentModel
 
     private IInductiveBranch? _i1;
     private IInductiveBranch? _i2;
+
+    /// <summary>The two inductor models this coupling joins, once <see cref="Resolve"/> has run — what the S-parameter
+    /// noise groups a Mutual with, because the coupled branches are one lossy network.</summary>
+    public (IInductiveBranch? First, IInductiveBranch? Second) Coupled => (_i1, _i2);
     private double _l1;
     private double _l2;
 

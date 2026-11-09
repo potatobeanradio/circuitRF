@@ -541,6 +541,8 @@ public static class CnlWriter
                 line.Append($" PassiveVars=\"{sp.PassiveVarsExpr}\"");
             if (lines.Length == 0 && sp.PassiveParamsExpr.Length > 0)
                 line.Append($" PassiveParams=\"{sp.PassiveParamsExpr}\"");
+            if (lines.Length == 0 && sp.NoiseExpr != Analysis.NoiseDefault)
+                line.Append($" Noise={sp.NoiseExpr}");
             if (lines.Length > 0) lines.Append('\n');
             lines.Append(line);
         }

@@ -65,6 +65,10 @@ public abstract class Analysis(string name)
     /// <summary>The default <c>NDF=</c> — off, so nothing about an existing analysis changes.</summary>
     public const string NdfDefault = "no";
 
+    /// <summary>The default <c>Noise=</c> of an S-parameter analysis — off, so nothing about an existing analysis
+    /// changes. Read as a flag through <see cref="ParseNdf"/>, the one yes/no spelling list.</summary>
+    public const string NoiseDefault = "no";
+
     /// <summary>
     /// <c>NDF=</c> as a flag. <c>yes</c>/<c>true</c>/<c>on</c>/<c>1</c> turn the normalized
     /// determinant function on; anything else leaves it off, because a mistyped flag must not make a
@@ -242,6 +246,29 @@ public sealed class SParameterAnalysis : Analysis
     /// <c>NdfPassivation.ParseList</c>.
     /// </summary>
     public string PassiveParamsExpr { get; init; } = "";
+
+    /// <summary>
+    /// <c>Noise=</c> from the directive, verbatim — <c>yes</c> adds the small-signal noise cubes (<c>Cs</c>, and for a
+    /// two-port <c>NF</c>, <c>NFmin</c>, <c>Rn</c>, <c>GammaOpt</c>). Read through <see cref="Noise"/>.
+    /// </summary>
+    public string NoiseExpr { get; init; } = NoiseDefault;
+
+    /// <summary>Whether <see cref="NoiseExpr"/> turns the noise analysis on.</summary>
+    public bool Noise => ParseNdf(NoiseExpr);
+
+    /// <summary>
+    /// This analysis under <paramref name="name"/> over <paramref name="sweeps"/>, every directive key carried across —
+    /// what a duplicate and an edit of the sweeps both need, so a key added here reaches both.
+    /// </summary>
+    public SParameterAnalysis WithSweeps(string name, IReadOnlyList<FrequencySpec> sweeps) => new(name, sweeps)
+    {
+        Enabled             = Enabled,
+        MarginThresholdExpr = MarginThresholdExpr,
+        NdfExpr             = NdfExpr,
+        PassiveVarsExpr     = PassiveVarsExpr,
+        PassiveParamsExpr   = PassiveParamsExpr,
+        NoiseExpr           = NoiseExpr,
+    };
 
     // ── Whole-analysis expand: union all segments into one sorted/deduped array ─
     /// <summary>
