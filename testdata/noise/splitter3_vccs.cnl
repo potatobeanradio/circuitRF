@@ -1,0 +1,17 @@
+; Unequal resistive splitter with a VCCS stage (45 mS, noiseless, feedback 1.5 kohm) in
+; its port-3 branch; ports 1 and 2 at 50 ohm, port 3 at 75 ohm; at 350 K.
+; Expected: F from port 1 to ports 2 and 3, each with the third port in its own noiseless Z0.
+temp = 76.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+Port:P3  p3 0  Num=3 Z=75.0 Ohm
+R:R1  p1  c  R=15.0 Ohm
+R:R2  c  p2  R=20.0 Ohm
+R:Rs  c  0  R=300.0 Ohm
+R:R3  c  m  R=25.0 Ohm
+R:Rm  m  0  R=60.0 Ohm
+C:Cm  m  0  C=0.5 pF
+VCCS:G1  p3  0  m  0  G=45.0 mS
+R:RL  p3  0  R=250.0 Ohm
+R:Rf  p3  m  R=1500.0 Ohm
+analysis SP1 type=sparam start=1.0 stop=4.0 npts=4 Unit=GHz

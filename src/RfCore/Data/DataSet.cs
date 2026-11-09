@@ -540,7 +540,7 @@ namespace RfCore.Data
         /// how a simulated source's <c>"SP1.S"</c> is reached (see <see cref="FindCubeSpec"/>).
         /// The reference impedance is read from the Z0 cube <b>in the same group</b>, never a bare
         /// lookup: pairing <c>SP1.S</c> with some other analysis's Z0 would be worse than the 50 Ω
-        /// fallback, because it would look right. A two-port's <c>NFmin</c>/<c>GammaOpt</c>/<c>Rn</c>
+        /// fallback, because it would look right. A two-port's <c>NFmin</c>/<c>Sopt</c>/<c>Rn</c>
         /// cubes in that same group fill <see cref="SNP.NoiseParameters"/>.
         /// </summary>
         public static SNP ToSnp(DataSet ds, string sSpec)
@@ -614,8 +614,8 @@ namespace RfCore.Data
                 SolvedMask = SampleProvenance.SolvedMaskFor(ds, cube.Axes[0]),
             };
 
-            // A two-port's noise parameters, when the run produced them: NFmin (dB), GammaOpt and Rn
-            // (Ω), each [freq] in the S cube's own group. GammaOpt is referenced to Re Z0 of port 1 —
+            // A two-port's noise parameters, when the run produced them: NFmin (dB), Sopt (Γopt) and Rn
+            // (Ω), each [freq] in the S cube's own group. Sopt is referenced to Re Z0 of port 1 —
             // the option line's R — and the Touchstone row carries Rn over that R.
             string group = dot < 0 ? "" : sSpec[..(dot + 1)];
             DataCube? Noise(string name, DataKind kind) =>
@@ -623,7 +623,7 @@ namespace RfCore.Data
                 c.Rank == 1 && c.Axes[0].Length == nFreq ? c : null;
             if (nPorts == 2 &&
                 Noise("NFmin", DataKind.Real) is { } nf &&
-                Noise("GammaOpt", DataKind.Complex) is { } go &&
+                Noise("Sopt", DataKind.Complex) is { } go &&
                 Noise("Rn", DataKind.Real) is { } rn)
             {
                 var (nfDb, gamma, rnOhm) = (nf.RealValues, go.ComplexValues, rn.RealValues);

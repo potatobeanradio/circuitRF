@@ -192,7 +192,7 @@ namespace RfCore
 
         /// <summary>
         /// The two-port NOISE PARAMETER rows a Touchstone file carried after its network data, or a
-        /// run's <c>NFmin</c>/<c>GammaOpt</c>/<c>Rn</c> cubes (<c>DataSetBuilder.ToSnp</c>) — empty
+        /// run's <c>NFmin</c>/<c>Sopt</c>/<c>Rn</c> cubes (<c>DataSetBuilder.ToSnp</c>) — empty
         /// otherwise. Γopt and rn are referenced to <c>Re</c> <see cref="Z0"/>, the option line's R.
         /// <see cref="TouchstoneIO"/> reads them (before it did, a measured amplifier file that carried
         /// them failed to load: its first noise row was folded into the next network block and

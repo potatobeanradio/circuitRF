@@ -963,10 +963,18 @@ a closed form (6 dB at 290 K and `1 + (T/T0)(L − 1)` to 6e-15 dB; Friis to 3e-
 - **The global `temp` can be a sweep's variable.** `SW1` over `temp` puts the pad at each ambient, and a swept global
   is a cube in a measurement (`T_K = temp + 273.15`), so the closed form is a measurement beside the run's NF.
 - **A noise match designed for the transistor's Γopt does not put the LNA's Γopt at 50 Ω.** The textbook L-section for
-  Zopt = 26.6 + j57.8 Ω (0.81 pF, 3.29 nH, with the inductor's 2 Ω) left the LNA's own GammaOpt at 0.23∠90° at 4 GHz:
-  the device's feedback (S12) and `Rstab` move it. `circuitrf opt` with one goal, `mag(SP1.GammaOpt) le 0.0005` at
-  4 GHz, found 0.43 pF and 3.16 nH, which the bench uses; |GammaOpt| is 0.0015 there.
-- **`nf_circle` takes a number of dB, not a cube**, so "NFmin + 0.25 dB" cannot be written as such. The circles are at
+  Zopt = 26.6 + j57.8 Ω (0.81 pF, 3.29 nH, with the inductor's 2 Ω) left the LNA's own Sopt at 0.23∠90° at 4 GHz:
+  the device's feedback (S12) and `Rstab` move it. `circuitrf opt` with one goal, `mag(SP1.Sopt) le 0.0005` at
+  4 GHz, found 0.43 pF and 3.16 nH, which the bench uses; |Sopt| is 0.0015 there.
+- **`ns_circle` takes a number of dB, not a cube**, so "NFmin + 0.25 dB" cannot be written as such. The circles are at
   1.25 and 2 dB, picked after the run gave NFmin 0.98 dB at 4 GHz.
 - **System Design's README said circuitRF has no noise analysis.** It now says the System tiles carry no noise figure,
   which is still why `CascadeBudget`'s NF is arithmetic only, and points here.
+
+## S-Parameter Noise: the new names, and the noise temperatures and Zopt on the LNA's display (2026-11-09)
+
+- The LNA bench's circles are `ns_circle` measurements and its Smith chart draws `SP1.Sopt`; the displays were rebuilt
+  with `CRF_AUTHOR_NOISE=1`.
+- **`3 LNA Noise Circles.cdd` has a third row**: `Te` against `Tmin`, and `Zopt` as Re and Im against frequency, each with
+  a marker at 4 GHz. At the match they meet: Te = Tmin, and Zopt is the 50 Ω port. Zopt is drawn as a rectangular
+  plot rather than a second Smith trace, because on the chart it would sit exactly on `Sopt`.

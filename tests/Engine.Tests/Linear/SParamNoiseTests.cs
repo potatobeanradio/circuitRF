@@ -121,6 +121,10 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
             double f = 1 + kelvin / NoiseMetrics.T0 * (loss - 1);
             Assert.Equal(10 * Math.Log10(f), r.Ds["NF"].RealValues[fi], 1e-9);
             Assert.Equal(10 * Math.Log10(f), r.Ds["NFmin"].RealValues[fi], 1e-9);   // matched: Γopt = 0
+            Assert.Equal(f, r.Ds["Fn"].RealValues[fi], 1e-12);
+            // The pad's equivalent input noise temperature is its own temperature times (L − 1), whatever T0 is.
+            Assert.Equal(kelvin * (loss - 1), r.Ds["Te"].RealValues[fi], 1e-9 * kelvin);
+            Assert.Equal(kelvin * (loss - 1), r.Ds["Tmin"].RealValues[fi], 1e-9 * kelvin);
         }
         Assert.True(WorstAgainstBosma(r, kelvin) < 1e-9, $"Cs vs kT(I − SSᴴ): {WorstAgainstBosma(r, kelvin):E2}");
     }
@@ -294,13 +298,13 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         {
             dNf    = Math.Max(dNf, Math.Max(Math.Abs(nf[fi] - r.Ds["NF"].RealValues[fi]), Math.Abs(nfMin[fi] - r.Ds["NFmin"].RealValues[fi])));
             dRn    = Math.Max(dRn, Math.Abs(r.Ds["Rn"].RealValues[fi] - rn[fi]) / Math.Abs(rn[fi]));
-            dGamma = Math.Max(dGamma, (r.Ds["GammaOpt"].ComplexValues[fi] - new Complex(gRe[fi], gIm[fi])).Magnitude);
+            dGamma = Math.Max(dGamma, (r.Ds["Sopt"].ComplexValues[fi] - new Complex(gRe[fi], gIm[fi])).Magnitude);
             Assert.Equal(nf[fi],    r.Ds["NF"].RealValues[fi],    tol.GetProperty("db_abs").GetDouble());
             Assert.Equal(nfMin[fi], r.Ds["NFmin"].RealValues[fi], tol.GetProperty("db_abs").GetDouble());
             Assert.True(Math.Abs(r.Ds["Rn"].RealValues[fi] - rn[fi]) <= tol.GetProperty("rn_rel").GetDouble() * Math.Abs(rn[fi]),
                         $"Rn {r.Ds["Rn"].RealValues[fi]} vs {rn[fi]} at {r.Freqs[fi]:G4} Hz");
-            Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - new Complex(gRe[fi], gIm[fi])).Magnitude
-                        <= tol.GetProperty("gamma_abs").GetDouble(), $"GammaOpt at {r.Freqs[fi]:G4} Hz");
+            Assert.True((r.Ds["Sopt"].ComplexValues[fi] - new Complex(gRe[fi], gIm[fi])).Magnitude
+                        <= tol.GetProperty("gamma_abs").GetDouble(), $"Sopt at {r.Freqs[fi]:G4} Hz");
 
             var expect = new Mat<Complex>(2, 2);
             for (int i = 0; i < 2; i++)
@@ -308,7 +312,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
                     expect[i, j] = new Complex(csRe[fi][i][j].GetDouble(), csIm[fi][i][j].GetDouble());
             worst = Math.Max(worst, RelDiff(At(r.Ds["Cs"], fi, 2), expect));
         }
-        output.WriteLine($"{bench}: worst NF/NFmin {dNf:E2} dB, Rn rel {dRn:E2}, GammaOpt {dGamma:E2}, Cs rel {worst:E2}");
+        output.WriteLine($"{bench}: worst NF/NFmin {dNf:E2} dB, Rn rel {dRn:E2}, Sopt {dGamma:E2}, Cs rel {worst:E2}");
         Assert.True(worst <= tol.GetProperty("cs_rel").GetDouble(), $"Cs rel {worst:E2}");
     }
 
@@ -329,10 +333,102 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         var r = RunCnl(Bench("ngspice_vccs_amp"));
         for (int fi = 0; fi < r.Freqs.Length; fi++)
         {
-            var p = new TwoPortNoise(Math.Pow(10, r.Ds["NFmin"].RealValues[fi] / 10), r.Ds["GammaOpt"].ComplexValues[fi],
+            var p = new TwoPortNoise(Math.Pow(10, r.Ds["NFmin"].RealValues[fi] / 10), r.Ds["Sopt"].ComplexValues[fi],
                                      r.Ds["Rn"].RealValues[fi], 75.0);
             Assert.Equal(r.Ds["NF"].RealValues[fi], 10 * Math.Log10(NoiseMetrics.NoiseFactor(p, Complex.Zero)), 1e-9);
         }
+    }
+
+    /// <summary>Every cube a two-port noise run adds, in the names Qucs and ngspice give them.</summary>
+    private static readonly string[] TwoPortCubes = ["Cs", "NF", "Fn", "NFmin", "Fmin", "Te", "Tmin", "Rn", "Sopt", "Zopt"];
+
+    /// <summary>
+    /// The linear and temperature forms follow from NF and NFmin (<c>Fn = 10^(NF/10)</c>, <c>Te = T0·(Fn − 1)</c>, and
+    /// likewise Fmin and Tmin), <c>Zopt = R(1 + Sopt)/(1 − Sopt)</c> on R = Re Z0 of port 1 gives Sopt back and is ngspice's
+    /// SOpt as an impedance, and <c>rn(SP1.S)</c> is Rn/R.
+    /// </summary>
+    [Theory]
+    [InlineData("ngspice_mixed_temp")]
+    [InlineData("ngspice_coupled_l")]
+    [InlineData("ngspice_vccs_amp")]
+    public void LinearAndTemperatureCubes_AndZopt_FollowFromTheNoiseParameters(string bench)
+    {
+        var b = Ref(bench);
+        var e = b.GetProperty("expected");
+        double r0 = b.GetProperty("ports_z0_ohm")[0].GetDouble();
+        var run = RunCnl(Bench(bench));
+        var rn = Eval(run.Ds, "rn(SP1.S)").AsCube().RealValues;
+        for (int fi = 0; fi < run.Freqs.Length; fi++)
+        {
+            double F(string c) => run.Ds[c].RealValues[fi];
+            Assert.Equal(Math.Pow(10, F("NF") / 10), F("Fn"), 1e-12 * F("Fn"));
+            Assert.Equal(Math.Pow(10, F("NFmin") / 10), F("Fmin"), 1e-12 * F("Fmin"));
+            Assert.Equal(NoiseMetrics.T0 * (F("Fn") - 1), F("Te"), 1e-12 * F("Te"));
+            Assert.Equal(NoiseMetrics.T0 * (F("Fmin") - 1), F("Tmin"), 1e-12 * F("Tmin"));
+            Assert.Equal(F("Rn") / r0, rn[fi], 1e-12 * rn[fi]);
+
+            Complex sOpt = run.Ds["Sopt"].ComplexValues[fi], zOpt = run.Ds["Zopt"].ComplexValues[fi];
+            Assert.True(((zOpt - r0) / (zOpt + r0) - sOpt).Magnitude < 1e-12, $"Zopt → Sopt at {run.Freqs[fi]:G4} Hz");
+            var g = new Complex(e.GetProperty("gamma_opt_re")[fi].GetDouble(), e.GetProperty("gamma_opt_im")[fi].GetDouble());
+            var zRef = r0 * (1 + g) / (1 - g);
+            Assert.True((zOpt - zRef).Magnitude <= 1e-9 * zRef.Magnitude, $"Zopt {zOpt} vs {zRef} at {run.Freqs[fi]:G4} Hz");
+        }
+    }
+
+    /// <summary>
+    /// A three-port has Cs and no two-port cubes. <c>nf</c> and <c>te</c> with an output port are the noise of the two-port
+    /// from port 1 to it, with the third port in its own noiseless Z0: against numpy nodal runs of that two-port, and for
+    /// the matched star splitter at 350 K Bosma's closed form, F = 1 + 2T/T0, Te = 2T = 700 K. At Γs = that two-port's own
+    /// Γopt (the reference's) nf is its NFmin.
+    /// </summary>
+    [Theory]
+    [InlineData("splitter3_passive")]
+    [InlineData("splitter3_vccs")]
+    public void ThreePort_NfAndTeToEachOutputPort_MatchTheReference(string bench)
+    {
+        var b = Ref(bench);
+        var e = b.GetProperty("expected");
+        double tol = b.GetProperty("tolerance").GetProperty("db_abs").GetDouble();
+        double[] Arr(JsonElement j) => [.. j.EnumerateArray().Select(x => x.GetDouble())];
+        var r = RunCnl(Bench(bench));
+        Assert.Equal(Arr(b.GetProperty("freq_hz")), r.Freqs);
+        Assert.Equal(new[] { "Cs", "S", "Z0" }, r.Ds.Cubes.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        double worstCs = 0;
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            var expect = new Mat<Complex>(3, 3);
+            for (int i = 0; i < 3; i++)
+                for (int j = 0; j < 3; j++)
+                    expect[i, j] = new Complex(e.GetProperty("cs_re")[fi][i][j].GetDouble(), e.GetProperty("cs_im")[fi][i][j].GetDouble());
+            worstCs = Math.Max(worstCs, RelDiff(At(r.Ds["Cs"], fi, 3), expect));
+        }
+        Assert.True(worstCs <= b.GetProperty("tolerance").GetProperty("cs_rel").GetDouble(), $"Cs rel {worstCs:E2}");
+
+        foreach (var port in new[] { 2, 3 })
+        {
+            var x = e.GetProperty("to_port").GetProperty(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            double[] nf = Arr(x.GetProperty("nf_db")), te = Arr(x.GetProperty("te_k")), nfMin = Arr(x.GetProperty("nfmin_db"));
+            double[] gRe = Arr(x.GetProperty("gamma_opt_re")), gIm = Arr(x.GetProperty("gamma_opt_im"));
+            // The reference's Γopt, as a per-frequency cube beside the run's own.
+            r.Ds.Add($"Gopt{port}", new DataCube([new Axis("freq", r.Freqs, "Hz")], [.. gRe.Zip(gIm, (a, c) => new Complex(a, c))]));
+            double[] ours = Eval(r.Ds, $"nf(SP1.S, 0, {port})").AsCube().RealValues;
+            double[] oursTe = Eval(r.Ds, $"te(SP1.S, 0, {port})").AsCube().RealValues;
+            double[] oursMin = Eval(r.Ds, $"nf(SP1.S, SP1.Gopt{port}, {port})").AsCube().RealValues;
+            for (int fi = 0; fi < r.Freqs.Length; fi++)
+            {
+                Assert.Equal(nf[fi], ours[fi], tol);
+                Assert.Equal(te[fi], oursTe[fi], 1e-9 * te[fi]);
+                Assert.Equal(nfMin[fi], oursMin[fi], tol);
+                if (bench == "splitter3_passive") Assert.Equal(700.0, oursTe[fi], 1e-9 * 700);
+            }
+            output.WriteLine($"{bench}, port 1 to {port}: NF {ours[0]:F4} dB, Te {oursTe[0]:F2} K, NFmin {oursMin[0]:F4} dB, "
+                           + $"worst |ΔNF| {nf.Zip(ours, (a, c) => Math.Abs(a - c)).Max():E2} dB");
+        }
+        // With no source the noise figure is from port 1's own Z0 into port 2, and Γs = 0 is that source on these real Z0.
+        var noSource = Eval(r.Ds, "nf(SP1.S)").AsCube().RealValues;
+        var atZero = Eval(r.Ds, "nf(SP1.S, 0, 2)").AsCube().RealValues;
+        for (int fi = 0; fi < r.Freqs.Length; fi++) Assert.Equal(atZero[fi], noSource[fi], 1e-12);
     }
 
     // ── the knob, the run's shape ─────────────────────────────────────────────
@@ -357,7 +453,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(absent.Stats.Factorizations, on.Stats.Factorizations);
         Assert.Equal(absent.Stats.PatternBuilds, on.Stats.PatternBuilds);
         Assert.Equal(absent.Stats.BackSubstitutions + 2 * absent.Freqs.Length, on.Stats.BackSubstitutions);
-        foreach (var name in new[] { "Cs", "NF", "NFmin", "Rn", "GammaOpt" }) Assert.True(on.Ds.Contains(name), name);
+        foreach (var name in TwoPortCubes) Assert.True(on.Ds.Contains(name), name);
         Assert.Equal(new[] { "freq", "i", "j" }, on.Ds["Cs"].Axes.Select(a => a.Name));
         Assert.Empty(on.Nl.Warnings);
     }
@@ -374,10 +470,9 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         var parallel = SParameterEngine.Run(nl, lib, tb, null, serial.Freqs, AnalysisSettings.Default.WithNoise(true),
                                             control: null, maxDegreeOfParallelism: 3);
         Assert.Equal(3, SParameterEngine.PlanDegree(nl, serial.Freqs.Length, 3));
-        foreach (var name in new[] { "S", "Cs", "GammaOpt" })
-            Assert.Equal(serial.Ds[name].ComplexValues, parallel[name].ComplexValues);
-        foreach (var name in new[] { "NF", "NFmin", "Rn" })
-            Assert.Equal(serial.Ds[name].RealValues, parallel[name].RealValues);
+        foreach (var name in TwoPortCubes.Prepend("S"))
+            if (serial.Ds[name].DataKind == DataKind.Complex) Assert.Equal(serial.Ds[name].ComplexValues, parallel[name].ComplexValues);
+            else Assert.Equal(serial.Ds[name].RealValues, parallel[name].RealValues);
         Assert.Equal(serial.Nl.Warnings, nl.Warnings);
     }
 
@@ -423,7 +518,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
             var row = snp.NoiseParameters[fi];
             Assert.Equal(r.Freqs[fi], row.FrequencyHz, 1e-3);
             Assert.Equal(r.Ds["NFmin"].RealValues[fi], row.NFminDb, 1e-9);
-            Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - row.GammaOpt).Magnitude < 1e-9);
+            Assert.True((r.Ds["Sopt"].ComplexValues[fi] - row.GammaOpt).Magnitude < 1e-9);
             Assert.Equal(r.Ds["Rn"].RealValues[fi], row.RnNormalized * snp.Z0.Real, 1e-9 * r.Ds["Rn"].RealValues[fi]);
         }
     }
@@ -513,7 +608,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         var r = RunCnl(Bench("pozar_ex12_5"));
         for (int fi = 0; fi < r.Freqs.Length; fi++)
         {
-            var p = new TwoPortNoise(Math.Pow(10, r.Ds["NFmin"].RealValues[fi] / 10), r.Ds["GammaOpt"].ComplexValues[fi],
+            var p = new TwoPortNoise(Math.Pow(10, r.Ds["NFmin"].RealValues[fi] / 10), r.Ds["Sopt"].ComplexValues[fi],
                                      r.Ds["Rn"].RealValues[fi], 50.0);
             var (centre, rad) = NoiseMetrics.NoiseCircle(p, f);
             double n = p.R / (4 * p.Rn) * (f - p.Fmin) * Sq(1 + p.GammaOpt);
@@ -540,7 +635,8 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         new Evaluator(new MeasurementContext(new Dictionary<string, DataSet> { ["SP1"] = ds })).Eval(expr, new Scope("t"));
 
     /// <summary>
-    /// <c>nf()</c> and <c>nf_circle()</c> on a run with port 1 at 75 Ω: nf at Γs = 0 is the NF the run reports (which
+    /// <c>nf()</c>, <c>te()</c> and <c>ns_circle()</c> on a run with port 1 at 75 Ω: nf with no source is the NF the run
+    /// reports bit for bit, and te its Te; nf at Γs = 0 is that NF (which
     /// the engine takes from Cs, not from the noise parameters), at Γs = Γopt it is NFmin, and every point of a circle
     /// gives the circle's own NF back.
     /// </summary>
@@ -548,7 +644,9 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
     public void NfFunctions_AgreeWithTheRunsOwnCubes()
     {
         var r = RunCnl(Bench("ngspice_vccs_amp"));
-        double[] nf0 = Eval(r.Ds, "nf(SP1.S, 0)").AsCube().RealValues, nfOpt = Eval(r.Ds, "nf(SP1.S, SP1.GammaOpt)").AsCube().RealValues;
+        Assert.Equal(r.Ds["NF"].RealValues, Eval(r.Ds, "nf(SP1.S)").AsCube().RealValues);
+        Assert.Equal(r.Ds["Te"].RealValues, Eval(r.Ds, "te(SP1.S)").AsCube().RealValues);
+        double[] nf0 = Eval(r.Ds, "nf(SP1.S, 0)").AsCube().RealValues, nfOpt = Eval(r.Ds, "nf(SP1.S, SP1.Sopt)").AsCube().RealValues;
         for (int fi = 0; fi < r.Freqs.Length; fi++)
         {
             Assert.Equal(r.Ds["NF"].RealValues[fi], nf0[fi], 1e-9);
@@ -557,21 +655,29 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
 
         double target = Math.Ceiling(r.Ds["NFmin"].RealValues.Max()) + 1;
         for (int k = 0; k < 9; k++)
-            Assert.All(Eval(r.Ds, $"nf(SP1.S, nf_circle(SP1.S, {target}, 9)[:, {k}])").AsCube().RealValues,
+            Assert.All(Eval(r.Ds, $"nf(SP1.S, ns_circle(SP1.S, {target}, 9)[:, {k}])").AsCube().RealValues,
                        v => Assert.Equal(target, v, 1e-9));
     }
 
-    /// <summary>Pozar Ex. 12.5 through <c>nf_circle()</c> on a run: the 2 dB circle's points are scikit-rf's to 1e-9, its
+    /// <summary>Pozar Ex. 12.5 through <c>ns_circle()</c> on a run: the 2 dB circle's points are scikit-rf's to 1e-9, its
     /// centre and radius the closed form's (1e-9) and the textbook's 0.56∠100° and 0.24 (1e-2), and the source at the
-    /// book's Γopt gives its 1.6 dB.</summary>
+    /// book's Γopt gives its 1.6 dB. The explicit form from the book's numbers, and from the run's own NFmin, Sopt and rn
+    /// cubes, draws the same points.</summary>
     [Fact]
-    public void NfCircle_PozarEx12_5_ThroughARun()
+    public void NsCircle_PozarEx12_5_ThroughARun()
     {
         var circle = Ref("pozar_ex12_5").GetProperty("circle");
         var book = circle.GetProperty("textbook");
         double tol = book.GetProperty("tol").GetDouble();
         var r = RunCnl(Bench("pozar_ex12_5"));
-        var pts = Eval(r.Ds, "nf_circle(SP1.S, 2, 9)").AsCube().ComplexValues;
+        var pts = Eval(r.Ds, "ns_circle(SP1.S, 2, 9)").AsCube().ComplexValues;
+        var fromCubes = Eval(r.Ds, "ns_circle(2, SP1.NFmin, SP1.Sopt, rn(SP1.S), 9)").AsCube().ComplexValues;
+        var fromBook = Eval(r.Ds, "ns_circle(2, 1.6, polar(0.62, 100), 20/50, 9)").AsCube().ComplexValues;
+        for (int k = 0; k < pts.Length; k++)
+        {
+            Assert.True((fromCubes[k] - pts[k]).Magnitude < 1e-12, $"explicit form from the cubes, point {k}");
+            Assert.True((fromBook[k % 9] - pts[k]).Magnitude < 1e-9, $"explicit form from the book, point {k}");
+        }
         var nfOpt = Eval(r.Ds, "nf(SP1.S, polar(0.62, 100))").AsCube().RealValues;
         for (int fi = 0; fi < r.Freqs.Length; fi++)
         {
@@ -612,7 +718,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
             var (a, b) = between[fi];
             double fmin = (Math.Pow(10, rows[a].NFminDb / 10) + Math.Pow(10, rows[b].NFminDb / 10)) / 2;
             Assert.Equal(10 * Math.Log10(fmin), r.Ds["NFmin"].RealValues[fi], 1e-9);
-            Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - (rows[a].GammaOpt + rows[b].GammaOpt) / 2).Magnitude < 1e-9);
+            Assert.True((r.Ds["Sopt"].ComplexValues[fi] - (rows[a].GammaOpt + rows[b].GammaOpt) / 2).Magnitude < 1e-9);
             Assert.Equal(50 * (rows[a].RnNormalized + rows[b].RnNormalized) / 2, r.Ds["Rn"].RealValues[fi], 1e-9);
         }
     }
@@ -632,7 +738,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("2 of its 4 rows, first at 2 GHz", w);
         Assert.Equal(3.0, r.Ds["NFmin"].RealValues[0], 1e-9);
         Assert.Equal(1.0, r.Ds["Rn"].RealValues[0], 1e-9);
-        Assert.True((r.Ds["GammaOpt"].ComplexValues[0] - 0.5).Magnitude < 1e-9);
+        Assert.True((r.Ds["Sopt"].ComplexValues[0] - 0.5).Magnitude < 1e-9);
     }
 
     /// <summary>

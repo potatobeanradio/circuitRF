@@ -395,8 +395,8 @@ public sealed class AnalysisSettings
 
     /// <summary>
     /// The <c>Noise=</c> key of a <c>sparam</c> directive: the S-parameter run also emits the
-    /// noise-wave correlation <c>Cs</c> and, for a two-port, <c>NF</c>, <c>NFmin</c>, <c>Rn</c> and
-    /// <c>GammaOpt</c> (<see cref="SParameterNoise"/>). Off by default, and off leaves a run exactly
+    /// noise-wave correlation <c>Cs</c> and, for a two-port, the noise figure and noise parameters (<c>NF</c>, <c>Fn</c>,
+    /// <c>NFmin</c>, <c>Fmin</c>, <c>Te</c>, <c>Tmin</c>, <c>Rn</c>, <c>Sopt</c>, <c>Zopt</c>; <see cref="SParameterNoise"/>). Off by default, and off leaves a run exactly
     /// as it was.
     /// </summary>
     public bool Noise

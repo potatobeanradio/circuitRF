@@ -32,6 +32,12 @@ Benches (keys of refs.json "benches"):
   ngspice_mixed_temp, ngspice_coupled_l, ngspice_vccs_amp
                          resistors at mixed temperatures, K-coupled lossy inductors, a VCCS
                          amplifier: ngspice .sp donoise against numpy nodal.
+  splitter3_passive, splitter3_vccs
+                         three-port: a matched resistive star splitter, and an unequal splitter with
+                         a VCCS stage in its port-3 branch (port 3 at 75 ohm), both at 350 K. F from
+                         port 1 to ports 2 and 3, and that two-port's noise parameters, with the third
+                         port in its own noiseless Z0: numpy nodal two-port runs; the passive one's
+                         F = 1 + (T/T0)(1 - sum_j |S_kj|^2)/|S_k1|^2 (Bosma) = 1 + 2T/T0.
   osdi_crf_noise         the fake OSDI part crf_noise (conductance g, PSD 4kTg + 2q|g v|) as a
                          shunt at a node DC-fed through a choke, between two 50 ohm ports:
                          F = 1 + (T/T0) g Z0 + 2q|g Vdc| Z0/(4 k T0). Closed form; no .cnl.
@@ -71,7 +77,7 @@ def K2C(t):
 # ---- circuit description: one list of parts drives numpy, ngspice and the .cnl ----------
 # Values in the units the .cnl writes: R ohm, L nH, C pF, G mS. T in kelvin (None = ambient).
 
-def R(name, a, b, r, T=None): return dict(t="R", name=name, n=(a, b), v=r, T=T)
+def R(name, a, b, r, T=None): return dict(t="R", name=name, n=(a, b), v=r, T=T)  # T = 0: noiseless
 def L(name, a, b, l_nh): return dict(t="L", name=name, n=(a, b), v=l_nh)
 def C(name, a, b, c_pf): return dict(t="C", name=name, n=(a, b), v=c_pf)
 def Kc(name, l1, l2, k): return dict(t="K", name=name, n=(), l1=l1, l2=l2, v=k)
@@ -116,7 +122,7 @@ def nodal(elems, ports, T_amb, f):
                 y = 1 / e["v"] if e["t"] == "R" else 1j * w * e["v"] * 1e-12
                 Y += y * (a @ a.T)
                 if e["t"] == "R":
-                    src.append((a, np.array([[4 * K * (e["T"] or T_amb) / e["v"]]])))
+                    src.append((a, np.array([[4 * K * (T_amb if e["T"] is None else e["T"]) / e["v"]]])))
             elif e["t"] == "G":
                 o = inc(e["n"][0]) - inc(e["n"][1])
                 c = inc(e["n"][2]) - inc(e["n"][3])
@@ -729,6 +735,71 @@ def case_ngspice(refs):
     refs["ngspice_mixed_temp"]["agreement"]["ngspice_at_27C_after_T0_correction"] = conv
 
 
+def splitter_cases():
+    """The two three-port benches: name -> (ports, elements, closed-form S or None, title)."""
+    s_star = 0.5 * (np.ones((3, 3)) - np.eye(3))
+    return {
+        "splitter3_passive": ([("p1", 50.0), ("p2", 50.0), ("p3", 50.0)],
+                              [R("R1", "p1", "c", 50.0 / 3), R("R2", "c", "p2", 50.0 / 3), R("R3", "c", "p3", 50.0 / 3)],
+                              s_star,
+                              "Matched resistive star splitter (three Z0/3 arms), 50 ohm ports, at 350 K."),
+        "splitter3_vccs": ([("p1", 50.0), ("p2", 50.0), ("p3", 75.0)],
+                           [R("R1", "p1", "c", 15.0), R("R2", "c", "p2", 20.0), R("Rs", "c", "0", 300.0),
+                            R("R3", "c", "m", 25.0), R("Rm", "m", "0", 60.0), C("Cm", "m", "0", 0.5),
+                            G("G1", "p3", "0", "m", "0", 45.0), R("RL", "p3", "0", 250.0), R("Rf", "p3", "m", 1500.0)],
+                           None,
+                           "Unequal resistive splitter with a VCCS stage (45 mS, noiseless, feedback 1.5 kohm) in\n"
+                           "its port-3 branch; ports 1 and 2 at 50 ohm, port 3 at 75 ohm; at 350 K."),
+    }
+
+
+def case_splitters(refs):
+    """F from port 1 to port k of a three-port is that of the two-port the other port's noiseless Z0 leaves:
+    numpy nodal runs of each such two-port are the reference, and the three-port's {1, k} submatrices of S and
+    Cs must equal them."""
+    T = 350.0
+    f_ghz = [1.0, 2.0, 3.0, 4.0]
+    for name, (ports, elems, s_cf, title) in splitter_cases().items():
+        z0, f = bench(name, ports, elems, T, f_ghz, title + "\nExpected: F from port 1 to ports 2 and 3, each with "
+                      "the third port in its own noiseless Z0.")
+        s_n, cs_n = nodal(elems, ports, T, f)
+        s_ref, cs_ref = s_n, cs_n
+        ag, to_port = {}, {}
+        if s_cf is not None:  # passive at one temperature: Bosma
+            s_ref = np.broadcast_to(s_cf, s_n.shape).astype(complex)
+            cs_ref = bosma(s_ref, T)
+            ag["closed_form_vs_numpy_nodal"] = within({"cs_rel": dmax(cs_ref, cs_n) / np.max(abs(cs_ref))})
+        for k in (2, 3):
+            pick = [0, k - 1]
+            other = ports[4 - k]   # the port that is neither 1 nor k
+            two_ports = [ports[0], ports[k - 1]]
+            s2, cs2 = nodal(elems + [R("Rterm", other[0], "0", other[1], T=0.0)], two_ports, T, f)
+            zp = z0[pick]
+            p2 = two_port(s2, cs2, zp)
+            sub = np.ix_(range(len(f)), pick, pick)
+            p_sub = two_port(s_ref[sub], cs_ref[sub], zp)
+            ag[f"to_port_{k}"] = {"numpy_two_port_vs_submatrix": within(agree(p2, p_sub, cs2, cs_ref[sub])),
+                                  "s_max_abs": dmax(s2, s_ref[sub])}
+            assert ag[f"to_port_{k}"]["s_max_abs"] < 1e-12
+            p = p_sub if s_cf is not None else p2
+            if s_cf is not None:
+                F = 1 + (T / T0) * (1 - np.sum(abs(s_ref[:, k - 1, :]) ** 2, axis=1)) / abs(s_ref[:, k - 1, 0]) ** 2
+                assert np.allclose(F, 1 + 2 * T / T0, rtol=0, atol=1e-14)
+                ag[f"to_port_{k}"]["bosma_closed_form_nf_db"] = within({"nf_db": dmax(10 * np.log10(F), p["nf_db"])})
+                p = dict(p, nf_db=10 * np.log10(F))
+            to_port[str(k)] = dict(expected(p), te_k=lst(T0 * (10 ** (np.asarray(p["nf_db"]) / 10) - 1)))
+        refs[name] = dict(
+            netlist=f"{name}.cnl", ambient_K=T, ports_z0_ohm=lst(z0), freq_hz=lst(f), description=title,
+            expected=dict(cs_re=np.real(cs_ref).tolist(), cs_im=np.imag(cs_ref).tolist(), to_port=to_port),
+            tolerance=TOL,
+            sources={"cs": "Bosma kT(I - S S^H) of the ideal splitter" if s_cf is not None else "numpy nodal (adjoint)",
+                     "to_port.<k>": ("closed form F = 1 + (T/T0)(1 - sum_j |S_kj|^2)/|S_k1|^2; noise parameters from "
+                                     "the {1, k} submatrices of the closed-form S and Cs") if s_cf is not None else
+                                    "numpy nodal two-port: ports 1 and k, the third port a noiseless resistor of its Z0",
+                     "te_k": "T0 (F - 1)"},
+            agreement=ag)
+
+
 def case_osdi(refs):
     z0, f = 50.0, 1e9
     pts = []
@@ -767,6 +838,7 @@ def main():
     case_touchstone(refs)
     case_pozar(refs)
     case_ngspice(refs)
+    case_splitters(refs)
     case_osdi(refs)
     doc = dict(schema=1, generator="gen_noise_refs.py",
                constants=dict(k=K, q=Q, T0=T0),

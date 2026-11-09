@@ -133,31 +133,65 @@ change. <code>Noise=no</code>, the default, adds nothing.</p>
 <td><code>NF</code></td>
 <td><code>[freq]</code></td>
 <td>dB</td>
-<td>The noise figure with port 1 driven from its own Z0 and port 2 loaded in its own. Two-ports only.</td>
+<td>The noise figure with port 1 driven from its own Z0 and port 2 loaded in its own.</td>
+</tr>
+<tr>
+<td><code>Fn</code></td>
+<td><code>[freq]</code></td>
+<td>—</td>
+<td>The same noise factor F, linear: 10^(NF/10).</td>
 </tr>
 <tr>
 <td><code>NFmin</code></td>
 <td><code>[freq]</code></td>
 <td>dB</td>
-<td>The minimum noise figure. Two-ports only.</td>
+<td>The minimum noise figure, over every source.</td>
+</tr>
+<tr>
+<td><code>Fmin</code></td>
+<td><code>[freq]</code></td>
+<td>—</td>
+<td>The minimum noise factor, linear.</td>
+</tr>
+<tr>
+<td><code>Te</code></td>
+<td><code>[freq]</code></td>
+<td>K</td>
+<td>The equivalent input noise temperature, T0·(F − 1).</td>
+</tr>
+<tr>
+<td><code>Tmin</code></td>
+<td><code>[freq]</code></td>
+<td>K</td>
+<td>The lowest Te any source gives, T0·(Fmin − 1).</td>
 </tr>
 <tr>
 <td><code>Rn</code></td>
 <td><code>[freq]</code></td>
 <td>Ω</td>
-<td>The equivalent noise resistance, not normalised. Two-ports only.</td>
+<td>The equivalent noise resistance, not normalised.</td>
 </tr>
 <tr>
-<td><code>GammaOpt</code></td>
+<td><code>Sopt</code></td>
 <td><code>[freq]</code></td>
 <td>—</td>
-<td>The source reflection that reaches NFmin, on Re Z0 of port 1. Two-ports only.</td>
+<td>The optimum source reflection, the one that reaches NFmin, on R = Re Z0 of port 1.</td>
+</tr>
+<tr>
+<td><code>Zopt</code></td>
+<td><code>[freq]</code></td>
+<td>Ω</td>
+<td>The optimum source as an impedance, R·(1 + Sopt)/(1 − Sopt).</td>
 </tr>
 </tbody>
 </table>
-<p>A network with more than two ports gets <code>Cs</code> only, because a noise figure and noise parameters belong to
-a two-port. For the noise figure from any other source, and for constant-noise-figure circles, use
-<a href="derived-metrics.html#noise"><code>nf()</code> and <code>nf_circle()</code></a>.</p>
+<p>Every cube but <code>Cs</code> is for a two-port only, because a noise figure and noise parameters belong to a
+two-port. The names are the ones commonly used for them. The linear noise factor is <code>Fn</code> rather than <code>F</code>, because
+<code>SP1.F(&quot;probe&quot;)</code> already reads a <a href="components.html#wsprobe">WSProbe</a>'s return difference.</p>
+<p>A network with more than two ports gets <code>Cs</code> only. For the noise figure from port 1 to any other port, or
+from any other source, and for constant-noise-figure circles, use
+<a href="derived-metrics.html#noise"><code>nf()</code>, <code>te()</code>, <code>rn()</code> and <code>ns_circle()</code></a>: <code>nf(SP1.S, 0, 3)</code> is the noise
+figure from port 1 to port 3 of a three-port.</p>
 <p><strong>What is noisy.</strong></p>
 <ul>
 <li><strong>Every linear passive part</strong> is thermal at its own temperature. That is its <code>Temp</code>, or <code>Dtemp</code> above
@@ -194,7 +228,8 @@ temperature is 10 K warmer than the standard, and its passive parts make that mu
 matched 6 dB pad reads F = 1 + (300/290)(L − 1), which is NF = 6.111 dB, not 6.000 dB. Set
 <code>temp = 16.85</code> to put the whole design at 290 K. Noise data from a file is absolute at T0, so it does
 not change with the ambient.</li>
-<li><strong>GammaOpt is on Re Z0 of port 1</strong>, and <code>Rn</code> is in ohms.</li>
+<li><strong>Sopt and Zopt are on Re Z0 of port 1</strong>, and <code>Rn</code> is in ohms. A Touchstone row's rn is Rn over that R,
+which <code>rn(SP1.S)</code> gives.</li>
 </ul>
 <p><strong>An SnP block's noise data.</strong> circuitRF reads Touchstone 1.x noise rows: frequency, NFmin in dB, |Γopt|,
 ∠Γopt in degrees, and rn normalised to the option line's R. Between rows the noise parameters are linear.
@@ -221,15 +256,17 @@ Port:P2  p2 0  Num=2 Z=50 Ohm
 SnP:X1   p1 p2 NumPorts=2 File=&quot;pozar_ex12_5.s2p&quot;
 analysis SP1 type=sparam start=3.5 stop=4.5 npts=3 Unit=GHz Noise=yes
 measure NFopt = nf(SP1.S, polar(0.62, 100))
-measure NF2   = nf_circle(SP1.S, 2)
+measure NF2   = ns_circle(SP1.S, 2)
 </code></pre>
-<p>The run gives back the file's NFmin = 1.6 dB, Rn = 20 Ω and GammaOpt = 0.62∠100°. <code>NF</code> is 2.948 dB,
-which is the noise figure from the 50 Ω source. <code>NFopt</code> is 1.6 dB again. <code>NF2</code> is the 2 dB noise circle:
+<p>The run gives back the file's NFmin = 1.6 dB, Rn = 20 Ω and Sopt = 0.62∠100°, which is
+Zopt = 19.2 + j38.2 Ω. <code>NF</code> is 2.948 dB, which is the noise figure from the 50 Ω source, and its noise
+temperature <code>Te</code> is 282 K against a <code>Tmin</code> of 129 K. <code>NFopt</code> is 1.6 dB again. <code>NF2</code> is the 2 dB noise circle:
 its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.</p>
 <p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> has three benches, each with a Data Display
 that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
 1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
-A noise-matched LNA shows NF against NFmin, its GammaOpt and two <code>nf_circle</code> circles on a Smith chart.</p>
+A noise-matched LNA shows NF against NFmin, Te against Tmin, its Sopt and two <code>ns_circle</code> circles on a
+Smith chart, and Zopt.</p>
 <h2 id="harmonic-balance">Harmonic Balance</h2>
 <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or more tones (up to
 six) — the spectrum (DC + harmonics, and mixing products when there is more than one tone) at

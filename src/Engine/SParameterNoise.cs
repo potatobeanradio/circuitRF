@@ -287,9 +287,13 @@ internal static class SParameterNoise
     }
 
     /// <summary>
-    /// The noise cubes: <c>Cs</c> [freq, i, j] on the S cube's own axes (W/Hz), and for a two-port <c>NF</c> (dB, port 1
-    /// driven from its Z0), <c>NFmin</c> (dB), <c>Rn</c> (Ω) and <c>GammaOpt</c> (referenced to Re Z0 of port 1), each [freq].
-    /// The names are what <see cref="DataSetBuilder.ToSnp(DataSet)"/> reads the Touchstone noise block from.
+    /// The noise cubes: <c>Cs</c> [freq, i, j] on the S cube's own axes (W/Hz), and for a two-port, each [freq], with port
+    /// 1 the input and the names Qucs and ngspice use where they have one: <c>NF</c> (dB, port 1 driven from its Z0) and
+    /// <c>Fn</c>, the same noise factor linear (Qucs's <c>F</c>; <c>SP1.F("probe")</c> is already the WSProbe's return
+    /// difference); <c>NFmin</c> (dB) and <c>Fmin</c>; <c>Te</c> and <c>Tmin</c> (K), the equivalent input noise
+    /// temperatures T0·(F − 1) and T0·(Fmin − 1); <c>Rn</c> (Ω); <c>Sopt</c>, Γopt on R = Re Z0 of port 1, and
+    /// <c>Zopt</c> = R·(1 + Sopt)/(1 − Sopt) (Ω). <see cref="DataSetBuilder.ToSnp(DataSet)"/> reads the Touchstone noise
+    /// block from NFmin, Sopt and Rn.
     /// </summary>
     internal static void AddCubes(DataSet ds, double[] freqsHz, Mat<Complex>[] s, Mat<Complex>[] cs, Complex[] z0)
     {
@@ -302,22 +306,33 @@ internal static class SParameterNoise
         ds.Add("Cs", new DataCube([.. ds["S"].Axes], data) { Unit = "W/Hz" });
         if (n != 2) return;
 
-        var nfDb = new double[nf];
-        var nfMin = new double[nf];
-        var rn = new double[nf];
-        var gOpt = new Complex[nf];
+        double r = z0[0].Real;
+        double[] nfDb = new double[nf], f = new double[nf], nfMin = new double[nf], fMin = new double[nf],
+                 te = new double[nf], tMin = new double[nf], rn = new double[nf];
+        Complex[] sOpt = new Complex[nf], zOpt = new Complex[nf];
         for (int fi = 0; fi < nf; fi++)
         {
-            var p = NoiseMetrics.FromWaves(s[fi], cs[fi], z0, z0[0].Real);
-            nfDb[fi]  = 10 * Math.Log10(NoiseMetrics.NoiseFactorAtZ0(s[fi], cs[fi]));
+            var p = NoiseMetrics.FromWaves(s[fi], cs[fi], z0, r);
+            f[fi]     = NoiseMetrics.NoiseFactorAtZ0(s[fi], cs[fi]);
+            nfDb[fi]  = 10 * Math.Log10(f[fi]);
+            te[fi]    = NoiseMetrics.T0 * (f[fi] - 1);
+            fMin[fi]  = p.Fmin;
             nfMin[fi] = p.NFminDb;
+            tMin[fi]  = NoiseMetrics.T0 * (p.Fmin - 1);
             rn[fi]    = p.Rn;
-            gOpt[fi]  = p.GammaOpt;
+            sOpt[fi]  = p.GammaOpt;
+            zOpt[fi]  = r * (1 + p.GammaOpt) / (1 - p.GammaOpt);
         }
         Axis Freq() => new("freq", (double[])freqsHz.Clone(), "Hz");
-        ds.Add("NF",       new DataCube([Freq()], nfDb)  { Unit = "dB" });
-        ds.Add("NFmin",    new DataCube([Freq()], nfMin) { Unit = "dB" });
-        ds.Add("Rn",       new DataCube([Freq()], rn)    { Unit = "Ohm" });
-        ds.Add("GammaOpt", new DataCube([Freq()], gOpt)  { Unit = RfCore.Export.ResultUnits.Dimensionless });
+        const string One = RfCore.Export.ResultUnits.Dimensionless;
+        ds.Add("NF",    new DataCube([Freq()], nfDb)  { Unit = "dB" });
+        ds.Add("Fn",    new DataCube([Freq()], f)     { Unit = One });
+        ds.Add("NFmin", new DataCube([Freq()], nfMin) { Unit = "dB" });
+        ds.Add("Fmin",  new DataCube([Freq()], fMin)  { Unit = One });
+        ds.Add("Te",    new DataCube([Freq()], te)    { Unit = "K" });
+        ds.Add("Tmin",  new DataCube([Freq()], tMin)  { Unit = "K" });
+        ds.Add("Rn",    new DataCube([Freq()], rn)    { Unit = "Ohm" });
+        ds.Add("Sopt",  new DataCube([Freq()], sOpt)  { Unit = One });
+        ds.Add("Zopt",  new DataCube([Freq()], zOpt)  { Unit = "Ohm" });
     }
 }

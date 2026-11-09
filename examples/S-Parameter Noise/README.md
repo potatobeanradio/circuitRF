@@ -8,11 +8,13 @@ order:
 - **`2 Friis Cascade`**: a low-noise stage, a pad and a second stage. The run's noise figure lies on Friis' formula at
   every pad loss from 1 to 10 dB.
 - **`3 LNA Noise Circles`**: a transistor-like two-port behind an input noise match, with a stabilising resistor. NF
-  against NFmin, the optimum source on a Smith chart, and two circles of constant noise figure.
+  against NFmin, the noise temperatures, the optimum source on a Smith chart and as an impedance, and two circles of
+  constant noise figure.
 
 Each bench's S-parameter analysis has **Noise** ticked (`Noise=yes` in the netlist). That adds the noise-wave
-correlation `Cs` to the run, and for a two-port the noise figure `NF`, `NFmin`, `Rn` and `GammaOpt`, as cubes beside
-`S`. Every part in these benches is noisy: the resistors and the lossy L and C are thermal at their own temperature, and
+correlation `Cs` to the run, and for a two-port the noise figure and noise parameters as cubes beside `S`: `NF` and
+`NFmin` (dB), `Fn` and `Fmin` (the same, linear), `Te` and `Tmin` (the noise temperatures, K), `Rn` (Ω), and the
+optimum source `Sopt`, also as an impedance `Zopt`. They take the names commonly used for them. Every part in these benches is noisy: the resistors and the lossy L and C are thermal at their own temperature, and
 each SnP block is noisy by the noise data in its file. So no run warns about a noiseless part. The full description is
 in *Reference ▸ Simulations ▸ Small-signal noise*.
 
@@ -123,13 +125,15 @@ narrow-band LNA around it:
   there.
 
 `SP1` runs from 3 to 5 GHz in 50 MHz steps. `MEAS1` adds the gain, `K_rollett = K(SP1.S)`, and two noise circles,
-`NF_125 = nf_circle(SP1.S, 1.25)` and `NF_200 = nf_circle(SP1.S, 2)`. Each circle is a cube over frequency and 101
+`NF_125 = ns_circle(SP1.S, 1.25)` and `NF_200 = ns_circle(SP1.S, 2)`. Each circle is a cube over frequency and 101
 points: the source reflections that give that noise figure.
 
 | At 4 GHz | |
 |---|---|
 | NF from 50 Ω | 0.979 dB |
-| NFmin | 0.979 dB, at a GammaOpt within 0.002 of the centre |
+| NFmin | 0.979 dB, at an Sopt within 0.002 of the centre |
+| Te and Tmin | 73.4 K, both |
+| Zopt | 50.08 − j0.13 Ω |
 | Rn | 5.0 Ω |
 | Gain | 11.4 dB |
 | K | 1.43 |
@@ -142,11 +146,16 @@ resistances set to 0, NFmin is 0.70 dB. `Rstab`'s own noise is the other 0.06 dB
 - **Noise figure of the LNA**: NF from 50 Ω against NFmin, 3 to 5 GHz. They touch at 4 GHz, where the match puts 50 Ω
   at the optimum, and part on either side. Below 4 GHz the NF is lower still, since NFmin falls faster than the mismatch
   grows.
-- **GammaOpt and two noise circles**: GammaOpt's locus from 3 to 5 GHz, passing through the centre of the chart at
+- **Sopt and two noise circles**: Sopt's locus from 3 to 5 GHz, passing through the centre of the chart at
   4 GHz (the marker), and the 1.25 dB and 2 dB circles at 4 GHz, about 0.27 dB and 1 dB above NFmin. The circle traces
   are `NF_125[20, :]` and `NF_200[20, :]`: point 20 of the frequency axis is 4 GHz. `NF_125[~, :]` draws one circle per
   frequency instead.
 - **Gain** and **Stability**: dB(S21), and K above 1 everywhere.
+- **Equivalent input noise temperature**: Te from 50 Ω against Tmin, T0·(F − 1) and T0·(Fmin − 1) with T0 = 290 K.
+  They meet at 73.4 K at 4 GHz (the marker), as NF and NFmin do; a noise temperature reads small differences at a
+  low noise figure more plainly than decibels.
+- **Optimum source impedance Zopt**: Sopt as an impedance, Re and Im, from 33 + j32 Ω at 3 GHz to 137 Ω at 5 GHz. The
+  marker reads 50.08 Ω at 4 GHz, the port's own 50 Ω.
 
 Every point of both circles gives its own noise figure back through `nf(SP1.S, Γs)`, to 3e-15 dB.
 

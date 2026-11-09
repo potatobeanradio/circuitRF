@@ -102,7 +102,7 @@ public sealed class TouchstoneNoiseBlockTests
         ds.AddToGroup("SP1", "S", new DataCube([freq, pi, pj], s));
         ds.AddToGroup("SP1", "Z0", DataSetBuilder.BuildZ0Cube(new Complex[] { 25, 25 }));
         ds.AddToGroup("SP1", "NFmin", new DataCube([freq], new[] { 0.8, 0.9 }));
-        ds.AddToGroup("SP1", "GammaOpt", new DataCube([freq], gamma));
+        ds.AddToGroup("SP1", "Sopt", new DataCube([freq], gamma));
         ds.AddToGroup("SP1", "Rn", new DataCube([freq], new[] { 10.0, 12.5 }));
 
         var snp = DataSetBuilder.ToSnp(ds, "SP1.S");

@@ -16,7 +16,8 @@ It runs in two steps, because circuitRF and the references usually live in diffe
     python3 plot_noise_compare.py run  <CircuitRF.Cli.dll> <results>   # needs dotnet only
     python3 plot_noise_compare.py plot <results> ../../docs/images/sparam-noise
 
-`run` runs every bench here with `Noise=yes`, the ngspice benches again on a 50-point grid, the
+`run` runs every bench here with `Noise=yes` (the three-ports with `nf(SP1.S, 0, k)` measurements), the
+ngspice benches again on a 50-point grid, the
 `S-Parameter Noise` example's first two benches, and the fake OSDI part over its bias (it needs
 `tools/osdi-worker` and `tools/fake-osdi-model` built). `plot` needs what the generator needs, plus
 matplotlib, and reruns ngspice and scikit-rf live where a figure wants more points than `refs.json` has.
@@ -39,7 +40,7 @@ informational warning: "Ambient temperature … from the global 'temp'".
 | `Cs` | `Cs = <b bᴴ>`: the outgoing power waves, with every port terminated in its own noiseless Z0, in W/Hz. |
 | Passive part at temperature T | `Cs = kT(I − SSᴴ)`. |
 | NF | At T0 = 290 K, with the source at port 1's Z0: `F = 1 + Cs22/(k·T0·\|S21\|²)`. |
-| `GammaOpt` | Referenced to port 1's Z0. |
+| Γopt | Referenced to port 1's Z0. circuitRF's cube is `Sopt`; refs.json keeps the key `gamma_opt`. |
 | `Rn` | In Ω. |
 | `k` | 1.380649e-23 J/K, exact. |
 | Ambient | `temp = 16.85` is 290 K. A bench with no `temp` line runs at circuitRF's default ambient, 26.85 °C = 300 K. |
@@ -56,10 +57,12 @@ benches.<name>:
                  cs_re [F][2][2], cs_im [F][2][2]  (W/Hz)
   tolerance      db_abs: |NF − ref| and |NFmin − ref|, in dB
                  rn_rel: |Rn − ref| / |ref|
-                 gamma_abs: |GammaOpt − ref|, as a complex magnitude
+                 gamma_abs: |Sopt − ref|, as a complex magnitude
                  cs_rel: max over entries |Cs − ref| / max |ref|, per frequency
   sources        which reference each expected quantity comes from
   agreement      the largest differences found between independent references (same units)
+  splitter3_*    a three-port: expected holds cs_re/cs_im [F][3][3] and to_port.<k> (k = 2, 3) with nf_db,
+                 te_k (K), nfmin_db, rn_ohm, gamma_opt_re, gamma_opt_im of the two-port from port 1 to port k
   extras         friis_matched.inputs; touchstone_*.file_reference_ohm and file_gamma_opt_*;
                  pozar_ex12_5.circle; osdi_crf_noise.formula, points and notes
 ```
@@ -78,6 +81,8 @@ benches.<name>:
 | `ngspice_mixed_temp` | R at 290 K, with `Temp=` resistors at 400 K and 77 K | ngspice `.sp … donoise`. Equal to numpy nodal. |
 | `ngspice_coupled_l` | Two lossy inductors coupled by `Mutual`, k = 0.7 | ngspice. Equal to numpy nodal. |
 | `ngspice_vccs_amp` | VCCS amplifier with a feedback R; port 1 at 75 Ω, port 2 at 50 Ω | ngspice. Equal to numpy nodal. |
+| `splitter3_passive` | Matched resistive star splitter (three 50/3 Ω arms), 50 Ω ports, at 350 K | Bosma `Cs`; to each output `F = 1 + (T/T0)(1 − Σⱼ\|S_kj\|²)/\|S_k1\|² = 1 + 2T/T0` (5.332 dB, Te = 700 K). Each output's noise parameters from the {1, k} submatrices; numpy nodal agrees. |
+| `splitter3_vccs` | Unequal resistive splitter with a VCCS stage (45 mS, 1.5 kΩ feedback) to port 3 at 75 Ω, 350 K | numpy nodal `Cs`; to each output, a numpy nodal two-port run with the third port a noiseless resistor of its Z0, equal to the three-port's {1, k} submatrices. |
 | `osdi_crf_noise` | The fake OSDI `crf_noise` as a shunt at a DC-fed node (no `.cnl`) | Closed form. |
 
 ### `osdi_crf_noise`

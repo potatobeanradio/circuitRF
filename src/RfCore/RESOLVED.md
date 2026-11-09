@@ -1170,7 +1170,7 @@ carries the reference its Γopt is on.
 - **Realizability** is det C_A ≥ 0, and det C_A = (4kT0)²·a(2·Rn·Gopt − a) with a = (Fmin − 1)/2, so the check is
   0 ≤ Fmin − 1 ≤ 4·Rn·Gopt. A C_A with C11 = 0 (a noiseless two-port) has no finite optimum and reads Fmin = 1, Rn = 0.
 - **Touchstone.** `TouchstoneIO.Write` now emits the 1.x noise rows (freq, NFmin dB, |Γopt|, ∠Γopt°, rn) after a
-  two-port's data, and `DataSetBuilder.ToSnp` fills `SNP.NoiseParameters` from cubes named `NFmin` (dB), `GammaOpt` and
+  two-port's data, and `DataSetBuilder.ToSnp` fills `SNP.NoiseParameters` from cubes named `NFmin` (dB), `Sopt` and
   `Rn` (Ω), each [freq], in the S cube's group. Nothing is re-referenced on write: the rows are stored against Re Z0, and
   the option line's R is Re Z0 in both write modes (strict 1.1 renormalises the S data to exactly that). The reader is
   1.x-only, so rn is always taken as Rn/R. The writer adds no header comment of its own, so a read → write → read keeps

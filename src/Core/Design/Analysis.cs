@@ -249,7 +249,7 @@ public sealed class SParameterAnalysis : Analysis
 
     /// <summary>
     /// <c>Noise=</c> from the directive, verbatim — <c>yes</c> adds the small-signal noise cubes (<c>Cs</c>, and for a
-    /// two-port <c>NF</c>, <c>NFmin</c>, <c>Rn</c>, <c>GammaOpt</c>). Read through <see cref="Noise"/>.
+    /// two-port <c>NF</c>, <c>Fn</c>, <c>NFmin</c>, <c>Fmin</c>, <c>Te</c>, <c>Tmin</c>, <c>Rn</c>, <c>Sopt</c>, <c>Zopt</c>). Read through <see cref="Noise"/>.
     /// </summary>
     public string NoiseExpr { get; init; } = NoiseDefault;
 

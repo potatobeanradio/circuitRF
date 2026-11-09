@@ -3976,7 +3976,7 @@ are not covered. Gate: `WorkerExitMidRunTests`, with `tools/DeviceWorkerExample 
 
 `Noise=yes` on a `sparam` directive (`AnalysisSettings.Noise`) adds `Cs` [freq, i, j] (W/Hz, the outgoing noise waves'
 correlation with every port in its own noiseless Z0) and, for a two-port, `NF`, `NFmin` (dB, T0 = 290 K), `Rn` (Ω) and
-`GammaOpt` (on Re Z0 of port 1), each [freq], through `RfCore.Data.NoiseMetrics`. Off, nothing is entered: the same
+`Sopt` (on Re Z0 of port 1), each [freq], through `RfCore.Data.NoiseMetrics`. Off, nothing is entered: the same
 cubes, S bit for bit and the same `RunStats`. On, S is still bit-identical and each frequency costs N more
 back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
 
@@ -4074,3 +4074,21 @@ refs.json's `osdi_crf_noise` points (g 1 and 4 mS, Vdc 0.5 and 1 V, T 300 and 35
 to 2e-15 against the closed form; with kf > 0 the flicker source is `kf·|g·v|/f`; m = 2 equals one device of 2g; a
 model with no sources (`crf_rc`) contributes nothing and is named.
 
+
+## S-parameter noise: the cubes named as Qucs and ngspice name them, and the linear and temperature forms (2026-11-09)
+
+A two-port noise run now adds `NF`, `Fn`, `NFmin`, `Fmin`, `Te`, `Tmin`, `Rn`, `Sopt` and `Zopt` beside `Cs`
+(`SParameterNoise.AddCubes`). `GammaOpt` became `Sopt`, ngspice's `SOpt` and Qucs's `Sopt`; `DataSetBuilder.ToSnp` reads
+the Touchstone noise block from `NFmin`, `Sopt` and `Rn`.
+
+- **The linear noise factor is `Fn`, not Qucs's `F`.** `SP1.F("probe")` is already the WSProbe's return difference
+  (`WspCubePacker` writes `F:<label>` into the same analysis group), and `EvalQualifiedAccessor` sends every
+  one-argument `SP1.F(…)` there, so a cube named `F` could not be indexed that way and `SP1.F` would mean two things.
+- `Fn` and `Te` come from the same `NoiseFactorAtZ0` double as `NF`, not back from dB; `Fmin` and `Tmin` from `FromWaves`'
+  Fmin. T0 is 290 K, so a matched pad at T gives Te = T·(L − 1) whatever T is.
+- `Zopt = R·(1 + Sopt)/(1 − Sopt)` on R = Re Z0 of port 1, the reference Sopt is on.
+- Still two-port only: an N-port gets `Cs`, and its per-port figures come from `nf`/`te` with a port.
+
+Gates: `SParamNoiseTests` — `MatchedPad_MeetsTheClosedForm` (Fn, Te = Tmin = T(L − 1) at 290 and 400 K),
+`LinearAndTemperatureCubes_AndZopt_FollowFromTheNoiseParameters` (the three ngspice benches; Zopt against their SOpt),
+and the three-port splitters of refs.json (`ThreePort_NfAndTeToEachOutputPort_MatchTheReference`).

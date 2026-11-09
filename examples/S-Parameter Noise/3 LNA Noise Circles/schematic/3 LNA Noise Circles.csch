@@ -245,14 +245,14 @@
         },
         {
           "Name": "NF_125",
-          "Expression": "nf_circle(SP1.S, 1.25)",
+          "Expression": "ns_circle(SP1.S, 1.25)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "NF_200",
-          "Expression": "nf_circle(SP1.S, 2)",
+          "Expression": "ns_circle(SP1.S, 2)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

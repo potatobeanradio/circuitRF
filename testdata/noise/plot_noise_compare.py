@@ -54,8 +54,10 @@ def run(cli, results):
     refs = json.load(open(os.path.join(HERE, "refs.json")))["benches"]
     for name, bench in refs.items():
         if bench["netlist"]:
-            extra = [f"measure C{round(10 * db)} = nf_circle(SP1.S, {db}, {CIRCLE_PTS})" for db in CIRCLE_DB] \
+            extra = [f"measure C{round(10 * db)} = ns_circle(SP1.S, {db}, {CIRCLE_PTS})" for db in CIRCLE_DB] \
                 if name == "pozar_ex12_5" else []
+            if "to_port" in bench["expected"]:   # a three-port: the noise figure to each output port
+                extra = [f"measure NF{k} = nf(SP1.S, 0, {k})" for k in bench["expected"]["to_port"]]
             with_noise(name, name, extra_lines=extra)
         if name.startswith("ngspice_"):
             with_noise(name, name + "_dense", grid=NG_GRID)
@@ -126,7 +128,7 @@ def plot(results, out):
     def fig(ncols, title):
         """One row of plots, each a (value, |deviation|) pair of axes sharing x."""
         f = plt.figure(figsize=(1200 / 110, 700 / 110), dpi=110)
-        gs = f.add_gridspec(2, ncols, height_ratios=[3, 1], hspace=0.12, wspace=0.34)
+        gs = f.add_gridspec(2, ncols, height_ratios=[3, 1], hspace=0.12, wspace=0.38)
         axes = [(f.add_subplot(gs[0, c]), f.add_subplot(gs[1, c])) for c in range(ncols)]
         for top, bot in axes:
             bot.sharex(top)
@@ -135,7 +137,7 @@ def plot(results, out):
             bot.set_ylim(TINY / 2, 3e-9)
             bot.set_yticks([1e-18, 1e-15, 1e-12, 1e-9])
             bot.axhline(1e-9, color=muted, linestyle=":", linewidth=1)    # the tests' tolerance
-            bot.set_ylabel("|Δ|", color=muted)
+        axes[0][1].set_ylabel("|Δ|", color=muted)   # one label for the row: the panels sit too close for one each
         axes[-1][1].annotate("test tolerance", (1.0, 1e-9), xycoords=("axes fraction", "data"), xytext=(-4, -9),
                              textcoords="offset points", ha="right", fontsize=7, color=muted)
         f.suptitle(title, fontsize=11, color=ink)
@@ -157,9 +159,12 @@ def plot(results, out):
         if not b["netlist"]:
             continue
         r, e = load(os.path.join(results, name + ".npy")), b["expected"]
+        if "to_port" in e:   # a three-port: nf(SP1.S, 0, k) to each output against the two-port reference
+            note(name, nf_db=np.concatenate([r[f"NF{k}"][0] - np.asarray(x["nf_db"]) for k, x in e["to_port"].items()]))
+            continue
         gopt = np.asarray(e["gamma_opt_re"]) + 1j * np.asarray(e["gamma_opt_im"])
         note(name, nf_db=r["NF"][0] - e["nf_db"], nfmin_db=r["NFmin"][0] - e["nfmin_db"],
-             rn_rel=(r["Rn"][0] - e["rn_ohm"]) / np.asarray(e["rn_ohm"]), gamma=np.abs(r["GammaOpt"][0] - gopt))
+             rn_rel=(r["Rn"][0] - e["rn_ohm"]) / np.asarray(e["rn_ohm"]), gamma=np.abs(r["Sopt"][0] - gopt))
 
     # -- a. the attenuator against its temperature ---------------------------------------------------
     r = load(os.path.join(results, "attenuator.npy"))
@@ -256,7 +261,7 @@ def plot(results, out):
         r = load(os.path.join(results, name + "_dense.npy"))
         fq = r["NF"][1][0]
         _, _, ng = g.ng_params(g.ngspice(name, ports, elems, g.T0, fq))
-        ours = dict(nf_db=r["NF"][0], nfmin_db=r["NFmin"][0], rn_ohm=r["Rn"][0], gamma=np.abs(r["GammaOpt"][0]))
+        ours = dict(nf_db=r["NF"][0], nfmin_db=r["NFmin"][0], rn_ohm=r["Rn"][0], gamma=np.abs(r["Sopt"][0]))
         theirs = dict(nf_db=ng["nf_db"], nfmin_db=ng["nfmin_db"], rn_ohm=ng["rn_ohm"], gamma=np.abs(ng["gamma_opt"]))
         for (top, bot), q in zip(row, ("nf_db", "nfmin_db", "rn_ohm", "gamma")):
             top.plot(fq / 1e9, theirs[q], color=color, label=labels[name])
@@ -265,15 +270,15 @@ def plot(results, out):
             if q == "rn_ohm":
                 d = d / theirs[q]
             elif q == "gamma":
-                d = np.abs(r["GammaOpt"][0] - ng["gamma_opt"])
+                d = np.abs(r["Sopt"][0] - ng["gamma_opt"])
             dev(bot, fq / 1e9, d, color)
         note(name + " (ngspice, dense)", nf_db=ours["nf_db"] - theirs["nf_db"], nfmin_db=ours["nfmin_db"] - theirs["nfmin_db"],
-             rn_rel=(ours["rn_ohm"] - theirs["rn_ohm"]) / theirs["rn_ohm"], gamma=np.abs(r["GammaOpt"][0] - ng["gamma_opt"]))
-    for (top, bot), t, u in zip(row, ("NF", "NFmin", "Rn", "|Γopt|"), ("dB", "dB", "Ω", "")):
+             rn_rel=(ours["rn_ohm"] - theirs["rn_ohm"]) / theirs["rn_ohm"], gamma=np.abs(r["Sopt"][0] - ng["gamma_opt"]))
+    for (top, bot), t, u in zip(row, ("NF", "NFmin", "Rn", "|Sopt|"), ("dB", "dB", "Ω", "")):
         top.set_title(t, color=ink)
         top.set_ylabel(u)
         bot.set_xlabel("Frequency, GHz")
-    row[2][1].set_ylabel("|Δ|/Rn", color=muted)
+    row[2][1].text(0.03, 0.9, "relative, |Δ|/Rn", transform=row[2][1].transAxes, va="top", fontsize=7, color=muted)
     f.legend(*row[0][0].get_legend_handles_labels(), loc="upper center", ncol=3, bbox_to_anchor=(0.5, 0.955))
     save(f, "ngspice_noise_parameters.png")
 
@@ -299,8 +304,8 @@ def plot(results, out):
         n = (10 ** (db / 10) - 10 ** 0.16) / (4 * rn_n) * abs(1 + gopt) ** 2      # closed form, Pozar (12.39)
         ax.plot((gopt / (1 + n)).real, (gopt / (1 + n)).imag, color=color, marker="+", markersize=8, linestyle="none")
     c2 = complex(b["circle"]["center_re"][1], b["circle"]["center_im"][1])
-    ax.plot(gopt.real, gopt.imag, color=ink, marker="*", markersize=9, linestyle="none", label="Γopt = 0.62∠100° (the file)")
-    ax.plot([], [], color=muted, **DOT, label="circuitRF, nf_circle(SP1.S, NF)")
+    ax.plot(gopt.real, gopt.imag, color=ink, marker="*", markersize=9, linestyle="none", label="Sopt = 0.62∠100° (the file)")
+    ax.plot([], [], color=muted, **DOT, label="circuitRF, ns_circle(SP1.S, NF)")
     ax.plot([], [], color=muted, marker="+", linestyle="none", label="closed-form centre")
     ax.annotate(f"2 dB: centre {abs(c2):.4f}∠{np.degrees(np.angle(c2)):.1f}°, radius {b['circle']['radius'][1]:.4f}\n"
                 f"(Pozar: 0.56∠100°, 0.24)\nmax |circuitRF − scikit-rf| over {len(CIRCLE_DB) * CIRCLE_PTS} points: "
@@ -335,7 +340,8 @@ def plot(results, out):
     # -- f. summary: the worst NF deviation of every bench --------------------------------------
     kind = {"pad6": "closed form", "lossy_lc": "Bosma, closed form", "friis_matched": "Friis",
             "friis_mismatched": "scikit-rf", "touchstone": "the file, scikit-rf", "pozar": "the file",
-            "1 Attenuator": "closed form", "2 Friis": "Friis", "osdi": "closed form"}
+            "1 Attenuator": "closed form", "2 Friis": "Friis", "osdi": "closed form",
+            "splitter3_passive": "3-port, Bosma", "splitter3_vccs": "3-port, numpy nodal two-port"}
     rows = [(k + "  ·  " + next((v for p, v in kind.items() if k.startswith(p)),
                                 "ngspice" if "dense" in k else "numpy nodal = ngspice"), v)
             for k, v in worst.items() if "nf_db" in v or "nf_db_vs_skrf" in v]

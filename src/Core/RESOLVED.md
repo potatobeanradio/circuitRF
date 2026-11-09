@@ -4476,29 +4476,50 @@ provider that does not speak the protocol, the two being the same thing to a cal
   `ReadOperatingPointAt` it takes the bias from the caller, and it returns one device's densities: the caller applies
   the multiplicity.
 
-## Expressions: `nf()` and `nf_circle()`, read off a noise run (2026-11-09)
+## Expressions: `nf()` and `ns_circle()` (first named `nf_circle`), read off a noise run (2026-11-09)
 
-`nf(SP1.S, Γs)` (dB, `{…, freq}`) and `nf_circle(SP1.S, NFdB[, npts])` (complex `{…, freq, point}`) are network
-built-ins in `Evaluator.Network.cs`. Nothing in them computes noise: they read the NFmin, Rn and GammaOpt cubes of the
+`nf(SP1.S, Γs)` (dB, `{…, freq}`) and `ns_circle(SP1.S, NFdB[, npts])` (complex `{…, freq, point}`) are network
+built-ins in `Evaluator.Network.cs`. Nothing in them computes noise: they read the NFmin, Rn and Sopt cubes of the
 analysis that owns the S cube and call `NoiseMetrics.NoiseFactor`/`NoiseCircle`.
 
 - **The owner lookup is the network metrics' own.** `ReadSNetwork` already found the owning DataSet through
   `MeasurementContext.TryFindOwner` for its Z0; `SNetwork` now carries that DataSet, so a sliced or computed S is refused
-  exactly as for `mu`. Γ is on Re Z0 of port 1 of each sweep slice, which is what the engine references GammaOpt to; a
-  sweep stacks NFmin/Rn/GammaOpt as `[sweep…, freq]`, one value per S matrix.
+  exactly as for `mu`. Γ is on Re Z0 of port 1 of each sweep slice, which is what the engine references Sopt to; a
+  sweep stacks NFmin/Rn/Sopt as `[sweep…, freq]`, one value per S matrix.
 - **There is no stability-circle function to follow.** The Data Display's stability circles are trace-card items drawn
-  from a centre and a radius, not expression values. `nf_circle` returns points instead: a closed loop, point k at
+  from a centre and a radius, not expression values. `ns_circle` returns points instead: a closed loop, point k at
   2πk/(npts − 1), so the first and last coincide (scikit-rf's `nf_circle` layout, which the Pozar gate compares point
   for point). A Data Display expression trace must reduce to one axis, and a network function's S argument cannot be
-  sliced per sample, so the circle reaches a Smith chart as a measurement (`measure NF2 = nf_circle(SP1.S, 2)`, trace
+  sliced per sample, so the circle reaches a Smith chart as a measurement (`measure NF2 = ns_circle(SP1.S, 2)`, trace
   `NF2[~, :]`).
 - **No answer is NaN, never a plausible number.** `nf` at |Γs| ≥ 1 (the formula goes below Fmin or negative there) and
-  `nf_circle` below NFmin (no circle). Refusals are coded (`NoiseFunctionDiagnostics`, `measure.noise.*`): not a
+  `ns_circle` below NFmin (no circle). Refusals are coded (`NoiseFunctionDiagnostics`, `measure.noise.*`): not a
   two-port, a run without `Noise=yes`, and malformed arguments.
 - `SParameterAnalysis.WithSweeps` takes an optional `noiseExpr`, so the analysis editor's Noise box replaces `Noise=`
   while every other key is still carried by the one copy.
 
 Gates: `NetworkMetricFunctionTests` (the refusals; a circle is closed and each point is its own NF through `nf`; the NaN
 rules) and `SParamNoiseTests.NfFunctions_AgreeWithTheRunsOwnCubes` (a 75/50 Ω run: `nf(SP1.S, 0)` = NF, which the
-engine takes from Cs, and `nf(SP1.S, SP1.GammaOpt)` = NFmin, to 1e-9) and `NfCircle_PozarEx12_5_ThroughARun` (scikit-rf's
+engine takes from Cs, and `nf(SP1.S, SP1.Sopt)` = NFmin, to 1e-9) and `NsCircle_PozarEx12_5_ThroughARun` (scikit-rf's
 points, the closed-form centre and radius to 1e-9, the textbook's to 1e-2).
+
+## Expressions: the noise functions take Qucs's and ngspice's names, an output port, and a circle from parameters (2026-11-09)
+
+The functions were renamed and extended in the same PR, to the names RF simulators commonly use: `nf(SP1.S[, Γs][, port])`
+(dB), `te(…)` with the same arguments (K, T0·(F − 1)), `rn(SP1.S)` (Rn/R) and `ns_circle` (was `nf_circle`), in two forms,
+`ns_circle(SP1.S, NFdB[, npts])` and `ns_circle(NFdB, NFmin, Sopt, rn[, npts])`.
+
+- **They read `Cs`, not the parameter cubes.** `ReadNoisePair` takes the {1, port} submatrices of S and Cs and runs
+  `NoiseMetrics.FromWaves` on them, so one path serves a two-port and the two-port from port 1 to any port of an N-port.
+  That submatrix IS the two-port: every other port stays in its own noiseless Z0, which neither reflects a wave nor adds
+  one. `nf(SP1.S)` with no source is `NoiseFactorAtZ0` on that pair, the same doubles as the engine's `NF`, bit for bit.
+  Γs has to come before a port (`nf(SP1.S, 0, 3)`): a lone second number could be either.
+- **`ns_circle`'s forms are told apart by argument count** (2–3 against 4–5) and the first argument has to fit (an S cube
+  for the first, a number for the second); anything else is `measure.noise.circle-form`, naming both spellings. The
+  explicit form's parameters are numbers or equal-length cubes, and the first cube's axes lead the result, so
+  `ns_circle(2, SP1.NFmin, SP1.Sopt, rn(SP1.S))` has the run form's `{freq, point}` shape and points (1e-12).
+- New coded refusals: `measure.noise.port` (an output port outside 2..N), `.circle-form`, `.parameter`. `rn` and the
+  run form of `ns_circle` still refuse an N-port (`not-two-port`); `not-run` now means "no Cs".
+
+Gates: `NetworkMetricFunctionTests` (every refusal id; nf with no source, te; the explicit circle from numbers and from
+cubes equals the run's) and `SParamNoiseTests.ThreePort_NfAndTeToEachOutputPort_MatchTheReference`.

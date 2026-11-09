@@ -231,9 +231,10 @@ planar arc, which is a roadmap call that blocks neither design).*
 circuitRF v1 had **no noise analysis**. The first half of the pass this section asked for is now in
 (2026-11, `docs/design/sparameter-noise.md`): **small-signal noise in the S-parameter analysis**. `Noise=yes`
 gives the noise-wave correlation of any N-port and, for a two-port, the noise figure and the noise parameters
-(Fmin, Γopt, Rn) over frequency. Passive parts are thermal at their own temperature, an SnP block is noisy by
-its Touchstone noise data, and a compiled (OSDI) model by its own declared noise sources. `nf()` and
-`nf_circle()` read the result back, and the Touchstone noise block is written.
+(Fmin, Sopt, Rn, and Te, Tmin and Zopt) over frequency. Passive parts are thermal at their own temperature, an
+SnP block is noisy by its Touchstone noise data, and a compiled (OSDI) model by its own declared noise sources.
+`nf()`, `te()`, `rn()` and `ns_circle()` read the result back, `nf()` and `te()` to any output port of an N-port,
+and the Touchstone noise block is written.
 
 **Still deferred** and still open to a contributor who wants to own them: noise in **harmonic balance**
 (mixers, and the noise of a large-signal stage), **phase noise** for oscillators, an **AC noise** analysis

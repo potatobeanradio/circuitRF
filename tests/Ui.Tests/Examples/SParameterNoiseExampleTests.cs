@@ -161,17 +161,22 @@ public sealed class SParameterNoiseExampleTests(ITestOutputHelper output) : IDis
         var nf = ds["SP1.NF"];
         var nfMin = ds["SP1.NFmin"];
         var rn = ds["SP1.Rn"];
-        var gOpt = ds["SP1.GammaOpt"];
+        var gOpt = ds["SP1.Sopt"];
         double[] freq = nf.Axes[0].Values;
         int f0 = Array.FindIndex(freq, f => Math.Abs(f - 4e9) < 1);
         Assert.Equal(20, f0);
 
         output.WriteLine($"4 GHz: NF {nf.RealValues[f0]:F4} dB, NFmin {nfMin.RealValues[f0]:F4} dB, Rn {rn.RealValues[f0]:F3} ohm, "
-                       + $"|GammaOpt| {gOpt.ComplexValues[f0].Magnitude:E2}");
+                       + $"|Sopt| {gOpt.ComplexValues[f0].Magnitude:E2}, Te {ds["SP1.Te"].RealValues[f0]:F2} K, "
+                       + $"Zopt {ds["SP1.Zopt"].ComplexValues[f0]:F3} ohm");
         Assert.True(gOpt.ComplexValues[f0].Magnitude < 2e-3, "not noise-matched at 4 GHz");
         Assert.True(nf.RealValues[f0] - nfMin.RealValues[f0] < 1e-4);
         Assert.InRange(nfMin.RealValues[f0], 0.95, 1.0);   // the README's 0.98 dB
         for (int k = 0; k < freq.Length; k++) Assert.True(nf.RealValues[k] >= nfMin.RealValues[k] - 1e-12);
+        // The display's noise temperatures and optimum source: at the match, Te = Tmin and Zopt is the 50 ohm port.
+        Assert.Equal(290 * (Math.Pow(10, nf.RealValues[f0] / 10) - 1), ds["SP1.Te"].RealValues[f0], 1e-9);
+        Assert.InRange(ds["SP1.Te"].RealValues[f0] - ds["SP1.Tmin"].RealValues[f0], 0, 0.01);
+        Assert.True((ds["SP1.Zopt"].ComplexValues[f0] - 50).Magnitude < 0.25, "Zopt is not 50 ohm at 4 GHz");
 
         var kf = Measure(ds, "K_rollett");
         output.WriteLine($"K from {kf.RealValues.Min():F3} to {kf.RealValues.Max():F3}");
@@ -296,13 +301,19 @@ public sealed class SParameterNoiseExampleTests(ITestOutputHelper output) : IDis
                 Plot(0, 0, ["--trace", T("SP1.NF", "NF from 50 Ω"), "--trace", T("SP1.NFmin", "NFmin"),
                             "--title", "Noise figure of the LNA", "--ylabel", "dB", "--y", "0.6:1.8"], Line, Dash);
                 markers.Add((0, 0, 20, 90, 40));    // 4 GHz
-                Plot(640, 0, ["--type", "smith", "--trace", T("SP1.GammaOpt", "GammaOpt"),
+                Plot(640, 0, ["--type", "smith", "--trace", T("SP1.Sopt", "Sopt"),
                               "--trace", T("NF_125[20,:]", "1.25 dB at 4 GHz"), "--trace", T("NF_200[20,:]", "2 dB at 4 GHz"),
-                              "--title", "GammaOpt and two noise circles"], Line, Line, Line);
+                              "--title", "Sopt and two noise circles"], Line, Line, Line);
                 markers.Add((1, 0, 20, 10, 40));
                 Plot(0, 480, ["--trace", T("Gain_dB", "Gain, dB(S21)"), "--title", "Gain", "--ylabel", "dB"], Line);
                 Plot(640, 480, ["--trace", T("K_rollett", "Rollett K"), "--title", "Stability: K above 1 across the band",
                                 "--ylabel", "K", "--y", "0.8:1.8"], Line);
+                Plot(0, 960, ["--trace", T("SP1.Te", "Te from 50 Ω"), "--trace", T("SP1.Tmin", "Tmin"),
+                              "--title", "Equivalent input noise temperature", "--ylabel", "K"], Line, Dash);
+                markers.Add((4, 0, 20, 90, 40));    // 4 GHz
+                Plot(640, 960, ["--trace", T("SP1.Zopt", "Re Zopt", ",y=real"), "--trace", T("SP1.Zopt", "Im Zopt", ",y=imag"),
+                                "--title", "Optimum source impedance Zopt", "--ylabel", "Ω"], Line, Dash);
+                markers.Add((5, 0, 20, 90, 40));    // 50 ohm at 4 GHz
             }
 
             var page = first!;
