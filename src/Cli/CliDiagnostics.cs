@@ -1803,6 +1803,11 @@ internal static class CliDiagnostics
         "check.elaboration.note", DiagnosticSeverity.Info,
         "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary><c>EvmSplit=yes</c> with nothing to split (brief NZ-8).</summary>
+    public static Diagnostic CheckEvmSplitNothing(string path, string analysis, string why) => Diagnostic.Create(
+        "check.noise.evm-split-nothing", DiagnosticSeverity.Info,
+        "{path}: envelope '{analysis}' has EvmSplit=yes, but {why}.", ("path", path), ("analysis", analysis), ("why", why));
+
     /// <summary><c>Noise=yes</c> on an ideal source (brief NZ-7 follow-up): it has no impedance to be noisy.</summary>
     public static Diagnostic CheckNoisySourceIdeal(string path, string part) => Diagnostic.Create(
         "check.noise.source-ideal", DiagnosticSeverity.Info,

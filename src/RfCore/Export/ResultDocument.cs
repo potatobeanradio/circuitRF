@@ -2541,10 +2541,14 @@ namespace RfCore.Export
     /// <param name="PhaseNoise">The sources stating a <c>PhaseNoise</c> mask, each with its mask; null when none does.</param>
     /// <param name="NoisySources">The sources whose impedance is thermal (<c>Noise=yes</c>), each with its temperature;
     /// null when none is.</param>
+    /// <param name="Evm">The carriers whose received quality is measured, each with its measure (EVM for LTE / NR and DBPSK,
+    /// the FSK error, CSS's de-chirped error), and what <c>EvmSplit</c> costs; null when no carrier carries symbols
+    /// (brief NZ-8).</param>
     public sealed record ExplainEnvelopeRecordsJson(IReadOnlyList<string> Nets, IReadOnlyList<string> IProbes,
                                                     string? Seed = null, bool SeedPerPoint = false,
                                                     IReadOnlyList<string>? PhaseNoise = null,
-                                                    IReadOnlyList<string>? NoisySources = null);
+                                                    IReadOnlyList<string>? NoisySources = null,
+                                                    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Evm = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s answer to "what would the NDF do here" — the way to see a

@@ -789,6 +789,44 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// brief NZ-8 — the <see cref="SignalQualityPreset"/> plots of the selected source's envelope result: the constellation
+    /// on one scale, EVM per carrier and the spectrum, each placed as Add Plot places one. A display that holds nothing but
+    /// its empty seeded plot gets them in that plot's place. Empty, and nothing added, when the source has no EVM.
+    /// </summary>
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddSignalQualityAsync()
+    {
+        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !SignalQualityPreset.Available(entry.Data))
+            return [];
+        var configs = SignalQualityPreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        if (configs.Count == 0) return [];
+        if (Plots.Count == 1 && Plots[0].Inspector.Traces.Count == 0) InternalRemoveContainer(Plots[0]);
+        // The preset lays its plots out together; the group lands where Add Plot would put a plot its size, moved down
+        // past any plot already there — a slot sized for one plot is not room for three.
+        double w = configs.Max(c => c.Left + c.Width), h = configs.Max(c => c.Top + c.Height);
+        var (x0, y0) = ComputeNewPlotPosition(w, h);
+        for (bool moved = true; moved;)
+        {
+            moved = false;
+            foreach (var p in Plots)
+                if (p.Left < x0 + w && x0 < p.Left + p.Width && p.Top < y0 + h && y0 < p.Top + p.Height)
+                {
+                    y0 = p.Top + p.Height + SignalQualityPreset.Gap;
+                    moved = true;
+                }
+        }
+        var added = new List<PlotContainerViewModel>();
+        foreach (var pc in configs)
+        {
+            (pc.Left, pc.Top) = (x0 + pc.Left, y0 + pc.Top);
+            var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
+            InternalRemoveContainer(container);
+            UndoRedo.Do(new AddPlotCommand(container, this));
+            added.Add(container);
+        }
+        return added;
+    }
+
+    /// <summary>
     /// Adds a plot a preset built (a contribution Pareto, brief-yield-9 R-ya9-5), placed as Add Plot places one, as
     /// one undo step — the same steps <see cref="AddStatisticsTableAsync"/> takes.
     /// </summary>
@@ -1706,6 +1744,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 WindowSecondaryWidth    = Finite(plot.Axes.WindowSecondary.Width),
                 WindowSecondaryHeight   = Finite(plot.Axes.WindowSecondary.Height),
                 XScale                  = plot.Axes.XScale,
+                EqualAspect             = plot.Axes.EqualAspect,
             },
         };
         foreach (var t in plot.Traces)

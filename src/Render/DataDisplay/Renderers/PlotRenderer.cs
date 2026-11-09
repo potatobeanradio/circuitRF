@@ -255,9 +255,27 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.PlotType == PlotType.Rect && plot.TopBandPx > 0 && canvasSize.H > 0)
             {
                 double band = Math.Min((plot.TopBandPx + AxesRenderer.TitleRowPx(plot, canvasSize)) / canvasSize.H, v.Height * 0.4);
-                return new PlotRect(v.X, v.Y + band, v.Width, v.Height - band);
+                v = new PlotRect(v.X, v.Y + band, v.Width, v.Height - band);
             }
-            return v;
+            return EqualScale(plot, v, canvasSize);
+        }
+
+        /// <summary><see cref="Axes.EqualAspect"/>: the plot box narrowed, centred, so a world unit is as many pixels along X
+        /// as along Y. Unchanged on any other plot, a log axis or a degenerate window.</summary>
+        private static PlotRect EqualScale(Plot plot, PlotRect v, (double W, double H) canvasSize)
+        {
+            var w = plot.Axes.Window;
+            if (plot.PlotType != PlotType.Rect || !plot.Axes.EqualAspect || plot.Axes.XScale == AxisScale.Log
+                || plot.Axes.YScale == AxisScale.Log || !(w.Width > 0) || !(w.Height > 0)
+                || canvasSize.W <= 0 || canvasSize.H <= 0) return v;
+            double sx = v.Width * canvasSize.W / w.Width, sy = v.Height * canvasSize.H / w.Height;   // px per unit
+            if (sx > sy)
+            {
+                double width = v.Width * sy / sx;
+                return new PlotRect(v.X + (v.Width - width) / 2, v.Y, width, v.Height);
+            }
+            double height = v.Height * sx / sy;
+            return new PlotRect(v.X, v.Y + (v.Height - height) / 2, v.Width, height);
         }
 
         private static PlotRect ComputeViewportCore(Plot plot, (double W, double H) canvasSize)

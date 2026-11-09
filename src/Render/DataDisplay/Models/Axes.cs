@@ -101,6 +101,16 @@ namespace CircuitRF.Render.DataDisplay
 
         public bool LockedPanning { get; set; } = false;
 
+        // ---- Equal scale ------------------------------------------------
+
+        /// <summary>
+        /// A rectangular plot draws one world unit as the same number of pixels along X and Y (brief NZ-8): the plot box is
+        /// narrowed, centred, in whichever direction has the more pixels per unit, so a circle of error is a circle on a
+        /// constellation. The window is untouched — the ticks are the ones the window gives. Off by default; ignored on a
+        /// log axis, where X and Y are not in the same units.
+        /// </summary>
+        public bool EqualAspect { get; set; }
+
         // ---- Appearance scalars (read by renderers) ----------------------
 
         public double Ticksize                { get; set; } = 0.015;
@@ -312,6 +322,7 @@ namespace CircuitRF.Render.DataDisplay
             WindowState            = src.WindowState;
             WindowSecondaryState   = src.WindowSecondaryState;
             LockedPanning          = src.LockedPanning;
+            EqualAspect            = src.EqualAspect;
             XTick                  = src.XTick;
             YTick                  = src.YTick;
             Y2Tick                 = src.Y2Tick;

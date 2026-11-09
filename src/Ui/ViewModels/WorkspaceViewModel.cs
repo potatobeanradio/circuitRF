@@ -10802,6 +10802,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (vm.Window.DataDisplay is { } dd) await dd.AddNoiseCirclesAsync();
     }
 
+    /// <summary>
+    /// brief NZ-8 — a new Data Display on the result <paramref name="path"/>, holding its envelope run's constellation, EVM
+    /// per carrier and spectrum: one action from the result's context menu. A result with no EVM is refused by name and
+    /// opens nothing.
+    /// </summary>
+    public async Task OpenSignalQualityAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Messages.Error($"'{path}' is no longer there.");
+            return;
+        }
+        var vm  = new DataDisplayDocumentViewModel();
+        vm.Window.GetResultsRootAction = GetResultsRoot;
+        var lib = vm.Window.DataSourceLibrary;
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
+        if (!SignalQualityPreset.Available(lib.SelectedEntry?.Data))
+        {
+            Messages.Warning($"{Path.GetFileName(path)} holds no EVM, so there is no constellation to draw. " +
+                             "Run an envelope analysis whose source plays an LTE or NR carrier, with an IProbe at the output.", path);
+            return;
+        }
+
+        var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
+        _scratchDataDisplays.Add(doc);
+        vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        WireDataDisplayLibraryEvents(vm);
+        WireDataDisplayTreeDirty(doc);
+        _factory.OpenDocument(doc);
+        if (vm.Window.DataDisplay is { } dd) await dd.AddSignalQualityAsync();
+    }
+
     /// <summary>Opens a <c>.cdd</c> as a Data Display tab, as double-clicking it in the Workspace does — the S-Parameter
     /// Viewer's Save as Data Display lands here.</summary>
     public void OpenDataDisplayDocument(string path)

@@ -98,6 +98,7 @@ public static class PlotConfigLoader
         // each mode (the linear zero-nudge is the log map's undefined point), so a log document
         // whose mode arrived second would have had its left edge nudged to −1e-6 on the way in.
         if (plot.PlotType.IsRect()) plot.Axes.XScale = savedAxes.XScale;
+        plot.Axes.EqualAspect = savedAxes.EqualAspect;
         plot.RestoreAxesFromConfig(
             savedAxes.AutoscaleX, savedAxes.AutoscaleY,
             savedAxes.AutoscaleRightY, savedAxes.AutoscaleMag,

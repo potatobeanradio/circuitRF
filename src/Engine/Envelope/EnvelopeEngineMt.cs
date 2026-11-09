@@ -125,7 +125,7 @@ public sealed class EnvelopeEngineMt
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         // A product at a negative frequency is stepped in the frame of |w|, so its noise is read there.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, p.Seed, tones.Average()) : null;
-        var phase = EnvelopePhaseNoise.Of(_nl, (int)Math.Round(sources.Min(x => x.Signal.RecordSeconds) * recordRate), recordRate, p.Seed);
+        var phase = !p.PhaseNoise ? null : EnvelopePhaseNoise.Of(_nl, (int)Math.Round(sources.Min(x => x.Signal.RecordSeconds) * recordRate), recordRate, p.Seed);
 
         // drive windows: per source, per tone (its carriers in that group, centred at the tone)
         int nWarm = (int)Math.Round(p.WarmupS / h);
@@ -352,7 +352,7 @@ public sealed class EnvelopeEngineMt
                     for (int j = 0; j < e.Dg[i].Length; j++) dgA[i][j] = e.Dg[i][j] + alpha * e.Dc[i][j];
                 }
                 return HbNewtonNd.BuildJNd(yEff, dgA, e.Dc, apft, N, tones);
-            });
+            }, p.MinNewton);
             if (accepted is null) { qNow = null!; return null; }
             qNow = accepted.Q;
 

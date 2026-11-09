@@ -90,6 +90,9 @@ internal static class EnvelopeVerb
                 MaxHarmExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr, Probes = probes ?? env.Probes, ZmeasExpr = env.ZmeasExpr,
                 SegmentsExpr = segs ?? env.SegmentsExpr, WarmupExpr = warm ?? env.WarmupExpr, StartExpr = env.StartExpr,
                 TolExpr = env.TolExpr, SaveWaveforms = env.SaveWaveforms, Envelope = mode ?? env.Envelope,
+                // the noise keys (NZ-7, NZ-8) carry through as written: rebuilt without them, Noise=yes ran noiseless
+                NoiseExpr = env.NoiseExpr, SeedExpr = env.SeedExpr, SeedPerPointExpr = env.SeedPerPointExpr,
+                EvmSplitExpr = env.EvmSplitExpr,
             };
             // A parametric_sweep wrapping this envelope (e.g. Pavg -> ACPR vs Pout) is dispatched at the SWEEP, the
             // same promotion `hb` applies: running the inner alone would silently drop the sweep axis.
@@ -250,6 +253,27 @@ internal static class EnvelopeVerb
                             branches[p], a.RealValues[o], a.RealValues[o + 1], a.RealValues[o + 2], a.RealValues[o + 3], a.RealValues[o + 4], car[c]));
                     }
             }
+            // brief NZ-8: each carrier's received quality, as its kind is measured, with the split and the SNR when
+            // EvmSplit ran; a carrier another table measures is left out of this one
+            bool split = ds.Cubes.ContainsKey("SNR_dB");
+            void Quality(string head, string err, string[] cols, string[] keys, string dist, string noise)
+            {
+                if (!ds.Cubes.TryGetValue(err, out var cube)) return;
+                var car = cube.Axes[1].Labels!;
+                double V(string k, int p, int c) => ds.Cubes[k].RealValues[p * car.Length + c];
+                Console.WriteLine($"  {head,-20}" + string.Concat(cols.Select(h => $" {h,10}")) + (split ? "     dist %    noise %     SNR dB" : ""));
+                foreach (int p in rf)
+                    for (int c = 0; c < car.Length; c++)
+                    {
+                        if (double.IsNaN(V(err, p, c)) && !rf.Any(q => !double.IsNaN(V(err, q, c)))) continue;
+                        Console.WriteLine($"  {branches[p],-20}" + string.Concat(keys.Select(k => string.Format(inv, " {0,10:0.000}", V(k, p, c)))) +
+                                          (split ? string.Format(inv, " {0,10:0.000} {1,10:0.000} {2,10:0.00}", V(dist, p, c), V(noise, p, c), V("SNR_dB", p, c)) : "") +
+                                          $"   {car[c]}");
+                    }
+            }
+            Quality("EVM", "EVM_pct", ["rms %", "peak %", "MER dB"], ["EVM_pct", "EVMpeak_pct", "MER_dB"], "EVMdist_pct", "EVMnoise_pct");
+            Quality("FSK", "FSKerr_pct", ["error %", "dev Hz", "offset Hz"], ["FSKerr_pct", "FreqDev_Hz", "FreqOffset_Hz"], "FSKerrDist_pct", "FSKerrNoise_pct");
+            Quality("CSS (de-chirped)", "CSSerr_pct", ["error %"], ["CSSerr_pct"], "CSSerrDist_pct", "CSSerrNoise_pct");
             if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop))
             {
                 // a pulsed-CW source: the pulse figures stand where ACLR does for a modulated one

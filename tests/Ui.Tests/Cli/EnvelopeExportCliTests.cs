@@ -43,6 +43,28 @@ public sealed class EnvelopeExportCliTests : IDisposable
         Assert.Equal(0.0, ds.Cubes["Pavg_dBm"].RealValues[0], 2);
     }
 
+    /// <summary>
+    /// The verb rebuilds the analysis to apply its overrides; the noise keys go with it (NZ-7, NZ-8). Rebuilt without them,
+    /// Noise=yes ran noiseless headlessly and EvmSplit wrote no split.
+    /// </summary>
+    [Fact]
+    public void TheNoiseKeys_ReachTheRun()
+    {
+        string cnl = Path.Combine(_dir, "lte.cnl"), npy = Path.Combine(_dir, "lte.npy");
+        File.WriteAllText(cnl,
+            "MOD_Source:S1 s 0 Fc=1e9 Pavg=-60 Z=50 Record=0.5e-3 Carrier[1]=\"LTE;BW=1.4MHz;Mod=QPSK;Off=0;P=0\"\n" +
+            "IProbe:Iout s o\n" +
+            "R:RL o 0 R=50\n" +
+            "analysis ENV1 type=env Stop=0.5e-3 Accuracy=draft Segments=1 Warmup=1e-6 Noise=yes EvmSplit=yes\n");
+
+        var run = RunCli("env", cnl, "-o", npy);
+
+        Assert.True(run.ExitCode == 0, run.StdErr);
+        var ds = DataSetImporter.Import(npy).DataSet;
+        Assert.True(ds.Cubes.ContainsKey("SNR_dB"), string.Join(", ", ds.Cubes.Keys));
+        Assert.Contains("SNR dB", run.StdOut);
+    }
+
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet")

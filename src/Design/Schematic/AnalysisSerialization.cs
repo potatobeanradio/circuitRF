@@ -144,6 +144,8 @@ public sealed class CschAnalysis
     public string?   EnvNoise          { get; set; }
     public string?   EnvSeed           { get; set; }
     public string?   EnvSeedPerPoint   { get; set; }
+    /// <summary>Brief NZ-8 — EvmSplit; null is the default.</summary>
+    public string?   EnvEvmSplit       { get; set; }
     public string?   SweepVarName      { get; set; }
     public string?   SweepStartExpr    { get; set; }
     public string?   SweepStopExpr     { get; set; }
@@ -397,6 +399,7 @@ public static class AnalysisSerialization
             EnvNoise = env.NoiseExpr != Analysis.NoiseDefault ? env.NoiseExpr : null,
             EnvSeed = env.SeedExpr != EnvelopeAnalysis.SeedDefault ? env.SeedExpr : null,
             EnvSeedPerPoint = env.SeedPerPointExpr != Analysis.NoiseDefault ? env.SeedPerPointExpr : null,
+            EnvEvmSplit = env.EvmSplitExpr != Analysis.NoiseDefault ? env.EvmSplitExpr : null,
         },
 
         HarmonicBalanceAnalysis hb => new CschAnalysis
@@ -604,6 +607,7 @@ public static class AnalysisSerialization
             NoiseExpr = dto.EnvNoise ?? Analysis.NoiseDefault,
             SeedExpr = dto.EnvSeed ?? EnvelopeAnalysis.SeedDefault,
             SeedPerPointExpr = dto.EnvSeedPerPoint ?? Analysis.NoiseDefault,
+            EvmSplitExpr = dto.EnvEvmSplit ?? Analysis.NoiseDefault,
         },
 
         "hb" => new HarmonicBalanceAnalysis(dto.Name)

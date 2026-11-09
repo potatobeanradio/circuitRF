@@ -23,12 +23,21 @@
 //    Pavg_dBm   [branch]                Pprobe_fund_W in dBm: at the output probe, Pout
 //    PAPR_dB [branch]   CCDF [branch, prob]   of p(t) = 1/2 Re(V1 I1*) (dB above mean)
 //    Gt_dB, DE_pct, NMSE_dB, Delay_s [branch]
+//    Signal quality (brief NZ-8), each carrier read from the probe voltage's envelope, its delay taken out:
+//    EVM_pct, EVM_dB, EVMpeak_pct, MER_dB [branch, carrier]   LTE / NR, and DBPSK at its bit centres; one gain fitted
+//    Const [branch, carrier, symbol] complex  ConstRef [carrier, symbol] complex   the received points and the ideal
+//               points there, at most ConstMaxSamples per carrier
+//    FSKerr_pct, FreqDev_Hz, FreqOffset_Hz [branch, carrier]  FreqPts [branch, carrier, bit]  FreqRef [carrier, bit]
+//               FSK: the frequency at each bit centre against the sent one
+//    CSSerr_pct [branch, carrier]   CSS: the de-chirped error, one gain per chirp
+//    With EvmSplit, each family's split (EVMdist_pct / EVMnoise_pct, FSKerrDist_pct / FSKerrNoise_pct,
+//    CSSerrDist_pct / CSSerrNoise_pct) and SNR_dB [branch, carrier], the in-channel signal over what the noise added
 //    AMAM / AMAM_min / AMAM_max / AMPM / AMPM_min / AMPM_max  [branch, Pin_inst]  binned on the
 //               instantaneous available drive power; the min/max spread at one Pin is the memory
 //    Pin_inst_t_dBm [time]  Gt_t_dB / PM_t_deg [time, branch]   the memory cloud: every AM-AM /
 //               AM-PM sample, decimated to at most CloudMaxSamples (single fundamental)
 //    A probe carrying no RF (mean fundamental-band power below NoRfFraction of the drive) is
-//    NaN in Gt, DE, NMSE, Delay, ACLR, PAPR, CCDF, AM-AM / AM-PM, the cloud and the pulse cubes.
+//    NaN in Gt, DE, NMSE, Delay, ACLR, PAPR, CCDF, AM-AM / AM-PM, the cloud, EVM and the pulse cubes.
 //  Scalars: Pin_avg_dBm (available drive), Pdc_W (every non-zero supply).
 //    __EnvSnpFit [instance, metric]  order, rel_error, sigma_max of each SnP's
 //               rational fit (only when the circuit has one)
@@ -67,7 +76,9 @@ public static class EnvelopeDataSet
     /// <summary>10·log10(1000/50): a VSD in dBV/Hz plus this is the power density into 50 Ω in dBm/Hz.</summary>
     public static readonly double VsdTo50OhmDb = 10 * Math.Log10(1000.0 / 50);
 
-    public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null)
+    /// <param name="quiet">EvmSplit's second run, with every noise source and mask off (brief NZ-8); null without one.</param>
+    public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null,
+                                EnvelopeRunResult? quiet = null)
     {
         var ds = new DataSet();
         var pulse = EnvelopePulse.Of(r);
@@ -312,6 +323,7 @@ public static class EnvelopeDataSet
                     new Axis("metric", Index(AclrLabels.Length), "", AclrLabels)], aclr));
                 ds.Add("PAPR_dB", new DataCube([branchAxis], papr));
                 ds.Add("CCDF", new DataCube([branchAxis, new Axis("prob", probAxis!)], ccdf));
+                AddEvm(ds, r, quiet, plan, t0, branchAxis, carSpecs, noRf, ProbeV, note);
             }
             ds.Add("Pavg_dBm", new DataCube([branchAxis], [.. pf.Select(Dbm)]) { Unit = "dBm" });
             if (imd.Count > 0)
@@ -353,6 +365,189 @@ public static class EnvelopeDataSet
     }
 
     private static double[] Index(int n) => [.. Enumerable.Range(0, n).Select(i => (double)i)];
+
+    /// <summary>The constellation keeps every m-th received point of a carrier, m the smallest that leaves at most this
+    /// many (the Signal Designer draws as many).</summary>
+    public const int ConstMaxSamples = 6000;
+
+    /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css }
+
+    private static Meter MeterOf(CarrierStandard s) => s switch
+    {
+        CarrierStandard.Lte or CarrierStandard.Nr => Meter.Ofdm,
+        CarrierStandard.Dbpsk => Meter.Dbpsk,
+        CarrierStandard.Fsk => Meter.Fsk,
+        CarrierStandard.Css => Meter.Css,
+        _ => Meter.None,
+    };
+
+    /// <summary>One carrier at one probe: its error (EVM, FSK error or the de-chirped error), the FSK deviation and offset,
+    /// the points to draw, and what was demodulated, for the SNR.</summary>
+    private sealed record Reading(double Err, double Peak, double Dev, double Off, Complex[]? Points, Complex[]? Ref,
+                                  double[]? Freq, double[]? FreqRef, object Raw);
+
+    private static Reading? Read(Meter meter, CarrierRecord rec, double record, Complex[] y, double fs, long start, double off,
+                                 out string? why)
+    {
+        if (meter == Meter.Ofdm)
+        {
+            var d = SignalEvm.Demodulate(rec, record, y, fs, start, off, out why);
+            if (d is null) return null;
+            var e = SignalEvm.Evaluate(d);
+            return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal, null, null, d);
+        }
+        var w = SignalQuality.Receive(rec, record, y, fs, start, off, out why);
+        if (w is null) return null;
+        var q = SignalQuality.Evaluate(w);
+        return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w);
+    }
+
+    private static double Snr(object noisy, object quiet) => noisy switch
+    {
+        ReceivedSymbols n => SignalEvm.SignalToNoise(n, (ReceivedSymbols)quiet),
+        ReceivedWaveform n => SignalQuality.SignalToNoise(n, (ReceivedWaveform)quiet),
+        _ => double.NaN,
+    };
+
+    /// <summary>
+    /// The received signal's quality at every IProbe for every carrier that carries symbols (brief NZ-8), each read from
+    /// the probe VOLTAGE's envelope in the product that carries it, its delay fitted against the record the source played:
+    /// LTE / NR and DBPSK as EVM, MER and a constellation; FSK as the FSK error, the deviation and the offset, with the
+    /// frequency at each bit centre; CSS as the de-chirped error. With EvmSplit, each error's distortion / noise split and
+    /// the in-channel SNR. A family is written only when a carrier of it is there, and nothing when no carrier carries
+    /// symbols; a carrier the run cannot measure is NaN, said once. A probe carrying no RF is NaN, as in ACLR.
+    /// </summary>
+    private static void AddEvm(DataSet ds, EnvelopeRunResult r, EnvelopeRunResult? quiet, EnvelopeRunner.Plan plan, int t0,
+                               Axis branchAxis, List<CarrierSpec> carSpecs, bool[] noRf, Func<int, int, Complex[]> probeV,
+                               Action<string>? note)
+    {
+        var meters = carSpecs.Select(c => MeterOf(c.Standard)).ToArray();
+        if (meters.All(m => m == Meter.None)) return;
+        var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds))).ToList();
+        int nb = branchAxis.Length, nc = recs.Count;
+        double fs = 1.0 / r.StepS;
+        long start = (long)Math.Round(plan.Params.StartS / r.StepS) + t0;
+        string[] labels = r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray();
+
+        // the quiet run's window, read as the first run's is
+        Complex[] QuietV(int b, int k)
+        {
+            int nm = quiet!.Time.Length - t0;
+            var y = new Complex[nm];
+            bool neg = r.MixFreqHz is { } mf && mf[k] < 0;
+            for (int t = 0; t < nm; t++) { var v = quiet.IProbeVoltage[t0 + t][b][k]; y[t] = neg ? Complex.Conjugate(v) : v; }
+            return y;
+        }
+
+        var err = Nan(nb * nc); var peak = Nan(nb * nc); var dev = Nan(nb * nc); var offs = Nan(nb * nc);
+        double[]? dist = quiet is null ? null : Nan(nb * nc), noise = quiet is null ? null : Nan(nb * nc), snr = quiet is null ? null : Nan(nb * nc);
+        var points = new Complex[nb, nc][]; var refs = new Complex[nc][];
+        var freq = new double[nb, nc][]; var freqRef = new double[nc][];
+        var why = new string?[nc];
+        var clamped = new HashSet<Meter>();
+        for (int c = 0; c < nc; c++)
+        {
+            if (meters[c] == Meter.None) continue;
+            int k = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
+            double off = r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0;
+            for (int b = 0; b < nb; b++)
+            {
+                var e = Read(meters[c], recs[c].rec, recs[c].record, probeV(b, k), fs, start, off, out why[c]);
+                if (e is null) break;
+                int n = e.Points?.Length ?? e.Freq?.Length ?? 0;
+                int stride = Math.Max(1, (n + ConstMaxSamples - 1) / ConstMaxSamples);
+                int kept = (n + stride - 1) / stride;
+                if (e.Ref is { } er) refs[c] ??= [.. Enumerable.Range(0, kept).Select(i => er[i * stride])];
+                if (e.FreqRef is { } fr) freqRef[c] ??= [.. Enumerable.Range(0, kept).Select(i => fr[i * stride])];
+                if (noRf[b]) continue;
+                int at = b * nc + c;
+                err[at] = e.Err; peak[at] = e.Peak; dev[at] = e.Dev; offs[at] = e.Off;
+                if (e.Points is { } ep) points[b, c] = [.. Enumerable.Range(0, kept).Select(i => ep[i * stride])];
+                if (e.Freq is { } ef) freq[b, c] = [.. Enumerable.Range(0, kept).Select(i => ef[i * stride])];
+                if (quiet is null) continue;
+                var q = Read(meters[c], recs[c].rec, recs[c].record, QuietV(b, k), fs, start, off, out _);
+                if (q is null) continue;
+                double diff = e.Err * e.Err - q.Err * q.Err;
+                dist![at] = q.Err;
+                if (diff < 0) clamped.Add(meters[c]);
+                noise![at] = Math.Sqrt(Math.Max(0, diff));
+                snr![at] = 10 * Math.Log10(Snr(e.Raw, q.Raw));
+            }
+        }
+        var missing = Enumerable.Range(0, nc).Where(c => why[c] is not null).ToList();
+        if (missing.Count > 0)
+            note?.Invoke($"Envelope '{plan.Name}': no signal quality for " +
+                         string.Join("; ", missing.Select(c => $"{labels[c]} ({why[c]})")) + ". NMSE remains the waveform measure for them.");
+        if (clamped.Count > 0)
+            note?.Invoke($"Envelope '{plan.Name}': on at least one carrier the noiseless run read a larger error than the noisy one " +
+                         "(the record's statistics), so the noise part is 0 there.");
+
+        var carrierAxis = new Axis("carrier", Index(nc), "", labels);
+        double[] Only(double[] v, params Meter[] kinds) => [.. v.Select((x, i) => kinds.Contains(meters[i % nc]) ? x : double.NaN)];
+        void Family(string prefix, string unitErr, Meter[] kinds, string distName, string noiseName)
+        {
+            ds.Add(prefix, new DataCube([branchAxis, carrierAxis], Only(err, kinds)) { Unit = unitErr });
+            if (dist is null) return;
+            ds.Add(distName, new DataCube([branchAxis, carrierAxis], Only(dist, kinds)) { Unit = "%" });
+            ds.Add(noiseName, new DataCube([branchAxis, carrierAxis], Only(noise!, kinds)) { Unit = "%" });
+        }
+
+        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk];
+        if (meters.Any(qam.Contains))
+        {
+            Family("EVM_pct", "%", qam, "EVMdist_pct", "EVMnoise_pct");
+            var evm = Only(err, qam);
+            ds.Add("EVM_dB", new DataCube([branchAxis, carrierAxis], [.. evm.Select(v => 20 * Math.Log10(v / 100))]) { Unit = "dB" });
+            ds.Add("EVMpeak_pct", new DataCube([branchAxis, carrierAxis], Only(peak, qam)) { Unit = "%" });
+            ds.Add("MER_dB", new DataCube([branchAxis, carrierAxis], [.. evm.Select(v => -20 * Math.Log10(v / 100))]) { Unit = "dB" });
+            // the constellation: one symbol axis as long as the longest carrier's, the rest NaN
+            int ns = Math.Max(1, refs.Max(x => x?.Length ?? 0));
+            var nan = new Complex(double.NaN, double.NaN);
+            var cons = new Complex[nb * nc * ns];
+            Array.Fill(cons, nan);
+            var cref = new Complex[nc * ns];
+            Array.Fill(cref, nan);
+            for (int c = 0; c < nc; c++)
+            {
+                if (refs[c] is { } rf) Array.Copy(rf, 0, cref, c * ns, rf.Length);
+                for (int b = 0; b < nb; b++)
+                    if (points[b, c] is { } pt) Array.Copy(pt, 0, cons, (b * nc + c) * ns, pt.Length);
+            }
+            var symbolAxis = new Axis("symbol", Index(ns));
+            ds.Add("Const", new DataCube([branchAxis, carrierAxis, symbolAxis], cons));
+            ds.Add("ConstRef", new DataCube([carrierAxis, symbolAxis], cref));
+        }
+        if (meters.Contains(Meter.Fsk))
+        {
+            Family("FSKerr_pct", "%", [Meter.Fsk], "FSKerrDist_pct", "FSKerrNoise_pct");
+            ds.Add("FreqDev_Hz", new DataCube([branchAxis, carrierAxis], Only(dev, Meter.Fsk)) { Unit = "Hz" });
+            ds.Add("FreqOffset_Hz", new DataCube([branchAxis, carrierAxis], Only(offs, Meter.Fsk)) { Unit = "Hz" });
+            int ns = Math.Max(1, freqRef.Max(x => x?.Length ?? 0));
+            var pts = Nan(nb * nc * ns);
+            var fref = Nan(nc * ns);
+            for (int c = 0; c < nc; c++)
+            {
+                if (freqRef[c] is { } rf) Array.Copy(rf, 0, fref, c * ns, rf.Length);
+                for (int b = 0; b < nb; b++)
+                    if (freq[b, c] is { } pt) Array.Copy(pt, 0, pts, (b * nc + c) * ns, pt.Length);
+            }
+            var bitAxis = new Axis("bit", Index(ns));
+            ds.Add("FreqPts", new DataCube([branchAxis, carrierAxis, bitAxis], pts) { Unit = "Hz" });
+            ds.Add("FreqRef", new DataCube([carrierAxis, bitAxis], fref) { Unit = "Hz" });
+        }
+        if (meters.Contains(Meter.Css))
+            Family("CSSerr_pct", "%", [Meter.Css], "CSSerrDist_pct", "CSSerrNoise_pct");
+        if (snr is not null)
+            ds.Add("SNR_dB", new DataCube([branchAxis, carrierAxis], snr) { Unit = "dB" });
+    }
+
+    private static double[] Nan(int n)
+    {
+        var a = new double[n];
+        Array.Fill(a, double.NaN);
+        return a;
+    }
 
     /// <summary>
     /// AM-AM and AM-PM at every IProbe (brief ENV-MEAS-3 §4-5), on the fixed <c>Pin_inst</c> grid. X is the instantaneous

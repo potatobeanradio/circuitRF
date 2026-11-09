@@ -382,6 +382,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             AddStatisticsTableCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(AddStatisticsTableTip));
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
+            AddSignalQualityCommand.NotifyCanExecuteChanged();
             RaiseDirtyChanged();
         };
         // A run finishing reloads the selected file in place — it may only now carry its statistics.
@@ -390,6 +391,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             AddStatisticsTableCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(AddStatisticsTableTip));
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
+            AddSignalQualityCommand.NotifyCanExecuteChanged();
         };
 
         UpdateThemeFromSystem();
@@ -534,6 +536,17 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     {
         if (DataDisplay is { } d) await d.AddNoiseCirclesAsync();
     }
+
+    /// <summary>brief NZ-8 — the constellation, EVM table and spectrum of the selected envelope result. Disabled, with its
+    /// tooltip saying what it needs, while the selected source has no EVM.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddSignalQuality))]
+    private async Task AddSignalQuality()
+    {
+        if (DataDisplay is { } d) await d.AddSignalQualityAsync();
+    }
+
+    /// <summary>Whether the selected source is an envelope result that measured EVM.</summary>
+    public bool CanAddSignalQuality => SignalQualityPreset.Available(DataSourceLibrary.SelectedEntry?.Data);
 
     /// <summary>Whether the selected source is a two-port S-parameter result with Noise=yes.</summary>
     public bool CanAddNoiseCircles => NoiseCirclesPreset.Available(DataSourceLibrary.SelectedEntry?.Data);

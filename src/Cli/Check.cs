@@ -1798,6 +1798,21 @@ internal static class Check
                 if (steady.Count > 0) f.Add(CliDiagnostics.CheckPhaseNoiseSteadyState(path, ec.InstancePath, steady));
             }
 
+            // NZ-8: EvmSplit runs the record twice to split EVM; with nothing noisy, or no carrier that has an EVM, there is
+            // nothing to split and the run says so — check says it first, as INFO.
+            foreach (var env in tb.Analyses.OfType<EnvelopeAnalysis>().Where(e => e.EvmSplit))
+            {
+                bool masks = nl.Components.Any(c => c.Parameters.TryGetValue(CircuitRF.Core.Elaboration.Elaborator.PhaseNoiseParamName, out var v)
+                                                    && v.Kind == CircuitRF.Core.Expressions.ValueKind.String && !string.IsNullOrWhiteSpace(v.AsString()));
+                bool qam = nl.Components.Select(c => c.Model).OfType<ModSourceModel>()
+                             .Any(m => m.Spec.Carriers.Any(c => c.Standard is RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
+                                 or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Fsk or RfCore.Signals.CarrierStandard.Css));
+                if (!env.Noise && !masks)
+                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "the run has no Noise and no PhaseNoise mask, so it runs once"));
+                else if (!qam)
+                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK or CSS), so there is no error to split"));
+            }
+
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
                 f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));
 

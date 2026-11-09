@@ -4184,3 +4184,47 @@ PnTone, the tone sources and MOD_Source. Code: `Envelope/EnvelopeNoise.cs` (inje
 - **Trap for anyone writing a CW envelope bench:** a `CW` carrier with no `BW=` takes the 20 MHz default, so the run
   steps at the 20 MHz rate (122.88 MHz times the oversampling). The first version of these tests took ~10 minutes at a
   million steps per run; stating `BW=0.2MHz` brings a 2 ms record to 3,840 draft steps.
+
+## Envelope EVM, its split into distortion and noise, the SNR and the constellation (2026-11-09)
+
+Brief NZ-8. EVM_pct / EVM_dB / EVMpeak_pct / MER_dB [branch, carrier], Const [branch, carrier, symbol] and ConstRef
+[carrier, symbol] at every IProbe for every LTE / NR carrier; with `EvmSplit=yes` (and noise or a mask) EVMdist_pct,
+EVMnoise_pct and SNR_dB. Code: `Envelope/EnvelopeDataSet.AddEvm`, the second run in `EnvelopeRunner.Execute`, the
+demodulator in `RfCore/Signals/SignalEvm` (`Demodulate`, `Evaluate`, `SignalToNoise`; its own entry in
+`src/RfCore/RESOLVED.md`). Gates: `EnvelopeSignalQualityTests`, `SignalEvmTests.E6-E8`, `SignalQualityPresetTests`.
+
+- **Gate 1 is 1e-5 pp, not the brief's 1e-6.** The pad reads the Signal Designer's EVM to 3.4e-6 pp on a 5 % clipped
+  record and 9.4e-6 pp on a 0.25 % shaped one. The residual does not scale with EVM: the demodulated points differ from
+  the native record's by 6.9e-8 rms at 1x and 4x oversampling alike, which is the drive itself — `CompositeWindow`'s
+  windowed-sinc interpolation of the record to the envelope rate — and it moves EVM by up to that × 100 pp through its
+  correlation with the error vector. The demodulator is exact: the same record resampled exactly
+  (`Fft.ResamplePeriodic`) reads `SignalEvm.Measure` to 1e-9 pp (`SignalEvmTests.E6`). Tightening the drive's
+  interpolation would change every envelope result's bits, so it was not done.
+- **EvmSplit's noiseless run takes a Newton update every step (`EnvelopeParams.MinNewton = 1`).** The envelope Newton
+  accepts its quadratic predictor whenever the residual is already under `Tol` (1e-6 A by default). The noisy run never
+  meets that — the noise is not predictable — so it is solved to well inside Tol; the noiseless one accepts the
+  predictor on about a third of the steps. On an amplifier at -37 dBm output (probe current ~9e-5 A, so Tol is ~1 % of
+  it) that left the noiseless run 1-2 % off: it read 3.463 % "distortion" and NMSE -32.4 dB where the amplifier,
+  far below compression, passes the clipped record on at 3.228 %, and the split came out as no noise at all. With one
+  update forced the split reads 3.228 % and 0.914 % at the default Tol, the same as at Tol=1e-12. The first run is left
+  exactly as asked. **The same looseness is in every noiseless envelope run of a small signal**: a plain run of that
+  amplifier reads NMSE -32.4 dB where Tol=1e-12 reads -36 dB. Not changed here; Tol is absolute in amperes.
+- **The CLI `env` verb dropped `Noise`, `Seed` and `SeedPerPoint`** (since NZ-7): it rebuilds the analysis to apply its
+  overrides and copied every field but those, so `Noise=yes` ran noiseless headlessly with nothing said. It copies them
+  now, with `EvmSplit` (`EnvelopeExportCliTests.TheNoiseKeys_ReachTheRun`).
+- **The quiet run reuses the run's netlists**, after the first, with the same steps and segments. Fresh runs of each
+  half read the same numbers as the split, so nothing carries over between them.
+- **DBPSK, FSK and CSS are measured too** (the owner's follow-up): DBPSK into the EVM cubes and the constellation,
+  FSK into FSKerr_pct / FreqDev_Hz / FreqOffset_Hz with FreqPts / FreqRef per bit, CSS into CSSerr_pct, each with its
+  own Dist / Noise split and the shared SNR_dB (`SignalQuality`, its entry in `src/RfCore/RESOLVED.md`). Each family is
+  written only when one of its carriers is there, NaN for the others. Gates:
+  `EnvelopeSignalQualityTests.TheIotCarriers_ReadZeroThroughAPad_AndTheirNoiseAsTheSnrSays`.
+- **No carrier with symbols, no cubes**: the gate-5 rule. A run with one writes NaN for any other carrier and says once
+  which and why (CW, pulse, imported I/Q).
+- **Not fixed, found on the way:** an envelope run through a system Amp fails its harmonic-balance start when the drive
+  at t = 0 is exactly zero — a DBPSK record starts on a phase reversal — or very small (an FSK bench at Pavg=-75 dBm
+  from a 1 mΩ source). Start=0.005 (half a bit) or more drive runs; the same benches without the Amp start. `explain --analysis` lists the carriers measured and what EvmSplit costs;
+  `check` reports EvmSplit with nothing to split as INFO.
+- **The phase-noise closed form** (gate 3): EVM² = Σ S_φ(f_m)/T · (1 − f_m/B) over the record's bins, B the occupied
+  bandwidth — the share of each subcarrier's spread that lands inside the channel. Over four seeds it reads 3.954 %
+  against 3.968 %.

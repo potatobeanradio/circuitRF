@@ -22,7 +22,7 @@
         <TextBlock Text="{Binding StimulusSummary}" FontSize="11" TextWrapping="Wrap"
                    Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
-        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
             <TextBlock Classes="lbl" Text="Stop time (s)"/>
             <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="Simulated signal time. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR."/>
             <TextBlock Grid.Column="2" Classes="lbl" Text="Accuracy" Margin="12,0,8,0"/>
@@ -65,6 +65,8 @@
                      ToolTip.Tip="Seeds the thermal noise and every source's PhaseNoise mask. The same seed gives the same noise on every run."/>
             <CheckBox Grid.Row="10" Grid.ColumnSpan="4" FontSize="11" Content="New seed at each sweep point" IsChecked="{Binding SeedPerPoint}"
                       ToolTip.Tip="Off: every point of a parametric sweep draws the same noise, so the differences between points are the circuit's"/>
+            <CheckBox Grid.Row="11" Grid.ColumnSpan="4" FontSize="11" Content="Split EVM into distortion and noise" IsChecked="{Binding EvmSplit}"
+                      ToolTip.Tip="Runs the record a second time with the noise and every phase-noise mask off: EVM splits into distortion and noise, and the in-channel SNR is measured. Twice the run time."/>
         </Grid>
     </StackPanel>
 </UserControl>

@@ -77,6 +77,17 @@ public partial class AxesLimitsViewModel : ViewModelBase
         RaiseRedraw();
     }
 
+    /// <summary><c>Axes.EqualAspect</c> (brief NZ-8): one world unit as many pixels along X as along Y. Rect only, beside
+    /// <see cref="XLogScale"/>; the renderer ignores it on a log axis.</summary>
+    [ObservableProperty] private bool _equalAspect;
+
+    partial void OnEqualAspectChanged(bool value)
+    {
+        if (_suppressApply) return;
+        _plot.Axes.EqualAspect = value;
+        RaiseRedraw();
+    }
+
     partial void OnXAutoscaleChanged(bool value)
     {
         if (_suppressApply) return;
@@ -153,6 +164,7 @@ public partial class AxesLimitsViewModel : ViewModelBase
             _yAutoscale  = IsComplex ? _plot.AutoscaleMag    : _plot.AutoscaleY;
             _y2Autoscale = _plot.AutoscaleRightY;
             _xLogScale   = _plot.Axes.XScale == AxisScale.Log;
+            _equalAspect = _plot.Axes.EqualAspect;
             _xMinText    = FormatValue(_plot.Axes.Window.Left);
             _xMaxText    = FormatValue(_plot.Axes.Window.Right);
             _yMinText    = FormatValue(_plot.Axes.Window.Top);

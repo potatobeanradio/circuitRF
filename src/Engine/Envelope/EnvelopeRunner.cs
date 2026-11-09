@@ -37,9 +37,11 @@ public static class EnvelopeRunner
     /// <param name="ProbesNote">The one note an old file's retired <c>Probes</c> list earns; null when it has none.</param>
     /// <param name="Name">The analysis, for the notes a run writes.</param>
     /// <param name="SeedPerPoint">A parametric sweep gives each point its own seed (<see cref="ForPoint"/>).</param>
+    /// <param name="EvmSplit">Run the record again with every noise source and mask off, to split EVM into distortion and
+    /// noise and measure the SNR (brief NZ-8).</param>
     public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, int MaxMixOrder = 5,
                               string Mode = "auto", string? ZmeasWarning = null, string? ProbesNote = null, string Name = "",
-                              bool SeedPerPoint = false)
+                              bool SeedPerPoint = false, bool EvmSplit = false)
     {
         /// <summary>This plan at the sweep point <paramref name="point"/> (its drive text, outer points included): the same
         /// seed at every point unless <see cref="SeedPerPoint"/>, then one mixed from the point.</summary>
@@ -97,7 +99,7 @@ public static class EnvelopeRunner
             : $"Envelope '{a.Name}': Probes is no longer a setting. Every labeled net's voltage is recorded and the nodes it " +
               $"lists ({string.Join(", ", p.Probes)}) join them; power is measured at IProbes.";
         return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals),
-                        probesNote, a.Name, a.SeedPerPoint);
+                        probesNote, a.Name, a.SeedPerPoint, a.EvmSplit);
     }
 
     /// <summary><c>Seed=</c> as the draws' seed: a whole number, negative ones included.</summary>
@@ -367,15 +369,56 @@ public static class EnvelopeRunner
     internal static DataSet Execute(Prepared prepared, AnalysisSettings? settings = null, RunControl? control = null,
                                   Action<string>? note = null)
     {
-        var sw = prepared.Clock;
         var plan = prepared.Plan;
         var p = plan.Params;
+        var nets = prepared.Nets;
+        int segs = nets.Length;
+        double warm = prepared.WarmS;
+
+        var (merged, seam) = Simulate(prepared, p, settings, control, note, quiet: false);
+
+        // EvmSplit (brief NZ-8): the same record again with every noise source and mask off — the same netlists, the same
+        // steps — so EVM splits into distortion and noise and the noise the first run added can be measured in-channel.
+        EnvelopeRunResult? quiet = null;
+        if (plan.EvmSplit)
+        {
+            bool masks = nets[0].Components.Any(ec => EnvelopePhaseNoise.Mask(ec) is not null);
+            if (p.Noise || masks)
+                // MinNewton = 1: the noise defeats the noisy run's predictor at nearly every step, so it is solved to well
+                // inside Tol; the noiseless run's predictor is accepted wherever it is within Tol — about 1 % of a
+                // -37 dBm probe's current at the default 1e-6 A — and would read distortion the noisy run does not have.
+                quiet = Simulate(prepared, p with { Noise = false, PhaseNoise = false, MinNewton = 1 }, settings, control, note, quiet: true).Merged;
+            else
+                nets[0].AddNoteOnce("envelope-evmsplit-nothing:" + plan.Name,
+                    $"Envelope '{plan.Name}': EvmSplit=yes has nothing to split - the run has no Noise and no PhaseNoise mask - so it ran once.");
+        }
+        // a run that started cold (no warm-up on its first segment) is measured after a short settle
+        double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
+        // — except a pulse train, which starts in its off-time at the quiescent point and has nothing to settle: its
+        // Pin_avg and every probe's Pavg are then averages over the whole record, off-time included
+        double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
+            ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
+        var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet);
+        double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
+        EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
+        ds.Add("__EnvSegments", DataCube.Scalar(segs));
+        ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
+        ds.Add("__EnvSeamError", DataCube.Scalar(seam));
+        return ds;
+    }
+
+    /// <summary>Runs every segment of <paramref name="prepared"/> with <paramref name="p"/> and stitches them: the record and
+    /// its worst seam error. The <paramref name="quiet"/> run (EvmSplit's second) reports nothing a first run has not.</summary>
+    private static (EnvelopeRunResult Merged, double Seam) Simulate(Prepared prepared, EnvelopeParams p, AnalysisSettings? settings,
+                                                                    RunControl? control, Action<string>? note, bool quiet)
+    {
+        var sw = prepared.Clock;
+        var plan = prepared.Plan;
         var nets = prepared.Nets;
         int segs = nets.Length, fundamentals = prepared.Fundamentals, tailSteps = prepared.TailSteps;
         double h = prepared.StepS, warm = prepared.WarmS;
         var bound = prepared.Bound;
         int cores = Math.Max(1, Environment.ProcessorCount);
-
         var results = new EnvelopeRunResult[segs];
         var opts = new ParallelOptions { MaxDegreeOfParallelism = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? cores : 1, CancellationToken = control?.Token ?? default };
         try
@@ -454,22 +497,10 @@ public static class EnvelopeRunner
             CarrierMix = R.CarrierMix, CarrierOffsetHz = R.CarrierOffsetHz, CarrierLabels = R.CarrierLabels,
             ToneFreqsHz = R.ToneFreqsHz, MixLabels = R.MixLabels, MixFreqHz = R.MixFreqHz, MixTones = R.MixTones,
         };
-        foreach (var n in results.SelectMany(x => x.Notes).Distinct()) { merged.Notes.Add(n); note?.Invoke(n); }
-        if (seamExternal > SeamWarnAbove)
+        if (!quiet) foreach (var n in results.SelectMany(x => x.Notes).Distinct()) { merged.Notes.Add(n); note?.Invoke(n); }
+        if (!quiet && seamExternal > SeamWarnAbove)
             note?.Invoke($"Envelope segments disagree at their seams on probe '{seamProbe}'. " +
                          "Set Warm-up and Segments to auto in the Envelope analysis setup.");
-        // a run that started cold (no warm-up on its first segment) is measured after a short settle
-        double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
-        // — except a pulse train, which starts in its off-time at the quiescent point and has nothing to settle: its
-        // Pin_avg and every probe's Pavg are then averages over the whole record, off-time included
-        double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
-            ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
-        var ds = EnvelopeDataSet.Build(merged, plan, skip, note);
-        double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
-        EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
-        ds.Add("__EnvSegments", DataCube.Scalar(segs));
-        ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
-        ds.Add("__EnvSeamError", DataCube.Scalar(seam));
-        return ds;
+        return (merged, seam);
     }
 }

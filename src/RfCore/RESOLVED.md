@@ -1179,3 +1179,50 @@ carries the reference its Γopt is on.
 Gates: `tests/RfCore.Tests/NoiseMetricsTests.cs` (Pozar 4th ed. Ex. 12.5, the C_A round trip at R = 50 and 25, Bosma
 with real and complex Z0, the two paths against each other, F from a complex-Z0 source) and
 `TouchstoneNoiseBlockTests.cs` (write → read at R = 50 and 25, strict mode, the cubes through `ToSnp`).
+
+## EVM of a received record: SignalEvm.Demodulate / Evaluate (brief NZ-8, 2026-11-09)
+
+The Signal Designer's EVM demodulates a carrier's own native record. An envelope run hands over a probe's envelope at
+the envelope rate, possibly delayed, possibly a part of the record. `Demodulate` brings it back to the native grid and
+`Evaluate` scores it with the Designer's own gain fit (`Score`, shared with `Measure`).
+
+- **Whole records are resampled exactly; a part of one is not.** A window of whole records is periodic, so cutting its
+  spectrum at the native Nyquist is `Fft.ResamplePeriodic` and the native samples come back exactly (E6: 1e-9 pp).
+  Any other window wraps, and a brick wall would ring as 1/t across the symbols, so it rolls off as cos² from the
+  channel edge (the record's own content ends there) to the native Nyquist, and symbols within a few samples of either
+  end are left out. That roll-off is a receive filter, and cutting the skirts of a record whose skirts reach the native
+  Nyquist (an unshaped one) costs 0.017 pp; a shaped record (the -80 dBc default) reads within 0.01 pp (E7).
+- **No per-symbol FFT at the envelope rate.** A DFT over the useful part at R× the native rate is orthogonal for
+  subcarriers but not for the band-limited interpolation between native samples, which carries the next symbol's edge
+  into the window; demodulating the native samples is what the Designer does.
+- **The delay is fitted against the record the source played, not the ideal points.** H = Σ_s Y·conj(D) per subcarrier
+  is a pure phase line for a pure delay, and for a matched pad it is a constant — exactly zero delay, checked as such
+  (`IsFlatPhase`) so the result is the Designer's. Fitting against the ideal points would let the delay soak up a
+  share of the clipping error and read below the Designer's EVM. The peak of H's 8x zero-padded transform, refined by
+  golden section, finds a 37 ns delay to 1e-12 s (E6). A delayed clipped record reads 0.002 pp differently: each FFT
+  window then reaches into the cyclic prefix, which clipping has made not quite a copy of the symbol's end.
+- **The envelope rate need not be a multiple of the carrier's.** p/q in whole numbers (q ≤ 4096) is enough: a 15 MHz LTE
+  carrier at 23.04 MHz under a 122.88 MHz envelope is 16/3.
+
+## DBPSK, FSK and CSS quality: SignalQuality (brief NZ-8 follow-up, 2026-11-09)
+
+The owner asked why only LTE / NR had an EVM: the other generated carriers carry known data too. A QAM EVM fits only
+DBPSK, so each is measured as its receiver reads it (`SignalQuality.cs`, tests `SignalQualityTests`).
+
+- **One measurement filter on both sides.** The received window and the sent record pass through the same cos² roll-off
+  from the channel edge (DBPSK Rb, FSK Dev + Rb, CSS BW/2) to 1.5x it, so the measurement bandwidth is the channel's
+  and the reference carries the same filtering: a pad reads zero (1e-13 % through an envelope run). Filtering only the
+  received side cut the DBPSK pulse's sidelobes beyond its 2 Rb main lobe and left an error floor on a perfect copy.
+- **DBPSK** is sampled at the bit centres (native sample 32k + 16), where the generator's two-bit cos² pulse peaks and
+  its neighbours are exactly zero; EVM is `SignalEvm.Score` against the filtered sent value normalised to unit RMS.
+  EVM² × SNR = 0.95 through the engine with noise.
+- **FSK** reads the frequency from the samples either side of each bit centre, `arg(x[c+1] conj(x[c-1]))`, on both
+  sides, and fits f_rx = a f_sent + b: deviation a·Dev, offset b, FSK error the RMS residual over the NOMINAL deviation.
+  It is not 1/√SNR: noise moves the phase's derivative more than the amplitude (23.5 dB SNR read 11.2 %).
+- **CSS** is per chirp: one complex gain of the received chirp against the sent one, the error the energy left over the
+  energy fitted. With |s| = 1 that is the energy outside the symbol's FFT bin after de-chirping, which is what a
+  receiver reads; one gain per chirp because it reads each symbol on its own. Chirp starts: 10 up-chirps from 0, then
+  the payload 2.25 chirps after the sync (the delimiter is skipped).
+- **The delay** is fitted from H = X conj(S) over the passband, by `SignalEvm.Delay`. Its flat-phase test now compares
+  against the largest element of H: a bin near a null of DBPSK's spectrum carried round-off at any phase and turned an
+  exact zero delay into a 1e-15 s fit.

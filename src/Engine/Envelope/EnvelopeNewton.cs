@@ -52,7 +52,11 @@ internal sealed class EnvelopeNewton
     /// <param name="evaluate">The residual at V (real-split, one row per unknown) and whatever the caller needs
     /// from that evaluation — the Jacobian ingredients and the charge/injection spectra.</param>
     /// <param name="jacobian">The row-major real Jacobian at the evaluation it is given. Consumed in place.</param>
-    public T? Solve<T>(Complex[,] V, double tol, Func<Complex[,], (double[] F, T State)> evaluate, Func<T, double[]> jacobian)
+    /// <param name="minIterations">Updates taken before the tolerance may accept: 0 lets the predictor itself be accepted
+    /// (every run but one), 1 makes every step take a Newton update — EvmSplit's noiseless run, so it is at least as
+    /// converged as the noisy one, whose noise the predictor never meets.</param>
+    public T? Solve<T>(Complex[,] V, double tol, Func<Complex[,], (double[] F, T State)> evaluate, Func<T, double[]> jacobian,
+                       int minIterations = 0)
         where T : class
     {
         var V0 = (Complex[,])V.Clone();
@@ -64,7 +68,7 @@ internal sealed class EnvelopeNewton
             // A stalled residual is accepted only after an update made with a FRESH Jacobian (a true round-off
             // floor). A stalled CHORD iteration means a stale Jacobian: rebuild it instead — accepting there left
             // isolated steps up to 1e3 x Tol off (single-sample glitches).
-            if (rn < tol || (fresh && !double.IsNaN(r0) && rn < 1e2 * tol && rn > 0.5 * r0))
+            if (it >= minIterations && (rn < tol || (fresh && !double.IsNaN(r0) && rn < 1e2 * tol && rn > 0.5 * r0)))
             {
                 Iterations += it;
                 return st;

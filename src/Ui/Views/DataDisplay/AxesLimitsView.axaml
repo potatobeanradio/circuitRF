@@ -148,6 +148,15 @@
                            Padding="4,2"/>
             </Grid>
 
+            <!-- One world unit as many pixels along X as along Y (Rect, brief NZ-8): a constellation's circle of error
+                 stays a circle. The plot box narrows; the limits above are unchanged. -->
+            <Separator IsVisible="{Binding ShowXScale}"/>
+            <CheckBox IsChecked="{Binding EqualAspect, Mode=TwoWay}"
+                      IsVisible="{Binding ShowXScale}"
+                      Content="Equal X and Y scale (1:1)"
+                      FontSize="11"
+                      ToolTip.Tip="One unit is as long along X as along Y: the plot box narrows to keep it, the limits stay as set. Linear axes only."/>
+
             <Separator/>
 
             <Button Content="Close"

@@ -507,7 +507,8 @@ public static class CnlWriter
     private static string EnvelopeNoiseKeys(EnvelopeAnalysis env) =>
         (env.NoiseExpr != Analysis.NoiseDefault ? $" Noise={env.NoiseExpr}" : "") +
         (env.SeedExpr != EnvelopeAnalysis.SeedDefault ? $" Seed={env.SeedExpr}" : "") +
-        (env.SeedPerPointExpr != Analysis.NoiseDefault ? $" SeedPerPoint={env.SeedPerPointExpr}" : "");
+        (env.SeedPerPointExpr != Analysis.NoiseDefault ? $" SeedPerPoint={env.SeedPerPointExpr}" : "") +
+        (env.EvmSplitExpr != Analysis.NoiseDefault ? $" EvmSplit={env.EvmSplitExpr}" : "");
 
     /// <summary>The loadpull noise keys (brief NZ-6), each only when it differs from its default, so a line without them
     /// round-trips to the bytes it always did.</summary>

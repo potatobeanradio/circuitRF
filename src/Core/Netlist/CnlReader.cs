@@ -1793,6 +1793,7 @@ public sealed class CnlReader
             NoiseExpr = kv.GetValueOrDefault("Noise", CircuitRF.Core.Design.Analysis.NoiseDefault),
             SeedExpr = kv.GetValueOrDefault("Seed", CircuitRF.Core.Design.EnvelopeAnalysis.SeedDefault),
             SeedPerPointExpr = kv.GetValueOrDefault("SeedPerPoint", CircuitRF.Core.Design.Analysis.NoiseDefault),
+            EvmSplitExpr = kv.GetValueOrDefault("EvmSplit", CircuitRF.Core.Design.Analysis.NoiseDefault),
         };
         return true;
     }

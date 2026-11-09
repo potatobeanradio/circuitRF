@@ -49,7 +49,8 @@ public class EnvelopeModeRoundTripTests
     [Fact]
     public void NoiseKeys_RoundTripThroughTheNetlistTheSchematicAndTheEditor()
     {
-        var env = ReadEnv("analysis ENV1 type=env Stop=10e-6 Noise=yes Seed=17 SeedPerPoint=yes");
+        var env = ReadEnv("analysis ENV1 type=env Stop=10e-6 Noise=yes Seed=17 SeedPerPoint=yes EvmSplit=yes");
+        Assert.True(env.EvmSplit);
         Assert.True(env.Noise);
         Assert.Equal("17", env.SeedExpr);
         Assert.True(env.SeedPerPoint);
@@ -58,11 +59,16 @@ public class EnvelopeModeRoundTripTests
         Assert.True(back.Noise);
         Assert.Equal("17", back.SeedExpr);
         Assert.True(back.SeedPerPoint);
+        Assert.True(back.EvmSplit);
 
         var edited = CircuitRF.Ui.ViewModels.EnvBodyViewModel.FromAnalysis(env, new SchematicEditModel()).BuildAnalysis("ENV1", true);
         Assert.True(edited.Noise);
         Assert.Equal("17", edited.SeedExpr);
         Assert.True(edited.SeedPerPoint);
+        Assert.True(edited.EvmSplit);
+        var written = new TestBench("tb");
+        written.Analyses.Add(env);
+        Assert.Contains("EvmSplit=yes", CnlWriter.Write(written));
 
         var plain = ReadEnv("analysis ENV1 type=env Stop=10e-6");
         var tb = new TestBench("tb");
@@ -70,10 +76,12 @@ public class EnvelopeModeRoundTripTests
         string cnl = CnlWriter.Write(tb);
         Assert.DoesNotContain("Noise", cnl);
         Assert.DoesNotContain("Seed", cnl);
+        Assert.DoesNotContain("EvmSplit", cnl);
         var dto = AnalysisSerialization.ToDto(plain);
         Assert.Null(dto.EnvNoise);
         Assert.Null(dto.EnvSeed);
         Assert.Null(dto.EnvSeedPerPoint);
+        Assert.Null(dto.EnvEvmSplit);
     }
 
     [Fact]

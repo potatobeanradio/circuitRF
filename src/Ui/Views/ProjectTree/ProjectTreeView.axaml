@@ -561,6 +561,14 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Bullseye" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- brief NZ-8 — an envelope result's constellation, EVM per carrier and spectrum, in one action. -->
+                                        <MenuItem Header="Open Signal Quality"
+                                                  Command="{Binding OpenSignalQualityCommand}"
+                                                  IsVisible="{Binding IsResultFile}"
+                                                  ToolTip.Tip="A new Data Display with this envelope result's constellation, EVM per carrier and output spectrum. Needs an envelope run with an LTE or NR carrier.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ScatterPlot" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- brief-dfr32-3 R-dfr32-3-2 — a solved 3D view's or EM setup's saved fields, to the Trash. -->
                                         <MenuItem Header="Delete Saved Fields"
                                                   Command="{Binding DeleteSavedFieldsCommand}"

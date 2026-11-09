@@ -360,6 +360,12 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public bool Noise => ParseNdf(NoiseExpr);
     /// <summary>Whether <see cref="SeedPerPointExpr"/> asks for a seed per sweep point.</summary>
     public bool SeedPerPoint => ParseNdf(SeedPerPointExpr);
+
+    /// <summary><c>EvmSplit=</c> (brief NZ-8): <c>yes</c> runs the record a second time with every noise source and phase-noise
+    /// mask off, so EVM splits into distortion and noise and the in-channel SNR is measured. Twice the run time.</summary>
+    public string EvmSplitExpr { get; init; } = NoiseDefault;
+    /// <summary>Whether <see cref="EvmSplitExpr"/> asks for the split.</summary>
+    public bool EvmSplit => ParseNdf(EvmSplitExpr);
 }
 
 /// <summary>

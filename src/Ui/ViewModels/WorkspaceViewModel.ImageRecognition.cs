@@ -368,6 +368,7 @@ public partial class WorkspaceViewModel : IImageDialogHost
     public void OpenInSParameterViewer(ProjectTreeNodeViewModel node) => OpenInSParameterViewer(node.AbsolutePath);
 
     public void OpenNoiseCircles(ProjectTreeNodeViewModel node) => _ = OpenNoiseCirclesAsync(node.AbsolutePath);
+    public void OpenSignalQuality(ProjectTreeNodeViewModel node) => _ = OpenSignalQualityAsync(node.AbsolutePath);
 
     public void CreateTouchstoneFromImageFile(ProjectTreeNodeViewModel node)
     {

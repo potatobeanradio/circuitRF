@@ -70,6 +70,12 @@ public sealed record EnvelopeParams
     public bool Noise { get; init; }
     /// <summary>The seed of every random draw: thermal noise and the sources' phase-noise masks.</summary>
     public ulong Seed { get; init; } = 1;
+    /// <summary>Apply the sources' <c>PhaseNoise</c> masks. False only for <c>EvmSplit</c>'s second, noiseless run (brief
+    /// NZ-8).</summary>
+    public bool PhaseNoise { get; init; } = true;
+    /// <summary>Newton updates every step takes before its tolerance may accept (<see cref="EnvelopeNewton.Solve"/>): 0,
+    /// except EvmSplit's noiseless run.</summary>
+    public int MinNewton { get; init; }
 }
 
 public sealed class EnvelopeRunResult
@@ -201,7 +207,7 @@ public sealed class EnvelopeEngine
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, p.Seed, f0) : null;
-        var phase = EnvelopePhaseNoise.Of(_nl, (int)Math.Round(nRec), recordRate, p.Seed);
+        var phase = p.PhaseNoise ? EnvelopePhaseNoise.Of(_nl, (int)Math.Round(nRec), recordRate, p.Seed) : null;
         // Every line is its delay for the whole run — the DC solve, the HB start and the stepping (EnvelopeLineDelay) — and
         // every other non-affine element (an SnP, a System Filter, a Z(freq) block) its rational fit (EnvelopeSnpFit).
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, 0.5 * need);
@@ -453,7 +459,7 @@ public sealed class EnvelopeEngine
                 var J = HbNewton.BuildJ(yEff, Gs, e.Cc, N, K, omega0, 0, e.Buckets);
                 if (prof) swJ.Stop();
                 return J;
-            });
+            }, p.MinNewton);
             if (accepted is null) { qNow = null!; return null; }
             qNow = accepted.Q;
 

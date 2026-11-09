@@ -45,6 +45,8 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     [ObservableProperty] private string _seed = EnvelopeAnalysis.SeedDefault;
     /// <summary><c>SeedPerPoint=</c>: a new seed at each parametric sweep point.</summary>
     [ObservableProperty] private bool _seedPerPoint;
+    /// <summary><c>EvmSplit=</c> (brief NZ-8): run the record again noiseless, to split EVM and measure the SNR.</summary>
+    [ObservableProperty] private bool _evmSplit;
 
     /// <summary>What the schematic's MOD_Sources will play — read-only context for the card.</summary>
     public string StimulusSummary { get; }
@@ -95,7 +97,7 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         Envelope = Array.IndexOf(EnvelopeOptions, a.Envelope.ToLowerInvariant()) >= 0 ? a.Envelope.ToLowerInvariant() : "auto",
         Segments = a.SegmentsExpr, Warmup = a.WarmupExpr,
         SaveWaveforms = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase),
-        Noise = a.Noise, Seed = a.SeedExpr, SeedPerPoint = a.SeedPerPoint,
+        Noise = a.Noise, Seed = a.SeedExpr, SeedPerPoint = a.SeedPerPoint, EvmSplit = a.EvmSplit,
     };
 
     public EnvelopeAnalysis BuildAnalysis(string name, bool enabled) => new(name)
@@ -108,5 +110,6 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         NoiseExpr = Noise ? "yes" : Analysis.NoiseDefault,
         SeedExpr = string.IsNullOrWhiteSpace(Seed) ? EnvelopeAnalysis.SeedDefault : Seed.Trim(),
         SeedPerPointExpr = SeedPerPoint ? "yes" : Analysis.NoiseDefault,
+        EvmSplitExpr = EvmSplit ? "yes" : Analysis.NoiseDefault,
     };
 }

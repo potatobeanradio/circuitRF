@@ -223,6 +223,12 @@ public sealed class AxesConfig
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AxisScale XScale { get; set; } = AxisScale.Linear;
+
+    /// <summary>One world unit as many pixels along X as along Y (<c>Axes.EqualAspect</c>, brief NZ-8). <b>Off is not
+    /// written</b>, so a display that never turned it on saves the bytes it saved before. Read in
+    /// <c>PlotConfigLoader.RestoreAxes</c>, written in <c>DataDisplayViewModel.BuildPlotContainerConfig</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EqualAspect { get; set; }
 }
 
 // ---- Cube-bound persistence (Phase 7.2c-a) ----------------------------------

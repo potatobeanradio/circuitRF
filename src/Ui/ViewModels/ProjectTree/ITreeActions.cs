@@ -91,6 +91,10 @@ public interface ITreeActions
     /// stability circles of its two-port noise result.</summary>
     void OpenNoiseCircles(ProjectTreeNodeViewModel node) { }
 
+    /// <summary>brief NZ-8 — Open Signal Quality on a result file: a new Data Display holding its envelope run's
+    /// constellation, EVM per carrier and spectrum.</summary>
+    void OpenSignalQuality(ProjectTreeNodeViewModel node) { }
+
     /// <summary>brief-dfr32-3 — whether a <c>.c3d</c>'s or <c>.cem</c>'s runs hold saved fields now.</summary>
     bool HasSavedFields(ProjectTreeNodeViewModel node) => false;
 

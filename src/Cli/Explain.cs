@@ -1544,9 +1544,26 @@ internal static class Explain
                 {
                     string[] listed = env.Probes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
                     var nets = CircuitRF.Engine.Envelope.EnvelopeEngine.RecordedNodes(nl, listed, src).Select(x => x.name).ToList();
+                    // Brief NZ-8: which carriers EVM is measured on, and what EvmSplit costs.
+                    var qam = src.SelectMany(c => ((ModSourceModel)c.Model).Spec.Carriers.Select(k => (c.InstancePath, k)))
+                                 .Select(x => (x.InstancePath, x.k, what: x.k.Standard switch
+                                 {
+                                     RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
+                                         or RfCore.Signals.CarrierStandard.Dbpsk => "EVM",
+                                     RfCore.Signals.CarrierStandard.Fsk => "FSK error",
+                                     RfCore.Signals.CarrierStandard.Css => "de-chirped error",
+                                     _ => null,
+                                 }))
+                                 .Where(x => x.what is not null)
+                                 .Select(x => $"{x.what} on {x.InstancePath}:{x.k.Label}").ToList();
+                    string? evm = qam.Count == 0 ? null
+                        : $"signal quality: {string.Join(", ", qam)}" + (!env.EvmSplit ? ""
+                            : env.Noise || masks.Count > 0
+                                ? "; EvmSplit runs the record a second time with the noise and masks off, so the run takes twice as long"
+                                : "; EvmSplit has nothing to split (no Noise, no PhaseNoise mask), so it runs once");
                     envRecords[env.Name] = new ExplainEnvelopeRecordsJson(nets, iprobes, env.SeedExpr, env.SeedPerPoint,
                                                                           masks.Count > 0 ? masks : null,
-                                                                          noisy.Count > 0 ? noisy : null);
+                                                                          noisy.Count > 0 ? noisy : null, evm);
                 }
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
@@ -2352,6 +2369,7 @@ internal static class Explain
                     if (a.Noise == true)
                         foreach (var n in rec.NoisySources ?? [])
                             Console.WriteLine($"      source impedance thermal: {n}");
+                    if (rec.Evm is { } evmLine) Console.WriteLine($"      {evmLine}");
                 }
 
                 // R-wsp9-4: the effective margin threshold beside the probe list. The default is

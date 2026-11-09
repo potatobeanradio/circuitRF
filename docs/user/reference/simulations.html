@@ -588,6 +588,11 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <td>no</td>
 <td><code>yes</code> gives each point of a parametric sweep its own seed.</td>
 </tr>
+<tr>
+<td>EvmSplit</td>
+<td>no</td>
+<td><code>yes</code> runs the record a second time without noise, to split each carrier's error into distortion and noise and measure the SNR (<a href="#envelope-evm">below</a>). Twice the run time.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="envelope-records">What a run records</h3>
@@ -692,6 +697,16 @@ density in dBm/Hz.</p>
 <td><a href="#envelope-amam">AM-AM, AM-PM and memory</a></td>
 </tr>
 <tr>
+<td><code>EVM_pct</code>, <code>FSKerr_pct</code>, <code>CSSerr_pct</code> and the rest</td>
+<td>branch, carrier</td>
+<td>each carrier's received quality (<a href="#envelope-evm">Signal quality</a>)</td>
+</tr>
+<tr>
+<td><code>Const</code></td>
+<td>branch, carrier, symbol</td>
+<td>the received symbols, complex, for the constellation</td>
+</tr>
+<tr>
 <td><code>I</code></td>
 <td>time, branch, harmonic</td>
 <td>the current envelopes (SaveWaveforms)</td>
@@ -705,7 +720,7 @@ density in dBm/Hz.</p>
 </table>
 <p>Every IProbe gets every row, so the branch axis is the same at every sweep point. A probe that carries
 no RF, such as a supply or bias probe, is blank in the output rows (<code>Gt_dB</code>, <code>DE_pct</code>, <code>NMSE_dB</code>,
-<code>ACLR</code>, <code>PAPR_dB</code>, <code>CCDF</code>, AM-AM and AM-PM): its fundamental-band power is below 10⁻⁶ of the available
+<code>ACLR</code>, <code>PAPR_dB</code>, <code>CCDF</code>, AM-AM, AM-PM and EVM): its fundamental-band power is below 10⁻⁶ of the available
 drive. Its <code>Pprobe_W</code> still reads its DC power.</p>
 <p>A design with a <a href="wbond.html">wBond</a> also gets <code>WireTemp</code> and <code>WireTempState</code> (axis <code>wire array</code>): each array's
 hottest wire under the record's average heat (<a href="wbond.html#wt-envelope">wBond ▸ In a circuit envelope run</a>).</p>
@@ -934,8 +949,8 @@ current after the first pulse, so pulse 1 differs from pulse 2: that is current 
 pulse-to-pulse figure exists to report. A thermal train settles only after several of its slowest time
 constants, which on a package pole means milliseconds of record at a step of a few nanoseconds.</p>
 <p>From the command line: <code>circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]</code>.
-It prints each IProbe's power, gain, efficiency, NMSE and PAPR, and the ACLR at every probe that
-carries RF. For a pulsed-CW source it prints each pulse's top power, droop, phase droop, rise and fall
+It prints each IProbe's power, gain, efficiency, NMSE and PAPR, and the ACLR and signal quality (EVM,
+FSK error or the de-chirped error) at every probe that carries RF. For a pulsed-CW source it prints each pulse's top power, droop, phase droop, rise and fall
 at those probes, then the pulse-to-pulse spread.</p>
 <h3 id="envelope-noise">Noise and phase noise</h3>
 <p>Without these settings every signal in an envelope run is noiseless: the spectrum has no floor and an
@@ -976,6 +991,159 @@ reports it as information on those analyses.</li>
 into parallel segments draws the same noise as one run. Every point of a parametric sweep uses the
 same seed, so the differences between points come from the circuit; <code>SeedPerPoint=yes</code> gives each
 point its own.</p>
+<h3 id="envelope-evm">Signal quality: EVM, FSK error and the constellation</h3>
+<p>At every IProbe, each carrier that carries symbols is demodulated from the probe's voltage and
+compared with what the source sent. NMSE measures the waveform; these measure what a receiver reads.
+Each modulation is measured the way its receiver reads it:</p>
+<table>
+<thead>
+<tr>
+<th>Carrier</th>
+<th>Measured as</th>
+<th>Picture</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LTE, NR</td>
+<td>EVM over every subcarrier of every OFDM symbol, as the <a href="signal-designer.html">Signal Designer</a> measures the source's own signal</td>
+<td>constellation</td>
+</tr>
+<tr>
+<td>DBPSK</td>
+<td>EVM at each bit centre, where a bit peaks at ±1 and its neighbours are zero</td>
+<td>constellation</td>
+</tr>
+<tr>
+<td>FSK, GFSK, GMSK</td>
+<td>the frequency at each bit centre against the frequency sent: FSK error, deviation and offset</td>
+<td>frequency at each bit</td>
+</tr>
+<tr>
+<td>CSS</td>
+<td>de-chirped: each chirp times the conjugate of the chirp sent, with one gain per chirp, as a receiver reads each symbol on its own</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>LTE, NR and DBPSK</strong> (axes branch, carrier):</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EVM_pct</code>, <code>EVM_dB</code></td>
+<td>RMS EVM, in percent and in dB</td>
+</tr>
+<tr>
+<td><code>EVMpeak_pct</code></td>
+<td>the largest error, over the RMS of the ideal points</td>
+</tr>
+<tr>
+<td><code>MER_dB</code></td>
+<td>−20·log10(EVM)</td>
+</tr>
+<tr>
+<td><code>Const</code> (branch, carrier, symbol)</td>
+<td>the received points, after the delay and gain are removed (at most 6000 per carrier)</td>
+</tr>
+<tr>
+<td><code>ConstRef</code> (carrier, symbol)</td>
+<td>the ideal point at each of those</td>
+</tr>
+</tbody>
+</table>
+<p><strong>FSK:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FSKerr_pct</code></td>
+<td>the RMS frequency error at the bit centres, over the nominal deviation, after the deviation and the offset are fitted</td>
+</tr>
+<tr>
+<td><code>FreqDev_Hz</code></td>
+<td>the deviation measured: the fitted scale times the nominal one</td>
+</tr>
+<tr>
+<td><code>FreqOffset_Hz</code></td>
+<td>the carrier frequency offset measured</td>
+</tr>
+<tr>
+<td><code>FreqPts</code> (branch, carrier, bit)</td>
+<td>the frequency at each bit centre, offset removed</td>
+</tr>
+<tr>
+<td><code>FreqRef</code> (carrier, bit)</td>
+<td>the frequency sent there</td>
+</tr>
+</tbody>
+</table>
+<p><strong>CSS:</strong> <code>CSSerr_pct</code>, the square root of the energy outside each symbol's own FFT bin over the
+energy in it, after de-chirping, in percent. FSK and CSS have constant envelopes, so a constellation
+would be a circle; these say more.</p>
+<ul>
+<li><strong>How it is measured.</strong> The probe's envelope is brought back to the carrier's own sample rate and
+its delay is fitted against the signal the source played. OFDM is then cut into symbols, each
+transformed after its cyclic prefix, with one complex gain fitted against the ideal points. DBPSK,
+FSK and CSS are first filtered to their channel, and so is the reference they are compared with,
+so the measurement bandwidth is the channel's. There is no per-subcarrier equaliser, so the in-band
+ripple of a filter counts as error, as it does in NMSE.</li>
+<li><strong>Through a matched pad</strong> the error is the source signal's own: the Signal Designer's EVM for LTE
+and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.</li>
+<li><strong>The record.</strong> A run of whole records (<code>Stop</code> a multiple of the source's record, with a warm-up)
+measures every symbol. A shorter run measures the symbols, bits or chirps it holds whole, apart
+from a few samples at each end. A run shorter than one has no result, and the run says so.</li>
+<li><strong>Other carriers.</strong> CW, a pulse and an imported I/Q file carry no symbols: their cells are blank,
+the run names them once, and NMSE remains their measure. Each set of cubes is written only when a
+carrier of its kind is in the run, and a run with none writes none of them.</li>
+</ul>
+<p><strong>Distortion and noise (<code>EvmSplit=yes</code>).</strong> With <code>Noise=yes</code> or a <code>PhaseNoise</code> mask, EvmSplit runs the
+same record a second time with every noise source and mask off. Each error then splits into its
+distortion and its noise, and the in-channel SNR is measured:</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EVMdist_pct</code>, <code>FSKerrDist_pct</code>, <code>CSSerrDist_pct</code></td>
+<td>the error without noise: the distortion</td>
+</tr>
+<tr>
+<td><code>EVMnoise_pct</code>, <code>FSKerrNoise_pct</code>, <code>CSSerrNoise_pct</code></td>
+<td>√(error² − distortion²): the noise's part</td>
+</tr>
+<tr>
+<td><code>SNR_dB</code></td>
+<td>the in-channel signal over the in-channel noise, the noise being the difference between the two runs</td>
+</tr>
+</tbody>
+</table>
+<p>For LTE, NR, DBPSK and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
+frequency more than the amplitude, so its error is larger than that. The split is what decides
+whether to fix linearity or noise. Over a short record the noisy run can read slightly less than
+the noiseless one; the noise part is then 0 and the run says so. Without EvmSplit, <code>SNR_dB</code> is not
+written: the spectrum's floor alone would mix distortion into it. <code>explain</code> states the second run,
+and <code>check</code> says when there is nothing to split.</p>
+<p><strong>In the Data Display.</strong> <strong>Signal quality</strong> (on the toolbar, and <strong>Open Signal Quality</strong> on a result
+file's menu) adds the picture, a table of every measure the result holds, and the output spectrum, at
+the probe carrying the signal. The constellation plots <code>imag(Const[…])</code> against <code>real(Const[…])</code>,
+points only, with <strong>Equal X and Y scale</strong> set in Axes Limits, so a circle of error looks like a
+circle. FSK's picture is the frequency at each bit, received over sent. CSS has the table and the
+spectrum.</p>
 <h2 id="parametric-sweep">Parametric Sweep</h2>
 <p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it across one or
 more variables (drive power, a bias voltage, frequency, any user variable). Nest sweeps to cover
