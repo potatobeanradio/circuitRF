@@ -141,3 +141,42 @@ closed-form centres. The 148 points agree to 2.3e-15.
 The fake OSDI `crf_noise` part shunting a DC-fed node, g = 1 and 4 mS at 300 and 350 K, its bias swept from 0 to 1.5 V,
 against `1 + (T/T0)·g·Z0 + 2q|gV|·Z0/(4kT0)`: within 5e-15 dB. The noise comes from the worker's `noise` command at
 each bias point.
+
+## 7. In the GUI
+
+The example workspace `examples/S-Parameter Noise` (File ▸ New ▸ Examples ▸ S-Parameter Noise), run in the
+application: open a bench's schematic, Simulate, and its Data Display opens on the result. Captured from this
+branch's build.
+
+![The example workspace and the LNA bench's Data Display](../images/sparam-noise/gui_overview.png)
+
+![The LNA bench](../images/sparam-noise/gui_lna_schematic.png)
+
+`3 LNA Noise Circles`: a transistor-like SnP with noise data behind a lossy input match and a stabilising resistor.
+The measurement block draws two constant-NF circles with `ns_circle(SP1.S, 1.25)` and `ns_circle(SP1.S, 2)`.
+
+![The Noise box](../images/sparam-noise/gui_noise_box.png)
+
+The S-parameter analysis's Edit Analysis dialog: the Noise box under the frequency plan writes `Noise=yes`.
+
+![The LNA bench's Data Display](../images/sparam-noise/gui_lna_display.png)
+
+NF from 50 Ω against NFmin (m1: 0.979 dB at 4 GHz); Sopt and the two noise circles on a Smith chart (m2: |Sopt| =
+0.0015 at 4 GHz, the match puts the optimum source at 50 Ω there); gain; Rollett's K; Te against Tmin (m3: 73.4 K);
+Re and Im of Zopt (m4: 50.1 Ω).
+
+![The noise figure and the noise circles, close up](../images/sparam-noise/gui_lna_display_top.png)
+
+![The Friis bench](../images/sparam-noise/gui_friis_schematic.png)
+
+![The Friis bench's Data Display](../images/sparam-noise/gui_friis_display.png)
+
+`2 Friis Cascade`: stage A, a resistive pad swept from 1 to 10 dB, stage B. The run's NF (dots) lies on Friis' formula,
+written as a measurement (line); m1 reads 1.21 dB at a 3 dB pad. The middle plot puts the pad first.
+
+![The attenuator bench](../images/sparam-noise/gui_attenuator_schematic.png)
+
+![The attenuator bench's Data Display](../images/sparam-noise/gui_attenuator_display.png)
+
+`1 Attenuator`: a matched 6 dB pad with the ambient swept from 20 K to 400 K. NF crosses the loss at 290 K (m1: 6 dB)
+and follows `1 + (T/T0)(L − 1)`; `Re Cs22/k` follows Bosma's `T(1 − 1/L)`.
