@@ -32,6 +32,16 @@
 // outer wire against its own holes, so the edge stays whole and its 1D mesh runs through the hole's corner. Gmsh says "There are 9
 // intersections in the 1D mesh", leaves the face with no elements, and stops at the 3D stage with "overlapping facets" or "Could not
 // recover boundary mesh". OpenTouches moves that corner by the tolerance, into the hole, which leaves a neck the tolerance wide.
+//
+// A SLOT A FEW MICROMETRES WIDE (designer round 39). An imported pour held its connector's ground block across a 2.54 µm gap,
+// bridged by via pads: ten slot holes 2.54 µm wide and up to 715 µm long, and two slots of the same width running in from its
+// edge. None is near a neighbour's line, so the rules above leave them; Gmsh's 1D mesh of the face at 357 µm crossed itself
+// along them ("There are 50 intersections in the 1D mesh"), and splitting and retrying each level re-meshed the whole board's
+// face, so the run sat in 2D meshing for over 15 minutes. CloseSlots fills, within ONE conductor, every hole and inlet narrower
+// than twice SlotHalfWidth (a tenth of the metal's thickness, at most 5 µm): the copper on both sides is one conductor already,
+// so nothing joins that was apart. Only copper is added, never removed.
+
+using Clipper2Lib;
 
 namespace CircuitRF.Design.Layout.Em3d;
 
@@ -61,6 +71,12 @@ public static class Em3dOutlineCleanup
         public double LongestSpikeM { get; set; }
         /// <summary>Corners moved off another stretch of their own object's outline (<see cref="OpenTouches{T}"/>).</summary>
         public int Touches { get; set; }
+        /// <summary>Conductors whose narrow slots and holes <see cref="CloseSlots"/> filled.</summary>
+        public int Slotted { get; set; }
+        /// <summary>The copper those fills added, square metres.</summary>
+        public double SlotAreaM2 { get; set; }
+        /// <summary>The widest slot a fill was allowed to close, metres (twice the largest half-width used).</summary>
+        public double SlotWidthM { get; set; }
     }
 
     /// <summary>
@@ -239,6 +255,68 @@ public static class Em3dOutlineCleanup
             result[r] = moved;
         }
         return result ?? rings;
+    }
+
+    /// <summary>A slot's half-width as a fraction of the conductor's thickness (<see cref="SlotHalfWidth"/>).</summary>
+    public const double SlotThicknessFraction = 1.0 / 10;
+
+    /// <summary>The largest half-width <see cref="CloseSlots"/> takes, metres: 1 oz copper closes slots under 7.1 µm, and nothing
+    /// closes one of 10 µm.</summary>
+    public const double MaxSlotHalfWidthM = 5e-6;
+
+    /// <summary>Half the widest slot closed in a conductor <paramref name="thicknessM"/> thick: a thin-film metal of 1–3 µm closes
+    /// only slots under a micrometre.</summary>
+    public static double SlotHalfWidth(double thicknessM) => Math.Min(MaxSlotHalfWidthM, Math.Max(0, thicknessM) * SlotThicknessFraction);
+
+    /// <summary>Clipper grid steps per metre for <see cref="CloseSlots"/>: a picometre.</summary>
+    private const double SlotGridPerMetre = 1e12;
+
+    /// <summary>The miter limit of the two offsets: a corner sharper than about 6° would be squared off, lose copper, and so
+    /// leave the conductor as drawn.</summary>
+    private const double SlotMiterLimit = 20;
+
+    /// <summary>
+    /// <paramref name="rings"/> (one conductor's outer ring, then its holes) with every hole and inlet narrower than twice
+    /// <paramref name="halfWidth"/> filled: what growing the outline by the half-width and shrinking it back adds (square corners
+    /// kept), joined to the copper as drawn, so copper is only ever added. The join leaves steps of the picometre grid where a
+    /// fill meets the drawn edge, which <see cref="Clean{T}"/> removes after. Null when nothing is narrow enough, and when the
+    /// result would be other than one outline with holes; then the conductor stays as drawn. Counted into <paramref name="stats"/>.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<(double X, double Y)>>? CloseSlots(IReadOnlyList<IReadOnlyList<(double X, double Y)>> rings,
+                                                                               double halfWidth, Stats stats)
+    {
+        if (!(halfWidth > 0) || rings.Count == 0 || rings[0].Count < 3) return null;
+        static long G(double m) => (long)Math.Round(m * SlotGridPerMetre);
+        static Path64 P(IReadOnlyList<(double X, double Y)> r) => new(r.Select(q => new Point64(G(q.X), G(q.Y))));
+        // The outline less every hole, not the rings read even-odd: imported holes can overlap each other (a slot hole running
+        // 3 µm into a via pad's), and even-odd makes their overlap copper, an island inside a hole.
+        var subject = Clipper.Difference(Clipper.Union([P(rings[0])], FillRule.NonZero),
+                                         Clipper.Union(new Paths64(rings.Skip(1).Select(P)), FillRule.NonZero), FillRule.NonZero);
+        double d = halfWidth * SlotGridPerMetre;
+        var grown = Clipper.InflatePaths(subject, d, JoinType.Miter, EndType.Polygon, SlotMiterLimit);
+        var closed = Clipper.InflatePaths(grown, -d, JoinType.Miter, EndType.Polygon, SlotMiterLimit);
+
+        // Only what the offsets ADD is taken, and added to the copper as drawn: the offsets themselves can shave a stepped arc,
+        // and a piece the size of the grid's rounding is no slot.
+        double minPiece = 0.01 * halfWidth * halfWidth * SlotGridPerMetre * SlotGridPerMetre;
+        var fills = new Paths64(Clipper.Difference(closed, subject, FillRule.NonZero).Where(f => Math.Abs(Clipper.Area(f)) >= minPiece));
+        if (fills.Count == 0) return null;
+        double added = Math.Abs(fills.Sum(Clipper.Area)) / (SlotGridPerMetre * SlotGridPerMetre);
+
+        var tree = new PolyTree64();
+        Clipper.BooleanOp(ClipType.Union, subject, fills, tree, FillRule.NonZero);
+        if (tree.Count != 1 || tree[0].Polygon is not { Count: >= 3 } outer) return null;
+        static List<(double X, double Y)> Ring(Path64 path) => [.. path.Select(q => (q.X / SlotGridPerMetre, q.Y / SlotGridPerMetre))];
+        var result = new List<IReadOnlyList<(double X, double Y)>> { Ring(outer) };
+        for (int i = 0; i < tree[0].Count; i++)
+        {
+            if (tree[0][i].Count > 0 || tree[0][i].Polygon is not { Count: >= 3 } hole) return null;   // an island in a hole
+            result.Add(Ring(hole));
+        }
+        stats.Slotted++;
+        stats.SlotAreaM2 += added;
+        stats.SlotWidthM = Math.Max(stats.SlotWidthM, 2 * halfWidth);
+        return result;
     }
 
     /// <summary>

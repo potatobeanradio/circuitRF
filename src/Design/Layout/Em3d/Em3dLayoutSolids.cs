@@ -873,7 +873,7 @@ public static class Em3dLayoutSolids
                     OriginMap[p.Name] = new Em3dObjectOrigin(Em3dObjectKind.Conductor, b.Layer.Name, p.Layer, p.SheetReason);
                     Net(p.Name, p.Net);
                     if (b.Layer.IsGroundReference) GroundBandObjectList.Add(p.Name);
-                    var poly = Robust(p.Poly, p.ZTop - p.ZBottom);
+                    var poly = Robust(CloseSlots(p.Poly, p.ZTop - p.ZBottom, Pieces[b.Index]), p.ZTop - p.ZBottom);
                     if (p.IsSheet)
                         sheets.Add(new Em3dSheet(p.Name, p.Material, Ring(poly.Outer),
                                                  [.. poly.HoleRings.Select(Ring)], p.SheetZ, p.ZTop - p.ZBottom, order));
@@ -882,7 +882,7 @@ public static class Em3dLayoutSolids
                                                  Extrude(poly, p.ZBottom, p.ZTop), order));
                 }
             }
-            if (_robust.Removed > 0 || _robust.Snapped > 0 || _robust.Touches > 0)
+            if (_robust.Removed > 0 || _robust.Snapped > 0 || _robust.Touches > 0 || _robust.Slotted > 0)
                 Notes.Add(RobustNote(_robust));
             int sheetCount = Bands.Where(b => Pieces.ContainsKey(b.Index)).Sum(b => Pieces[b.Index].Count(p => p.IsSheet && !p.IsFilm));
             if (sheetCount > 0 && options.Conductors == Em3dConductorMode.Sheets)
@@ -1587,6 +1587,33 @@ public static class Em3dLayoutSolids
                 ? poly : new PlanarPolygon(outer, poly.Holes is null ? null : holes);
         }
 
+        /// <summary>Designer round 39 — <paramref name="poly"/> with its slots and holes narrower than twice
+        /// <see cref="Em3dOutlineCleanup.SlotHalfWidth"/> filled, when Robust meshing is on (itself otherwise, and when the filled
+        /// conductor would reach another piece of its band: then the slot is a gap between two conductors, not one's own).</summary>
+        private PlanarPolygon CloseSlots(PlanarPolygon poly, double thicknessM, List<Piece> band)
+        {
+            if (!options.RobustMeshing) return poly;
+            var probe = new Em3dOutlineCleanup.Stats();
+            IReadOnlyList<IReadOnlyList<(double X, double Y)>> rings =
+                [[.. poly.Outer.Select(q => (q.X, q.Y))], .. poly.HoleRings.Select(h => (IReadOnlyList<(double X, double Y)>)[.. h.Select(q => (q.X, q.Y))])];
+            if (Em3dOutlineCleanup.CloseSlots(rings, Em3dOutlineCleanup.SlotHalfWidth(thicknessM), probe) is not { } closed) return poly;
+            var filled = new PlanarPolygon([.. closed[0].Select(q => new EmPoint(q.X, q.Y))],
+                                           closed.Count > 1 ? [.. closed.Skip(1).Select(h => (IReadOnlyList<EmPoint>)[.. h.Select(q => new EmPoint(q.X, q.Y))])] : null);
+            var (fx0, fy0, fx1, fy1) = filled.Bounds();
+            foreach (var other in band)
+            {
+                if (other.IsFilm || ReferenceEquals(other.Poly, poly)) continue;
+                var o = other.Poly;
+                var (ox0, oy0, ox1, oy1) = o.Bounds();
+                if (ox1 < fx0 || ox0 > fx1 || oy1 < fy0 || oy0 > fy1) continue;
+                if (o.Outer.Any(q => filled.Contains(q.X, q.Y)) || filled.Outer.Any(q => o.Contains(q.X, q.Y))) return poly;
+            }
+            _robust.Slotted += probe.Slotted;
+            _robust.SlotAreaM2 += probe.SlotAreaM2;
+            _robust.SlotWidthM = Math.Max(_robust.SlotWidthM, probe.SlotWidthM);
+            return filled;
+        }
+
         /// <summary>Designer feedback round 38 — the board's own outline as Robust meshing leaves it: a rounded corner read from a
         /// Gerber outline holds points under a micrometre apart, and four of them on the board's side make a flat element. Done
         /// here, before anything reads the outline, so a conductor, a via's clip and the laminate all meet the same edge.</summary>
@@ -1648,7 +1675,10 @@ public static class Em3dLayoutSolids
             (s.Spikes > 0 ? $" It also cut off {s.Spikes:N0} zero-width spike{(s.Spikes == 1 ? "" : "s")} where an outline ran out and straight back, " +
                             $"holding no copper; the longest reached {Fmt(s.LongestSpikeM * 1e6)} µm." : "") +
             (s.Touches > 0 ? $" It also moved {s.Touches:N0} corner{(s.Touches == 1 ? "" : "s")} off {(s.Touches == 1 ? "a stretch" : "stretches")} of the same object's " +
-                             "outline, such as a hole touching its pour's edge at one point, which the mesher cannot cross." : "");
+                             "outline, such as a hole touching its pour's edge at one point, which the mesher cannot cross." : "") +
+            (s.Slotted > 0 ? $" It filled the slots and holes narrower than {Fmt(s.SlotWidthM * 1e6)} µm inside {s.Slotted:N0} " +
+                             $"conductor{(s.Slotted == 1 ? "" : "s")}, {Fmt(s.SlotAreaM2 * 1e12)} µm² of copper in all: the mesher " +
+                             "cannot fit elements into them, and each joins copper of one conductor." : "");
 
         private static Em3dExtrudedPolygon Extrude(PlanarPolygon p, double z0, double z1)
             => new(Ring(p.Outer), [.. p.HoleRings.Select(Ring)], z0, z1);

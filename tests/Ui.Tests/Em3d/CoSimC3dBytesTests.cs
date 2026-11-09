@@ -50,6 +50,24 @@ public sealed class CoSimC3dBytesTests : IDisposable
         Assert.Equal("Wrote board Driven_cosim.cnl: the board's S6P with 3 part port(s) closed by their models, ready to simulate.", r.Sentence);
     }
 
+    /// <summary>A re-run with a port added rewrites the netlist the earlier run wrote: the port count is not part of what makes it
+    /// this setup's own. A hand-written file of the same name is still left alone.</summary>
+    [Fact]
+    public void ARerunWithMorePorts_ReplacesItsOwnNetlist_ButNotAHandWrittenOne()
+    {
+        var setup = new EmSetup { Name = "board", Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz") };
+        EmCoSimPort[] Ports(int n) => [.. Enumerable.Range(1, n).Select(i => new EmCoSimPort(i, "P" + i, "50", null))];
+        var first = EmCoSimNetlist.Write(_root, setup, Path.Combine(_root, "results", "board.s2p"), null, Ports(2));
+        Assert.Equal(EmSnpSchematicOutcome.Created, first.Outcome);
+        var second = EmCoSimNetlist.Write(_root, setup, Path.Combine(_root, "results", "board.s3p"), null, Ports(3));
+        Assert.Equal(EmSnpSchematicOutcome.Created, second.Outcome);
+        Assert.Contains("File=\"results/board.s3p\"", File.ReadAllText(second.Path!));
+
+        File.WriteAllText(second.Path!, "; mine\n");
+        var third = EmCoSimNetlist.Write(_root, setup, Path.Combine(_root, "results", "board.s3p"), null, Ports(3));
+        Assert.Equal(EmSnpSchematicOutcome.LeftAlone, third.Outcome);
+    }
+
     /// <summary>The netlist's comments land on the cell's schematic as ONE text, a line per comment, not a text per line.</summary>
     [Fact]
     public void TheCellsNotes_AreOneMultiLineText()

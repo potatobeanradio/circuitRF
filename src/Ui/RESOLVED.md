@@ -42099,3 +42099,9 @@ hides the S/Z/Y toggle; a commit that makes a trace such an expression clears th
 they were (`ViSymmetricCardTests.SpecEdit_Invalid_BestEffort` holds that). Picking an item still re-aims the trace at it.
 Gate: `ExpressionTracePickerTests`; seen with UiSnapshot on the circles chart's inspector.
 
+
+## A `.cem`'s Mesh opened nothing to look at (designer feedback, 2026-11-09)
+
+A 3D `.cem` setup's Mesh button made the mesh, but showed it only in a 3D view that was already open; with none open it waited
+for Show 3D, and nothing said so. A `.c3d` has its view on screen all the time, which is why the same mesh "plots" there.
+`WorkspaceViewModel.ShowCemMesh` now opens the setup's 3D view (or brings an open one forward) with the mesh turned on.

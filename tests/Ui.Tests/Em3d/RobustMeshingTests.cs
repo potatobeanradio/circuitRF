@@ -69,6 +69,72 @@ public sealed class RobustMeshingTests
         Assert.Equal(0, none.Spikes);
     }
 
+    /// <summary>Designer round 39, in its shape: a 1 oz pour holding a block across a 2.54 µm slot, bridged in the middle — a
+    /// slot hole and a slot running in from the edge. Both close, no copper is lost, and a 50 µm hole of the same pour stays.</summary>
+    [Fact]
+    public void ASlotAFewMicrometresWide_IsClosed_AndAWiderHoleStays()
+    {
+        const double t = 35.56 * Um, gap = 2.54 * Um;
+        double half = Em3dOutlineCleanup.SlotHalfWidth(t);
+        Assert.True(2 * half > gap && 2 * half < 10 * Um);
+        // Pour 0..3000 × 0..1000 µm; a slot along y = 600 µm from x = 0 to 400 µm entering from the left edge, and a slot hole
+        // from x = 600 to 1200 µm on the same line; a 50 µm square hole elsewhere.
+        (double X, double Y)[] outer =
+        [
+            (0, 0), (3000 * Um, 0), (3000 * Um, 1000 * Um), (0, 1000 * Um),
+            (0, 600 * Um + gap), (400 * Um, 600 * Um + gap), (400 * Um, 600 * Um), (0, 600 * Um),
+        ];
+        (double X, double Y)[] slot = [(600 * Um, 600 * Um), (1200 * Um, 600 * Um), (1200 * Um, 600 * Um + gap), (600 * Um, 600 * Um + gap)];
+        (double X, double Y)[] hole = [(2000 * Um, 200 * Um), (2050 * Um, 200 * Um), (2050 * Um, 250 * Um), (2000 * Um, 250 * Um)];
+        // A via pad's hole the slot hole runs 3 µm into, as the imported pour's did: the overlap stays hole, not an island.
+        (double X, double Y)[] pad = [(1197 * Um, 400 * Um), (1500 * Um, 400 * Um), (1500 * Um, 800 * Um), (1197 * Um, 800 * Um)];
+        var stats = new Em3dOutlineCleanup.Stats();
+        var closed = Em3dOutlineCleanup.CloseSlots([outer, slot, hole, pad], half, stats);
+        Assert.NotNull(closed);
+        Assert.Equal(3, closed!.Count);                                              // the outline, the pad's hole, the 50 µm hole
+        // The inlet is gone: a plain rectangle once Clean, which Robust meshing runs next, takes the grid's picometre steps.
+        Assert.Equal(4, Em3dOutlineCleanup.Clean(closed[0], q => q, 0.5 * Um, new Em3dOutlineCleanup.Stats()).Count);
+        double Area(IReadOnlyList<(double X, double Y)> r)
+            => new CircuitRF.Engine.Mom.PlanarPolygon([.. r.Select(q => new CircuitRF.Engine.Mom.EmPoint(q.X, q.Y))]).Area();
+        Assert.Equal([2500e-12, 303 * 400e-12], closed.Skip(1).Select(Area).Order(), new ToleranceComparer(1e-15));
+        Assert.Equal(997 * Um * gap, stats.SlotAreaM2, 1e-14);                      // 400 µm inlet + 597 µm of hole
+        Assert.Contains("filled the slots and holes narrower than", Em3dLayoutSolids.Builder.RobustNote(stats), StringComparison.Ordinal);
+
+        // Nothing that narrow: left as drawn.
+        Assert.Null(Em3dOutlineCleanup.CloseSlots([outer[..4], hole], half, new Em3dOutlineCleanup.Stats()));
+    }
+
+    /// <summary>MMIC scale: the slot width scales with the metal, so a gap any foundry's rules allow stays. A 3 µm gold meander
+    /// whose own turns are 1 µm apart, and a 0.25 µm first metal with a 0.5 µm slot, come back untouched; only a 0.1 µm crack in
+    /// the gold (a merge artefact, far under any spacing rule) is filled.</summary>
+    [Fact]
+    public void AtMmicScale_OnlyACrackFarUnderTheSpacingRuleIsFilled()
+    {
+        Assert.Equal(0.3 * Um, Em3dOutlineCleanup.SlotHalfWidth(3 * Um), 1e-15);
+        Assert.Equal(0.025 * Um, Em3dOutlineCleanup.SlotHalfWidth(0.25 * Um), 1e-15);
+
+        // A U-shaped meander, 10 µm wide arms, its inside gap 1 µm (one conductor).
+        static (double X, double Y)[] U(double gap) =>
+        [
+            (0, 0), (20 * Um + gap, 0), (20 * Um + gap, 200 * Um), (10 * Um + gap, 200 * Um),
+            (10 * Um + gap, 10 * Um), (10 * Um, 10 * Um), (10 * Um, 200 * Um), (0, 200 * Um),
+        ];
+        Assert.Null(Em3dOutlineCleanup.CloseSlots([U(1 * Um)], Em3dOutlineCleanup.SlotHalfWidth(3 * Um), new Em3dOutlineCleanup.Stats()));
+        (double X, double Y)[] metal1 = [(0, 0), (50 * Um, 0), (50 * Um, 20 * Um), (0, 20 * Um)];
+        (double X, double Y)[] slot = [(10 * Um, 9.75 * Um), (40 * Um, 9.75 * Um), (40 * Um, 10.25 * Um), (10 * Um, 10.25 * Um)];
+        Assert.Null(Em3dOutlineCleanup.CloseSlots([metal1, slot], Em3dOutlineCleanup.SlotHalfWidth(0.25 * Um), new Em3dOutlineCleanup.Stats()));
+
+        var stats = new Em3dOutlineCleanup.Stats();
+        Assert.NotNull(Em3dOutlineCleanup.CloseSlots([U(0.1 * Um)], Em3dOutlineCleanup.SlotHalfWidth(3 * Um), stats));
+        Assert.Equal(190 * Um * 0.1 * Um, stats.SlotAreaM2, 1e-16);
+    }
+
+    private sealed class ToleranceComparer(double tolerance) : IEqualityComparer<double>
+    {
+        public bool Equals(double a, double b) => Math.Abs(a - b) <= tolerance;
+        public int GetHashCode(double v) => 0;
+    }
+
     /// <summary>The TP149 trace's corner, in its shape: a quarter arc of 6.89 µm segments ending in a 1.44 µm stub, a 0.1 µm
     /// edge, a straight run of collinear points, and four real corners. The stub, the 0.1 µm edge, the collinear points
     /// and some of the arc go; every original point stays within the tolerance of the result; the corners stay.</summary>

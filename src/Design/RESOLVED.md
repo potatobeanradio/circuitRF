@@ -29286,3 +29286,40 @@ in place of `_sim`/`_cosim`; the panel's **Create now** (`EmSchematicNow`) makes
 
 Tests: `tests/Ui.Tests/Em/EmSchematicWithPartsTests.cs` (9, no solve; F1/F2 from the schematic-driven layout set and the shipped
 PCB Component Ports board).
+
+## A pour with 2.5 µm slots sat in Gmsh's 2D meshing for 15+ minutes (designer feedback, 2026-11-09)
+
+An imported top pour held a connector's ground block across a 2.54 µm gap, bridged by via pads. On the pour that left ten slot
+holes and two inlets 2.54 µm wide and up to 715 µm long, and each slot hole ran about 3 µm into a via pad's hole. Gmsh's 1D
+mesh of that face at a 357 µm size crossed itself along the slots ("There are 50 intersections in the 1D mesh"). It split edges
+and retried up to level 10, re-meshing the whole board-sized face each time, so the run had not left 2D meshing after 15 min.
+OpenCASCADE's "triangulation of surface N failed" lines named exactly the pour's faces: the overlapping holes made inner wires
+that cross.
+
+- **`Em3dOutlineCleanup.CloseSlots`, under Robust meshing**: within ONE conductor, every hole and inlet narrower than twice
+  `SlotHalfWidth` (a tenth of the metal thickness, at most 5 µm: 1 oz copper closes slots under 7.1 µm) is filled. The copper
+  on both sides is one conductor already, so nothing joins that was apart. A piece whose filled outline reaches another piece of
+  its band is left as drawn (`Em3dLayoutSolids.CloseSlots`), and so are films.
+- **Only what the grow-and-shrink ADDS is taken**, unioned onto the copper as drawn. The offsets alone shaved 19 µm² off the
+  pour's stepped arc corner (a Clipper miter offset is not exactly a morphological closing on a staircase), so copper is never
+  removed. The union leaves picometre steps where a fill meets a drawn edge; `Clean`, which runs right after, removes them.
+- **The rings are read as outline MINUS the union of its holes, not even-odd**: two overlapping holes read even-odd make their
+  overlap an island of copper inside the hole, which is also the shape the crossing inner wires gave OpenCASCADE.
+- The Robust meshing note reports it ("filled the slots and holes narrower than … µm inside N conductors, … µm² of copper").
+- **MMIC is untouched by construction and by measurement.** The width scales with the metal: 3 µm gold closes under 0.6 µm,
+  0.25 µm metal under 0.05 µm, a 0.05 µm film under 0.01 µm — all far under any spacing rule. A conductor with nothing to fill
+  is returned as the same object, so its problem is byte-identical. Measured: a dry run of all 95 3D setups in `examples/` and
+  `testdata/` (the GaAs package, HEMT finger thermal models, the TFR zigzags) filled nothing, and `Em3dGeneratorDumpTests`
+  (every `.cem`, planar ones built in 3D) stays byte-identical.
+
+Tests: `tests/Ui.Tests/Em3d/RobustMeshingTests.cs` `ASlotAFewMicrometresWide_IsClosed_AndAWiderHoleStays`,
+`AtMmicScale_OnlyACrackFarUnderTheSpacingRuleIsFilled`.
+
+## A re-run with a different port count left the old `_cosim.cnl` in place (designer feedback, 2026-11-09)
+
+`EmCoSimNetlist.Write` replaces an existing netlist only when it is one of this setup's own. It decided that by the whole first
+line, and that line carries the port count ("the board's 10-port …"). A 12-port re-run (ports added at the IC) therefore read
+the 10-port file as someone else's, "left it alone", and the workspace kept a netlist naming an `.s10p` the new run superseded.
+Ownership is now the header up to the count (`OwnerPrefix`); a hand-written file of that name is still left alone.
+
+Test: `tests/Ui.Tests/Em3d/CoSimC3dBytesTests.cs` `ARerunWithMorePorts_ReplacesItsOwnNetlist_ButNotAHandWrittenOne`.

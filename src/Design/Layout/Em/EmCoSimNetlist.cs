@@ -220,7 +220,7 @@ public static class EmCoSimNetlist
         comments.Insert(0, $"{BoardInstance}'s ports: {string.Join(", ", ports.Select(p => $"{Node(p.Number)} is {p.Name}"))}.");
 
         var sb = new StringBuilder();
-        sb.AppendLine($"; Co-simulation of '{setup.Name}': the board's {n}-port with each part across its own component port (written by");
+        sb.AppendLine($"{OwnerPrefix(setup)}{n}-port with each part across its own component port (written by");
         sb.AppendLine("; circuitRF from the run). A gap port measures the board with the part's pads open, so each part stands from its");
         sb.AppendLine("; port's node to ground, never between two port nodes.");
         foreach (string c in comments) sb.AppendLine("; " + c);
@@ -426,6 +426,9 @@ public static class EmCoSimNetlist
         }
     }
 
+    /// <summary>The start of the first line every netlist this setup's runs write: what <see cref="Write"/> recognises as its own.</summary>
+    private static string OwnerPrefix(EmSetup setup) => $"; Co-simulation of '{setup.Name}': the board's ";
+
     /// <summary>
     /// Writes <see cref="FileNameFor"/> in <paramref name="workspaceDir"/> for the run's Touchstone at <paramref name="snpPath"/>.
     /// An existing file is replaced only when it is one this writer made for the same Touchstone (its first line); any other is
@@ -447,7 +450,9 @@ public static class EmCoSimNetlist
                 string old = File.ReadAllText(path);
                 if (old == text)
                     return new(EmSnpSchematicOutcome.Current, path, $"{Path.GetFileName(path)} is already this run's co-simulation netlist.", text);
-                if (!old.StartsWith(text[..text.IndexOf('\n')], StringComparison.Ordinal))
+                // Ownership is the header up to the port count: a re-run with ports added or removed rewrites its own netlist
+                // (designer round 39 — a 12-port run left the 10-port netlist naming a Touchstone that run superseded).
+                if (!old.StartsWith(OwnerPrefix(setup), StringComparison.Ordinal))
                     return new(EmSnpSchematicOutcome.LeftAlone, path,
                         $"{Path.GetFileName(path)} exists and was not written by this setup's runs, so it was left alone.", text);
             }

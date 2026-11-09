@@ -124,7 +124,9 @@ public partial class WorkspaceViewModel
     /// <summary>brief-dfr36-1 R-dfr36-1-4 — the .cem files whose panel made a mesh with no view open to show it: Show 3D turns it on.</summary>
     private readonly HashSet<string> _meshToShow = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>A .cem's mesh-only pass finished: an open view turns the mesh on now, and a view opened later does when it opens.</summary>
+    /// <summary>A .cem's mesh-only pass finished: an open view turns the mesh on now, and with none open the 3D view opens on it —
+    /// the mesh was asked for to be looked at, and a .cem has no view on screen the way a .c3d does (designer round 39: a mesh
+    /// made from the panel could not be found to plot).</summary>
     private void ShowCemMesh(string cemPath)
     {
         string full = Path.GetFullPath(cemPath);
@@ -132,8 +134,13 @@ public partial class WorkspaceViewModel
         {
             v.ViewModel.ShowMeshWhenAvailable = true;
             v.ViewModel.RefreshSolverOverlays();
+            ActivateIfOpen(Viewer3DDocument.KeyFor(full));
         }
-        else _meshToShow.Add(full);
+        else
+        {
+            _meshToShow.Add(full);
+            OpenOrActivate3DView(full);
+        }
     }
 
     private void Refresh3DViewOverlays(string cemPath)
