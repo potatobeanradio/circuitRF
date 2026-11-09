@@ -105,6 +105,12 @@ public sealed class CschAnalysis
     public string?   SsUnit            { get; set; }
     public string?   SsLogExpr         { get; set; }
     public string?   SsMaxHarmExpr     { get; set; }
+    // Brief NZ-5 — HB noise keys; null is the default, so a document without them reads back unchanged.
+    public string?   HbNoiseExpr         { get; set; }
+    public string?   HbNoiseInExpr       { get; set; }
+    public string?   HbNoiseOutExpr      { get; set; }
+    public string?   HbNoiseSidebandExpr { get; set; }
+    public string?   HbNoiseContribExpr  { get; set; }
     // brief-sar-9 — a fields analysis ("fields"): the EM block, the frequency, the drive port, the normalisation, averaging.
     public string?   FieldsBlock       { get; set; }
     public string?   FieldsFreqExpr    { get; set; }
@@ -406,6 +412,11 @@ public static class AnalysisSerialization
             SsUnit            = hb.SsUnit != "Hz" ? hb.SsUnit : null,
             SsLogExpr         = NullIfBlank(hb.SsLogExpr),
             SsMaxHarmExpr     = NullIfBlank(hb.SsMaxHarmExpr),
+            HbNoiseExpr         = hb.NoiseExpr != Analysis.NoiseDefault ? hb.NoiseExpr : null,
+            HbNoiseInExpr       = hb.NoiseInExpr != HarmonicBalanceAnalysis.NoiseInDefault ? hb.NoiseInExpr : null,
+            HbNoiseOutExpr      = hb.NoiseOutExpr != HarmonicBalanceAnalysis.NoiseOutDefault ? hb.NoiseOutExpr : null,
+            HbNoiseSidebandExpr = hb.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault ? hb.NoiseSidebandExpr : null,
+            HbNoiseContribExpr  = hb.NoiseContribExpr != Analysis.NoiseContribDefault ? hb.NoiseContribExpr : null,
 #pragma warning disable CS0618
             SweepVarName      = hb.SweepVarName,
             SweepStartExpr    = hb.SweepStartExpr,
@@ -590,6 +601,11 @@ public static class AnalysisSerialization
             SsUnit            = dto.SsUnit            ?? "Hz",
             SsLogExpr         = dto.SsLogExpr         ?? "",
             SsMaxHarmExpr     = dto.SsMaxHarmExpr     ?? "",
+            NoiseExpr         = dto.HbNoiseExpr         ?? Analysis.NoiseDefault,
+            NoiseInExpr       = dto.HbNoiseInExpr       ?? HarmonicBalanceAnalysis.NoiseInDefault,
+            NoiseOutExpr      = dto.HbNoiseOutExpr      ?? HarmonicBalanceAnalysis.NoiseOutDefault,
+            NoiseSidebandExpr = dto.HbNoiseSidebandExpr ?? HarmonicBalanceAnalysis.NoiseSidebandDefault,
+            NoiseContribExpr  = dto.HbNoiseContribExpr  ?? Analysis.NoiseContribDefault,
 #pragma warning disable CS0618
             SweepVarName      = dto.SweepVarName,
             SweepStartExpr    = dto.SweepStartExpr,

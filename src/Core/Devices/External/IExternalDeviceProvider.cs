@@ -102,6 +102,27 @@ public interface IExternalDeviceInstance : IDisposable
     /// worker does.
     /// </summary>
     double[,]? EvaluateNoise(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz) => null;
+
+    /// <summary>
+    /// <see cref="EvaluateNoise"/> at every one of <paramref name="nodeVoltages"/>' states: <c>[t, k, s]</c>. Harmonic-balance
+    /// noise asks this once per instance per operating point with every time sample of the waveform (brief NZ-5); a provider
+    /// that pays a round trip per call must answer it in one. The default loops <see cref="EvaluateNoise"/>, which costs
+    /// an in-process provider nothing. Null when the provider offers no noise.
+    /// </summary>
+    double[,,]? EvaluateNoiseBatch(IReadOnlyList<IReadOnlyList<double>> nodeVoltages, IReadOnlyList<double> frequenciesHz)
+    {
+        double[,,]? all = null;
+        for (int t = 0; t < nodeVoltages.Count; t++)
+        {
+            var one = EvaluateNoise(nodeVoltages[t], frequenciesHz);
+            if (one is null) return null;
+            all ??= new double[nodeVoltages.Count, one.GetLength(0), one.GetLength(1)];
+            for (int k = 0; k < one.GetLength(0); k++)
+                for (int s = 0; s < one.GetLength(1); s++)
+                    all[t, k, s] = one[k, s];
+        }
+        return all;
+    }
 }
 
 /// <summary>

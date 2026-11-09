@@ -160,7 +160,21 @@ reply     {"sourceCount":S,"freqCount":F}
   `n + F` doubles, an unknown handle, and a bias the model refuses (`EVAL_RET_FLAG_FATAL`) are each an
   `{"error": …}` reply.
 
-`verify.py` checks it against `crf_noise` in the test model: a conductance `g` with thermal `4kTg`,
+`noise_batch` is `noise` at every state of a waveform, in one round trip. Harmonic-balance noise reads
+a device's noise at every time sample of its large-signal waveform and asks once per instance per
+operating point:
+
+```
+request   {"cmd":"noise_batch","handle":h,"count":T,"freqCount":F}
+          payload: T blocks of n node voltages, then F frequencies in Hz
+reply     {"sourceCount":S,"count":T,"freqCount":F}
+          payload: T*F*S doubles — density of source s at frequency k, state t, is [(t*F + k)*S + s]
+```
+
+Each state is evaluated as `noise` evaluates its one, and the instance is left at the last. A payload
+that is not exactly `T*n + F` doubles is an `{"error": …}` reply.
+
+`verify.py` checks `noise` against `crf_noise` in the test model: a conductance `g` with thermal `4kTg`,
 shot `2q|g·v|` and flicker `kf·|g·v|/f`, at two biases and two temperatures, to 1e-12.
 
 ## `tools/fake-osdi-model`

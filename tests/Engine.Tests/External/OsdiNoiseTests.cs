@@ -121,6 +121,31 @@ public sealed class OsdiNoiseTests : IDisposable
         Assert.True(worstCs <= csTol, $"Cs {worstCs:E2}");
     }
 
+    /// <summary>
+    /// Brief NZ-5: <c>noise_batch</c> answers every state of a waveform in one request with exactly what <c>noise</c> answers
+    /// for each state alone — the worker's batch is the per-bias command in a loop, not a second evaluation.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void NoiseBatch_EqualsNoise_StateByState()
+    {
+        var (_, nl) = Run(26.85, 0.5, "Type=crf_noise g=4e-3 kf=1e-9");
+        using (nl)
+        {
+            var ec = nl.Components.Single(c => c.InstancePath == "X1");
+            var ed = (ExternalDeviceModel)ec.Model;
+            double[][] states = [[0.5, 0], [-0.3, 0], [1.2, 0.1]];
+            double[] hz = [1e6, 1e9, 3e9];
+            var batch = ed.NoiseDensitiesOver(ec, [.. states.Select(v => new CircuitRF.Core.PortVoltages(v))], 300, hz)!;
+            for (int t = 0; t < states.Length; t++)
+            {
+                var one = ed.ReadNoiseAt(states[t], hz)!;
+                for (int k = 0; k < hz.Length; k++)
+                    for (int s = 0; s < one.GetLength(1); s++)
+                        Assert.Equal(one[k, s], batch[t, k, s]);
+            }
+        }
+    }
+
     /// <summary>With kf above 0 the flicker source is there, and it falls as 1/f.</summary>
     [FixtureFact(WorkerRel, HowTo)]
     public void Flicker_IsOneOverF()

@@ -421,6 +421,50 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public bool HasSsSweep
         => SsStartExpr.Trim().Length > 0 && SsStopExpr.Trim().Length > 0;
 
+    // ── Noise on the conversion matrix (brief NZ-5) ───────────────────────────
+    //
+    // Every key defaults to the spelling that leaves an HB run exactly as it was (overview D3): a run with Noise absent
+    // writes nothing new. Noise=yes needs the small-signal sweep keys, whose frequencies are the OUTPUT frequencies.
+
+    /// <summary>The default <c>NoiseIn=</c>: port 1.</summary>
+    public const string NoiseInDefault = "1";
+    /// <summary>The default <c>NoiseOut=</c>: port 2.</summary>
+    public const string NoiseOutDefault = "2";
+    /// <summary>The default <c>NoiseSideband=</c>: 0, the same frequency in and out (an amplifier).</summary>
+    public const string NoiseSidebandDefault = "0";
+
+    /// <summary><c>Noise=</c>, verbatim — <c>yes</c> adds the noise cubes over <c>ssfreq</c>. Read through <see cref="Noise"/>.</summary>
+    public string NoiseExpr         { get; init; } = Analysis.NoiseDefault;
+    /// <summary><c>NoiseIn=</c>: the port whose termination the noise figure is referred to.</summary>
+    public string NoiseInExpr       { get; init; } = NoiseInDefault;
+    /// <summary><c>NoiseOut=</c>: the port the output noise is read at.</summary>
+    public string NoiseOutExpr      { get; init; } = NoiseOutDefault;
+    /// <summary><c>NoiseSideband=</c>: the input sideband carrying the signal, <c>k</c> (one tone) or <c>k1,k2,…</c> (a lattice);
+    /// the input frequency is <c>f_out + k·f0</c>.</summary>
+    public string NoiseSidebandExpr { get; init; } = NoiseSidebandDefault;
+    /// <summary><c>NoiseContrib=</c>: <c>yes</c> adds <c>NFc</c>/<c>NFpct</c> [ssfreq, part].</summary>
+    public string NoiseContribExpr  { get; init; } = Analysis.NoiseContribDefault;
+
+    /// <summary>Whether <see cref="NoiseExpr"/> turns HB noise on.</summary>
+    public bool Noise        => ParseNdf(NoiseExpr);
+    /// <summary>Whether <see cref="NoiseContribExpr"/> asks for each part's share.</summary>
+    public bool NoiseContrib => ParseNdf(NoiseContribExpr);
+
+    /// <summary>
+    /// <see cref="NoiseSidebandExpr"/> as integers: one per tone, comma-separated (<c>-1</c>, <c>1,-1</c>), surrounding
+    /// parentheses allowed. Null when it is not a list of integers.
+    /// </summary>
+    public static int[]? ParseSideband(string? expr)
+    {
+        string t = (expr ?? "").Trim().Trim('(', ')', '"').Trim();
+        if (t.Length == 0) return [0];
+        var parts = t.Split(',', StringSplitOptions.TrimEntries);
+        var k = new int[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+            if (!int.TryParse(parts[i], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out k[i])) return null;
+        return k;
+    }
+
     /// <summary>
     /// The small-signal sweep as the ordinary <see cref="FrequencySpec"/> every other frequency
     /// sweep in circuitRF is — so <c>SSUnit</c> resolves through <see cref="FreqUnit.ResolveHz"/>

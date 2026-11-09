@@ -92,13 +92,17 @@ public static class SParameterNoise
     /// sources, a system block's NF) is one more entry here. Every entry is evaluated BEFORE the frequency's assembly: a
     /// recorded stamp writes the model's branch index, and the assembly then writes the real one back.
     /// </summary>
-    internal static List<NoiseSource> Sources(ElaboratedNetlist nl, double[] freqsHz, double[]? dcNodeVoltages)
+    /// <param name="claim">A row the caller models itself (harmonic-balance noise claims every device with its own sources,
+    /// to evaluate them over the large-signal waveform, and a Mixer with an NF): neither added here nor warned about.</param>
+    internal static List<NoiseSource> Sources(ElaboratedNetlist nl, double[] freqsHz, double[]? dcNodeVoltages,
+                                              Func<NoiseModelRow, List<ElaboratedComponent>, bool>? claim = null)
     {
         var entries = Classify(nl, freqsHz);
         var sources = new List<NoiseSource>();
         var silent  = new List<string>();
         foreach (var (row, parts) in entries)
         {
+            if (claim?.Invoke(row, parts) == true) continue;
             switch (row.Kind)
             {
                 case NoiseModelKind.FileData:

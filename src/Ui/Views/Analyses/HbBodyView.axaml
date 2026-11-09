@@ -169,10 +169,11 @@
             <!-- ── Separator before Small-signal ──────────────────────────── -->
             <Separator Opacity="0.3"/>
 
-            <!-- ── Small-signal (WSProbe probe-tickle sweep, brief-wsprobe-5 R-wsp5-1) ──
+            <!-- ── Small-signal (the WSProbe tickle sweep, brief-wsprobe-5 R-wsp5-1, and the frequencies HB noise is
+                 read at, brief NZ-5 — so the group is named for neither) ──
                  Empty start/stop = no small-signal solve at all, which is why nothing here is
                  pre-filled; the live point count says which of the two states the analysis is in. -->
-            <Expander Header="Small-signal (WSProbe)"
+            <Expander Header="Small-signal"
                       IsExpanded="{Binding SmallSignalExpanded, Mode=TwoWay}"
                       FontSize="11">
 
@@ -181,7 +182,7 @@
                     <!-- Row 1: Start + Stop + unit -->
                     <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="10">
                         <StackPanel Spacing="2">
-                            <TextBlock Text="Probe freq. start"
+                            <TextBlock Text="Freq. start"
                                        FontSize="10" Opacity="0.6"/>
                             <TextBox Text="{Binding SsStartExpr, Mode=TwoWay}"
                                      FontSize="11"/>
@@ -232,12 +233,39 @@
                                      FontSize="11"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="Margin threshold, dB (or none)"
+                            <TextBlock Text="WSProbe margin threshold, dB (or none)"
                                        FontSize="10" Opacity="0.6"/>
                             <TextBox Text="{Binding MarginThresholdExpr, Mode=TwoWay}"
                                      FontSize="11"/>
                         </StackPanel>
                     </Grid>
+
+                    <!-- Noise on the same conversion matrix (brief NZ-5): read at these frequencies, which are the
+                         OUTPUT frequencies. Always laid out, enabled by the box, so nothing shifts when it is ticked. -->
+                    <CheckBox IsChecked="{Binding Noise, Mode=TwoWay}"
+                              Content="Noise (NF, Gc, Te, Nout at these frequencies, the output ones)" FontSize="11"/>
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10" IsEnabled="{Binding Noise}">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Input port" FontSize="10" Opacity="0.6"/>
+                            <ComboBox ItemsSource="{Binding PortChoices}"
+                                      SelectedItem="{Binding NoiseInExpr, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Output port" FontSize="10" Opacity="0.6"/>
+                            <ComboBox ItemsSource="{Binding PortChoices}"
+                                      SelectedItem="{Binding NoiseOutExpr, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="2">
+                            <TextBlock Text="Signal sideband k" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding NoiseSidebandExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding NoiseSidebandPreview}" IsEnabled="{Binding Noise}"
+                               FontSize="10" Opacity="0.55" TextWrapping="Wrap"/>
+                    <CheckBox IsChecked="{Binding NoiseContrib, Mode=TwoWay}" IsEnabled="{Binding Noise}"
+                              Content="Each part's share (NFc, NFpct)" FontSize="11"/>
 
                 </StackPanel>
             </Expander>

@@ -184,6 +184,53 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
         return psd;
     }
 
+    /// <summary>
+    /// The noise sources' densities at EVERY state of <paramref name="nodeVoltages"/> and every frequency, in one round trip
+    /// (<c>noise_batch</c>, the worker README's Noise section): <c>[t, k, s]</c>, unscaled. Harmonic-balance noise asks this
+    /// once per instance per operating point with the whole waveform (brief NZ-5) — one request per time sample would make
+    /// the transport the simulator, which is the rule <c>eval</c>'s batching already states.
+    /// </summary>
+    public double[,,]? EvaluateNoiseBatch(IReadOnlyList<IReadOnlyList<double>> nodeVoltages, IReadOnlyList<double> frequenciesHz)
+    {
+        ArgumentNullException.ThrowIfNull(nodeVoltages);
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int sources = Descriptor.NoiseSources.Count, count = nodeVoltages.Count, freqs = frequenciesHz.Count, n = _nodeCount;
+        if (sources == 0) return null;
+        if (count == 0 || freqs == 0) return new double[count, freqs, sources];
+
+        var states = BuildRequest(nodeVoltages, count, n);
+        var request = new double[states.Length + freqs];
+        states.CopyTo(request, 0);
+        for (int k = 0; k < freqs; k++) request[states.Length + k] = frequenciesHz[k];
+
+        using var reply = _channel.Send(w =>
+        {
+            w.WriteString("cmd", "noise_batch");
+            w.WriteNumber("handle", _handle);
+            w.WriteNumber("count", count);
+            w.WriteNumber("freqCount", freqs);
+        }, request);
+        NoiseBatchRequests++;
+
+        var data = reply.Payload.Span;
+        int said = reply.Root.TryGetProperty("sourceCount", out var sc) && sc.ValueKind == JsonValueKind.Number
+                   && sc.TryGetInt32(out int v) ? v : -1;
+        if (said != sources || data.Length != (long)count * freqs * sources)
+            throw new ExternalDeviceException(NoiseReplyMismatch(Descriptor.TypeId, sources, count * freqs, said, data.Length).Render());
+
+        var psd = new double[count, freqs, sources];
+        for (int t = 0; t < count; t++)
+            for (int k = 0; k < freqs; k++)
+                for (int s = 0; s < sources; s++)
+                    psd[t, k, s] = data[(t * freqs + k) * sources + s];
+        return psd;
+    }
+
+    /// <summary>How many <c>noise_batch</c> requests this instance has sent: what brief NZ-5's batching gate counts.</summary>
+    public int NoiseBatchRequests { get; private set; }
+
     /// <summary>A <c>noise</c> reply that does not match what was declared and asked: a protocol desync, never a result.</summary>
     private static Diagnostic NoiseReplyMismatch(string type, int sources, int freqs, int said, int values) => Diagnostic.Create(
         "external.noise.reply-mismatch", DiagnosticSeverity.Error,

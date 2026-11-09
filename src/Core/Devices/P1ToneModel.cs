@@ -196,6 +196,10 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
         return GetDeclaredZ(n);
     }
 
+    /// <summary>The impedance the source presents at <paramref name="omega"/> (rad/s, either sign): the band-mapped Z in a
+    /// harmonic-balance run, Z[1] in an S-parameter one — what a noise analysis terminates its port in.</summary>
+    public Complex ImpedanceAt(double omega) => GetZ(omega);
+
     /// <summary>Returns the declared Z for harmonic band n; falls back to Zdefault.</summary>
     public Complex GetDeclaredZ(int n)
         => _harmonicZ.TryGetValue(n, out var z) ? z : _zDefault;

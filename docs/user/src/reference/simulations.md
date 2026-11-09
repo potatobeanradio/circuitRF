@@ -278,9 +278,68 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
       <tr><td>SSStart / SSStop / SSNpts / SSStep / SSUnit / SSLog</td><td>The small-signal "tickle" sweep a <a href="components.html#wsprobe">WSProbe</a> is driven over, around the converged large-signal operating point. Absent, there is no small-signal solve and the run is unchanged. See <a href="wsprobe.html#hb">The WSProbe under harmonic balance</a>.</td><td>0.1-10 GHz</td></tr>
       <tr><td>SSMaxHarm</td><td>Sidebands retained in the conversion matrix for that solve.</td><td>= MaxHarm</td></tr>
       <tr><td>MarginThreshold</td><td>As for S-parameters, applied at each operating point.</td><td>-15 dB</td></tr>
+      <tr><td>Noise</td><td><code>yes</code> adds noise over the small-signal frequencies. See <a href="#hb-noise">Noise in harmonic balance</a>.</td><td>no</td></tr>
+      <tr><td>NoiseIn / NoiseOut</td><td>The port the noise figure is referred to, and the port the output noise is read at.</td><td>1 / 2</td></tr>
+      <tr><td>NoiseSideband</td><td>The input sideband that carries the signal: the input frequency is f_out + k·f0.</td><td>0</td></tr>
+      <tr><td>NoiseContrib</td><td><code>yes</code> adds each part's share of the noise.</td><td>no</td></tr>
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
+
+### Noise in harmonic balance {#hb-noise}
+
+**Computes:** the noise figure of a circuit with a large signal in it — a mixer's SSB and DSB noise figure, an LNA's noise
+figure while a blocker drives it, or a receiver chain's with its LO running. The S-parameter
+[noise analysis](#sp-noise) cannot answer these: it linearises at the DC operating point, so it has no LO, no blocker and
+no frequency conversion.
+
+```
+analysis HB1 type=hb Tone=LOfreq MaxHarm=7 SSStart=10 SSStop=200 SSNpts=20 SSUnit=MHz Noise=yes NoiseIn=1 NoiseOut=2 NoiseSideband=1
+```
+
+The small-signal frequencies are the **output** frequencies — for a mixer, the IF. `NoiseSideband` says where the signal
+comes in: the input frequency is `f_out + k·f0`.
+
+| Case | NoiseSideband |
+|---|---|
+| An amplifier, or an LNA with a blocker as the tone | `0` (same frequency in and out) |
+| A down-converter with f_IF = f_RF − f_LO | `1` |
+| A down-converter with f_IF = f_LO − f_RF | `-1` |
+| Two tones (a blocker and an LO) | one integer per tone, `1,0` |
+
+The image is the opposite sideband (`-k`). `circuitrf explain <file> --analysis` prints the signal and image input
+frequencies at the first and last output point, so a wrong sign shows before a run.
+
+**Results**, over `ssfreq`:
+
+| Cube | Meaning |
+|---|---|
+| `NF`, `Fn` | The SSB noise figure, dB and linear: only the signal sideband counts as signal. |
+| `NFdsb`, `Fndsb` | The DSB noise figure: the signal sideband and its image both count as signal. Written only when the input and output frequencies differ. |
+| `Te` | The SSB equivalent input noise temperature, K. |
+| `Nout` | The noise at the output port, W/Hz, with the input port's termination at T0 = 290 K. |
+| `Gc` | The conversion (or small-signal) gain from the input sideband to the output, dB. `Fn = Nout / (k·T0·Gc)`. |
+| `NFsb` [ssfreq, sideband] | The share of the output noise that arrives through each input sideband, %: noise folding made visible. |
+| `NFc`, `NFpct` [ssfreq, part] | With `NoiseContrib=yes`: each part's share of F − 1, and the same as a percentage. The input termination's other sidebands are one entry. |
+
+**What is noisy.**
+
+- Passive parts are thermal at their own temperature, at every sideband frequency.
+- A nonlinear device's noise sources are read at every time sample of its large-signal waveform, so its noise is correlated
+  between sidebands: a diode switched by the LO is noisy only while it conducts. A flicker term is taken at the geometric
+  mean of the two sidebands' frequencies.
+- A [Mixer](system-components.html#mixer)'s `NF` is an equivalent noise source at its RF port.
+- The input port's termination is at T0 at every sideband; the other ports are noiseless, as in the S-parameter noise
+  analysis.
+
+A device's noise is correlated between sidebands, so it cannot be split by sideband. `NFsb` shows the noise from the
+terminations and passive parts, and it adds up to 100 % less the devices' share. Each device's share is in `NFc`.
+
+A compiled (Verilog-A) device reports its noise for the whole waveform in one request per operating point.
+
+Inside a [parametric sweep](#parametric-sweep), LO power or blocker power is an ordinary sweep axis, so "NF against LO
+drive" and "NF against blocker level" need nothing more. With the drive turned down to nothing, `NF` equals the
+S-parameter noise analysis's.
 
 ## Circuit Envelope (modulated signals) {#envelope}
 

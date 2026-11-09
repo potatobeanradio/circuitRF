@@ -268,7 +268,10 @@ isolations and per-port impedances.
 `NF` states the mixer's noise figure and `NFType` whether it is a single-sideband (`ssb`, the
 default) or double-sideband (`dsb`) figure. An S-parameter run has no LO, so it has no conversion
 path: the mixer stays out of its noise exactly as it stays out of its S, and `explain` says so.
-The figure is carried for the analyses that do convert.
+[Harmonic-balance noise](simulations.html#hb-noise) uses it: the mixer is a noiseless multiplier with an equivalent noise
+source at its RF port, sized so its own DSB noise figure is `NF` (an SSB figure is taken as 3 dB above the DSB one, since
+the multiplier converts both sidebands equally). An SSB figure below 3 dB is below what a noiseless mixer reaches; the run
+says so and adds no noise.
 
 They are documented in full, with the conversion-gain arithmetic and the non-ideality table, under
 {{anchor: components#mixer|Components › Ideal Mixer}} and

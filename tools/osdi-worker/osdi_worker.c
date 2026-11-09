@@ -1304,6 +1304,71 @@ static int cmd_noise(const char *js, const char *js_end, const double *in, size_
     return 0;
 }
 
+/* ── noise_batch ──────────────────────────────────────────────────────────── */
+
+/* `noise` at every state of a waveform, in one round trip: what harmonic-balance noise needs, which
+ * reads a device's noise at every time sample of its large-signal waveform. One request per sample
+ * would make the transport the simulator, the reason `eval` takes a whole grid.
+ *
+ *   in:   {"cmd":"noise_batch","handle":h,"count":T,"freqCount":F}
+ *         payload = T blocks of n node voltages (eval's layout), then F frequencies in Hz
+ *   out:  {"sourceCount":S,"count":T,"freqCount":F}
+ *         payload = out[(t*F + k)*S + s] = source s at frequency k, at state t
+ *
+ * Each state is evaluated exactly as `noise` evaluates its one, and the instance is left at the
+ * LAST state. */
+static int cmd_noise_batch(const char *js, const char *js_end, const double *in, size_t in_count) {
+    double hv = -1, tv = 0, fv = 0;
+    json_num(json_member(js, js_end, "handle"),    js_end, &hv);
+    json_num(json_member(js, js_end, "count"),     js_end, &tv);
+    json_num(json_member(js, js_end, "freqCount"), js_end, &fv);
+    int    h = (int)hv;
+    size_t T = tv > 0 ? (size_t)tv : 0;
+    size_t F = fv > 0 ? (size_t)fv : 0;
+
+    if (h < 0 || h >= MAX_INSTANCES || !g_inst[h].live) { report_error("noise_batch: no such instance"); return 0; }
+    Instance *ins = &g_inst[h];
+    const OsdiDescriptor *d = ins->d;
+    uint32_t n = ins->n;
+
+    if (in_count != T * n + F) {
+        report_error("noise_batch: payload is not count blocks of node voltages followed by freqCount frequencies");
+        return 0;
+    }
+
+    size_t S = d->num_noise_src;
+    if (S && !d->load_noise) { report_error("noise_batch: the model declares noise sources but no load_noise"); return 0; }
+
+    size_t total = T * F * S;
+    double *out = (double *)calloc(total ? total : 1, sizeof(double));
+    if (!out) { report_error("noise_batch: out of memory"); return 0; }
+
+    const double *freqs = in + T * n;
+    for (size_t t = 0; S && t < T; t++) {
+        OsdiSimInfo info;
+        memset(&info, 0, sizeof info);
+        info.paras      = sim_paras();
+        info.prev_solve = (double *)(in + t * n);
+        info.prev_state = ins->state_prev;
+        info.next_state = ins->state_next;
+        info.flags = CALC_RESIST_RESIDUAL | CALC_OP | CALC_NOISE | ANALYSIS_NOISE;
+
+        if (d->eval(NULL, ins->inst, ins->model, &info) & EVAL_RET_FLAG_FATAL) {
+            free(out); report_error("noise_batch: the model refused a state of the batch"); return 0;
+        }
+        for (size_t k = 0; k < F; k++) d->load_noise(ins->inst, ins->model, freqs[k], out + (t * F + k) * S);
+    }
+
+    Sb s = {0};
+    sb_puts(&s, "{\"sourceCount\":"); sb_int(&s, (long)S);
+    sb_puts(&s, ",\"count\":");       sb_int(&s, (long)T);
+    sb_puts(&s, ",\"freqCount\":");   sb_int(&s, (long)F);
+    sb_puts(&s, "}");
+    write_frame(s.buf, out, total);
+    free(s.buf); free(out);
+    return 0;
+}
+
 /* ── command loop ─────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
@@ -1358,6 +1423,8 @@ int main(int argc, char **argv) {
             cmd_opvars(js, js_end);
         } else if (strcmp(cmd, "noise") == 0) {
             cmd_noise(js, js_end, payload, payload_count);
+        } else if (strcmp(cmd, "noise_batch") == 0) {
+            cmd_noise_batch(js, js_end, payload, payload_count);
         } else if (strcmp(cmd, "destroy") == 0) {
             double hv = -1; json_num(json_member(js, js_end, "handle"), js_end, &hv);
             int h = (int)hv;

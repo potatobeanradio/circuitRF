@@ -103,7 +103,7 @@ public class HbSmallSignalDialogTests(ITestOutputHelper output)
         Assert.Contains("logarithmic", vm.SmallSignalPreview);
 
         vm.SsNptsExpr = "1";
-        Assert.Contains("1 probe frequency", vm.SmallSignalPreview);
+        Assert.Contains("1 frequency:", vm.SmallSignalPreview);
 
         // Clearing either end returns the group to "no sweep" — the state a run is byte-identical in.
         vm.SsStopExpr = "";
@@ -130,5 +130,31 @@ public class HbSmallSignalDialogTests(ITestOutputHelper output)
         var rebuilt = vm.BuildAnalysis("HB1", enabled: true);
         Assert.False(rebuilt.HasSsSweep);
         Assert.Equal(Analysis.MarginThresholdDefault, rebuilt.MarginThresholdExpr);
+    }
+
+    /// <summary>
+    /// Brief NZ-5: the noise keys survive the dialog — a port the analysis names is in the picker before it is selected, a
+    /// loaded spelling is kept while its box is untouched, and an analysis without noise gains no key.
+    /// </summary>
+    [Fact]
+    public void TheNoiseKeysRoundTrip_AndAnAnalysisWithoutThemGainsNone()
+    {
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "1", ToneUnit = "GHz", SsStartExpr = "0.1", SsStopExpr = "0.3", SsNptsExpr = "3", SsUnit = "GHz",
+            NoiseExpr = "true", NoiseInExpr = "3", NoiseOutExpr = "4", NoiseSidebandExpr = "-1", NoiseContribExpr = "yes",
+        };
+        var vm = HbBodyViewModel.FromAnalysis(hb, Model());
+        Assert.Contains("3", vm.PortChoices);
+        Assert.Contains("4", vm.PortChoices);
+        Assert.Contains("image at f_out + f0", vm.NoiseSidebandPreview);
+        var back = vm.BuildAnalysis("HB1", true);
+        Assert.Equal(("true", "3", "4", "-1", "yes"),
+                     (back.NoiseExpr, back.NoiseInExpr, back.NoiseOutExpr, back.NoiseSidebandExpr, back.NoiseContribExpr));
+
+        var plain = HbBodyViewModel.FromAnalysis(new HarmonicBalanceAnalysis("HB2") { ToneExpr = "1", ToneUnit = "GHz" }, Model())
+                                   .BuildAnalysis("HB2", true);
+        Assert.Equal(Analysis.NoiseDefault, plain.NoiseExpr);
+        Assert.DoesNotContain("Noise", CircuitRF.Core.Netlist.CnlWriter.Write(new TestBench("tb") { Analyses = { plain } }));
     }
 }

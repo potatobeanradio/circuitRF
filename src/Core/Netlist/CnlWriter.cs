@@ -421,6 +421,15 @@ public static class CnlWriter
             if (hb.SsMaxHarmExpr.Trim().Length > 0) sb.Append($" SSMaxHarm={hb.SsMaxHarmExpr}");
         }
 
+        // Noise on the conversion matrix (brief NZ-5): each key only when it differs from its default, so a line
+        // without them round-trips to the bytes it always did.
+        if (hb.NoiseExpr != Analysis.NoiseDefault) sb.Append($" Noise={hb.NoiseExpr}");
+        if (hb.NoiseInExpr != HarmonicBalanceAnalysis.NoiseInDefault) sb.Append($" NoiseIn={hb.NoiseInExpr}");
+        if (hb.NoiseOutExpr != HarmonicBalanceAnalysis.NoiseOutDefault) sb.Append($" NoiseOut={hb.NoiseOutExpr}");
+        if (hb.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault)
+            sb.Append($" NoiseSideband=\"{hb.NoiseSidebandExpr}\"");
+        if (hb.NoiseContribExpr != Analysis.NoiseContribDefault) sb.Append($" NoiseContrib={hb.NoiseContribExpr}");
+
 #pragma warning disable CS0618
         if (hb.SweepVarName is not null)
             sb.Append($" Sweep=\"{hb.SweepVarName}: {hb.SweepStartExpr} .. {hb.SweepStopExpr} step {hb.SweepStepExpr}\"");

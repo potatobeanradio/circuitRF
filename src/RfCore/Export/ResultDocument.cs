@@ -2422,13 +2422,28 @@ namespace RfCore.Export
         /// run refuses it with. Null for any other analysis.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainFieldsSweepJson? FieldsSweep = null,
-        /// <summary>Whether an S-parameter analysis runs its small-signal noise (<c>Noise=</c>). Null for any other kind.</summary>
+        /// <summary>Whether an S-parameter or HB analysis runs its noise (<c>Noise=</c>). Null for any other kind.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         bool? Noise = null,
         /// <summary>The noise model of every part, when the analysis has <c>Noise=yes</c> and the design elaborates. Null
         /// otherwise.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainNoiseJson? NoiseModel = null);
+        ExplainNoiseJson? NoiseModel = null,
+        /// <summary>Brief NZ-5 — an HB analysis with <c>Noise=yes</c>: its ports and sideband, and the input frequency at the
+        /// first and last output point, so a wrong sideband sign is seen before a run. Null otherwise.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainHbNoiseJson? HbNoise = null);
+
+    /// <summary>
+    /// <c>explain --analysis</c>'s line for an HB analysis with <c>Noise=yes</c> (brief NZ-5): the input and output ports, the
+    /// signal sideband k, and at the first and last output frequency the signal's input frequency <c>|f_out + Σ kᵢ·fᵢ|</c>
+    /// and the image's <c>|f_out − Σ kᵢ·fᵢ|</c> (Hz) — or the sentence the run refuses with.
+    /// </summary>
+    public sealed record ExplainHbNoiseJson(
+        int InPort, int OutPort, string Sideband, bool NoiseContrib,
+        double[] OutputHz, double[] InputHz, double[] ImageHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s noise table for an S-parameter analysis with <c>Noise=yes</c>: every part once, with

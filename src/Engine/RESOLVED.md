@@ -4118,3 +4118,25 @@ the Friis cascade; the π pad's closed-form split at 290 K and 400 K; Noise=no o
 T(L − 1) of a passive .s2p at 20 K and 400 K through its Temp=; a resistive Z_Port equal to the resistor; the table),
 `OsdiNoiseTests.Table_NamesTheDeviceSources_AndNoiseNoQuietsTheDevice`, `tests/Ui.Tests/Cli/NoiseExplainCliTests.cs`
 (the explain rows and the check INFO, as a process) and `tests/Ui.Tests/PartNoiseSwitchTests.cs` (the editor's box).
+
+## Harmonic-balance noise: the adjoint on the conversion matrix, and two things it showed (2026-11-09)
+
+Brief NZ-5; design note `docs/design/hb-noise.md`. Noise runs on `HbSmallSignal.BuildJss` with one transposed sparse solve
+at the output, one transposed dense solve of `J_ss`, and one transposed sparse solve per sideband (`HbNoise.Add`).
+
+- **An S-parameter NF is only as converged as its DC pre-pass.** `NonlinearDcEngine` declares convergence at
+  ‖F‖ < 1e-6 A (`NonlinearAbsTol`). On a BJT biased through 150 kΩ that leaves the base ~2.5e-7 V short of the converged
+  point, which is 1e-5 of gm and 9e-6 dB of NF — ten times the HB-vs-S-parameter gate's 1e-6 dB. Nothing is wrong in either
+  noise path: with the reference's DC pre-pass at 1e-14 A the two agree to 4e-10 dB. A comparison of an S-parameter
+  result against anything at that precision has to tighten the reference's DC tolerance; the default was not changed,
+  since that would move every nonlinear S-parameter result.
+- **A cyclostationary source cannot be attributed to a sideband.** The share of output noise per input sideband splits a
+  stationary source exactly (its sidebands are uncorrelated), but a device switched by its own waveform has large
+  cross-sideband terms that cancel: a diode pumped on and off by the LO showed ±20 % of the output noise per sideband and
+  2 % net. `NFsb` therefore carries the stationary sources only and sums to 100 % less the devices' share, which `NFc`
+  carries.
+- **A one-tone small-signal limit floors above Tol = 1e-12.** The LNA bench reaches ‖F‖ ≈ 1.5e-10 and stops at MaxIter;
+  1e-9 converges and is already below what the gate resolves.
+
+Gates: `tests/Engine.Tests/HarmonicBalance/HbNoiseTests.cs`, `HbNoiseExternalTests.cs`,
+`OsdiNoiseTests.NoiseBatch_EqualsNoise_StateByState`; the dialog, `tests/Ui.Tests/HbSmallSignalDialogTests.cs`.

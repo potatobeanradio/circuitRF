@@ -445,6 +445,10 @@ public sealed class HbLinearExtractor
 
         /// <summary>One back-substitution. <paramref name="x"/> is filled with the solution.</summary>
         public void Solve(Complex[] b, Complex[] x) => _lu.Solve(b, x);
+
+        /// <summary><c>Aᴴ·x = b</c> on the same factorisation — CSparse's transposed solve is Hermitian
+        /// (src/Engine/RESOLVED.md). HB noise's adjoint rows (brief NZ-5).</summary>
+        public void SolveHermitian(Complex[] b, Complex[] x) => _lu.SolveTranspose(b, x);
     }
 
     /// <summary>

@@ -85,6 +85,15 @@ public static class HbSmallSignal
         /// whole stimulus when the two families are disjoint; see <see cref="DegeneracyNote"/>.
         /// </summary>
         bool IsDegenerate(double omegaSs);
+
+        /// <summary>
+        /// Where the difference of sidebands <paramref name="s"/> and <paramref name="t"/> sits in a one-sided spectrum of
+        /// the kind <see cref="G"/> reads — the harmonic <c>|s − t|</c> on one tone, the difference lattice's index on several
+        /// — and whether it was reached through a negation, so the stored phasor is conjugated. <c>-1</c> when it is outside
+        /// the retained spectrum. What brief NZ-5's cyclostationary noise reads its sideband correlations through, so the
+        /// bookkeeping is the conversion matrix's own.
+        /// </summary>
+        (int Index, bool Conj) DifferenceIndex(int s, int t);
     }
 
     /// <summary>The relative tolerance on the commensurability test of
@@ -154,6 +163,8 @@ public static class HbSmallSignal
             double r = 2.0 * omegaSs / _omega0;
             return Math.Abs(r - Math.Round(r)) <= CommensurateTol * Math.Max(1.0, Math.Abs(r));
         }
+
+        public (int Index, bool Conj) DifferenceIndex(int s, int t) => (Math.Abs(s - t), s - t < 0);
 
         /// <summary>R-wsp5-2 on a scalar harmonic index: <c>G⁽²⁾[d]</c> from the one-sided
         /// full-amplitude <c>G[|d|]</c>, conjugated for <c>d &lt; 0</c> and halved for
@@ -245,6 +256,8 @@ public static class HbSmallSignal
             }
             return false;
         }
+
+        public (int Index, bool Conj) DifferenceIndex(int s, int t) => Difference(s, t);
 
         private Complex TwoSided(Complex[,,] a, int n, int m, int s, int t)
         {

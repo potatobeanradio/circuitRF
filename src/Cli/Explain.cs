@@ -1494,6 +1494,20 @@ internal static class Explain
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
 
+        // Brief NZ-5: an HB noise run's sideband, as the input frequency it means, at the first and last output point — the
+        // directive resolved exactly as the run resolves it, so a refusal here is the run's.
+        var hbNoise = new Dictionary<string, ExplainHbNoiseJson>(StringComparer.Ordinal);
+        if (tb.Analyses.OfType<HarmonicBalanceAnalysis>().Any(h => h.Noise))
+        {
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                foreach (var hba in tb.Analyses.OfType<HarmonicBalanceAnalysis>().Where(h => h.Noise))
+                    hbNoise[hba.Name] = HbNoiseOf(hba, nl);
+            }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+        }
+
         // Brief ENV-MEAS-3: an envelope run records every labeled net's voltage and every IProbe's power, so explain says
         // which, from the same rule the engine applies. Elaborated once, only when an envelope analysis is declared.
         var envRecords = new Dictionary<string, ExplainEnvelopeRecordsJson>(StringComparer.Ordinal);
@@ -1612,8 +1626,9 @@ internal static class Explain
                 Records: envRecords.GetValueOrDefault(a.Name),
                 Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
                 FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name),
-                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : null,
-                NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name)));
+                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : a is HarmonicBalanceAnalysis hbN ? hbN.Noise : null,
+                NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name),
+                HbNoise: hbNoise.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1731,6 +1746,26 @@ internal static class Explain
     }
 
     /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
+    /// <summary>Brief NZ-5: an HB noise directive resolved by the engine's own <c>HbEngine.Resolve</c>, then the signal and
+    /// image input frequencies at the first and last output point. A refusal comes back as its sentence.</summary>
+    private static ExplainHbNoiseJson HbNoiseOf(HarmonicBalanceAnalysis hba, ElaboratedNetlist nl)
+    {
+        try
+        {
+            var p = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+            var req = p.Noise!;
+            double shift = 0;
+            for (int i = 0; i < req.Sideband.Length && i < p.ToneFreqsHz.Length; i++) shift += req.Sideband[i] * p.ToneFreqsHz[i];
+            double[] outHz = p.SsGrid.Length > 1 ? [p.SsGrid[0], p.SsGrid[^1]] : [.. p.SsGrid];
+            return new ExplainHbNoiseJson(req.InPort, req.OutPort, req.SidebandText, req.Contrib, outHz,
+                [.. outHz.Select(f => Math.Abs(f + shift))], [.. outHz.Select(f => Math.Abs(f - shift))]);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new ExplainHbNoiseJson(0, 0, hba.NoiseSidebandExpr, hba.NoiseContrib, [], [], [], ex.Message);
+        }
+    }
+
     private static string NoiseModelWord(NoiseModelKind k) => k switch
     {
         NoiseModelKind.Thermal       => "thermal",
@@ -2294,6 +2329,24 @@ internal static class Explain
                     if (ndf.Refusal is { } why)
                         foreach (var line in why.Split('\n'))
                             Console.WriteLine($"      {line.TrimEnd()}");
+                }
+
+                // NZ-5: an HB noise run's sideband as input frequencies, so a wrong sign is visible before a run.
+                if (a.HbNoise is { } hn)
+                {
+                    if (hn.Refusal is { } why)
+                        Console.WriteLine($"      Noise: WOULD BE REFUSED — {why}");
+                    else
+                    {
+                        static string Ghz(double hz) => (hz / 1e9).ToString("G6", System.Globalization.CultureInfo.InvariantCulture) + " GHz";
+                        Console.WriteLine(
+                            $"      Noise: NF referred to port {hn.InPort}, read at port {hn.OutPort}; signal sideband k={hn.Sideband}; " +
+                            (hn.NoiseContrib ? "NFc/NFpct written (NoiseContrib=yes)" : "NFc/NFpct not written (NoiseContrib=no)"));
+                        for (int i = 0; i < hn.OutputHz.Length; i++)
+                            Console.WriteLine(
+                                $"      noise at output {Ghz(hn.OutputHz[i])}: signal in at {Ghz(hn.InputHz[i])}" +
+                                (hn.InputHz[i] == hn.OutputHz[i] && hn.ImageHz[i] == hn.OutputHz[i] ? "" : $", image at {Ghz(hn.ImageHz[i])}"));
+                    }
                 }
 
                 // NZ-1: the noise model of every part, which is what an NF is made of — read before trusting one.

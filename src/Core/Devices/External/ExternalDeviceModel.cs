@@ -259,6 +259,20 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
     public double[,]? ReadNoiseAt(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz)
         => Descriptor.NoiseSources.Count == 0 ? null : Guarded(() => _instance.EvaluateNoise(nodeVoltages, frequenciesHz));
 
+    /// <summary>A worker round trip per call: harmonic-balance noise asks for the whole waveform at once (brief NZ-5).</summary>
+    public override bool PrefersBatchNoise => true;
+
+    /// <summary>Every sample of the waveform in ONE request (<see cref="IExternalDeviceInstance.EvaluateNoiseBatch"/>); the
+    /// temperature is the worker's own, as for <see cref="NoiseDensitiesAt"/>.</summary>
+    public override double[,,]? NoiseDensitiesOver(
+        ElaboratedComponent c, IReadOnlyList<PortVoltages> samples, double kelvin, IReadOnlyList<double> frequenciesHz)
+    {
+        if (Descriptor.NoiseSources.Count == 0) return null;
+        var states = new IReadOnlyList<double>[samples.Count];
+        for (int t = 0; t < samples.Count; t++) states[t] = samples[t].Voltages;
+        return Guarded(() => _instance.EvaluateNoiseBatch(states, frequenciesHz));
+    }
+
     /// <summary>
     /// Runs one provider call, attaching this instance's label to whatever comes back.
     ///

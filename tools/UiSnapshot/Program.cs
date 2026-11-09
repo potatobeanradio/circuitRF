@@ -217,6 +217,7 @@ var signal = new List<string>();
 string? snp = null;
 int plotIndex = 1, previewTab = 0;
 bool sizeGiven = false;
+bool scrollEnd = false;
 double width = 1000, height = 700;
 var steps = new List<(string Kind, string Arg)>();
 for (int i = 0; i < args.Length; i++)
@@ -353,6 +354,7 @@ for (int i = 0; i < args.Length; i++)
         case "--kit" when i + 1 < args.Length: gdsfactoryKit = Path.GetFullPath(args[++i]); break;
         case "--cell" when i + 1 < args.Length: gdsfactoryCell = args[++i]; break;
         case "--workspace" when i + 1 < args.Length: gdsfactoryWorkspace = Path.GetFullPath(args[++i]); break;
+        case "--scroll-end": scrollEnd = true; break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
@@ -457,7 +459,7 @@ if ((analysisDialog ?? emSolvesDialog) is { } sdl6Csch && output is not null)
 {
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
-    return analysisDialog is not null ? ShowAnalysisDialog(sdl6Csch, select, output) : ShowEmSolvesDialog(sdl6Csch, output);
+    return analysisDialog is not null ? ShowAnalysisDialog(sdl6Csch, select, output, sizeGiven ? height : null, scrollEnd) : ShowEmSolvesDialog(sdl6Csch, output);
 }
 // --settings-solvers: the real Solvers tab, on whatever CRF_STATE_DIR holds (so a scratch install shows its own row).
 if (settingsSolvers && output is not null)
@@ -2514,7 +2516,7 @@ static int ShowPlanarMemoryDialog(string path)
 
 // --analysis-dialog <csch> [--select <analysis>]: brief-sdl-6 — the Edit Analysis dialog on one of the schematic's
 // analyses, as the Analyses panel opens it, with its Simulate by and EM setup row.
-static int ShowAnalysisDialog(string csch, string? name, string path)
+static int ShowAnalysisDialog(string csch, string? name, string path, double? height = null, bool scrollEnd = false)
 {
     var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
     model.SchematicDirectory = Path.GetDirectoryName(csch);
@@ -2522,8 +2524,19 @@ static int ShowAnalysisDialog(string csch, string? name, string path)
                                 : model.Analyses.First(a => a.Name == name);
     var vm = new AnalysisEditorViewModel(model, existing);
     var dialog = new CircuitRF.Ui.Views.Dialogs.AnalysisEditorDialog(vm, isEdit: true);
+    // --size: the height, so a long analysis body is seen whole — the dialog sizes to its content up to a MaxHeight,
+    // which a snapshot lifts.
+    if (height is double h) { dialog.MaxHeight = h; dialog.Height = h; }
     dialog.Show();
-    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    // Enough frames for an open Expander's reveal to finish: at six, a long one is drawn part-way through it.
+    for (int k = 0; k < 40; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    if (scrollEnd)
+    {
+        // --scroll-end: every scroll region of the dialog at its end, for the rows an analysis body keeps below its fold.
+        foreach (var sv in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(dialog).OfType<Avalonia.Controls.ScrollViewer>())
+            sv.ScrollToEnd();
+        for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    }
     Console.WriteLine($"Simulate by: {vm.SimulateByOptions[vm.SimulateByIndex]}; EM setup: {vm.EmSetupOptions[vm.EmSetupIndex]} " +
                       $"(choosable: {vm.EmSetupChoosable})");
     if (vm.IsFields)

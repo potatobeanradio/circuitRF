@@ -52,7 +52,9 @@ public sealed record HbAnalysisParams(
     int?     SsMaxHarm = null,
     /// <summary>The WSProbe stability-margin report threshold in dB, or null for
     /// <c>MarginThreshold=none</c> (WSP-9 R-wsp9-3, applied per operating point).</summary>
-    double?  MarginThresholdDb = -15.0)
+    double?  MarginThresholdDb = -15.0,
+    /// <summary>Brief NZ-5: the noise request of <c>Noise=yes</c>, or null — and a null run is the one from before.</summary>
+    HbNoiseRequest? Noise = null)
 {
     /// <summary>Convenience: fundamental frequency for single-tone runs.</summary>
     public double ToneHz      => ToneFreqsHz[0];
@@ -409,7 +411,33 @@ public sealed class HbEngine
             sweepVar, sweepStart, sweepStop, sweepStep,
             MaxIter: maxIter, Lambda: lambda,
             SsFreqsHz: ssGrid, SsMaxHarm: ssMaxHarm,
-            MarginThresholdDb: Analysis.ParseMarginThresholdDb(hba.MarginThresholdExpr));
+            MarginThresholdDb: Analysis.ParseMarginThresholdDb(hba.MarginThresholdExpr),
+            Noise: NoiseRequest(hba, toneFreqsHz.Length, ssGrid is not null, Num));
+    }
+
+    /// <summary>
+    /// <c>Noise=</c> and its keys (brief NZ-5), or null when the directive does not ask for noise. Every malformed key is a
+    /// refusal naming it: a noise run that quietly fell back to a default port or sideband would look like a real answer.
+    /// </summary>
+    internal static HbNoiseRequest? NoiseRequest(HarmonicBalanceAnalysis hba, int tones, bool hasSsSweep,
+                                                 Func<string, double, double> num)
+    {
+        if (!hba.Noise) return null;
+        if (!hasSsSweep)
+            throw new InvalidOperationException(HbNoiseDiagnostics.NoSsSweep(hba.Name).Render());
+        int Port(string key, string expr)
+        {
+            double v = num(expr, double.NaN);
+            if (!double.IsFinite(v) || v < 1 || v != Math.Round(v))
+                throw new InvalidOperationException(HbNoiseDiagnostics.BadPort(hba.Name, key, expr).Render());
+            return (int)v;
+        }
+        int nIn = Port("NoiseIn", hba.NoiseInExpr), nOut = Port("NoiseOut", hba.NoiseOutExpr);
+        var k = HarmonicBalanceAnalysis.ParseSideband(hba.NoiseSidebandExpr);
+        if (k is null || (k.Length != tones && !(k.Length == 1 && k[0] == 0)))
+            throw new InvalidOperationException(HbNoiseDiagnostics.BadSideband(hba.Name, hba.NoiseSidebandExpr, tones).Render());
+        if (k.Length != tones) k = new int[tones];
+        return new HbNoiseRequest(nIn, nOut, k, hba.NoiseContrib);
     }
 
     internal static Scope BuildScope(IReadOnlyDictionary<string, Value> globals)
@@ -808,6 +836,23 @@ public sealed class HbEngine
             NoteNoSmallSignalSweep(wspProbes.Length);
         }
 
+        // ── Noise on the same conversion matrix (brief NZ-5) ─────────────────
+        if (p.Noise is { } noise && solveResult.G is not null && solveResult.C is not null)
+        {
+            var sidebands = new HbSmallSignal.ToneSidebands(
+                solveResult.G, solveResult.C, solveResult.Buckets, p.SsOrder, omega0);
+            int kss = p.SsOrder;
+            var dcX = backSolver.GetSolution(0, 0);
+            var dcNodes = new double[extractor.NonGroundCount];
+            for (int i = 0; i < dcNodes.Length && i < dcX.Length; i++) dcNodes[i] = dcX[i].Real;
+            HbNoise.Add(ds, _netlist, noise, p.SsGrid, extractor, sidebands, yNN[0],
+                HbNoise.ToneSamples(V, N, K, gridN, solveResult.G.GetLength(2) - 1),
+                [omega0],
+                [.. Enumerable.Range(-kss, 2 * kss + 1).Select(k => (double)k)],
+                [.. Enumerable.Range(-kss, 2 * kss + 1).Select(k => k.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+                dcNodes, commensurateWith: $"the fundamental {f0 / 1e9:G6} GHz");
+        }
+
         // V holds the converged interface spectrum [N, K+1]; expose it so a parametric sweep can
         // warm-start the next point (continuation — §11). Only propagate a converged seed.
         return new HbRunResult(ds, backSolver, solveResult.Converged, V, trace);
@@ -1148,6 +1193,8 @@ public sealed class HbEngine
         // default; this is the rectangular-FFT path AnalysisSettings.HbTwoToneOnLattice = false
         // selects, and its Jacobian keeps its own frozen goldens. Said rather than silently skipped:
         // a probed run that produced no wsp with SS* keys present would look like a bug.
+        if (p.Noise is not null)
+            throw new InvalidOperationException(HbNoiseDiagnostics.TwoToneGridPath().Render());
         var wspProbes2 = WspProbeSites();
         if (wspProbes2.Length > 0 && p.HasSsSweep)
             _netlist.AddWarningOnce("wsprobe.hb-ss-two-tone-grid-path",
@@ -1472,7 +1519,59 @@ public sealed class HbEngine
             NoteNoSmallSignalSweep(wspProbesNd.Length);
         }
 
+        // ── Noise over the mixing lattice (brief NZ-5) ───────────────────────
+        if (p.Noise is { } noiseNd)
+        {
+            if (T >= 3)
+                throw new InvalidOperationException(HbNoiseDiagnostics.TonesUnsupported(T).Render());
+            int ssOrder = Math.Clamp(p.SsMaxHarm ?? p.MaxMixOrder, 0, p.MaxMixOrder);
+            var (diffLattice, gSpec, cSpec) = HbSmallSignal.LatticeSpectra(
+                V, apft, _settings.HbApftOversample, N, _netlist, ifNodes);
+            var sidebandsNd = new HbSmallSignal.LatticeSidebands(lattice, diffLattice, gSpec, cSpec, omegas, ssOrder);
+            var sideValues = new double[sidebandsNd.Count];
+            var sideLabels = new string[sidebandsNd.Count];
+            for (int s = 0; s < sidebandsNd.Count; s++)
+            {
+                sideValues[s] = s;
+                sideLabels[s] = LatticeSidebandLabel(sidebandsNd.Offset(s), omegas, ssOrder);
+            }
+            var dc0 = xMix[0];
+            var dcNodes = new double[extractor.NonGroundCount];
+            for (int i = 0; i < dcNodes.Length && i < dc0.Length; i++) dcNodes[i] = dc0[i].Real;
+            HbNoise.Add(dsNd, _netlist, noiseNd, p.SsGrid, extractor, sidebandsNd, yNN[0],
+                HbNoise.LatticeSamples(V, apft, _settings.HbApftOversample, N),
+                omegas, sideValues, sideLabels, dcNodes,
+                commensurateWith: $"the tone lattice ({string.Join(", ", f.Select(x => $"{x / 1e9:G6} GHz"))})");
+        }
+
         return (dsNd, solveResult.Converged, V, trace);
+    }
+
+    /// <summary>
+    /// A lattice sideband's mixing vector, spelled <c>k1,k2</c> for the <c>sideband</c> axis of <c>NFsb</c> (brief NZ-5):
+    /// the vector of order at most <paramref name="order"/> whose frequency is <paramref name="offset"/>.
+    /// </summary>
+    private static string LatticeSidebandLabel(double offset, double[] omegas, int order)
+    {
+        int t = omegas.Length;
+        var k = new int[t];
+        string? found = null;
+        void Walk(int i, int left)
+        {
+            if (found is not null) return;
+            if (i == t)
+            {
+                double w = 0;
+                for (int j = 0; j < t; j++) w += k[j] * omegas[j];
+                if (Math.Abs(w - offset) <= 1e-9 * Math.Max(1.0, omegas.Max(Math.Abs)))
+                    found = string.Join(",", k);
+                return;
+            }
+            for (int v = -left; v <= left; v++) { k[i] = v; Walk(i + 1, left - Math.Abs(v)); }
+            k[i] = 0;
+        }
+        Walk(0, order);
+        return found ?? offset.ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>

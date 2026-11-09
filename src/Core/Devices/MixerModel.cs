@@ -125,6 +125,9 @@ public sealed class MixerModel : ComponentModel
     /// </summary>
     public double? NoiseFigureDb { get; init; }
 
+    /// <summary>The RF port's own conductance 1/Zrf, S: the matched termination a stated NF is referred to.</summary>
+    public double RfConductance => _grf;
+
     /// <summary>Whether <see cref="NoiseFigureDb"/> is a single- or a double-sideband figure (<c>NFType=</c>).</summary>
     public MixerNoiseFigureType NoiseFigureType { get; init; } = MixerNoiseFigureType.Ssb;
 

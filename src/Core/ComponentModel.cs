@@ -104,6 +104,38 @@ public abstract class ComponentModel
     }
 
     /// <summary>
+    /// Whether <see cref="NoiseDensitiesOver"/> is one round trip that a harmonic-balance noise analysis should take in
+    /// place of <see cref="EvaluateNoise"/> per sample (brief NZ-5) — true only where an evaluation costs transport, as
+    /// <see cref="PrefersBatchEvaluate"/> is. A built-in model leaves it false, and its noise is read per sample as a white
+    /// and a flicker part, each modulated by the waveform.
+    /// </summary>
+    public virtual bool PrefersBatchNoise => false;
+
+    /// <summary>
+    /// The densities of <see cref="NoiseSources"/> at every state in <paramref name="samples"/> and every frequency in
+    /// <paramref name="frequenciesHz"/>: <c>[t, k, s]</c>, single-sided A²/Hz, for one device. A harmonic-balance noise
+    /// analysis asks once per device per operating point, with every time sample of the large-signal waveform. The default
+    /// evaluates <see cref="EvaluateNoise"/> per sample and applies each density's law; a model whose densities come from
+    /// elsewhere answers here in one call. Null when the model declares no sources.
+    /// </summary>
+    public virtual double[,,]? NoiseDensitiesOver(
+        ElaboratedComponent c, IReadOnlyList<PortVoltages> samples, double kelvin, IReadOnlyList<double> frequenciesHz)
+    {
+        var decl = NoiseSources;
+        if (decl.Count == 0) return null;
+        var d = new NoiseDensity[decl.Count];
+        var psd = new double[samples.Count, frequenciesHz.Count, decl.Count];
+        for (int t = 0; t < samples.Count; t++)
+        {
+            EvaluateNoise(samples[t], kelvin, d);
+            for (int k = 0; k < frequenciesHz.Count; k++)
+                for (int s = 0; s < decl.Count; s++)
+                    psd[t, k, s] = d[s].At(frequenciesHz[k]);
+        }
+        return psd;
+    }
+
+    /// <summary>
     /// Nonlinear contribution with control currents. Engines call this form, passing
     /// ControlCurrents.Empty when they don't yet supply control currents.
     /// Base default: forward to the 1-arg form (ignores control currents — correct for every

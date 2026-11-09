@@ -405,8 +405,10 @@ dotnet run --project tools/UiSnapshot --no-build -- --dxf-mapping-dialog <file.d
 by row and EM setup picker; `--select` names the analysis (default: the first that is not a sweep):
 
 ```
-dotnet run --project tools/UiSnapshot --no-build -- --analysis-dialog <file.csch> [--select SP1] -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --analysis-dialog <file.csch> [--select SP1] [--size WxH] [--scroll-end] -o out.png
 ```
+`--size` sets the dialog's height (the width is the dialog's own), and `--scroll-end` scrolls every scroll region in it to its
+end, for the rows an analysis body keeps below its own fold.
 
 **The EM solves question** (brief SDL-6 D5) Simulate asks when a run needs more than one uncached EM solve, with the count
 `CircuitEvaluation.CountEmSolves` takes of the schematic:

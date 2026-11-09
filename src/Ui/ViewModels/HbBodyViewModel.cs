@@ -177,7 +177,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
         get
         {
             if (string.IsNullOrWhiteSpace(SsStartExpr) || string.IsNullOrWhiteSpace(SsStopExpr))
-                return "no small-signal sweep — the WSProbes carry no transfer functions";
+                return "no small-signal sweep — no WSProbe transfer functions and no noise";
             var spec = new HarmonicBalanceAnalysis("preview")
             {
                 SsStartExpr = SsStartExpr, SsStopExpr = SsStopExpr,
@@ -191,7 +191,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 // is an expression the dialog cannot evaluate falls through to the empty preview
                 // rather than to a wrong count.
                 int n = spec.Expand().Length;
-                return $"{n:N0} probe {(n == 1 ? "frequency" : "frequencies")}" +
+                return $"{n:N0} {(n == 1 ? "frequency" : "frequencies")}: the WSProbes' sweep, and the output frequencies for noise" +
                        (SsLog ? ", logarithmic" : "");
             }
             catch { return ""; }     // an expression the dialog cannot resolve yet
@@ -218,11 +218,67 @@ public sealed partial class HbBodyViewModel : ObservableObject
     [ObservableProperty] private string _maxIterExpr         = "100";
     [ObservableProperty] private string _maxIterPreview      = "";
 
+    // ── Noise on the small-signal sweep (brief NZ-5) ──────────────────────────
+    //
+    // Off by default, and every key keeps its loaded spelling while its control is unchanged, so opening and closing the
+    // dialog on an analysis without noise writes the line it always had.
+
+    private HarmonicBalanceAnalysis? _source;
+
+    /// <summary><c>Noise=yes</c>: NF, Gc, Te, Nout and NFsb over the small-signal frequencies, which are the output ones.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoiseSidebandPreview))]
+    private bool _noise;
+
+    /// <summary><c>NoiseIn=</c>, a port number from <see cref="PortChoices"/>.</summary>
+    [ObservableProperty] private string _noiseInExpr = HarmonicBalanceAnalysis.NoiseInDefault;
+
+    /// <summary><c>NoiseOut=</c>, a port number from <see cref="PortChoices"/>.</summary>
+    [ObservableProperty] private string _noiseOutExpr = HarmonicBalanceAnalysis.NoiseOutDefault;
+
+    /// <summary><c>NoiseSideband=</c>: k (one tone) or k1,k2 (two).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoiseSidebandPreview))]
+    private string _noiseSidebandExpr = HarmonicBalanceAnalysis.NoiseSidebandDefault;
+
+    /// <summary><c>NoiseContrib=yes</c>: each part's share of F − 1 as NFc / NFpct.</summary>
+    [ObservableProperty] private bool _noiseContrib;
+
+    /// <summary>The schematic's port numbers (Term, Port, P1Tone), plus whatever the analysis already names, so a picker
+    /// never silently drops a loaded value. A stable list: built once, extended only by <see cref="FromAnalysis"/>.</summary>
+    public List<string> PortChoices { get; } = [];
+
+    /// <summary>What the sideband means, in words: where the signal comes in, and the image.</summary>
+    public string NoiseSidebandPreview
+    {
+        get
+        {
+            var k = HarmonicBalanceAnalysis.ParseSideband(NoiseSidebandExpr);
+            if (k is null) return "not a sideband: one integer per tone, comma-separated";
+            if (k.All(x => x == 0)) return "signal in at the output frequency (an amplifier); one NF";
+            string Term(int[] v) => string.Join(" ", v.Select((x, i) =>
+                x == 0 ? "" : $"{(x > 0 ? "+" : "−")} {(Math.Abs(x) == 1 ? "" : Math.Abs(x) + "·")}f{(v.Length > 1 ? i + 1 : 0)}")
+                .Where(t => t.Length > 0));
+            return $"signal in at f_out {Term(k)}; image at f_out {Term([.. k.Select(x => -x)])}; NF (SSB) and NFdsb";
+        }
+    }
+
+    public string NoiseExpr => _source is { } s && s.Noise == Noise ? s.NoiseExpr : Noise ? "yes" : Analysis.NoiseDefault;
+    public string NoiseContribExpr => _source is { } s && s.NoiseContrib == NoiseContrib
+        ? s.NoiseContribExpr : NoiseContrib ? "yes" : Analysis.NoiseContribDefault;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public HbBodyViewModel(SchematicEditModel model)
     {
         _model = model;
+        PortChoices.AddRange(model.Components
+            .Where(c => ComponentTypeRegistry.OwnsUniquePortNum(c.Symbol))
+            .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num")?.Expression?.Trim())
+            .Where(n => int.TryParse(n, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            .Select(n => n!).Distinct().OrderBy(n => int.Parse(n, CultureInfo.InvariantCulture)));
+        foreach (var d in new[] { HarmonicBalanceAnalysis.NoiseInDefault, HarmonicBalanceAnalysis.NoiseOutDefault })
+            if (!PortChoices.Contains(d)) PortChoices.Add(d);
         Tones.CollectionChanged += OnTonesChanged;
         AddToneInternal(NewDefaultTone(model));
     }
@@ -456,6 +512,11 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 SsLogExpr         = SsLog ? "true" : "",
                 SsMaxHarmExpr     = SsMaxHarmExpr,
                 MarginThresholdExpr = MarginThresholdExpr,
+                NoiseExpr         = NoiseExpr,
+                NoiseInExpr       = NoiseInExpr,
+                NoiseOutExpr      = NoiseOutExpr,
+                NoiseSidebandExpr = NoiseSidebandExpr,
+                NoiseContribExpr  = NoiseContribExpr,
             }
             : new HarmonicBalanceAnalysis(name)
             {
@@ -476,6 +537,11 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 SsLogExpr         = SsLog ? "true" : "",
                 SsMaxHarmExpr     = SsMaxHarmExpr,
                 MarginThresholdExpr = MarginThresholdExpr,
+                NoiseExpr         = NoiseExpr,
+                NoiseInExpr       = NoiseInExpr,
+                NoiseOutExpr      = NoiseOutExpr,
+                NoiseSidebandExpr = NoiseSidebandExpr,
+                NoiseContribExpr  = NoiseContribExpr,
             };
 
         analysis.Enabled = enabled;
@@ -550,6 +616,16 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.SsMaxHarmExpr        = hb.SsMaxHarmExpr;
         vm.MarginThresholdExpr  = hb.MarginThresholdExpr;
         vm.SmallSignalExpanded  = hb.HasSsSweep;
+
+        // Noise (brief NZ-5): a port the analysis names joins the picker before it is selected.
+        vm._source = hb;
+        foreach (var port in new[] { hb.NoiseInExpr, hb.NoiseOutExpr })
+            if (!vm.PortChoices.Contains(port)) vm.PortChoices.Add(port);
+        vm.Noise             = hb.Noise;
+        vm.NoiseInExpr       = hb.NoiseInExpr;
+        vm.NoiseOutExpr      = hb.NoiseOutExpr;
+        vm.NoiseSidebandExpr = hb.NoiseSidebandExpr;
+        vm.NoiseContrib      = hb.NoiseContrib;
 
         return vm;
     }

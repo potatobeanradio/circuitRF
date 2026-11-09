@@ -1864,6 +1864,12 @@ public sealed class CnlReader
             SsUnit            = kv.GetValueOrDefault("SSUnit",          "Hz"),
             SsLogExpr         = kv.GetValueOrDefault("SSLog",           ""),
             SsMaxHarmExpr     = kv.GetValueOrDefault("SSMaxHarm",       ""),
+            // Noise on the conversion matrix (brief NZ-5): every default leaves the run as it was.
+            NoiseExpr         = kv.GetValueOrDefault("Noise",         CircuitRF.Core.Design.Analysis.NoiseDefault),
+            NoiseInExpr       = kv.GetValueOrDefault("NoiseIn",       CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseInDefault),
+            NoiseOutExpr      = kv.GetValueOrDefault("NoiseOut",      CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseOutDefault),
+            NoiseSidebandExpr = kv.GetValueOrDefault("NoiseSideband", CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseSidebandDefault),
+            NoiseContribExpr  = kv.GetValueOrDefault("NoiseContrib",  CircuitRF.Core.Design.Analysis.NoiseContribDefault),
             Enabled           = ParseEnabledToken(tokens),
 #pragma warning disable CS0618
             SweepVarName      = sweepVar,
