@@ -2436,7 +2436,11 @@ namespace RfCore.Export
         /// <summary>Brief NZ-6 — a loadpull or pursuit with <c>Noise=yes</c>: its noise ports and the frequency NF is read at.
         /// Null otherwise.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainLoadpullNoiseJson? LoadpullNoise = null);
+        ExplainLoadpullNoiseJson? LoadpullNoise = null,
+        /// <summary>Brief NZ-9 — an oscillator analysis's start-up search, run before any harmonic balance: the probe, the span,
+        /// and where the circuit starts, or the sentence the run refuses with. Null for any other kind.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainOscJson? Oscillator = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s line for a loadpull or pursuit with <c>Noise=yes</c> (brief NZ-6): the termination NF is
@@ -2444,6 +2448,20 @@ namespace RfCore.Export
     /// (0 when <c>NoiseFreq</c> is absent) and the one it is actually read at (Hz: 1 % above the tone by default, and moved
     /// off a half-multiple of the tone), and the signal's input frequency — or the sentence the run refuses with.
     /// </summary>
+    /// <summary>
+    /// <c>explain --analysis</c>'s line for an oscillator analysis (brief NZ-9): the OscProbe and its mode, the start-up search's
+    /// span (Hz), the frequency where the small-signal immittance at the probe has a negative real part at a zero of its
+    /// imaginary part and that real part (S in shunt, ohm in series) — or the sentence the run refuses with.
+    /// </summary>
+    public sealed record ExplainOscJson(
+        string Probe, string Mode, double FstartHz, double FstopHz, double FguessHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? StartupHz = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? StartupReal = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal = null);
+
     public sealed record ExplainLoadpullNoiseJson(
         string In, string Out, string Sideband, double RequestedHz, double ReadHz, double InputHz,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

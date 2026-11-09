@@ -139,6 +139,22 @@ public sealed class TrlAnalysisTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(inProcess, viaCli);
     }
 
+    // The verb prints and exports the bench's measure lines, as Simulate shows them: they are evaluated into the run's
+    // grouped results, beside the analysis's own group.
+    [Fact]
+    public void TheCliVerb_ReportsTheBenchsMeasurements()
+    {
+        MeasureStandards();
+        WriteBench("meas.cnl", Standards + Cal + "measure LineTwice = 2*CAL.LineDeg\n");
+        string npy = Path.Combine(_dir, "meas.npy");
+        var cli = RunCli("trl", Path.Combine(_dir, "meas.cnl"), "-o", npy);
+        output.WriteLine(cli.StdOut);
+        Assert.True(cli.ExitCode == 0, cli.StdErr);
+        Assert.Contains("measurements:", cli.StdOut);
+        Assert.Contains("LineTwice", cli.StdOut);
+        Assert.Contains("CAL:", cli.StdOut);
+    }
+
     [Fact]
     public void TheDirective_SurvivesTheNetlistAndTheSchematic()
     {

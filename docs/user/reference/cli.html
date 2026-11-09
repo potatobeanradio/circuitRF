@@ -825,9 +825,19 @@ decibels, one cut per bearing:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf trl &lt;bench.cnl|.csch&gt; [-a name]... [--set var=expr]... [--fixture-a path] [--fixture-b path] [-o out.{mat,npy,txt}]</code></pre>
 <p>Runs every enabled <code>type=trl</code> analysis, or the ones <code>-a</code> names (<a href="simulations.html#trl">TRL Calibration</a>), and writes each one's
 two fixture files where its directive says. <code>--fixture-a</code> and <code>--fixture-b</code> replace those paths for one analysis. <code>-o</code>
-exports the result (<code>SA</code>, <code>SB</code>, <code>LineDeg</code>, <code>LineLossDb</code>, <code>Gamma</code>, <code>Usable</code>); it does not move the fixtures. Under <code>--json</code>
+exports the result (<code>SA</code>, <code>SB</code>, <code>LineDeg</code>, <code>LineLossDb</code>, <code>Gamma</code>, <code>Usable</code>) and the bench's measurements; it does not move
+the fixtures. Under <code>--json</code>
 both fixture files are listed in <code>outputs</code>.</p>
 <p>Exit <strong>0</strong> when it ran, a usable-band warning included, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
+<h2 id="osc"><code>osc</code> — a free-running oscillator</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf osc &lt;design.cnl|.csch&gt; [-a name] [--set var=expr]... [--fguess f] [--maxharm k] [--tol t] [--aguess a] [--probe OP1] [-o out.{mat,npy,txt}]</code></pre>
+<p>Runs the design's <a href="simulations.html#oscillator">oscillator analysis</a>, or the one <code>-a</code> names: the start-up search, then
+harmonic balance with the frequency as an unknown. A parametric sweep wrapping it runs the whole sweep, so a tuning curve
+is one command. <code>--fguess</code> (in the directive's <code>Unit</code>), <code>--maxharm</code>, <code>--tol</code>, <code>--aguess</code> and <code>--probe</code> replace the
+directive's keys. The result is <code>Fosc</code>, <code>Aosc</code>, <code>Startup</code> and the harmonic-balance cubes at the oscillation, with the
+design's measurements beside them.</p>
+<p>Exit <strong>0</strong> when the oscillation was found, <strong>1</strong> refused (the circuit does not start, or has no OscProbe) or failed,
+<strong>130</strong> cancelled.</p>
 <h2 id="em"><code>em</code> — electromagnetic extraction</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
 <p><code>em</code> is the only verb that does not take a <code>.cnl</code>. It takes a <strong><code>.cem</code> EM setup</strong> — the document the

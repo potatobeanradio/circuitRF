@@ -279,6 +279,20 @@ public static partial class AnalysisDirectiveSchema
             new("fixtureA",    Summary: "Where fixture A is written (port 1 the instrument side, port 2 the part's), resolved as an SnP's File. Default <analysis name>_A.s2p."),
             new("fixtureB",    Summary: "Where fixture B is written (port 1 the part's side, port 2 the instrument's), resolved as an SnP's File. Default <analysis name>_B.s2p."),
         ]),
+
+        // brief NZ-9 — harmonic balance with the fundamental frequency as an unknown: a free-running oscillator
+        new("osc", ["oscillator"],
+        [
+            new("Probe",         Summary: "Instance name of the OscProbe the auxiliary generator is inserted at (X1, or CORE.X1 inside a cell). Blank when the circuit holds exactly one."),
+            new("Fguess",        Required: true, Summary: "Where the start-up search is centred, in Unit."),
+            new("Fstart",        Summary: "Low end of the start-up search, in Unit. Default half of Fguess."),
+            new("Fstop",         Summary: "High end of the start-up search, in Unit. Default 1.5 x Fguess."),
+            new("Unit",          Default: "GHz", Summary: "Unit for Fguess, Fstart and Fstop."),
+            new("MaxHarm",       Default: "7",   Summary: "Highest harmonic of the oscillation, as HB's."),
+            new("FFTOverSample", Default: "1",   Summary: "Oversampling factor for the time-domain transform, as HB's."),
+            new("Tol",           Default: "1e-6",Summary: "Newton convergence tolerance of every harmonic-balance solve, in amperes, as HB's. The search tightens it to a billionth of the probe generator's own current where that is smaller."),
+            new("Aguess",        Summary: "The probe generator's amplitude to start from: volts for a shunt OscProbe, amperes for a series one. Blank ramps it up from a small one until the circuit's negative resistance runs out."),
+        ]),
     ];
 
     /// <summary>Every directive spec, in the order the reference page should list them.</summary>

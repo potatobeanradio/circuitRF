@@ -291,6 +291,7 @@ public sealed partial class Evaluator
                         => EvalStatisticOver(cl, scope),
             "pctl_over" => EvalPercentileOver(cl, scope),
             "unwrap"    => EvalUnwrap(cl, scope),
+            "deriv"     => EvalDeriv(cl, scope),
             "cpk"       => EvalCpk(cl, scope),
             "sigma_to"  => EvalSigmaTo(cl, scope),
             "histogram" => EvalHistogram(cl, scope),

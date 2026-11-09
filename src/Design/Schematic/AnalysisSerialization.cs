@@ -16,7 +16,7 @@ namespace CircuitRF.Design.Schematic;
 //    - Id never persisted
 //    - format_version reject-on-mismatch (enforced by the CschFile wrapper)
 //
-//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields" / "trl".
+//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields" / "trl" / "osc".
 //  Loadpull ("lp") and Loadpull-Pursuit ("lpp") round-trip here (authoring forms: briefs 05-06).
 //  Their tone serializes as LpToneExpr + LpToneUnit — the same coefficient+unit pair HB uses, so a
 //  VAR tone with or without a unit resolves correctly via the var-unit-wins rule (brief 04b).
@@ -54,7 +54,7 @@ public sealed class CschFrequencySpec
 /// </summary>
 public sealed class CschAnalysis
 {
-    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields" | "trl".  Unknown tags are skipped on load.</summary>
+    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields" | "trl" | "osc".  Unknown tags are skipped on load.</summary>
     public string Type    { get; set; } = "";
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
@@ -126,6 +126,13 @@ public sealed class CschAnalysis
     public string?   TrlReflectType    { get; set; }
     public string?   TrlFixtureA       { get; set; }
     public string?   TrlFixtureB       { get; set; }
+    // Brief NZ-9 — an oscillator ("osc"): MaxHarm, FFTOverSample and Tol reuse the HB fields above.
+    public string?   OscProbe          { get; set; }
+    public string?   OscFguess         { get; set; }
+    public string?   OscFstart         { get; set; }
+    public string?   OscFstop          { get; set; }
+    public string?   OscUnit           { get; set; }
+    public string?   OscAguess         { get; set; }
     // Envelope (type "env") — the remaining env fields reuse HB ones (MaxHarmonicExpr, MaxMixOrderExpr, TolExpr).
     public string?   EnvStop           { get; set; }
     public string?   EnvStep           { get; set; }
@@ -366,6 +373,15 @@ public static class AnalysisSerialization
             FieldsWeightsExpr = f.WeightsExpr.Length > 0 ? f.WeightsExpr : null, FieldsNorm = f.Norm, FieldsAverageExpr = f.AverageExpr,
         },
 
+        OscillatorAnalysis o => new CschAnalysis
+        {
+            Type = "osc", Name = a.Name, Enabled = a.Enabled,
+            OscProbe = o.Probe.Length > 0 ? o.Probe : null, OscFguess = o.FguessExpr,
+            OscFstart = o.FstartExpr.Length > 0 ? o.FstartExpr : null, OscFstop = o.FstopExpr.Length > 0 ? o.FstopExpr : null,
+            OscUnit = o.Unit, MaxHarmonicExpr = o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr, TolExpr = o.TolExpr,
+            OscAguess = o.AguessExpr.Length > 0 ? o.AguessExpr : null,
+        },
+
         TrlAnalysis t => new CschAnalysis
         {
             Type = "trl", Name = a.Name, Enabled = a.Enabled, TrlThru = t.Thru, TrlReflect = t.Reflect, TrlLine = t.Line,
@@ -576,6 +592,13 @@ public static class AnalysisSerialization
         {
             Enabled = dto.Enabled, Block = dto.FieldsBlock ?? "", FreqExpr = dto.FieldsFreqExpr ?? "", FreqUnit = dto.FieldsFreqUnit ?? "Hz",
             DriveExpr = dto.FieldsDriveExpr ?? "1", WeightsExpr = dto.FieldsWeightsExpr ?? "", Norm = dto.FieldsNorm ?? FieldsAnalysis.NormAccepted, AverageExpr = dto.FieldsAverageExpr ?? "yes",
+        },
+
+        "osc" => new OscillatorAnalysis(dto.Name)
+        {
+            Enabled = dto.Enabled, Probe = dto.OscProbe ?? "", FguessExpr = dto.OscFguess ?? "1", FstartExpr = dto.OscFstart ?? "",
+            FstopExpr = dto.OscFstop ?? "", Unit = dto.OscUnit ?? "GHz", MaxHarmonicExpr = dto.MaxHarmonicExpr ?? "7",
+            FFTOverSampleExpr = dto.FFTOverSampleExpr ?? "1", TolExpr = dto.TolExpr ?? "1e-6", AguessExpr = dto.OscAguess ?? "",
         },
 
         "trl" => new TrlAnalysis(dto.Name)

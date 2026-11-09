@@ -4247,3 +4247,27 @@ Both found while building NZ-8, both one cause: `Tol` is absolute (1e-6 A at the
 - **The phase-noise closed form** (gate 3): EVM² = Σ S_φ(f_m)/T · (1 − f_m/B) over the record's bins, B the occupied
   bandwidth — the share of each subcarrier's spread that lands inside the channel. Over four seeds it reads 3.954 %
   against 3.968 %.
+
+## Brief NZ-9 — the oscillator analysis (`OscEngine`, `OscProbeModel`)
+
+- **The HB engine is untouched.** The auxiliary generator is the OscProbe's own stamp, armed by `OscEngine` with (A, ω, G):
+  a Norton source plus G at ω only, idle (open in shunt, a 0 V branch in series) everywhere else. The extractor sees an
+  ordinary linear part whose right-hand side changes with A, so its cached factorisations are reused across amplitude
+  steps and refactored only when f moves. No file under `HarmonicBalance/` that existed before was edited, so every driven
+  HB result is the same bytes (gate 4 by construction).
+- **The residual is the circuit's large-signal immittance at the probe, per unit amplitude** — `G(A − V)/V` in shunt,
+  `−V/(A + G·V)` in series — not the generator's current. It does not depend on G (G sets only how well posed each driven
+  solve is), and at A → 0 it is the small-signal immittance, which the start-up condition says is not zero. That is what
+  keeps the trivial DC solution out by construction. G is the start-up immittance's slope scale plus twice its negative
+  real part, so it outweighs the negative resistance at every amplitude below the oscillation.
+- **A 4K-point grid aliases a cubic at MaxHarm = 1.** With FFTOverSample=1 the grid is 4 points, and cos³ sampled at four
+  points IS cos: the third harmonic folds onto the fundamental, and the cubic's describing function reads g3·A³ instead
+  of (3/4)·g3·A³ — a 15 % amplitude error that converges cleanly. Gate 1 runs FFTOverSample=4 and matches the closed form
+  to 4e-10 (frequency to 2e-16). This is HB's own grid rule, not the oscillator's; the oscillator takes FFTOverSample for it.
+- **The inner HB tolerance follows the generator**: min(Tol, 1e-9 × the generator's current). A solve that stops short of
+  that but under the analysis's own Tol is accepted, since that is the answer HB itself gives there.
+- **How far an oscillation sits from its start-up frequency depends on the loop gain, and can be large.** The gate-2
+  Colpitts at a loop gain near 24 (RL = 2 kΩ, 1.7 mA) converged 21 % below its 159 MHz start-up: the transistor saturates
+  and is off most of the cycle, so the tank falls to L with C1 in series with C2. At a loop gain near 3 it lands 6.8 %
+  below (130.89 MHz against 140.41), above the transistor-off resonance (129.09 MHz), from Fguess ±20 % alike. That
+  bracket — start-up frequency above, transistor-off resonance below — is the stated pull.

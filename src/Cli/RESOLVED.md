@@ -3534,3 +3534,13 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
 - **Measuring the topic for the topic list costs one small file**: the list's text reads the index only. The README,
   the file list and `find`'s cell description are read only when one example is named.
 
+
+## Brief NZ-9 — the `osc` verb
+
+- **A run verb that goes through `CircuitEvaluation.Execute` must print `GroupedResults`, not `Results`, or the design's
+  measure lines vanish.** `Results` holds each analysis's own DataSet; the measurements are evaluated afterwards into
+  `GroupedResults` under `measurements`. `osc` prints and exports `GroupedResults`, and so does `trl` now: it printed
+  `Results`, so a TRL bench's `measure` lines were computed and never shown or exported (`TrlAnalysisTests.
+  TheCliVerb_ReportsTheBenchsMeasurements`).
+- The run's one-line summary (Fosc, Aosc, the start-up frequency) is `RunResult.StatusMessage`, not a note: the analysis
+  notes `CircuitEvaluation` collects become the status message, while `RunResult.Notes` carries the netlist's notes.

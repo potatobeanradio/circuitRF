@@ -83,6 +83,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.IProbe,          "iprobe",            2),
         (SymbolKind.VProbe,          "vprobe",            1),
         (SymbolKind.WSProbe,         "wsprobe",           2),
+        (SymbolKind.OscProbe,        "oscprobe",          2),
         (SymbolKind.Tline,           "tline",             2),
         (SymbolKind.CLine,           "cline",             4),
         (SymbolKind.MCLine,          "mcline",            4),

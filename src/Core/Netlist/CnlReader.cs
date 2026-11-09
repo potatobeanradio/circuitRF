@@ -115,6 +115,8 @@ public sealed class CnlReader
                 tb.Analyses.Add(fieldsAnalysis!);
             else if (TryParseTrlDirective(rawLine, out var trlAnalysis))
                 tb.Analyses.Add(trlAnalysis!);
+            else if (TryParseOscDirective(rawLine, out var oscAnalysis))
+                tb.Analyses.Add(oscAnalysis!);
             else if (TryParseSParamDirective(rawLine, out var spAnalysis))
             {
                 // Multi-segment: merge consecutive segments with the same analysis name.
@@ -1226,6 +1228,38 @@ public sealed class CnlReader
     /// brief-de-4 — a "Name type=trl thru=… reflect=… line=… reflectType=… [fixtureA=…] [fixtureB=…]" directive as a
     /// <see cref="TrlAnalysis"/>. The fixture paths are kept as written: they resolve at run time exactly as an SnP's File does.
     /// </summary>
+    /// <summary>
+    /// Brief NZ-9 — a "Name type=osc Fguess=… [Probe=…] [Fstart=…] [Fstop=…] [Unit=…] [MaxHarm=…] [FFTOverSample=…] [Tol=…]
+    /// [Aguess=…]" directive as an <see cref="OscillatorAnalysis"/>. Every value is kept as written and resolved at run time.
+    /// </summary>
+    private bool TryParseOscDirective(string rawLine, out OscillatorAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq > 0) kv[tokens[i][..eq]] = tokens[i][(eq + 1)..].Trim('"');
+        }
+        if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "osc") return false;
+        result = new OscillatorAnalysis(tokens[0])
+        {
+            Probe             = kv.GetValueOrDefault("Probe", ""),
+            FguessExpr        = kv.GetValueOrDefault("Fguess", "1"),
+            FstartExpr        = kv.GetValueOrDefault("Fstart", ""),
+            FstopExpr         = kv.GetValueOrDefault("Fstop", ""),
+            Unit              = kv.GetValueOrDefault("Unit", "GHz"),
+            MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm", "7"),
+            FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample", "1"),
+            TolExpr           = kv.GetValueOrDefault("Tol", "1e-6"),
+            AguessExpr        = kv.GetValueOrDefault("Aguess", ""),
+            Enabled           = ParseEnabledToken(tokens),
+        };
+        return true;
+    }
+
     private bool TryParseTrlDirective(string rawLine, out TrlAnalysis? result)
     {
         result = null;

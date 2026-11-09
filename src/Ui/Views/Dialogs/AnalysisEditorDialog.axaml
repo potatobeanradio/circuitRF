@@ -44,7 +44,7 @@
                     <TextBlock Text="Type:"
                                FontSize="12"
                                Opacity="0.75"/>
-                    <!-- Two columns of four: the circuit solves (DC, S, HB, envelope) and the rest (loadpull, pursuit, fields, TRL). -->
+                    <!-- Two columns: the circuit solves (DC, S, HB, oscillator, envelope) and the rest (loadpull, pursuit, fields, TRL). -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                         <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="3">
                             <RadioButton x:Name="DcRadio"
@@ -61,6 +61,12 @@
                                          Content="Harmonic Balance"
                                          GroupName="AnalysisType"
                                          FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="OscRadio"
+                                         Content="Oscillator"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         ToolTip.Tip="Harmonic balance with the frequency as an unknown: a free-running oscillator, found at its OscProbe"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
                             <RadioButton x:Name="EnvRadio"
                                          Content="Envelope (modulated)"
@@ -238,6 +244,15 @@
                     Padding="10,10"
                     IsVisible="False">
                 <analyses:TrlBodyView x:Name="TrlBodyViewControl"/>
+            </Border>
+
+            <!-- ── Oscillator body (brief NZ-9): the OscProbe, the start-up search, the HB keys ──────────── -->
+            <Border x:Name="OscBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:OscBodyView x:Name="OscBodyViewControl"/>
             </Border>
 
             <!-- ── Envelope body ─────────────────────────────────────────────────── -->

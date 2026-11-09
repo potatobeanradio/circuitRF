@@ -114,6 +114,8 @@ public static class SymbolPortDefs
             // (load side), and extraction emits them in that order whatever the instance's rotation
             // or mirror does to the DRAWING.
             case SymbolKind.WSProbe: return [("G", 0f, 0f), ("L", 100f, 0f)];
+            // OscProbe (brief NZ-9): the WSProbe's through, its two terminals interchangeable.
+            case SymbolKind.OscProbe: return [("1", 0f, 0f), ("2", 100f, 0f)];
             // TLIN: horizontal 2-port — port 1 left, port 2 right. Both ground-referenced
             // (the reference net is implicit; only these two signal nets are netlisted).
             case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];

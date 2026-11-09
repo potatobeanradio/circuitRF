@@ -67,6 +67,14 @@ public enum SymbolKind
     /// </summary>
     WSProbe,
 
+    /// <summary>
+    /// The oscillator analysis's marker (brief NZ-9; engine "OscProbe", <see cref="CircuitRF.Core.Devices.OscProbeModel"/>).
+    /// Placed in series in an oscillator's loop (<c>Mode=series</c>, the default, where it is a short) or across its resonator
+    /// (<c>Mode=shunt</c>, an open). It does nothing in any analysis but the oscillator's, which inserts its auxiliary
+    /// generator here.
+    /// </summary>
+    OscProbe,
+
     Sdd,
     ZPort,
     Generic,

@@ -1560,6 +1560,9 @@ public sealed class Elaborator
             return ResolveEnumNamedParameters(inst, parentScope, "Direction");
         if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope, "IP3Ref");
+        // The OscProbe's Mode is series or shunt (brief NZ-9) — a word, as IP3Ref is.
+        if (inst.Reference.Equals("OscProbe", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope, "Mode");
         // The mixer's NFType (brief NZ-3) is ssb or dsb — a word, the same kind of value as IP3Ref.
         if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase)
             && inst.Overrides.Any(o => o.Name.Equals("NFType", StringComparison.OrdinalIgnoreCase)))

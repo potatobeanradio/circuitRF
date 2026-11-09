@@ -527,10 +527,24 @@ decibels, one cut per bearing:
 
 Runs every enabled `type=trl` analysis, or the ones `-a` names ([TRL Calibration](simulations.html#trl)), and writes each one's
 two fixture files where its directive says. `--fixture-a` and `--fixture-b` replace those paths for one analysis. `-o`
-exports the result (`SA`, `SB`, `LineDeg`, `LineLossDb`, `Gamma`, `Usable`); it does not move the fixtures. Under `--json`
+exports the result (`SA`, `SB`, `LineDeg`, `LineLossDb`, `Gamma`, `Usable`) and the bench's measurements; it does not move
+the fixtures. Under `--json`
 both fixture files are listed in `outputs`.
 
 Exit **0** when it ran, a usable-band warning included, **1** refused or failed, **130** cancelled.
+
+## `osc` — a free-running oscillator {#osc}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf osc &lt;design.cnl|.csch&gt; [-a name] [--set var=expr]... [--fguess f] [--maxharm k] [--tol t] [--aguess a] [--probe OP1] [-o out.{mat,npy,txt}]</code></pre>
+
+Runs the design's [oscillator analysis](simulations.html#oscillator), or the one `-a` names: the start-up search, then
+harmonic balance with the frequency as an unknown. A parametric sweep wrapping it runs the whole sweep, so a tuning curve
+is one command. `--fguess` (in the directive's `Unit`), `--maxharm`, `--tol`, `--aguess` and `--probe` replace the
+directive's keys. The result is `Fosc`, `Aosc`, `Startup` and the harmonic-balance cubes at the oscillation, with the
+design's measurements beside them.
+
+Exit **0** when the oscillation was found, **1** refused (the circuit does not start, or has no OscProbe) or failed,
+**130** cancelled.
 
 ## `em` — electromagnetic extraction {#em}
 

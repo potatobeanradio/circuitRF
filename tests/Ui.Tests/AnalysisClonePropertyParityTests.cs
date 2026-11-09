@@ -50,6 +50,12 @@ public sealed class AnalysisClonePropertyParityTests
             FixtureA = "fix/a.s2p", FixtureB = "fix/b.s2p",
         },
 
+        [typeof(OscillatorAnalysis)] = new OscillatorAnalysis("OSC1")
+        {
+            Enabled = false, Probe = "X1.OP", FguessExpr = "fv*1.1", FstartExpr = "0.8", FstopExpr = "1.4", Unit = "MHz",
+            MaxHarmonicExpr = "11", FFTOverSampleExpr = "2", TolExpr = "1e-9", AguessExpr = "0.3",
+        },
+
         [typeof(EnvelopeAnalysis)] = new EnvelopeAnalysis("ENV1")
         {
             Enabled = false, StopExpr = "250e-6", StepExpr = "1e-9", Accuracy = "fine", MaxHarmExpr = "6",

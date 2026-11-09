@@ -341,6 +341,67 @@ Inside a [parametric sweep](#parametric-sweep), LO power or blocker power is an 
 drive" and "NF against blocker level" need nothing more. With the drive turned down to nothing, `NF` equals the
 S-parameter noise analysis's.
 
+## Oscillator {#oscillator}
+
+An oscillator analysis finds a free-running oscillation: its frequency, its amplitude, its harmonics, and how they tune.
+Harmonic balance alone cannot do this. It needs the fundamental stated, and an oscillator's frequency is part of the
+answer. Started on an oscillator, it finds the circuit sitting still at its DC operating point, which is always a solution.
+
+Place one [OscProbe](components.html#oscprobe) in the oscillator's loop (series) or across its resonator (shunt), and add
+an analysis of type **Oscillator**:
+
+```
+OscProbe:OP1  c 0  Mode=shunt
+analysis OSC1 type=osc Fguess=140 Unit=MHz MaxHarm=9
+```
+
+**How it works.** At the OscProbe the analysis inserts a generator that works at one frequency f, with amplitude A. For
+any trial (A, f) an ordinary harmonic-balance run at f gives the current the generator delivers (shunt) or the voltage
+across it (series). Where that is zero, the generator is doing no work and the circuit sustains itself. That is two
+equations, the real and imaginary parts, in two unknowns, solved by Newton's method around harmonic-balance runs.
+
+**Start-up.** First, the circuit is linearised about its DC operating point, and the admittance looking into the probe is
+computed from `Fstart` to `Fstop` (by default half and one and a half times `Fguess`). The circuit starts to oscillate
+where that admittance has a **negative real part at a zero of its imaginary part**: the circuit gives back more power
+than it takes, at a frequency where it resonates. If no such point is found, the run stops and says so, naming the span
+it searched. It never returns the DC solution as an oscillation. Then the amplitude is raised from small until the
+negative resistance runs out, which brackets the oscillation, and Newton's method finishes it.
+
+`circuitrf explain --analysis` shows the start-up search without running harmonic balance.
+
+| Key | Default | |
+|---|---|---|
+| `Probe` | the only OscProbe | Which OscProbe, when there are several |
+| `Fguess` | (required) | Where the start-up search is centred, in `Unit` |
+| `Fstart`, `Fstop` | Fguess/2, 1.5·Fguess | The start-up search's span |
+| `Unit` | GHz | Unit of the three frequencies |
+| `MaxHarm`, `FFTOverSample`, `Tol` | 7, 1, 1e-6 | As [harmonic balance](#harmonic-balance)'s |
+| `Aguess` | ramp from small | Amplitude to start from: volts in shunt, amperes in series |
+
+**Results.** The run writes the cubes a harmonic-balance analysis writes, at the oscillation (`V`, `I`, `ToneFreqs` and the
+rest), so every HB measurement and Data Display preset works on it. It adds:
+
+- `Fosc`: the oscillation frequency, Hz;
+- `Aosc`: the generator's amplitude at the answer, which is the oscillation's own amplitude at the probe (volts in shunt,
+  amperes of loop current in series);
+- `Startup [freq]`: the small-signal admittance looking into the probe, the curve the start-up search read.
+
+**Tuning.** Inside a [parametric sweep](#parametric-sweep), `Fosc` against the swept variable is a tuning curve. A
+measurement gives Kvco, the slope of that curve, with `deriv()`:
+
+```
+analysis SW1 type=parametric_sweep Var=Vtune Start=0 Stop=5 Step=0.25 Inner=OSC1
+measure Kvco = deriv(OSC1.Fosc)
+```
+
+**What moves the frequency.** The oscillation sits a little away from the start-up frequency. As the swing grows, the
+active device spends part of each cycle cut off, and the capacitance and conductance it adds to the resonator change. A
+Colpitts, for example, starts where its transistor's low emitter impedance loads one capacitor, and settles toward the
+resonance of the tank with the transistor off. The harmonics pull the frequency a little too, so raise `MaxHarm` until
+`Fosc` stops moving.
+
+From the command line, `circuitrf osc design.csch` runs it ([`osc`](cli.html#osc)).
+
 ## Circuit Envelope (modulated signals) {#envelope}
 
 **Computes:** the circuit's response to a **modulated** signal — LTE, NR, several carriers, a pulsed-CW

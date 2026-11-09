@@ -110,16 +110,15 @@ internal static class Trl
         if (failed.Count > 0) return JsonRun.Fail(CliDiagnostics.RunFailed(string.Join("; ", failed)));
         foreach (string note in result.Notes) Console.WriteLine(note);
 
-        var grouped = new DataSet();
-        foreach (var r in result.Results)
+        // The run's grouped DataSet: each analysis's group and, when the bench declares measure lines, `measurements` — the
+        // GUI's. Reading Results instead dropped the measurements, which are evaluated into this one only.
+        var grouped = result.GroupedResults ?? new DataSet();
+        foreach (string group in grouped.Groups)
         {
             Console.WriteLine();
-            Console.WriteLine($"{r.Name}:");
-            foreach (var (name, cube) in r.Data.Cubes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            {
+            Console.WriteLine($"{group}:");
+            foreach (var (name, cube) in grouped.CubesIn(group).OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 CliEntry.PrintCube($"  {name}", cube, 24, false);
-                grouped.AddToGroup(r.Name, name, cube);
-            }
         }
         JsonRun.Data = grouped;
         JsonRun.Analysis = string.Join(", ", names);

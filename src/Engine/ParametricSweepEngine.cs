@@ -655,6 +655,13 @@ public static class ParametricSweepEngine
                 return rr.DataSet;
             }
 
+            // Brief NZ-9: the oscillator at this point. Swept over a tuning variable, its Fosc is the tuning curve.
+            case OscillatorAnalysis osa:
+            {
+                var op = OscEngine.Resolve(osa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+                return OscEngine.Run(netlist, tb, op, settings, lib, baseDirectory).Data;
+            }
+
             case SParameterAnalysis spa:
                 return RunSParam(spa, lib, tb, netlist, settings, baseDirectory, control);
 
@@ -704,7 +711,7 @@ public static class ParametricSweepEngine
                 throw new NotSupportedException(
                     $"ParametricSweepEngine: inner analysis type " +
                     $"'{inner.GetType().Name}' is not supported. " +
-                    $"Supported: HarmonicBalanceAnalysis, SParameterAnalysis, DcAnalysis, " +
+                    $"Supported: HarmonicBalanceAnalysis, OscillatorAnalysis, SParameterAnalysis, DcAnalysis, " +
                     $"ParametricSweepAnalysis, LoadpullAnalysis, LoadpullPursuitAnalysis.");
         }
     }

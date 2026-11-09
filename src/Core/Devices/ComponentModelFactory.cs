@@ -50,6 +50,8 @@ public static class ComponentModelFactory
             // The WSProbe (brief-wsprobe-1 R-wsp1-1): the same 0 V series element as an IProbe, with an
             // orientation the S-parameter engine injects through. Stamp shared via SeriesProbeModelBase.
             { "WSProbe", () => new WSProbeModel()      },
+            // The oscillator analysis's marker (brief NZ-9): a short in series or an open in shunt everywhere else.
+            { "OscProbe", () => new OscProbeModel()    },
             { "VCCS",  () => new VccsModel()          },
             // The E element's linear half. Group 2 where the VCCS is Group 1 — see VcvsModel for
             // why a controlled VOLTAGE source cannot be stamped as admittances.

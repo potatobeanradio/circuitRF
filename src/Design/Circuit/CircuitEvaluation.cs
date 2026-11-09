@@ -684,6 +684,12 @@ public static class CircuitEvaluation
             case DcAnalysis:
                 return ($"DC '{analysis.Name}': operating point", 1, false);
 
+            case OscillatorAnalysis osa:
+            {
+                var p = OscEngine.Resolve(osa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                return (OscSummary.Describe(p), 1, false);
+            }
+
             case TrlAnalysis trl:
                 return ($"TRL '{trl.Name}': fixtures from {trl.Thru}, {trl.Reflect} and {trl.Line} -> " +
                         $"{trl.FixtureAPath}, {trl.FixtureBPath}", 1, false);
@@ -858,6 +864,16 @@ public static class CircuitEvaluation
                 return CircuitRF.Design.Em3d.FieldCosimulation.Run(fa, nl, notes, control, fields?.Artifacts,
                     fields?.Output ?? FieldsOutput.Written, fields?.Label,
                     fields is null ? null : m => fields.Metrics[resultName ?? fa.Name] = m);
+
+            // brief NZ-9 — harmonic balance with the fundamental an unknown, at the circuit's OscProbe
+            case OscillatorAnalysis osa:
+            {
+                var p   = OscEngine.Resolve(osa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                var osc = OscEngine.Run(nl, tb, p, null, lib, baseDirectory);
+                converged = osc.Run.Converged;
+                notes.Add(OscSummary.Result(osa.Name, osc));
+                return osc.Data;
+            }
 
             // brief-de-4 — two fixtures from three measured standards on the bench; no circuit is solved
             case TrlAnalysis trl:

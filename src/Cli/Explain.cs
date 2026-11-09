@@ -66,6 +66,7 @@ internal static class Explain
         (a => a is EnvelopeAnalysis,         "envelope",         "analysis <name> type=env ...",               "env"),
         (a => a is FieldsAnalysis,           "fields",           "analysis <name> type=fields ...",            "fields"),
         (a => a is TrlAnalysis,              "TRL",              "analysis <name> type=trl ...",               "trl"),
+        (a => a is OscillatorAnalysis,       "oscillator",       "analysis <name> type=osc ...",               "osc"),
     ];
 
     public static int Run(string[] args)
@@ -1521,6 +1522,19 @@ internal static class Explain
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
 
+        // Brief NZ-9: an oscillator's start-up search, the run's own first step, run here with no harmonic balance after it.
+        var osc = new Dictionary<string, ExplainOscJson>(StringComparer.Ordinal);
+        if (tb.Analyses.Any(a => a is OscillatorAnalysis))
+        {
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                foreach (var oa in tb.Analyses.OfType<OscillatorAnalysis>())
+                    osc[oa.Name] = OscOf(oa, nl);
+            }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+        }
+
         // Brief ENV-MEAS-3: an envelope run records every labeled net's voltage and every IProbe's power, so explain says
         // which, from the same rule the engine applies. Elaborated once, only when an envelope analysis is declared.
         var envRecords = new Dictionary<string, ExplainEnvelopeRecordsJson>(StringComparer.Ordinal);
@@ -1671,7 +1685,8 @@ internal static class Explain
                      : a is ILoadpullNoiseKeys lpN ? lpN.Noise : a is EnvelopeAnalysis envN ? envN.Noise : null,
                 NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name),
                 HbNoise: hbNoise.GetValueOrDefault(a.Name),
-                LoadpullNoise: lpNoise.GetValueOrDefault(a.Name)));
+                LoadpullNoise: lpNoise.GetValueOrDefault(a.Name),
+                Oscillator: osc.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1791,6 +1806,28 @@ internal static class Explain
     /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
     /// <summary>Brief NZ-5: an HB noise directive resolved by the engine's own <c>HbEngine.Resolve</c>, then the signal and
     /// image input frequencies at the first and last output point. A refusal comes back as its sentence.</summary>
+    /// <summary>Brief NZ-9 — an oscillator's start-up search through <c>OscEngine.Startup</c>, the run's own first step, so
+    /// a refusal here is the run's word for word.</summary>
+    private static ExplainOscJson OscOf(OscillatorAnalysis oa, ElaboratedNetlist nl)
+    {
+        string probe = oa.Probe, mode = "";
+        double fg = 0, f0 = 0, f1 = 0;
+        try
+        {
+            var p = CircuitRF.Engine.HarmonicBalance.OscEngine.Resolve(oa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+            (fg, f0, f1) = (p.FguessHz, p.FstartHz, p.FstopHz);
+            var ec = CircuitRF.Engine.HarmonicBalance.OscEngine.FindProbe(nl, oa.Name, p.Probe);
+            probe = ec.InstancePath;
+            mode = OscProbeModel.IsShunt(ec) ? OscProbeModel.ModeShunt : OscProbeModel.ModeSeries;
+            var s = CircuitRF.Engine.HarmonicBalance.OscEngine.Startup(nl, p);
+            if (s.StartHz is not { } fs)
+                return new ExplainOscJson(probe, mode, f0, f1, fg, Refusal:
+                    CircuitRF.Engine.HarmonicBalance.OscDiagnostics.NoStartup(oa.Name, probe, s.Shunt, f0, f1).Render());
+            return new ExplainOscJson(probe, mode, f0, f1, fg, fs, s.Immittance.Real);
+        }
+        catch (Exception ex) { return new ExplainOscJson(probe, mode, f0, f1, fg, Refusal: ex.Message); }
+    }
+
     private static ExplainLoadpullNoiseJson LoadpullNoiseOf(Analysis a, ElaboratedNetlist nl)
     {
         var keys = (ILoadpullNoiseKeys)a;
@@ -2012,6 +2049,7 @@ internal static class Explain
         LoadpullAnalysis         => "loadpull",
         LoadpullPursuitAnalysis  => "loadpull-pursuit",
         ParametricSweepAnalysis  => "parametric-sweep",
+        OscillatorAnalysis       => "osc",
         _                        => a.GetType().Name,
     };
 
@@ -2419,6 +2457,17 @@ internal static class Explain
                                 $"      noise at output {Ghz(hn.OutputHz[i])}: signal in at {Ghz(hn.InputHz[i])}" +
                                 (hn.InputHz[i] == hn.OutputHz[i] && hn.ImageHz[i] == hn.OutputHz[i] ? "" : $", image at {Ghz(hn.ImageHz[i])}"));
                     }
+                }
+
+                // NZ-9: an oscillator's start-up search, before any harmonic balance runs.
+                if (a.Oscillator is { } os)
+                {
+                    static string G(double hz) => (hz / 1e9).ToString("G7", System.Globalization.CultureInfo.InvariantCulture);
+                    Console.WriteLine($"      OscProbe {os.Probe} ({os.Mode}); start-up search {G(os.FstartHz)}-{G(os.FstopHz)} GHz around {G(os.FguessHz)} GHz");
+                    Console.WriteLine(os.Refusal is { } why
+                        ? $"      Start-up: WOULD BE REFUSED — {why}"
+                        : $"      Start-up at {G(os.StartupHz!.Value)} GHz: small-signal {(os.Mode == OscProbeModel.ModeShunt ? "conductance" : "resistance")} " +
+                          $"{os.StartupReal!.Value.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} {(os.Mode == OscProbeModel.ModeShunt ? "S" : "Ohm")} (negative: the circuit starts)");
                 }
 
                 // NZ-6: a loadpull's noise ports and where NF is read.

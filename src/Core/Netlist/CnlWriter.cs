@@ -376,6 +376,13 @@ public static class CnlWriter
         DcAnalysis dc                 => $"analysis {dc.Name} type=dc",
         FieldsAnalysis fa             => $"analysis {fa.Name} type=fields block={fa.Block} freq=\"{fa.FreqExpr}\" freqUnit={fa.FreqUnit} " +
                                          $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}",
+        OscillatorAnalysis osc        => $"analysis {osc.Name} type=osc" +
+                                         (osc.Probe.Length > 0 ? $" Probe={osc.Probe}" : "") +
+                                         $" Fguess=\"{osc.FguessExpr}\"" +
+                                         (osc.FstartExpr.Length > 0 ? $" Fstart=\"{osc.FstartExpr}\"" : "") +
+                                         (osc.FstopExpr.Length > 0 ? $" Fstop=\"{osc.FstopExpr}\"" : "") +
+                                         $" Unit={osc.Unit} MaxHarm=\"{osc.MaxHarmonicExpr}\" FFTOverSample=\"{osc.FFTOverSampleExpr}\" Tol=\"{osc.TolExpr}\"" +
+                                         (osc.AguessExpr.Length > 0 ? $" Aguess=\"{osc.AguessExpr}\"" : ""),
         TrlAnalysis trl               => $"analysis {trl.Name} type=trl thru={trl.Thru} reflect={trl.Reflect} line={trl.Line} reflectType={trl.ReflectType}" +
                                          (trl.FixtureA.Length > 0 ? $" fixtureA=\"{trl.FixtureA}\"" : "") +
                                          (trl.FixtureB.Length > 0 ? $" fixtureB=\"{trl.FixtureB}\"" : ""),

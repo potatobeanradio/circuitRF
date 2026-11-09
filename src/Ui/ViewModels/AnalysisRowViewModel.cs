@@ -57,6 +57,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         ParametricSweepAnalysis  => "SW",
         FieldsAnalysis           => "FLD",
         TrlAnalysis              => "TRL",
+        OscillatorAnalysis       => "OSC",
         _                        => "?",
     };
     public string Summary   => ComputeSummary(Analysis, _schematicVm.EditModel);
@@ -139,6 +140,8 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         FieldsAnalysis fa          => $"{fa.Block} at {fa.FrequencyText}, port {fa.DriveExpr} driven" + (fa.Average ? "" : ", local only"),
         TrlAnalysis t              => $"{t.Thru} / {t.Reflect} ({t.ReflectType}) / {t.Line} → " +
                                       $"{System.IO.Path.GetFileName(t.FixtureAPath)}, {System.IO.Path.GetFileName(t.FixtureBPath)}",
+        OscillatorAnalysis o       => $"Oscillator around {o.FguessExpr} {o.Unit}" + (o.Probe.Length > 0 ? $" at {o.Probe}" : "") +
+                                      $", MaxHarm {o.MaxHarmonicExpr}",
         _                          => "",
     };
 

@@ -1857,6 +1857,13 @@ internal static class CliDiagnostics
     /// <c>.cnl</c> has no such cut, and a probe across one net measures a loop of nothing — every
     /// output it reports is about a circuit that is not the one drawn.
     /// </summary>
+    /// <summary>Brief NZ-9 — an oscillator analysis whose OscProbe is missing, ambiguous or misnamed: the run's own refusal, as a
+    /// finding.</summary>
+    public static Diagnostic CheckOscProbe(string path, string analysis, string why) => Diagnostic.Create(
+        "check.osc.probe", DiagnosticSeverity.Error,
+        "{path}: {why}",
+        ("path", path), ("analysis", analysis), ("why", why));
+
     public static Diagnostic CheckWsProbeShorted(string path, string probe, string net) => Diagnostic.Create(
         "wsprobe.shorted", DiagnosticSeverity.Warning,
         "{path}: WSProbe '{probe}' has both terminals on net '{net}'. A WSProbe splits a node into a " +

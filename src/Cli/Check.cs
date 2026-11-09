@@ -1765,6 +1765,13 @@ internal static class Check
                         path, ec.InstancePath,
                         ec.Nodes[0] < nl.Nodes.Count ? nl.Nodes.NameOf(ec.Nodes[0]) : $"node {ec.Nodes[0]}"));
 
+            // NZ-9: an oscillator analysis needs exactly one OscProbe (or a Probe= naming one) — the run's own rule.
+            foreach (var oa in tb.Analyses.OfType<OscillatorAnalysis>())
+            {
+                try { CircuitRF.Engine.HarmonicBalance.OscEngine.FindProbe(nl, oa.Name, oa.Probe.Trim()); }
+                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscProbe(path, oa.Name, ex.Message)); }
+            }
+
             // NZ-1: Noise=no on a part that can never be noisy is accepted and does nothing, which is worth a word.
             foreach (var ec in nl.Components)
                 if (ec.NoiseOff && !CircuitRF.Engine.SParameterNoise.CanBeNoisy(ec))

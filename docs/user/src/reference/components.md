@@ -643,6 +643,27 @@ an appendix on stability analysis itself.
 
 {{table: components/WSProbe}}
 
+### Oscillator Probe (OscProbe) {#oscprobe}
+
+{{symbol: oscprobe}}
+
+The marker an [oscillator analysis](simulations.html#oscillator) needs: it says where in the circuit the oscillation is
+looked for. Place exactly one, where the oscillation is strong:
+
+- **`Mode=series`** (the default): in the oscillator's loop, the way an [IProbe](#iprobe) is placed. Drop it onto a wire
+  and it breaks into the wire.
+- **`Mode=shunt`**: across the resonator, often from the tank's live side to ground.
+
+In every other analysis it does nothing: a short in series, an open in shunt. So a design runs the same with it as without
+it.
+
+Under the oscillator analysis it holds a generator at the oscillation frequency only. In shunt it is a voltage generator,
+and the analysis finds the amplitude and frequency at which it draws no current. In series it is a current generator, and
+the analysis finds where it holds no voltage. Either way the generator does no work at the answer, so the circuit is
+oscillating on its own. Its two terminals are interchangeable.
+
+{{table: components/OscProbe}}
+
 ### Tuner / SourceTuner / LoadTuner {#tuner}
 
 <div class="symbol-row">

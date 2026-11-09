@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public sealed partial class AnalysisEditorViewModel : ObservableObject
 {
-    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV, TRL }
+    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV, TRL, OSC }
 
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
@@ -37,7 +37,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Type selection ────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv), nameof(IsTrl),
+    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv), nameof(IsTrl), nameof(IsOsc),
                               nameof(ShowSweeps), nameof(SimulateByChoosable))]
     private AnalysisKind _type = AnalysisKind.DC;
 
@@ -57,6 +57,12 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>brief-de-4 — the TRL analysis's body.</summary>
     public TrlBodyViewModel TrlBody { get; private set; } = null!;
+
+    /// <summary>Brief NZ-9 — an oscillator: harmonic balance with the fundamental frequency as an unknown.</summary>
+    public bool IsOsc => Type == AnalysisKind.OSC;
+
+    /// <summary>Brief NZ-9 — the oscillator analysis's body.</summary>
+    public OscBodyViewModel OscBody { get; private set; } = null!;
 
     /// <summary>Parametric-sweep chains are supported on every analysis type — including freq-swept
     /// Loadpull and Loadpull-Pursuit over a tone VAR (FreqSweptLoadpull brief, Layers A–E).</summary>
@@ -80,7 +86,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Whether the choice applies: a fields analysis reads the EM result in its block, so there is no layout to
     /// simulate it by. A part set to EM in its bench stays EM; that is the part's own setting.</summary>
-    public bool SimulateByChoosable => !IsFields && !IsTrl;
+    public bool SimulateByChoosable => !IsFields && !IsTrl && !IsOsc;
 
     /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
     /// "(choose a setup)" so a picker always has a row to show.</summary>
@@ -190,6 +196,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         FieldsBody.UseDrivers(CircuitRF.Design.Em3d.FieldDrivers.Of(model), choose: true);
         TrlBody        = new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
+        OscBody        = new OscBodyViewModel(model);
         LoadEmSetups(null);
         ValidateName();
     }
@@ -220,6 +227,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         EnvBody = inner is EnvelopeAnalysis env0 ? EnvBodyViewModel.FromAnalysis(env0, model) : new EnvBodyViewModel(model);
         TrlBody = inner is TrlAnalysis trl0 ? TrlBodyViewModel.From(trl0, model, workspaceRoot) : new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
+        OscBody = inner is OscillatorAnalysis osc0 ? OscBodyViewModel.From(osc0, model) : new OscBodyViewModel(model);
         switch (inner)
         {
             case EnvelopeAnalysis:
@@ -274,6 +282,14 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                     SweepsExpanded = true;
                 }
 #pragma warning restore CS0618
+                break;
+
+            case OscillatorAnalysis:
+                _type   = AnalysisKind.OSC;
+                SpBody  = new SpBodyViewModel(model);
+                HbBody  = SeededHb(model);
+                LpBody  = SeededLp(model, workspaceRoot);
+                LppBody = SeededLpp(model, workspaceRoot);
                 break;
 
             case TrlAnalysis:
@@ -428,6 +444,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.Fields => "F",
             AnalysisKind.ENV => "ENV",
             AnalysisKind.TRL => "CAL",
+            AnalysisKind.OSC => "OSC",
             _                => "DC",
         };
         for (int n = 1; n <= 999; n++)
@@ -477,6 +494,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.Fields => FieldsBody.IsValid ? FieldsBody.BuildAnalysis(name, Enabled) : null,
             AnalysisKind.ENV => EnvBody.BuildAnalysis(name, Enabled),
             AnalysisKind.TRL => TrlBody.IsValid ? TrlBody.BuildAnalysis(name, Enabled) : null,
+            AnalysisKind.OSC => OscBody.IsValid ? OscBody.BuildAnalysis(name, Enabled) : null,
             _                => null,
         };
         if (inner is null) return null;

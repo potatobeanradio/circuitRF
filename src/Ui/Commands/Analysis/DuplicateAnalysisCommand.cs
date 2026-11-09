@@ -83,6 +83,14 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 FixtureA = t.FixtureA, FixtureB = t.FixtureB,
             },
 
+        OscillatorAnalysis o =>
+            new OscillatorAnalysis(newName)
+            {
+                Enabled = a.Enabled, Probe = o.Probe, FguessExpr = o.FguessExpr, FstartExpr = o.FstartExpr, FstopExpr = o.FstopExpr,
+                Unit = o.Unit, MaxHarmonicExpr = o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr, TolExpr = o.TolExpr,
+                AguessExpr = o.AguessExpr,
+            },
+
         SParameterAnalysis sp => sp.WithSweeps(newName, sp.Sweeps),
 
         EnvelopeAnalysis env =>

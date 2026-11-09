@@ -199,6 +199,35 @@ public sealed class TrlAnalysis(string name) : Analysis(name)
 }
 
 /// <summary>
+/// Brief NZ-9 — the oscillator analysis, <c>type=osc</c>: harmonic balance with the fundamental frequency as an unknown.
+/// An auxiliary generator at <see cref="Probe"/> (an <c>OscProbe</c>) is solved for the amplitude and frequency at which it
+/// does no work, which is where the circuit sustains itself. Every value is the directive's text, resolved at run time.
+/// </summary>
+public sealed class OscillatorAnalysis(string name) : Analysis(name)
+{
+    /// <summary><c>Probe=</c>: the OscProbe's instance path (<c>X1</c>, or <c>CORE.X1</c> inside a cell). Blank when the
+    /// circuit holds exactly one, which is then the one used.</summary>
+    public string Probe        { get; init; } = "";
+    /// <summary><c>Fguess=</c>: where the start-up search is centred.</summary>
+    public string FguessExpr   { get; init; } = "1";
+    /// <summary><c>Fstart=</c>: the start-up search's low end; blank for half of Fguess.</summary>
+    public string FstartExpr   { get; init; } = "";
+    /// <summary><c>Fstop=</c>: the start-up search's high end; blank for 1.5 × Fguess.</summary>
+    public string FstopExpr    { get; init; } = "";
+    /// <summary><c>Unit=</c>, applied to Fguess, Fstart and Fstop alike.</summary>
+    public string Unit         { get; init; } = "GHz";
+    /// <summary><c>MaxHarm=</c>, as HB's.</summary>
+    public string MaxHarmonicExpr { get; init; } = "7";
+    /// <summary><c>FFTOverSample=</c>, as HB's.</summary>
+    public string FFTOverSampleExpr { get; init; } = "1";
+    /// <summary><c>Tol=</c>, as HB's: the KCL tolerance of every harmonic-balance solve, in amperes.</summary>
+    public string TolExpr      { get; init; } = "1e-6";
+    /// <summary><c>Aguess=</c>: the generator amplitude to start from (volts for a shunt probe, amperes for a series one);
+    /// blank to ramp up from a small one.</summary>
+    public string AguessExpr   { get; init; } = "";
+}
+
+/// <summary>
 /// S-parameter analysis. Carries one or more frequency-sweep segments; at engine time all
 /// segments are unioned into a single sorted/deduped flat frequency array via <see cref="Expand"/>.
 /// </summary>

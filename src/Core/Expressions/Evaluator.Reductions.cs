@@ -31,7 +31,7 @@ public sealed partial class Evaluator
     public static IReadOnlySet<string> AxisFunctions { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
-        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap",
+        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap", "deriv",
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
@@ -293,6 +293,87 @@ public sealed partial class Evaluator
         PhaseUnwrap.DegreesAlong(degrees, [.. cube.Axes.Select(x => x.Length)], dim);
         return new Value(new DataCube([.. cube.Axes], degrees) { Unit = complex ? "" : cube.Unit });
     }
+
+    /// <summary>
+    /// <c>deriv(y [, "axis"])</c> — the derivative of <c>y</c> along one of its axes, per unit of that axis's values (brief NZ-9:
+    /// a tuning curve's slope, Kvco = <c>deriv(SW1.Fosc)</c>). Second-order differences on the interior, exact for a parabola
+    /// on an uneven grid, and first-order at the two ends. The axis defaults to a rank-1 cube's only axis, then <c>freq</c>.
+    /// Every other axis is kept. Real stays real, complex complex.
+    /// </summary>
+    private Value EvalDeriv(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length is < 1 or > 2) throw new ArityException("deriv", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        string? axisName = null;
+        if (cl.Args.Length == 2)
+        {
+            var a = EvalExpr(cl.Args[1], scope);
+            axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
+        }
+        if (v.Kind != ValueKind.Cube)
+            throw new ExpressionException(Diag("expr.deriv.scalar",
+                "deriv(): give it a result that runs along an axis — a swept Fosc, or a cube over freq — not a single number."));
+
+        var cube = v.AsCube();
+        string axes = string.Join(", ", cube.Axes.Select(x => x.Name));
+        if (axisName is null)
+        {
+            if (cube.Rank == 1)                            axisName = cube.Axes[0].Name;
+            else if (cube.Axes.Any(x => x.Name == "freq")) axisName = "freq";
+            else throw new ExpressionException(Diag("expr.deriv.which-axis",
+                "deriv(): name the axis to differentiate along as the last argument. This value's axes are: {axes}.", ("axes", axes)));
+        }
+        int dim = -1;
+        for (int d = 0; d < cube.Rank; d++) if (cube.Axes[d].Name == axisName) { dim = d; break; }
+        if (dim < 0) throw new ExpressionException(Diag("expr.deriv.no-axis",
+            "deriv(): no axis named '{axis}'. Its axes are: {axes}.", ("axis", axisName), ("axes", axes)));
+        var x = cube.Axes[dim].Values;
+        int n = x.Length;
+        if (n < 2) throw new ExpressionException(Diag("expr.deriv.one-point",
+            "deriv(): the axis '{axis}' has one point, so there is no slope along it.", ("axis", axisName)));
+
+        int stride = 1;
+        for (int d = cube.Rank - 1; d > dim; d--) stride *= cube.Axes[d].Length;
+        int block = stride * n;
+
+        // Weights of y[i-1], y[i], y[i+1] at each point i.
+        var w = new (double M, double Z, double P)[n];
+        w[0]     = (0, -1 / (x[1] - x[0]), 1 / (x[1] - x[0]));
+        w[n - 1] = (-1 / (x[n - 1] - x[n - 2]), 1 / (x[n - 1] - x[n - 2]), 0);
+        for (int i = 1; i < n - 1; i++)
+        {
+            double h1 = x[i] - x[i - 1], h2 = x[i + 1] - x[i], den = h1 * h2 * (h1 + h2);
+            w[i] = (-h2 * h2 / den, (h2 * h2 - h1 * h1) / den, h1 * h1 / den);
+        }
+
+        if (cube.DataKind == DataKind.Complex)
+        {
+            var y = cube.ComplexValues;
+            var r = new System.Numerics.Complex[y.Length];
+            for (int outer = 0; outer + block <= y.Length; outer += block)
+                for (int inner = 0; inner < stride; inner++)
+                    for (int i = 0; i < n; i++)
+                    {
+                        int at = outer + inner + i * stride;
+                        r[at] = w[i].Z * y[at] + (i > 0 ? w[i].M * y[at - stride] : 0) + (i < n - 1 ? w[i].P * y[at + stride] : 0);
+                    }
+            return new Value(new DataCube([.. cube.Axes], r));
+        }
+        var yr = cube.RealValues;
+        var rr = new double[yr.Length];
+        for (int outer = 0; outer + block <= yr.Length; outer += block)
+            for (int inner = 0; inner < stride; inner++)
+                for (int i = 0; i < n; i++)
+                {
+                    int at = outer + inner + i * stride;
+                    rr[at] = w[i].Z * yr[at] + (i > 0 ? w[i].M * yr[at - stride] : 0) + (i < n - 1 ? w[i].P * yr[at + stride] : 0);
+                }
+        return new Value(new DataCube([.. cube.Axes], rr));
+    }
+
+    /// <summary>A <c>deriv()</c> refusal, as a coded diagnostic's sentence.</summary>
+    private static string Diag(string id, string template, params (string Name, object? Value)[] args)
+        => CircuitRF.Diagnostics.Diagnostic.Create(id, CircuitRF.Diagnostics.DiagnosticSeverity.Error, template, args).Render();
 
     // ── The operand rule ───────────────────────────────────────────────────────────
 

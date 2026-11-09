@@ -5000,6 +5000,18 @@ they are the directive's two files, listed in `--json`'s `outputs` as `touchston
 ran (the usable-band warning is a warning), 1 on a refusal, 130 on a cancellation. No new diagnostic ids. Gate:
 `tests/Ui.Tests/TrlAnalysisTests.cs`, which compares the verb run as a process with the in-process run byte for byte.
 
+## 41. `osc` — a free-running oscillator (brief NZ-9)
+
+`circuitrf osc <design.cnl|.csch>` runs a design's `type=osc` analysis. It follows §9's steps and **owns no solve**: the run
+is `CircuitEvaluation.Execute`, which dispatches `OscEngine.Run` (`src/Engine/HarmonicBalance`) exactly as Simulate does.
+The chain is chosen as `hb` chooses one (`ChainSelector`), so a `parametric_sweep` wrapping the oscillator is dispatched at
+the sweep and a named inner analysis is promoted to it. `--fguess`, `--maxharm`, `--tol`, `--aguess` and `--probe` REPLACE
+the directive (§5); `--set` overrides a global. It prints the run's grouped DataSet, measurements included, and `-o`
+exports it. Exit 0 found, 1 refused or failed (`osc.no-startup`, `osc.no-probe`, `osc.several-probes`,
+`osc.unknown-probe`, `osc.bad-span`, `osc.no-limit`, `osc.solve-failed`, `osc.not-converged`), 130 cancelled. `explain
+--analysis` runs the start-up search alone (`OscEngine.Startup`), and `check` reports a missing or ambiguous OscProbe
+(`check.osc.probe`). Gate: `tests/Ui.Tests/OscillatorSurfaceTests.cs`.
+
 ## 40. The shipped examples: `reference examples` and `new example`
 
 `circuitrf reference examples [name]` is a generated reference topic, so it is also the MCP resource

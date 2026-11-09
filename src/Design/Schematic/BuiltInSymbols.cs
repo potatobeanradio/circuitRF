@@ -80,6 +80,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _iprobe       = BuildIProbe();
     private static readonly Symbol _vprobe       = BuildVProbe();
     private static readonly Symbol _wsprobe      = BuildWSProbe();
+    private static readonly Symbol _oscprobe     = BuildOscProbe();
     private static readonly Symbol _var          = BuildVar();
     private static readonly Symbol _meas         = BuildMeas();
     private static readonly Symbol _generic      = BuildGeneric();
@@ -286,6 +287,7 @@ public static class BuiltInSymbols
             case SymbolKind.IProbe:     return _iprobe;
             case SymbolKind.VProbe:     return _vprobe;
             case SymbolKind.WSProbe:    return _wsprobe;
+            case SymbolKind.OscProbe:   return _oscprobe;
             case SymbolKind.Var:        return _var;
             case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
@@ -1290,6 +1292,18 @@ public static class BuiltInSymbols
         Poly(true, 14, -56, 28, -62, 28, -50),     //                    left head
         Poly(true, 86, -56, 72, -62, 72, -50),     //                    right head
     ], SymbolKind.WSProbe);
+
+    // ── OscProbe — the oscillator analysis's marker (brief NZ-9) ─────────────
+    //
+    // The WSProbe's straight horizontal through, pins at (0,0)/(100,0), and its 70 x 70 square body, so the two probes sit at
+    // the same weight on one sheet and drop into a wire the same way. Inside, one cycle of a sine — the oscillation the
+    // analysis solves for — in place of the WSProbe's letters; its two terminals are interchangeable, so nothing marks them.
+    private static Symbol BuildOscProbe() => Sym([
+        L(  0,   0,  15,   0),                     // left lead
+        L( 85,   0, 100,   0),                     // right lead
+        RRect(50, 0, 70, 70, 6),                   // the body — a square in the wire
+        Sine(50, 0, 16, 1, 46, SineAxis.Horizontal),
+    ], SymbolKind.OscProbe);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
     // Pins: (0,0) — the connection point at the top of the symbol.

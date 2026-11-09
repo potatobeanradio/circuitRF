@@ -394,6 +394,11 @@ public static class ComponentTypeRegistry
             SearchTerms: ["WSProbe", "Winslow", "stability", "probe", "H0", "Y0", "loop gain",
                           "driving point"],
             IsCommon: true),
+        // OscProbe (brief NZ-9): the oscillator analysis's marker. A short in series, an open in shunt, in every other
+        // analysis; the oscillator analysis inserts its auxiliary generator here.
+        [SymbolKind.OscProbe]      = new("OscProbe", "OP",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["OscProbe", "oscillator", "osc", "probe", "free-running", "VCO", "phase noise"]),
         [SymbolKind.Sdd]           = new("SDD",   "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["SDD", "Sdd", "nonlinear", "behavioral"],
@@ -1116,6 +1121,10 @@ public static class ComponentTypeRegistry
             "G is the generator-side terminal, L the load-side. ZG looks out of G, ZL out of L; "
           + "swapping them swaps every G/L-labelled output and negates nothing else.",
 
+        SymbolKind.OscProbe =>
+            "Interchangeable. In series (Mode=series) it sits IN the oscillator's loop; across the resonator (Mode=shunt) it "
+          + "joins the two sides of the tank, often one of them ground.",
+
         _ => "",
     };
 
@@ -1167,6 +1176,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
         SymbolKind.IProbe        => "IProbe",
         SymbolKind.WSProbe       => "WSProbe",
+        SymbolKind.OscProbe      => "OscProbe",
         // Sentinel, like Var and Meas: no ComponentModelFactory entry exists and none can. A VProbe
         // line DOES reach the .cnl and the elaborator -- unlike VAR/MEAS -- but the elaborator turns
         // it into a net-name alias and builds no model, which is what makes it free of the circuit.
@@ -1924,6 +1934,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.Switch or SymbolKind.SwitchD, "Isolation") =>
             "How far below the signal the leakage past an OPEN throw sits. The 200 dB default means "
           + "none — the ideal switch leaks nothing, and the entry is not stamped at all.",
+        (SymbolKind.OscProbe, "Mode") =>
+            "series: the probe sits in the oscillator's loop and is a short in every other analysis. shunt: it sits across the "
+          + "resonator and is an open. Under the oscillator analysis, series inserts a current generator and shunt a voltage "
+          + "generator, at the oscillation frequency only.",
         (SymbolKind.Switch or SymbolKind.SwitchD, "OffState") =>
             "What an open throw looks like from its own port: Reflective is an open circuit, "
           + "Absorptive is a matched termination. Reflective is what a series switch does.",
@@ -2346,6 +2360,8 @@ public static class ComponentTypeRegistry
             // but a State driven by a variable or a sweep is a caption the picture cannot carry, and
             // the label is also the only place such a value can be TYPED now that the properties
             // dialog offers a closed picker (NamedParamOptions).
+            case SymbolKind.OscProbe:
+                return [new("Mode", CircuitRF.Core.Devices.OscProbeModel.ModeSeries, "", true, UnitDimension.None)];
             case SymbolKind.Switch:
                 return [new("State",     "1",           "",   true,  UnitDimension.None),
                         new("Throws",    "1",           "",   false, UnitDimension.None),
@@ -3688,6 +3704,8 @@ public static class ComponentTypeRegistry
             case "VP":     kind = SymbolKind.VProbe;        return true;
             case "WSPROBE":
             case "WSP":    kind = SymbolKind.WSProbe;       return true;
+            case "OSCPROBE":
+            case "OP":     kind = SymbolKind.OscProbe;      return true;
             case "VAR":    kind = SymbolKind.Var;           return true;
             case "MEAS":   kind = SymbolKind.Meas;          return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
@@ -3998,6 +4016,9 @@ public static class ComponentTypeRegistry
     private static readonly string[] CirculatorDirectionOptions =
         [nameof(CirculatorDirection.CW), nameof(CirculatorDirection.CCW)];
 
+    private static readonly string[] OscProbeModeOptions =
+        [CircuitRF.Core.Devices.OscProbeModel.ModeSeries, CircuitRF.Core.Devices.OscProbeModel.ModeShunt];
+
     private static readonly string[] SwitchOffStateOptions =
         [nameof(SwitchOffState.Reflective), nameof(SwitchOffState.Absorptive)];
 
@@ -4064,6 +4085,7 @@ public static class ComponentTypeRegistry
     {
         (SymbolKind.Circulator, "Direction")                      => CirculatorDirectionOptions,
         (SymbolKind.Switch or SymbolKind.SwitchD, "OffState")     => SwitchOffStateOptions,
+        (SymbolKind.OscProbe, "Mode")                             => OscProbeModeOptions,
         // The switch position (owner, 2026-09-13). A closed set of numerals rather than a free-text
         // box: a State naming a throw that does not exist closes nothing SILENTLY, by the model's own
         // rule, so a typo'd "3" is an open switch with nothing said anywhere. An expression — the
