@@ -51,6 +51,7 @@ namespace RfCore.Loadpull
             "Pout_dBm", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "Pdc_W",
             "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc",
             "Zin_real", "Zin_imag", "IRL_dB", "AMPM_deg",
+            "NF",   // brief NZ-6: present only on a Noise=yes run
         ];
 
         private const double Z0 = 50.0;

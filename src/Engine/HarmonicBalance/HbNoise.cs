@@ -15,6 +15,12 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// </summary>
 public sealed record HbNoiseRequest(int InPort, int OutPort, int[] Sideband, bool Contrib)
 {
+    /// <summary>Brief NZ-6: a Tuner's instance name to take as the input termination in place of port <see cref="InPort"/> — a
+    /// loadpull's source tuner. Its RF termination is the port; its drive and bias tee are not.</summary>
+    public string? InTuner { get; init; }
+    /// <summary>Brief NZ-6: a Tuner's instance name to read the output noise at in place of port <see cref="OutPort"/>.</summary>
+    public string? OutTuner { get; init; }
+
     /// <summary>The sideband as the run summary and the cubes spell it: <c>-1</c>, or <c>1,-1</c> on a lattice.</summary>
     public string SidebandText => string.Join(",", Sideband);
 }
@@ -316,6 +322,24 @@ internal static class HbNoise
         throw new InvalidOperationException(HbNoiseDiagnostics.NoPort(key, num, role).Render());
     }
 
+    /// <summary>
+    /// A Tuner as a noise port (brief NZ-6): its RF termination — the Z_Port a loadpull overrides per grid point — between
+    /// the two nodes it sits on. A source tuner's is in series between its drive node (held by the drive, a short to every
+    /// small-signal current) and its DC block; a load tuner's runs from its DC block to its reference. The impedance is the
+    /// band's at each sideband, as the tuner stamps it. The drive and the bias tee are ideal, so the port is the whole of
+    /// the tuner's noise.
+    /// </summary>
+    private static Port FindTuner(ElaboratedNetlist nl, string name, string key)
+    {
+        var ec = nl.Components.FirstOrDefault(c => c.Model is TunerModel && c.InstancePath == name)
+                 ?? throw new InvalidOperationException(HbNoiseDiagnostics.NoTuner(key, name).Render());
+        var t = (TunerModel)ec.Model;
+        int Node(int i) => ec.Nodes.Length > i ? ec.Nodes[i] : 0;
+        return t.Role == TunerRole.Source
+            ? new Port(ec.InstancePath, Node(2), Node(4), t.ImpedanceAt)
+            : new Port(ec.InstancePath, Node(2), Node(1), t.ImpedanceAt);
+    }
+
     // ── the analysis ─────────────────────────────────────────────────────────
 
     /// <summary>One output frequency's answer.</summary>
@@ -343,8 +367,8 @@ internal static class HbNoise
             throw new InvalidOperationException(HbSmallSignal.TooLargeMessage(nInt * S, nInt, S)
                 .Replace("wsprobe.hb-ss-", "hb.noise.", StringComparison.Ordinal));
 
-        var pin  = FindPort(nl, req.InPort,  "input",  "NoiseIn");
-        var pout = FindPort(nl, req.OutPort, "output", "NoiseOut");
+        var pin  = req.InTuner  is { } ti ? FindTuner(nl, ti, "NoiseIn")  : FindPort(nl, req.InPort,  "input",  "NoiseIn");
+        var pout = req.OutTuner is { } to ? FindTuner(nl, to, "NoiseOut") : FindPort(nl, req.OutPort, "output", "NoiseOut");
 
         // The signal sideband and its image, by their mixing offsets.
         double target = 0;

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:an="using:CircuitRF.Ui.Views.Analyses"
              x:Class="CircuitRF.Ui.Views.Analyses.LpBodyView"
              x:DataType="vm:LpBodyViewModel">
 
@@ -110,6 +111,11 @@
                 <TextBox Text="{Binding CompressionExpr, Mode=TwoWay}" FontSize="11"/>
                 <TextBlock Text="{Binding CompressionPreview}" FontSize="10" Opacity="0.55"/>
             </StackPanel>
+
+            <Separator Opacity="0.3"/>
+
+            <!-- ── Noise figure (brief NZ-6) ────────────────────────────────── -->
+            <an:LoadpullNoiseView DataContext="{Binding NoiseVm}"/>
 
             <Separator Opacity="0.3"/>
 

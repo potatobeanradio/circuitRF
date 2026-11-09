@@ -259,11 +259,15 @@ public sealed class LoadpullPursuitEngine
             new(new Complex(0, 0), new Complex(50, 0), 0)   // 50 Ω start point
         }, 50.0);
 
+        // Brief NZ-6 — the noise keys ride on the inner params; only the follow-on loadpull (a Run()) reads them, the search
+        // never does (it calls RunOneTermination, and NF is no part of what it maximises).
+        var (noise, noiseHz) = LoadpullEngine.ResolveNoise(lpa, lpa.Name, lpa.LoadTunerName, lpa.SourceTunerName, tone,
+                                                           globals, globalsWithUnit, Num);
         var lpParams = new LoadpullAnalysisParams(
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, dummyGrid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz);
 
         bool usePae  = lpa.EffTypeExpr.Trim().Equals("PAE", StringComparison.OrdinalIgnoreCase);
         double obo   = Num(lpa.ZsourceOBOExpr, 5.0);

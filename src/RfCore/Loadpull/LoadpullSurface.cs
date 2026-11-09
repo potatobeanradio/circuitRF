@@ -455,7 +455,8 @@ namespace RfCore.Loadpull
                                        "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc",
                                        // Derived display metrics (post-processor / .spl reader) — must be
                                        // loadable so the summary table's MetricAtCoord can read them.
-                                       "Zin_real", "Zin_imag", "AMPM_deg", "IRL_dB" };
+                                       "Zin_real", "Zin_imag", "AMPM_deg", "IRL_dB",
+                                       "NF" };   // brief NZ-6: the noise figure of a Noise=yes run
             var metricCubes  = new Dictionary<string, DataCube>(StringComparer.Ordinal);
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);

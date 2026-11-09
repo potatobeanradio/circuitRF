@@ -574,6 +574,22 @@ public sealed class AnalysisSerializationTests
         Assert.Equal("3",   lp.GuardHarmonicExpr);
     }
 
+    /// <summary>Brief NZ-6: the loadpull noise keys survive the .csch on a loadpull and a pursuit alike.</summary>
+    [Fact]
+    public void LP_And_LPP_NoiseKeys_RoundTrip()
+    {
+        var lp  = new LoadpullAnalysis("LP1") { GridPath = "g.gam", NoiseExpr = "yes", NoiseFreqExpr = "2.4", NoiseFreqUnit = "GHz",
+                                                NoiseInExpr = "TS2", NoiseOutExpr = "3", NoiseSidebandExpr = "-1" };
+        var lpp = new LoadpullPursuitAnalysis("LPP1") { NoiseExpr = "yes", NoiseOutExpr = "TL2" };
+        var (a2, _) = RoundTrip([lp, lpp], []);
+        var r = Assert.IsType<LoadpullAnalysis>(a2[0]);
+        Assert.Equal(("yes", "2.4", "GHz", "TS2", "3", "-1"),
+            (r.NoiseExpr, r.NoiseFreqExpr, r.NoiseFreqUnit, r.NoiseInExpr, r.NoiseOutExpr, r.NoiseSidebandExpr));
+        var q = Assert.IsType<LoadpullPursuitAnalysis>(a2[1]);
+        Assert.Equal(("yes", "", "Hz", "", "TL2", "0"),
+            (q.NoiseExpr, q.NoiseFreqExpr, q.NoiseFreqUnit, q.NoiseInExpr, q.NoiseOutExpr, q.NoiseSidebandExpr));
+    }
+
     [Fact]
     public void LP_DefaultToneUnit_OmittedFromDto_ReReadsAsHz()
     {

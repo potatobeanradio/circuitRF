@@ -14,6 +14,34 @@ namespace CircuitRF.Core.Tests.Netlist;
 /// </summary>
 public class LoadpullCnlRoundTripTests
 {
+    // ── Brief NZ-6: the noise keys round-trip on both, and a line without them gains none ──────────
+
+    [Fact]
+    public void LoadpullNoiseKeys_RoundTrip_AndAreAbsentWhenDefault()
+    {
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(new LoadpullAnalysis("LP1") { GridPath = "g.gam", LoadTunerName = "TL", SourceTunerName = "TS" });
+        tb.Analyses.Add(new LoadpullAnalysis("LP2")
+        {
+            GridPath = "g.gam", LoadTunerName = "TL", SourceTunerName = "TS", NoiseExpr = "yes", NoiseFreqExpr = "2.4", NoiseFreqUnit = "GHz",
+            NoiseInExpr = "TS2", NoiseOutExpr = "3", NoiseSidebandExpr = "-1",
+        });
+        tb.Analyses.Add(new LoadpullPursuitAnalysis("LPP1") { LoadTunerName = "TL", SourceTunerName = "TS", NoiseExpr = "yes", NoiseFreqExpr = "2.4", NoiseFreqUnit = "GHz" });
+
+        var text = CnlWriter.Write(tb);
+        Assert.DoesNotContain("Noise", text.Split('\n').Single(l => l.Contains("analysis LP1 ", StringComparison.Ordinal)));
+        var (_, tb2) = new CnlReader().Read(text);
+
+        var lp2 = tb2.Analyses.OfType<LoadpullAnalysis>().Single(a => a.Name == "LP2");
+        Assert.True(lp2.Noise);
+        Assert.Equal(("2.4", "GHz", "TS2", "3", "-1"),
+            (lp2.NoiseFreqExpr, lp2.NoiseFreqUnit, lp2.NoiseInExpr, lp2.NoiseOutExpr, lp2.NoiseSidebandExpr));
+        var lpp = tb2.Analyses.OfType<LoadpullPursuitAnalysis>().Single();
+        Assert.True(lpp.Noise);
+        Assert.Equal(("2.4", "GHz", "", ""), (lpp.NoiseFreqExpr, lpp.NoiseFreqUnit, lpp.NoiseInExpr, lpp.NoiseOutExpr));
+        Assert.False(tb2.Analyses.OfType<LoadpullAnalysis>().Single(a => a.Name == "LP1").Noise);
+    }
+
     // ── LP: every field round-trips ──────────────────────────────────────────
 
     [Fact]

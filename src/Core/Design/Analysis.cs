@@ -511,10 +511,33 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
 }
 
 /// <summary>
+/// The noise keys a loadpull and a loadpull pursuit share (brief NZ-6). Every default leaves a run exactly as it was:
+/// <c>Noise=no</c> writes nothing new. With <c>Noise=yes</c> the engine reads harmonic-balance noise (brief NZ-5) at every
+/// converged rung of every grid point's drive ladder and adds <c>NF</c> [gridPoint, pinStep] beside Pout, Gt and PAE.
+/// </summary>
+public interface ILoadpullNoiseKeys
+{
+    /// <summary><c>Noise=</c>, verbatim.</summary>
+    string NoiseExpr { get; }
+    /// <summary><c>NoiseFreq=</c>: the output frequency the noise is read at. Empty reads 1 % above the tone.</summary>
+    string NoiseFreqExpr { get; }
+    /// <summary><c>NoiseFreqUnit=</c>: the unit of <see cref="NoiseFreqExpr"/>, var-unit-wins as the tone's.</summary>
+    string NoiseFreqUnit { get; }
+    /// <summary><c>NoiseIn=</c>: empty for the source tuner, else a tuner's instance name or a port number.</summary>
+    string NoiseInExpr { get; }
+    /// <summary><c>NoiseOut=</c>: empty for the load tuner, else a tuner's instance name or a port number.</summary>
+    string NoiseOutExpr { get; }
+    /// <summary><c>NoiseSideband=</c>: the input sideband k (the input frequency is <c>f_out + k·f0</c>); 0 for an amplifier.</summary>
+    string NoiseSidebandExpr { get; }
+    /// <summary>Whether <see cref="NoiseExpr"/> turns the noise on.</summary>
+    bool Noise { get; }
+}
+
+/// <summary>
 /// Loadpull analysis directive (loadpull.md §2.1).
 /// Key=value fields store raw expression strings (resolved at engine time).
 /// </summary>
-public sealed class LoadpullAnalysis(string name) : Analysis(name)
+public sealed class LoadpullAnalysis(string name) : Analysis(name), ILoadpullNoiseKeys
 {
     // ── Required ───────────────────────────────────────────────────────────────
     public string ToneExpr        { get; init; } = "0";
@@ -547,6 +570,15 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name)
     /// </summary>
     public string ContinuityMarginExpr { get; init; } = "3";
 
+    // ── Noise figure at each rung (brief NZ-6) — see ILoadpullNoiseKeys ────────
+    public string NoiseExpr         { get; init; } = Analysis.NoiseDefault;
+    public string NoiseFreqExpr     { get; init; } = "";
+    public string NoiseFreqUnit     { get; init; } = "Hz";
+    public string NoiseInExpr       { get; init; } = "";
+    public string NoiseOutExpr      { get; init; } = "";
+    public string NoiseSidebandExpr { get; init; } = HarmonicBalanceAnalysis.NoiseSidebandDefault;
+    public bool   Noise => ParseNdf(NoiseExpr);
+
     // Optional: source directory for resolving relative Grid paths (set by reader).
     public string? SourceDirectory  { get; init; }
 }
@@ -556,7 +588,7 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name)
 /// All loadpull keys except Grid, plus pursuit-specific keys.
 /// loadpull_pursuit.md §3.
 /// </summary>
-public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
+public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name), ILoadpullNoiseKeys
 {
     // ── Shared with LoadpullAnalysis (no Grid) ────────────────────────────────
     public string ToneExpr          { get; init; } = "0";
@@ -582,6 +614,15 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
     /// <summary>Round 11 — see <see cref="LoadpullAnalysis.ContinuityMarginExpr"/>; the pursuit's own
     /// inner drive-up is the same one, so it takes the same key.</summary>
     public string ContinuityMarginExpr { get; init; } = "3";
+
+    // ── Noise figure at each rung (brief NZ-6) — see ILoadpullNoiseKeys; read by the follow-on loadpull only ────────
+    public string NoiseExpr         { get; init; } = Analysis.NoiseDefault;
+    public string NoiseFreqExpr     { get; init; } = "";
+    public string NoiseFreqUnit     { get; init; } = "Hz";
+    public string NoiseInExpr       { get; init; } = "";
+    public string NoiseOutExpr      { get; init; } = "";
+    public string NoiseSidebandExpr { get; init; } = HarmonicBalanceAnalysis.NoiseSidebandDefault;
+    public bool   Noise => ParseNdf(NoiseExpr);
 
     // ── Pursuit-specific keys ─────────────────────────────────────────────────
     public string EffTypeExpr                { get; init; } = "DE";            // "DE" or "PAE"

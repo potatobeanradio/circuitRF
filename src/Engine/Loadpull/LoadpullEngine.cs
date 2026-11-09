@@ -33,7 +33,12 @@ public sealed record LoadpullAnalysisParams(
     double?            TickleDbm,        // null = disabled
     /// <summary>Round 11 — <see cref="DriveLadder"/>'s continuity margin, dB. 0 disables the guard.
     /// Defaulted so every existing positional construction keeps compiling and keeps the guard on.</summary>
-    double             ContinuityMarginDb = DriveLadder.DefaultContinuityMarginDb);
+    double             ContinuityMarginDb = DriveLadder.DefaultContinuityMarginDb,
+    /// <summary>Brief NZ-6: the noise read at every converged rung (<c>Noise=yes</c>), or null — and a null run is the one
+    /// from before. Its ports are the tuners unless the directive named others.</summary>
+    HbNoiseRequest?    Noise = null,
+    /// <summary>Brief NZ-6: the output frequency the noise is read at, Hz (<c>NoiseFreq=</c>; the tone when absent).</summary>
+    double             NoiseFreqHz = 0);
 
 /// <summary>
 /// The core loadpull engine — outer Γ/Z grid × inner adaptive Pin sweep (loadpull.md §2–§5).
@@ -54,6 +59,11 @@ public sealed class LoadpullEngine
     // into WireTemp. A pursuit's search calls RunOneTermination directly and reads none of them, so it must not pay K+1
     // back-solves per Pin step for them (its follow-on loadpull is a Run(), and reports WireTemp there).
     private bool _collectWBondCurrents;
+
+    // Brief NZ-6 — the frequency the noise is read at, set only inside Run() when the directive asks for noise. A pursuit's
+    // search calls RunOneTermination directly and reads no noise, so it pays nothing for it; its follow-on loadpull is a
+    // Run(), and reports NF there. 0 = no noise.
+    private double _noiseHz;
 
     public LoadpullEngine(ElaboratedNetlist netlist, TestBench tb, AnalysisSettings? settings = null)
     {
@@ -155,11 +165,88 @@ public sealed class LoadpullEngine
         // frequency's own terminations.
         var grid = GamReader.ReadFileForFreq(lpa.GridPath, tone);
 
+        var (noise, noiseHz) = ResolveNoise(lpa, lpa.Name, lpa.LoadTunerName, lpa.SourceTunerName, tone, globals, globalsWithUnit, Num);
         return new LoadpullAnalysisParams(
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, grid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz);
+    }
+
+    /// <summary>
+    /// The loadpull noise keys (brief NZ-6) of a loadpull or a pursuit, or (null, 0) without <c>Noise=yes</c>. The frequency is
+    /// 0 when <c>NoiseFreq</c> is absent, which <see cref="NoiseReadHz"/> reads as the default. <c>NoiseIn</c>
+    /// and <c>NoiseOut</c> default to the source and load tuners; a number is a port's <c>Num</c>, as on an <c>hb</c>
+    /// analysis, and anything else a Tuner's instance name. Every malformed key is a refusal naming it, as on HB.
+    /// </summary>
+    internal static (HbNoiseRequest? Request, double FreqHz) ResolveNoise(
+        ILoadpullNoiseKeys keys, string analysis, string loadTuner, string sourceTuner, double toneHz,
+        IReadOnlyDictionary<string, Value> globals, IReadOnlyCollection<string>? globalsWithUnit,
+        Func<string, double, double> num)
+    {
+        if (!keys.Noise) return (null, 0);
+        double hz = 0;
+        if (keys.NoiseFreqExpr.Trim().Length > 0)
+        {
+            try { hz = FreqUnit.ResolveHz(keys.NoiseFreqExpr, keys.NoiseFreqUnit, globals, globalsWithUnit); }
+            catch (ExpressionException ex)
+            {
+                throw new InvalidOperationException(
+                    "Loadpull " + FreqUnit.UnresolvedFieldMessage("NoiseFreq", analysis, keys.NoiseFreqExpr, ex), ex);
+            }
+            if (!(hz > 0) || !double.IsFinite(hz))
+                throw new InvalidOperationException($"Loadpull '{analysis}': NoiseFreq={keys.NoiseFreqExpr} is not a positive frequency.");
+        }
+        var k = HarmonicBalanceAnalysis.ParseSideband(keys.NoiseSidebandExpr);
+        if (k is not { Length: 1 })
+            throw new InvalidOperationException(HbNoiseDiagnostics.BadSideband(analysis, keys.NoiseSidebandExpr, 1).Render());
+
+        // Each end: blank is the tuner; an integer is a port number; anything else is a tuner's name.
+        (int Port, string? Tuner) End(string expr, string tuner)
+        {
+            string t = expr.Trim();
+            if (t.Length == 0) return (0, tuner);
+            if (int.TryParse(t, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int n))
+            {
+                if (n < 1) throw new InvalidOperationException(HbNoiseDiagnostics.BadPort(analysis, "NoiseIn/NoiseOut", t).Render());
+                return (n, null);
+            }
+            return (0, t);
+        }
+        var (inPort, inTuner)   = End(keys.NoiseInExpr,  sourceTuner);
+        var (outPort, outTuner) = End(keys.NoiseOutExpr, loadTuner);
+        return (new HbNoiseRequest(inPort, outPort, k, Contrib: false) { InTuner = inTuner, OutTuner = outTuner }, hz);
+    }
+
+    /// <summary>
+    /// Where the noise is read when <c>NoiseFreq</c> is absent (brief NZ-6), relative to the tone: 1 % above it. The brief's
+    /// default is "the tone", the LNA under drive, but the tone itself is degenerate (below) and a reading just beside it is
+    /// not one number: under drive the conversion matrix carries baseband noise onto the output at the offset's own
+    /// frequency, so a reading 1 kHz off is dominated by flicker and by the bias network's high impedance at 1 kHz — on
+    /// brief NZ-5's BJT LNA, 3.6 → 8.2 → 17.4 dB from −50 to −30 dBm against 2.54 → 2.62 → 3.29 dB at 10 MHz. 1 % is the
+    /// noise a small signal near the drive sees, which is what the default is for (owner's choice, 2026-11-09).
+    /// </summary>
+    public const double DefaultNoiseOffset = 0.01;
+
+    /// <summary>
+    /// The relative step a stated noise frequency on a degenerate point is moved by (brief NZ-6). At the tone or any
+    /// half-multiple of it, a sideband and the negative of another are one frequency, and brief NZ-5's conversion matrix
+    /// cannot split the noise between them (it reports NaN there). One part in a million of the tone separates the
+    /// sidebands cleanly, and a displayed frequency does not change.
+    /// </summary>
+    public const double DegenerateNoiseOffset = 1e-6;
+
+    /// <summary>The frequency the noise is actually read at: the tone plus <see cref="DefaultNoiseOffset"/> of it when
+    /// <paramref name="requestedHz"/> is 0 (<c>NoiseFreq</c> absent); <paramref name="requestedHz"/> plus
+    /// <see cref="DegenerateNoiseOffset"/> of the tone when it lands on a degenerate point (<paramref name="moved"/>);
+    /// otherwise <paramref name="requestedHz"/>.</summary>
+    public static double NoiseReadHz(double requestedHz, double toneHz, out bool moved)
+    {
+        moved = false;
+        if (requestedHz <= 0) return toneHz * (1 + DefaultNoiseOffset);
+        double r = 2.0 * requestedHz / toneHz;
+        moved = Math.Abs(r - Math.Round(r)) <= 1e-9 * Math.Max(1.0, Math.Abs(r));
+        return moved ? requestedHz + DegenerateNoiseOffset * toneHz : requestedHz;
     }
 
     // ── Setup context (shared between full sweep and per-termination queries) ───
@@ -312,6 +399,17 @@ public sealed class LoadpullEngine
         var convergedV    = new Dictionary<int, Complex[,]>();
         var gridPointList = p.Grid.Points;
         _collectWBondCurrents = true;
+        bool moved = false;
+        _noiseHz = p.Noise is null ? 0 : NoiseReadHz(p.NoiseFreqHz, p.ToneHz, out moved);
+        if (moved)
+            _netlist.AddNoteOnce("loadpull.noise-frequency-offset",
+                $"Loadpull noise is read at {_noiseHz / 1e9:G9} GHz, {DegenerateNoiseOffset:G2} of the tone above the " +
+                $"requested {p.NoiseFreqHz / 1e9:G9} GHz: at a half-multiple of the tone a sideband and the negative of " +
+                "another are one frequency, and the noise there cannot be split between them.");
+        else if (p.Noise is not null && p.NoiseFreqHz <= 0)
+            _netlist.AddNoteOnce("loadpull.noise-frequency-default",
+                $"Loadpull noise is read at {_noiseHz / 1e9:G9} GHz, 1 % above the tone (NoiseFreq is absent): the noise a " +
+                "small signal beside the drive sees. Set NoiseFreq to read it elsewhere.");
         try
         {
             for (int gi = 0; gi < gridPointList.Count; gi++)
@@ -345,7 +443,7 @@ public sealed class LoadpullEngine
                     $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
             }
         }
-        finally { _collectWBondCurrents = false; }
+        finally { _collectWBondCurrents = false; _noiseHz = 0; }
 
         ctx.SweptModel.ClearHarmonicOverride();
         ctx.SrcModel.SetTone(0);
@@ -549,6 +647,16 @@ public sealed class LoadpullEngine
         ds.Add("BiasILoad",  new DataCube(new[] { gridAxis, pinAxis }, biasILoad));
         ds.Add("BiasVSrc",   new DataCube(new[] { gridAxis, pinAxis }, biasVSrc));
         ds.Add("BiasISrc",   new DataCube(new[] { gridAxis, pinAxis }, biasISrc));
+        // Brief NZ-6 — NF beside the FOMs, only when asked for (a run without Noise=yes writes exactly what it always did).
+        // NaN where a rung did not converge or the ladder never reached it: a padded 0 dB would read as a noiseless device.
+        if (p.Noise is not null)
+        {
+            var nf = new double[fomLen];
+            for (int gi = 0; gi < nG; gi++)
+                for (int pi = 0; pi < nP; pi++)
+                    nf[gi * nP + pi] = pi < gridPoints[gi].PinSteps.Count ? gridPoints[gi].PinSteps[pi].NfDb : double.NaN;
+            ds.Add("NF", new DataCube(new[] { gridAxis, pinAxis }, nf) { Unit = "dB" });
+        }
         ds.Add("ZLoad",      new DataCube(new[] { gridAxis }, zLoad));
         ds.Add("GammaLoad",  new DataCube(new[] { gridAxis }, gammaLoad));
         ds.Add("StopCode",   new DataCube(new[] { gridAxis }, stopCode));
@@ -599,6 +707,10 @@ public sealed class LoadpullEngine
         ctx.SweptModel.SetHarmonicOverride(p.TuneHarm, z);
 
         var pinSteps  = new List<PinStepResult>();
+        // Brief NZ-6 — each converged solve, by the step it made, so the noise is read after the ladder on the rungs it
+        // kept (a continuation's discarded probes cost nothing). Null when no noise was asked for.
+        var noisePoints = p.Noise is not null && _noiseHz > 0
+            ? new Dictionary<PinStepResult, HbEngine.SinglePointResult>(ReferenceEqualityComparer.Instance) : null;
         string stopReason = "PinMax";
         double gMax   = double.NegativeInfinity;
         // Pout at the rung gMax was measured on — what a compression claim is measured AGAINST.
@@ -647,6 +759,7 @@ public sealed class LoadpullEngine
 
             if (!sr.Converged && sr.FailReason is not null) lastFailReason = sr.FailReason;
             lastFailVacuous = sr.ToleranceVacuous;
+            if (noisePoints is not null && sr.Converged) noisePoints[step] = sr;
 
             return sr.Converged ? step : null;
         }
@@ -743,6 +856,15 @@ public sealed class LoadpullEngine
                 }
             }
         }
+
+        // Brief NZ-6 — NF at every converged rung, on that rung's own large-signal waveform. This grid point's termination is
+        // still the one in force, which is what the sideband partitions are stamped from; the drive is the right-hand side
+        // only, so whichever rung the ladder solved last does not matter.
+        if (noisePoints is not null)
+            foreach (var st in pinSteps)
+                if (noisePoints.TryGetValue(st, out var sr)
+                    && _hbEngine.NoiseAt(sr, p.Noise!, _noiseHz) is { } nds)
+                    st.NfDb = nds["NF"].RealValues[0];
 
         // Round 11 — the energy tripwire, and it is SKIPPED against an active termination. See
         // HasActiveTermination / WarnIfEnergyViolating for why that is physics and not a concession.

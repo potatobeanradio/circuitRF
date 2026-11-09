@@ -284,6 +284,7 @@ public static class SParameterNoise
     private static string WhyNoiselessByDefinition(ElaboratedComponent ec) => ec.Model switch
     {
         PortModel or TermModel => "a port: the run's own noiseless termination",
+        TunerModel             => "a tuner: the loadpull's own noiseless termination",
         _                      => "an independent source, zeroed in a small-signal run",
     };
 
@@ -321,9 +322,10 @@ public static class SParameterNoise
     public static bool CanBeNoisy(ElaboratedComponent ec) =>
         !IsNoiselessByDefinition(ec) && ec.Model is not (IProbeModel or ShortModel or WSProbeModel);
 
-    /// <summary>Ports (the run's noiseless terminations, or inert when buried) and independent sources (zeroed).</summary>
+    /// <summary>Ports (the run's noiseless terminations, or inert when buried), tuners (a loadpull's terminations: noiseless
+    /// by definition, as a port is — brief NZ-6) and independent sources (zeroed).</summary>
     private static bool IsNoiselessByDefinition(ElaboratedComponent ec) =>
-        ec.Model is PortModel or TermModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
+        ec.Model is PortModel or TermModel or TunerModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
 
     /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
     /// with no noise data is one (its activity is measured on its file), and so is a passive system block carrying a

@@ -362,3 +362,25 @@ terminals sit behind its own linear network, so every `lp`/`lpp` of one was refu
   harmonicaRF's `PinSearch` and gains one taking the load current.
 - The only refusal left is a tuner whose DUT side is ground.
 
+
+## Noise figure in a loadpull (brief NZ-6, 2026-11-09)
+
+Design note: `docs/design/hb-noise.md` §9. What was found on the way:
+
+- **The tuner's ideal 1 F DC block costs ~1e-6 of relative precision in every loadpull number.** Its j·6e9 S admittance
+  beside 0.02 S terminations: the small-signal NF of a BJT LNA came out 3.8e-6 dB below the S-parameter NF with bare
+  ports, and the S-parameter analysis shows the same shift with the same 1 F cap drawn (1 mF moves it back to 1e-9 dB;
+  the 1 H choke's value changes nothing). Physically the tee is 1e-10 Ω at 1 GHz. Left as it is — the cap is part of the
+  shipped tuner and of every golden — and the NZ-6 gate compares against the S-parameter analysis with the tee drawn.
+- **The loadpull's forced 1 µΩ choke regularization floors the HB residual near 1.5e-10 A** (Y ≈ 1e6 S at DC). A loadpull
+  `Tol` below ~1e-10 never converges; the noise gates pass `InductanceRegR = 1e-3` (no DC flows through a tuner's choke
+  behind its DC blocks) to run at 1e-12.
+- **HB noise at the tone is not a number.** The tone is degenerate for the one-family conversion matrix, and just beside it
+  the drive carries baseband noise up at the offset's own frequency (flicker, and a bias network open at kHz). The owner
+  chose 1 % above the tone as `NoiseFreq`'s default; a stated half-multiple of the tone is moved 1e-6 of the tone up.
+- **Tuners are noiseless by definition** now (`SParameterNoise.IsNoiselessByDefinition`), in the S-parameter noise analysis
+  too, where a tuner presents its Z[1]. Before, it was a thermal resistor there.
+- **`ContinuityMargin` does not survive a round trip** — not written by `CnlWriter.FormatLoadpullAnalysis`/
+  `FormatLoadpullPursuitAnalysis`, not carried by `CschAnalysis`, the editors or `DuplicateAnalysisCommand`. A loadpull
+  that sets it in a hand-written `.cnl` keeps it; one saved from the GUI, or run through the GUI's netlist write, gets 3 dB.
+  Found, not fixed (outside NZ-6).

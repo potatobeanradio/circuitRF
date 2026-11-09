@@ -1309,6 +1309,13 @@ public sealed class CnlReader
             DriveSteppingExpr     = kv.GetValueOrDefault("DriveStepping",       "IfNecessary"),
             GuardHarmonicExpr     = kv.GetValueOrDefault("GuardHarmonic",       "0"),
             ContinuityMarginExpr  = kv.GetValueOrDefault("ContinuityMargin",    "3"),
+            // Noise figure at each rung (brief NZ-6): every default leaves the run as it was.
+            NoiseExpr         = kv.GetValueOrDefault("Noise",         CircuitRF.Core.Design.Analysis.NoiseDefault),
+            NoiseFreqExpr     = kv.GetValueOrDefault("NoiseFreq",     ""),
+            NoiseFreqUnit     = kv.GetValueOrDefault("NoiseFreqUnit", "Hz"),
+            NoiseInExpr       = kv.GetValueOrDefault("NoiseIn",       ""),
+            NoiseOutExpr      = kv.GetValueOrDefault("NoiseOut",      ""),
+            NoiseSidebandExpr = kv.GetValueOrDefault("NoiseSideband", CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseSidebandDefault),
             EffTypeExpr           = kv.GetValueOrDefault("EffType",             "DE"),
             ZsourceOBOExpr        = kv.GetValueOrDefault("ZsourceOBO",          "5"),
             SearchMethodExpr      = kv.GetValueOrDefault("SearchMethod",         "SteepestAscent"),
@@ -1383,6 +1390,13 @@ public sealed class CnlReader
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping", "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic", "0"),
             ContinuityMarginExpr = kv.GetValueOrDefault("ContinuityMargin", "3"),
+            // Noise figure at each rung (brief NZ-6): every default leaves the run as it was.
+            NoiseExpr         = kv.GetValueOrDefault("Noise",         CircuitRF.Core.Design.Analysis.NoiseDefault),
+            NoiseFreqExpr     = kv.GetValueOrDefault("NoiseFreq",     ""),
+            NoiseFreqUnit     = kv.GetValueOrDefault("NoiseFreqUnit", "Hz"),
+            NoiseInExpr       = kv.GetValueOrDefault("NoiseIn",       ""),
+            NoiseOutExpr      = kv.GetValueOrDefault("NoiseOut",      ""),
+            NoiseSidebandExpr = kv.GetValueOrDefault("NoiseSideband", CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseSidebandDefault),
             SourceDirectory   = sourceDirectory,
             Enabled           = ParseEnabledToken(tokens),
         };

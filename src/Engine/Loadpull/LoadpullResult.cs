@@ -144,6 +144,11 @@ public sealed class PinStepResult
     /// search, which reads none).</summary>
     public IReadOnlyDictionary<string, WBondArrayCurrents>? WBondCurrents { get; init; }
 
+    // ── Noise (brief NZ-6) ───────────────────────────────────────────────────
+    /// <summary>The SSB noise figure at this step, dB, read on the step's own large-signal waveform; NaN when the run asked
+    /// for no noise or the step did not converge.</summary>
+    public double NfDb { get; internal set; } = double.NaN;
+
     // ── Convergence ──────────────────────────────────────────────────────────
     public bool    Converged   { get; }
     public int     Iterations  { get; }

@@ -90,6 +90,18 @@ public static partial class AnalysisDirectiveSchema
         new("emSetup", Summary: "The EM view that solves a model=em analysis when the cell has several: a .cem (a path relative to the netlist, or its name), or a driven setup embedded in the cell's 3D view as <view>#<setup> (C1#Driven1; a path to the .c3d before the # from a netlist that is not the cell's). Palace, EMerge or openEMS, as that setup says."),
     ];
 
+    /// <summary>The loadpull noise keys (brief NZ-6), on loadpull and loadpull_pursuit alike. Declared before
+    /// <see cref="_specs"/>, which reads it while it is being initialised.</summary>
+    private static readonly AnalysisDirectiveKey[] _loadpullNoise =
+    [
+        new("Noise",      Default: "no",  Summary: "yes adds NF [gridPoint, pinStep] (dB, SSB) beside Pout, Gt and PAE: harmonic-balance noise read at every converged rung of each grid point's drive ladder, the compression rung included, on that rung's own large-signal waveform, so the contour plot draws NF at any drive. The source tuner's termination is at T0 = 290 K; the tuners are otherwise noiseless, like ports. Costs about one Newton iteration per rung. A pursuit reads it on its follow-on loadpull only."),
+        new("NoiseFreq",  Default: "",    Summary: "The output frequency the noise is read at. Absent = 1 % above the tone: a small signal beside the drive (an LNA under drive). The tone itself is not a reading - under drive, noise close to the carrier is baseband noise carried up by the drive, and depends on how close. A stated frequency where a sideband and the negative of another coincide - the tone, or any half-multiple of it - is read 1e-6 of the tone above it, and the run says so."),
+        new("NoiseFreqUnit", Default: "Hz", Summary: "Unit for NoiseFreq."),
+        new("NoiseIn",    Default: "",    Summary: "The termination the noise figure is referred to. Absent = the source tuner; else a Tuner's instance name, or the Num of a top-level Port, Term or P1Tone."),
+        new("NoiseOut",   Default: "",    Summary: "The termination the output noise is read at. Absent = the load tuner; else a Tuner's instance name or a port Num."),
+        new("NoiseSideband", Default: "0",Summary: "The input sideband carrying the signal: the input frequency is NoiseFreq + k*Tone. 0 for an amplifier."),
+    ];
+
     private static readonly AnalysisDirectiveSpec[] _specs =
     [
         new("dc", ["operating_point", "op"],
@@ -188,6 +200,7 @@ public static partial class AnalysisDirectiveSchema
             new("DriveStepping", Default: "IfNecessary", Summary: "Drive-ladder policy."),
             new("GuardHarmonic", Default: "0",Summary: "Aliasing guard harmonics."),
             new("ContinuityMargin", Default: "3", Summary: "dB margin the continuity gate allows between adjacent grid points."),
+            .. _loadpullNoise,
         ]),
 
         new("loadpull_pursuit", ["lpp", "loadpullpursuit", "pursuit"],
@@ -223,6 +236,7 @@ public static partial class AnalysisDirectiveSchema
             new("nonconvergentVSWR", Default: "1.05", Summary: "VSWR circle used to replace a non-converging point."),
             new("CreateLoadpullResult", Default: "true", Summary: "Also produce the loadpull result cubes the Data Display reads."),
             new("LoadpullResultZsource", Default: "MXE", Summary: "Source impedance the loadpull result is computed at: MXE | MXP | None."),
+            .. _loadpullNoise,
         ]),
 
         new("parametric_sweep", ["sweep", "parametricsweep", "param_sweep"],

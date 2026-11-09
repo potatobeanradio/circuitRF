@@ -35,6 +35,12 @@ public static class HbNoiseDiagnostics
         "{key}={num} names the {role} port, but no top-level Port, Term or P1Tone has Num={num}.",
         ("key", key), ("num", num), ("role", role));
 
+    /// <summary>A loadpull's NoiseIn/NoiseOut naming no Tuner (brief NZ-6).</summary>
+    public static Diagnostic NoTuner(string key, string name) => Diagnostic.Create(
+        "hb.noise.no-tuner", DiagnosticSeverity.Error,
+        "{key}={name} names no Tuner in this design.",
+        ("key", key), ("name", name));
+
     /// <summary>The signal sideband is not among those the conversion matrix keeps.</summary>
     public static Diagnostic SidebandNotRetained(string sideband) => Diagnostic.Create(
         "hb.noise.sideband-not-retained", DiagnosticSeverity.Error,

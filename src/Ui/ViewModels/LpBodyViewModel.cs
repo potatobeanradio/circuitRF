@@ -39,6 +39,9 @@ public sealed partial class LpBodyViewModel : ObservableObject
     /// <summary>True when the schematic has no tuner component to pick (drives the inline hint).</summary>
     public bool HasNoTuners => TunerInstanceNames.Count == 0;
 
+    /// <summary>The noise controls (brief NZ-6), shared with the other loadpull editor.</summary>
+    public LoadpullNoiseViewModel NoiseVm { get; }
+
     // ── Basic ─────────────────────────────────────────────────────────────────
     [ObservableProperty] private string  _loadTunerName   = "";
     [ObservableProperty] private string  _sourceTunerName = "";
@@ -113,6 +116,7 @@ public sealed partial class LpBodyViewModel : ObservableObject
             .Where(c => c.Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
             .Select(c => c.InstanceName)
             .ToList();
+        NoiseVm = new LoadpullNoiseViewModel(model, TunerInstanceNames);
     }
 
     // ── Seeding (a NEW analysis, not an edit) ─────────────────────────────────
@@ -213,6 +217,12 @@ public sealed partial class LpBodyViewModel : ObservableObject
         TolExpr         = TolExpr,
         DriveSteppingExpr = DriveSteppingExpr,
         GuardHarmonicExpr = GuardHarmonicExpr,
+        NoiseExpr         = NoiseVm.NoiseExpr,
+        NoiseFreqExpr     = NoiseVm.NoiseFreqExpr,
+        NoiseFreqUnit     = NoiseVm.NoiseFreqUnitExpr,
+        NoiseInExpr       = NoiseVm.NoiseInExpr,
+        NoiseOutExpr      = NoiseVm.NoiseOutExpr,
+        NoiseSidebandExpr = NoiseVm.NoiseSidebandExpr,
         // SourceDirectory set by the extractor/reader at run time, not here.
     };
 
@@ -254,6 +264,7 @@ public sealed partial class LpBodyViewModel : ObservableObject
         vm._prevToneUnit = toneUnit;
         vm.ToneUnit      = toneUnit;
         vm.ToneCoeff     = toneExpr;
+        vm.NoiseVm.Load(lp);
 
         return vm;
     }

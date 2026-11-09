@@ -1508,6 +1508,19 @@ internal static class Explain
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
 
+        // Brief NZ-6: a loadpull's noise ports and the frequency NF is read at, resolved as the run resolves them.
+        var lpNoise = new Dictionary<string, ExplainLoadpullNoiseJson>(StringComparer.Ordinal);
+        if (tb.Analyses.Any(a => a is ILoadpullNoiseKeys { Noise: true }))
+        {
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                foreach (var a in tb.Analyses.Where(a => a is ILoadpullNoiseKeys { Noise: true }))
+                    lpNoise[a.Name] = LoadpullNoiseOf(a, nl);
+            }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+        }
+
         // Brief ENV-MEAS-3: an envelope run records every labeled net's voltage and every IProbe's power, so explain says
         // which, from the same rule the engine applies. Elaborated once, only when an envelope analysis is declared.
         var envRecords = new Dictionary<string, ExplainEnvelopeRecordsJson>(StringComparer.Ordinal);
@@ -1626,9 +1639,11 @@ internal static class Explain
                 Records: envRecords.GetValueOrDefault(a.Name),
                 Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
                 FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name),
-                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : a is HarmonicBalanceAnalysis hbN ? hbN.Noise : null,
+                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : a is HarmonicBalanceAnalysis hbN ? hbN.Noise
+                     : a is ILoadpullNoiseKeys lpN ? lpN.Noise : null,
                 NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name),
-                HbNoise: hbNoise.GetValueOrDefault(a.Name)));
+                HbNoise: hbNoise.GetValueOrDefault(a.Name),
+                LoadpullNoise: lpNoise.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1748,6 +1763,25 @@ internal static class Explain
     /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
     /// <summary>Brief NZ-5: an HB noise directive resolved by the engine's own <c>HbEngine.Resolve</c>, then the signal and
     /// image input frequencies at the first and last output point. A refusal comes back as its sentence.</summary>
+    private static ExplainLoadpullNoiseJson LoadpullNoiseOf(Analysis a, ElaboratedNetlist nl)
+    {
+        var keys = (ILoadpullNoiseKeys)a;
+        try
+        {
+            var p = a is LoadpullPursuitAnalysis lpp
+                ? CircuitRF.Engine.Loadpull.LoadpullPursuitEngine.Resolve(lpp, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).LpParams
+                : CircuitRF.Engine.Loadpull.LoadpullEngine.Resolve((LoadpullAnalysis)a, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+            var req = p.Noise!;
+            double read = CircuitRF.Engine.Loadpull.LoadpullEngine.NoiseReadHz(p.NoiseFreqHz, p.ToneHz, out _);
+            return new ExplainLoadpullNoiseJson(req.InTuner ?? $"port {req.InPort}", req.OutTuner ?? $"port {req.OutPort}",
+                req.SidebandText, p.NoiseFreqHz, read, Math.Abs(read + req.Sideband[0] * p.ToneHz));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException)
+        {
+            return new ExplainLoadpullNoiseJson("", "", keys.NoiseSidebandExpr, 0, 0, 0, ex.Message);
+        }
+    }
+
     private static ExplainHbNoiseJson HbNoiseOf(HarmonicBalanceAnalysis hba, ElaboratedNetlist nl)
     {
         try
@@ -2346,6 +2380,24 @@ internal static class Explain
                             Console.WriteLine(
                                 $"      noise at output {Ghz(hn.OutputHz[i])}: signal in at {Ghz(hn.InputHz[i])}" +
                                 (hn.InputHz[i] == hn.OutputHz[i] && hn.ImageHz[i] == hn.OutputHz[i] ? "" : $", image at {Ghz(hn.ImageHz[i])}"));
+                    }
+                }
+
+                // NZ-6: a loadpull's noise ports and where NF is read.
+                if (a.LoadpullNoise is { } ln)
+                {
+                    if (ln.Refusal is { } why)
+                        Console.WriteLine($"      Noise: WOULD BE REFUSED — {why}");
+                    else
+                    {
+                        static string Ghz(double hz) => (hz / 1e9).ToString("G9", System.Globalization.CultureInfo.InvariantCulture) + " GHz";
+                        Console.WriteLine(
+                            $"      Noise: NF [gridPoint, pinStep] at every converged rung, referred to {ln.In}, read at {ln.Out}; " +
+                            $"signal sideband k={ln.Sideband}, in at {Ghz(ln.InputHz)}");
+                        Console.WriteLine(
+                            ln.RequestedHz <= 0     ? $"      noise read at {Ghz(ln.ReadHz)}: 1 % above the tone (NoiseFreq absent)"
+                          : ln.ReadHz == ln.RequestedHz ? $"      noise read at {Ghz(ln.ReadHz)}"
+                          : $"      noise read at {Ghz(ln.ReadHz)} (requested {Ghz(ln.RequestedHz)}, a half-multiple of the tone, where the noise cannot be split between sidebands)");
                     }
                 }
 

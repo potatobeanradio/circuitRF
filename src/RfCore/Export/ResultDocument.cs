@@ -2432,7 +2432,22 @@ namespace RfCore.Export
         /// <summary>Brief NZ-5 — an HB analysis with <c>Noise=yes</c>: its ports and sideband, and the input frequency at the
         /// first and last output point, so a wrong sideband sign is seen before a run. Null otherwise.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainHbNoiseJson? HbNoise = null);
+        ExplainHbNoiseJson? HbNoise = null,
+        /// <summary>Brief NZ-6 — a loadpull or pursuit with <c>Noise=yes</c>: its noise ports and the frequency NF is read at.
+        /// Null otherwise.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainLoadpullNoiseJson? LoadpullNoise = null);
+
+    /// <summary>
+    /// <c>explain --analysis</c>'s line for a loadpull or pursuit with <c>Noise=yes</c> (brief NZ-6): the termination NF is
+    /// referred to and the one it is read at (a Tuner's name, or <c>port n</c>), the sideband, the requested output frequency
+    /// (0 when <c>NoiseFreq</c> is absent) and the one it is actually read at (Hz: 1 % above the tone by default, and moved
+    /// off a half-multiple of the tone), and the signal's input frequency — or the sentence the run refuses with.
+    /// </summary>
+    public sealed record ExplainLoadpullNoiseJson(
+        string In, string Out, string Sideband, double RequestedHz, double ReadHz, double InputHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s line for an HB analysis with <c>Noise=yes</c> (brief NZ-5): the input and output ports, the

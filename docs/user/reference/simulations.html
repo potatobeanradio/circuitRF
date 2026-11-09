@@ -953,6 +953,61 @@ contour lines; measured loadpull files (<code>.spl</code>/<code>.lpcwave</code>)
       <tr><td>Power / bias</td><td>The drive level and bias at which the pull is performed (often a power sweep too).</td></tr>
     </tbody>
   </table>
+<h3 id="lp-noise">Noise figure in loadpull and sourcepull</h3>
+<p><code>Noise=yes</code> adds the noise figure to a loadpull, beside Pout, gain and PAE. Swept on the source side (<code>Sweep=Source</code>),
+its contours with gain and PAE on the same chart show the trade an input match is chosen on.</p>
+<pre><code>analysis LP1 type=loadpull Tone=2.4 ToneUnit=GHz LoadTuner=TL SourceTuner=TS Grid=&quot;source.gam&quot; Sweep=Source Noise=yes
+</code></pre>
+<p>At every drive level of every grid point that converges, circuitRF reads the <a href="#hb-noise">harmonic-balance noise</a> on that
+drive level's own large-signal waveform. <code>NF</code> [gridPoint, pinStep] (dB, SSB) is written with the other results, the
+contour plot offers it as a metric, and a <code>.spl</code> export carries it as one more column. A <code>.spl</code> reader that predates the
+<code>NF</code> column skips it and reads the rest.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Noise</code></td>
+<td><code>yes</code> adds <code>NF</code>.</td>
+<td><code>no</code></td>
+</tr>
+<tr>
+<td><code>NoiseFreq</code>, <code>NoiseFreqUnit</code></td>
+<td>The output frequency the noise is read at.</td>
+<td>1 % above the tone</td>
+</tr>
+<tr>
+<td><code>NoiseIn</code></td>
+<td>The termination NF is referred to: a Tuner's name, or the <code>Num</code> of a Port, Term or P1Tone.</td>
+<td>the source tuner</td>
+</tr>
+<tr>
+<td><code>NoiseOut</code></td>
+<td>The termination the noise is read at.</td>
+<td>the load tuner</td>
+</tr>
+<tr>
+<td><code>NoiseSideband</code></td>
+<td>The input sideband: the signal comes in at <code>NoiseFreq + k·Tone</code>.</td>
+<td><code>0</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why not at the tone itself.</strong> Under drive, noise near the carrier is low-frequency noise that the drive carries up,
+so how much of it there is depends on how close you look. 1 kHz off the tone, flicker noise and a high-impedance bias
+network can add several dB that a signal 10 MHz away never sees. By default the noise is read 1 % above the tone, the
+noise a small signal beside the drive sees. For a receive band, set <code>NoiseFreq</code> to it. A <code>NoiseFreq</code> exactly at the tone,
+or at any half-multiple of it, is read 1e-6 of the tone above, and the run says so.</p>
+<p><strong>The tuners are noiseless</strong>, as ports are. The input termination is at T0 = 290 K. At the low drive levels of the
+ladder, <code>NF</code> equals the <a href="#sp-noise">S-parameter noise analysis</a> on the same terminations. A small-signal sourcepull's NF
+contours are the circles <code>ns_circle</code> draws.</p>
+<p>It costs about one Newton iteration per drive level. On a <a href="#loadpull-pursuit">pursuit</a>, the same keys add <code>NF</code> to its
+follow-on loadpull. The search itself does not read noise.</p>
 <h3 id="gam-file">The termination grid file (<code>.gam</code>)</h3>
 <p>The grid of terminations a loadpull visits lives in a small, human-readable text file with a
 <code>.gam</code> extension — one termination per line. It is kept <em>out</em> of the netlist on purpose: a grid is

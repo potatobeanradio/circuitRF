@@ -230,7 +230,7 @@ public partial class TraceRowViewModel : ViewModelBase
         "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "dB",
         "DE" or "PAE" or "Efficiency"  => "%",
         "AMPM_deg"                     => "deg",
-        "IRL_dB"                       => "dB",
+        "IRL_dB" or "NF"               => "dB",
         _                              => "",
     };
 
@@ -676,6 +676,7 @@ public partial class TraceRowViewModel : ViewModelBase
         // Engine core FOMs + post-processor derived FOMs (loadpull-postprocessor.md) — always offered.
         "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "Pdc_W",
         "Zin_real", "Zin_imag", "IRL_dB", "AMPM_deg",
+        "NF",   // brief NZ-6 — present only when the run asked for noise, then always offered
     };
 
     private void RebuildMetricList()
@@ -850,7 +851,7 @@ public partial class TraceRowViewModel : ViewModelBase
     private void RebuildSummaryMetricOptions()
     {
         SummaryMetricOptions.Clear();
-        foreach (var m in new[] { "Pout_dBm", "Efficiency", "Gt_dB", "Gp_dB", "PAE", "AMPM_deg", "IRL_dB", "Pdc_W" })
+        foreach (var m in new[] { "Pout_dBm", "Efficiency", "Gt_dB", "Gp_dB", "PAE", "AMPM_deg", "IRL_dB", "Pdc_W", "NF" })
             if (AvailableMetrics.Contains(m)) SummaryMetricOptions.Add(m);
         SummaryMetricOptions.Add("Zload");
         // Zin is offered when the Zin_real cube EXISTS in the dataset — not gated on AvailableMetrics,

@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.LoadpullNoiseView"
+             x:DataType="vm:LoadpullNoiseViewModel">
+
+    <!-- Brief NZ-6 — noise figure at every converged rung, shared by the loadpull and pursuit editors. Always laid out,
+         enabled by the box, so nothing shifts when it is ticked. -->
+    <StackPanel Spacing="6">
+        <CheckBox IsChecked="{Binding Noise, Mode=TwoWay}"
+                  Content="Noise figure (NF at every drive level)" FontSize="11"/>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding Noise}">
+            <StackPanel Spacing="2">
+                <TextBlock Text="Input termination" FontSize="10" Opacity="0.6"/>
+                <ComboBox ItemsSource="{Binding InChoices}"
+                          SelectedItem="{Binding NoiseIn, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" FontSize="11"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="Output termination" FontSize="10" Opacity="0.6"/>
+                <ComboBox ItemsSource="{Binding OutChoices}"
+                          SelectedItem="{Binding NoiseOut, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" FontSize="11"/>
+            </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="2*,*" ColumnSpacing="10" IsEnabled="{Binding Noise}">
+            <StackPanel Spacing="2">
+                <TextBlock Text="Noise frequency" FontSize="10" Opacity="0.6"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding NoiseFreqCoeff, Mode=TwoWay}" FontSize="11"/>
+                    <ComboBox Grid.Column="1" MinWidth="60" MaxWidth="68" FontSize="9" Margin="3,0,0,0"
+                              ItemsSource="{x:Static vm:LoadpullNoiseViewModel.FreqUnits}"
+                              SelectedItem="{Binding NoiseFreqUnit, Mode=TwoWay}"/>
+                </Grid>
+                <TextBlock Text="{Binding NoiseFreqPreview}" FontSize="10" Opacity="0.55"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="Signal sideband k" FontSize="10" Opacity="0.6"/>
+                <TextBox Text="{Binding NoiseSidebandExpr, Mode=TwoWay}" FontSize="11"/>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</UserControl>

@@ -66,7 +66,7 @@ public sealed class LoadpullMetricListTests
 
     // Writes a simulated-LP-shaped grouped run.npy. When enrich=true, runs the post-processor first
     // (the run-pipeline behavior) so the persisted file carries the derived display metrics.
-    private static string WriteGroupedLpNpy(bool enrich)
+    private static string WriteGroupedLpNpy(bool enrich, bool withNf = false)
     {
         var ds = new DataSet();
         void G(string name, DataCube c) => ds.AddToGroup("LP1", name, c);
@@ -85,6 +85,7 @@ public sealed class LoadpullMetricListTests
         G("Gp",   Fom2D(varying: true));
         G("DE",   Fom2D(varying: false));
         G("PAE",  Fom2D(varying: false));
+        if (withNf) G("NF", Fom2D(varying: false));   // brief NZ-6 — flat, so only the always-offered rule can offer it
         // Spectra + node-identity provenance (engine output).
         var (v, inl) = Spectra();
         G("V", v);
@@ -140,6 +141,25 @@ public sealed class LoadpullMetricListTests
             // Interface spectra are not metrics.
             Assert.DoesNotContain("V",   metrics);
             Assert.DoesNotContain("INl", metrics);
+        }
+        finally
+        {
+            try { File.Delete(npy); } catch { /* best-effort temp cleanup */ }
+        }
+    }
+
+    /// <summary>Brief NZ-6: a Noise=yes run's NF is offered as a contour metric, even flat, beside the headline FOMs.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task MetricList_OffersNoiseFigure_WhenTheRunCarriesIt()
+    {
+        string npy = WriteGroupedLpNpy(enrich: true, withNf: true);
+        try
+        {
+            var lib = new DataSourceLibraryViewModel();
+            await lib.SelectDataSourceAsync(npy);
+            var inspector = new PlotInspectorViewModel(new Plot(PlotType.Smith, FreqUnit.GHz), () => {}, library: lib);
+            inspector.AddContourTraceCommand.Execute(null);
+            Assert.Contains("NF", inspector.Traces[0].AvailableMetrics);
         }
         finally
         {

@@ -332,6 +332,13 @@ public sealed class TunerModel : ComponentModel
     /// uses for the Pavl↔|Vs| calibration.
     /// </summary>
     public Complex FundamentalZ(double toneFreqHz) => GetZ(2.0 * Math.PI * toneFreqHz);
+
+    /// <summary>
+    /// The impedance this tuner's RF termination presents at angular frequency <paramref name="omega"/> — its band's
+    /// declared Z, the loadpull override, or the catch-all — exactly as <see cref="Stamp"/> stamps it. Brief NZ-6 reads it
+    /// as the termination of a loadpull's noise ports.
+    /// </summary>
+    public Complex ImpedanceAt(double omega) => GetZ(omega);
 }
 
 /// <summary>Role of a Tuner within a Loadpull analysis (assigned by the LoadpullEngine).</summary>

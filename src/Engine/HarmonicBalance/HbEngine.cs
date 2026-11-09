@@ -1848,6 +1848,40 @@ public sealed class HbEngine
         /// <summary>The solve was refused because its tolerance is not smaller than its own RF excitation
         /// (<see cref="HbNewton.IsToleranceVacuous"/>) — a setup fault, which no smaller drive step cures.</summary>
         public bool ToleranceVacuous { get; init; }
+
+        /// <summary>Brief NZ-6: the converged solve's own linearisation, which <see cref="NoiseAt"/> reads. Null on a failed
+        /// solve.</summary>
+        internal SinglePointLinearization? Linearization { get; init; }
+    }
+
+    /// <summary>What a single-point solve's noise needs from it: the solve's own conductance and capacitance spectra (never
+    /// re-evaluated — see <see cref="HbNewton.SolveResult"/>), the extractor it was solved on, the DC interface admittance, and the
+    /// time grid.</summary>
+    internal sealed record SinglePointLinearization(HbNewton.SolveResult Solve, HbLinearExtractor Extractor, Complex[,] YDc, int N, int K, int GridN, double Omega0);
+
+    /// <summary>
+    /// Brief NZ-6 — harmonic-balance noise (brief NZ-5's <see cref="HbNoise"/>) at one output frequency, on a converged
+    /// <see cref="RunSinglePoint"/> result: the cubes <see cref="HbNoise.Add"/> writes, over an <c>ssfreq</c> axis of
+    /// one point. Call it while the netlist still holds the state the point was solved in — a loadpull's tuner overrides —
+    /// since the sideband partitions are stamped from it; the drive is the right-hand side only and does not matter.
+    /// Null when the point did not converge.
+    /// </summary>
+    public DataSet? NoiseAt(SinglePointResult point, HbNoiseRequest request, double outputHz)
+    {
+        if (point.Linearization is not { Solve: { G: { } g, C: { } c } solve } lin || point.BackSolver is not { } back) return null;
+        var extractor = lin.Extractor;
+        var sidebands = new HbSmallSignal.ToneSidebands(g, c, solve.Buckets, lin.K, lin.Omega0);
+        var dcX = back.GetSolution(0, 0);
+        var dcNodes = new double[extractor.NonGroundCount];
+        for (int i = 0; i < dcNodes.Length && i < dcX.Length; i++) dcNodes[i] = dcX[i].Real;
+        var ds = new DataSet();
+        HbNoise.Add(ds, _netlist, request, [outputHz], extractor, sidebands, lin.YDc,
+            HbNoise.ToneSamples(point.V, lin.N, lin.K, lin.GridN, g.GetLength(2) - 1),
+            [lin.Omega0],
+            [.. Enumerable.Range(-lin.K, 2 * lin.K + 1).Select(k => (double)k)],
+            [.. Enumerable.Range(-lin.K, 2 * lin.K + 1).Select(k => k.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            dcNodes, commensurateWith: $"the fundamental {lin.Omega0 / (2 * Math.PI) / 1e9:G6} GHz");
+        return ds;
     }
 
     /// <summary>
@@ -1963,6 +1997,7 @@ public sealed class HbEngine
         return new SinglePointResult(V, sr.INl, sr.Converged, sr.Iterations, failReason, sr.IterTrace, backSolver)
         {
             ToleranceVacuous = !sr.Converged && double.IsFinite(sr.VacuousToleranceScale),
+            Linearization    = sr.Converged ? new SinglePointLinearization(sr, extractor, yNN[0], N, K, gridN, omega0) : null,
         };
     }
 

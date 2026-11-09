@@ -92,6 +92,9 @@ namespace RfCore.Loadpull
             ["Zin_imag"]          = new("Zin_imag",   FomScale.PassThrough),
             ["IRL_dB"]            = new("IRL_dB",      FomScale.PassThrough),
             ["AMPM_deg"]          = new("AMPM_deg",   FomScale.PassThrough),
+            // Brief NZ-6 — the noise figure (dB, SSB) a Noise=yes loadpull writes. A reader older than this entry skips the
+            // column, as it skips any header this table does not name.
+            ["NF"]                = new("NF",         FomScale.PassThrough),
         };
 
         public static double Apply(double v, FomScale scale) => scale switch

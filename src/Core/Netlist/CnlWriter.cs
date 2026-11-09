@@ -460,6 +460,7 @@ public static class CnlWriter
         sb.Append($" Tol={lp.TolExpr}");
         sb.Append($" DriveStepping={lp.DriveSteppingExpr}");
         sb.Append($" GuardHarmonic={lp.GuardHarmonicExpr}");
+        AppendLoadpullNoise(sb, lp);
         return sb.ToString();
     }
 
@@ -496,7 +497,21 @@ public static class CnlWriter
         sb.Append($" nonconvergentVSWR={lpp.NonconvergentVswrExpr}");
         sb.Append($" CreateLoadpullResult={lpp.CreateLoadpullResultExpr}");
         sb.Append($" LoadpullResultZsource={lpp.LoadpullResultZsourceExpr}");
+        AppendLoadpullNoise(sb, lpp);
         return sb.ToString();
+    }
+
+    /// <summary>The loadpull noise keys (brief NZ-6), each only when it differs from its default, so a line without them
+    /// round-trips to the bytes it always did.</summary>
+    private static void AppendLoadpullNoise(StringBuilder sb, ILoadpullNoiseKeys n)
+    {
+        if (n.NoiseExpr != Analysis.NoiseDefault) sb.Append($" Noise={n.NoiseExpr}");
+        if (n.NoiseFreqExpr.Trim().Length > 0) sb.Append($" NoiseFreq=\"{n.NoiseFreqExpr}\"");
+        if (n.NoiseFreqUnit != "Hz") sb.Append($" NoiseFreqUnit={n.NoiseFreqUnit}");
+        if (n.NoiseInExpr.Trim().Length > 0) sb.Append($" NoiseIn={n.NoiseInExpr}");
+        if (n.NoiseOutExpr.Trim().Length > 0) sb.Append($" NoiseOut={n.NoiseOutExpr}");
+        if (n.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault)
+            sb.Append($" NoiseSideband=\"{n.NoiseSidebandExpr}\"");
     }
 
     private static string FormatParametricSweepAnalysis(ParametricSweepAnalysis ps)

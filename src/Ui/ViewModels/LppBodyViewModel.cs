@@ -39,6 +39,9 @@ public sealed partial class LppBodyViewModel : ObservableObject
     public IReadOnlyList<string> TunerInstanceNames { get; }
     public bool HasNoTuners => TunerInstanceNames.Count == 0;
 
+    /// <summary>The noise controls (brief NZ-6), shared with the other loadpull editor.</summary>
+    public LoadpullNoiseViewModel NoiseVm { get; }
+
     // ── Shared LP fields (minus Grid) ─────────────────────────────────────────
     [ObservableProperty] private string _loadTunerName   = "";
     [ObservableProperty] private string _sourceTunerName = "";
@@ -138,6 +141,7 @@ public sealed partial class LppBodyViewModel : ObservableObject
             .Where(c => c.Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
             .Select(c => c.InstanceName)
             .ToList();
+        NoiseVm = new LoadpullNoiseViewModel(model, TunerInstanceNames);
     }
 
     // ── Seeding (a NEW analysis, not an edit) ─────────────────────────────────
@@ -231,6 +235,12 @@ public sealed partial class LppBodyViewModel : ObservableObject
         TolExpr         = TolExpr,
         DriveSteppingExpr = DriveSteppingExpr,
         GuardHarmonicExpr = GuardHarmonicExpr,
+        NoiseExpr         = NoiseVm.NoiseExpr,
+        NoiseFreqExpr     = NoiseVm.NoiseFreqExpr,
+        NoiseFreqUnit     = NoiseVm.NoiseFreqUnitExpr,
+        NoiseInExpr       = NoiseVm.NoiseInExpr,
+        NoiseOutExpr      = NoiseVm.NoiseOutExpr,
+        NoiseSidebandExpr = NoiseVm.NoiseSidebandExpr,
         // Pursuit keys
         EffTypeExpr               = EffTypeExpr,
         ZsourceOBOExpr            = ZsourceOboExpr,
@@ -296,6 +306,7 @@ public sealed partial class LppBodyViewModel : ObservableObject
         vm.ToneUnit      = toneUnit;
         vm.ToneCoeff     = toneExpr;
 
+        vm.NoiseVm.Load(lpp);
         return vm;
     }
 

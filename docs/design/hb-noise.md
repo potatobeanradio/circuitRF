@@ -138,3 +138,47 @@ Tests: `tests/Engine.Tests/HarmonicBalance/HbNoiseTests.cs`, `HbNoiseExternalTes
 6. **No key, no change.** A probed HB run with `Noise` absent and with `Noise=no` carries the same cubes, value for value,
    the WSProbe's small-signal outputs included, and `Noise=yes` changes none of them. The noise code runs only on a
    non-null request.
+
+## 9. In a loadpull (brief NZ-6)
+
+`Noise=yes` on a `loadpull` (and on a `loadpull_pursuit`, for its follow-on loadpull) reads this analysis at every converged
+rung of every grid point's drive ladder: `LoadpullEngine.RunOneTermination` keeps each accepted rung's single-point solve
+and, after the ladder, hands it to `HbEngine.NoiseAt` — the same `HbNoise.Add` over an `ssfreq` axis of one point, on the
+rung's own conductance and capacitance spectra (`HbEngine.SinglePointLinearization`). The grid point's tuner override is
+still in force then, which is what the sideband partitions are stamped from; the drive is the right-hand side only. A
+pursuit's search calls `RunOneTermination` outside `Run` and reads no noise. The result is `NF` [gridPoint, pinStep], NaN
+where a rung did not converge or was never reached, beside the FOM cubes; the `.spl` writer and the contour metric list
+carry it.
+
+**Ports.** `NoiseIn`/`NoiseOut` default to the source and load tuners (`HbNoiseRequest.InTuner`/`OutTuner`). A tuner's port
+is its RF termination, the Z_Port the grid overrides: a source tuner's runs from its drive node (held by the drive, a short
+to every small-signal current) to its DC block, a load tuner's from its DC block to its reference, at the band impedance
+`TunerModel.ImpedanceAt` stamps. A tuner is noiseless by definition, as a port is (`SParameterNoise.IsNoiselessByDefinition`);
+the input termination is at T0, as in §3.
+
+**The frequency.** The tone itself is degenerate (§7), and a reading just beside it is not one number: under drive the
+conversion matrix carries baseband noise onto the output at the offset's own frequency. On the BJT LNA of §8, from −50 to
+−30 dBm, NF read 1 kHz above a 1 GHz tone goes 3.6 → 8.2 → 17.4 dB (flicker at 1 kHz, and the base's 150 kΩ bias network
+open at 1 kHz), and 2.54 → 2.62 → 3.29 dB 10 MHz above it. So `NoiseFreq` absent reads 1 % above the tone
+(`LoadpullEngine.DefaultNoiseOffset`), the noise a small signal beside the drive sees; a stated frequency on a
+half-multiple of the tone is moved 1e-6 of the tone up (`DegenerateNoiseOffset`). Both are said in a run note and by
+`explain --analysis`.
+
+**Gates** (`tests/Engine.Tests/Loadpull/LoadpullNoiseTests.cs`):
+
+1. **Small-signal rung.** A sourcepull of the LNA at −130 dBm over five terminations: NF equals the S-parameter noise
+   analysis on the same terminations to 6e-8 dB. "The same" includes the tuner's ideal bias tee — a 1 F DC block and a
+   1 H choke: against bare ports the loadpull is 3.8e-6 dB low, and so is the S-parameter analysis with the tee drawn.
+   Physically the tee is nothing at 1 GHz (1e-10 Ω, 6e9 Ω); the shift is the solve's precision with a j6e9 S admittance
+   beside 0.02 S (a 1 mF block moves it back to 1e-9 dB, and the choke's value does not matter). Every loadpull number
+   carries the same ~1e-6 relative error from it.
+2. **Contours are circles.** The small-signal sourcepull on 85 terminations (rings 0.1 apart to |Γ| = 0.7), its NF contours
+   drawn by the Data Display's own fit and extractor, against `ns_circle` from the S-parameter Fmin, Sopt and Rn at
+   NFmin + 0.25, 0.5 and 1 dB: centres within 4.2e-3 and radii within 2.6e-3 in Γ, every contour point within 1.5e-2 of
+   the circle. That is the RBF's interpolation error on that grid; the grid points themselves are gate 1's.
+3. **No key, no change.** `Noise` absent and `Noise=no` give the same cubes value for value and the same `.spl` bytes;
+   `Noise=yes` adds `NF` and changes nothing else.
+
+The `.spl` reader maps a column only through `LoadpullFomDialect.Map` and skips a header it does not name, every other
+column read at its own position — so `SplReader` from before `NF` reads a file with it (a test shows this with an
+unknown column).

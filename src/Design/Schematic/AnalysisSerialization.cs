@@ -181,6 +181,13 @@ public sealed class CschAnalysis
     public string?  LpTolExpr          { get; set; }
     public string?  LpDriveSteppingExpr{ get; set; }
     public string?  LpGuardHarmonicExpr{ get; set; }
+    // Brief NZ-6 — the loadpull noise keys, LP and LPP alike; null is the default, so a document without them reads back unchanged.
+    public string?  LpNoiseExpr         { get; set; }
+    public string?  LpNoiseFreqExpr     { get; set; }
+    public string?  LpNoiseFreqUnit     { get; set; }
+    public string?  LpNoiseInExpr       { get; set; }
+    public string?  LpNoiseOutExpr      { get; set; }
+    public string?  LpNoiseSidebandExpr { get; set; }
 
     // ── LPP-only pursuit keys ──────────────────────────────────────────────────
     public string?  LppEffType              { get; set; }   // "DE" | "PAE"
@@ -465,6 +472,12 @@ public static class AnalysisSerialization
             LpTolExpr         = lp.TolExpr,
             LpDriveSteppingExpr = lp.DriveSteppingExpr,
             LpGuardHarmonicExpr = lp.GuardHarmonicExpr,
+            LpNoiseExpr         = lp.NoiseExpr != Analysis.NoiseDefault ? lp.NoiseExpr : null,
+            LpNoiseFreqExpr     = NullIfBlank(lp.NoiseFreqExpr),
+            LpNoiseFreqUnit     = lp.NoiseFreqUnit != "Hz" ? lp.NoiseFreqUnit : null,
+            LpNoiseInExpr       = NullIfBlank(lp.NoiseInExpr),
+            LpNoiseOutExpr      = NullIfBlank(lp.NoiseOutExpr),
+            LpNoiseSidebandExpr = lp.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault ? lp.NoiseSidebandExpr : null,
         },
 
         LoadpullPursuitAnalysis lpp => new CschAnalysis
@@ -490,6 +503,12 @@ public static class AnalysisSerialization
             LpTolExpr         = lpp.TolExpr,
             LpDriveSteppingExpr = lpp.DriveSteppingExpr,
             LpGuardHarmonicExpr = lpp.GuardHarmonicExpr,
+            LpNoiseExpr         = lpp.NoiseExpr != Analysis.NoiseDefault ? lpp.NoiseExpr : null,
+            LpNoiseFreqExpr     = NullIfBlank(lpp.NoiseFreqExpr),
+            LpNoiseFreqUnit     = lpp.NoiseFreqUnit != "Hz" ? lpp.NoiseFreqUnit : null,
+            LpNoiseInExpr       = NullIfBlank(lpp.NoiseInExpr),
+            LpNoiseOutExpr      = NullIfBlank(lpp.NoiseOutExpr),
+            LpNoiseSidebandExpr = lpp.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault ? lpp.NoiseSidebandExpr : null,
             LppEffType              = lpp.EffTypeExpr,
             LppZsourceOBO           = lpp.ZsourceOBOExpr,
             LppSearchMethod         = lpp.SearchMethodExpr,
@@ -648,6 +667,12 @@ public static class AnalysisSerialization
             TolExpr         = dto.LpTolExpr         ?? "1e-6",
             DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
             GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+            NoiseExpr         = dto.LpNoiseExpr         ?? Analysis.NoiseDefault,
+            NoiseFreqExpr     = dto.LpNoiseFreqExpr     ?? "",
+            NoiseFreqUnit     = dto.LpNoiseFreqUnit     ?? "Hz",
+            NoiseInExpr       = dto.LpNoiseInExpr       ?? "",
+            NoiseOutExpr      = dto.LpNoiseOutExpr      ?? "",
+            NoiseSidebandExpr = dto.LpNoiseSidebandExpr ?? HarmonicBalanceAnalysis.NoiseSidebandDefault,
         },
 
         "lpp" => new LoadpullPursuitAnalysis(dto.Name)
@@ -671,6 +696,12 @@ public static class AnalysisSerialization
             TolExpr         = dto.LpTolExpr         ?? "1e-6",
             DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
             GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+            NoiseExpr         = dto.LpNoiseExpr         ?? Analysis.NoiseDefault,
+            NoiseFreqExpr     = dto.LpNoiseFreqExpr     ?? "",
+            NoiseFreqUnit     = dto.LpNoiseFreqUnit     ?? "Hz",
+            NoiseInExpr       = dto.LpNoiseInExpr       ?? "",
+            NoiseOutExpr      = dto.LpNoiseOutExpr      ?? "",
+            NoiseSidebandExpr = dto.LpNoiseSidebandExpr ?? HarmonicBalanceAnalysis.NoiseSidebandDefault,
             EffTypeExpr               = dto.LppEffType              ?? "DE",
             ZsourceOBOExpr            = dto.LppZsourceOBO           ?? "5",
             SearchMethodExpr          = dto.LppSearchMethod         ?? "SteepestAscent",
