@@ -1,0 +1,13 @@
+! Stage B: a second amplifier block, noisier.
+! Synthetic: matched (S11 = S22 = 0), unilateral (S12 = 0), 12 dB of gain, flat from 1 to 4 GHz.
+! Noise: NFmin = 3 dB at Gamma_opt = 0, rn = 0.4 (Rn = 20 ohm).
+# GHz S MA R 50
+1 0 0 3.981071705535 110 0 0 0 0
+2 0 0 3.981071705535 110 0 0 0 0
+3 0 0 3.981071705535 110 0 0 0 0
+4 0 0 3.981071705535 110 0 0 0 0
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+1 3 0 0 0.4
+2 3 0 0 0.4
+3 3 0 0 0.4
+4 3 0 0 0.4

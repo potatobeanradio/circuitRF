@@ -535,7 +535,10 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     private Analysis? BuildSp(string name, bool enabled)
     {
         var sweeps = SpBody.BuildSweeps();
-        var sp = new SParameterAnalysis(name, sweeps);
+        // The keys this editor has no field for (MarginThreshold, NDF, …) are carried across from the analysis being
+        // edited, or left at their defaults for a new one; Noise is the body's check box.
+        var sp = SpBody.Source?.WithSweeps(name, sweeps, SpBody.NoiseExpr)
+              ?? new SParameterAnalysis(name, sweeps) { NoiseExpr = SpBody.NoiseExpr };
         sp.Enabled = enabled;
         return sp;
     }

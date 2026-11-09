@@ -729,7 +729,8 @@ public static class ParametricSweepEngine
         // The margin threshold is the INNER analysis' own key, so it is applied per point rather
         // than left on whatever settings the sweep was started with (WSP-9 R-wsp9-3).
         var withMargin = (settings ?? AnalysisSettings.Default)
-            .WithMarginThreshold(Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr));
+            .WithMarginThreshold(Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr))
+            .WithNoise(spa.Noise);
         // NDF= is the inner analysis' own key too, and for the same reason: the passive netlist is
         // built from THIS point's TestBench, so a swept variable that also scales the passivation
         // is honoured per point rather than frozen at the sweep's first (brief-wsprobe-6 R-wsp6-4).

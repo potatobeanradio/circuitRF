@@ -17,7 +17,7 @@
 > surface** (Phase 7).
 > **What's left for v1:** Phase-8 hardening — installers, docs, and CI. **Deferred to v2:**
 > the Layout editor, a sparse block Jacobian for HB at scale, the Verilog-A/OSDI backend
-> (→ ASM-HEMT), and **noise analysis** (see §11). The earlier refinements still hold: the result
+> (→ ASM-HEMT), and **noise analysis** (see §11; the small-signal S-parameter part is now done). The earlier refinements still hold: the result
 > model is a **`DataSet`** of single-kind **`DataCube`s**; **`RfCore` is an external sibling**
 > (`ProjectReference`); the device base is **`ComponentModel`**; analyses **and measurements**
 > attach to a **`TestBench`**; `.npy` exports the whole DataSet as one packed structured array.
@@ -226,12 +226,17 @@ this phase would be under-estimated.
 **LW1-vs-L8 sequencing** — the wirebond arc carries no DCIM risk and could reasonably precede the full-wave
 planar arc, which is a roadmap call that blocks neither design).*
 
-## 11. Noise analysis — a deliberate green field (v2 candidate)
+## 11. Noise analysis — the small-signal part done, the rest a green field
 
-circuitRF v1 has **no noise analysis** — no noise figure, no phase noise, no noise-parameter (Fmin, Γopt,
-Rn) extraction. This is not a technical wall: the linear engine already builds the MNA system noise analysis
-needs, the SDD/device interface could carry noise-current contributions, and `.spl`/`.lpcwave` ingest already
-parses noise columns. It is simply **unbuilt** — a clean, well-bounded feature left open on purpose for a
-contributor (an LNA designer or a device-modeling expert) who wants to own it. A solid noise pass — small-
-signal noise figure and noise parameters over frequency, then nonlinear/HB noise for mixers and oscillators —
-is a strong candidate for a **major v2 addition**. If that's you, this is a great place to make a mark.
+circuitRF v1 had **no noise analysis**. The first half of the pass this section asked for is now in
+(2026-11, `docs/design/sparameter-noise.md`): **small-signal noise in the S-parameter analysis**. `Noise=yes`
+gives the noise-wave correlation of any N-port and, for a two-port, the noise figure and the noise parameters
+(Fmin, Sopt, Rn, and Te, Tmin and Zopt) over frequency. Passive parts are thermal at their own temperature, an
+SnP block is noisy by its Touchstone noise data, and a compiled (OSDI) model by its own declared noise sources.
+`nf()`, `te()`, `rn()` and `ns_circle()` read the result back, `nf()` and `te()` to any output port of an N-port,
+and the Touchstone noise block is written.
+
+**Still deferred** and still open to a contributor who wants to own them: noise in **harmonic balance**
+(mixers, and the noise of a large-signal stage), **phase noise** for oscillators, an **AC noise** analysis
+(output noise and its contributors at a node), and noise in the **built-in nonlinear models** (diode, BJT and
+FET shot and flicker noise, which the S-parameter noise analysis takes as noiseless and names in a warning).

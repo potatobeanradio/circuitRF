@@ -86,13 +86,14 @@ public static class SParameterEngine
         var sMatrices = new Mat<Complex>[freqsHz.Length];
         var wsp       = prep.Probes.Length > 0 ? new Complex[freqsHz.Length][,] : null;
         var nd        = NewNdfOutput(prep, freqsHz.Length);
-        RunRange(prep, freqsHz, settings, 0, freqsHz.Length, sMatrices, wsp, nd, control, abort: null);
+        var cs        = prep.Noise is null ? null : new Mat<Complex>[freqsHz.Length];
+        RunRange(prep, freqsHz, settings, 0, freqsHz.Length, sMatrices, wsp, nd, cs, control, abort: null);
         var stats = new RunStats(
             prep.Mna.Factorizations + (prep.MnaTerminated?.Factorizations ?? 0)
                                     + (prep.MnaPassive?.Factorizations ?? 0),
             prep.BackSubstitutions,
             prep.Mna.PatternBuilds);
-        return (BuildDataSet(netlist, freqsHz, sMatrices, prep.Z0PerPort, PortNumbers(prep), prep.Probes, wsp, nd, settings), stats);
+        return (BuildDataSet(netlist, freqsHz, sMatrices, prep.Z0PerPort, PortNumbers(prep), prep.Probes, wsp, nd, cs, settings), stats);
     }
 
     /// <summary>
@@ -295,6 +296,7 @@ public static class SParameterEngine
                 preps[i]      = Prepare(copy, freqsHz, settings, ndf);
             }
             var nd = NewNdfOutput(preps[0], freqCount);
+            var cs = preps[0].Noise is null ? null : new Mat<Complex>[freqCount];
 
             // A chunk that fails records WHERE and stops; the others notice and stop too, so a
             // cancelled or singular run does not go on solving points nobody will read.
@@ -307,7 +309,7 @@ public static class SParameterEngine
                 var (lo, hi) = ChunkRange(freqCount, degree, c);
                 try
                 {
-                    RunRange(preps[c], freqsHz, settings, lo, hi, sMatrices, wsp, nd, control, abort);
+                    RunRange(preps[c], freqsHz, settings, lo, hi, sMatrices, wsp, nd, cs, control, abort);
                 }
                 catch (Exception ex)
                 {
@@ -327,7 +329,7 @@ public static class SParameterEngine
                 if (extras[i] is { } copy) netlist.MergeDiagnosticsFrom(copy);
 
             return BuildDataSet(netlist, freqsHz, sMatrices, preps[0]!.Z0PerPort, PortNumbers(preps[0]!),
-                                preps[0]!.Probes, wsp, nd, settings);
+                                preps[0]!.Probes, wsp, nd, cs, settings);
         }
         finally
         {
@@ -404,6 +406,7 @@ public static class SParameterEngine
         WspProbeSite[]    probes,
         Complex[][,]?     wsp,
         NdfOutput?        ndf,
+        Mat<Complex>[]?   cs,
         AnalysisSettings  settings)
     {
         DataSet ds;
@@ -424,6 +427,8 @@ public static class SParameterEngine
                 ds.Add("S",  DataSetBuilder.WithPortNumbers(ds["S"],  portNumbers));
                 ds.Add("Z0", DataSetBuilder.WithPortNumbers(ds["Z0"], portNumbers));
             }
+
+            if (cs is not null) SParameterNoise.AddCubes(ds, freqsHz, sMatrices, cs, z0PerPort);
         }
         else
         {
@@ -520,6 +525,10 @@ public static class SParameterEngine
         /// <summary>Back-substitutions performed so far, for <see cref="RunStats"/>.</summary>
         internal int                BackSubstitutions;
 
+        /// <summary>Each noisy part's noise currents at ω (<see cref="SParameterNoise.Sources"/>), or null when
+        /// <see cref="AnalysisSettings.Noise"/> is off — and then no noise code below is entered.</summary>
+        internal List<Func<double, NoiseCurrents>>? Noise;
+
         // ── NDF (brief-wsprobe-6) ─────────────────────────────────────────────
 
         /// <summary>The run's NDF request, or null when the knob is off — and when it is off,
@@ -593,6 +602,14 @@ public static class SParameterEngine
 
         // Choose path once: wave path when every port Z0 has a positive real part.
         bool allPortsResistive = z0PerPort.All(z => z.Real > 1e-12);
+
+        // Noise waves are defined against the noiseless Z0 terminations of the wave path; a legacy port terminates
+        // nothing. Refused here, once, before any DC pre-pass or frequency.
+        if (settings.Noise && !allPortsResistive)
+        {
+            var bad = ports.First(q => !(q.Z0.Real > 1e-12));
+            throw new InvalidOperationException(NoiseDiagnostics.ReactiveReference(bad.PortNum, bad.Z0.Real).Render());
+        }
 
         // R-wsp1-4: on the legacy path the probe solves need every port terminated in its Z0, and a
         // port with Z0 = 0 exactly cannot be — never a large-conductance stand-in.
@@ -700,6 +717,8 @@ public static class SParameterEngine
         };
 
         if (ndf is not null) PrepareNdf(prep, netlist, freqsHz, settings, ndf, nonGroundNodes);
+        // A port-less (probe) run has no waves to correlate.
+        if (settings.Noise && N > 0) prep.Noise = SParameterNoise.Sources(netlist, freqsHz, dcNodeVoltages);
         return prep;
     }
 
@@ -782,11 +801,12 @@ public static class SParameterEngine
         Mat<Complex>[]  sMatrices,
         Complex[][,]?    wspOut,
         NdfOutput?       ndfOut,
+        Mat<Complex>[]?  csOut,
         RunControl?      control,
         Func<bool>?      abort)
     {
         if (p.AllPortsResistive)
-            RunWavePath(p, freqsHz, settings, lo, hi, sMatrices, wspOut, ndfOut, control, abort);
+            RunWavePath(p, freqsHz, settings, lo, hi, sMatrices, wspOut, ndfOut, csOut, control, abort);
         else
             RunLegacyPath(p, freqsHz, settings, lo, hi, sMatrices, wspOut, ndfOut, control, abort);
     }
@@ -802,6 +822,7 @@ public static class SParameterEngine
         Mat<Complex>[]  sMatrices,
         Complex[][,]?    wspOut,
         NdfOutput?       ndfOut,
+        Mat<Complex>[]?  csOut,
         RunControl?      control,
         Func<bool>?      abort)
     {
@@ -817,6 +838,7 @@ public static class SParameterEngine
         int nonGroundNodes = mna.NodeCount;
         var xBuf = Array.Empty<Complex>();
         var bBuf = Array.Empty<Complex>();
+        (int, int, Complex)[]? noisePorts = p.Noise is null ? null : [.. ports.Select(q => (q.Node0, q.Node1, q.Z0))];
 
         for (int fi = lo; fi < hi; fi++)
         {
@@ -827,6 +849,10 @@ public static class SParameterEngine
             control?.Tick();
 
             double omega = 2.0 * Math.PI * freqsHz[fi];
+
+            // The parts' noise, recorded BEFORE the assembly: a recorded stamp writes the model's branch index, and
+            // StampAll then writes this assembly's back.
+            NoiseCurrents[]? noise = p.Noise is { } sources ? [.. sources.Select(src => src(omega))] : null;
 
             // Stamp network (ports contribute conductances, not 0 V branches).
             StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: dcNodeVoltages);
@@ -889,6 +915,13 @@ public static class SParameterEngine
             }
 
             sMatrices[fi] = sMatrix;
+
+            // The noise waves, against the same factorisation: one transposed solve per port.
+            if (noise is not null)
+            {
+                csOut![fi] = SParameterNoise.Waves(lu, mna.Size, noisePorts!, noise);
+                p.BackSubstitutions += N;
+            }
 
             // R-wsp1-3/R-wsp1-4: the probe injections, against the SAME factorisation — on this path
             // the assembly on the stack is already the terminated network (every port stamps its
@@ -1273,7 +1306,7 @@ public static class SParameterEngine
     /// <summary>Builds a device's bias PortVoltages from the DC node-voltage solution, using the same
     /// port→node-pair convention as NonlinearDcEngine (port p = Nodes[2p] − Nodes[2p+1]).
     /// Null dcNodeVoltages ⇒ all-zero bias (purely-linear run never reaches here; DC-fail fallback).</summary>
-    private static PortVoltages BuildBias(ElaboratedComponent ec, double[]? dcNodeVoltages)
+    internal static PortVoltages BuildBias(ElaboratedComponent ec, double[]? dcNodeVoltages)
     {
         int P = ec.Model.PortCount;
         var v = new double[P];

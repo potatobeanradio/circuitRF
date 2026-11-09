@@ -1,0 +1,12 @@
+; Unmatched lossy R/L/C 2-port at the default ambient (300 K).
+; Expected: Cs = kT(I - S S^H) entry by entry; F = 1 + (T/T0)(1/G_A - 1).
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+L:L1  p1  a  L=3.0 nH
+R:R1  a  b  R=15.0 Ohm
+C:C1  b  0  C=1.2 pF
+R:R2  b  0  R=400.0 Ohm
+C:C2  b  c  C=0.8 pF
+R:R3  c  p2  R=6.0 Ohm
+L:L2  p2  0  L=6.0 nH
+analysis SP1 type=sparam start=0.5 stop=5.0 npts=10 Unit=GHz

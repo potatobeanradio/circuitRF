@@ -1,0 +1,11 @@
+; Resistors at mixed temperatures: R2 at 400 K and R3 at 77 K (Temp=), the
+; rest at the 290 K ambient.
+; Expected: ngspice .sp donoise = numpy nodal.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+R:R1  p1  m  R=30.0 Ohm
+R:R2  m  0  R=120.0 Ohm  Temp=126.85
+R:R3  m  p2  R=40.0 Ohm  Temp=-196.15
+C:C1  m  0  C=0.6 pF
+analysis SP1 type=sparam start=0.5 stop=5.0 npts=10 Unit=GHz

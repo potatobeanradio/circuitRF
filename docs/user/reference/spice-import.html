@@ -105,9 +105,11 @@ are the reasoning, written down.</p>
 <p>There are five reasons, and every dropped parameter is one of them.</p>
 <h3 id="there-is-no-analysis-that-would-read-it">1. There is no analysis that would read it</h3>
 <p><code>KF</code> and <code>AF</code> — the flicker-noise coefficients — appear on every semiconductor card and are carried
-by none of them. circuitRF has <strong>no noise analysis</strong> for them to feed. Accepting them would put two
-rows on the built cell that look honoured and change no result, which is worse than an empty space:
-a parameter this model does not read is not offered.</p>
+by none of them. The built-in device models are <strong>noiseless</strong>: the
+<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes them so and names them in its warning,
+and nothing else here analyses noise. Accepting the two would put two rows on the built cell that look
+honoured and change no result, which is worse than an empty space: a parameter this model does not read
+is not offered. A compiled model brings its own noise (<a href="veriloga.html#noise">VerilogA</a>).</p>
 <h3 id="the-device-has-no-node-for-it">2. The device has no node for it</h3>
 <p>A bipolar card's <code>CJS</code>/<code>VJS</code>/<code>MJS</code> describe the <strong>collector–substrate junction</strong>. A discrete RF
 transistor has no substrate terminal to attach one to, and adding a fourth pin would change what the

@@ -1607,7 +1607,8 @@ internal static class Explain
                 OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null,
                 Records: envRecords.GetValueOrDefault(a.Name),
                 Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
-                FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name)));
+                FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name),
+                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : null));
         }
 
         return (rows, exit);

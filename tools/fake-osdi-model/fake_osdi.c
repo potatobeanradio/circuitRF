@@ -1013,11 +1013,144 @@ static OsdiJacobianEntry ref_jacobian[] = {
     { { 1, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
 };
 
+/* ── device 6: "crf_noise" — a conductance with noise sources ──────────────────
+ *
+ * The only device here with noise sources, so `noise` has a closed form to be checked against.
+ *
+ *   v = V(A) - V(B)      I[A] = +g*v      I[B] = -g*v      dI/dV = [ +g -g ; -g +g ]
+ *
+ * Three current noise sources, all between A and B (nodes 0 and 1), as single-sided power spectral
+ * densities in A^2/Hz — what Verilog-A's white_noise/flicker_noise take:
+ *
+ *   thermal = 4*k*T*g            T = the instance temperature setup_instance was given
+ *   shot    = 2*q*|g*v|
+ *   flicker = kf*|g*v| / f       kf defaults to 0, so by default only the first two are non-zero
+ *
+ * v is the bias of the last eval that asked for CALC_NOISE. As a compiled model does, eval computes
+ * the bias-dependent part and load_noise applies the frequency dependence.
+ */
+
+#define CRF_K_BOLTZMANN 1.380649e-23
+#define CRF_Q_ELECTRON  1.602176634e-19
+
+typedef struct {
+    double g;     /* model param, S */
+    double kf;    /* model param, A — flicker coefficient */
+} NoiModel;
+
+typedef struct {
+    uint32_t node_mapping[2];
+    double  *jac_resist[4];
+    bool     collapsed[1];
+    double   resid_resist[2];
+    double   g_eff;
+    double   kf;
+    double   temp_k;
+    double   pwr[3];            /* thermal, shot, flicker numerator: written by eval under CALC_NOISE */
+} NoiInst;
+
+static void *noi_access(void *inst, void *model, uint32_t id, uint32_t flags) {
+    (void)flags; (void)inst;
+    NoiModel *m = (NoiModel *)model;
+    switch (id) {
+        case 0: return m ? (void *)&m->g  : NULL;
+        case 1: return m ? (void *)&m->kf : NULL;
+        default: return NULL;
+    }
+}
+
+static void noi_setup_model(void *handle, void *model, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)sim;
+    NoiModel *m = (NoiModel *)model;
+    if (m->g == 0.0) m->g = 1e-3;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static void noi_setup_instance(void *handle, void *inst, void *model, double temperature,
+                               uint32_t num_terminals, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)num_terminals; (void)sim;
+    NoiModel *m = (NoiModel *)model;
+    NoiInst  *i = (NoiInst *)inst;
+    i->g_eff  = m->g;
+    i->kf     = m->kf;
+    i->temp_k = temperature;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static uint32_t noi_eval(void *handle, void *inst, const void *model, const OsdiSimInfo *info) {
+    (void)handle; (void)model;
+    NoiInst *i = (NoiInst *)inst;
+    double v  = info->prev_solve[i->node_mapping[0]] - info->prev_solve[i->node_mapping[1]];
+    double iv = i->g_eff * v;
+    i->resid_resist[0] =  iv;
+    i->resid_resist[1] = -iv;
+    if (info->flags & CALC_NOISE) {
+        i->pwr[0] = 4.0 * CRF_K_BOLTZMANN * i->temp_k * i->g_eff;
+        i->pwr[1] = 2.0 * CRF_Q_ELECTRON * fabs(iv);
+        i->pwr[2] = i->kf * fabs(iv);
+    }
+    return 0;
+}
+
+static void noi_load_noise(void *inst, void *model, double freq, double *dens) {
+    (void)model;
+    NoiInst *i = (NoiInst *)inst;
+    dens[0] = i->pwr[0];
+    dens[1] = i->pwr[1];
+    dens[2] = i->pwr[2] / freq;
+}
+
+/* Entries, in the order declared below:  (0,0) (0,1) (1,0) (1,1) */
+static void noi_load_jacobian_resist(void *inst, void *model) {
+    (void)model;
+    NoiInst *i = (NoiInst *)inst;
+    double g = i->g_eff;
+    if (i->jac_resist[0]) *i->jac_resist[0] +=  g;
+    if (i->jac_resist[1]) *i->jac_resist[1] += -g;
+    if (i->jac_resist[2]) *i->jac_resist[2] += -g;
+    if (i->jac_resist[3]) *i->jac_resist[3] +=  g;
+}
+
+static void noi_load_residual_resist(void *inst, void *model, double *dst) {
+    (void)model;
+    NoiInst *i = (NoiInst *)inst;
+    dst[i->node_mapping[0]] += i->resid_resist[0];
+    dst[i->node_mapping[1]] += i->resid_resist[1];
+}
+
+static char *noi_name_g[]  = { (char *)"g"  };
+static char *noi_name_kf[] = { (char *)"kf" };
+
+static OsdiParamOpvar noi_params[] = {
+    { noi_name_g,  0, (char *)"conductance",         (char *)"S", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { noi_name_kf, 0, (char *)"flicker coefficient", (char *)"A", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+};
+
+static OsdiNode noi_nodes[] = {
+    { (char *)"A", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(NoiInst, resid_resist[0]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+    { (char *)"B", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(NoiInst, resid_resist[1]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+};
+
+static OsdiJacobianEntry noi_jacobian[] = {
+    { { 0, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 0, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+};
+
+static OsdiNoiseSource noi_sources[] = {
+    { (char *)"thermal", { 0, 1 } },
+    { (char *)"shot",    { 0, 1 } },
+    { (char *)"flicker", { 0, 1 } },
+};
+
 /* ── the exports the ABI is discovered through ───────────────────────────────── */
 
 uint32_t OSDI_VERSION_MAJOR = OSDI_VERSION_MAJOR_CURR;
 uint32_t OSDI_VERSION_MINOR = OSDI_VERSION_MINOR_CURR;
-uint32_t OSDI_NUM_DESCRIPTORS = 5;
+uint32_t OSDI_NUM_DESCRIPTORS = 6;
 uint32_t OSDI_DESCRIPTOR_SIZE = sizeof(OsdiDescriptor);
 
 OsdiDescriptor OSDI_DESCRIPTORS[] = {
@@ -1273,6 +1406,57 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .load_spice_rhs_dc     = NULL,
         .load_spice_rhs_tran   = NULL,
         .load_jacobian_resist  = ref_load_jacobian_resist,
+        .load_jacobian_react   = NULL,
+        .load_jacobian_tran    = NULL,
+    },
+    {
+        .name = (char *)"crf_noise",
+
+        .num_nodes     = 2,
+        .num_terminals = 2,
+        .nodes         = noi_nodes,
+
+        .num_jacobian_entries = 4,
+        .jacobian_entries     = noi_jacobian,
+
+        .num_collapsible  = 0,
+        .collapsible      = NULL,
+        .collapsed_offset = (uint32_t)offsetof(NoiInst, collapsed),
+
+        .noise_sources  = noi_sources,
+        .num_noise_src  = 3,
+
+        .num_params          = 2,   /* g, kf */
+        .num_instance_params = 0,
+        .num_opvars          = 0,
+        .param_opvar         = noi_params,
+
+        .node_mapping_offset        = (uint32_t)offsetof(NoiInst, node_mapping),
+        .jacobian_ptr_resist_offset = (uint32_t)offsetof(NoiInst, jac_resist),
+
+        .num_states    = 0,
+        .state_idx_off = 0,
+
+        .bound_step_offset = 0,
+
+        .instance_size = sizeof(NoiInst),
+        .model_size    = sizeof(NoiModel),
+
+        .access = noi_access,
+
+        .setup_model    = noi_setup_model,
+        .setup_instance = noi_setup_instance,
+
+        .eval = noi_eval,
+
+        .load_noise            = noi_load_noise,
+        .load_residual_resist  = noi_load_residual_resist,
+        .load_residual_react   = NULL,
+        .load_limit_rhs_resist = NULL,
+        .load_limit_rhs_react  = NULL,
+        .load_spice_rhs_dc     = NULL,
+        .load_spice_rhs_tran   = NULL,
+        .load_jacobian_resist  = noi_load_jacobian_resist,
         .load_jacobian_react   = NULL,
         .load_jacobian_tran    = NULL,
     },

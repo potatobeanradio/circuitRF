@@ -6,8 +6,14 @@
              x:DataType="vm:SpBodyViewModel"
              x:Name="SpBodyViewRoot">
 
-    <!-- The same frequency plan editor the EM Setup panel and Export to Library place. -->
-    <ctl:FrequencyPlanEditor Segments="{Binding Segments}"
-                             AddSegmentCommand="{Binding AddSegmentCommand}"/>
+    <StackPanel Spacing="4">
+        <!-- The same frequency plan editor the EM Setup panel and Export to Library place. -->
+        <ctl:FrequencyPlanEditor Segments="{Binding Segments}"
+                                 AddSegmentCommand="{Binding AddSegmentCommand}"/>
+
+        <!-- Noise=yes: the small-signal noise cubes beside S. -->
+        <CheckBox FontSize="11" Content="Noise: NF, NFmin, Sopt, Rn and Te" IsChecked="{Binding Noise}"
+                  ToolTip.Tip="Adds the noise-wave correlation Cs and, for a two-port, the noise figure from port 1's Z0 and the noise parameters (T0 = 290 K). Passive parts are thermal at their own temperature; a part with no noise model is named in a warning."/>
+    </StackPanel>
 
 </UserControl>

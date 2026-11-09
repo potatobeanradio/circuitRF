@@ -3971,3 +3971,124 @@ ATTEMPT being reported and the point retried, since a NaN point in an I–V fami
 clear stop, and only a retry gives "a second exit at the same point" a meaning. Loadpull's own grid loop and envelope
 are not covered. Gate: `WorkerExitMidRunTests`, with `tools/DeviceWorkerExample --exit-on-eval n` /
 `--exit-when-vgs-above v`.
+
+## S-parameter noise: passive thermal noise and the noise waves (2026-11-09)
+
+`Noise=yes` on a `sparam` directive (`AnalysisSettings.Noise`) adds `Cs` [freq, i, j] (W/Hz, the outgoing noise waves'
+correlation with every port in its own noiseless Z0) and, for a two-port, `NF`, `NFmin` (dB, T0 = 290 K), `Rn` (Ω) and
+`Sopt` (on Re Z0 of port 1), each [freq], through `RfCore.Data.NoiseMetrics`. Off, nothing is entered: the same
+cubes, S bit for bit and the same `RunStats`. On, S is still bit-identical and each frequency costs N more
+back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
+
+- **The noise waves come from the engine's own wave extraction.** With no drive, port k's current is `−V_k/Z0_k`, so
+  the Kurokawa `b_k = (V_k − Z0_k*·I_k)/(2√Re Z0_k)` the S loop reads is `(√Re Z0_k/Z0_k)·V_k`. The port-voltage row of
+  `M⁻¹` is one transposed solve per port on the SAME `SparseLU` the S columns used; `SolveTranspose` is Hermitian, so the
+  row is `conj(y)` (the HB small-signal cache's finding, reused). `Cs = D·Σ H·C·Hᴴ·Dᴴ`. A dropped conjugate leaves the
+  diagonals right and mirrors the off-diagonals' phase; `lossy_lc`'s complex off-diagonals catch it. The legacy path
+  (some Re Z0 ≤ 0) terminates nothing and is refused in `Prepare`, before the DC pre-pass (`NoiseDiagnostics`).
+- **Passive parts: Bosma/Twiss on the recorded stamp.** Each part is recorded (`EnvelopeTangentCheck.Recorded`), every
+  node tied to ground through 50 Ω, and `Z_t` taken from the whole recorded system, so branches are eliminated. The
+  part's open-circuit noise is the terminated network's `2kT(Z_t + Z_tᴴ)` less the terminations' `(4kT/R)·Z_t·Z_tᴴ`, and
+  its node currents `C_j = Z_t⁺·C_V·Z_t⁺ᴴ`. Equal to `2kT(Y + Yᴴ)` where Y exists (a resistor, R‖C, R‖L‖C, a lossy
+  inductor and a lossy TLIN agree with the Schur complement of their own stamp to ≤ 5e-15). An ideal tie (a short, an ideal transformer, a 0 V branch) makes `Z_t` singular; the SVD
+  pseudo-inverse (cut 1e-10 of σ_max) drops exactly the injections that drive no node voltage, which the surrounding
+  network cannot see either, so it stays exact (a resistor and a short recorded together, seen through a terminated
+  network). Lossless parts come out at round-off with no special case. Ceilings: a resistor below ~1 nΩ reads as a tie,
+  and one far above 50 Ω loses about log10(R/50) digits to the subtraction (a few 1e-9 relative at 1 GΩ, where its noise
+  no longer matters).
+- **Record before the assembly.** A stamp writes the model's branch index (`LastBranchIndex`, an SnP's port branches);
+  recording one into a scratch numbering after `StampAll` would leave the regularisation and the probes reading the
+  scratch index. The parts are recorded first at each frequency, and `StampAll` writes the real indices back.
+- **A Mutual and its inductors are one recording**, inductors first (`MutualInductanceModel.Coupled` joins them; chains
+  of couplings union). Recorded apart, each inductor's loss would be reduced through its own branch with the coupling
+  missing. A coupled group with members at different temperatures is taken at the hottest (marked `ponytail:`).
+- **Temperature** is `Temperature.ResolveDeviceC` per part (Temp, then Dtemp, then the ambient — 300 K by default, so
+  a design stating nothing is not at T0 = 290 K).
+- **Noiseless.** Ports and independent sources by definition. Nonlinear devices, active or black-box linear parts
+  (a VCCS, an op-amp, a negative resistor), external devices that declare no noise sources and S-parameter blocks with
+  gain and no noise data have no noise model here and are named in one `sparam-noise-noiseless` warning (the next two
+  sections).
+
+Gates: `tests/Engine.Tests/Linear/SParamNoiseTests.cs` against closed forms (a matched pad at 290 K and 400 K, Bosma's
+`kT(I − SSᴴ)` entry by entry on a lossy reactive network, coupled lossy inductors and an ideal transformer) and
+`testdata/noise/refs.json` (`gen_noise_refs.py`: numpy nodal and ngspice 47 `.sp … donoise` at 290 K — mixed `Temp=`,
+a Mutual, a VCCS amplifier with 75/50 Ω ports: Cs within 2e-13); serial = parallel bit for bit; a parametric sweep stacks the cubes;
+`circuitrf sparam … -o x.s2p` writes the noise block.
+
+## S-parameter noise: an S-parameter block's own noise data (2026-11-09)
+
+A two-port SnP whose Touchstone file has a noise block is noisy by that data, passive or not
+(`SParameterNoise.DataFile`); a passive SnP without one is thermal through Bosma like any passive part, since
+`SnpModel.ActivityFor` measures σ_max(S) on the file; an SnP with gain and no noise data, and every Deembed, stay
+noiseless and named.
+
+- **The data path.** `SnpModel.NoiseData` turns the rows into `TwoPortNoise` (Fmin as a factor, Rn = rn·R, Γopt and Rn
+  on the option line's R = Re Z0; the reader is 1.x-only, so rn is always normalised). `NoiseAt` interpolates linearly
+  in Fmin, Re Γopt, Im Γopt and Rn, as `u·a + t·b` so a sweep point on a row returns the row exactly, and holds the end
+  rows outside. The engine forms `C_A = ChainCorrelation(p)` and `C_Y = T⁻¹·C_A·T⁻ᴴ` (`AdmittanceFromChain`) with Y the
+  admittance of the S the block stamps (`SnpModel.SAt`, now also what `Stamp` uses, offsets included) at the file's R —
+  a real R, so `RFNetwork.SToY` is the power-wave Y here. The densities are absolute at T0 and do not move with the
+  ambient; the multiplicity scales C_Y (m independent copies). Re-referencing is free: C_Y is reference-independent, so a
+  25 Ω file between 50 Ω ports reports Γopt on 50 Ω with nothing converted.
+- **A floating reference.** Port k's current enters at `Nodes[k]` and leaves at `ReferenceNode`, so the 2x2 C_Y goes onto
+  three nodes through `[[1,0],[0,1],[−1,−1]]`, ground rows dropped (`AcrossPorts`). The gate makes it observable: a
+  passive file whose noise rows are its own thermal noise at T0, on a reference reaching ground through 20 Ω, the bench
+  at T0, must give Bosma's `kT0(I − SSᴴ)` for the whole network (9e-15); dropping the reference row fails it.
+- **A Deembed states no noise.** The inverse of a noisy fixture would need the fixture's noise taken away, which no
+  current source can do, so it is named as noiseless even on a file with a noise block.
+- **Two warnings, once per instance, both decided in `Prepare`** so a frequency-parallel run reports what a serial one
+  does: `sparam.noise.data-band` (the sweep leaves the rows' band) and `sparam.noise.data-unphysical` (some row fails
+  `0 ≤ Fmin − 1 ≤ 4·Rn·Gopt`; the data is used as given). Realizability is checked with a 1e-3 tolerance on the factor:
+  measured NFmin rounded to 0.01 dB misses the bound by up to ~1e-3.
+
+Gates: `SParamNoiseTests` — refs.json's `friis_matched` (the Friis closed form), `friis_mismatched` (scikit-rf `connect`),
+`touchstone_r50`/`_r25`/`_r25_in_50` (the file's values, Γopt re-referenced) and `pozar_ex12_5`, all within 1e-14 dB and
+3e-15 in Cs; Pozar's 2 dB circle from the reported cubes against scikit-rf's `nf_circle` (1e-9) and the textbook (1e-2);
+a passive SnP with no noise data against Bosma on a floating reference; linear interpolation and the held ends; the
+unphysical-data warning; the noiseless naming of an SnP with gain and of a Deembed; and `circuitrf sparam … -o x.s2p`
+writing back ampA.s2p's noise rows.
+
+## S-parameter noise: an external device's own noise sources (2026-11-09)
+
+An OSDI device is noisy by the sources its model declares (the worker's `noise` command, `tools/osdi-worker/README.md`
+Noise). `SParameterNoise.DeviceSources` reads them once per instance in `Prepare`, for every sweep frequency, at the DC
+operating point the run linearises the device about (`SParameterEngine.BuildBias`, now internal), so the noise and the
+small-signal stamp describe the same bias. A failed read fails the run: noise that was asked for and not produced is not
+a warning.
+
+- **Mapping.** Source s between device nodes (a, b), density p, is a current noise source: `p·[[1, −1], [−1, 1]]` on
+  circuit nodes `(Nodes[2a], Nodes[2b])`, or p alone on `Nodes[2a]` when b is −1 (ground) or the circuit node is 0. Internal
+  nodes are ordinary MNA unknowns, so they map the same way; a pair collapsed onto one node cancels. All sources of one
+  device are summed into one `NoiseCurrents` (independent sources add).
+- **Multiplicity is applied here.** The worker passes no `$mfactor` and returns one device's densities; m independent
+  copies in parallel carry m times the density, as their stamp carries m times the admittance.
+- **The lookup is by ω.** The contributor is called with the ω `RunRange` computes, `2π·f`, and the table is keyed by
+  the same expression, so it is an equality of the same double.
+- **A device that declares no sources is named in the `sparam-noise-noiseless` warning.** The descriptor cannot tell a
+  model that states it has no noise from a provider that cannot report any (the other two worker kinds never speak the
+  command, so their descriptors are empty too). Naming it is right for both: the user learns the device adds nothing,
+  and a model with no `white_noise` loses nothing by being named.
+
+Gate: `tests/Engine.Tests/External/OsdiNoiseTests.cs` (the worker and `fake_osdi`'s `crf_noise`, skipped when not built):
+refs.json's `osdi_crf_noise` points (g 1 and 4 mS, Vdc 0.5 and 1 V, T 300 and 350 K), NF to 4e-15 dB and every Cs entry
+to 2e-15 against the closed form; with kf > 0 the flicker source is `kf·|g·v|/f`; m = 2 equals one device of 2g; a
+model with no sources (`crf_rc`) contributes nothing and is named.
+
+
+## S-parameter noise: the cubes named as Qucs and ngspice name them, and the linear and temperature forms (2026-11-09)
+
+A two-port noise run now adds `NF`, `Fn`, `NFmin`, `Fmin`, `Te`, `Tmin`, `Rn`, `Sopt` and `Zopt` beside `Cs`
+(`SParameterNoise.AddCubes`). `GammaOpt` became `Sopt`, ngspice's `SOpt` and Qucs's `Sopt`; `DataSetBuilder.ToSnp` reads
+the Touchstone noise block from `NFmin`, `Sopt` and `Rn`.
+
+- **The linear noise factor is `Fn`, not Qucs's `F`.** `SP1.F("probe")` is already the WSProbe's return difference
+  (`WspCubePacker` writes `F:<label>` into the same analysis group), and `EvalQualifiedAccessor` sends every
+  one-argument `SP1.F(…)` there, so a cube named `F` could not be indexed that way and `SP1.F` would mean two things.
+- `Fn` and `Te` come from the same `NoiseFactorAtZ0` double as `NF`, not back from dB; `Fmin` and `Tmin` from `FromWaves`'
+  Fmin. T0 is 290 K, so a matched pad at T gives Te = T·(L − 1) whatever T is.
+- `Zopt = R·(1 + Sopt)/(1 − Sopt)` on R = Re Z0 of port 1, the reference Sopt is on.
+- Still two-port only: an N-port gets `Cs`, and its per-port figures come from `nf`/`te` with a port.
+
+Gates: `SParamNoiseTests` — `MatchedPad_MeetsTheClosedForm` (Fn, Te = Tmin = T(L − 1) at 290 and 400 K),
+`LinearAndTemperatureCubes_AndZopt_FollowFromTheNoiseParameters` (the three ngspice benches; Zopt against their SOpt),
+and the three-port splitters of refs.json (`ThreePort_NfAndTeToEachOutputPort_MatchTheReference`).

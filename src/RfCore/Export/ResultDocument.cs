@@ -2421,7 +2421,10 @@ namespace RfCore.Export
         /// <summary>brief-cosim-pattern-5 R-cp5-2 / R-cp5-4 — a parametric sweep around a fields analysis: what its pattern cubes will take, or the sentence the
         /// run refuses it with. Null for any other analysis.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainFieldsSweepJson? FieldsSweep = null);
+        ExplainFieldsSweepJson? FieldsSweep = null,
+        /// <summary>Whether an S-parameter analysis runs its small-signal noise (<c>Noise=</c>). Null for any other kind.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool? Noise = null);
 
     /// <summary>brief-cosim-pattern-5 — <c>explain --analysis</c>'s answer for a sweep around a fields analysis, from the function the run uses.</summary>
     public sealed record ExplainFieldsSweepJson(

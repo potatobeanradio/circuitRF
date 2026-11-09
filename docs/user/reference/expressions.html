@@ -118,6 +118,7 @@ may not shadow them.</p>
       <tr><td>Complex → Real</td><td><code>real(z) imag(z) abs(z) mag(z)</code> (= abs) <code>phase(z)</code> (degrees) <code>phase_rad(z)</code> (radians) <code>unwrap(z)</code> — the phase in degrees, continued across ±180° along the frequency axis instead of jumping by 360°; <code>unwrap(p)</code> does the same to a phase <code>p</code> already in degrees, and <code>unwrap(x, "axis")</code> names another axis</td></tr>
       <tr><td>Real,Real → Complex</td><td><code>polar(mag, phase_deg)</code> — e.g. <code>polar(0.1, 10)</code> is 0.1∠10°</td></tr>
       <tr><td>Network metrics</td><td><code>mu(S) mu_prime(S) K(S) delta_mag(S) max_gain(S)</code> (dB) <code>max_gain_lin(S) passivity(S)</code>, each also <code>(S, in, out)</code> for an N-port — <code>S</code> is an analysis's S cube, e.g. <code>mu(SP1.S)</code></td></tr>
+      <tr><td>Noise</td><td><code>nf(S[, Γs][, port])</code> (dB) — the noise figure from port 1's Z0 or a source of reflection Γs, to port 2 or <code>port</code>; <code>te(S[, Γs][, port])</code> (K) — the same as a noise temperature; <code>rn(S)</code> — Rn/R; <code>ns_circle(S, NFdB[, npts])</code> — the constant-noise-figure circle as <code>{freq, point}</code> Γ points, or <code>ns_circle(NFdB, NFmin, Sopt, rn[, npts])</code> from noise parameters. The S forms need a run with <a href="simulations.html#sp-noise"><code>Noise=yes</code></a> — <a href="derived-metrics.html#noise">the equations</a></td></tr>
       <tr><td>Delay / match</td><td><code>group_delay(z)</code> (seconds; or <code>group_delay(S, in, out)</code>) <code>vswr(Γ)</code></td></tr>
       <tr><td>Statistics over trials</td><td><code>mean_over std_over median_over pctl_over(x, p) skew_over kurt_over yield_over(cond) cpk(x, lo, hi) sigma_to(x, limit)</code>; <code>histogram(x, bins) cdf(x) normq(x) yield_sens(pass, x, bins)</code> — <a href="measurements.html#statistics">measurement functions</a> over a Monte Carlo run's trials</td></tr>
       <tr><td>Distributions</td><td><code>agauss(nom, dev[, k])</code> normal, σ = dev/k · <code>gauss(nom, rel[, k])</code> normal, σ = nom·rel/k · <code>aunif(nom, dev)</code> uniform on nom ± dev · <code>unif(nom, rel)</code> uniform on nom·(1 ± rel) · <code>limit(nom, dev)</code> nom ± dev, equally likely — each is <code>nom</code> except in a Monte Carlo trial. <code>limit(x, lo, hi)</code> is a clamp.</td></tr>
@@ -127,8 +128,9 @@ may not shadow them.</p>
     built-ins (and so are never unit suffixes). So are <code>max_over(x, lo, hi)</code> and
     <code>min_over(x, lo, hi)</code>, the <a href="measurements.html#spec">worst value over a band</a> —
     unlike <code>min(a,b)</code>/<code>max(a,b)</code>, which compare two values. The network metrics,
-    <code>group_delay</code> and <code>vswr</code> are measurement functions too; a metric reads the
-    analysis's own port reference impedances, so pass <code>SP1.S</code> itself, not a slice of it.
+    the noise functions, <code>group_delay</code> and <code>vswr</code> are measurement
+    functions too; a metric reads the analysis's own port reference impedances (and <code>nf</code> its
+    noise waves), so pass <code>SP1.S</code> itself, not a slice of it.
     A distribution in a global variable is drawn once per trial and shared; in a cell's parameter or variable
     it is drawn for each instance. A variable holding one is not tunable.</caption>
   </table>

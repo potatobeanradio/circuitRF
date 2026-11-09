@@ -1143,3 +1143,39 @@ pinch-off is not reciprocal at all (S21 ≠ S12 by 6 dB), so "passive at this bi
 A Line cut for exactly the 8:1 band reads 20° and 160° at its edges only to rounding, which can fall either side from one
 runtime to the next and turn the band's end points into a warning. `TrlCalibration` counts a point within 1e-6° of an edge
 (`UsableEdgeSlackDeg`) as inside. `DataCube.Mag` on a real cube is now its absolute value (`src/Core/RESOLVED.md`).
+
+## Two-port noise math, and the Touchstone noise block written back (2026-11-09)
+
+`Data/NoiseMetrics.cs` is the noise math the S-parameter noise analysis builds on: noise parameters ↔ the chain
+correlation C_A, the noise-wave correlation Cs → C_Y → C_A → parameters, an independent "straight from Cs" path
+(Wedge & Rutledge 1992), F(Γs), constant-F circles and a realizability check. `TwoPortNoise(Fmin, GammaOpt, Rn, R)`
+carries the reference its Γopt is on.
+
+- **Conventions.** Spectral densities are single-sided and absolute (a matched load's outgoing wave is kT W/Hz, a
+  resistor's voltage 4kTR V²/Hz). F is referred to T0 = 290 K with k = 1.380649e-23 J/K exact; RfCore cannot reach
+  `Core`'s `Temperature.Boltzmann`, so the constant is repeated once. Noise waves are Kurokawa power waves with every
+  port in its own noiseless Z0. C_A puts v in series and i in shunt at the input, so
+  F(Ys) = 1 + (C11|Ys|² + 2Re(Ys·C12) + C22)/(4kT0·Re Ys), which fixes `T = [[0, −1/Y21], [1, −Y11/Y21]]` for
+  C_A = T·C_Y·Tᴴ with port currents I = Y·V + i. Γ is always on a REAL R: the option line's R for a file, Re Z0 of port 1
+  for a run.
+- **`RFNetwork.SToY` is not the power-wave Y for a complex Z0.** It is the √Z0 form, which agrees with power waves only
+  for a real reference (the gap `TraceResolve.ResolveNetworkParamCube` already documents). C_Y needs the power-wave Y,
+  so `NoiseMetrics` renormalises S to Re Z0 with the power-wave `SToS` first and converts there. With plain `SToY` the
+  Bosma check (a passive network at T, Cs = kT(I − S·Sᴴ), must give C_Y = 2kT(Y + Yᴴ)) fails for complex Z0 and passes
+  for real Z0, so a real-Z0 test alone would not have caught it.
+- **The textbook direct forms all checked out**, two rewritten. Γopt = η2(1 − √(1 − 1/|η2|²)) divides by
+  ζ = c22·S11 − c12·S21, which is zero exactly when Γopt is; rationalised it is Γopt = 2ζ*/(h + √(h² − 4|ζ|²)),
+  h = c22 + η1, with no special case. Rn is not in that set; it is the limit of F·(1 − |Γs|²) at Γs = −1,
+  Rn = z0·(c22 + η1 + 2Re ζ)/(4kT0|S21|²), which needs no division by |Γopt|² (the route through F at Γs = 0 does).
+- **Realizability** is det C_A ≥ 0, and det C_A = (4kT0)²·a(2·Rn·Gopt − a) with a = (Fmin − 1)/2, so the check is
+  0 ≤ Fmin − 1 ≤ 4·Rn·Gopt. A C_A with C11 = 0 (a noiseless two-port) has no finite optimum and reads Fmin = 1, Rn = 0.
+- **Touchstone.** `TouchstoneIO.Write` now emits the 1.x noise rows (freq, NFmin dB, |Γopt|, ∠Γopt°, rn) after a
+  two-port's data, and `DataSetBuilder.ToSnp` fills `SNP.NoiseParameters` from cubes named `NFmin` (dB), `Sopt` and
+  `Rn` (Ω), each [freq], in the S cube's group. Nothing is re-referenced on write: the rows are stored against Re Z0, and
+  the option line's R is Re Z0 in both write modes (strict 1.1 renormalises the S data to exactly that). The reader is
+  1.x-only, so rn is always taken as Rn/R. The writer adds no header comment of its own, so a read → write → read keeps
+  the file's own noise comments without doubling them.
+
+Gates: `tests/RfCore.Tests/NoiseMetricsTests.cs` (Pozar 4th ed. Ex. 12.5, the C_A round trip at R = 50 and 25, Bosma
+with real and complex Z0, the two paths against each other, F from a complex-Z0 source) and
+`TouchstoneNoiseBlockTests.cs` (write → read at R = 50 and 25, strict mode, the cubes through `ToSnp`).

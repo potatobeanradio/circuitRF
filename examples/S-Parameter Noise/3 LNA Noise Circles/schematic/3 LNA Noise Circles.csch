@@ -1,0 +1,392 @@
+{
+  "FormatVersion": 2,
+  "CellName": "3 LNA Noise Circles",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "P1",
+      "Symbol": "Term",
+      "X": 0,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Term",
+      "X": 4600,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Src",
+      "X": 800,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "0.25",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "C",
+          "Expression": "0.43",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Srl",
+      "X": 1400,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "2",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "L",
+          "Expression": "3.16",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Q1",
+      "Symbol": "Snp",
+      "X": 2600,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "data/transistor.s2p",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Rstab",
+      "Symbol": "Resistor",
+      "X": 3800,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "300",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 4600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 3800,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 0,
+      "Y": -1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain_dB",
+          "Expression": "dB(SP1.S(2,1))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "K_rollett",
+          "Expression": "K(SP1.S)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF_125",
+          "Expression": "ns_circle(SP1.S, 1.25)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF_200",
+          "Expression": "ns_circle(SP1.S, 2)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          1600,
+          0
+        ],
+        [
+          2400,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          800,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          0
+        ],
+        [
+          4600,
+          0
+        ],
+        [
+          4600,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3800,
+          0
+        ],
+        [
+          3800,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 600,
+      "Y": 0,
+      "Name": "in",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2000,
+      "Y": 0,
+      "Name": "g",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4000,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "3",
+          "StopExpr": "5",
+          "StepExpr": "0.05",
+          "Mode": "StepSize",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz",
+          "StepUnit": "GHz"
+        }
+      ],
+      "NoiseExpr": "yes"
+    }
+  ]
+}

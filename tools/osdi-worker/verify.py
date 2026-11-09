@@ -263,6 +263,61 @@ print("EVAL without the flag is unchanged: ok")
 
 send({"cmd":"destroy","handle":FH}); recv()
 
+# ── noise: sources in describe, densities at the bias the caller states ──────────
+#
+# Every type carries the key; crf_noise is the only one with sources. Node pairs use describe's own
+# node numbering (-1 = ground, unused here).
+assert all("noise" in t for t in d["types"]), d
+assert next(t for t in d["types"] if t["typeId"] == "crf_rc")["noise"] == []
+nz = next(t for t in d["types"] if t["typeId"] == "crf_noise")
+assert nz["noise"] == [{"name": "thermal", "nodes": [0, 1]},
+                       {"name": "shot",    "nodes": [0, 1]},
+                       {"name": "flicker", "nodes": [0, 1]}], nz["noise"]
+print("DESCRIBE noise sources: ok")
+
+K_B, Q_E = 1.380649e-23, 1.602176634e-19
+def noise(handle, volts, freqs):
+    send({"cmd":"noise","handle":handle,"freqCount":len(freqs)},
+         struct.pack("<%dd" % (len(volts) + len(freqs)), *volts, *freqs))
+    return recv()
+
+def close(a, b): return abs(a - b) <= 1e-12 * abs(b)
+
+freqs = [1.0e3, 2.5e9]
+g, kf = 2.0e-3, 1.0e-12
+for T in (300.0, 400.0):
+    send({"cmd":"create","typeId":"crf_noise","params":{"g":g,"kf":kf},"temperatureK":T})
+    hn = recv()[0]["handle"]
+    # A different bias evaluated first: noise must use the voltages it is given, not this one.
+    send({"cmd":"eval","handle":hn,"count":1}, struct.pack("<2d", 3.0, 0.0)); recv()
+    for va, vb in ((1.0, 0.0), (-0.3, 0.2)):
+        j, dens = noise(hn, (va, vb), freqs)
+        assert j == {"sourceCount": 3, "freqCount": 2}, j
+        i = abs(g * (va - vb))
+        for k, f in enumerate(freqs):
+            th, sh, fl = dens[k*3:k*3+3]          # frequency-major: [k*S + s]
+            assert close(th, 4*K_B*T*g) and close(sh, 2*Q_E*i) and close(fl, kf*i/f), (T, va, vb, f, dens)
+        print(f"NOISE T={T} v={va-vb}: thermal={dens[0]:.6e} shot={dens[1]:.6e} flicker@1k={dens[2]:.6e}")
+    send({"cmd":"destroy","handle":hn}); recv()
+
+# Defaults (g = 1e-3, kf = 0): thermal and shot only, and eval is the plain conductance.
+send({"cmd":"create","typeId":"crf_noise","params":{},"temperatureK":290.0}); hn = recv()[0]["handle"]
+_, dens = noise(hn, (0.5, 0.0), [1e6])
+assert close(dens[0], 4*K_B*290.0*1e-3) and close(dens[1], 2*Q_E*0.5e-3) and dens[2] == 0.0, dens
+send({"cmd":"eval","handle":hn,"count":1}, struct.pack("<2d", 0.5, 0.0)); _, ev = recv()
+assert ev[0] == 1.0 and close(ev[1], 0.5e-3) and close(ev[2], -0.5e-3), ev
+# The payload must be exactly the node voltages followed by freqCount frequencies.
+send({"cmd":"noise","handle":hn,"freqCount":2}, struct.pack("<3d", 0.5, 0.0, 1e6)); bad,_ = recv()
+assert "error" in bad, bad
+send({"cmd":"destroy","handle":hn}); recv()
+
+# A type without noise answers zero sources, not an error.
+send({"cmd":"create","typeId":"crf_rc","params":{"g0":0.001},"temperatureK":300.0}); hr = recv()[0]["handle"]
+j, dens = noise(hr, (1.0, 0.0), freqs)
+assert j == {"sourceCount": 0, "freqCount": 2} and dens == [], (j, dens)
+send({"cmd":"destroy","handle":hr}); recv()
+print("NOISE closed form, stated bias, zero-source type: ok")
+
 send({"cmd":"create","typeId":"crf_rc",
       "params":{"g0":0.002,"c":1e-12,"tc":0.01,"tnom":300.0,"mult":1.0},
       "temperatureK":400.0})

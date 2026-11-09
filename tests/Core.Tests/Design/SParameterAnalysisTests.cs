@@ -229,4 +229,31 @@ public sealed class SParameterAnalysisTests
         for (int i = 0; i < expected.Length; i++)
             Assert.Equal(expected[i], allFreqs[i], 1.0);
     }
+
+    /// <summary>Noise= reaches the analysis, survives a write and a read (two segments, so the merge too), and its
+    /// default is not written.</summary>
+    [Fact]
+    public void Noise_RoundTripsThroughCnl()
+    {
+        var (_, tb) = new CnlReader().Read("analysis SP1 type=sparam start=1 stop=2 npts=3 Unit=GHz Noise=yes\n");
+        var spa = Assert.IsType<SParameterAnalysis>(Assert.Single(tb.Analyses));
+        Assert.True(spa.Noise);
+
+        var two = new SParameterAnalysis("SP2", [new FrequencySpec("1e9", "2e9", 3), new FrequencySpec("5e9", "6e9", 3)])
+        {
+            NoiseExpr = "yes",
+        };
+        var tb2 = new TestBench("tb");
+        tb2.Analyses.Add(two);
+        string text = CnlWriter.Write(tb2);
+        Assert.Single(text.Split('\n'), l => l.Contains("Noise=yes"));
+        var back = Assert.IsType<SParameterAnalysis>(Assert.Single(new CnlReader().Read(text).Item2.Analyses));
+        Assert.Equal(2, back.Sweeps.Count);
+        Assert.True(back.Noise);
+
+        var off = new TestBench("tb");
+        off.Analyses.Add(new SParameterAnalysis("SP3", new FrequencySpec("1e9", "2e9", 3)));
+        Assert.DoesNotContain("Noise", CnlWriter.Write(off));
+        Assert.False(Assert.IsType<SParameterAnalysis>(Assert.Single(new CnlReader().Read(CnlWriter.Write(off)).Item2.Analyses)).Noise);
+    }
 }

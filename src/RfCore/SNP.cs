@@ -66,10 +66,11 @@ namespace RfCore
     /// </summary>
     /// <param name="FrequencyHz">Frequency, Hz.</param>
     /// <param name="NFminDb">Minimum noise figure, dB.</param>
-    /// <param name="GammaOpt">Optimum source reflection coefficient (the file writes it as magnitude
-    /// and angle in degrees whatever the network data's format).</param>
-    /// <param name="RnNormalized">Effective noise resistance, normalized to the reference impedance
-    /// (Touchstone 1.x); Ω in a Touchstone 2 file.</param>
+    /// <param name="GammaOpt">Optimum source reflection coefficient, referenced to the option line's R
+    /// (<c>Re SNP.Z0</c>); the file writes it as magnitude and angle in degrees whatever the network
+    /// data's format.</param>
+    /// <param name="RnNormalized">Effective noise resistance over that same R (<c>Rn/R</c>, Touchstone
+    /// 1.x). The reader is 1.x-only, so this is always taken as normalised.</param>
     public sealed record NoiseParameterPoint(double FrequencyHz, double NFminDb, Complex GammaOpt, double RnNormalized);
 
     // ============================================================
@@ -190,12 +191,13 @@ namespace RfCore
         public List<CommentEntry> Comments { get; } = new();
 
         /// <summary>
-        /// The two-port NOISE PARAMETER rows a Touchstone file carried after its network data —
-        /// empty for every other file. <b>Read and kept, used by nothing yet</b>: before these were
-        /// recognised, a measured amplifier file that carried them failed to load at all (its first
-        /// noise row was folded into the next network block and reported as a token overflow). They
-        /// are kept rather than skipped so the file's content is not silently narrowed, and so a
-        /// later noise analysis has them. Not written back by <see cref="TouchstoneIO"/>.
+        /// The two-port NOISE PARAMETER rows a Touchstone file carried after its network data, or a
+        /// run's <c>NFmin</c>/<c>Sopt</c>/<c>Rn</c> cubes (<c>DataSetBuilder.ToSnp</c>) — empty
+        /// otherwise. Γopt and rn are referenced to <c>Re</c> <see cref="Z0"/>, the option line's R.
+        /// <see cref="TouchstoneIO"/> reads them (before it did, a measured amplifier file that carried
+        /// them failed to load: its first noise row was folded into the next network block and
+        /// reported as a token overflow) and writes them back after the network data of a two-port.
+        /// The math on them is <see cref="RfCore.Data.NoiseMetrics"/>.
         /// </summary>
         public List<NoiseParameterPoint> NoiseParameters { get; } = new();
 

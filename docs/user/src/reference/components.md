@@ -1262,6 +1262,11 @@ circuit and interpolated onto the analysis sweep.
   `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
   not (an amplifier).
 
+**Noise.** In an S-parameter run with [`Noise=yes`](simulations.html#sp-noise), a two-port file's Touchstone noise
+block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with
+a warning. A passive file with no noise block is thermal at the design's ambient temperature. A file with gain and no
+noise block is taken as noiseless and named in the run's warning, and so is every [Deembed](#deembed).
+
 When the file's header names its ports (`! Port[1] = P1`, which every EM result circuitRF writes carries), each lead
 shows its port's name in place of its number, shortened past eight characters. The pins are still ports 1…N: only the
 text beside them changes.
@@ -1418,8 +1423,11 @@ current of a real diode rolls off from the ideal exponential towards a square ro
 model has no term for that knee, so it stays exponential and is optimistic there. An extracted
 <code>Rs</code> often absorbs some of that roll-off, which is a fit rather than the physics and does
 not follow temperature the way the real mechanism does.
-<strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise analysis for it
-to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
+<strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
+(<code>Kf</code>/<code>Af</code>) are not offered, and the
+<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
+names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
+<strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
 <strong>Sidewall junction capacitance</strong> as a separate term — <code>Cj0</code>, <code>Vj</code>
 and <code>M</code> describe one junction. A parameter this model does not read is not offered in the
 palette; a card stating one has it {{anchor: spice-import#families|named on import}}.</p>
@@ -1710,8 +1718,11 @@ is zero the two nodes are the same net and the halves add back to `Cjc`, so noth
 discrete RF transistor has no substrate terminal to attach it to, and adding a fourth pin would change
 what the symbol means. <strong>Excess phase</strong> (<code>Ptf</code>) — it is a delay, and circuitRF's
 weighting functions carry 1 and jω, not exp(−jωτ), so accepting the parameter would be accepting a value
-that does nothing. <strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise
-analysis for it to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a
+that does nothing. <strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
+(<code>Kf</code>/<code>Af</code>) are not offered, and the
+<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
+names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
+<strong>Self-heating</strong> — the device temperature is a parameter, not a
 solved node, so there is no electrothermal feedback. <strong>Package parasitics</strong> — the lead
 inductances and package capacitances of a real part are separate components you place around the
 transistor, not parameters of it. A parameter this model does not read is not offered in the palette.
@@ -1831,8 +1842,11 @@ zero at threshold, so a device biased there is being asked a question this model
 <strong>Short-channel effects</strong> — drain-induced barrier lowering, mobility degradation,
 velocity saturation and channel-length modulation done properly are what the higher levels add;
 here <code>Lambda</code> is a single fitted output slope and nothing else.
-<strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise analysis for it
-to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
+<strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
+(<code>Kf</code>/<code>Af</code>) are not offered, and the
+<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
+names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
+<strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
 A parameter this model does not read is not offered in the palette. If your application depends on
 any of the above, use a compiled model through <a href="#veriloga">VerilogA</a> instead.</p>
 </div>

@@ -72,6 +72,7 @@ interpolated onto the sweep.
       <tr><td>Reference impedance</td><td>Per-port reference (from each Term's <code>Z</code>); the result renormalizes to it.</td></tr>
       <tr><td><code>NDF=yes</code></td><td>Also compute the <a href="wsprobe.html#ndf">normalized determinant function</a> — the rigorous count of right-half-plane poles of the whole network. <code>PassiveVars=</code> / <code>PassiveParams=</code> name what passivates a user-supplied model.</td></tr>
       <tr><td><code>MarginThreshold=</code></td><td>The <a href="wsprobe.html#stability-margin">stability margin</a> in dB below which a WSProbe is reported as worth looking at. Default <code>-15</code>; <code>none</code> disables.</td></tr>
+      <tr><td><code>Noise=yes</code></td><td>Also compute the <a href="#sp-noise">small-signal noise</a>: the noise-wave correlation, and for a two-port the noise figure and noise parameters. The <b>Noise</b> box in the analysis editor. Default <code>no</code>.</td></tr>
     </tbody>
   </table>
 
@@ -85,6 +86,126 @@ a filter's passband and rejection, a duplexer's arm-to-arm leakage, and an ampli
 gain and stability.</p>
 
 <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
+
+### Small-signal noise {#sp-noise}
+
+`Noise=yes` adds the circuit's small-signal noise to the S-parameter run. The noise comes from the same
+solve: one more back-substitution per port at each frequency, and no further factorization. S does not
+change. `Noise=no`, the default, adds nothing.
+
+```text
+analysis SP1 type=sparam start=1 stop=6 npts=51 Unit=GHz Noise=yes
+```
+
+**What the run adds.** The cubes go into the analysis's own group, beside `S` and `Z0`. A
+[parametric sweep](#parametric-sweep) stacks them as it stacks `S`.
+
+| Cube | Axes | Unit | What it is |
+|---|---|---|---|
+| `Cs` | `[freq, i, j]` | W/Hz | The correlation ⟨b·bᴴ⟩ of the noise waves leaving the ports. Every port is terminated in its own noiseless Z0. |
+| `NF` | `[freq]` | dB | The noise figure with port 1 driven from its own Z0 and port 2 loaded in its own. |
+| `Fn` | `[freq]` | — | The same noise factor F, linear: 10^(NF/10). |
+| `NFmin` | `[freq]` | dB | The minimum noise figure, over every source. |
+| `Fmin` | `[freq]` | — | The minimum noise factor, linear. |
+| `Te` | `[freq]` | K | The equivalent input noise temperature, T0·(F − 1). |
+| `Tmin` | `[freq]` | K | The lowest Te any source gives, T0·(Fmin − 1). |
+| `Rn` | `[freq]` | Ω | The equivalent noise resistance, not normalised. |
+| `Sopt` | `[freq]` | — | The optimum source reflection, the one that reaches NFmin, on R = Re Z0 of port 1. |
+| `Zopt` | `[freq]` | Ω | The optimum source as an impedance, R·(1 + Sopt)/(1 − Sopt). |
+
+Every cube but `Cs` is for a two-port only, because a noise figure and noise parameters belong to a
+two-port. The names are the ones commonly used for them. The linear noise factor is `Fn` rather than `F`, because
+`SP1.F("probe")` already reads a [WSProbe](components.html#wsprobe)'s return difference.
+
+A network with more than two ports gets `Cs` only. For the noise figure from port 1 to any other port, or
+from any other source, and for constant-noise-figure circles, use
+[`nf()`, `te()`, `rn()` and `ns_circle()`](derived-metrics.html#noise): `nf(SP1.S, 0, 3)` is the noise
+figure from port 1 to port 3 of a three-port.
+
+**What is noisy.**
+
+- **Every linear passive part** is thermal at its own temperature. That is its `Temp`, or `Dtemp` above
+  the ambient, or else the design's ambient. The noise is computed from the part's own small-signal
+  stamp (Bosma's theorem), so a lossless part adds none, and a lossy one adds exactly the noise of its
+  loss. Resistors, lossy reactances, transmission lines and coupled inductors (`Mutual`) are all covered.
+- **An [SnP block](components.html#snp)** whose two-port file has a Touchstone noise block is noisy by
+  that data, even if it has gain. A passive file with no noise block is thermal, like any passive part.
+- **A [compiled model](veriloga.html)** is noisy by the sources it declares (`white_noise`,
+  `flicker_noise`). They are evaluated at the DC operating point the run linearises the device about, and
+  multiplied by the instance's multiplicity.
+
+**What is noiseless.** The following parts have no noise model here:
+
+- the built-in nonlinear device models (diodes, BJTs, FETs, the SDD);
+- active or black-box linear parts, such as a controlled source, an amplifier block or a negative
+  resistor;
+- an SnP block with gain and no noise data;
+- every Deembed;
+- a compiled model that declares no noise sources.
+
+These are taken as noiseless, and one warning names them all (`sparam.noise.noiseless`), so a result
+never leaves out a part without saying so. Ports and independent sources are noiseless by definition,
+and they are not named.
+
+**Conventions.**
+
+- **Spectral densities are single-sided and absolute.** A matched load's outgoing noise wave is kT W/Hz,
+  and a resistor's open-circuit noise voltage is 4kTR V²/Hz. k is 1.380649e-23 J/K, exact.
+- **The noise waves are the power waves S is defined on.** Every port is terminated in its own noiseless
+  Z0. This is why a port whose Z0 has no positive real part is refused with `Noise=yes`
+  (`sparam.noise.reactive-z0`): there is no termination to define the waves against.
+- **NF is referred to T0 = 290 K, but the default ambient is 26.85 °C = 300 K.** A design that states no
+  temperature is 10 K warmer than the standard, and its passive parts make that much more noise. A
+  matched 6 dB pad reads F = 1 + (300/290)(L − 1), which is NF = 6.111 dB, not 6.000 dB. Set
+  `temp = 16.85` to put the whole design at 290 K. Noise data from a file is absolute at T0, so it does
+  not change with the ambient.
+- **Sopt and Zopt are on Re Z0 of port 1**, and `Rn` is in ohms. A Touchstone row's rn is Rn over that R,
+  which `rn(SP1.S)` gives.
+
+**An SnP block's noise data.** circuitRF reads Touchstone 1.x noise rows: frequency, NFmin in dB, |Γopt|,
+∠Γopt in degrees, and rn normalised to the option line's R. Between rows the noise parameters are linear.
+Outside the rows the nearest row holds, and `sparam.noise.data-band` says so. A row that no physical
+two-port could have (0 ≤ Fmin − 1 ≤ 4·Rn·Re Yopt fails) gets `sparam.noise.data-unphysical`, and it is
+used as given.
+
+**Written out.** `circuitrf sparam bench.cnl -o out.s2p` on a two-port writes a Touchstone noise block
+after the data. It is in the same 1.x format, with Γopt and rn on the option line's R. The rows are the
+run's own cubes, so reading the file back gives them again.
+
+**A worked example: Pozar's Ex. 12.5.** A transistor is described by its S-parameters and its noise
+parameters in a Touchstone file. The book gives them at 4 GHz, and the file holds them over 3.5 to 4.5 GHz:
+Fmin = 1.6 dB, Γopt = 0.62∠100° and rn = 0.4 on 50 Ω, which is Rn = 20 Ω.
+
+```text
+# GHz S MA R 50
+3.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+4 0.6 -60 1.9 81 0.05 26 0.5 -60
+4.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+3.5 1.6 0.62 100 0.4
+4 1.6 0.62 100 0.4
+4.5 1.6 0.62 100 0.4
+```
+
+```text
+Port:P1  p1 0  Num=1 Z=50 Ohm
+Port:P2  p2 0  Num=2 Z=50 Ohm
+SnP:X1   p1 p2 NumPorts=2 File="pozar_ex12_5.s2p"
+analysis SP1 type=sparam start=3.5 stop=4.5 npts=3 Unit=GHz Noise=yes
+measure NFopt = nf(SP1.S, polar(0.62, 100))
+measure NF2   = ns_circle(SP1.S, 2)
+```
+
+The run gives back the file's NFmin = 1.6 dB, Rn = 20 Ω and Sopt = 0.62∠100°, which is
+Zopt = 19.2 + j38.2 Ω. `NF` is 2.948 dB, which is the noise figure from the 50 Ω source, and its noise
+temperature `Te` is 282 K against a `Tmin` of 129 K. `NFopt` is 1.6 dB again. `NF2` is the 2 dB noise circle:
+its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.
+
+**Worked examples.** **File ▸ New ▸ Examples ▸ S-Parameter Noise** has three benches, each with a Data Display
+that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
+1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
+A noise-matched LNA shows NF against NFmin, Te against Tmin, its Sopt and two `ns_circle` circles on a
+Smith chart, and Zopt.
 
 ## Harmonic Balance {#harmonic-balance}
 

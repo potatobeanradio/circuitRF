@@ -90,6 +90,17 @@ public sealed class AnalysisSerializationTests
     }
 
     [Fact]
+    public void SP_Noise_RoundTrips_AndIsAbsentWhenOff()
+    {
+        var on  = new SParameterAnalysis("SP1", new FrequencySpec("1e9", "2e9", 3)) { NoiseExpr = "yes" };
+        var off = new SParameterAnalysis("SP2", new FrequencySpec("1e9", "2e9", 3));
+        var (a2, _) = RoundTrip([on, off], []);
+        Assert.True(Assert.IsType<SParameterAnalysis>(a2[0]).Noise);
+        Assert.False(Assert.IsType<SParameterAnalysis>(a2[1]).Noise);
+        Assert.DoesNotContain("noiseexpr", AnalysisSerialization.Serialize([off], []), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SP_ExprFields_Preserved()
     {
         var seg = new FrequencySpec("f0", "2*f0", "step_size");

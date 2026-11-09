@@ -59,6 +59,76 @@ public sealed class TouchstoneNoiseBlockTests
         Assert.Equal(2, snp.NoiseParameters.Count);
     }
 
+    [Theory]
+    [InlineData(50.0, false)]
+    [InlineData(25.0, false)]
+    [InlineData(25.0, true)]    // strict 1.1: a complex Z0 is renormalised to its real part, the option line's R
+    public void TheNoiseBlockIsWrittenAfterTheDataAndReadsBack(double r, bool strict)
+    {
+        double[] f = [1e9, 2e9, 3e9];
+        var snp = new SNP(f, f.Select((_, k) => Amp(k)).ToArray(), z0: new Complex(r, strict ? 5 : 0));
+        snp.NoiseParameters.AddRange(f.Select((hz, k) =>
+            new NoiseParameterPoint(hz, 0.5 + 0.1 * k, Complex.FromPolarCoordinates(0.3 + 0.1 * k, k - 1.0), 0.2 + 0.05 * k)));
+
+        var text = new StringWriter();
+        TouchstoneIO.Write(snp, text, touchstone11Compatible: strict);
+        var back = TouchstoneIO.Read(new StringReader(text.ToString()), knownPorts: 2);
+
+        Assert.Equal(r, back.Z0.Real);
+        Assert.Equal(f, back.Frequencies);
+        Assert.Equal(snp.NoiseParameters.Count, back.NoiseParameters.Count);
+        foreach (var (a, b) in snp.NoiseParameters.Zip(back.NoiseParameters))
+        {
+            Assert.Equal(a.FrequencyHz, b.FrequencyHz);
+            Assert.Equal(a.NFminDb, b.NFminDb, 1e-9);
+            Assert.True((a.GammaOpt - b.GammaOpt).Magnitude < 1e-9);
+            Assert.Equal(a.RnNormalized, b.RnNormalized, 1e-9);
+        }
+        if (!strict)
+            Assert.True((snp.Matrices[2][1, 0] - back.Matrices[2][1, 0]).Magnitude < 1e-8);
+    }
+
+    [Fact]
+    public void ARunsNoiseCubesBecomeTheNoiseBlockReferencedToTheOptionLineR()
+    {
+        double[] f = [1e9, 2e9];
+        var freq = new Axis("freq", f, "Hz");
+        var pi = new Axis("i", [1.0, 2.0], "port");
+        var pj = new Axis("j", [1.0, 2.0], "port");
+        var s = f.SelectMany((_, k) => { var m = Amp(k); return new[] { m[0, 0], m[0, 1], m[1, 0], m[1, 1] }; }).ToArray();
+        Complex[] gamma = [Complex.FromPolarCoordinates(0.4, 1.0), Complex.FromPolarCoordinates(0.5, 1.2)];
+
+        var ds = new DataSet();
+        ds.AddToGroup("SP1", "S", new DataCube([freq, pi, pj], s));
+        ds.AddToGroup("SP1", "Z0", DataSetBuilder.BuildZ0Cube(new Complex[] { 25, 25 }));
+        ds.AddToGroup("SP1", "NFmin", new DataCube([freq], new[] { 0.8, 0.9 }));
+        ds.AddToGroup("SP1", "Sopt", new DataCube([freq], gamma));
+        ds.AddToGroup("SP1", "Rn", new DataCube([freq], new[] { 10.0, 12.5 }));
+
+        var snp = DataSetBuilder.ToSnp(ds, "SP1.S");
+        Assert.Equal(new NoiseParameterPoint(1e9, 0.8, gamma[0], 10.0 / 25), snp.NoiseParameters[0]);
+        Assert.Equal(new NoiseParameterPoint(2e9, 0.9, gamma[1], 0.5), snp.NoiseParameters[1]);
+
+        var text = new StringWriter();
+        TouchstoneIO.Write(snp, text);
+        Assert.Contains("S RI R 25", text.ToString());
+        Assert.Equal(2, TouchstoneIO.Read(new StringReader(text.ToString()), knownPorts: 2).NoiseParameters.Count);
+
+        // Without all three cubes there is no noise block.
+        ds.RemoveFromGroup("SP1", "Rn");
+        Assert.Empty(DataSetBuilder.ToSnp(ds, "SP1.S").NoiseParameters);
+    }
+
+    private static Mat<Complex> Amp(int k)
+    {
+        var m = new Mat<Complex>(2, 2);
+        m[0, 0] = new Complex(0.3, -0.1 * k);
+        m[0, 1] = new Complex(0.02, 0.01);
+        m[1, 0] = Complex.FromPolarCoordinates(4 + k, 2.0 - k);
+        m[1, 1] = new Complex(-0.2, 0.3);
+        return m;
+    }
+
     [Fact]
     public void TheFixtureIsReadOffTheSMatrix()
     {

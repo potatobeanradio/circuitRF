@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core.Elaboration;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Core.Devices;
 
@@ -237,13 +238,10 @@ public sealed class SnpModel : ComponentModel
         if (Inverse) { StampInverse(mna, c, omega); return; }
 
         var snp    = LoadSnp(c);
-        var interp = LoadInterpolator(c);
         double hz  = omega / (2.0 * Math.PI);
 
         // Interpolate the stored S-parameters to this frequency, then convert to Z.
-        // The splines were fitted once (see LoadInterpolator); this is the evaluation only.
-        // brief-sens-2: the entry offsets, after interpolation — the same instance back when there are none.
-        var sMat = SnpPerturbation.Apply(interp.Evaluate(hz), Offsets, hz);
+        var sMat = SAt(c, hz);
         var zMat = RFNetwork.SToZ(sMat, snp.Z0);
 
         int n       = _portCount;
@@ -364,6 +362,52 @@ public sealed class SnpModel : ComponentModel
                 if (t[r, k + j] != Complex.Zero) Wave(row, k + j, Complex.Zero, -t[r, k + j]);
             }
         }
+    }
+
+    /// <summary>
+    /// The S-parameters <see cref="Stamp"/> stamps at <paramref name="hz"/>: the file's, interpolated (the splines were fitted
+    /// once, see <see cref="LoadInterpolator"/>; this is the evaluation only), with the instance's entry offsets applied
+    /// (brief-sens-2; the same instance back when there are none). Not a Deembed's, which stamps the inverse.
+    /// </summary>
+    public NumFlat.Mat<Complex> SAt(ElaboratedComponent c, double hz)
+        => SnpPerturbation.Apply(LoadInterpolator(c).Evaluate(hz), Offsets, hz);
+
+    // ── Noise data, for the S-parameter noise analysis ───────────────────────
+
+    private (double Hz, TwoPortNoise Noise)[]? _noise;
+
+    /// <summary>
+    /// The file's two-port noise rows as noise parameters, in frequency order: Fmin as a factor, Rn in ohms (the file's
+    /// normalised rn times R), and Γopt and Rn referenced to the option line's R = Re Z0, which <see cref="TwoPortNoise.R"/>
+    /// carries. Empty when the block states none: not a two-port, a file with no noise block, or a Deembed — the network
+    /// that undoes a noisy fixture would need the fixture's noise taken away, which no noise source can do.
+    /// </summary>
+    public IReadOnlyList<(double Hz, TwoPortNoise Noise)> NoiseData(ElaboratedComponent c)
+    {
+        if (_noise is not null) return _noise;
+        if (Inverse || _portCount != 2) return _noise = [];
+        var snp = LoadSnp(c);
+        double r = snp.Z0.Real;
+        return _noise = [.. snp.NoiseParameters.OrderBy(p => p.FrequencyHz).Select(p =>
+            (p.FrequencyHz, new TwoPortNoise(Math.Pow(10, p.NFminDb / 10), p.GammaOpt, p.RnNormalized * r, r)))];
+    }
+
+    /// <summary>
+    /// The noise parameters at <paramref name="hz"/>: linear between rows in Fmin (as a factor), Re Γopt, Im Γopt and Rn,
+    /// exact at a row, and the end row held outside them. Null when <see cref="NoiseData"/> is empty.
+    /// </summary>
+    public TwoPortNoise? NoiseAt(ElaboratedComponent c, double hz)
+    {
+        var rows = NoiseData(c);
+        if (rows.Count == 0) return null;
+        if (hz <= rows[0].Hz) return rows[0].Noise;
+        if (hz >= rows[^1].Hz) return rows[^1].Noise;
+        int k = 1;
+        while (rows[k].Hz < hz) k++;
+        var (f0, a) = rows[k - 1];
+        var (f1, b) = rows[k];
+        double t = (hz - f0) / (f1 - f0), u = 1 - t;   // u·a + t·b is exactly b at t = 1
+        return new TwoPortNoise(u * a.Fmin + t * b.Fmin, u * a.GammaOpt + t * b.GammaOpt, u * a.Rn + t * b.Rn, a.R);
     }
 
     /// <summary>Designer round 32 — the |Z|/|Z0| above which a block is stamped as its S rather than its Z: an (I − S) that

@@ -188,3 +188,30 @@ reference gives 74.151741294 Ω, and circuitRF gives 74.151741 Ω, the same curr
 with or without the switch. So circuitRF's DC answer is the linearised one: the term is about 2e-10 A here,
 which a DC stop rule on the residual can accept after the first Newton step. That is a solver
 tolerance question, not the worker's.
+
+## Noise sources are read through `load_noise`, at a bias the host states (2026-11-09)
+
+The worker never called `load_noise`, so a model's `white_noise`/`flicker_noise` contributions had no way out of it.
+`describe` now lists each type's noise sources (`"noise":[{"name":…,"nodes":[a,b]}]`), and a new command `noise`
+returns their densities for one instance at F frequencies. The protocol is in the README's Noise section.
+
+- **The bias is an input, not the instance's last evaluation.** The request carries the instance's node voltages in
+  `eval`'s layout, and the worker evaluates once at them with `CALC_RESIST_RESIDUAL | CALC_OP | CALC_NOISE |
+  ANALYSIS_NOISE` before calling `load_noise` per frequency. The last `eval` may belong to another point of a
+  harmonic-balance grid or to another analysis; only the host knows which operating point the noise belongs to. No
+  Jacobian is asked for, so the load pointers `eval` installs are not written.
+- **Densities are passed on unscaled.** `load_noise` writes the single-sided power spectral density that Verilog-A's
+  `white_noise`/`flicker_noise` take, A²/Hz for a current source between the pair. Checked on a resistor-like module
+  compiled with OpenVAF and driven through this worker: thermal `4kTg` and shot `2q|i|` to 1e-6 (the compiler's
+  `P_K`/`P_Q` are older CODATA values), flicker exactly `kf·|i|/f`, all at the stated bias after an `eval` at a
+  different one. ngspice 47's `.noise` on the same compiled module, shunting a node fed through 1 kΩ, gives an output
+  noise equal to these densities summed and scaled by the 500 Ω node impedance squared, to four digits at 1 and
+  10 kHz. So ngspice reads them as single-sided A²/Hz too.
+- **Node pairs use `describe`'s numbering**, terminals first, then internal. A pair whose `node_2` is `UINT32_MAX` is
+  to ground and is written `-1`, as a collapse to ground already is in `create`'s reply.
+- A type with no sources answers zero sources, not an error.
+
+Gate: `tools/fake-osdi-model`'s sixth type, `crf_noise` (a conductance `g` with thermal `4kTg`, shot `2q|g·v|` and
+flicker `kf·|g·v|/f`, all between its two terminals), and `verify.py`, which checks the densities to 1e-12 at two
+biases and two temperatures and checks the zero-source reply on `crf_rc`. The fake library declares OSDI 0.3, which
+ngspice 47 refuses to load (it needs 0.4), so it cannot be cross-checked there.

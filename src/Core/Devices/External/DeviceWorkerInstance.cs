@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Core.Devices.External;
 
@@ -144,6 +145,51 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
         Decode(reply, count, n, out var opVars);
         return opVars;
     }
+
+    /// <summary>
+    /// The noise sources' densities at one bias and every frequency, in one round trip (the worker README's Noise
+    /// section): <c>[k, s]</c>, single-sided A²/Hz, unscaled. Like <see cref="ReadOperatingPoint"/>, asked only when the
+    /// descriptor declared some, so a worker that does not know the command never receives it.
+    /// </summary>
+    public double[,]? EvaluateNoise(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz)
+    {
+        ArgumentNullException.ThrowIfNull(nodeVoltages);
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int sources = Descriptor.NoiseSources.Count, count = frequenciesHz.Count, n = _nodeCount;
+        if (sources == 0) return null;
+
+        var request = new double[n + count];
+        BuildRequest([nodeVoltages], 1, n).CopyTo(request, 0);
+        for (int k = 0; k < count; k++) request[n + k] = frequenciesHz[k];
+
+        using var reply = _channel.Send(w =>
+        {
+            w.WriteString("cmd", "noise");
+            w.WriteNumber("handle", _handle);
+            w.WriteNumber("freqCount", count);
+        }, request);
+
+        var data = reply.Payload.Span;
+        int said = reply.Root.TryGetProperty("sourceCount", out var sc) && sc.ValueKind == JsonValueKind.Number
+                   && sc.TryGetInt32(out int v) ? v : -1;
+        if (said != sources || data.Length != sources * count)
+            throw new ExternalDeviceException(NoiseReplyMismatch(Descriptor.TypeId, sources, count, said, data.Length).Render());
+
+        var psd = new double[count, sources];
+        for (int k = 0; k < count; k++)
+            for (int s = 0; s < sources; s++)
+                psd[k, s] = data[k * sources + s];
+        return psd;
+    }
+
+    /// <summary>A <c>noise</c> reply that does not match what was declared and asked: a protocol desync, never a result.</summary>
+    private static Diagnostic NoiseReplyMismatch(string type, int sources, int freqs, int said, int values) => Diagnostic.Create(
+        "external.noise.reply-mismatch", DiagnosticSeverity.Error,
+        "'{type}' declares {sources} noise sources and was asked for {freqs} frequencies, but its noise reply named " +
+        "{said} sources and carried {values} values.",
+        ("type", type), ("sources", sources), ("freqs", freqs), ("said", said), ("values", values));
 
     private double[] BuildRequest(IReadOnlyList<IReadOnlyList<double>> nodeVoltages, int count, int n)
     {

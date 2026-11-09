@@ -37,7 +37,7 @@
   </div>
 
   <h1>Derived Metrics</h1>
-  <p class="lede">Stability, passivity, group delay and the two-terminal passive readouts — every equation, written out.</p>
+  <p class="lede">Stability, passivity, group delay, noise figure and the two-terminal passive readouts — every equation, written out.</p>
 
 <p>A <strong>derived metric</strong> is a quantity the Data Display computes from an S-matrix rather than reading out
 of it. Stability factors, gain limits, passivity, group delay, and the impedance readouts a capacitor or
@@ -56,6 +56,7 @@ with can be traced to an assumption rather than to a mystery.</p>
 <li><a href="#circles">Stability circles</a></li>
 <li><a href="#passivity">Passivity, σ<sub>max</sub></a></li>
 <li><a href="#groupdelay">Group delay</a></li>
+<li><a href="#noise">Noise figure from any source, and noise circles</a></li>
 <li><a href="#passive">The two-terminal passive readouts</a></li>
 <li><a href="#fixture">The fixture: the one thing you must tell it</a></li>
 <li><a href="#srf">Self-resonance</a></li>
@@ -251,6 +252,69 @@ result has exactly as many points as the sweep. The grid need not be uniform.</l
 a sweep too coarse for that cannot have its group delay measured by any method, and unwrapping will
 quietly guess wrong rather than fail.</li>
 </ul>
+<h2 id="noise">Noise figure from any source, and noise circles</h2>
+<p>An S-parameter run with <a href="simulations.html#sp-noise"><code>Noise=yes</code></a> reports the noise waves <code>Cs</code>, and for a
+two-port its noise figure and noise parameters. Four measurement functions read them for any source and,
+on more than two ports, for any output port:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nf(SP1.S[, Γs][, port])</code></td>
+<td>The noise figure in dB from port 1 to <code>port</code> (2 by default), per frequency. With no Γs the source is port 1's own Z0, so <code>nf(SP1.S)</code> is the run's <code>NF</code>. Γs is a number, such as <code>0</code> or <code>polar(0.3, 45)</code>, or one value per frequency, such as <code>SP1.Sopt</code>. A port comes after a Γs: <code>nf(SP1.S, 0, 3)</code>.</td>
+</tr>
+<tr>
+<td><code>te(SP1.S[, Γs][, port])</code></td>
+<td>The same as an equivalent input noise temperature, T0·(F − 1), in K. <code>te(SP1.S)</code> is the run's <code>Te</code>.</td>
+</tr>
+<tr>
+<td><code>rn(SP1.S)</code></td>
+<td>Rn normalised to R, Rn/R, per frequency: a Touchstone noise row's rn. A two-port's.</td>
+</tr>
+<tr>
+<td><code>ns_circle(SP1.S, NFdB[, npts])</code></td>
+<td>The Γs that give NFdB on a two-port run, as <code>npts</code> points (101 by default) round a closed circle, per frequency: a complex <code>{freq, point}</code> cube.</td>
+</tr>
+<tr>
+<td><code>ns_circle(NFdB, NFmin, Sopt, rn[, npts])</code></td>
+<td>The same circle from noise parameters alone: NFmin in dB, Sopt and rn = Rn/R. Each is a number, or a cube with one value per frequency, so a circle can be drawn from a datasheet's numbers or from cubes that are not a noise run. The cubes' axes lead the result.</td>
+</tr>
+</tbody>
+</table>
+<pre><code>F(Γs) = Fmin + 4·rn·|Γs − Sopt|² / ((1 − |Γs|²)·|1 + Sopt|²)          NF = 10·log10 F,   Te = T0·(F − 1)
+F     = 1 + Cs[k,k] / (k·T0·|S[k,1]|²)                                with no Γs, k the output port
+
+N      = (F − Fmin)·|1 + Sopt|² / (4·rn)                              rn = Rn / R
+centre = Sopt / (1 + N)                      radius = √(N² + N·(1 − |Sopt|²)) / (1 + N)
+</code></pre>
+<p>R is Re Z0 of port 1, which is what Sopt and Γs are referenced to, and T0 is 290 K. These follow from
+the formulas: <code>nf(SP1.S)</code> and <code>te(SP1.S)</code> are the run's <code>NF</code> and <code>Te</code>, and so is <code>nf(SP1.S, 0)</code> when
+port 1's Z0 is real; <code>nf(SP1.S, SP1.Sopt)</code> is its <code>NFmin</code>; every point of <code>ns_circle(SP1.S, x)</code> gives <code>x</code>
+back through <code>nf</code>; and <code>ns_circle(x, SP1.NFmin, SP1.Sopt, rn(SP1.S))</code> is <code>ns_circle(SP1.S, x)</code>.</p>
+<p><strong>More than two ports.</strong> With port 1 as the source and port k as the output, every other port stays
+terminated in its own noiseless Z0. The two-port that leaves has the {1, k} rows and columns of the
+run's S and Cs, so <code>nf(SP1.S, Γs, k)</code> and <code>te(SP1.S, Γs, k)</code> are its noise figure and temperature. A
+splitter's noise figure to each output is <code>nf(SP1.S, 0, 2)</code> and <code>nf(SP1.S, 0, 3)</code>.</p>
+<p>Where no answer exists, the value is NaN rather than a plausible number:</p>
+<ul>
+<li><code>nf</code> and <code>te</code> at |Γs| ≥ 1, because no passive source presents that reflection;</li>
+<li><code>ns_circle</code> below a frequency's NFmin, where there is no such circle.</li>
+</ul>
+<p>The run forms need the analysis's own S cube, as the stability metrics do. They are refused, with the
+reason, on a run made without <code>Noise=yes</code> (<code>measure.noise.not-run</code>), for <code>rn</code> and <code>ns_circle</code> on a
+network that is not a two-port (<code>measure.noise.not-two-port</code>), and for an output port outside 2 to N
+(<code>measure.noise.port</code>). The two forms of <code>ns_circle</code> are told apart by their number of arguments, and
+the first argument has to fit: a call that is neither is refused (<code>measure.noise.circle-form</code>), and so
+is a noise parameter of the wrong kind or length (<code>measure.noise.parameter</code>).</p>
+<p><strong>To draw the circles on a Smith chart,</strong> make the circle a measurement and plot it with <code>point</code> as X:</p>
+<pre><code>measure NF2 = ns_circle(SP1.S, 2)
+</code></pre>
+<p>The trace spec <code>NF2[~, :]</code> draws one circle per frequency, and <code>NF2[0, :]</code> draws the first one only.</p>
 <h2 id="passive">The two-terminal passive readouts</h2>
 <p>Six quantities, and they exist for a specific reason: <strong>a capacitor, an inductor or a ferrite bead is
 specified, bought and compared in ESR, C, L, Q and self-resonance — never in S-parameters.</strong> When a

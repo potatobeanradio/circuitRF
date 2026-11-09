@@ -327,6 +327,19 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             }
         }
 
+        // NOISE SOURCES: each a current noise source between two of the type's nodes, -1 the ground reference. A worker
+        // that says nothing declares none.
+        var noise = new List<ExternalNoiseSourceDescriptor>();
+        if (element.TryGetProperty("noise", out var nz) && nz.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var z in nz.EnumerateArray())
+            {
+                if (!z.TryGetProperty("nodes", out var pair) || pair.ValueKind != JsonValueKind.Array
+                    || pair.GetArrayLength() != 2) continue;
+                noise.Add(new ExternalNoiseSourceDescriptor(ReadString(z, "name", ""), pair[0].GetInt32(), pair[1].GetInt32()));
+            }
+        }
+
         var nodes = new List<ExternalNodeDescriptor>();
         if (element.TryGetProperty("nodes", out var ns) && ns.ValueKind == JsonValueKind.Array)
         {
@@ -371,7 +384,8 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             nodes,
             SupportsNonlinear: ReadBool(element, "nonlinear", true),
             SupportsLinear:    ReadBool(element, "linear",    false),
-            OpVars:            opVars);
+            OpVars:            opVars,
+            NoiseSources:      noise);
     }
 
     /// <summary>

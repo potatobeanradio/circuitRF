@@ -58,6 +58,14 @@ public sealed record ExternalOpVarDescriptor(
     string            Description = "");
 
 /// <summary>
+/// One noise source a device type declares: a current noise source between <paramref name="NodeA"/> and
+/// <paramref name="NodeB"/>, numbered as <see cref="ExternalDeviceDescriptor.Nodes"/> (terminals, then internal), with
+/// <paramref name="NodeB"/> = -1 for the ground reference. Its density is read at a bias
+/// (<see cref="IExternalDeviceInstance.EvaluateNoise"/>); the name is the model's own, rendered, never interpreted.
+/// </summary>
+public sealed record ExternalNoiseSourceDescriptor(string Name, int NodeA, int NodeB);
+
+/// <summary>
 /// One node of a device type. <paramref name="External"/> nodes bind to nets the user names in the
 /// netlist; internal nodes are allocated by the elaborator and are invisible in the design layer.
 ///
@@ -116,8 +124,16 @@ public sealed record ExternalDeviceDescriptor(
     IReadOnlyList<ExternalNodeDescriptor>    Nodes,
     bool                                     SupportsNonlinear = true,
     bool                                     SupportsLinear    = false,
-    IReadOnlyList<ExternalOpVarDescriptor>?  OpVars            = null)
+    IReadOnlyList<ExternalOpVarDescriptor>?  OpVars            = null,
+    IReadOnlyList<ExternalNoiseSourceDescriptor>? NoiseSources = null)
 {
+    /// <summary>
+    /// The noise sources this device type declares, in the order their densities come back. Empty for a type with none
+    /// and for every provider that does not speak this part of the protocol — to the noise analysis both are a device
+    /// with no noise model.
+    /// </summary>
+    public IReadOnlyList<ExternalNoiseSourceDescriptor> NoiseSources { get; init; } = NoiseSources ?? [];
+
     /// <summary>
     /// Quantities this device type computes and will report at an operating point. Empty for a
     /// provider that declares none, and for every provider that does not speak the protocol at all

@@ -141,6 +141,8 @@ public sealed class CnlReader
                             ? spAnalysis.PassiveVarsExpr : existing.PassiveVarsExpr,
                         PassiveParamsExpr = spAnalysis.PassiveParamsExpr.Length > 0
                             ? spAnalysis.PassiveParamsExpr : existing.PassiveParamsExpr,
+                        NoiseExpr = spAnalysis.NoiseExpr != Analysis.NoiseDefault
+                            ? spAnalysis.NoiseExpr : existing.NoiseExpr,
                     };
                     merged.Enabled = existing.Enabled;
                     merged.Model   = existing.Model;
@@ -1502,6 +1504,7 @@ public sealed class CnlReader
             NdfExpr = kv.GetValueOrDefault("NDF", CircuitRF.Core.Design.Analysis.NdfDefault),
             PassiveVarsExpr   = kv.GetValueOrDefault("PassiveVars", ""),
             PassiveParamsExpr = kv.GetValueOrDefault("PassiveParams", ""),
+            NoiseExpr = kv.GetValueOrDefault("Noise", CircuitRF.Core.Design.Analysis.NoiseDefault),
         };
         return true;
     }

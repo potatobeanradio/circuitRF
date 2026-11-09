@@ -283,9 +283,12 @@ model's own behaviour, which is most of why the bench exists.
 
 ## Noise figure — read this before looking for it
 
-**circuitRF has no noise analysis.** There is no noise source, no noise-correlation propagation and
-no `NF` parameter on any block, and there is no version of this example that could have simulated
-one. Adding it is a real engine feature, not a field on a tile.
+**The System blocks carry no noise figure.** circuitRF's S-parameter analysis does compute noise
+(`Noise=yes`): every passive part is thermal at its own temperature, and an SnP block or a compiled
+model brings its own noise data. But an `Amp` or a `Mixer` tile has no `NF` parameter, so a noise run
+of these benches would treat every gain stage as noiseless and say so in a warning, and the figure
+it gave would be the passive blocks' alone. The **S-Parameter Noise** example simulates a Friis
+cascade whose stages are SnP files with noise data.
 
 So `CascadeBudget` does the next honest thing: it computes the **Friis cascade** in ordinary
 measurement expressions, from a per-stage noise figure you type into a VAR block, *beside* two
@@ -317,8 +320,8 @@ hurts most: it lands ahead of every gain stage, so its 0.5 dB goes into the nois
 one, 3.34 dB becomes 3.84 dB, and the sensitivity moves with it. Everything from the mixer onward
 is 1.7 % of the total put together, which is the Friis result stated as a design instruction: past
 the LNA, only the gain in front of a stage matters. The NF row has no simulated partner and will
-not have one until the engine grows a noise analysis. Treat it as a spreadsheet that happens to
-live in the design.
+not have one until the tiles carry noise data. Treat it as a spreadsheet that happens to live in
+the design.
 
 The same cell also carries a real S-parameter run over the RF front end, 1.5–2.7 GHz:
 

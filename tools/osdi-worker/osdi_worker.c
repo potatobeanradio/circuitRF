@@ -615,6 +615,23 @@ static void emit_describe(Sb *s) {
             sb_json_str(s, d->nodes[i].residual_units ? d->nodes[i].residual_units : "");
             sb_puts(s, "}");
         }
+        sb_puts(s, "]");
+
+        /* Noise sources, in the order `noise` returns their densities. Each is a current noise
+         * source between two nodes of THIS list's numbering (terminals, then internal); -1 is the
+         * ground reference, which the ABI spells node_2 == UINT32_MAX. A type with none says so
+         * with an empty list, as `opvars` does. */
+        sb_puts(s, ",\"noise\":[");
+        for (uint32_t i = 0; i < d->num_noise_src; i++) {
+            const OsdiNoiseSource *ns = &d->noise_sources[i];
+            if (i) sb_puts(s, ",");
+            sb_puts(s, "{\"name\":"); sb_json_str(s, ns->name ? ns->name : "");
+            sb_puts(s, ",\"nodes\":["); sb_int(s, (long)ns->nodes.node_1);
+            sb_puts(s, ",");
+            if (ns->nodes.node_2 == UINT32_MAX) sb_puts(s, "-1");
+            else sb_int(s, (long)ns->nodes.node_2);
+            sb_puts(s, "]}");
+        }
         sb_puts(s, "]}");
     }
     sb_puts(s, "]}");
@@ -1179,12 +1196,10 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
             if (!isfinite(I[i]) || !isfinite(Q[i])) finite = false;
         }
 
-        /* NOISE IS NOT LOADED, AND THAT IS NOT AN OVERSIGHT. circuitRF has no noise analysis — no
-         * noise engine exists and none is planned for v1 — and OSDI exposes a model's noise sources
-         * through a SEPARATE `load_noise` entry point that nothing here calls. A model's
-         * `white_noise`/`flicker_noise` contributions are therefore structurally absent rather than
-         * mishandled: they never enter any matrix, and no result carries a place they could have
-         * gone. Wiring `load_noise` up would be the smallest part of adding noise analysis. */
+        /* NOISE IS NOT LOADED HERE. A model's `white_noise`/`flicker_noise` contributions never
+         * enter G, C or a residual, so this evaluation does not ask for them. They are read by
+         * `noise` (cmd_noise below), which evaluates once at the bias the caller states with
+         * CALC_NOISE and then calls `load_noise` per frequency. */
         if (d->load_jacobian_resist) d->load_jacobian_resist(ins->inst, ins->model);
         /* alpha = 1 gives the raw dQ/dV. A transient host passes an integration coefficient here;
          * circuitRF wants the capacitance itself and applies its own weighting. */
@@ -1220,6 +1235,72 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
     sb_puts(&s, "}");
     write_frame(s.buf, out, out_count);
     free(s.buf); free(out); free(sol); free(jr); free(jx);
+    return 0;
+}
+
+/* ── noise ────────────────────────────────────────────────────────────────── */
+
+/* The noise source densities of one instance, at a bias the CALLER states and at F frequencies.
+ *
+ *   in:   {"cmd":"noise","handle":h,"freqCount":F}   payload = n node voltages (eval's layout),
+ *                                                     then F frequencies in Hz
+ *   out:  {"sourceCount":S,"freqCount":F}             payload = F blocks of S densities:
+ *                                                     out[k*S + s] = source s at frequency k
+ *
+ * THE BIAS IS AN INPUT, not whatever this instance last evaluated. The last evaluation may belong
+ * to another frequency of a harmonic-balance grid or to another analysis, and the host is the only
+ * party that knows which operating point the noise belongs to. So the model is evaluated once here,
+ * with CALC_NOISE so it computes its noise contributions from that operating point, and `load_noise`
+ * then turns them into densities per frequency (a flicker source divides by f there).
+ *
+ * A density is what `load_noise` writes and is passed on unscaled: the single-sided power spectral
+ * density Verilog-A's white_noise/flicker_noise define, A^2/Hz for a current source between the
+ * source's node pair. A type with no sources answers S = 0 and an empty payload, not an error.
+ *
+ * Like `eval`, this leaves the instance's op-vars describing the bias evaluated here. */
+static int cmd_noise(const char *js, const char *js_end, const double *in, size_t in_count) {
+    double hv = -1, fv = 0;
+    json_num(json_member(js, js_end, "handle"),    js_end, &hv);
+    json_num(json_member(js, js_end, "freqCount"), js_end, &fv);
+    int    h = (int)hv;
+    size_t F = fv > 0 ? (size_t)fv : 0;
+
+    if (h < 0 || h >= MAX_INSTANCES || !g_inst[h].live) { report_error("noise: no such instance"); return 0; }
+    Instance *ins = &g_inst[h];
+    const OsdiDescriptor *d = ins->d;
+    uint32_t n = ins->n;
+
+    if (in_count != n + F) { report_error("noise: payload is not the node voltages followed by freqCount frequencies"); return 0; }
+
+    size_t S = d->num_noise_src;
+    if (S && !d->load_noise) { report_error("noise: the model declares noise sources but no load_noise"); return 0; }
+
+    size_t SF = S * F;
+    double *out = (double *)calloc(SF ? SF : 1, sizeof(double));
+    if (!out) { report_error("noise: out of memory"); return 0; }
+
+    if (S) {
+        OsdiSimInfo info;
+        memset(&info, 0, sizeof info);
+        info.paras      = sim_paras();
+        info.prev_solve = (double *)in;          /* the first n doubles: this instance's nodes */
+        info.prev_state = ins->state_prev;
+        info.next_state = ins->state_next;
+        /* No Jacobian is asked for, so the load pointers `eval` installs are never written. */
+        info.flags = CALC_RESIST_RESIDUAL | CALC_OP | CALC_NOISE | ANALYSIS_NOISE;
+
+        if (d->eval(NULL, ins->inst, ins->model, &info) & EVAL_RET_FLAG_FATAL) {
+            free(out); report_error("noise: the model refused this bias"); return 0;
+        }
+        for (size_t k = 0; k < F; k++) d->load_noise(ins->inst, ins->model, in[n + k], out + k * S);
+    }
+
+    Sb s = {0};
+    sb_puts(&s, "{\"sourceCount\":"); sb_int(&s, (long)S);
+    sb_puts(&s, ",\"freqCount\":");   sb_int(&s, (long)F);
+    sb_puts(&s, "}");
+    write_frame(s.buf, out, SF);
+    free(s.buf); free(out);
     return 0;
 }
 
@@ -1275,6 +1356,8 @@ int main(int argc, char **argv) {
             cmd_eval(js, js_end, payload, payload_count);
         } else if (strcmp(cmd, "opvars") == 0) {
             cmd_opvars(js, js_end);
+        } else if (strcmp(cmd, "noise") == 0) {
+            cmd_noise(js, js_end, payload, payload_count);
         } else if (strcmp(cmd, "destroy") == 0) {
             double hv = -1; json_num(json_member(js, js_end, "handle"), js_end, &hv);
             int h = (int)hv;

@@ -1,0 +1,13 @@
+; Coupled lossy inductors: L1 = 5 nH + 3 ohm, L2 = 8 nH + 4 ohm, k = 0.7
+; (Mutual M = k sqrt(L1 L2)), 290 K.
+; Expected: ngspice .sp donoise = numpy nodal.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+R:R1  p1  a  R=3.0 Ohm
+L:L1  a  0  L=5.0 nH
+R:R2  p2  b  R=4.0 Ohm
+L:L2  b  0  L=8.0 nH
+Mutual:K1  Inductor1="L1" Inductor2="L2" M=4427.188724235731 pH   ; k = 0.7
+C:C1  p1  p2  C=0.25 pF
+analysis SP1 type=sparam start=0.5 stop=5.0 npts=10 Unit=GHz

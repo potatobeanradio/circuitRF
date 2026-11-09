@@ -1,0 +1,10 @@
+; Matched resistive star splitter (three Z0/3 arms), 50 ohm ports, at 350 K.
+; Expected: F from port 1 to ports 2 and 3, each with the third port in its own noiseless Z0.
+temp = 76.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+Port:P3  p3 0  Num=3 Z=50.0 Ohm
+R:R1  p1  c  R=16.666666666666668 Ohm
+R:R2  c  p2  R=16.666666666666668 Ohm
+R:R3  c  p3  R=16.666666666666668 Ohm
+analysis SP1 type=sparam start=1.0 stop=4.0 npts=4 Unit=GHz

@@ -1,0 +1,9 @@
+; Matched 6 dB resistive pi pad, 50 ohm, ambient 290 K.
+; Expected: F = 1 + (T/T0)(L-1), Cs = kT(1 - 1/L) I.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+R:Rsh1  p1  0  R=150.47602375372455 Ohm
+R:Rse  p1  p2  R=37.35187703354018 Ohm
+R:Rsh2  p2  0  R=150.47602375372455 Ohm
+analysis SP1 type=sparam start=1.0 stop=3.0 npts=3 Unit=GHz

@@ -16,6 +16,7 @@ keywords: Verilog-A, VerilogA, OSDI, compact model, compiled model, vendor model
       <li><a href="#terminals">Terminals, <code>Pins</code>, and the thermal one</a></li>
       <li><a href="#parameters">Loading a fitted parameter set</a></li>
       <li><a href="#rebuild">When circuitRF rebuilds, and where the artefact goes</a></li>
+      <li><a href="#noise">Noise</a></li>
       <li><a href="#limits">What is not supported</a></li>
     </ol>
   </nav>
@@ -299,9 +300,18 @@ wrong even where it would succeed. The parameter editor names the exact path eac
 file, so a rebuild
 you were not expecting is visible rather than mysterious.
 
+## Noise {#noise}
+
+A compiled model's noise sources (`white_noise`, `flicker_noise`) are used by the
+[S-parameter noise analysis](simulations.html#sp-noise). Each source is evaluated at the DC operating point
+the run linearises the device about, as the single-sided density in A²/Hz the language defines, and it is
+multiplied by the instance's multiplicity. A model that declares no noise sources is taken as noiseless and
+named in the run's warning.
+
 ## What is not supported {#limits}
 
-- **No noise analysis** from a compiled model.
+- **No other noise analysis.** There is no noise in harmonic balance, no phase noise and no AC noise, so a
+  compiled model's noise reaches only the S-parameter noise analysis.
 - **Aging and degradation parameters** are forwarded to the model like any other parameter and then
   do nothing — there is no aging analysis and no stress history to drive one.
 - **Verilog-AMS digital constructs** are the compiler's business, not circuitRF's. If your compiler
