@@ -4005,11 +4005,44 @@ back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
 - **Temperature** is `Temperature.ResolveDeviceC` per part (Temp, then Dtemp, then the ambient — 300 K by default, so
   a design stating nothing is not at T0 = 290 K).
 - **Noiseless.** Ports and independent sources by definition. Nonlinear devices, active or black-box linear parts
-  (a VCCS, an op-amp, a negative resistor), external devices and S-parameter blocks have no noise model here and are
-  named in one `sparam-noise-noiseless` warning.
+  (a VCCS, an op-amp, a negative resistor), external devices and S-parameter blocks with gain and no noise data have no
+  noise model here and are named in one `sparam-noise-noiseless` warning (S-parameter blocks: next section).
 
 Gates: `tests/Engine.Tests/Linear/SParamNoiseTests.cs` against closed forms (a matched pad at 290 K and 400 K, Bosma's
 `kT(I − SSᴴ)` entry by entry on a lossy reactive network, coupled lossy inductors and an ideal transformer) and
 `testdata/noise/refs.json` (`gen_noise_refs.py`: numpy nodal and ngspice 47 `.sp … donoise` at 290 K — mixed `Temp=`,
 a Mutual, a VCCS amplifier with 75/50 Ω ports: Cs within 2e-13); serial = parallel bit for bit; a parametric sweep stacks the cubes;
 `circuitrf sparam … -o x.s2p` writes the noise block.
+
+## S-parameter noise: an S-parameter block's own noise data (2026-11-09)
+
+A two-port SnP whose Touchstone file has a noise block is noisy by that data, passive or not
+(`SParameterNoise.DataFile`); a passive SnP without one is thermal through Bosma like any passive part, since
+`SnpModel.ActivityFor` measures σ_max(S) on the file; an SnP with gain and no noise data, and every Deembed, stay
+noiseless and named.
+
+- **The data path.** `SnpModel.NoiseData` turns the rows into `TwoPortNoise` (Fmin as a factor, Rn = rn·R, Γopt and Rn
+  on the option line's R = Re Z0; the reader is 1.x-only, so rn is always normalised). `NoiseAt` interpolates linearly
+  in Fmin, Re Γopt, Im Γopt and Rn, as `u·a + t·b` so a sweep point on a row returns the row exactly, and holds the end
+  rows outside. The engine forms `C_A = ChainCorrelation(p)` and `C_Y = T⁻¹·C_A·T⁻ᴴ` (`AdmittanceFromChain`) with Y the
+  admittance of the S the block stamps (`SnpModel.SAt`, now also what `Stamp` uses, offsets included) at the file's R —
+  a real R, so `RFNetwork.SToY` is the power-wave Y here. The densities are absolute at T0 and do not move with the
+  ambient; the multiplicity scales C_Y (m independent copies). Re-referencing is free: C_Y is reference-independent, so a
+  25 Ω file between 50 Ω ports reports Γopt on 50 Ω with nothing converted.
+- **A floating reference.** Port k's current enters at `Nodes[k]` and leaves at `ReferenceNode`, so the 2x2 C_Y goes onto
+  three nodes through `[[1,0],[0,1],[−1,−1]]`, ground rows dropped (`AcrossPorts`). The gate makes it observable: a
+  passive file whose noise rows are its own thermal noise at T0, on a reference reaching ground through 20 Ω, the bench
+  at T0, must give Bosma's `kT0(I − SSᴴ)` for the whole network (9e-15); dropping the reference row fails it.
+- **A Deembed states no noise.** The inverse of a noisy fixture would need the fixture's noise taken away, which no
+  current source can do, so it is named as noiseless even on a file with a noise block.
+- **Two warnings, once per instance, both decided in `Prepare`** so a frequency-parallel run reports what a serial one
+  does: `sparam.noise.data-band` (the sweep leaves the rows' band) and `sparam.noise.data-unphysical` (some row fails
+  `0 ≤ Fmin − 1 ≤ 4·Rn·Gopt`; the data is used as given). Realizability is checked with a 1e-3 tolerance on the factor:
+  measured NFmin rounded to 0.01 dB misses the bound by up to ~1e-3.
+
+Gates: `SParamNoiseTests` — refs.json's `friis_matched` (the Friis closed form), `friis_mismatched` (scikit-rf `connect`),
+`touchstone_r50`/`_r25`/`_r25_in_50` (the file's values, Γopt re-referenced) and `pozar_ex12_5`, all within 1e-14 dB and
+3e-15 in Cs; Pozar's 2 dB circle from the reported cubes against scikit-rf's `nf_circle` (1e-9) and the textbook (1e-2);
+a passive SnP with no noise data against Bosma on a floating reference; linear interpolation and the held ends; the
+unphysical-data warning; the noiseless naming of an SnP with gain and of a Deembed; and `circuitrf sparam … -o x.s2p`
+writing back ampA.s2p's noise rows.

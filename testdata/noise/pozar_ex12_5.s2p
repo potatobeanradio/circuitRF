@@ -1,0 +1,10 @@
+! Pozar, Microwave Engineering 4th ed., Example 12.5 (the 4 GHz data, held over 3.5-4.5 GHz):
+! Fmin = 1.6 dB, Gamma_opt = 0.62 /100 deg, Rn = 20 ohm, Z0 = 50 ohm.
+# GHz S MA R 50
+3.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+4 0.6 -60 1.9 81 0.05 26 0.5 -60
+4.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+3.5 1.6 0.62 100 0.4
+4 1.6 0.62 100 0.4
+4.5 1.6 0.62 100 0.4

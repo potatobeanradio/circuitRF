@@ -1,0 +1,11 @@
+! Synthetic mismatched amplifier B (bilateral, Gamma_opt != 0), R 50.
+# GHz S MA R 50
+2 0.35 -90 2.5 54 0.08 26 0.4 -68
+4 0.35 -100 2.5 38 0.08 22 0.4 -76
+6 0.35 -110 2.5 22 0.08 18 0.4 -84
+8 0.35 -120 2.5 6 0.08 14 0.4 -92
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+2 1.2 0.35 82 0.3
+4 1.4 0.35 94 0.3
+6 1.6 0.35 106 0.3
+8 1.8 0.35 118 0.3

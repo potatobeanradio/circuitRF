@@ -1,0 +1,12 @@
+; ampA.s2p - lossy R/C interstage at T0 = 290 K - ampB.s2p, 50 ohm; every
+; block mismatched. Expected: scikit-rf connect (C_A cascade) = numpy nodal.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+SnP:XA  p1  a  NumPorts=2 File="ampA.s2p"
+R:Ri1  a  m  R=22.0 Ohm
+C:Ci  m  0  C=0.4 pF
+R:Ri2  m  0  R=180.0 Ohm
+R:Ri3  m  b  R=10.0 Ohm
+SnP:XB  b  p2  NumPorts=2 File="ampB.s2p"
+analysis SP1 type=sparam start=2.0 stop=8.0 npts=4 Unit=GHz

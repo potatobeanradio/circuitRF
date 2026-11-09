@@ -1,0 +1,12 @@
+! Synthetic matched unilateral amplifier: S11 = S22 = S12 = 0, |S21|^2 = 15 dB,
+! NFmin = 1.2 dB at Gamma_opt = 0, so NF(50 ohm) = NFmin.
+# GHz S MA R 50
+1 0 0 5.62341325190349 -45 0 0 0 0
+2 0 0 5.62341325190349 -45 0 0 0 0
+3 0 0 5.62341325190349 -45 0 0 0 0
+4 0 0 5.62341325190349 -45 0 0 0 0
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+1 1.2 0 0 0.3
+2 1.2 0 0 0.3
+3 1.2 0 0 0.3
+4 1.2 0 0 0.3

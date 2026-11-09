@@ -18,9 +18,12 @@ namespace CircuitRF.Engine.Tests.Linear;
 /// figure) and testdata/noise/refs.json, written outside circuitRF by gen_noise_refs.py (numpy nodal and ngspice 47
 /// <c>.sp … donoise</c>).
 /// </summary>
-public sealed class SParamNoiseTests(ITestOutputHelper output)
+public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
 {
     private const double K = NoiseMetrics.Boltzmann;
+
+    private readonly string _dir = Directory.CreateTempSubdirectory("sparam-noise-").FullName;
+    public void Dispose() { try { Directory.Delete(_dir, recursive: true); } catch { } }
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -29,6 +32,13 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
         for (var dir = AppContext.BaseDirectory; dir is not null; dir = Path.GetDirectoryName(dir))
             if (Directory.Exists(Path.Combine(dir, "testdata", "noise"))) return Path.Combine(dir, "testdata", "noise");
         throw new DirectoryNotFoundException("testdata/noise not found above " + AppContext.BaseDirectory);
+    }
+
+    /// <summary>A bench's entry in refs.json.</summary>
+    private static JsonElement Ref(string bench)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(NoiseDir(), "refs.json")));
+        return doc.RootElement.GetProperty("benches").GetProperty(bench).Clone();
     }
 
     /// <summary>A bench's text with <c>Noise=yes</c> on its analysis line (the files leave it off).</summary>
@@ -43,7 +53,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
     /// <summary>Reads, elaborates and runs the netlist's S-parameter analysis with the settings its directive asks for.</summary>
     private static Run RunCnl(string cnl)
     {
-        var (lib, tb) = new CnlReader().Read(cnl);
+        var (lib, tb) = new CnlReader().Read(cnl, sourceDirectory: NoiseDir());
         var nl    = new Elaborator(lib).Elaborate(tb);
         var spa   = tb.Analyses.OfType<SParameterAnalysis>().First();
         var freqs = spa.Expand(nl.ResolvedGlobals);
@@ -259,10 +269,15 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
     [InlineData("ngspice_mixed_temp")]
     [InlineData("ngspice_coupled_l")]
     [InlineData("ngspice_vccs_amp")]
+    [InlineData("friis_matched")]
+    [InlineData("friis_mismatched")]
+    [InlineData("touchstone_r50")]
+    [InlineData("touchstone_r25")]
+    [InlineData("touchstone_r25_in_50")]
+    [InlineData("pozar_ex12_5")]
     public void Bench_MatchesItsReference(string bench)
     {
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(NoiseDir(), "refs.json")));
-        var b = doc.RootElement.GetProperty("benches").GetProperty(bench);
+        var b = Ref(bench);
         var e = b.GetProperty("expected");
         var tol = b.GetProperty("tolerance");
         double[] Arr(JsonElement j) => [.. j.EnumerateArray().Select(x => x.GetDouble())];
@@ -273,9 +288,12 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
         double[] nf = Arr(e.GetProperty("nf_db")), nfMin = Arr(e.GetProperty("nfmin_db")), rn = Arr(e.GetProperty("rn_ohm"));
         double[] gRe = Arr(e.GetProperty("gamma_opt_re")), gIm = Arr(e.GetProperty("gamma_opt_im"));
         var csRe = e.GetProperty("cs_re"); var csIm = e.GetProperty("cs_im");
-        double worst = 0;
+        double worst = 0, dNf = 0, dRn = 0, dGamma = 0;
         for (int fi = 0; fi < r.Freqs.Length; fi++)
         {
+            dNf    = Math.Max(dNf, Math.Max(Math.Abs(nf[fi] - r.Ds["NF"].RealValues[fi]), Math.Abs(nfMin[fi] - r.Ds["NFmin"].RealValues[fi])));
+            dRn    = Math.Max(dRn, Math.Abs(r.Ds["Rn"].RealValues[fi] - rn[fi]) / Math.Abs(rn[fi]));
+            dGamma = Math.Max(dGamma, (r.Ds["GammaOpt"].ComplexValues[fi] - new Complex(gRe[fi], gIm[fi])).Magnitude);
             Assert.Equal(nf[fi],    r.Ds["NF"].RealValues[fi],    tol.GetProperty("db_abs").GetDouble());
             Assert.Equal(nfMin[fi], r.Ds["NFmin"].RealValues[fi], tol.GetProperty("db_abs").GetDouble());
             Assert.True(Math.Abs(r.Ds["Rn"].RealValues[fi] - rn[fi]) <= tol.GetProperty("rn_rel").GetDouble() * Math.Abs(rn[fi]),
@@ -289,7 +307,7 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
                     expect[i, j] = new Complex(csRe[fi][i][j].GetDouble(), csIm[fi][i][j].GetDouble());
             worst = Math.Max(worst, RelDiff(At(r.Ds["Cs"], fi, 2), expect));
         }
-        output.WriteLine($"{bench}: worst Cs rel {worst:E2}");
+        output.WriteLine($"{bench}: worst NF/NFmin {dNf:E2} dB, Rn rel {dRn:E2}, GammaOpt {dGamma:E2}, Cs rel {worst:E2}");
         Assert.True(worst <= tol.GetProperty("cs_rel").GetDouble(), $"Cs rel {worst:E2}");
     }
 
@@ -396,6 +414,41 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
     [Fact]
     public void Cli_WritesTheTouchstoneNoiseBlock()
     {
+        var snp = CliSparam(Bench("lossy_lc"));
+        var r = RunCnl(Bench("lossy_lc"));
+        Assert.Equal(r.Freqs.Length, snp.NoiseParameters.Count);
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            var row = snp.NoiseParameters[fi];
+            Assert.Equal(r.Freqs[fi], row.FrequencyHz, 1e-3);
+            Assert.Equal(r.Ds["NFmin"].RealValues[fi], row.NFminDb, 1e-9);
+            Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - row.GammaOpt).Magnitude < 1e-9);
+            Assert.Equal(r.Ds["Rn"].RealValues[fi], row.RnNormalized * snp.Z0.Real, 1e-9 * r.Ds["Rn"].RealValues[fi]);
+        }
+    }
+
+    /// <summary>An S-parameter block's noise data goes through the run and out of the CLI as it came in.</summary>
+    [Fact]
+    public void Cli_WritesBackTheNoiseDataItRead()
+    {
+        var written = CliSparam(Bench("touchstone_r50"), "ampA.s2p");
+        var read = TouchstoneIO.ReadFile(Path.Combine(NoiseDir(), "ampA.s2p"));
+        Assert.Equal(read.NoiseParameters.Count, written.NoiseParameters.Count);
+        Assert.Equal(read.Z0, written.Z0);
+        for (int k = 0; k < read.NoiseParameters.Count; k++)
+        {
+            NoiseParameterPoint a = read.NoiseParameters[k], b = written.NoiseParameters[k];
+            Assert.Equal(a.FrequencyHz, b.FrequencyHz, 1e-3);
+            Assert.Equal(a.NFminDb, b.NFminDb, 1e-9);
+            Assert.True((a.GammaOpt - b.GammaOpt).Magnitude < 1e-9, $"GammaOpt row {k}: {a.GammaOpt} vs {b.GammaOpt}");
+            Assert.Equal(a.RnNormalized, b.RnNormalized, 1e-9);
+        }
+    }
+
+    /// <summary>Runs <c>circuitrf sparam bench.cnl -o x.s2p</c> in a scratch folder holding <paramref name="files"/> from
+    /// testdata/noise, and reads x.s2p back.</summary>
+    private SNP CliSparam(string cnlText, params string[] files)
+    {
         string cliDll = Path.GetFullPath(Path.Combine(
             System.Reflection.CustomAttributeExtensions
                 .GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>(typeof(SParamNoiseTests).Assembly)
@@ -406,8 +459,9 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
         Directory.CreateDirectory(dir);
         try
         {
+            foreach (string f in files) File.Copy(Path.Combine(NoiseDir(), f), Path.Combine(dir, f));
             string cnl = Path.Combine(dir, "bench.cnl"), s2p = Path.Combine(dir, "x.s2p");
-            File.WriteAllText(cnl, Bench("lossy_lc"));
+            File.WriteAllText(cnl, cnlText);
             var psi = new System.Diagnostics.ProcessStartInfo("dotnet")
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
@@ -418,20 +472,193 @@ public sealed class SParamNoiseTests(ITestOutputHelper output)
             proc.WaitForExit();
             output.WriteLine(stdout + stderr);
             Assert.Equal(0, proc.ExitCode);
-
-            var snp = TouchstoneIO.ReadFile(s2p);
-            var r = RunCnl(Bench("lossy_lc"));
-            Assert.Equal(r.Freqs.Length, snp.NoiseParameters.Count);
-            for (int fi = 0; fi < r.Freqs.Length; fi++)
-            {
-                var row = snp.NoiseParameters[fi];
-                Assert.Equal(r.Freqs[fi], row.FrequencyHz, 1e-3);
-                Assert.Equal(r.Ds["NFmin"].RealValues[fi], row.NFminDb, 1e-9);
-                Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - row.GammaOpt).Magnitude < 1e-9);
-                Assert.Equal(r.Ds["Rn"].RealValues[fi], row.RnNormalized * snp.Z0.Real, 1e-9 * r.Ds["Rn"].RealValues[fi]);
-            }
+            return TouchstoneIO.ReadFile(s2p);
         }
         finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // ── S-parameter blocks ────────────────────────────────────────────────────
+
+    /// <summary>Friis: two matched amplifiers from their files with a matched 3 dB pad at T0 between them.</summary>
+    [Fact]
+    public void FriisCascade_MeetsTheClosedForm()
+    {
+        var inputs = Ref("friis_matched").GetProperty("inputs");
+        double Lin(string key) => Math.Pow(10, inputs.GetProperty(key).GetDouble() / 10);
+        double g1 = Lin("G1_db"), f1 = Lin("NF1_db"), f2 = Lin("NF2_db"), loss = Lin("pad_loss_db");
+        double f = f1 + (loss - 1) / g1 + (f2 - 1) * loss / g1;
+
+        var r = RunCnl(Bench("friis_matched"));
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+            Assert.Equal(10 * Math.Log10(f), r.Ds["NF"].RealValues[fi], 1e-9);
+        Assert.DoesNotContain(r.Nl.Warnings, x => x.StartsWith("Noise:", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Pozar Ex. 12.5: the 2 dB circle drawn from the parameters the run reports, against the closed form and scikit-rf's
+    /// <c>nf_circle</c> points (1e-9) and the textbook's rounded answer (1e-2).
+    /// </summary>
+    [Fact]
+    public void PozarEx12_5_NoiseCircle()
+    {
+        var circle = Ref("pozar_ex12_5").GetProperty("circle");
+        var book = circle.GetProperty("textbook");
+        double[] Arr(string key) => [.. circle.GetProperty(key).EnumerateArray().Select(x => x.GetDouble())];
+        double f = Math.Pow(10, circle.GetProperty("nf_db").GetDouble() / 10);
+        double[] nRef = Arr("N"), cRe = Arr("center_re"), cIm = Arr("center_im"), radius = Arr("radius");
+        var ptsRe = circle.GetProperty("scikit_rf_points_npoints9_re");
+        var ptsIm = circle.GetProperty("scikit_rf_points_npoints9_im");
+
+        var r = RunCnl(Bench("pozar_ex12_5"));
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            var p = new TwoPortNoise(Math.Pow(10, r.Ds["NFmin"].RealValues[fi] / 10), r.Ds["GammaOpt"].ComplexValues[fi],
+                                     r.Ds["Rn"].RealValues[fi], 50.0);
+            var (centre, rad) = NoiseMetrics.NoiseCircle(p, f);
+            double n = p.R / (4 * p.Rn) * (f - p.Fmin) * Sq(1 + p.GammaOpt);
+            output.WriteLine($"{r.Freqs[fi]:G4} Hz: N {n:G6}, centre {centre.Magnitude:G6} at {centre.Phase * 180 / Math.PI:G6} deg, radius {rad:G6}");
+
+            Assert.Equal(nRef[fi], n, 1e-9);
+            Assert.True((centre - new Complex(cRe[fi], cIm[fi])).Magnitude < 1e-9, $"centre {centre}");
+            Assert.Equal(radius[fi], rad, 1e-9);
+            for (int k = 0; k < 9; k++)
+            {
+                var pt = centre + rad * Complex.Exp(new Complex(0, 2 * Math.PI * k / 8));
+                Assert.True((pt - new Complex(ptsRe[fi][k].GetDouble(), ptsIm[fi][k].GetDouble())).Magnitude < 1e-9, $"point {k}");
+            }
+
+            double tol = book.GetProperty("tol").GetDouble();
+            Assert.Equal(book.GetProperty("N").GetDouble(), n, tol);
+            Assert.Equal(book.GetProperty("center_mag").GetDouble(), centre.Magnitude, tol);
+            Assert.Equal(book.GetProperty("center_deg").GetDouble(), centre.Phase * 180 / Math.PI, tol);
+            Assert.Equal(book.GetProperty("radius").GetDouble(), rad, tol);
+        }
+    }
+
+    /// <summary>
+    /// Between noise rows, Fmin (as a factor), Γopt and Rn are linear; outside them the end row holds, and the run says so
+    /// once. ampA.s2p's rows are at 2, 4, 6 and 8 GHz, so 3, 5 and 7 GHz are midpoints.
+    /// </summary>
+    [Fact]
+    public void NoiseData_IsLinearBetweenRows_AndHeldOutsideThem()
+    {
+        var r = RunCnl(Bench("touchstone_r50").Replace("start=2.0 stop=8.0 npts=4", "start=1.0 stop=9.0 npts=9"));
+        var w = Assert.Single(r.Nl.Warnings, x => x.StartsWith("Noise:", StringComparison.Ordinal));
+        Assert.Contains("SnP:X1", w);
+        Assert.Contains("2 to 8 GHz", w);
+
+        var rows = TouchstoneIO.ReadFile(Path.Combine(NoiseDir(), "ampA.s2p")).NoiseParameters;
+        (int, int)[] between = [(0, 0), (0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (2, 3), (3, 3), (3, 3)];
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            var (a, b) = between[fi];
+            double fmin = (Math.Pow(10, rows[a].NFminDb / 10) + Math.Pow(10, rows[b].NFminDb / 10)) / 2;
+            Assert.Equal(10 * Math.Log10(fmin), r.Ds["NFmin"].RealValues[fi], 1e-9);
+            Assert.True((r.Ds["GammaOpt"].ComplexValues[fi] - (rows[a].GammaOpt + rows[b].GammaOpt) / 2).Magnitude < 1e-9);
+            Assert.Equal(50 * (rows[a].RnNormalized + rows[b].RnNormalized) / 2, r.Ds["Rn"].RealValues[fi], 1e-9);
+        }
+    }
+
+    /// <summary>Noise rows no physical two-port has (Fmin − 1 above 4·Rn·Gopt) are reported once and used as given.</summary>
+    [Fact]
+    public void UnphysicalNoiseData_IsSaidOnce_AndUsedAsGiven()
+    {
+        // ampA.s2p's network with its 2 and 6 GHz rows replaced: 3 dB at Γopt = 0.5 needs Rn far above 1 Ω.
+        string[] head = [.. File.ReadAllLines(Path.Combine(NoiseDir(), "ampA.s2p")).TakeWhile(l => !l.StartsWith("! noise"))];
+        string file = Scratch("unphysical.s2p",
+            [.. head, "2 3 0.5 0 0.02", "4 0.92 0.42 76 0.24", "6 3 0.5 0 0.02", "8 1.24 0.34 112 0.28"]);
+        var r = RunCnl(Bench("touchstone_r50").Replace("\"ampA.s2p\"", $"\"{file}\""));
+
+        var w = Assert.Single(r.Nl.Warnings, x => x.StartsWith("Noise:", StringComparison.Ordinal));
+        Assert.Contains("SnP:X1", w);
+        Assert.Contains("2 of its 4 rows, first at 2 GHz", w);
+        Assert.Equal(3.0, r.Ds["NFmin"].RealValues[0], 1e-9);
+        Assert.Equal(1.0, r.Ds["Rn"].RealValues[0], 1e-9);
+        Assert.True((r.Ds["GammaOpt"].ComplexValues[0] - 0.5).Magnitude < 1e-9);
+    }
+
+    /// <summary>
+    /// A passive block with no noise data is thermal (Bosma) like any passive part — here with its ports on a floating
+    /// reference that reaches ground through a resistor, so the whole network is passive at one temperature and every Cs
+    /// entry must be <c>kT(I − S·Sᴴ)</c>.
+    /// </summary>
+    [Fact]
+    public void PassiveBlock_WithoutNoiseData_IsBosma()
+    {
+        string file = PassiveFile("passive.s2p", "", noise: false);
+        var r = RunCnl(FloatingBlock(file, ""));
+        Assert.Empty(r.Nl.Warnings);
+        double worst = WorstAgainstBosma(r, 300.0);
+        output.WriteLine($"passive SnP, no noise data: {worst:E2}");
+        Assert.True(worst < 1e-9, $"{worst:E2}");
+    }
+
+    /// <summary>
+    /// A passive block whose noise data is its own thermal noise at T0, on a floating reference through a resistor, the
+    /// whole bench at T0: the data path (C_A to C_Y, and the reference node carrying minus the port currents) must give
+    /// Bosma's <c>kT0(I − S·Sᴴ)</c> for the whole network.
+    /// </summary>
+    [Fact]
+    public void BlockNoiseData_OnAFloatingReference_IsBosmaWhenItIsThermal()
+    {
+        const string AtT0 = "temp = 16.85\n";
+        string file = PassiveFile("thermal.s2p", AtT0, noise: true);
+        Assert.NotEmpty(TouchstoneIO.ReadFile(file).NoiseParameters);
+        var r = RunCnl(FloatingBlock(file, AtT0));
+        Assert.DoesNotContain(r.Nl.Warnings, x => x.StartsWith("Noise:", StringComparison.Ordinal));
+        double worst = WorstAgainstBosma(r, NoiseMetrics.T0);
+        output.WriteLine($"thermal noise data, floating reference: {worst:E2}");
+        Assert.True(worst < 1e-9, $"{worst:E2}");
+    }
+
+    /// <summary>
+    /// What has no noise model is named: a block with gain and no noise data, and a Deembed, which states none even on a
+    /// file that has some. A block with noise data is not named.
+    /// </summary>
+    [Fact]
+    public void BlocksWithoutANoiseModel_AreNamed()
+    {
+        string[] head = [.. File.ReadAllLines(Path.Combine(NoiseDir(), "ampA.s2p")).TakeWhile(l => !l.StartsWith("! noise"))];
+        string gain = Scratch("gain.s2p", head);
+        var r = RunCnl($"""
+            Port:P1  p1 0  Num=1 Z=50 Ohm
+            Port:P2  p2 0  Num=2 Z=50 Ohm
+            SnP:X1  p1  a  NumPorts=2 File="{gain}"
+            SnP:X3  a  m  NumPorts=2 File="ampA.s2p"
+            Deembed:X2  m  p2  NumPorts=2 File="ampA.s2p"
+            analysis SP1 type=sparam start=2 stop=8 npts=4 Unit=GHz Noise=yes
+            """);
+        var w = Assert.Single(r.Nl.Warnings, x => x.StartsWith("Noise:", StringComparison.Ordinal));
+        Assert.Contains("SnP:X1", w);
+        Assert.Contains("Deembed:X2", w);
+        Assert.DoesNotContain("SnP:X3", w);
+    }
+
+    /// <summary>lossy_lc's S (and, with <paramref name="noise"/>, its noise rows) at <paramref name="prefix"/>'s ambient,
+    /// written to a scratch Touchstone file.</summary>
+    private string PassiveFile(string name, string prefix, bool noise)
+    {
+        var r = RunCnl(WithNoise(prefix + File.ReadAllText(Path.Combine(NoiseDir(), "lossy_lc.cnl")), noise ? "yes" : "no"));
+        string path = Path.Combine(_dir, name);
+        TouchstoneIO.WriteFile(DataSetBuilder.ToSnp(r.Ds), path, precision: "G17");
+        return path;
+    }
+
+    /// <summary>The block between two 50 Ω ports, its reference node reaching ground through 20 Ω, on lossy_lc's grid.</summary>
+    private static string FloatingBlock(string file, string prefix) => prefix + $"""
+        Port:P1  p1 0  Num=1 Z=50 Ohm
+        Port:P2  p2 0  Num=2 Z=50 Ohm
+        SnP:X1  p1  p2  r  NumPorts=2 File="{file}"
+        R:Rg  r  0  R=20 Ohm
+        analysis SP1 type=sparam start=0.5 stop=5.0 npts=10 Unit=GHz Noise=yes
+        """;
+
+    /// <summary>A file in this test's scratch folder, holding <paramref name="lines"/>.</summary>
+    private string Scratch(string name, string[] lines)
+    {
+        string path = Path.Combine(_dir, name);
+        File.WriteAllLines(path, lines);
+        return path;
     }
 
     // ── small helpers ─────────────────────────────────────────────────────────

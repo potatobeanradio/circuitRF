@@ -1,0 +1,6 @@
+; Pozar Ex. 12.5 device between 50 ohm ports; noise circle for NF = 2 dB.
+; Expected: N = 0.1019, centre 0.56 /100 deg, radius 0.24 (textbook rounding).
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+SnP:X1  p1  p2  NumPorts=2 File="pozar_ex12_5.s2p"
+analysis SP1 type=sparam start=3.5 stop=4.5 npts=3 Unit=GHz

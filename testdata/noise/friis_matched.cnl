@@ -1,0 +1,11 @@
+; Friis: amp1.s2p - matched 3 dB pi pad at T0 = 290 K - amp2.s2p, 50 ohm.
+; Expected: F = F1 + (L-1)/G1 + (F2-1) L/G1.
+temp = 16.85
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+SnP:X1  p1  a  NumPorts=2 File="amp1.s2p"
+R:Rpsh1  a  0  R=292.402179640268 Ohm
+R:Rpse  a  b  R=17.61479400596541 Ohm
+R:Rpsh2  b  0  R=292.402179640268 Ohm
+SnP:X2  b  p2  NumPorts=2 File="amp2.s2p"
+analysis SP1 type=sparam start=1.0 stop=4.0 npts=4 Unit=GHz

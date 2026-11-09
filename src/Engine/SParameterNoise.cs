@@ -6,6 +6,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Engine.Envelope;
 using CSparse.Complex.Factorization;
 using NumFlat;
+using RfCore;
 using RfCore.Data;
 
 namespace CircuitRF.Engine;
@@ -27,9 +28,10 @@ public readonly record struct NoiseCurrents(int[] Nodes, Mat<Complex> C);
 /// the row is <c>conj(y)</c> (src/Engine/RESOLVED.md). Then <c>Cs = D·Σ H·C·Hᴴ·Dᴴ</c> over the parts' noise currents,
 /// <c>H[k, a] = conj(y_k[node_a − 1])</c>, <c>D = diag(√Re Z0/Z0)</c>: N extra back-substitutions per frequency.</para>
 ///
-/// <para><b>Passive parts</b> (<see cref="Bosma"/>) are thermal at their own temperature. Everything else — nonlinear
-/// devices, active or black-box linear parts, external devices and S-parameter data blocks — is noiseless and named in
-/// one warning; ports and independent sources are noiseless by definition.</para>
+/// <para><b>Passive parts</b> (<see cref="Bosma"/>) are thermal at their own temperature, a passive S-parameter block
+/// included. A two-port S-parameter block with noise data uses that data instead, passive or not. Everything else —
+/// nonlinear devices, active or black-box linear parts, external devices, S-parameter blocks with gain and no noise
+/// data — is noiseless and named in one warning; ports and independent sources are noiseless by definition.</para>
 /// </summary>
 internal static class SParameterNoise
 {
@@ -73,6 +75,12 @@ internal static class SParameterNoise
         foreach (int g in order)
         {
             var parts = members[g];
+            // An S-parameter block with noise data is noisy by its own statement, passive or not.
+            if (parts is [{ Model: SnpModel snp } block] && snp.NoiseData(block).Count > 0)
+            {
+                sources.Add(DataFile(block, snp, nl, freqsHz));
+                continue;
+            }
             if (!parts.All(ec => IsThermal(ec, freqsHz)))
             {
                 silent.AddRange(parts.Select(ec => $"{ec.ComponentType}:{ec.InstancePath}"));
@@ -96,11 +104,63 @@ internal static class SParameterNoise
     private static bool IsNoiselessByDefinition(ElaboratedComponent ec) =>
         ec.Model is PortModel or TermModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
 
-    /// <summary>A linear part with no dependent source: thermal noise at its own temperature.</summary>
+    /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
+    /// with no noise data is one (its activity is measured on its file).</summary>
     private static bool IsThermal(ElaboratedComponent ec, double[] freqsHz) =>
         ec.Model.Kind == ModelKind.Linear
-        && ec.Model is not (SnpModel or ExternalDeviceModel)
+        && ec.Model is not ExternalDeviceModel
         && ec.ActivityFor(freqsHz) == Activity.Passive;
+
+    /// <summary>
+    /// A two-port S-parameter block's own noise data (<see cref="SnpModel.NoiseAt"/>): the chain correlation of its noise
+    /// parameters, as absolute densities at T0 whatever the ambient, turned into the short-circuit currents across its
+    /// ports, <c>C_Y = T⁻¹·C_A·T⁻ᴴ</c>, with Y the power-wave admittance of the S it stamps at the file's R, times its
+    /// multiplicity (m independent copies in parallel). Rows outside the sweep's band and data that is not physical are
+    /// each reported once, here, and the data is used as given.
+    /// </summary>
+    private static Func<double, NoiseCurrents> DataFile(
+        ElaboratedComponent ec, SnpModel snp, ElaboratedNetlist nl, double[] freqsHz)
+    {
+        var rows = snp.NoiseData(ec);
+        string who = $"{ec.ComponentType}:{ec.InstancePath}";
+        double lo = rows[0].Hz, hi = rows[^1].Hz;
+        if (freqsHz.Length > 0 && (freqsHz.Min() < lo || freqsHz.Max() > hi))
+            nl.AddWarningOnce($"{NoiseDiagnostics.DataBandKey}:{ec.InstancePath}",
+                              NoiseDiagnostics.DataOutsideBand(who, lo, hi, freqsHz.Min(), freqsHz.Max()).Render());
+        // Measured data rounded to 0.01 dB misses the bound by up to ~1e-3 in the factor; that is not worth a warning.
+        var bad = rows.Where(r => !NoiseMetrics.IsRealizable(r.Noise, 1e-3)).ToList();
+        if (bad.Count > 0)
+            nl.AddWarningOnce($"{NoiseDiagnostics.DataUnphysicalKey}:{ec.InstancePath}",
+                              NoiseDiagnostics.DataUnphysical(who, bad[0].Hz, bad.Count, rows.Count).Render());
+
+        int[] ports = [ec.Nodes[0], ec.Nodes[1]];
+        return w =>
+        {
+            double hz = w / (2 * Math.PI);
+            var p  = snp.NoiseAt(ec, hz)!.Value;
+            var y  = RFNetwork.SToY(snp.SAt(ec, hz), new Complex(p.R, 0));
+            var cy = NoiseMetrics.AdmittanceFromChain(NoiseMetrics.ChainCorrelation(p), y);
+            return AcrossPorts(new Complex(ec.Multiplicity, 0) * cy, ports, ec.ReferenceNode);
+        };
+    }
+
+    /// <summary>
+    /// Port currents' correlation <paramref name="cy"/> as node injections: port k's current enters at
+    /// <paramref name="ports"/>[k] and leaves at <paramref name="reference"/>, so the reference carries minus their sum.
+    /// Ground rows are dropped (<see cref="NoiseCurrents"/> excludes ground).
+    /// </summary>
+    private static NoiseCurrents AcrossPorts(Mat<Complex> cy, int[] ports, int reference)
+    {
+        int n = ports.Length;
+        int[] nodes = [.. ports, reference];
+        int[] kept = [.. Enumerable.Range(0, n + 1).Where(i => nodes[i] > 0)];
+        if (kept.Length == 0) return default;
+        var t = new Mat<Complex>(kept.Length, n);
+        for (int r = 0; r < kept.Length; r++)
+            for (int k = 0; k < n; k++)
+                t[r, k] = kept[r] == n ? -1 : kept[r] == k ? 1 : 0;
+        return new NoiseCurrents([.. kept.Select(i => nodes[i])], t * cy * t.ConjugateTranspose());
+    }
 
     /// <summary>
     /// Bosma/Twiss for one recorded stamp at <paramref name="kelvin"/>. Every node is tied to ground through R

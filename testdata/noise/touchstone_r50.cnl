@@ -1,0 +1,7 @@
+; Touchstone noise round trip: ampA.s2p (R 50) between 50 ohm ports.
+; Expected: NFmin, Rn, Gamma_opt as in the file (Gamma_opt re-referenced to the port-1 Z0).
+; Default ambient: data-file noise is absolute, independent of the ambient.
+Port:P1  p1 0  Num=1 Z=50.0 Ohm
+Port:P2  p2 0  Num=2 Z=50.0 Ohm
+SnP:X1  p1  p2  NumPorts=2 File="ampA.s2p"
+analysis SP1 type=sparam start=2.0 stop=8.0 npts=4 Unit=GHz
