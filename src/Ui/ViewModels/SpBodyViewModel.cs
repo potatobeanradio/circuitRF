@@ -78,6 +78,13 @@ public sealed partial class SpBodyViewModel : ObservableObject
     public IReadOnlyList<FrequencySpec> BuildSweeps()
         => Segments.Select(s => s.Build()).ToList();
 
+    /// <summary>The Noise check box: <c>Noise=yes</c>, the small-signal noise cubes beside S.</summary>
+    [ObservableProperty] private bool _noise;
+
+    /// <summary><c>Noise=</c> as the box has it: the loaded analysis's own spelling while the box still says what it
+    /// said, else <c>yes</c> or <c>no</c>.</summary>
+    public string NoiseExpr => Source is { } s && s.Noise == Noise ? s.NoiseExpr : Noise ? "yes" : Analysis.NoiseDefault;
+
     // ── FromAnalysis ──────────────────────────────────────────────────────────
 
     /// <summary>The analysis this body was loaded from, or null for a new one — what an edit carries its other keys from.</summary>
@@ -85,7 +92,7 @@ public sealed partial class SpBodyViewModel : ObservableObject
 
     public static SpBodyViewModel FromAnalysis(SParameterAnalysis sp, SchematicEditModel model)
     {
-        var vm = new SpBodyViewModel(model) { Source = sp };
+        var vm = new SpBodyViewModel(model) { Source = sp, Noise = sp.Noise };
         vm.Segments.Clear();
         foreach (var sweep in sp.Sweeps)
             vm.AddSegmentInternal(new FrequencySpecViewModel(model, sweep));

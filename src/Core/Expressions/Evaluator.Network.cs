@@ -8,7 +8,9 @@ namespace CircuitRF.Core.Expressions;
 /// <summary>
 /// The network-metric built-ins — <c>mu</c>, <c>mu_prime</c>, <c>K</c>, <c>delta_mag</c>,
 /// <c>max_gain</c>, <c>max_gain_lin</c>, <c>passivity</c> — plus <c>group_delay</c> and <c>vswr</c>
-/// (brief-tuneopt-9 R-to9-1/2), so a stability factor or a delay is one goal expression away.
+/// (brief-tuneopt-9 R-to9-1/2), so a stability factor or a delay is one goal expression away; and the
+/// noise figure from any source, <c>nf</c>, with its constant-NF circles, <c>nf_circle</c>, both read off
+/// the NFmin, Rn and GammaOpt cubes a <c>Noise=yes</c> run puts beside S.
 ///
 /// <para><b>Nothing here computes a metric.</b> Every value comes from <see cref="NetworkMetrics"/>'
 /// matrix-level overloads — the same calls the Data Display's µ/K/MAG/σ/group-delay traces make —
@@ -26,7 +28,7 @@ public sealed partial class Evaluator
 {
     internal static bool IsNetworkBuiltin(string name) => name is
         "mu" or "mu_prime" or "K" or "delta_mag" or "max_gain" or "max_gain_lin" or "passivity" or
-        "group_delay" or "vswr";
+        "group_delay" or "vswr" or "nf" or "nf_circle";
 
     private Value EvalNetworkCall(CallExpr cl, Scope scope) => cl.Name switch
     {
@@ -39,14 +41,17 @@ public sealed partial class Evaluator
         "passivity"    => EvalPassivity(cl, scope),
         "group_delay"  => EvalGroupDelay(cl, scope),
         "vswr"         => EvalVswr(cl, scope),
+        "nf"           => EvalNf(cl, scope),
+        "nf_circle"    => EvalNfCircle(cl, scope),
         _              => throw new UnknownFunctionException(cl.Name),
     };
 
     // ── The S-cube reader ────────────────────────────────────────────────────
 
     /// <summary>An S cube read as matrices: the leading axes (freq last), one matrix per leading
-    /// point, and the per-port reference impedances for each block of <c>FreqCount</c> matrices.</summary>
-    private sealed record SNetwork(Axis[] Leading, int N, Mat<Complex>[] Mats, int FreqCount, Complex[][] Z0PerSlice);
+    /// point, and the per-port reference impedances for each block of <c>FreqCount</c> matrices; <c>Owner</c> is the
+    /// analysis's DataSet, where its other cubes are.</summary>
+    private sealed record SNetwork(Axis[] Leading, int N, Mat<Complex>[] Mats, int FreqCount, Complex[][] Z0PerSlice, DataSet Owner);
 
     private SNetwork ReadSNetwork(CallExpr cl, Scope scope)
     {
@@ -105,7 +110,7 @@ public sealed partial class Evaluator
             var fallback = NetworkMetrics.ReadZ0(owner, n);
             z0 = [.. Enumerable.Repeat(fallback, Math.Max(slices, 1))];
         }
-        return new SNetwork(leading, n, mats, nFreq, z0);
+        return new SNetwork(leading, n, mats, nFreq, z0, owner);
     }
 
     /// <summary>The ordered (input, output) port pair: arguments 2 and 3 when given, (1, 2) for a
@@ -253,5 +258,89 @@ public sealed partial class Evaluator
             default:
                 throw new TypeErrorException("vswr(): the argument must be a reflection coefficient.");
         }
+    }
+
+    // ── Noise ────────────────────────────────────────────────────────────────
+
+    /// <summary>The two-port noise parameters the analysis owning the S cube reported, one per leading point, with
+    /// Γopt on Re Z0 of port 1 of that point's sweep slice — read from its NFmin, Rn and GammaOpt cubes, which a
+    /// sweep stacks as it stacks S.</summary>
+    private (SNetwork S, TwoPortNoise[] P) ReadNoise(CallExpr cl, Scope scope)
+    {
+        var s = ReadSNetwork(cl, scope);
+        if (s.N != 2) throw new ExpressionException(NoiseFunctionDiagnostics.NotTwoPort(cl.Name, s.N));
+        if (!(s.Owner.Contains("NFmin") && s.Owner.Contains("Rn") && s.Owner.Contains("GammaOpt")))
+            throw new ExpressionException(NoiseFunctionDiagnostics.NotRun(cl.Name));
+        double[] nfMin = s.Owner["NFmin"].RealValues, rn = s.Owner["Rn"].RealValues;
+        Complex[] gOpt = s.Owner["GammaOpt"].ComplexValues;
+        foreach (var (name, got) in new[] { ("NFmin", nfMin.Length), ("Rn", rn.Length), ("GammaOpt", gOpt.Length) })
+            if (got != s.Mats.Length)
+                throw new ExpressionException(NoiseFunctionDiagnostics.CubeShape(cl.Name, name, got, s.Mats.Length));
+
+        var p = new TwoPortNoise[s.Mats.Length];
+        for (int b = 0; b < p.Length; b++)
+            p[b] = new TwoPortNoise(Math.Pow(10, nfMin[b] / 10), gOpt[b], rn[b], s.Z0PerSlice[b / s.FreqCount][0].Real);
+        return (s, p);
+    }
+
+    /// <summary>
+    /// <c>nf(S, Γs)</c> — the noise figure in dB from a source of reflection Γs (on Re Z0 of port 1), per frequency:
+    /// <c>F = Fmin + 4(Rn/R)|Γs − Γopt|²/((1 − |Γs|²)|1 + Γopt|²)</c> (<see cref="NoiseMetrics.NoiseFactor"/>). Γs is a
+    /// number, or a cube with one value per frequency point (<c>SP1.GammaOpt</c>). NaN where |Γs| ≥ 1: no passive
+    /// source presents that, and the formula's number there means nothing.
+    /// </summary>
+    private Value EvalNf(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 2) throw new ArityException(cl.Name, 2, cl.Args.Length);
+        var (s, p) = ReadNoise(cl, scope);
+        var g = EvalExpr(cl.Args[1], scope);
+        Complex[] gs = g.Kind switch
+        {
+            ValueKind.Real    => [.. Enumerable.Repeat(new Complex(g.AsReal(), 0), p.Length)],
+            ValueKind.Complex => [.. Enumerable.Repeat(g.AsComplex(), p.Length)],
+            ValueKind.Cube when g.AsCube().BufferLength == p.Length =>
+                g.AsCube().DataKind == DataKind.Complex ? g.AsCube().ComplexValues
+                                                        : [.. g.AsCube().RealValues.Select(x => new Complex(x, 0))],
+            ValueKind.Cube => throw new ExpressionException(NoiseFunctionDiagnostics.Source(cl.Name, $"{g.AsCube().BufferLength} values", p.Length)),
+            _              => throw new ExpressionException(NoiseFunctionDiagnostics.Source(cl.Name, g.Kind.ToString(), p.Length)),
+        };
+        var vals = new double[p.Length];
+        for (int b = 0; b < p.Length; b++)
+            vals[b] = gs[b].Magnitude >= 1 ? double.NaN : 10 * Math.Log10(NoiseMetrics.NoiseFactor(p[b], gs[b]));
+        return LeadingCube(s.Leading, vals, "dB");
+    }
+
+    /// <summary>
+    /// <c>nf_circle(S, NFdB[, npts])</c> — the source reflections that give a noise figure of NFdB, as a closed loop of
+    /// <c>npts</c> (default 101) points per frequency: <c>{…, freq, point}</c>, point k at angle 2πk/(npts − 1) round
+    /// <see cref="NoiseMetrics.NoiseCircle"/>, on Re Z0 of port 1. Below NFmin there is no circle and the points are NaN.
+    /// </summary>
+    private Value EvalNfCircle(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length is not (2 or 3)) throw new ArityException(cl.Name, 2, cl.Args.Length);
+        var (s, p) = ReadNoise(cl, scope);
+        var nf = EvalExpr(cl.Args[1], scope);
+        if (nf.Kind != ValueKind.Real) throw new ExpressionException(NoiseFunctionDiagnostics.Figure(cl.Name, nf.Kind.ToString()));
+        int npts = 101;
+        if (cl.Args.Length == 3)
+        {
+            var v = EvalExpr(cl.Args[2], scope);
+            double x = v.Kind == ValueKind.Real ? v.AsReal() : double.NaN;
+            if (!(x >= 3) || x != Math.Floor(x) || x > int.MaxValue)
+                throw new ExpressionException(NoiseFunctionDiagnostics.CirclePoints(cl.Name,
+                    v.Kind == ValueKind.Real ? x.ToString(System.Globalization.CultureInfo.InvariantCulture) : v.Kind.ToString()));
+            npts = (int)x;
+        }
+
+        double f = Math.Pow(10, nf.AsReal() / 10);
+        var pts = new Complex[p.Length * npts];
+        for (int b = 0; b < p.Length; b++)
+        {
+            var (centre, radius) = NoiseMetrics.NoiseCircle(p[b], f);
+            for (int k = 0; k < npts; k++)
+                pts[b * npts + k] = centre + radius * Complex.Exp(new Complex(0, 2 * Math.PI * k / (npts - 1)));
+        }
+        var point = new Axis("point", [.. Enumerable.Range(0, npts).Select(k => (double)k)]);
+        return new Value(new DataCube([.. s.Leading, point], pts));
     }
 }

@@ -94,6 +94,7 @@ interpolated onto the sweep.</p>
       <tr><td>Reference impedance</td><td>Per-port reference (from each Term's <code>Z</code>); the result renormalizes to it.</td></tr>
       <tr><td><code>NDF=yes</code></td><td>Also compute the <a href="wsprobe.html#ndf">normalized determinant function</a> — the rigorous count of right-half-plane poles of the whole network. <code>PassiveVars=</code> / <code>PassiveParams=</code> name what passivates a user-supplied model.</td></tr>
       <tr><td><code>MarginThreshold=</code></td><td>The <a href="wsprobe.html#stability-margin">stability margin</a> in dB below which a WSProbe is reported as worth looking at. Default <code>-15</code>; <code>none</code> disables.</td></tr>
+      <tr><td><code>Noise=yes</code></td><td>Also compute the <a href="#sp-noise">small-signal noise</a>: the noise-wave correlation, and for a two-port the noise figure and noise parameters. The <b>Noise</b> box in the analysis editor. Default <code>no</code>.</td></tr>
     </tbody>
   </table>
 <p class="small">A <a href="components.html#wsprobe">WSProbe</a> anywhere in the circuit adds the
@@ -104,6 +105,127 @@ analysis that answers almost everything about them: port match, isolation, coupl
 a filter's passband and rejection, a duplexer's arm-to-arm leakage, and an amplifier's small-signal
 gain and stability.</p>
 <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
+<h3 id="sp-noise">Small-signal noise</h3>
+<p><code>Noise=yes</code> adds the circuit's small-signal noise to the S-parameter run. The noise comes from the same
+solve: one more back-substitution per port at each frequency, and no further factorization. S does not
+change. <code>Noise=no</code>, the default, adds nothing.</p>
+<pre><code class="language-text">analysis SP1 type=sparam start=1 stop=6 npts=51 Unit=GHz Noise=yes
+</code></pre>
+<p><strong>What the run adds.</strong> The cubes go into the analysis's own group, beside <code>S</code> and <code>Z0</code>. A
+<a href="#parametric-sweep">parametric sweep</a> stacks them as it stacks <code>S</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Axes</th>
+<th>Unit</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cs</code></td>
+<td><code>[freq, i, j]</code></td>
+<td>W/Hz</td>
+<td>The correlation ⟨b·bᴴ⟩ of the noise waves leaving the ports. Every port is terminated in its own noiseless Z0.</td>
+</tr>
+<tr>
+<td><code>NF</code></td>
+<td><code>[freq]</code></td>
+<td>dB</td>
+<td>The noise figure with port 1 driven from its own Z0 and port 2 loaded in its own. Two-ports only.</td>
+</tr>
+<tr>
+<td><code>NFmin</code></td>
+<td><code>[freq]</code></td>
+<td>dB</td>
+<td>The minimum noise figure. Two-ports only.</td>
+</tr>
+<tr>
+<td><code>Rn</code></td>
+<td><code>[freq]</code></td>
+<td>Ω</td>
+<td>The equivalent noise resistance, not normalised. Two-ports only.</td>
+</tr>
+<tr>
+<td><code>GammaOpt</code></td>
+<td><code>[freq]</code></td>
+<td>—</td>
+<td>The source reflection that reaches NFmin, on Re Z0 of port 1. Two-ports only.</td>
+</tr>
+</tbody>
+</table>
+<p>A network with more than two ports gets <code>Cs</code> only, because a noise figure and noise parameters belong to
+a two-port. For the noise figure from any other source, and for constant-noise-figure circles, use
+<a href="derived-metrics.html#noise"><code>nf()</code> and <code>nf_circle()</code></a>.</p>
+<p><strong>What is noisy.</strong></p>
+<ul>
+<li><strong>Every linear passive part</strong> is thermal at its own temperature. That is its <code>Temp</code>, or <code>Dtemp</code> above
+the ambient, or else the design's ambient. The noise is computed from the part's own small-signal
+stamp (Bosma's theorem), so a lossless part adds none, and a lossy one adds exactly the noise of its
+loss. Resistors, lossy reactances, transmission lines and coupled inductors (<code>Mutual</code>) are all covered.</li>
+<li><strong>An <a href="components.html#snp">SnP block</a></strong> whose two-port file has a Touchstone noise block is noisy by
+that data, even if it has gain. A passive file with no noise block is thermal, like any passive part.</li>
+<li><strong>A <a href="veriloga.html">compiled model</a></strong> is noisy by the sources it declares (<code>white_noise</code>,
+<code>flicker_noise</code>). They are evaluated at the DC operating point the run linearises the device about, and
+multiplied by the instance's multiplicity.</li>
+</ul>
+<p><strong>What is noiseless.</strong> The following parts have no noise model here:</p>
+<ul>
+<li>the built-in nonlinear device models (diodes, BJTs, FETs, the SDD);</li>
+<li>active or black-box linear parts, such as a controlled source, an amplifier block or a negative
+resistor;</li>
+<li>an SnP block with gain and no noise data;</li>
+<li>every Deembed;</li>
+<li>a compiled model that declares no noise sources.</li>
+</ul>
+<p>These are taken as noiseless, and one warning names them all (<code>sparam.noise.noiseless</code>), so a result
+never leaves out a part without saying so. Ports and independent sources are noiseless by definition,
+and they are not named.</p>
+<p><strong>Conventions.</strong></p>
+<ul>
+<li><strong>Spectral densities are single-sided and absolute.</strong> A matched load's outgoing noise wave is kT W/Hz,
+and a resistor's open-circuit noise voltage is 4kTR V²/Hz. k is 1.380649e-23 J/K, exact.</li>
+<li><strong>The noise waves are the power waves S is defined on.</strong> Every port is terminated in its own noiseless
+Z0. This is why a port whose Z0 has no positive real part is refused with <code>Noise=yes</code>
+(<code>sparam.noise.reactive-z0</code>): there is no termination to define the waves against.</li>
+<li><strong>NF is referred to T0 = 290 K, but the default ambient is 26.85 °C = 300 K.</strong> A design that states no
+temperature is 10 K warmer than the standard, and its passive parts make that much more noise. A
+matched 6 dB pad reads F = 1 + (300/290)(L − 1), which is NF = 6.111 dB, not 6.000 dB. Set
+<code>temp = 16.85</code> to put the whole design at 290 K. Noise data from a file is absolute at T0, so it does
+not change with the ambient.</li>
+<li><strong>GammaOpt is on Re Z0 of port 1</strong>, and <code>Rn</code> is in ohms.</li>
+</ul>
+<p><strong>An SnP block's noise data.</strong> circuitRF reads Touchstone 1.x noise rows: frequency, NFmin in dB, |Γopt|,
+∠Γopt in degrees, and rn normalised to the option line's R. Between rows the noise parameters are linear.
+Outside the rows the nearest row holds, and <code>sparam.noise.data-band</code> says so. A row that no physical
+two-port could have (0 ≤ Fmin − 1 ≤ 4·Rn·Re Yopt fails) gets <code>sparam.noise.data-unphysical</code>, and it is
+used as given.</p>
+<p><strong>Written out.</strong> <code>circuitrf sparam bench.cnl -o out.s2p</code> on a two-port writes a Touchstone noise block
+after the data. It is in the same 1.x format, with Γopt and rn on the option line's R. The rows are the
+run's own cubes, so reading the file back gives them again.</p>
+<p><strong>A worked example: Pozar's Ex. 12.5.</strong> A transistor is described by its S-parameters and its noise
+parameters in a Touchstone file. The book gives them at 4 GHz, and the file holds them over 3.5 to 4.5 GHz:
+Fmin = 1.6 dB, Γopt = 0.62∠100° and rn = 0.4 on 50 Ω, which is Rn = 20 Ω.</p>
+<pre><code class="language-text"># GHz S MA R 50
+3.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+4 0.6 -60 1.9 81 0.05 26 0.5 -60
+4.5 0.6 -60 1.9 81 0.05 26 0.5 -60
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+3.5 1.6 0.62 100 0.4
+4 1.6 0.62 100 0.4
+4.5 1.6 0.62 100 0.4
+</code></pre>
+<pre><code class="language-text">Port:P1  p1 0  Num=1 Z=50 Ohm
+Port:P2  p2 0  Num=2 Z=50 Ohm
+SnP:X1   p1 p2 NumPorts=2 File=&quot;pozar_ex12_5.s2p&quot;
+analysis SP1 type=sparam start=3.5 stop=4.5 npts=3 Unit=GHz Noise=yes
+measure NFopt = nf(SP1.S, polar(0.62, 100))
+measure NF2   = nf_circle(SP1.S, 2)
+</code></pre>
+<p>The run gives back the file's NFmin = 1.6 dB, Rn = 20 Ω and GammaOpt = 0.62∠100°. <code>NF</code> is 2.948 dB,
+which is the noise figure from the 50 Ω source. <code>NFopt</code> is 1.6 dB again. <code>NF2</code> is the 2 dB noise circle:
+its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.</p>
 <h2 id="harmonic-balance">Harmonic Balance</h2>
 <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or more tones (up to
 six) — the spectrum (DC + harmonics, and mixing products when there is more than one tone) at

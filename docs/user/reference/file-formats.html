@@ -117,6 +117,11 @@ format: its parts are imported into a 3D view, and a 3D view or a layout is expo
 (<code>.ds</code>): blocks of nested sweeps, read as one group per block named after its analysis
 (<code>SP1</code>), each variable a cube on the block's sweep axes. Only a full grid is read. Export Data
 and a run verb's <code>-o out.ds</code> write one. Try <code>circuitrf read sweep.ds</code>.</p>
+<p class="small"><strong>Touchstone</strong> is read and written in its 1.x form; a Touchstone 2 file with
+keyword blocks is refused with the reader's reason. A two-port's noise block (frequency, NFmin in dB,
+|Γopt|, ∠Γopt, rn normalised to the option line's R) is read, and an
+<a href="simulations.html#sp-noise">S-parameter block uses it</a>. It is also written: a two-port
+S-parameter run with <code>Noise=yes</code> writes its noise parameters as that block after the data.</p>
 <div class="callout note">
 <span class="label">Which of these are documents you open</span>
 <p><code>.csch</code>, <code>.csym</code>, <code>.clay</code>, <code>.cdd</code>, <code>.ctech</code>,

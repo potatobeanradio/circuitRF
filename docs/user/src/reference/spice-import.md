@@ -87,9 +87,11 @@ There are five reasons, and every dropped parameter is one of them.
 ### 1. There is no analysis that would read it
 
 `KF` and `AF` — the flicker-noise coefficients — appear on every semiconductor card and are carried
-by none of them. circuitRF has **no noise analysis** for them to feed. Accepting them would put two
-rows on the built cell that look honoured and change no result, which is worse than an empty space:
-a parameter this model does not read is not offered.
+by none of them. The built-in device models are **noiseless**: the
+[S-parameter noise analysis](simulations.html#sp-noise) takes them so and names them in its warning,
+and nothing else here analyses noise. Accepting the two would put two rows on the built cell that look
+honoured and change no result, which is worse than an empty space: a parameter this model does not read
+is not offered. A compiled model brings its own noise ([VerilogA](veriloga.html#noise)).
 
 ### 2. The device has no node for it
 

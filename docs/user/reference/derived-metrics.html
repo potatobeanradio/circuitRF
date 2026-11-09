@@ -37,7 +37,7 @@
   </div>
 
   <h1>Derived Metrics</h1>
-  <p class="lede">Stability, passivity, group delay and the two-terminal passive readouts — every equation, written out.</p>
+  <p class="lede">Stability, passivity, group delay, noise figure and the two-terminal passive readouts — every equation, written out.</p>
 
 <p>A <strong>derived metric</strong> is a quantity the Data Display computes from an S-matrix rather than reading out
 of it. Stability factors, gain limits, passivity, group delay, and the impedance readouts a capacitor or
@@ -56,6 +56,7 @@ with can be traced to an assumption rather than to a mystery.</p>
 <li><a href="#circles">Stability circles</a></li>
 <li><a href="#passivity">Passivity, σ<sub>max</sub></a></li>
 <li><a href="#groupdelay">Group delay</a></li>
+<li><a href="#noise">Noise figure from any source, and noise circles</a></li>
 <li><a href="#passive">The two-terminal passive readouts</a></li>
 <li><a href="#fixture">The fixture: the one thing you must tell it</a></li>
 <li><a href="#srf">Self-resonance</a></li>
@@ -251,6 +252,47 @@ result has exactly as many points as the sweep. The grid need not be uniform.</l
 a sweep too coarse for that cannot have its group delay measured by any method, and unwrapping will
 quietly guess wrong rather than fail.</li>
 </ul>
+<h2 id="noise">Noise figure from any source, and noise circles</h2>
+<p>An S-parameter run with <a href="simulations.html#sp-noise"><code>Noise=yes</code></a> reports NFmin, Rn and Γopt for a
+two-port. Two measurement functions read them back for any source:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nf(SP1.S, Γs)</code></td>
+<td>The noise figure in dB from a source of reflection Γs, per frequency. Γs is a number, such as <code>0</code> or <code>polar(0.3, 45)</code>, or one value per frequency, such as <code>SP1.GammaOpt</code>.</td>
+</tr>
+<tr>
+<td><code>nf_circle(SP1.S, NFdB[, npts])</code></td>
+<td>The Γs that give NFdB, as <code>npts</code> points (101 by default) round a closed circle, per frequency: a complex <code>{freq, point}</code> cube.</td>
+</tr>
+</tbody>
+</table>
+<pre><code>F(Γs) = Fmin + 4·(Rn/R)·|Γs − Γopt|² / ((1 − |Γs|²)·|1 + Γopt|²)          NF = 10·log10 F
+
+N      = (R / 4Rn)·(F − Fmin)·|1 + Γopt|²
+centre = Γopt / (1 + N)                      radius = √(N² + N·(1 − |Γopt|²)) / (1 + N)
+</code></pre>
+<p>R is Re Z0 of port 1, which is what Γopt and Γs are referenced to. Three values follow from these
+formulas: <code>nf(SP1.S, 0)</code> is the run's <code>NF</code> when port 1's Z0 is real, <code>nf(SP1.S, SP1.GammaOpt)</code> is its <code>NFmin</code>, and every point
+of <code>nf_circle(SP1.S, x)</code> gives <code>x</code> back through <code>nf</code>.</p>
+<p>Where no answer exists, the value is NaN rather than a plausible number:</p>
+<ul>
+<li><code>nf</code> at |Γs| ≥ 1, because no passive source presents that reflection;</li>
+<li><code>nf_circle</code> below a frequency's NFmin, where there is no such circle.</li>
+</ul>
+<p>Both need the analysis's own S cube, as the stability metrics do. They are refused, with the reason,
+on a network that is not a two-port (<code>measure.noise.not-two-port</code>) and on a run made without
+<code>Noise=yes</code> (<code>measure.noise.not-run</code>).</p>
+<p><strong>To draw the circles on a Smith chart,</strong> make the circle a measurement and plot it with <code>point</code> as X:</p>
+<pre><code>measure NF2 = nf_circle(SP1.S, 2)
+</code></pre>
+<p>The trace spec <code>NF2[~, :]</code> draws one circle per frequency, and <code>NF2[0, :]</code> draws the first one only.</p>
 <h2 id="passive">The two-terminal passive readouts</h2>
 <p>Six quantities, and they exist for a specific reason: <strong>a capacitor, an inductor or a ferrite bead is
 specified, bought and compared in ESR, C, L, Q and self-resonance — never in S-parameters.</strong> When a

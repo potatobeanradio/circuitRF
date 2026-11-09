@@ -42078,3 +42078,12 @@ names, and nothing told it when the build finished, so the placed parts appeared
 outright with "Every two-terminal part" ticked). `OnSceneAdopted` now calls `RefreshComponentParts` on the open setup panel; an
 unchanged elaboration lists nothing again. A `.cem` resolves its layout inside its own refresh, so its list never had the gap.
 Gate: `SimulateEditorGateTests.TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit`, which fails without the call.
+
+## The S-parameter analysis editor's Noise check box (2026-11-09)
+
+`SpBodyView` places a Noise check box under the frequency plan, bound to `SpBodyViewModel.Noise`. It is the first
+directive key this body shows besides the sweeps; the others (MarginThreshold, NDF, PassiveVars/Params) are still
+carried from the edited analysis by `SParameterAnalysis.WithSweeps`, which now takes the box's `NoiseExpr`. An edit opens
+on the analysis's own value, and while the box still says what it said the analysis's own spelling (`on`, `true`) is
+kept, so opening and closing the dialog rewrites nothing; a change writes `yes` or `no` (the default, which the writer
+leaves out). Gate: `SpNoiseCheckBoxTests`.

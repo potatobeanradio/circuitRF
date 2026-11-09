@@ -3,8 +3,8 @@ title: Derived Metrics
 slug: reference/derived-metrics.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Derived Metrics
-lede: Stability, passivity, group delay and the two-terminal passive readouts — every equation, written out.
-keywords: ESR, ESL, Q factor, self-resonance, SRF, Ceff, Leff, capacitance, inductance, stability, mu, Rollett, K factor, MAG, MSG, passivity, group delay, sigma max, decoupling, MLCC, fixture, shunt-through
+lede: Stability, passivity, group delay, noise figure and the two-terminal passive readouts — every equation, written out.
+keywords: noise figure, NF, NFmin, noise circle, nf_circle, ESR, ESL, Q factor, self-resonance, SRF, Ceff, Leff, capacitance, inductance, stability, mu, Rollett, K factor, MAG, MSG, passivity, group delay, sigma max, decoupling, MLCC, fixture, shunt-through
 ---
 
 A **derived metric** is a quantity the Data Display computes from an S-matrix rather than reading out
@@ -26,6 +26,7 @@ with can be traced to an assumption rather than to a mystery.
 <li><a href="#circles">Stability circles</a></li>
 <li><a href="#passivity">Passivity, σ<sub>max</sub></a></li>
 <li><a href="#groupdelay">Group delay</a></li>
+<li><a href="#noise">Noise figure from any source, and noise circles</a></li>
 <li><a href="#passive">The two-terminal passive readouts</a></li>
 <li><a href="#fixture">The fixture: the one thing you must tell it</a></li>
 <li><a href="#srf">Self-resonance</a></li>
@@ -196,6 +197,44 @@ Plotted in **nanoseconds**. Three details that decide whether the number is mean
 - **The sweep must resolve the phase to better than half a cycle per step.** That is the one real limit:
   a sweep too coarse for that cannot have its group delay measured by any method, and unwrapping will
   quietly guess wrong rather than fail.
+
+## Noise figure from any source, and noise circles {#noise}
+
+An S-parameter run with [`Noise=yes`](simulations.html#sp-noise) reports NFmin, Rn and Γopt for a
+two-port. Two measurement functions read them back for any source:
+
+| Function | Returns |
+|---|---|
+| `nf(SP1.S, Γs)` | The noise figure in dB from a source of reflection Γs, per frequency. Γs is a number, such as `0` or `polar(0.3, 45)`, or one value per frequency, such as `SP1.GammaOpt`. |
+| `nf_circle(SP1.S, NFdB[, npts])` | The Γs that give NFdB, as `npts` points (101 by default) round a closed circle, per frequency: a complex `{freq, point}` cube. |
+
+```
+F(Γs) = Fmin + 4·(Rn/R)·|Γs − Γopt|² / ((1 − |Γs|²)·|1 + Γopt|²)          NF = 10·log10 F
+
+N      = (R / 4Rn)·(F − Fmin)·|1 + Γopt|²
+centre = Γopt / (1 + N)                      radius = √(N² + N·(1 − |Γopt|²)) / (1 + N)
+```
+
+R is Re Z0 of port 1, which is what Γopt and Γs are referenced to. Three values follow from these
+formulas: `nf(SP1.S, 0)` is the run's `NF` when port 1's Z0 is real, `nf(SP1.S, SP1.GammaOpt)` is its `NFmin`, and every point
+of `nf_circle(SP1.S, x)` gives `x` back through `nf`.
+
+Where no answer exists, the value is NaN rather than a plausible number:
+
+- `nf` at |Γs| ≥ 1, because no passive source presents that reflection;
+- `nf_circle` below a frequency's NFmin, where there is no such circle.
+
+Both need the analysis's own S cube, as the stability metrics do. They are refused, with the reason,
+on a network that is not a two-port (`measure.noise.not-two-port`) and on a run made without
+`Noise=yes` (`measure.noise.not-run`).
+
+**To draw the circles on a Smith chart,** make the circle a measurement and plot it with `point` as X:
+
+```
+measure NF2 = nf_circle(SP1.S, 2)
+```
+
+The trace spec `NF2[~, :]` draws one circle per frequency, and `NF2[0, :]` draws the first one only.
 
 ## The two-terminal passive readouts {#passive}
 

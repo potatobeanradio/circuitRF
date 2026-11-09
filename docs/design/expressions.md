@@ -173,6 +173,14 @@ returns `{…, freq}`. `group_delay(z)` is −dφ/dω along `freq` of a complex 
 renormalization. `vswr(Γ)` is (1 + |Γ|)/(1 − |Γ|) element-wise, +∞ at and beyond |Γ| = 1. A name such
 as `K` stays usable as a variable or measurement: only a CALL `K(…)` is the function.
 
+**Noise** (measurement context only; `docs/design/sparameter-noise.md`): `nf(S, Γs)` is the noise figure in dB from a
+source of reflection Γs (a number, or one value per point of `S`'s leading axes), `{…, freq}`, NaN where |Γs| ≥ 1;
+`nf_circle(S, NFdB[, npts])` is the constant-NF circle, `{…, freq, point}`, a closed loop of `npts` (101) complex Γ
+points, NaN below NFmin. Both read the NFmin, Rn and GammaOpt cubes of the analysis that owns `S`, found as the network
+metrics find Z0, with Γ on Re Z0 of port 1 of each sweep slice. Refused with a coded diagnostic: not a two-port
+(`measure.noise.not-two-port`), a run without `Noise=yes` (`measure.noise.not-run`), and malformed arguments
+(`measure.noise.source`, `.figure`, `.circle-points`, `.cube-shape`).
+
 **Field measurements** (measurement context only, over a `type=fields` analysis; brief-sar-10): `B1pMean(F, region)`,
 `B1pMin(F, region)`, `B1pCoV(F, region)`, `psSAR(F, mass)`, `SARwb(F, region)`, `SarEff(F, region, mass)`, `Pabs(F)`. `F` is
 the analysis's NAME, read as a name and never evaluated; a region is a string (a tissue, tissues joined by `+`, `"all"`, or

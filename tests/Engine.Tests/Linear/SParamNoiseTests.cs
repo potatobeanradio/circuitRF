@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Text.Json;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine.Envelope;
 using NumFlat;
@@ -532,6 +533,63 @@ public sealed class SParamNoiseTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(book.GetProperty("center_mag").GetDouble(), centre.Magnitude, tol);
             Assert.Equal(book.GetProperty("center_deg").GetDouble(), centre.Phase * 180 / Math.PI, tol);
             Assert.Equal(book.GetProperty("radius").GetDouble(), rad, tol);
+        }
+    }
+
+    private static Value Eval(DataSet ds, string expr) =>
+        new Evaluator(new MeasurementContext(new Dictionary<string, DataSet> { ["SP1"] = ds })).Eval(expr, new Scope("t"));
+
+    /// <summary>
+    /// <c>nf()</c> and <c>nf_circle()</c> on a run with port 1 at 75 Ω: nf at Γs = 0 is the NF the run reports (which
+    /// the engine takes from Cs, not from the noise parameters), at Γs = Γopt it is NFmin, and every point of a circle
+    /// gives the circle's own NF back.
+    /// </summary>
+    [Fact]
+    public void NfFunctions_AgreeWithTheRunsOwnCubes()
+    {
+        var r = RunCnl(Bench("ngspice_vccs_amp"));
+        double[] nf0 = Eval(r.Ds, "nf(SP1.S, 0)").AsCube().RealValues, nfOpt = Eval(r.Ds, "nf(SP1.S, SP1.GammaOpt)").AsCube().RealValues;
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            Assert.Equal(r.Ds["NF"].RealValues[fi], nf0[fi], 1e-9);
+            Assert.Equal(r.Ds["NFmin"].RealValues[fi], nfOpt[fi], 1e-9);
+        }
+
+        double target = Math.Ceiling(r.Ds["NFmin"].RealValues.Max()) + 1;
+        for (int k = 0; k < 9; k++)
+            Assert.All(Eval(r.Ds, $"nf(SP1.S, nf_circle(SP1.S, {target}, 9)[:, {k}])").AsCube().RealValues,
+                       v => Assert.Equal(target, v, 1e-9));
+    }
+
+    /// <summary>Pozar Ex. 12.5 through <c>nf_circle()</c> on a run: the 2 dB circle's points are scikit-rf's to 1e-9, its
+    /// centre and radius the closed form's (1e-9) and the textbook's 0.56∠100° and 0.24 (1e-2), and the source at the
+    /// book's Γopt gives its 1.6 dB.</summary>
+    [Fact]
+    public void NfCircle_PozarEx12_5_ThroughARun()
+    {
+        var circle = Ref("pozar_ex12_5").GetProperty("circle");
+        var book = circle.GetProperty("textbook");
+        double tol = book.GetProperty("tol").GetDouble();
+        var r = RunCnl(Bench("pozar_ex12_5"));
+        var pts = Eval(r.Ds, "nf_circle(SP1.S, 2, 9)").AsCube().ComplexValues;
+        var nfOpt = Eval(r.Ds, "nf(SP1.S, polar(0.62, 100))").AsCube().RealValues;
+        for (int fi = 0; fi < r.Freqs.Length; fi++)
+        {
+            for (int k = 0; k < 9; k++)
+            {
+                var want = new Complex(circle.GetProperty("scikit_rf_points_npoints9_re")[fi][k].GetDouble(),
+                                       circle.GetProperty("scikit_rf_points_npoints9_im")[fi][k].GetDouble());
+                Assert.True((pts[fi * 9 + k] - want).Magnitude < 1e-9, $"point {k} at {r.Freqs[fi]} Hz: {pts[fi * 9 + k]}");
+            }
+            Complex centre = (pts[fi * 9] + pts[fi * 9 + 4]) / 2;        // θ = 0 and π
+            double radius = (pts[fi * 9] - pts[fi * 9 + 4]).Magnitude / 2;
+            Assert.True((centre - new Complex(circle.GetProperty("center_re")[fi].GetDouble(),
+                                              circle.GetProperty("center_im")[fi].GetDouble())).Magnitude < 1e-9);
+            Assert.Equal(circle.GetProperty("radius")[fi].GetDouble(), radius, 1e-9);
+            Assert.Equal(book.GetProperty("center_mag").GetDouble(), centre.Magnitude, tol);
+            Assert.Equal(book.GetProperty("center_deg").GetDouble(), centre.Phase * 180 / Math.PI, tol);
+            Assert.Equal(book.GetProperty("radius").GetDouble(), radius, tol);
+            Assert.Equal(1.6, nfOpt[fi], 1e-9);
         }
     }
 

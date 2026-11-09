@@ -258,16 +258,17 @@ public sealed class SParameterAnalysis : Analysis
 
     /// <summary>
     /// This analysis under <paramref name="name"/> over <paramref name="sweeps"/>, every directive key carried across —
-    /// what a duplicate and an edit of the sweeps both need, so a key added here reaches both.
+    /// what a duplicate and an edit of the sweeps both need, so a key added here reaches both. <paramref name="noiseExpr"/>,
+    /// when given, replaces <c>Noise=</c> (the analysis editor's Noise check box).
     /// </summary>
-    public SParameterAnalysis WithSweeps(string name, IReadOnlyList<FrequencySpec> sweeps) => new(name, sweeps)
+    public SParameterAnalysis WithSweeps(string name, IReadOnlyList<FrequencySpec> sweeps, string? noiseExpr = null) => new(name, sweeps)
     {
         Enabled             = Enabled,
         MarginThresholdExpr = MarginThresholdExpr,
         NdfExpr             = NdfExpr,
         PassiveVarsExpr     = PassiveVarsExpr,
         PassiveParamsExpr   = PassiveParamsExpr,
-        NoiseExpr           = NoiseExpr,
+        NoiseExpr           = noiseExpr ?? NoiseExpr,
     };
 
     // ── Whole-analysis expand: union all segments into one sorted/deduped array ─
