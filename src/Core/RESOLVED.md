@@ -4544,3 +4544,28 @@ Brief NZ-2. `ga_circle`, `gp_circle`, `stab_circle`, `stab_side` in `Expressions
 Gates: `tests/Engine.Tests/Linear/CircleFunctionTests.cs` (closed forms on the `pozar_ex12_5` fixture's device, gains and |Γ| on the
 circles' own points, an unconditionally stable part's whole chart stable, NaN and one warning above the maximum, the
 shape refusal).
+
+## Noise figure on the system blocks (2026-11-09)
+
+Brief NZ-3. `NF`/`NFopt`/`Rn`/`Gopt` on `Amp` (`AmplifierNoiseSpec`), `NF`/`NFType` on `Mixer`; the amplifier's noise is
+one more `SParameterNoise.Sources` entry (`NoiseModelKind.Specified`), written through the block's power-wave Y exactly as
+an S-parameter file's noise data is.
+
+- **NF alone is one input noise wave**: Fmin = F, Zopt = Zin, Rn = (F − 1)·|Zin|²/(4·Re Zin). That puts det C_A at zero,
+  which is what a single wave is, so NF comes back exactly at Zs = Zin and the mismatch curve follows with no extra term.
+- **The system blocks' `Passive` was a claim, not a measurement.** `IdealSBlockModel.ActivityFor` now measures σ_max(S)
+  (over the run's frequencies for the filter, once for the flat blocks) and answers `BlackBox` above 1, as `SnpModel` does
+  for a file with gain. Without it the noise analysis gave such a block Bosma noise with a negative eigenvalue. It also
+  means an NDF run now refuses one by name instead of counting it passive. Return loss, isolation and directivity add in
+  phase in this family, so ordinary-looking sets cross 1 (a 0.4 dB circulator at 22 dB isolation and 25 dB return loss is
+  σ_max 1.09).
+- **The balun is non-passive at ANY imbalance**, whatever its loss: its common mode is a lossless total reflection, and
+  an amplitude or phase imbalance couples the unbalanced port into it. A balanced balun is passive and thermal.
+- **A passive intermod adds no noise**, but it makes the block `Nonlinear`, and `Stamp` stands down on a nonlinear block —
+  so the thermal recording goes through `IdealSBlockModel.StampLinearS` instead. Without it a PIM circulator read as a
+  "built-in nonlinear model" and was named noiseless.
+- **Blank noise rows are dropped at extraction** (Amp, Mixer, MixerD), and `NFType` is dropped when `NF` is blank, so a
+  placed tile's defaults add no key to the netlist.
+
+Gates: `tests/Engine.Tests/Linear/SystemBlockNoiseTests.cs`; `SystemBlockElaborationTests.AFreshlyPlacedAmplifierOrMixerExtractsNoNoiseKey`
+and `NoiseExplainCliTests.Amplifier_IsListedAsSpecifiedNf` in `tests/Ui.Tests`.

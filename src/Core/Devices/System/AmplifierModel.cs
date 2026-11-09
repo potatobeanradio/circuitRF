@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using RfCore.Data;
 
 namespace CircuitRF.Core.Devices;
 
@@ -124,9 +125,12 @@ public sealed class AmplifierModel : IdealSBlockModel
     /// <param name="rlInDb">Input return loss; ≥ 150 dB means exactly matched.</param>
     /// <param name="rlOutDb">Output return loss; ≥ 150 dB means exactly matched.</param>
     /// <param name="s12Db">Reverse isolation; ≥ 150 dB means unilateral, and no entry is stamped.</param>
+    /// <param name="noise">The noise specification (<c>NF</c>, <c>NFopt</c>, <c>Rn</c>, <c>Gopt</c>), or null: a noiseless
+    /// amplifier, as one with no <c>NF=</c> has always been. See <see cref="AmplifierNoiseSpec"/>.</param>
     public AmplifierModel(double gainDb, double ip3Dbm, Ip3Reference ip3Ref,
                           Complex zIn, Complex zOut,
-                          double rlInDb, double rlOutDb, double s12Db)
+                          double rlInDb, double rlOutDb, double s12Db,
+                          AmplifierNoiseSpec? noise = null)
         // CONJUGATED, exactly as FilterModel's are and for the same reason: Zin/Zout name what the
         // port PRESENTS, and the stamp works in the reference impedance. A real pair is unchanged.
         : base([Complex.Conjugate(zIn), Complex.Conjugate(zOut)])
@@ -156,7 +160,29 @@ public sealed class AmplifierModel : IdealSBlockModel
         }
 
         BuildAdmittance();
+
+        if (noise is { IsStated: true })
+        {
+            NoiseSpec  = noise;
+            NoiseParameters = noise.Resolve(zIn);
+        }
     }
+
+    /// <summary>What the instance line stated about noise, or null when it stated nothing (a noiseless amplifier).</summary>
+    public AmplifierNoiseSpec? NoiseSpec { get; }
+
+    /// <summary>
+    /// The amplifier's four noise parameters, or null when it has none: <see cref="AmplifierNoiseSpec.Resolve"/> of what the
+    /// line stated, Γopt referenced to <c>Re Zin</c>. The block's noise is exactly a two-port with these parameters, all of
+    /// it referred to the input; the S-parameter noise analysis turns them into port currents through the block's own Y.
+    /// </summary>
+    public TwoPortNoise? NoiseParameters { get; }
+
+    /// <summary>
+    /// Whether the block has an admittance matrix, which its noise currents are written through. False only when the
+    /// reverse loop gain is unity (<c>(1+S11)(1+S22) = S12·S21</c>) — an oscillator, which the linear stamp still takes.
+    /// </summary>
+    public bool HasAdmittance => !_degenerate;
 
     /// <summary>
     /// The forward soft-limit scale in volts, or 0 when the forward path is exactly linear.
@@ -294,4 +320,76 @@ public sealed class AmplifierModel : IdealSBlockModel
 
         dc[0, 0] = dc[0, 1] = dc[1, 0] = dc[1, 1] = 0.0;
     }
+}
+
+/// <summary>
+/// An amplifier's noise as its instance line states it (brief NZ-3). <c>NF</c> alone is the datasheet number: the noise
+/// figure when the block is driven from a source equal to its own <c>Zin</c>, at T0. <c>NFopt</c>, <c>Rn</c> and
+/// <c>Gopt</c> add the rest of the four noise parameters, for a block whose noise match is not its power match.
+///
+/// <para><b>NF alone is one input noise wave.</b> A wave of temperature <c>Te = T0·(F − 1)</c> entering port 1,
+/// uncorrelated with anything, and nothing at port 2. From a source Zs its noise factor is
+/// <c>F(Zs) = 1 + (Te/T0)·|Zs − Zin|² / (4·Re Zs·Re Zin) + Te/T0</c>, written as noise parameters: <c>Fmin = F</c>,
+/// <c>Zopt = Zin</c>, and <c>Rn = (F − 1)·|Zin|² / (4·Re Zin)</c> — the correlation of the input noise voltage and current
+/// is then complete (det C_A = 0), which is what one wave is. The NF comes back out of the analysis exactly, because at
+/// <c>Zs = Zin</c> the mismatch term is zero.</para>
+///
+/// <para><b>The four-parameter form.</b> <c>Fmin = NFopt</c> (default NF); <c>Γopt = Gopt</c>, referenced to
+/// <c>Re Zin</c> (default: the Γ of <c>Zin</c> itself, 0 for a real <c>Zin</c>); and <c>Rn</c>, when it is not stated:
+/// with NF and NFopt both stated and a Γopt away from <c>Zin</c>, the Rn that makes the noise factor at <c>Zs = Zin</c>
+/// equal NF; otherwise the one-wave value above, at <c>Fmin</c>. A set that describes no physical two-port
+/// (<c>Fmin − 1 &gt; 4·Rn·Re Yopt</c>) or that contradicts itself is refused by name.</para>
+/// </summary>
+/// <param name="NfDb">The noise figure at <c>Zs = Zin</c>, dB, or null.</param>
+/// <param name="NfOptDb">The minimum noise figure, dB, or null.</param>
+/// <param name="RnOhm">The equivalent noise resistance, Ω, or null.</param>
+/// <param name="GammaOpt">The optimum source reflection referenced to <c>Re Zin</c>, or null.</param>
+public sealed record AmplifierNoiseSpec(double? NfDb, double? NfOptDb, double? RnOhm, Complex? GammaOpt)
+{
+    /// <summary>Whether the line stated a noise figure at all: <c>NF</c> or <c>NFopt</c>. <c>Rn</c> or <c>Gopt</c> alone
+    /// describe no noise and are refused rather than ignored.</summary>
+    public bool IsStated => NfDb is not null || NfOptDb is not null;
+
+    /// <summary>The four noise parameters for an amplifier whose input presents <paramref name="zIn"/>, Γopt referenced to
+    /// <c>Re zIn</c>. Throws, naming the keys, on a set that is not physical.</summary>
+    public TwoPortNoise Resolve(Complex zIn)
+    {
+        if (NfDb is < 0 || NfOptDb is < 0)
+            throw new InvalidOperationException(
+                $"Amp: a noise figure below 0 dB is less noise than the source's own (NF={NfDb}, NFopt={NfOptDb}); " +
+                "no two-port is quieter than a noiseless one.");
+        if (NfDb is { } nf0 && NfOptDb is { } opt0 && nf0 < opt0 - 1e-12)
+            throw new InvalidOperationException(
+                $"Amp: NF={nf0} dB is below NFopt={opt0} dB, but NFopt is the lowest noise figure any source gives.");
+
+        double r     = zIn.Real;
+        double fmin  = Math.Pow(10, (NfOptDb ?? NfDb!.Value) / 10);
+        var    yIn   = 1 / zIn;
+        var    yopt  = GammaOpt is { } g ? (1 - g) / (r * (1 + g)) : yIn;
+        var    gamma = GammaOpt ?? (1 - r * yIn) / (1 + r * yIn);
+        // The one-wave Rn at Fmin: 4·Rn·Re Yin = Fmin − 1.
+        double oneWave = (fmin - 1) / (4 * yIn.Real);
+
+        double rn;
+        if (RnOhm is { } given) rn = given;
+        else if (NfDb is { } nf && NfOptDb is not null && nf - NfOptDb.Value > 1e-12)
+        {
+            double mis = Sq(yIn - yopt);
+            if (!(mis > 1e-24 * Sq(yIn)))
+                throw new InvalidOperationException(
+                    $"Amp: NF={nf} dB and NFopt={NfOptDb} dB differ, but with no Gopt the noise match is Zin itself, where " +
+                    "the noise figure is NFopt. State Gopt (or Rn) to say where the minimum lies.");
+            rn = (Math.Pow(10, nf / 10) - fmin) * yIn.Real / mis;
+        }
+        else rn = oneWave;
+
+        var p = new TwoPortNoise(fmin, gamma, rn, r);
+        if (!NoiseMetrics.IsRealizable(p, 1e-9 * Math.Max(1, fmin - 1)))
+            throw new InvalidOperationException(
+                $"Amp: the noise parameters NFmin = {10 * Math.Log10(fmin):G6} dB, Rn = {rn:G6} Ohm and Gopt = {gamma:G6} " +
+                "describe no physical two-port: Fmin − 1 must not exceed 4·Rn·Re(Yopt). Raise Rn or move Gopt.");
+        return p;
+    }
+
+    private static double Sq(Complex z) => z.Real * z.Real + z.Imaginary * z.Imaginary;
 }

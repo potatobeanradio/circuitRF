@@ -1805,7 +1805,12 @@ public static class ComponentModelFactory
             isoLoRfDb:  P("IsoLO_RF", 200.0),
             isoLoIfDb:  P("IsoLO_IF", 200.0),
             isoRfIfDb:  P("IsoRF_IF", 200.0),
-            iip3Dbm:    P("IIP3",     100.0));
+            iip3Dbm:    P("IIP3",     100.0))
+        {
+            // Brief NZ-3: stored for the noise of the analyses that have a conversion path (harmonic balance, envelope).
+            NoiseFigureDb   = parameters.TryGetValue("NF", out var nf) && nf.Kind == ValueKind.Real ? nf.AsReal() : null,
+            NoiseFigureType = EnumNamed(parameters, "NFType", MixerNoiseFigureType.Ssb),
+        };
     }
 
     // ── The ideal system blocks (brief-sys-2) ─────────────────────────────────
@@ -1874,7 +1879,7 @@ public static class ComponentModelFactory
         ("Circulator", n => Is(n, "Z0"),                       "Z0"),
         ("Coupler",    n => Is(n, "Z0"),                       "Z0"),
         ("Balun",      n => Is(n, "Zunb", "Zbal"),             "Zunb, Zbal"),
-        ("Amp",        n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
+        ("Amp",        n => Is(n, "Zin", "Zout", "Gopt"),      "Zin, Zout, Gopt"),
         ("Filter",     n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
         ("Duplexer",   n => Is(n, "Zant", "TxZ", "RxZ"),       "Zant, TxZ, RxZ"),
         // The three terminations state a complex impedance PER HARMONIC. Their scalar `Z`/`Z0` is
@@ -2092,7 +2097,28 @@ public static class ComponentModelFactory
             zOut:     ImpedanceParam(parameters, "Zout", 50.0),
             rlInDb:   P("RLin",  200.0),
             rlOutDb:  P("RLout", 200.0),
-            s12Db:    P("S12",   200.0));
+            s12Db:    P("S12",   200.0),
+            noise:    AmplifierNoiseOf(parameters));
+    }
+
+    /// <summary>
+    /// The amplifier's noise keys (brief NZ-3): <c>NF</c> and <c>NFopt</c> in dB, <c>Rn</c> in ohms, <c>Gopt</c> a complex
+    /// reflection. All absent is null — the noiseless amplifier, unchanged. <c>Rn</c> or <c>Gopt</c> with no noise figure
+    /// beside them is refused: they shape a noise figure that was never stated, and ignoring them would be silent.
+    /// </summary>
+    private static AmplifierNoiseSpec? AmplifierNoiseOf(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double? R(string name) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : null;
+        Complex? gopt = parameters.TryGetValue("Gopt", out var g) && g.Kind is ValueKind.Real or ValueKind.Complex
+            ? ToComplex(g) : null;
+
+        var spec = new AmplifierNoiseSpec(R("NF"), R("NFopt"), R("Rn"), gopt);
+        if (spec.IsStated) return spec;
+        if (spec.RnOhm is not null || spec.GammaOpt is not null)
+            throw new InvalidOperationException(
+                "Amp: Rn and Gopt shape a noise figure, and this amplifier states none. Add NF (or NFopt), or remove them.");
+        return null;
     }
 
     // ── The frequency-dependent pair (brief-sys-6) ────────────────────────────

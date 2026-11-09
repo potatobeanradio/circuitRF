@@ -2436,19 +2436,26 @@ namespace RfCore.Export
     /// stated either way so the cost is seen before it is asked for.
     /// </summary>
     /// <param name="NoiseContrib">Whether the run writes <c>NCs</c>.</param>
-    /// <param name="NoisyParts">Entries on the cubes' part axis: the thermal, file-data and device-source rows.</param>
+    /// <param name="NoisyParts">Entries on the cubes' part axis: the thermal, file-data, device-source and specified rows.</param>
     /// <param name="NcsBytes">NCs' size: 16 bytes × frequencies × noisy parts × ports².</param>
     public sealed record ExplainNoiseJson(
         bool NoiseContrib, int NoisyParts, int Frequencies, int Ports, long NcsBytes,
         IReadOnlyList<ExplainNoisePartJson> Parts);
 
     /// <summary>One part (or a coupled group, its paths joined by <c>+</c>) in the noise table.</summary>
-    /// <param name="Model"><c>thermal</c>, <c>fileData</c>, <c>deviceSources</c>, <c>switchedOff</c> or <c>noiseless</c>.</param>
+    /// <param name="Model"><c>thermal</c>, <c>fileData</c>, <c>deviceSources</c>, <c>specified</c>, <c>switchedOff</c> or
+    /// <c>noiseless</c>.</param>
     /// <param name="Kelvin">A thermal part's resolved temperature.</param>
     /// <param name="File">A file-data block's file, with <paramref name="BandLoHz"/>–<paramref name="BandHiHz"/> the band of
     /// its noise rows.</param>
     /// <param name="Sources">A device's noise source names, as its model declares them.</param>
     /// <param name="Reason">Why a part is switched off or noiseless.</param>
+    /// <param name="NfDb">A <c>specified</c> part's stated noise figure, dB (null when only NFopt was stated).</param>
+    /// <param name="NfMinDb">A <c>specified</c> part's minimum noise figure, dB.</param>
+    /// <param name="RnOhm">A <c>specified</c> part's equivalent noise resistance, Ω.</param>
+    /// <param name="GammaOptRe">A <c>specified</c> part's Γopt, real part, referenced to <paramref name="GammaOptRefOhm"/>.</param>
+    /// <param name="GammaOptIm">Γopt's imaginary part.</param>
+    /// <param name="GammaOptRefOhm">The resistance Γopt is referenced to: the part's own Re Zin.</param>
     public sealed record ExplainNoisePartJson(
         string Part, string Type, string Model,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Kelvin = null,
@@ -2456,7 +2463,13 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? BandLoHz = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? BandHiHz = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Sources = null,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Reason = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? NfDb = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? NfMinDb = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? RnOhm = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? GammaOptRe = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? GammaOptIm = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? GammaOptRefOhm = null);
 
     /// <summary>brief-cosim-pattern-5 — <c>explain --analysis</c>'s answer for a sweep around a fields analysis, from the function the run uses.</summary>
     public sealed record ExplainFieldsSweepJson(

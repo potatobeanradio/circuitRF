@@ -1981,6 +1981,20 @@ public static class ComponentTypeRegistry
           + "stamped at all. The gain you typed is what you measure at any value of it.",
         (SymbolKind.Amp, "RLout") =>
             "Output return loss. 200 dB means exactly matched.",
+        (SymbolKind.Amp, "NF") =>
+            "Noise figure, measured from a source equal to Zin at 290 K - the datasheet number, and what the "
+          + "S-parameter noise analysis returns for a matched amplifier. Blank means noiseless. On its own it is one "
+          + "noise wave entering the input: a source other than Zin raises the noise figure along the ordinary "
+          + "noise-parameter curve, with NFmin = NF at Zs = Zin.",
+        (SymbolKind.Amp, "NFopt") =>
+            "Minimum noise figure, for an amplifier whose noise match is not its power match. Blank takes NF. With NF "
+          + "also stated and Gopt away from Zin, Rn follows from the two.",
+        (SymbolKind.Amp, "Rn") =>
+            "Equivalent noise resistance: how fast the noise figure rises away from the noise match. Blank derives it - "
+          + "from NF and NFopt when both are stated, otherwise the value one input noise wave has.",
+        (SymbolKind.Amp, "Gopt") =>
+            "The source reflection coefficient that gives NFopt, referenced to the real part of Zin; complex, e.g. "
+          + "0.2+j0.25. Blank means Zin itself.",
         (SymbolKind.Amp, "S12") =>
             "Reverse isolation. The 200 dB default means the amplifier is unilateral - the reverse "
           + "path is absent, not small, which is what makes an ideal amplifier unconditionally "
@@ -2046,6 +2060,11 @@ public static class ComponentTypeRegistry
         "IIP3"     => "Input-referred third-order intercept at the RF port, which sets both "
                     + "compression and IM3. The 100 dBm default means the RF path is exactly "
                     + "linear and the mixer never compresses.",
+        "NF"       => "Noise figure, RF to IF, of the kind NFType names. Used by harmonic-balance and envelope noise; "
+                    + "an S-parameter run has no LO and so no conversion, and leaves the mixer out of its noise. "
+                    + "Blank means noiseless.",
+        "NFType"   => "Whether NF is a single-sideband figure (ssb, the receiver cascade's) or a double-sideband one "
+                    + "(dsb, as a zero-IF or radiometer measurement states it; 3 dB below SSB for an ideal mixer).",
         _          => "",
     };
 
@@ -2335,7 +2354,12 @@ public static class ComponentTypeRegistry
                         new("Zout",   "50",     "Ω",   false, UnitDimension.Resistance),
                         new("RLin",   "200",    "dB",  false, UnitDimension.None),
                         new("RLout",  "200",    "dB",  false, UnitDimension.None),
-                        new("S12",    "200",    "dB",  false, UnitDimension.None)];
+                        new("S12",    "200",    "dB",  false, UnitDimension.None),
+                        // Noise (brief NZ-3): blank means noiseless, and a blank row is dropped at extraction.
+                        new("NF",     "",       "dB",  false, UnitDimension.None),
+                        new("NFopt",  "",       "dB",  false, UnitDimension.None),
+                        new("Rn",     "",       "Ω",   false, UnitDimension.Resistance),
+                        new("Gopt",   "",       "",    false, UnitDimension.None)];
             // 10 dB, which is brief-sys-2's stated default for the MODEL — SYS-1 had seeded 3 here
             // as a label placeholder before there was a model to disagree with, and a tile whose
             // placed value differs from what the same component takes when the parameter is absent
@@ -2356,7 +2380,10 @@ public static class ComponentTypeRegistry
                         new("IsoLO_RF", "200", "dB",  false, UnitDimension.None),
                         new("IsoLO_IF", "200", "dB",  false, UnitDimension.None),
                         new("IsoRF_IF", "200", "dB",  false, UnitDimension.None),
-                        new("IIP3",     "100", "dBm", false, UnitDimension.Power)];
+                        new("IIP3",     "100", "dBm", false, UnitDimension.Power),
+                        // Noise (brief NZ-3): blank NF is dropped at extraction.
+                        new("NF",       "",    "dB",  false, UnitDimension.None),
+                        new("NFType",   "ssb", "",    false, UnitDimension.None)];
 
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
             // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
@@ -3896,6 +3923,10 @@ public static class ComponentTypeRegistry
     private static readonly string[] Ip3ReferenceOptions =
         [nameof(Ip3Reference.Input), nameof(Ip3Reference.Output)];
 
+    /// <summary>The mixer's <c>NFType</c>: the two noise figures a datasheet quotes. Lower case, as the key is written.</summary>
+    private static readonly string[] MixerNfTypeOptions =
+        [nameof(MixerNoiseFigureType.Ssb).ToLowerInvariant(), nameof(MixerNoiseFigureType.Dsb).ToLowerInvariant()];
+
     /// <summary>The Tuner family's <c>BiasTee</c> switch. Not an enum anywhere — the engine
     /// string-compares the resolved value against "on" (<see cref="ComponentModelFactory"/>'s
     /// tuner branch), so these two spellings ARE the contract and there is no type to
@@ -3951,6 +3982,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
+        (SymbolKind.Mixer or SymbolKind.MixerD, "NFType")         => MixerNfTypeOptions,
         // The Tuner family (owner request, 2026-09-01). Both parameters accept a closed set of two
         // spellings and neither is a number, so a free-text box could only ever be got wrong — a
         // typo'd "ON " or "0" reads as the default with nothing said anywhere, which is exactly the

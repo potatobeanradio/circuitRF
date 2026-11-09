@@ -1546,6 +1546,10 @@ public sealed class Elaborator
             return ResolveEnumNamedParameters(inst, parentScope, "Direction");
         if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope, "IP3Ref");
+        // The mixer's NFType (brief NZ-3) is ssb or dsb — a word, the same kind of value as IP3Ref.
+        if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase)
+            && inst.Overrides.Any(o => o.Name.Equals("NFType", StringComparison.OrdinalIgnoreCase)))
+            return ResolveEnumNamedParameters(inst, parentScope, "NFType");
 
         // The filter pair's Response and Form are the same kind of value, twice over on the duplexer
         // because it carries two complete filter specifications (brief-sys-6).

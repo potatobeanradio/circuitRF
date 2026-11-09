@@ -30,6 +30,8 @@ public enum NoiseModelKind
     FileData,
     /// <summary>The noise sources an external device's model declares, at the DC operating point.</summary>
     DeviceSources,
+    /// <summary>A noise figure stated on the part (<c>NF=</c> on the system amplifier): its four noise parameters.</summary>
+    Specified,
     /// <summary><c>Noise=no</c> on the part.</summary>
     SwitchedOff,
     /// <summary>No noise, for <see cref="NoiseModelRow.Reason"/>.</summary>
@@ -41,7 +43,8 @@ public enum NoiseModelKind
 /// <c>+</c> (the label it carries on the noise cubes' part axis), its component types joined the same way, and what the
 /// noise analysis makes of it. <paramref name="Kelvin"/> is set for <see cref="NoiseModelKind.Thermal"/>; the file and
 /// the band of its noise rows (Hz) for <see cref="NoiseModelKind.FileData"/>; the source names for
-/// <see cref="NoiseModelKind.DeviceSources"/>; a reason for the other two. <paramref name="ByDefinition"/> marks a port or an
+/// <see cref="NoiseModelKind.DeviceSources"/>; the stated NF (dB, NaN when only NFopt was stated) and the four noise
+/// parameters for <see cref="NoiseModelKind.Specified"/>; a reason for the other two. <paramref name="ByDefinition"/> marks a port or an
 /// independent source, which the noiseless warning does not name.
 /// </summary>
 public sealed record NoiseModelRow(string Label, string Types, NoiseModelKind Kind)
@@ -51,6 +54,8 @@ public sealed record NoiseModelRow(string Label, string Types, NoiseModelKind Ki
     public double BandLoHz { get; init; } = double.NaN;
     public double BandHiHz { get; init; } = double.NaN;
     public IReadOnlyList<string>? SourceNames { get; init; }
+    public double NfDb { get; init; } = double.NaN;
+    public TwoPortNoise? Specified { get; init; }
     public string? Reason { get; init; }
     public bool ByDefinition { get; init; }
 }
@@ -97,12 +102,15 @@ public static class SParameterNoise
                 case NoiseModelKind.DeviceSources:
                     sources.Add(new(row.Label, DeviceSources(parts[0], (ExternalDeviceModel)parts[0].Model, freqsHz, dcNodeVoltages)));
                     break;
+                case NoiseModelKind.Specified:
+                    sources.Add(new(row.Label, Amplifier(parts[0], (AmplifierModel)parts[0].Model)));
+                    break;
                 case NoiseModelKind.Thermal:
                     // Non-mutual first, so a Mutual reads its inductors' branches of THIS recording.
                     ElaboratedComponent[] seq = [.. parts.Where(ec => ec.Model is not MutualInductanceModel),
                                                  .. parts.Where(ec => ec.Model is MutualInductanceModel)];
                     double kelvin = row.Kelvin;
-                    sources.Add(new(row.Label, w => Bosma(EnvelopeTangentCheck.Recorded(r => { foreach (var ec in seq) ec.Stamp(r, w); }), kelvin)));
+                    sources.Add(new(row.Label, w => Bosma(EnvelopeTangentCheck.Recorded(r => { foreach (var ec in seq) StampLinear(ec, r, w); }), kelvin)));
                     break;
                 case NoiseModelKind.Noiseless when !row.ByDefinition:
                     silent.AddRange(parts.Select(ec => $"{ec.ComponentType}:{ec.InstancePath}"));
@@ -181,6 +189,15 @@ public static class SParameterNoise
                 }, parts));
                 continue;
             }
+            // A system amplifier with a stated noise figure: its four noise parameters, through its own Y.
+            if (parts is [{ Model: AmplifierModel { NoiseParameters: { } spec, HasAdmittance: true } amp }])
+            {
+                result.Add((Row(NoiseModelKind.Specified) with
+                {
+                    NfDb = amp.NoiseSpec!.NfDb ?? double.NaN, Specified = spec,
+                }, parts));
+                continue;
+            }
             // An external device whose model declares noise sources; one that declares none is named below.
             if (parts is [{ Model: ExternalDeviceModel ed }] && ed.NoiseSources.Count > 0)
             {
@@ -211,6 +228,16 @@ public static class SParameterNoise
     private static string WhyNoNoiseModel(ElaboratedComponent ec, double[] freqsHz) => ec.Model switch
     {
         ExternalDeviceModel => "its model declares no noise sources",
+        AmplifierModel { NoiseParameters: not null } =>
+            "an amplifier whose reverse loop gain is unity has no admittance to write its noise through",
+        AmplifierModel => "a system amplifier with no NF=",
+        MixerModel mx => "a mixer has no conversion path without an LO, so it stays out of the small-signal noise as it does " +
+                         "out of the small-signal S" + (mx.NoiseFigureDb is { } nf
+                             ? $"; its NF={nf.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} dB " +
+                               $"({(mx.NoiseFigureType == MixerNoiseFigureType.Dsb ? "DSB" : "SSB")}) is for harmonic-balance and envelope noise"
+                             : ""),
+        IdealSBlockModel when ec.ActivityFor(freqsHz) == Activity.BlackBox =>
+            $"a system block whose S-matrix is not passive ({ec.Model.PassivationNote})",
         SnpModel            => "an S-parameter block that is not passive and has no noise data in its file",
         _ when ec.Model.Kind != ModelKind.Linear => "a built-in nonlinear model, which has no noise sources",
         _ => ec.ActivityFor(freqsHz) switch
@@ -232,9 +259,58 @@ public static class SParameterNoise
         ec.Model is PortModel or TermModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
 
     /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
-    /// with no noise data is one (its activity is measured on its file).</summary>
+    /// with no noise data is one (its activity is measured on its file), and so is a passive system block carrying a
+    /// passive intermod: the overlay is a nonlinearity and adds no noise, so the block is thermal on its linear S.</summary>
     private static bool IsThermal(ElaboratedComponent ec, double[] freqsHz) =>
-        ec.Model.Kind == ModelKind.Linear && ec.ActivityFor(freqsHz) == Activity.Passive;
+        (ec.Model.Kind == ModelKind.Linear || ec.Model is IdealSBlockModel) && ec.ActivityFor(freqsHz) == Activity.Passive;
+
+    /// <summary>The linear stamp a thermal part's noise is recorded from: the part's own, or a system block's linear S when
+    /// a passive intermod makes it nonlinear (its <c>Stamp</c> then stands down). A system block allocates branch unknowns,
+    /// so it carries no multiplier, and calling the model directly loses none.</summary>
+    private static void StampLinear(ElaboratedComponent ec, IMnaContext r, double w)
+    {
+        if (ec.Model is IdealSBlockModel { Kind: ModelKind.Nonlinear } block) block.StampLinearS(r, ec, w);
+        else ec.Stamp(r, w);
+    }
+
+    /// <summary>
+    /// A system amplifier's stated noise (<see cref="AmplifierModel.NoiseParameters"/>): the chain correlation of its four
+    /// noise parameters as port currents, <c>C_Y = T⁻¹·C_A·T⁻ᴴ</c>, with Y the power-wave admittance of the S it stamps at
+    /// its own reference impedances — the same route an S-parameter block's file noise takes (<see cref="DataFile"/>), so
+    /// the block is exactly a two-port with noise data. Each port's current is across its own ± pair (the family's 2N-net
+    /// convention). Frequency-flat, as the block is: computed once.
+    /// </summary>
+    private static Func<double, NoiseCurrents> Amplifier(ElaboratedComponent ec, AmplifierModel amp)
+    {
+        var s = new Mat<Complex>(2, 2);
+        var sAt = amp.SAt(0.0);
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < 2; j++)
+                s[i, j] = sAt[i, j];
+        var y  = NoiseMetrics.PowerWaveAdmittance(s, [.. amp.Z0At(0.0)]);
+        var cy = NoiseMetrics.AdmittanceFromChain(NoiseMetrics.ChainCorrelation(amp.NoiseParameters!.Value), y);
+        var currents = AcrossPairs(new Complex(ec.Multiplicity, 0) * cy, [(ec.Nodes[0], ec.Nodes[1]), (ec.Nodes[2], ec.Nodes[3])]);
+        return _ => currents;
+    }
+
+    /// <summary>
+    /// Port currents' correlation <paramref name="cy"/> as node injections when each port has its own reference: port k's
+    /// current enters at <c>Plus</c> and leaves at <c>Minus</c>. Ground rows are dropped.
+    /// </summary>
+    private static NoiseCurrents AcrossPairs(Mat<Complex> cy, (int Plus, int Minus)[] ports)
+    {
+        int n = ports.Length;
+        var nodes = ports.SelectMany(p => new[] { p.Plus, p.Minus }).Where(x => x > 0).Distinct().ToArray();
+        if (nodes.Length == 0) return default;
+        var t = new Mat<Complex>(nodes.Length, n);
+        for (int k = 0; k < n; k++)
+        {
+            int a = Array.IndexOf(nodes, ports[k].Plus), b = Array.IndexOf(nodes, ports[k].Minus);
+            if (a >= 0) t[a, k] += 1;
+            if (b >= 0) t[b, k] -= 1;
+        }
+        return new NoiseCurrents(nodes, t * cy * t.ConjugateTranspose());
+    }
 
     /// <summary>
     /// An external device's own noise sources (<see cref="ExternalDeviceModel.ReadNoiseAt"/>), read once, here, at the DC

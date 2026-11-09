@@ -206,6 +206,25 @@ public class SystemBlockElaborationTests
     /// number, or an Elaborator that let one reach the expression evaluator, would fail here and
     /// nowhere before Simulate.</para>
     /// </summary>
+    /// <summary>Brief NZ-3 gate 5: the noise rows a freshly placed amplifier and mixer carry are blank, and a blank row
+    /// is the absent key — the extracted line names none of them, so a design that states no noise is unchanged.</summary>
+    [Theory]
+    [InlineData(SymbolKind.Amp)]
+    [InlineData(SymbolKind.Mixer)]
+    [InlineData(SymbolKind.MixerD)]
+    public void AFreshlyPlacedAmplifierOrMixerExtractsNoNoiseKey(SymbolKind kind)
+    {
+        var model = new SchematicEditModel();
+        var comp  = new EditableComponent { InstanceName = "X1", Symbol = kind, X = 0, Y = 0 };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
+        Assert.Contains(comp.Parameters, p => p.Name == "NF");
+        model.Components.Add(comp);
+
+        var inst = Assert.Single(NetExtractor.Extract(model).TestBench.Instances);
+        Assert.DoesNotContain(inst.Overrides, o => o.Name is "NF" or "NFopt" or "Rn" or "Gopt" or "NFType");
+    }
+
     [Fact]
     public void AFreshlyPlacedFilterIsAChebyshevBandpassOverItsStatedEdges()
     {

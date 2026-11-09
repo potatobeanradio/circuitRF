@@ -103,6 +103,31 @@ public sealed class NoiseExplainCliTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain("'R2' has Noise=no", check.StdOut + check.StdErr);
     }
 
+    /// <summary>Brief NZ-3: a system amplifier with NF= is listed as a specified NF, with the value, in JSON and text.</summary>
+    [Fact]
+    public void Amplifier_IsListedAsSpecifiedNf()
+    {
+        Directory.CreateDirectory(_root);
+        string path = Path.Combine(_root, "amp.cnl");
+        File.WriteAllText(path, """
+            Port:P1  a 0  Num=1 Z=50 Ohm
+            Port:P2  b 0  Num=2 Z=50 Ohm
+            Amp:A1  a 0 b 0  Gain=20 IP3=200 NF=3
+            analysis SP1 type=sparam start=1 stop=2 npts=2 Unit=GHz Noise=yes
+            """);
+        var json = RunCli("explain", path, "--analysis", "--json");
+        Assert.True(json.ExitCode == 0, json.StdErr + json.StdOut);
+        using var doc = JsonDocument.Parse(json.StdOut);
+        var row = Row(doc.RootElement.GetProperty("result").GetProperty("explain").GetProperty("analyses")[0]
+                         .GetProperty("noiseModel"), "A1");
+        Assert.Equal("specified", row.GetProperty("model").GetString());
+        Assert.Equal(3.0, row.GetProperty("nfDb").GetDouble(), 1e-12);
+
+        var text = RunCli("explain", path, "--analysis");
+        output.WriteLine(text.StdOut);
+        Assert.Contains("noise A1 (Amp): specified NF 3 dB", text.StdOut);
+    }
+
     // ── The CLI as a process ────────────────────────────────────────────────────
 
     private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

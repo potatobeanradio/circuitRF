@@ -118,6 +118,16 @@ public sealed class MixerModel : ComponentModel
     /// <summary>The derived multiplier constant, 1/V: v_if(open) = K·v_rf·v_lo.</summary>
     public double MultiplierK => _k;
 
+    /// <summary>
+    /// The stated noise figure, dB, or null (<c>NF=</c>, brief NZ-3). Stored for the analyses that have a conversion path —
+    /// harmonic-balance noise and envelope noise. The S-parameter analysis has no LO and so no conversion: the mixer stays
+    /// out of its noise exactly as it stays out of its S, and <c>explain</c> says so.
+    /// </summary>
+    public double? NoiseFigureDb { get; init; }
+
+    /// <summary>Whether <see cref="NoiseFigureDb"/> is a single- or a double-sideband figure (<c>NFType=</c>).</summary>
+    public MixerNoiseFigureType NoiseFigureType { get; init; } = MixerNoiseFigureType.Ssb;
+
     /// <summary>The RF soft-limit scale in volts, or 0 when the RF path is exactly linear.</summary>
     public double SaturationVolts => _vsat;
 
@@ -187,4 +197,15 @@ public sealed class MixerModel : ComponentModel
         dc[1, 0] = dc[1, 1] = dc[1, 2] = 0.0;
         dc[2, 0] = dc[2, 1] = dc[2, 2] = 0.0;
     }
+}
+
+/// <summary>
+/// Which noise figure a mixer's <c>NF=</c> states. <b>Ssb</b>: the signal in one sideband, the noise of both reaching the
+/// IF — the figure a receiver's single-sideband cascade uses. <b>Dsb</b>: the signal in both sidebands, as a radiometer
+/// or a zero-IF receiver measures it; for an ideal mixer it is 3 dB below the SSB figure.
+/// </summary>
+public enum MixerNoiseFigureType
+{
+    Ssb,
+    Dsb,
 }

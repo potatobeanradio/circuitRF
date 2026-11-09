@@ -1718,13 +1718,16 @@ internal static class Explain
         catch (Exception) { freqs = []; }
 
         var rows  = SParameterNoise.Table(nl, freqs);
-        int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources);
+        int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources
+                                              or NoiseModelKind.Specified);
         static double? Finite(double v) => double.IsFinite(v) ? v : null;
         return new ExplainNoiseJson(
             spa.NoiseContrib, noisy, freqs.Length, ports, SParameterNoise.ContributionBytes(freqs.Length, noisy, ports),
             [.. rows.Select(r => new ExplainNoisePartJson(
                 r.Label, r.Types, NoiseModelWord(r.Kind), Finite(r.Kelvin), r.File, Finite(r.BandLoHz), Finite(r.BandHiHz),
-                r.SourceNames, r.Reason))]);
+                r.SourceNames, r.Reason,
+                Finite(r.NfDb), r.Specified?.NFminDb, r.Specified?.Rn,
+                r.Specified?.GammaOpt.Real, r.Specified?.GammaOpt.Imaginary, r.Specified?.R))]);
     }
 
     /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
@@ -1733,6 +1736,7 @@ internal static class Explain
         NoiseModelKind.Thermal       => "thermal",
         NoiseModelKind.FileData      => "fileData",
         NoiseModelKind.DeviceSources => "deviceSources",
+        NoiseModelKind.Specified     => "specified",
         NoiseModelKind.SwitchedOff   => "switchedOff",
         _                            => "noiseless",
     };
@@ -1747,9 +1751,22 @@ internal static class Explain
             "fileData"      => $"file data, {Path.GetFileName(p.File)}, noise rows {(p.BandLoHz!.Value / 1e9).ToString("G6", inv)} to " +
                                $"{(p.BandHiHz!.Value / 1e9).ToString("G6", inv)} GHz",
             "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}",
+            "specified"     => SpecifiedText(p, inv),
             "switchedOff"   => $"switched off ({p.Reason})",
             _               => $"noiseless ({p.Reason})",
         };
+    }
+
+    /// <summary>A part with a stated noise figure: the NF, and the other noise parameters where they say more than it.</summary>
+    private static string SpecifiedText(ExplainNoisePartJson p, IFormatProvider inv)
+    {
+        string g(double v) => v.ToString("G4", inv);
+        var head = p.NfDb is { } nf ? $"specified NF {g(nf)} dB" : $"specified NFmin {g(p.NfMinDb!.Value)} dB";
+        bool gammaZero = p.GammaOptRe is 0 && p.GammaOptIm is 0;
+        if (p.NfDb is { } nf2 && Math.Abs(nf2 - p.NfMinDb!.Value) < 1e-12 && gammaZero) return head;
+        var gamma = new System.Numerics.Complex(p.GammaOptRe!.Value, p.GammaOptIm!.Value);
+        return head + $" (NFmin {g(p.NfMinDb!.Value)} dB, Rn {g(p.RnOhm!.Value)} Ohm, " +
+               $"Gopt {g(gamma.Magnitude)} at {g(gamma.Phase * 180 / Math.PI)} deg on {g(p.GammaOptRefOhm!.Value)} Ohm)";
     }
 
     /// <summary>A byte count in the unit that keeps it readable.</summary>

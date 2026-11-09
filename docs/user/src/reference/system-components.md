@@ -96,7 +96,8 @@ Two analyses, and the split is not arbitrary:
 
 - **{{anchor: simulations#s-parameters|S-parameters}}** answer everything that is a property of one
   frequency at a time: port match, isolation, coupling, directivity, a filter's passband and
-  rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain and stability. This
+  rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain, stability and noise
+  figure. This
   is the analysis nine of the eleven blocks are entirely described by.
 - **{{anchor: simulations#harmonic-balance|Harmonic balance}}** answers everything that moves energy
   between frequencies or depends on level: conversion gain, mixing products, compression, third-order
@@ -264,6 +265,11 @@ sidebands come out and the conversion gain tracks the LO drive.
 return is not ground. Both are full members of the System family — they carry an intercept, three
 isolations and per-port impedances.
 
+`NF` states the mixer's noise figure and `NFType` whether it is a single-sideband (`ssb`, the
+default) or double-sideband (`dsb`) figure. An S-parameter run has no LO, so it has no conversion
+path: the mixer stays out of its noise exactly as it stays out of its S, and `explain` says so.
+The figure is carried for the analyses that do convert.
+
 They are documented in full, with the conversion-gain arithmetic and the non-ideality table, under
 {{anchor: components#mixer|Components › Ideal Mixer}} and
 {{anchor: components#mixerd|Differential Mixer}}. This entry is a pointer, not a second copy.
@@ -298,6 +304,26 @@ entries of the block's S-matrix and each is exactly the number you typed. Mismat
 not quietly re-scale S21, the way a Th&eacute;venin-source formulation would — a datasheet states
 gain and return loss as independent measurements, and so does this block.</p>
 </div>
+
+**Noise figure.** `NF` is the number on the datasheet: the noise figure when the amplifier is
+driven from a source equal to its own `Zin`, at 290 K. Run an S-parameter analysis with `Noise=yes`
+and a matched amplifier returns exactly that `NF`, with `NFmin` equal to it and `Sopt` at zero. Left
+blank, the amplifier is noiseless and the run names it in its noiseless warning.
+
+On its own, `NF` is one noise wave entering the input. Driven from anything other than `Zin`, the
+noise figure rises along the ordinary noise-parameter curve, with no further setting. A packaged
+low-noise amplifier whose noise match is not its power match takes the other three noise parameters
+as well:
+
+| Key | Meaning | Blank means |
+|---|---|---|
+| `NFopt` | Minimum noise figure, dB | `NF` |
+| `Gopt` | Source reflection that reaches `NFopt`, referenced to the real part of `Zin`; complex, e.g. `0.2+j0.25` | `Zin` itself |
+| `Rn` | Equivalent noise resistance, &Omega; | Derived: from `NF` and `NFopt` when both are given, otherwise the one-wave value |
+
+A set that describes no physical two-port, or `Rn`/`Gopt` with no noise figure beside them, is
+refused with the keys named. In a cascade of these blocks the analysis reproduces the cascade noise formula, with the
+passive blocks contributing their own thermal noise at their `Temp`.
 
 Parameters: {{anchor: components#amp|Components › Amplifier}}.
 

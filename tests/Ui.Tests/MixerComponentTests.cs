@@ -61,7 +61,7 @@ public class MixerComponentTests
         var names = ComponentTypeRegistry.DefaultParameters(SymbolKind.Mixer, 0)
                                          .Select(p => p.Name).ToList();
         Assert.Equal(
-            ["ConvGain", "Plo", "Zrf", "Zlo", "Zif", "IsoLO_RF", "IsoLO_IF", "IsoRF_IF", "IIP3"],
+            ["ConvGain", "Plo", "Zrf", "Zlo", "Zif", "IsoLO_RF", "IsoLO_IF", "IsoRF_IF", "IIP3", "NF", "NFType"],
             names);
     }
 

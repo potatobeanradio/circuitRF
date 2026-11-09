@@ -441,6 +441,43 @@ public abstract class IdealSBlockModel : ComponentModel, IReportsWarnings
     }
 
     /// <summary>
+    /// The block's LINEAR S, stamped whatever its <see cref="ComponentModel.Kind"/> — what the S-parameter noise analysis
+    /// records a passive block's thermal noise from (brief NZ-3). A passive intermod is a nonlinearity and adds no noise,
+    /// so a circulator carrying one is thermal on the S it would stamp without it; <see cref="Stamp"/> stands down on such a
+    /// block, which is why this exists. A multiplier never reaches this family (its branch unknowns refuse one).
+    /// </summary>
+    public void StampLinearS(IMnaContext mna, ElaboratedComponent c, double omega)
+        => StampWaveConstraints(mna, c.Nodes, SAt(omega), Z0At(omega), PortBranchIndices);
+
+    /// <summary>
+    /// The declared <see cref="ComponentModel.Activity"/>, MEASURED for a block that declares itself passive: σ_max(S) at
+    /// every frequency the run visits (once, for a block whose S does not depend on frequency). Above 1 the block delivers
+    /// more power than it absorbs — the in-phase sum <see cref="SystemBlockPassivity"/> reports — and a block with gain
+    /// hides its dependent source in its numbers, exactly as an S-parameter file with gain does: <see cref="Activity.BlackBox"/>,
+    /// with the measured σ_max in <see cref="PassivationNote"/>. Treating it as passive would give it a negative thermal
+    /// noise power and a stability survey a dependent source it cannot see.
+    /// </summary>
+    public override Activity ActivityFor(ElaboratedComponent c, IReadOnlyList<double> freqsHz)
+    {
+        _activityNote = null;
+        if (Activity is not Activity.Passive) return Activity;
+        IEnumerable<double> at = SDependsOnFrequency ? freqsHz : [0.0];
+        foreach (double hz in at)
+        {
+            if (SystemBlockPassivity.ExcessOf(SAt(2.0 * Math.PI * hz), PortCount) is not { } sigma) continue;
+            _activityNote = SDependsOnFrequency
+                ? $"σ_max = {sigma:G4} > 1 at {hz / 1e9:G6} GHz"
+                : $"σ_max = {sigma:G4} > 1";
+            return Activity.BlackBox;
+        }
+        return Activity.Passive;
+    }
+
+    /// <inheritdoc/>
+    public override string? PassivationNote => _activityNote;
+    private string? _activityNote;
+
+    /// <summary>
     /// The same stamp with <see cref="PassivateS"/> applied first — the <c>Δ0</c> half of the NDF
     /// (brief-wsprobe-6 §3). Every block in this family whose S is passive by construction (the
     /// attenuator, the switch, the circulator, the coupler, the balun, the filter, the duplexer)

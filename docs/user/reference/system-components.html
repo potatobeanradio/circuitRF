@@ -143,7 +143,8 @@ then go and meet with a real one.</p>
 <ul>
 <li><strong><a href="simulations.html#s-parameters">S-parameters</a></strong> answer everything that is a property of one
 frequency at a time: port match, isolation, coupling, directivity, a filter's passband and
-rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain and stability. This
+rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain, stability and noise
+figure. This
 is the analysis nine of the eleven blocks are entirely described by.</li>
 <li><strong><a href="simulations.html#harmonic-balance">Harmonic balance</a></strong> answers everything that moves energy
 between frequencies or depends on level: conversion gain, mixing products, compression, third-order
@@ -360,6 +361,10 @@ sidebands come out and the conversion gain tracks the LO drive.</p>
 <p><code>MixerD</code> is the same component with all six nets brought out as pins, in ± pairs, for when a port's
 return is not ground. Both are full members of the System family — they carry an intercept, three
 isolations and per-port impedances.</p>
+<p><code>NF</code> states the mixer's noise figure and <code>NFType</code> whether it is a single-sideband (<code>ssb</code>, the
+default) or double-sideband (<code>dsb</code>) figure. An S-parameter run has no LO, so it has no conversion
+path: the mixer stays out of its noise exactly as it stays out of its S, and <code>explain</code> says so.
+The figure is carried for the analyses that do convert.</p>
 <p>They are documented in full, with the conversion-gain arithmetic and the non-ideality table, under
 <a href="components.html#mixer">Components › Ideal Mixer</a> and
 <a href="components.html#mixerd">Differential Mixer</a>. This entry is a pointer, not a second copy.</p>
@@ -394,6 +399,43 @@ entries of the block's S-matrix and each is exactly the number you typed. Mismat
 not quietly re-scale S21, the way a Th&eacute;venin-source formulation would — a datasheet states
 gain and return loss as independent measurements, and so does this block.</p>
 </div>
+<p><strong>Noise figure.</strong> <code>NF</code> is the number on the datasheet: the noise figure when the amplifier is
+driven from a source equal to its own <code>Zin</code>, at 290 K. Run an S-parameter analysis with <code>Noise=yes</code>
+and a matched amplifier returns exactly that <code>NF</code>, with <code>NFmin</code> equal to it and <code>Sopt</code> at zero. Left
+blank, the amplifier is noiseless and the run names it in its noiseless warning.</p>
+<p>On its own, <code>NF</code> is one noise wave entering the input. Driven from anything other than <code>Zin</code>, the
+noise figure rises along the ordinary noise-parameter curve, with no further setting. A packaged
+low-noise amplifier whose noise match is not its power match takes the other three noise parameters
+as well:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+<th>Blank means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NFopt</code></td>
+<td>Minimum noise figure, dB</td>
+<td><code>NF</code></td>
+</tr>
+<tr>
+<td><code>Gopt</code></td>
+<td>Source reflection that reaches <code>NFopt</code>, referenced to the real part of <code>Zin</code>; complex, e.g. <code>0.2+j0.25</code></td>
+<td><code>Zin</code> itself</td>
+</tr>
+<tr>
+<td><code>Rn</code></td>
+<td>Equivalent noise resistance, Ω</td>
+<td>Derived: from <code>NF</code> and <code>NFopt</code> when both are given, otherwise the one-wave value</td>
+</tr>
+</tbody>
+</table>
+<p>A set that describes no physical two-port, or <code>Rn</code>/<code>Gopt</code> with no noise figure beside them, is
+refused with the keys named. In a cascade of these blocks the analysis reproduces the cascade noise formula, with the
+passive blocks contributing their own thermal noise at their <code>Temp</code>.</p>
 <p>Parameters: <a href="components.html#amp">Components › Amplifier</a>.</p>
 <h3 id="atten">Attenuator (Atten)</h3>
 <figure class="symbol"><span class="frame">

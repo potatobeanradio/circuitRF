@@ -3557,6 +3557,13 @@ public static class NetExtractor
             // emitted: `Eo=` with nothing after it is the empty-parameter-value trap, where the .cnl
             // reader takes the next token as the value.
             .Where(p => !(comp.Symbol == SymbolKind.CLine && string.IsNullOrWhiteSpace(p.Expression)))
+            // The amplifier's and the mixer's noise keys (brief NZ-3) are placed blank (blank = noiseless) and dropped for the
+            // same reason; a blank row is the absent key, so a design that states no noise extracts exactly as before.
+            .Where(p => !(comp.Symbol is SymbolKind.Amp or SymbolKind.Mixer or SymbolKind.MixerD
+                          && string.IsNullOrWhiteSpace(p.Expression)))
+            // NFType qualifies an NF; with no NF it says nothing, and is dropped so a placed mixer's default adds no key.
+            .Where(p => !(comp.Symbol is SymbolKind.Mixer or SymbolKind.MixerD && p.Name == "NFType"
+                          && string.IsNullOrWhiteSpace(comp.Parameters.FirstOrDefault(q => q.Name == "NF")?.Expression)))
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);

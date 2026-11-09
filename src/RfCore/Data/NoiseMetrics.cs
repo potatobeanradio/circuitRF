@@ -216,7 +216,7 @@ namespace RfCore.Data
         /// is the √Z0 (pseudo-wave) form, which agrees with power waves only for a REAL reference, so S
         /// is first renormalised to Re Z0 with the power-wave <see cref="RFNetwork.SToS(Mat{Complex}, Complex[], Complex[])"/>.
         /// </summary>
-        private static Mat<Complex> PowerWaveAdmittance(Mat<Complex> s, Complex[] z0)
+        public static Mat<Complex> PowerWaveAdmittance(Mat<Complex> s, Complex[] z0)
         {
             if (z0.All(z => z.Imaginary == 0)) return RFNetwork.SToY(s, z0);
             var r = z0.Select(z => new Complex(z.Real, 0)).ToArray();
