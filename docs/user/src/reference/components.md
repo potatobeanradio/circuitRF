@@ -1425,15 +1425,17 @@ current of a real diode rolls off from the ideal exponential towards a square ro
 model has no term for that knee, so it stays exponential and is optimistic there. An extracted
 <code>Rs</code> often absorbs some of that roll-off, which is a fit rather than the physics and does
 not follow temperature the way the real mechanism does.
-<strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
-(<code>Kf</code>/<code>Af</code>) are not offered, and the
-<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
-names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
 <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
 <strong>Sidewall junction capacitance</strong> as a separate term — <code>Cj0</code>, <code>Vj</code>
 and <code>M</code> describe one junction. A parameter this model does not read is not offered in the
 palette; a card stating one has it {{anchor: spice-import#families|named on import}}.</p>
 </div>
+
+
+**Noise.** Shot noise `2q·|Id|` across the junction, always on, since it is what a junction carrying current does;
+flicker noise `Kf·|Id|^Af/f` on the same junction when `Kf` is above zero; and thermal noise `4kT/Rs` across the series
+resistance when there is one. The [S-parameter noise analysis](simulations.html#sp-noise) evaluates them at the DC
+operating point and the device's own temperature.
 
 ### The FET family {#fets}
 
@@ -1587,6 +1589,19 @@ a p-channel model card is read as the quadratic law or Statz, never as either of
 
 {{table: components/PFetMaterka}}
 
+
+**Noise**, in the two-temperature form RF transistor noise is characterised in:
+
+| Key | What it does | Default |
+|---|---|---|
+| `Ri` | An intrinsic gate resistance in series with `Cgs`, on an internal node. With it, the gate diode, `Cgs` and the drain current's control voltage sit behind it, and `Cgd` stays on the external gate. | 0: none, and the model is exactly what it is without it |
+| `Tg` | The gate noise temperature, in kelvin: `Ri` is thermal at it. | The device temperature |
+| `Td` | The drain noise temperature, in kelvin: the output conductance is thermal at it, a noise current `4k·Td·gds` from drain to source. It may be an expression, for a drain temperature fitted against bias. | Blank: no drain noise |
+| `Kf`, `Af` | Flicker noise `Kf·|Id|^Af/f` on the drain current. | 0 (off), 1 |
+
+With none of `Ri`, `Td` or `Kf` set, a FET has no noise sources and the noise analysis names it in its warning. The
+family has no extrinsic `Rg`, `Rd` or `Rs`: resistors placed beside it are thermal at their own temperature.
+
 ### The junction FET {#jfets}
 
 Two tiles — **NJFET** and **PJFET** — over the Shichman–Hodges square law, one set of equations with
@@ -1720,11 +1735,7 @@ is zero the two nodes are the same net and the halves add back to `Cjc`, so noth
 discrete RF transistor has no substrate terminal to attach it to, and adding a fourth pin would change
 what the symbol means. <strong>Excess phase</strong> (<code>Ptf</code>) — it is a delay, and circuitRF's
 weighting functions carry 1 and jω, not exp(−jωτ), so accepting the parameter would be accepting a value
-that does nothing. <strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
-(<code>Kf</code>/<code>Af</code>) are not offered, and the
-<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
-names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
-<strong>Self-heating</strong> — the device temperature is a parameter, not a
+that does nothing. <strong>Self-heating</strong> — the device temperature is a parameter, not a
 solved node, so there is no electrothermal feedback. <strong>Package parasitics</strong> — the lead
 inductances and package capacitances of a real part are separate components you place around the
 transistor, not parameters of it. A parameter this model does not read is not offered in the palette.
@@ -1756,6 +1767,11 @@ The emitter arrow points **into** the base. Same equations, same parameter names
 current negated — so a parameter set written for one polarity is used unchanged for the other.
 
 {{table: components/BjtPnp}}
+
+
+**Noise.** Base shot noise `2q·|Ib|` across the internal base–emitter junction and collector shot noise `2q·|Ic|`
+across the internal collector–emitter, always on; flicker noise `Kf·|Ib|^Af/f` beside the base shot when `Kf` is set;
+and thermal noise `4kT/R` across each of `Rb` (at its current-modulated value), `Re` and `Rc` that is present.
 
 ### The MOS transistor {#mos}
 
@@ -1844,10 +1860,6 @@ zero at threshold, so a device biased there is being asked a question this model
 <strong>Short-channel effects</strong> — drain-induced barrier lowering, mobility degradation,
 velocity saturation and channel-length modulation done properly are what the higher levels add;
 here <code>Lambda</code> is a single fitted output slope and nothing else.
-<strong>Noise</strong> — the built-in models are noiseless, so the flicker-noise coefficients
-(<code>Kf</code>/<code>Af</code>) are not offered, and the
-<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes this device as noiseless and
-names it in its warning. A compiled model through <a href="#veriloga">VerilogA</a> brings its own noise.
 <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
 A parameter this model does not read is not offered in the palette. If your application depends on
 any of the above, use a compiled model through <a href="#veriloga">VerilogA</a> instead.</p>
@@ -1931,6 +1943,12 @@ The current goes to zero at threshold in both.
 
 {{table: components/Mos3P}}
 
+
+**Noise.** Channel thermal noise `4kT·GammaN·gm` across the channel, always on: `GammaN` is 2/3 for a long channel, so
+the default is `(8/3)kT·gm`, and a short-channel device takes a larger value. (It is not called `Gamma`, which is the
+body-effect coefficient.) Flicker noise `Kf·|Id|^Af/(Cox·L²·f)` when `Kf` is set and the card states `Tox`, which is
+what gives `Cox`; and thermal noise across `Rd` and `Rs` when they are present.
+
 ### The vertical power MOSFET {#vdmos}
 
 **NVDMOS** and **PVDMOS** — a *separate component* from the lateral MOS pair, not a setting of it.
@@ -1989,6 +2007,11 @@ drain.
 {{symbol: vdmos-p}}
 
 {{table: components/VdmosP}}
+
+
+**Noise.** Channel thermal noise `4kT·GammaN·gm`, always on (`GammaN` 2/3 by default); flicker noise `Kf·|Id|^Af/f`
+when `Kf` is set (this model states no oxide geometry, so the density is the card's own); and thermal noise across each
+of `Rg`, `Rd` and `Rs` that is present.
 
 ### The IGBT {#igbt}
 
@@ -2272,6 +2295,15 @@ blocks can carry it, and how to give one to a block that cannot — are in
 <b><a href="system-components.html">System Components</a></b>. Read that before placing one; the
 entries below are the glyph, the pins and the parameter table.</p>
 </div>
+
+
+**Noise.** The extrinsic network is thermal at the device's own temperature, which includes the self-heating rise at
+the operating point; the thermal network (`Rth`, `Cth`) carries heat, not current, and has no noise. The core's noise is
+the model's optional `Noise` block: a drain temperature `Td` (noise current `4k·Td·gds` across the intrinsic
+drain–source), a gate temperature `Tg` (the temperature of the network's element named `Ri`), and `Kf`/`Af`. Each
+temperature is a constant, an equation or a table over the core's `vgs`, `vds` and temperature, in kelvin. A model
+without the block is complete; its core is named as noiseless. The [Model Composer](model-composer.html) fits the block
+from measured noise parameters in its Noise step.
 
 ### Balun {#balun}
 

@@ -128,6 +128,30 @@ public sealed record CoreConstituents(
     /// <summary>The DC/RF dispersion of [P1] eq. 6.52 (R-mc7-4): present exactly when <see cref="IdRF"/>
     /// is, and then <see cref="Id"/> is the DC current <c>IdDC</c>.</summary>
     public ModelDispersion? Dispersion { get; init; }
+
+    /// <summary>The core's noise (brief NZ-4), <c>Core.Noise</c>. Null: no block, and the core is named as noiseless.</summary>
+    public ModelNoise? Noise { get; init; }
+}
+
+/// <summary>
+/// <c>Core.Noise</c> (brief NZ-4): the two-temperature FET noise of the core. <see cref="Td"/>, the drain temperature, puts
+/// <c>4k·Td·gds</c> across the intrinsic drain–source; <see cref="Tg"/>, the gate temperature, is the temperature the
+/// extrinsic network's element named <c>Ri</c> is thermal at; <see cref="Kf"/>/<see cref="Af"/> a flicker current
+/// <c>Kf·|Id|^Af / f</c> on the drain. Temperatures in kelvin, each a constant or a constituent evaluated at the core's own
+/// <c>vgs</c>, <c>vds</c> and temperature. Absent ones are off.
+/// </summary>
+public sealed record ModelNoise(NoiseValue? Tg = null, NoiseValue? Td = null, double Kf = 0.0, double Af = 1.0)
+{
+    /// <summary>The element of the extrinsic network <see cref="Tg"/> heats.</summary>
+    public const string GateResistorName = "Ri";
+}
+
+/// <summary>A <c>Core.Noise</c> temperature: a constant (a bare number in the file) or a constituent (an equation or a
+/// table, written as the core's currents are). Exactly one is set.</summary>
+public sealed record NoiseValue(double? Constant, Constituent? Function)
+{
+    public static NoiseValue Of(double kelvin) => new(kelvin, null);
+    public static NoiseValue Of(Constituent function) => new(null, function);
 }
 
 /// <summary>

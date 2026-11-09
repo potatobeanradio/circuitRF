@@ -234,9 +234,21 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
 
     // ── noise ─────────────────────────────────────────────────────────────────
 
-    /// <summary>The noise sources the model declares — empty for one that declares none, and for a provider that cannot
-    /// report any.</summary>
-    public IReadOnlyList<ExternalNoiseSourceDescriptor> NoiseSources => Descriptor.NoiseSources;
+    /// <summary>
+    /// The noise sources the model declares (<see cref="ExternalDeviceDescriptor.NoiseSources"/>) on the one interface every
+    /// model shares (brief NZ-4) — empty for one that declares none, and for a provider that cannot report any. Device node
+    /// k is the component's terminal <c>2k</c>, the + terminal of its port k; a negative node is ground.
+    /// </summary>
+    public override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noiseDecl ??=
+        [.. Descriptor.NoiseSources.Select(s => new NoiseSourceDecl(s.Name, s.NodeA < 0 ? -1 : 2 * s.NodeA,
+                                                                     s.NodeB < 0 ? -1 : 2 * s.NodeB))];
+    private IReadOnlyList<NoiseSourceDecl>? _noiseDecl;
+
+    /// <summary>The worker's own densities, per frequency (<see cref="ReadNoiseAt"/>): the model's temperature is the one the
+    /// worker was created with (the instance's resolved <c>Temp</c>), so <paramref name="kelvin"/> is not read.</summary>
+    public override double[,]? NoiseDensitiesAt(
+        ElaboratedComponent c, in PortVoltages bias, double kelvin, IReadOnlyList<double> frequenciesHz)
+        => ReadNoiseAt(bias.Voltages, frequenciesHz);
 
     /// <summary>
     /// The densities of <see cref="NoiseSources"/> at the bias <paramref name="nodeVoltages"/> and each of
@@ -245,7 +257,7 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
     /// which operating point the noise belongs to. Null when the model declares no sources.
     /// </summary>
     public double[,]? ReadNoiseAt(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz)
-        => NoiseSources.Count == 0 ? null : Guarded(() => _instance.EvaluateNoise(nodeVoltages, frequenciesHz));
+        => Descriptor.NoiseSources.Count == 0 ? null : Guarded(() => _instance.EvaluateNoise(nodeVoltages, frequenciesHz));
 
     /// <summary>
     /// Runs one provider call, attaching this instance's label to whatever comes back.

@@ -105,8 +105,8 @@ public sealed class OsdiNoiseTests : IDisposable
             using (nl)
             {
                 var ed = (ExternalDeviceModel)nl.Components.Single(c => c.InstancePath == "X1").Model;
-                Assert.Equal(new[] { "thermal", "shot", "flicker" }, ed.NoiseSources.Select(s => s.Name));
-                Assert.All(ed.NoiseSources, s => Assert.Equal((0, 1), (s.NodeA, s.NodeB)));
+                Assert.Equal(new[] { "thermal", "shot", "flicker" }, ed.Descriptor.NoiseSources.Select(s => s.Name));
+                Assert.All(ed.Descriptor.NoiseSources, s => Assert.Equal((0, 1), (s.NodeA, s.NodeB)));
                 Assert.DoesNotContain(nl.Warnings, w => w.StartsWith("Noise:", StringComparison.Ordinal));
 
                 for (int fi = 0; fi < 2; fi++)   // white: the 1 GHz reference holds at 2 GHz

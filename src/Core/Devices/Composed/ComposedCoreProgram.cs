@@ -96,7 +96,9 @@ public sealed class ComposedCoreProgram
         }
 
         var k = model.Core;
-        return new ComposedCoreProgram(seeds, hasT, traps, traps is null ? null : TrapShift.Build(model.Traps!, traps),
+        ComposedFunction? Temp(NoiseValue? v, string key) => v?.Function is { } f ? One(f, $"Noise.{key}", f.PayloadKey, null) : null;
+        var noise = k.Noise;
+        var program = new ComposedCoreProgram(seeds, hasT, traps, traps is null ? null : TrapShift.Build(model.Traps!, traps),
             hasT ? double.NaN : model.Temperature.T0, label, k.Symmetry,
             One(k.Id, "Id", k.Id.PayloadKey, Branch(k.Id.Inputs, vgs: 0, vds: 1)),
             One(k.Ig, "Ig", "IgGs", Branch(k.Ig.Inputs, vgs: 1, vds: 0)),
@@ -106,7 +108,18 @@ public sealed class ComposedCoreProgram
             k.IdRF is { } rf ? One(rf, "IdRF", rf.PayloadKey, Branch(rf.Inputs, vgs: 0, vds: 1)) : null,
             k.Dispersion?.Tau,
             k.Qg.Method == Constituent.DriftMethod ? DriftCharges.Build(model) : null);
+        if (noise is not null)
+        {
+            program.NoiseTg = Temp(noise.Tg, "Tg");
+            program.NoiseTd = Temp(noise.Td, "Td");
+        }
+        return program;
     }
+
+    /// <summary>The <c>Core.Noise</c> temperatures that are constituents, compiled as the currents are (brief NZ-4); null for
+    /// a constant or an absent one.</summary>
+    internal ComposedFunction? NoiseTg { get; private set; }
+    internal ComposedFunction? NoiseTd { get; private set; }
 
     /// <summary>
     /// The seeds of a DC operating point: <paramref name="vgs"/>, <paramref name="vds"/>, <paramref name="t"/> (°C) when

@@ -341,6 +341,7 @@ public sealed partial class ModelComposerViewModel
         "Traps" => TrapRunItems(),
         "Current" or "Charge" or "Fit" => [new("Fit", "fit")],
         "Thermal" => [new("Extract", "fit")],
+        "Noise" => [new("Fit", "fit")],
         "Check" => [new("Check charge conservation", "check")],
         "Validate" => [new("Validate all", "validate"), new("Show testbench", "testbench")],
         "Export" => [new("Export", "export"), new("Run stale", "stale")],

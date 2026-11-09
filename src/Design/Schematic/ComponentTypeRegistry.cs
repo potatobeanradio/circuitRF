@@ -1429,6 +1429,7 @@ public static class ComponentTypeRegistry
          : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
          : PlanarLineParameterDescription(kind, parameterName) is { Length: > 0 } plDesc ? plDesc
          : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
+         : DeviceNoiseParameterDescription(kind, parameterName) is { Length: > 0 } nzDesc ? nzDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
          : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
@@ -2042,6 +2043,35 @@ public static class ComponentTypeRegistry
         _ => "",
     };
 
+    /// <summary>The built-in devices' noise keys (brief NZ-4).</summary>
+    private static string DeviceNoiseParameterDescription(SymbolKind kind, string parameterName)
+    {
+        bool fet = kind is SymbolKind.FetCurtice or SymbolKind.FetCurticeCubic or SymbolKind.FetStatz
+                        or SymbolKind.FetMaterka or SymbolKind.FetAngelov;
+        bool device = fet || kind is SymbolKind.Diode or SymbolKind.BjtNpn or SymbolKind.BjtPnp or SymbolKind.Mos1N
+                          or SymbolKind.Mos1P or SymbolKind.Mos3N or SymbolKind.Mos3P or SymbolKind.VdmosN or SymbolKind.VdmosP;
+        if (!device) return "";
+        return parameterName switch
+        {
+            "Kf" => "Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the "
+                  + (kind is SymbolKind.BjtNpn or SymbolKind.BjtPnp ? "base current"
+                     : kind is SymbolKind.Diode ? "junction current" : "drain current")
+                  + (kind is SymbolKind.Mos1N or SymbolKind.Mos1P or SymbolKind.Mos3N or SymbolKind.Mos3P
+                     ? ", divided by Cox*L^2 (it needs Tox)" : "") + ". 0 is off.",
+            "Af" => "Flicker noise exponent on the current. 1 is the usual value.",
+            "GammaN" => "Channel thermal noise coefficient: the channel's noise current is 4kT*GammaN*gm. 2/3 is the "
+                      + "long-channel value; short channels are higher.",
+            "Ri" when fet => "Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate "
+                           + "temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.",
+            "Tg" when fet => "Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device "
+                           + "temperature.",
+            "Td" when fet => "Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise "
+                           + "current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain "
+                           + "temperature fitted against bias.",
+            _ => "",
+        };
+    }
+
     private static string MixerParameterDescription(string parameterName) => parameterName switch
     {
         "ConvGain" => "Single-sideband power conversion gain, RF port to IF port, at the LO drive "
@@ -2092,6 +2122,14 @@ public static class ComponentTypeRegistry
         new("Eg",       "1.16",  "V",  false, UnitDimension.Voltage),
         new("Temp",     "26.85", "",   false, UnitDimension.None),
         new("Tnom",     "26.85", "",   false, UnitDimension.None),
+        // Noise (brief NZ-4): the intrinsic gate resistance (0 = none) and the two-temperature form. Tg and Td are noise
+        // temperatures in KELVIN; blank Tg is the device temperature, blank Td is no drain noise. Blank rows are dropped at
+        // extraction.
+        new("Ri",       "0",     "Ω",  false, UnitDimension.Resistance),
+        new("Tg",       "",      "",   false, UnitDimension.None),
+        new("Td",       "",      "",   false, UnitDimension.None),
+        new("Kf",       "0",     "",   false, UnitDimension.None),
+        new("Af",       "1",     "",   false, UnitDimension.None),
     ];
 
     /// <summary>
@@ -2730,6 +2768,9 @@ public static class ComponentTypeRegistry
                     new("Eg",   "1.16",  "V",  false, UnitDimension.Voltage),
                     new("Temp", "26.85", "",   false, UnitDimension.None),
                     new("Tnom", "26.85", "",   false, UnitDimension.None),
+                    // Noise (brief NZ-4): flicker, off at Kf = 0.
+                    new("Kf",   "0",     "",   false, UnitDimension.None),
+                    new("Af",   "1",     "",   false, UnitDimension.None),
                 ];
 
             // The p-channel laws share their n-channel counterpart's list, because they ARE that
@@ -2986,6 +3027,10 @@ public static class ComponentTypeRegistry
                     new("Eg",     "1.16",  "V",  false, UnitDimension.Voltage),
                     new("Temp",   "26.85", "",   false, UnitDimension.None),
                     new("Tnom",   "26.85", "",   false, UnitDimension.None),
+                    // Noise (brief NZ-4): flicker, off at Kf = 0.
+                    new("Kf",   "0",     "",   false, UnitDimension.None),
+                    new("Af",   "1",     "",   false, UnitDimension.None),
+                    new("GammaN", "2/3",    "", false, UnitDimension.None),
                 ];
 
             // Both channels share ONE parameter list, because they are one set of equations with
@@ -3099,6 +3144,11 @@ public static class ComponentTypeRegistry
                     new("Eg",     "1.16",  "V",     false, UnitDimension.Voltage),
                     new("Temp",   "26.85", "",      false, UnitDimension.None),
                     new("Tnom",   "26.85", "",      false, UnitDimension.None),
+                    // Noise (brief NZ-4): flicker, off at Kf = 0.
+                    new("Kf",   "0",     "",   false, UnitDimension.None),
+                    new("Af",   "1",     "",   false, UnitDimension.None),
+                    // Channel thermal noise coefficient: 2/3 is the long-channel value. Not "Gamma", the body effect.
+                    new("GammaN", "2/3",    "", false, UnitDimension.None),
                 ];
 
             // Both polarities share ONE parameter list, because they are one set of equations with
@@ -3162,6 +3212,9 @@ public static class ComponentTypeRegistry
                     new("Eg",   "1.11",  "V", false, UnitDimension.Voltage),
                     new("Temp", "26.85", "", false, UnitDimension.None),
                     new("Tnom", "26.85", "", false, UnitDimension.None),
+                    // Noise (brief NZ-4): flicker, off at Kf = 0.
+                    new("Kf",   "0",     "",   false, UnitDimension.None),
+                    new("Af",   "1",     "",   false, UnitDimension.None),
                 ];
 
             case SymbolKind.NonlinearC:

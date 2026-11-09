@@ -41,7 +41,7 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
 
     /// <summary>The steps, overview §3.</summary>
     public static readonly IReadOnlyList<string> ActiveSteps =
-        ["Data", "Pads", "Network", "Current", "Charge", "Thermal", "Traps", "Check", "Validate", "Export"];
+        ["Data", "Pads", "Network", "Current", "Charge", "Thermal", "Traps", "Noise", "Check", "Validate", "Export"];
     public static readonly IReadOnlyList<string> PassiveSteps = ["Data", "Topology", "Fit", "Export"];
 
     /// <summary>A new document: the window opens on the Active / Passive chooser.</summary>
@@ -210,6 +210,7 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
         "Current" => MaterialIconKind.CurrentDc,
         "Charge" => MaterialIconKind.Battery,
         "Thermal" => MaterialIconKind.Thermometer,
+        "Noise" => MaterialIconKind.Waveform,
         "Traps" => MaterialIconKind.TimerSandEmpty,
         "Check" => MaterialIconKind.CheckDecagramOutline,
         "Validate" => MaterialIconKind.ChartBellCurve,
@@ -326,6 +327,7 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
                 "Current" => DocumentPath is { } cp && CurrentFit.HasArrays(cp, Document),
                 "Charge" => DocumentPath is { } qp && ChargeFit.HasArrays(qp, Document),
                 "Thermal" => ThermalFit.Record(Document) is not null,
+                "Noise" => NoiseFit.Record(Document) is not null,
                 "Traps" => TrapFit.Record(Document) is not null
                            || !TrapFit.Settings(Document).Modelled && CurrentFit.Record(Document) is { Traps: null },
                 "Check" => CheckReport is not null,

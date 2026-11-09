@@ -211,30 +211,22 @@
                         <Grid ColumnDefinitions="50,*,Auto" IsVisible="{Binding PadsOpenShort}">
                             <TextBlock Classes="lbl" Text="Open"/>
                             <TextBlock Grid.Column="1" Text="{Binding PadsOpen}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <Button Grid.Column="2" Classes="tool" Command="{Binding PickPadFileCommand}" CommandParameter="open" ToolTip.Tip="Choose">
-                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                            </Button>
+                            <Button Grid.Column="2" Content="…" Command="{Binding PickPadFileCommand}" CommandParameter="open" ToolTip.Tip="Choose" Padding="8,0"/>
                         </Grid>
                         <Grid ColumnDefinitions="50,*,Auto" IsVisible="{Binding PadsOpenShort}">
                             <TextBlock Classes="lbl" Text="Short"/>
                             <TextBlock Grid.Column="1" Text="{Binding PadsShort}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <Button Grid.Column="2" Classes="tool" Command="{Binding PickPadFileCommand}" CommandParameter="short" ToolTip.Tip="Choose">
-                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                            </Button>
+                            <Button Grid.Column="2" Content="…" Command="{Binding PickPadFileCommand}" CommandParameter="short" ToolTip.Tip="Choose" Padding="8,0"/>
                         </Grid>
                         <Grid ColumnDefinitions="50,*,Auto" IsVisible="{Binding PadsTwoPorts}">
                             <TextBlock Classes="lbl" Text="Gate"/>
                             <TextBlock Grid.Column="1" Text="{Binding PadsGate}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <Button Grid.Column="2" Classes="tool" Command="{Binding PickPadFileCommand}" CommandParameter="gate" ToolTip.Tip="Choose">
-                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                            </Button>
+                            <Button Grid.Column="2" Content="…" Command="{Binding PickPadFileCommand}" CommandParameter="gate" ToolTip.Tip="Choose" Padding="8,0"/>
                         </Grid>
                         <Grid ColumnDefinitions="50,*,Auto" IsVisible="{Binding PadsTwoPorts}">
                             <TextBlock Classes="lbl" Text="Drain"/>
                             <TextBlock Grid.Column="1" Text="{Binding PadsDrain}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <Button Grid.Column="2" Classes="tool" Command="{Binding PickPadFileCommand}" CommandParameter="drain" ToolTip.Tip="Choose">
-                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                            </Button>
+                            <Button Grid.Column="2" Content="…" Command="{Binding PickPadFileCommand}" CommandParameter="drain" ToolTip.Tip="Choose" Padding="8,0"/>
                         </Grid>
                     </StackPanel>
 
@@ -359,6 +351,24 @@
                             </Grid>
                             <SelectableTextBlock FontSize="11" Text="{Binding ThermalResidual}"/>
                         </StackPanel>
+                    </StackPanel>
+
+                    <!-- ── Noise (brief NZ-4) ─────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding IsNoiseStep}" Spacing="4">
+                        <TextBlock Classes="panelhdr" Text="Noise"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="lbl" Text="Measured noise parameters" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="…" Command="{Binding AddNoiseFileCommand}" Padding="8,0"
+                                    ToolTip.Tip="Add a file: a .s2p with a noise block, or a table of noise parameters"/>
+                        </Grid>
+                        <TextBox Text="{Binding NoiseSources, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="NoWrap"
+                                 FontSize="11" ToolTip.Tip="{x:Static mc:ModelComposerViewModel.NoiseSourcesTip}"/>
+                        <Grid ColumnDefinitions="*,110">
+                            <TextBlock Classes="lbl" Text="Measured at (°C)"/>
+                            <ctl:InlineEditText Grid.Column="1" Text="{Binding NoiseAmbient, Mode=TwoWay}" HorizontalContentAlignment="Right"/>
+                        </Grid>
+                        <SelectableTextBlock FontSize="10.5" FontFamily="monospace" TextWrapping="Wrap" Text="{Binding NoiseResult}"
+                                             IsVisible="{Binding NoiseResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
                     <!-- ── Traps (R-mc15-5) ────────────────────────────────── -->
@@ -523,9 +533,7 @@
                         <!-- Where Export writes, under the button that writes it. -->
                         <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsActive}">
                             <TextBox Text="{Binding ExportPath}" FontSize="11" ToolTip.Tip="The .cmodel's path"/>
-                            <Button Grid.Column="1" Classes="tool" Command="{Binding PickExportPathCommand}" ToolTip.Tip="Choose">
-                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                            </Button>
+                            <Button Grid.Column="1" Content="…" Command="{Binding PickExportPathCommand}" ToolTip.Tip="Choose" Padding="8,0"/>
                         </Grid>
                         <SelectableTextBlock Classes="warn" FontSize="11" Text="{Binding VerilogATables}"
                                              IsVisible="{Binding VerilogATables, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

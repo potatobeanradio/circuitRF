@@ -281,8 +281,9 @@ public class ModelCardImportTests : IDisposable
         var t = One(".model QMOD NPN (IS=1e-16 BF=100 CJS=1e-13 KF=1e-16 AF=1 PTF=0)");
 
         Assert.Contains("CJS", t.Binding!.Unmapped, StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("KF",  t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("AF",  t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
+        // KF and AF are carried since the BJT's flicker noise reads them (brief NZ-4).
+        Assert.DoesNotContain("KF", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AF", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("PTF", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
 
         // …and it reaches the user, both in the message and on the cell's own annotation.

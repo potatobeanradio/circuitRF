@@ -1104,7 +1104,15 @@ public sealed class Elaborator
                 // is TWO ports — (gate,source) and (drain,source) — so the source net appears in
                 // both pairs. Expanding here keeps the schematic honest (three pins) and the model
                 // in the coordinates every published FET equation is written in (Vgs, Vds).
-                if (model is Devices.Fet.FetModelBase && resolvedNodes.Length == 3)
+                if (model is Devices.Fet.FetModelBase { HasIntrinsicGateResistance: true } && resolvedNodes.Length == 3)
+                {
+                    // With Ri (brief NZ-4): the resistor (gate, gi), the intrinsic (gi, source), (drain, source) and Cgd's
+                    // (gate, drain). gi is minted here and is a real unknown, as the diode's internal node is.
+                    int g = resolvedNodes[0], d = resolvedNodes[1], src = resolvedNodes[2];
+                    int gi = netlist.Nodes.GetOrAssign($"__fet_{childPath}_gi");
+                    resolvedNodes = [g, gi, gi, src, d, src, g, d];
+                }
+                else if (model is Devices.Fet.FetModelBase && resolvedNodes.Length == 3)
                     resolvedNodes = [resolvedNodes[0], resolvedNodes[2],   // gate, source
                                      resolvedNodes[1], resolvedNodes[2]];  // drain, source
 

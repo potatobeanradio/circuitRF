@@ -1747,7 +1747,7 @@ internal static class Explain
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         return p.Model switch
         {
-            "thermal"       => $"thermal at {p.Kelvin!.Value.ToString("0.##", inv)} K",
+            "thermal"       => $"thermal at {p.Kelvin!.Value.ToString("0.##", inv)} K" + (p.Reason is { } why ? $", {why}" : ""),
             "fileData"      => $"file data, {Path.GetFileName(p.File)}, noise rows {(p.BandLoHz!.Value / 1e9).ToString("G6", inv)} to " +
                                $"{(p.BandHiHz!.Value / 1e9).ToString("G6", inv)} GHz",
             "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}",

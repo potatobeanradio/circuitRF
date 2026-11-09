@@ -146,6 +146,58 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
         _temperatureC = _hasT ? Math.Clamp(ambientC, t.Tmin, t.Tmax) : t.T0;
     }
 
+    // ── Noise (brief NZ-4) ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The core's noise sources, from the model's <c>Core.Noise</c>: <c>4k·Td·gds</c> across the intrinsic drain–source
+    /// when <c>Td</c> is stated, and flicker <c>Kf·|Id|^Af / f</c> there when <c>Kf</c> is. <c>Tg</c> is not a source of
+    /// the core: it is the temperature of the network's <c>Ri</c>, which the noise analysis takes thermal at it
+    /// (<see cref="GateNoiseKelvin"/>). No block, or one with neither, declares none.
+    /// </summary>
+    public override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noiseDecl ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noiseDecl;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        var list = new List<NoiseSourceDecl>();
+        if (Loaded.Model.Core.Noise is not { } n) return list;
+        if (n.Td is not null) list.Add(NoiseSourceDecl.OnPort("thermal_gds", 1));
+        if (n.Kf != 0) list.Add(NoiseSourceDecl.OnPort("flicker", 1));
+        return list;
+    }
+
+    /// <summary>The device's own temperature at a state, kelvin: the temperature it was asked to run at plus the thermal
+    /// node's rise when it heats itself. What the network's parasitics are thermal at.</summary>
+    public double DeviceKelvin(in PortVoltages v)
+        => Temperature.ToKelvin(RequestedC + (_heats && v.Voltages.Length > ThermalPort ? v[ThermalPort] : 0.0));
+
+    /// <summary><c>Core.Noise.Tg</c> at a state, kelvin, or null when the model states none.</summary>
+    public double? GateNoiseKelvin(in PortVoltages v)
+        => Loaded.Model.Core.Noise?.Tg is { } tg ? NoiseTemperature(tg, _p.NoiseTg, v) : null;
+
+    /// <summary>A Noise temperature at a state: the constant, or the constituent at the core's vgs, vds and temperature.</summary>
+    private double NoiseTemperature(NoiseValue value, ComposedFunction? compiled, in PortVoltages v)
+    {
+        if (value.Constant is { } k) return k;
+        Span<double> seeds = stackalloc double[_p.Width];
+        Span<double> grad  = stackalloc double[_p.Width];
+        _p.DcSeeds(v[0], v[1], _temperatureC + (_heats ? v[ThermalPort] : 0.0), seeds);
+        return _p.Eval(compiled!, "Noise", seeds, grad);
+    }
+
+    /// <inheritdoc/>
+    public override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        var n = Loaded.Model.Core.Noise!;
+        int P = PortCount;
+        var i = new double[P];
+        var dg = new double[P, P];
+        EvaluateInto(v, i, new double[P], dg, new double[P, P]);
+        int k = 0;
+        if (n.Td is { } td) into[k++] = NoiseDensity.Thermal(dg[1, 1], NoiseTemperature(td, _p.NoiseTd, v));
+        if (n.Kf != 0) into[k] = NoiseDensity.Flicker(n.Kf, n.Af, i[1]);
+    }
+
     public override int       PortCount => 2 + InternalStateNodeCount + (_thermal ? 1 : 0);
     public override ModelKind Kind      => ModelKind.Nonlinear;
 

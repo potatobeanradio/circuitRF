@@ -1321,7 +1321,7 @@ public static class ComponentModelFactory
         // the coefficients each model actually owns, so their signatures differ and will keep
         // differing; positional binding would compile silently after a reorder and feed Cgd where
         // Alpha belongs.
-        return key switch
+        Fet.FetModelBase? fet = key switch
         {
             "FET_CURTICE" => new Fet.CurticeQuadraticFetModel(
                 vto: P("Vto", vtoDefault), beta: P("Beta", 0.02),
@@ -1369,6 +1369,12 @@ public static class ComponentModelFactory
 
             _ => null,
         };
+
+        // Brief NZ-4: the intrinsic gate resistance and the two-temperature noise. Tg and Td are NOISE temperatures in
+        // kelvin, the unit they are fitted and quoted in (a drain temperature is thousands of kelvin), unlike Temp's °C;
+        // absent, Tg is the device's own temperature and Td is off.
+        fet?.SetNoise(P("Ri", 0.0), P("Tg", double.NaN), P("Td", double.NaN), P("Kf", 0.0), P("Af", 1.0));
+        return fet;
     }
 
     // ── IGBT ──────────────────────────────────────────────────────────────────
@@ -1465,7 +1471,7 @@ public static class ComponentModelFactory
 
         // Every call is by NAME: two dozen optional `double` parameters, so positional binding would
         // compile silently after a reorder and feed a transit time where a junction potential goes.
-        return new Mos.VdmosModel(
+        return WithMosNoise(new Mos.VdmosModel(
             channel:                    channel,
             vto:                        P("Vto",     vtoDefault),
             kp:                         P("Kp",      1.0),
@@ -1493,7 +1499,7 @@ public static class ComponentModelFactory
             saturationTempExponent:     P("Xti",     3.0),
             bandgapAtZeroK:             P("Eg",      Temperature.SiliconBandgapEv),
             vtoTempCoefficient:         P("Vtotc",   0.0),
-            kpTempCoefficient:          P("Kptc",    0.0));
+            kpTempCoefficient:          P("Kptc",    0.0)), parameters);
     }
 
     // ── JFET family ───────────────────────────────────────────────────────────
@@ -1605,7 +1611,7 @@ public static class ComponentModelFactory
         // the six short-channel ones — which is exactly why they are separate types: a single type
         // would present the union and silently accept whichever set the user did not mean.
         if (level == 3)
-            return new Mos.MosfetLevel3Model(
+            return WithMosNoise(new Mos.MosfetLevel3Model(
                 channel:                  channel,
                 vto:                      P("Vto",    vtoDefault),
                 kp:                       P("Kp",     2.0e-5),
@@ -1649,9 +1655,9 @@ public static class ComponentModelFactory
                 tempC:                    Temperature.ResolveDeviceC(parameters, ambientC),
                 tnomC:                    P("Tnom",   Temperature.NominalC),
                 xti:                      P("Xti",    3.0),
-                eg:                       P("Eg",     Temperature.SiliconBandgapEv));
+                eg:                       P("Eg",     Temperature.SiliconBandgapEv)), parameters);
 
-        return new Mos.MosfetLevel1Model(
+        return WithMosNoise(new Mos.MosfetLevel1Model(
             channel:                  channel,
             vto:                      P("Vto",    vtoDefault),
             kp:                       P("Kp",     2.0e-5),
@@ -1696,7 +1702,23 @@ public static class ComponentModelFactory
             xti:                      P("Xti",    3.0),
             // Read as the bandgap at 0 K, which is what the Varshni relation in Temperature
             // subtracts from — the same reading every other family here uses.
-            eg:                       P("Eg",     Temperature.SiliconBandgapEv));
+            eg:                       P("Eg",     Temperature.SiliconBandgapEv)), parameters);
+    }
+
+    /// <summary>
+    /// A MOSFET's noise keys (brief NZ-4): <c>Kf</c>, <c>Af</c> and <c>GammaN</c>, the channel thermal noise coefficient
+    /// (2/3 for a long channel). Named <c>GammaN</c> because <c>Gamma</c> is already this family's body-effect coefficient.
+    /// </summary>
+    private static T WithMosNoise<T>(T model, IReadOnlyDictionary<string, Value> parameters) where T : ComponentModel
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+        switch (model)
+        {
+            case Mos.MosfetModelBase mos: mos.SetNoise(P("Kf", 0.0), P("Af", 1.0), P("GammaN", 2.0 / 3.0)); break;
+            case Mos.VdmosModel vd:       vd.SetNoise(P("Kf", 0.0), P("Af", 1.0), P("GammaN", 2.0 / 3.0)); break;
+        }
+        return model;
     }
 
     // ── BJT family ────────────────────────────────────────────────────────────
@@ -1776,7 +1798,9 @@ public static class ComponentModelFactory
             // parameter table quoting a room-temperature figure here is stating a slightly
             // different quantity; it costs nothing at Temp == Tnom, where the relation is the
             // identity, and only shifts the SLOPE of the saturation currents away from it.
-            bandgapAtZeroK:                 P("Eg",   1.11));
+            bandgapAtZeroK:                 P("Eg",   1.11),
+            flickerCoefficient:             P("Kf",   0.0),
+            flickerExponent:                P("Af",   1.0));
     }
 
     // ── Diode ─────────────────────────────────────────────────────────────────
@@ -2232,7 +2256,9 @@ public static class ComponentModelFactory
             // every ambient while the device still looks temperature-aware.
             nominalTemperatureK:   Temperature.ToKelvin(P("Tnom", Temperature.NominalC)),
             saturationTempExponent: P("Xti", 3.0),
-            bandgapAtZeroK:        P("Eg",  Temperature.SiliconBandgapEv));
+            bandgapAtZeroK:        P("Eg",  Temperature.SiliconBandgapEv),
+            flickerCoefficient:    P("Kf",  0.0),
+            flickerExponent:       P("Af",  1.0));
     }
 
     // ── R (temperature coefficients) ──────────────────────────────────────────

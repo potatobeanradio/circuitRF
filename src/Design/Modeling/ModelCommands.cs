@@ -30,7 +30,7 @@ public sealed record FitOptions(string? Method = null, ulong? Seed = null, strin
 public static partial class ModelCommands
 {
     /// <summary>The steps a fit can run, in the order <c>all</c> runs them.</summary>
-    public static readonly IReadOnlyList<string> Steps = ["network", "thermal", "current", "traps", "charge", "passive"];
+    public static readonly IReadOnlyList<string> Steps = ["network", "thermal", "current", "traps", "charge", "noise", "passive"];
 
     // ── new ───────────────────────────────────────────────────────────────────
 
@@ -316,6 +316,7 @@ public static partial class ModelCommands
         steps.Add("current");
         if (TrapFit.Modelled(doc)) steps.Add("traps");
         steps.Add("charge");
+        if (NoiseFit.Settings(doc).Sources.Count > 0) steps.Add("noise");
         return steps;
     }
 
@@ -476,6 +477,7 @@ public static partial class ModelCommands
             "traps" => TrapFit.FitFile(cmcPath, rc) is var (traps, current) ? [.. traps.Record.Report, .. current?.Record.Report ?? []] : [],
             "charge" => ChargeFit.FitFile(cmcPath, rc).Record.Report,
             "passive" => PassiveStep.FitFile(cmcPath, rc).Record.Report,
+            "noise" => NoiseFit.FitFile(cmcPath, rc).Report,
             _ => throw new ModelingException(step, "it is not a step."),
         };
         var lines = report.Select(l => new ModelLine("step", step, l)).ToList();

@@ -178,6 +178,50 @@ public sealed class VdmosModel : ComponentModel
         _rs = sourceResistance > 0 ? sourceResistance : 0.0;
     }
 
+    // Noise (brief NZ-4), set by the factory once, before the model is used.
+    private double _kf, _af = 1.0, _gammaN = 2.0 / 3.0;
+
+    /// <summary>The noise keys from the instance line: <c>Kf</c>, <c>Af</c> and the channel coefficient <c>GammaN</c>.</summary>
+    internal void SetNoise(double kf, double af, double gammaN)
+    {
+        _kf = kf;
+        _af = af > 0 ? af : 1.0;
+        _gammaN = gammaN >= 0 ? gammaN : 2.0 / 3.0;
+        _noise = null;
+    }
+
+    /// <summary>
+    /// The noise sources (brief NZ-4): channel thermal <c>4kT·GammaN·gm</c> across the channel, always on; flicker
+    /// <c>Kf·|Id|^Af / f</c> when <c>Kf</c> is set — this model states no oxide geometry, so the density is the card's
+    /// own; and thermal <c>4kT/R</c> across each of <c>Rg</c>, <c>Rd</c> and <c>Rs</c> that is present.
+    /// </summary>
+    public override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noise ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noise;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        var list = new List<NoiseSourceDecl> { NoiseSourceDecl.OnPort("thermal_channel", PDs) };
+        if (_kf != 0) list.Add(NoiseSourceDecl.OnPort("flicker", PDs));
+        if (_rg > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rg", PortRg));
+        if (_rd > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rd", PortRd));
+        if (_rs > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rs", PortRs));
+        return list;
+    }
+
+    /// <inheritdoc/>
+    public override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        double vds = _s * v[PDs];
+        bool forward = vds >= 0.0;
+        var (id, gm, _) = DrainCurrent(_s * v[forward ? PGs : PGd], forward ? vds : -vds);
+        int k = 0;
+        into[k++] = new NoiseDensity(4 * Temperature.Boltzmann * kelvin * _gammaN * Math.Abs(gm));
+        if (_kf != 0) into[k++] = NoiseDensity.Flicker(_kf, _af, id);
+        if (_rg > 0) into[k++] = NoiseDensity.Thermal(1.0 / _rg, kelvin);
+        if (_rd > 0) into[k++] = NoiseDensity.Thermal(1.0 / _rd, kelvin);
+        if (_rs > 0) into[k] = NoiseDensity.Thermal(1.0 / _rs, kelvin);
+    }
+
     /// <summary>True for an n-channel device. The two are NOT interchangeable at a bias point.</summary>
     public bool IsNChannel => _s > 0;
 

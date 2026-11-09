@@ -4569,3 +4569,36 @@ an S-parameter file's noise data is.
 
 Gates: `tests/Engine.Tests/Linear/SystemBlockNoiseTests.cs`; `SystemBlockElaborationTests.AFreshlyPlacedAmplifierOrMixerExtractsNoNoiseKey`
 and `NoiseExplainCliTests.Amplifier_IsListedAsSpecifiedNf` in `tests/Ui.Tests`.
+
+## Noise in the built-in models and the composed FET (2026-11-09)
+
+Brief NZ-4. One seam on `ComponentModel` — `NoiseSources`, `EvaluateNoise(v, kelvin)` at the instantaneous state, and
+`NoiseDensitiesAt` (the per-frequency form, which an external device's worker answers) — and one branch in
+`SParameterNoise`: any model that declares sources, built-in or external.
+
+- **A model declares only the sources its keys turn on**, so a device whose noise keys are all at their defaults is
+  named exactly as before. On by design: diode shot, BJT base and collector shot, MOSFET/VDMOS channel thermal, and the
+  thermal noise of any stated series resistance.
+- **`Gamma` was taken.** It is the MOSFET's body-effect coefficient, so the channel-noise coefficient is `GammaN`.
+- **The FET family had no intrinsic gate resistance for `Tg` to act on.** `Ri` (default 0) now puts `Cgs`, the gate diode
+  and the drain current's control voltage on a minted node `gi`, four ports `(g,gi) (gi,s) (d,s) (g,d)` with `Cgd` alone
+  on the last; at `Ri = 0` the two-port path is untouched. `Tg`/`Td` are noise temperatures in KELVIN, unlike `Temp`.
+- **A composed FET's thermal network was being given Johnson noise.** `Rth`/`Cth` are an ordinary R and C on the thermal
+  node, so the Bosma path made them noisy, and the core's thermal coupling carried that into the drain. They are now
+  noiseless by definition. The network's other elements are thermal at the core's requested temperature plus the
+  thermal node's DC rise; its `Ri` at `Core.Noise.Tg`.
+- **The vendor model library worker (`tools/senior-worker`) leaves its devices noiseless.** Its host ABI does carry a
+  linear-analysis entry point (`analyze_lin`, `UserNonLinDef` word 1) and a host callback `add_lin_n(inst, i, j, re, im)`,
+  which reads as a noise-correlation sink. But the worker stubs `add_lin_n` and never calls `analyze_lin`, and nothing
+  available here establishes `analyze_lin`'s argument layout or the units and normalisation of what `add_lin_n`
+  receives; the fake model library does not implement either. Wiring it would mean guessing densities, so it was not
+  done. It needs a real kit device whose noise is known, to measure the convention against.
+- **The SPICE importer now carries `KF`/`AF`** onto the diode, BJT, MOS, VDMOS and MESFET cards; the JFET and IGBT still
+  drop them (no noise sources).
+- **The Model Composer's Noise step is optional.** Its fit is linear: the device's chain correlation is
+  `C₀ + Tg·C_g + Td·C_d`, so three noise runs of the assembled model give the basis and a least-squares solve the
+  temperatures; the network's own parasitics in `C₀` are the de-embedding. Export writes `Core.Noise` only when the step
+  lists data and has a result.
+
+Gates: `tests/Engine.Tests/Linear/DeviceNoiseTests.cs`, `tests/Ui.Tests/ModelComposer/NoiseFitTests.cs`,
+`SystemBlockElaborationTests.AFreshlyPlacedFetStatesNoNoiseTemperature`.

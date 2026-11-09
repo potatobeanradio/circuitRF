@@ -63,6 +63,46 @@ public abstract class ComponentModel
     public virtual NonlinearResult Evaluate(in PortVoltages v)
         => throw new NotSupportedException($"{GetType().Name} is not a nonlinear model");
 
+    // ── Noise (brief NZ-4) ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The noise sources this model declares: each a current between two of its terminals, internal nodes included
+    /// (<see cref="NoiseSourceDecl"/>). Empty — the default — is a model with no noise of its own, which the noise analysis
+    /// names. A model declares only the sources its parameters turn on, so a device with every noise parameter at its
+    /// default is named exactly as it was before it had any.
+    /// </summary>
+    public virtual IReadOnlyList<NoiseSourceDecl> NoiseSources => [];
+
+    /// <summary>
+    /// Each of <see cref="NoiseSources"/>' densities at the INSTANTANEOUS state <paramref name="v"/> — the same port
+    /// voltages <see cref="Evaluate(in PortVoltages)"/> takes — and the device temperature <paramref name="kelvin"/>, for
+    /// one device (the caller applies the multiplier). In the S-parameter analysis the state is the DC operating point; in
+    /// a harmonic-balance noise analysis it is each sample of the large-signal waveform, which is what makes the densities
+    /// cyclostationary without a second model. A model with a thermal node reads its rise from <paramref name="v"/>, as
+    /// <c>Evaluate</c> does.
+    /// </summary>
+    public virtual void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into) { }
+
+    /// <summary>
+    /// The densities of <see cref="NoiseSources"/> at the bias <paramref name="bias"/> and each of
+    /// <paramref name="frequenciesHz"/>: <c>[k, s]</c>, single-sided A²/Hz, for one device. The default evaluates
+    /// <see cref="EvaluateNoise"/> once and applies each density's frequency law; a model whose densities come from
+    /// elsewhere (an external device's worker) answers here instead. Null when the model declares no sources.
+    /// </summary>
+    public virtual double[,]? NoiseDensitiesAt(
+        ElaboratedComponent c, in PortVoltages bias, double kelvin, IReadOnlyList<double> frequenciesHz)
+    {
+        var decl = NoiseSources;
+        if (decl.Count == 0) return null;
+        var d = new NoiseDensity[decl.Count];
+        EvaluateNoise(bias, kelvin, d);
+        var psd = new double[frequenciesHz.Count, decl.Count];
+        for (int k = 0; k < frequenciesHz.Count; k++)
+            for (int s = 0; s < decl.Count; s++)
+                psd[k, s] = d[s].At(frequenciesHz[k]);
+        return psd;
+    }
+
     /// <summary>
     /// Nonlinear contribution with control currents. Engines call this form, passing
     /// ControlCurrents.Empty when they don't yet supply control currents.

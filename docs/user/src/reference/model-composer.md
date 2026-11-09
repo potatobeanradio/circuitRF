@@ -85,12 +85,13 @@ the data and network it came from. When either changes, the step is marked stale
 | Charge | Fits `Qg` and `Qd`, or, with no S data, writes them from typed capacitances. |
 | Thermal | Adds self-heating: Rth (typed, or extracted from pulsed I–V) and the thermal time constants. |
 | Traps | Chooses a trap model and its coupling: fits the currents again with the trap states as inputs, or fits the strengths of a threshold shift from multi-bias S. |
+| Noise | Optional. Fits the drain noise temperature `Td`, and the gate temperature `Tg` when the data supports both, from measured noise parameters. A document with no noise data exports a complete model without noise. |
 | Check | Checks that the charges conserve charge. |
 | Validate | Compares the model with every data set at the plane it was measured at. |
 | Export | Writes the `.cmodel`. |
 
 **Fit all** (`model fit --step all`) runs every step the document needs, in this order: the network if any value is
-free, then thermal, current, traps when a trap model is chosen, and charge. With no S data, the network is held at its
+free, then thermal, current, traps when a trap model is chosen, charge, and noise when the Noise step lists data. With no S data, the network is held at its
 values (`network: held at its values — no S data to fit to`) and the charge step writes the typed capacitances; a fit
 of the network step alone still refuses.
 
@@ -1024,6 +1025,29 @@ and the words *one temperature* instead: the model it builds has no temperature 
 |---|---|
 | Tj | Each DC point's junction-temperature rise against its dissipated power, and the model's Rth line |
 | DC I–V | Measured Id, the model with self-heating (solid) and the isothermal model (dashed) |
+
+## The Noise step {#noise}
+
+The step is optional: a model needs no noise data to be built, exported or simulated, and one exported without it has no
+`Noise` block, its core named as noiseless by the noise analysis.
+
+**Data.** One file per line in the box. A Touchstone two-port with a noise block takes its bias after the path,
+`file.s2p Vgs Vds`. Anything else is a table that states its own biases, one row per line:
+`Vgs Vds Freq_Hz NFmin_dB |Γopt| ∠Γopt_deg Rn_Ω`, with Γopt on 50 Ω and `#` or `!` starting a comment. **Measured at**
+is the ambient the data was taken at, °C.
+
+**Fit** (Run). At each bias the model the earlier steps built is simulated with the same S-parameter noise analysis a
+schematic runs, between 50 Ω ports. Every part of the extrinsic network is in that simulation at the device's
+temperature, self-heating included, so its noise is taken out of the measurement by the model itself: that is the
+de-embedding, and it uses the model's own network. What is left is fitted by least squares on the noise correlation:
+`Td`, the drain temperature (a noise current `4k·Td·gds` across the intrinsic drain–source), and `Tg`, the temperature of
+the network's element named `Ri`, when the network has one and the data separates the two. Otherwise `Ri`, if present,
+stays at the device temperature and `Td` is fitted alone.
+
+The readout gives each bias's temperatures and the RMS difference between measured and modelled NFmin (dB), Γopt and Rn
+(relative), and then the two side by side at each frequency. **Export** writes them as the `.cmodel`'s `Noise` block: a
+constant from one bias, and from several a plane in `vgs` and `vds` fitted through them. This is the one noise fit the
+composer does; it does not extract noise in any other way.
 
 ## The Traps step {#traps}
 

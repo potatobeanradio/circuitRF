@@ -95,6 +95,9 @@ public static class SpiceModelCardTranslation
 
     private static readonly (string Target, string[] Sources)[] DiodeMap =
     [
+        // Flicker noise (brief NZ-4): the device reads both, with the meaning the card gives them.
+        ("Kf",   ["KF"]),
+        ("Af",   ["AF"]),
         // JS is the same saturation current under the dialect's other spelling (both scale with
         // AREA), so a card stating only JS binds rather than being refused for "leaving it behind".
         ("Is",   ["IS", "JS"]),
@@ -122,6 +125,9 @@ public static class SpiceModelCardTranslation
 
     private static readonly (string Target, string[] Sources)[] BjtMap =
     [
+        // Flicker noise (brief NZ-4): the device reads both, with the meaning the card gives them.
+        ("Kf",   ["KF"]),
+        ("Af",   ["AF"]),
         ("Is",   ["IS"]),
         ("Bf",   ["BF"]),
         ("Nf",   ["NF"]),
@@ -219,6 +225,9 @@ public static class SpiceModelCardTranslation
     /// </summary>
     private static readonly (string Target, string[] Sources)[] MesfetMap =
     [
+        // Flicker noise (brief NZ-4): the device reads both, with the meaning the card gives them.
+        ("Kf",   ["KF"]),
+        ("Af",   ["AF"]),
         ("Vto",     ["VTO", "VT0"]),
         ("Beta",    ["BETA"]),
         ("Alpha",   ["ALPHA"]),
@@ -276,6 +285,9 @@ public static class SpiceModelCardTranslation
     /// </summary>
     private static readonly (string Target, string[] Sources)[] VdmosMap =
     [
+        // Flicker noise (brief NZ-4): the device reads both, with the meaning the card gives them.
+        ("Kf",   ["KF"]),
+        ("Af",   ["AF"]),
         ("Vto",    ["VTO", "VT0", "VTH"]),
         ("Kp",     ["KP"]),
         ("Lambda", ["LAMBDA"]),
@@ -364,6 +376,9 @@ public static class SpiceModelCardTranslation
     /// </summary>
     private static readonly (string Target, string[] Sources)[] MosfetMap =
     [
+        // Flicker noise (brief NZ-4): the device reads both, with the meaning the card gives them.
+        ("Kf",   ["KF"]),
+        ("Af",   ["AF"]),
         ("Vto",    ["VTO", "VT0"]),
         ("Kp",     ["KP"]),
         ("Gamma",  ["GAMMA"]),

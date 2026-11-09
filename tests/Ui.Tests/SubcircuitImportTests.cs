@@ -722,7 +722,7 @@ public class SubcircuitImportTests : IDisposable
     public void TheReport_NamesEveryCardParameterThatWasNotCarried()
     {
         var t = Only("""
-            .model DMOD D (IS=1e-14 KF=1e-20 AF=1.0)
+            .model DMOD D (IS=1e-14 IKF=1e-3)
             .subckt WRAP a b
             D1 a b DMOD
             .ends
@@ -730,7 +730,7 @@ public class SubcircuitImportTests : IDisposable
 
         var report = SubcircuitCellBuilder.Write(_root, "WRAP", t, [t]).Report;
 
-        Assert.Contains(report, l => l.Contains("KF", StringComparison.Ordinal)
+        Assert.Contains(report, l => l.Contains("IKF", StringComparison.Ordinal)
                                   && l.Contains("not carried", StringComparison.OrdinalIgnoreCase));
     }
 

@@ -60,9 +60,14 @@ namespace CircuitRF.Core.Devices;
 /// <c>Mjs</c>) — a discrete RF transistor has no substrate terminal to attach it to, and inventing
 /// a fourth pin would change what the symbol means; <c>Ptf</c> excess phase — it is a delay, and
 /// circuitRF's weighting functions carry 1 and jω, not exp(−jωτ), so accepting the parameter would
-/// be accepting a value that does nothing; <c>Kf</c>/<c>Af</c> flicker noise — there is no noise
-/// analysis for it to feed; and self-heating — the device temperature is a parameter, not a solved
-/// node. A parameter this model does not read is not offered.</para>
+/// be accepting a value that does nothing; and self-heating — the device temperature is a parameter,
+/// not a solved node. A parameter this model does not read is not offered.</para>
+///
+/// <para><b>Noise</b> (brief NZ-4), the standard set: base shot <c>2q·|Ib|</c> across the internal base–emitter
+/// junction and collector shot <c>2q·|Ic|</c> across the internal collector–emitter, always on; flicker
+/// <c>Kf·|Ib|^Af / f</c> beside the base shot when <c>Kf</c> is set; and thermal <c>4kT/R</c> across each of
+/// <c>Rb</c> (at its modulated value), <c>Re</c> and <c>Rc</c> that is present. <c>Ib = Ibe + Ibc</c> and
+/// <c>Ic = Ict − Ibc</c>, the terminal currents of the intrinsic device.</para>
 /// </summary>
 public sealed class BjtModel : ComponentModel
 {
@@ -120,6 +125,7 @@ public sealed class BjtModel : ComponentModel
     private readonly double _cje, _vje, _mje, _cjc, _vjc, _mjc, _xcjc, _fc;
     private readonly double _tf, _xtf, _vtf, _itf, _tr;
     private readonly double _vt;
+    private readonly double _kf, _af;
 
     /// <param name="polarity">n-p-n or p-n-p. Every internal voltage and current is multiplied by
     /// its sign, so one set of equations serves both and the two cannot drift apart.</param>
@@ -174,8 +180,12 @@ public sealed class BjtModel : ComponentModel
         double tnomC                      = Temperature.NominalC,
         double saturationTempExponent     = 3.0,
         double betaTempExponent           = 0.0,
-        double bandgapAtZeroK             = Temperature.SiliconBandgapEv)
+        double bandgapAtZeroK             = Temperature.SiliconBandgapEv,
+        double flickerCoefficient         = 0.0,
+        double flickerExponent            = 1.0)
     {
+        _kf = flickerCoefficient;
+        _af = flickerExponent > 0 ? flickerExponent : 1.0;
         _s = (double)(int)polarity;
 
         double a  = area > 0 ? area : 1.0;
@@ -350,6 +360,48 @@ public sealed class BjtModel : ComponentModel
     // and the linear engines go through ComponentModel.StampLinearized, which linearises about the
     // bias point.
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega) { }
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noise ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noise;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        var list = new List<NoiseSourceDecl>
+        {
+            NoiseSourceDecl.OnPort("shot_base", PBe),
+            NoiseSourceDecl.OnPort("shot_collector", PCe),
+        };
+        if (_kf != 0) list.Add(NoiseSourceDecl.OnPort("flicker", PBe));
+        if (_rb > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rb", PortRb));
+        if (_re > 0) list.Add(NoiseSourceDecl.OnPort("thermal_re", PortRe));
+        if (_rc > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rc", PortRc));
+        return list;
+    }
+
+    /// <inheritdoc/>
+    public override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        int P = PortCount;
+        var i = new double[P];
+        var q = new double[P];
+        var dg = new double[P, P];
+        EvaluateInto(v, i, q, dg, new double[P, P]);
+        // Back to the intrinsic device's terminal currents: the base carries both junctions' base currents, the collector
+        // the transport current less the collector junction's.
+        double ib = i[PBe] + i[PBc], ic = i[PCe] - i[PBc];
+        int k = 0;
+        into[k++] = NoiseDensity.Shot(ib);
+        into[k++] = NoiseDensity.Shot(ic);
+        if (_kf != 0) into[k++] = NoiseDensity.Flicker(_kf, _af, ib);
+        if (_rb > 0)
+        {
+            // The modulated base resistance at this state: the port's own conductance is 1/Rb there.
+            into[k++] = NoiseDensity.Thermal(dg[PortRb, PortRb], kelvin);
+        }
+        if (_re > 0) into[k++] = NoiseDensity.Thermal(1.0 / _re, kelvin);
+        if (_rc > 0) into[k] = NoiseDensity.Thermal(1.0 / _rc, kelvin);
+    }
 
     /// <summary>
     /// One saturation-current exponential and its derivative, continued by its TANGENT above the

@@ -49,9 +49,11 @@ namespace CircuitRF.Core.Devices.Mos;
 ///
 /// <para><b>What is NOT modelled, deliberately:</b> subthreshold conduction (<c>Nfs</c>) — the
 /// classical law goes to exactly zero at threshold, and a device biased there is being asked a
-/// question this model cannot answer; flicker noise (<c>Kf</c>/<c>Af</c>) — there is no noise
-/// analysis for it to feed; and self-heating — the device temperature is a parameter, not a solved
-/// node. A parameter this model does not read is not offered.</para>
+/// question this model cannot answer; and self-heating — the device temperature is a parameter, not a
+/// solved node. A parameter this model does not read is not offered.</para>
+///
+/// <para><b>Noise</b> (brief NZ-4): see <see cref="NoiseSources"/> — channel thermal, flicker and the series
+/// resistances.</para>
 /// </summary>
 public abstract class MosfetModelBase : ComponentModel
 {
@@ -94,6 +96,18 @@ public abstract class MosfetModelBase : ComponentModel
 
     // Ohmic.
     private readonly double _rd, _rs;
+
+    // Noise (brief NZ-4), set by the factory once, before the model is used.
+    private double _kf, _af = 1.0, _gammaN = 2.0 / 3.0;
+
+    /// <summary>The noise keys from the instance line: <c>Kf</c>, <c>Af</c> and the channel coefficient <c>GammaN</c>.</summary>
+    internal void SetNoise(double kf, double af, double gammaN)
+    {
+        _kf = kf;
+        _af = af > 0 ? af : 1.0;
+        _gammaN = gammaN >= 0 ? gammaN : 2.0 / 3.0;
+        _noise = null;
+    }
 
     /// <summary>Surface potential at the device temperature, V — <c>Phi</c>, already scaled.</summary>
     protected double Phi { get; }
@@ -351,6 +365,44 @@ public abstract class MosfetModelBase : ComponentModel
     /// is published in.</para>
     /// </summary>
     /// <returns>(Id, gm = ∂Id/∂Vgs, gds = ∂Id/∂Vds, gmbs = ∂Id/∂Vbs)</returns>
+    /// <summary>
+    /// The noise sources (brief NZ-4): channel thermal noise <c>4kT·GammaN·gm</c> across the channel — <c>(8/3)kT·gm</c>
+    /// at the long-channel <c>GammaN = 2/3</c> — always on; flicker <c>Kf·|Id|^Af / (Cox·L²·f)</c> when <c>Kf</c> is set
+    /// and the card states an oxide (no <c>Tox</c>, no <c>Cox</c>, no flicker); and thermal <c>4kT/R</c> across each of
+    /// <c>Rd</c> and <c>Rs</c> that is present.
+    /// </summary>
+    public sealed override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noise ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noise;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        var list = new List<NoiseSourceDecl> { NoiseSourceDecl.OnPort("thermal_channel", PDs) };
+        if (_kf != 0 && CoxPerArea > 0) list.Add(NoiseSourceDecl.OnPort("flicker", PDs));
+        if (_rd > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rd", PortRd));
+        if (_rs > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rs", PortRs));
+        return list;
+    }
+
+    /// <inheritdoc/>
+    public sealed override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        // The channel in its own forward orientation, exactly as EvaluateInto takes it.
+        double vds = _s * v[PDs];
+        bool forward = vds >= 0.0;
+        double egs = _s * v[forward ? PGs : PGd], ebs = _s * v[forward ? PBs : PBd];
+        var (id, gm, _, _) = Channel(egs, forward ? vds : -vds, ebs);
+
+        int k = 0;
+        into[k++] = new NoiseDensity(4 * Temperature.Boltzmann * kelvin * _gammaN * Math.Abs(gm));
+        if (_kf != 0 && CoxPerArea > 0)
+        {
+            var f = NoiseDensity.Flicker(_kf, _af, id);
+            into[k++] = f with { FlickerCoeff = f.FlickerCoeff / (CoxPerArea * Leff * Leff) };
+        }
+        if (_rd > 0) into[k++] = NoiseDensity.Thermal(1.0 / _rd, kelvin);
+        if (_rs > 0) into[k] = NoiseDensity.Thermal(1.0 / _rs, kelvin);
+    }
+
     protected abstract (double Id, double Gm, double Gds, double Gmbs) Channel(
         double vgs, double vds, double vbs);
 

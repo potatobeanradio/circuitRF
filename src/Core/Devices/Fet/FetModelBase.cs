@@ -43,6 +43,20 @@ namespace CircuitRF.Core.Devices.Fet;
 /// alone, and no published convention says that it does. Guessing which is a device that simulates
 /// and is wrong, which is exactly what this family refuses to produce.</para>
 ///
+/// <para><b>The intrinsic gate resistance <c>Ri</c></b> (brief NZ-4), when it is above zero, sits in series with
+/// <c>Cgs</c> on an internal node <c>gi</c>: the gate diode, <c>Cgs</c> and the drain current's control voltage are all
+/// on <c>gi</c>, and <c>Cgd</c> stays on the external gate. Four ports then — <c>(gate, gi)</c> the resistor,
+/// <c>(gi, source)</c>, <c>(drain, source)</c> and a charge-only <c>(gate, drain)</c> for <c>Cgd</c> — the same
+/// internal-node arrangement the diode's <c>Rs</c> uses, minted by the elaborator. With <c>Ri = 0</c> (the default) the
+/// model is the two-port it always was, bit for bit.</para>
+///
+/// <para><b>Noise</b> (brief NZ-4) is the two-temperature form RF transistor noise is characterised in: <c>Ri</c>
+/// thermal at the gate temperature <c>Tg</c> (default the device temperature), the output conductance <c>gds</c>
+/// thermal at the drain temperature <c>Td</c> (<c>4k·Td·gds</c>; off unless stated), and flicker <c>Kf·|Id|^Af / f</c>
+/// on the drain current when <c>Kf</c> is set. With none of the three set the model declares no sources and is named as
+/// noiseless, as before. The family carries no extrinsic <c>Rg</c>/<c>Rd</c>/<c>Rs</c>; resistors placed beside it are
+/// thermal at their own temperature.</para>
+///
 /// <para><b>Still NOT modelled:</b> the Statz/TOM-family charge formulation, which is a different
 /// scheme again — it works on a smoothed effective voltage rather than on Vgs and Vgd separately,
 /// so it is not a parameter change to the above but its own implementation. Also absent:
@@ -88,6 +102,30 @@ public abstract class FetModelBase : ComponentModel
     private readonly double _vbi, _m, _fc;
     private readonly int    _capModel;
     private readonly double _s;
+    private readonly double _tempK;
+
+    // Noise and the intrinsic gate resistance (brief NZ-4), set by the factory once, before the model is used.
+    private double _ri, _tg = double.NaN, _td = double.NaN, _kf, _af = 1.0;
+
+    /// <summary>
+    /// The intrinsic gate resistance and the noise parameters, from the instance line. Called by the factory straight
+    /// after construction and never again: <c>Ri</c> decides the port count, which the elaborator reads to build the node
+    /// list. <paramref name="tgK"/> NaN means the device temperature; <paramref name="tdK"/> NaN means no drain noise.
+    /// </summary>
+    internal void SetNoise(double ri, double tgK, double tdK, double kf, double af)
+    {
+        _ri = ri > 0 ? ri : 0.0;
+        _tg = tgK;
+        _td = tdK;
+        _kf = kf;
+        _af = af > 0 ? af : 1.0;
+    }
+
+    /// <summary>The intrinsic gate resistance, Ω, or 0 when there is none.</summary>
+    public double IntrinsicGateResistance => _ri;
+
+    /// <summary>True when <c>Ri</c> puts the gate side on an internal node.</summary>
+    public bool HasIntrinsicGateResistance => _ri > 0;
 
     /// <summary>
     /// <c>+1</c> for n-channel, <c>−1</c> for p-channel. A concrete law multiplies its own
@@ -138,14 +176,47 @@ public abstract class FetModelBase : ComponentModel
         _cgd    = cgd;
         _isGate = gateSaturationCurrent;
         _nGate  = gateEmissionCoefficient > 0 ? gateEmissionCoefficient : 1.0;
-        _vt     = Boltzmann * (tempC + 273.15 > 0 ? tempC + 273.15 : 300.15) / ElemCharge;
+        _tempK  = tempC + 273.15 > 0 ? tempC + 273.15 : 300.15;
+        _vt     = Boltzmann * _tempK / ElemCharge;
     }
 
-    public sealed override int       PortCount => 2;
+    // Port indices with Ri: the resistor, the intrinsic gate-source, the drain-source, and Cgd's charge-only port.
+    private const int PRi = 0, PGi = 1, PDs = 2, PGd = 3;
+
+    public sealed override int       PortCount => _ri > 0 ? 4 : 2;
     public sealed override ModelKind Kind      => ModelKind.Nonlinear;
 
-    /// <summary>Four entries because two ports share the source net; the elaborator builds them.</summary>
-    public sealed override string[] TerminalNames => ["gate", "source", "drain", "source"];
+    /// <summary>Four entries because two ports share the source net; the elaborator builds them. Eight with <c>Ri</c>.</summary>
+    public sealed override string[] TerminalNames => _ri > 0
+        ? ["gate", "gi", "gi", "source", "drain", "source", "gate", "drain"]
+        : ["gate", "source", "drain", "source"];
+
+    /// <inheritdoc/>
+    public sealed override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noise ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noise;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        int drain = _ri > 0 ? PDs : 1;
+        var list = new List<NoiseSourceDecl>();
+        if (_ri > 0) list.Add(NoiseSourceDecl.OnPort("thermal_ri", PRi));
+        if (double.IsFinite(_td)) list.Add(NoiseSourceDecl.OnPort("thermal_gds", drain));
+        if (_kf != 0) list.Add(NoiseSourceDecl.OnPort("flicker", drain));
+        return list;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><paramref name="kelvin"/> is the device temperature, which <c>Tg</c> defaults to.</remarks>
+    public sealed override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        bool ri = _ri > 0;
+        double vgs = _s * v[ri ? PGi : 0], vds = _s * v[ri ? PDs : 1];
+        var (id, _, gds) = DrainCurrent(vgs, vds);
+        int k = 0;
+        if (ri) into[k++] = NoiseDensity.Thermal(1.0 / _ri, double.IsFinite(_tg) ? _tg : kelvin);
+        if (double.IsFinite(_td)) into[k++] = NoiseDensity.Thermal(gds, _td);
+        if (_kf != 0) into[k] = NoiseDensity.Flicker(_kf, _af, id);
+    }
 
     /// <summary>
     /// The model's own drain-current law. Returns Id and both derivatives — analytically, because a
@@ -216,14 +287,15 @@ public abstract class FetModelBase : ComponentModel
     /// bias — this family's <c>dc</c> is already symmetric (<c>dc[0,1] = dc[1,0] = −Cgd</c>), so
     /// there is no transcapacitance to remove and the symmetrisation is the identity here.
     /// </summary>
-    public sealed override IReadOnlyList<(int P, int Q)> ControlledConductances => [(1, 0)];
+    public sealed override IReadOnlyList<(int P, int Q)> ControlledConductances => _ri > 0 ? [(PDs, PGi)] : [(1, 0)];
 
     public sealed override NonlinearResult Evaluate(in PortVoltages v)
     {
-        var i = new double[2];
-        var q = new double[2];
-        var dg = new double[2, 2];
-        var dc = new double[2, 2];
+        int n = PortCount;
+        var i = new double[n];
+        var q = new double[n];
+        var dg = new double[n, n];
+        var dc = new double[n, n];
         EvaluateInto(v, i, q, dg, dc);
         return new NonlinearResult(i, q, dg, dc);
     }
@@ -239,6 +311,8 @@ public abstract class FetModelBase : ComponentModel
     /// <inheritdoc/>
     protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
     {
+        if (_ri > 0) { EvaluateWithRi(v, i, q, dg, dc); return; }
+
         // Into n-channel coordinates. For n-channel the sign is exactly +1, so every multiplication
         // below is the identity and the result is bit-identical to one computed before polarity
         // existed — which is what lets this family's own tests stand as the proof it changed no
@@ -278,5 +352,34 @@ public abstract class FetModelBase : ComponentModel
         dg[0, 0] = gg;  dg[0, 1] = 0.0;  dg[1, 0] = gm;   dg[1, 1] = gds;
         dc[0, 0] = cgsV + cgdV;  dc[0, 1] = -cgdV;
         dc[1, 0] = -cgdV;        dc[1, 1] = cgdV;
+    }
+
+    /// <summary>
+    /// The four-port form with <c>Ri</c>: the resistor on (gate, gi); the gate diode and <c>Cgs</c> on (gi, source), whose
+    /// voltage also controls the drain current; the drain current on (drain, source); <c>Cgd</c> alone on (gate, drain).
+    /// Each port's charge depends only on its own voltage, so no cross capacitance appears — the coupling is the shared
+    /// nodes. The resistor's current is ohmic and does not flip with polarity.
+    /// </summary>
+    private void EvaluateWithRi(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
+        Array.Clear(i); Array.Clear(q); Array.Clear(dg); Array.Clear(dc);
+
+        double vgs = _s * v[PGi], vds = _s * v[PDs], vgd = _s * v[PGd];
+        var (id, gm, gds) = DrainCurrent(vgs, vds);
+        var (ig, gg)      = GateCurrent(vgs);
+
+        double qgs, cgsV, qgd, cgdV;
+        switch (_capModel)
+        {
+            case 0:  qgs = cgsV = qgd = cgdV = 0.0; break;
+            case 2:  (qgs, cgsV) = JunctionCharge(_cgs, vgs); (qgd, cgdV) = JunctionCharge(_cgd, vgd); break;
+            default: qgs = _cgs * vgs; cgsV = _cgs; qgd = _cgd * vgd; cgdV = _cgd; break;
+        }
+
+        double gr = 1.0 / _ri;
+        i[PRi] = v[PRi] * gr;  dg[PRi, PRi] = gr;
+        i[PGi] = _s * ig;      dg[PGi, PGi] = gg;   q[PGi] = _s * qgs;  dc[PGi, PGi] = cgsV;
+        i[PDs] = _s * id;      dg[PDs, PGi] = gm;   dg[PDs, PDs] = gds;
+        q[PGd] = _s * qgd;     dc[PGd, PGd] = cgdV;
     }
 }

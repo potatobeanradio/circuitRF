@@ -104,12 +104,11 @@ are the reasoning, written down.</p>
 <h2 id="why">Why a parameter is not carried</h2>
 <p>There are five reasons, and every dropped parameter is one of them.</p>
 <h3 id="there-is-no-analysis-that-would-read-it">1. There is no analysis that would read it</h3>
-<p><code>KF</code> and <code>AF</code> — the flicker-noise coefficients — appear on every semiconductor card and are carried
-by none of them. The built-in device models are <strong>noiseless</strong>: the
-<a href="simulations.html#sp-noise">S-parameter noise analysis</a> takes them so and names them in its warning,
-and nothing else here analyses noise. Accepting the two would put two rows on the built cell that look
-honoured and change no result, which is worse than an empty space: a parameter this model does not read
-is not offered. A compiled model brings its own noise (<a href="veriloga.html#noise">VerilogA</a>).</p>
+<p><code>KF</code> and <code>AF</code>, the flicker-noise coefficients, appear on every semiconductor card. The diode, the bipolar transistor,
+the MOS transistors, the vertical MOSFET and the MESFET family carry them, because their noise sources read them
+(<a href="components.html#diode">Components</a> lists each model's sources). The JFET and the IGBT have no noise sources, so on
+their cards the two are not carried: two rows on the built cell that look honoured and change no result would be worse
+than an empty space. A compiled model brings its own noise (<a href="veriloga.html#noise">VerilogA</a>).</p>
 <h3 id="the-device-has-no-node-for-it">2. The device has no node for it</h3>
 <p>A bipolar card's <code>CJS</code>/<code>VJS</code>/<code>MJS</code> describe the <strong>collector–substrate junction</strong>. A discrete RF
 transistor has no substrate terminal to attach one to, and adding a fourth pin would change what the

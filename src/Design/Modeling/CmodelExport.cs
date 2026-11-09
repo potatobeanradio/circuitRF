@@ -129,6 +129,7 @@ public static class CmodelExport
             {
                 Symmetry = current.Settings.Symmetry,
                 Dispersion = r.Tau is { } tau ? new ModelDispersion(tau) : null,
+                Noise = NoiseFit.CoreNoise(doc),
             },
             Extrapolation = r.Gx.Count > 0 ? ModelExtrapolation.Local(r.Gx) : null,
             Symbol = SymbolFor(symbol ?? Settings(doc).Symbol, cmcDir, outDir, thermal is not null),

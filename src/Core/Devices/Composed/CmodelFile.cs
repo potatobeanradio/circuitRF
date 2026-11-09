@@ -200,6 +200,7 @@ public static class CmodelFile
                     throw new CmodelFormatException($"Core.Dispersion.{p.Name}", "it is not a field of Dispersion; the field is Tau.");
             dispersion = new ModelDispersion(Num(dsp, "Tau", "Core.Dispersion.Tau"));
         }
+        ModelNoise? noise = coreObj.TryGetProperty("Noise", out var nz) ? ParseNoise(nz) : null;
         var core = Obj(coreObj, "Constituents", "Core.Constituents");
         Constituent One(string name, bool optional = false)
         {
@@ -252,11 +253,33 @@ public static class CmodelFile
             Traps         = traps,
             Network       = new ExtrinsicNetwork(Str(net, "Netlist", "Network.Netlist"), scaling),
             Core          = new CoreConstituents(One("Id"), One("Ig"), One("Qg"), One("Qd"), idRf)
-                            { Symmetry = symmetry, Dispersion = dispersion },
+                            { Symmetry = symmetry, Dispersion = dispersion, Noise = noise },
             Extrapolation = extrapolation,
             Symbol        = symbol,
             Provenance    = provenance,
         };
+    }
+
+    private static readonly string[] NoiseKeys = ["Tg", "Td", "Kf", "Af"];
+
+    /// <summary><c>Core.Noise</c> (brief NZ-4): <c>Tg</c>, <c>Td</c> as a number (kelvin) or a constituent object; <c>Kf</c>,
+    /// <c>Af</c> as numbers.</summary>
+    private static ModelNoise ParseNoise(JsonElement n)
+    {
+        if (n.ValueKind != JsonValueKind.Object) throw new CmodelFormatException("Core.Noise", "it is not an object.");
+        foreach (var p in n.EnumerateObject())
+            if (!NoiseKeys.Contains(p.Name, StringComparer.Ordinal))
+                throw new CmodelFormatException($"Core.Noise.{p.Name}",
+                    $"it is not a field of Noise; the fields are {string.Join(", ", NoiseKeys)}.");
+        NoiseValue? Temp(string key)
+        {
+            if (!n.TryGetProperty(key, out var v)) return null;
+            string field = $"Core.Noise.{key}";
+            return v.ValueKind == JsonValueKind.Number ? NoiseValue.Of(Num(n, key, field)) : NoiseValue.Of(ParseConstituent(v, field));
+        }
+        return new ModelNoise(Temp("Tg"), Temp("Td"),
+                              n.TryGetProperty("Kf", out _) ? Num(n, "Kf", "Core.Noise.Kf") : 0.0,
+                              n.TryGetProperty("Af", out _) ? Num(n, "Af", "Core.Noise.Af") : 1.0);
     }
 
     private static readonly string[] ThermalKeys = ["Rth", "Cth", "Ladder", "RthSlope", "Tref"];
@@ -526,14 +549,48 @@ public static class CmodelFile
         ValidateDriftPair(m);
         ValidateDispersion(m);
         ValidateExtrapolation(m);
+        ValidateNoise(m, inputs, network);
 
         if (m.Symbol is { Length: 0 })
             throw new CmodelFormatException("Symbol", "it is empty; leave it out for the standard FET symbol.");
     }
 
-    private static void ValidateConstituent(ComposedModel m, Constituent c, string name, HashSet<string> allowed)
+    /// <summary>
+    /// <c>Core.Noise</c>: each temperature a positive finite constant, or an equation or table reading the core's own
+    /// <c>vgs</c>, <c>vds</c> and temperature (no trap state); <c>Kf</c> finite and not negative, <c>Af</c> positive; and a
+    /// <c>Tg</c> only where the network has the <c>Ri</c> it heats.
+    /// </summary>
+    private static void ValidateNoise(ComposedModel m, HashSet<string> inputs, ComposedNetworkTemplate network)
     {
-        string field = $"Core.Constituents.{name}";
+        if (m.Core.Noise is not { } n) return;
+        void Temp(NoiseValue? v, string key)
+        {
+            if (v is null) return;
+            string field = $"Core.Noise.{key}";
+            if (v.Constant is { } k)
+            {
+                if (!(double.IsFinite(k) && k > 0)) throw new CmodelFormatException(field, "it is not a temperature in kelvin above zero.");
+                return;
+            }
+            var c = v.Function!;
+            if (c.Method is not (Constituent.EquationMethod or Constituent.TableMethod))
+                throw new CmodelFormatException($"{field}.Method", $"'{c.Method}' is not Equation or Table.");
+            ValidateConstituent(m, c, key, inputs, field);
+        }
+        Temp(n.Tg, "Tg");
+        Temp(n.Td, "Td");
+        if (!(double.IsFinite(n.Kf) && n.Kf >= 0)) throw new CmodelFormatException("Core.Noise.Kf", "it is not a flicker coefficient of zero or more.");
+        if (!(double.IsFinite(n.Af) && n.Af > 0)) throw new CmodelFormatException("Core.Noise.Af", "it is not a flicker exponent above zero.");
+        if (n.Tg is not null && !network.HasElement(ModelNoise.GateResistorName))
+            throw new CmodelFormatException("Core.Noise.Tg",
+                $"it is the temperature of the network's intrinsic gate resistance, and the network has no element named " +
+                $"'{ModelNoise.GateResistorName}'.");
+    }
+
+    private static void ValidateConstituent(ComposedModel m, Constituent c, string name, HashSet<string> allowed,
+                                            string? fieldName = null)
+    {
+        string field = fieldName ?? $"Core.Constituents.{name}";
         if (!KnownMethods.Contains(c.Method, StringComparer.Ordinal))
             throw new CmodelFormatException($"{field}.Method",
                 $"'{c.Method}' is not a known method; the known methods are {string.Join(", ", KnownMethods)}.");
@@ -970,6 +1027,19 @@ public static class CmodelFile
             WriteConstituent(w, "Qd", m.Core.Qd);
             if (m.Core.IdRF is { } idRf) WriteConstituent(w, "IdRF", idRf);
             w.WriteEndObject();
+            if (m.Core.Noise is { } noise)
+            {
+                w.WriteStartObject("Noise");
+                foreach (var (key, v) in new[] { ("Tg", noise.Tg), ("Td", noise.Td) })
+                {
+                    if (v is null) continue;
+                    if (v.Constant is { } k) w.WriteNumber(key, k);
+                    else WriteConstituent(w, key, v.Function!);
+                }
+                if (noise.Kf != 0) w.WriteNumber("Kf", noise.Kf);
+                if (noise.Af != 1) w.WriteNumber("Af", noise.Af);
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
 
             if (m.Extrapolation is { } ex)

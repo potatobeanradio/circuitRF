@@ -54,9 +54,12 @@ namespace CircuitRF.Core.Devices;
 /// forward current stays exponential where a real junction's rolls off towards its square root, so
 /// the model is optimistic at high bias and an extracted <c>Rs</c> is where that roll-off usually
 /// ends up instead; a separate sidewall junction — <c>Cj0</c>/<c>Vj</c>/<c>M</c> describe one
-/// junction, not a bottom and a perimeter; <c>Kf</c>/<c>Af</c> flicker noise — there is no noise
-/// analysis for it to feed; and self-heating — the device temperature is a parameter, not a solved
-/// node. A parameter this model does not read is not offered.</para>
+/// junction, not a bottom and a perimeter; and self-heating — the device temperature is a parameter,
+/// not a solved node. A parameter this model does not read is not offered.</para>
+///
+/// <para><b>Noise</b> (brief NZ-4): shot noise <c>2q·|Id|</c> across the junction, always on — it is what a junction
+/// carrying current does; flicker <c>Kf·|Id|^Af / f</c> on the same junction when <c>Kf</c> is set; and thermal
+/// <c>4kT/Rs</c> across the series resistance when there is one.</para>
 /// </summary>
 public sealed class DiodeModel : ComponentModel
 {
@@ -74,6 +77,7 @@ public sealed class DiodeModel : ComponentModel
 
     private readonly double _is, _n, _cj0, _vj, _m, _fc, _bv, _ibv, _tt, _gmin, _vt, _rs;
     private readonly double _isr, _nr, _nbv;
+    private readonly double _kf, _af;
 
     /// <param name="temperatureK">
     /// Junction temperature in KELVIN; sets Vt = kT/q. Defaults to the SAME nominal the FET family
@@ -117,8 +121,12 @@ public sealed class DiodeModel : ComponentModel
         double area                   = 1.0,
         double nominalTemperatureK    = Temperature.NominalK,
         double saturationTempExponent = 3.0,
-        double bandgapAtZeroK         = Temperature.SiliconBandgapEv)
+        double bandgapAtZeroK         = Temperature.SiliconBandgapEv,
+        double flickerCoefficient     = 0.0,
+        double flickerExponent        = 1.0)
     {
+        _kf = flickerCoefficient;
+        _af = flickerExponent > 0 ? flickerExponent : 1.0;
         double a = area > 0 ? area : 1.0;
 
         double tK  = temperatureK        > 0 ? temperatureK        : Temperature.NominalK;
@@ -245,6 +253,29 @@ public sealed class DiodeModel : ComponentModel
             : _cj0 * _vj / (1.0 - _m) * (1.0 - System.Math.Pow(u0, 1.0 - _m));
         double dv  = v - fcvj;
         return (q0 + c0 * dv + 0.5 * dc0 * dv * dv, c0 + dc0 * dv);
+    }
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<NoiseSourceDecl> NoiseSources => _noise ??= BuildNoiseSources();
+    private IReadOnlyList<NoiseSourceDecl>? _noise;
+
+    private IReadOnlyList<NoiseSourceDecl> BuildNoiseSources()
+    {
+        int junction = _rs > 0 ? 1 : 0;
+        var list = new List<NoiseSourceDecl> { NoiseSourceDecl.OnPort("shot", junction) };
+        if (_kf != 0) list.Add(NoiseSourceDecl.OnPort("flicker", junction));
+        if (_rs > 0) list.Add(NoiseSourceDecl.OnPort("thermal_rs", 0));
+        return list;
+    }
+
+    /// <inheritdoc/>
+    public override void EvaluateNoise(in PortVoltages v, double kelvin, Span<NoiseDensity> into)
+    {
+        double id = Conduction(v[_rs > 0 ? 1 : 0]).I;
+        int k = 0;
+        into[k++] = NoiseDensity.Shot(id);
+        if (_kf != 0) into[k++] = NoiseDensity.Flicker(_kf, _af, id);
+        if (_rs > 0) into[k] = NoiseDensity.Thermal(1.0 / _rs, kelvin);
     }
 
     // A diode conducts at DC, so it has no linear stamp — the nonlinear engines call Evaluate, and

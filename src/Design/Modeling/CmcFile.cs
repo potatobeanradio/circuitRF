@@ -6,7 +6,7 @@
 // dropped would leave a data set measured under conditions nobody stated, and the step that needed it would
 // report it missing with the typo still sitting in the file. Pads and Network are kept as JSON and carried
 // verbatim, but validated through CmcExtrinsic (MC-4), their one reader; Steps is opaque except Steps.Current (MC-7),
-// Steps.Charge (MC-8), Steps.Thermal (MC-9), Steps.Traps (MC-10), MC-11's Export, Validate and Report, and
+// Steps.Charge (MC-8), Steps.Thermal (MC-9), Steps.Traps (MC-10), Steps.Noise (NZ-4), MC-11's Export, Validate and Report, and
 // Steps.Passive (MC-12).
 
 using System.Globalization;
@@ -398,6 +398,7 @@ public static class CmcFile
         CurrentFit.Validate(d);
         ChargeFit.Validate(d);
         ThermalFit.Validate(d);
+        NoiseFit.Validate(d);
         TrapFit.Validate(d);
         CmodelExport.Validate(d);
         ModelValidation.Validate(d);

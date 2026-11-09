@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Engine.Envelope;
@@ -55,6 +56,10 @@ public sealed record NoiseModelRow(string Label, string Types, NoiseModelKind Ki
     public double BandHiHz { get; init; } = double.NaN;
     public IReadOnlyList<string>? SourceNames { get; init; }
     public double NfDb { get; init; } = double.NaN;
+    /// <summary>For a thermal part inside a composed FET: that FET's core, whose state sets the temperature — the device's,
+    /// self-heating included, or <c>Tg</c> for its <c>Ri</c> (<see cref="AtGateTemperature"/>).</summary>
+    public string? DeviceOf { get; init; }
+    public bool AtGateTemperature { get; init; }
     public TwoPortNoise? Specified { get; init; }
     public string? Reason { get; init; }
     public bool ByDefinition { get; init; }
@@ -100,7 +105,7 @@ public static class SParameterNoise
                     sources.Add(new(row.Label, DataFile(parts[0], (SnpModel)parts[0].Model, nl, freqsHz)));
                     break;
                 case NoiseModelKind.DeviceSources:
-                    sources.Add(new(row.Label, DeviceSources(parts[0], (ExternalDeviceModel)parts[0].Model, freqsHz, dcNodeVoltages)));
+                    sources.Add(new(row.Label, DeviceSources(parts[0], row.Kelvin, freqsHz, dcNodeVoltages)));
                     break;
                 case NoiseModelKind.Specified:
                     sources.Add(new(row.Label, Amplifier(parts[0], (AmplifierModel)parts[0].Model)));
@@ -110,6 +115,15 @@ public static class SParameterNoise
                     ElaboratedComponent[] seq = [.. parts.Where(ec => ec.Model is not MutualInductanceModel),
                                                  .. parts.Where(ec => ec.Model is MutualInductanceModel)];
                     double kelvin = row.Kelvin;
+                    if (row.DeviceOf is { } corePath)
+                    {
+                        // A composed FET's parasitic: at the device's temperature at the operating point — the heated one
+                        // when it heats itself — or, for its Ri, at the model's gate temperature Tg there.
+                        var coreEc = nl.Components.First(c => c.InstancePath == corePath);
+                        var core   = (ComposedCoreModel)coreEc.Model;
+                        var bias   = SParameterEngine.BuildBias(coreEc, dcNodeVoltages);
+                        kelvin = row.AtGateTemperature ? core.GateNoiseKelvin(bias)!.Value : core.DeviceKelvin(bias);
+                    }
                     sources.Add(new(row.Label, w => Bosma(EnvelopeTangentCheck.Recorded(r => { foreach (var ec in seq) StampLinear(ec, r, w); }), kelvin)));
                     break;
                 case NoiseModelKind.Noiseless when !row.ByDefinition:
@@ -158,6 +172,19 @@ public static class SParameterNoise
             list.Add(comps[i]);
         }
 
+        // Composed FETs (brief NZ-4): each core by the prefix its cell's elements share, "X1." for "X1.core".
+        string coreSuffix = "." + ComposedNetworkTemplate.CoreInstanceName;
+        var cores = comps.Where(ec => ec.Model is ComposedCoreModel && ec.InstancePath.EndsWith(coreSuffix, StringComparison.Ordinal))
+                         .ToDictionary(ec => ec.InstancePath[..^(coreSuffix.Length - 1)], ec => ec, StringComparer.Ordinal);
+        ElaboratedComponent? CoreOf(ElaboratedComponent ec)
+        {
+            foreach (var (prefix, core) in cores)
+                if (!ReferenceEquals(core, ec) && ec.InstancePath.StartsWith(prefix, StringComparison.Ordinal)
+                    && ec.InstancePath.IndexOf('.', prefix.Length) < 0)
+                    return core;
+            return null;
+        }
+
         var result = new List<(NoiseModelRow, List<ElaboratedComponent>)>(order.Count);
         foreach (int g in order)
         {
@@ -169,6 +196,17 @@ public static class SParameterNoise
             if (g < 0)
             {
                 result.Add((Row(NoiseModelKind.Noiseless) with { ByDefinition = true, Reason = WhyNoiselessByDefinition(parts[0]) }, parts));
+                continue;
+            }
+            // A self-heating composed FET's thermal network: its R and C carry heat, not current, and have no Johnson noise.
+            if (parts is [var heat] && CoreOf(heat) is { Model: ComposedCoreModel { Loaded.Model.Thermal: { } thermal } } owner
+                && ComposedNetworkTemplate.ThermalElementNames(thermal).Any(n => heat.InstancePath.EndsWith("." + n, StringComparison.Ordinal)))
+            {
+                result.Add((Row(NoiseModelKind.Noiseless) with
+                {
+                    ByDefinition = true,
+                    Reason = $"the thermal network of {owner.InstancePath[..^coreSuffix.Length]}: it carries heat, not current",
+                }, parts));
                 continue;
             }
             // The user's statement, not a gap: listed, never warned about.
@@ -198,10 +236,15 @@ public static class SParameterNoise
                 }, parts));
                 continue;
             }
-            // An external device whose model declares noise sources; one that declares none is named below.
-            if (parts is [{ Model: ExternalDeviceModel ed }] && ed.NoiseSources.Count > 0)
+            // A model that declares noise sources — a built-in device whose noise parameters turn some on, or an external
+            // device whose model declares them — on the one seam (brief NZ-4); one that declares none is named below.
+            if (parts is [{ Model: { NoiseSources.Count: > 0 } noisy } one])
             {
-                result.Add((Row(NoiseModelKind.DeviceSources) with { SourceNames = [.. ed.NoiseSources.Select(x => x.Name)] }, parts));
+                result.Add((Row(NoiseModelKind.DeviceSources) with
+                {
+                    SourceNames = [.. noisy.NoiseSources.Select(x => x.Name)],
+                    Kelvin = Temperature.ResolveDeviceC(one.Parameters, nl.AmbientC) + Temperature.KelvinOffset,
+                }, parts));
                 continue;
             }
             if (parts.FirstOrDefault(ec => !IsThermal(ec, freqsHz)) is { } loud)
@@ -212,6 +255,22 @@ public static class SParameterNoise
             // A coupled group with members at different temperatures is taken at the hottest one; exact would need
             // each inductor's loss separated from the coupling, which the stamp does not expose.
             double kelvin = parts.Max(ec => Temperature.ResolveDeviceC(ec.Parameters, nl.AmbientC)) + Temperature.KelvinOffset;
+            if (parts is [var member] && CoreOf(member) is { Model: ComposedCoreModel cc } coreEc)
+            {
+                string device = coreEc.InstancePath[..^coreSuffix.Length];
+                bool gate = cc.Loaded.Model.Core.Noise?.Tg is not null
+                            && member.InstancePath.EndsWith("." + ModelNoise.GateResistorName, StringComparison.Ordinal);
+                result.Add((Row(NoiseModelKind.Thermal) with
+                {
+                    Kelvin = Temperature.ToKelvin(cc.RequestedC),
+                    DeviceOf = coreEc.InstancePath,
+                    AtGateTemperature = gate,
+                    Reason = gate ? $"at {device}'s gate temperature Tg"
+                         : cc.HasThermalNode ? $"{device}'s temperature, plus its self-heating at the operating point"
+                         : $"{device}'s temperature",
+                }, parts));
+                continue;
+            }
             result.Add((Row(NoiseModelKind.Thermal) with { Kelvin = kelvin }, parts));
         }
         return result;
@@ -239,6 +298,10 @@ public static class SParameterNoise
         IdealSBlockModel when ec.ActivityFor(freqsHz) == Activity.BlackBox =>
             $"a system block whose S-matrix is not passive ({ec.Model.PassivationNote})",
         SnpModel            => "an S-parameter block that is not passive and has no noise data in its file",
+        Core.Devices.Fet.FetModelBase => "a FET with none of Ri, Td or Kf set",
+        SddModel => "an SDD, whose equations describe no noise sources",
+        ComposedCoreModel { Loaded.Model.Core.Noise: null } => "a composed FET whose .cmodel has no Noise block",
+        ComposedCoreModel => "a composed FET whose Noise block states no drain noise (Td or Kf)",
         _ when ec.Model.Kind != ModelKind.Linear => "a built-in nonlinear model, which has no noise sources",
         _ => ec.ActivityFor(freqsHz) switch
         {
@@ -313,19 +376,21 @@ public static class SParameterNoise
     }
 
     /// <summary>
-    /// An external device's own noise sources (<see cref="ExternalDeviceModel.ReadNoiseAt"/>), read once, here, at the DC
-    /// operating point the run linearises the device about (<see cref="SParameterEngine.BuildBias"/>) for every sweep
-    /// frequency. Source s between device nodes (a, b) with density p is a current noise source: on circuit nodes
-    /// (na, nb) it adds <c>p·[[1, −1], [−1, 1]]</c>, or p on na alone when b is ground. Device node k is circuit node
-    /// <c>Nodes[2k]</c>, internal nodes included; a node collapsed to ground is 0 and drops out, and a pair collapsed
-    /// onto one node cancels. Times the multiplicity, m independent copies; the provider never applies it.
+    /// A model's own noise sources (<see cref="ComponentModel.NoiseSources"/>), read once, here, at the DC operating point
+    /// the run linearises the device about (<see cref="SParameterEngine.BuildBias"/>) and the device temperature
+    /// <paramref name="kelvin"/>, for every sweep frequency (<see cref="ComponentModel.NoiseDensitiesAt"/>). Source s from
+    /// terminal a to terminal b with density p is a current noise source: on circuit nodes (na, nb) it adds
+    /// <c>p·[[1, −1], [−1, 1]]</c>, or p on na alone when b is ground; a correlated pair adds <c>ρ·√(p_s·p_t)</c> between
+    /// their incidences. A terminal on ground drops out, and a pair collapsed onto one node cancels. Times the multiplicity,
+    /// m independent copies; the model never applies it. One branch for a built-in device and an external one alike.
     /// </summary>
     private static Func<double, NoiseCurrents> DeviceSources(
-        ElaboratedComponent ec, ExternalDeviceModel ed, double[] freqsHz, double[]? dcNodeVoltages)
+        ElaboratedComponent ec, double kelvin, double[] freqsHz, double[]? dcNodeVoltages)
     {
-        var psd = ed.ReadNoiseAt(SParameterEngine.BuildBias(ec, dcNodeVoltages).Voltages, freqsHz)!;
-        int Circuit(int k) => k < 0 || 2 * k >= ec.Nodes.Length ? 0 : ec.Nodes[2 * k];
-        var pairs = ed.NoiseSources.Select(s => (A: Circuit(s.NodeA), B: Circuit(s.NodeB))).ToArray();
+        var decl = ec.Model.NoiseSources;
+        var psd  = ec.Model.NoiseDensitiesAt(ec, SParameterEngine.BuildBias(ec, dcNodeVoltages), kelvin, freqsHz)!;
+        int Circuit(int t) => t < 0 || t >= ec.Nodes.Length ? 0 : ec.Nodes[t];
+        var pairs = decl.Select(s => (A: Circuit(s.TerminalA), B: Circuit(s.TerminalB))).ToArray();
         int[] nodes = [.. pairs.SelectMany(p => new[] { p.A, p.B }).Where(n => n > 0).Distinct()];
         if (nodes.Length == 0) return _ => default;
 
@@ -341,6 +406,20 @@ public static class SParameterNoise
                 if (a >= 0) c[a, a] += p;
                 if (b >= 0) c[b, b] += p;
                 if (a >= 0 && b >= 0) { c[a, b] -= p; c[b, a] -= p; }
+
+                if (decl[s].CorrelatedWith is int t and >= 0 && t < s)
+                {
+                    Complex x = decl[s].Correlation * ec.Multiplicity * Math.Sqrt(psd[k, s] * psd[k, t]);
+                    int ta = Array.IndexOf(nodes, pairs[t].A), tb = Array.IndexOf(nodes, pairs[t].B);
+                    // ⟨j_s·conj(j_t)⟩ = x on the incidences e_s·e_tᵀ, and its conjugate on e_t·e_sᵀ.
+                    foreach (var (i, si) in new[] { (a, 1.0), (b, -1.0) })
+                        foreach (var (j, tj) in new[] { (ta, 1.0), (tb, -1.0) })
+                        {
+                            if (i < 0 || j < 0) continue;
+                            c[i, j] += si * tj * x;
+                            c[j, i] += si * tj * Complex.Conjugate(x);
+                        }
+                }
             }
             at[2.0 * Math.PI * freqsHz[k]] = new NoiseCurrents(nodes, c);
         }

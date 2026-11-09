@@ -86,12 +86,11 @@ There are five reasons, and every dropped parameter is one of them.
 
 ### 1. There is no analysis that would read it
 
-`KF` and `AF` — the flicker-noise coefficients — appear on every semiconductor card and are carried
-by none of them. The built-in device models are **noiseless**: the
-[S-parameter noise analysis](simulations.html#sp-noise) takes them so and names them in its warning,
-and nothing else here analyses noise. Accepting the two would put two rows on the built cell that look
-honoured and change no result, which is worse than an empty space: a parameter this model does not read
-is not offered. A compiled model brings its own noise ([VerilogA](veriloga.html#noise)).
+`KF` and `AF`, the flicker-noise coefficients, appear on every semiconductor card. The diode, the bipolar transistor,
+the MOS transistors, the vertical MOSFET and the MESFET family carry them, because their noise sources read them
+([Components](components.html#diode) lists each model's sources). The JFET and the IGBT have no noise sources, so on
+their cards the two are not carried: two rows on the built cell that look honoured and change no result would be worse
+than an empty space. A compiled model brings its own noise ([VerilogA](veriloga.html#noise)).
 
 ### 2. The device has no node for it
 

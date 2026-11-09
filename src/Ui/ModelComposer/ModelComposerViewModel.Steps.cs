@@ -45,6 +45,7 @@ public sealed partial class ModelComposerViewModel
     public bool IsChargeStep => StepName == "Charge";
     public bool IsThermalStep => StepName == "Thermal";
     public bool IsTrapsStep => StepName == "Traps";
+    public bool IsNoiseStep => StepName == "Noise";
     public bool IsCheckStep => StepName == "Check";
     public bool IsValidateStep => StepName == "Validate";
     public bool IsExportStep => StepName == "Export";
@@ -52,7 +53,7 @@ public sealed partial class ModelComposerViewModel
 
     private void NotifyModelSteps()
     {
-        foreach (string p in new[] { nameof(IsCurrentStep), nameof(IsChargeStep), nameof(IsThermalStep), nameof(IsTrapsStep),
+        foreach (string p in new[] { nameof(IsCurrentStep), nameof(IsChargeStep), nameof(IsThermalStep), nameof(IsTrapsStep), nameof(IsNoiseStep),
                                      nameof(IsCheckStep), nameof(IsValidateStep), nameof(IsExportStep), nameof(IsFitStep) })
             OnPropertyChanged(p);
     }
@@ -68,6 +69,7 @@ public sealed partial class ModelComposerViewModel
             RefreshCharge();
             RefreshThermal();
             RefreshTraps();
+            RefreshNoise();
             RefreshValidation();
             RefreshExport();
         }
@@ -451,6 +453,84 @@ public sealed partial class ModelComposerViewModel
     {
         if (_loadingSteps || IsChoosingKind || !IsActive) return;
         EditPart($"Thermal: {label}", ThermalFit.Settings, ThermalFit.WithSettings, change(ThermalFit.Settings(Document)));
+    }
+
+    // ── Noise (brief NZ-4) ───────────────────────────────────────────────────
+
+    /// <summary>The measured noise data, one file per line: a path, then Vgs and Vds for a Touchstone file (a table names
+    /// its own biases).</summary>
+    [ObservableProperty] private string _noiseSources = "";
+    [ObservableProperty] private string _noiseAmbient = "";
+    /// <summary>The fit, one bias per line, and under each the measured and modelled noise parameters by frequency.</summary>
+    [ObservableProperty] private string _noiseResult = "";
+
+    public const string NoiseSourcesTip =
+        "One file per line. A .s2p with a noise block: path Vgs Vds. A table: path alone, its rows Vgs Vds Freq_Hz NFmin_dB |Γopt| ∠Γopt_deg Rn_Ω.";
+
+    private void RefreshNoise()
+    {
+        var s = NoiseFit.Settings(Document);
+        NoiseSources = string.Join("\n", s.Sources.Select(x => x.Vgs is { } g && x.Vds is { } d ? $"{x.Path} {Num(g)} {Num(d)}" : x.Path));
+        NoiseAmbient = Num(s.AmbientC);
+        NoiseResult = NoiseFit.Record(Document) is { } r ? NoiseText(r) : "";
+    }
+
+    private static string NoiseText(NoiseFitRecord r)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int k = 0; k < r.Biases.Count; k++)
+        {
+            sb.AppendLine(r.Report[k]);
+            if (r.Biases[k].Curves.Count == 0) continue;
+            sb.AppendLine("measured / modelled:");
+            sb.AppendLine("GHz   NFmin dB     |Γopt|       Rn Ω");
+            foreach (var (hz, m, f) in r.Biases[k].Curves)
+                sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                    $"{hz / 1e9,-5:G4} {m.NFminDb:F2}/{f.NFminDb,-6:F2} {m.GammaOpt.Magnitude:F3}/{f.GammaOpt.Magnitude,-6:F3} {m.Rn:G3}/{f.Rn:G3}"));
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>Browses for a noise data file and adds it as a line, relative to the document. A Touchstone file does not
+    /// say its bias, so it is added with none and the status line asks for Vgs and Vds after the path.</summary>
+    [RelayCommand]
+    private async Task AddNoiseFile()
+    {
+        if (PickFile is null || DocumentFolder is not { } dir)
+        {
+            if (DocumentFolder is null) Warn("Save the document first; its files are found relative to it.");
+            return;
+        }
+        if (await PickFile("Measured noise parameters", ["*.s2p", "*.txt", "*.csv", "*.dat"]) is not { } file) return;
+        string rel = Path.GetRelativePath(dir, file).Replace('\\', '/');
+        NoiseSources = NoiseSources.Trim().Length == 0 ? rel : NoiseSources.TrimEnd() + "\n" + rel;
+        if (Path.GetExtension(file).Equals(".s2p", StringComparison.OrdinalIgnoreCase))
+            Info($"Noise: type the bias after {Path.GetFileName(file)} — its Vgs and Vds, in volts.");
+    }
+
+    partial void OnNoiseSourcesChanged(string value)
+    {
+        var list = new List<NoiseSource>();
+        foreach (string line in value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length >= 3 && TryNum(f[^2], out double g) && TryNum(f[^1], out double d))
+                list.Add(new NoiseSource(string.Join(' ', f[..^2]), g, d));
+            else list.Add(new NoiseSource(line));
+        }
+        EditNoise(s => s with { Sources = list }, "data");
+    }
+
+    partial void OnNoiseAmbientChanged(string value)
+    {
+        if (TryNum(value, out double t)) EditNoise(s => s with { AmbientC = t }, $"ambient {value} °C");
+        else if (!_loadingSteps) Error($"Noise: '{value}' is not a temperature in °C.");
+    }
+
+    private void EditNoise(Func<NoiseFitSettings, NoiseFitSettings> change, string label)
+    {
+        if (_loadingSteps || IsChoosingKind || !IsActive) return;
+        EditPart($"Noise: {label}", NoiseFit.Settings, NoiseFit.WithSettings, change(NoiseFit.Settings(Document)));
     }
 
     // ── Traps (R-mc15-5) ─────────────────────────────────────────────────────

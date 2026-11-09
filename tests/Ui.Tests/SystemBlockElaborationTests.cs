@@ -225,6 +225,25 @@ public class SystemBlockElaborationTests
         Assert.DoesNotContain(inst.Overrides, o => o.Name is "NF" or "NFopt" or "Rn" or "Gopt" or "NFType");
     }
 
+    /// <summary>Brief NZ-4 gate 5: a freshly placed FET's blank Tg and Td rows are dropped at extraction, so it states no
+    /// drain noise and its Ri is the zero that leaves the model unchanged.</summary>
+    [Theory]
+    [InlineData(SymbolKind.FetCurtice)]
+    [InlineData(SymbolKind.FetAngelov)]
+    public void AFreshlyPlacedFetStatesNoNoiseTemperature(SymbolKind kind)
+    {
+        var model = new SchematicEditModel();
+        var comp  = new EditableComponent { InstanceName = "F1", Symbol = kind, X = 0, Y = 0 };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
+        model.Components.Add(comp);
+
+        var inst = Assert.Single(NetExtractor.Extract(model).TestBench.Instances);
+        Assert.DoesNotContain(inst.Overrides, o => o.Name is "Tg" or "Td");
+        var ec = Elaborate(kind);
+        Assert.Empty(ec.Model.NoiseSources);
+    }
+
     [Fact]
     public void AFreshlyPlacedFilterIsAChebyshevBandpassOverItsStatedEdges()
     {
