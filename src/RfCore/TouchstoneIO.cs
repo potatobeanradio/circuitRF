@@ -13,7 +13,9 @@
 //    • N>2 data order:     row-major, one matrix row per output line
 //    • Comments:  ! to end of line (inline or full-line)
 //    • 2-port noise block: after the network data, starting on a frequency ≤ the last one
-//      (or after [Noise Data]); read into SNP.NoiseParameters, never written back
+//      (or after [Noise Data]); read into SNP.NoiseParameters and written back after the data.
+//      Rows: freq NFmin(dB) |Γopt| ∠Γopt(deg) rn, Γopt and rn = Rn/R referenced to the option
+//      line's R. The reader is 1.x-only, so rn is always taken as normalised.
 //
 //  Touchstone 1.1 compatibility mode (WriteFile/Write):
 //    • Renormalizes data to a single uniform real Z0
@@ -535,6 +537,19 @@ namespace RfCore
                     foreach (var c in snp.Comments.Where(c => c.FrequencyIndex == fi))
                         writer.WriteLine($"! {c.Text}");
                 }
+            }
+
+            // ---- Two-port noise block (Touchstone 1.x): freq NFmin(dB) |Γopt| ∠Γopt(deg) rn ----
+            // SNP.NoiseParameters are referenced to Re(snp.Z0), which is the option line's R in both
+            // write modes (compatibility mode renormalises the S data to exactly that R), so the rows
+            // are written as stored and nothing is re-referenced.
+            if (snp.Ports == 2)
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                foreach (var n in snp.NoiseParameters)
+                    writer.WriteLine((n.FrequencyHz / freqDiv).ToString(precision, inv) + string.Concat(
+                        new[] { n.NFminDb, n.GammaOpt.Magnitude, n.GammaOpt.Phase * 180.0 / Math.PI, n.RnNormalized }
+                            .Select(v => $"  {v.ToString(precision, inv),18}")));
             }
         }
 

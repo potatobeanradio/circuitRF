@@ -540,7 +540,8 @@ namespace RfCore.Data
         /// how a simulated source's <c>"SP1.S"</c> is reached (see <see cref="FindCubeSpec"/>).
         /// The reference impedance is read from the Z0 cube <b>in the same group</b>, never a bare
         /// lookup: pairing <c>SP1.S</c> with some other analysis's Z0 would be worse than the 50 Ω
-        /// fallback, because it would look right.
+        /// fallback, because it would look right. A two-port's <c>NFmin</c>/<c>GammaOpt</c>/<c>Rn</c>
+        /// cubes in that same group fill <see cref="SNP.NoiseParameters"/>.
         /// </summary>
         public static SNP ToSnp(DataSet ds, string sSpec)
         {
@@ -604,7 +605,7 @@ namespace RfCore.Data
                 refZ0 = new Complex(50, 0);   // legacy .npy without Z0 cube
             }
 
-            return new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, refZ0)
+            var snp = new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, refZ0)
             {
                 Z0PerPort = perPortZ0,
                 // Carried here rather than stamped by each consumer: an SNP built from a DataSet is
@@ -612,6 +613,24 @@ namespace RfCore.Data
                 // network — the Data Display's own matrix-bound traces included — reads this object.
                 SolvedMask = SampleProvenance.SolvedMaskFor(ds, cube.Axes[0]),
             };
+
+            // A two-port's noise parameters, when the run produced them: NFmin (dB), GammaOpt and Rn
+            // (Ω), each [freq] in the S cube's own group. GammaOpt is referenced to Re Z0 of port 1 —
+            // the option line's R — and the Touchstone row carries Rn over that R.
+            string group = dot < 0 ? "" : sSpec[..(dot + 1)];
+            DataCube? Noise(string name, DataKind kind) =>
+                ds.Contains(group + name) && ds[group + name] is { } c && c.DataKind == kind &&
+                c.Rank == 1 && c.Axes[0].Length == nFreq ? c : null;
+            if (nPorts == 2 &&
+                Noise("NFmin", DataKind.Real) is { } nf &&
+                Noise("GammaOpt", DataKind.Complex) is { } go &&
+                Noise("Rn", DataKind.Real) is { } rn)
+            {
+                var (nfDb, gamma, rnOhm) = (nf.RealValues, go.ComplexValues, rn.RealValues);
+                for (int fi = 0; fi < nFreq; fi++)
+                    snp.NoiseParameters.Add(new NoiseParameterPoint(freqs[fi], nfDb[fi], gamma[fi], rnOhm[fi] / refZ0.Real));
+            }
+            return snp;
         }
     }
 }
