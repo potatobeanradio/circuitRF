@@ -2536,7 +2536,15 @@ namespace RfCore.Export
     /// <summary><c>explain --analysis</c>'s answer for an envelope run: every labeled net (with an old file's retired
     /// <c>Probes</c> nodes) in the order the node axis carries them, and every IProbe in the order of the branch
     /// axis.</summary>
-    public sealed record ExplainEnvelopeRecordsJson(IReadOnlyList<string> Nets, IReadOnlyList<string> IProbes);
+    /// <param name="Seed">The run's <c>Seed=</c> as written, and <paramref name="SeedPerPoint"/> whether a sweep reseeds each
+    /// point (brief NZ-7).</param>
+    /// <param name="PhaseNoise">The sources stating a <c>PhaseNoise</c> mask, each with its mask; null when none does.</param>
+    /// <param name="NoisySources">The sources whose impedance is thermal (<c>Noise=yes</c>), each with its temperature;
+    /// null when none is.</param>
+    public sealed record ExplainEnvelopeRecordsJson(IReadOnlyList<string> Nets, IReadOnlyList<string> IProbes,
+                                                    string? Seed = null, bool SeedPerPoint = false,
+                                                    IReadOnlyList<string>? PhaseNoise = null,
+                                                    IReadOnlyList<string>? NoisySources = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s answer to "what would the NDF do here" — the way to see a

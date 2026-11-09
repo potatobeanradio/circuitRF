@@ -986,7 +986,7 @@ public sealed class Elaborator
             {
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
                 // Noise= is the analysis's switch, not the model's parameter: taken off here, before any model sees it.
-                inst = TakeNoiseSwitch(inst, childPath, out bool noiseOff);
+                inst = TakeNoiseSwitch(inst, childPath, out bool noiseOff, out bool noiseOn);
                 var resolvedNodes  = inst.NetBindings.Select(n => netlist.Nodes.GetOrAssign(ResolveNet(n))).ToArray();
                 var resolvedParams = ResolveParameters(inst, currentScope);
                 // Temp wins over Dtemp (Temperature.ResolveDeviceC), but the two together cannot
@@ -1301,7 +1301,8 @@ public sealed class Elaborator
                         $"use a Pin for cell interfaces and place Terms only in the testbench.");
 
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
-                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff };
+                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff,
+                           NoiseOn = noiseOn };
                 netlist.AddComponent(ec);
             }
             else
@@ -1465,17 +1466,20 @@ public sealed class Elaborator
     // ── The part's noise switch ───────────────────────────────────────────────
 
     /// <summary>The instance key that switches a part's noise off in the S-parameter noise analysis: <c>Noise=yes|no</c>,
-    /// default yes. Accepted on every primitive; on one that can never be noisy it does nothing.</summary>
+    /// default yes. Accepted on every primitive; on one that can never be noisy it does nothing. On a source with an
+    /// impedance (P1Tone, PnTone, MOD_Source), which is noiseless by default, <c>Noise=yes</c> makes that impedance thermal
+    /// in an envelope run (brief NZ-7 follow-up).</summary>
     public const string NoiseParamName = "Noise";
 
     /// <summary>
-    /// <paramref name="inst"/> without its <see cref="NoiseParamName"/> override, and whether that override said no. The
+    /// <paramref name="inst"/> without its <see cref="NoiseParamName"/> override, and whether that override said no or yes. The
     /// value is a closed list — yes/true/on/1 or no/false/off/0, quoted or not, as a kit writes it — because a mistyped
     /// switch that silently left a part noisy, or quiet, is a wrong noise figure that looks right.
     /// </summary>
-    internal static Instance TakeNoiseSwitch(Instance inst, string childPath, out bool noiseOff)
+    internal static Instance TakeNoiseSwitch(Instance inst, string childPath, out bool noiseOff, out bool noiseOn)
     {
         noiseOff = false;
+        noiseOn = false;
         int at = -1;
         for (int i = 0; i < inst.Overrides.Count; i++)
             if (inst.Overrides[i].Name.Equals(NoiseParamName, StringComparison.OrdinalIgnoreCase)) at = i;
@@ -1485,8 +1489,10 @@ public sealed class Elaborator
         if (v.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Equals("false", StringComparison.OrdinalIgnoreCase)
             || v.Equals("off", StringComparison.OrdinalIgnoreCase) || v == "0")
             noiseOff = true;
-        else if (!(v.Equals("yes", StringComparison.OrdinalIgnoreCase) || v.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v == "1"))
+        else if (v.Equals("yes", StringComparison.OrdinalIgnoreCase) || v.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v == "1")
+            noiseOn = true;
+        else
             throw new InvalidOperationException(NoiseSwitchDiagnostics.NotYesOrNo(childPath, v).Render());
 
         var rest = inst.Overrides.Where((_, i) => !inst.Overrides[i].Name.Equals(NoiseParamName, StringComparison.OrdinalIgnoreCase));
@@ -2239,6 +2245,7 @@ public sealed class Elaborator
 
         foreach (var ov in inst.Overrides)
         {
+            if (StoreRawPhaseNoise(ov, result)) continue;
             bool isExprParam = ov.Name is "V" or "Vdc" or "I" or "Idc" or "Phase"
                 || RxToneIndexed.IsMatch(ov.Name);
 
@@ -2759,6 +2766,7 @@ public sealed class Elaborator
 
         foreach (var ov in inst.Overrides)
         {
+            if (StoreRawPhaseNoise(ov, result)) continue;
             // Z[k] and G[k] may be complex; store as-is for the factory to parse.
             if (RxP1ToneZEntry.IsMatch(ov.Name) || RxP1ToneGEntry.IsMatch(ov.Name))
             {
@@ -2791,6 +2799,7 @@ public sealed class Elaborator
         foreach (var ov in inst.Overrides)
         {
             string raw = ov.Expression.Trim();
+            if (StoreRawPhaseNoise(ov, result)) continue;
             if (RxModCarrier.IsMatch(ov.Name))
             {
                 result[ov.Name] = new Value(RfCore.Signals.SignalSpec.MapFilePath(raw.Trim('"'), ResolveSnpFilePath));
@@ -2821,11 +2830,27 @@ public sealed class Elaborator
         // Phase[i] in deg, Z/Z[k] in Ω). Evaluate each with its declared unit, like P1Tone.
         foreach (var ov in inst.Overrides)
         {
+            if (StoreRawPhaseNoise(ov, result)) continue;
             try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
             catch { /* skip unresolvable — degrades gracefully */ }
         }
 
         return result;
+    }
+
+    /// <summary>The source parameter a phase-noise mask is stated in (brief NZ-7): <c>"offset:level, …"</c>.</summary>
+    public const string PhaseNoiseParamName = "PhaseNoise";
+
+    /// <summary>
+    /// A source's <c>PhaseNoise=</c> is a MASK (<c>"1kHz:-80, 1MHz:-140"</c>), never an expression: stored verbatim, its
+    /// quotes removed, for the envelope engine to read. True when <paramref name="ov"/> was it. (<c>PhaseNoiseFloor</c> is
+    /// an ordinary number and evaluates as one.)
+    /// </summary>
+    private static bool StoreRawPhaseNoise(ParameterAssignment ov, Dictionary<string, Value> into)
+    {
+        if (!ov.Name.Equals(PhaseNoiseParamName, StringComparison.OrdinalIgnoreCase)) return false;
+        into[PhaseNoiseParamName] = new Value(ov.Expression.Trim().Trim('"').Trim());
+        return true;
     }
 
     // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).

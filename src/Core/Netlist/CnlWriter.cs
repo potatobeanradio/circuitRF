@@ -367,7 +367,8 @@ public static class CnlWriter
         EnvelopeAnalysis env          => $"analysis {env.Name} type=env Stop={env.StopExpr} Step={env.StepExpr} Accuracy={env.Accuracy} " +
                                          $"MaxHarm={env.MaxHarmExpr} MaxMixOrder={env.MaxMixOrderExpr} Segments={env.SegmentsExpr} " +
                                          $"Warmup={env.WarmupExpr} Start={env.StartExpr} Tol={env.TolExpr} SaveWaveforms={env.SaveWaveforms}" +
-                                         (env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? "" : $" Envelope={env.Envelope}"),
+                                         (env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? "" : $" Envelope={env.Envelope}") +
+                                         EnvelopeNoiseKeys(env),
         LoadpullAnalysis lp           => FormatLoadpullAnalysis(lp),
         LoadpullPursuitAnalysis lpp   => FormatLoadpullPursuitAnalysis(lpp),
         ParametricSweepAnalysis ps    => FormatParametricSweepAnalysis(ps),
@@ -500,6 +501,13 @@ public static class CnlWriter
         AppendLoadpullNoise(sb, lpp);
         return sb.ToString();
     }
+
+    /// <summary>The envelope noise keys (brief NZ-7), each only when it differs from its default, so a line without them
+    /// round-trips to the bytes it always did.</summary>
+    private static string EnvelopeNoiseKeys(EnvelopeAnalysis env) =>
+        (env.NoiseExpr != Analysis.NoiseDefault ? $" Noise={env.NoiseExpr}" : "") +
+        (env.SeedExpr != EnvelopeAnalysis.SeedDefault ? $" Seed={env.SeedExpr}" : "") +
+        (env.SeedPerPointExpr != Analysis.NoiseDefault ? $" SeedPerPoint={env.SeedPerPointExpr}" : "");
 
     /// <summary>The loadpull noise keys (brief NZ-6), each only when it differs from its default, so a line without them
     /// round-trips to the bytes it always did.</summary>

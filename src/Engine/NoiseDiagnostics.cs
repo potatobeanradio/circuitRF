@@ -36,6 +36,35 @@ public static class NoiseDiagnostics
         "0 <= Fmin - 1 <= 4*Rn*Re(Yopt). The data is used as given.",
         ("who", who), ("bad", bad), ("rows", rows), ("at", Ghz(firstHz)));
 
+    /// <summary>The key the envelope run's devices-without-injected-noise warning is reported once under.</summary>
+    public const string EnvelopeDevicesKey = "envelope-noise-devices";
+
+    /// <summary>Envelope noise (brief NZ-7): devices whose own noise sources the run does not inject, named once.</summary>
+    public static Diagnostic EnvelopeDevices(IReadOnlyList<string> instances)
+    {
+        const int Shown = 10;
+        string names = string.Join(", ", instances.Take(Shown)) +
+                       (instances.Count > Shown ? $" and {instances.Count - Shown} more" : "");
+        return Diagnostic.Create(
+            "envelope.noise.devices", DiagnosticSeverity.Warning,
+            "Noise: {names}: noise not modelled in envelope. A device's noise moves with its state inside a step; the " +
+            "envelope injects the thermal noise of passive parts, S-parameter noise data and system amplifiers' NF only, " +
+            "and these devices run noiseless.",
+            ("names", names));
+    }
+
+    /// <summary>Envelope <c>Seed=</c> that is not a whole number (brief NZ-7).</summary>
+    public static Diagnostic EnvelopeSeed(string analysis, double value) => Diagnostic.Create(
+        "envelope.noise.seed", DiagnosticSeverity.Error,
+        "Envelope '{analysis}': Seed must be a whole number (got {value}).", ("analysis", analysis), ("value", value));
+
+    /// <summary>A source's phase-noise mask with points beyond the envelope's bandwidth (brief NZ-7), said once per source.</summary>
+    public static Diagnostic PhaseNoiseBeyondBand(string who, string band, string first) => Diagnostic.Create(
+        "envelope.noise.phase-band", DiagnosticSeverity.Warning,
+        "PhaseNoise on {who}: this envelope represents offsets up to {band}, and the mask's points from {first} on fall " +
+        "outside it and are not simulated.",
+        ("who", who), ("band", band), ("first", first));
+
     private static string Ghz(double hz) => (hz / 1e9).ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Parts the noise analysis has no model for, named once per run.</summary>

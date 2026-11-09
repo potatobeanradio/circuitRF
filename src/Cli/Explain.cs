@@ -1531,11 +1531,22 @@ internal static class Explain
                 using var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
                 var src = nl.Components.Where(c => c.Model is ModSourceModel).ToArray();
                 var iprobes = nl.Components.Where(c => c.Model is IProbeModel && c.Nodes.Length >= 2).Select(c => c.InstancePath).ToList();
+                // Brief NZ-7: the sources whose phase-noise mask the run simulates, with the mask as stated.
+                var masks = nl.Components
+                    .Where(c => c.Parameters.TryGetValue(Elaborator.PhaseNoiseParamName, out var v)
+                                && v.Kind == CircuitRF.Core.Expressions.ValueKind.String && !string.IsNullOrWhiteSpace(v.AsString()))
+                    .Select(c => $"{c.InstancePath}: {c.Parameters[Elaborator.PhaseNoiseParamName].AsString()}").ToList();
+                // NZ-7 follow-up: the sources whose own impedance is thermal, at the temperature the run uses.
+                var noisy = nl.Components.Where(c => c.NoiseOn && c.Model is ModSourceModel or P1ToneModel or PnToneModel)
+                    .Select(c => $"{c.InstancePath} at {Temperature.ResolveDeviceC(c.Parameters, nl.AmbientC) + Temperature.KelvinOffset:0.##} K")
+                    .ToList();
                 foreach (var env in tb.Analyses.OfType<EnvelopeAnalysis>())
                 {
                     string[] listed = env.Probes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
                     var nets = CircuitRF.Engine.Envelope.EnvelopeEngine.RecordedNodes(nl, listed, src).Select(x => x.name).ToList();
-                    envRecords[env.Name] = new ExplainEnvelopeRecordsJson(nets, iprobes);
+                    envRecords[env.Name] = new ExplainEnvelopeRecordsJson(nets, iprobes, env.SeedExpr, env.SeedPerPoint,
+                                                                          masks.Count > 0 ? masks : null,
+                                                                          noisy.Count > 0 ? noisy : null);
                 }
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
@@ -1640,7 +1651,7 @@ internal static class Explain
                 Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
                 FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name),
                 Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : a is HarmonicBalanceAnalysis hbN ? hbN.Noise
-                     : a is ILoadpullNoiseKeys lpN ? lpN.Noise : null,
+                     : a is ILoadpullNoiseKeys lpN ? lpN.Noise : a is EnvelopeAnalysis envN ? envN.Noise : null,
                 NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name),
                 HbNoise: hbNoise.GetValueOrDefault(a.Name),
                 LoadpullNoise: lpNoise.GetValueOrDefault(a.Name)));
@@ -2332,6 +2343,15 @@ internal static class Explain
                     Console.WriteLine(rec.IProbes.Count > 0
                         ? $"      measures power at {rec.IProbes.Count} IProbe(s): {string.Join(", ", rec.IProbes)}"
                         : "      measures power at no IProbe: place one in series with a load to measure its power");
+                    // Brief NZ-7: the draws' seed, and the phase-noise masks the run simulates.
+                    if (a.Noise == true || rec.PhaseNoise is not null)
+                        Console.WriteLine($"      {(a.Noise == true ? "thermal noise on, " : "")}noise seed {rec.Seed}" +
+                                          (rec.SeedPerPoint ? ", a new one at each sweep point" : ", the same at every sweep point"));
+                    foreach (var m in rec.PhaseNoise ?? [])
+                        Console.WriteLine($"      phase noise {m} (dBc/Hz)");
+                    if (a.Noise == true)
+                        foreach (var n in rec.NoisySources ?? [])
+                            Console.WriteLine($"      source impedance thermal: {n}");
                 }
 
                 // R-wsp9-4: the effective margin threshold beside the probe list. The default is

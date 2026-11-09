@@ -75,7 +75,7 @@ public class ParameterEditorRegistryTests
     public void DefaultParameters_ToneSource_HasVoltageAndFrequencyDimensions()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.ToneSource, 0);
-        Assert.Equal(4, ps.Count);  // V, Freq, Phase (hidden), Vdc (hidden)
+        Assert.Equal(6, ps.Count);  // V, Freq, Phase (hidden), Vdc (hidden), PhaseNoise and PhaseNoiseFloor (hidden, blank)
         Assert.Equal(UnitDimension.Voltage,   ps[0].Dimension);
         Assert.Equal(UnitDimension.Frequency, ps[1].Dimension);
         Assert.Equal(UnitDimension.Angle,     ps[2].Dimension);

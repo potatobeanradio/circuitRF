@@ -128,6 +128,75 @@ public sealed class NoiseExplainCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("noise A1 (Amp): specified NF 3 dB", text.StdOut);
     }
 
+    /// <summary>
+    /// Brief NZ-7: a source's phase-noise mask is simulated by an envelope run only. <c>check</c> reports it under a
+    /// steady-state analysis as INFO and exits 0, and a mask that does not read as an error; <c>explain</c> names the
+    /// envelope run's seed and the mask.
+    /// </summary>
+    [Fact]
+    public void PhaseNoise_IsInfoUnderHb_AnErrorWhenItDoesNotRead_AndExplainedOnTheEnvelope()
+    {
+        Directory.CreateDirectory(_root);
+        string Write(string name, string mask)
+        {
+            string path = Path.Combine(_root, name);
+            File.WriteAllText(path, $"""
+                MOD_Source:S1 s 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 Carrier[1]="CW;BW=0.2MHz;Off=0;P=0" PhaseNoise="{mask}"
+                R:RL s 0 R=50 Ohm
+                analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=3
+                analysis ENV1 type=env Stop=1e-5 Noise=yes Seed=5
+                """);
+            return path;
+        }
+        var good = RunCli("check", Write("good.cnl", "1kHz:-80, 1MHz:-140"), "--json");
+        Assert.True(good.ExitCode == 0, good.StdErr + good.StdOut);
+        Assert.Contains("check.noise.phase-steady-state", good.StdOut);
+        Assert.Contains("HB1 runs at steady state and ignores it", good.StdOut);
+
+        var bad = RunCli("check", Write("bad.cnl", "1kHz-80"), "--json");
+        Assert.Equal(1, bad.ExitCode);
+        Assert.Contains("check.noise.phase-mask", bad.StdOut);
+
+        var text = RunCli("explain", Path.Combine(_root, "good.cnl"), "--analysis");
+        Assert.True(text.ExitCode == 0, text.StdErr + text.StdOut);
+        output.WriteLine(text.StdOut);
+        Assert.Contains("thermal noise on, noise seed 5, the same at every sweep point", text.StdOut);
+        Assert.Contains("phase noise S1: 1kHz:-80, 1MHz:-140 (dBc/Hz)", text.StdOut);
+    }
+
+    /// <summary>
+    /// The NZ-7 follow-up: Noise=yes on a source. <c>check</c> says a noisy MOD_Source stays noiseless in an S-parameter
+    /// noise run, and that an ideal source has no impedance to be noisy, both as INFO; <c>explain</c> names the source and
+    /// its temperature on the envelope run.
+    /// </summary>
+    [Fact]
+    public void NoisySource_IsExplained_AndCheckSaysWhereItIsNot()
+    {
+        Directory.CreateDirectory(_root);
+        string path = Path.Combine(_root, "src.cnl");
+        File.WriteAllText(path, """
+            MOD_Source:S1 s 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 Carrier[1]="CW;BW=0.2MHz;Off=0;P=0" Noise=yes Temp=16.85
+            Vdc:V1 d 0 Vdc=1 V Noise=yes
+            R:RD d 0 R=50 Ohm
+            Port:P1 s 0 Num=1 Z=50 Ohm
+            Port:P2 d 0 Num=2 Z=50 Ohm
+            analysis SP1 type=sparam start=1 stop=2 npts=2 Unit=GHz Noise=yes
+            analysis ENV1 type=env Stop=1e-5 Noise=yes
+            """);
+        var check = RunCli("check", path, "--json");
+        Assert.True(check.ExitCode == 0, check.StdErr + check.StdOut);
+        Assert.Contains("check.noise.source-steady-state", check.StdOut);
+        Assert.Contains("SP1 keeps it noiseless", check.StdOut);
+        Assert.Contains("check.noise.source-ideal", check.StdOut);
+        Assert.Contains("V1", check.StdOut);
+        Assert.Contains("has Noise=yes and no impedance to be noisy", check.StdOut);
+
+        var text = RunCli("explain", path, "--analysis");
+        Assert.True(text.ExitCode == 0, text.StdErr + text.StdOut);
+        output.WriteLine(text.StdOut);
+        Assert.Contains("source impedance thermal: S1 at 290 K", text.StdOut);
+    }
+
     // ── The CLI as a process ────────────────────────────────────────────────────
 
     private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

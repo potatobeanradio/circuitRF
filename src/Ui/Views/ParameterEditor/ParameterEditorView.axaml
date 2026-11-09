@@ -1472,7 +1472,9 @@
                      Not on a wBond (ShowFootprintRow): a wirebond is made by a bonding machine and
                      has no land pattern. -->
                 <!-- brief NZ-1: the part's noise switch, drawn as an ordinary parameter row like Footprint below it.
-                     Unticked writes Noise=no; the display column's box draws it on the symbol, off by default. -->
+                     Unticked writes Noise=no; the display column's box draws it on the symbol, off by default. On a
+                     source with an impedance (P1Tone, PnTone, MOD_Source) the default is unticked, and ticked writes
+                     Noise=yes: its impedance is thermal in an envelope run. -->
                 <Grid IsVisible="{Binding ShowNoiseRow}" Margin="4,2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
@@ -1485,7 +1487,7 @@
                     <TextBlock Grid.Column="0" Text="Noise" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <CheckBox Grid.Column="1" IsChecked="{Binding PartNoise}" FontSize="11" VerticalAlignment="Center"
                               Content="Noisy"
-                              ToolTip.Tip="Ticked: the part is as noisy as its model (thermal at its own temperature when passive). Unticked: Noise=no, and the noise analysis gives it no noise."/>
+                              ToolTip.Tip="{Binding NoiseRowTip}"/>
                     <CheckBox Grid.Column="4"
                               IsChecked="{Binding ShowNoiseLabel}"
                               ToolTip.Tip="Show on schematic"

@@ -63,6 +63,9 @@ public abstract class ToneSourceModelBase : ComponentModel, IDriveScalable
         => t.VResolved * Complex.FromPolarCoordinates(1.0, t.PhaseRad);
 
     private readonly ToneEntry[] _tones;
+
+    /// <summary>Every tone's frequency (Hz), in the order stated.</summary>
+    public IReadOnlyList<double> ToneFreqsHz => Array.ConvertAll(_tones, t => t.FreqHz);
     private readonly double      _dcResolved;
     private readonly Expr?       _dcExpr;
     private readonly IReadOnlyDictionary<string, Value> _dcScopeVars;

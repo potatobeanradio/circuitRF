@@ -371,7 +371,7 @@ public static class ParametricSweepEngine
                     netlist = nets[si] = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                     try
                     {
-                        var plan = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals);
+                        var plan = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals).ForPoint(drive);
                         bool first = true;
                         prepared = Envelope.EnvelopeRunner.Prepare(plan, () =>
                         {

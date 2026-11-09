@@ -1385,7 +1385,17 @@ public static class ComponentTypeRegistry
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
-        or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer;
+        or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
+        // A source with an impedance (brief NZ-7 follow-up): noiseless by default, its impedance thermal in an envelope run
+        // when ticked (NoiseSwitchDefault).
+        or SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource;
+
+    /// <summary>
+    /// What the Noise row means when the part says nothing: noisy (true) for every part the noise analysis can make noisy,
+    /// noiseless (false) for a source with an impedance, whose box writes <c>Noise=yes</c> when ticked and makes that
+    /// impedance thermal in an envelope run. The elaborator's own default either way.
+    /// </summary>
+    public static bool NoiseSwitchDefault(SymbolKind kind) => kind is not (SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource);
 
     public static bool IsRemovableParameter(SymbolKind kind, string parameterName)
     {
@@ -1418,6 +1428,20 @@ public static class ComponentTypeRegistry
     /// ZPort is one, whatever it looks like.</summary>
     private static readonly Regex RxZMatrixEntry = new(@"^Z\[\d+,\d+\]$", RegexOptions.Compiled);
 
+    /// <summary>A source's phase-noise rows (brief NZ-7), on every CW and modulated source.</summary>
+    private static string PhaseNoiseParameterDescription(SymbolKind kind, string parameterName) =>
+        kind is not (SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource or SymbolKind.ToneSource
+                     or SymbolKind.CurrentToneSource) ? "" : parameterName switch
+        {
+            "PhaseNoise" => "The source's phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: "
+                          + "offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against "
+                          + "log-frequency between points; the first segment's slope continues below the first point. "
+                          + "Only an envelope run simulates it, as a random phase drawn from the analysis's Seed; "
+                          + "harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.",
+            "PhaseNoiseFloor" => "The phase noise beyond the mask's last point, dBc/Hz. Blank: the last point's level.",
+            _ => "",
+        };
+
     public static string ParameterDescription(SymbolKind kind, string parameterName)
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
@@ -1430,6 +1454,7 @@ public static class ComponentTypeRegistry
          : PlanarLineParameterDescription(kind, parameterName) is { Length: > 0 } plDesc ? plDesc
          : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
          : DeviceNoiseParameterDescription(kind, parameterName) is { Length: > 0 } nzDesc ? nzDesc
+         : PhaseNoiseParameterDescription(kind, parameterName) is { Length: > 0 } pnDesc ? pnDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
          : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
@@ -2148,6 +2173,17 @@ public static class ComponentTypeRegistry
     ///
     /// Parameter names match what the engine/device models expect at elaboration time, with
     /// </summary>
+    /// <summary>
+    /// A source's phase-noise mask (brief NZ-7), placed blank on every CW and modulated source: <c>PhaseNoise</c> is
+    /// single-sided L(f) as <c>offset:dBc/Hz</c> pairs (<c>1kHz:-80, 100kHz:-120</c>), <c>PhaseNoiseFloor</c> the level
+    /// beyond its last point. Only an envelope run simulates it. Blank rows are dropped at extraction.
+    /// </summary>
+    private static readonly DefaultParam[] PhaseNoiseRows =
+    [
+        new("PhaseNoise",      "", "", false, UnitDimension.None),
+        new("PhaseNoiseFloor", "", "", false, UnitDimension.None),
+    ];
+
     public static IReadOnlyList<DefaultParam> DefaultParameters(SymbolKind kind, int portCount)
     {
         switch (kind)
@@ -2186,14 +2222,16 @@ public static class ComponentTypeRegistry
             case SymbolKind.ToneSource: return [new("V",     "1", "V",   true,  UnitDimension.Voltage),
                                                 new("Freq",  "1", "GHz", true,  UnitDimension.Frequency),
                                                 new("Phase", "0", "deg", false, UnitDimension.Angle),
-                                                new("Vdc",   "0", "V",   false, UnitDimension.Voltage)];
+                                                new("Vdc",   "0", "V",   false, UnitDimension.Voltage),
+                                                .. PhaseNoiseRows];
             // ITone mirrors ToneSource exactly, with I/Idc for V/Vdc — I and Freq match the
             // I_1Tone factory keys, Idc (hidden) is the DC offset.
             case SymbolKind.CurrentToneSource:
                                         return [new("I",     "1", "mA",  true,  UnitDimension.Current),
                                                 new("Freq",  "1", "GHz", true,  UnitDimension.Frequency),
                                                 new("Phase", "0", "deg", false, UnitDimension.Angle),
-                                                new("Idc",   "0", "mA",  false, UnitDimension.Current)];
+                                                new("Idc",   "0", "mA",  false, UnitDimension.Current),
+                                                .. PhaseNoiseRows];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
             // VCVS: one parameter, the voltage gain. V(out+) − V(out−) = E·(V(ctrl+) − V(ctrl−)).
@@ -2430,7 +2468,8 @@ public static class ComponentTypeRegistry
                 new("Pavl",  "0",   "dBm", true,  UnitDimension.Power),
                 new("Z",    "50",   "Ω",   true,  UnitDimension.Resistance),
                 new("Freq",  "1",   "GHz", true,  UnitDimension.Frequency),
-                new("Phase", "0",   "deg", false, UnitDimension.Angle)];
+                new("Phase", "0",   "deg", false, UnitDimension.Angle),
+                .. PhaseNoiseRows];
 
             // PnTone: multi-tone power source — seeded with TWO tones so a freshly-placed PnTone is a
             // ready two-tone source. Per-tone Freq[i]/Pavl[i]/Phase[i]; shared Z (= Zdefault reference).
@@ -2442,7 +2481,8 @@ public static class ComponentTypeRegistry
                 new("Freq[2]",  "2.01", "GHz", true,  UnitDimension.Frequency),
                 new("Pavl[2]",  "0",    "dBm", true,  UnitDimension.Power),
                 new("Phase[2]", "0",    "deg", false, UnitDimension.Angle),
-                new("Z",       "50",    "Ω",   true,  UnitDimension.Resistance)];
+                new("Z",       "50",    "Ω",   true,  UnitDimension.Resistance),
+                .. PhaseNoiseRows];
 
             // MOD_Source: one 20 MHz LTE carrier at 2 GHz, 10 dBm average — a ready modulated source. The Signal
             // Designer rewrites Carrier[i] / Record / Clip; Carrier strings are descriptions, never expressions.
@@ -2451,7 +2491,8 @@ public static class ComponentTypeRegistry
                 new("Pavg",       "10",   "dBm", true,  UnitDimension.Power),
                 new("Z",          "50",   "Ω",   true,  UnitDimension.Resistance),
                 new("Carrier[1]", "\"LTE;BW=20MHz;Mod=64QAM;Off=0;P=0;Seed=1\"", "", true, UnitDimension.None),
-                new("Record",     "1e-3", "",    false, UnitDimension.None)];
+                new("Record",     "1e-3", "",    false, UnitDimension.None),
+                .. PhaseNoiseRows];
 
             case SymbolKind.ZPort:
             {

@@ -433,6 +433,9 @@ blocks are handled as follows.
 | Segments | auto | Parallel-in-time segments, one per core and none shorter than 4× the warm-up; one when the circuit's memory is too long to warm up in parallel. 1 runs sequentially. |
 | Warmup | auto | Simulated before each segment and discarded. *auto* is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written. |
 | SaveWaveforms | yes | Keep the envelopes against time (`V`, `I`, `Pprobe_t_W`). `no` keeps every spectrum and every power, AM-AM and pulse number. |
+| Noise | no | `yes` adds thermal noise to the run ([below](#envelope-noise)). |
+| Seed | 1 | The seed of every random draw: thermal noise and every source's PhaseNoise mask. |
+| SeedPerPoint | no | `yes` gives each point of a parametric sweep its own seed. |
 
 ### What a run records {#envelope-records}
 
@@ -639,6 +642,50 @@ From the command line: `circuitrf env design.cnl [--stop 0.5e-3] [--accuracy sta
 It prints each IProbe's power, gain, efficiency, NMSE and PAPR, and the ACLR at every probe that
 carries RF. For a pulsed-CW source it prints each pulse's top power, droop, phase droop, rise and fall
 at those probes, then the pulse-to-pulse spread.
+
+### Noise and phase noise {#envelope-noise}
+
+Without these settings every signal in an envelope run is noiseless: the spectrum has no floor and an
+LO is a perfect tone. Two settings add what a receiver is limited by.
+
+**Thermal noise (`Noise=yes`).** Every part the [S-parameter noise analysis](#sp-noise) makes noisy
+adds noise to the run: resistors and other passive parts at their own temperature, S-parameter blocks
+with noise data, and system amplifiers with an `NF`. At every step, each harmonic band gets a random
+current on the part's nodes, with the part's noise at the centre of that band. The noise is taken as
+flat across one band, so a part whose noise changes noticeably across the signal bandwidth is
+evaluated at the band centre. The `PSD` then shows the noise floor, and `ACLR` includes it.
+
+- Sources and ports are noiseless unless you say otherwise. To put a source's own noise in the run,
+  tick **Noisy** in the source's parameters (`Noise=yes` on a P1Tone, PnTone or MOD_Source): its
+  impedance then adds thermal noise at the source's temperature, `Temp` if set, else the ambient.
+  Set `Temp=16.85` (290 K) for the input noise a noise figure is referred to. A P1Tone or PnTone with
+  per-harmonic impedances uses each band's own. The S-parameter, harmonic-balance and loadpull noise
+  analyses keep the source noiseless, because their noise figure already counts the source at 290 K.
+- A transistor's or diode's own noise is not added: it changes with the device's state inside a
+  step. The run names such devices in one warning, and they run noiseless.
+
+**Phase noise (`PhaseNoise=` on a source).** P1Tone, PnTone, the tone sources and MOD_Source take a
+phase-noise mask, single-sided L(f) in dBc/Hz at offsets from the carrier:
+
+```
+P1Tone:LO  lo 0  Pavl=7 dBm  Freq=2 GHz  PhaseNoise="1kHz:-80, 10kHz:-100, 100kHz:-120, 1MHz:-140"
+```
+
+- Between points the mask is a straight line in dB against log-frequency. Below the first point, the
+  first segment's slope continues. Beyond the last point it is `PhaseNoiseFloor` (dBc/Hz), or the
+  last point's level when that is not set.
+- The run turns the source's phase by a random φ(t) whose spectrum is the mask: by φ at its
+  fundamental and k·φ at its k-th harmonic. An LO with a mask mixes a blocker's energy into the
+  wanted channel, which is reciprocal mixing.
+- An envelope represents offsets up to half its sample rate. Mask points beyond that cannot be
+  simulated, and the run says so once, naming the first such offset.
+- Harmonic balance, loadpull and S-parameters run at steady state and ignore the mask. `check`
+  reports it as information on those analyses.
+
+**Seed.** The same `Seed` gives the same noise on every run and on every computer, and a run split
+into parallel segments draws the same noise as one run. Every point of a parametric sweep uses the
+same seed, so the differences between points come from the circuit; `SeedPerPoint=yes` gives each
+point its own.
 
 ## Parametric Sweep {#parametric-sweep}
 

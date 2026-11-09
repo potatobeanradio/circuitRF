@@ -140,6 +140,10 @@ public sealed class CschAnalysis
     public string?   EnvSaveWaveforms  { get; set; }
     /// <summary>Envelope mode (single / lattice); null = auto.</summary>
     public string?   EnvMode           { get; set; }
+    // Brief NZ-7 — envelope noise; null is the default, so a document without them reads back unchanged.
+    public string?   EnvNoise          { get; set; }
+    public string?   EnvSeed           { get; set; }
+    public string?   EnvSeedPerPoint   { get; set; }
     public string?   SweepVarName      { get; set; }
     public string?   SweepStartExpr    { get; set; }
     public string?   SweepStopExpr     { get; set; }
@@ -390,6 +394,9 @@ public static class AnalysisSerialization
             EnvSaveWaveforms = env.SaveWaveforms, MaxHarmonicExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr,
             EnvMode = env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? null : env.Envelope,
             TolExpr = env.TolExpr,
+            EnvNoise = env.NoiseExpr != Analysis.NoiseDefault ? env.NoiseExpr : null,
+            EnvSeed = env.SeedExpr != EnvelopeAnalysis.SeedDefault ? env.SeedExpr : null,
+            EnvSeedPerPoint = env.SeedPerPointExpr != Analysis.NoiseDefault ? env.SeedPerPointExpr : null,
         },
 
         HarmonicBalanceAnalysis hb => new CschAnalysis
@@ -594,6 +601,9 @@ public static class AnalysisSerialization
             WarmupExpr = dto.EnvWarmup ?? "auto", StartExpr = dto.EnvStart ?? "0", SaveWaveforms = dto.EnvSaveWaveforms ?? "yes",
             MaxHarmExpr = dto.MaxHarmonicExpr ?? "5", MaxMixOrderExpr = dto.MaxMixOrderExpr ?? "7", TolExpr = dto.TolExpr ?? "1e-6",
             Envelope = dto.EnvMode ?? "auto",
+            NoiseExpr = dto.EnvNoise ?? Analysis.NoiseDefault,
+            SeedExpr = dto.EnvSeed ?? EnvelopeAnalysis.SeedDefault,
+            SeedPerPointExpr = dto.EnvSeedPerPoint ?? Analysis.NoiseDefault,
         },
 
         "hb" => new HarmonicBalanceAnalysis(dto.Name)

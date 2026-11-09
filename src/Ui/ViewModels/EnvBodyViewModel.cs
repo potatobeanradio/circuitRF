@@ -39,6 +39,12 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     [ObservableProperty] private string _segments = "auto";
     [ObservableProperty] private string _warmup = "auto";
     [ObservableProperty] private bool _saveWaveforms = true;
+    /// <summary><c>Noise=</c> (brief NZ-7): thermal noise injected from every noisy part.</summary>
+    [ObservableProperty] private bool _noise;
+    /// <summary><c>Seed=</c>: the seed of the thermal noise and of every source's phase-noise mask.</summary>
+    [ObservableProperty] private string _seed = EnvelopeAnalysis.SeedDefault;
+    /// <summary><c>SeedPerPoint=</c>: a new seed at each parametric sweep point.</summary>
+    [ObservableProperty] private bool _seedPerPoint;
 
     /// <summary>What the schematic's MOD_Sources will play — read-only context for the card.</summary>
     public string StimulusSummary { get; }
@@ -89,6 +95,7 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         Envelope = Array.IndexOf(EnvelopeOptions, a.Envelope.ToLowerInvariant()) >= 0 ? a.Envelope.ToLowerInvariant() : "auto",
         Segments = a.SegmentsExpr, Warmup = a.WarmupExpr,
         SaveWaveforms = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase),
+        Noise = a.Noise, Seed = a.SeedExpr, SeedPerPoint = a.SeedPerPoint,
     };
 
     public EnvelopeAnalysis BuildAnalysis(string name, bool enabled) => new(name)
@@ -98,5 +105,8 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         MaxMixOrderExpr = MaxMixOrder.Trim(),
         SegmentsExpr = Segments.Trim(), WarmupExpr = Warmup.Trim(), SaveWaveforms = SaveWaveforms ? "yes" : "no",
         Envelope = Envelope,
+        NoiseExpr = Noise ? "yes" : Analysis.NoiseDefault,
+        SeedExpr = string.IsNullOrWhiteSpace(Seed) ? EnvelopeAnalysis.SeedDefault : Seed.Trim(),
+        SeedPerPointExpr = SeedPerPoint ? "yes" : Analysis.NoiseDefault,
     };
 }

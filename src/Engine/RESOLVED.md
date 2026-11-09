@@ -4140,3 +4140,47 @@ at the output, one transposed dense solve of `J_ss`, and one transposed sparse s
 
 Gates: `tests/Engine.Tests/HarmonicBalance/HbNoiseTests.cs`, `HbNoiseExternalTests.cs`,
 `OsdiNoiseTests.NoiseBatch_EqualsNoise_StateByState`; the dialog, `tests/Ui.Tests/HbSmallSignalDialogTests.cs`.
+
+## Envelope noise: thermal noise and a phase-noise mask on any source (2026-11-09)
+
+Brief NZ-7. `Noise=yes`, `Seed=` and `SeedPerPoint=` on `type=env`; `PhaseNoise=` (and `PhaseNoiseFloor=`) on P1Tone,
+PnTone, the tone sources and MOD_Source. Code: `Envelope/EnvelopeNoise.cs` (injection), `RfCore/Signals/NoiseDraw.cs`
+(the draws), `RfCore/Signals/PhaseNoiseMask.cs` (the mask and its phase record). Gate: `EnvelopeNoiseTests`.
+
+- **Scaling.** A part's single-sided correlation C at a band's centre becomes, per step, `sqrt(2/h)·L·z` (C = L·Lᴴ,
+  E|z|² = 1) on a product at f > 0 — a complex envelope of two-sided density 2C, which is a real signal of single-sided
+  density C. The baseband product is real: `sqrt(1/(2h))·L·g` with Re C = L·Lᵀ, read at fs/4, the middle of 0..fs/2.
+  Measured: a matched pad at T0 reads k·T0 to 0.3 % (standard error 0.8 %), an Amp with NF=3 and 20 dB reads
+  k·T0·F·G to 0.1 %, and the run's own PSD cube agrees within 0.03 dB.
+- **The parts' noise is built before the run replaces anything** — before a line becomes its delay and an S-parameter
+  block its rational fit — so each comes from the part's own stamp, through `SParameterNoise.Sources` (the one seam).
+  Devices with their own sources are claimed out of it and named in one warning ("noise not modelled in envelope").
+- **Sources and ports stay noiseless by default**, as in the S-parameter noise analysis. `Noise=yes` on a P1Tone,
+  PnTone or MOD_Source (the parameter dialog's Noise box, unticked by default on these) makes its impedance thermal in
+  an envelope run: 4kT·Re(1/Z) across its terminals at the source's `Temp`, else the ambient, with a P1Tone's or
+  PnTone's Z[n] for the band, n = round-half-up(f / fc), as they assign it. Injected across (ext, ref) rather than
+  (ext, drive): the ideal drive source ties the two, so the current is the same. The S-parameter, HB and loadpull
+  noise analyses keep it noiseless — their NF already counts the source termination at T0 — and `check` says so as
+  INFO. Measured: a 50 Ω MOD_Source or P1Tone at T0 into the matched pad reads 1.007 and 0.998 k·T0; without the key
+  the pad's own 0.901 (expected 0.9). Gate 1 still builds its source from a tiny Z and an explicit resistor.
+- **Every draw is keyed by (seed, part path, product, ABSOLUTE sample).** Two segments with a warm-up draw what one run
+  draws, and on a memoryless circuit the stitched record is bit-identical to the sequential one from sample 1 on.
+  Sample 0 differs: a cold run records its noiseless harmonic-balance start there, where the split run is already a
+  warm-up into its record.
+- **The draws are platform-independent bits.** The Gaussian (a radius from one uniform, an angle from another) is written with its own logarithm, sine and cosine
+  (polynomials on +, −, ×, ÷ and the IEEE-exact square root), so no platform maths library is in the path; a test pins
+  six draws' bit patterns. The phase record goes through the managed FFT, whose twiddles do use the maths library, so the
+  phase is as reproducible across platforms as the rest of an envelope run, not bit-pinned.
+- **A CW source's phase noise** is its static RHS split out per product (the RHS less the RHS at DriveScale 0) and added
+  back each step as (exp(j·n·φ) − 1) times its own solution, n = |f| / the source's lowest tone frequency. φ = 0 adds
+  exactly nothing. The harmonic-balance start is at φ = 0 while step 1 reads φ(i0+1), so a circuit with memory sees a
+  small phase step at the start; the settle skip / warm-up covers it, and a memoryless one sees none.
+- **Lattice products at a negative frequency** are stepped in the frame of |w| (the factorization is shared), so their
+  noise is C at |f|, not its conjugate.
+- **Gate results.** The mask comes back over 16 seeds to 0.41 dB worst bin (mean −0.005 dB) from 20 kHz to 0.4·fs;
+  reciprocal mixing through an ideal multiplier reads −53.53 dBc in a 18.75 kHz channel 198.75 kHz from the blocker,
+  against −53.52 dBc closed form. With no key, a CLI run of a bench with an SDD, a CW P1Tone and two segments wrote the
+  same bytes before and after the change, but for the 7-byte run-time scalar that differs between two runs anyway.
+- **Trap for anyone writing a CW envelope bench:** a `CW` carrier with no `BW=` takes the 20 MHz default, so the run
+  steps at the 20 MHz rate (122.88 MHz times the oversampling). The first version of these tests took ~10 minutes at a
+  million steps per run; stating `BW=0.2MHz` brings a 2 ms record to 3,840 draft steps.

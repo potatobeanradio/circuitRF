@@ -1803,6 +1803,40 @@ internal static class CliDiagnostics
         "check.elaboration.note", DiagnosticSeverity.Info,
         "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary><c>Noise=yes</c> on an ideal source (brief NZ-7 follow-up): it has no impedance to be noisy.</summary>
+    public static Diagnostic CheckNoisySourceIdeal(string path, string part) => Diagnostic.Create(
+        "check.noise.source-ideal", DiagnosticSeverity.Info,
+        "{path}: '{part}' has Noise=yes and no impedance to be noisy: an ideal source is noiseless. A P1Tone, PnTone or " +
+        "MOD_Source with Noise=yes has a thermal impedance in an envelope run.",
+        ("path", path), ("part", part));
+
+    /// <summary>
+    /// <c>Noise=yes</c> on a source with an impedance, beside noise analyses that keep it noiseless (brief NZ-7 follow-up):
+    /// their noise figure already counts the source termination at T0, so only an envelope run makes it thermal.
+    /// </summary>
+    public static Diagnostic CheckNoisySourceSteadyState(string path, string part, IReadOnlyList<string> analyses) => Diagnostic.Create(
+        "check.noise.source-steady-state", DiagnosticSeverity.Info,
+        "{path}: '{part}' has Noise=yes, which makes its impedance thermal in an envelope run. {names} {verb} it " +
+        "noiseless: a noise figure already counts the source termination at T0.",
+        ("path", path), ("part", part), ("names", string.Join(", ", analyses)),
+        ("verb", analyses.Count == 1 ? "keeps" : "keep"));
+
+    /// <summary>A source's <c>PhaseNoise=</c> mask that does not read (brief NZ-7): the run would refuse it.</summary>
+    public static Diagnostic CheckPhaseNoiseMask(string path, string part, string why) => Diagnostic.Create(
+        "check.noise.phase-mask", DiagnosticSeverity.Error,
+        "{path}: '{part}': {why}", ("path", path), ("part", part), ("why", why));
+
+    /// <summary>
+    /// A source's phase-noise mask under analyses that run at steady state (brief NZ-7): they ignore it, which is said and
+    /// is not an error, since the same source drives the envelope run that uses it.
+    /// </summary>
+    public static Diagnostic CheckPhaseNoiseSteadyState(string path, string part, IReadOnlyList<string> analyses) => Diagnostic.Create(
+        "check.noise.phase-steady-state", DiagnosticSeverity.Info,
+        "{path}: '{part}' has a PhaseNoise mask, which only an envelope run simulates; {names} {verb} at steady state and " +
+        "{pronoun} it.",
+        ("path", path), ("part", part), ("names", string.Join(", ", analyses)),
+        ("verb", analyses.Count == 1 ? "runs" : "run"), ("pronoun", analyses.Count == 1 ? "ignores" : "ignore"));
+
     /// <summary>
     /// <c>Noise=no</c> on a part that can never be noisy (brief NZ-1): accepted, does nothing, and said so.
     /// </summary>

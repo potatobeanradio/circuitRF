@@ -87,10 +87,41 @@ public sealed class PartNoiseSwitchTests
         Assert.Contains(r1.Overrides, o => o.Name == "Noise" && o.Expression == "yes");
     }
 
-    /// <summary>No box on a part with no noise to switch off — a port, a source.</summary>
+    /// <summary>No box on a part with no noise to switch off — a port, an ideal source.</summary>
     [Theory]
     [InlineData(SymbolKind.Term)]
     [InlineData(SymbolKind.Vdc)]
     public void APartThatCannotBeNoisy_HasNoBox(SymbolKind kind)
         => Assert.False(Open(kind, "X1").Editor.ShowNoiseRow);
+
+    /// <summary>
+    /// A source with an impedance (brief NZ-7 follow-up) has the box too, the other way round: unticked by default and
+    /// writing nothing; ticked writes <c>Noise=yes</c>, which extracts to the netlist and makes its impedance thermal in an
+    /// envelope run; unticking removes it again. A source carrying <c>Noise=yes</c> opens ticked.
+    /// </summary>
+    [Theory]
+    [InlineData(SymbolKind.P1Tone)]
+    [InlineData(SymbolKind.PnTone)]
+    [InlineData(SymbolKind.ModSource)]
+    public void ASourceWithAnImpedance_IsNoiselessUntilTicked(SymbolKind kind)
+    {
+        var (editor, comp, model) = Open(kind, "S1");
+        Assert.True(editor.ShowNoiseRow);
+        Assert.False(editor.PartNoise);
+        Assert.Contains("envelope", editor.NoiseRowTip);
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "Noise");
+
+        editor.PartNoise = true;
+        Assert.Equal("yes", Assert.Single(comp.Parameters, p => p.Name == "Noise").Expression);
+        Assert.DoesNotContain(editor.Rows, r => r.Name == "Noise");
+        var s1 = NetExtractor.Extract(model, "tb").TestBench.Instances.Single(i => i.InstanceName == "S1");
+        Assert.Contains(s1.Overrides, o => o.Name == "Noise" && o.Expression == "yes");
+
+        var reopened = new ParameterEditorViewModel();
+        reopened.SetTargetDirect(new SchematicViewModel(model), comp, showClose: false);
+        Assert.True(reopened.PartNoise);
+
+        editor.PartNoise = false;
+        Assert.DoesNotContain(comp.Parameters, p => p.Name == "Noise");
+    }
 }

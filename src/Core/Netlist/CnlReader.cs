@@ -1789,6 +1789,10 @@ public sealed class CnlReader
             StartExpr = kv.GetValueOrDefault("Start", "0"),
             TolExpr = kv.GetValueOrDefault("Tol", "1e-6"),
             SaveWaveforms = kv.GetValueOrDefault("SaveWaveforms", "yes"),
+            // Noise (brief NZ-7): every default leaves the run as it was.
+            NoiseExpr = kv.GetValueOrDefault("Noise", CircuitRF.Core.Design.Analysis.NoiseDefault),
+            SeedExpr = kv.GetValueOrDefault("Seed", CircuitRF.Core.Design.EnvelopeAnalysis.SeedDefault),
+            SeedPerPointExpr = kv.GetValueOrDefault("SeedPerPoint", CircuitRF.Core.Design.Analysis.NoiseDefault),
         };
         return true;
     }

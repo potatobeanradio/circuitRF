@@ -51,7 +51,7 @@ public class CurrentSourceComponentTests
     public void ITone_DefaultParameters_UseTheCurrentSourceKeys()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.CurrentToneSource, 0);
-        Assert.Equal(["I", "Freq", "Phase", "Idc"], ps.Select(p => p.Name));
+        Assert.Equal(["I", "Freq", "Phase", "Idc", "PhaseNoise", "PhaseNoiseFloor"], ps.Select(p => p.Name));
         Assert.DoesNotContain(ps, p => p.Name is "V" or "Vdc");
     }
 

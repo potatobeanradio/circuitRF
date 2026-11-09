@@ -225,6 +225,42 @@ public class SystemBlockElaborationTests
         Assert.DoesNotContain(inst.Overrides, o => o.Name is "NF" or "NFopt" or "Rn" or "Gopt" or "NFType");
     }
 
+    /// <summary>Brief NZ-7: a source's phase-noise rows are placed blank and extract to nothing; a mask typed without
+    /// quotes reaches the netlist quoted (its spaces and commas would otherwise read as nets) and elaborates verbatim.</summary>
+    [Theory]
+    [InlineData(SymbolKind.P1Tone)]
+    [InlineData(SymbolKind.PnTone)]
+    [InlineData(SymbolKind.ModSource)]
+    [InlineData(SymbolKind.ToneSource)]
+    public void APhaseNoiseMask_ExtractsQuoted_AndBlankExtractsNothing(SymbolKind kind)
+    {
+        EditableComponent Place(string mask)
+        {
+            var comp = new EditableComponent { InstanceName = "S1", Symbol = kind, X = 0, Y = 0 };
+            foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+                comp.Parameters.Add(new EditableParameter
+                {
+                    Name = dp.Name, Unit = dp.Unit, Dimension = dp.Dimension,
+                    Expression = dp.Name == "PhaseNoise" ? mask : dp.Expression,
+                });
+            return comp;
+        }
+        var blank = new SchematicEditModel();
+        blank.Components.Add(Place(""));
+        Assert.DoesNotContain(Assert.Single(NetExtractor.Extract(blank).TestBench.Instances).Overrides,
+                              o => o.Name is "PhaseNoise" or "PhaseNoiseFloor");
+
+        var model = new SchematicEditModel();
+        model.Components.Add(Place("1kHz:-80, 1MHz:-140"));
+        var tb = NetExtractor.Extract(model).TestBench;
+        Assert.Equal("\"1kHz:-80, 1MHz:-140\"", Assert.Single(tb.Instances).Overrides.Single(o => o.Name == "PhaseNoise").Expression);
+        string cnl = CircuitRF.Core.Netlist.CnlWriter.Write(tb);
+        var (lib, back) = new CircuitRF.Core.Netlist.CnlReader().Read(cnl);
+        Assert.Equal(Assert.Single(tb.Instances).NetBindings.Count, Assert.Single(back.Instances).NetBindings.Count);
+        using var nl = new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(back);
+        Assert.Equal("1kHz:-80, 1MHz:-140", nl.Components.Single(c => c.InstancePath == "S1").Parameters["PhaseNoise"].AsString());
+    }
+
     /// <summary>Brief NZ-4 gate 5: a freshly placed FET's blank Tg and Td rows are dropped at extraction, so it states no
     /// drain noise and its Ri is the zero that leaves the model unchanged.</summary>
     [Theory]

@@ -341,6 +341,25 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string TolExpr       { get; init; } = "1e-6";
     /// <summary>Keep the probe envelopes as a time cube (<c>yes</c>) or measurements only (<c>no</c>).</summary>
     public string SaveWaveforms { get; init; } = "yes";
+
+    // ── Noise (brief NZ-7) — every default leaves a run exactly as it was (overview D3) ─────────────
+
+    /// <summary>The default <c>Seed=</c>.</summary>
+    public const string SeedDefault = "1";
+
+    /// <summary><c>Noise=</c>, verbatim — <c>yes</c> injects thermal noise from every part the S-parameter noise analysis
+    /// makes noisy. Read through <see cref="Noise"/>.</summary>
+    public string NoiseExpr { get; init; } = NoiseDefault;
+    /// <summary><c>Seed=</c>: the seed of every random draw in the run, thermal noise and phase noise alike.</summary>
+    public string SeedExpr { get; init; } = SeedDefault;
+    /// <summary><c>SeedPerPoint=</c>: <c>yes</c> gives each point of a parametric sweep its own seed; by default every point
+    /// draws the same noise, so a swept result's differences are the circuit's.</summary>
+    public string SeedPerPointExpr { get; init; } = NoiseDefault;
+
+    /// <summary>Whether <see cref="NoiseExpr"/> turns thermal noise on.</summary>
+    public bool Noise => ParseNdf(NoiseExpr);
+    /// <summary>Whether <see cref="SeedPerPointExpr"/> asks for a seed per sweep point.</summary>
+    public bool SeedPerPoint => ParseNdf(SeedPerPointExpr);
 }
 
 /// <summary>

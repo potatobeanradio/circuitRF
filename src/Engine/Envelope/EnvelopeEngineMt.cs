@@ -122,6 +122,11 @@ public sealed class EnvelopeEngineMt
         int[] toneMix = new int[T];
         for (int t = 0; t < T; t++) { var k = new int[T]; k[t] = 1; toneMix[t] = lat.IndexOf(k); }
 
+        // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
+        // A product at a negative frequency is stepped in the frame of |w|, so its noise is read there.
+        var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, p.Seed, tones.Average()) : null;
+        var phase = EnvelopePhaseNoise.Of(_nl, (int)Math.Round(sources.Min(x => x.Signal.RecordSeconds) * recordRate), recordRate, p.Seed);
+
         // drive windows: per source, per tone (its carriers in that group, centred at the tone)
         int nWarm = (int)Math.Round(p.WarmupS / h);
         int nSteps = (int)Math.Round(p.StopS / h);
@@ -136,6 +141,7 @@ public sealed class EnvelopeEngineMt
                 var x = sources[s].Signal.CompositeWindow(recordRate, tones[t] - sources[s].FcHz, i0, total, idx);
                 double vs = sources[s].VsPeak;
                 for (int i = 0; i < x.Length; i++) x[i] *= vs;
+                phase?.Apply(sources[s], x, i0);
                 drv[s, t] = x;
             }
 
@@ -202,6 +208,7 @@ public sealed class EnvelopeEngineMt
                     for (int r = 0; r < b.Length; r++) b[r] -= bStatic[r];
                     bUnit[s] = b;
                 }
+                bUnit = EnvelopeEngine.ToneUnits(bUnit, bStatic, phase, () => EnvelopeEngine.RhsAt(extractor, mna, w, sources, null));
                 var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
                 lines.Product = null;
@@ -283,8 +290,9 @@ public sealed class EnvelopeEngineMt
         // is source s's drive at tone t. Null when Newton did not converge.
         Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, EnvelopeEngine.Stage> stageOf,
                              Func<int, int, Complex> drvAt, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
-                             Complex[,] V, Action<int, Complex[]>? delayed, out Complex[,] qNow)
+                             Complex[,] V, Action<int, Complex[]>? delayed, long sample, out Complex[,] qNow)
         {
+            delayed = EnvelopeEngine.WithNoise(delayed, thermal, sample);
             var yEff = new Complex[M][,];
             var iSrc = new Complex[M][];
             var xoc = new Complex[M][];
@@ -311,6 +319,7 @@ public sealed class EnvelopeEngineMt
                         var u = sg.Xu[s];
                         for (int r = 0; r < n; r++) x[r] += a * u[r];
                     }
+                EnvelopeEngine.AddTonePhase(phase, sg.Xu, sources.Length, Math.Abs(pr.W) / (2 * Math.PI), sample, x);
                 var Y = pr.Neg ? Conj(sg.Y) : sg.Y;
                 var isrc = new Complex[N];
                 for (int a = 0; a < N; a++)
@@ -381,7 +390,7 @@ public sealed class EnvelopeEngineMt
                     double f = (double)i / sub;
                     var xn = Advance(nw, aSub, -aSub, 0.0, m => SplitStage(m, sub, aSub),
                                      (s, t) => drv[s, t][step - 1] + f * (drv[s, t][step] - drv[s, t][step - 1]),
-                                     x, x, q, q, vs, lines.Any ? (m, b) => lines.AddSplit(m, b, sub, i) : null, out var qn);
+                                     x, x, q, q, vs, lines.Any ? (m, b) => lines.AddSplit(m, b, sub, i) : null, i0 + step, out var qn);
                     if (xn is null) ok = false;
                     else { x = xn; q = qn; lines.PushSub(xn); }
                 }
@@ -419,7 +428,7 @@ public sealed class EnvelopeEngineMt
 
             var xNew = Advance(newton, alpha, b1, b2, m => be ? prods[m].Be : prods[m].G2, (s, t) => drv[s, t][step],
                                prods.Select(pr => pr.Xm1).ToArray(), prods.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               lines.Any ? lines.AddMain : null, out var qNow)
+                               lines.Any ? lines.AddMain : null, i0 + step, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int m = 0; m < M; m++) { prods[m].Xm2 = prods[m].Xm1; prods[m].Xm1 = xNew[m]; }
             lines.Push(xNew);

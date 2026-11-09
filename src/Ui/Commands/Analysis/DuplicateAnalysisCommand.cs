@@ -92,6 +92,7 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 MaxHarmExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr, Probes = env.Probes,
                 ZmeasExpr = env.ZmeasExpr, SegmentsExpr = env.SegmentsExpr, WarmupExpr = env.WarmupExpr,
                 StartExpr = env.StartExpr, TolExpr = env.TolExpr, SaveWaveforms = env.SaveWaveforms, Envelope = env.Envelope,
+                NoiseExpr = env.NoiseExpr, SeedExpr = env.SeedExpr, SeedPerPointExpr = env.SeedPerPointExpr,
             },
 
         HarmonicBalanceAnalysis hb =>

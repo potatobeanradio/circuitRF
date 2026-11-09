@@ -127,6 +127,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// noisy (<see cref="ComponentTypeRegistry.HasNoiseSwitch"/>).</summary>
     public bool ShowNoiseRow => IsNotEmptyState && _target is not null && ComponentTypeRegistry.HasNoiseSwitch(_target.Symbol);
 
+    /// <summary>The row's default when the part says nothing (<see cref="ComponentTypeRegistry.NoiseSwitchDefault"/>): ticked
+    /// on a part, unticked on a source with an impedance.</summary>
+    private bool NoiseDefault => _target is null || ComponentTypeRegistry.NoiseSwitchDefault(_target.Symbol);
+
+    /// <summary>What the box does, for this kind: a part's noise switched off, or a source's impedance switched on.</summary>
+    public string NoiseRowTip => NoiseDefault
+        ? "Ticked: the part is as noisy as its model (thermal at its own temperature when passive). Unticked: Noise=no, and the noise analysis gives it no noise."
+        : "Ticked: Noise=yes, and an envelope run with thermal noise makes this source's impedance thermal at its own temperature (Temp, else the ambient). Unticked: the source is noiseless, as the noise analyses take it.";
+
     /// <summary>
     /// Ticked: the part is as noisy as its model, which is the default. Unticked: <c>Noise=no</c>. A control rather than a
     /// text row for <c>OpVars</c>' reason: two states, and no expression usefully written in it.
@@ -140,9 +149,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     partial void OnShowNoiseLabelChanged(bool oldValue, bool newValue) => WriteNoiseParameter();
 
     /// <summary>
-    /// The two boxes as the instance's <c>Noise</c> parameter. Noisy and not displayed is the default and writes nothing,
-    /// so a part nobody touched carries no key; anything else is <c>Noise=yes|no</c> with the display box as its
-    /// show-on-schematic flag.
+    /// The two boxes as the instance's <c>Noise</c> parameter. The kind's default (<see cref="NoiseDefault"/>) not displayed
+    /// writes nothing, so a part nobody touched carries no key; anything else is <c>Noise=yes|no</c> with the display box
+    /// as its show-on-schematic flag.
     /// </summary>
     private void WriteNoiseParameter()
     {
@@ -150,7 +159,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         var updated = _target.Parameters.Select(p => p.Clone())
                              .Where(p => !p.Name.Equals(ComponentTypeRegistry.NoiseParameter, StringComparison.OrdinalIgnoreCase))
                              .ToList();
-        if (!PartNoise || ShowNoiseLabel)
+        if (PartNoise != NoiseDefault || ShowNoiseLabel)
             updated.Add(new EditableParameter
             {
                 Name = ComponentTypeRegistry.NoiseParameter, Expression = PartNoise ? "yes" : "no", ShowOnSchematic = ShowNoiseLabel,
@@ -158,7 +167,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
     }
 
-    /// <summary>The box from the instance: unticked only on a recognisable no, the elaborator's own reading.</summary>
+    /// <summary>The box from the instance, the elaborator's own reading: on a part unticked only on a recognisable no, on a
+    /// source ticked only on a recognisable yes.</summary>
     private void RefreshNoiseRow()
     {
         OnPropertyChanged(nameof(ShowNoiseRow));
@@ -168,9 +178,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         string raw = (param?.Expression ?? "").Trim().Trim('"');
         bool off = raw.Equals("no", StringComparison.OrdinalIgnoreCase) || raw.Equals("false", StringComparison.OrdinalIgnoreCase)
                 || raw.Equals("off", StringComparison.OrdinalIgnoreCase) || raw == "0";
+        bool on = raw.Equals("yes", StringComparison.OrdinalIgnoreCase) || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+               || raw.Equals("on", StringComparison.OrdinalIgnoreCase) || raw == "1";
+        OnPropertyChanged(nameof(NoiseRowTip));
         bool was = _isRefreshing;
         _isRefreshing = true;
-        PartNoise = !off;
+        PartNoise = NoiseDefault ? !off : on;
         ShowNoiseLabel = param?.ShowOnSchematic ?? false;
         _isRefreshing = was;
     }

@@ -1770,6 +1770,34 @@ internal static class Check
                 if (ec.NoiseOff && !CircuitRF.Engine.SParameterNoise.CanBeNoisy(ec))
                     f.Add(CliDiagnostics.CheckNoiseSwitchInert(path, ec.InstancePath));
 
+            // NZ-7 follow-up: Noise=yes on a source. One with an impedance (P1Tone, PnTone, MOD_Source) has it thermal in an
+            // envelope run and stays noiseless in the analyses whose noise figure already counts the source termination; an
+            // ideal source has no impedance, so the switch does nothing there.
+            var noiseAnalyses = tb.Analyses.Where(a => a is SParameterAnalysis { Noise: true } or HarmonicBalanceAnalysis { Noise: true }
+                                                           or ILoadpullNoiseKeys { Noise: true }).Select(a => a.Name).ToList();
+            foreach (var ec in nl.Components.Where(c => c.NoiseOn))
+            {
+                if (ec.Model is ModSourceModel or P1ToneModel or PnToneModel)
+                {
+                    if (noiseAnalyses.Count > 0) f.Add(CliDiagnostics.CheckNoisySourceSteadyState(path, ec.InstancePath, noiseAnalyses));
+                }
+                else if (ec.Model is IDriveScalable or VdcModel)
+                    f.Add(CliDiagnostics.CheckNoisySourceIdeal(path, ec.InstancePath));
+            }
+
+            // NZ-7: a source's phase-noise mask is simulated by an envelope run only. A mask that does not read is an error
+            // (the parser the run uses); one under steady-state analyses is INFO, never an error.
+            var steady = tb.Analyses.Where(a => a is HarmonicBalanceAnalysis or LoadpullAnalysis or LoadpullPursuitAnalysis
+                                                    or SParameterAnalysis).Select(a => a.Name).ToList();
+            foreach (var ec in nl.Components)
+            {
+                if (!ec.Parameters.TryGetValue(CircuitRF.Core.Elaboration.Elaborator.PhaseNoiseParamName, out var pn)
+                    || pn.Kind != CircuitRF.Core.Expressions.ValueKind.String || string.IsNullOrWhiteSpace(pn.AsString())) continue;
+                try { RfCore.Signals.PhaseNoiseMask.Parse(pn.AsString()); }
+                catch (FormatException ex) { f.Add(CliDiagnostics.CheckPhaseNoiseMask(path, ec.InstancePath, ex.Message)); continue; }
+                if (steady.Count > 0) f.Add(CliDiagnostics.CheckPhaseNoiseSteadyState(path, ec.InstancePath, steady));
+            }
+
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
                 f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));
 

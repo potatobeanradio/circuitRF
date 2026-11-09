@@ -589,12 +589,14 @@ tone amplitude, <code>Freq</code> the tone frequency, and <code>Vdc</code> a DC 
 </tbody></table>
 <p class="small">The nets of an instance line, in this order. V and Vdc are the voltage at + relative to −, and Phase is referred to the same pair.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>V</td><td><code>1</code></td><td>V</td><td>shown</td></tr>
-<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td></tr>
-<tr><td>Vdc</td><td><code>0</code></td><td>V</td><td>&mdash;</td></tr>
+<tr><td>V</td><td><code>1</code></td><td>V</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Vdc</td><td><code>0</code></td><td>V</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PhaseNoise</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source&#39;s phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against log-frequency between points; the first segment&#39;s slope continues below the first point. Only an envelope run simulates it, as a random phase drawn from the analysis&#39;s Seed; harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.</td></tr>
+<tr><td>PhaseNoiseFloor</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The phase noise beyond the mask&#39;s last point, dBc/Hz. Blank: the last point&#39;s level.</td></tr>
 </tbody></table>
 <h3 id="currenttonesource">Current Tone Source (ITone)</h3>
 <figure class="symbol"><span class="frame">
@@ -631,12 +633,14 @@ path and it solves.</p>
 </tbody></table>
 <p class="small">The nets of an instance line, in this order. A positive I is delivered INTO the + terminal and drawn out of the −, which is what the arrow on the + lead points at. Note this is the opposite sense to the VCCS&#39;s arrow, which is a controlled source and is drawn the way controlled sources are.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>I</td><td><code>1</code></td><td>mA</td><td>shown</td></tr>
-<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td></tr>
-<tr><td>Idc</td><td><code>0</code></td><td>mA</td><td>&mdash;</td></tr>
+<tr><td>I</td><td><code>1</code></td><td>mA</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Idc</td><td><code>0</code></td><td>mA</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PhaseNoise</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source&#39;s phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against log-frequency between points; the first segment&#39;s slope continues below the first point. Only an envelope run simulates it, as a random phase drawn from the analysis&#39;s Seed; harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.</td></tr>
+<tr><td>PhaseNoiseFloor</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The phase noise beyond the mask&#39;s last point, dBc/Hz. Blank: the last point&#39;s level.</td></tr>
 </tbody></table>
 <h3 id="p1tone">RF Power Source (P1Tone)</h3>
 <figure class="symbol"><span class="frame">
@@ -664,13 +668,15 @@ on. Added in the parameter editor.</li>
 </tbody></table>
 <p class="small">The nets of an instance line, in this order. + is the RF output and − the reference, normally ground — Term&#39;s own convention, since this is a source with Term&#39;s internal resistance in front of it. The source&#39;s internal impedance Z is in series with +.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>Num</td><td><code>1</code></td><td>&mdash;</td><td>shown</td></tr>
-<tr><td>Pavl</td><td><code>0</code></td><td>dBm</td><td>shown</td></tr>
-<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td></tr>
-<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td></tr>
+<tr><td>Num</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Pavl</td><td><code>0</code></td><td>dBm</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Freq</td><td><code>1</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Phase</td><td><code>0</code></td><td>deg</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PhaseNoise</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source&#39;s phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against log-frequency between points; the first segment&#39;s slope continues below the first point. Only an envelope run simulates it, as a random phase drawn from the analysis&#39;s Seed; harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.</td></tr>
+<tr><td>PhaseNoiseFloor</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The phase noise beyond the mask&#39;s last point, dBc/Hz. Blank: the last point&#39;s level.</td></tr>
 </tbody></table>
 <h3 id="pntone">Multi-Tone RF Power Source (PnTone)</h3>
 <figure class="symbol"><span class="frame">
@@ -697,15 +703,17 @@ owns the mixing grid, and the source just supplies power at those frequencies.</
 </tbody></table>
 <p class="small">The nets of an instance line, in this order. + is the RF output and − the reference, normally ground — Term&#39;s own convention, since this is a source with Term&#39;s internal resistance in front of it. The source&#39;s internal impedance Z is in series with +.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>Freq[1]</td><td><code>1.99</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Pavl[1]</td><td><code>0</code></td><td>dBm</td><td>shown</td></tr>
-<tr><td>Phase[1]</td><td><code>0</code></td><td>deg</td><td>&mdash;</td></tr>
-<tr><td>Freq[2]</td><td><code>2.01</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Pavl[2]</td><td><code>0</code></td><td>dBm</td><td>shown</td></tr>
-<tr><td>Phase[2]</td><td><code>0</code></td><td>deg</td><td>&mdash;</td></tr>
-<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td></tr>
+<tr><td>Freq[1]</td><td><code>1.99</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Pavl[1]</td><td><code>0</code></td><td>dBm</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Phase[1]</td><td><code>0</code></td><td>deg</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Freq[2]</td><td><code>2.01</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Pavl[2]</td><td><code>0</code></td><td>dBm</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Phase[2]</td><td><code>0</code></td><td>deg</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>PhaseNoise</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source&#39;s phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against log-frequency between points; the first segment&#39;s slope continues below the first point. Only an envelope run simulates it, as a random phase drawn from the analysis&#39;s Seed; harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.</td></tr>
+<tr><td>PhaseNoiseFloor</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The phase noise beyond the mask&#39;s last point, dBc/Hz. Blank: the last point&#39;s level.</td></tr>
 </tbody></table>
 <h3 id="modsource">Modulated RF Source (MOD_Source)</h3>
 <figure class="symbol"><span class="frame">
@@ -757,13 +765,15 @@ in an S-parameter run it is the passive impedance <code>Z</code>.</p>
 </tbody></table>
 <p class="small">The nets of an instance line, in this order. + is the RF output and − the reference, normally ground — Term&#39;s own convention, since this is a source with Term&#39;s internal resistance in front of it. The source&#39;s internal impedance Z is in series with +.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>Fc</td><td><code>2</code></td><td>GHz</td><td>shown</td></tr>
-<tr><td>Pavg</td><td><code>10</code></td><td>dBm</td><td>shown</td></tr>
-<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td></tr>
-<tr><td>Carrier[1]</td><td><code>&quot;LTE;BW=20MHz;Mod=64QAM;Off=0;P=0;Seed=1&quot;</code></td><td>&mdash;</td><td>shown</td></tr>
-<tr><td>Record</td><td><code>1e-3</code></td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Fc</td><td><code>2</code></td><td>GHz</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Pavg</td><td><code>10</code></td><td>dBm</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Z</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Carrier[1]</td><td><code>&quot;LTE;BW=20MHz;Mod=64QAM;Off=0;P=0;Seed=1&quot;</code></td><td>&mdash;</td><td>shown</td><td>&mdash;</td></tr>
+<tr><td>Record</td><td><code>1e-3</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PhaseNoise</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source&#39;s phase noise, single-sided L(f) in dBc/Hz at offsets from the carrier: offset:level pairs such as 1kHz:-80, 10kHz:-100, 1MHz:-140. Straight lines in dB against log-frequency between points; the first segment&#39;s slope continues below the first point. Only an envelope run simulates it, as a random phase drawn from the analysis&#39;s Seed; harmonic balance, loadpull and S-parameters run at steady state and ignore it. Blank: none.</td></tr>
+<tr><td>PhaseNoiseFloor</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The phase noise beyond the mask&#39;s last point, dBc/Hz. Blank: the last point&#39;s level.</td></tr>
 </tbody></table>
 <h3 id="vccs">Voltage-Controlled Current Source (VCCS)</h3>
 <figure class="symbol"><span class="frame">

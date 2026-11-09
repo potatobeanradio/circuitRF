@@ -66,6 +66,10 @@ public sealed record EnvelopeParams
     public double StartS { get; init; }
     /// <summary>Warm-up simulated before <see cref="StartS"/> and discarded (s).</summary>
     public double WarmupS { get; init; }
+    /// <summary>Inject thermal noise (brief NZ-7, <see cref="EnvelopeNoise"/>).</summary>
+    public bool Noise { get; init; }
+    /// <summary>The seed of every random draw: thermal noise and the sources' phase-noise masks.</summary>
+    public ulong Seed { get; init; } = 1;
 }
 
 public sealed class EnvelopeRunResult
@@ -195,6 +199,9 @@ public sealed class EnvelopeEngine
         foreach (var sg in signals)
             if (Math.Abs(sg.RecordSeconds - record) > 1e-12)
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
+        // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
+        var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, p.Seed, f0) : null;
+        var phase = EnvelopePhaseNoise.Of(_nl, (int)Math.Round(nRec), recordRate, p.Seed);
         // Every line is its delay for the whole run — the DC solve, the HB start and the stepping (EnvelopeLineDelay) — and
         // every other non-affine element (an SnP, a System Filter, a Z(freq) block) its rational fit (EnvelopeSnpFit).
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, 0.5 * need);
@@ -218,6 +225,7 @@ public sealed class EnvelopeEngine
             var x = signals[s].CompositeWindow(recordRate, f0 - sources[s].FcHz, i0, nDrive);
             double vs = sources[s].VsPeak;
             for (int i = 0; i < x.Length; i++) x[i] *= vs;
+            phase?.Apply(sources[s], x, i0);
             drive[s] = x;
         }
         Complex Drv(int s, int step) => drive[s][step];
@@ -286,6 +294,7 @@ public sealed class EnvelopeEngine
                     for (int r = 0; r < b.Length; r++) b[r] -= bStatic[r];
                     bUnit[s] = b;
                 }
+                bUnit = ToneUnits(bUnit, bStatic, phase, () => RhsAt(extractor, mna, w, sources, null));
                 var pr = new Product { Omega = w, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
                 lines.Product = null;
@@ -381,10 +390,12 @@ public sealed class EnvelopeEngine
         // One step from the history (x1, x2, q1, q2) to the new state of every product, with V the starting guess and,
         // on return, the solved interface spectrum. Null when Newton did not converge.
         // delayed(k, b) adds the lines' known delayed waves for product k to its right-hand side.
+        // sample is the step's absolute index in the signal record: what the noise and the phase records are read at.
         Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, Stage> stageOf,
                              Func<int, Complex> drv, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
-                             Complex[,] V, Action<int, Complex[]>? delayed, out Complex[,] qNow)
+                             Complex[,] V, Action<int, Complex[]>? delayed, long sample, out Complex[,] qNow)
         {
+            delayed = WithNoise(delayed, thermal, sample);
             if (prof) swL.Start();
             var iSrc = new Complex[K + 1][];
             var yEff = new Complex[K + 1][,];
@@ -410,6 +421,7 @@ public sealed class EnvelopeEngine
                         var u = sg.Xu[s];
                         for (int r = 0; r < n; r++) x[r] += a * u[r];
                     }
+                AddTonePhase(phase, sg.Xu, sources.Length, k * f0, sample, x);
                 var voc = new Complex[N];
                 for (int j = 0; j < N; j++) voc[j] = x[ifNodes[j] - 1];
                 var isrc = new Complex[N];
@@ -482,7 +494,7 @@ public sealed class EnvelopeEngine
                     double f = (double)i / m;
                     var xn = Advance(nw, aSub, -aSub, 0.0, k => SplitStage(k, m, aSub),
                                      s => Drv(s, step - 1) + f * (Drv(s, step) - Drv(s, step - 1)), x, x, q, q, vs,
-                                     lines.Any ? (k, b) => lines.AddSplit(k, b, m, i) : null, out var qn);
+                                     lines.Any ? (k, b) => lines.AddSplit(k, b, m, i) : null, i0 + step, out var qn);
                     if (xn is null) ok = false;
                     else { x = xn; q = qn; lines.PushSub(xn); }
                 }
@@ -522,7 +534,7 @@ public sealed class EnvelopeEngine
 
             var xNew = Advance(newton, alpha, b1, b2, k => be ? products[k].Be : products[k].G2, s => Drv(s, step),
                                products.Select(pr => pr.Xm1).ToArray(), products.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               lines.Any ? lines.AddMain : null, out var qNow)
+                               lines.Any ? lines.AddMain : null, i0 + step, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int k = 0; k <= K; k++) { products[k].Xm2 = products[k].Xm1; products[k].Xm1 = xNew[k]; }
             lines.Push(xNew);
@@ -586,6 +598,50 @@ public sealed class EnvelopeEngine
         return ([.. ps.Select(c => c.InstancePath)], [.. ps.Select(c => ((IProbeModel)c.Model).LastBranchIndex)],
                 [.. ps.Select(c => c.Nodes[0] - 1)]);
     }
+
+    /// <summary>
+    /// Each phase-noisy CW source's own share of a product's static right-hand side, appended to <paramref name="bUnit"/>
+    /// after the MOD_Sources' unit drives (brief NZ-7): the static RHS less the RHS with that source's drive scaled to 0
+    /// (<paramref name="rhs"/> stamps it). Its solution, times (exp(j·n·φ) − 1), turns the source's phase at each step.
+    /// <paramref name="bUnit"/> unchanged when no source states a mask.
+    /// </summary>
+    internal static Complex[][] ToneUnits(Complex[][] bUnit, Complex[] bStatic, EnvelopePhaseNoise? phase, Func<Complex[]> rhs)
+    {
+        if (phase is not { Tones.Count: > 0 }) return bUnit;
+        var all = new List<Complex[]>(bUnit);
+        foreach (var t in phase.Tones)
+        {
+            double was = t.Model.DriveScale;
+            t.Model.DriveScale = 0;
+            try
+            {
+                var b0 = rhs();
+                var d = new Complex[bStatic.Length];
+                for (int r = 0; r < d.Length; r++) d[r] = bStatic[r] - b0[r];
+                all.Add(d);
+            }
+            finally { t.Model.DriveScale = was; }
+        }
+        return [.. all];
+    }
+
+    /// <summary>Adds each phase-noisy CW source's phase turn at a product of |f| = <paramref name="productHz"/> to its
+    /// open-circuit state <paramref name="x"/>: (exp(j·n·φ) − 1) times the source's own solution, which
+    /// <see cref="ToneUnits"/> placed after the <paramref name="first"/> MOD_Source columns of <paramref name="xu"/>.</summary>
+    internal static void AddTonePhase(EnvelopePhaseNoise? phase, Complex[][] xu, int first, double productHz, long sample, Complex[] x)
+    {
+        if (phase is not { Tones.Count: > 0 } || productHz <= 0) return;
+        for (int j = 0; j < phase.Tones.Count; j++)
+        {
+            var f = phase.ToneFactor(j, productHz, sample);
+            var u = xu[first + j];
+            for (int r = 0; r < x.Length; r++) x[r] += f * u[r];
+        }
+    }
+
+    /// <summary>The right-hand-side hook with the step's thermal noise added after it (brief NZ-7); unchanged without noise.</summary>
+    internal static Action<int, Complex[]>? WithNoise(Action<int, Complex[]>? delayed, EnvelopeNoise? thermal, long sample) =>
+        thermal is null ? delayed : (k, b) => { delayed?.Invoke(k, b); thermal.Add(k, sample, b); };
 
     internal static CompressedColumnStorage<Complex> Stamp(HbLinearExtractor ex, MnaSystem mna, double omega)
     {

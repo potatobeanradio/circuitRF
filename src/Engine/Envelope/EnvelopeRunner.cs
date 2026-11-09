@@ -36,8 +36,17 @@ public static class EnvelopeRunner
     /// has none, or 50.</param>
     /// <param name="ProbesNote">The one note an old file's retired <c>Probes</c> list earns; null when it has none.</param>
     /// <param name="Name">The analysis, for the notes a run writes.</param>
+    /// <param name="SeedPerPoint">A parametric sweep gives each point its own seed (<see cref="ForPoint"/>).</param>
     public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, int MaxMixOrder = 5,
-                              string Mode = "auto", string? ZmeasWarning = null, string? ProbesNote = null, string Name = "");
+                              string Mode = "auto", string? ZmeasWarning = null, string? ProbesNote = null, string Name = "",
+                              bool SeedPerPoint = false)
+    {
+        /// <summary>This plan at the sweep point <paramref name="point"/> (its drive text, outer points included): the same
+        /// seed at every point unless <see cref="SeedPerPoint"/>, then one mixed from the point.</summary>
+        public Plan ForPoint(string point) => SeedPerPoint
+            ? this with { Params = Params with { Seed = RfCore.Signals.NoiseDraw.Mix(Params.Seed ^ RfCore.Signals.NoiseDraw.Hash(point)) } }
+            : this;
+    }
 
     public static Plan Resolve(EnvelopeAnalysis a, IReadOnlyDictionary<string, Value> globals)
     {
@@ -75,6 +84,8 @@ public static class EnvelopeRunner
             Tol = Num(a.TolExpr, 1e-6),
             Probes = a.Probes.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries),
             StartS = Num(a.StartExpr, 0),
+            Noise = a.Noise,
+            Seed = SeedOf(Num(a.SeedExpr, 1), a.Name),
         };
         bool save = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase) &&
                     !a.SaveWaveforms.Equals("false", StringComparison.OrdinalIgnoreCase);
@@ -86,7 +97,15 @@ public static class EnvelopeRunner
             : $"Envelope '{a.Name}': Probes is no longer a setting. Every labeled net's voltage is recorded and the nodes it " +
               $"lists ({string.Join(", ", p.Probes)}) join them; power is measured at IProbes.";
         return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals),
-                        probesNote, a.Name);
+                        probesNote, a.Name, a.SeedPerPoint);
+    }
+
+    /// <summary><c>Seed=</c> as the draws' seed: a whole number, negative ones included.</summary>
+    private static ulong SeedOf(double v, string name)
+    {
+        if (!double.IsFinite(v) || Math.Abs(v - Math.Round(v)) > 1e-9 || Math.Abs(v) > 9e15)
+            throw new InvalidOperationException(NoiseDiagnostics.EnvelopeSeed(name, v).Render());
+        return unchecked((ulong)(long)Math.Round(v));
     }
 
     /// <summary>

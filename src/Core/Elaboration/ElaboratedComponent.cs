@@ -45,6 +45,13 @@ public sealed class ElaboratedComponent(
     /// </summary>
     public bool NoiseOff { get; init; }
 
+    /// <summary>
+    /// The part's own <c>Noise=yes</c>, stated. Every noisy part is noisy without it; it matters on a source with an
+    /// impedance (P1Tone, PnTone, MOD_Source), which is noiseless by default and with it has a thermal impedance in an
+    /// envelope run (brief NZ-7 follow-up).
+    /// </summary>
+    public bool NoiseOn { get; init; }
+
     private bool HasMultiplier => Multiplicity != 1.0;
 
     // ── the one seam ──────────────────────────────────────────────────────────

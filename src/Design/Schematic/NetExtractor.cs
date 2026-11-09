@@ -3566,10 +3566,15 @@ public static class NetExtractor
             // NFType qualifies an NF; with no NF it says nothing, and is dropped so a placed mixer's default adds no key.
             .Where(p => !(comp.Symbol is SymbolKind.Mixer or SymbolKind.MixerD && p.Name == "NFType"
                           && string.IsNullOrWhiteSpace(comp.Parameters.FirstOrDefault(q => q.Name == "NF")?.Expression)))
+            // A source's phase-noise mask (brief NZ-7) is placed blank and dropped the same way.
+            .Where(p => !(p.Name is "PhaseNoise" or "PhaseNoiseFloor" && string.IsNullOrWhiteSpace(p.Expression)))
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
-                return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
+                // The mask is a list with spaces and commas in it; unquoted, its words would read as nets.
+                string expr = p.Name == "PhaseNoise" && !p.Expression.TrimStart().StartsWith('"')
+                    ? "\"" + p.Expression.Trim() + "\"" : p.Expression;
+                return new ParameterAssignment(p.Name, expr, unit.Length > 0 ? unit : null);
             })
             .ToList();
 

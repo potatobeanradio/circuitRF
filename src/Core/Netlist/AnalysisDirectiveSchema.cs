@@ -145,6 +145,9 @@ public static partial class AnalysisDirectiveSchema
             new("Start",     Default: "0",       Summary: "Signal-record time of t = 0 (s)."),
             new("Tol",       Default: "1e-6",    Summary: "Newton residual tolerance per envelope step (A)."),
             new("SaveWaveforms", Default: "yes", Summary: "yes keeps the probe envelopes as a time cube; no keeps the measurements only."),
+            new("Noise",     Default: "no",      Summary: "yes injects thermal noise: every part the S-parameter noise analysis makes noisy (passive parts at their own temperature, S-parameter blocks with noise data, system amplifiers with NF=) adds a seeded white Gaussian current on its nodes at every step of every harmonic band, with the part's noise correlation at the band's centre. The PSD then shows the noise floor and ACLR includes it. Nonlinear devices' own noise is not injected (they are named in a warning), and sources and ports are noiseless, as in the S-parameter noise analysis."),
+            new("Seed",      Default: "1",       Summary: "The seed of every random draw: thermal noise and every source's PhaseNoise mask. The same seed gives the same draws on every platform and in every segment split."),
+            new("SeedPerPoint", Default: "no",   Summary: "yes gives each point of a parametric sweep its own seed. By default every point draws the same noise, so a swept result's differences are the circuit's."),
         ]),
 
         new("hb", ["harmonic_balance", "harmonicbalance"],

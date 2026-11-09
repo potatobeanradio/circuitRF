@@ -44,6 +44,38 @@ public class EnvelopeModeRoundTripTests
         Assert.Null(AnalysisSerialization.ToDto(env).EnvMode);
     }
 
+    /// <summary>Brief NZ-7: the noise keys survive the netlist, the schematic and the editor, and are absent at their
+    /// defaults from both writers.</summary>
+    [Fact]
+    public void NoiseKeys_RoundTripThroughTheNetlistTheSchematicAndTheEditor()
+    {
+        var env = ReadEnv("analysis ENV1 type=env Stop=10e-6 Noise=yes Seed=17 SeedPerPoint=yes");
+        Assert.True(env.Noise);
+        Assert.Equal("17", env.SeedExpr);
+        Assert.True(env.SeedPerPoint);
+
+        var back = (EnvelopeAnalysis)AnalysisSerialization.FromDto(AnalysisSerialization.ToDto(env))!;
+        Assert.True(back.Noise);
+        Assert.Equal("17", back.SeedExpr);
+        Assert.True(back.SeedPerPoint);
+
+        var edited = CircuitRF.Ui.ViewModels.EnvBodyViewModel.FromAnalysis(env, new SchematicEditModel()).BuildAnalysis("ENV1", true);
+        Assert.True(edited.Noise);
+        Assert.Equal("17", edited.SeedExpr);
+        Assert.True(edited.SeedPerPoint);
+
+        var plain = ReadEnv("analysis ENV1 type=env Stop=10e-6");
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(plain);
+        string cnl = CnlWriter.Write(tb);
+        Assert.DoesNotContain("Noise", cnl);
+        Assert.DoesNotContain("Seed", cnl);
+        var dto = AnalysisSerialization.ToDto(plain);
+        Assert.Null(dto.EnvNoise);
+        Assert.Null(dto.EnvSeed);
+        Assert.Null(dto.EnvSeedPerPoint);
+    }
+
     [Fact]
     public void Zmeas_IsReadForTheRunsWarning_AndNeitherWriterEmitsIt()
     {
