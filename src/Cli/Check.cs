@@ -1765,6 +1765,11 @@ internal static class Check
                         path, ec.InstancePath,
                         ec.Nodes[0] < nl.Nodes.Count ? nl.Nodes.NameOf(ec.Nodes[0]) : $"node {ec.Nodes[0]}"));
 
+            // NZ-1: Noise=no on a part that can never be noisy is accepted and does nothing, which is worth a word.
+            foreach (var ec in nl.Components)
+                if (ec.NoiseOff && !CircuitRF.Engine.SParameterNoise.CanBeNoisy(ec))
+                    f.Add(CliDiagnostics.CheckNoiseSwitchInert(path, ec.InstancePath));
+
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
                 f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));
 

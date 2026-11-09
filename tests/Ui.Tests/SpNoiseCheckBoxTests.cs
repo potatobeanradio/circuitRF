@@ -49,4 +49,24 @@ public sealed class SpNoiseCheckBoxTests
         Assert.False(off.Noise);
         Assert.Equal(("yes", "-20"), (off.NdfExpr, off.MarginThresholdExpr));
     }
+
+    /// <summary>The per-part box is NoiseContrib=: off on a new analysis, written yes when ticked, and an edit opens on
+    /// the analysis's own spelling and keeps it.</summary>
+    [Fact]
+    public void TheNoiseContribBox_IsNoiseContrib()
+    {
+        var vm = new AnalysisEditorViewModel(new SchematicEditModel(), AnalysisEditorViewModel.AnalysisKind.SP) { Name = "SP1" };
+        Assert.False(vm.SpBody.NoiseContrib);
+        vm.SpBody.Noise = true;
+        vm.SpBody.NoiseContrib = true;
+        Assert.Equal("yes", Build(vm).NoiseContribExpr);
+
+        var m = new SchematicEditModel();
+        var existing = new SParameterAnalysis("SP1", new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz"))
+            { NoiseExpr = "yes", NoiseContribExpr = "on" };
+        m.Analyses.Add(existing);
+        var edit = new AnalysisEditorViewModel(m, existing);
+        Assert.True(edit.SpBody.NoiseContrib);
+        Assert.Equal("on", Build(edit).NoiseContribExpr);
+    }
 }

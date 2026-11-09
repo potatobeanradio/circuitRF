@@ -95,6 +95,7 @@ interpolated onto the sweep.</p>
       <tr><td><code>NDF=yes</code></td><td>Also compute the <a href="wsprobe.html#ndf">normalized determinant function</a> — the rigorous count of right-half-plane poles of the whole network. <code>PassiveVars=</code> / <code>PassiveParams=</code> name what passivates a user-supplied model.</td></tr>
       <tr><td><code>MarginThreshold=</code></td><td>The <a href="wsprobe.html#stability-margin">stability margin</a> in dB below which a WSProbe is reported as worth looking at. Default <code>-15</code>; <code>none</code> disables.</td></tr>
       <tr><td><code>Noise=yes</code></td><td>Also compute the <a href="#sp-noise">small-signal noise</a>: the noise-wave correlation, and for a two-port the noise figure and noise parameters. The <b>Noise</b> box in the analysis editor. Default <code>no</code>.</td></tr>
+      <tr><td><code>NoiseContrib=yes</code></td><td>With <code>Noise=yes</code>, also write <code>NCs</code>, <a href="#sp-noise-parts">each part's share</a> of the noise-wave correlation. The box under <b>Noise</b>. Default <code>no</code>.</td></tr>
     </tbody>
   </table>
 <p class="small">A <a href="components.html#wsprobe">WSProbe</a> anywhere in the circuit adds the
@@ -183,9 +184,27 @@ change. <code>Noise=no</code>, the default, adds nothing.</p>
 <td>Ω</td>
 <td>The optimum source as an impedance, R·(1 + Sopt)/(1 − Sopt).</td>
 </tr>
+<tr>
+<td><code>NFc</code></td>
+<td><code>[freq, part]</code></td>
+<td>—</td>
+<td>Each part's share of F − 1. They sum to F − 1.</td>
+</tr>
+<tr>
+<td><code>NFpct</code></td>
+<td><code>[freq, part]</code></td>
+<td>%</td>
+<td>The same as a percentage of F − 1, which is the number to sort by.</td>
+</tr>
+<tr>
+<td><code>NCs</code></td>
+<td><code>[freq, part, i, j]</code></td>
+<td>W/Hz</td>
+<td>Each part's share of <code>Cs</code>, with <code>NoiseContrib=yes</code> only. They sum to <code>Cs</code>.</td>
+</tr>
 </tbody>
 </table>
-<p>Every cube but <code>Cs</code> is for a two-port only, because a noise figure and noise parameters belong to a
+<p>Every cube but <code>Cs</code> and <code>NCs</code> is for a two-port only, because a noise figure and noise parameters belong to a
 two-port. The names are the ones commonly used for them. The linear noise factor is <code>Fn</code> rather than <code>F</code>, because
 <code>SP1.F(&quot;probe&quot;)</code> already reads a <a href="components.html#wsprobe">WSProbe</a>'s return difference.</p>
 <p>A network with more than two ports gets <code>Cs</code> only. For the noise figure from port 1 to any other port, or
@@ -203,6 +222,11 @@ that data, even if it has gain. A passive file with no noise block is thermal, l
 <li><strong>A <a href="veriloga.html">compiled model</a></strong> is noisy by the sources it declares (<code>white_noise</code>,
 <code>flicker_noise</code>). They are evaluated at the DC operating point the run linearises the device about, and
 multiplied by the instance's multiplicity.</li>
+<li><strong>A <code>Z_Port</code></strong> whose impedance has a real part that is positive semidefinite at every swept frequency is
+passive, and thermal like any passive part. One with a negative real part anywhere is noiseless.</li>
+<li><strong>An SnP block's temperature</strong> is its own <code>Temp</code> or <code>Dtemp</code>, as on any part. It matters only for a passive
+block with no noise data, whose noise is thermal. Noise data from a file is absolute and does not change
+with it.</li>
 </ul>
 <p><strong>What is noiseless.</strong> The following parts have no noise model here:</p>
 <ul>
@@ -216,7 +240,28 @@ resistor;</li>
 <p>These are taken as noiseless, and one warning names them all (<code>sparam.noise.noiseless</code>), so a result
 never leaves out a part without saying so. Ports and independent sources are noiseless by definition,
 and they are not named.</p>
-<p><strong>Conventions.</strong></p>
+<p><strong>Switching a part's noise off.</strong> <code>Noise=no</code> on a part makes it noiseless in this analysis:</p>
+<pre><code class="language-text">R:Rbias  b 0  R=10 kOhm Noise=no
+</code></pre>
+<p>Use it for a resistor that stands in for an instrument's load, or one that is part of a model and not a
+physical resistor. The part is not named in the warning, because the statement is yours. <code>Noise=yes</code>, the
+default, leaves the part as noisy as its model. The key is accepted on every part: on a <code>Mutual</code> or any
+of the inductors it couples it quiets the whole coupled group, and on a port, a source or a probe it does
+nothing (<code>check</code> says so, as <code>check.noise.inert-switch</code>). In the parameter editor it is the <strong>Noise</strong> check
+box in the part's own list. Its show-on-schematic box draws it on the symbol, and is off by default.</p>
+<h4 id="sp-noise-parts">Which part sets the noise</h4>
+<p>A two-port run also writes <code>NFc</code> and <code>NFpct</code> on a <code>part</code>
+axis. The axis has one entry per noisy part, labelled with its instance path. A <code>Mutual</code> and the inductors
+it couples are one entry, labelled with their names joined by <code>+</code>, because their loss is one network.
+<code>NFc</code> is the part's own output noise at port 2 divided by the source's, with port 1 driven from its Z0, so
+F − 1 is their sum. <code>NFpct</code> is each one as a percentage of F − 1. The shares come from the same solve as
+<code>Cs</code>, at no extra cost. To see them, plot <code>NFpct</code> against <code>part</code> at one frequency on a rectangular plot.</p>
+<p><code>NoiseContrib=yes</code> also writes <code>NCs</code>, each part's share of the whole <code>Cs</code> matrix, for any number of ports.
+Its size is frequencies × parts × ports² complex values, which is why it is not written by default.
+<code>circuitrf explain bench.cnl --analysis</code> states that size, and lists every part's noise model: thermal at
+its temperature in K, the file and band of an SnP block's noise data, a compiled model's noise sources,
+switched off, or noiseless with the reason. Read it before trusting an NF.</p>
+<h4 id="conventions-and-noise-data">Conventions and noise data</h4>
 <ul>
 <li><strong>Spectral densities are single-sided and absolute.</strong> A matched load's outgoing noise wave is kT W/Hz,
 and a resistor's open-circuit noise voltage is 4kTR V²/Hz. k is 1.380649e-23 J/K, exact.</li>

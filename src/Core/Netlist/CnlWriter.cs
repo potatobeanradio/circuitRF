@@ -543,6 +543,8 @@ public static class CnlWriter
                 line.Append($" PassiveParams=\"{sp.PassiveParamsExpr}\"");
             if (lines.Length == 0 && sp.NoiseExpr != Analysis.NoiseDefault)
                 line.Append($" Noise={sp.NoiseExpr}");
+            if (lines.Length == 0 && sp.NoiseContribExpr != Analysis.NoiseContribDefault)
+                line.Append($" NoiseContrib={sp.NoiseContribExpr}");
             if (lines.Length > 0) lines.Append('\n');
             lines.Append(line);
         }

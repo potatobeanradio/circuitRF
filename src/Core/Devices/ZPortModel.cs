@@ -62,8 +62,40 @@ public sealed class ZPortModel : ComponentModel
     public override Activity Activity => Activity.ActiveExact;
 
     /// <inheritdoc/>
-    public override string? PassivationNote =>
+    public override string? PassivationNote => _passivationNote ??
         "Re Z → |Re Z| on the diagonal, which is its ordinary stamp unless some Re Z < 0";
+    private string? _passivationNote;
+
+    /// <summary>
+    /// This instance's own answer over the run's frequencies: <see cref="Core.Activity.Passive"/> when its impedance
+    /// matrix has <c>Re Z ⪰ 0</c> (<c>Z + Zᴴ</c> positive semidefinite) at every one of them, so the S-parameter noise
+    /// analysis gives it thermal noise like any passive linear part. The test is σ_max of its S at a real 50 Ω
+    /// reference, which is at most 1 exactly when <c>Re Z ⪰ 0</c> — the reference cancels out of the question, as it does
+    /// for a <c>Chain</c>. Otherwise the type-level <see cref="Core.Activity.ActiveExact"/> stands.
+    /// </summary>
+    public override Activity ActivityFor(ElaboratedComponent c, IReadOnlyList<double> freqsHz)
+    {
+        const double Tol = 1e-9, Z0 = 50.0;
+        double worst = 0.0, at = double.NaN;
+        foreach (double hz in freqsHz)
+        {
+            var z = EvaluateZ(hz);
+            var m = new NumFlat.Mat<Complex>(_portCount, _portCount);
+            for (int p = 0; p < _portCount; p++)
+                for (int q = 0; q < _portCount; q++) m[p, q] = z[p, q];
+            double sig;
+            try { sig = RfCore.RFNetwork.Passivity(RfCore.RFNetwork.ZToS(m, new Complex(Z0, 0))); }
+            catch (Exception) { sig = double.PositiveInfinity; }
+            if (!(sig <= worst)) { worst = sig; at = hz; }
+        }
+        if (freqsHz.Count > 0 && worst <= 1.0 + Tol)
+        {
+            _passivationNote = $"Re Z ⪰ 0 over the swept band (σ_max = {worst:G4} at 50 Ohm), so its stamp is already passive";
+            return Activity.Passive;
+        }
+        _passivationNote = null;
+        return Activity;
+    }
 
     /// <summary><c>Re Z → |Re Z|</c> per entry of the impedance matrix's DIAGONAL, which is where a
     /// driving-point negative resistance lives; the off-diagonal transfer terms are untouched, being

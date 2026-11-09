@@ -158,6 +158,33 @@ public sealed class OsdiNoiseTests : IDisposable
             }
     }
 
+    /// <summary>
+    /// Brief NZ-1: the noise table lists the device with the count and names of the sources its model declares; with
+    /// Noise=no it is switched off, the key never reaches the provider (which refuses a parameter it does not know), and
+    /// the network around it is lossless, so Cs is zero.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void Table_NamesTheDeviceSources_AndNoiseNoQuietsTheDevice()
+    {
+        var (_, nl) = Run(26.85, 0.5, "Type=crf_noise g=1e-3");
+        using (nl)
+        {
+            var row = SParameterNoise.Table(nl, [1e9]).Single(r => r.Label == "X1");
+            Assert.Equal(NoiseModelKind.DeviceSources, row.Kind);
+            var ed = (ExternalDeviceModel)nl.Components.Single(c => c.InstancePath == "X1").Model;
+            Assert.Equal(ed.NoiseSources.Select(x => x.Name), row.SourceNames);
+            Assert.NotEmpty(row.SourceNames!);
+        }
+
+        var (quiet, nlq) = Run(26.85, 0.5, "Type=crf_noise g=1e-3 Noise=no");
+        using (nlq)
+        {
+            Assert.Equal(NoiseModelKind.SwitchedOff, SParameterNoise.Table(nlq, [1e9]).Single(r => r.Label == "X1").Kind);
+            foreach (Complex c in quiet["Cs"].ComplexValues)
+                Assert.True(c.Magnitude < 1e-12 * NoiseMetrics.KT0, $"Cs entry {c}");
+        }
+    }
+
     /// <summary>A model that declares no noise sources contributes nothing, and the run names it.</summary>
     [FixtureFact(WorkerRel, HowTo)]
     public void AModelWithNoSources_ContributesNothing_AndIsNamed()

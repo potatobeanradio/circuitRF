@@ -69,6 +69,10 @@ public abstract class Analysis(string name)
     /// changes. Read as a flag through <see cref="ParseNdf"/>, the one yes/no spelling list.</summary>
     public const string NoiseDefault = "no";
 
+    /// <summary>The default <c>NoiseContrib=</c> of an S-parameter analysis — off: each part's share of <c>Cs</c> is the
+    /// cube that grows with parts × frequencies × ports², so it is written only when asked for.</summary>
+    public const string NoiseContribDefault = "no";
+
     /// <summary>
     /// <c>NDF=</c> as a flag. <c>yes</c>/<c>true</c>/<c>on</c>/<c>1</c> turn the normalized
     /// determinant function on; anything else leaves it off, because a mistyped flag must not make a
@@ -257,11 +261,23 @@ public sealed class SParameterAnalysis : Analysis
     public bool Noise => ParseNdf(NoiseExpr);
 
     /// <summary>
+    /// <c>NoiseContrib=</c> from the directive, verbatim — <c>yes</c> adds <c>NCs</c> [freq, part, i, j], each noisy part's
+    /// share of <c>Cs</c>, to a <c>Noise=yes</c> run. A two-port's <c>NFc</c> and <c>NFpct</c> come either way. Read through
+    /// <see cref="NoiseContrib"/>.
+    /// </summary>
+    public string NoiseContribExpr { get; init; } = NoiseContribDefault;
+
+    /// <summary>Whether <see cref="NoiseContribExpr"/> asks for each part's share of <c>Cs</c>.</summary>
+    public bool NoiseContrib => ParseNdf(NoiseContribExpr);
+
+    /// <summary>
     /// This analysis under <paramref name="name"/> over <paramref name="sweeps"/>, every directive key carried across —
     /// what a duplicate and an edit of the sweeps both need, so a key added here reaches both. <paramref name="noiseExpr"/>,
-    /// when given, replaces <c>Noise=</c> (the analysis editor's Noise check box).
+    /// when given, replaces <c>Noise=</c> (the analysis editor's Noise check box), and <paramref name="noiseContribExpr"/>
+    /// <c>NoiseContrib=</c> (its per-part box).
     /// </summary>
-    public SParameterAnalysis WithSweeps(string name, IReadOnlyList<FrequencySpec> sweeps, string? noiseExpr = null) => new(name, sweeps)
+    public SParameterAnalysis WithSweeps(string name, IReadOnlyList<FrequencySpec> sweeps, string? noiseExpr = null,
+                                         string? noiseContribExpr = null) => new(name, sweeps)
     {
         Enabled             = Enabled,
         MarginThresholdExpr = MarginThresholdExpr,
@@ -269,6 +285,7 @@ public sealed class SParameterAnalysis : Analysis
         PassiveVarsExpr     = PassiveVarsExpr,
         PassiveParamsExpr   = PassiveParamsExpr,
         NoiseExpr           = noiseExpr ?? NoiseExpr,
+        NoiseContribExpr    = noiseContribExpr ?? NoiseContribExpr,
     };
 
     // ── Whole-analysis expand: union all segments into one sorted/deduped array ─

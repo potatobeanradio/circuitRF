@@ -118,6 +118,61 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsNotEmptyState));
         OnPropertyChanged(nameof(ShowFootprintRow));
+        OnPropertyChanged(nameof(ShowNoiseRow));
+    }
+
+    // ── Noise switch (brief NZ-1) ─────────────────────────────────────────────
+
+    /// <summary>The Noise row: a check box in the part's own parameter list, on the kinds the noise analysis can make
+    /// noisy (<see cref="ComponentTypeRegistry.HasNoiseSwitch"/>).</summary>
+    public bool ShowNoiseRow => IsNotEmptyState && _target is not null && ComponentTypeRegistry.HasNoiseSwitch(_target.Symbol);
+
+    /// <summary>
+    /// Ticked: the part is as noisy as its model, which is the default. Unticked: <c>Noise=no</c>. A control rather than a
+    /// text row for <c>OpVars</c>' reason: two states, and no expression usefully written in it.
+    /// </summary>
+    [ObservableProperty] private bool _partNoise = true;
+
+    /// <summary>The row's display box: draw <c>Noise = …</c> on the symbol. Off by default, as on any row.</summary>
+    [ObservableProperty] private bool _showNoiseLabel;
+
+    partial void OnPartNoiseChanged(bool oldValue, bool newValue) => WriteNoiseParameter();
+    partial void OnShowNoiseLabelChanged(bool oldValue, bool newValue) => WriteNoiseParameter();
+
+    /// <summary>
+    /// The two boxes as the instance's <c>Noise</c> parameter. Noisy and not displayed is the default and writes nothing,
+    /// so a part nobody touched carries no key; anything else is <c>Noise=yes|no</c> with the display box as its
+    /// show-on-schematic flag.
+    /// </summary>
+    private void WriteNoiseParameter()
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        var updated = _target.Parameters.Select(p => p.Clone())
+                             .Where(p => !p.Name.Equals(ComponentTypeRegistry.NoiseParameter, StringComparison.OrdinalIgnoreCase))
+                             .ToList();
+        if (!PartNoise || ShowNoiseLabel)
+            updated.Add(new EditableParameter
+            {
+                Name = ComponentTypeRegistry.NoiseParameter, Expression = PartNoise ? "yes" : "no", ShowOnSchematic = ShowNoiseLabel,
+            });
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
+    /// <summary>The box from the instance: unticked only on a recognisable no, the elaborator's own reading.</summary>
+    private void RefreshNoiseRow()
+    {
+        OnPropertyChanged(nameof(ShowNoiseRow));
+        if (_target is null) return;
+        var param = _target.Parameters
+                           .FirstOrDefault(p => p.Name.Equals(ComponentTypeRegistry.NoiseParameter, StringComparison.OrdinalIgnoreCase));
+        string raw = (param?.Expression ?? "").Trim().Trim('"');
+        bool off = raw.Equals("no", StringComparison.OrdinalIgnoreCase) || raw.Equals("false", StringComparison.OrdinalIgnoreCase)
+                || raw.Equals("off", StringComparison.OrdinalIgnoreCase) || raw == "0";
+        bool was = _isRefreshing;
+        _isRefreshing = true;
+        PartNoise = !off;
+        ShowNoiseLabel = param?.ShowOnSchematic ?? false;
+        _isRefreshing = was;
     }
 
     // ── Header ────────────────────────────────────────────────────────────────
@@ -440,6 +495,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private void RefreshFootprintPanel()
     {
+        RefreshNoiseRow();
         if (_target is null) return;
         OnPropertyChanged(nameof(ShowFootprintRow));   // a type change can move a part into or out of the line kinds
 
@@ -1162,6 +1218,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 if (comp.Symbol == SymbolKind.VerilogA &&
                     param.Name.Equals(ComponentModelFactory.VerilogAOpVarsParam,
                                       StringComparison.OrdinalIgnoreCase)) continue;
+                // The Noise row owns `Noise` (brief NZ-1), on every kind that has one.
+                if (ComponentTypeRegistry.HasNoiseSwitch(comp.Symbol) &&
+                    param.Name.Equals(ComponentTypeRegistry.NoiseParameter, StringComparison.OrdinalIgnoreCase)) continue;
                 // …and its symbol picker owns `Symbol` and `Terminals` (brief-vendorlib-7).
                 if (comp.Symbol == SymbolKind.VerilogA && IsVerilogASymbolPanelParameter(param.Name)) continue;
 

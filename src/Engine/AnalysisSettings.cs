@@ -413,4 +413,29 @@ public sealed class AnalysisSettings
         copy._noise = noise;
         return copy;
     }
+
+    /// <summary>
+    /// The <c>NoiseContrib=</c> key of a <c>sparam</c> directive: a <see cref="Noise"/> run also writes <c>NCs</c>, each
+    /// noisy part's share of <c>Cs</c> [freq, part, i, j]. Off by default, because it grows with parts × frequencies ×
+    /// ports²; a two-port's <c>NFc</c>/<c>NFpct</c> are written either way.
+    /// </summary>
+    public bool NoiseContrib
+    {
+        get => _noiseContrib;
+        init => _noiseContrib = value;
+    }
+    private bool _noiseContrib;
+
+    /// <summary>These settings with an S-parameter analysis' two noise keys, <c>Noise=</c> and <c>NoiseContrib=</c>: what
+    /// every caller that runs one applies, so a key added to the pair reaches all of them.</summary>
+    public AnalysisSettings WithNoiseOf(CircuitRF.Core.Design.SParameterAnalysis spa)
+        => WithNoise(spa.Noise).WithNoiseContrib(spa.NoiseContrib);
+
+    /// <summary>These settings with <see cref="NoiseContrib"/> set.</summary>
+    public AnalysisSettings WithNoiseContrib(bool contrib)
+    {
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._noiseContrib = contrib;
+        return copy;
+    }
 }

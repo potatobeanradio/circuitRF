@@ -143,6 +143,8 @@ public sealed class CnlReader
                             ? spAnalysis.PassiveParamsExpr : existing.PassiveParamsExpr,
                         NoiseExpr = spAnalysis.NoiseExpr != Analysis.NoiseDefault
                             ? spAnalysis.NoiseExpr : existing.NoiseExpr,
+                        NoiseContribExpr = spAnalysis.NoiseContribExpr != Analysis.NoiseContribDefault
+                            ? spAnalysis.NoiseContribExpr : existing.NoiseContribExpr,
                     };
                     merged.Enabled = existing.Enabled;
                     merged.Model   = existing.Model;
@@ -1505,6 +1507,7 @@ public sealed class CnlReader
             PassiveVarsExpr   = kv.GetValueOrDefault("PassiveVars", ""),
             PassiveParamsExpr = kv.GetValueOrDefault("PassiveParams", ""),
             NoiseExpr = kv.GetValueOrDefault("Noise", CircuitRF.Core.Design.Analysis.NoiseDefault),
+            NoiseContribExpr = kv.GetValueOrDefault("NoiseContrib", CircuitRF.Core.Design.Analysis.NoiseContribDefault),
         };
         return true;
     }
@@ -2010,7 +2013,8 @@ public sealed class CnlReader
                 var pname = tok[..eq];
                 var pexpr = tok[(eq + 1)..];
 
-                // SnP: silently ignore Temp, CheckPassivity, Noise, SaveCurrent, Mode
+                // SnP: silently ignore CheckPassivity, SaveCurrent, Mode. Temp/Dtemp (the block's temperature, for
+                // its thermal noise when passive) and Noise (the part's noise switch) are read like any part's.
                 if ((isSnP || isDeembed) && IsIgnoredSnpParam(pname))
                     { i++; continue; }
 
@@ -2157,9 +2161,7 @@ public sealed class CnlReader
     }
 
     private static bool IsIgnoredSnpParam(string name) =>
-        name.Equals("Temp",           StringComparison.OrdinalIgnoreCase) ||
         name.Equals("CheckPassivity", StringComparison.OrdinalIgnoreCase) ||
-        name.Equals("Noise",          StringComparison.OrdinalIgnoreCase) ||
         name.Equals("SaveCurrent",    StringComparison.OrdinalIgnoreCase) ||
         name.Equals("Mode",           StringComparison.OrdinalIgnoreCase);
 

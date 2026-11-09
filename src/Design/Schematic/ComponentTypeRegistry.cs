@@ -1359,6 +1359,34 @@ public static class ComponentTypeRegistry
     public static bool HasEmptyDefault(SymbolKind kind, string parameterName)
         => DefaultParameters(kind, 2).Any(d => string.Equals(d.Name, parameterName, StringComparison.Ordinal) && d.Expression.Length == 0);
 
+    /// <summary>
+    /// The parameter a part's noise switch is written as: <c>Noise=no</c> makes it noiseless in the S-parameter noise
+    /// analysis, and absent (or <c>yes</c>) leaves it as noisy as its model. The elaborator's own spelling.
+    /// </summary>
+    public const string NoiseParameter = CircuitRF.Core.Elaboration.Elaborator.NoiseParamName;
+
+    /// <summary>
+    /// Whether the parameter editor offers <see cref="NoiseParameter"/> as a check box on this kind: the parts the noise
+    /// analysis can make noisy — thermal passives (lumped, lines, the MMIC passives, a wirebond, the passive system blocks),
+    /// coupled inductors and transformers, impedance and S-parameter blocks, and a compiled model with its own noise
+    /// sources. Not on a port, a source, a probe or an annotation, which have no noise to switch off, nor yet on a built-in
+    /// nonlinear model or a controlled source, which the analysis has no noise for. The key is still READ on every part;
+    /// this is only where a box is worth drawing.
+    /// </summary>
+    public static bool HasNoiseSwitch(SymbolKind kind) => kind is
+        SymbolKind.Resistor or SymbolKind.Inductor or SymbolKind.Capacitor or SymbolKind.Mutual or SymbolKind.Transformer
+        or SymbolKind.Srlc or SymbolKind.Prlc or SymbolKind.Srl or SymbolKind.Src or SymbolKind.Slc
+        or SymbolKind.Prl or SymbolKind.Prc or SymbolKind.Plc or SymbolKind.Bead
+        or SymbolKind.ZPort or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.VerilogA
+        or SymbolKind.Tline or SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MTee or SymbolKind.MCross
+        or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.Cpwg or SymbolKind.Slin
+        or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
+        or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
+        or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
+        or SymbolKind.TestPad or SymbolKind.GsgPad
+        or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
+        or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer;
+
     public static bool IsRemovableParameter(SymbolKind kind, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(parameterName)) return false;

@@ -13,7 +13,11 @@
 
         <!-- Noise=yes: the small-signal noise cubes beside S. -->
         <CheckBox FontSize="11" Content="Noise: NF, NFmin, Sopt, Rn and Te" IsChecked="{Binding Noise}"
-                  ToolTip.Tip="Adds the noise-wave correlation Cs and, for a two-port, the noise figure from port 1's Z0 and the noise parameters (T0 = 290 K). Passive parts are thermal at their own temperature; a part with no noise model is named in a warning."/>
+                  ToolTip.Tip="Adds the noise-wave correlation Cs and, for a two-port, the noise figure from port 1's Z0, the noise parameters (T0 = 290 K) and each part's share of F - 1 (NFc, NFpct). Passive parts are thermal at their own temperature; a part with no noise model is named in a warning."/>
+        <!-- NoiseContrib=yes: each part's share of Cs. Under the Noise box, and only live with it. -->
+        <CheckBox FontSize="11" Margin="20,0,0,0" Content="Each part's share of Cs (NCs)"
+                  IsChecked="{Binding NoiseContrib}" IsEnabled="{Binding Noise}"
+                  ToolTip.Tip="Adds NCs [freq, part, i, j]: each noisy part's share of Cs, labelled by instance path. Its size grows with parts x frequencies x ports squared."/>
     </StackPanel>
 
 </UserControl>

@@ -537,8 +537,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         var sweeps = SpBody.BuildSweeps();
         // The keys this editor has no field for (MarginThreshold, NDF, …) are carried across from the analysis being
         // edited, or left at their defaults for a new one; Noise is the body's check box.
-        var sp = SpBody.Source?.WithSweeps(name, sweeps, SpBody.NoiseExpr)
-              ?? new SParameterAnalysis(name, sweeps) { NoiseExpr = SpBody.NoiseExpr };
+        var sp = SpBody.Source?.WithSweeps(name, sweeps, SpBody.NoiseExpr, SpBody.NoiseContribExpr)
+              ?? new SParameterAnalysis(name, sweeps) { NoiseExpr = SpBody.NoiseExpr, NoiseContribExpr = SpBody.NoiseContribExpr };
         sp.Enabled = enabled;
         return sp;
     }

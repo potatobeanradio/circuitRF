@@ -1264,8 +1264,10 @@ circuit and interpolated onto the analysis sweep.
 
 **Noise.** In an S-parameter run with [`Noise=yes`](simulations.html#sp-noise), a two-port file's Touchstone noise
 block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with
-a warning. A passive file with no noise block is thermal at the design's ambient temperature. A file with gain and no
-noise block is taken as noiseless and named in the run's warning, and so is every [Deembed](#deembed).
+a warning. A passive file with no noise block is thermal at the block's own `Temp` (°C), or `Dtemp` above the ambient,
+or else the design's ambient. A file with gain and no noise block is taken as noiseless and named in the run's warning,
+and so is every [Deembed](#deembed). `Noise=no` makes the block noiseless whatever its file says
+([Switching a part's noise off](simulations.html#sp-noise)).
 
 When the file's header names its ports (`! Port[1] = P1`, which every EM result circuitRF writes carries), each lead
 shows its port's name in place of its number, shortened past eight characters. The pins are still ports 1…N: only the

@@ -2370,8 +2370,10 @@ not (an amplifier).</li>
 </ul>
 <p><strong>Noise.</strong> In an S-parameter run with <a href="simulations.html#sp-noise"><code>Noise=yes</code></a>, a two-port file's Touchstone noise
 block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with
-a warning. A passive file with no noise block is thermal at the design's ambient temperature. A file with gain and no
-noise block is taken as noiseless and named in the run's warning, and so is every <a href="#deembed">Deembed</a>.</p>
+a warning. A passive file with no noise block is thermal at the block's own <code>Temp</code> (°C), or <code>Dtemp</code> above the ambient,
+or else the design's ambient. A file with gain and no noise block is taken as noiseless and named in the run's warning,
+and so is every <a href="#deembed">Deembed</a>. <code>Noise=no</code> makes the block noiseless whatever its file says
+(<a href="simulations.html#sp-noise">Switching a part's noise off</a>).</p>
 <p>When the file's header names its ports (<code>! Port[1] = P1</code>, which every EM result circuitRF writes carries), each lead
 shows its port's name in place of its number, shortened past eight characters. The pins are still ports 1…N: only the
 text beside them changes.</p>

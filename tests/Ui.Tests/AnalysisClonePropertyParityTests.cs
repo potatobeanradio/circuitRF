@@ -61,7 +61,7 @@ public sealed class AnalysisClonePropertyParityTests
             "SP1", new[] { new FrequencySpec("1", "2", 11, SweepKind.Log, "GHz", "GHz") })
         {
             Enabled = false, MarginThresholdExpr = "-20", NdfExpr = "yes", PassiveVarsExpr = "gm",
-            PassiveParamsExpr = "X1.gmscale", NoiseExpr = "yes",
+            PassiveParamsExpr = "X1.gmscale", NoiseExpr = "yes", NoiseContribExpr = "yes",
         },
 
         [typeof(HarmonicBalanceAnalysis)] = new HarmonicBalanceAnalysis("HB1")

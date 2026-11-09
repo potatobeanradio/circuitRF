@@ -985,6 +985,8 @@ public sealed class Elaborator
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
+                // Noise= is the analysis's switch, not the model's parameter: taken off here, before any model sees it.
+                inst = TakeNoiseSwitch(inst, childPath, out bool noiseOff);
                 var resolvedNodes  = inst.NetBindings.Select(n => netlist.Nodes.GetOrAssign(ResolveNet(n))).ToArray();
                 var resolvedParams = ResolveParameters(inst, currentScope);
                 // Temp wins over Dtemp (Temperature.ResolveDeviceC), but the two together cannot
@@ -1291,7 +1293,7 @@ public sealed class Elaborator
                         $"use a Pin for cell interfaces and place Terms only in the testbench.");
 
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
-                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath) };
+                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff };
                 netlist.AddComponent(ec);
             }
             else
@@ -1450,6 +1452,39 @@ public sealed class Elaborator
                 throw new InvalidOperationException(
                     $"'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.");
         }
+    }
+
+    // ── The part's noise switch ───────────────────────────────────────────────
+
+    /// <summary>The instance key that switches a part's noise off in the S-parameter noise analysis: <c>Noise=yes|no</c>,
+    /// default yes. Accepted on every primitive; on one that can never be noisy it does nothing.</summary>
+    public const string NoiseParamName = "Noise";
+
+    /// <summary>
+    /// <paramref name="inst"/> without its <see cref="NoiseParamName"/> override, and whether that override said no. The
+    /// value is a closed list — yes/true/on/1 or no/false/off/0, quoted or not, as a kit writes it — because a mistyped
+    /// switch that silently left a part noisy, or quiet, is a wrong noise figure that looks right.
+    /// </summary>
+    internal static Instance TakeNoiseSwitch(Instance inst, string childPath, out bool noiseOff)
+    {
+        noiseOff = false;
+        int at = -1;
+        for (int i = 0; i < inst.Overrides.Count; i++)
+            if (inst.Overrides[i].Name.Equals(NoiseParamName, StringComparison.OrdinalIgnoreCase)) at = i;
+        if (at < 0) return inst;
+
+        string v = Unquote(inst.Overrides[at].Expression.Trim()).Trim();
+        if (v.Equals("no", StringComparison.OrdinalIgnoreCase) || v.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("off", StringComparison.OrdinalIgnoreCase) || v == "0")
+            noiseOff = true;
+        else if (!(v.Equals("yes", StringComparison.OrdinalIgnoreCase) || v.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v == "1"))
+            throw new InvalidOperationException(
+                $"'{childPath}': {NoiseParamName}={v} is not yes or no. {NoiseParamName}=no makes the part noiseless in " +
+                $"the S-parameter noise analysis; {NoiseParamName}=yes, the default, leaves it as noisy as its model.");
+
+        var rest = inst.Overrides.Where((_, i) => !inst.Overrides[i].Name.Equals(NoiseParamName, StringComparison.OrdinalIgnoreCase));
+        return new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, rest) { RefNetBinding = inst.RefNetBinding };
     }
 
     // ── Parameter resolution ──────────────────────────────────────────────────

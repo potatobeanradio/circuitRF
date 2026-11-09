@@ -256,4 +256,43 @@ public sealed class SParameterAnalysisTests
         Assert.DoesNotContain("Noise", CnlWriter.Write(off));
         Assert.False(Assert.IsType<SParameterAnalysis>(Assert.Single(new CnlReader().Read(CnlWriter.Write(off)).Item2.Analyses)).Noise);
     }
+
+    /// <summary>NoiseContrib= reaches the analysis, survives a write and a read across two segments (the merge), and its
+    /// default is not written.</summary>
+    [Fact]
+    public void NoiseContrib_RoundTripsThroughCnl()
+    {
+        var two = new SParameterAnalysis("SP2", [new FrequencySpec("1e9", "2e9", 3), new FrequencySpec("5e9", "6e9", 3)])
+        {
+            NoiseExpr = "yes", NoiseContribExpr = "yes",
+        };
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(two);
+        string text = CnlWriter.Write(tb);
+        Assert.Single(text.Split('\n'), l => l.Contains("NoiseContrib=yes"));
+        var back = Assert.IsType<SParameterAnalysis>(Assert.Single(new CnlReader().Read(text).Item2.Analyses));
+        Assert.True(back.NoiseContrib);
+        Assert.True(back.WithSweeps("SP3", back.Sweeps).NoiseContrib);
+
+        var off = new TestBench("tb");
+        off.Analyses.Add(new SParameterAnalysis("SP3", new FrequencySpec("1e9", "2e9", 3)) { NoiseExpr = "yes" });
+        Assert.DoesNotContain("NoiseContrib", CnlWriter.Write(off));
+    }
+
+    /// <summary>An SnP line's Temp= and every part's Noise= are kept by the reader and written back, where the reader
+    /// used to drop both from an SnP line.</summary>
+    [Fact]
+    public void SnpTempAndPartNoise_SurviveTheReader()
+    {
+        var (_, tb) = new CnlReader().Read("""
+            SnP:X1  a b  NumPorts=2 File="x.s2p" Temp=126.85 Noise=no
+            R:R1  a 0  R=50 Ohm Noise=no
+            """);
+        var x1 = tb.Instances.Single(i => i.InstanceName == "X1");
+        Assert.Contains(x1.Overrides, o => o.Name == "Temp" && o.Expression == "126.85");
+        Assert.Contains(x1.Overrides, o => o.Name == "Noise" && o.Expression == "no");
+        string text = CnlWriter.Write(tb);
+        Assert.Contains("Temp=126.85", text);
+        Assert.Equal(2, text.Split('\n').Count(l => l.Contains("Noise=no")));
+    }
 }

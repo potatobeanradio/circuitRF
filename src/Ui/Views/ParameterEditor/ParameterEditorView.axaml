@@ -1471,6 +1471,28 @@
 
                      Not on a wBond (ShowFootprintRow): a wirebond is made by a bonding machine and
                      has no land pattern. -->
+                <!-- brief NZ-1: the part's noise switch, drawn as an ordinary parameter row like Footprint below it.
+                     Unticked writes Noise=no; the display column's box draws it on the symbol, off by default. -->
+                <Grid IsVisible="{Binding ShowNoiseRow}" Margin="4,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
+                        <ColumnDefinition Width="*"                                   MinWidth="50"/>
+                        <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="ParamRemove"  Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Noise" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding PartNoise}" FontSize="11" VerticalAlignment="Center"
+                              Content="Noisy"
+                              ToolTip.Tip="Ticked: the part is as noisy as its model (thermal at its own temperature when passive). Unticked: Noise=no, and the noise analysis gives it no noise."/>
+                    <CheckBox Grid.Column="4"
+                              IsChecked="{Binding ShowNoiseLabel}"
+                              ToolTip.Tip="Show on schematic"
+                              Margin="6,0,2,0"
+                              VerticalAlignment="Center"/>
+                </Grid>
+
                 <Grid IsVisible="{Binding ShowFootprintRow}" Margin="4,2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>

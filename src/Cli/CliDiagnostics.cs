@@ -1804,6 +1804,15 @@ internal static class CliDiagnostics
         "{path}: {text}", ("path", path), ("text", text));
 
     /// <summary>
+    /// <c>Noise=no</c> on a part that can never be noisy (brief NZ-1): accepted, does nothing, and said so.
+    /// </summary>
+    public static Diagnostic CheckNoiseSwitchInert(string path, string part) => Diagnostic.Create(
+        "check.noise.inert-switch", DiagnosticSeverity.Info,
+        "{path}: '{part}' has Noise=no and has no noise to switch off: a port, an independent source or an ideal element " +
+        "is noiseless in the noise analysis already.",
+        ("path", path), ("part", part));
+
+    /// <summary>
     /// A WSProbe whose two terminals are the same net (brief-wsprobe-1 R-wsp1-12(b)). In the GUI
     /// the series-probe insertion cut makes this impossible for an IProbe; a hand-written
     /// <c>.cnl</c> has no such cut, and a probe across one net measures a loop of nothing — every

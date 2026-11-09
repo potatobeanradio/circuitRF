@@ -4001,7 +4001,7 @@ back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
   scratch index. The parts are recorded first at each frequency, and `StampAll` writes the real indices back.
 - **A Mutual and its inductors are one recording**, inductors first (`MutualInductanceModel.Coupled` joins them; chains
   of couplings union). Recorded apart, each inductor's loss would be reduced through its own branch with the coupling
-  missing. A coupled group with members at different temperatures is taken at the hottest (marked `ponytail:`).
+  missing. A coupled group with members at different temperatures is taken at the hottest.
 - **Temperature** is `Temperature.ResolveDeviceC` per part (Temp, then Dtemp, then the ambient — 300 K by default, so
   a design stating nothing is not at T0 = 290 K).
 - **Noiseless.** Ports and independent sources by definition. Nonlinear devices, active or black-box linear parts
@@ -4092,3 +4092,29 @@ the Touchstone noise block from `NFmin`, `Sopt` and `Rn`.
 Gates: `SParamNoiseTests` — `MatchedPad_MeetsTheClosedForm` (Fn, Te = Tmin = T(L − 1) at 290 and 400 K),
 `LinearAndTemperatureCubes_AndZopt_FollowFromTheNoiseParameters` (the three ngspice benches; Zopt against their SOpt),
 and the three-port splitters of refs.json (`ThreePort_NfAndTeToEachOutputPort_MatchTheReference`).
+
+## S-parameter noise: each part's share, Noise=no on a part, Temp on an SnP, a resistive Z_Port (2026-11-09)
+
+Brief NZ-1. Design note: `docs/design/sparameter-noise.md` §1.1.
+
+- **The shares are the very terms `Cs` already summed.** `SParameterNoise.Waves` keeps each entry's `D·H·C·Hᴴ·Dᴴ`
+  as it adds it, so Σ NCs equals `Cs` bit for bit (measured 0 on all four gate benches) and Σ NFc equals F − 1 to
+  ~4e-16 relative: the only difference is the division by kT0·|S21|² done per share rather than once. The source order
+  is unchanged, so `Cs` and every PR #50 cube are the same bits as before.
+- **One classification for the run and for `explain`.** `SParameterNoise.Classify` decides every part's model once;
+  `Sources` builds the noise from it and `Table` reports it. A part noiseless by definition is its own entry and is
+  never grouped, so the order of the noisy entries — and with it the summation order of `Cs` — is what it was.
+- **`Noise=` is taken off the instance at elaboration, not passed as a parameter.** An external device's provider
+  rejects a parameter name its model does not declare, so leaving it in the dictionary would have refused every
+  OSDI part with the switch. A kit netlist's dialect boolean arrives quoted (`Noise="no"`) and is read the same way.
+- **`Z_Port`'s activity is now per instance.** Its type-level answer stays `ActiveExact`; `ActivityFor` measures σ_max
+  of its S at 50 Ω over the run's frequencies, which is ≤ 1 exactly when Re Z ⪰ 0. NDF reads the same answer, and for
+  a passive Z_Port its passivated stamp is its ordinary one, so nothing NDF computes moves.
+- **No noisy part at all** (every resistor of a pad switched off) gives `Cs` exactly zero and NF exactly 0 dB, and no
+  part axis: `NCs`, `NFc` and `NFpct` are not written rather than written with a zero-length axis.
+
+Gates: `tests/Engine.Tests/Linear/NoiseContributionTests.cs` (sums on mixed temperatures, a coupled group, a VCCS and
+the Friis cascade; the π pad's closed-form split at 290 K and 400 K; Noise=no on every and on one resistor; Te =
+T(L − 1) of a passive .s2p at 20 K and 400 K through its Temp=; a resistive Z_Port equal to the resistor; the table),
+`OsdiNoiseTests.Table_NamesTheDeviceSources_AndNoiseNoQuietsTheDevice`, `tests/Ui.Tests/Cli/NoiseExplainCliTests.cs`
+(the explain rows and the check INFO, as a process) and `tests/Ui.Tests/PartNoiseSwitchTests.cs` (the editor's box).

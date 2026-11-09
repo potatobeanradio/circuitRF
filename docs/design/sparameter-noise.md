@@ -46,6 +46,43 @@ temperature `te` and noise circle `ns_circle`. The one departure is the linear n
 `SP1.F("probe")` is the WSProbe's return difference in the same analysis group, and its accessor takes every
 one-argument `SP1.F(…)`.
 
+### 1.1 Each part's share, and the part's own switch
+
+**Shares.** `Cs` is a sum over the noisy entries of `SParameterNoise.Sources`, each mapped onto the port waves by the
+same transposed solves: `Cs = Σ_p D·H·C_p·Hᴴ·Dᴴ`. Each term is kept as it is added (`Waves(…, parts)`), so the shares
+cost no solve and their sum is `Cs` bit for bit. They are written on a `part` axis labelled by instance path, in the
+order of `Sources`; a `Mutual` and the inductors it couples are one entry, labelled with the members joined by `+`,
+because their loss is one recorded network.
+
+- `NCs [freq, part, i, j]` (W/Hz) is every share, for any port count, only with `NoiseContrib=yes`: its size is
+  16 bytes × frequencies × parts × ports², which `explain --analysis` states before a run.
+- For a two-port, always: `NFc [freq, part] = NCs[f, p, 2, 2] / (kT0·|S21|²)`, the part's own output noise at port 2
+  over the source's with port 1 driven from its Z0. Since `F = 1 + Cs22/(kT0·|S21|²)`, `F − 1 = Σ_p NFc`.
+  `NFpct = 100·NFc/(F − 1)`.
+
+A matched π pad is the closed-form check: with `H = (Rsh2‖Z0)/(Rse + Rsh2‖Z0)` and both end nodes seeing Z0/2, the
+input shunt gives `(T/T0)·Z0/Rsh1`, the output shunt `(T/T0)·(Z0/Rsh2)/H²`, and the series arm
+`(T/T0)·4·Rse·Zr²/((Zl + Rse + Zr)²·Z0·H²)` with `Zl = Z0‖Rsh1`, `Zr = Z0‖Rsh2`. They sum to `(T/T0)(L − 1)`.
+
+**`Noise=no` on a part.** The elaborator takes the key off the instance line (`Elaborator.TakeNoiseSwitch`) and sets
+`ElaboratedComponent.NoiseOff`, so no model sees it as a parameter: an external device's provider would refuse a name
+its model does not declare. The value is a closed list (yes/true/on/1, no/false/off/0, quoted or not); anything else is
+refused naming the part. A switched-off part is no entry of `Sources` and is not named in the noiseless warning. On a
+coupled group, any member's `Noise=no` quiets the group. On a part that can never be noisy (a port, an independent
+source, a probe, a short) the key does nothing, and `check` says so as INFO (`check.noise.inert-switch`).
+
+**One classification.** `SParameterNoise.Table` lists every part once — thermal at its resolved K, file data with the
+file and its band, device sources with their names, switched off, or noiseless with the reason — and `Sources` builds
+the noise from the same list, so `explain --analysis` cannot report a model the run does not use.
+
+**A resistive `Z_Port`.** `ZPortModel.ActivityFor` answers per instance and per run: passive when σ_max of its S at a
+real 50 Ω reference is at most 1 at every swept frequency, which is `Re Z ⪰ 0` there. It is then thermal like any
+passive part; otherwise it keeps the type-level `ActiveExact` and stays named as noiseless.
+
+**`Temp=` on an SnP.** The `.cnl` reader keeps `Temp`/`Dtemp` on an `SnP` (and a `Deembed`, where nothing reads them),
+so a passive block without noise data is thermal at `Temperature.ResolveDeviceC` like any part. Noise data from a file
+is absolute and does not move with it.
+
 ## 2. Conventions
 
 | Quantity | Convention |
@@ -59,7 +96,8 @@ one-argument `SP1.F(…)`.
 | Refused | `Noise=yes` with a port whose Re Z0 ≤ 0 (`sparam.noise.reactive-z0`): nothing terminates it. |
 | Noiseless, named once | Built-in nonlinear models, active or black-box linear parts, an SnP with gain and no noise data, every Deembed, an external device with no declared sources (`sparam.noise.noiseless`). Ports and independent sources are noiseless silently. |
 
-`Noise=no` (the default) changes nothing: the same cubes, S bit for bit and the same run statistics.
+`Noise=no` (the default) changes nothing: the same cubes, S bit for bit and the same run statistics. `NoiseContrib=no`
+(the default) writes no `NCs`; a two-port's `NFc` and `NFpct` are written beside the other noise cubes either way.
 
 ## 3. Not in scope
 

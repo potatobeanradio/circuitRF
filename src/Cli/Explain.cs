@@ -14,6 +14,7 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 using Em3dPort = CircuitRF.Engine.Em3d.Em3dPort;
 using Point3 = CircuitRF.Engine.Em3d.Point3;
@@ -1470,6 +1471,7 @@ internal static class Explain
         // which is the way to see a refusal coming without running". One survey per S-parameter
         // analysis, because the two passivation lists are the directive's own.
         var ndfByAnalysis = new Dictionary<string, ExplainNdfJson>(StringComparer.Ordinal);
+        var noiseByAnalysis = new Dictionary<string, ExplainNoiseJson>(StringComparer.Ordinal);
         if (tb.Analyses.Any(a => a is SParameterAnalysis))
         {
             try
@@ -1486,6 +1488,8 @@ internal static class Explain
 
                 foreach (var spa in tb.Analyses.OfType<SParameterAnalysis>())
                     ndfByAnalysis[spa.Name] = SurveyNdf(spa, nl);
+                foreach (var spa in tb.Analyses.OfType<SParameterAnalysis>().Where(x => x.Noise))
+                    noiseByAnalysis[spa.Name] = NoiseTable(spa, nl, ports ?? 0);
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
@@ -1608,7 +1612,8 @@ internal static class Explain
                 Records: envRecords.GetValueOrDefault(a.Name),
                 Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null,
                 FieldsSweep: fieldSweeps.GetValueOrDefault(a.Name),
-                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : null));
+                Noise: a is SParameterAnalysis spNoise ? spNoise.Noise : null,
+                NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1700,6 +1705,61 @@ internal static class Explain
             [.. survey.Instances.Select(i => new ExplainNdfInstanceJson(
                 i.InstancePath, i.ComponentType, ActivityWord(i.Activity), i.Passivation, i.Refusal))]);
     }
+
+    /// <summary>
+    /// The noise model of every part for a <c>Noise=yes</c> analysis: <c>SParameterNoise.Table</c>, the classification the
+    /// run builds its noise from, so what this lists is what the run does. Reads each S-parameter block's noise rows and
+    /// starts nothing.
+    /// </summary>
+    private static ExplainNoiseJson NoiseTable(SParameterAnalysis spa, ElaboratedNetlist nl, int ports)
+    {
+        double[] freqs;
+        try { freqs = spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
+        catch (Exception) { freqs = []; }
+
+        var rows  = SParameterNoise.Table(nl, freqs);
+        int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources);
+        static double? Finite(double v) => double.IsFinite(v) ? v : null;
+        return new ExplainNoiseJson(
+            spa.NoiseContrib, noisy, freqs.Length, ports, SParameterNoise.ContributionBytes(freqs.Length, noisy, ports),
+            [.. rows.Select(r => new ExplainNoisePartJson(
+                r.Label, r.Types, NoiseModelWord(r.Kind), Finite(r.Kelvin), r.File, Finite(r.BandLoHz), Finite(r.BandHiHz),
+                r.SourceNames, r.Reason))]);
+    }
+
+    /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
+    private static string NoiseModelWord(NoiseModelKind k) => k switch
+    {
+        NoiseModelKind.Thermal       => "thermal",
+        NoiseModelKind.FileData      => "fileData",
+        NoiseModelKind.DeviceSources => "deviceSources",
+        NoiseModelKind.SwitchedOff   => "switchedOff",
+        _                            => "noiseless",
+    };
+
+    /// <summary>One noise table row, as <c>explain</c> prints it.</summary>
+    private static string NoiseRowText(ExplainNoisePartJson p)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        return p.Model switch
+        {
+            "thermal"       => $"thermal at {p.Kelvin!.Value.ToString("0.##", inv)} K",
+            "fileData"      => $"file data, {Path.GetFileName(p.File)}, noise rows {(p.BandLoHz!.Value / 1e9).ToString("G6", inv)} to " +
+                               $"{(p.BandHiHz!.Value / 1e9).ToString("G6", inv)} GHz",
+            "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}",
+            "switchedOff"   => $"switched off ({p.Reason})",
+            _               => $"noiseless ({p.Reason})",
+        };
+    }
+
+    /// <summary>A byte count in the unit that keeps it readable.</summary>
+    private static string Bytes(long b) => b switch
+    {
+        < 1024        => $"{b} B",
+        < 1024 * 1024 => $"{b / 1024.0:0.#} KB",
+        < 1L << 30    => $"{b / (1024.0 * 1024):0.#} MB",
+        _             => $"{b / (1024.0 * 1024 * 1024):0.##} GB",
+    };
 
     /// <summary>The enum, in the JSON's own camelCase — a stable token a caller can branch on.</summary>
     private static string ActivityWord(CircuitRF.Core.Activity a) => a switch
@@ -2217,6 +2277,17 @@ internal static class Explain
                     if (ndf.Refusal is { } why)
                         foreach (var line in why.Split('\n'))
                             Console.WriteLine($"      {line.TrimEnd()}");
+                }
+
+                // NZ-1: the noise model of every part, which is what an NF is made of — read before trusting one.
+                if (a.NoiseModel is { } nz)
+                {
+                    Console.WriteLine(
+                        $"      Noise: {nz.NoisyParts} noisy part(s) on the part axis; NCs {Bytes(nz.NcsBytes)} " +
+                        $"({nz.Frequencies} freq x {nz.NoisyParts} part x {nz.Ports}^2), " +
+                        (nz.NoiseContrib ? "written (NoiseContrib=yes)" : "not written (NoiseContrib=no)"));
+                    foreach (var p in nz.Parts)
+                        Console.WriteLine($"      noise {p.Part} ({p.Type}): {NoiseRowText(p)}");
                 }
             }
         }

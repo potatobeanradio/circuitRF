@@ -85,6 +85,14 @@ public sealed partial class SpBodyViewModel : ObservableObject
     /// said, else <c>yes</c> or <c>no</c>.</summary>
     public string NoiseExpr => Source is { } s && s.Noise == Noise ? s.NoiseExpr : Noise ? "yes" : Analysis.NoiseDefault;
 
+    /// <summary>The per-part box under it: <c>NoiseContrib=yes</c>, each part's share of <c>Cs</c> as <c>NCs</c>. Only
+    /// meaningful with <see cref="Noise"/> on, which is when the box is enabled.</summary>
+    [ObservableProperty] private bool _noiseContrib;
+
+    /// <summary><c>NoiseContrib=</c> as the box has it, keeping the loaded spelling while the box is unchanged.</summary>
+    public string NoiseContribExpr => Source is { } s && s.NoiseContrib == NoiseContrib
+        ? s.NoiseContribExpr : NoiseContrib ? "yes" : Analysis.NoiseContribDefault;
+
     // ── FromAnalysis ──────────────────────────────────────────────────────────
 
     /// <summary>The analysis this body was loaded from, or null for a new one — what an edit carries its other keys from.</summary>
@@ -92,7 +100,7 @@ public sealed partial class SpBodyViewModel : ObservableObject
 
     public static SpBodyViewModel FromAnalysis(SParameterAnalysis sp, SchematicEditModel model)
     {
-        var vm = new SpBodyViewModel(model) { Source = sp, Noise = sp.Noise };
+        var vm = new SpBodyViewModel(model) { Source = sp, Noise = sp.Noise, NoiseContrib = sp.NoiseContrib };
         vm.Segments.Clear();
         foreach (var sweep in sp.Sweeps)
             vm.AddSegmentInternal(new FrequencySpecViewModel(model, sweep));

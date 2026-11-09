@@ -86,7 +86,7 @@ public static class SParameterEngine
         var sMatrices = new Mat<Complex>[freqsHz.Length];
         var wsp       = prep.Probes.Length > 0 ? new Complex[freqsHz.Length][,] : null;
         var nd        = NewNdfOutput(prep, freqsHz.Length);
-        var cs        = prep.Noise is null ? null : new Mat<Complex>[freqsHz.Length];
+        var cs        = NewNoiseOutput(prep, freqsHz.Length, settings);
         RunRange(prep, freqsHz, settings, 0, freqsHz.Length, sMatrices, wsp, nd, cs, control, abort: null);
         var stats = new RunStats(
             prep.Mna.Factorizations + (prep.MnaTerminated?.Factorizations ?? 0)
@@ -296,7 +296,7 @@ public static class SParameterEngine
                 preps[i]      = Prepare(copy, freqsHz, settings, ndf);
             }
             var nd = NewNdfOutput(preps[0], freqCount);
-            var cs = preps[0].Noise is null ? null : new Mat<Complex>[freqCount];
+            var cs = NewNoiseOutput(preps[0], freqCount, settings);
 
             // A chunk that fails records WHERE and stops; the others notice and stop too, so a
             // cancelled or singular run does not go on solving points nobody will read.
@@ -397,6 +397,13 @@ public static class SParameterEngine
         return (lo, hi);
     }
 
+    /// <summary>The noise result a run fills, or null when <see cref="AnalysisSettings.Noise"/> is off. Each part's share
+    /// is kept when a cube needs it: <c>NCs</c> on <see cref="AnalysisSettings.NoiseContrib"/>, <c>NFc</c> for a two-port.</summary>
+    private static NoiseOutput? NewNoiseOutput(Prepared p, int freqCount, AnalysisSettings settings)
+        => p.Noise is not { } sources ? null
+         : new NoiseOutput(freqCount, [.. sources.Select(x => x.Label)],
+                           keepParts: settings.NoiseContrib || p.Ports.Count == 2, writeNcs: settings.NoiseContrib);
+
     private static DataSet BuildDataSet(
         ElaboratedNetlist netlist,
         double[]          freqsHz,
@@ -406,7 +413,7 @@ public static class SParameterEngine
         WspProbeSite[]    probes,
         Complex[][,]?     wsp,
         NdfOutput?        ndf,
-        Mat<Complex>[]?   cs,
+        NoiseOutput?      cs,
         AnalysisSettings  settings)
     {
         DataSet ds;
@@ -527,7 +534,7 @@ public static class SParameterEngine
 
         /// <summary>Each noisy part's noise currents at ω (<see cref="SParameterNoise.Sources"/>), or null when
         /// <see cref="AnalysisSettings.Noise"/> is off — and then no noise code below is entered.</summary>
-        internal List<Func<double, NoiseCurrents>>? Noise;
+        internal List<NoiseSource>? Noise;
 
         // ── NDF (brief-wsprobe-6) ─────────────────────────────────────────────
 
@@ -801,7 +808,7 @@ public static class SParameterEngine
         Mat<Complex>[]  sMatrices,
         Complex[][,]?    wspOut,
         NdfOutput?       ndfOut,
-        Mat<Complex>[]?  csOut,
+        NoiseOutput?     csOut,
         RunControl?      control,
         Func<bool>?      abort)
     {
@@ -822,7 +829,7 @@ public static class SParameterEngine
         Mat<Complex>[]  sMatrices,
         Complex[][,]?    wspOut,
         NdfOutput?       ndfOut,
-        Mat<Complex>[]?  csOut,
+        NoiseOutput?     csOut,
         RunControl?      control,
         Func<bool>?      abort)
     {
@@ -852,7 +859,7 @@ public static class SParameterEngine
 
             // The parts' noise, recorded BEFORE the assembly: a recorded stamp writes the model's branch index, and
             // StampAll then writes this assembly's back.
-            NoiseCurrents[]? noise = p.Noise is { } sources ? [.. sources.Select(src => src(omega))] : null;
+            NoiseCurrents[]? noise = p.Noise is { } sources ? [.. sources.Select(src => src.At(omega))] : null;
 
             // Stamp network (ports contribute conductances, not 0 V branches).
             StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: dcNodeVoltages);
@@ -919,7 +926,9 @@ public static class SParameterEngine
             // The noise waves, against the same factorisation: one transposed solve per port.
             if (noise is not null)
             {
-                csOut![fi] = SParameterNoise.Waves(lu, mna.Size, noisePorts!, noise);
+                var shares = csOut!.Parts is not null ? new Mat<Complex>[noise.Length] : null;
+                csOut.Cs[fi] = SParameterNoise.Waves(lu, mna.Size, noisePorts!, noise, shares);
+                if (shares is not null) csOut.Parts![fi] = shares;
                 p.BackSubstitutions += N;
             }
 

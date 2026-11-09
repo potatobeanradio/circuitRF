@@ -94,6 +94,8 @@ public sealed class CschAnalysis
     public string?   PassiveParamsExpr { get; set; }
     /// <summary>The S-parameter noise knob. Null / absent → off, as on a file written before it existed.</summary>
     public string?   NoiseExpr         { get; set; }
+    /// <summary>The per-part noise share knob. Null / absent → off.</summary>
+    public string?   NoiseContribExpr  { get; set; }
     // The small-signal (probe-tickle) sweep — WSP-5 R-wsp5-1. All null on a file written before it,
     // which reads back as "no small-signal sweep" and therefore as the run that file always had.
     public string?   SsStartExpr       { get; set; }
@@ -364,6 +366,7 @@ public static class AnalysisSerialization
             PassiveVarsExpr   = sp.PassiveVarsExpr.Length   > 0 ? sp.PassiveVarsExpr   : null,
             PassiveParamsExpr = sp.PassiveParamsExpr.Length > 0 ? sp.PassiveParamsExpr : null,
             NoiseExpr = sp.NoiseExpr != Analysis.NoiseDefault ? sp.NoiseExpr : null,
+            NoiseContribExpr = sp.NoiseContribExpr != Analysis.NoiseContribDefault ? sp.NoiseContribExpr : null,
         },
 
         EnvelopeAnalysis env => new CschAnalysis
@@ -550,6 +553,7 @@ public static class AnalysisSerialization
                 PassiveVarsExpr   = dto.PassiveVarsExpr   ?? "",
                 PassiveParamsExpr = dto.PassiveParamsExpr ?? "",
                 NoiseExpr         = dto.NoiseExpr         ?? Analysis.NoiseDefault,
+                NoiseContribExpr  = dto.NoiseContribExpr  ?? Analysis.NoiseContribDefault,
             },
 
         "env" => new EnvelopeAnalysis(dto.Name)

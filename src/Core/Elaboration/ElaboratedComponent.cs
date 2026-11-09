@@ -38,6 +38,13 @@ public sealed class ElaboratedComponent(
     /// </summary>
     public double Multiplicity { get; init; } = 1.0;
 
+    /// <summary>
+    /// The part's own <c>Noise=no</c>: the S-parameter noise analysis gives it no noise. Taken off the instance line at
+    /// elaboration (<see cref="Elaborator.NoiseParamName"/>), so no model ever sees it as a parameter. False — the part
+    /// is as noisy as its model — unless the line says otherwise.
+    /// </summary>
+    public bool NoiseOff { get; init; }
+
     private bool HasMultiplier => Multiplicity != 1.0;
 
     // ── the one seam ──────────────────────────────────────────────────────────

@@ -440,7 +440,7 @@ static int RunSparam(string[] args)
         var settings = spa is null
             ? null
             : AnalysisSettings.Default.WithMarginThreshold(
-                  Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr)).WithNoise(spa.Noise);
+                  Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr)).WithNoiseOf(spa);
 
         // brief-wsprobe-6 R-wsp6-2: NDF= is a property of the DIRECTIVE too, and the passive
         // assembly may need a second elaboration — which is why the request carries a factory bound

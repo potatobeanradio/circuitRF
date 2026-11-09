@@ -783,7 +783,7 @@ public static class CircuitEvaluation
                     nl, lib, tb, baseDirectory,
                     spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit),
                     AnalysisSettings.Default.WithMarginThreshold(
-                        Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr)).WithNoise(spa.Noise),
+                        Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr)).WithNoiseOf(spa),
                     control,
                     ndf: NdfRequestFor(spa, lib, tb, baseDirectory));
 
