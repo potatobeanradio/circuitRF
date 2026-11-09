@@ -232,6 +232,21 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
         return Guarded(() => _instance.EvaluateOperatingPoint(nodeVoltages));
     }
 
+    // ── noise ─────────────────────────────────────────────────────────────────
+
+    /// <summary>The noise sources the model declares — empty for one that declares none, and for a provider that cannot
+    /// report any.</summary>
+    public IReadOnlyList<ExternalNoiseSourceDescriptor> NoiseSources => Descriptor.NoiseSources;
+
+    /// <summary>
+    /// The densities of <see cref="NoiseSources"/> at the bias <paramref name="nodeVoltages"/> and each of
+    /// <paramref name="frequenciesHz"/>: <c>[k, s]</c>, single-sided A²/Hz, for ONE device — the caller applies the
+    /// multiplicity. The bias is the caller's for the reason <see cref="ReadOperatingPointAt"/> gives: only it knows
+    /// which operating point the noise belongs to. Null when the model declares no sources.
+    /// </summary>
+    public double[,]? ReadNoiseAt(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz)
+        => NoiseSources.Count == 0 ? null : Guarded(() => _instance.EvaluateNoise(nodeVoltages, frequenciesHz));
+
     /// <summary>
     /// Runs one provider call, attaching this instance's label to whatever comes back.
     ///

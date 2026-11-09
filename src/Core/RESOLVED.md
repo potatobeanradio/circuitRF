@@ -4460,3 +4460,19 @@ a number, but is set to 'rz'"), far from the line that caused it.
 
 Gate: `SpiceExpressionTests.AComparisonIsANumber_AndANumberIsACondition` (every operator and position, 16
 cases), `AComparisonAlreadyInACondition_IsLeftAsWritten`, `ASwitchedTermInASubcircuitEvaluates`.
+
+## External devices: noise sources in the descriptor, and their densities at a stated bias (2026-11-09)
+
+`ExternalDeviceDescriptor.NoiseSources` carries what a worker's `describe` lists under `"noise"`: each source's name and
+its node pair in the type's own node numbering, −1 for ground. Empty for a type that declares none and for every
+provider that does not speak the protocol, the two being the same thing to a caller (as with `OpVars`).
+
+- `IExternalDeviceInstance.EvaluateNoise(voltages, freqs)` is a default interface method returning null, so the other
+  worker kinds and in-process providers need no change. `DeviceWorkerInstance` sends `noise` only when the descriptor
+  declared sources, and it uses eval's framing: the node voltages in eval's layout, then the frequencies. A reply whose
+  source count or payload length does not match is refused as a desync (`external.noise.reply-mismatch`), never read
+  as a result.
+- `ExternalDeviceModel.ReadNoiseAt` goes through `Guarded`, so a failure names the instance. Like
+  `ReadOperatingPointAt` it takes the bias from the caller, and it returns one device's densities: the caller applies
+  the multiplicity.
+

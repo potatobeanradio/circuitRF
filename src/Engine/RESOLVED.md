@@ -4005,8 +4005,9 @@ back-substitutions and no factorisation. `SParameterNoise.cs` holds all of it.
 - **Temperature** is `Temperature.ResolveDeviceC` per part (Temp, then Dtemp, then the ambient — 300 K by default, so
   a design stating nothing is not at T0 = 290 K).
 - **Noiseless.** Ports and independent sources by definition. Nonlinear devices, active or black-box linear parts
-  (a VCCS, an op-amp, a negative resistor), external devices and S-parameter blocks with gain and no noise data have no
-  noise model here and are named in one `sparam-noise-noiseless` warning (S-parameter blocks: next section).
+  (a VCCS, an op-amp, a negative resistor), external devices that declare no noise sources and S-parameter blocks with
+  gain and no noise data have no noise model here and are named in one `sparam-noise-noiseless` warning (the next two
+  sections).
 
 Gates: `tests/Engine.Tests/Linear/SParamNoiseTests.cs` against closed forms (a matched pad at 290 K and 400 K, Bosma's
 `kT(I − SSᴴ)` entry by entry on a lossy reactive network, coupled lossy inductors and an ideal transformer) and
@@ -4046,3 +4047,30 @@ Gates: `SParamNoiseTests` — refs.json's `friis_matched` (the Friis closed form
 a passive SnP with no noise data against Bosma on a floating reference; linear interpolation and the held ends; the
 unphysical-data warning; the noiseless naming of an SnP with gain and of a Deembed; and `circuitrf sparam … -o x.s2p`
 writing back ampA.s2p's noise rows.
+
+## S-parameter noise: an external device's own noise sources (2026-11-09)
+
+An OSDI device is noisy by the sources its model declares (the worker's `noise` command, `tools/osdi-worker/README.md`
+Noise). `SParameterNoise.DeviceSources` reads them once per instance in `Prepare`, for every sweep frequency, at the DC
+operating point the run linearises the device about (`SParameterEngine.BuildBias`, now internal), so the noise and the
+small-signal stamp describe the same bias. A failed read fails the run: noise that was asked for and not produced is not
+a warning.
+
+- **Mapping.** Source s between device nodes (a, b), density p, is a current noise source: `p·[[1, −1], [−1, 1]]` on
+  circuit nodes `(Nodes[2a], Nodes[2b])`, or p alone on `Nodes[2a]` when b is −1 (ground) or the circuit node is 0. Internal
+  nodes are ordinary MNA unknowns, so they map the same way; a pair collapsed onto one node cancels. All sources of one
+  device are summed into one `NoiseCurrents` (independent sources add).
+- **Multiplicity is applied here.** The worker passes no `$mfactor` and returns one device's densities; m independent
+  copies in parallel carry m times the density, as their stamp carries m times the admittance.
+- **The lookup is by ω.** The contributor is called with the ω `RunRange` computes, `2π·f`, and the table is keyed by
+  the same expression, so it is an equality of the same double.
+- **A device that declares no sources is named in the `sparam-noise-noiseless` warning.** The descriptor cannot tell a
+  model that states it has no noise from a provider that cannot report any (the other two worker kinds never speak the
+  command, so their descriptors are empty too). Naming it is right for both: the user learns the device adds nothing,
+  and a model with no `white_noise` loses nothing by being named.
+
+Gate: `tests/Engine.Tests/External/OsdiNoiseTests.cs` (the worker and `fake_osdi`'s `crf_noise`, skipped when not built):
+refs.json's `osdi_crf_noise` points (g 1 and 4 mS, Vdc 0.5 and 1 V, T 300 and 350 K), NF to 4e-15 dB and every Cs entry
+to 2e-15 against the closed form; with kf > 0 the flicker source is `kf·|g·v|/f`; m = 2 equals one device of 2g; a
+model with no sources (`crf_rc`) contributes nothing and is named.
+

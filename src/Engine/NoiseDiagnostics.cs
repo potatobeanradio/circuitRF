@@ -47,7 +47,8 @@ public static class NoiseDiagnostics
         return Diagnostic.Create(
             "sparam.noise.noiseless", DiagnosticSeverity.Warning,
             "Noise: {names} {verb} no noise model and {count} taken as noiseless (passive linear parts are given " +
-            "thermal noise, and an S-parameter block the noise data in its file).",
+            "thermal noise, an S-parameter block the noise data in its file, and an external device the noise sources " +
+            "its model declares).",
             ("names", names), ("verb", instances.Count == 1 ? "has" : "have"), ("count", instances.Count == 1 ? "is" : "are"));
     }
 }

@@ -29,9 +29,10 @@ public readonly record struct NoiseCurrents(int[] Nodes, Mat<Complex> C);
 /// <c>H[k, a] = conj(y_k[node_a − 1])</c>, <c>D = diag(√Re Z0/Z0)</c>: N extra back-substitutions per frequency.</para>
 ///
 /// <para><b>Passive parts</b> (<see cref="Bosma"/>) are thermal at their own temperature, a passive S-parameter block
-/// included. A two-port S-parameter block with noise data uses that data instead, passive or not. Everything else —
-/// nonlinear devices, active or black-box linear parts, external devices, S-parameter blocks with gain and no noise
-/// data — is noiseless and named in one warning; ports and independent sources are noiseless by definition.</para>
+/// included. A two-port S-parameter block with noise data uses that data instead, passive or not, and an external device
+/// the noise sources its model declares, at the DC operating point. Everything else — built-in nonlinear devices, active
+/// or black-box linear parts, S-parameter blocks with gain and no noise data, external devices that declare no sources —
+/// is noiseless and named in one warning; ports and independent sources are noiseless by definition.</para>
 /// </summary>
 internal static class SParameterNoise
 {
@@ -44,7 +45,7 @@ internal static class SParameterNoise
     /// here. Every entry is evaluated BEFORE the frequency's assembly: a recorded stamp writes the model's branch index,
     /// and the assembly then writes the real one back.
     /// </summary>
-    internal static List<Func<double, NoiseCurrents>> Sources(ElaboratedNetlist nl, double[] freqsHz)
+    internal static List<Func<double, NoiseCurrents>> Sources(ElaboratedNetlist nl, double[] freqsHz, double[]? dcNodeVoltages)
     {
         var comps = nl.Components;
         int n = comps.Count;
@@ -81,6 +82,12 @@ internal static class SParameterNoise
                 sources.Add(DataFile(block, snp, nl, freqsHz));
                 continue;
             }
+            // An external device whose model declares noise sources; one that declares none is named below.
+            if (parts is [{ Model: ExternalDeviceModel ed } device] && ed.NoiseSources.Count > 0)
+            {
+                sources.Add(DeviceSources(device, ed, freqsHz, dcNodeVoltages));
+                continue;
+            }
             if (!parts.All(ec => IsThermal(ec, freqsHz)))
             {
                 silent.AddRange(parts.Select(ec => $"{ec.ComponentType}:{ec.InstancePath}"));
@@ -107,9 +114,42 @@ internal static class SParameterNoise
     /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
     /// with no noise data is one (its activity is measured on its file).</summary>
     private static bool IsThermal(ElaboratedComponent ec, double[] freqsHz) =>
-        ec.Model.Kind == ModelKind.Linear
-        && ec.Model is not ExternalDeviceModel
-        && ec.ActivityFor(freqsHz) == Activity.Passive;
+        ec.Model.Kind == ModelKind.Linear && ec.ActivityFor(freqsHz) == Activity.Passive;
+
+    /// <summary>
+    /// An external device's own noise sources (<see cref="ExternalDeviceModel.ReadNoiseAt"/>), read once, here, at the DC
+    /// operating point the run linearises the device about (<see cref="SParameterEngine.BuildBias"/>) for every sweep
+    /// frequency. Source s between device nodes (a, b) with density p is a current noise source: on circuit nodes
+    /// (na, nb) it adds <c>p·[[1, −1], [−1, 1]]</c>, or p on na alone when b is ground. Device node k is circuit node
+    /// <c>Nodes[2k]</c>, internal nodes included; a node collapsed to ground is 0 and drops out, and a pair collapsed
+    /// onto one node cancels. Times the multiplicity, m independent copies; the provider never applies it.
+    /// </summary>
+    private static Func<double, NoiseCurrents> DeviceSources(
+        ElaboratedComponent ec, ExternalDeviceModel ed, double[] freqsHz, double[]? dcNodeVoltages)
+    {
+        var psd = ed.ReadNoiseAt(SParameterEngine.BuildBias(ec, dcNodeVoltages).Voltages, freqsHz)!;
+        int Circuit(int k) => k < 0 || 2 * k >= ec.Nodes.Length ? 0 : ec.Nodes[2 * k];
+        var pairs = ed.NoiseSources.Select(s => (A: Circuit(s.NodeA), B: Circuit(s.NodeB))).ToArray();
+        int[] nodes = [.. pairs.SelectMany(p => new[] { p.A, p.B }).Where(n => n > 0).Distinct()];
+        if (nodes.Length == 0) return _ => default;
+
+        // Keyed by ω exactly as RunRange computes it (2π·f), so the lookup is an equality of the same double.
+        var at = new Dictionary<double, NoiseCurrents>();
+        for (int k = 0; k < freqsHz.Length; k++)
+        {
+            var c = new Mat<Complex>(nodes.Length, nodes.Length);
+            for (int s = 0; s < pairs.Length; s++)
+            {
+                double p = ec.Multiplicity * psd[k, s];
+                int a = Array.IndexOf(nodes, pairs[s].A), b = Array.IndexOf(nodes, pairs[s].B);
+                if (a >= 0) c[a, a] += p;
+                if (b >= 0) c[b, b] += p;
+                if (a >= 0 && b >= 0) { c[a, b] -= p; c[b, a] -= p; }
+            }
+            at[2.0 * Math.PI * freqsHz[k]] = new NoiseCurrents(nodes, c);
+        }
+        return w => at[w];
+    }
 
     /// <summary>
     /// A two-port S-parameter block's own noise data (<see cref="SnpModel.NoiseAt"/>): the chain correlation of its noise

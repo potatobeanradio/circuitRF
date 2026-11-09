@@ -126,6 +126,43 @@ coefficient, so `g = 0.004` at 400 K and `0.002` if the temperature were silentl
 temperature that never lands still produces finite, plausible currents — so it has to be observable
 in the answer, not merely passed.
 
+## Noise
+
+`describe` lists each type's noise sources, in the order `noise` returns them:
+
+```
+"noise": [ {"name": "thermal", "nodes": [0, 1]}, … ]
+```
+
+Each is a current noise source between two nodes. The node numbers are those of the type's `nodes`
+list (terminals first, then internal), and `-1` is the ground reference. A type with no sources has
+`"noise": []`.
+
+`noise` returns the densities of one created instance:
+
+```
+request   {"cmd":"noise","handle":h,"freqCount":F}
+          payload: n node voltages (the layout eval takes, n = create's pinCount), then F frequencies in Hz
+reply     {"sourceCount":S,"freqCount":F}
+          payload: F*S doubles, frequency-major — density of source s at frequency k is [k*S + s]
+```
+
+- **The bias is an input.** The worker evaluates the model once at the stated voltages with
+  `CALC_RESIST_RESIDUAL | CALC_OP | CALC_NOISE | ANALYSIS_NOISE`, then calls `load_noise` once per
+  frequency. The last `eval` may belong to another frequency of a harmonic-balance grid or another
+  analysis, so the host states the operating point the noise belongs to. Afterwards the instance's
+  op-vars describe that bias, as after an `eval`.
+- **A density is passed on unscaled.** It is what `load_noise` writes: the single-sided power
+  spectral density that Verilog-A's `white_noise`/`flicker_noise` take, in A²/Hz for a current
+  source (`4kT/R` for a resistor). Multiplicity is not applied here: the worker passes no
+  `$mfactor`, so the host scales by its own instance count.
+- A type with no sources answers `sourceCount` 0 and an empty payload. A payload that is not exactly
+  `n + F` doubles, an unknown handle, and a bias the model refuses (`EVAL_RET_FLAG_FATAL`) are each an
+  `{"error": …}` reply.
+
+`verify.py` checks it against `crf_noise` in the test model: a conductance `g` with thermal `4kTg`,
+shot `2q|g·v|` and flicker `kf·|g·v|/f`, at two biases and two temperatures, to 1e-12.
+
 ## `tools/fake-osdi-model`
 
 A test-only library implementing this ABI honestly and nothing else, so the worker can be driven on a

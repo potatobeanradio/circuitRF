@@ -718,7 +718,7 @@ public static class SParameterEngine
 
         if (ndf is not null) PrepareNdf(prep, netlist, freqsHz, settings, ndf, nonGroundNodes);
         // A port-less (probe) run has no waves to correlate.
-        if (settings.Noise && N > 0) prep.Noise = SParameterNoise.Sources(netlist, freqsHz);
+        if (settings.Noise && N > 0) prep.Noise = SParameterNoise.Sources(netlist, freqsHz, dcNodeVoltages);
         return prep;
     }
 
@@ -1306,7 +1306,7 @@ public static class SParameterEngine
     /// <summary>Builds a device's bias PortVoltages from the DC node-voltage solution, using the same
     /// port→node-pair convention as NonlinearDcEngine (port p = Nodes[2p] − Nodes[2p+1]).
     /// Null dcNodeVoltages ⇒ all-zero bias (purely-linear run never reaches here; DC-fail fallback).</summary>
-    private static PortVoltages BuildBias(ElaboratedComponent ec, double[]? dcNodeVoltages)
+    internal static PortVoltages BuildBias(ElaboratedComponent ec, double[]? dcNodeVoltages)
     {
         int P = ec.Model.PortCount;
         var v = new double[P];

@@ -93,6 +93,15 @@ public interface IExternalDeviceInstance : IDisposable
     /// supplied point.</para>
     /// </summary>
     ExternalOperatingPoint? EvaluateOperatingPoint(IReadOnlyList<IReadOnlyList<double>> nodeVoltages) => null;
+
+    /// <summary>
+    /// The densities of the descriptor's <see cref="ExternalDeviceDescriptor.NoiseSources"/> at the bias
+    /// <paramref name="nodeVoltages"/> (one entry per node, as <see cref="Evaluate"/> takes) and each of
+    /// <paramref name="frequenciesHz"/>: <c>[k, s]</c> is source s at frequency k, single-sided A²/Hz, for ONE device —
+    /// the caller applies its multiplicity. Null when this provider offers none, which every provider but the OSDI
+    /// worker does.
+    /// </summary>
+    double[,]? EvaluateNoise(IReadOnlyList<double> nodeVoltages, IReadOnlyList<double> frequenciesHz) => null;
 }
 
 /// <summary>
