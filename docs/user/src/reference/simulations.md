@@ -432,6 +432,7 @@ blocks are handled as follows.
 | MaxMixOrder | 7 | Lattice order when carriers get their own fundamentals; 7 converges IM5. |
 | Segments | auto | Parallel-in-time segments, one per core and none shorter than 4× the warm-up; one when the circuit's memory is too long to warm up in parallel. 1 runs sequentially. |
 | Warmup | auto | Simulated before each segment and discarded. *auto* is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written. |
+| Tol | 1e-6 | The Newton tolerance per step, in amperes. A run uses at most 10⁻⁴ of its own RF excitation at the record's RMS drive, so a small signal is solved as closely as a large one. |
 | SaveWaveforms | yes | Keep the envelopes against time (`V`, `I`, `Pprobe_t_W`). `no` keeps every spectrum and every power, AM-AM and pulse number. |
 | Noise | no | `yes` adds thermal noise to the run ([below](#envelope-noise)). |
 | Seed | 1 | The seed of every random draw: thermal noise and every source's PhaseNoise mask. |

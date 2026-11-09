@@ -254,4 +254,47 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         Assert.InRange(e, 0.005, 0.5);
         if (cube != "FSKerr_pct") Assert.InRange(e * e * snr, 0.8, 1.2);
     }
+
+    // An amplifier far below compression (output -37 dBm, IP3 20 dBm) behind a 50 Ω source resistor, noiseless.
+    private static string SmallAmp(string source, string stop) => $"""
+        temp = 16.85
+        {source}
+        R:RS s a R=50 Ohm
+        Amp:A1 a 0 b 0 Gain=20 IP3=20
+        IProbe:Iout b c
+        R:RL c 0 R=50 Ohm Noise=no
+        analysis ENV1 type=env Accuracy=draft MaxHarm=3 Segments=1 Warmup=1e-6 Stop={stop}
+        """;
+
+    /// <summary>
+    /// The run's tolerance follows its signal (EnvelopeEngine.RunTolerance). At the default Tol (1e-6 A, ~1 % of this
+    /// probe's current) the noiseless run accepted its step predictor about a percent off: EVM 3.463 % where the clipped
+    /// record reads 3.228 %, NMSE -32 dB. Solved to 1e-4 of its own excitation it reads the record's EVM and an NMSE far
+    /// below any distortion.
+    /// </summary>
+    [Fact]
+    public void ASmallSignal_IsSolvedAsCloselyAsALargeOne()
+    {
+        var (ds, sig) = Run(SmallAmp($"MOD_Source:S1 s 0 Fc=2e9 Pavg=-10 Z=1e-3 Record=0.5e-3 Clip=8 {Lte}", "0.5e-3"));
+        double own = SignalEvm.Measure(sig.Carriers[0].Spec, sig.Carriers[0].Native, sig.RecordSeconds).RmsPercent;
+        output.WriteLine($"EVM {At(ds, "EVM_pct"):F4} %, the record's own {own:F4} %, NMSE {At(ds, "NMSE_dB"):F1} dB");
+        Assert.Equal(own, At(ds, "EVM_pct"), 0.01);
+        Assert.True(At(ds, "NMSE_dB") < -80);
+    }
+
+    /// <summary>
+    /// A DBPSK record starts on a phase reversal, where its drive is zero: the harmonic-balance start through a nonlinear
+    /// block refused the tolerance as one that could not constrain that drive, and the run failed. The start is now its
+    /// seed, and the run measures the record's own (zero) EVM.
+    /// </summary>
+    [Fact]
+    public void ARecordStartingAtZeroDrive_StartsThroughANonlinearBlock()
+    {
+        const string carrier = "DBPSK;Rb=1kbps;Data=0110100111;Off=0;P=0";       // the record's first sample is 0
+        string stop = RecordOf(carrier).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        var (ds, sig) = Run(SmallAmp($"MOD_Source:S1 s 0 Fc=868e6 Pavg=-10 Z=1e-3 Carrier[1]=\"{carrier}\"", stop));
+        Assert.True(sig.Carriers[0].Native[0].Magnitude < 1e-12);
+        output.WriteLine($"EVM {At(ds, "EVM_pct"):E3} %");
+        Assert.True(At(ds, "EVM_pct") < 0.01);
+    }
 }

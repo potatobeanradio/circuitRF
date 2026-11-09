@@ -4207,8 +4207,7 @@ demodulator in `RfCore/Signals/SignalEvm` (`Demodulate`, `Evaluate`, `SignalToNo
   it) that left the noiseless run 1-2 % off: it read 3.463 % "distortion" and NMSE -32.4 dB where the amplifier,
   far below compression, passes the clipped record on at 3.228 %, and the split came out as no noise at all. With one
   update forced the split reads 3.228 % and 0.914 % at the default Tol, the same as at Tol=1e-12. The first run is left
-  exactly as asked. **The same looseness is in every noiseless envelope run of a small signal**: a plain run of that
-  amplifier reads NMSE -32.4 dB where Tol=1e-12 reads -36 dB. Not changed here; Tol is absolute in amperes.
+  exactly as asked. The same looseness was in every noiseless envelope run of a small signal; fixed below (the run tolerance).
 - **The CLI `env` verb dropped `Noise`, `Seed` and `SeedPerPoint`** (since NZ-7): it rebuilds the analysis to apply its
   overrides and copied every field but those, so `Noise=yes` ran noiseless headlessly with nothing said. It copies them
   now, with `EvmSplit` (`EnvelopeExportCliTests.TheNoiseKeys_ReachTheRun`).
@@ -4221,9 +4220,29 @@ demodulator in `RfCore/Signals/SignalEvm` (`Demodulate`, `Evaluate`, `SignalToNo
   `EnvelopeSignalQualityTests.TheIotCarriers_ReadZeroThroughAPad_AndTheirNoiseAsTheSnrSays`.
 - **No carrier with symbols, no cubes**: the gate-5 rule. A run with one writes NaN for any other carrier and says once
   which and why (CW, pulse, imported I/Q).
-- **Not fixed, found on the way:** an envelope run through a system Amp fails its harmonic-balance start when the drive
-  at t = 0 is exactly zero — a DBPSK record starts on a phase reversal — or very small (an FSK bench at Pavg=-75 dBm
-  from a 1 mΩ source). Start=0.005 (half a bit) or more drive runs; the same benches without the Amp start. `explain --analysis` lists the carriers measured and what EvmSplit costs;
+
+## The envelope's tolerance follows its signal (2026-11-09)
+
+Both found while building NZ-8, both one cause: `Tol` is absolute (1e-6 A at the nonlinear interface).
+
+- **A small signal was solved to about a percent of itself.** The step's predictor is accepted whenever the residual is
+  already under Tol, which at a -37 dBm output is ~1 % of the current. A noiseless amplifier far below compression read
+  NMSE -32.4 dB, ACPR -44 dB and EVM 3.463 % where the clipped record alone is 3.228 %: spectral regrowth that was
+  solver error. Now the run uses `EnvelopeEngine.RunTolerance`: Tol, or 1e-4 of the RF excitation at the record's RMS
+  drive when that is smaller (both engines, the start and every step). The same bench reads NMSE -112 dB, ACPR -87 dB,
+  EVM 3.228 %. **A run whose excitation is 10 mA or more keeps Tol exactly**: the NR20 ACPR and the 400 MHz two-carrier
+  examples are bit-identical to before, but for the run-time scalar. The RMS, not the drive at t = 0, because that may be
+  zero.
+- **The harmonic-balance start was refused when the drive at t = 0 was below Tol.** `HbNewton.Solve` refuses, at
+  iteration 0, a solve whose RF excitation the tolerance cannot constrain (`IsToleranceVacuous`) — right for a drive-up
+  ladder, which would otherwise report its previous rung's spectrum; wrong for an envelope start, which IS the drive at
+  one instant. A DBPSK record starts on a phase reversal, where the drive is zero (to round-off), and every rung of the
+  start's drive ramp was zero too: "the harmonic-balance start point did not converge" through any nonlinear block. Its
+  seed is now the start, to within the run tolerance every step is held to. With the run tolerance, an FSK bench at
+  -75 dBm from a 1 mΩ source, refused for the same reason, starts on an ordinary solve. The lattice engine's start
+  (`HbNewtonNd`) makes no such refusal and only takes the run tolerance.
+- `EvmSplit`'s `MinNewton = 1` stays: the noiseless run is then never less converged than the noisy one, whatever the
+  tolerance. `explain --analysis` lists the carriers measured and what EvmSplit costs;
   `check` reports EvmSplit with nothing to split as INFO.
 - **The phase-noise closed form** (gate 3): EVM² = Σ S_φ(f_m)/T · (1 − f_m/B) over the record's bins, B the occupied
   bandwidth — the share of each subcarrier's spread that lands inside the channel. Over four seeds it reads 3.954 %

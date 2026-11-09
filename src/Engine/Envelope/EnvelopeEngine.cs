@@ -170,6 +170,40 @@ public sealed class EnvelopeEngine
     /// <summary>How finely a step whose Newton failed may be split before the run gives up.</summary>
     internal const int MaxStepSplit = 16;
 
+    /// <summary>
+    /// The Newton tolerance is at most this fraction of the run's RF excitation (<see cref="RunTolerance"/>). Tol is absolute,
+    /// in amperes at the nonlinear interface; at 1e-6 A it was ~1 % of a -37 dBm signal's current, which a noiseless run
+    /// then read as distortion (an amplifier far below compression showed NMSE -32 dB, -36 dB once converged). 1e-4 of the
+    /// excitation leaves every run whose excitation is 10 mA or more on Tol exactly — bit for bit — and tightens a small one.
+    /// </summary>
+    internal const double RelativeTol = 1e-4;
+
+    /// <summary>
+    /// The tolerance a run's steps and its harmonic-balance start are solved to: <paramref name="tol"/>, or
+    /// <see cref="RelativeTol"/> of the RF excitation <paramref name="iSrc"/> (the products <paramref name="isRf"/> names)
+    /// when that is smaller. The excitation is the record's RMS drive, not the drive at t = 0, which may be zero.
+    /// </summary>
+    internal static double RunTolerance(double tol, Complex[][] iSrc, Func<int, bool> isRf)
+    {
+        double sum = 0;
+        for (int m = 0; m < iSrc.Length; m++)
+        {
+            if (!isRf(m) || iSrc[m] is not { } col) continue;
+            foreach (var v in col) sum += v.Real * v.Real + v.Imaginary * v.Imaginary;
+        }
+        double scale = Math.Sqrt(sum);
+        return scale > 0 && RelativeTol * scale < tol ? RelativeTol * scale : tol;
+    }
+
+    /// <summary>The RMS magnitude of a drive window: the level the run's tolerance is set against.</summary>
+    internal static double Rms(Complex[] x)
+    {
+        if (x.Length == 0) return 0;
+        double sum = 0;
+        foreach (var v in x) sum += v.Real * v.Real + v.Imaginary * v.Imaginary;
+        return Math.Sqrt(sum / x.Length);
+    }
+
     public EnvelopeRunResult Run(EnvelopeParams p, RunControl? control = null)
     {
         var sw = Stopwatch.StartNew();
@@ -320,7 +354,9 @@ public sealed class EnvelopeEngine
 
         Mark("linear products");
         // ── start: harmonic balance at the first stimulus sample ─────────
-        var (V, hbX, qPrev) = SteadyStart(extractor, baseband, sources, f0, K, N, ifNodes, gridN, p, s => Drv(s, 0));
+        var driveRms = drive.Select(Rms).ToArray();
+        var (V, hbX, qPrev) = SteadyStart(extractor, baseband, sources, f0, K, N, ifNodes, gridN, p, s => Drv(s, 0), s => driveRms[s],
+                                          out double tolRun);
         for (int k = 0; k <= K; k++) { products[k].Xm1 = hbX[k]; products[k].Xm2 = hbX[k]; }
         lines.Start(hbX);
         var qm1 = qPrev; var qm2 = qPrev;
@@ -388,7 +424,7 @@ public sealed class EnvelopeEngine
         var judge = HbNewton.JudgeFor(_nl, ifNodes);
         var newton = new EnvelopeNewton(dof, judge);
         var vHist = new List<Complex[,]> { (Complex[,])V.Clone() };
-        double tolAbs = p.Tol;
+        double tolAbs = tolRun;
         bool prof = Environment.GetEnvironmentVariable("CRF_ENV_PROFILE") is not null;
         var swL = new Stopwatch(); var swE = new Stopwatch(); var swF = new Stopwatch(); var swJ = new Stopwatch(); var swU = new Stopwatch();
         int splitSteps = 0, finestSplit = 1;
@@ -766,18 +802,20 @@ public sealed class EnvelopeEngine
     /// <summary>Harmonic balance with each MOD_Source fixed at its t0 envelope value; returns V, full states, q.</summary>
     /// <remarks>The DC solve and the k = 0 extraction see the baseband product's held elements (a line shorted), so the run
     /// starts at the equilibrium it steps from.</remarks>
+    /// <param name="driveRms">Each source's RMS drive over the run, which the tolerance is set against.</param>
+    /// <param name="tol">The run's tolerance (<see cref="RunTolerance"/>), which the start is solved to and the steps take.</param>
     private (Complex[,] V, Complex[][] X, Complex[,] q) SteadyStart(HbLinearExtractor ex, EnvelopeBaseband.Hold baseband, ModSourceModel[] srcs, double f0, int K,
-        int N, int[] ifNodes, int gridN, EnvelopeParams p, Func<int, Complex> drive0)
+        int N, int[] ifNodes, int gridN, EnvelopeParams p, Func<int, Complex> drive0, Func<int, double> driveRms, out double tol)
     {
         double w0 = 2 * Math.PI * f0;
         var yNN = new Complex[K + 1][,];
         var iSrc = new Complex[K + 1][];
         var bSrc = new Complex[K + 1][];
-        void ExtractAll(double scale)
+        void ExtractAll(double scale, Func<int, Complex>? at = null)
         {
             for (int k = 0; k <= K; k++)
             {
-                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = k == 1 ? drive0(s) * scale : Complex.Zero;
+                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = k == 1 ? (at ?? drive0)(s) * scale : Complex.Zero;
                 baseband.Holding = k == 0;
                 if (k == 0) (yNN[0], iSrc[0]) = ex.ExtractDC();
                 else (yNN[k], iSrc[k]) = ex.Extract(k * w0);
@@ -799,23 +837,31 @@ public sealed class EnvelopeEngine
                 int node = ifNodes[a];
                 V[a, 0] = dc.Converged && node - 1 < dc.NodeVoltages.Length ? dc.NodeVoltages[node - 1] : 0.0;
             }
+            // the run's tolerance, from the RF excitation at the record's RMS drive (the drive at t = 0 may be zero)
+            ExtractAll(1.0, s => driveRms(s));
+            tol = RunTolerance(p.Tol, iSrc, k => k > 0);
             HbNewton.SolveResult? sol = null;
             foreach (double sc in new[] { 1.0 })
             {
                 ExtractAll(sc);
-                sol = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _nl, ifNodes, gridN, _settings, p.Tol);
+                sol = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _nl, ifNodes, gridN, _settings, tol);
             }
-            if (sol is null || !sol.Converged)
+            // The drive at t = 0 below what the run's tolerance resolves — a DBPSK record starts on a phase reversal, where it
+            // is zero — is refused by the solve as a tolerance it cannot constrain. For a drive-up ladder that refusal is the
+            // point; here the start IS that drive, and its solution is the seed to within the tolerance every step is held to.
+            bool belowTol = sol is { Converged: false } && double.IsFinite(sol.VacuousToleranceScale);
+            if (!belowTol && (sol is null || !sol.Converged))
             {
                 // drive ramp in 10 steps
                 for (int r = 1; r <= 10; r++)
                 {
                     ExtractAll(r / 10.0);
-                    sol = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _nl, ifNodes, gridN, _settings, p.Tol);
+                    sol = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _nl, ifNodes, gridN, _settings, tol);
                 }
                 if (sol is null || !sol.Converged)
                     throw new InvalidOperationException("envelope: the harmonic-balance start point did not converge");
             }
+            if (sol is null) throw new InvalidOperationException("envelope: the harmonic-balance start point did not converge");
             var X = new Complex[K + 1][];
             for (int k = 0; k <= K; k++)
             {

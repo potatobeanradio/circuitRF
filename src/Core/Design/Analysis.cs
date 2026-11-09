@@ -338,6 +338,8 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string WarmupExpr    { get; init; } = "auto";
     /// <summary>Signal-record time of t = 0 (s).</summary>
     public string StartExpr     { get; init; } = "0";
+    /// <summary>Newton residual tolerance per step (A). The run uses at most 1e-4 of its RF excitation at the record's RMS
+    /// drive (<c>EnvelopeEngine.RunTolerance</c>), so a small signal is not solved to a percent of itself.</summary>
     public string TolExpr       { get; init; } = "1e-6";
     /// <summary>Keep the probe envelopes as a time cube (<c>yes</c>) or measurements only (<c>no</c>).</summary>
     public string SaveWaveforms { get; init; } = "yes";

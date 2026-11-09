@@ -222,7 +222,8 @@ public sealed class EnvelopeEngineMt
         finally { baseband.Holding = false; lines.Product = null; foreach (var s in sources) s.EnvelopeDrive = null; }
 
         // ── start: multi-tone HB with the t0 drives ─────────────────────────
-        var (V, X0, q0) = Start(extractor, baseband, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0]);
+        var (V, X0, q0) = Start(extractor, baseband, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0],
+                                (s, t) => EnvelopeEngine.Rms(drv[s, t]), out double tolRun);
         for (int m = 0; m < M; m++) { prods[m].Xm1 = X0[m]; prods[m].Xm2 = X0[m]; }
         lines.Start(X0);
         var qm1 = q0; var qm2 = q0;
@@ -337,7 +338,7 @@ public sealed class EnvelopeEngineMt
             var qh = new Complex[N, M];
             for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) qh[a, m] = b1 * q1[a, m] + b2 * q2[a, m];
 
-            var accepted = nw.Solve(V, p.Tol, v =>
+            var accepted = nw.Solve(V, tolRun, v =>
             {
                 var (iNl, qNl, dg, dc) = HbNewtonNd.EvaluateNonlinearNd(v, apft, N, _nl, ifNodes);
                 var injNow = new Complex[N, M];
@@ -476,17 +477,20 @@ public sealed class EnvelopeEngineMt
     }
 
     /// <remarks>The DC solve and the baseband extraction see the held elements, as in <see cref="EnvelopeEngine"/>.</remarks>
+    /// <param name="driveRms">Each source's RMS drive per tone over the run, which the tolerance is set against.</param>
+    /// <param name="tol">The run's tolerance (<see cref="EnvelopeEngine.RunTolerance"/>).</param>
     private (Complex[,] V, Complex[][] X, Complex[,] q) Start(HbLinearExtractor ex, EnvelopeBaseband.Hold baseband, ModSourceModel[] srcs, HbApft apft, double[] tones,
-        double[] wMix, int[] toneMix, int N, int[] ifNodes, EnvelopeParams p, Func<int, int, Complex> drive0)
+        double[] wMix, int[] toneMix, int N, int[] ifNodes, EnvelopeParams p, Func<int, int, Complex> drive0,
+        Func<int, int, double> driveRms, out double tol)
     {
         int M = wMix.Length;
         var yNN = new Complex[M][,]; var iSrc = new Complex[M][]; var bSrc = new Complex[M][];
-        void ExtractAll(double scale)
+        void ExtractAll(double scale, Func<int, int, Complex>? at = null)
         {
             for (int m = 0; m < M; m++)
             {
                 int t = Array.IndexOf(toneMix, m);
-                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = t >= 0 ? drive0(s, t) * scale : Complex.Zero;
+                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = t >= 0 ? (at ?? drive0)(s, t) * scale : Complex.Zero;
                 double w = Math.Abs(wMix[m]);
                 Complex[,] y; Complex[] isr;
                 baseband.Holding = m == 0;
@@ -508,16 +512,19 @@ public sealed class EnvelopeEngineMt
             var V = new Complex[N, M];
             for (int a = 0; a < N; a++)
                 V[a, 0] = dc.Converged && ifNodes[a] - 1 < dc.NodeVoltages.Length ? dc.NodeVoltages[ifNodes[a] - 1] : 0.0;
+            // the run's tolerance, from the RF excitation at the record's RMS drive (as EnvelopeEngine)
+            ExtractAll(1.0, (s, t) => driveRms(s, t));
+            tol = EnvelopeEngine.RunTolerance(p.Tol, iSrc, m => m > 0);
             ExtractAll(1.0);
             var V0 = (Complex[,])V.Clone();
-            var sol = HbNewtonNd.Solve(V, yNN, iSrc, apft, tones, N, _nl, ifNodes, _settings, p.Tol);
+            var sol = HbNewtonNd.Solve(V, yNN, iSrc, apft, tones, N, _nl, ifNodes, _settings, tol);
             if (!sol.Converged)
             {
                 Array.Copy(V0, V, V0.Length);
                 for (int r = 1; r <= 10; r++)                                   // drive ramp
                 {
                     ExtractAll(r / 10.0);
-                    sol = HbNewtonNd.Solve(V, yNN, iSrc, apft, tones, N, _nl, ifNodes, _settings, p.Tol);
+                    sol = HbNewtonNd.Solve(V, yNN, iSrc, apft, tones, N, _nl, ifNodes, _settings, tol);
                 }
             }
             if (sol is null || !sol.Converged) throw new InvalidOperationException("envelope: the multi-tone harmonic-balance start point did not converge");

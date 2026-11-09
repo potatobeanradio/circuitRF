@@ -569,6 +569,11 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <td>Simulated before each segment and discarded. <em>auto</em> is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written.</td>
 </tr>
 <tr>
+<td>Tol</td>
+<td>1e-6</td>
+<td>The Newton tolerance per step, in amperes. A run uses at most 10⁻⁴ of its own RF excitation at the record's RMS drive, so a small signal is solved as closely as a large one.</td>
+</tr>
+<tr>
 <td>SaveWaveforms</td>
 <td>yes</td>
 <td>Keep the envelopes against time (<code>V</code>, <code>I</code>, <code>Pprobe_t_W</code>). <code>no</code> keeps every spectrum and every power, AM-AM and pulse number.</td>

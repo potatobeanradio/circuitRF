@@ -47,7 +47,8 @@ public sealed class EnvelopeConvergenceTests
         var (ds, notes) = Run(Bench(20, "fine", 0.15e-6));
 
         Assert.True(double.IsFinite(ds["Pavg_dBm"].RealValues[0]));
-        Assert.Empty(notes);
+        // no step needed splitting; a 0.15 us run holds no whole NR symbol, which the run notes (brief NZ-8)
+        Assert.DoesNotContain(notes, n => !n.Contains("no signal quality", StringComparison.Ordinal));
     }
 
     [Fact]
