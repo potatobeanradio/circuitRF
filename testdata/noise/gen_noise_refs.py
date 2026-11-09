@@ -671,10 +671,9 @@ def ng_params(ng):
                                          rn_ohm=ng["rn"].real, gamma_opt=ng["sopt"])
 
 
-def case_ngspice(refs):
-    f_ghz = [0.5 * i for i in range(1, 11)]
-    Tamb = T0
-    cases = {
+def ngspice_cases():
+    """The three ngspice benches: name -> (ports, elements, title). plot_noise_compare.py reuses them."""
+    return {
         "ngspice_mixed_temp": ([("p1", 50.0), ("p2", 50.0)],
                                [R("R1", "p1", "m", 30.0), R("R2", "m", "0", 120.0, T=400.0),
                                 R("R3", "m", "p2", 40.0, T=77.0), C("C1", "m", "0", 0.6)],
@@ -692,6 +691,12 @@ def case_ngspice(refs):
                              "VCCS amplifier (60 mS, noiseless) with resistive input, load and feedback,\n"
                              "290 K; port 1 at 75 ohm, port 2 at 50 ohm."),
     }
+
+
+def case_ngspice(refs):
+    f_ghz = [0.5 * i for i in range(1, 11)]
+    Tamb = T0
+    cases = ngspice_cases()
     for name, (ports, elems, title) in cases.items():
         z0, f = bench(name, ports, elems, Tamb, f_ghz, title + "\nExpected: ngspice .sp donoise = numpy nodal.")
         s_n, cs_n = nodal(elems, ports, Tamb, f)

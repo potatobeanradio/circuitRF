@@ -7,6 +7,11 @@
       "Summary": "A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template's own Data Display. Stability factors K and mu are written as measurement expressions."
     },
     {
+      "Folder": "S-Parameter Noise",
+      "Title": "S-Parameter Noise",
+      "Summary": "Noise=yes on an S-parameter run: a 6 dB pad whose noise figure follows its temperature, a cascade of two amplifiers and a pad laid over Friis' formula, and a noise-matched LNA with its optimum source and two constant-noise-figure circles on a Smith chart. Every number is checked against a closed form."
+    },
+    {
       "Folder": "TRL and De-embedding",
       "Title": "TRL and De-embedding",
       "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."

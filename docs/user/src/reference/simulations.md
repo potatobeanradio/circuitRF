@@ -189,6 +189,11 @@ The run gives back the file's NFmin = 1.6 dB, Rn = 20 Ω and GammaOpt = 0.62∠1
 which is the noise figure from the 50 Ω source. `NFopt` is 1.6 dB again. `NF2` is the 2 dB noise circle:
 its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.
 
+**Worked examples.** **File ▸ New ▸ Examples ▸ S-Parameter Noise** has three benches, each with a Data Display
+that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
+1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
+A noise-matched LNA shows NF against NFmin, its GammaOpt and two `nf_circle` circles on a Smith chart.
+
 ## Harmonic Balance {#harmonic-balance}
 
 **Computes:** the steady-state response of a nonlinear circuit driven by one or more tones (up to

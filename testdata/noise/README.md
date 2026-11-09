@@ -10,6 +10,17 @@ run the script with numpy, scikit-rf (2.1.0 was used) and ngspice (47 was used) 
 The output is deterministic. The script asserts that its references agree, and it stops if any
 two of them differ by more than 1% of the tolerance.
 
+`plot_noise_compare.py` draws `docs/images/sparam-noise/*.png`, circuitRF against these references.
+It runs in two steps, because circuitRF and the references usually live in different environments:
+
+    python3 plot_noise_compare.py run  <CircuitRF.Cli.dll> <results>   # needs dotnet only
+    python3 plot_noise_compare.py plot <results> ../../docs/images/sparam-noise
+
+`run` runs every bench here with `Noise=yes`, the ngspice benches again on a 50-point grid, the
+`S-Parameter Noise` example's first two benches, and the fake OSDI part over its bias (it needs
+`tools/osdi-worker` and `tools/fake-osdi-model` built). `plot` needs what the generator needs, plus
+matplotlib, and reruns ngspice and scikit-rf live where a figure wants more points than `refs.json` has.
+
 ## Using the benches
 
 The `.cnl` files leave out the noise key, so they still parse with a circuitRF that has no noise

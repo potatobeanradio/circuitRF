@@ -1,0 +1,13 @@
+! Stage A: a low-noise amplifier block.
+! Synthetic: matched (S11 = S22 = 0), unilateral (S12 = 0), 16 dB of gain, flat from 1 to 4 GHz.
+! Noise: NFmin = 0.8 dB at Gamma_opt = 0.25 /45 deg, rn = 0.25 (Rn = 12.5 ohm).
+# GHz S MA R 50
+1 0 0 6.309573444802 -60 0 0 0 0
+2 0 0 6.309573444802 -60 0 0 0 0
+3 0 0 6.309573444802 -60 0 0 0 0
+4 0 0 6.309573444802 -60 0 0 0 0
+! noise: f  NFmin(dB)  |Gamma_opt|  angle(Gamma_opt) deg  Rn/R
+1 0.8 0.25 45 0.25
+2 0.8 0.25 45 0.25
+3 0.8 0.25 45 0.25
+4 0.8 0.25 45 0.25

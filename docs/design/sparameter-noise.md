@@ -81,3 +81,48 @@ noise parameters are two-port quantities; an N-port gets `Cs` only.
 Gates: `tests/RfCore.Tests/NoiseMetricsTests.cs`, `TouchstoneNoiseBlockTests.cs`,
 `tests/Engine.Tests/Linear/SParamNoiseTests.cs`, `tests/Engine.Tests/External/OsdiNoiseTests.cs`, and
 `tests/Core.Tests/Expressions/NetworkMetricFunctionTests.cs` for `nf`/`nf_circle`.
+
+The example workspace `examples/S-Parameter Noise` (a pad over temperature, a Friis cascade, a noise-matched LNA with
+its noise circles) is held to its closed forms by `tests/Ui.Tests/Examples/SParameterNoiseExampleTests.cs`.
+
+## 6. Comparison figures
+
+`testdata/noise/plot_noise_compare.py` draws these from circuitRF's own results and the independent references:
+`run CLI RESULTS` runs every `refs.json` bench, the example's first two benches and the OSDI part through the
+`circuitrf` build under test, and `plot RESULTS docs/images/sparam-noise` adds scikit-rf, ngspice and the closed
+forms. circuitRF is drawn as markers and a reference as lines; each lower panel is |circuitRF − reference| on a log
+scale, with the tests' 1e-9 tolerance dotted (an exact 0 is drawn at 1e-18).
+
+![Every bench's largest deviation](../images/sparam-noise/deviation_summary.png)
+
+Every bench's largest |ΔNF| and |ΔNFmin|. The worst is the coupled-inductor bench against ngspice, 1.2e-12 dB in NF
+and 5e-12 dB in NFmin near its 4.7 GHz resonance, where Rn reaches 1.5 kΩ; everything else is below 4e-13 dB.
+
+![A 6 dB pad against its temperature](../images/sparam-noise/attenuator_nf_vs_temperature.png)
+
+The example's matched 6 dB pad from 20 K to 400 K against `1 + (T/T0)(L − 1)`: 6.000 dB at 290 K, within 6e-15 dB at
+all 39 temperatures.
+
+![Cascades](../images/sparam-noise/friis_cascades.png)
+
+Left, `friis_matched` against Friis' formula and scikit-rf's `connect`, 7e-16 dB. Middle, the example's cascade with
+its pad swept from 1 to 10 dB: NF against Friis (2e-14 dB) and scikit-rf (2e-15 dB), NFmin against scikit-rf
+(2e-15 dB). Right, `friis_mismatched`, every block mismatched, against scikit-rf: 3e-15 dB.
+
+![Against ngspice](../images/sparam-noise/ngspice_noise_parameters.png)
+
+NF, NFmin, Rn and |Γopt| of the three ngspice benches over 0.1–5 GHz (50 points) against ngspice 47 `.sp donoise`,
+run live at 16.85 °C, where ngspice's reference temperature (the circuit's) is T0. Mixed temperatures and the VCCS
+amplifier with 75/50 Ω ports: 7e-15 dB. Coupled lossy inductors: 1.2e-12 dB in NF, 5e-12 dB in NFmin, 3e-13 in Rn
+relative and 1.2e-13 in Γopt.
+
+![Pozar's noise circles](../images/sparam-noise/pozar_noise_circles.png)
+
+Pozar's Ex. 12.5 at 4 GHz: `nf_circle(SP1.S, NF, 37)` at 1.8, 2, 2.5 and 3 dB against scikit-rf's `nf_circle` and the
+closed-form centres. The 148 points agree to 2.3e-15.
+
+![The OSDI test part](../images/sparam-noise/osdi_nf_vs_bias.png)
+
+The fake OSDI `crf_noise` part shunting a DC-fed node, g = 1 and 4 mS at 300 and 350 K, its bias swept from 0 to 1.5 V,
+against `1 + (T/T0)·g·Z0 + 2q|gV|·Z0/(4kT0)`: within 5e-15 dB. The noise comes from the worker's `noise` command at
+each bias point.
