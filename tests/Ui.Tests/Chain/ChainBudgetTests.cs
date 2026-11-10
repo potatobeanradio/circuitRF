@@ -249,6 +249,37 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
             Assert.Contains(n, names);
     }
 
+    [Fact]
+    public void TheDiagram_IsTheTransferredChainAlone_EveryStageMapped_AndNoted()
+    {
+        var d = RfArray();
+        var r = ChainBudget.Evaluate(d);
+        var dia = ChainBenches.Diagram(d, r);
+        Assert.NotNull(dia);
+        var names = dia!.Model.Components.ToDictionary(c => c.Id, c => c.InstanceName);
+
+        // Every element's branch, the combiner's Wilkinson, the receiver after it; none of a bench's sources or rows.
+        foreach (string n in new[] { "LNA_1", "LNA_4", "PS_1", "PS_4", "PATH2", "CMB_L1", "CMB_L4", "CMB_R3", "BPF", "A2" })
+            Assert.Contains(n, names.Values);
+        Assert.DoesNotContain(dia.Model.Components, c => c.Symbol == SymbolKind.Meas || c.InstanceName.StartsWith("SRC", StringComparison.Ordinal));
+
+        // A click on any of a stage's parts selects that stage: every stage has parts, and each part one stage.
+        Assert.Equal(Enumerable.Range(0, d.Stages.Count), dia.StageOfComponent.Values.Distinct().Order());
+        Assert.Equal(0, dia.StageOfComponent[names.Single(kv => kv.Value == "LNA_3").Key]);
+        Assert.Equal(2, dia.StageOfComponent[names.Single(kv => kv.Value == "CMB_R2").Key]);
+
+        // Four lines over each stage; the cascade's line carries the budget's own numbers.
+        var notes = dia.Model.CanvasObjects.OfType<EditableText>().Select(t => t.Text).ToList();
+        Assert.Equal(4 * d.Stages.Count, notes.Count);
+        Assert.Contains($"Σ G {r.Totals!.GainDb.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture)}  "
+                        + $"NF {r.Totals.NfDb.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture)}", notes);
+
+        // A chain the budget refuses has no drawing.
+        var bad = RfArray();
+        bad.Stages.Add(S("C2", ChainParts.Combiner, ("N", "2")));
+        Assert.Null(ChainBenches.Diagram(bad, ChainBudget.Evaluate(bad)));
+    }
+
     // ── the benches, run ─────────────────────────────────────────────────────
 
     /// <summary>

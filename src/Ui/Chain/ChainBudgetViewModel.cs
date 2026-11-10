@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CircuitRF.Design.Chain;
-using CircuitRF.Design.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -51,44 +50,6 @@ public sealed partial class ChainStageViewModel : ObservableObject
     [ObservableProperty] private ChainPart _part;
     [ObservableProperty] private string _summary = "";
 
-    // ── the block diagram ────────────────────────────────────────────────────
-
-    /// <summary>The stage drawn selected in the diagram: the table's selected row.</summary>
-    [ObservableProperty] private bool _isSelected;
-
-    /// <summary>The stage's own numbers under its block, and the cascade at its output.</summary>
-    [ObservableProperty] private string _keyLine = "";
-    [ObservableProperty] private string _cascadeLine = "";
-
-    /// <summary>What the block says beside its glyph: a mixer's LO, a phase shifter's phase, a combiner's N.</summary>
-    [ObservableProperty] private string _extra = "";
-
-    /// <summary>One block per element the diagram draws: one, or up to three for an array's branch stage.</summary>
-    [ObservableProperty] private IReadOnlyList<ChainStageViewModel> _copies = [];
-
-    /// <summary>"× N" under an array branch's blocks; empty elsewhere.</summary>
-    [ObservableProperty] private string _timesN = "";
-
-    /// <summary>The System block whose schematic artwork the stage is drawn with. A composed stage with no single
-    /// block of its own (a splitter, a combiner) is drawn as <see cref="GlyphText"/> instead.</summary>
-    public SymbolKind Glyph => Part.Token switch
-    {
-        ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
-        ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
-        ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
-        ChainParts.Limiter => SymbolKind.Diode, _ => SymbolKind.Amp,
-    };
-
-    public bool HasGlyph => Part.Token is not (ChainParts.Splitter or ChainParts.Combiner);
-    public string GlyphText => Part.Token == ChainParts.Combiner ? "N : 1" : Part.Token == ChainParts.Splitter ? "1 : N" : "";
-
-    partial void OnPartChanged(ChainPart? oldValue, ChainPart newValue)
-    {
-        OnPropertyChanged(nameof(Glyph));
-        OnPropertyChanged(nameof(HasGlyph));
-        OnPropertyChanged(nameof(GlyphText));
-    }
-
     /// <summary>Parameters the stage carries that its part does not list: kept, and written back, unchanged.</summary>
     private Dictionary<string, string> Unlisted { get; }
 
@@ -119,10 +80,6 @@ public sealed partial class ChainStageViewModel : ObservableObject
     }
 }
 
-/// <summary>One row of the cascade: a stage's cumulative numbers at its output.</summary>
-public sealed record ChainResultRow(string Stage, string Gain, string Nf, string Iip3, string Oip3, string Ip1db, string Op1db,
-                                    string Pout, string Snr, string Share);
-
 /// <summary>
 /// The RF Chain Budget window: a <c>.cchain</c> as a table of stages and system inputs, its cascade recomputed on every
 /// edit by <see cref="ChainBudget"/>, and its Transfer to Schematic. Nothing here computes a number.
@@ -149,15 +106,61 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     };
 
     public ObservableCollection<ChainStageViewModel> Stages { get; } = [];
-    public ObservableCollection<ChainResultRow> Results { get; } = [];
 
     [ObservableProperty] private ChainStageViewModel? _selectedStage;
 
-    /// <summary>The diagram and the table share one selection: the selected row's block is drawn selected.</summary>
-    partial void OnSelectedStageChanged(ChainStageViewModel? value)
+    /// <summary>The diagram and the table share one selection: the selected row's parts are drawn selected, and a
+    /// click on a part in the drawing selects its row.</summary>
+    partial void OnSelectedStageChanged(ChainStageViewModel? value) => OnPropertyChanged(nameof(SelectedStageIndex));
+
+    public int SelectedStageIndex
     {
-        foreach (var s in Stages) s.IsSelected = ReferenceEquals(s, value);
+        get => SelectedStage is { } s ? Stages.IndexOf(s) : -1;
+        set
+        {
+            var next = value >= 0 && value < Stages.Count ? Stages[value] : null;
+            if (!ReferenceEquals(next, SelectedStage)) SelectedStage = next;
+        }
     }
+
+    /// <summary>The chain as the benches draw it (<see cref="ChainBenches.Diagram"/>), annotated stage by stage.</summary>
+    [ObservableProperty] private ChainDiagram? _diagram;
+
+    /// <summary>The cascade, as a Data Display table over the budget's stage axis.</summary>
+    public CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel PlotHost { get; } =
+        new(new CircuitRF.Ui.DataDisplay.ViewModels.DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
+
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _cascade;
+
+    public CircuitRF.Render.DataDisplay.Plot? CascadePlot => _cascade?.PlotVM.Plot;
+
+    /// <summary>Raised after the cascade table is refilled in place: a PlotControl repaints only when told.</summary>
+    public event EventHandler? PlotsUpdated;
+
+    private void RefillCascade(ChainBudgetResult r)
+    {
+        var pc = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.CascadeTable(BudgetSource);
+        if (_cascade is null)
+        {
+            _cascade = PlotHost.AddPlot(CircuitRF.Render.DataDisplay.PlotType.Table, CircuitRF.Render.DataDisplay.FreqUnit.GHz, 0, 0, pc.Width, pc.Height);
+            PlotHost.SelectOnly((CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?)null);
+            OnPropertyChanged(nameof(CascadePlot));
+        }
+        var plot = _cascade.PlotVM.Plot;
+        plot.Traces.Clear();
+        var source = new CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source(BudgetSource, ChainBudget.ToDataSet(r));
+        if (r.Totals is not null)
+            foreach (var tc in pc.Traces)
+                if (CircuitRF.Render.DataDisplay.PlotConfigLoader.LoadTrace(tc, pc.PlotType, pc.FreqUnit, source) is { } t)
+                    plot.Traces.Add(t);
+        plot.CustomTitle = pc.CustomTitle;
+        plot.CustomTitleOn = pc.CustomTitleOn;
+        _cascade.OnPlotChanged(_cascade, EventArgs.Empty);
+        _cascade.RequestPlotRedraw();
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    private const string BudgetSource = "budget";
     [ObservableProperty] private ChainPart _partToAdd = ChainParts.All[0];
 
     // The system inputs, as typed: a frequency in GHz, a bandwidth in MHz, the rest in their own unit.
@@ -236,13 +239,10 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var d = ToDesign();
         var r = ChainBudget.Evaluate(d);
         Budget = r;
-        Results.Clear();
-        foreach (var s in r.Stages)
-            Results.Add(new ChainResultRow(s.Name, D(s.GainDb), D(s.NfDb), D(s.Iip3Dbm), D(s.Oip3Dbm), D(s.Ip1dbDbm), D(s.Op1dbDbm),
-                                           D(s.PoutDbm), D(s.SnrDb), D(s.NoiseSharePct)));
         foreach (var (row, s) in Stages.Zip(r.Stages))
             row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
-        Diagram(d, r);
+        Diagram = ChainBenches.Diagram(d, r);
+        RefillCascade(r);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes);
         Summary = r.Totals is not { } t ? "" :
@@ -253,42 +253,6 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
             (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "");
     }
-
-    /// <summary>
-    /// What each block of the diagram says: its own gain, NF and intercept, the cascade at its output, and how many
-    /// times it is drawn — an array's branch stages once per element, up to three, with "× N" under them.
-    /// </summary>
-    private void Diagram(ChainDesign d, ChainBudgetResult r)
-    {
-        int combiner = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
-        int n = combiner >= 0 ? Math.Max(2, (int)Math.Round(ChainValue.Or(d.Stages[combiner].Get("N"), 2))) : 1;
-        for (int i = 0; i < Stages.Count; i++)
-        {
-            var row = Stages[i];
-            bool branch = i < combiner;
-            row.Copies = Enumerable.Repeat(row, branch ? Math.Min(n, 3) : 1).ToList();
-            row.TimesN = branch ? $"× {n}" : "";
-            var st = d.Stages[i];
-            row.Extra = st.Part switch
-            {
-                ChainParts.Mixer => $"LO {Hz(ChainValue.Or(st.Get("Flo"), 0))}",
-                ChainParts.PhaseShifter => $"φ {st.Get("Phase")}°",
-                ChainParts.Combiner => $"N = {n}, steer {st.Get("Steer")}°",
-                ChainParts.Splitter => $"N = {st.Get("N")}",
-                _ => "",
-            };
-            if (i < r.Stages.Count)
-            {
-                var s = r.Stages[i];
-                row.KeyLine = $"G {D(s.Stage.GainDb)}  NF {D(s.Stage.NfDb)}" +
-                              (double.IsFinite(s.Stage.Iip3Dbm) ? $"\nIIP3 {D(s.Stage.Iip3Dbm)}  P1 {D(s.Stage.Ip1dbDbm)}" : "\nlinear");
-                row.CascadeLine = $"Σ G {D(s.GainDb)}  NF {D(s.NfDb)}\nIIP3 {D(s.Iip3Dbm)}  SNR {D(s.SnrDb)}";
-            }
-            else row.KeyLine = row.CascadeLine = "";
-        }
-    }
-
-    private static string Hz(double f) => f >= 1e9 ? $"{f / 1e9:0.###} GHz" : $"{f / 1e6:0.###} MHz";
 
     // ── the stage list ───────────────────────────────────────────────────────
 

@@ -7,7 +7,8 @@
         xmlns:vm="using:CircuitRF.Ui.Chain"
         xmlns:chain="using:CircuitRF.Design.Chain"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:chv="using:CircuitRF.Ui.Views.Chain"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         x:Class="CircuitRF.Ui.Views.Chain.ChainBudgetWindow"
         x:DataType="vm:ChainBudgetViewModel"
         Title="{Binding Title}"
@@ -34,15 +35,6 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin"            Value="0,0,4,0"/>
         </Style>
-        <Style Selector="TextBlock.col">
-            <Setter Property="FontSize"      Value="12"/>
-            <Setter Property="FontWeight"    Value="SemiBold"/>
-            <Setter Property="TextAlignment" Value="Right"/>
-        </Style>
-        <Style Selector="TextBlock.num">
-            <Setter Property="FontSize"      Value="12"/>
-            <Setter Property="TextAlignment" Value="Right"/>
-        </Style>
         <Style Selector="TextBox.p">
             <Setter Property="FontSize"  Value="12"/>
             <Setter Property="MinWidth"  Value="70"/>
@@ -54,24 +46,6 @@
             <Setter Property="MinWidth"  Value="90"/>
             <Setter Property="Padding"   Value="4,1"/>
             <Setter Property="MinHeight" Value="24"/>
-        </Style>
-        <!-- The diagram's blocks: the selected stage's is drawn in the accent colour, as its table row is. -->
-        <Style Selector="Border.block">
-            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius"    Value="4"/>
-            <Setter Property="Padding"         Value="6,4"/>
-            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
-            <Setter Property="Cursor"          Value="Hand"/>
-        </Style>
-        <Style Selector="Border.block.sel">
-            <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
-            <Setter Property="BorderThickness" Value="2"/>
-        </Style>
-        <Style Selector="TextBlock.small">
-            <Setter Property="FontSize"      Value="10.5"/>
-            <Setter Property="TextAlignment" Value="Center"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.tb">
             <Setter Property="Padding" Value="8,3"/>
@@ -138,51 +112,14 @@
         </Border>
 
         <Grid RowDefinitions="Auto,*,Auto">
-            <!-- The chain as a block diagram, input on the left: each stage drawn with its System block's own schematic
-                 artwork, its own numbers under it and the cascade at its output. An array's branch stages are drawn once
-                 per element, up to three, with "× N". A click selects the stage, here and in the table. -->
-            <Border Classes="pane" Grid.Row="0">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
-                        <ItemsControl ItemsSource="{Binding Stages}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:ChainStageViewModel">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="⟶" FontSize="18" VerticalAlignment="Center" Margin="4,0" Opacity="0.7"/>
-                                        <Border Classes="block" Classes.sel="{Binding IsSelected}" PointerPressed="OnBlockPressed"
-                                                ToolTip.Tip="{Binding Part.Summary}">
-                                            <StackPanel Spacing="1" MinWidth="104">
-                                                <TextBlock Classes="small" Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
-                                                <ItemsControl ItemsSource="{Binding Copies}" HorizontalAlignment="Center">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:ChainStageViewModel">
-                                                            <Panel Width="76" Height="40" Margin="0,1">
-                                                                <ctl:PaletteGlyphControl Kind="{Binding Glyph}" Monochrome="True" IsVisible="{Binding HasGlyph}"/>
-                                                                <Border IsVisible="{Binding !HasGlyph}" BorderBrush="{DynamicResource SystemControlForegroundBaseHighBrush}"
-                                                                        BorderThickness="1.5" CornerRadius="2" Width="52" Height="34">
-                                                                    <TextBlock Text="{Binding GlyphText}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                </Border>
-                                                            </Panel>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                                <TextBlock Classes="small" Text="{Binding TimesN}" IsVisible="{Binding TimesN, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" FontWeight="SemiBold"/>
-                                                <TextBlock Classes="small" Text="{Binding Extra}" IsVisible="{Binding Extra, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Opacity="0.8"/>
-                                                <TextBlock Classes="small" Text="{Binding KeyLine}"/>
-                                                <TextBlock Classes="small" Text="{Binding CascadeLine}" Opacity="0.75"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,2,0"/>
-                    </StackPanel>
-                </ScrollViewer>
+            <!-- The chain as a block diagram: the chain itself, as Transfer to Schematic places it, drawn by circuitRF's own
+                 schematic renderer, with each stage's own numbers and the cascade at its output over it. A click on a
+                 part selects its stage, here and in the table; wheel to zoom, middle-drag to pan, double-click to fit. -->
+            <Border Classes="pane" Grid.Row="0" Height="330">
+                <DockPanel>
+                    <TextBlock Classes="panelhdr" DockPanel.Dock="Top" Text="The chain, as it transfers to a schematic"/>
+                    <chv:ChainSchematicCanvas Diagram="{Binding Diagram}" SelectedStage="{Binding SelectedStageIndex}"/>
+                </DockPanel>
             </Border>
 
             <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->
@@ -226,41 +163,11 @@
             </Border>
 
             <!-- The cascade: each stage's cumulative numbers at its output, referred to the input (to one element's,
-                 in an array). -->
-            <Border Classes="pane" Grid.Row="2">
-                <StackPanel>
-                    <TextBlock Classes="panelhdr" Text="Cascade, at each stage's output"/>
-                    <Grid ColumnDefinitions="130,80,80,80,80,80,80,80,80,80" Margin="0,0,0,2">
-                        <TextBlock Grid.Column="0" Classes="col" Text="Stage" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="1" Classes="col" Text="G, dB"/>
-                        <TextBlock Grid.Column="2" Classes="col" Text="NF, dB"/>
-                        <TextBlock Grid.Column="3" Classes="col" Text="IIP3, dBm"/>
-                        <TextBlock Grid.Column="4" Classes="col" Text="OIP3, dBm"/>
-                        <TextBlock Grid.Column="5" Classes="col" Text="IP1dB, dBm"/>
-                        <TextBlock Grid.Column="6" Classes="col" Text="OP1dB, dBm"/>
-                        <TextBlock Grid.Column="7" Classes="col" Text="Pout, dBm"/>
-                        <TextBlock Grid.Column="8" Classes="col" Text="SNR, dB"/>
-                        <TextBlock Grid.Column="9" Classes="col" Text="F − 1, %"/>
-                    </Grid>
-                    <ItemsControl ItemsSource="{Binding Results}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ChainResultRow">
-                                <Grid ColumnDefinitions="130,80,80,80,80,80,80,80,80,80">
-                                    <TextBlock Grid.Column="0" Classes="num" Text="{Binding Stage}" TextAlignment="Left"/>
-                                    <TextBlock Grid.Column="1" Classes="num" Text="{Binding Gain}"/>
-                                    <TextBlock Grid.Column="2" Classes="num" Text="{Binding Nf}"/>
-                                    <TextBlock Grid.Column="3" Classes="num" Text="{Binding Iip3}"/>
-                                    <TextBlock Grid.Column="4" Classes="num" Text="{Binding Oip3}"/>
-                                    <TextBlock Grid.Column="5" Classes="num" Text="{Binding Ip1db}"/>
-                                    <TextBlock Grid.Column="6" Classes="num" Text="{Binding Op1db}"/>
-                                    <TextBlock Grid.Column="7" Classes="num" Text="{Binding Pout}"/>
-                                    <TextBlock Grid.Column="8" Classes="num" Text="{Binding Snr}"/>
-                                    <TextBlock Grid.Column="9" Classes="num" Text="{Binding Share}"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                 in an array), as a Data Display table over the budget's stage axis. -->
+            <Border Classes="pane" Grid.Row="2" Height="190">
+                <ddc:PlotControl Name="CascadePlotControl" ClipToBounds="True"
+                                 Plot="{Binding CascadePlot}" Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
             </Border>
         </Grid>
     </DockPanel>

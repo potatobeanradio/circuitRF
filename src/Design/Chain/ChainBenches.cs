@@ -26,6 +26,7 @@ using System.Text;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Symbol;
 
 namespace CircuitRF.Design.Chain;
 
@@ -35,6 +36,9 @@ public enum ChainBench { OneTone, TwoTone, Envelope }
 public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout);
 
 /// <summary>What a transfer wrote, or why it wrote nothing.</summary>
+/// <summary>The chain drawn as a schematic, and the stage each drawn component (by its id) belongs to.</summary>
+public sealed record ChainDiagram(SchematicEditModel Model, IReadOnlyDictionary<string, int> StageOfComponent);
+
 public sealed record ChainTransferResult(IReadOnlyList<string> SchematicPaths, IReadOnlyList<string> Refusals,
                                          IReadOnlyList<string> Notes);
 
@@ -73,8 +77,12 @@ public static class ChainBenches
         => r.Totals is null ? [] : [.. Enum.GetValues<ChainBench>().Select(b => new Emitter(d, r, chain, b).Emit())];
 
     /// <summary>
-    /// Draws the three benches and writes each as a cell under <paramref name="workspaceDir"/>. Writes nothing when
-    /// any bench is refused or, unless <paramref name="replace"/>, when one of the cells already exists.
+    /// Draws the three benches and writes each as a cell under <paramref name="workspaceDir"/>, the way a cell from any
+    /// generator is placed: each is written first into a staging folder and read back through
+    /// <see cref="CellViewFileValidator"/>, a history checkpoint is taken when the workspace keeps one, and only then
+    /// is each written in with <see cref="CellCreate.Create"/>, the function New Cell calls. Writes nothing when any
+    /// bench is refused or does not validate, when the checkpoint fails, or, unless <paramref name="replace"/>, when one
+    /// of the cells already exists.
     /// </summary>
     public static ChainTransferResult Write(ChainDesign d, string workspaceDir, string chain, bool replace = false)
     {
@@ -105,16 +113,83 @@ public static class ChainBenches
         }
         if (refusals.Count > 0) return new([], refusals, notes);
 
+        // Staged and read back before anything reaches the workspace.
+        string staging = Path.Combine(Path.GetTempPath(), "crf-chain-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            foreach (var (cell, model) in drawn)
+                if (CellViewFileValidator.DescribeDefect(CellCreate.Create(staging, cell, CellViews.Schematic, model).SchematicPath!,
+                                                         ViewType.Schematic) is { } defect)
+                    refusals.Add($"{cell}: {defect}");
+        }
+        finally { try { Directory.Delete(staging, recursive: true); } catch (IOException) { } }
+        if (refusals.Count > 0) return new([], refusals, notes);
+
+        if (Revision.WorkspaceCheckpoints.BeforeWrite(Path.Combine(workspaceDir, chain + ChainDesignIo.Extension),
+                $"Before Transfer to Schematic of {chain}", Revision.CheckpointOrigin.SavePoint) is { } failed)
+            return new([], [failed.Render()], notes);
+
         var paths = new List<string>();
         foreach (var (cell, model) in drawn)
             paths.Add(CellCreate.Create(workspaceDir, cell, CellViews.Schematic, model).SchematicPath!);
         return new(paths, [], [.. r.Notes, .. notes]);
     }
 
+    /// <summary>
+    /// The chain as a drawing: its parts exactly as the benches place them, between a Port per element and a Port at
+    /// the output, with each mixer's LO, drawn by <see cref="NetlistSchematic.Build"/> as every bench is. Over each stage
+    /// on the first element's row, four lines of text: the stage's own gain, NF, intercept and compression point, and
+    /// the cascade's gain, NF, IIP3 and SNR at its output. Null when the budget is refused or the drawing is.
+    /// </summary>
+    public static ChainDiagram? Diagram(ChainDesign d, ChainBudgetResult r)
+    {
+        if (r.Totals is null) return null;
+        var e = new Emitter(d, r, "chain", ChainBench.OneTone, diagram: true);
+        var text = e.Emit();
+        var (lib, tb) = new CnlReader().Read(text.Netlist, "tb", null);
+        var drawn = NetlistSchematic.Build(lib, tb, null, exact: text.Layout);
+        if (drawn.Schematic is not { } model) return null;
+
+        static string D(double v) => double.IsFinite(v) ? v.ToString("0.0#", CultureInfo.InvariantCulture) : "—";
+        double h = EditableText.DefaultFontSize * 1.3;
+        foreach (var (stage, (x, y)) in e.Anchor)
+        {
+            // Four short lines, bottom up, so a note stays within its own block's width: the stage on its own, then
+            // the cascade at its output (Σ).
+            var s = r.Stages[stage];
+            string[] lines =
+            [
+                $"G {D(s.Stage.GainDb)}  NF {D(s.Stage.NfDb)}",
+                double.IsFinite(s.Stage.Iip3Dbm) ? $"IIP3 {D(s.Stage.Iip3Dbm)}  P1 {D(s.Stage.Ip1dbDbm)}" : "linear",
+                $"Σ G {D(s.GainDb)}  NF {D(s.NfDb)}",
+                $"Σ IIP3 {D(s.Iip3Dbm)}  SNR {D(s.SnrDb)}",
+            ];
+            for (int i = 0; i < lines.Length; i++)
+                model.CanvasObjects.Add(Note(x, y - 260 - (lines.Length - 1 - i) * h, lines[i],
+                                             i < 2 ? SymbolFontStyle.Bold : SymbolFontStyle.Regular));
+        }
+        var stageOf = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var c in model.Components)
+            if (e.StageOf.TryGetValue(c.InstanceName, out int st)) stageOf[c.Id] = st;
+        return new ChainDiagram(model, stageOf);
+    }
+
+    private static EditableText Note(double x, double y, string text, SymbolFontStyle style) => new()
+    {
+        X = x, Y = y, Text = text, FontStyle = style,
+        Align = SymbolTextAlign.Center, VAlign = SymbolTextVAlign.Bottom,
+    };
+
     // ── the netlist ──────────────────────────────────────────────────────────
 
-    private sealed class Emitter(ChainDesign d, ChainBudgetResult r, string chain, ChainBench bench)
+    private sealed class Emitter(ChainDesign d, ChainBudgetResult r, string chain, ChainBench bench, bool diagram = false)
     {
+        /// <summary>The stage each placed instance belongs to, and where each stage's first block sits on the first
+        /// element's row — what the diagram's selection and annotations are read from.</summary>
+        public readonly Dictionary<string, int> StageOf = new(StringComparer.Ordinal);
+        public readonly Dictionary<int, (double X, double Y)> Anchor = [];
+        private int _stage = -1;
+
         private const double Lead = 500, BranchPitch = 1400;
         private readonly StringBuilder _parts = new();
         private readonly List<string> _vars = ["temp = 16.85"], _analyses = [], _meas = [];
@@ -132,7 +207,13 @@ public static class ChainBenches
         private int Mixers => d.Stages.Count(s => s.Part == ChainParts.Mixer);
 
         private void Line(string text) => _parts.AppendLine(text);
-        private void Place(string inst, double x, double y) => _at[inst] = new ExactInstance(x, y, SymbolRotation.R0, false);
+        private void Place(string inst, double x, double y)
+        {
+            _at[inst] = new ExactInstance(x, y, SymbolRotation.R0, false);
+            if (_stage < 0) return;
+            StageOf[inst] = _stage;
+            if (Math.Abs(y) < 1e-9 && !Anchor.ContainsKey(_stage)) Anchor[_stage] = (x, y);
+        }
         private void Inline(string inst, double half) { _x += half; Place(inst, _x, _y); _x += half + Lead; }
 
         /// <summary>A parameter as its netlist text: a bare number gets the parameter's unit, as a schematic writes it.</summary>
@@ -217,10 +298,12 @@ public static class ChainBenches
                 for (int j = 0; j < nb; j++)
                 {
                     string net = $"b{k}_{d.Stages[j].Name}";
+                    _stage = j;
                     var parts = Stage(d.Stages[j], d.Stages[j].Name + (array ? $"_{k}" : ""), prev, net, ref bf, bv1, bv3, ref blo, k, n);
                     if (k == 1) { stageNet[j] = net; stageIdx[j] = ((int[])bv1.Clone(), (int[])bv3.Clone()); stageFreq[j] = bf; stageParts[j] = []; }
                     stageParts[j].AddRange(parts);
                     prev = net;
+                    _stage = -1;
                 }
                 branchOut[k - 1] = prev;
                 rowX = Math.Max(rowX, _x);
@@ -237,14 +320,17 @@ public static class ChainBenches
                 var s = d.Stages[j];
                 string net = j == d.Stages.Count - 1 ? "out" : $"n_{s.Name}";
                 List<string> parts;
+                _stage = j;
                 if (s.Part == ChainParts.Combiner) parts = Combiner(s, branchOut, net, f);
                 else parts = Stage(s, s.Name, cur, net, ref f, v1, v3, ref lo, 1, 1);
                 stageNet[j] = net; stageIdx[j] = ((int[])v1.Clone(), (int[])v3.Clone()); stageFreq[j] = f; stageParts[j] = parts;
                 cur = net;
+                _stage = -1;
             }
             if (cur != "out") { /* the last stage always writes "out" */ }
             Load(n);
-            Measurements(stageNet, stageIdx, stageParts, stageFreq, v1, v3, f, n);
+            if (!diagram) Measurements(stageNet, stageIdx, stageParts, stageFreq, v1, v3, f, n);
+            else _vars.Clear();
 
             var sb = new StringBuilder();
             sb.AppendLine($"; {CellName(chain, bench)}: transferred from the chain budget '{chain}'");
@@ -265,8 +351,11 @@ public static class ChainBenches
         private void Source(int k, string net)
         {
             string name = $"SRC{(N > 1 ? k.ToString(CultureInfo.InvariantCulture) : "")}";
-            switch (bench)
+            switch (diagram ? (ChainBench)(-1) : bench)
             {
+                case (ChainBench)(-1):
+                    name = N > 1 ? $"IN{k}" : "IN";
+                    Line($"Port:{name}  {net}  0  Num={k}  Z=50 Ohm"); break;
                 case ChainBench.OneTone:
                     Line($"P1Tone:{name}  {net}  0  Num={k}  Freq=Frf  Pavl=Pin dBm  Z=50 Ohm"); break;
                 case ChainBench.TwoTone:
@@ -284,6 +373,7 @@ public static class ChainBenches
 
         private void Load(int n)
         {
+            if (diagram) { Line($"Port:OUT  out  0  Num={n + 1}  Z=50 Ohm"); Place("OUT", _x, _y + 200); return; }
             switch (bench)
             {
                 case ChainBench.OneTone: Line($"Port:PO  out  0  Num={n + 1}  Z=50 Ohm"); Place("PO", _x, _y + 200); break;
@@ -338,10 +428,13 @@ public static class ChainBenches
                 case ChainParts.Mixer:
                 {
                     double flo = ChainValue.Or(s.Get("Flo"), 0);
-                    string iso = $"ISO_{name}", rf = $"{a}_rf", lon = $"lo_{name}";
-                    Line($"Circulator:{iso}  {a}  0  {rf}  0  {iso}_t  0  Direction=CW");
-                    Line($"R:{iso}_R  {iso}_t  0  R=50 Ohm");
-                    Inline(iso, 300); Place($"{iso}_R", _x - Lead - 300, _y + 900);
+                    string iso = $"ISO_{name}", rf = diagram ? a : $"{a}_rf", lon = $"lo_{name}";
+                    if (!diagram)
+                    {
+                        Line($"Circulator:{iso}  {a}  0  {rf}  0  {iso}_t  0  Direction=CW");
+                        Line($"R:{iso}_R  {iso}_t  0  R=50 Ohm");
+                        Inline(iso, 300); Place($"{iso}_R", _x - Lead - 300, _y + 900);
+                    }
                     Line($"Mixer:{name}  {rf}  0  {lon}  0  {b}  0{Params(s, "Flo")}");
                     Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm");
                     Inline(name, 300); Place($"LO_{name}", _x - Lead - 300, _y + 900);

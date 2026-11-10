@@ -2,18 +2,14 @@
 // input — and, in an array, to ONE element's input.
 //
 //   Gain                 G_k = Π g_i                                     (signal gain; a Combiner's g is N/L)
-//   Noise (Friis 1944)   Te_k = Σ Te_i / Gn_(i−1),  F = 1 + Te/T0        (noise gain Gn: a Combiner's is 1/L)
+//   Noise (Friis)        Te_k = Σ Te_i / Gn_(i−1),  F = 1 + Te/T0        (noise gain Gn: a Combiner's is 1/L)
 //   Intercept            1/IIP3_k = Σ G_(i−1) / IIP3_i ,  OIP3 = IIP3·G  (in-phase IM3 addition, the worst case)
 //   Compression          1/IP1dB_k = Σ G_(i−1) / IP1dB_i ,  OP1dB = IP1dB + G − 1 dB   (an approximation, as for IP3)
 //   MDS                  10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A)       (A = N after a Combiner: the array gain)
 //   SNR                  Pin − MDS ;  sensitivity = MDS + SNR_req ;  SFDR = (2/3)(IIP3 − MDS)
 //
-// Friis, "Noise figures of radio receivers", Proc. IRE 32(7), 1944, doi:10.1109/JRPROC.1944.232049; Pozar, Microwave
-// Engineering, 4th ed., §10.1 (cascaded noise), §10.3 (cascaded IP3, dynamic range, SFDR); Razavi, RF Microelectronics,
-// 2nd ed., §2.2 and §2.3 (cascaded IP3 and P1dB, sensitivity). The array: N branches whose signals add in phase and whose
-// noise is uncorrelated, so the SNR rises by N while the array's noise temperature is one branch's Friis sum
-// (Van Trees, Optimum Array Processing, §2.2; Wilkinson, "An N-way hybrid power divider", IRE Trans. MTT 8(1), 1960,
-// doi:10.1109/TMTT.1960.1124668).
+// The array: N branches whose signals add in phase and whose noise is uncorrelated, so the SNR rises by N while the
+// array's noise temperature is one branch's Friis sum. The sources are in docs/design/chain-budget.md.
 
 using RfCore.Data;
 

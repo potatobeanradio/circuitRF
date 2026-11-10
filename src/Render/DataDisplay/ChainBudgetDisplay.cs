@@ -98,6 +98,52 @@ public static class ChainBudgetDisplay
         };
     }
 
+    /// <summary>
+    /// The cascade as the RF Chain Budget window shows it: one Table plot over the budget's <c>stage</c> axis
+    /// (<see cref="ChainBudget.ToDataSet"/>), a row per stage and a column per cumulative quantity.
+    /// </summary>
+    public static PlotContainerConfig CascadeTable(string src)
+    {
+        (string Cube, string Header)[] cols =
+        [
+            ("G_dB", "G, dB"), ("NF_dB", "NF, dB"), ("IIP3_dBm", "IIP3, dBm"), ("OIP3_dBm", "OIP3, dBm"),
+            ("IP1dB_dBm", "IP1dB, dBm"), ("OP1dB_dBm", "OP1dB, dBm"), ("Pout_dBm", "Pout, dBm"), ("SNR_dB", "SNR, dB"),
+            ("NFpct", "share of F − 1, %"),
+        ];
+        return new PlotContainerConfig
+        {
+            PlotType = PlotType.Table, Width = 120 + cols.Length * 104, Height = 180,
+            CustomTitle = "Cascade, at each stage's output", CustomTitleOn = true, FreqColumnWidth = 120,
+            Traces =
+            [
+                .. cols.Select((c, i) => new TraceConfig
+                {
+                    SourcePath = src, CubeName = c.Cube, Label = c.Header,
+                    CubeSlice = [new AxisSliceConfig { AxisName = "stage", Role = AxisRole.KeepAsX }],
+                    FormatString = PrecisionFormat.F, MaximumFractionDigits = 2, ColumnWidth = 104,
+                    Properties = new TracePropertiesConfig
+                    {
+                        LineColorIndex = TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length],
+                        MarkerColorIndex = TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length],
+                    },
+                }),
+            ],
+        };
+    }
+
+    /// <summary>One budget, in memory, as the Data Display's source: what the window's cascade table reads.</summary>
+    public sealed class Source(string path, RfCore.Data.DataSet data) : IPlotDataSources
+    {
+        public string? ResolveAbs(string? sourceRef) => sourceRef is null || sourceRef == path ? path : null;
+        public bool Contains(string absPath) => absPath == path;
+        public RfCore.SNP? NetworkFor(string absPath) => null;
+        public RfCore.Data.DataSet? DataFor(string absPath) => absPath == path ? data : null;
+        public string? AliasFor(string absPath) => null;
+        public string? DisplayNameFor(string absPath) => absPath == path ? "budget" : null;
+        public bool HasMultipleSources => false;
+        public RfCore.Data.DataSet? SelectedData => data;
+    }
+
     /// <summary>One Table plot of scalar measurement columns.</summary>
     private static PlotContainerConfig Table(string title, string src, (string Cube, string Header)[] cols) => new()
     {

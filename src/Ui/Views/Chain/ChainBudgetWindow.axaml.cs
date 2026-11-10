@@ -30,6 +30,14 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     public ChainBudgetWindow()
     {
         InitializeComponent();
+        // The table is a bare PlotControl, refilled in place, so this window repaints it and gives it the theme, as the
+        // S-Parameter Viewer does its own.
+        DataContextChanged += (_, _) =>
+        {
+            SyncPlotTheme();
+            if (Vm is { } vm) vm.PlotsUpdated += (_, _) => this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>("CascadePlotControl")?.InvalidateVisual();
+        };
+        ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
         Closed += (_, _) =>
         {
             foreach (var k in OpenByPath.Where(kv => ReferenceEquals(kv.Value, this)).Select(kv => kv.Key).ToList()) OpenByPath.Remove(k);
@@ -37,6 +45,13 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     private ChainBudgetViewModel? Vm => DataContext as ChainBudgetViewModel;
+
+    private void SyncPlotTheme()
+    {
+        if (Vm is null) return;
+        Vm.PlotHost.Theme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? CircuitRF.Render.DataDisplay.RenderTheme.Dark : CircuitRF.Render.DataDisplay.RenderTheme.Light;
+        this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>("CascadePlotControl")?.SetValue(CircuitRF.Ui.DataDisplay.Controls.PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+    }
 
     /// <summary>Tools ▸ RF Chain Budget: a new chain.</summary>
     public static ChainBudgetWindow ShowStandalone(Window? owner)
@@ -122,12 +137,6 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
             FileTypeChoices = [ChainFiles],
         });
         return file?.TryGetLocalPath();
-    }
-
-    /// <summary>A block of the diagram selects its stage, which selects its table row.</summary>
-    private void OnBlockPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
-    {
-        if (sender is Control { DataContext: ChainStageViewModel stage } && Vm is { } vm) vm.SelectedStage = stage;
     }
 
     private void OnHelpClick(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/chain-budget.html");

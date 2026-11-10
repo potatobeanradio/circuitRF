@@ -13,8 +13,7 @@
 // The budget of each is closed form. A matched passive part at T0 has NF = its loss. An ideal Amp's and Mixer's
 // 1 dB compression point is its tanh limiter's own, IIP3 − 8.9625 dB (src/Core/Devices/ThirdOrderLimiter.cs), which is
 // what the transfer's simulation then measures. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
-// gain: N element signals in phase add in amplitude, their uncorrelated noise in power (Wilkinson 1960; for the array
-// gain, Van Trees, Optimum Array Processing, §2.2).
+// gain: N element signals in phase add in amplitude, their uncorrelated noise in power.
 
 using CircuitRF.Design.Schematic;
 
