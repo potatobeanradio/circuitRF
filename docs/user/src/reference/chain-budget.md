@@ -4,7 +4,7 @@ slug: reference/chain-budget.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > RF Chain Budget
 lede: A receive chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
-keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, .cchain
+keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, .cchain
 ---
 
 <nav class="toc">
@@ -19,6 +19,9 @@ keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cas
 <li><a href="#variants">The combiner's four variants</a></li>
 <li><a href="#transfer">Transfer to Schematic</a></li>
 <li><a href="#steering">Steering the beam in simulation</a></li>
+<li><a href="#levels">Levels at every node</a></li>
+<li><a href="#canceller">The canceller</a></li>
+<li><a href="#demo">The modulated-signal demo</a></li>
 <li><a href="#agreement">How closely the simulation agrees</a></li>
 <li><a href="#format">The .cchain file</a></li>
 <li><a href="#cli">From the command line</a></li>
@@ -43,8 +46,8 @@ differences that matter here:
 
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
-- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet and a four-element steered array, each already
-  transferred.
+- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array and a front end
+  with a canceller, each already transferred.
 
 {{ui: chain-budget}}
 
@@ -63,7 +66,10 @@ The window has three parts, and every edit recomputes all of them at once:
 
   Clicking a block, or a part in the schematic, selects its stage, and the selected stage is drawn selected in both.
 - **The stages**, one row each: the name, the part, and the part's parameters.
-- **The cascade**, a [Data Display](data-display.html) table with one row per stage, and the chain's totals below it.
+- **The cascade, the levels and the canceller**, three [Data Display](data-display.html) tabs: the cascade table, one
+  row per stage; the [levels at every node](#levels), the budget's lines with the transferred benches' simulated
+  points once they have run, where a marker on a trace selects its node's stage in both views; and, for a chain with a
+  canceller, [its depth](#canceller) against its errors. The chain's totals are below them.
 
 ## The system inputs {#inputs}
 
@@ -74,13 +80,16 @@ The window has three parts, and every edit recomputes all of them at once:
 | Input power | The signal at the input. In an array, at **each element**. |
 | Source temperature | The noise temperature of what drives the input, an antenna's for instance. 290 K is T0. |
 | Required SNR | What the demodulator needs: sensitivity is the MDS plus this. |
+| Blockers | Carriers at the input besides the signal: an offset from the frequency (MHz when bare) and a level, dBm, each pair separated by `;` (`150 MHz, -40; 20 MHz, -50`). See [Levels](#levels). |
+
+Beside **Transfer to Schematic**, **with a modulated-signal demo** adds the [demo bench](#demo) to what it writes.
 
 ## The stages, and the parts a stage can be {#stages}
 
 A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
 blocks — the splitter and the array combiner are the library's [Combiner](system-components.html#combiner), an
-active combiner that block with an Amplifier after each — and the library has no phase shifter or limiter, so two more
-are **composed** of parts it does have. Transfer places exactly that composition.
+active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter or canceller,
+so three more are **composed** of parts it does have. Transfer places exactly that composition.
 
 | Part | What it is | Budget |
 |---|---|---|
@@ -93,6 +102,7 @@ are **composed** of parts it does have. Transfer places exactly that composition
 | Directional coupler (`Coupler`) | Its through arm, the coupled and isolated ports terminated. | G = 10·log10(1 − 10^(−`Coupling`/10)) − `IL`, NF = −G |
 | Phase shifter (composed) | An Amplifier of gain −`IL` with `NF` and `IIP3`, and a TLIN of electrical length `Phase`. | G = −`IL`, NF = `NF` (blank: `IL`), IIP3 = `IIP3` (blank: linear) |
 | Limiter (composed) | An Amplifier of gain −`IL`, NF = `IL`, whose intercept puts its input 1 dB compression point at `P1dB`. | G = −`IL`, NF = `IL`, IP1dB = `P1dB` |
+| Canceller (composed) | A Directional Coupler whose isolated port takes a reference path that subtracts a copy of an interference from the main path. See [The canceller](#canceller). | G = −(`IL` − 10·log10(1 − c)), NF from the reference path's noise |
 | N-way splitter | The [Combiner](system-components.html#combiner) from its common port, one output followed and the others terminated. | G = −(10·log10 N + `IL`), NF = −G |
 | N-way array combiner | The [Combiner](system-components.html#combiner), every input an element's branch: one N:1, or a tree of 2:1s, passive or active. See [Arrays](#array) and [the variants](#variants). | Direct, passive: signal +10·log10 N − `IL`, noise −`IL`, NF = `IL` |
 
@@ -199,8 +209,9 @@ IIP3 10 dBm), at the combiner's output and per element:
 ## Transfer to Schematic {#transfer}
 
 **Transfer to Schematic** saves the chain and writes its test-bench cells beside the `.cchain`, named after it, each
-with a Data Display of the same name that Simulate opens on the bench's own result. Every chain gets three; an array
-whose branch has no mixer gets two more, Steering (when the branch has a phase shifter) and Combiners:
+with a Data Display of the same name that Simulate opens on the bench's own result. Every chain gets 1-Tone, 2-Tone,
+Envelope and Levels; a chain with blockers a Blockers bench; a chain with a canceller a Canceller bench; an array whose
+branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo:
 
 | Bench | Source | Analyses | Measures |
 |---|---|---|---|
@@ -209,6 +220,10 @@ whose branch has no mixer gets two more, Steering (when the branch has a phase s
 | `<chain> Envelope` | a MOD_Source per element: an NR carrier, its source noisy at the source temperature | [envelope](simulations.html#envelope-noise) with `Noise=yes` and `EvmSplit=yes` | in-channel SNR, the EVM's noise part, output power and output noise |
 | `<chain> Steering` | a plane wave: one Port into a Combiner used as a splitter, path k delayed by the wave's extra path; the elements and the combiner, a Port at its output | an S-parameter run with `Noise=yes` in a sweep of `theta_in` (−90° to 90°) within a sweep of `theta_steer` (−30°, 0°, 30°) | the pattern against the arriving angle beside the closed-form array factor; at each beam's peak the gain, the NF and the array gain. See [Steering](#steering) |
 | `<chain> Combiners` | the same elements into each of the four [variants](#variants), each fed by its own wave at broadside | one S-parameter run with `Noise=yes` | each variant's gain and NF, beside its budget, intercepts and array gain |
+| `<chain> Levels` | a PnTone per element, two tones 1 MHz apart, each at the input power | multi-tone harmonic balance, on the 2-Tone bench's mixing order | the signal and its IM3 at every node. See [Levels](#levels) |
+| `<chain> Blockers` | a PnTone per element with every blocker, an isolator after every stage | harmonic balance | every blocker at every node |
+| `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources | envelope runs, swept | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation. See [The canceller](#canceller) |
+| `<chain> Demo` | a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask | envelope with `Noise=yes` and `EvmSplit=yes`, the input power swept | the constellation, the EVM against the input power, its noise and distortion parts. See [The demo](#demo) |
 
 The chain's parts are placed as written. Three things are the bench's and not the chain's:
 
@@ -264,9 +279,107 @@ peak. Change `d_over_lambda` to 1 and the grating lobes appear at ±90°.
 Edit a sweep's values, or delete the sweeps and set `theta_in` and `theta_steer` by hand: everything is an ordinary
 variable.
 
+## Levels at every node {#levels}
+
+The **Levels** tab and the Levels display follow the chain node by node: node 0 is the input and node k the output of
+stage k. At every node:
+
+| Quantity | Budget |
+|---|---|
+| Signal | Pin + G, per tone of two at the input power |
+| Noise floor | 10·log10(k·(Ts + Te)·B·Gn) + 30 dBm, the noise in the bandwidth |
+| NF | the cumulative noise figure |
+| IM3 | 3·P − 2·OIP3, each third-order product of the two tones, absolute |
+| Each blocker | its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), a mixer moving it to \|f − Flo\| |
+| A canceller's interference | from the canceller's input, where it is stated, and its residual after it |
+| Margin to compression | OP1dB − the larger of the signal and the blockers; before anything compresses, the whole chain's IP1dB less the input's |
+| SNR | the signal over the noise floor |
+
+The simulated points come from three benches: the **Levels** bench (two tones each at the input power: the signal and
+the IM3), the **Blockers** bench (the blockers alone, an isolator after every stage so that each node's voltage is the
+wave going forward, not a reflection standing on a filter's stopband) and the **1-Tone** bench (each stage's
+cumulative NF, from the noise run's own shares, and the noise floor that NF gives at the node through the budget's
+noise gain). In the window they appear once those benches have been simulated beside the `.cchain`; in the display
+they are its points, the budget its lines. The displays plot against a variable `nodeix` that each bench sweeps
+around a trivial DC solve, which is how one number per node becomes one curve.
+
+Add a marker to a trace in the window's Levels plots and its node's stage is selected, in the stage list and in both
+views; move the marker and the selection follows.
+
+## The canceller {#canceller}
+
+A **Canceller** stage subtracts a weighted copy of an interference from the main path: a reference path from the
+interference's own source, through an amplitude setting, a phase setting and a delay, into a directional coupler's
+isolated port, the main path being the coupler's through arm.
+
+| Parameter | Meaning |
+|---|---|
+| `Coupling` | The coupler's coupling, dB. The main path loses 10·log10(1 − c) of it. |
+| `IL` | The coupler's excess loss, dB. |
+| `Pint` | The interference at the canceller's main input, dBm. |
+| `Bint` | The interference's bandwidth. |
+| `Pref` | The reference input: the interference at its source, dBm. The path's gain follows from it. |
+| `NFref` | The reference path's noise figure, dB. Blank: passive, at T0. |
+| `AmpErr`, `PhaseErr`, `DelayErr` | The cancellation path's amplitude error (dB), phase error (degrees, an advance) and delay mismatch (the reference path later, seconds: `0.1 ns`). |
+
+**On the wanted signal** it is the through arm, a loss L_t = 10^(`IL`/10)/(1 − c), and the noise the reference path
+injects. That path needs a gain G_ref with G_ref·P_ref·c = P_int·(1 − c); its output is at T0·F_ref·G_ref, coupled by
+c/(1 − c) against the through arm, so
+
+```
+F = L_t + (F_ref·G_ref − 1)·c/(1 − c)
+```
+
+A passive path (F_ref·G_ref = 1) adds nothing to the coupler's loss.
+
+**On the interference** the residual is the fraction R the subtraction leaves. With an amplitude ratio
+a = 10^(`AmpErr`/20), a phase error φ and a delay mismatch τ, a carrier of bandwidth B and flat spectrum, centred ν from
+where the phase was set, leaves the band's average of |1 − a·e^(j(φ − 2πfτ))|²:
+
+```
+R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ),      sinc x = sin x / x,      depth = −10·log10 R
+```
+
+33.5 dB at 0.1 dB and 1°; with 1 ns of delay mismatch alone, 40.8 dB over 5 MHz, 28.8 dB over 20 MHz and 22.8 dB over
+40 MHz. The window's **Canceller** tab draws the depth against the phase error for five amplitude errors, and against the
+bandwidth for four delay mismatches. The levels carry the interference and its residual node by node.
+
+**The Canceller bench** studies it with real signals. Two MOD_Sources, which the [Signal
+Designer](signal-designer.html) edits: the wanted signal, an NR 64-QAM carrier and a QPSK one, and the interference,
+three NR carriers of 10, 5 and 20 MHz, the first two under the wanted ones. The interference is split: one share leaks
+into the main path through a line of 1 ns, the other is the reference path — an Amp for the amplitude, one path of a
+2-way Combiner for a flat phase, a line for the delay — into the coupler's isolated port. Its VAR block sets the errors,
+`amp_err`, `phase_err` and `delay_err`, and two switches, `canc_on` (the reference path) and `sig_on` (the wanted
+signal). Its envelope runs:
+
+- the interference alone, uncancelled: the reference each depth is measured from;
+- the depth against each error, swept, the others at their nominal values, at every interference carrier: beside it the
+  closed form above at that carrier's bandwidth and offset, so the 20 MHz carrier shows how a delay mismatch costs a
+  wider signal more;
+- the wanted carriers with and without cancellation, their noise on: EVM, SNR, and each constellation both ways.
+
+Open either source in the Signal Designer to change its modulation (LTE, NR, DBPSK, FSK, CSS and the rest it offers) or
+its bandwidth; the bench measures whatever it sends.
+
+## The modulated-signal demo {#demo}
+
+**with a modulated-signal demo** (or `--demo`, or `"Demo": true` in the `.cchain`) adds `<chain> Demo`: the chain
+demodulated end to end. Each element is fed an NR 64-QAM carrier and, from a second source beside it, a DBPSK carrier
+at twice the bandwidth's offset, joined by a 2-way Combiner, each at the input power and noisy at the source
+temperature. Each mixer's LO carries a phase-noise mask, which an envelope run plays as a random phase. An envelope run
+with `Noise=yes` and `EvmSplit=yes` is swept over the input power in seven steps, from 5 dB of SNR to 5 dB past the
+input P1dB. Its display:
+
+- the 64-QAM constellation at the output, received points over the ideal ones, at the middle and the highest power;
+- the EVM against the input power, 64-QAM and DBPSK, and beside it the budget's from its SNR, EVM ≈ 1/√SNR, which holds
+  where noise dominates;
+- the EVM's split into its noise and distortion parts: noise at low power, the LO's phase noise as a floor, distortion
+  past compression;
+- the SNR in the carrier's channel, simulated and the budget's.
+
 ## How closely the simulation agrees {#agreement}
 
-Measured on the two chains of the example, the budget against the simulation of the benches it writes:
+Measured on the example's superhet and array, the budget against the simulation of the benches it writes:
 
 | Quantity | Superhet | 4-element array | Why it differs at all |
 |---|---|---|---|
@@ -280,6 +393,21 @@ Measured on the two chains of the example, the budget against the simulation of 
 The same array at RF, with no mixer, runs its noise through the S-parameter analysis instead and reads 3×10⁻¹⁰ dB in
 gain and 10⁻¹¹ dB in NF. The envelope
 SNR is a measurement of one noise record: four seeds of the array read 29.17 to 29.42 dB against 29.37 dB predicted.
+
+The superhet's Levels bench puts the signal on the budget to 2×10⁻⁵ dB at every node and the IM3 to 8×10⁻⁵ dB; its
+Blockers bench reads each blocker 0.001 to 0.003 dB below the budget, the blocker's own slight compression at −40 and
+−50 dBm into the LNA. The front end's 1-Tone bench reads the canceller's noise, its through arm and the reference path's
+coupled noise, on the formula to 10⁻⁶ dB.
+
+The Canceller bench's depth, at each of the three interference carriers and every swept error, is the closed form's to
+within 1.4 % of the depth, 0.7 dB at 49.7 dB deep and under 0.3 dB everywhere shallower than 45 dB. With cancellation the
+64-QAM carrier's EVM falls from 840 % to 3.2 % and the QPSK one's from 1036 % to 8.6 %.
+
+The superhet's Demo bench reads the SNR 0.20 dB under the budget at its lowest power, where noise dominates, and the
+EVM's noise part 57.0 % against the budget's 1/√SNR of 56.2 %. Higher up, two floors the budget does not model take
+over: the LO's phase noise, 1.23 % of EVM in the distortion part, which is the mask integrated over the channel
+(−38.2 dBc), and a noise part that stops at about 1 % (40 dB of SNR), which the Canceller bench's NR carriers show as
+well. At 5 dB past the input P1dB the distortion part is 15.5 %.
 
 The array's Steering bench puts its pattern on the closed-form array factor to 3×10⁻⁹ dB within 3 dB of each peak and
 to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on the budget to 10⁻¹⁴ dB. The Combiners bench
@@ -314,6 +442,8 @@ as the part's netlist line carries them.
 | `Stages` | In signal order. `Name` follows the instance-name rule (a letter, then letters, digits and `_`). |
 | `Part` | `Amp`, `Mixer`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Splitter` or `Combiner`. |
 | `Parameters` | The part's parameters by their own names. An absent one takes the part's default (a System block's own placement default); one the part does not list is carried onto the schematic unchanged and not read by the budget. |
+| `Blockers` | Optional: `[{"OffsetHz": 150000000, "LevelDbm": -40}, …]`, each an offset from `FrequencyHz` and a level at the input. |
+| `Demo` | Optional: `true` to write the [demo bench](#demo) too. |
 
 A chain has at most one Combiner.
 
@@ -326,8 +456,8 @@ circuitrf chain Superhet.cchain --to-schematic       the benches and their displ
 circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 ```
 
-`--to-schematic [dir]` writes into another folder, `--name` names the benches, and an existing bench is a refusal unless
-`--replace` is given. `circuitrf check` reads a `.cchain` through the same budget and reports its refusals. Over the MCP
+`--to-schematic [dir]` writes into another folder, `--name` names the benches, `--demo` adds the demo bench, and an
+existing bench is a refusal unless `--replace` is given. `circuitrf check` reads a `.cchain` through the same budget and reports its refusals. Over the MCP
 server the verb is `run analysis=chain`.
 
 <p class="small">See also: <a href="system-components.html">System Components</a> ·

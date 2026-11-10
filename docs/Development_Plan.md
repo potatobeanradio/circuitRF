@@ -283,5 +283,9 @@ S-parameter, harmonic-balance and envelope analyses. Nothing new in the engine.
   with `PathIL` for its unequal paths, is the remedy).
 - **Unequal paths in an active combiner.** `PathIL` is a passive combiner's; an active one's level amplifiers would see
   unequal powers, which the per-element budget does not follow.
+- **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep
+  or tune by hand; there is no loop that adapts them, and no stage of the budget follows a residual through a later
+  nonlinearity other than as a level.
+- **Per-node EVM.** The demo reads EVM at the output only; a probe at every node would give it node by node.
 - **The Steering bench through a mixer.** It needs an S-parameter run to reach the combiner, so an array whose branch
   has a mixer gets no Steering or Combiners bench.

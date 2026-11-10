@@ -27,6 +27,10 @@ flowchart LR
     write --> env["Envelope bench<br/>noise + EvmSplit: SNR, EVM"]
     write --> steer["Steering bench (array)<br/>plane wave, sweeps of<br/>theta_in × theta_steer"]
     write --> comb["Combiners bench (array)<br/>the four variants side by side"]
+    write --> lev["Levels, Blockers benches<br/>every node, two tones and blockers"]
+    write --> canc["Canceller bench<br/>envelope, real signals"]
+    write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
+    calc --> levels["ChainLevels<br/>every node"] --> table
     one --> cdd["one .cdd per bench<br/>(ChainBudgetDisplay):<br/>budget | simulated | difference"]
     two --> cdd
     env --> cdd
@@ -110,6 +114,24 @@ noise gain, noise figure and intercept, and the chain's array gain becomes the p
 noise gain, (Σa_k)²/Σa_k² for the combiner. A tree with N not a power of 2 is refused, Direct named as the remedy,
 rather than given uneven levels: an uneven tree's paths have unequal losses, which is what `PathIL` already states.
 
+### 2.1 The levels, the canceller and the demo
+
+**`ChainLevels`** walks the budget's own cascade node by node — the signal, the noise floor in the bandwidth, the NF,
+the IM3 of two tones at the input power, every blocker, a canceller's interference, the margin to compression and the
+SNR. A blocker is carried through every stage's gain at its own frequency: a filter's response there comes from
+`FilterNetwork`, the model the Filter block itself simulates with, so a blocker's rejection is the block's and not a
+second filter formula; a mixer moves it to |f − Flo|.
+
+**The canceller** (`CancellerSpec`) is composed: a Directional Coupler whose through arm is the main path and whose
+isolated port takes the reference path. Its budget on the wanted signal is the through arm's loss and the reference
+path's injected noise, F = L_t + (F_ref·G_ref − 1)·c/(1 − c); on the interference, the band average of
+|1 − a·e^(j(φ − 2πfτ))|², R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ). On the ordinary benches the reference path is only its
+noise (an Amp of the gain it would need, from a T0 termination, or a T0 termination when passive); the Canceller bench
+drives it with the interference itself.
+
+**The demo** uses what the envelope run already measures at every IProbe — EVM, the constellation, EvmSplit's noise and
+distortion parts and the in-channel SNR — over a sweep of the input power. Nothing demodulates but the envelope run.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -136,6 +158,32 @@ number, not a cube ("Value is Cube, not Complex"), while `^` broadcasts; the ben
 `2.718281828459045^(j*x)` and sin x as its imaginary part. And a variable DERIVED from a swept one (`psi_in =
 …sin(theta_in…)`) reads its nominal value in a measurement, not the swept cube, though the circuit sees it swept; so the
 array factor is written from `theta_in` and `theta_steer` themselves.
+
+**A harmonic-balance result has an axis called `node`.** Its voltage cube's nets are on an axis of that name, so a
+measurement reading a variable called `node` read the nets instead (ten of them, not the seven nodes swept). The
+Levels displays' variable is `nodeix`.
+
+**One number per node, one curve.** A display draws a cube against its axis; a bench's measurements are one number per
+node. Each Levels bench sweeps `nodeix` over 0 … n around a trivial DC solve and writes each curve as
+Σ v_k·L_k(nodeix), L_k the Lagrange basis polynomial that is 1 at node k and 0 at the others — exact at the integers in
+arithmetic alone, the only operations a sweep's cube takes.
+
+**A node's voltage is not its forward wave before a reflective stopband.** On the first Blockers run the 150 MHz
+blocker read 3.1 dB high at the LNA's output and 5.8 dB high after the mixer: the filter after each reflects it, and the
+node's voltage is the incident wave plus the reflection. The Blockers bench puts an ideal isolator after every stage,
+so each node sees a match and reads the wave going forward, which is what the budget carries; the blockers then sit on
+the budget to their own compression of the LNA, 0.001 to 0.003 dB.
+
+**Blockers and the two tones are two runs.** In one harmonic-balance run, four tones and an LO on the mixing order the
+IF's IM3 needs (5 + mixers) is some 1,800 frequencies; at 3 + mixers the run takes 34 s and the IF's IM3 reads 0.45 dB
+off. The Levels bench runs the two tones alone on the 2-Tone bench's order (7 s, IM3 within 10⁻⁴ dB) and the Blockers
+bench the blockers alone (3 s).
+
+**A DBPSK carrier is its source's only one,** so the demo's DBPSK has its own source, joined to the NR one by a 2-way
+Combiner.
+
+**A flat phase needs a behavioural part.** A TLIN's phase is a delay as well, so the Canceller bench's phase setting is
+one path of a 2-way Combiner, whose `Phase[k]` is flat, and its delay a line.
 
 **A splitter-fed plane wave gives each element its own noise.** One Port into a lossless N-way Combiner used as a
 splitter: by Bosma the splitter's isolation network puts kT0·(I − s·s†) on its outputs and the Port's termination
@@ -167,6 +215,27 @@ down to −60 dB:
 ![The array pattern for three steer angles against the closed-form array factor](../images/rf-chain-budget/steering_pattern.png)
 
 ![The four combiner variants, budget and simulation](../images/rf-chain-budget/combiner_variants.png)
+
+The levels, the canceller and the demo, read from the example's benches as the GUI simulates them:
+
+![The superhet's levels at every node, the budget's lines and the Levels, Blockers and 1-Tone benches' points](../images/rf-chain-budget/levels-display.png)
+
+- **Levels**: the signal at every node to 2×10⁻⁵ dB, the IM3 to 8×10⁻⁵ dB; each blocker 0.001 to 0.003 dB under the
+  budget, its own slight compression at −40 and −50 dBm (`ChainBudgetExampleTests.Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`).
+- **The canceller's noise**: the front end's 1-Tone NF on F = L_t + (F_ref·G_ref − 1)·c/(1 − c) to 10⁻⁶ dB.
+- **The canceller's depth**: at three carriers (10 MHz centred, 5 MHz at −15 MHz, 20 MHz at +20 MHz) and every swept
+  error, within 1.4 % of the closed form's depth, worst 0.7 dB at 49.7 dB deep, under 0.3 dB shallower than 45 dB. The
+  wanted 64-QAM carrier's EVM goes from 840 % to 3.2 %, the QPSK one's from 1036 % to 8.6 %.
+
+![The Canceller bench's display: depth against each error, EVM and constellations with and without](../images/rf-chain-budget/canceller-display.png)
+
+- **The demo**: the SNR 0.20 dB under the budget at the lowest power, the EVM's noise part 57.0 % against 1/√SNR's
+  56.2 %. Higher, two floors the budget leaves out: the distortion part's 1.23 %, the LO mask integrated over the channel
+  (−38.2 dBc), and a noise part that stops at about 1 %, 40 dB of SNR, for the DBPSK carrier too. The Canceller bench,
+  with no LO and another chain, stops at 41 dB, so the floor belongs to the envelope measurement rather than to either
+  chain; where in it is an open question. Past compression the distortion part is 15.5 %.
+
+![The demo's display: EVM against the input power, its split, the SNR and two constellations](../images/rf-chain-budget/demo-display.png)
 
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.

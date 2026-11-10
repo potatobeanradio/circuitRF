@@ -1570,16 +1570,17 @@ writes nothing but `-o`'s PDF.
 
 ## `chain` — an RF chain budget, headless {#chain}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
 
 `chain` budgets a **`.cchain`** — the document the [RF Chain Budget](chain-budget.html) window edits — and prints
 the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
 floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so `--json` carries it and `-o` writes it: per-stage
 cubes over a `stage` axis labelled with the stage names (`G_dB`, `NF_dB`, `IIP3_dBm`, …) and the totals as scalars.
 
-`--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone` and `Envelope` test
-benches, and an array's `Steering` and `Combiners` benches, each with its Data Display, beside the `.cchain` or in
-`dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
+`--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone`, `Envelope` and `Levels`
+test benches; `Blockers` for a chain with blockers, `Canceller` for one with a canceller; an array's `Steering` and
+`Combiners` benches; and with `--demo` (or `"Demo": true` in the `.cchain`) the `Demo` bench, the chain demodulated end
+to end. Each comes with its Data Display, beside the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
 bench is refused. Exit **0** when it budgeted (and
 transferred), **1** on a refusal.
 
