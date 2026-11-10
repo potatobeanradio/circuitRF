@@ -272,6 +272,7 @@ internal static class Explain
             case DocumentKind.AssemblyRules:
             case DocumentKind.Rail:
             case DocumentKind.Smith:
+            case DocumentKind.Chain:
             case DocumentKind.ComposedModel:
             case DocumentKind.ComposerDocument:
             case DocumentKind.Folder:

@@ -537,6 +537,22 @@ internal static class ToolCatalog
                   + "radial=db dbUnit=dBi trace=cube=F1.farfield.U,cut=0,y=db10. Every enabled fields analysis unless analysis names one. "
                   + "'reference cosimulation' has the workflow and every metric."),
                 // brief-de-4: the `trl` verb — two fixture files from three measured standards on a bench; solves no circuit.
+                // The `chain` verb: an RF chain budget, closed form, and its transfer to test benches. Runs no analysis
+                // itself; the benches it writes are ordinary schematics the other modes run.
+                new("chain", ["chain"],
+                    [new("path", true, "The .cchain to budget.")],
+                    [new("output", "-o", OptKind.Path, "Where the budget is written as a DataSet: .npy, .mat or .txt."),
+                     new("toSchematic", "--to-schematic", OptKind.Flag, "Also write the chain's three test benches beside the .cchain: "
+                       + "<name> 1-Tone (S-parameter noise, or harmonic-balance noise with a mixer, and a compression sweep), <name> 2-Tone "
+                       + "(two-tone intercepts) and <name> Envelope (SNR and EVM with noise), each with a Data Display of the budget "
+                       + "beside every simulated number."),
+                     new("name", "--name", OptKind.Str, "The benches' name stem; default the .cchain's file name."),
+                     new("replace", "--replace", OptKind.Flag, "Write the benches again when they exist; without it an existing one is a refusal.")],
+                    "An RF receive chain's budget: per stage, the cumulative gain, NF (Friis), IIP3/OIP3, IP1dB/OP1dB, output power, "
+                  + "SNR and share of F - 1, and the chain's noise floor, MDS, sensitivity, SNR and SFDR; in an array (a Combiner "
+                  + "stage) referred to one element, with the array gain. Each stage is a System block (Amp, Mixer, Atten, Filter, "
+                  + "Switch, Circulator, Coupler) or a composed one (PhaseShifter, Limiter, Splitter, Combiner) with the part's own "
+                  + "parameters. The result is a DataSet over a stage axis. 'reference chain-budget' has the format and the formulas."),
                 new("trl", ["trl"],
                     [new("path", true, "The .cnl or .csch whose TRL analyses to run.")],
                     [Analysis, Set, Output,

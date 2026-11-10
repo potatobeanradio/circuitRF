@@ -4260,6 +4260,40 @@ internal static class CliDiagnostics
 
     /// <summary>Refused BY KIND, naming what was handed over — `rail`'s rule and `check`'s
     /// inference, so a `.csch` is refused as a schematic rather than as an unreadable file.</summary>
+    // ── chain (the RF Chain Budget, headless) ─────────────────────────────────
+
+    public static Diagnostic ChainNotAChain(string path, string kind) => Diagnostic.Create(
+        "chain.path.not-a-chain", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and chain budgets an RF chain document. Give it the .cchain.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic ChainUnknownOption(string option) => Diagnostic.Create(
+        "chain.option.unknown", DiagnosticSeverity.Error,
+        "chain does not take '{option}'. It takes a .cchain, -o, --to-schematic [dir], --name and --replace.",
+        ("option", option));
+
+    public static Diagnostic ChainUnreadable(string path, string why) => Diagnostic.Create(
+        "chain.document.unreadable", DiagnosticSeverity.Error,
+        "'{path}' did not read: {why}", ("path", path), ("why", why));
+
+    /// <summary><see cref="CircuitRF.Design.Chain.ChainDesign.Refusals"/>' own sentence, carried through unchanged.</summary>
+    public static Diagnostic ChainRefused(string path, string why) => Diagnostic.Create(
+        "chain.document.refused", DiagnosticSeverity.Error,
+        "'{path}' cannot be budgeted: {why}", ("path", path), ("why", why));
+
+    /// <summary>What the budget or the drawing has to say that is not a refusal: a blank NF, a drawn net joined by label.</summary>
+    public static Diagnostic ChainNote(string note) => Diagnostic.Create(
+        "chain.note", DiagnosticSeverity.Info, "{note}", ("note", note));
+
+    /// <summary>Why the transfer wrote nothing: a cell already there, a bench the drawing refused.</summary>
+    public static Diagnostic ChainTransferRefused(string why) => Diagnostic.Create(
+        "chain.transfer.refused", DiagnosticSeverity.Error, "Transfer to schematic: {why}", ("why", why));
+
+    public static Diagnostic CheckChainSummary(string path, int stages, double gainDb, double nfDb) => Diagnostic.Create(
+        "check.chain.summary", DiagnosticSeverity.Info,
+        "{path}: {stages} stage(s), gain {gain} dB, NF {nf} dB.",
+        ("path", path), ("stages", stages), ("gain", Math.Round(gainDb, 3)), ("nf", Math.Round(nfDb, 3)));
+
     public static Diagnostic SmithNotASmithDocument(string path, string kind) => Diagnostic.Create(
         "smith.path.not-a-smith", DiagnosticSeverity.Error,
         "'{path}' is {kind}, and smith evaluates a Smith Chart document. Give it the .csmith.",
