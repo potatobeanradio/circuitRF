@@ -774,240 +774,23 @@
       ]
     },
     {
-      "InstanceName": "CMB_L1",
-      "Symbol": "Tline",
-      "X": 4700,
-      "Y": 0,
+      "InstanceName": "CMB",
+      "Symbol": "Combiner",
+      "X": 4800,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "Z",
-          "Expression": "100",
-          "Unit": "Ohm",
+          "Name": "N",
+          "Expression": "4",
+          "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Resistance"
+          "Dimension": "None"
         },
         {
-          "Name": "E",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        },
-        {
-          "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
-          "ShowOnSchematic": true,
-          "Dimension": "Frequency"
-        }
-      ]
-    },
-    {
-      "InstanceName": "CMB_R1",
-      "Symbol": "Resistor",
-      "X": 4200,
-      "Y": 400,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "50",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "CMB_L2",
-      "Symbol": "Tline",
-      "X": 4700,
-      "Y": 1400,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "Z",
-          "Expression": "100",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        },
-        {
-          "Name": "E",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        },
-        {
-          "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
-          "ShowOnSchematic": true,
-          "Dimension": "Frequency"
-        }
-      ]
-    },
-    {
-      "InstanceName": "CMB_R2",
-      "Symbol": "Resistor",
-      "X": 4200,
-      "Y": 1800,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "50",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "CMB_L3",
-      "Symbol": "Tline",
-      "X": 4700,
-      "Y": 2800,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "Z",
-          "Expression": "100",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        },
-        {
-          "Name": "E",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        },
-        {
-          "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
-          "ShowOnSchematic": true,
-          "Dimension": "Frequency"
-        }
-      ]
-    },
-    {
-      "InstanceName": "CMB_R3",
-      "Symbol": "Resistor",
-      "X": 4200,
-      "Y": 3200,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "50",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "CMB_L4",
-      "Symbol": "Tline",
-      "X": 4700,
-      "Y": 4200,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "Z",
-          "Expression": "100",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        },
-        {
-          "Name": "E",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        },
-        {
-          "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
-          "ShowOnSchematic": true,
-          "Dimension": "Frequency"
-        }
-      ]
-    },
-    {
-      "InstanceName": "CMB_R4",
-      "Symbol": "Resistor",
-      "X": 4200,
-      "Y": 4600,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "50",
-          "Unit": "Ohm",
-          "ShowOnSchematic": true,
-          "Dimension": "Resistance"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "CMB_IL",
-      "Symbol": "Atten",
-      "X": 5700,
-      "Y": 0,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "Loss",
+          "Name": "IL",
           "Expression": "0.5",
           "Unit": "dB",
           "ShowOnSchematic": true,
@@ -1020,13 +803,19 @@
           "ShowOnSchematic": false,
           "Dimension": "Resistance"
         }
+      ],
+      "LabelOffsets": [
+        [
+          530,
+          -541
+        ]
       ]
     },
     {
       "InstanceName": "RFBPF",
       "Symbol": "Filter",
-      "X": 6700,
-      "Y": 0,
+      "X": 5800,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1099,8 +888,8 @@
     {
       "InstanceName": "ISO_MIX",
       "Symbol": "Circulator",
-      "X": 7700,
-      "Y": 0,
+      "X": 6800,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1117,8 +906,8 @@
     {
       "InstanceName": "ISO_MIX_R",
       "Symbol": "Resistor",
-      "X": 7700,
-      "Y": 900,
+      "X": 6800,
+      "Y": 3000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1141,8 +930,8 @@
     {
       "InstanceName": "MIX",
       "Symbol": "Mixer",
-      "X": 8800,
-      "Y": 0,
+      "X": 7900,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1187,8 +976,8 @@
     {
       "InstanceName": "LO_MIX",
       "Symbol": "P1Tone",
-      "X": 8800,
-      "Y": 900,
+      "X": 7900,
+      "Y": 3000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1225,8 +1014,8 @@
     {
       "InstanceName": "IFBPF",
       "Symbol": "Filter",
-      "X": 9800,
-      "Y": 0,
+      "X": 8900,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1299,8 +1088,8 @@
     {
       "InstanceName": "IFA",
       "Symbol": "Amp",
-      "X": 10800,
-      "Y": 0,
+      "X": 9900,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1338,8 +1127,8 @@
     {
       "InstanceName": "ATT",
       "Symbol": "Atten",
-      "X": 11900,
-      "Y": 0,
+      "X": 11000,
+      "Y": 2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1363,8 +1152,8 @@
     {
       "InstanceName": "Iout",
       "Symbol": "IProbe",
-      "X": 12700,
-      "Y": -100,
+      "X": 11800,
+      "Y": 2000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1379,8 +1168,8 @@
     {
       "InstanceName": "RL",
       "Symbol": "Resistor",
-      "X": 13300,
-      "Y": 200,
+      "X": 12400,
+      "Y": 2300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1451,8 +1240,8 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 7700,
-      "Y": 1100,
+      "X": 6800,
+      "Y": 3200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1463,8 +1252,8 @@
     {
       "InstanceName": "GND6",
       "Symbol": "Ground",
-      "X": 8800,
-      "Y": 1100,
+      "X": 7900,
+      "Y": 3200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1475,8 +1264,8 @@
     {
       "InstanceName": "GND7",
       "Symbol": "Ground",
-      "X": 13300,
-      "Y": 400,
+      "X": 12400,
+      "Y": 2500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1488,7 +1277,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": 0,
-      "Y": -1400,
+      "Y": -1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1534,7 +1323,7 @@
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
       "X": 1600,
-      "Y": -1900,
+      "Y": -1700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1623,12 +1412,12 @@
     {
       "Points": [
         [
-          7700,
-          300
+          6800,
+          2400
         ],
         [
-          7700,
-          700
+          6800,
+          2800
         ]
       ]
     },
@@ -1707,372 +1496,12 @@
     {
       "Points": [
         [
-          3100,
-          1400
-        ],
-        [
-          3600,
-          1400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          2000,
-          2800
-        ],
-        [
-          2500,
-          2800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          3100,
-          2800
-        ],
-        [
-          3600,
-          2800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          2000,
-          4200
-        ],
-        [
-          2500,
-          4200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          0,
-          0
-        ],
-        [
-          0,
-          -200
-        ],
-        [
-          1200,
-          -200
-        ],
-        [
-          1200,
-          0
-        ],
-        [
-          1400,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          0,
-          1400
-        ],
-        [
-          0,
-          1200
-        ],
-        [
-          300,
-          1200
-        ],
-        [
-          300,
-          1400
-        ],
-        [
-          500,
-          1400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          0,
-          2800
-        ],
-        [
-          0,
-          2600
-        ],
-        [
-          300,
-          2600
-        ],
-        [
-          300,
-          2800
-        ],
-        [
-          500,
-          2800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          0,
-          4200
-        ],
-        [
-          0,
-          4000
-        ],
-        [
-          300,
-          4000
-        ],
-        [
-          300,
-          4200
-        ],
-        [
-          500,
-          4200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          12800,
-          0
-        ],
-        [
-          12800,
-          200
-        ],
-        [
-          12500,
-          200
-        ],
-        [
-          12500,
-          -400
-        ],
-        [
-          13300,
-          -400
-        ],
-        [
-          13300,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          6000,
-          0
-        ],
-        [
-          6500,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          11100,
-          0
-        ],
-        [
-          11600,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          10000,
-          0
-        ],
-        [
-          10500,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          9100,
-          0
-        ],
-        [
-          9600,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          6900,
-          0
-        ],
-        [
-          7400,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          8000,
-          0
-        ],
-        [
-          8500,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          12200,
-          0
-        ],
-        [
-          12400,
-          0
-        ],
-        [
-          12400,
-          300
-        ],
-        [
-          12700,
-          300
-        ],
-        [
-          12700,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4000,
-          0
-        ],
-        [
-          4500,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4200,
-          0
-        ],
-        [
-          4200,
-          200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
           4000,
           1400
         ],
         [
-          4500,
-          1400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
           4200,
           1400
-        ],
-        [
-          4200,
-          1600
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4000,
-          2800
-        ],
-        [
-          4500,
-          2800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4200,
-          2800
-        ],
-        [
-          4200,
-          3000
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          3100,
-          4200
-        ],
-        [
-          4500,
-          4200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4200,
-          4200
-        ],
-        [
-          4200,
-          4400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4200,
-          600
         ],
         [
           4200,
@@ -2084,14 +1513,10 @@
         ],
         [
           3400,
-          2200
+          2000
         ],
         [
-          4200,
-          2200
-        ],
-        [
-          4200,
+          4500,
           2000
         ]
       ]
@@ -2099,83 +1524,55 @@
     {
       "Points": [
         [
-          3400,
+          3100,
+          1400
+        ],
+        [
+          3600,
+          1400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          2800
+        ],
+        [
+          2500,
+          2800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4000,
+          2800
+        ],
+        [
+          4300,
+          2800
+        ],
+        [
+          4300,
           2200
         ],
         [
-          3400,
-          3600
-        ],
-        [
-          4200,
-          3600
-        ],
-        [
-          4200,
-          3400
+          4500,
+          2200
         ]
       ]
     },
     {
       "Points": [
         [
-          4000,
-          3600
-        ],
-        [
-          4000,
-          5000
-        ],
-        [
-          4200,
-          5000
-        ],
-        [
-          4200,
-          4800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4900,
-          0
-        ],
-        [
-          5200,
-          0
-        ],
-        [
-          5200,
-          400
-        ],
-        [
-          5300,
-          400
-        ],
-        [
-          5300,
-          1400
-        ],
-        [
-          4900,
-          1400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          5300,
-          1400
-        ],
-        [
-          5300,
+          3100,
           2800
         ],
         [
-          4900,
+          3600,
           2800
         ]
       ]
@@ -2183,15 +1580,11 @@
     {
       "Points": [
         [
-          5300,
-          2800
-        ],
-        [
-          5300,
+          2000,
           4200
         ],
         [
-          4900,
+          2500,
           4200
         ]
       ]
@@ -2199,20 +1592,252 @@
     {
       "Points": [
         [
-          5200,
+          0,
           0
         ],
         [
-          5400,
+          0,
+          -200
+        ],
+        [
+          1200,
+          -200
+        ],
+        [
+          1200,
           0
+        ],
+        [
+          1400,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          1400
+        ],
+        [
+          0,
+          1200
+        ],
+        [
+          300,
+          1200
+        ],
+        [
+          300,
+          1400
+        ],
+        [
+          500,
+          1400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          2800
+        ],
+        [
+          0,
+          2600
+        ],
+        [
+          300,
+          2600
+        ],
+        [
+          300,
+          2800
+        ],
+        [
+          500,
+          2800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          4200
+        ],
+        [
+          0,
+          4000
+        ],
+        [
+          300,
+          4000
+        ],
+        [
+          300,
+          4200
+        ],
+        [
+          500,
+          4200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          11900,
+          2100
+        ],
+        [
+          11900,
+          2300
+        ],
+        [
+          11600,
+          2300
+        ],
+        [
+          11600,
+          1700
+        ],
+        [
+          12400,
+          1700
+        ],
+        [
+          12400,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          10200,
+          2100
+        ],
+        [
+          10700,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          9100,
+          2100
+        ],
+        [
+          9600,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          8200,
+          2100
+        ],
+        [
+          8700,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          6000,
+          2100
+        ],
+        [
+          6500,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          7100,
+          2100
+        ],
+        [
+          7600,
+          2100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          11300,
+          2100
+        ],
+        [
+          11500,
+          2100
+        ],
+        [
+          11500,
+          2400
+        ],
+        [
+          11800,
+          2400
+        ],
+        [
+          11800,
+          2100
         ]
       ]
     }
   ],
   "NetLabels": [
     {
-      "X": 8800,
-      "Y": 700,
+      "X": 4500,
+      "Y": 1800,
+      "Name": "b1_PS",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4000,
+      "Y": 0,
+      "Name": "b1_PS",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4500,
+      "Y": 2400,
+      "Name": "b4_PS",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3100,
+      "Y": 4200,
+      "Name": "b4_PS",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 7900,
+      "Y": 2800,
       "Name": "lo_MIX",
       "SegmentIndex": 0,
       "AlongT": 0,
@@ -2220,9 +1845,27 @@
       "OffsetY": 0
     },
     {
-      "X": 8800,
-      "Y": 300,
+      "X": 7900,
+      "Y": 2400,
       "Name": "lo_MIX",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5600,
+      "Y": 2100,
+      "Name": "n_CMB",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5100,
+      "Y": 2100,
+      "Name": "n_CMB",
       "SegmentIndex": 0,
       "AlongT": 0,
       "OffsetX": 0,
@@ -2232,7 +1875,7 @@
       "X": 600,
       "Y": -200,
       "Name": "in1",
-      "OwnerWireIndex": 11,
+      "OwnerWireIndex": 13,
       "SegmentIndex": 1,
       "AlongT": 0.5,
       "OffsetX": 0,
@@ -2259,20 +1902,10 @@
       "OffsetY": 0
     },
     {
-      "X": 4200,
-      "Y": 0,
-      "Name": "b1_PS",
-      "OwnerWireIndex": 23,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
       "X": 100,
       "Y": 1200,
       "Name": "in2",
-      "OwnerWireIndex": 12,
+      "OwnerWireIndex": 14,
       "SegmentIndex": 1,
       "AlongT": 0.3333333333333333,
       "OffsetX": 0,
@@ -2302,19 +1935,19 @@
       "X": 3300,
       "Y": 1400,
       "Name": "b2_PS_ps",
-      "OwnerWireIndex": 7,
+      "OwnerWireIndex": 8,
       "SegmentIndex": 0,
       "AlongT": 0.4,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 4200,
-      "Y": 1400,
+      "X": 3900,
+      "Y": 2000,
       "Name": "b2_PS",
-      "OwnerWireIndex": 25,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 4,
+      "AlongT": 0.45454545454545453,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -2322,7 +1955,7 @@
       "X": 100,
       "Y": 2600,
       "Name": "in3",
-      "OwnerWireIndex": 13,
+      "OwnerWireIndex": 15,
       "SegmentIndex": 1,
       "AlongT": 0.3333333333333333,
       "OffsetX": 0,
@@ -2342,7 +1975,7 @@
       "X": 2200,
       "Y": 2800,
       "Name": "b3_LNA",
-      "OwnerWireIndex": 8,
+      "OwnerWireIndex": 9,
       "SegmentIndex": 0,
       "AlongT": 0.4,
       "OffsetX": 0,
@@ -2352,19 +1985,19 @@
       "X": 3300,
       "Y": 2800,
       "Name": "b3_PS_ps",
-      "OwnerWireIndex": 9,
+      "OwnerWireIndex": 11,
       "SegmentIndex": 0,
       "AlongT": 0.4,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 4200,
+      "X": 4100,
       "Y": 2800,
       "Name": "b3_PS",
-      "OwnerWireIndex": 27,
+      "OwnerWireIndex": 10,
       "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -2372,7 +2005,7 @@
       "X": 100,
       "Y": 4000,
       "Name": "in4",
-      "OwnerWireIndex": 14,
+      "OwnerWireIndex": 16,
       "SegmentIndex": 1,
       "AlongT": 0.3333333333333333,
       "OffsetX": 0,
@@ -2392,66 +2025,16 @@
       "X": 2200,
       "Y": 4200,
       "Name": "b4_LNA",
-      "OwnerWireIndex": 10,
+      "OwnerWireIndex": 12,
       "SegmentIndex": 0,
       "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 3800,
-      "Y": 4200,
-      "Name": "b4_PS",
-      "OwnerWireIndex": 29,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 5100,
-      "Y": 1400,
-      "Name": "n_CMB_c",
-      "OwnerWireIndex": 34,
-      "SegmentIndex": 4,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 3800,
-      "Y": 1100,
-      "Name": "CMB_star",
-      "OwnerWireIndex": 31,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 6200,
-      "Y": 0,
-      "Name": "n_CMB",
-      "OwnerWireIndex": 16,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 7100,
-      "Y": 0,
+      "Y": 2100,
       "Name": "n_RFBPF",
-      "OwnerWireIndex": 20,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 8200,
-      "Y": 0,
-      "Name": "n_RFBPF_rf",
       "OwnerWireIndex": 21,
       "SegmentIndex": 0,
       "AlongT": 0.4,
@@ -2459,8 +2042,18 @@
       "OffsetY": 0
     },
     {
-      "X": 7700,
-      "Y": 500,
+      "X": 7300,
+      "Y": 2100,
+      "Name": "n_RFBPF_rf",
+      "OwnerWireIndex": 22,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 6800,
+      "Y": 2600,
       "Name": "ISO_MIX_t",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
@@ -2469,9 +2062,19 @@
       "OffsetY": 0
     },
     {
-      "X": 9300,
-      "Y": 0,
+      "X": 8400,
+      "Y": 2100,
       "Name": "n_MIX",
+      "OwnerWireIndex": 20,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 9300,
+      "Y": 2100,
+      "Name": "n_IFBPF",
       "OwnerWireIndex": 19,
       "SegmentIndex": 0,
       "AlongT": 0.4,
@@ -2479,9 +2082,9 @@
       "OffsetY": 0
     },
     {
-      "X": 10200,
-      "Y": 0,
-      "Name": "n_IFBPF",
+      "X": 10400,
+      "Y": 2100,
+      "Name": "n_IFA",
       "OwnerWireIndex": 18,
       "SegmentIndex": 0,
       "AlongT": 0.4,
@@ -2489,30 +2092,20 @@
       "OffsetY": 0
     },
     {
-      "X": 11300,
-      "Y": 0,
-      "Name": "n_IFA",
-      "OwnerWireIndex": 17,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 12500,
-      "Y": 300,
+      "X": 11600,
+      "Y": 2400,
       "Name": "out",
-      "OwnerWireIndex": 22,
+      "OwnerWireIndex": 23,
       "SegmentIndex": 2,
       "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 12900,
-      "Y": -400,
+      "X": 12000,
+      "Y": 1700,
       "Name": "load",
-      "OwnerWireIndex": 15,
+      "OwnerWireIndex": 17,
       "SegmentIndex": 3,
       "AlongT": 0.5,
       "OffsetX": 0,

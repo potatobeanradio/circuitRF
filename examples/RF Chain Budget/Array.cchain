@@ -31,7 +31,13 @@
       "Part": "Combiner",
       "Parameters": {
         "N": "4",
+        "Topology": "Direct",
+        "Kind": "Passive",
         "IL": "0.5",
+        "PathIL": "",
+        "Gain": "10",
+        "NF": "2",
+        "IIP3": "10",
         "Steer": "45"
       }
     },

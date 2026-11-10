@@ -7,7 +7,9 @@
 //    - the shipped benches and displays are exactly what Transfer to Schematic writes from the shipped .cchain today;
 //    - the workspace checks clean, and every display column is a measurement its bench computes;
 //    - each bench's simulated gain, NF, intercepts, compression and SNR sit on the budget within the tolerances the
-//      README quotes, stage by stage.
+//      README quotes, stage by stage;
+//    - the array's Steering bench draws the closed-form array factor at every steer angle, its NF and array gain staying
+//      put at each beam's peak, and its Combiners bench sets the four combiners each on its own budget.
 //
 //  The 2-Tone and Envelope runs take 7 to 50 s each, so those are Category=Benchmark.
 // ================================================================
@@ -51,7 +53,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
             var w = ChainBenches.Write(d, _ws, chain, replace: true);
             Assert.Empty(w.Refusals);
             ChainBudgetDisplay.WriteAll(_ws, chain, d, ChainBudget.Evaluate(d));
-            foreach (var b in Enum.GetValues<ChainBench>())
+            foreach (var b in ChainBenches.BenchesFor(d))
             {
                 string cell = ChainBenches.CellName(chain, b);
                 Assert.Equal(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)));
@@ -65,7 +67,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     {
         Assert.Equal(0, CliEntry.Run(["check", Workspace]));
         foreach (string chain in Chains)
-            foreach (var b in Enum.GetValues<ChainBench>())
+            foreach (var b in ChainBenches.BenchesFor(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, chain + ".cchain"))))
             {
                 string cell = ChainBenches.CellName(chain, b);
                 var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell, Workspace));
@@ -105,6 +107,42 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
             Assert.InRange(M(ds, $"NF_{s}_sim") - M(ds, $"NF_{s}_calc"), -2e-4, 2e-4);
         Assert.Equal(26.0206, M(ds, "G_calc"), 4);
         Assert.InRange(M(ds, "IP1dB_err"), 0, 0.1);
+    }
+
+    // ── the array's Steering and Combiners benches: an S-parameter run each, seconds ──
+
+    [Fact]
+    public void Array_Steering_ThePatternIsTheArrayFactor_AndTheNfStaysPut()
+    {
+        var ds = Simulate("Array Steering");
+        foreach (string a in new[] { "m30", "0", "p30" })
+        {
+            Assert.InRange(M(ds, $"G_{a}_err"), -1e-9, 1e-9);
+            Assert.InRange(M(ds, $"NF_{a}_err"), -1e-9, 1e-9);
+            Assert.InRange(M(ds, $"A_{a}_err"), -1e-9, 1e-9);
+        }
+        Assert.Equal(6.0206, M(ds, "A_calc"), 4);
+        var p = ds["measurements.Pattern_sim"].RealValues;
+        var e = ds["measurements.Pattern_err"].RealValues;
+        double worst = Enumerable.Range(0, p.Length).Where(i => p[i] > -40).Max(i => Math.Abs(e[i]));
+        output.WriteLine($"Array Steering: worst |pattern - array factor| above -40 dB = {worst:G3} dB");
+        Assert.InRange(worst, 0, 1e-6);
+    }
+
+    [Fact]
+    public void Array_Combiners_TheFourVariantsEachOnItsBudget()
+    {
+        var ds = Simulate("Array Combiners");
+        foreach (var (_, _, code) in ChainBenches.CombinerVariants)
+        {
+            Assert.InRange(M(ds, $"G_{code}_err"), -1e-9, 1e-9);
+            Assert.InRange(M(ds, $"NF_{code}_err"), -1e-9, 1e-9);
+        }
+        // The README's table: a tree's loss accumulates per level, an active combiner's amplifiers cascade.
+        Assert.Equal(18.5206, M(ds, "G_DP_calc"), 4);
+        Assert.Equal(18.0206, M(ds, "G_TP_calc"), 4);
+        Assert.Equal(28.5206, M(ds, "G_DA_calc"), 4);
+        Assert.Equal(38.0206, M(ds, "G_TA_calc"), 4);
     }
 
     // ── 2-Tone and Envelope ──────────────────────────────────────────────────

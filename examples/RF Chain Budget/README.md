@@ -8,8 +8,8 @@ Two receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already tran
 1. **`Superhet.cchain`**: an LNA, an RF bandpass filter, a mixer to a 350 MHz IF, an IF filter, an IF amplifier and an
    attenuator. Every stage is a System block with its own parameters.
 2. **`Array.cchain`**: four elements, each an LNA and a phase shifter, into a 4-way combiner steered 45° per element, then
-   the superhet's receiver from the RF filter on. The phase shifter and the combiner are composed of the library's own
-   parts: an amplifier and a line, and a Wilkinson combiner of lines and resistors.
+   the superhet's receiver from the RF filter on. The combiner is the library's N-way Combiner; the phase shifter is
+   composed of the library's own parts, an amplifier and a line.
 
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
@@ -25,7 +25,8 @@ The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 | ATT | `Atten` | −3 dB | 3 dB | |
 
 The array replaces the LNA with four branches of an `Amp` (18 dB, NF 1.2 dB, OIP3 10 dBm) and a `PhaseShifter` (5 dB of
-loss, NF 5 dB, IIP3 15 dBm), and a `Combiner` (N = 4, 0.5 dB of excess loss, `Steer` = 45°).
+loss, NF 5 dB, IIP3 15 dBm), and a `Combiner` (N = 4, direct and passive, 0.5 dB of excess loss, `Steer` = 45°; its
+active variants' amplifiers 10 dB, NF 2 dB, IIP3 10 dBm).
 
 | | Superhet | Array, per element |
 |---|---|---|
@@ -45,11 +46,12 @@ element's branch, the combiner's loss and the receiver after it, by Friis' formu
 because the phase shifter's 5 dB comes right after the LNA.
 
 **Try it.** In the array's window set the combiner's `N` to 8: the array gain becomes 9.03 dB and the SNR rises 3 dB,
-while the NF does not move.
+while the NF does not move. Set its `Topology` to Tree and the block view draws three levels of 2:1; set `Kind` to Active
+and an amplifier follows each.
 
 ## The benches
 
-Each chain has three, written by **Transfer to Schematic**:
+Each chain has three, written by **Transfer to Schematic**, and the array two more:
 
 - **`1-Tone`**: a P1Tone per element and a Port at the output. With the mixer, harmonic-balance noise with the LO
   running gives the SSB NF and the conversion gain; a drive sweep at the predicted IP1dB gives the compression point.
@@ -65,6 +67,25 @@ then develops more noise there than across a matched termination.
 
 In the array each element has a line in front of it, `PATH2` to `PATH4`: the arriving wave's extra path, 45° per element.
 Each element's phase shifter is set to take it out again, so the four arrive at the combiner in phase.
+
+- **`Array Steering`**: a plane wave into the four elements — one Port into a Combiner used as a splitter, its path k
+  delayed by the wave's extra path — steered by the phase shifters from the VAR block's `theta_steer`, and read at the
+  combiner. A sweep of `theta_in` from −90° to 90° within a sweep of `theta_steer` over −30°, 0° and 30° draws the
+  array pattern, and beside it the closed-form array factor. Set `taper` to 6 and the sidelobes fall; set
+  `d_over_lambda` to 1 and grating lobes appear.
+- **`Array Combiners`**: the same four elements into each of the combiner's four variants, side by side, each from its
+  own wave at broadside: gain and NF from one S-parameter run, beside each variant's budget.
+
+| Variant | Gain | NF | IIP3 | OIP3 |
+|---|---|---|---|---|
+| Direct, passive | 18.52 dB | 1.33 dB | −9.19 dBm | 9.33 dBm |
+| Tree, passive | 18.02 dB | 1.35 dB | −9.19 dBm | 8.83 dBm |
+| Direct, active | 28.52 dB | 1.43 dB | −11.88 dBm | 16.64 dBm |
+| Tree, active | 38.02 dB | 1.45 dB | −18.77 dBm | 19.26 dBm |
+
+A tree's loss accumulates level by level (two 2:1 levels of 0.5 dB against one 4:1 of 0.5 dB); an active combiner's
+noise figure is set by its first amplifier and its intercept by its last, which sees the most power. All four keep the
+6.02 dB array gain.
 
 ## What the displays show
 
@@ -82,6 +103,10 @@ The gain, NF and intercepts agree to the drive levels the benches use. The compr
 formula's own approximation: two stages compressing at similar levels compress a little later together. The SNR is one
 noise record's: four seeds of the array read 29.17 to 29.42 dB against 29.37 dB.
 
+The array's Steering pattern sits on the closed-form array factor to 3×10⁻⁹ dB within 3 dB of each peak, and its gain,
+NF and array gain at each peak, like every variant's gain and NF on the Combiners bench, to 10⁻¹⁴ dB: an S-parameter run
+of ideal blocks has no drive level to differ by.
+
 **Run the bench first.** A display reads `results/<bench>.npy`, which Simulate writes. Measured wall clock, release build:
 
 | Bench | Superhet | Array |
@@ -89,3 +114,5 @@ noise record's: four seeds of the array read 29.17 to 29.42 dB against 29.37 dB.
 | 1-Tone | 3 s | 6 s |
 | 2-Tone | 7 s | 50 s |
 | Envelope | 9 s | 25 s |
+| Steering | | 2 s |
+| Combiners | | 1 s |
