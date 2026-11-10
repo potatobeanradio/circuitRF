@@ -32,4 +32,17 @@ public static class EnvelopeToneDiagnostics
         "Envelope '{analysis}': P1Tone '{tone}' at {toneMhz} MHz is on no harmonic of the one envelope (Envelope=single, " +
         "{f0Mhz} MHz), so it drives nothing. Leave Envelope auto to give it a fundamental of its own.",
         ("analysis", analysis), ("tone", tone), ("toneMhz", Mhz(toneHz)), ("f0Mhz", Mhz(f0Hz)));
+
+    /// <summary>The key the round-off-held tolerance is reported once under.</summary>
+    public const string RoundOffFloorKey = "envelope-tol-roundoff";
+
+    /// <summary>A signal so small beside the circuit's largest current (a bias supply through an ideal choke) that round-off
+    /// holds the Newton tolerance above 1 % of it.</summary>
+    public static Diagnostic RoundOffFloor(double tolA, double excitationA) => Diagnostic.Create(
+        "envelope.tol.roundoff", DiagnosticSeverity.Warning,
+        "envelope: the signal's current ({signal} A) is so small beside the circuit's bias currents that round-off holds the " +
+        "solve's tolerance at {tol} A, {pct} % of it: EVM, ACLR and distortion are read no better than that. A series " +
+        "resistance on an ideal bias choke (R=) lifts the floor.",
+        ("signal", excitationA.ToString("G3", CultureInfo.InvariantCulture)), ("tol", tolA.ToString("G3", CultureInfo.InvariantCulture)),
+        ("pct", (100 * tolA / excitationA).ToString("0.#", CultureInfo.InvariantCulture)));
 }

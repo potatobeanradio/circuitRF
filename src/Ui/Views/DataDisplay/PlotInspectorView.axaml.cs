@@ -32,12 +32,28 @@ public partial class PlotInspectorView : UserControl
 
     /// <summary>The ✕ shares the top line with the centred plot-type row. A plot of fixed type hides that row, and
     /// the next one has buttons at its right end, so the rows step down by the button's height.</summary>
+    /// <remarks>A flyout is sized to its content, and the Labels and Axes sections are narrower than Traces: switching
+    /// to one shrank the panel under the pointer and brought the ✕ down onto the plot-type row's Help button. As a flyout
+    /// the rows are therefore never narrower than the Traces section (<see cref="FlyoutMinWidth"/>), nor than the
+    /// widest they have been while it is open (<see cref="OnRowsSizeChanged"/>): the panel keeps its width across
+    /// sections, and the ✕ its room.</remarks>
     private void UpdateCloseRoom()
     {
         if (InspectorRows is null || FlyoutCloseButton is null) return;   // before InitializeComponent
         InspectorRows.Margin = IsFlyout && _vm is { CanChangePlotType: false }
             ? new Thickness(0, FlyoutCloseButton.Height + 2, 0, 0)
             : default;
+        InspectorRows.MinWidth = IsFlyout ? Math.Max(InspectorRows.MinWidth, FlyoutMinWidth) : 0;
+        InspectorRows.SizeChanged -= OnRowsSizeChanged;
+        if (IsFlyout) InspectorRows.SizeChanged += OnRowsSizeChanged;
+    }
+
+    /// <summary>The Traces section's width as a flyout (a trace card's fields and the Freq/legend row), DIPs.</summary>
+    private const double FlyoutMinWidth = 277;
+
+    private void OnRowsSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width > InspectorRows.MinWidth) InspectorRows.MinWidth = e.NewSize.Width;
     }
 
     // Plot-type Help: open the Reference Guide's Plot Types chapter at the current type.

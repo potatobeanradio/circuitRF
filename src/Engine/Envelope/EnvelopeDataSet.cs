@@ -475,8 +475,9 @@ public static class EnvelopeDataSet
                 bool silent = noRf[b];
                 Complex[] Received(EnvelopeRunResult run, Func<int, int, Complex[]> own) =>
                     at0.Sign == 0 ? own(b, k) : Stored(run, t0, b, at0.M, at0.Sign);
-                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, out why[c]);
-                if (e is null) break;
+                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, out string? fail);
+                // A carrier no probe reads is named; one an earlier probe read keeps its values and is not.
+                if (e is null) { if (b == 0) why[c] = fail; break; }
                 int n = e.Points?.Length ?? e.Freq?.Length ?? 0;
                 int stride = Math.Max(1, (n + ConstMaxSamples - 1) / ConstMaxSamples);
                 int kept = (n + stride - 1) / stride;

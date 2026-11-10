@@ -275,4 +275,46 @@ public sealed class DeviceNoiseTests(ITestOutputHelper output)
         Assert.Equal(NoiseModelKind.Noiseless, row.Kind);
         Assert.Contains("Ri, Td or Kf", row.Reason);
     }
+
+    /// <summary>A FET with Ri and neither Td nor Kf is noisy at its gate only: its drain is named in the noiseless warning
+    /// (D4), and explain's row says so, where it used to pass as fully modelled.</summary>
+    [Fact]
+    public void Fet_WithRiAlone_NamesItsNoiselessDrain()
+    {
+        using var nl = Elaborate(Shunt(0, "FET_CURTICE:F1  x 0 0  Ri=4 Ohm"));
+        var row = SParameterNoise.Table(nl, [1e9]).Single(r => r.Label == "F1");
+        Assert.Equal(NoiseModelKind.DeviceSources, row.Kind);
+        Assert.Contains("drain is noiseless", row.Reason);
+        Run(nl, [1e9]);
+        Assert.Contains(nl.Warnings, w => w.Contains("F1 (its drain)"));
+    }
+
+    /// <summary>A flicker source has no density at 0 Hz: that point's noise is NaN, and the run says so rather than leaving
+    /// a NaN nobody explained.</summary>
+    [Fact]
+    public void FlickerAtZeroHz_IsWarnedAbout()
+    {
+        using var nl = Elaborate(Shunt(0.6, "Diode:D1  x 0  Is=1e-14 Kf=1e-12"));
+        Run(nl, [0, 1e6]);
+        Assert.Contains(nl.Warnings, w => w.Contains("D1") && w.Contains("0 Hz"));
+    }
+
+    /// <summary>Noise=no on a composed FET quiets the device whole — its core and every element of its network — where the
+    /// line was refused as carrying a parameter a ComposedFET does not take.</summary>
+    [Fact]
+    public void ComposedFet_NoiseNo_QuietsTheWholeDevice()
+    {
+        string model = Path.Combine(Path.GetDirectoryName(Locate("examples/Model Composer/synthetic-gan/gan_4x125.cmodel"))!, "gan_4x125.cmodel");
+        using var nl = Elaborate($"""
+            Port:P1  p1 0  Num=1 Z=50 Ohm
+            Port:P2  p2 0  Num=2 Z=50 Ohm
+            C:CB1  p1 g  C=1 F
+            C:CB2  p2 d  C=1 F
+            ComposedFET:X1  g d 0  File="{model}" Noise=no
+            """);
+        var device = nl.Components.Where(c => c.InstancePath.StartsWith("X1.", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(device);
+        Assert.All(device, c => Assert.True(c.NoiseOff, c.InstancePath));
+        Assert.DoesNotContain(nl.Components, c => c.NoiseOff && !c.InstancePath.StartsWith("X1.", StringComparison.Ordinal));
+    }
 }

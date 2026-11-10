@@ -222,8 +222,18 @@ generator-held circuit, which is regular.
 2. **The outer Jacobian.** `M = [[Re R_lnA, Re R_f], [Im R_lnA, Im R_f]]` by central differences about the answer
    (`ln A ± 1e-4`, `f·(1 ± 1e-5)`, four HB solves). Pushed by `δR`, the oscillation answers
    `[δln A; δf] = −M⁻¹·[Re δR; Im δR]`: `δf = Re(conj μ_f · δR)`, `μ_f` the second row of `−M⁻¹` as a complex number.
-3. **Real-linear in complex form.** A slow real current has `u_{−k} = conj u_k`, so
-   `δf = Σ_s h_sᵀ·u_s` with `h_s = ½·(conj μ_f·β_s + μ_f·conj β_{−s})`, and likewise for `δln A`.
+3. **Real-linear in complex form, at the offset.** The residual's envelope `δR(t) = ρ·δV(t)` has real and imaginary
+   parts whose components at `f_m` are `(δR₊ ± conj δR₋)/2` (over `j` for the imaginary), `δR₊ = 2ρ·X₊` read at the
+   probe's `+ω0` sideband and `conj δR₋ = 2·conj ρ·X₋` at its `−ω0` sideband, two adjoints on one matrix. So
+   `h_s = ½·(conj μ_f·2ρ·a⁺_s + μ_f·2·conj ρ·a⁻_s)`, and likewise for `δln A`. At `f_m = 0` the lower adjoint is the
+   conjugate of the upper's mirror (`a⁻_s = conj a⁺_{−s}`), which is the static form
+   `h_s = ½·(conj μ_f·β_s + μ_f·conj β_{−s})`.
+   **The baseband sideband is taken at `f_m`, the carrier's at `k·ω0`:** the matrix's sideband-0 rows and the partition
+   the adjoint back-solves there are evaluated at `ω_m`. A bias or tuning network whose RC corner lies below the offset
+   then filters the noise it carries to the device, as it does; read statically it passes whole (a 100 kΩ tuning
+   resistor behind 100 nF, a 16 Hz corner, read ~4 dB high 100 kHz out, and the join disagreed by 4 dB). The
+   carrier's sidebands stay static: their response to a slow change of amplitude and frequency is the outer Jacobian's,
+   and the probe holds them. A pure tank, with nothing slow at baseband, is unchanged.
 4. **The density.** With the sources' covariance `C_st(ω_m)` at the sidebands `ω_m + k·ω0`:
    `S_δf = ½·Σ_s,t h_sᵀ·C_st·conj h_t` (two-sided, Hz²/Hz), `L = S_δf / f_m²`, `AN = ½·Σ hᴬ·C·hᴬᴴ`.
 
@@ -244,7 +254,7 @@ f_AM = −Im(W_lnL · conj W_f) / |W_f|²          (Hz)
 
 (a parallel tank: `A·Y′(A) / (4πC)`). **The rule: below `0.1·f_AM` the close-in description, above it the conversion
 matrix.** No blend, no constant chosen per circuit, and the singular point is never regularised. Both descriptions are
-evaluated at the join offset itself and a difference over 0.5 dB is the warning `osc.pn.join`. With no restoring force
+evaluated at the join offset itself, PN and AN alike, and a difference over 0.5 dB in either is the warning `osc.pn.join`. With no restoring force
 (`f_AM ≤ 0`) the conversion matrix is used throughout, with the warning `osc.pn.no-relaxation`.
 
 ### 10.4 The corner, the output, the refusals

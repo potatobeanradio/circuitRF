@@ -92,6 +92,62 @@ OscProbe:X1 n 0 Mode=shunt
         Assert.Contains("between 0.25 and 0.75 GHz", ex.Message);
         Assert.Contains("WSProbe", ex.Message);
     }
+    // A swept oscillator keeps its curve when one point does not oscillate: that point is NaN (Converged 0) with one warning
+    // naming it, and the other points are solved, as a swept envelope's failed point is. It used to stop the whole sweep.
+    [Fact]
+    public void Sweep_APointThatDoesNotOscillate_IsAGap_NotTheEnd()
+    {
+        string cnl = "rl = 1000\n" + Tank().Replace($"R={1 / GL:R}", "R=rl") + @"
+analysis OSC1 type=osc Fguess=0.5 Unit=GHz MaxHarm=1 FFTOverSample=4 Tol=1e-12
+analysis SW1 type=parametric_sweep Var=rl Values=200,1000,2000 Inner=OSC1
+";
+        var (lib, tb) = new CnlReader().Read(cnl);
+        var sweep = tb.Analyses.OfType<ParametricSweepAnalysis>().Single();
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var ds = ParametricSweepEngine.Run(sweep, lib, tb, diagnosticsInto: nl);
+        var f = ds["Fosc"].RealValues;
+        var conv = ds["Converged"].RealValues;
+        output.WriteLine($"Fosc {string.Join(", ", f)}; Converged {string.Join(", ", conv)}");
+        Assert.True(double.IsNaN(f[0]));
+        Assert.Equal(0, conv[0]);
+        Assert.True(f[1] > 0 && f[2] > 0);
+        Assert.Contains(nl.Warnings, w => w.Contains("rl = 200") && w.Contains("does not start to oscillate"));
+    }
+
+    // Aguess is a start, not a promise. The receiver example's VCO with a 10 nF base capacitor does not solve at its own
+    // amplitude at the start-up frequency (22 % above the oscillation), and the run then ramps from small, as it does with
+    // no Aguess, to the same oscillation.
+    [Fact]
+    public void Aguess_ThatDoesNotSolveAtStartUp_FallsBackToTheRamp()
+    {
+        const string vco = @"
+temp = 16.85
+Vdc:VCC  vcc  0  Vdc=5 V
+R:R1  vcc  b  R=4700 Ohm
+R:R2  b  0  R=4700 Ohm
+C:Cb  b  0  C=10 nF
+R:RE  e  0  R=470 Ohm
+SRL:L1  vcc  c  L=3.2 nH  R=0.5 Ohm
+R:RL  vcc  c  R=500 Ohm
+C:C1  c  e  C=2 pF
+C:C2  e  0  C=4 pF
+BJT_NPN:Q1  c  b  e  Is=1e-15  Bf=100  Rb=10  Cje=0.3e-12  Cjc=0.1e-12  Tf=5e-12
+C:Cc  c  v  C=1 pF
+Diode:DV  0  v  Is=1e-14  Cj0=1.5e-12  Vj=0.7  M=0.5
+R:Rt  t  v  R=10000 Ohm
+Vdc:VT  t  0  Vdc=4
+OscProbe:X1  c  0  Mode=shunt
+";
+        OscillatorAnalysis A(string aguess) => new("OSC1")
+        {
+            FguessExpr = "2", Unit = "GHz", MaxHarmonicExpr = "7", FFTOverSampleExpr = "1", TolExpr = "1e-9", AguessExpr = aguess,
+        };
+        var ramp = Run(vco, A(""));
+        var guess = Run(vco, A("2.2"));
+        output.WriteLine($"no Aguess: {ramp.FoscHz / 1e9:R} GHz, {ramp.Aosc:R} V; Aguess=2.2: {guess.FoscHz / 1e9:R} GHz, {guess.Aosc:R} V");
+        Assert.True(Math.Abs(guess.FoscHz / ramp.FoscHz - 1) < 1e-6);
+        Assert.True(Math.Abs(guess.Aosc / ramp.Aosc - 1) < 1e-5);
+    }
 }
 
 /// <summary>Brief NZ-9 gate 2 — a common-base Colpitts on the built-in BJT.</summary>
@@ -140,4 +196,5 @@ OscProbe:X1 c 0 Mode=shunt
             fosc = r.FoscHz;
         }
     }
+
 }

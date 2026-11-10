@@ -62,21 +62,22 @@ public sealed class ZPortModel : ComponentModel
     public override Activity Activity => Activity.ActiveExact;
 
     /// <inheritdoc/>
-    public override string? PassivationNote => _passivationNote ??
+    public override string? PassivationNote =>
         "Re Z → |Re Z| on the diagonal, which is its ordinary stamp unless some Re Z < 0";
-    private string? _passivationNote;
 
     /// <summary>
-    /// This instance's own answer over the run's frequencies: <see cref="Core.Activity.Passive"/> when its impedance
-    /// matrix has <c>Re Z ⪰ 0</c> (<c>Z + Zᴴ</c> positive semidefinite) at every one of them, so the S-parameter noise
-    /// analysis gives it thermal noise like any passive linear part. The test is σ_max of its S at a real 50 Ω
-    /// reference, which is at most 1 exactly when <c>Re Z ⪰ 0</c> — the reference cancels out of the question, as it does
-    /// for a <c>Chain</c>. Otherwise the type-level <see cref="Core.Activity.ActiveExact"/> stands.
+    /// Whether this instance's impedance matrix has <c>Re Z ⪰ 0</c> (<c>Z + Zᴴ</c> positive semidefinite) at every one of
+    /// <paramref name="freqsHz"/>, so the S-parameter noise analysis gives it thermal noise like any passive linear part.
+    /// The test is σ_max of its S at a real 50 Ω reference, which is at most 1 exactly when <c>Re Z ⪰ 0</c> — the reference
+    /// cancels out of the question, as it does for a <c>Chain</c>.
     /// </summary>
-    public override Activity ActivityFor(ElaboratedComponent c, IReadOnlyList<double> freqsHz)
+    /// <remarks>Asked by the noise analysis only, not through <see cref="ComponentModel.ActivityFor"/>: that answer is
+    /// also the NDF passivation's, and a run without noise must report what it always did (the type-level
+    /// <see cref="Core.Activity.ActiveExact"/>, whose passivated stamp is this block's own when it is passive).</remarks>
+    public bool IsPassiveOver(IReadOnlyList<double> freqsHz)
     {
         const double Tol = 1e-9, Z0 = 50.0;
-        double worst = 0.0, at = double.NaN;
+        if (freqsHz.Count == 0) return false;
         foreach (double hz in freqsHz)
         {
             var z = EvaluateZ(hz);
@@ -85,16 +86,10 @@ public sealed class ZPortModel : ComponentModel
                 for (int q = 0; q < _portCount; q++) m[p, q] = z[p, q];
             double sig;
             try { sig = RfCore.RFNetwork.Passivity(RfCore.RFNetwork.ZToS(m, new Complex(Z0, 0))); }
-            catch (Exception) { sig = double.PositiveInfinity; }
-            if (!(sig <= worst)) { worst = sig; at = hz; }
+            catch (Exception) { return false; }
+            if (!(sig <= 1.0 + Tol)) return false;
         }
-        if (freqsHz.Count > 0 && worst <= 1.0 + Tol)
-        {
-            _passivationNote = $"Re Z ⪰ 0 over the swept band (σ_max = {worst:G4} at 50 Ohm), so its stamp is already passive";
-            return Activity.Passive;
-        }
-        _passivationNote = null;
-        return Activity;
+        return true;
     }
 
     /// <summary><c>Re Z → |Re Z|</c> per entry of the impedance matrix's DIAGONAL, which is where a

@@ -310,6 +310,16 @@ internal static class HbNoise
     /// <summary>A port of the run: its two circuit nodes and the impedance it presents at a frequency.</summary>
     private sealed record Port(string Label, int Plus, int Minus, Func<double, Complex> Z);
 
+    /// <summary>
+    /// Refuses, naming the key, a request whose NoiseIn or NoiseOut names no port or Tuner of <paramref name="nl"/> — called
+    /// before a run solves anything, so a misspelt end is not found after the first loadpull grid point's whole drive ladder.
+    /// </summary>
+    public static void ValidateEnds(ElaboratedNetlist nl, HbNoiseRequest req)
+    {
+        _ = req.InTuner  is { } ti ? FindTuner(nl, ti, "NoiseIn")  : FindPort(nl, req.InPort,  "input",  "NoiseIn");
+        _ = req.OutTuner is { } to ? FindTuner(nl, to, "NoiseOut") : FindPort(nl, req.OutPort, "output", "NoiseOut");
+    }
+
     private static Port FindPort(ElaboratedNetlist nl, int num, string role, string key)
     {
         foreach (var ec in nl.Components)
@@ -687,7 +697,7 @@ internal static class HbNoise
             {
                 double c = pts[fi].Parts.Length > k ? pts[fi].Parts[k] : double.NaN;
                 nfc[fi * np + k] = c;
-                pct[fi * np + k] = 100 * c / (pts[fi].F - 1);
+                pct[fi * np + k] = pts[fi].F - 1 > SParameterNoise.PctFloor ? 100 * c / (pts[fi].F - 1) : double.NaN;
             }
         ds.Add("NFc",   new DataCube([Freq(), Part()], nfc) { Unit = One });
         ds.Add("NFpct", new DataCube([Freq(), Part()], pct) { Unit = "%" });

@@ -133,12 +133,13 @@ public static class OscDiagnostics
 
     public const string PnJoinKey = "osc.pn.join";
     /// <summary>The two descriptions disagree where they are joined.</summary>
-    public static Diagnostic PnJoinMismatch(string analysis, double joinHz, double dbDiff) => Diagnostic.Create(
+    public static Diagnostic PnJoinMismatch(string analysis, double joinHz, double dbDiff, string quantity = "phase noise")
+        => Diagnostic.Create(
         PnJoinKey, DiagnosticSeverity.Warning,
-        "Oscillator analysis '{analysis}': at the join offset {f} the close-in phase noise (from the frequency's sensitivity) " +
+        "Oscillator analysis '{analysis}': at the join offset {f} the close-in {q} (from the oscillation's sensitivity) " +
         "and the conversion matrix's differ by {d} dB. Both should hold there; a difference this large means one of them " +
         "does not: tighten Tol, or raise MaxHarm.",
-        ("analysis", analysis), ("f", Hz(joinHz)), ("d", dbDiff.ToString("F2", CultureInfo.InvariantCulture)));
+        ("analysis", analysis), ("f", Hz(joinHz)), ("q", quantity), ("d", dbDiff.ToString("F2", CultureInfo.InvariantCulture)));
 
     public const string PnCornerKey = "osc.pn.corner";
     /// <summary>A model whose flicker cannot be separated from its white noise.</summary>

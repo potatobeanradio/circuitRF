@@ -108,11 +108,11 @@ public sealed partial class Evaluator
         var v      = EvalExpr(cl.Args[0], scope);
         var target = EvalExpr(cl.Args[1], scope);
         if (target.Kind != ValueKind.Real)
-            throw new ExpressionException("value_at(): the point must be a number, e.g. value_at(x, 2.45GHz).");
+            throw new ExpressionException(ValueAtDiagnostics.PointNotNumber());
         double t = target.AsReal();
 
         if (v.Kind != ValueKind.Cube)
-            throw new ExpressionException("value_at(): this value is a single number, so it has no axis to read along.");
+            throw new ExpressionException(ValueAtDiagnostics.Scalar());
         var cube = v.AsCube();
         string axes = string.Join(", ", cube.Axes.Select(a => a.Name));
 
@@ -124,13 +124,12 @@ public sealed partial class Evaluator
         }
         else if (cube.Axes.Any(a => a.Name == "freq")) axisName = "freq";
         else if (cube.Rank == 1)                       axisName = cube.Axes[0].Name;
-        else throw new ExpressionException(
-            $"value_at(): this value has no 'freq' axis; name the axis as the last argument. Its axes are: {axes}.");
+        else throw new ExpressionException(ValueAtDiagnostics.NoFreqAxis(axes));
         if (!cube.Axes.Any(a => a.Name == axisName))
-            throw new ExpressionException($"value_at(): no axis named '{axisName}'. Its axes are: {axes}.");
+            throw new ExpressionException(ValueAtDiagnostics.NoSuchAxis(axisName, axes));
 
         var xs = cube.Axis(axisName).Values;
-        if (xs.Length == 0) throw new ExpressionException($"value_at(): the '{axisName}' axis has no points.");
+        if (xs.Length == 0) throw new ExpressionException(ValueAtDiagnostics.EmptyAxis(axisName));
 
         // A grid point, to the tolerance max_over uses for a band edge.
         double tol = 1e-9 * Math.Max(Math.Abs(t), xs.Max(Math.Abs));
@@ -160,8 +159,7 @@ public sealed partial class Evaluator
 
         string extent = string.Create(CultureInfo.InvariantCulture,
             $"{xs.Min():G6} to {xs.Max():G6} {cube.Axis(axisName).Unit}").TrimEnd();
-        throw new ExpressionException(string.Create(CultureInfo.InvariantCulture,
-            $"value_at(): {t:G6} is outside the '{axisName}' axis, which runs from {extent}."));
+        throw new ExpressionException(ValueAtDiagnostics.Outside(t, axisName, extent));
 
         static Value Collapse(DataCube slice)
         {

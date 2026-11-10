@@ -257,9 +257,11 @@ public static class ParametricSweepEngine
                         $"Sweep '{sweep.Name}' at {at}: {ex.Summary} The point failed; the worker was restarted and the point run again.");
                     seed = null;
                 }
-                catch (Exception ex) when (runOtherInner is not null && !IsCancellation(ex))
+                catch (Exception ex) when ((runOtherInner is not null || inner is OscillatorAnalysis) && !IsCancellation(ex))
                 {
                     // R-cp5-3 — the envelope's rule for a failed point: NaN, a warning naming its value, the others kept.
+                    // An oscillator's too: a tuning curve with one point that does not start (or leaves its search span)
+                    // is the rest of the curve and a gap, not no curve at all.
                     string why = $"{DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive)}: {ex.Message}";
                     failedPoints.Add(why);
                     diagnosticsInto?.AddWarningOnce($"sweep-point-failed:{why}",
@@ -470,6 +472,12 @@ public static class ParametricSweepEngine
         {
             if (name.StartsWith("__", StringComparison.Ordinal)) { ds.Add(name, c); continue; }
             int n = c.BufferLength;
+            // A failed point did not converge: 0, as a solve that ran and did not converge says, not NaN.
+            if (name == "Converged" && c.DataKind == DataKind.Real)
+            {
+                ds.Add(name, new DataCube([.. c.Axes], new double[n]) { Unit = c.Unit });
+                continue;
+            }
             ds.Add(name, c.DataKind == DataKind.Complex
                 ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray()) { Unit = c.Unit }
                 : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()) { Unit = c.Unit });

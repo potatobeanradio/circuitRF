@@ -102,6 +102,9 @@ public static class SParameterNoise
         var silent  = new List<string>();
         foreach (var (row, parts) in entries)
         {
+            // A device noisy in part (a FET's Ri with no drain source) is named whoever models the rest of it.
+            if (row is { Kind: NoiseModelKind.DeviceSources, Reason: DrainNoiselessReason })
+                silent.Add($"{parts[0].ComponentType}:{parts[0].InstancePath} (its drain)");
             if (claim?.Invoke(row, parts) == true) continue;
             switch (row.Kind)
             {
@@ -109,7 +112,7 @@ public static class SParameterNoise
                     sources.Add(new(row.Label, DataFile(parts[0], (SnpModel)parts[0].Model, nl, freqsHz)));
                     break;
                 case NoiseModelKind.DeviceSources:
-                    sources.Add(new(row.Label, DeviceSources(parts[0], row.Kelvin, freqsHz, dcNodeVoltages)));
+                    sources.Add(new(row.Label, DeviceSources(parts[0], row.Kelvin, freqsHz, dcNodeVoltages, nl)));
                     break;
                 case NoiseModelKind.Specified:
                     sources.Add(new(row.Label, Amplifier(parts[0], (AmplifierModel)parts[0].Model)));
@@ -248,6 +251,8 @@ public static class SParameterNoise
                 {
                     SourceNames = [.. noisy.NoiseSources.Select(x => x.Name)],
                     Kelvin = Temperature.ResolveDeviceC(one.Parameters, nl.AmbientC) + Temperature.KelvinOffset,
+                    // A FET with Ri and no drain source is noisy at its gate only: the drain is a gap, and warned about (D4).
+                    Reason = noisy is Core.Devices.Fet.FetModelBase { HasDrainNoise: false } ? DrainNoiselessReason : null,
                 }, parts));
                 continue;
             }
@@ -259,10 +264,12 @@ public static class SParameterNoise
             // A coupled group with members at different temperatures is taken at the hottest one; exact would need
             // each inductor's loss separated from the coupling, which the stamp does not expose.
             double kelvin = parts.Max(ec => Temperature.ResolveDeviceC(ec.Parameters, nl.AmbientC)) + Temperature.KelvinOffset;
-            if (parts is [var member] && CoreOf(member) is { Model: ComposedCoreModel cc } coreEc)
+            // A composed FET's parasitic — one element, or a coupled group whose members all belong to the one device.
+            if (CoreOf(parts[0]) is { Model: ComposedCoreModel cc } coreEc
+                && parts.All(ec => ReferenceEquals(CoreOf(ec), coreEc)))
             {
                 string device = coreEc.InstancePath[..^coreSuffix.Length];
-                bool gate = cc.Loaded.Model.Core.Noise?.Tg is not null
+                bool gate = parts is [var member] && cc.Loaded.Model.Core.Noise?.Tg is not null
                             && member.InstancePath.EndsWith("." + ModelNoise.GateResistorName, StringComparison.Ordinal);
                 result.Add((Row(NoiseModelKind.Thermal) with
                 {
@@ -279,6 +286,9 @@ public static class SParameterNoise
         }
         return result;
     }
+
+    /// <summary>The reason on a FET's device-sources row when only its Ri is noisy.</summary>
+    internal const string DrainNoiselessReason = "its drain is noiseless: Ri is set, and neither Td nor Kf";
 
     /// <summary>Why a part that is noiseless by definition is, in a few words.</summary>
     private static string WhyNoiselessByDefinition(ElaboratedComponent ec) => ec.Model switch
@@ -331,7 +341,8 @@ public static class SParameterNoise
     /// with no noise data is one (its activity is measured on its file), and so is a passive system block carrying a
     /// passive intermod: the overlay is a nonlinearity and adds no noise, so the block is thermal on its linear S.</summary>
     private static bool IsThermal(ElaboratedComponent ec, double[] freqsHz) =>
-        (ec.Model.Kind == ModelKind.Linear || ec.Model is IdealSBlockModel) && ec.ActivityFor(freqsHz) == Activity.Passive;
+        (ec.Model.Kind == ModelKind.Linear || ec.Model is IdealSBlockModel)
+        && (ec.ActivityFor(freqsHz) == Activity.Passive || ec.Model is ZPortModel z && z.IsPassiveOver(freqsHz));
 
     /// <summary>The linear stamp a thermal part's noise is recorded from: the part's own, or a system block's linear S when
     /// a passive intermod makes it nonlinear (its <c>Stamp</c> then stands down). A system block allocates branch unknowns,
@@ -391,10 +402,19 @@ public static class SParameterNoise
     /// m independent copies; the model never applies it. One branch for a built-in device and an external one alike.
     /// </summary>
     private static Func<double, NoiseCurrents> DeviceSources(
-        ElaboratedComponent ec, double kelvin, double[] freqsHz, double[]? dcNodeVoltages)
+        ElaboratedComponent ec, double kelvin, double[] freqsHz, double[]? dcNodeVoltages, ElaboratedNetlist nl)
     {
         var decl = ec.Model.NoiseSources;
         var psd  = ec.Model.NoiseDensitiesAt(ec, SParameterEngine.BuildBias(ec, dcNodeVoltages), kelvin, freqsHz)!;
+        // A flicker source has no density at 0 Hz: that point's noise answers are NaN, and the run says why.
+        for (int k = 0; k < freqsHz.Length; k++)
+            for (int s = 0; s < decl.Count; s++)
+                if (!double.IsFinite(psd[k, s]))
+                {
+                    nl.AddWarningOnce($"{NoiseDiagnostics.NonFiniteDensityKey}:{ec.InstancePath}",
+                        NoiseDiagnostics.NonFiniteDensity($"{ec.ComponentType}:{ec.InstancePath}", decl[s].Name, freqsHz[k]).Render());
+                    k = freqsHz.Length; break;
+                }
         int Circuit(int t) => t < 0 || t >= ec.Nodes.Length ? 0 : ec.Nodes[t];
         var pairs = decl.Select(s => (A: Circuit(s.TerminalA), B: Circuit(s.TerminalB))).ToArray();
         int[] nodes = [.. pairs.SelectMany(p => new[] { p.A, p.B }).Where(n => n > 0).Distinct()];
@@ -657,12 +677,16 @@ public static class SParameterNoise
             {
                 double c = shares[fi][p][1, 1].Real / source;
                 nfc[fi * np + p] = c;
-                pct[fi * np + p] = 100 * c / (f[fi] - 1);
+                pct[fi * np + p] = f[fi] - 1 > PctFloor ? 100 * c / (f[fi] - 1) : double.NaN;
             }
         }
         ds.Add("NFc",   new DataCube([Freq(), Part()], nfc) { Unit = One });
         ds.Add("NFpct", new DataCube([Freq(), Part()], pct) { Unit = "%" });
     }
+
+    /// <summary>F − 1 below which a circuit is taken as noiseless and has no percentage shares (NaN): the shares are then
+    /// round-off, and a percentage of round-off is a number that means nothing.</summary>
+    internal const double PctFloor = 1e-12;
 
     /// <summary>
     /// The size in bytes of <c>NCs</c> for <paramref name="parts"/> noisy parts, <paramref name="ports"/> ports and

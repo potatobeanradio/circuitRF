@@ -969,13 +969,17 @@ public sealed class Elaborator
             // X1.rg is a component path and V(X1.gi) an intrinsic voltage like in any sub-cell.
             if (inst.Reference.Equals(ComponentModelFactory.ComposedFetTypeName, StringComparison.OrdinalIgnoreCase))
             {
+                // Noise=no quiets the whole device: its core and every element of its extrinsic network.
+                inst = TakeNoiseSwitch(inst, childPath, out bool composedNoiseOff, out _);
                 var composed = ComposedFetCell(inst, childPath, currentScope, out var switches, out var loadedModel);
                 NoteComposedSwitches(childPath, switches, loadedModel, netlist);
                 var portMap  = new Dictionary<string, string>(StringComparer.Ordinal);
                 for (int i = 0; i < composed.Ports.Count; i++)
                     portMap[composed.Ports[i]] = ResolveNet(inst.NetBindings[i]);
                 var scope = new Scope(childPath, currentScope) { InstancePath = childPath };
-                FlattenCell(composed, childPath, portMap, scope, globalScope, netlist);
+                if (composedNoiseOff) _noiseOffDepth++;
+                try { FlattenCell(composed, childPath, portMap, scope, globalScope, netlist); }
+                finally { if (composedNoiseOff) _noiseOffDepth--; }
                 continue;
             }
 
@@ -1301,7 +1305,7 @@ public sealed class Elaborator
                         $"use a Pin for cell interfaces and place Terms only in the testbench.");
 
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
-                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff,
+                         { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff || _noiseOffDepth > 0,
                            NoiseOn = noiseOn };
                 netlist.AddComponent(ec);
             }
@@ -1470,6 +1474,10 @@ public sealed class Elaborator
     /// impedance (P1Tone, PnTone, MOD_Source), which is noiseless by default, <c>Noise=yes</c> makes that impedance thermal
     /// in an envelope run (brief NZ-7 follow-up).</summary>
     public const string NoiseParamName = "Noise";
+
+    /// <summary>Above zero while a device stated <c>Noise=no</c> on is flattened as a cell (a ComposedFET): every element it
+    /// elaborates to is switched off with it.</summary>
+    private int _noiseOffDepth;
 
     /// <summary>
     /// <paramref name="inst"/> without its <see cref="NoiseParamName"/> override, and whether that override said no or yes. The

@@ -225,16 +225,16 @@ from −95 to −20 dBm.
 | Pin | EVM | Noise part | Distortion part | SNR |
 |---|---|---|---|---|
 | −95 dBm | 31.08 % | 31.08 % | 0.40 % | 10.1 dB |
-| −80 dBm | 5.65 % | 5.64 % | 0.40 % | 25.0 dB |
-| −65 dBm | 1.59 % | 1.54 % | 0.40 % | 36.3 dB |
-| **−50 dBm** | **1.27 %** | 1.21 % | 0.40 % | 38.4 dB |
-| −35 dBm | 1.46 % | 1.21 % | 0.83 % | 38.4 dB |
-| −20 dBm | 11.75 % | 1.22 % | 11.69 % | 38.3 dB |
+| −80 dBm | 5.66 % | 5.65 % | 0.40 % | 25.0 dB |
+| −65 dBm | 1.64 % | 1.60 % | 0.40 % | 36.0 dB |
+| **−50 dBm** | **1.34 %** | 1.28 % | 0.40 % | 37.9 dB |
+| −35 dBm | 1.53 % | 1.28 % | 0.83 % | 37.9 dB |
+| −20 dBm | 11.76 % | 1.29 % | 11.69 % | 37.8 dB |
 
 There are three regimes:
 
 - **Below about −70 dBm, thermal noise.** EVM falls 1 dB for every dB of signal.
-- **From about −60 to −35 dBm, the LO's phase noise.** The SNR stops at 38.4 dB, and stays there however strong the signal
+- **From about −60 to −35 dBm, the LO's phase noise.** The SNR stops at 37.9 dB, and stays there however strong the signal
   is: the LO's phase noise multiplies the signal, so it grows with it.
 - **Above −35 dBm, distortion.** The LNA compresses.
 
@@ -255,13 +255,13 @@ with **Phase noise** ticked, from 100 Hz to 10 MHz off the carrier. `SW1` sweeps
 
 | Vtune | Fosc | Kvco | PN at 100 kHz | Flicker corner |
 |---|---|---|---|---|
-| 3 V | 2092.7 MHz | 17.1 MHz/V | −108.7 dBc/Hz | 6.9 kHz |
-| **3.5 V** | **2101.2 MHz** | 16.1 MHz/V | **−109.2 dBc/Hz** | under 10 Hz |
-| 4 V | 2108.7 MHz | 14.3 MHz/V | −109.3 dBc/Hz | 3.2 kHz |
-| 9 V | 2155.6 MHz | 6.6 MHz/V | −108.1 dBc/Hz | 42.3 kHz |
+| 3 V | 2092.7 MHz | 17.1 MHz/V | −106.6 dBc/Hz | 6.9 kHz |
+| **3.5 V** | **2101.2 MHz** | 16.1 MHz/V | **−106.5 dBc/Hz** | under 10 Hz |
+| 4 V | 2108.7 MHz | 14.3 MHz/V | −106.4 dBc/Hz | 3.2 kHz |
+| 9 V | 2155.6 MHz | 6.6 MHz/V | −105.6 dBc/Hz | 42.3 kHz |
 
-At 3.5 V the phase noise is −129.2 dBc/Hz at 1 MHz, 20 dB per decade, which is white noise turned into phase noise.
-`PNpct` names the transistor (about 70 %), the tuning resistor `Rt` and the tank's load `RL`. `Rt` matters because its
+At 3.5 V the phase noise is −128.8 dBc/Hz at 1 MHz, 20 dB per decade, which is white noise turned into phase noise.
+`PNpct` names the transistor (about 80 %), the tuning resistor `Rt` and the tank's load `RL`. `Rt` matters because its
 thermal noise is a voltage on the varactor, and the varactor turns it straight into frequency.
 
 The flicker corner, below which phase noise falls at 30 dB per decade, moves with tuning. At 3.5 V it almost vanishes,
@@ -269,11 +269,8 @@ because there the oscillation's frequency is insensitive to the transistor's fli
 quietest place to run this VCO close in, which is why bench 6's LO is this curve.
 
 Copying it: in the display, right-click the 3.5 V `PN` trace's legend entry and choose **Copy as Phase-Noise Mask**. The
-clipboard then holds `PhaseNoise="100Hz:-49.21, …"`, which is what `VCO`'s `PhaseNoise` in bench 6 holds. The example's
+clipboard then holds `PhaseNoise="100Hz:-49.20, …"`, which is what `VCO`'s `PhaseNoise` in bench 6 holds. The example's
 test checks that bench 6's mask is this bench's result, point for point.
-
-Below 3 V the close-in and far-out halves of the phase-noise calculation disagree by more than 0.5 dB where they join,
-and the run warns. The sweep starts at 3 V so that it does not.
 
 **What the display shows** (`7 VCO Phase Noise.cdd`):
 

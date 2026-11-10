@@ -57,11 +57,17 @@ namespace RfCore.Loadpull
         private static void WriteBlock(TextWriter w, LoadpullFreqBlock b)
         {
             var fomNames = LoadpullExportModel.FomColumns.Where(b.Foms.ContainsKey).ToList();
-            bool hasSrc  = b.HasSourceGamma;
+            bool hasSrc  = !b.SweptSource && b.HasSourceGamma;
 
             w.WriteLine($"! Frequency = {Fmt(b.FreqGHz)} GHz");
-            // A "! Source Impedance" comment marks this as load-pull (source fixed, load swept).
-            if (hasSrc)
+            // A "! Source Impedance" comment marks this as load-pull (source fixed, load swept); "! Load Impedance" a
+            // sourcepull (load fixed, source swept — the "#" grid lines are then the source's Γ).
+            if (b.SweptSource)
+            {
+                var zl = b.HasFixedLoadGamma ? GammaToZ(b.FixedLoadGamma) : new Complex(50, 0);
+                w.WriteLine($"! Load Impedance = {Fmt(zl.Real)} +j {Fmt(zl.Imaginary)} Ohm");
+            }
+            else if (hasSrc)
             {
                 var zs = GammaToZ(b.SourceGamma);
                 w.WriteLine($"! Source Impedance = {Fmt(zs.Real)} +j {Fmt(zs.Imaginary)} Ohm");

@@ -399,7 +399,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     public void SetGetCanvasSizeAction(Func<(double, double)> a)          => _getCanvasSizeAction          = a;
     public void SetGetWindowGeometryAction(Func<(double, double, double, double)> a)
         => _getWindowGeometryAction = a;
-    public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction       = a;
+    public void SetGetClipboardTextAction(Func<Task<string?>> a)
+    {
+        _getClipboardTextAction = a;
+        PasteCommand.NotifyCanExecuteChanged();
+    }
     public void SetRichCopyAction(Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, Task> a)
         => _richCopyAction = a;
     public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
@@ -760,8 +764,6 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     // ---- Edit commands (Cut / Copy / Paste) -----------------------------
 
-    private bool _canPaste;
-
     /// <summary>
     /// Copies selected plots to clipboard then removes them.
     /// Enabled only when one or more plots are selected.
@@ -792,11 +794,14 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         if (containers.Count == 0) return;
 
         await _richCopyAction(containers, CurrentTheme);
-        await CheckPasteStateAsync();
     }
 
     /// <summary>
-    /// Pastes plots from clipboard JSON into the active tab.
+    /// Pastes plots from clipboard JSON into the active tab. Enabled whenever the clipboard can be read, and the
+    /// clipboard is read when it runs: whether it holds plots changes with every copy, in this display, another
+    /// display, another window or another application, and a state worked out ahead of time was stale for all but
+    /// the first. (It was also worked out before the reader was wired, so a display opened after the copy — a new,
+    /// unsaved one included — never enabled Ctrl/Cmd+V at all.) A clipboard with no plots on it pastes nothing.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanPaste))]
     private async Task Paste()
@@ -811,29 +816,16 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         if (added.Count > 0)
             display.UndoRedo.Push(new PasteCommand(added, display));
     }
-    private bool CanPaste() => _canPaste;
+    private bool CanPaste() => _getClipboardTextAction is not null;
 
     /// <summary>Invokes cut/copy/paste for routing from the workspace Edit menu.</summary>
     public Task InvokeCutAsync()   => Cut();
     public Task InvokeCopyAsync()  => Copy();
     public Task InvokePasteAsync() => Paste();
 
-    public async Task CheckPasteStateAsync()
-    {
-        if (_getClipboardTextAction is null)
-        {
-            _canPaste = false;
-            PasteCommand.NotifyCanExecuteChanged();
-            return;
-        }
-        string? text = await ReadClipboardTextAsync();
-        _canPaste = TryParseDataDisplayConfig(text, out _);
-        PasteCommand.NotifyCanExecuteChanged();
-    }
-
-    /// <summary>The clipboard's text through the view's reader, null when it cannot be read. Copy re-reads
-    /// the clipboard straight after writing it, and a platform that refuses that read (Windows throws when
-    /// the data object is replaced mid-enumeration) must leave Paste disabled, not end the process.</summary>
+    /// <summary>The clipboard's text through the view's reader, null when it cannot be read: a platform that refuses
+    /// the read (Windows throws when the data object is replaced mid-enumeration) pastes nothing, and does not end the
+    /// process.</summary>
     private Task<string?> ReadClipboardTextAsync()
         => _getClipboardTextAction is null
             ? Task.FromResult<string?>(null)

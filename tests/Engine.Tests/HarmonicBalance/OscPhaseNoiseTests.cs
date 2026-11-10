@@ -211,4 +211,45 @@ Diode:DB b 0 Is=1e-14 Kf={Kf:R} Af=1 Temp=16.85");
             else Assert.Equal(a.ComplexValues.ToArray(), b.ComplexValues.ToArray());
         }
     }
+
+    // A bias node's own noise reaches the tank through its RC: RB's current, filtered by CB to a 370 Hz corner, tunes the
+    // tank through CV. Close to the carrier, below the corner, RB's share falls as 1/f_m² like any white source; above it the
+    // RC takes another 20 dB a decade off, which a sensitivity read at DC (capacitors open) would miss.
+    [Fact]
+    public void CloseIn_BiasNoiseIsFilteredByItsRc_AboveTheCorner()
+    {
+        const double cb = 100e-9;
+        string cnl = Tank(extra: $@"
+NonlinearC:CV n b C0={C0:R} C1={C1v:R}
+C:CB b 0 C={cb:R}
+R:RB vb b R={Rb:R} Temp=16.85
+Vdc:VB vb 0 Vdc={Vbias:R}");
+        var r = Run(cnl, Osc(start: "3 Hz", stop: "50 kHz", npts: "43", fguess: "0.43"));
+        double fc = 1 / (2 * Math.PI * Rb * cb);
+        var pnc = r.Data["PNc"];
+        int rb = Array.IndexOf(pnc.Axes[1].Labels!, "RB");
+        int np = pnc.Axes[1].Length;
+        var f = Offsets(r.Data);
+        double At(int i) => pnc.RealValues[i * np + rb];
+        double Slope(double lo, double hi)
+        {
+            int i = Array.FindIndex(f, x => x >= lo), j = Array.FindIndex(f, x => x >= hi);
+            return (At(j) - At(i)) / Math.Log10(f[j] / f[i]);
+        }
+        double below = Slope(fc / 100, fc / 10), above = Slope(fc * 10, fc * 100);
+        output.WriteLine($"RC corner {fc:G4} Hz: RB's share {below:F3} dB/decade below, {above:F3} above");
+        Assert.True(Math.Abs(below + 20) < 0.5, $"below the corner: {below:F3} dB/decade");
+        Assert.True(Math.Abs(above + 40) < 0.5, $"above the corner: {above:F3} dB/decade");
+    }
+
+    // PnStart and PnStop read the prefix's case where it decides: 1 mHz is a millihertz, not a megahertz.
+    [Fact]
+    public void PnOffsets_ReadMilliAndMegaByCase()
+    {
+        var (lib, tb) = new CnlReader().Read(Tank());
+        var nl = new Elaborator(lib).Elaborate(tb);
+        var p = OscEngine.Resolve(Osc(start: "1 mHz", stop: "1 MHz"), nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+        Assert.Equal(1e-3, p.PhaseNoise!.StartHz, 12);
+        Assert.Equal(1e6, p.PhaseNoise.StopHz, 6);
+    }
 }

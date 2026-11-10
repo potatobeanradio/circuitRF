@@ -4334,3 +4334,44 @@ through as `Noiseless` and was named in the warning, while HB noise (NZ-5) used 
 `HbNoise.MixerSource` (an equivalent source at the RF port sized to F_DSB) in every band. Gate:
 `EnvelopeNoiseTests.MixerNf_IsTheNoiseInAnEnvelopeRun` — NF 20 → 30 dB moves the IF SNR by 10.079 dB, the closed form
 10·log10((F_DSB,30 − 1)/(F_DSB,20 − 1)) to three decimals.
+
+## NZ series review (2026-11-09)
+
+**Close-in phase noise read the baseband at DC.** `OscPhaseNoise.Sensitivities` built the held circuit's conversion
+matrix at ω_ss = 0, where every capacitor is open, so a bias or tuning RC whose corner lay below the offset passed its
+noise whole: a 100 kΩ tuning resistor behind 100 nF (16 Hz) read the same at 100 kHz as behind 1 pF, ~4 dB high, and the
+join to the conversion matrix disagreed by 4 dB (the warning blamed Tol and MaxHarm). The sideband-0 rows and the
+partition the adjoint back-solves there are now taken at f_m, the carrier's sidebands stay static, and the residual's
+envelope is read from two adjoints (the probe's +ω0 and −ω0 sidebands), which reduces to the static form at f_m = 0
+(identical to the last digit with nothing slow at baseband). The receiver example's VCO moved +2.9 dB at 100 kHz: its base
+node (R1‖R2, Cb = 1 nF, 68 kHz) no longer looks open to Q1's correlated noise above the corner, and its AN, which jumped
+13.7 dB at the join, is continuous. AN is now join-checked too. Gate: `OscPhaseNoiseTests.CloseIn_BiasNoiseIsFilteredByItsRc_AboveTheCorner`
+(−20.0 dB/decade below a 370 Hz corner, −40.0 above).
+
+**The envelope's relative tolerance had no floor.** `RunTolerance` took min(Tol, 1e-4 × excitation); behind ideal chokes
+the 1 µΩ regularisation makes a ~3e6 A Norton current per 3 V, and the residual cannot fall below a machine epsilon of it
+(~7e-10 A), so any signal under ~−75 dBm into a biased transistor failed to start. The floor is one epsilon of the
+largest Norton current (measured converging at under 0.3 of it), and the run warns (`envelope.tol.roundoff`) once the
+floor holds the solve above 1 % of the excitation: EVM 0.363 % at −90 dBm, 0.373 % at −100, 0.71 % at −110 with the warning.
+
+**Smaller ones.** A FET with Ri and neither Td nor Kf had a noiseless drain and no warning (now named, "(its drain)");
+`Noise=no` on a ComposedFET was refused (it now quiets the core and every network element); coupled inductors inside a
+composed FET took the ambient, not the device temperature; a flicker source at 0 Hz NaN'd the point silently (warned);
+NFpct is NaN, not round-off over round-off, when F − 1 is below 1e-12; HB noise on an unconverged solve warns; a NoiseIn/
+NoiseOut naming no port or Tuner is refused before the first grid point (and by `check`/`explain`); `PnStart="1 mHz"`
+read as a megahertz; a stated `Aguess` that does not solve at start-up falls back to the ramp.
+
+**A swept oscillator stopped at its first refused point.** A point that does not start, or leaves its search span, is
+now NaN (`Converged` 0) with a warning naming its value, as a swept envelope's failed point is, and the curve keeps its
+other points; every point refused still stops the run. Gate: `OscillatorAnalysisTests.Sweep_APointThatDoesNotOscillate_IsAGap_NotTheEnd`.
+
+**Z_Port's passivity is the noise analysis's question only.** NZ-1 measured it in `ActivityFor`, which the NDF
+passivation also reads, so a run without `Noise=yes` reported a passive Z_Port differently. It is now
+`ZPortModel.IsPassiveOver`, asked by `SParameterNoise.IsThermal`; `ActivityFor` and the passivation note are the
+type-level ones again. `OscProbeModel` also joins the NDF passivation table (idle: a short or an open), which NZ-9 left out.
+
+`explain --analysis` lists the noisy parts of an HB or loadpull `Noise=yes` run as it does an S-parameter run's,
+classified at the frequencies the run reads (the small-signal sweep; the noise read frequency), and counts a Mixer's NF.
+
+**Found, not changed.** MOSFET channel thermal noise is on by default (GammaN = 2/3), as NZ-4's table says, though its
+gate 5 lists only diode/BJT shot and series-R thermal.

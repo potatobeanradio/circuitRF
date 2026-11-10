@@ -248,8 +248,8 @@ public sealed class ReceiverNoiseExampleTests(ITestOutputHelper output) : IDispo
         // The README's table: Pin, EVM, noise part, distortion part (%), SNR (dB).
         foreach (var (p, e, n, d, snr) in new[]
                  {
-                     (-95.0, 31.08, 31.08, 0.40, 10.1), (-80, 5.65, 5.64, 0.40, 25.0), (-65, 1.59, 1.54, 0.40, 36.3),
-                     (-50, 1.27, 1.21, 0.40, 38.4), (-35, 1.46, 1.21, 0.83, 38.4), (-20, 11.75, 1.22, 11.69, 38.3),
+                     (-95.0, 31.08, 31.08, 0.40, 10.1), (-80, 5.66, 5.65, 0.40, 25.0), (-65, 1.64, 1.60, 0.40, 36.0),
+                     (-50, 1.34, 1.28, 0.40, 37.9), (-35, 1.53, 1.28, 0.83, 37.9), (-20, 11.76, 1.29, 11.69, 37.8),
                  })
         {
             int i = Index(pin, p);
@@ -259,8 +259,8 @@ public sealed class ReceiverNoiseExampleTests(ITestOutputHelper output) : IDispo
             Assert.Equal(snr, At("SNR_dB", i), 0.05);
         }
         // The phase-noise floor: from −65 to −20 dBm the noise part stands still while the signal grows 45 dB.
-        Assert.InRange(At("SNR_dB", Index(pin, -50)), 38.3, 38.5);
-        Assert.InRange(At("SNR_dB", Index(pin, -20)), 38.3, 38.5);
+        Assert.InRange(At("SNR_dB", Index(pin, -50)), 37.8, 38.0);
+        Assert.InRange(At("SNR_dB", Index(pin, -20)), 37.7, 38.0);
         // At the IF: the chain's 26 dB of small-signal gain (16 − 2 − 7 − 1 + 20), compressing at −20 dBm.
         Assert.Equal(26.0, At1("Gt_dB", Index(pin, -50)), 0.05);
         Assert.Equal(23.8, At1("Gt_dB", Index(pin, -20)), 0.05);
@@ -302,8 +302,8 @@ public sealed class ReceiverNoiseExampleTests(ITestOutputHelper output) : IDispo
         // The README's table: Vtune, Fosc (MHz), Kvco (MHz/V), PN at 100 kHz (dBc/Hz), flicker corner (kHz; 3.5 V's is the null).
         foreach (var (v, fo, k, l, c) in new[]
                  {
-                     (3.0, 2092.7, 17.1, -108.7, 6.9), (3.5, 2101.2, 16.1, -109.2, double.NaN),
-                     (4, 2108.7, 14.3, -109.3, 3.2), (9, 2155.6, 6.6, -108.1, 42.3),
+                     (3.0, 2092.7, 17.1, -106.6, 6.9), (3.5, 2101.2, 16.1, -106.5, double.NaN),
+                     (4, 2108.7, 14.3, -106.4, 3.2), (9, 2155.6, 6.6, -105.6, 42.3),
                  })
         {
             int i = Index(vt, v);
@@ -312,11 +312,11 @@ public sealed class ReceiverNoiseExampleTests(ITestOutputHelper output) : IDispo
             Assert.Equal(l, pn.RealValues[i * no + Index(off, 1e5)], 0.05);
             if (!double.IsNaN(c)) Assert.Equal(c, corner[i] / 1e3, 0.05);
         }
-        Assert.Equal(-129.2, pn.RealValues[v35 * no + Index(off, 1e6)], 0.05);
+        Assert.Equal(-128.8, pn.RealValues[v35 * no + Index(off, 1e6)], 0.05);
         Assert.True(corner[v35] < 10, "the flicker corner at 3.5 V is not the null");
         var share = Shares(ds["OSC1.PNpct"], v35 * no + Index(off, 1e5));
         output.WriteLine("at 3.5 V, 100 kHz: " + string.Join(", ", share.Where(x => x.Value > 1).Select(x => $"{x.Key} {x.Value:F1} %")));
-        Assert.InRange(share["Q1"], 65, 75);
+        Assert.InRange(share["Q1"], 78, 88);
         Assert.True(share["Rt"] > share["RL"] && share["RL"] > 5, "the tuning resistor and the load are not next");
 
         // Bench 6's LO carries this curve: Copy as Phase-Noise Mask of the PN trace at 3.5 V, pasted on the VCO source.

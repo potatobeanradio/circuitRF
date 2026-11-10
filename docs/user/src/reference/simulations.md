@@ -467,7 +467,7 @@ warns.
 | Key | Default | |
 |---|---|---|
 | `PhaseNoise` | no | yes adds the cubes below |
-| `PnStart`, `PnStop` | 100 Hz, 10 MHz | The offsets from the carrier, with an optional Hz, kHz, MHz or GHz |
+| `PnStart`, `PnStop` | 100 Hz, 10 MHz | The offsets from the carrier, with an optional mHz, Hz, kHz, MHz or GHz (`m` milli, `M` mega) |
 | `PnNpts` | 61 | Number of offsets |
 | `PnLog` | yes | Offsets evenly spaced in log-frequency, or linearly |
 | `PnPort` | see below | The `Num` of the Port or Term the noise is read at |

@@ -403,6 +403,7 @@ public sealed class LoadpullEngine
         var gridPointList = p.Grid.Points;
         _collectWBondCurrents = true;
         bool moved = false;
+        if (p.Noise is { } req) HbNoise.ValidateEnds(_netlist, req);
         _noiseHz = p.Noise is null ? 0 : NoiseReadHz(p.NoiseFreqHz, p.ToneHz, out moved);
         if (moved)
             _netlist.AddNoteOnce("loadpull.noise-frequency-offset",
@@ -681,6 +682,16 @@ public sealed class LoadpullEngine
         // return loss (NOT 50 Ω). `__`-prefixed so it is hidden from pickers and passed through sweep
         // stacking unstacked; distinct from the importers' rank-1 {freq} "ZSource" (no name collision).
         ds.Add("__SrcZ", new DataCube(new[] { gridAxis }, zSource));
+
+        // A sourcepull: ZLoad/GammaLoad carry the swept termination, which is the SOURCE's; say so, with the load held
+        // fixed, so an exported .spl/.lpcwave files the swept Γ on the source plane (LoadpullExportModel). A loadpull
+        // writes neither, exactly as before.
+        if (!p.SweepLoad)
+        {
+            ds.Add(RfCore.Loadpull.LoadpullExportModel.SweptSourceCube, new DataCube(Array.Empty<Axis>(), new[] { 1.0 }));
+            ds.Add(RfCore.Loadpull.LoadpullExportModel.FixedLoadZCube,
+                   new DataCube(Array.Empty<Axis>(), new[] { ctx.LoadModel.GetDeclaredZ(1) }));
+        }
 
         // Single-frequency carrier so the summary surface reports the real tone frequency (not 0) for
         // these freq-axis-less FOM cubes — same convention the .spl/.lpcwave readers use (__Freq).

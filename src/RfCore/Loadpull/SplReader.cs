@@ -19,6 +19,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using RfCore.Data;
 
@@ -77,6 +78,11 @@ namespace RfCore.Loadpull
             if (freqGrids.Count == 0)
                 throw new FormatException(".spl: no freq/grid/pin header line found.");
 
+            // The swept termination the file declares: "VAR=<F0 Source Gamma>" is a sourcepull, whose rows carry the swept Γ
+            // in gamma_src1 and the fixed load in gamma_ld1. Anything else is the load.
+            bool sweptSource = lines.Any(l => l.TrimStart().StartsWith("VAR", StringComparison.OrdinalIgnoreCase)
+                                              && l.Contains("Source Gamma", StringComparison.OrdinalIgnoreCase));
+
             // ── Parse each frequency block ──────────────────────────────────────
             // Locate "Freq = X GHz" lines; each starts a block.
             var freqBlockStarts = new List<int>();
@@ -105,7 +111,7 @@ namespace RfCore.Loadpull
                 int nGrid = freqInfo.NGrid;
                 int nPin  = freqInfo.NPin;
 
-                var block = ParseFreqBlock(lines, blockStart, blockEnd, nGrid, nPin, freqInfo.FreqGHz);
+                var block = ParseFreqBlock(lines, blockStart, blockEnd, nGrid, nPin, freqInfo.FreqGHz, sweptSource);
                 freqResults.Add(block);
             }
 
@@ -132,11 +138,14 @@ namespace RfCore.Loadpull
             public double[]? ReflLin;      // reflection coeff (linear, stored alias)
             public Complex   SourceGamma;  // per-freq source Γ (from first grid pt)
             public bool      HasSourceGamma;
+            public bool      SweptSource;      // a sourcepull: GammaLoad holds the swept source Γ
+            public Complex   FixedLoadGamma;   // a sourcepull's fixed load (from first row)
+            public bool      HasFixedLoadGamma;
         }
 
         private static FreqBlock ParseFreqBlock(
             List<string> lines, int start, int end,
-            int nGrid, int nPin, double freqGhz)
+            int nGrid, int nPin, double freqGhz, bool sweptSource = false)
         {
             // Find column header line: the first line starting with "valid" or
             // containing gamma_ld1 (and not starting with '!')
@@ -169,10 +178,11 @@ namespace RfCore.Loadpull
             // Detect dialect
             bool isLpcwaveDerived = colIdx.ContainsKey("PoutWaves[dBm]");
 
-            // Identify swept gamma column pair (gamma_ld1_real / gamma_ld1_imag)
-            bool hasGammaRi = colIdx.ContainsKey("gamma_ld1_real") && colIdx.ContainsKey("gamma_ld1_imag");
-            int ld1RealCol  = hasGammaRi ? colIdx["gamma_ld1_real"] : -1;
-            int ld1ImagCol  = hasGammaRi ? colIdx["gamma_ld1_imag"] : -1;
+            // Identify swept gamma column pair: gamma_ld1_real / gamma_ld1_imag, or gamma_src1's on a sourcepull
+            string swept    = sweptSource ? "gamma_src1" : "gamma_ld1";
+            bool hasGammaRi = colIdx.ContainsKey(swept + "_real") && colIdx.ContainsKey(swept + "_imag");
+            int ld1RealCol  = hasGammaRi ? colIdx[swept + "_real"] : -1;
+            int ld1ImagCol  = hasGammaRi ? colIdx[swept + "_imag"] : -1;
 
             // Pin column (PavlDbm source)
             int pinCol = colIdx.TryGetValue("Pin_avail_dBm", out int pc1) ? pc1
@@ -295,8 +305,20 @@ namespace RfCore.Loadpull
                 srcGPhCol  = colIdx.TryGetValue("PhiS@F0[deg]",   out int _sp1) ? _sp1 : -1;
             }
 
+            // ── A sourcepull: the swept Γ is the source's, and the load is the fixed termination ──
+            block.SweptSource = sweptSource;
+            if (sweptSource)
+            {
+                if (colIdx.TryGetValue("gamma_ld1_real", out int lr) && colIdx.TryGetValue("gamma_ld1_imag", out int li)
+                    && rawData.Count > 0 && lr < rawData[0].Length && li < rawData[0].Length
+                    && !double.IsNaN(rawData[0][lr]) && !double.IsNaN(rawData[0][li]))
+                {
+                    block.FixedLoadGamma    = new Complex(rawData[0][lr], rawData[0][li]);
+                    block.HasFixedLoadGamma = true;
+                }
+            }
             // ── Capture source Γ from first row (validity-agnostic: it's a termination) ──
-            if (srcGRealCol >= 0 && srcGImagCol >= 0 && rawData.Count > 0)
+            else if (srcGRealCol >= 0 && srcGImagCol >= 0 && rawData.Count > 0)
             {
                 var r0 = rawData[0];
                 double re = srcGRealCol < r0.Length ? r0[srcGRealCol] : double.NaN;
@@ -384,6 +406,19 @@ namespace RfCore.Loadpull
         {
             var ds = new DataSet();
             if (blocks.Count == 0) return ds;
+
+            // A sourcepull says so, and carries its fixed load — rank 0 for one frequency, over {freq} for several.
+            if (blocks[0].SweptSource)
+            {
+                ds.Add(LoadpullExportModel.SweptSourceCube, new DataCube(Array.Empty<Axis>(), new[] { 1.0 }));
+                if (blocks.All(b => b.HasFixedLoadGamma))
+                {
+                    var zl = blocks.Select(b => GammaToZ(b.FixedLoadGamma)).ToArray();
+                    ds.Add(LoadpullExportModel.FixedLoadZCube, blocks.Count == 1
+                        ? new DataCube(Array.Empty<Axis>(), zl)
+                        : new DataCube(new[] { new Axis("freq", blocks.Select(b => b.FreqGHz * 1e9).ToArray(), "Hz") }, zl));
+                }
+            }
 
             if (!multiFreq)
             {

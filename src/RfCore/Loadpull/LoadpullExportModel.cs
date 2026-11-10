@@ -39,6 +39,11 @@ namespace RfCore.Loadpull
         public Dictionary<string, double[]> Foms = new(StringComparer.Ordinal);
         public Complex SourceGamma;
         public bool    HasSourceGamma;
+        /// <summary>A sourcepull: <see cref="GammaLoad"/> holds the swept SOURCE Γ, and <see cref="FixedLoadGamma"/> the
+        /// load the run held fixed (when known).</summary>
+        public bool    SweptSource;
+        public Complex FixedLoadGamma;
+        public bool    HasFixedLoadGamma;
     }
 
     public static class LoadpullExportModel
@@ -55,6 +60,24 @@ namespace RfCore.Loadpull
         ];
 
         private const double Z0 = 50.0;
+
+        /// <summary>
+        /// Rank-0 marker: 1 when the swept termination — the <c>GammaLoad</c>/<c>ZLoad</c> cubes every loadpull result carries
+        /// it in — is the SOURCE (a sourcepull, <c>Sweep=Source</c>). <c>__</c>-prefixed: hidden, and passed through sweep
+        /// stacking unstacked. The engine writes it; the .spl and .lpcwave readers write it back from the file.
+        /// </summary>
+        public const string SweptSourceCube = "__SweptSource";
+
+        /// <summary>A sourcepull's fixed load at the fundamental (Ω): rank 0, or over <c>{freq}</c> from a multi-frequency
+        /// file.</summary>
+        public const string FixedLoadZCube = "__FixedLoadZ";
+
+        /// <summary>Whether <paramref name="ds"/>'s loadpull cubes (in <paramref name="group"/>) are a sourcepull.</summary>
+        public static bool IsSourcepull(DataSet ds, string group = "")
+        {
+            string q = group.Length > 0 ? $"{group}.{SweptSourceCube}" : SweptSourceCube;
+            return ds.Contains(q) && ds[q].RealValues is { Length: > 0 } v && v[0] != 0;
+        }
 
         /// <summary>
         /// Flatten <paramref name="ds"/>'s loadpull cubes (in <paramref name="group"/>; "" = top level)
@@ -105,8 +128,11 @@ namespace RfCore.Loadpull
             int nFreq = freqHz.Length;
             var blocks = new List<LoadpullFreqBlock>(nFreq);
 
-            // Source termination (ZSource over {freq}) → per-freq source Γ.
-            Complex[]? zSource = Has("ZSource") ? Get("ZSource").ComplexValues : null;
+            // Source termination (ZSource over {freq}) → per-freq source Γ. A sourcepull has no fixed source: its swept Γ is
+            // the termination cube, and the load is the fixed one.
+            bool sweptSource = IsSourcepull(ds, group);
+            Complex[]? zSource = !sweptSource && Has("ZSource") ? Get("ZSource").ComplexValues : null;
+            Complex[]? zFixedLoad = sweptSource && Has(FixedLoadZCube) ? Get(FixedLoadZCube).ComplexValues : null;
 
             for (int fi = 0; fi < nFreq; fi++)
             {
@@ -136,6 +162,17 @@ namespace RfCore.Loadpull
                         for (int pi = 0; pi < nPin; pi++)
                             buf[gi * nPin + pi] = src[FlatIndex(c, fi, gi, pi)];
                     block.Foms[name] = buf;
+                }
+
+                block.SweptSource = sweptSource;
+                if (zFixedLoad is { Length: > 0 })
+                {
+                    var zl = zFixedLoad[Math.Min(fi, zFixedLoad.Length - 1)];
+                    if (!(double.IsNaN(zl.Real) || double.IsNaN(zl.Imaginary)))
+                    {
+                        block.FixedLoadGamma    = Z2G(zl / Z0);
+                        block.HasFixedLoadGamma = true;
+                    }
                 }
 
                 if (zSource != null && fi < zSource.Length)

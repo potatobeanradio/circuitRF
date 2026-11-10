@@ -384,3 +384,8 @@ Design note: `docs/design/hb-noise.md` §9. What was found on the way:
   `FormatLoadpullPursuitAnalysis`, not carried by `CschAnalysis`, the editors or `DuplicateAnalysisCommand`. A loadpull
   that sets it in a hand-written `.cnl` keeps it; one saved from the GUI, or run through the GUI's netlist write, gets 3 dB.
   Found, not fixed (outside NZ-6).
+- **A sourcepull's export filed the swept source Γ as the load's** (NZ series review). The result carries the swept
+  termination in `GammaLoad`/`ZLoad` whichever side was swept, and nothing said which. A sourcepull now also writes
+  `__SweptSource` (1) and `__FixedLoadZ` (the load tuner's declared Z[1]); `.spl` declares `VAR=<F0 Source Gamma>` with the
+  swept Γ in `gamma_src1` and the fixed load in `gamma_ld1`, `.lpcwave` a `! Load Impedance` line, and both readers write
+  the markers back. A loadpull writes neither, byte for byte as before. Gate: `LoadpullWriterTests.Sourcepull_RoundTrip_…`.

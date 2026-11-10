@@ -3544,3 +3544,9 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
   TheCliVerb_ReportsTheBenchsMeasurements`).
 - The run's one-line summary (Fosc, Aosc, the start-up frequency) is `RunResult.StatusMessage`, not a note: the analysis
   notes `CircuitEvaluation` collects become the status message, while `RunResult.Notes` carries the netlist's notes.
+- **The run verbs' overrides dropped the noise keys** (NZ series review). `ApplyHbOverrides` and `ApplyLoadpullOverrides`
+  rebuild the directive field by field, and any `--maxharm`, `--tol`, `--pin`… left out every NZ-5/NZ-6 key (and HB's
+  SS* and MarginThreshold) in silence: `hb … --maxharm 7` wrote no NF. Both copy them now, and
+  `AnalysisClonePropertyParityTests.CliOverrideRebuild_CarriesEveryPropertyItDoesNotOverride` holds them by reflection.
+  `check` also runs the oscillator's own key resolution without `PhaseNoise=yes` (`check.osc.keys`) and an HB/loadpull
+  noise run's ends (`check.noise.keys`).

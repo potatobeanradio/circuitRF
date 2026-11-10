@@ -1864,6 +1864,20 @@ internal static class CliDiagnostics
         "{path}: {why}",
         ("path", path), ("analysis", analysis), ("why", why));
 
+    /// <summary>Brief NZ-9 — an oscillator's search keys (Fguess, Fstart, Fstop, Unit) that do not resolve: the run's own
+    /// refusal, as a finding.</summary>
+    public static Diagnostic CheckOscKeys(string path, string analysis, string why) => Diagnostic.Create(
+        "check.osc.keys", DiagnosticSeverity.Error,
+        "{path}: {why}",
+        ("path", path), ("analysis", analysis), ("why", why));
+
+    /// <summary>Briefs NZ-5/NZ-6 — an HB or loadpull noise run whose keys do not resolve, or whose NoiseIn/NoiseOut names no
+    /// port or Tuner: the run's own refusal, as a finding.</summary>
+    public static Diagnostic CheckNoiseKeys(string path, string analysis, string why) => Diagnostic.Create(
+        "check.noise.keys", DiagnosticSeverity.Error,
+        "{path}: {why}",
+        ("path", path), ("analysis", analysis), ("why", why));
+
     /// <summary>Brief NZ-10 — an oscillator's phase-noise keys that do not resolve, or name nowhere to read: the run's own
     /// refusal, as a finding.</summary>
     public static Diagnostic CheckOscPhaseNoise(string path, string analysis, string why) => Diagnostic.Create(

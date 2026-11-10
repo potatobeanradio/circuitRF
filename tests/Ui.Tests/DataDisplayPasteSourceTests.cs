@@ -92,4 +92,44 @@ public sealed class DataDisplayPasteSourceTests : IDisposable
 
         Assert.Equal(DataSourceRef.Selected, pasted.PlotVM.Plot.Traces.Single().SourceRef);
     }
+
+    /// <summary>
+    /// The clipboard path end to end, as the views wire it: a display that was already open when another display copied —
+    /// and a new, unsaved display with no source selected and no results folder — has Paste enabled and pastes the plot,
+    /// its data with it. Paste's enabled state used to be worked out once, at attach, before the clipboard reader was
+    /// wired, and never again unless the same display copied; Ctrl/Cmd+V then did nothing in any other display.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]   // another display, open before the copy
+    [InlineData(true)]    // a new, unsaved display: nothing selected, no results folder
+    public async Task CopyInOneDisplay_PastesInAnother_ThroughTheClipboard(bool fresh)
+    {
+        string results = Path.Combine(_root, "ws", "results");
+        WriteRun(results, "a.npy", 10);
+        string? clipboard = null;
+        void Wire(DisplayWindowViewModel w)
+        {
+            w.SetRichCopyAction((containers, _) => { clipboard = PlotExporter.BuildContainersJson(containers); return Task.CompletedTask; });
+            w.SetGetClipboardTextAction(() => Task.FromResult(clipboard));
+        }
+
+        var from = await WindowOnAsync(results, "a.npy");
+        var to   = fresh ? new DisplayWindowViewModel() : await WindowOnAsync(results, "a.npy");
+        Wire(from);
+        Wire(to);
+        var src = from.DataDisplay!.Plots[0];
+        src.Inspector.PlotType = PlotType.Rect;
+        src.Inspector.AddTraceCommand.Execute(null);
+        int before = to.DataDisplay!.Plots.Count;
+
+        await from.CopyCommand.ExecuteAsync(null);
+        Assert.NotNull(clipboard);
+        Assert.True(to.PasteCommand.CanExecute(null));
+        await to.PasteCommand.ExecuteAsync(null);
+
+        Assert.Equal(before + 1, to.DataDisplay.Plots.Count);
+        var trace = to.DataDisplay.Plots[^1].PlotVM.Plot.Traces.Single();
+        Assert.True(trace.Points.Count > 0);
+        Assert.Equal(10, trace.Points[0].Y, 6);
+    }
 }

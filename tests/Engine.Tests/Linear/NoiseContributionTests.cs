@@ -225,6 +225,12 @@ public sealed class NoiseContributionTests(ITestOutputHelper output) : IDisposab
                                 <= 1e-12 * ((Complex)asR.Ds["Cs"][fi, 1, 1]).Magnitude, $"f{fi} ({i},{j})");
         Assert.DoesNotContain(asZ.Nl.Warnings, w => w.StartsWith("Noise:", StringComparison.Ordinal));
         Assert.Contains(active.Nl.Warnings, w => w.StartsWith("Noise:", StringComparison.Ordinal) && w.Contains("Z_Port:X1"));
+
+        // The passivity is the noise analysis's own question: the NDF passivation still sees the type-level answer and
+        // its note, so a run without Noise=yes reports what it always did.
+        var zp = asZ.Nl.Components.Single(c => c.InstancePath == "X1");
+        Assert.Equal(CircuitRF.Core.Activity.ActiveExact, zp.ActivityFor([1e9, 2e9, 3e9]));
+        Assert.StartsWith("Re Z → |Re Z| on the diagonal", zp.Model.PassivationNote);
     }
 
     // ── gate 5: no key, no change ─────────────────────────────────────────────────

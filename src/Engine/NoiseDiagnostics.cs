@@ -67,6 +67,16 @@ public static class NoiseDiagnostics
 
     private static string Ghz(double hz) => (hz / 1e9).ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary>The key prefix a device's non-finite noise density is reported once under, per instance.</summary>
+    public const string NonFiniteDensityKey = "sparam-noise-nonfinite";
+
+    /// <summary>A device noise source with no finite density at a sweep frequency: a flicker source at 0 Hz.</summary>
+    public static Diagnostic NonFiniteDensity(string who, string source, double hz) => Diagnostic.Create(
+        "sparam.noise.nonfinite-density", DiagnosticSeverity.Warning,
+        "Noise: {who}'s {source} source has no finite density at {hz} Hz (a flicker source at 0 Hz), so the noise " +
+        "results there are NaN. Start the sweep above 0 Hz to read them.",
+        ("who", who), ("source", source), ("hz", hz.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)));
+
     /// <summary>Parts the noise analysis has no model for, named once per run.</summary>
     public static Diagnostic Noiseless(IReadOnlyList<string> instances)
     {

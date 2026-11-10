@@ -575,7 +575,7 @@ public sealed class EnvelopeEngineMt
                 V[a, 0] = dc.Converged && ifNodes[a] - 1 < dc.NodeVoltages.Length ? dc.NodeVoltages[ifNodes[a] - 1] : 0.0;
             // the run's tolerance, from the RF excitation at the record's RMS drive (as EnvelopeEngine)
             ExtractAll(1.0, (s, t) => driveRms(s, t));
-            tol = EnvelopeEngine.RunTolerance(p.Tol, iSrc, m => m > 0);
+            tol = EnvelopeEngine.RunTolerance(p.Tol, iSrc, m => m > 0, _nl);
             ExtractAll(1.0);
             var V0 = (Complex[,])V.Clone();
             var sol = HbNewtonNd.Solve(V, yNN, iSrc, apft, tones, N, _nl, ifNodes, _settings, tol);

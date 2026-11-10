@@ -297,4 +297,23 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         output.WriteLine($"EVM {At(ds, "EVM_pct"):E3} %");
         Assert.True(At(ds, "EVM_pct") < 0.01);
     }
+
+    /// <summary>
+    /// The relative tolerance stops at round-off. A biased stage behind ideal chokes carries a ~3e6 A Norton current at DC
+    /// (the 1 µΩ regularisation across 3 V), and its residual cannot fall below a machine epsilon of that; a -100 dBm signal's
+    /// 1e-4 lay under it, and every run below ~-75 dBm failed to start. The floor holds, and an excitation large enough is on
+    /// Tol exactly, as before.
+    /// </summary>
+    [Fact]
+    public void RunTolerance_StopsAtRoundOffOnTheLargestCurrent()
+    {
+        const double dc = 3e6;
+        System.Numerics.Complex[][] Src(double rf) => [[dc], [rf], [0]];
+        double small = CircuitRF.Engine.Envelope.EnvelopeEngine.RunTolerance(1e-6, Src(6e-8), k => k > 0);
+        Assert.Equal(CircuitRF.Engine.Envelope.EnvelopeEngine.RoundOffFloor * dc, small, 1e-24);
+        double large = CircuitRF.Engine.Envelope.EnvelopeEngine.RunTolerance(1e-6, Src(1e-1), k => k > 0);
+        Assert.Equal(1e-6, large);
+        double mid = CircuitRF.Engine.Envelope.EnvelopeEngine.RunTolerance(1e-6, Src(1e-3), k => k > 0);
+        Assert.Equal(1e-7, mid, 1e-20);
+    }
 }

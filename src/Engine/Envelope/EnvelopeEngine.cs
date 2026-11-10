@@ -178,12 +178,34 @@ public sealed class EnvelopeEngine
     /// </summary>
     internal const double RelativeTol = 1e-4;
 
+    /// <summary>The tolerance's floor, as a multiple of the largest Norton current in the run (<see cref="RunTolerance"/>): four
+    /// machine epsilons, where a biased stage behind ideal chokes was measured to converge at under one.</summary>
+    internal const double RoundOffFloor = 2.220446049250313e-16;
+
+    /// <summary>The fraction of the excitation above which a round-off-held tolerance is reported: the signal is then solved
+    /// to no better than 1 % of its own level, and EVM, ACLR and distortion read it.</summary>
+    internal const double FloorWarnFraction = 1e-2;
+
+    /// <summary>
+    /// <see cref="RunTolerance(double, Complex[][], Func{int, bool})"/>, warning once on <paramref name="nl"/> when round-off
+    /// holds the tolerance above <see cref="FloorWarnFraction"/> of the excitation.
+    /// </summary>
+    internal static double RunTolerance(double tol, Complex[][] iSrc, Func<int, bool> isRf, ElaboratedNetlist nl)
+    {
+        double t = RunTolerance(tol, iSrc, isRf, out double scale);
+        if (scale > 0 && t > FloorWarnFraction * scale && t < tol)
+            nl.AddWarningOnce(EnvelopeToneDiagnostics.RoundOffFloorKey, EnvelopeToneDiagnostics.RoundOffFloor(t, scale).Render());
+        return t;
+    }
+
     /// <summary>
     /// The tolerance a run's steps and its harmonic-balance start are solved to: <paramref name="tol"/>, or
     /// <see cref="RelativeTol"/> of the RF excitation <paramref name="iSrc"/> (the products <paramref name="isRf"/> names)
     /// when that is smaller. The excitation is the record's RMS drive, not the drive at t = 0, which may be zero.
     /// </summary>
-    internal static double RunTolerance(double tol, Complex[][] iSrc, Func<int, bool> isRf)
+    internal static double RunTolerance(double tol, Complex[][] iSrc, Func<int, bool> isRf) => RunTolerance(tol, iSrc, isRf, out _);
+
+    private static double RunTolerance(double tol, Complex[][] iSrc, Func<int, bool> isRf, out double scale)
     {
         double sum = 0;
         for (int m = 0; m < iSrc.Length; m++)
@@ -191,8 +213,16 @@ public sealed class EnvelopeEngine
             if (!isRf(m) || iSrc[m] is not { } col) continue;
             foreach (var v in col) sum += v.Real * v.Real + v.Imaginary * v.Imaginary;
         }
-        double scale = Math.Sqrt(sum);
-        return scale > 0 && RelativeTol * scale < tol ? RelativeTol * scale : tol;
+        scale = Math.Sqrt(sum);
+        if (!(scale > 0) || RelativeTol * scale >= tol) return tol;
+        // Never below what the solve can reach: the residual sums currents as large as the biggest Norton current (a supply
+        // through an ideal choke regularised to ~1 µΩ is ~1e6 A per volt), and round-off on those leaves a floor that a
+        // small enough signal's relative tolerance would sit under — and every step would then fail to converge.
+        double big = 0;
+        foreach (var col in iSrc)
+            if (col is not null)
+                foreach (var v in col) big = Math.Max(big, v.Magnitude);
+        return Math.Min(tol, Math.Max(RelativeTol * scale, RoundOffFloor * big));
     }
 
     /// <summary>The RMS magnitude of a drive window: the level the run's tolerance is set against.</summary>
@@ -839,7 +869,7 @@ public sealed class EnvelopeEngine
             }
             // the run's tolerance, from the RF excitation at the record's RMS drive (the drive at t = 0 may be zero)
             ExtractAll(1.0, s => driveRms(s));
-            tol = RunTolerance(p.Tol, iSrc, k => k > 0);
+            tol = RunTolerance(p.Tol, iSrc, k => k > 0, _nl);
             HbNewton.SolveResult? sol = null;
             foreach (double sc in new[] { 1.0 })
             {

@@ -50,7 +50,9 @@ namespace RfCore.Loadpull
             w.WriteLine();
             w.WriteLine($"Number of Frequencies = {blocks.Count}");
             w.WriteLine("Number of Variables = 1");
-            w.WriteLine("VAR=<F0 Load Gamma>, Units=<>");
+            // The swept termination: the load, or the source for a sourcepull — whose rows then carry the swept Γ in gamma_src1
+            // and the fixed load in gamma_ld1.
+            w.WriteLine(blocks[0].SweptSource ? "VAR=<F0 Source Gamma>, Units=<>" : "VAR=<F0 Load Gamma>, Units=<>");
             w.WriteLine("VAR=<Pin_avail>, Units=<dBm>");
             w.WriteLine("! Freq Points per VAR");
             foreach (var b in blocks)
@@ -67,7 +69,9 @@ namespace RfCore.Loadpull
         {
             // Columns present (canonical FOM names), in display order.
             var fomNames = LoadpullExportModel.FomColumns.Where(b.Foms.ContainsKey).ToList();
-            bool hasSrc  = b.HasSourceGamma;
+            bool swept   = b.SweptSource;
+            bool hasSrc  = swept || b.HasSourceGamma;
+            bool hasLd   = !swept || b.HasFixedLoadGamma;
 
             w.WriteLine($"Freq = {Fmt(b.FreqGHz)} GHz");
             w.WriteLine("num_src_harmonics = 1, num_ld_harmonics = 1");
@@ -75,7 +79,7 @@ namespace RfCore.Loadpull
             // Header — gamma tokens are single names; SplReader expands each into a real/imag pair.
             var header = new List<string> { "valid" };
             if (hasSrc) header.Add("gamma_src1");
-            header.Add("gamma_ld1");
+            if (hasLd)  header.Add("gamma_ld1");
             header.Add("Psource[dBm]");
             header.AddRange(fomNames);
             w.WriteLine(string.Join(" ", header));
@@ -85,15 +89,18 @@ namespace RfCore.Loadpull
 
             for (int gi = 0; gi < b.NGrid; gi++)
             {
-                var gld = b.GammaLoad[gi];
+                // GammaLoad is the swept termination; on a sourcepull that is the source's.
+                var gSwept = b.GammaLoad[gi];
+                Complex gsrc = swept ? gSwept : b.SourceGamma;
+                Complex gld  = swept ? b.FixedLoadGamma : gSwept;
                 for (int pi = 0; pi < b.NPin; pi++)
                 {
                     int idx = gi * b.NPin + pi;
                     bool valid = probe == null || !double.IsNaN(b.Foms[probe][idx]);
 
                     var cells = new List<string> { valid ? "1" : "0" };
-                    if (hasSrc) { cells.Add(Fmt(b.SourceGamma.Real)); cells.Add(Fmt(b.SourceGamma.Imaginary)); }
-                    cells.Add(Fmt(gld.Real)); cells.Add(Fmt(gld.Imaginary));
+                    if (hasSrc) { cells.Add(Fmt(gsrc.Real)); cells.Add(Fmt(gsrc.Imaginary)); }
+                    if (hasLd)  { cells.Add(Fmt(gld.Real));  cells.Add(Fmt(gld.Imaginary)); }
                     cells.Add(Fmt(b.PinAxis[pi]));
                     foreach (var name in fomNames)
                         cells.Add(Fmt(b.Foms[name][idx]));

@@ -29,6 +29,22 @@ public static class HbNoiseDiagnostics
         ("what", tones == 1 ? "an integer k (the input frequency is f_out + k·f0)."
                             : $"{tones} comma-separated integers, one per tone (the input frequency is f_out + Σ kᵢ·fᵢ)."));
 
+    /// <summary>The key the unconverged-solve noise warning is reported once under.</summary>
+    public const string UnconvergedKey = "hb-noise-unconverged";
+
+    /// <summary>Noise read on a harmonic-balance solve that did not converge.</summary>
+    public static Diagnostic Unconverged() => Diagnostic.Create(
+        "hb.noise.unconverged", DiagnosticSeverity.Warning,
+        "HB noise was read on a harmonic-balance solve that did not converge: its NF and the other noise results describe " +
+        "that unconverged waveform, not the circuit's.");
+
+    /// <summary>
+    /// Refuses, naming the key, an HB or loadpull noise request whose NoiseIn or NoiseOut names no port or Tuner of
+    /// <paramref name="nl"/> — what <c>check</c> asks before anything is solved.
+    /// </summary>
+    public static void ValidateEnds(CircuitRF.Core.Elaboration.ElaboratedNetlist nl, HbNoiseRequest request)
+        => HbNoise.ValidateEnds(nl, request);
+
     /// <summary>A port number no port carries.</summary>
     public static Diagnostic NoPort(string key, int num, string role) => Diagnostic.Create(
         "hb.noise.no-port", DiagnosticSeverity.Error,

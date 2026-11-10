@@ -53,7 +53,10 @@ internal sealed record OscPhaseNoiseInputs(
 /// noise moves the oscillation, and how far is the outer Newton's own sensitivity. A slow current <c>u</c> at sideband s of
 /// the generator-held circuit moves the residual by <c>δR = Σ β_s·u_s</c> (one adjoint of the static driven solve), and the
 /// oscillation answers with <c>[δln A; δf] = −M⁻¹·[Re δR; Im δR]</c>, M the outer Jacobian. The frequency deviation's
-/// density over f_m² is L; white sources give 1/f_m², flicker at baseband 1/f_m³.</para>
+/// density over f_m² is L; white sources give 1/f_m², flicker at baseband 1/f_m³. The slow current's baseband sideband is
+/// taken at f_m itself, not at DC: a bias or tuning network's RC whose corner lies below the offset filters what reaches
+/// the device, and a static reading would pass it whole (a decoupled tuning resistor read ~4 dB high 100 kHz out). The
+/// carrier's sidebands stay static; their response to a slow change is M's.</para>
 ///
 /// <para><b>The join.</b> The sensitivity holds while f_m is well below the rate at which the amplitude settles, f_AM, read
 /// off the circuit's immittance W at the probe: <c>f_AM = −Im(W_lnL·conj W_f) / |W_f|²</c>. Below <see cref="JoinFraction"/>
@@ -123,7 +126,12 @@ internal static class OscPhaseNoise
         var src = BuildSources(nl, smp, sb, extractor.InterfaceNodes, sidebandHz, dcNodes);
 
         // ── Close-in: the frequency's and the amplitude's sensitivity to a slow current at every sideband ──
+        // Static for the flicker corner's asymptotes; at each close-in offset (and the join) with the baseband at that offset.
         var (hF, hA) = Sensitivities(x, extractor, sb, nInt, lin.YDc);
+        var closeIn = new Dictionary<double, (Complex[][] HF, Complex[][] HA)>();
+        foreach (double f in offsets.Append(fJoin))
+            if (f > 0 && f <= fJoin && f < half && !closeIn.ContainsKey(f))
+                closeIn[f] = Sensitivities(x, extractor, sb, nInt, lin.YDc, f);
         // From here on the circuit is the autonomous one at every frequency: the generator was needed only for the static
         // sensitivity above, and an offset closer to the carrier than its 1e-9 window would otherwise stamp it into a sideband.
         ((OscProbeModel)x.Probe.Model).Disarm();
@@ -148,9 +156,10 @@ internal static class OscPhaseNoise
             if (fm <= fJoin)
             {
                 var stat = StationaryAt(src, fm);
-                pnParts = Quad(src, stat, hF, fm, whiteOnly: false);
+                var (hFm, hAm) = closeIn[fm];
+                pnParts = Quad(src, stat, hFm, fm, whiteOnly: false);
                 for (int k = 0; k < np; k++) pnParts[k] /= 2 * fm * fm;
-                anParts = Quad(src, stat, hA, fm, whiteOnly: false);
+                anParts = Quad(src, stat, hAm, fm, whiteOnly: false);
                 for (int k = 0; k < np; k++) anParts[k] /= 2;
             }
             else
@@ -172,13 +181,22 @@ internal static class OscPhaseNoise
         if (fJoin > 0 && fJoin < half && fJoin >= offsets[0] && fJoin <= offsets[^1])
         {
             var stat = StationaryAt(src, fJoin);
-            double close = Quad(src, stat, hF, fJoin, whiteOnly: false).Sum() / (2 * fJoin * fJoin);
-            var (far, _) = Far(x, nl, src, extractor, sb, nInt, lin.YDc, fJoin, plus, minus, v1);
+            double close = Quad(src, stat, closeIn[fJoin].HF, fJoin, whiteOnly: false).Sum() / (2 * fJoin * fJoin);
+            double closeAm = Quad(src, stat, closeIn[fJoin].HA, fJoin, whiteOnly: false).Sum() / 2;
+            var (far, farAm) = Far(x, nl, src, extractor, sb, nInt, lin.YDc, fJoin, plus, minus, v1);
             if (far is not null)
             {
                 double diff = 10 * Math.Log10(close / far.Sum());
                 if (!(Math.Abs(diff) <= JoinTolDb))
                     nl.AddWarningOnce(OscDiagnostics.PnJoinKey, OscDiagnostics.PnJoinMismatch(x.Analysis, fJoin, diff).Render());
+            }
+            // The amplitude noise is joined at the same offset, and held to the same agreement.
+            if (farAm is not null)
+            {
+                double diff = 10 * Math.Log10(closeAm / farAm.Sum());
+                if (!(Math.Abs(diff) <= JoinTolDb))
+                    nl.AddWarningOnce(OscDiagnostics.PnJoinKey + ".am",
+                        OscDiagnostics.PnJoinMismatch(x.Analysis, fJoin, diff, "amplitude noise").Render());
             }
         }
 
@@ -346,23 +364,40 @@ internal static class OscPhaseNoise
     /// one, which is how a real-linear map is written over complex phasors.
     /// </summary>
     private static (Complex[][] HF, Complex[][] HA) Sensitivities(OscPhaseNoiseInputs x, HbLinearExtractor extractor,
-        HbSmallSignal.ISidebands sb, int nInt, Complex[,] yDc)
+        HbSmallSignal.ISidebands sb, int nInt, Complex[,] yDc, double fm = 0)
     {
         int S = sb.Count, Z = sb.Zero, nc = nInt * S;
+        double wm = 2 * Math.PI * fm;
         var om = new double[S];
         for (int s = 0; s < S; s++) om[s] = sb.Offset(s);
         var ys = new Dictionary<double, Complex[,]>();
         for (int s = 0; s < S; s++) ys[om[s]] = HbSmallSignal.YNNAt(extractor, om[s], yDc);
         var jss = HbSmallSignal.BuildJss(sb, nInt, 0.0, w => ys[w]);
+        if (wm > 0)
+        {
+            // The slow current's baseband sideband is at the offset itself, where a bias network's capacitors are not open:
+            // its rows of the matrix, and its partition, are taken at f_m. The carrier's sidebands stay static — their
+            // response to a slow change is the outer Newton's own (M), which the generator holds them for.
+            var yM = HbSmallSignal.YNNAt(extractor, wm, yDc);
+            var zero = new Complex[yM.GetLength(0), yM.GetLength(1)];
+            var jm = HbSmallSignal.BuildJss(sb, nInt, wm, w => w == wm ? yM : zero);
+            for (int n = 0; n < nInt; n++)
+                Array.Copy(jm, (n * S + Z) * nc, jss, (n * S + Z) * nc, nc);
+            om[Z] = wm;
+            ys[wm] = yM;
+        }
         var lu = new HbSmallSignal.DenseLu(Transpose(jss, nc), nc);
-        if (lu.Singular) throw new InvalidOperationException(OscDiagnostics.PnSingular(x.Analysis, 0).Render());
+        if (lu.Singular) throw new InvalidOperationException(OscDiagnostics.PnSingular(x.Analysis, fm).Render());
 
         int pa = x.Probe.Nodes[0], pb = x.Probe.Nodes[1];
-        var a = HbNoise.Adjoint(extractor, nInt, S, om, ys, jss, lu, Z + 1, r =>
+        void Probe(Complex[] r)
         {
             if (pa > 0) r[pa - 1] += Complex.One;
             if (pb > 0) r[pb - 1] -= Complex.One;
-        });
+        }
+        // The probe's voltage at the carrier's upper (+f0) and lower (−f0) sidebands of the slow current.
+        var up = HbNoise.Adjoint(extractor, nInt, S, om, ys, jss, lu, Z + 1, Probe);
+        var dn = HbNoise.Adjoint(extractor, nInt, S, om, ys, jss, lu, Z - 1, Probe);
 
         // dR/dV at the fundamental (V the full-amplitude phasor, twice the two-sided one the adjoint reads).
         double g = x.GGen, amp = x.Amplitude;
@@ -376,19 +411,21 @@ internal static class OscPhaseNoise
         var muA = new Complex(n00, n01);
         var muF = new Complex(n10, n11);
 
-        int size = a[Z].Length;
+        // The residual's envelope δR(t) = ρ·δV(t): its real and imaginary parts at f_m are (δR₊ ± conj δR₋)/2 (over j for
+        // the imaginary), δR₊ = 2ρ·X₊ from the upper sideband and conj δR₋ = 2·conj(ρ)·X₋ from the lower. At f_m = 0 the lower
+        // sideband's response to a current at s is the conjugate of the upper's to the mirror current, which is the static form.
+        int size = up[Z].Length;
         var hF = new Complex[S][];
         var hA = new Complex[S][];
         for (int s = 0; s < S; s++)
         {
-            int mirror = 2 * Z - s;
             hF[s] = new Complex[size];
             hA[s] = new Complex[size];
             for (int i = 0; i < size; i++)
             {
-                Complex beta = 2 * rho * a[s][i], betaM = 2 * rho * a[mirror][i];
-                hF[s][i] = 0.5 * (Complex.Conjugate(muF) * beta + muF * Complex.Conjugate(betaM));
-                hA[s][i] = 0.5 * (Complex.Conjugate(muA) * beta + muA * Complex.Conjugate(betaM));
+                Complex beta = 2 * rho * up[s][i], betaLo = 2 * Complex.Conjugate(rho) * dn[s][i];
+                hF[s][i] = 0.5 * (Complex.Conjugate(muF) * beta + muF * betaLo);
+                hA[s][i] = 0.5 * (Complex.Conjugate(muA) * beta + muA * betaLo);
             }
         }
         return (hF, hA);

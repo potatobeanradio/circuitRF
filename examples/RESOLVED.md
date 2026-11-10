@@ -995,8 +995,11 @@ per bench, the ambient set by `temp = 16.85`.
   diode is the largest share, and the README says how to put the LO's own noise back. `EveryLoIsAP1Tone` holds it.
 - **Bench 6's LO mask is bench 7's PN at 3.5 V**, written by `PhaseNoiseMask.Assignment` (what Copy as Phase-Noise
   Mask writes) and checked point for point by the VCO test. Change the VCO and the mask goes stale; the test says so.
-- **The VCO sweep starts at 3 V.** Below it the close-in and far-out phase noise disagree at their join (1.6 dB at
-  1 V, 0.8 dB at 2 V) and the run warns; at 2.5 V a fresh start-up also needed `Aguess` near the swing. `MaxHarm=9`
+- **The VCO sweep starts at 3 V.** Below it the close-in and far-out phase noise disagreed at their join (1.6 dB at
+  1 V, 0.8 dB at 2 V). The cause was the close-in reading the base bias network at DC, where Cb is open; with the
+  baseband read at the offset (NZ series review, `src/Engine/RESOLVED.md`) 2 V and 2.5 V join with no warning, and the
+  3.5 V curve rises ~3 dB above Cb's 68 kHz corner, which moved the README's PN column and bench 6's mask and EVM
+  table with it. A stated `Aguess` that does not solve at start-up now falls back to the amplitude ramp. `MaxHarm=9`
   failed the amplitude ramp where 7 did not.
 - **A Smith chart is sized from its plot's width**, so a 620 × 520 box drew a chart taller than the box and the legend
   ran into the plot below; the circles and contour charts are narrower than they are tall for that reason. A Smith

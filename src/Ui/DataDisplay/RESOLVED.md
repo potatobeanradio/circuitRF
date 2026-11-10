@@ -2579,6 +2579,14 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   (`PlotExporter.BuildContainersJson`) and the paste turns each back into the reference that display
   would save (`PastedSourceRef`) — the sentinel when it is that display's selected file. Works across
   windows and workspaces (system clipboard).
+- **Ctrl/Cmd+V still did nothing in any display but the one that copied** (fixed in the NZ-series review). Paste's
+  enabled state was worked out at `OnAttachedToVisualTree`, which runs before `OnLoaded` wires the clipboard
+  reader, so it was always false, and only `PerformCopy` in the same window recomputed it. A new, unsaved display
+  opened after the copy never enabled it; one already open beside the copier kept its stale state. The key
+  binding is the only thing that reads it (the workspace Edit ▸ Paste calls `InvokePasteAsync` directly, and the
+  macOS Edit menu's Paste has no key equivalent), so Paste is now enabled whenever a reader is wired and reads the
+  clipboard when it runs; a clipboard with no plots pastes nothing. `CheckPasteStateAsync` is gone, and with it the
+  clipboard re-read straight after every Copy. Gate: `DataDisplayPasteSourceTests.CopyInOneDisplay_PastesInAnother_ThroughTheClipboard`.
 - **A Smith/Polar Y-label strip spanned the canvas less its label rows, not the disc.** On a box taller
   than wide (the shipped Receiver Noise examples were 520×640 and 560×680) or with a Below legend the
   label sat well below the disc's centre. `LabelStripMargin` now takes the disc's rectangle
@@ -2589,3 +2597,7 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   `ReloadAsync` before the entry's data is replaced; ghosts reuse `SnapshotGhost` at 0.45·0.65^age.
   Limit areas are stored in the plot's DISPLAYED X units, like `Axes.Window`, and rescale with
   `FreqUnits` whether or not X is autoscaled.
+- **The Plot Inspector flyout narrowed on its Labels and Axes sections**, which are narrower than Traces, and the ✕
+  landed on the plot-type row's Help button. As a flyout the rows keep at least the Traces section's width and never
+  shrink while it is open (`PlotInspectorView.UpdateCloseRoom`/`OnRowsSizeChanged`); a new view is made per open, so the
+  latch resets. Checked with UiSnapshot on all three sections.

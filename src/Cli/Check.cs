@@ -1770,14 +1770,35 @@ internal static class Check
             {
                 try { CircuitRF.Engine.HarmonicBalance.OscEngine.FindProbe(nl, oa.Name, oa.Probe.Trim()); }
                 catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscProbe(path, oa.Name, ex.Message)); continue; }
-                // NZ-10: the phase-noise keys resolve and name somewhere to read — the run's own refusals, as findings.
+                // The search keys resolve (Fguess, the span, the unit) — the run's own refusals, as findings.
+                CircuitRF.Engine.HarmonicBalance.OscParams op;
+                try { op = CircuitRF.Engine.HarmonicBalance.OscEngine.Resolve(oa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
+                catch (Exception ex) when (ex is InvalidOperationException or CircuitRF.Core.Expressions.ExpressionException)
+                { f.Add(CliDiagnostics.CheckOscKeys(path, oa.Name, ex.Message)); continue; }
+                // NZ-10: the phase-noise keys name somewhere to read.
                 if (!oa.PhaseNoise) continue;
+                try { CircuitRF.Engine.HarmonicBalance.OscEngine.PhaseNoiseReadAt(nl, op); }
+                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscPhaseNoise(path, oa.Name, ex.Message)); }
+            }
+
+            // NZ-5/NZ-6: an HB or loadpull noise run's NoiseIn/NoiseOut name a port or Tuner of this design, and its keys
+            // resolve — refused here rather than after the first grid point's whole drive ladder.
+            foreach (var a in tb.Analyses.Where(a => a is HarmonicBalanceAnalysis { Noise: true } or ILoadpullNoiseKeys { Noise: true }))
+            {
                 try
                 {
-                    var op = CircuitRF.Engine.HarmonicBalance.OscEngine.Resolve(oa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                    CircuitRF.Engine.HarmonicBalance.OscEngine.PhaseNoiseReadAt(nl, op);
+                    var req = a switch
+                    {
+                        HarmonicBalanceAnalysis hba => CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).Noise,
+                        LoadpullPursuitAnalysis lpp => CircuitRF.Engine.Loadpull.LoadpullPursuitEngine.Resolve(lpp, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).LpParams.Noise,
+                        LoadpullAnalysis lpa => CircuitRF.Engine.Loadpull.LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).Noise,
+                        _ => null,
+                    };
+                    if (req is not null) CircuitRF.Engine.HarmonicBalance.HbNoiseDiagnostics.ValidateEnds(nl, req);
                 }
-                catch (InvalidOperationException ex) { f.Add(CliDiagnostics.CheckOscPhaseNoise(path, oa.Name, ex.Message)); }
+                catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException
+                                               or CircuitRF.Core.Expressions.ExpressionException)
+                { f.Add(CliDiagnostics.CheckNoiseKeys(path, a.Name, ex.Message)); }
             }
 
             // NZ-1: Noise=no on a part that can never be noisy is accepted and does nothing, which is worth a word.

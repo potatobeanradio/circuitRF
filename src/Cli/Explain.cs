@@ -1504,7 +1504,14 @@ internal static class Explain
             {
                 using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
                 foreach (var hba in tb.Analyses.OfType<HarmonicBalanceAnalysis>().Where(h => h.Noise))
+                {
                     hbNoise[hba.Name] = HbNoiseOf(hba, nl);
+                    // The parts table, as for an S-parameter run, classified over the output frequencies the run reads.
+                    double[] ss;
+                    try { ss = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).SsGrid; }
+                    catch (Exception) { ss = []; }
+                    noiseByAnalysis[hba.Name] = SteadyStateNoiseTable(nl, ss, hba.NoiseContrib);
+                }
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
@@ -1517,7 +1524,10 @@ internal static class Explain
             {
                 using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
                 foreach (var a in tb.Analyses.Where(a => a is ILoadpullNoiseKeys { Noise: true }))
-                    lpNoise[a.Name] = LoadpullNoiseOf(a, nl);
+                {
+                    var ln = lpNoise[a.Name] = LoadpullNoiseOf(a, nl);
+                    noiseByAnalysis[a.Name] = SteadyStateNoiseTable(nl, ln.ReadHz > 0 ? [ln.ReadHz] : [], contrib: false);
+                }
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
@@ -1784,6 +1794,22 @@ internal static class Explain
     /// run builds its noise from, so what this lists is what the run does. Reads each S-parameter block's noise rows and
     /// starts nothing.
     /// </summary>
+    /// <summary>
+    /// The noise model of every part for an HB or loadpull <c>Noise=yes</c> run (briefs NZ-5/NZ-6): the same table, with
+    /// what those runs do differently — a device's sources are evaluated over its large-signal waveform, and a Mixer's NF is
+    /// a source at its RF port — so both count as noisy. They write no <c>NCs</c>.
+    /// </summary>
+    private static ExplainNoiseJson SteadyStateNoiseTable(ElaboratedNetlist nl, double[] freqs, bool contrib)
+    {
+        var rows = SParameterNoise.Table(nl, freqs);
+        var mixers = nl.Components.Where(c => c.Model is MixerModel { NoiseFigureDb: not null })
+                                  .Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal);
+        int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources
+                                              or NoiseModelKind.Specified
+                                    || (r.Kind == NoiseModelKind.Noiseless && mixers.Contains(r.Label)));
+        return new ExplainNoiseJson(contrib, noisy, freqs.Length, 0, 0, [.. rows.Select(PartJson)]);
+    }
+
     private static ExplainNoiseJson NoiseTable(SParameterAnalysis spa, ElaboratedNetlist nl, int ports)
     {
         double[] freqs;
@@ -1793,14 +1819,19 @@ internal static class Explain
         var rows  = SParameterNoise.Table(nl, freqs);
         int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources
                                               or NoiseModelKind.Specified);
-        static double? Finite(double v) => double.IsFinite(v) ? v : null;
         return new ExplainNoiseJson(
             spa.NoiseContrib, noisy, freqs.Length, ports, SParameterNoise.ContributionBytes(freqs.Length, noisy, ports),
-            [.. rows.Select(r => new ExplainNoisePartJson(
-                r.Label, r.Types, NoiseModelWord(r.Kind), Finite(r.Kelvin), r.File, Finite(r.BandLoHz), Finite(r.BandHiHz),
-                r.SourceNames, r.Reason,
-                Finite(r.NfDb), r.Specified?.NFminDb, r.Specified?.Rn,
-                r.Specified?.GammaOpt.Real, r.Specified?.GammaOpt.Imaginary, r.Specified?.R))]);
+            [.. rows.Select(PartJson)]);
+    }
+
+    private static ExplainNoisePartJson PartJson(NoiseModelRow r)
+    {
+        static double? Finite(double v) => double.IsFinite(v) ? v : null;
+        return new ExplainNoisePartJson(
+            r.Label, r.Types, NoiseModelWord(r.Kind), Finite(r.Kelvin), r.File, Finite(r.BandLoHz), Finite(r.BandHiHz),
+            r.SourceNames, r.Reason,
+            Finite(r.NfDb), r.Specified?.NFminDb, r.Specified?.Rn,
+            r.Specified?.GammaOpt.Real, r.Specified?.GammaOpt.Imaginary, r.Specified?.R);
     }
 
     /// <summary>The noise model kind, as the JSON's camelCase token.</summary>
@@ -1842,6 +1873,7 @@ internal static class Explain
                 ? CircuitRF.Engine.Loadpull.LoadpullPursuitEngine.Resolve(lpp, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit).LpParams
                 : CircuitRF.Engine.Loadpull.LoadpullEngine.Resolve((LoadpullAnalysis)a, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
             var req = p.Noise!;
+            CircuitRF.Engine.HarmonicBalance.HbNoiseDiagnostics.ValidateEnds(nl, req);
             double read = CircuitRF.Engine.Loadpull.LoadpullEngine.NoiseReadHz(p.NoiseFreqHz, p.ToneHz, out _);
             return new ExplainLoadpullNoiseJson(req.InTuner ?? $"port {req.InPort}", req.OutTuner ?? $"port {req.OutPort}",
                 req.SidebandText, p.NoiseFreqHz, read, Math.Abs(read + req.Sideband[0] * p.ToneHz));
@@ -1858,6 +1890,7 @@ internal static class Explain
         {
             var p = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
             var req = p.Noise!;
+            CircuitRF.Engine.HarmonicBalance.HbNoiseDiagnostics.ValidateEnds(nl, req);
             double shift = 0;
             for (int i = 0; i < req.Sideband.Length && i < p.ToneFreqsHz.Length; i++) shift += req.Sideband[i] * p.ToneFreqsHz[i];
             double[] outHz = p.SsGrid.Length > 1 ? [p.SsGrid[0], p.SsGrid[^1]] : [.. p.SsGrid];
@@ -1889,7 +1922,7 @@ internal static class Explain
             "thermal"       => $"thermal at {p.Kelvin!.Value.ToString("0.##", inv)} K" + (p.Reason is { } why ? $", {why}" : ""),
             "fileData"      => $"file data, {Path.GetFileName(p.File)}, noise rows {(p.BandLoHz!.Value / 1e9).ToString("G6", inv)} to " +
                                $"{(p.BandHiHz!.Value / 1e9).ToString("G6", inv)} GHz",
-            "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}",
+            "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}" + (p.Reason is { } gap ? $"; {gap}" : ""),
             "specified"     => SpecifiedText(p, inv),
             "switchedOff"   => $"switched off ({p.Reason})",
             _               => $"noiseless ({p.Reason})",
@@ -2497,7 +2530,15 @@ internal static class Explain
                 }
 
                 // NZ-1: the noise model of every part, which is what an NF is made of — read before trusting one.
-                if (a.NoiseModel is { } nz)
+                if (a.NoiseModel is { } ss && (a.HbNoise is not null || a.LoadpullNoise is not null))
+                {
+                    // HB and loadpull noise: the same parts, a device's noise over its waveform, a Mixer's NF at its RF port.
+                    Console.WriteLine($"      Noise: {ss.NoisyParts} noisy part(s); a device's sources are evaluated over its " +
+                                      "large-signal waveform, and a Mixer's NF is a source at its RF port");
+                    foreach (var p in ss.Parts)
+                        Console.WriteLine($"      noise {p.Part} ({p.Type}): {NoiseRowText(p)}");
+                }
+                else if (a.NoiseModel is { } nz)
                 {
                     Console.WriteLine(
                         $"      Noise: {nz.NoisyParts} noisy part(s) on the part axis; NCs {Bytes(nz.NcsBytes)} " +

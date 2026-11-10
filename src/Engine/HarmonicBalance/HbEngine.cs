@@ -839,6 +839,8 @@ public sealed class HbEngine
         // ── Noise on the same conversion matrix (brief NZ-5) ─────────────────
         if (p.Noise is { } noise && solveResult.G is not null && solveResult.C is not null)
         {
+            if (!solveResult.Converged)
+                _netlist.AddWarningOnce(HbNoiseDiagnostics.UnconvergedKey, HbNoiseDiagnostics.Unconverged().Render());
             var sidebands = new HbSmallSignal.ToneSidebands(
                 solveResult.G, solveResult.C, solveResult.Buckets, p.SsOrder, omega0);
             int kss = p.SsOrder;
@@ -1522,6 +1524,8 @@ public sealed class HbEngine
         // ── Noise over the mixing lattice (brief NZ-5) ───────────────────────
         if (p.Noise is { } noiseNd)
         {
+            if (!solveResult.Converged)
+                _netlist.AddWarningOnce(HbNoiseDiagnostics.UnconvergedKey, HbNoiseDiagnostics.Unconverged().Render());
             if (T >= 3)
                 throw new InvalidOperationException(HbNoiseDiagnostics.TonesUnsupported(T).Render());
             int ssOrder = Math.Clamp(p.SsMaxHarm ?? p.MaxMixOrder, 0, p.MaxMixOrder);

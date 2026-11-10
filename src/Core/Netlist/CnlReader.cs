@@ -1272,6 +1272,7 @@ public sealed class CnlReader
         static bool IsYes(string v) => v.Trim().ToLowerInvariant() is "yes" or "true" or "1" or "on";
         static bool IsOffsetUnit(string t) => t.Equals("Hz", StringComparison.OrdinalIgnoreCase) || t.Equals("kHz", StringComparison.OrdinalIgnoreCase)
                                               || t.Equals("MHz", StringComparison.OrdinalIgnoreCase) || t.Equals("GHz", StringComparison.OrdinalIgnoreCase);
+        // (mHz matches the MHz test above case-insensitively; OscEngine reads the prefix's case.)
     }
 
     private bool TryParseTrlDirective(string rawLine, out TrlAnalysis? result)

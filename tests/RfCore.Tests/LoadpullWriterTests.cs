@@ -27,7 +27,7 @@ public sealed class LoadpullWriterTests
 
     // Single-frequency: FOMs over {gridPoint, pinStep}; GammaLoad over {gridPoint};
     // ZSource + __Freq rank-1 {freq}.
-    private static DataSet BuildSingleFreq(double freqHz)
+    private static DataSet BuildSingleFreq(double freqHz, bool withSource = true)
     {
         var grid = new Axis("gridPoint", Enumerable.Range(0, NG).Select(i => (double)i).ToArray());
         var pin  = new Axis("pinStep",   new[] { -10.0, -5.0, 0.0 });   // Pavl dBm
@@ -57,8 +57,9 @@ public sealed class LoadpullWriterTests
         ds.Add("Zin_imag",  Fom((gi, pi) => -5.0 + pi));
         ds.Add("IRL_dB",    Fom((gi, pi) => -12.0 - gi));
         ds.Add("AMPM_deg",  Fom((gi, pi) => 2.0 * pi));
-        ds.Add("ZSource",   new DataCube(new[] { new Axis("freq", new[] { freqHz }, "Hz") },
-                                         new[] { new Complex(40.0, 10.0) }));
+        if (withSource)
+            ds.Add("ZSource",   new DataCube(new[] { new Axis("freq", new[] { freqHz }, "Hz") },
+                                             new[] { new Complex(40.0, 10.0) }));
         ds.Add("__Freq",    new DataCube(new[] { new Axis("freq", new[] { freqHz }, "Hz") }, new[] { freqHz }));
         return ds;
     }
@@ -145,6 +146,41 @@ public sealed class LoadpullWriterTests
         var zsB = read["ZSource"].ComplexValues[0];
         AssertNear(zsA.Real, zsB.Real, 1e-3, "ZSource.re");
         AssertNear(zsA.Imaginary, zsB.Imaginary, 1e-3, "ZSource.im");
+    }
+
+    // ── A sourcepull keeps its swept side, in both formats ────────────────────
+
+    /// <summary>A sourcepull's swept Γ is the SOURCE's: the .spl declares it (VAR=&lt;F0 Source Gamma&gt;) and carries it in
+    /// gamma_src1 with the fixed load in gamma_ld1, the .lpcwave states the fixed load; both read back as the same
+    /// sourcepull, the swept Γ on GammaLoad as every loadpull result carries it.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Sourcepull_RoundTrip_KeepsTheSweptSideAndTheFixedLoad(bool lpcwave)
+    {
+        var src = BuildSingleFreq(2.45e9, withSource: false);
+        var zLoad = new Complex(35.0, 12.0);
+        src.Add(LoadpullExportModel.SweptSourceCube, new DataCube(Array.Empty<Axis>(), new[] { 1.0 }));
+        src.Add(LoadpullExportModel.FixedLoadZCube,  new DataCube(Array.Empty<Axis>(), new[] { zLoad }));
+
+        var sw = new StringWriter();
+        if (lpcwave) LpcwaveWriter.WriteLpcwave(src, sw); else SplWriter.WriteSpl(src, sw);
+        string text = sw.ToString();
+        if (!lpcwave) Assert.Contains("VAR=<F0 Source Gamma>", text);
+        var read = lpcwave ? LpcwaveReader.ReadLpcwave(new StringReader(text)) : SplReader.ReadSpl(new StringReader(text));
+
+        Assert.True(LoadpullExportModel.IsSourcepull(read));
+        Assert.False(read.Contains("ZSource"));
+        var zl = read[LoadpullExportModel.FixedLoadZCube].ComplexValues[0];
+        AssertNear(zLoad.Real, zl.Real, 1e-3, "fixed load.re");
+        AssertNear(zLoad.Imaginary, zl.Imaginary, 1e-3, "fixed load.im");
+        var gSrc = src["GammaLoad"].ComplexValues;
+        var gRd  = read["GammaLoad"].ComplexValues;
+        for (int gi = 0; gi < NG; gi++)
+        {
+            AssertNear(gSrc[gi].Real, gRd[gi].Real, 1e-5, $"swept[{gi}].re");
+            AssertNear(gSrc[gi].Imaginary, gRd[gi].Imaginary, 1e-5, $"swept[{gi}].im");
+        }
     }
 
     // ── Single-freq .lpcwave round-trip ───────────────────────────────────────

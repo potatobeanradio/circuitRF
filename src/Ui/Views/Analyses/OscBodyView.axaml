@@ -40,7 +40,7 @@
                    ToolTip.Tip="The oscillation's phase and amplitude noise in dBc/Hz over an offset sweep, from every noise source in the circuit; each Port and Term is a load at 290 K."/>
         <TextBlock Grid.Row="6" Grid.Column="0" Text="PnStart:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
         <TextBox   Grid.Row="6" Grid.Column="1" FontSize="12" Text="{Binding PnStart}" IsEnabled="{Binding PhaseNoise}"
-                   ToolTip.Tip="Lowest offset from the carrier, with an optional Hz, kHz, MHz or GHz."/>
+                   ToolTip.Tip="Lowest offset from the carrier, with an optional mHz, Hz, kHz, MHz or GHz."/>
         <TextBlock Grid.Row="6" Grid.Column="2" Text="PnStop:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
         <TextBox   Grid.Row="6" Grid.Column="3" FontSize="12" Text="{Binding PnStop}" IsEnabled="{Binding PhaseNoise}"
                    ToolTip.Tip="Highest offset from the carrier. Offsets at or beyond half the carrier are NaN."/>

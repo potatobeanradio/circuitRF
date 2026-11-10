@@ -1379,9 +1379,10 @@ public static class ComponentTypeRegistry
     /// Whether the parameter editor offers <see cref="NoiseParameter"/> as a check box on this kind: the parts the noise
     /// analysis can make noisy — thermal passives (lumped, lines, the MMIC passives, a wirebond, the passive system blocks),
     /// coupled inductors and transformers, impedance and S-parameter blocks, and a compiled model with its own noise
-    /// sources. Not on a port, a source, a probe or an annotation, which have no noise to switch off, nor yet on a built-in
-    /// nonlinear model or a controlled source, which the analysis has no noise for. The key is still READ on every part;
-    /// this is only where a box is worth drawing.
+    /// sources; a system amplifier or mixer with an NF; and the built-in nonlinear models with noise sources (diode, BJT,
+    /// MOSFET, VDMOS, the FET family, the composed FET). Not on a port, a source, a probe or an annotation, which have no
+    /// noise to switch off, nor on a model the analysis has no noise for (JFET, IGBT, an SDD, a controlled source). The key
+    /// is still READ on every part; this is only where a box is worth drawing.
     /// </summary>
     public static bool HasNoiseSwitch(SymbolKind kind) => kind is
         SymbolKind.Resistor or SymbolKind.Inductor or SymbolKind.Capacitor or SymbolKind.Mutual or SymbolKind.Transformer
@@ -1396,6 +1397,13 @@ public static class ComponentTypeRegistry
         or SymbolKind.TestPad or SymbolKind.GsgPad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
+        // Noisy by their own NF (brief NZ-3) or noise sources (brief NZ-4).
+        or SymbolKind.Amp or SymbolKind.Mixer or SymbolKind.MixerD
+        or SymbolKind.Diode or SymbolKind.BjtNpn or SymbolKind.BjtPnp
+        or SymbolKind.Mos1N or SymbolKind.Mos1P or SymbolKind.Mos3N or SymbolKind.Mos3P or SymbolKind.VdmosN or SymbolKind.VdmosP
+        or SymbolKind.FetCurtice or SymbolKind.FetCurticeCubic or SymbolKind.FetStatz or SymbolKind.FetMaterka
+        or SymbolKind.FetAngelov or SymbolKind.PFetCurtice or SymbolKind.PFetStatz or SymbolKind.PFetMaterka
+        or SymbolKind.ComposedFET
         // A source with an impedance (brief NZ-7 follow-up): noiseless by default, its impedance thermal in an envelope run
         // when ticked (NoiseSwitchDefault).
         or SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource;
@@ -2105,8 +2113,8 @@ public static class ComponentTypeRegistry
             "Tg" when fet => "Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device "
                            + "temperature.",
             "Td" when fet => "Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise "
-                           + "current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain "
-                           + "temperature fitted against bias.",
+                           + "current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain "
+                           + "temperature that follows bias is a composed FET's (a .cmodel Noise block).",
             _ => "",
         };
     }

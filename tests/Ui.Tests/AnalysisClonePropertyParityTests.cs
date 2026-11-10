@@ -88,6 +88,19 @@ public sealed class AnalysisClonePropertyParityTests
             GuardHarmonicExpr = "2",
             LambdaExpr        = "0.5",
             MaxIterExpr       = "250",
+            MarginThresholdExpr = "-25",
+            SsStartExpr       = "1",
+            SsStopExpr        = "2",
+            SsStepExpr        = "0.1",
+            SsNptsExpr        = "11",
+            SsUnit            = "GHz",
+            SsLogExpr         = "true",
+            SsMaxHarmExpr     = "3",
+            NoiseExpr         = "yes",
+            NoiseInExpr       = "3",
+            NoiseOutExpr      = "4",
+            NoiseSidebandExpr = "-1",
+            NoiseContribExpr  = "yes",
         },
 
         [typeof(LoadpullAnalysis)] = new LoadpullAnalysis("LP1")
@@ -216,6 +229,35 @@ public sealed class AnalysisClonePropertyParityTests
                 Assert.True(ValuesMatch(a, b),
                     $"{type.Name}.{p.Name} was not carried across: " +
                     $"expected {Describe(a)}, clone has {Describe(b)}.");
+            }
+        }
+    }
+
+    // ── 3. The CLI's override rebuild carries every property it does not override ──
+
+    /// <summary>The run verbs rebuild an HB or loadpull directive field by field to apply --maxharm and the like; a field
+    /// missing there drops that key from the run in silence (the noise keys were, once).</summary>
+    [Fact]
+    public void CliOverrideRebuild_CarriesEveryPropertyItDoesNotOverride()
+    {
+        var samples = Samples();
+        foreach (var type in new[] { typeof(HarmonicBalanceAnalysis), typeof(LoadpullAnalysis), typeof(LoadpullPursuitAnalysis) })
+        {
+            var source = samples[type];
+            var tb = new TestBench("TB");
+            tb.Analyses.Add(source);
+            var rebuilt = source is HarmonicBalanceAnalysis
+                ? CircuitRF.Cli.CliEntry.ApplyHbOverrides(tb, source, 13, null, null, null)
+                : CircuitRF.Cli.CliEntry.ApplyLoadpullOverrides(tb, source, null, null, 13, null, null, null, null, null, null);
+            Assert.NotSame(source, rebuilt);
+
+            foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!p.CanRead || p.GetIndexParameters().Length > 0) continue;
+                if (p.Name == "MaxHarmonicExpr") { Assert.Equal("13", p.GetValue(rebuilt)); continue; }
+                object? a = p.GetValue(source), b = p.GetValue(rebuilt);
+                Assert.True(ValuesMatch(a, b),
+                    $"{type.Name}.{p.Name} was dropped by the CLI's override rebuild: expected {Describe(a)}, got {Describe(b)}.");
             }
         }
     }

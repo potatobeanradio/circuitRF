@@ -954,6 +954,7 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["ShortModel"]            = Activity.Passive,
         ["IProbeModel"]           = Activity.Passive,
         ["WSProbeModel"]          = Activity.Passive,
+        ["OscProbeModel"]         = Activity.Passive,   // idle outside the oscillator analysis: a short (series) or an open (shunt)
         ["PortModel"]             = Activity.Passive,
         ["TermModel"]             = Activity.Passive,
         ["WBondModel"]            = Activity.Passive,

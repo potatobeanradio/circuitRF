@@ -197,6 +197,62 @@ public sealed class NoiseExplainCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("source impedance thermal: S1 at 290 K", text.StdOut);
     }
 
+    /// <summary>Briefs NZ-5 and NZ-9: what a run would refuse, check refuses first — an HB noise end naming no port, and an
+    /// oscillator whose start-up span leaves out its own Fguess. Both passed check before, and the noise one surfaced only
+    /// after a solve.</summary>
+    [Fact]
+    public void Check_RefusesAMissingNoisePort_AndAnOscillatorSpanWithoutItsGuess()
+    {
+        Directory.CreateDirectory(_root);
+        string hb = Path.Combine(_root, "hb.cnl");
+        File.WriteAllText(hb, """
+            Port:P1  a 0  Num=1 Z=50 Ohm
+            Port:P2  b 0  Num=2 Z=50 Ohm
+            R:R1  a b  R=10 Ohm
+            analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=3 SSStart=1.01 SSStop=1.02 SSNpts=2 SSUnit=GHz Noise=yes NoiseOut=7
+            """);
+        var check = RunCli("check", hb, "--json");
+        output.WriteLine(check.StdOut);
+        Assert.Equal(1, check.ExitCode);
+        Assert.Contains("check.noise.keys", check.StdOut);
+        Assert.Contains("Num=7", check.StdOut);
+
+        string osc = Path.Combine(_root, "osc.cnl");
+        File.WriteAllText(osc, """
+            L:L1  n 0  L=10 nH
+            C:C1  n 0  C=10 pF
+            R:RL  n 0  R=1000 Ohm
+            SDD:D1 n 0  Ports=1  I[1,0]=-2e-3*_v1+1e-3*_v1^3
+            OscProbe:X1 n 0 Mode=shunt
+            analysis OSC1 type=osc Fguess=0.45 Fstart=0.6 Unit=GHz MaxHarm=1
+            """);
+        check = RunCli("check", osc, "--json");
+        output.WriteLine(check.StdOut);
+        Assert.Equal(1, check.ExitCode);
+        Assert.Contains("check.osc.keys", check.StdOut);
+    }
+
+    /// <summary>An HB noise run's parts are listed as an S-parameter run's are, with what HB noise does differently said once.</summary>
+    [Fact]
+    public void Explain_ListsTheNoisyParts_ForAnHbNoiseRun()
+    {
+        Directory.CreateDirectory(_root);
+        string hb = Path.Combine(_root, "hbparts.cnl");
+        File.WriteAllText(hb, """
+            Port:P1  a 0  Num=1 Z=50 Ohm
+            Port:P2  b 0  Num=2 Z=50 Ohm
+            R:R1  a b  R=10 Ohm Temp=126.85
+            Diode:D1  b 0  Is=1e-14
+            analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=3 SSStart=1.01 SSStop=1.02 SSNpts=2 SSUnit=GHz Noise=yes
+            """);
+        var text = RunCli("explain", hb, "--analysis");
+        output.WriteLine(text.StdOut);
+        Assert.True(text.ExitCode == 0, text.StdErr + text.StdOut);
+        Assert.Contains("large-signal waveform", text.StdOut);
+        Assert.Contains("noise R1 (R): thermal at 400 K", text.StdOut);
+        Assert.Contains("noise D1 (Diode): device sources", text.StdOut);
+    }
+
     // ── The CLI as a process ────────────────────────────────────────────────────
 
     private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

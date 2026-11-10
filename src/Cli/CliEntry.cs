@@ -1335,7 +1335,7 @@ static int LoadpullExitCode(DataSet ds)
 /// the netlist is the one source both the engine and the sweep engine read. Returns the refreshed
 /// top, since the object it named may have just been replaced.
 /// </summary>
-static Analysis ApplyLoadpullOverrides(
+internal static Analysis ApplyLoadpullOverrides(
     TestBench tb, Analysis top, string? gridPath, string? outGridPath,
     int? maxHarm, double? tol, int? maxIter, double? compression,
     double? pinStart, double? pinStep, double? pinMax)
@@ -1374,6 +1374,12 @@ static Analysis ApplyLoadpullOverrides(
                     DriveSteppingExpr    = l.DriveSteppingExpr,
                     GuardHarmonicExpr    = l.GuardHarmonicExpr,
                     ContinuityMarginExpr = l.ContinuityMarginExpr,
+                    NoiseExpr            = l.NoiseExpr,
+                    NoiseFreqExpr        = l.NoiseFreqExpr,
+                    NoiseFreqUnit        = l.NoiseFreqUnit,
+                    NoiseInExpr          = l.NoiseInExpr,
+                    NoiseOutExpr         = l.NoiseOutExpr,
+                    NoiseSidebandExpr    = l.NoiseSidebandExpr,
                     SourceDirectory      = l.SourceDirectory,
                     Enabled              = l.Enabled,
                 };
@@ -1401,6 +1407,12 @@ static Analysis ApplyLoadpullOverrides(
                     DriveSteppingExpr         = p.DriveSteppingExpr,
                     GuardHarmonicExpr         = p.GuardHarmonicExpr,
                     ContinuityMarginExpr      = p.ContinuityMarginExpr,
+                    NoiseExpr            = p.NoiseExpr,
+                    NoiseFreqExpr        = p.NoiseFreqExpr,
+                    NoiseFreqUnit        = p.NoiseFreqUnit,
+                    NoiseInExpr          = p.NoiseInExpr,
+                    NoiseOutExpr         = p.NoiseOutExpr,
+                    NoiseSidebandExpr    = p.NoiseSidebandExpr,
                     EffTypeExpr               = p.EffTypeExpr,
                     ZsourceOBOExpr            = p.ZsourceOBOExpr,
                     SearchMethodExpr          = p.SearchMethodExpr,
@@ -2430,7 +2442,7 @@ static Analysis? BaseOfChain(Analysis top, TestBench tb) => ChainSelector.BaseOf
 /// both read, so an override has to land there to be seen by both. Returns the refreshed top (the
 /// object it named may have just been replaced).
 /// </summary>
-static Analysis ApplyHbOverrides(TestBench tb, Analysis top,
+internal static Analysis ApplyHbOverrides(TestBench tb, Analysis top,
                                  int? maxHarm, int? maxMixOrder, double? tol, int? maxIter)
 {
     if (maxHarm is null && maxMixOrder is null && tol is null && maxIter is null) return top;
@@ -2458,6 +2470,19 @@ static Analysis ApplyHbOverrides(TestBench tb, Analysis top,
             LambdaExpr        = h.LambdaExpr,
             MaxIterExpr       = maxIter?.ToString(System.Globalization.CultureInfo.InvariantCulture)
                                 ?? h.MaxIterExpr,
+            MarginThresholdExpr = h.MarginThresholdExpr,
+            SsStartExpr       = h.SsStartExpr,
+            SsStopExpr        = h.SsStopExpr,
+            SsStepExpr        = h.SsStepExpr,
+            SsNptsExpr        = h.SsNptsExpr,
+            SsUnit            = h.SsUnit,
+            SsLogExpr         = h.SsLogExpr,
+            SsMaxHarmExpr     = h.SsMaxHarmExpr,
+            NoiseExpr         = h.NoiseExpr,
+            NoiseInExpr       = h.NoiseInExpr,
+            NoiseOutExpr      = h.NoiseOutExpr,
+            NoiseSidebandExpr = h.NoiseSidebandExpr,
+            NoiseContribExpr  = h.NoiseContribExpr,
             Enabled           = h.Enabled,
             SweepVarName      = h.SweepVarName,
             SweepStartExpr    = h.SweepStartExpr,

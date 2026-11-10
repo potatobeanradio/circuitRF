@@ -124,6 +124,10 @@ public abstract class FetModelBase : ComponentModel
     /// <summary>The intrinsic gate resistance, Ω, or 0 when there is none.</summary>
     public double IntrinsicGateResistance => _ri;
 
+    /// <summary>Whether the drain has a noise source (<c>Td</c> or <c>Kf</c>). Without one, an <c>Ri</c> alone makes the FET
+    /// noisy at its gate only, and the noise analysis names the noiseless drain.</summary>
+    public bool HasDrainNoise => double.IsFinite(_td) || _kf != 0;
+
     /// <summary>True when <c>Ri</c> puts the gate side on an internal node.</summary>
     public bool HasIntrinsicGateResistance => _ri > 0;
 

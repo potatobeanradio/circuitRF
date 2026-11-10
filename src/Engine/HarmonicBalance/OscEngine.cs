@@ -120,13 +120,21 @@ public static class OscEngine
         {
             string t = (text ?? "").Trim().Trim('"').Trim();
             double scale = 1;
-            foreach (var (suffix, mult) in new[] { ("GHz", 1e9), ("MHz", 1e6), ("kHz", 1e3), ("Hz", 1.0) })
-                if (t.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && t.Length > suffix.Length)
+            if (t.Length > 2 && t.EndsWith("Hz", StringComparison.OrdinalIgnoreCase))
+            {
+                // The prefix's case is its meaning where it has to be: M is mega and m is milli — a 1 mHz offset is where a
+                // 1/f³ slope is read, and reading it as 1 MHz is nine decades out. k and G have one meaning either way.
+                char p = t[^3];
+                (int cut, scale) = p switch
                 {
-                    t = t[..^suffix.Length].Trim();
-                    scale = mult;
-                    break;
-                }
+                    'G' or 'g' => (3, 1e9),
+                    'M'        => (3, 1e6),
+                    'm'        => (3, 1e-3),
+                    'k' or 'K' => (3, 1e3),
+                    _          => (2, 1.0),
+                };
+                if (t.Length > cut) t = t[..^cut].Trim();
+            }
             double v = t.Length == 0 ? double.NaN : Eval(key, t) * scale;
             if (!(v > 0) || !double.IsFinite(v))
                 throw new InvalidOperationException(OscDiagnostics.PnBadKey(a.Name, key, text ?? "").Render());
@@ -337,10 +345,15 @@ public static class OscEngine
         {
             // ── Ramp the amplitude from small until the negative resistance runs out ──
             double f = fs;
-            double a0 = p.Aguess ?? (shunt ? 1e-3 : 1e-3 / scale);
-            double a = a0;
-            var r = Eval(a, f) ?? throw Fail(f, a, "the first small-amplitude solve");
-            if (p.Aguess is null)
+            double small = shunt ? 1e-3 : 1e-3 / scale;
+            double a = p.Aguess ?? small;
+            var first = Eval(a, f);
+            // Aguess is a start, not a promise: at the start-up frequency, which can lie well off the oscillation's, the
+            // stated amplitude may not solve, and the ramp from small is then the way in, as it is without one.
+            bool ramp = p.Aguess is null || first is null;
+            if (first is null && p.Aguess is not null) a = small;
+            var r = first ?? Eval(a, f) ?? throw Fail(f, a, "the first small-amplitude solve");
+            if (ramp)
             {
                 double aPrev = a; Complex rPrev = r.R;
                 bool bracketed = r.R.Real >= 0;

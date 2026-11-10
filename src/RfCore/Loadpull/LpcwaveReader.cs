@@ -134,6 +134,8 @@ namespace RfCore.Loadpull
             public double[]? TransPhase;   // transducer phase (degrees)
             public Complex   SourceGamma;  // per-freq source Γ (from first grid/pin)
             public bool      HasSourceGamma;
+            public Complex   FixedLoadZ;   // a sourcepull's "! Load Impedance", Ω
+            public bool      HasFixedLoadZ;
         }
 
         private static FreqBlock ParseFreqBlock(List<string> lines, double freqGhz)
@@ -142,11 +144,12 @@ namespace RfCore.Loadpull
             // "! Source Impedance = ..." → source is fixed → load is swept → loadpull
             // "! Load Impedance = ..."   → load is fixed → source is swept → sourcepull
             bool isLoadpull = true;
+            Complex? fixedLoadZ = null;
             foreach (var l in lines)
             {
                 var t = l.Trim();
                 if (t.StartsWith("! Load Impedance", StringComparison.OrdinalIgnoreCase))
-                { isLoadpull = false; break; }
+                { isLoadpull = false; fixedLoadZ = ParseImpedanceComment(t); break; }
                 if (t.StartsWith("! Source Impedance", StringComparison.OrdinalIgnoreCase))
                 { isLoadpull = true; break; }
             }
@@ -278,6 +281,8 @@ namespace RfCore.Loadpull
                 NGrid     = nGrid,
                 NPin      = nPin,
                 IsLoadpull = isLoadpull,
+                FixedLoadZ = fixedLoadZ ?? Complex.Zero,
+                HasFixedLoadZ = fixedLoadZ is not null,
                 GammaLoad  = gridGammas.ToArray(),
                 PinAxis    = pinAxis,
             };
@@ -316,8 +321,8 @@ namespace RfCore.Loadpull
                 for (int pi2 = 0; pi2 < nPin; pi2++)
                     block.Foms["PavlDbm"][gi2 * nPin + pi2] = block.PinAxis[pi2];
 
-            // ── Capture source Γ from first grid/pin (setup constant, MA pair) ───
-            if (srcGMagRelIdx >= 0 && srcGPhRelIdx >= 0 && driveups.Count > 0 && driveups[0].Count > 0)
+            // ── Capture source Γ from first grid/pin (setup constant, MA pair); a sourcepull's is the swept one ───
+            if (isLoadpull && srcGMagRelIdx >= 0 && srcGPhRelIdx >= 0 && driveups.Count > 0 && driveups[0].Count > 0)
             {
                 var r0  = driveups[0][0];
                 double mag = srcGMagRelIdx < r0.Length ? r0[srcGMagRelIdx] : double.NaN;
@@ -382,6 +387,20 @@ namespace RfCore.Loadpull
         {
             var ds = new DataSet();
             if (blocks.Count == 0) return ds;
+
+            // A sourcepull says so, and carries its fixed load — rank 0 for one frequency, over {freq} for several.
+            if (!blocks[0].IsLoadpull)
+            {
+                ds.Add(LoadpullExportModel.SweptSourceCube, new DataCube(Array.Empty<Axis>(), new[] { 1.0 }));
+                if (blocks.TrueForAll(b => b.HasFixedLoadZ))
+                {
+                    var zl = blocks.ConvertAll(b => b.FixedLoadZ).ToArray();
+                    var fq = blocks.ConvertAll(b => b.FreqGHz * 1e9).ToArray();
+                    ds.Add(LoadpullExportModel.FixedLoadZCube, blocks.Count == 1
+                        ? new DataCube(Array.Empty<Axis>(), zl)
+                        : new DataCube(new[] { new Axis("freq", fq, "Hz") }, zl));
+                }
+            }
 
             if (!multiFreq)
             {
@@ -541,6 +560,22 @@ namespace RfCore.Loadpull
         }
 
         // Γ → Z  (Z0 = 50 Ω)
+        /// <summary>"! Load Impedance = R +j X Ohm" (also "R -j X", "R + jX") → R + jX, or null when it does not read.</summary>
+        private static Complex? ParseImpedanceComment(string line)
+        {
+            int eq = line.IndexOf('=');
+            if (eq < 0) return null;
+            string t = line[(eq + 1)..].Replace("Ohm", "", StringComparison.OrdinalIgnoreCase).Replace(" ", "");
+            int j = t.IndexOf('j');
+            if (j < 1) return null;
+            char sign = t[j - 1];
+            if (sign is not ('+' or '-')) return null;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            if (!double.TryParse(t[..(j - 1)], System.Globalization.NumberStyles.Float, inv, out double re)) return null;
+            if (!double.TryParse(t[(j + 1)..], System.Globalization.NumberStyles.Float, inv, out double im)) return null;
+            return new Complex(re, sign == '-' ? -im : im);
+        }
+
         private static Complex GammaToZ(Complex gamma, double z0 = 50.0)
         {
             var denom = 1.0 - gamma;

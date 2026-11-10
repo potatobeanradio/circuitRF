@@ -94,7 +94,6 @@ public partial class DataDisplayView : UserControl
         if (DataContext is DataDisplayDocument doc)
         {
             doc.ViewModel.Window.RefreshAvailableDataSources();
-            _ = doc.ViewModel.Window.CheckPasteStateAsync();
         }
     }
 

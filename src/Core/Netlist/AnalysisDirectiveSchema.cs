@@ -294,7 +294,7 @@ public static partial class AnalysisDirectiveSchema
             new("Aguess",        Summary: "The probe generator's amplitude to start from: volts for a shunt OscProbe, amperes for a series one. Blank ramps it up from a small one until the circuit's negative resistance runs out."),
             // brief NZ-10 — phase noise from the circuit's own noise sources
             new("PhaseNoise",    Default: "no",     Summary: "yes: the oscillation's phase noise PN and amplitude noise AN (dBc/Hz, single-sided) over PnStart-PnStop, each part's share (PNc, PNpct) and the flicker corner PNcorner. Close to the carrier from the frequency's sensitivity to each noise source, far from it from the conversion matrix, joined a decade below the rate at which the amplitude settles."),
-            new("PnStart",       Default: "100 Hz", Summary: "Lowest offset from the carrier, with an optional Hz, kHz, MHz or GHz (Hz when bare)."),
+            new("PnStart",       Default: "100 Hz", Summary: "Lowest offset from the carrier, with an optional mHz, Hz, kHz, MHz or GHz (Hz when bare; the m of mHz and the M of MHz are read by their case)."),
             new("PnStop",        Default: "10 MHz", Summary: "Highest offset from the carrier, as PnStart. Offsets at or beyond half the carrier are NaN."),
             new("PnNpts",        Default: "61",     Summary: "Number of offsets."),
             new("PnLog",         Default: "yes",    Summary: "yes: offsets evenly spaced in log-frequency; no: linearly."),

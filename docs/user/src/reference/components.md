@@ -1617,7 +1617,7 @@ a p-channel model card is read as the quadratic law or Statz, never as either of
 |---|---|---|
 | `Ri` | An intrinsic gate resistance in series with `Cgs`, on an internal node. With it, the gate diode, `Cgs` and the drain current's control voltage sit behind it, and `Cgd` stays on the external gate. | 0: none, and the model is exactly what it is without it |
 | `Tg` | The gate noise temperature, in kelvin: `Ri` is thermal at it. | The device temperature |
-| `Td` | The drain noise temperature, in kelvin: the output conductance is thermal at it, a noise current `4k·Td·gds` from drain to source. It may be an expression, for a drain temperature fitted against bias. | Blank: no drain noise |
+| `Td` | The drain noise temperature, in kelvin: the output conductance is thermal at it, a noise current `4k·Td·gds` from drain to source. One number at every bias; a drain temperature that follows bias needs a composed FET's `.cmodel` Noise block. | Blank: no drain noise |
 | `Kf`, `Af` | Flicker noise `Kf·|Id|^Af/f` on the drain current. | 0 (off), 1 |
 
 With none of `Ri`, `Td` or `Kf` set, a FET has no noise sources and the noise analysis names it in its warning. The
