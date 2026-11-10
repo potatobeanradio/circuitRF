@@ -10759,6 +10759,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private void NewSParameterViewer() => Views.SParameters.SParameterViewerWindow.ShowStandalone(ResolveOwner(null));
 
+    /// <summary>Tools ▸ RF Chain Budget: an empty chain, in a window of its own. Needs no workspace until it is
+    /// transferred to a schematic.</summary>
+    [RelayCommand]
+    private void NewChainBudget() => Views.Chain.ChainBudgetWindow.ShowStandalone(ResolveOwner(null));
+
     /// <summary>The S-Parameter Viewer on one Touchstone file — the window already showing it, or a new one.</summary>
     public void OpenInSParameterViewer(string path)
     {
@@ -12235,6 +12240,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // brief-modelcomposer-14 R-mc14-1 — a .cmc opens its Model Composer window.
             case NodeKind.ModelComposerFile:
                 OpenModelComposerPath(node.AbsolutePath);
+                return;
+
+            // A .cchain opens its RF Chain Budget window.
+            case NodeKind.ChainFile:
+                Views.Chain.ChainBudgetWindow.ShowForFile(node.AbsolutePath, Views.WorkspaceLocator.WindowFor(this));
                 return;
 
             // R-rail24-1a — a .crlib opens like any other document type. Until this row existed the

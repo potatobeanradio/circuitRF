@@ -136,6 +136,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.SmithFile, _)          => MaterialIconKind.ChartScatterPlot,
         // brief-modelcomposer-14 — a .cmc: a device model in the making.
         (NodeKind.ModelComposerFile, _)  => MaterialIconKind.IntegratedCircuitChip,
+        // A .cchain: stages in a row, which is what a budget is.
+        (NodeKind.ChainFile, _)          => MaterialIconKind.ArrowRightBoldBoxOutline,
         // R-rail24-1a — a .crlib. It is a TABLE of parts, and a list glyph is what reads as one at
         // 16 px; the capacitor-ish glyphs all claim more about the contents than the file does.
         (NodeKind.PartLibraryFile, _)    => MaterialIconKind.FormatListBulletedType,
@@ -234,6 +236,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                 or NodeKind.RailFile
                 or NodeKind.SmithFile
                 or NodeKind.ModelComposerFile
+                or NodeKind.ChainFile
                 or NodeKind.PartLibraryFile
                 or NodeKind.MaterialLibraryFile
                 or NodeKind.ColorThemeFile;
@@ -252,6 +255,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         NodeKind.RailFile        => "Remove railRF Document",
         NodeKind.SmithFile       => "Remove Smith Chart",
         NodeKind.ModelComposerFile => "Remove Model Composer Document",
+        NodeKind.ChainFile       => "Remove Chain Budget",
         NodeKind.ColorThemeFile  => "Remove Color Theme",
         NodeKind.PartLibraryFile => "Remove Part Library",
         NodeKind.MaterialLibraryFile => "Remove Material Library",
@@ -325,7 +329,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsOpenableFile =>
         Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
              or NodeKind.EmSetupFile or NodeKind.WBondFile or NodeKind.RailFile
-             or NodeKind.SmithFile or NodeKind.ModelComposerFile
+             or NodeKind.SmithFile or NodeKind.ModelComposerFile or NodeKind.ChainFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
         || IsOpenableKnownFile;
 
@@ -450,6 +454,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.RailFile
                                           or NodeKind.SmithFile
                                           or NodeKind.ModelComposerFile
+                                          or NodeKind.ChainFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
                                           or NodeKind.EmSetupFile
@@ -1271,6 +1276,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             // for the .wBond's and .crail's reason rather than earning a checkbox of its own.
             NodeKind.SmithFile       => f.Cells,
             NodeKind.ModelComposerFile => f.Cells,
+            NodeKind.ChainFile       => f.Cells,
             // A .crlib is the model half of a design document — it rides the Cells toggle for the
             // .wBond's, .crail's and .csmith's reason rather than earning a checkbox of its own.
             NodeKind.PartLibraryFile => f.Cells,

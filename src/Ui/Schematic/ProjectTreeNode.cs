@@ -65,6 +65,10 @@ public enum NodeKind
     /// (brief-modelcomposer-14 R-mc14-1). <c>CmcFile</c> reads it.</summary>
     ModelComposerFile,
 
+    /// <summary>An RF chain budget (<c>.cchain</c>) — a receive chain's stages and system inputs. <c>ChainDesignIo</c>
+    /// reads it; it opens in the RF Chain Budget window.</summary>
+    ChainFile,
+
     /// <summary>
     /// A part library (<c>.crlib</c>) — the models a board's part numbers resolve to
     /// (brief-railrf-24-part-library-editor.md R-rail24-1a). <c>PartLibraryIo</c> reads it.

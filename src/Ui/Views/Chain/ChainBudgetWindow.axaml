@@ -1,0 +1,267 @@
+<!-- The RF Chain Budget: a receive chain as a table of stages, each a System block with its own parameters, the system
+     inputs above it, and the cascade below, recomputed on every edit. Transfer to Schematic writes the chain's three
+     test benches and their Data Display. Styled as the S-Parameter Viewer is: `pane` borders on the theme's chrome
+     brushes, sentence-case headings. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.Chain"
+        xmlns:chain="using:CircuitRF.Design.Chain"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        x:Class="CircuitRF.Ui.Views.Chain.ChainBudgetWindow"
+        x:DataType="vm:ChainBudgetViewModel"
+        Title="{Binding Title}"
+        Width="1300" Height="960" MinWidth="900" MinHeight="600"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="0,0,4,0"/>
+        </Style>
+        <Style Selector="TextBlock.col">
+            <Setter Property="FontSize"      Value="12"/>
+            <Setter Property="FontWeight"    Value="SemiBold"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style Selector="TextBlock.num">
+            <Setter Property="FontSize"      Value="12"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style Selector="TextBox.p">
+            <Setter Property="FontSize"  Value="12"/>
+            <Setter Property="MinWidth"  Value="70"/>
+            <Setter Property="Padding"   Value="4,2"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+        <Style Selector="ComboBox.p">
+            <Setter Property="FontSize"  Value="12"/>
+            <Setter Property="MinWidth"  Value="90"/>
+            <Setter Property="Padding"   Value="4,1"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+        <!-- The diagram's blocks: the selected stage's is drawn in the accent colour, as its table row is. -->
+        <Style Selector="Border.block">
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="4"/>
+            <Setter Property="Padding"         Value="6,4"/>
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+        <Style Selector="Border.block.sel">
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="TextBlock.small">
+            <Setter Property="FontSize"      Value="10.5"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.tb">
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="Margin"  Value="0,0,4,0"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <!-- Toolbar: the file, the stage list, the transfer. -->
+        <Border Classes="pane" DockPanel.Dock="Top">
+            <WrapPanel>
+                <Button Classes="tb" Command="{Binding NewCommand}" ToolTip.Tip="A new chain">New</Button>
+                <Button Classes="tb" Command="{Binding OpenCommand}" ToolTip.Tip="Open a .cchain">Open…</Button>
+                <Button Classes="tb" Command="{Binding SaveCommand}">Save</Button>
+                <Button Classes="tb" Command="{Binding SaveAsCommand}">Save As…</Button>
+                <Separator Width="16"/>
+                <ComboBox Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding PartToAdd}"
+                          MinWidth="210" Margin="0,0,4,0" ToolTip.Tip="The part the next stage is">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="chain:ChainPart"><TextBlock Text="{Binding Title}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Classes="tb" Command="{Binding AddStageCommand}" ToolTip.Tip="Add a stage of this part after the selected one">Add Stage</Button>
+                <Button Classes="tb" Command="{Binding RemoveStageCommand}">Remove</Button>
+                <Button Classes="tb" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move the selected stage toward the input">Up</Button>
+                <Button Classes="tb" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move the selected stage toward the output">Down</Button>
+                <Separator Width="16"/>
+                <Button Classes="tb" Name="TransferButton" Click="OnTransferClick"
+                        ToolTip.Tip="Write the chain's 1-Tone, 2-Tone and Envelope test benches, with their analyses and the budget's numbers beside the simulated ones, and a Data Display of both">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="TransferRight" Width="16" Height="16"/>
+                        <TextBlock Text="Transfer to Schematic…"/>
+                    </StackPanel>
+                </Button>
+                <Button Classes="tb" Click="OnHelpClick">Help</Button>
+            </WrapPanel>
+        </Border>
+
+        <!-- The system inputs. -->
+        <Border Classes="pane" DockPanel.Dock="Top">
+            <WrapPanel>
+                <TextBlock Classes="lbl" Text="Frequency, GHz"/>
+                <TextBox Classes="p" Text="{Binding FrequencyGHz}" Margin="0,0,14,0" ToolTip.Tip="The input (RF) frequency"/>
+                <TextBlock Classes="lbl" Text="Bandwidth, MHz"/>
+                <TextBox Classes="p" Text="{Binding BandwidthMHz}" Margin="0,0,14,0" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
+                <TextBlock Classes="lbl" Text="Input power, dBm"/>
+                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Margin="0,0,14,0" ToolTip.Tip="The signal at the input; in an array, at each element"/>
+                <TextBlock Classes="lbl" Text="Source temperature, K"/>
+                <TextBox Classes="p" Text="{Binding TemperatureK}" Margin="0,0,14,0" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
+                <TextBlock Classes="lbl" Text="Required SNR, dB"/>
+                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+            </WrapPanel>
+        </Border>
+
+        <!-- The chain's totals, and anything the budget has to say. -->
+        <Border Classes="pane" DockPanel.Dock="Bottom">
+            <StackPanel Spacing="4">
+                <TextBlock Classes="panelhdr" Text="Chain"/>
+                <SelectableTextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap"/>
+                <SelectableTextBlock Text="{Binding Refusals}" IsVisible="{Binding HasRefusals}" FontSize="12" TextWrapping="Wrap"
+                                     Foreground="{DynamicResource CrfWarningBrush}"/>
+                <SelectableTextBlock Text="{Binding Notes}" IsVisible="{Binding HasNotes}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- The chain as a block diagram, input on the left: each stage drawn with its System block's own schematic
+                 artwork, its own numbers under it and the cascade at its output. An array's branch stages are drawn once
+                 per element, up to three, with "× N". A click selects the stage, here and in the table. -->
+            <Border Classes="pane" Grid.Row="0">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                        <ItemsControl ItemsSource="{Binding Stages}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ChainStageViewModel">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="⟶" FontSize="18" VerticalAlignment="Center" Margin="4,0" Opacity="0.7"/>
+                                        <Border Classes="block" Classes.sel="{Binding IsSelected}" PointerPressed="OnBlockPressed"
+                                                ToolTip.Tip="{Binding Part.Summary}">
+                                            <StackPanel Spacing="1" MinWidth="104">
+                                                <TextBlock Classes="small" Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
+                                                <ItemsControl ItemsSource="{Binding Copies}" HorizontalAlignment="Center">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:ChainStageViewModel">
+                                                            <Panel Width="76" Height="40" Margin="0,1">
+                                                                <ctl:PaletteGlyphControl Kind="{Binding Glyph}" Monochrome="True" IsVisible="{Binding HasGlyph}"/>
+                                                                <Border IsVisible="{Binding !HasGlyph}" BorderBrush="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                                                        BorderThickness="1.5" CornerRadius="2" Width="52" Height="34">
+                                                                    <TextBlock Text="{Binding GlyphText}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </Panel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <TextBlock Classes="small" Text="{Binding TimesN}" IsVisible="{Binding TimesN, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" FontWeight="SemiBold"/>
+                                                <TextBlock Classes="small" Text="{Binding Extra}" IsVisible="{Binding Extra, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Opacity="0.8"/>
+                                                <TextBlock Classes="small" Text="{Binding KeyLine}"/>
+                                                <TextBlock Classes="small" Text="{Binding CascadeLine}" Opacity="0.75"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,2,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->
+            <Border Classes="pane" Grid.Row="1">
+                <DockPanel>
+                    <TextBlock Classes="panelhdr" DockPanel.Dock="Top" Text="Stages, input to output"/>
+                    <ListBox ItemsSource="{Binding Stages}" SelectedItem="{Binding SelectedStage}" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChainStageViewModel">
+                                <Grid ColumnDefinitions="110,220,*" Margin="0,2">
+                                    <TextBox Grid.Column="0" Classes="p" Text="{Binding Name}" VerticalAlignment="Top" ToolTip.Tip="The stage's name: its instance name on the schematic"/>
+                                    <ComboBox Grid.Column="1" Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding Part}"
+                                              Margin="6,0" HorizontalAlignment="Stretch" VerticalAlignment="Top" ToolTip.Tip="{Binding Part.Summary}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="chain:ChainPart"><TextBlock Text="{Binding Title}"/></DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <StackPanel Grid.Column="2" Spacing="2">
+                                        <ItemsControl ItemsSource="{Binding Parameters}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ChainParamViewModel">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
+                                                        <TextBlock Classes="lbl" Text="{Binding Name}"/>
+                                                        <TextBox Classes="p" Text="{Binding Value}" IsVisible="{Binding IsText}" Watermark="{Binding Watermark}"/>
+                                                        <ComboBox Classes="p" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
+                                                        <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="{Binding Summary}" FontSize="11" Opacity="0.7"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- The cascade: each stage's cumulative numbers at its output, referred to the input (to one element's,
+                 in an array). -->
+            <Border Classes="pane" Grid.Row="2">
+                <StackPanel>
+                    <TextBlock Classes="panelhdr" Text="Cascade, at each stage's output"/>
+                    <Grid ColumnDefinitions="130,80,80,80,80,80,80,80,80,80" Margin="0,0,0,2">
+                        <TextBlock Grid.Column="0" Classes="col" Text="Stage" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="1" Classes="col" Text="G, dB"/>
+                        <TextBlock Grid.Column="2" Classes="col" Text="NF, dB"/>
+                        <TextBlock Grid.Column="3" Classes="col" Text="IIP3, dBm"/>
+                        <TextBlock Grid.Column="4" Classes="col" Text="OIP3, dBm"/>
+                        <TextBlock Grid.Column="5" Classes="col" Text="IP1dB, dBm"/>
+                        <TextBlock Grid.Column="6" Classes="col" Text="OP1dB, dBm"/>
+                        <TextBlock Grid.Column="7" Classes="col" Text="Pout, dBm"/>
+                        <TextBlock Grid.Column="8" Classes="col" Text="SNR, dB"/>
+                        <TextBlock Grid.Column="9" Classes="col" Text="F − 1, %"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Results}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChainResultRow">
+                                <Grid ColumnDefinitions="130,80,80,80,80,80,80,80,80,80">
+                                    <TextBlock Grid.Column="0" Classes="num" Text="{Binding Stage}" TextAlignment="Left"/>
+                                    <TextBlock Grid.Column="1" Classes="num" Text="{Binding Gain}"/>
+                                    <TextBlock Grid.Column="2" Classes="num" Text="{Binding Nf}"/>
+                                    <TextBlock Grid.Column="3" Classes="num" Text="{Binding Iip3}"/>
+                                    <TextBlock Grid.Column="4" Classes="num" Text="{Binding Oip3}"/>
+                                    <TextBlock Grid.Column="5" Classes="num" Text="{Binding Ip1db}"/>
+                                    <TextBlock Grid.Column="6" Classes="num" Text="{Binding Op1db}"/>
+                                    <TextBlock Grid.Column="7" Classes="num" Text="{Binding Pout}"/>
+                                    <TextBlock Grid.Column="8" Classes="num" Text="{Binding Snr}"/>
+                                    <TextBlock Grid.Column="9" Classes="num" Text="{Binding Share}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

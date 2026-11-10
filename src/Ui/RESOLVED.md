@@ -42105,3 +42105,12 @@ Gate: `ExpressionTracePickerTests`; seen with UiSnapshot on the circles chart's 
 A 3D `.cem` setup's Mesh button made the mesh, but showed it only in a 3D view that was already open; with none open it waited
 for Show 3D, and nothing said so. A `.c3d` has its view on screen all the time, which is why the same mesh "plots" there.
 `WorkspaceViewModel.ShowCemMesh` now opens the setup's 3D view (or brings an open one forward) with the mesh turned on.
+
+## A swept variable inside a MEAS row is the sweep's axis, for every analysis in the schematic (2026-11-10)
+
+The RF chain budget's 1-Tone bench has an HB noise run at the small-signal drive and an HB compression sweep over
+`Pin`. A row `G_sim = dB(HBN.V(...)) + 10 - Pin` read correctly from the CLI (`hb -a HBN`, no sweep in the run) and as a
+curve over the sweep in the window, where Simulate runs both chains and `Pin` becomes the sweep's axis cube for every
+row. The bench now keeps the small-signal drive in its own variable (`Pss`, with `Pin = Pss`) and the noise rows read it.
+The rule to remember when writing a bench with a parametric sweep: a row that means the variable's *value* must not
+name the swept variable.

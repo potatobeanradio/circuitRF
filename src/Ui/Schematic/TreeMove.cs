@@ -72,7 +72,7 @@ public static class TreeMove
         NodeKind.Cell or NodeKind.UserFolder
      or NodeKind.OtherFile or NodeKind.DataDisplayFile or NodeKind.TechFile
      or NodeKind.ColorThemeFile or NodeKind.EmSetupFile or NodeKind.WBondFile
-     or NodeKind.HarmonicaFile or NodeKind.RailFile or NodeKind.SmithFile
+     or NodeKind.HarmonicaFile or NodeKind.RailFile or NodeKind.SmithFile or NodeKind.ChainFile
      or NodeKind.PartLibraryFile or NodeKind.MaterialLibraryFile;
 
     /// <summary>
