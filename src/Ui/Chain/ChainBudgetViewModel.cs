@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CircuitRF.Design.Chain;
+using CircuitRF.Design.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -29,6 +30,13 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     partial void OnValueChanged(string value) => changed();
 }
 
+/// <summary>One symbol of a stage's block in the block view: the System block whose artwork it is drawn with, and a
+/// caption under it ("4:1", "2 × 2:1").</summary>
+public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption)
+{
+    public bool HasCaption => Caption.Length > 0;
+}
+
 /// <summary>One stage row: its name, its part, the part's parameters, and the stage's own budget.</summary>
 public sealed partial class ChainStageViewModel : ObservableObject
 {
@@ -49,6 +57,25 @@ public sealed partial class ChainStageViewModel : ObservableObject
     [ObservableProperty] private string _name;
     [ObservableProperty] private ChainPart _part;
     [ObservableProperty] private string _summary = "";
+
+    // ── the block view: an idealised block per stage ─────────────────────────
+
+    /// <summary>The block drawn selected: the selected row's.</summary>
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>The symbols the block draws: one for most parts; a combiner's levels, each with its amplifier when
+    /// active.</summary>
+    [ObservableProperty] private IReadOnlyList<ChainBlockGlyph> _glyphs = [];
+
+    /// <summary>"× N" under an array branch's block, empty elsewhere.</summary>
+    [ObservableProperty] private string _timesN = "";
+
+    /// <summary>What the block says beside its symbol: a mixer's LO, a phase shifter's phase, a combiner's variant.</summary>
+    [ObservableProperty] private string _extra = "";
+
+    /// <summary>The stage's own numbers, and the cascade at its output.</summary>
+    [ObservableProperty] private string _keyLine = "";
+    [ObservableProperty] private string _cascadeLine = "";
 
     /// <summary>Parameters the stage carries that its part does not list: kept, and written back, unchanged.</summary>
     private Dictionary<string, string> Unlisted { get; }
@@ -111,7 +138,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     /// <summary>The diagram and the table share one selection: the selected row's parts are drawn selected, and a
     /// click on a part in the drawing selects its row.</summary>
-    partial void OnSelectedStageChanged(ChainStageViewModel? value) => OnPropertyChanged(nameof(SelectedStageIndex));
+    partial void OnSelectedStageChanged(ChainStageViewModel? value)
+    {
+        foreach (var s in Stages) s.IsSelected = ReferenceEquals(s, value);
+        OnPropertyChanged(nameof(SelectedStageIndex));
+    }
 
     public int SelectedStageIndex
     {
@@ -242,6 +273,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         foreach (var (row, s) in Stages.Zip(r.Stages))
             row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
         Diagram = ChainBenches.Diagram(d, r);
+        Blocks(d, r);
         RefillCascade(r);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes);
@@ -252,6 +284,68 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB" +
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
             (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "");
+    }
+
+    /// <summary>
+    /// The block view, idealised: one block per stage with its System block's symbol, its own numbers and the cascade
+    /// at its output. An array is drawn compactly — the branch's stages once, each marked "× N", into one combiner block
+    /// — and a combiner as its variant: Direct one N:1 symbol, a tree its levels of 2:1 (a deep one as "× levels"), an
+    /// amplifier after each when active.
+    /// </summary>
+    private void Blocks(ChainDesign d, ChainBudgetResult r)
+    {
+        int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
+        int n = cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1;
+        for (int i = 0; i < Stages.Count && i < d.Stages.Count; i++)
+        {
+            var row = Stages[i];
+            var st = d.Stages[i];
+            row.TimesN = i < cmb ? $"× {n}" : "";
+            row.Glyphs = Glyphs(st);
+            row.Extra = st.Part switch
+            {
+                ChainParts.Mixer => $"LO {ChainValue.Or(st.Get("Flo"), 0) / 1e6:0.###} MHz",
+                ChainParts.PhaseShifter => $"φ {st.Get("Phase")}°",
+                ChainParts.Combiner => ChainParts.ReadCombiner(st).Describe()
+                                       + (ChainValue.Or(st.Get("Steer"), 0) != 0 ? $", steer {st.Get("Steer")}°" : ""),
+                ChainParts.Splitter => $"1:{st.Get("N")}",
+                _ => "",
+            };
+            if (i < r.Stages.Count)
+            {
+                var s = r.Stages[i];
+                row.KeyLine = $"G {D(s.Stage.GainDb)}  NF {D(s.Stage.NfDb)}\n" +
+                              (double.IsFinite(s.Stage.Iip3Dbm) ? $"IIP3 {D(s.Stage.Iip3Dbm)}  P1 {D(s.Stage.Ip1dbDbm)}" : "linear");
+                row.CascadeLine = $"Σ G {D(s.GainDb)}  NF {D(s.NfDb)}\nΣ IIP3 {D(s.Iip3Dbm)}  SNR {D(s.SnrDb)}";
+            }
+            else row.KeyLine = row.CascadeLine = "";
+        }
+    }
+
+    private static IReadOnlyList<ChainBlockGlyph> Glyphs(ChainStage st)
+    {
+        if (st.Part == ChainParts.Combiner)
+        {
+            var c = ChainParts.ReadCombiner(st);
+            var g = new List<ChainBlockGlyph>();
+            void Level(string caption)
+            {
+                g.Add(new ChainBlockGlyph(SymbolKind.Combiner, caption));
+                if (c.Active) g.Add(new ChainBlockGlyph(SymbolKind.Amp, ""));
+            }
+            if (!c.Tree) Level($"{c.N}:1");
+            else if (c.Levels.Count <= 3) foreach (var l in c.Levels) Level($"{l.Parts} × 2:1");
+            else Level($"2:1, × {c.Levels.Count} levels");
+            return g;
+        }
+        var kind = st.Part switch
+        {
+            ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
+            ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
+            ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
+            ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner, _ => SymbolKind.Amp,
+        };
+        return [new ChainBlockGlyph(kind, st.Part == ChainParts.Splitter ? $"1:{st.Get("N")}" : "")];
     }
 
     // ── the stage list ───────────────────────────────────────────────────────

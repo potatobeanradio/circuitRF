@@ -10,8 +10,8 @@ using CircuitRF.Ui.Views.Chain;
 namespace CircuitRF.Ui.Diagnostics.Fixtures;
 
 /// <summary>
-/// The RF Chain Budget window, captured from the live window on a chain of the "RF Chain Budget" example: the chain as
-/// the schematic renderer draws it, its stages and its cascade table. Hosted as <see cref="DocSignalFixtures"/> hosts the Signal Designer — the
+/// The RF Chain Budget window, captured from the live window on a chain of the "RF Chain Budget" example: the chain's
+/// blocks (the window's first tab), its stages and its cascade table. Hosted as <see cref="DocSignalFixtures"/> hosts the Signal Designer — the
 /// window's content with its own styles moved onto it.
 /// </summary>
 public static class DocChainFixtures

@@ -15,8 +15,9 @@ namespace CircuitRF.Ui.Views.Chain;
 
 /// <summary>
 /// The RF Chain Budget window. The view model holds the chain and its cascade; this holds what needs a window — the file
-/// pickers, the confirmation, and Transfer to Schematic, which writes the three benches and the display through the
-/// calls <c>circuitrf chain --to-schematic</c> makes, then opens them in the workspace window that opened this one.
+/// pickers, the confirmation, the Blocks view's click, and Transfer to Schematic, which writes the chain's benches and
+/// their displays through the calls <c>circuitrf chain --to-schematic</c> makes, then opens the first in the workspace
+/// window that opened this one.
 /// </summary>
 public partial class ChainBudgetWindow : Window, ICrfMenuWindow
 {
@@ -139,6 +140,12 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         return file?.TryGetLocalPath();
     }
 
+    /// <summary>A click on a block selects its stage, in the stage list and in the schematic.</summary>
+    private void OnBlockPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (sender is Control { DataContext: ChainStageViewModel stage } && Vm is { } vm) vm.SelectedStage = stage;
+    }
+
     private void OnHelpClick(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/chain-budget.html");
 
     /// <summary>
@@ -159,7 +166,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         var design = vm.ToDesign();
 
         bool replace = false;
-        var existing = Enum.GetValues<ChainBench>().Select(b => ChainBenches.CellName(name, b))
+        var existing = ChainBenches.BenchesFor(design).Select(b => ChainBenches.CellName(name, b))
                            .Where(c => Directory.Exists(Path.Combine(dir, c))).ToList();
         if (existing.Count > 0)
         {

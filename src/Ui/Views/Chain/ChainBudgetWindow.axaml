@@ -1,6 +1,6 @@
 <!-- The RF Chain Budget: a receive chain as a table of stages, each a System block with its own parameters, the system
-     inputs above it, and the cascade below, recomputed on every edit. Transfer to Schematic writes the chain's three
-     test benches and their Data Display. Styled as the S-Parameter Viewer is: `pane` borders on the theme's chrome
+     inputs above it, the chain drawn two ways (blocks, and the schematic it transfers to) and the cascade below,
+     recomputed on every edit. Transfer to Schematic writes the chain's test benches and their Data Displays. Styled as the S-Parameter Viewer is: `pane` borders on the theme's chrome
      brushes, sentence-case headings. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,6 +9,7 @@
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:chv="using:CircuitRF.Ui.Views.Chain"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
         x:Class="CircuitRF.Ui.Views.Chain.ChainBudgetWindow"
         x:DataType="vm:ChainBudgetViewModel"
         Title="{Binding Title}"
@@ -47,6 +48,23 @@
             <Setter Property="Padding"   Value="4,1"/>
             <Setter Property="MinHeight" Value="24"/>
         </Style>
+        <Style Selector="Border.block">
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="4"/>
+            <Setter Property="Padding"         Value="6,4"/>
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+        <Style Selector="Border.block.sel">
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="TextBlock.small">
+            <Setter Property="FontSize"      Value="10.5"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
         <Style Selector="Button.tb">
             <Setter Property="Padding" Value="8,3"/>
             <Setter Property="Margin"  Value="0,0,4,0"/>
@@ -74,7 +92,7 @@
                 <Button Classes="tb" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move the selected stage toward the output">Down</Button>
                 <Separator Width="16"/>
                 <Button Classes="tb" Name="TransferButton" Click="OnTransferClick"
-                        ToolTip.Tip="Write the chain's 1-Tone, 2-Tone and Envelope test benches, with their analyses and the budget's numbers beside the simulated ones, and a Data Display of both">
+                        ToolTip.Tip="Write the chain's 1-Tone, 2-Tone and Envelope test benches (and an array's Steering and Combiners benches), with their analyses and the budget's numbers beside the simulated ones, and a Data Display of each">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="TransferRight" Width="16" Height="16"/>
                         <TextBlock Text="Transfer to Schematic…"/>
@@ -112,14 +130,62 @@
         </Border>
 
         <Grid RowDefinitions="Auto,*,Auto">
-            <!-- The chain as a block diagram: the chain itself, as Transfer to Schematic places it, drawn by circuitRF's own
-                 schematic renderer, with each stage's own numbers and the cascade at its output over it. A click on a
-                 part selects its stage, here and in the table; wheel to zoom, middle-drag to pan, double-click to fit. -->
+            <!-- The chain, two ways, one selection. Blocks: an idealised block per stage with its System block's symbol, its
+                 own numbers and the cascade at its output; an array's branch once, "× N", into one combiner block drawn
+                 as its variant. Schematic: the chain itself, as Transfer to Schematic places it, drawn by circuitRF's own
+                 schematic renderer with the same numbers over each stage; wheel to zoom, middle-drag to pan,
+                 double-click to fit. A click on a block or a part selects its stage, in both and in the stage list. -->
             <Border Classes="pane" Grid.Row="0" Height="330">
-                <DockPanel>
-                    <TextBlock Classes="panelhdr" DockPanel.Dock="Top" Text="The chain, as it transfers to a schematic"/>
-                    <chv:ChainSchematicCanvas Diagram="{Binding Diagram}" SelectedStage="{Binding SelectedStageIndex}"/>
-                </DockPanel>
+                <TabControl Padding="0,4,0,0">
+                    <TabItem Header="Blocks" FontSize="13">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                <ItemsControl ItemsSource="{Binding Stages}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ChainStageViewModel">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="⟶" FontSize="18" VerticalAlignment="Center" Margin="4,0" Opacity="0.7"/>
+                                                <Border Classes="block" Classes.sel="{Binding IsSelected}" PointerPressed="OnBlockPressed"
+                                                        ToolTip.Tip="{Binding Part.Summary}">
+                                                    <StackPanel Spacing="1" MinWidth="104">
+                                                        <TextBlock Classes="small" Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
+                                                        <ItemsControl ItemsSource="{Binding Glyphs}" HorizontalAlignment="Center">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:ChainBlockGlyph">
+                                                                    <StackPanel Margin="1,0">
+                                                                        <ctl:PaletteGlyphControl Kind="{Binding Kind}" Monochrome="True" Width="64" Height="40"/>
+                                                                        <TextBlock Classes="small" Text="{Binding Caption}" IsVisible="{Binding HasCaption}"/>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <TextBlock Classes="small" Text="{Binding TimesN}" FontSize="13" FontWeight="SemiBold"
+                                                                   IsVisible="{Binding TimesN, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                        <TextBlock Classes="small" Text="{Binding Extra}" Opacity="0.8"
+                                                                   IsVisible="{Binding Extra, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                        <TextBlock Classes="small" Text="{Binding KeyLine}"/>
+                                                        <TextBlock Classes="small" Text="{Binding CascadeLine}" Opacity="0.75"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                    <TabItem Header="Schematic" FontSize="13">
+                        <chv:ChainSchematicCanvas Diagram="{Binding Diagram}" SelectedStage="{Binding SelectedStageIndex}"/>
+                    </TabItem>
+                </TabControl>
             </Border>
 
             <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->
