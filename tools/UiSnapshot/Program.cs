@@ -28,6 +28,8 @@ using CircuitRF.Design.Layout;
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
+// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--blocks-png <png>] [--size WxH] [steps]
+//   the RF Chain Budget window; --blocks-png also writes the Blocks view's Copy picture, the clipboard's 2x bitmap
 // UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
@@ -164,6 +166,7 @@ bool reviewRun = false;
 string? componentPortsCem = null;   // brief-lcp-4: --clay with a .cem's component ports drawn as the open .cem pushes them
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
+string? chainFile = null, chainBlocksPng = null;
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
 // scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
 string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
@@ -229,6 +232,8 @@ for (int i = 0; i < args.Length; i++)
         case "--plot" when i + 1 < args.Length: plotIndex = int.Parse(args[++i]); break;
         case "--results" when i + 1 < args.Length: results = args[++i]; break;
         case "--signal" when i + 1 < args.Length: signal.Add(args[++i]); break;
+        case "--chain" when i + 1 < args.Length: chainFile = Path.GetFullPath(args[++i]); break;
+        case "--blocks-png" when i + 1 < args.Length: chainBlocksPng = Path.GetFullPath(args[++i]); break;
         case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
@@ -490,7 +495,7 @@ if (netsPanel is not null && output is not null)
     return ShowSeededNetsPanel(netsPanel, output, sizeGiven ? width : 320, sizeGiven ? height : 460);
 }
 bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
-if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -1085,6 +1090,24 @@ else if (snp is not null)
     var until = DateTime.UtcNow.AddSeconds(120);
     while (viewer.IsLoading && DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
     Console.WriteLine(viewer.Status);
+}
+else if (chainFile is not null)
+{
+    // The RF Chain Budget window on a .cchain, as opening the file from the workspace tree shows it; --select names
+    // the stage selected in the stage list and both views.
+    var chainVm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(CircuitRF.Design.Chain.ChainDesignIo.LoadFromFile(chainFile));
+    if (select is not null) chainVm.SelectedStage = chainVm.Stages.FirstOrDefault(st => st.Name == select);
+    if (chainBlocksPng is not null)
+    {
+        var (compose, page) = CircuitRF.Ui.Chain.ChainBlocksGraphicExport.Composition(
+            CircuitRF.Ui.Chain.ChainBlocksGraphicExport.BlocksOf(chainVm), CircuitRF.Render.ColorVariant.Light, transparentBackground: false);
+        File.WriteAllBytes(chainBlocksPng, CircuitRF.Render.DataDisplay.PlotDocumentWriter.BuildPngBytes(compose, page, CircuitRF.Ui.Chain.ChainBlocksGraphicExport.BitmapScale)!);
+        Console.WriteLine($"wrote {chainBlocksPng} ({page.Width:0} x {page.Height:0} pt page)");
+    }
+    host = new CircuitRF.Ui.Views.Chain.ChainBudgetWindow { DataContext = chainVm };
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
+    Pump();
 }
 else if (signal.Count > 0)
 {
@@ -2130,7 +2153,9 @@ Window? TopDialog() => host.OwnedWindows.LastOrDefault(w => w.IsVisible);
 
 ContextMenu? OpenContextMenu()
     => layoutCanvas?.ContextMenu is { IsOpen: true } m ? m
-     : host.GetVisualDescendants().OfType<SchematicCanvas>().FirstOrDefault()?.ContextMenu is { IsOpen: true } s ? s : null;
+     : host.GetVisualDescendants().OfType<SchematicCanvas>().FirstOrDefault()?.ContextMenu is { IsOpen: true } s ? s
+     // Any other control's own menu, open: the RF Chain Budget's Blocks view's, for one.
+     : host.GetVisualDescendants().OfType<Control>().Select(c => c.ContextMenu).FirstOrDefault(m => m is { IsOpen: true });
 
 static IEnumerable<MenuItem> MenuItems(IEnumerable<MenuItem> items)
 {

@@ -26,6 +26,7 @@ public sealed class DynamicSymbolGeometryTests
     [InlineData(SymbolKind.VerilogA, 8, 8)]
     [InlineData(SymbolKind.Sdd,      4, 2)]   // 2 pins per port — the one kind that IS halved
     [InlineData(SymbolKind.ZPort,    6, 3)]
+    [InlineData(SymbolKind.Combiner, 3, 2)]   // N paths plus the common port S
     [InlineData(SymbolKind.Resistor, 2, 2)]   // ignored by Primitives, but must not be halved either
     public void PortCountOf_MapsPinCountToPortCount_PerKind(SymbolKind kind, int pins, int expectedPorts)
         => Assert.Equal(expectedPorts, SchematicRenderer.PortCountOf(kind, pins));

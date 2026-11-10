@@ -34,7 +34,8 @@ namespace CircuitRF.Render.DataDisplay
             TransformSet         tf,
             PlotDetail           detail,
             RenderTheme          theme,
-            IReadOnlyList<string>? xCategories = null)
+            IReadOnlyList<string>? xCategories = null,
+            double                 xCategoryFirst = 1)
         {
             float lw = LineWidth(canvasSize);
             var (minorTicks, majorTicks, labels) = detail.Properties();
@@ -107,14 +108,16 @@ namespace CircuitRF.Render.DataDisplay
                 }
             }
 
-            // A CATEGORICAL X (brief-yield-9 R-ya9-5 — a contribution Pareto over contributor names): the axis values
-            // are 1…N and each whole number is labelled with its category's name rather than a number.
+            // A CATEGORICAL X (brief-yield-9 R-ya9-5 — a contribution Pareto over contributor names; a chain's levels
+            // over its nodes): the axis values are consecutive whole numbers from xCategoryFirst, and each is labelled
+            // with its category's name rather than a number.
             if (labels && xCategories is not null)
-                for (int k = 1; k <= xCategories.Count; k++)
+                for (int k = 0; k < xCategories.Count; k++)
                 {
-                    if (k < axes.Window.Left - 1e-9 || k > axes.Window.Right + 1e-9) continue;
-                    var at = tf.PrimaryToCanvas(k, axes.Window.Top);
-                    string label = xCategories[k - 1];
+                    double x = xCategoryFirst + k;
+                    if (x < axes.Window.Left - 1e-9 || x > axes.Window.Right + 1e-9) continue;
+                    var at = tf.PrimaryToCanvas(x, axes.Window.Top);
+                    string label = xCategories[k];
                     float tw = textFont.MeasureText(label);
                     canvas.DrawText(label, at.X - tw / 2f, at.Y + textFont.Size * 1.4f, SKTextAlign.Left, textFont, textPaint);
                 }

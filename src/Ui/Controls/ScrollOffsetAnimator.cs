@@ -51,6 +51,7 @@ internal sealed class ScrollOffsetAnimator
     private readonly DispatcherTimer _timer;
     private ScrollViewer? _target;
     private Func<double?>? _retarget;
+    private Action? _landed;
     private double _from;
     private double _to;
     private long _startedAt;
@@ -69,6 +70,7 @@ internal sealed class ScrollOffsetAnimator
         _timer.Stop();
         _target = null;
         _retarget = null;
+        _landed = null;
     }
 
     /// <summary>
@@ -91,7 +93,9 @@ internal sealed class ScrollOffsetAnimator
     /// motion stays one continuous movement. It is stopped listening to at
     /// <see cref="RetargetUntil"/>.</para>
     /// </param>
-    public void AnimateTo(ScrollViewer scroll, double y, Func<double?>? retarget = null)
+    /// <param name="landed">Called once the scroll has ENDED where it was going (not when it is cancelled): the
+    /// moment a caller can ask whether the item it was scrolling to is really there now.</param>
+    public void AnimateTo(ScrollViewer scroll, double y, Func<double?>? retarget = null, Action? landed = null)
     {
         ArgumentNullException.ThrowIfNull(scroll);
         Cancel();
@@ -102,11 +106,13 @@ internal sealed class ScrollOffsetAnimator
         if (Math.Abs(clamped - from) < MinPixels)
         {
             scroll.Offset = scroll.Offset.WithY(clamped);
+            landed?.Invoke();
             return;
         }
 
         _target    = scroll;
         _retarget  = retarget;
+        _landed    = landed;
         _from      = from;
         _to        = clamped;
         _startedAt = Stopwatch.GetTimestamp();
@@ -135,7 +141,9 @@ internal sealed class ScrollOffsetAnimator
         // the final frames: a correction at this point is a pixel or two, not a visible move.
         double landed = _retarget?.Invoke() is { } last ? Clamp(scroll, last) : _to;
         scroll.Offset = scroll.Offset.WithY(landed);
+        var done = _landed;
         Cancel();
+        done?.Invoke();
     }
 
     /// <summary>

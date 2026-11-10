@@ -450,11 +450,7 @@ public partial class TechEditorView : UserControl
     private double EstimatedOffsetOf(StackupLayerRowViewModel row, ScrollViewer scroll)
     {
         var rows = _subscribedVm?.FilteredStackupLayers;
-        int i = rows?.IndexOf(row) ?? -1;
-        if (i < 0 || rows!.Count == 0) return scroll.Offset.Y;
-
-        return Math.Clamp(scroll.Extent.Height * i / rows.Count, 0,
-                          Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+        return ListBoxEasedScroll.EstimatedOffsetOf(rows?.IndexOf(row) ?? -1, rows?.Count ?? 0, scroll);
     }
 
     /// <summary>The one eased scroll of the card list. Held by the view so a second selection cancels
@@ -462,18 +458,13 @@ public partial class TechEditorView : UserControl
     private readonly ScrollOffsetAnimator _stackupScroll = new();
 
     private ScrollViewer? StackupScroller()
-        => StackupList?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        => StackupList is null ? null : ListBoxEasedScroll.ScrollerOf(StackupList);
 
     /// <summary>Whether <paramref name="row"/>'s card is realised and wholly inside the viewport.
     /// False for a card taller than the pane, which can never be wholly inside one and therefore
     /// always wants its top put at the top.</summary>
     private bool IsFullyVisible(StackupLayerRowViewModel row, ScrollViewer scroll)
-    {
-        if (StackupList?.ContainerFromItem(row) is not Control container) return false;
-        if (container.TranslatePoint(default, scroll) is not { } p) return false;
-
-        return p.Y >= -0.5 && p.Y + container.Bounds.Height <= scroll.Viewport.Height + 0.5;
-    }
+        => StackupList is not null && ListBoxEasedScroll.IsFullyVisible(StackupList, row, scroll);
 
     /// <summary>
     /// The offset that puts <paramref name="row"/>'s card's own TOP edge at the top of the pane, or
@@ -489,16 +480,7 @@ public partial class TechEditorView : UserControl
     /// matters.</para>
     /// </summary>
     private double? TopOffsetOf(StackupLayerRowViewModel row, ScrollViewer scroll)
-    {
-        if (StackupList?.ContainerFromItem(row) is not Control container) return null;
-
-        // The container's offset within the SCROLLER's viewport; adding the scroller's own offset
-        // gives the position in the content, which is what Offset is measured in.
-        if (container.TranslatePoint(default, scroll) is not { } p) return null;
-
-        return Math.Clamp(scroll.Offset.Y + p.Y, 0,
-                          Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
-    }
+        => StackupList is null ? null : ListBoxEasedScroll.TopOffsetOf(StackupList, row, scroll);
 
     /// <summary>
     /// R-stk3-9. Clears the selection — which clears the drawing's outline, the card's shading and

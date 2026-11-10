@@ -5873,3 +5873,14 @@ reads a whole S cube and its analysis (`ga_circle(SP1.S, 12)`) could not run on 
 
 Gates: `tests/Ui.Tests/NoiseCirclesPresetTests.cs`. The preset (`NoiseCirclesPreset`) was rendered with UiSnapshot on the
 S-Parameter Noise example's LNA result and on a potentially unstable two-port, and looked at.
+
+## A variadic symbol's argument is not always its pin count: the Combiner drew N + 1 branches (2026-11-10)
+
+`SchematicRenderer.PortCountOf` turns a placed part's pin count into the number `BuiltInSymbols.Primitives(kind, n)`
+wants. For SDD and ZPort that is half the pins; for everything else it passed the pin count straight through. The
+Combiner's `n` is its number of PATHS and it has one pin more, the common port S, so a 2-way combiner was drawn as a
+3-way one: three branch leads at y = −200, 0, +200 while `SymbolPortDefs` put its two path pins at ±100. The pins, the
+wires and the netlist were right all along — only the artwork was wrong, which is why the example benches needed no
+change once it was fixed. The palette tile, the documentation figure and the chain window's block view call
+`Primitives(kind, n)` with the path count directly and never showed it. Gate: `DynamicSymbolGeometryTests`'
+`PortCountOf_MapsPinCountToPortCount_PerKind` (Combiner, 3 pins → 2).

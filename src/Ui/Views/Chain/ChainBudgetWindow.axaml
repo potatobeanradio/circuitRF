@@ -16,6 +16,16 @@
         Width="1300" Height="960" MinWidth="900" MinHeight="600"
         CanResize="True">
 
+    <!-- Undo and Redo over the whole chain, with the Match Designer's gestures. A text box keeps its own Ctrl+Z while it
+         has the focus (it handles the key first); the toolbar's buttons reach the chain's history from anywhere. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding RedoCommand}"/>
+    </Window.KeyBindings>
+
     <Window.Styles>
         <Style Selector="Border.pane">
             <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
@@ -56,71 +66,141 @@
             <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
             <Setter Property="Cursor"          Value="Hand"/>
         </Style>
+        <!-- The selected block's border is 1 px thicker, so its padding is 1 px less: the block's outer size and its
+             content stay where they were, and selecting a stage moves nothing in the row. -->
         <Style Selector="Border.block.sel">
             <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
             <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding"         Value="5,3"/>
         </Style>
         <Style Selector="TextBlock.small">
             <Setter Property="FontSize"      Value="10.5"/>
             <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
-        <Style Selector="Button.tb">
-            <Setter Property="Padding" Value="8,3"/>
-            <Setter Property="Margin"  Value="0,0,4,0"/>
+        <!-- A value the chain refuses: the recognition dialogs' invalid border, kept while the box has the focus (which is
+             when it is being typed), and the reason in the Chain pane below. -->
+        <Style Selector="TextBox.invalid">
+            <Setter Property="BorderBrush" Value="#C8463A"/>
+        </Style>
+        <Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement, TextBox.invalid:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="#C8463A"/>
+        </Style>
+        <!-- A unit after its box: the box's own label is before it, the unit after, and the gap to the next field. -->
+        <Style Selector="TextBlock.unit">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="4,0,14,0"/>
         </Style>
     </Window.Styles>
 
     <DockPanel>
-        <!-- Toolbar: the file, the stage list, the transfer. -->
-        <Border Classes="pane" DockPanel.Dock="Top">
-            <WrapPanel>
-                <Button Classes="tb" Command="{Binding NewCommand}" ToolTip.Tip="A new chain">New</Button>
-                <Button Classes="tb" Command="{Binding OpenCommand}" ToolTip.Tip="Open a .cchain">Open…</Button>
-                <Button Classes="tb" Command="{Binding SaveCommand}">Save</Button>
-                <Button Classes="tb" Command="{Binding SaveAsCommand}">Save As…</Button>
-                <Separator Width="16"/>
-                <ComboBox Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding PartToAdd}"
-                          MinWidth="210" Margin="0,0,4,0" ToolTip.Tip="The part the next stage is">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="chain:ChainPart"><TextBlock Text="{Binding Title}"/></DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <Button Classes="tb" Command="{Binding AddStageCommand}" ToolTip.Tip="Add a stage of this part after the selected one">Add Stage</Button>
-                <Button Classes="tb" Command="{Binding RemoveStageCommand}">Remove</Button>
-                <Button Classes="tb" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move the selected stage toward the input">Up</Button>
-                <Button Classes="tb" Command="{Binding MoveDownCommand}" ToolTip.Tip="Move the selected stage toward the output">Down</Button>
-                <Separator Width="16"/>
-                <Button Classes="tb" Name="TransferButton" Click="OnTransferClick"
-                        ToolTip.Tip="Write the chain's 1-Tone, 2-Tone and Envelope test benches (and an array's Steering and Combiners benches), with their analyses and the budget's numbers beside the simulated ones, and a Data Display of each">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <mi:MaterialIcon Kind="TransferRight" Width="16" Height="16"/>
-                        <TextBlock Text="Transfer to Schematic…"/>
-                    </StackPanel>
+        <!-- Toolbar: the file, the stage list, the transfer, help. The editors' and the other tools' shape (the Layout
+             Editor's, the railRF window's): a full-bleed bottom-ruled Border padded 4,2, icon-only 16 px buttons at
+             Padding 6,3 with the word in the tooltip, and a 1 px rule between groups. A WrapPanel, as the Layout
+             Editor's toolbar is, so a narrow window wraps rather than clips. -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <!-- Help at the far right, as the other tools' toolbars keep it; everything else from the left. -->
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Click="OnHelpClick" Padding="6,3" VerticalAlignment="Center"
+                        ToolTip.Tip="Help — the RF Chain Budget chapter of the circuitRF reference">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
                 </Button>
-                <CheckBox IsChecked="{Binding Demo}" Margin="0,0,8,0" VerticalAlignment="Center"
-                          ToolTip.Tip="Transfer also writes the Demo bench: the chain demodulated end to end, NR and DBPSK from the Signal Designer's source, the LO with a phase-noise mask, the constellation and the EVM against the input power">
-                    <TextBlock Text="with a modulated-signal demo" FontSize="12"/>
-                </CheckBox>
-                <Button Classes="tb" Click="OnHelpClick">Help</Button>
-            </WrapPanel>
+                <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                    <Button Command="{Binding NewCommand}" Padding="6,3" ToolTip.Tip="New — an empty chain">
+                        <mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding OpenCommand}" Padding="6,3" ToolTip.Tip="Open… — a .cchain">
+                        <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding SaveCommand}" Padding="6,3" ToolTip.Tip="Save — the chain as a .cchain. A chain that has never been saved asks where.">
+                        <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding SaveAsCommand}" Padding="6,3" ToolTip.Tip="Save As… — write the chain under a new name">
+                        <mi:MaterialIcon Kind="ContentSaveEditOutline" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <Button Command="{Binding UndoCommand}" Padding="6,3" ToolTip.Tip="{Binding UndoTip}">
+                        <mi:MaterialIcon Kind="UndoVariant" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding RedoCommand}" Padding="6,3" ToolTip.Tip="{Binding RedoTip}">
+                        <mi:MaterialIcon Kind="RedoVariant" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <ComboBox Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding PartToAdd}"
+                              MinWidth="210" VerticalAlignment="Center" ToolTip.Tip="The part the next stage is">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="chain:ChainPart"><TextBlock Text="{Binding Title}"/></DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Command="{Binding AddStageCommand}" Padding="6,3" ToolTip.Tip="Add Stage — a stage of this part after the selected one">
+                        <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding RemoveStageCommand}" Padding="6,3" ToolTip.Tip="Remove the selected stage">
+                        <mi:MaterialIcon Kind="Delete" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding MoveUpCommand}" Padding="6,3" ToolTip.Tip="Move Up — the selected stage toward the input">
+                        <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding MoveDownCommand}" Padding="6,3" ToolTip.Tip="Move Down — the selected stage toward the output">
+                        <mi:MaterialIcon Kind="ArrowDown" Width="16" Height="16"/>
+                    </Button>
+
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <Button Name="TransferButton" Click="OnTransferClick" Padding="6,3"
+                            ToolTip.Tip="Transfer to Schematic… — write the chain's 1-Tone, 2-Tone and Envelope test benches (and an array's Steering and Combiners benches), with their analyses and the budget's numbers beside the simulated ones, and a Data Display of each">
+                        <mi:MaterialIcon Kind="TransferRight" Width="16" Height="16"/>
+                    </Button>
+                    <!-- What Transfer writes besides the standard benches, in a drop-down right beside it: the .c3d toolbar's
+                         Realistic View / Look pair (a narrow chevron button with a flyout), so the option costs the toolbar
+                         no width. -->
+                    <Button Padding="1,4" Margin="-3,0,0,0" ToolTip.Tip="Transfer options">
+                        <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <CheckBox IsChecked="{Binding Demo}"
+                                          ToolTip.Tip="Transfer also writes the Demo bench: the chain demodulated end to end, NR and DBPSK from the Signal Designer's source, the LO with a phase-noise mask, the constellation and the EVM against the input power">
+                                    <TextBlock Text="include a modulated-signal demo" FontSize="12"/>
+                                </CheckBox>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </WrapPanel>
+            </DockPanel>
         </Border>
 
         <!-- The system inputs. -->
         <Border Classes="pane" DockPanel.Dock="Top">
             <WrapPanel>
-                <TextBlock Classes="lbl" Text="Frequency, GHz"/>
-                <TextBox Classes="p" Text="{Binding FrequencyGHz}" Margin="0,0,14,0" ToolTip.Tip="The input (RF) frequency"/>
-                <TextBlock Classes="lbl" Text="Bandwidth, MHz"/>
-                <TextBox Classes="p" Text="{Binding BandwidthMHz}" Margin="0,0,14,0" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
-                <TextBlock Classes="lbl" Text="Input power, dBm"/>
-                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Margin="0,0,14,0" ToolTip.Tip="The signal at the input; in an array, at each element"/>
-                <TextBlock Classes="lbl" Text="Source temperature, K"/>
-                <TextBox Classes="p" Text="{Binding TemperatureK}" Margin="0,0,14,0" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
-                <TextBlock Classes="lbl" Text="Required SNR, dB"/>
-                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Margin="0,0,14,0" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                <TextBlock Classes="lbl" Text="Frequency"/>
+                <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
+                <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>
+                <TextBlock Classes="lbl" Text="Bandwidth"/>
+                <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
+                <TextBlock Classes="unit" Text="MHz"/>
+                <TextBlock Classes="lbl" Text="Input power"/>
+                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" ToolTip.Tip="The signal at the input; in an array, at each element"/>
+                <TextBlock Classes="unit" Text="dBm"/>
+                <TextBlock Classes="lbl" Text="Source temperature"/>
+                <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
+                <TextBlock Classes="unit" Text="K"/>
+                <TextBlock Classes="lbl" Text="Required SNR"/>
+                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                <TextBlock Classes="unit" Text="dB"/>
                 <TextBlock Classes="lbl" Text="Blockers"/>
-                <TextBox Classes="p" Text="{Binding Blockers}" MinWidth="200" Watermark="offset MHz, level dBm; …"
+                <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
                          ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
             </WrapPanel>
         </Border>
@@ -136,19 +216,45 @@
             </StackPanel>
         </Border>
 
-        <Grid RowDefinitions="Auto,*,Auto">
+        <!-- The three panes share the height, and the gaps between them drag: the Match Designer's and railRF's grippers,
+             a 4 px transparent GridSplitter in an Auto row, with no line of its own because the panes already have
+             edges. The blocks and the cascade open at their fixed heights and the stage list takes the rest; nothing
+             is remembered. Each row keeps a floor, so a drag cannot squeeze a pane to nothing. -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="290" MinHeight="120"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="90"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="280" MinHeight="120"/>
+            </Grid.RowDefinitions>
             <!-- The chain, two ways, one selection. Blocks: an idealised block per stage with its System block's symbol, its
                  own numbers and the cascade at its output; an array's branch once, "× N", into one combiner block drawn
                  as its variant. Schematic: the chain itself, as Transfer to Schematic places it, drawn by circuitRF's own
                  schematic renderer with the same numbers over each stage; wheel to zoom, middle-drag to pan,
                  double-click to fit. A click on a block or a part selects its stage, in both and in the stage list. -->
-            <Border Classes="pane" Grid.Row="0" Height="290">
+            <Border Classes="pane" Grid.Row="0">
                 <TabControl Padding="0,4,0,0">
                     <TabItem Header="Blocks" FontSize="13">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                        <!-- Right-click ▸ Copy: the whole lineup on the clipboard as a picture, for a slide or a document
+                             (ChainBlocksGraphicExport, on the stackup copy's pipeline). Transparent so a right-click on the
+                             space around the blocks reaches the menu too. -->
+                        <!-- Focusable, and focused by a click on a block, so Delete removes the selected stage there and nowhere
+                             else: a Delete typed in a parameter's box edits its text. -->
+                        <ScrollViewer Name="BlocksScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                      Background="Transparent" Focusable="True" KeyDown="OnBlocksKeyDown">
+                            <!-- ONE ContextMenu, its items built fresh on every Opening from where the right-click landed
+                                 (OnBlocksMenuOpening): Insert Block into the gap nearest it, Copy, and Remove Block on the
+                                 block under it. Items reused across openings would fire once per opening. -->
+                            <ScrollViewer.ContextMenu>
+                                <ContextMenu Name="BlocksMenu" Opening="OnBlocksMenuOpening"/>
+                            </ScrollViewer.ContextMenu>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
-                                <ItemsControl ItemsSource="{Binding Stages}">
+                                <!-- Drag a block left or right to move its stage: the line shows where it will land, and the move is made on
+                                     release, through the same move Up and Down make. The schematic does not drag. -->
+                                <Grid>
+                                    <ItemsControl Name="BlockItems" ItemsSource="{Binding Stages}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -157,6 +263,7 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="⟶" FontSize="18" VerticalAlignment="Center" Margin="4,0" Opacity="0.7"/>
                                                 <Border Classes="block" Classes.sel="{Binding IsSelected}" PointerPressed="OnBlockPressed"
+                                                        PointerMoved="OnBlockMoved" PointerReleased="OnBlockReleased" PointerCaptureLost="OnBlockCaptureLost"
                                                         ToolTip.Tip="{Binding Part.Summary}">
                                                     <StackPanel Spacing="1" MinWidth="104">
                                                         <TextBlock Classes="small" Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
@@ -167,7 +274,7 @@
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate x:DataType="vm:ChainBlockGlyph">
                                                                     <StackPanel Margin="1,0">
-                                                                        <ctl:PaletteGlyphControl Kind="{Binding Kind}" Monochrome="True" Width="64" Height="40"/>
+                                                                        <ctl:PaletteGlyphControl Kind="{Binding Kind}" Artwork="{Binding Artwork}" Monochrome="True" Width="64" Height="40"/>
                                                                         <TextBlock Classes="small" Text="{Binding Caption}" IsVisible="{Binding HasCaption}"/>
                                                                     </StackPanel>
                                                                 </DataTemplate>
@@ -185,25 +292,52 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                    <!-- Where a dragged block will land: a line at the gap it would drop into, drawn over the row and never hit. -->
+                                    <Canvas IsHitTestVisible="False">
+                                        <Rectangle Name="BlockDropMarker" Width="3" RadiusX="1.5" RadiusY="1.5" IsVisible="False"
+                                                   Fill="{DynamicResource SystemAccentColor}"/>
+                                    </Canvas>
+                                </Grid>
                                 <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
                     <TabItem Header="Schematic" FontSize="13">
-                        <chv:ChainSchematicCanvas Diagram="{Binding Diagram}" SelectedStage="{Binding SelectedStageIndex}"/>
+                        <!-- Z arms a zoom box and F fits, as on every schematic canvas; the Fit button, top left as the Match Designer places its own, is F for the mouse.
+                             Right-click ▸ Copy puts the drawing on the clipboard as the schematic editor's Copy does. -->
+                        <Grid>
+                            <chv:ChainSchematicCanvas Name="ChainSchematic" Diagram="{Binding Diagram}" SelectedStage="{Binding SelectedStageIndex}">
+                                <chv:ChainSchematicCanvas.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Copy" Click="OnCopySchematicClick"
+                                                  ToolTip.Tip="The schematic as a picture, to paste into a slide or a document, and as parts and wires, to paste into a schematic"/>
+                                    </ContextMenu>
+                                </chv:ChainSchematicCanvas.ContextMenu>
+                            </chv:ChainSchematicCanvas>
+                            <Button HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4" Padding="6,3"
+                                    Click="OnFitSchematicClick" ToolTip.Tip="Fit (F)">
+                                <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                            </Button>
+                        </Grid>
                     </TabItem>
                 </TabControl>
             </Border>
 
             <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->
-            <Border Classes="pane" Grid.Row="1">
+            <GridSplitter Grid.Row="1" Height="4" ResizeDirection="Rows" Background="Transparent"/>
+
+            <Border Classes="pane" Grid.Row="2">
                 <DockPanel>
                     <TextBlock Classes="panelhdr" DockPanel.Dock="Top" Text="Stages, input to output"/>
-                    <ListBox ItemsSource="{Binding Stages}" SelectedItem="{Binding SelectedStage}" Background="Transparent">
+                    <!-- AutoScrollToSelectedItem off: a stage selected from a block, the schematic or a levels marker is
+                         brought to the top of the list with an eased scroll (ListBoxEasedScroll, as the .ctech stackup's
+                         card list follows the cross-section), and the list's own ScrollIntoView would jump first. -->
+                    <ListBox Name="StageList" ItemsSource="{Binding Stages}" SelectedItem="{Binding SelectedStage}" Background="Transparent"
+                             AutoScrollToSelectedItem="False">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:ChainStageViewModel">
                                 <Grid ColumnDefinitions="110,220,*" Margin="0,2">
-                                    <TextBox Grid.Column="0" Classes="p" Text="{Binding Name}" VerticalAlignment="Top" ToolTip.Tip="The stage's name: its instance name on the schematic"/>
+                                    <TextBox Grid.Column="0" Classes="p" Text="{Binding Name}" Classes.invalid="{Binding NameInvalid}" VerticalAlignment="Top" ToolTip.Tip="The stage's name: its instance name on the schematic"/>
                                     <ComboBox Grid.Column="1" Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding Part}"
                                               Margin="6,0" HorizontalAlignment="Stretch" VerticalAlignment="Top" ToolTip.Tip="{Binding Part.Summary}">
                                         <ComboBox.ItemTemplate>
@@ -219,7 +353,7 @@
                                                 <DataTemplate x:DataType="vm:ChainParamViewModel">
                                                     <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
                                                         <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                                                        <TextBox Classes="p" Text="{Binding Value}" IsVisible="{Binding IsText}" Watermark="{Binding Watermark}"/>
+                                                        <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
                                                         <ComboBox Classes="p" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
                                                         <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
                                                     </StackPanel>
@@ -239,7 +373,9 @@
                  data: the cascade table over the stage axis; the levels over the node axis (0 the input, k stage k's
                  output), with the transferred benches' simulated points once they have run, and a marker on a trace
                  selecting that node's stage; and the depth a canceller's errors leave, in closed form. -->
-            <Border Classes="pane" Grid.Row="2" Height="280">
+            <GridSplitter Grid.Row="3" Height="4" ResizeDirection="Rows" Background="Transparent"/>
+
+            <Border Classes="pane" Grid.Row="4">
                 <TabControl Padding="0,4,0,0">
                     <TabItem Header="Cascade" FontSize="13">
                         <ddc:PlotControl Name="CascadePlotControl" ClipToBounds="True"

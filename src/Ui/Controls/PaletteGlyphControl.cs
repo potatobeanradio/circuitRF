@@ -40,6 +40,21 @@ public sealed class PaletteGlyphControl : Control
         AvaloniaProperty.Register<PaletteGlyphControl, SymbolRotation>(nameof(Rotation));
 
     /// <summary>
+    /// The artwork to draw in place of <see cref="Kind"/>'s default variant, or null. A kind with variants (the
+    /// filter's band forms) has one glyph per variant and the tile has no instance to ask, so a caller that knows the
+    /// variant hands its artwork here: the RF Chain Budget's block for a high-pass filter stage draws the high-pass
+    /// glyph rather than the band-pass default.
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyList<SymbolPrimitive>?> ArtworkProperty =
+        AvaloniaProperty.Register<PaletteGlyphControl, IReadOnlyList<SymbolPrimitive>?>(nameof(Artwork));
+
+    public IReadOnlyList<SymbolPrimitive>? Artwork
+    {
+        get => GetValue(ArtworkProperty);
+        set => SetValue(ArtworkProperty, value);
+    }
+
+    /// <summary>
     /// How the glyph is turned before it is fitted — <c>R0</c> for a palette tile, and what the Smith
     /// Chart's Add/Insert menus set so a SERIES element reads horizontally and a SHUNT one vertically.
     /// </summary>
@@ -114,6 +129,7 @@ public sealed class PaletteGlyphControl : Control
         AffectsRender<PaletteGlyphControl>(IconPathProperty);
         AffectsRender<PaletteGlyphControl>(SymbolCellDirProperty);
         AffectsRender<PaletteGlyphControl>(RotationProperty);
+        AffectsRender<PaletteGlyphControl>(ArtworkProperty);
     }
 
     private ColorTheme _activeTheme = ColorTheme.BuiltIn;
@@ -143,7 +159,7 @@ public sealed class PaletteGlyphControl : Control
         var theme     = SchematicRenderTheme.FromTheme(_activeTheme, variant);
         var effective = Monochrome ? theme.WithMonochrome(variant == ColorVariant.Light) : theme;
         context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, PortCount, effective,
-                                              IconPath, ResolveCellPrimitives(), Rotation));
+                                              IconPath, ResolveCellPrimitives() ?? Artwork, Rotation));
     }
 
     /// <summary>
@@ -154,6 +170,76 @@ public sealed class PaletteGlyphControl : Control
     {
         var res = CellSymbolResolver.ResolveCellDirOrRef(SymbolCellDir);
         return res.State == CellSymbolState.Resolved ? res.Symbol!.Primitives : null;
+    }
+
+    /// <summary>The inset on each side of a glyph's tile, as a fraction of the tile.</summary>
+    internal const double GlyphPadding = 0.12;
+
+    /// <summary>
+    /// Draws <paramref name="prims"/> fitted into a <paramref name="width"/> × <paramref name="height"/> tile at the
+    /// canvas's origin, centred, with <see cref="GlyphPadding"/> on every side: the framing every palette tile uses,
+    /// and the one the RF Chain Budget's block copy draws its glyphs with, so a copied block's symbol is the window's.
+    /// <paramref name="extraPoints"/> are folded into the framing (a ZPort's pin tips). Returns the transform used, for
+    /// anything drawn over the glyph in the same frame.
+    /// </summary>
+    internal static (double Zoom, double PanX, double PanY) DrawFitted(
+        SKCanvas canvas, double width, double height, IReadOnlyList<SymbolPrimitive> prims,
+        IReadOnlyList<(string Name, float LocalX, float LocalY)> extraPoints, SymbolRotation rotation,
+        SchematicRenderTheme theme)
+    {
+        var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(prims);
+
+        foreach (var (_, lx, ly) in extraPoints)
+        {
+            if (lx < bbMinX) bbMinX = lx; if (lx > bbMaxX) bbMaxX = lx;
+            if (ly < bbMinY) bbMinY = ly; if (ly > bbMaxY) bbMaxY = ly;
+        }
+
+        // Guard: degenerate / empty bbox from an all-Text primitive list
+        if (bbMaxX <= bbMinX || bbMaxY <= bbMinY)
+        {
+            bbMinX = -200; bbMinY = -200; bbMaxX = 200; bbMaxY = 200;
+        }
+
+        // THE FIT IS ON THE ROTATED BOX. The four corners go through the renderer's own
+        // transform rather than a hand-written axis swap, so a glyph laid on its side is framed
+        // by what will actually be drawn.
+        if (rotation != SymbolRotation.R0)
+        {
+            double rMinX = double.MaxValue, rMinY = double.MaxValue;
+            double rMaxX = double.MinValue, rMaxY = double.MinValue;
+            foreach (var (lx, ly) in new[] { (bbMinX, bbMinY), (bbMaxX, bbMinY),
+                                             (bbMinX, bbMaxY), (bbMaxX, bbMaxY) })
+            {
+                var (wx, wy) = SchematicGeometry.LocalToWorld(
+                    (float)lx, (float)ly, 0, 0, rotation, mirrorX: false);
+                if (wx < rMinX) rMinX = wx; if (wx > rMaxX) rMaxX = wx;
+                if (wy < rMinY) rMinY = wy; if (wy > rMaxY) rMaxY = wy;
+            }
+            bbMinX = rMinX; bbMaxX = rMaxX; bbMinY = rMinY; bbMaxY = rMaxY;
+        }
+
+        double worldW = bbMaxX - bbMinX;
+        double worldH = bbMaxY - bbMinY;
+
+        // Scale to fit the bbox in the tile with uniform padding on all sides
+        double zoom = Math.Min(width / worldW, height / worldH)
+                    * (1.0 - 2.0 * GlyphPadding);
+        if (zoom <= 0) zoom = 0.01;
+
+        // Pan so the glyph center maps to the tile center
+        double cx   = (bbMinX + bbMaxX) * 0.5;
+        double cy   = (bbMinY + bbMaxY) * 0.5;
+        double panX = cx - width  / (2.0 * zoom);
+        double panY = cy - height / (2.0 * zoom);
+
+        SchematicRenderer.DrawSymbol(
+            canvas, prims,
+            compX: 0, compY: 0,
+            rotation: rotation, mirrorX: false,
+            panX: panX, panY: panY, zoom: zoom,
+            theme: theme);
+        return (zoom, panX, panY);
     }
 
     // ── ICustomDrawOperation ─────────────────────────────────────────────────
@@ -167,8 +253,6 @@ public sealed class PaletteGlyphControl : Control
         private readonly string?              _iconPath;
         private readonly IReadOnlyList<SymbolPrimitive>? _cellPrims;
         private readonly SymbolRotation       _rotation;
-
-        private const double Padding = 0.12; // 12% inset on each side
 
         internal GlyphDrawOperation(Rect bounds, SymbolKind kind, int portCount,
                                     SchematicRenderTheme theme, string? iconPath,
@@ -221,65 +305,14 @@ public sealed class PaletteGlyphControl : Control
                                     : BuiltInSymbols.Primitives(_kind).Primitives);
             if (prims.Count == 0) return;
 
-            var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(prims);
-
             // ZPort/Sdd draw their port leads dynamically (SchematicRenderer.DrawVariadicPortLeads),
-            // never baked into Primitives — the static bbox above covers only the body, so the pin
-            // tips (drawn below) must be folded in here or the leads would run past the auto-fit
-            // framing. Snp's own leads ARE baked into its primitive list already (BuildSnpSymbol), so
-            // no expansion is needed there.
+            // never baked into Primitives — the static bbox covers only the body, so the pin tips
+            // (drawn below) are folded into the framing or the leads would run past it. Snp's own
+            // leads ARE baked into its primitive list already (BuildSnpSymbol), so no expansion is
+            // needed there.
             bool drawsLeadsSeparately = _cellPrims is null && _kind is SymbolKind.ZPort or SymbolKind.Sdd;
             var ports = drawsLeadsSeparately ? SymbolPortDefs.For(_kind, n) : [];
-            foreach (var (_, lx, ly) in ports)
-            {
-                if (lx < bbMinX) bbMinX = lx; if (lx > bbMaxX) bbMaxX = lx;
-                if (ly < bbMinY) bbMinY = ly; if (ly > bbMaxY) bbMaxY = ly;
-            }
-
-            // Guard: degenerate / empty bbox from an all-Text primitive list
-            if (bbMaxX <= bbMinX || bbMaxY <= bbMinY)
-            {
-                bbMinX = -200; bbMinY = -200; bbMaxX = 200; bbMaxY = 200;
-            }
-
-            // THE FIT IS ON THE ROTATED BOX. The four corners go through the renderer's own
-            // transform rather than a hand-written axis swap, so a glyph laid on its side is framed
-            // by what will actually be drawn.
-            if (_rotation != SymbolRotation.R0)
-            {
-                double rMinX = double.MaxValue, rMinY = double.MaxValue;
-                double rMaxX = double.MinValue, rMaxY = double.MinValue;
-                foreach (var (lx, ly) in new[] { (bbMinX, bbMinY), (bbMaxX, bbMinY),
-                                                 (bbMinX, bbMaxY), (bbMaxX, bbMaxY) })
-                {
-                    var (wx, wy) = SchematicGeometry.LocalToWorld(
-                        (float)lx, (float)ly, 0, 0, _rotation, mirrorX: false);
-                    if (wx < rMinX) rMinX = wx; if (wx > rMaxX) rMaxX = wx;
-                    if (wy < rMinY) rMinY = wy; if (wy > rMaxY) rMaxY = wy;
-                }
-                bbMinX = rMinX; bbMaxX = rMaxX; bbMinY = rMinY; bbMaxY = rMaxY;
-            }
-
-            double worldW = bbMaxX - bbMinX;
-            double worldH = bbMaxY - bbMinY;
-
-            // Scale to fit the bbox in the tile with uniform padding on all sides
-            double zoom = Math.Min(_bounds.Width / worldW, _bounds.Height / worldH)
-                        * (1.0 - 2.0 * Padding);
-            if (zoom <= 0) zoom = 0.01;
-
-            // Pan so the glyph center maps to the tile center
-            double cx   = (bbMinX + bbMaxX) * 0.5;
-            double cy   = (bbMinY + bbMaxY) * 0.5;
-            double panX = cx - _bounds.Width  / (2.0 * zoom);
-            double panY = cy - _bounds.Height / (2.0 * zoom);
-
-            SchematicRenderer.DrawSymbol(
-                canvas, prims,
-                compX: 0, compY: 0,
-                rotation: _rotation, mirrorX: false,
-                panX: panX, panY: panY, zoom: zoom,
-                theme: _theme);
+            var (zoom, panX, panY) = DrawFitted(canvas, _bounds.Width, _bounds.Height, prims, ports, _rotation, _theme);
 
             // ZPort/Sdd's port leads are drawn dynamically by the real schematic renderer
             // (DrawVariadicPortLeads) — never baked into Primitives — so the palette glyph must draw
@@ -317,8 +350,8 @@ public sealed class PaletteGlyphControl : Control
             var bmp = CircuitRF.Render.BitmapCache.Load(_iconPath);
             if (bmp is null || bmp.Width <= 0 || bmp.Height <= 0) return false;
 
-            float availW = (float)(_bounds.Width  * (1.0 - 2.0 * Padding));
-            float availH = (float)(_bounds.Height * (1.0 - 2.0 * Padding));
+            float availW = (float)(_bounds.Width  * (1.0 - 2.0 * GlyphPadding));
+            float availH = (float)(_bounds.Height * (1.0 - 2.0 * GlyphPadding));
             if (availW <= 0f || availH <= 0f) return false;
 
             float scale = Math.Min(availW / bmp.Width, availH / bmp.Height);

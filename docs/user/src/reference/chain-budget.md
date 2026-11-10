@@ -57,32 +57,52 @@ The window has three parts, and every edit recomputes all of them at once:
   - **Blocks**: one idealised block per stage, drawn with its System block's own symbol, with its own gain, NF and
     intercept under it and the cascade at its output (Σ) under that. An array is drawn compactly: the branch's stages
     once, each marked "× N", into one combiner block drawn as its variant — a direct combiner one N:1 symbol, a tree its
-    levels of 2:1 (a deep one as "× levels"), an amplifier after each when it is active.
+    levels of 2:1 (a deep one as "× levels"), an amplifier after each when it is active. A filter's block shows its
+    band form. Drag a block left or right to move its stage: a line shows where it will land. **Delete**
+    removes the selected block's stage. Right-click for **Insert Block** ▸ a part, which inserts a stage of that part
+    where you clicked (the left half of a block before it, the right half after it), **Copy**, which puts the whole
+    lineup on the clipboard as a picture to paste into a slide or a document, and **Remove Block**, which removes the
+    block you clicked.
   - **Schematic**: the schematic Transfer would write, drawn as every circuitRF schematic is, without the bench's
     sources, analyses and isolators: each stage is its own parts (a composed stage its composition, a tree its levels
     of Combiners), and in an array every element's branch is drawn into the combiner. Above each stage are four lines:
     its own gain and NF, its own intercept and compression point, and the cascade's gain, NF, IIP3 and SNR at its output.
-    Scroll to zoom, drag with the middle button to pan, double-click to fit.
+    Scroll to zoom, drag with the middle button to pan. **Z** and a drag zoom to a box, and **F**, the Fit button or
+    a double-click fits. Right-click ▸ **Copy** copies it as the schematic editor copies: a picture for a slide or a
+    document, and parts and wires to paste into a schematic.
 
   Clicking a block, or a part in the schematic, selects its stage, and the selected stage is drawn selected in both.
-- **The stages**, one row each: the name, the part, and the part's parameters.
+- **The stages**, one row each: the name, the part, and the part's parameters. Selecting a stage in either view
+  scrolls its row to the top of the list.
 - **The cascade, the levels and the canceller**, three [Data Display](data-display.html) tabs: the cascade table, one
   row per stage; the [levels at every node](#levels), the budget's lines with the transferred benches' simulated
   points once they have run, where a marker on a trace selects its node's stage in both views; and, for a chain with a
   canceller, [its depth](#canceller) against its errors. The chain's totals are below them.
 
+Drag the gap between two of the three parts to give one more height.
+
+**Undo** and **Redo** (the toolbar, or Ctrl+Z and Ctrl+Shift+Z, ⌘ on a Mac) step through every edit: an input, a stage's
+name, part or parameter, and every stage added, removed or moved. A value typed into a box is one step. Undoing back
+to the chain as it was opened or last saved leaves it unchanged, with nothing to save.
+
+A value the budget cannot use is never taken. While you type one, its box is outlined in red, the reason is under the
+chain's totals, and everything else keeps showing the last chain that worked; leave the box (or press Enter) with the
+value still refused and it goes back to the last one that worked. A choice from a list that the budget refuses, such
+as a tree combiner whose N is not a power of 2, is not made, and the reason is shown.
+
 ## The system inputs {#inputs}
 
 | Input | Meaning |
 |---|---|
-| Frequency | The input (RF) frequency. After a mixer the chain is at the difference frequency. |
+| Frequency | The input (RF) frequency, in the frequency unit set in Settings ▸ General ▸ Units (GHz when that is Automatic). After a mixer the chain is at the difference frequency. |
 | Bandwidth | The noise bandwidth B the noise floor, the MDS and the SNR are read in. |
 | Input power | The signal at the input. In an array, at **each element**. |
 | Source temperature | The noise temperature of what drives the input, an antenna's for instance. 290 K is T0. |
 | Required SNR | What the demodulator needs: sensitivity is the MDS plus this. |
 | Blockers | Carriers at the input besides the signal: an offset from the frequency (MHz when bare) and a level, dBm, each pair separated by `;` (`150 MHz, -40; 20 MHz, -50`). See [Levels](#levels). |
 
-Beside **Transfer to Schematic**, **with a modulated-signal demo** adds the [demo bench](#demo) to what it writes.
+**Transfer to Schematic**'s drop-down has **include a modulated-signal demo**, which adds the [demo bench](#demo) to
+what it writes.
 
 ## The stages, and the parts a stage can be {#stages}
 
@@ -363,7 +383,8 @@ its bandwidth; the bench measures whatever it sends.
 
 ## The modulated-signal demo {#demo}
 
-**with a modulated-signal demo** (or `--demo`, or `"Demo": true` in the `.cchain`) adds `<chain> Demo`: the chain
+**include a modulated-signal demo**, in Transfer to Schematic's drop-down (or `--demo`, or `"Demo": true` in the
+`.cchain`), adds `<chain> Demo`: the chain
 demodulated end to end. Each element is fed an NR 64-QAM carrier and, from a second source beside it, a DBPSK carrier
 at twice the bandwidth's offset, joined by a 2-way Combiner, each at the input power and noisy at the source
 temperature. Each mixer's LO carries a phase-noise mask, which an envelope run plays as a random phase. An envelope run

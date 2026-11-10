@@ -5,15 +5,17 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using CircuitRF.Core.Matching;
 using CircuitRF.Design.Chain;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Chain;
 
 /// <summary>One parameter of one stage: its name, its text, and the choices when it names one.</summary>
-public sealed partial class ChainParamViewModel(ChainParam param, string value, Action changed) : ObservableObject
+public sealed partial class ChainParamViewModel(ChainParam param, string value, Action<object?> changed) : ObservableObject
 {
     public string Name => param.Name;
     /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
@@ -27,12 +29,21 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
 
     [ObservableProperty] private string _value = value;
 
-    partial void OnValueChanged(string value) => changed();
+    /// <summary>The value typed here makes the budget refuse the chain: the box is drawn invalid, the views keep the
+    /// last chain that evaluated, and leaving the box puts <see cref="LastGood"/> back.</summary>
+    [ObservableProperty] private bool _invalid;
+
+    /// <summary>The value this field had the last time the whole chain evaluated.</summary>
+    public string LastGood { get; set; } = value;
+
+    // A typed value is one undo step however many keystrokes it took; a pick from the list is a step of its own.
+    partial void OnValueChanged(string value) => changed(IsText ? this : null);
 }
 
 /// <summary>One symbol of a stage's block in the block view: the System block whose artwork it is drawn with, and a
-/// caption under it ("4:1", "2 × 2:1").</summary>
-public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption)
+/// caption under it ("4:1", "2 × 2:1"). <paramref name="Artwork"/> is the block's own variant where the kind has
+/// several (a filter's band form), null for the kind's default.</summary>
+public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption, IReadOnlyList<SymbolPrimitive>? Artwork = null)
 {
     public bool HasCaption => Caption.Length > 0;
 }
@@ -40,12 +51,15 @@ public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption)
 /// <summary>One stage row: its name, its part, the part's parameters, and the stage's own budget.</summary>
 public sealed partial class ChainStageViewModel : ObservableObject
 {
-    private readonly Action _changed;
+    private readonly Action<object?> _changed;
 
-    public ChainStageViewModel(ChainStage stage, Action changed)
+    /// <param name="changed">Told of every edit, with the key that coalesces it into the previous undo step (the same
+    /// text field, typed on) or null for an edit that is a step of its own.</param>
+    public ChainStageViewModel(ChainStage stage, Action<object?> changed)
     {
         _changed = changed;
         _name = stage.Name;
+        NameLastGood = stage.Name;
         _part = ChainParts.Find(stage.Part) ?? ChainParts.All[0];
         Unlisted = stage.Parameters.Where(kv => _part.Parameters.All(p => p.Name != kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
         Fill(stage);
@@ -56,6 +70,12 @@ public sealed partial class ChainStageViewModel : ObservableObject
 
     [ObservableProperty] private string _name;
     [ObservableProperty] private ChainPart _part;
+
+    /// <summary>The name typed makes the budget refuse the chain (see <see cref="ChainParamViewModel.Invalid"/>).</summary>
+    [ObservableProperty] private bool _nameInvalid;
+
+    /// <summary>The name the last time the whole chain evaluated.</summary>
+    public string NameLastGood { get; set; } = "";
     [ObservableProperty] private string _summary = "";
 
     // ── the block view: an idealised block per stage ─────────────────────────
@@ -82,13 +102,13 @@ public sealed partial class ChainStageViewModel : ObservableObject
 
     public ObservableCollection<ChainParamViewModel> Parameters { get; } = [];
 
-    partial void OnNameChanged(string value) => _changed();
+    partial void OnNameChanged(string value) => _changed((this, nameof(Name)));
 
     /// <summary>A new part keeps every parameter the two share by name and takes the new one's defaults for the rest.</summary>
     partial void OnPartChanged(ChainPart value)
     {
         Fill(ToStage());
-        _changed();
+        _changed(null);
     }
 
     private void Fill(ChainStage stage)
@@ -142,6 +162,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         foreach (var s in Stages) s.IsSelected = ReferenceEquals(s, value);
         OnPropertyChanged(nameof(SelectedStageIndex));
+        if (!_restoring && !_loading && !_structural && _current is { } cur)
+        {
+            _current = cur with { Selected = SelectedStageIndex };
+            _lastKey = null;
+        }
     }
 
     public int SelectedStageIndex
@@ -304,10 +329,19 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     }
 
     private const string BudgetSource = "budget";
+
+    /// <summary>
+    /// The unit the Frequency field is typed in: Settings ▸ General ▸ Units' frequency unit, GHz under Automatic,
+    /// read once when the window opens as the Match Designer reads it. The .cchain stores hertz, so the unit is
+    /// only how the number is shown.
+    /// </summary>
+    public string FrequencyUnit { get; } = CircuitRF.Ui.Theming.PreferredUnits.Frequency ?? "GHz";
+
+    private double FrequencyScale => FreqUnitHelper.Multiplier(FrequencyUnit);
     [ObservableProperty] private ChainPart _partToAdd = ChainParts.All[0];
 
-    // The system inputs, as typed: a frequency in GHz, a bandwidth in MHz, the rest in their own unit.
-    [ObservableProperty] private string _frequencyGHz = "";
+    // The system inputs, as typed: a frequency in FrequencyUnit, a bandwidth in MHz, the rest in their own unit.
+    [ObservableProperty] private string _frequency = "";
     [ObservableProperty] private string _bandwidthMHz = "";
     [ObservableProperty] private string _inputPowerDbm = "";
     [ObservableProperty] private string _temperatureK = "";
@@ -341,13 +375,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Title));
     partial void OnRefusalsChanged(string value) => OnPropertyChanged(nameof(HasRefusals));
     partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(HasNotes));
-    partial void OnFrequencyGHzChanged(string value) => Changed();
-    partial void OnBandwidthMHzChanged(string value) => Changed();
-    partial void OnInputPowerDbmChanged(string value) => Changed();
-    partial void OnTemperatureKChanged(string value) => Changed();
-    partial void OnRequiredSnrDbChanged(string value) => Changed();
-    partial void OnBlockersChanged(string value) => Changed();
-    partial void OnDemoChanged(bool value) => Changed();
+    partial void OnFrequencyChanged(string value) => Edited(nameof(Frequency));
+    partial void OnBandwidthMHzChanged(string value) => Edited(nameof(BandwidthMHz));
+    partial void OnInputPowerDbmChanged(string value) => Edited(nameof(InputPowerDbm));
+    partial void OnTemperatureKChanged(string value) => Edited(nameof(TemperatureK));
+    partial void OnRequiredSnrDbChanged(string value) => Edited(nameof(RequiredSnrDb));
+    partial void OnBlockersChanged(string value) => Edited(nameof(Blockers));
+    partial void OnDemoChanged(bool value) => Edited(null);
 
     private static string FormatBlockers(IEnumerable<ChainBlocker> b) =>
         string.Join("; ", b.Select(x => $"{N(x.OffsetHz / 1e6)} MHz, {N(x.LevelDbm)}"));
@@ -371,8 +405,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     public void Load(ChainDesign d)
     {
+        // Another document: the last good chain was the previous one's, and nothing of it may stand in for this one.
+        _hasGood = false;
+        SetErrorKey(null);
         _loading = true;
-        FrequencyGHz = N(d.FrequencyHz / 1e9);
+        Frequency = N(d.FrequencyHz / FrequencyScale);
         BandwidthMHz = N(d.BandwidthHz / 1e6);
         InputPowerDbm = N(d.InputPowerDbm);
         TemperatureK = N(d.TemperatureK);
@@ -380,9 +417,10 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Blockers = FormatBlockers(d.Blockers);
         Demo = d.Demo;
         Stages.Clear();
-        foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Changed));
+        foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Edited));
         _loading = false;
         Recompute();
+        ResetHistory();
         IsDirty = false;
     }
 
@@ -391,7 +429,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     public ChainDesign ToDesign() => new()
     {
-        FrequencyHz = Parse(FrequencyGHz, 1e9, double.NaN),
+        FrequencyHz = Parse(Frequency, FrequencyScale, double.NaN),
         BandwidthHz = Parse(BandwidthMHz, 1e6, double.NaN),
         InputPowerDbm = Parse(InputPowerDbm, 1, double.NaN),
         TemperatureK = Parse(TemperatureK, 1, double.NaN),
@@ -401,21 +439,178 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Demo = Demo,
     };
 
-    private void Changed()
+    /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
+    private void Changed() => Edited(null);
+
+    // ── undo and redo ────────────────────────────────────────────────────────────────────────────────────────────────
+    //
+    // Every edit is undoable, and undoing back to the document as it was opened or last saved makes it clean again.
+    // The history is SNAPSHOTS of the whole document as the window holds it — the system inputs AS TYPED (a half-typed
+    // "2." must come back as "2.", not as the NaN it parses to), every stage's name, part and parameters, and which
+    // stage was selected — so an undo restores exactly what was on screen and no edit needs an inverse of its own. A
+    // chain is a few dozen strings; a snapshot per step costs nothing worth counting.
+    //
+    // Keystrokes coalesce: a run of edits to ONE text field (the same key, with nothing else between) is one step, so
+    // undo takes a typed value back whole rather than a character at a time. A pick from a list, the Demo box and
+    // every structural edit are a step each. Selecting another stage ends a run.
+
+    private const int UndoDepth = 200;
+
+    /// <summary>The document's content, compared to decide dirtiness; the selection rides beside it.</summary>
+    private sealed record UndoContent(string Frequency, string Bandwidth, string InputPower, string Temperature,
+                                      string RequiredSnr, string Blockers, bool Demo, string Stages);
+
+    private sealed record UndoState(UndoContent Content, int Selected);
+
+    private readonly List<UndoState> _undo = [];
+    private readonly List<UndoState> _redo = [];
+    private UndoState? _current;
+    private UndoContent? _saved;
+    private object? _lastKey;
+    private bool _restoring;
+
+    /// <summary>A stage is being added, removed or moved: the stage list may clear or move the selection on its own
+    /// before the edit is reported, and the undo step must keep the selection the edit was made FROM.</summary>
+    private bool _structural;
+
+    /// <summary>Runs a structural edit with the recorded selection held still until it has been reported.</summary>
+    private void Structural(Action edit)
     {
-        if (_loading) return;
-        IsDirty = true;
+        _structural = true;
+        try { edit(); }
+        finally { _structural = false; }
+    }
+
+    private UndoState Capture() => new(new UndoContent(
+        Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo,
+        System.Text.Json.JsonSerializer.Serialize(Stages.Select(st => st.ToStage()).Select(st => new { st.Name, st.Part, st.Parameters }))),
+        SelectedStageIndex);
+
+    /// <summary>A document just opened, made or loaded: nothing to undo, and this content is the clean state.</summary>
+    private void ResetHistory()
+    {
+        _undo.Clear();
+        _redo.Clear();
+        _lastKey = null;
+        _current = Capture();
+        _saved = _current.Content;
+        NotifyHistory();
+    }
+
+    /// <summary>
+    /// An edit has been made. <paramref name="key"/> names the text field it was typed into (a run of edits to one
+    /// key is one undo step) or is null for an edit that is a step of its own.
+    /// </summary>
+    private void Edited(object? key)
+    {
+        if (_loading || _restoring) return;
+        var now = Capture();
+        if (_current is { } before && !now.Content.Equals(before.Content))
+        {
+            if (key is null || !Equals(key, _lastKey) || _undo.Count == 0)
+            {
+                _undo.Add(before);
+                if (_undo.Count > UndoDepth) _undo.RemoveAt(0);
+            }
+            _redo.Clear();
+            _lastKey = key;
+        }
+        _current = now;
+
+        // A typing run that has come back to where it began (a refused value put back) is no step at all.
+        if (key is not null && Equals(key, _lastKey) && _undo.Count > 0 && _undo[^1].Content.Equals(now.Content))
+        {
+            _undo.RemoveAt(_undo.Count - 1);
+            _lastKey = null;
+        }
+
+        IsDirty = !now.Content.Equals(_saved);
+        bool ok = Recompute();
+        if (ok) SetErrorKey(null);
+        else if (key is null && _hasGood && _undo.Count > 0)
+        {
+            // A pick or a structural edit the budget refuses is not made: back to the chain before it.
+            string why = Refusals;
+            var back = _undo[^1];
+            _undo.RemoveAt(_undo.Count - 1);
+            Restore(back);
+            Refusals = "Not applied: " + why;
+            return;
+        }
+        else SetErrorKey(key);
+        NotifyHistory();
+    }
+
+    private bool CanUndo() => _undo.Count > 0;
+    private bool CanRedo() => _redo.Count > 0;
+
+    [RelayCommand(CanExecute = nameof(CanUndo))]
+    private void Undo() => Step(_undo, _redo);
+
+    [RelayCommand(CanExecute = nameof(CanRedo))]
+    private void Redo() => Step(_redo, _undo);
+
+    private void Step(List<UndoState> from, List<UndoState> to)
+    {
+        if (from.Count == 0) return;
+        to.Add(Capture());
+        var state = from[^1];
+        from.RemoveAt(from.Count - 1);
+        Restore(state);
+    }
+
+    private void Restore(UndoState state)
+    {
+        _restoring = true;
+        try
+        {
+            var c = state.Content;
+            (Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo) =
+                (c.Frequency, c.Bandwidth, c.InputPower, c.Temperature, c.RequiredSnr, c.Blockers, c.Demo);
+            Stages.Clear();
+            foreach (var st in System.Text.Json.JsonSerializer.Deserialize<List<ChainStage>>(c.Stages) ?? [])
+                Stages.Add(new ChainStageViewModel(st, Edited));
+            SelectedStage = state.Selected >= 0 && state.Selected < Stages.Count ? Stages[state.Selected] : null;
+        }
+        finally { _restoring = false; }
+        _current = state;
+        _lastKey = null;
+        IsDirty = !state.Content.Equals(_saved);
         Recompute();
+        NotifyHistory();
+    }
+
+    /// <summary>What Undo and Redo would do, for their tooltips; and their enabled state.</summary>
+    public string UndoTip => _undo.Count > 0 ? "Undo  (Ctrl+Z)" : "Nothing to undo";
+    public string RedoTip => _redo.Count > 0 ? "Redo  (Ctrl+Shift+Z)" : "Nothing to redo";
+
+    private void NotifyHistory()
+    {
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(UndoTip));
+        OnPropertyChanged(nameof(RedoTip));
     }
 
     private static string D(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) : "—";
     private static string Dbm(double v) => double.IsFinite(v) ? D(v) + " dBm" : "none (linear)";
 
     /// <summary>The cascade, again, from what the rows say now.</summary>
-    public void Recompute()
+    /// <summary>
+    /// The cascade, again, from what the rows say now — and true when the chain evaluated. When it did not and an
+    /// earlier chain did, NOTHING on screen changes but the refusal: the blocks, the schematic, the table and the plots
+    /// keep that last good chain, so a value half-typed or mistyped never blanks them (owner, 2026-11-10). A chain
+    /// that has never evaluated (a file opened with a bad value in it) shows its refusal as it always did.
+    /// </summary>
+    public bool Recompute()
     {
         var d = ToDesign();
         var r = ChainBudget.Evaluate(d);
+        if (r.Totals is null && _hasGood)
+        {
+            Refusals = string.Join("\n", r.Refusals);
+            return false;
+        }
         Budget = r;
         foreach (var (row, s) in Stages.Zip(r.Stages))
             row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
@@ -434,6 +629,81 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB" +
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
             (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "");
+        if (r.Totals is null) return false;
+        MarkGood();
+        return true;
+    }
+
+    // ── refusing bad input ────────────────────────────────────────────────────────────────────────────────────────
+    //
+    // An edit is accepted only if the whole chain still evaluates. A TEXT field cannot be refused keystroke by
+    // keystroke — "-", "2." and "2.4 G" are all on the way to good values — so while one is being typed into, a refused
+    // chain leaves the views on the last good one and draws the box invalid, with the budget's reason in the Chain
+    // pane; when the box is left (focus moves, or Enter) a value still refused is put back to the last good one. A pick
+    // from a list, the Demo box and a stage added, removed or moved are refused at once: the edit is undone and the
+    // reason shown. So the chain the window shows is never one the budget refuses.
+
+    private bool _hasGood;
+    private (string Frequency, string Bandwidth, string InputPower, string Temperature, string RequiredSnr, string Blockers) _goodInputs;
+
+    /// <summary>The field drawn invalid, if any: a system input's name, a parameter, or (stage, "Name").</summary>
+    private object? _errorKey;
+
+    public bool FrequencyInvalid => Equals(_errorKey, nameof(Frequency));
+    public bool BandwidthInvalid => Equals(_errorKey, nameof(BandwidthMHz));
+    public bool InputPowerInvalid => Equals(_errorKey, nameof(InputPowerDbm));
+    public bool TemperatureInvalid => Equals(_errorKey, nameof(TemperatureK));
+    public bool RequiredSnrInvalid => Equals(_errorKey, nameof(RequiredSnrDb));
+    public bool BlockersInvalid => Equals(_errorKey, nameof(Blockers));
+
+    /// <summary>The chain evaluated: every field's value now is its last good one.</summary>
+    private void MarkGood()
+    {
+        _hasGood = true;
+        _goodInputs = (Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers);
+        foreach (var st in Stages)
+        {
+            st.NameLastGood = st.Name;
+            foreach (var p in st.Parameters) p.LastGood = p.Value;
+        }
+        SetErrorKey(null);
+    }
+
+    private void SetErrorKey(object? key)
+    {
+        if (Equals(_errorKey, key)) return;
+        Flag(_errorKey, false);
+        _errorKey = key;
+        Flag(key, true);
+        foreach (var n in new[] { nameof(FrequencyInvalid), nameof(BandwidthInvalid), nameof(InputPowerInvalid),
+                                  nameof(TemperatureInvalid), nameof(RequiredSnrInvalid), nameof(BlockersInvalid) })
+            OnPropertyChanged(n);
+
+        static void Flag(object? key, bool on)
+        {
+            if (key is ChainParamViewModel p) p.Invalid = on;
+            else if (key is ValueTuple<ChainStageViewModel, string> (var st, _)) st.NameInvalid = on;
+        }
+    }
+
+    /// <summary>
+    /// The field being typed into is left: a value the chain still refuses goes back to its last good one. Called
+    /// when a box loses the focus or takes Enter, and before Save and Transfer, so neither ever writes a refused chain.
+    /// </summary>
+    public void CommitEdits()
+    {
+        switch (_errorKey)
+        {
+            case ChainParamViewModel p when Stages.Any(st => st.Parameters.Contains(p)): p.Value = p.LastGood; break;
+            case ValueTuple<ChainStageViewModel, string> (var st, _) when Stages.Contains(st): st.Name = st.NameLastGood; break;
+            case nameof(Frequency): Frequency = _goodInputs.Frequency; break;
+            case nameof(BandwidthMHz): BandwidthMHz = _goodInputs.Bandwidth; break;
+            case nameof(InputPowerDbm): InputPowerDbm = _goodInputs.InputPower; break;
+            case nameof(TemperatureK): TemperatureK = _goodInputs.Temperature; break;
+            case nameof(RequiredSnrDb): RequiredSnrDb = _goodInputs.RequiredSnr; break;
+            case nameof(Blockers): Blockers = _goodInputs.Blockers; break;
+        }
+        SetErrorKey(null);
     }
 
     /// <summary>
@@ -490,6 +760,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             else Level($"2:1, × {c.Levels.Count} levels");
             return g;
         }
+        // A filter draws its band form, as the placed Filter block does: the low-pass and high-pass glyphs, not the
+        // band-pass default.
+        if (st.Part == ChainParts.Filter)
+        {
+            var form = Enum.TryParse<NetworkForm>(st.Get("Form").Trim(), true, out var f) ? f : NetworkForm.Bandpass;
+            return [new ChainBlockGlyph(SymbolKind.Filter, "", BuiltInSymbols.PrimitivesForFilter(form).Primitives)];
+        }
         var kind = st.Part switch
         {
             ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
@@ -504,9 +781,17 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     // ── the stage list ───────────────────────────────────────────────────────
 
     [RelayCommand]
-    private void AddStage()
+    private void AddStage() =>
+        InsertStage(PartToAdd, SelectedStage is { } sel ? Stages.IndexOf(sel) + 1 : Stages.Count);
+
+    /// <summary>
+    /// A new stage of <paramref name="part"/>, named after the part and numbered past every name the chain already has,
+    /// inserted before the stage now at <paramref name="insertBefore"/> (<see cref="Stages"/>' count puts it last), and
+    /// selected: the toolbar's Add Stage, after the selected stage, and the Blocks view's Insert Block, where it was
+    /// right-clicked.
+    /// </summary>
+    public ChainStageViewModel InsertStage(ChainPart part, int insertBefore)
     {
-        var part = PartToAdd;
         string stem = part.Token switch
         {
             ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
@@ -516,21 +801,27 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         };
         int n = 1;
         while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;
-        var row = new ChainStageViewModel(new ChainStage { Name = $"{stem}{n}", Part = part.Token }, Changed);
-        int at = SelectedStage is { } sel ? Stages.IndexOf(sel) + 1 : Stages.Count;
-        Stages.Insert(at, row);
+        var row = new ChainStageViewModel(new ChainStage { Name = $"{stem}{n}", Part = part.Token }, Edited);
+        // The edit is reported BEFORE the selection moves, so the undo step keeps the selection the edit was made from.
+        Structural(() => { Stages.Insert(Math.Clamp(insertBefore, 0, Stages.Count), row); Changed(); });
         SelectedStage = row;
-        Changed();
+        return row;
     }
 
     [RelayCommand]
     private void RemoveStage()
     {
-        if (SelectedStage is not { } sel) return;
-        int at = Stages.IndexOf(sel);
-        Stages.Remove(sel);
+        if (SelectedStage is { } sel) Remove(sel);
+    }
+
+    /// <summary>Removes <paramref name="stage"/>, the toolbar's Remove on the selected one and the Blocks view's Remove
+    /// Block on the one right-clicked; the selection moves to the stage that took its place.</summary>
+    public void Remove(ChainStageViewModel stage)
+    {
+        int at = Stages.IndexOf(stage);
+        if (at < 0) return;
+        Structural(() => { Stages.Remove(stage); Changed(); });
         SelectedStage = Stages.Count == 0 ? null : Stages[Math.Min(at, Stages.Count - 1)];
-        Changed();
     }
 
     [RelayCommand]
@@ -544,9 +835,23 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         if (SelectedStage is not { } sel) return;
         int at = Stages.IndexOf(sel), to = at + by;
         if (to < 0 || to >= Stages.Count) return;
-        Stages.Move(at, to);
+        Structural(() => { Stages.Move(at, to); Changed(); });
         SelectedStage = sel;
-        Changed();
+    }
+
+    /// <summary>
+    /// Moves <paramref name="stage"/> so that it lands before the stage now at <paramref name="insertBefore"/>
+    /// (<see cref="Stages"/>' count puts it last): a block dragged in the Blocks view and dropped. It stays selected, and
+    /// a drop where it already is changes nothing.
+    /// </summary>
+    public void MoveStage(ChainStageViewModel stage, int insertBefore)
+    {
+        int at = Stages.IndexOf(stage);
+        if (at < 0) return;
+        int to = Math.Clamp(insertBefore > at ? insertBefore - 1 : insertBefore, 0, Stages.Count - 1);
+        if (to == at) return;
+        Structural(() => { Stages.Move(at, to); Changed(); });
+        SelectedStage = stage;
     }
 
     // ── files ────────────────────────────────────────────────────────────────
@@ -583,11 +888,16 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task<bool> Save() => FilePath is { } p ? Write(p) : await SaveAs();
+    public async Task<bool> Save()
+    {
+        CommitEdits();
+        return FilePath is { } p ? Write(p) : await SaveAs();
+    }
 
     [RelayCommand]
     private async Task<bool> SaveAs()
     {
+        CommitEdits();
         if (PickSavePathAsync is null || await PickSavePathAsync(FilePath) is not { } path) return false;
         return Write(path);
     }
@@ -598,6 +908,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         {
             ChainDesignIo.SaveToFile(path, ToDesign());
             FilePath = Path.GetFullPath(path);
+            _saved = Capture().Content;
             IsDirty = false;
             return true;
         }

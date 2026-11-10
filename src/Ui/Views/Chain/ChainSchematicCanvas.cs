@@ -42,10 +42,75 @@ public sealed class ChainSchematicCanvas : Control
     private bool _fitted;
     private Point? _dragFrom;
 
+    // Z arms a zoom box, F fits, Escape disarms: the keys a schematic canvas with no editor answers
+    // (SchematicCanvas.OnViewerKeyDown), with its rules — a click without a drag zooms nothing, and the box disarms
+    // either way. The box is drawn as the schematic's own rubber band.
+    private bool _zoomBoxArmed;
+    private (double X, double Y)? _zoomBoxStart;
+    private (double X, double Y, double W, double H)? _zoomBoxRect;
+
     public ChainSchematicCanvas()
     {
         ClipToBounds = true;
+        Focusable = true;
         Cursor = new Cursor(StandardCursorType.Arrow);
+    }
+
+    /// <summary>Fit the whole chain in the view: the F key and the tab's Fit button.</summary>
+    public void ZoomToFit()
+    {
+        _fitted = false;
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Copies the whole drawing to the clipboard as the schematic editor's Copy does (SchematicClipboard.CopyAsync):
+    /// PDF, SVG and a bitmap for a slide or a document, and circuitRF's own schematic data, so it also pastes into a
+    /// schematic as parts and wires.
+    /// </summary>
+    public async System.Threading.Tasks.Task CopyToClipboardAsync()
+    {
+        if (Diagram is not { } d || TopLevel.GetTopLevel(this) is not { Clipboard: { } clipboard } top) return;
+        var m = d.Model;
+        IntPtr hwnd = top.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        await CircuitRF.Ui.Clipboard.SchematicClipboard.CopyAsync(clipboard, [.. m.Components], [.. m.Wires], [.. m.CanvasObjects],
+                                                                m.GridSize, [.. m.NetLabels], m.SchematicDirectory, hwnd);
+    }
+
+    private void SetZoomBoxArmed(bool armed)
+    {
+        _zoomBoxArmed = armed;
+        Cursor = new Cursor(armed ? StandardCursorType.Cross : StandardCursorType.Arrow);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (_model is null || (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) return;
+        switch (e.Key)
+        {
+            case Key.Z: SetZoomBoxArmed(true); e.Handled = true; break;
+            case Key.F: ZoomToFit(); e.Handled = true; break;
+            case Key.Escape when _zoomBoxArmed:
+                _zoomBoxStart = null;
+                _zoomBoxRect = null;
+                SetZoomBoxArmed(false);
+                InvalidateVisual();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void ZoomToRect(double x0, double y0, double x1, double y1)
+    {
+        double worldW = Math.Abs(x1 - x0), worldH = Math.Abs(y1 - y0);
+        if (worldW < 1 || worldH < 1) return;
+        const double pad = 0.05;
+        _zoom = Math.Clamp(Math.Min(Bounds.Width / worldW, Bounds.Height / worldH) * (1.0 - 2.0 * pad), MinZoom, MaxZoom);
+        _panX = (x0 + x1) / 2.0 - Bounds.Width / (2.0 * _zoom);
+        _panY = (y0 + y1) / 2.0 - Bounds.Height / (2.0 * _zoom);
+        _fitted = true;
+        InvalidateVisual();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -105,7 +170,16 @@ public sealed class ChainSchematicCanvas : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        Focus();
         var pt = e.GetCurrentPoint(this);
+        if (_zoomBoxArmed && pt.Properties.IsLeftButtonPressed)
+        {
+            var q = e.GetPosition(this);
+            _zoomBoxStart = (q.X / _zoom + _panX, q.Y / _zoom + _panY);
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
         if (pt.Properties.IsMiddleButtonPressed)
         {
             _dragFrom = e.GetPosition(this);
@@ -127,6 +201,14 @@ public sealed class ChainSchematicCanvas : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        if (_zoomBoxStart is { } start)
+        {
+            var q = e.GetPosition(this);
+            double wx = q.X / _zoom + _panX, wy = q.Y / _zoom + _panY;
+            _zoomBoxRect = (Math.Min(start.X, wx), Math.Min(start.Y, wy), Math.Abs(wx - start.X), Math.Abs(wy - start.Y));
+            InvalidateVisual();
+            return;
+        }
         if (_dragFrom is not { } from) return;
         var to = e.GetPosition(this);
         _panX -= (to.X - from.X) / _zoom;
@@ -138,6 +220,19 @@ public sealed class ChainSchematicCanvas : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_zoomBoxStart is { } start)
+        {
+            var q = e.GetPosition(this);
+            double wx = q.X / _zoom + _panX, wy = q.Y / _zoom + _panY;
+            _zoomBoxStart = null;
+            _zoomBoxRect = null;
+            e.Pointer.Capture(null);
+            if (Math.Abs(wx - start.X) > 1 && Math.Abs(wy - start.Y) > 1)
+                ZoomToRect(Math.Min(start.X, wx), Math.Min(start.Y, wy), Math.Max(start.X, wx), Math.Max(start.Y, wy));
+            SetZoomBoxArmed(false);
+            InvalidateVisual();
+            return;
+        }
         _dragFrom = null;
         e.Pointer.Capture(null);
     }
@@ -158,9 +253,10 @@ public sealed class ChainSchematicCanvas : Control
         var selected = Diagram is { } d
             ? d.StageOfComponent.Where(kv => kv.Value == SelectedStage).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal)
             : [];
+        var overlay = selected.Count == 0 && _zoomBoxRect is null ? null
+            : new SchematicOverlay { SelectedComponentIds = selected, RubberBand = _zoomBoxRect, RubberBandCrossing = false };
         context.Custom(new Op(new Rect(Bounds.Size), _model, _index, _panX, _panY, _zoom,
-                              SchematicRenderTheme.FromTheme(theme, variant),
-                              selected.Count == 0 ? null : new SchematicOverlay { SelectedComponentIds = selected }));
+                              SchematicRenderTheme.FromTheme(theme, variant), overlay));
     }
 
     private sealed class Op(Rect bounds, SchematicModel model, SchematicSpatialIndex? index, double panX, double panY,

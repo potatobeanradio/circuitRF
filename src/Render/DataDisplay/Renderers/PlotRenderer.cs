@@ -381,8 +381,9 @@ namespace CircuitRF.Render.DataDisplay
             switch (plot.PlotType)
             {
                 case PlotType.Rect:
+                    var categories = plot.XCategories();
                     AxesRenderer.DrawRectGrid(canvas, canvasSize, plot.Axes, tf, detail, theme,
-                                              xCategories: plot.XCategoryLabels());
+                                              xCategories: categories?.Labels, xCategoryFirst: categories?.First ?? 1);
                     break;
                 case PlotType.Polar:
                     AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme, plot.PatternScale,

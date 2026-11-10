@@ -407,19 +407,51 @@ namespace CircuitRF.Render.DataDisplay
         /// draws over a labelled axis whose values are 1…N — a contribution Pareto's contributors — or null when the
         /// plot's X is a number. Every bar trace on the plot must agree, or the axis stays numeric.
         /// </summary>
-        public IReadOnlyList<string>? XCategoryLabels()
+        public IReadOnlyList<string>? XCategoryLabels() => XCategories()?.Labels;
+
+        /// <summary>
+        /// <see cref="XCategoryLabels"/>, and the X value the first name stands at: name k is drawn at
+        /// <c>First + k</c>.
+        ///
+        /// <para>Bars keep the Pareto's rule exactly — every bar trace labelled, over 1…N, all agreeing — and lines are
+        /// not looked at beside them. A plot of LINES only is categorical too when every curve on it is drawn over one
+        /// labelled axis of consecutive whole numbers, which is how a quantity "at each node" or "at each stage" comes
+        /// out (the RF Chain Budget's levels, over IN and the stages from 0): the names are what that axis means, and
+        /// the numbers were only its storage. One unlabelled curve, or two that disagree, and the axis stays numeric,
+        /// because a name at a whole number would then be a claim about a curve it does not describe.</para>
+        /// </summary>
+        public (IReadOnlyList<string> Labels, double First)? XCategories()
         {
             if (PlotType != PlotType.Rect) return null;
+
+            if (Traces.Any(t => t.DrawsBars))
+            {
+                IReadOnlyList<string>? bars = null;
+                foreach (var t in Traces)
+                {
+                    if (!t.DrawsBars) continue;
+                    if (t.CubeXLabels is not { Count: > 0 } l || t.CubeXValues is not { } xs || xs.Count != l.Count) return null;
+                    for (int k = 0; k < xs.Count; k++) if (xs[k] != k + 1) return null;
+                    if (bars is not null && !bars.SequenceEqual(l)) return null;
+                    bars = l;
+                }
+                return bars is null ? null : (bars, 1.0);
+            }
+
             IReadOnlyList<string>? labels = null;
+            double first = double.NaN;
             foreach (var t in Traces)
             {
-                if (!t.DrawsBars) continue;
-                if (t.CubeXLabels is not { Count: > 0 } l || t.CubeXValues is not { } xs || xs.Count != l.Count) return null;
-                for (int k = 0; k < xs.Count; k++) if (xs[k] != k + 1) return null;
-                if (labels is not null && !labels.SequenceEqual(l)) return null;
-                labels = l;
+                // An annotation, or a curve with nothing to draw yet (a simulated level before its bench has run), says
+                // nothing about the axis.
+                if (t.IsAnnotation || t.CubeXValues is not { Count: > 0 } xs) continue;
+                if (t.CubeXLabels is not { Count: > 0 } l || xs.Count != l.Count) return null;
+                if (xs[0] != Math.Round(xs[0])) return null;
+                for (int k = 1; k < xs.Count; k++) if (xs[k] != xs[0] + k) return null;
+                if (labels is not null && (first != xs[0] || !labels.SequenceEqual(l))) return null;
+                (labels, first) = (l, xs[0]);
             }
-            return labels;
+            return labels is null ? null : (labels, first);
         }
 
         /// <summary>

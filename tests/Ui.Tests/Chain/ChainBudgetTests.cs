@@ -215,7 +215,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         ChainDesignIo.SaveToFile(path, Superhet());
         Assert.Equal(0, CliEntry.Run(["chain", path, "-o", npy]));
         var ds = CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(npy).Item1!;
-        Assert.Equal(["LNA", "RFBPF", "MIX", "IFBPF", "IFA", "ATT"], ds["G_dB"].Axes[0].Labels);
+        Assert.Equal(["LNA", "RFBPF", "MIX", "IFBPF", "IFA", "ATT"], ds["G_dB"].Axes[0].Labels!);
         Assert.Equal(ChainBudget.Evaluate(Superhet()).Totals!.NfDb, ds["NFtot_dB"].RealValues[0], 12);
         Assert.Equal(1, CliEntry.Run(["chain", npy]));
         Assert.Equal(1, CliEntry.Run(["chain", path, "--nope"]));

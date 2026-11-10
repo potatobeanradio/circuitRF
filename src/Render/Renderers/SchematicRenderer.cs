@@ -930,15 +930,21 @@ public static class SchematicRenderer
     /// have none), and, for a one-terminal model, <c>1/2 == 0</c> falling through to the two-port
     /// default and drawing a second lead to a pin that does not exist.</para>
     ///
+    /// <para>The Combiner's argument is its number of PATHS, and it draws one pin more, the common
+    /// port S. Passing the pin count drew a 2-way combiner with three branch leads at y = −200, 0,
+    /// +200 while its two path pins sat at ±100.</para>
+    ///
     /// <para>Every non-variadic kind ignores the argument entirely, and SnP/Tuner never reach here
     /// (they carry a per-instance <c>InstanceSymbol</c>), so the pin count is the right answer for
-    /// everything outside the one SDD/ZPort case.</para>
+    /// everything outside the SDD/ZPort and Combiner cases.</para>
     /// </summary>
     private static int PortCountOf(SchematicComponent c) => PortCountOf(c.Symbol, c.Ports.Count);
 
     /// <summary>The rule above, reachable by pin count alone so it can be tested directly.</summary>
     internal static int PortCountOf(SymbolKind kind, int pinCount) =>
-        kind is SymbolKind.Sdd or SymbolKind.ZPort ? pinCount / 2 : pinCount;
+        kind is SymbolKind.Sdd or SymbolKind.ZPort ? pinCount / 2
+      : kind is SymbolKind.Combiner ? pinCount - 1
+      : pinCount;
 
     // ── Variadic port lead stubs (ZPort, Sdd) ────────────────────────────────
 
