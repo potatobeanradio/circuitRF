@@ -29332,3 +29332,21 @@ netlist's folder, so `netlist --to-schematic` wrote the drawing machine's own pa
 the Receiver Noise example's sourcepull bench, drawn from a scratch netlist, failed on another folder. The two
 paths are now rebuilt through the `.csch` analysis record relative to the same base a `File=` uses. Gate:
 `NetlistToSchematicTests.ALoadpullGridDrawnIntoACell_IsStoredAgainstTheWorkspaceRoot`.
+
+## The RF chain budget's benches: what had to be added to make Friis exact (2026-11-10)
+
+`ChainBenches` writes a chain as three benches of System blocks, and the budget beside every simulated number. Three
+findings, each now in the transfer and stated in `docs/design/chain-budget.md` §3:
+
+- **A mixer's SSB NF assumes a T0 image termination.** A filter in front of the ideal Mixer reflects the image, and the
+  Mixer's equivalent RF-port noise current then develops about four times the matched noise voltage there: the 2.45 GHz
+  superhet's harmonic-balance NF read 2.833 dB against Friis' 2.549 dB. An isolator (a Circulator, third port terminated
+  at the ambient) in front of each mixer gives 2.5489 dB. It is the bench's, named `ISO_<mixer>`, and removing it is
+  the documented way to see an image termination's cost.
+- **Each LO adds one to every product's order.** Two tones and an LO need MaxMixOrder 5 + mixers for the IF stages' IM3
+  (0.012 dB off at 5), the compression sweep 3 + 2·mixers, the HB noise run 1 + 2·mixers (the image sideband).
+- **HB noise at an output frequency on the tone lattice is NaN by design** (a sideband and the negative of another are
+  the same frequency). The IF is a lattice point when the RF tone is in the analysis, so the noise run's output is the IF
+  plus 1 kHz.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
