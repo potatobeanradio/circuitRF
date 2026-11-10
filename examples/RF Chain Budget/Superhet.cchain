@@ -1,0 +1,79 @@
+{
+  "FormatVersion": 1,
+  "FrequencyHz": 2450000000,
+  "BandwidthHz": 4500000,
+  "InputPowerDbm": -70,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "LNA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "16",
+        "NF": "1",
+        "IP3": "15",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "RFBPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "Fc": "1 GHz",
+        "F1": "2.35 GHz",
+        "F2": "2.55 GHz",
+        "Ripple": "0.1",
+        "Astop": "40",
+        "IL": "1.5"
+      }
+    },
+    {
+      "Name": "MIX",
+      "Part": "Mixer",
+      "Parameters": {
+        "ConvGain": "-7",
+        "NF": "7",
+        "NFType": "ssb",
+        "IIP3": "10",
+        "Plo": "7",
+        "Flo": "2.1 GHz"
+      }
+    },
+    {
+      "Name": "IFBPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "Fc": "1 GHz",
+        "F1": "320 MHz",
+        "F2": "380 MHz",
+        "Ripple": "0.1",
+        "Astop": "40",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "IFA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "20",
+        "NF": "4",
+        "IP3": "25",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "ATT",
+      "Part": "Atten",
+      "Parameters": {
+        "Loss": "3"
+      }
+    }
+  ]
+}
