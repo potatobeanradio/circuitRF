@@ -179,6 +179,33 @@ public partial class AxesLimitsViewModel : ViewModelBase
     [RelayCommand]
     private void Close() => _close();
 
+    /// <summary>
+    /// Re-reads every field from the plot — after an autoscale, a pan or new data moved the window, or an
+    /// undo put the flags back. Nothing is applied while it does.
+    /// </summary>
+    public void RefreshFromPlot()
+    {
+        bool saved = _suppressApply;
+        _suppressApply = true;
+        try
+        {
+            XAutoscale  = IsComplex ? _plot.AutoscaleMag : _plot.AutoscaleX;
+            YAutoscale  = IsComplex ? _plot.AutoscaleMag : _plot.AutoscaleY;
+            Y2Autoscale = _plot.AutoscaleRightY;
+            XLogScale   = _plot.Axes.XScale == AxisScale.Log;
+            EqualAspect = _plot.Axes.EqualAspect;
+            RefreshXText();
+            RefreshYText();
+            RefreshY2Text();
+        }
+        finally { _suppressApply = saved; }
+        OnPropertyChanged(nameof(XFieldsEnabled));
+        OnPropertyChanged(nameof(YFieldsEnabled));
+        OnPropertyChanged(nameof(Y2FieldsEnabled));
+        OnPropertyChanged(nameof(ShowY2));
+        OnPropertyChanged(nameof(XUnitLabel));
+    }
+
     // ---- Private apply logic ---------------------------------------------
 
     /// <summary>

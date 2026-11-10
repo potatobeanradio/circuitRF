@@ -131,6 +131,16 @@ with two — and the bracket form is `HB1.V[0, "Vout", 1]` / `HB1.V[0, 0, "Vout"
 > comes out identically 0 with no error anywhere. The bracket form errors instead ("expected 4 axis
 > tokens, got 3"), which is the safer failure. `at` has neither problem.
 
+### 3a. One point by its VALUE: `value_at(x, v [, "axis"])`
+
+`at` names a position, which is a different point as soon as the sweep changes. `value_at` names the
+value: `value_at(dB(SP1.S(2,1)), 2.45GHz)` is the gain at 2.45 GHz on any grid that reaches it. Axis
+`freq` unless named, then a rank-1 cube's only one. A grid point (to `max_over`'s 1e-9 relative edge
+tolerance) is read off; otherwise linear interpolation between the two neighbours, as a complex number
+when the cube is complex. Every other axis is kept. A value outside the axis is refused with its extent,
+never extrapolated. Implemented in `Evaluator.Reductions.cs` and listed in `AxisFunctions`, so a trace
+expression evaluates it over whole cubes. Gate: `tests/Core.Tests/Expressions/ValueAtTests.cs`.
+
 ### S-parameters: `i`/`j` are 1-based port numbers (both notations)
 
 An S-parameter cube has axes `[freq, i, j]` (plus a leading sweep axis when swept), where `i` is the

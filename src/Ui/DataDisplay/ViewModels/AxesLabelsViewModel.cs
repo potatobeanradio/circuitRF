@@ -58,6 +58,12 @@ public partial class AxesLabelsViewModel : ViewModelBase
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>The right-hand axis's label is offered on a Rect plot, the only kind with a second Y axis.</summary>
+    public bool ShowY2 => _plot.PlotType.IsRect();
+
+    /// <summary>The X and Y labels name axes, which a Table has none of.</summary>
+    public bool ShowAxisLabels => _plot.PlotType != PlotType.Table;
+
     [RelayCommand]
     private void Close() => _closeAction();
 }

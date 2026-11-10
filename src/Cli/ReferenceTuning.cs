@@ -591,8 +591,20 @@ internal static partial class Reference
             "(first node to second): A.P(\"probe\") is the fundamental-band power, A.P(\"probe\", k) the power at harmonic k " +
             "(0 = DC, V0*I0) or at a mixing product by its tag (\"(1,0)\"), and A.Pt(\"probe\") the instantaneous " +
             "fundamental-band power against time (envelope, SaveWaveforms=yes). Every sweep axis passes through, so one line " +
-            "is a number, a curve or a surface as sweeps are added; one point is at(A.P(\"probe\"), \"Pin\", i), i its position along Pin (0 first, -1 last). So: " +
+            "is a number, a curve or a surface as sweeps are added; one point is at(A.P(\"probe\"), \"Pin\", i), i its position along Pin (0 first, -1 last), " +
+            "or value_at(A.P(\"probe\"), 10, \"Pin\") by its value. So: " +
             "measure Pout_dBm = dBm(ENV1.P(\"Iout\")), measure PAE_pct = 100*(ENV1.P(\"Iout\") - ENV1.P(\"Iin\"))/ENV1.P(\"IDC\", 0).", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "One point or one band of any value, in a measure line or a goal: value_at(x, v[, \"axis\"]) is x where the axis " +
+            "(freq unless named) equals v, read off the grid when v is a grid point and interpolated linearly between the two " +
+            "either side when it is not; real or complex, every other axis kept, and a v outside the axis is refused with its " +
+            "extent. at(x, \"axis\", i) is the point at position i instead (0 first, -1 last), which means another point once " +
+            "the sweep changes. max_over(x[, lo, hi][, \"axis\"]) and min_over(...) are the largest and smallest real value " +
+            "over the points in [lo, hi] (freq unless named). So: measure G_2G45 = value_at(dB(SP1.S(2,1)), 2.45GHz), " +
+            "measure NF_worst = max_over(SP1.NF, 2.4GHz, 2.5GHz). A measure that comes out a single number is one cell of a " +
+            "Table plot.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
     }

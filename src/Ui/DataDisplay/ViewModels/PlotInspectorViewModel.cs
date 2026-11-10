@@ -224,6 +224,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSummaryAddMode));
         OnPropertyChanged(nameof(InspectorTitle));
         if (IsSummaryTable) RebuildSummary();
+        RefreshAxesEditors();   // Smith/Polar couple the axes; a Table has no Labels or Axes section
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -236,6 +237,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _plot.FreqUnits = value;
         // Rebuild cube data and axis-role labels so harmonic pin options show the new unit.
         foreach (var vm in Traces) vm.OnFreqUnitChanged();
+        RebuildLimitAreaRows();   // the areas were rescaled with the window
         RebuildAndNotify();
     }
 
@@ -1045,6 +1047,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
 
         if (IsSummaryTable) RebuildSummary();
+        RebuildLimitAreaRows();
 
         // The trials selected in each source, shared by every display (brief-yield-9 R-ya9-6).
         TrialSelection.Shared.Subscribe(this);
@@ -1128,9 +1131,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         _harmonicWarned = false;   // new source → re-warn once if harmonic cubes found
         _plot.Autoscale();
+        RefreshLimitTexts();
         if (IsSummaryTable) RebuildSummary();
         RebuildGhosts();
-        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotNeedsRedraw?.Invoke(this, DataRefreshEventArgs.Instance);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         RefreshAddCommand();
     }
@@ -1140,8 +1144,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
     private void OnSnapshotChanged(object? sender, EventArgs e)
     {
         RebuildGhosts();
-        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotNeedsRedraw?.Invoke(this, DataRefreshEventArgs.Instance);
     }
+
+    /// <summary>The share of a live trace's opacity the <paramref name="age"/>-th earlier frozen run draws at,
+    /// 0 being the run just before the latest: 45 %, then two thirds of that for each run further back.</summary>
+    internal static double FrozenRunOpacity(int age) => 0.45 * Math.Pow(0.65, age);
 
     /// <summary>
     /// One faded ghost per trace whose source has a snapshot, resolved against the frozen data. The
@@ -1156,6 +1164,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var t in _plot.PlotType == PlotType.Table ? Enumerable.Empty<Trace>() : _plot.Traces)
         {
             var path = t.IsCubeBound ? t.SourcePath : t.Data?.FilePath ?? t.SourcePath;
+
+            // Freeze: the earlier runs, oldest first so the newer ones draw over them, each fainter than the
+            // one after it. A Table shows only the latest run (this loop never reaches one).
+            var frozen = _library.FrozenRunsFor(path);
+            for (int k = frozen.Count - 1; k >= 0; k--)
+                if (SnapshotGhost.Of(t, frozen[k], _plot.PlotType, _plot.FreqUnits, FrozenRunOpacity(k)) is { } old)
+                    ghosts.Add(old);
+
             if (_library.SnapshotFor(path) is not { } snap) continue;
             if (SnapshotGhost.Of(t, snap, _plot.PlotType, _plot.FreqUnits) is { } ghost) ghosts.Add(ghost);
         }
@@ -1405,6 +1421,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         foreach (var t in _plot.Traces) ResolveOrRebuild(t);
         _plot.Autoscale();
+        RefreshLimitTexts();
         ApplyTrialSelection();
         foreach (var vm in Traces) vm.RefreshDescription();
         OnPropertyChanged(nameof(ShowSpecLinesToggle));

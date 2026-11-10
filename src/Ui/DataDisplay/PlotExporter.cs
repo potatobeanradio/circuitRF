@@ -242,11 +242,31 @@ namespace CircuitRF.Ui.DataDisplay
         /// Source paths are kept absolute (no config-dir relativization) so the JSON
         /// is portable as clipboard text without knowing a base directory.
         /// </summary>
+        /// <remarks>
+        /// <b>Every trace's source is written as the FILE it reads, not as the reference it is saved
+        /// under.</b> A saved trace that follows the display's selected source carries the "selected"
+        /// sentinel, and one under the results folder carries a name relative to it; both mean
+        /// something different on the display that pastes them — another tab with another selection,
+        /// or another workspace with another results folder — so the plots came across empty. The
+        /// paste turns each path back into the reference that display would save
+        /// (<see cref="DataDisplayViewModel.PasteFromConfigAsync"/>).
+        /// </remarks>
         internal static string BuildContainersJson(IReadOnlyList<PlotContainerViewModel> containers)
         {
             var config = new DataDisplayConfig { ZoomLevel = 1.0 };
             foreach (var c in containers)
-                config.Plots.Add(DataDisplayViewModel.BuildPlotContainerConfig(c, ""));
+            {
+                var pc = DataDisplayViewModel.BuildPlotContainerConfig(c, "", c.Library);
+                if (c.Library is { } lib)
+                    foreach (var tc in pc.Traces)
+                    {
+                        if (tc.SourcePath is { Length: > 0 } sp && lib.ResolveAbs(sp) is { } abs)
+                            tc.SourcePath = abs;
+                        if (tc.XSourcePath is { Length: > 0 } xp && lib.ResolveAbs(xp) is { } xabs)
+                            tc.XSourcePath = xabs;
+                    }
+                config.Plots.Add(pc);
+            }
             return JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
         }
 

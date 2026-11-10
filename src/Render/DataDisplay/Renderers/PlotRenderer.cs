@@ -456,6 +456,13 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.PlotType == PlotType.Polar && plot.Traces.Any(t => t.IsWspTrace))
                 DrawWspCriticalPoints(canvas, tf, theme);
 
+            // ---- The user's hatched limit areas ------------------------------
+            //
+            //  Under everything a curve draws, ghosts included: an area is the background a curve is
+            //  read against.
+            if (plot.PlotType == PlotType.Rect)
+                LimitAreaRenderer.Draw(canvas, canvasSize, plot, tf, theme);
+
             // ---- Tuning snapshot ghosts (brief-tuneopt-3 R-to3-9) ----------
             //
             //  UNDER the live curves: the ghost is the "before" a live curve is read against. Each

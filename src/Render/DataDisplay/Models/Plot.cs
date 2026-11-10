@@ -198,10 +198,18 @@ namespace CircuitRF.Render.DataDisplay
 
         private void RescalePinnedFrequencyWindow(FreqUnit from, FreqUnit to)
         {
-            if (from == to || _autoscaleX || !XAxisTracksFreqUnit) return;
+            if (from == to || !XAxisTracksFreqUnit) return;
 
             double r = FreqUnitExtensions.ConversionFactor(from, to);
             if (!(r > 0) || !double.IsFinite(r) || r == 1.0) return;
+
+            // A limit area is a range of FREQUENCIES too, autoscaled or not (it is not framing, it is a spec).
+            foreach (var a in LimitAreas)
+            {
+                a.XStart *= r;
+                a.XEnd   *= r;
+            }
+            if (_autoscaleX) return;
 
             var w = Axes.Window;
             Axes.Window = new PlotRect(w.X * r, w.Y, w.Width * r, w.Height);
@@ -387,6 +395,12 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>Whether spec lines are drawn: <see cref="ShowSpecLines"/>, defaulting to on.</summary>
         public bool SpecLinesOn => ShowSpecLines ?? true;
+
+        /// <summary>
+        /// The user's hatched limit areas (<see cref="LimitArea"/>), drawn on a Rect plot in its displayed units.
+        /// Saved with the plot.
+        /// </summary>
+        public List<LimitArea> LimitAreas { get; set; } = new();
 
         /// <summary>
         /// The names a categorical X axis is labelled with (brief-yield-9 R-ya9-5): the labels of the bars a Rect plot
@@ -1491,6 +1505,37 @@ namespace CircuitRF.Render.DataDisplay
         }
 
         // ---- Plot-type switching ----------------------------------------
+
+        /// <summary>
+        /// Puts the plot type and display unit back as a saved configuration states them, with none of
+        /// <see cref="SetPlotType"/>'s or <see cref="FreqUnits"/>' side effects: no trace is remapped,
+        /// rebuilt or removed and no window is rescaled.
+        /// </summary>
+        /// <remarks>
+        /// For an undo, which restores the traces and the axes from the same configuration straight
+        /// afterwards. A remap there would rewrite traces that are about to be replaced, and a rescale
+        /// would move a window that is about to be restored. Each plot type keeps its own axes, as
+        /// <see cref="SetPlotType"/> keeps them.
+        /// </remarks>
+        public void RestoreTypeAndUnit(PlotType type, FreqUnit unit)
+        {
+            if (type != PlotType)
+            {
+                bool lockedPanning = Axes.LockedPanning;
+                PlotType = type;
+                if (_axesStorage.TryGetValue(type, out var saved))
+                    Axes = saved;
+                else
+                {
+                    Axes = new Axes();
+                    if (type != PlotType.Table) _axesStorage[type] = Axes;
+                }
+                Axes.LockedPanning = lockedPanning;
+            }
+            _freqUnits = unit;
+            Axes.ShowSecondary = NeedsSecondary;
+            SetAxesViewport();
+        }
 
         public void SetPlotType(PlotType newType)
         {

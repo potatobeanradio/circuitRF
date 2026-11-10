@@ -169,7 +169,9 @@ each one's own probes (<code>Iout1</code>, <code>IDC1</code>, <code>Iout2</code>
 the same line gives one number with no sweep, a curve under a <code>Pin</code> sweep, and a surface when a
 <code>Vdd</code> sweep is wrapped around that, with no edit. There are no positional sweep arguments. To read
 one sweep point, pin its axis by name with <code>at</code>, which takes the point's position along that axis
-(0 is the first, −1 the last): <code>at(ENV1.P(&quot;Iout&quot;), &quot;Pin&quot;, -1)</code> is the power at the highest drive.</li>
+(0 is the first, −1 the last): <code>at(ENV1.P(&quot;Iout&quot;), &quot;Pin&quot;, -1)</code> is the power at the highest drive.
+To read it by its value instead, use <a href="#value-at"><code>value_at</code></a>: <code>value_at(ENV1.P(&quot;Iout&quot;), 10, &quot;Pin&quot;)</code>
+is the power at 10 dBm of drive.</li>
 <li><strong>Probe names</strong> match like <code>I(&quot;…&quot;)</code>: the whole name, any case. An unknown name is an error that
 lists the analysis's IProbes.</li>
 <li><strong>With two or more fundamentals</strong>, <code>P(&quot;Iout&quot;)</code> is the sum over the carrier products, the same band
@@ -287,6 +289,25 @@ analysis. <code>freq</code> is reserved — a VAR may not be named <code>freq</c
 different frequency grids, leaves <code>freq</code> unresolved and the measurement's error says which of the
 two it was — rather than silently computing against the wrong grid. Under harmonic balance the
 spectral axis is <code>harmonic</code> (or <code>mixIndex</code>) and a small-signal sweep is <code>ssfreq</code>; neither is <code>freq</code>.</p>
+<h2 id="value-at">One point by its value: <code>value_at</code></h2>
+<p><code>value_at(x, v)</code> is <code>x</code> at the frequency <code>v</code>. When <code>v</code> is a grid point it is read straight off; between
+two points it is interpolated linearly. Name another axis as the last argument to read along that one
+instead.</p>
+<pre><code class="language-text">measure  G_2G45   = value_at(dB(SP1.S(2,1)), 2.45GHz)      the gain at 2.45 GHz
+measure  NF_2G45  = value_at(SP1.NF, 2.45GHz)              the noise figure there
+measure  Pout_10  = value_at(dBm(ENV1.P(&quot;Iout&quot;)), 10, &quot;Pin&quot;)   the output power at 10 dBm of drive
+</code></pre>
+<ul>
+<li><strong>By value, not position.</strong> <code>at(x, &quot;freq&quot;, 19)</code> names the 20th point, which is a different frequency as
+soon as the sweep changes. <code>value_at(x, 2.45GHz)</code> means 2.45 GHz on any grid that reaches it.</li>
+<li><strong>Every other axis is kept</strong>, as with <code>at</code>: over a parametric sweep you get one value per sweep point.</li>
+<li><strong>Real or complex.</strong> A complex value is interpolated as a complex number, so
+<code>value_at(SP1.S(1,1), 2.45GHz)</code> is a reflection coefficient you can take <code>mag</code> or <code>dB</code> of afterwards.</li>
+<li><strong>A value outside the axis is refused</strong>, naming the axis's extent. Reading past the data would be a
+number that looks right and is not.</li>
+</ul>
+<p>A measurement that comes out a single number shows as one cell of a <a href="data-display.html">Table plot</a>, so a
+few <code>value_at</code>, <code>max_over</code> and <code>min_over</code> lines make a readout of the numbers you care about.</p>
 <h2 id="spec">Spec checks: the worst value over a band</h2>
 <p>A specification line asks for the <strong>worst</strong> value of a quantity over a frequency band: &quot;insertion
 loss ≤ 1 dB from 0.1 to 3 GHz&quot;, &quot;rejection ≥ 20 dB from 6 to 12 GHz&quot;. <code>max_over</code> and <code>min_over</code>

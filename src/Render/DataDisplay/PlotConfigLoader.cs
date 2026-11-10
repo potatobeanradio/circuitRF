@@ -39,7 +39,28 @@ public static class PlotConfigLoader
     public static Plot LoadPlot(PlotContainerConfig pc, IPlotDataSources sources)
     {
         var plot = new Plot(pc.PlotType, pc.FreqUnit);
+        ApplySettings(plot, pc);
 
+        foreach (var traceConfig in pc.Traces)
+            if (LoadTrace(traceConfig, pc.PlotType, pc.FreqUnit, sources) is { } trace)
+                plot.Traces.Add(trace);
+
+        RestoreAxes(plot, pc.Axes);
+        return plot;
+    }
+
+    /// <summary>
+    /// Every plot-wide setting a saved configuration states — titles, labels, table and polar options,
+    /// the legend, the 3D view — onto <paramref name="plot"/>; nothing about its traces or its axes.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="LoadPlot"/>'s first half, and the undo of an edit in the Data Display puts a plot back
+    /// through it: the plot an undo restores keeps its identity (other undo entries and the views hold
+    /// it), so its settings are assigned rather than the plot rebuilt. One list of assignments for both,
+    /// so a setting that survives a reopen also survives an undo.
+    /// </remarks>
+    public static void ApplySettings(Plot plot, PlotContainerConfig pc)
+    {
         plot.CustomTitle     = pc.CustomTitle;
         plot.CustomTitleOn   = pc.CustomTitleOn;
         plot.CustomXLabel    = pc.CustomXLabel;
@@ -68,18 +89,12 @@ public static class PlotConfigLoader
         plot.LegendPos                   = pc.Legend == LegendPlacement.Floating && pc.LegendLeft is { } ll && pc.LegendTop is { } lt
                                            ? new PlotPoint(ll, lt) : new PlotPoint(double.NaN, double.NaN);
         plot.ShowSpecLines               = pc.SpecLines;
+        plot.LimitAreas                  = pc.LimitAreas?.Select(a => a.ToArea()).ToList() ?? new();
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
         plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
         plot.SurfaceShowAxes             = pc.SurfaceShowAxes;
         plot.SurfaceShowLegend           = pc.SurfaceShowLegend;
-
-        foreach (var traceConfig in pc.Traces)
-            if (LoadTrace(traceConfig, pc.PlotType, pc.FreqUnit, sources) is { } trace)
-                plot.Traces.Add(trace);
-
-        RestoreAxes(plot, pc.Axes);
-        return plot;
     }
 
     /// <summary>

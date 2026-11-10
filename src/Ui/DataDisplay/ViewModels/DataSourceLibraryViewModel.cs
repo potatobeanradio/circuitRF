@@ -517,9 +517,13 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
         }
 
+        // While the display is frozen, the result this reload replaces is kept to be drawn under the new one.
+        var replaced = IsFrozen ? entry.Data : null;
+
         if (entry.Kind == SourceKind.BinaryDataset)
         {
             if (!await RefreshBinaryDatasetAsync(entry, entry.FilePath!)) return;
+            KeepFrozenRun(entry, replaced);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (entry.Kind == SourceKind.Npy)
@@ -531,6 +535,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             // The file on disk is the newer version now, published or not (R-to3-5).
             ForgetPublication(entry);
             entry.RefreshNpy(data, entry.FilePath!);
+            KeepFrozenRun(entry, replaced);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (entry.Kind == SourceKind.Spl)
@@ -540,6 +545,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             catch { return; }
 
             entry.RefreshLoadpull(data, entry.FilePath!);
+            KeepFrozenRun(entry, replaced);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (entry.Kind == SourceKind.Lpcwave)
@@ -549,6 +555,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             catch { return; }
 
             entry.RefreshLoadpull(data, entry.FilePath!);
+            KeepFrozenRun(entry, replaced);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else
@@ -558,6 +565,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             catch { return; }
 
             entry.RefreshTouchstone(newData, entry.FilePath!);
+            KeepFrozenRun(entry, replaced);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
     }

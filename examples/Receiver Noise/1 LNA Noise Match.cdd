@@ -207,7 +207,7 @@
           "Left": 640,
           "Top": 0,
           "Width": 520,
-          "Height": 640,
+          "Height": 520,
           "PlotType": "Smith",
           "FreqUnit": "GHz",
           "CustomTitle": "Noise and gain circles at 2.45 GHz",

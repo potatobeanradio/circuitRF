@@ -94,12 +94,26 @@ public sealed class UndoRedoManager
     public IUndoableCommand? Top => _undoStack.TryPeek(out var top) ? top : null;
 
     /// <summary>
+    /// True while a command's <c>Execute</c> or <c>Undo</c> is running here. A change made then is
+    /// the command's own, so the Data Display's edit recorder must not record it a second time.
+    /// </summary>
+    public bool IsApplying => _applying > 0;
+    private int _applying;
+
+    private void Applying(Action act)
+    {
+        _applying++;
+        try { act(); }
+        finally { _applying--; }
+    }
+
+    /// <summary>
     /// Calls <c>command.Execute()</c> then pushes it onto the undo stack.
     /// Clears the redo stack.
     /// </summary>
     public void Do(IUndoableCommand command)
     {
-        command.Execute();
+        Applying(command.Execute);
         _undoStack.Push(command);
         _redoStack.Clear();
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -130,7 +144,7 @@ public sealed class UndoRedoManager
         // in the trail could say so. Ctrl+Z is a discrete keypress with no auto-repeat, so this
         // meets the same bar as every other note here.
         Gesture.Note("undo", $"{cmd.GetType().Name} (undo {_undoStack.Count}, redo {_redoStack.Count + 1})");
-        cmd.Undo();
+        Applying(cmd.Undo);
         _redoStack.Push(cmd);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -144,7 +158,7 @@ public sealed class UndoRedoManager
         if (!CanRedo) return;
         var cmd = _redoStack.Pop();
         Gesture.Note("redo", $"{cmd.GetType().Name} (undo {_undoStack.Count + 1}, redo {_redoStack.Count})");
-        cmd.Execute();
+        Applying(cmd.Execute);
         _undoStack.Push(cmd);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

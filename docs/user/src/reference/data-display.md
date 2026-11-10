@@ -63,9 +63,20 @@ plainly — text variables, a `PortZ` that varies — is said on the source's ro
 {{ui: data-display}}
 
 A display holds one or more **tabs**; each tab is a canvas holding **plots**; each plot holds
-**traces**; a trace may carry **markers**. Plots are moved and resized on the canvas directly. The
+**traces**; a trace may carry **markers**. Plots are moved and resized on the canvas directly; a plot's marker info boxes and
+floating legend move with it. The
 **Plot Inspector** — one panel per selected plot — is where the plot's type, its traces and its axes are
-edited.
+edited. On a rectangular, Smith or polar plot it has three sections: **Traces** (the trace cards),
+**Labels** (the title and axis labels) and **Axes** (limits, autoscale and limit areas). The plot's
+right-click **Axes Limits** and **Axes Labels…** open it on the matching section.
+
+Every edit in a display is one undo step: a trace card, a label, a limit, the plot type, a move, a marker.
+Undoing every edit since the last save leaves the `.cdd` unmodified again.
+
+**Copy and paste** a plot with Ctrl/Cmd+C and Ctrl/Cmd+V — between tabs, between displays, and between
+the displays of different workspaces. A pasted plot shows the same data it showed where it was copied.
+When that is also the data source the pasting display has selected, the pasted plot follows the toolbar
+selection like the plots already there.
 
 There are four plot types, and which one will accept which data is the single most important rule in the
 Data Display. It has its own page: [Plot Types](plot-types.html).
@@ -261,10 +272,19 @@ them as plain dots without an outline, which keeps a family of 20,000-sample clo
 
 ## Axes and limits {#axes}
 
-Each plot carries axis labels and limits of its own, edited from the Plot Inspector. A trace may be
+Each plot carries axis labels and limits of its own, edited in the Plot Inspector's **Labels** and
+**Axes** sections. A trace may be
 assigned to a **secondary (right-hand) Y axis** on a rectangular plot, which is how gain in dB and
-efficiency in per cent share one frame legibly. Autoscale is on until you set a limit; setting one turns
-it off for that axis, so a figure you have framed deliberately does not re-frame itself on the next run.
+efficiency in per cent share one frame legibly. Each axis has its own **Auto** box. With it ticked, the
+axis is fitted to the data after every run and every edit; untick it to type limits, and a figure you
+have framed deliberately does not re-frame itself on the next run. **Fit now** fits every axis once and
+leaves the Auto boxes as they are. Autoscale belongs to each plot, not to the display.
+
+**Limit areas** hatch the side of a limit a curve must stay out of — a filter's rejection, a passband's
+ripple floor. In the **Axes** section of a rectangular plot, **+ Area** adds one. **Max** hatches above
+the limit and **Min** below it. **from** and **to** bound it along X, in the units the X axis shows; leave
+either empty to run the area to that edge of the plot. **Y2** draws it against the right-hand axis. Areas
+are saved in the `.cdd`, and `circuitrf render` draws them too.
 
 **Equal X and Y scale (1:1)**, in a rectangular plot's **Axes Limits**, draws one unit as long along X as
 along Y. The plot box narrows to keep it and the limits stay as they are. A constellation needs it, so
@@ -460,11 +480,20 @@ constellation are extrapolation.
 
 {{toolbar: datadisplay}}
 
-The groups, left to right: the **source picker**, which chooses the data source new traces bind to; the
-four **plot types**, which add a plot of that kind; the **statistics table** of a Monte Carlo result;
-**add trace**; the **zoom and fit** controls; **undo
-and redo**, which cover the whole display and not just the selected plot; and **save**, **open** and
-**export**.
+The groups, left to right: the **source picker**, which chooses the data source new traces bind to;
+**Freeze**; the four **plot types**, which add a plot of that kind; the **statistics table** of a Monte
+Carlo result; **add trace**; the **zoom and fit** controls and the **snap grid**; **undo and redo**,
+which cover the whole display and not just the selected plot; and **save**, **open** and **export**.
+
+**Freeze** keeps earlier runs on screen. While it is on, each run leaves the one before it on every plot
+of the display as a fainter copy of each trace — the older, the fainter — up to five earlier runs. The
+button says how many it holds. Tables show the latest run only. Click it again to turn it off and clear
+them; frozen runs are not saved.
+
+The **snap grid** button cycles a coarse grid, a fine grid and off. While a grid is on, a plot you drag
+lands with its corner on the grid and a plot you resize lands with its edge on it, so plots line up and
+come out the same size. A marker info box or floating legend you drag lands on it the same way. The grid
+is not drawn.
 
 <p class="small">See also: <a href="plot-types.html">Plot types</a> ·
 <a href="npy-export.html">Results &amp; data export</a> ·

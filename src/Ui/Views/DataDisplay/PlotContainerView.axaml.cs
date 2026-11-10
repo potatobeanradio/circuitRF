@@ -385,6 +385,9 @@ public partial class PlotContainerView : UserControl
         // Rect resizes at the configured "golden" ratio by default; Shift frees it). Tables and the
         // square-aspect plots (Smith/Polar) are never ratio-locked here — a Table must resize freely in
         // both dimensions, and ResizeTo already keeps Smith/Polar square on its own.
+        // The grid, when it is on, takes the far edges (the width first, so a ratio-locked Rect keeps its ratio).
+        (targetW, targetH) = vm.SnapResizeTarget(targetW, targetH);
+
         if (vm.PlotVM.Plot.PlotType == PlotType.Rect && (e.KeyModifiers & KeyModifiers.Shift) == 0)
         {
             double ratio = AppSettingsViewModel.Instance.RectAspectRatio;

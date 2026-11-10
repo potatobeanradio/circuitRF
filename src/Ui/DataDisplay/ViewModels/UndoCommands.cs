@@ -151,23 +151,6 @@ internal sealed class SetLegendCommand : IUndoableCommand
     }
 }
 
-// ---- Trace label (DFR27-3) -------------------------------------------
-
-/// <summary>A trace card's Label box committed: one step whichever way it went — set, changed or cleared.</summary>
-internal sealed class SetTraceLabelCommand : IUndoableCommand
-{
-    private readonly TraceRowViewModel _row;
-    private readonly string? _old, _new;
-
-    public SetTraceLabelCommand(TraceRowViewModel row, string? oldLabel, string? newLabel)
-    {
-        _row = row; _old = oldLabel; _new = newLabel;
-    }
-
-    public void Execute() => _row.ApplyTraceLabel(_new);
-    public void Undo()    => _row.ApplyTraceLabel(_old);
-}
-
 // ---- Move plots / InfoBoxes ------------------------------------------
 
 /// <summary>

@@ -1205,11 +1205,18 @@ public partial class TraceRowViewModel : ViewModelBase
     private void FilterSignalsToGroup(string? group)
     {
         AvailableSignals.Clear();
-        if (group is null) return;
-        foreach (var s in _allSignals)
-            if (s.Group == group) AvailableSignals.Add(s);
+        if (group is not null)
+            foreach (var s in _allSignals)
+                if (s.Group == group) AvailableSignals.Add(s);
         OnPropertyChanged(nameof(IsViSelector));
+        OnPropertyChanged(nameof(HasSignalChoices));
     }
+
+    /// <summary>
+    /// The item picker has something to offer. A typed expression selects no group, so the list is empty and a
+    /// click on the picker would open nothing: it is disabled then rather than left looking live.
+    /// </summary>
+    public bool HasSignalChoices => AvailableSignals.Count > 0;
 
     public ObservableCollection<TraceDataItem> AvailableSignals { get; } = new();
 
@@ -3969,9 +3976,8 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         string? next = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
         if (next == _trace.Label) { OnPropertyChanged(nameof(TraceLabel)); return; }
-        var cmd = new SetTraceLabelCommand(this, _trace.Label, next);
-        cmd.Execute();
-        _parent.PushUndo?.Invoke(cmd);
+        // One undo step: the display's edit recorder takes the change as it is reported.
+        ApplyTraceLabel(next);
     }
 
     internal void ApplyTraceLabel(string? label)

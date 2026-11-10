@@ -631,7 +631,7 @@ public sealed class MatchRound4Tests(ITestOutputHelper output)
         Assert.Contains("ApplyMenuAvailability()", build, StringComparison.Ordinal);
 
         // The inspector itself refuses, so a double-tap cannot get in round the back.
-        var inspector = Between(plot, "private void ShowPlotInspector(int scrollToTraceIndex = -1)");
+        var inspector = Between(plot, "private void ShowPlotInspector(int scrollToTraceIndex = -1,");
         Assert.Contains("CanEditPlotProperties", inspector, StringComparison.Ordinal);
     }
 

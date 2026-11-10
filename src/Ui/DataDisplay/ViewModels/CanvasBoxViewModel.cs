@@ -112,6 +112,19 @@ public abstract partial class CanvasBoxViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewTop));
     }
 
+    /// <summary>True between <see cref="StartDrag"/> and <see cref="EndDrag"/>.</summary>
+    public bool IsDragging => _isDragging;
+
+    /// <summary>Shifts the box during a drag — the grid's correction, applied after the pointer has placed it.</summary>
+    internal void OffsetDrag(double dx, double dy)
+    {
+        if (!_isDragging) return;
+        _logicalLeft += dx;
+        _logicalTop  += dy;
+        OnPropertyChanged(nameof(ViewLeft));
+        OnPropertyChanged(nameof(ViewTop));
+    }
+
     public void EndDrag()
     {
         if (!_isDragging) return;
@@ -162,7 +175,7 @@ public abstract partial class CanvasBoxViewModel : ViewModelBase
 
     // ---- Group drag (absolute window-position path) -----------------
 
-    public void StartGroupDrag(Point windowPt)  => _parent.StartInfoBoxGroupDrag(windowPt);
+    public void StartGroupDrag(Point windowPt)  => _parent.StartInfoBoxGroupDrag(windowPt, this);
     public void UpdateGroupDrag(Point windowPt)  => _parent.UpdateInfoBoxGroupDrag(windowPt);
     public void EndGroupDrag()                   => _parent.EndInfoBoxGroupDrag();
 }

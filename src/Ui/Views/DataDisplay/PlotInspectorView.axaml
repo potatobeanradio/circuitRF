@@ -54,6 +54,47 @@
             <Setter Property="Stroke" Value="White"/>
         </Style>
 
+        <!-- ── Section strip (Traces · Labels · Axes): text tabs with an accent underline on the
+             active one, no tab chrome. A Fluent TabControl's headers take a full row of 40 px type and
+             padding; this takes one line of 11 px text. -->
+        <Style Selector="Button.secTab">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="CornerRadius"    Value="0"/>
+            <Setter Property="Padding"         Value="8,2,8,3"/>
+            <Setter Property="MinWidth"        Value="0"/>
+            <Setter Property="FontSize"        Value="11"/>
+            <Setter Property="Foreground"      Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="Button.secTab /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background"  Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.secTab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background"  Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseLowColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemBaseHighColor}"/>
+        </Style>
+        <Style Selector="Button.secTab.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemBaseHighColor}"/>
+        </Style>
+
+        <!-- ── Compact text boxes of the Labels and Axes sections ───────── -->
+        <Style Selector="TextBox.sec">
+            <Setter Property="FontSize"  Value="11"/>
+            <Setter Property="Height"    Value="22"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding"   Value="4,2"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="CheckBox.sec">
+            <Setter Property="FontSize"  Value="11"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding"   Value="4,0,0,0"/>
+        </Style>
+
         <!-- ── Trace-card remove (trash) button ─────────────────────────── -->
         <Style Selector="Button.removeTrace">
             <Setter Property="Background"       Value="Transparent"/>
@@ -432,6 +473,28 @@
                           ToolTip.Tip="Colour ramp — the contour plot's own set"/>
             </StackPanel>
 
+            <!-- ── Section strip: Traces · Labels · Axes ───────────────────────
+                 On a plot with axes. The title and axis labels, the limits and each axis's autoscale
+                 had been reachable only from the plot's context menu; they are sections of the same
+                 panel now, and the context menu opens the panel on the section it names. -->
+            <Grid IsVisible="{Binding HasAxesSections}" Margin="0,2,0,0">
+                <Border Height="1" VerticalAlignment="Bottom"
+                        Background="{DynamicResource SystemBaseLowColor}" Opacity="0.6"/>
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                    <Button Classes="secTab" Classes.active="{Binding IsTracesSection}"
+                            Command="{Binding ShowTracesSectionCommand}" Content="Traces"/>
+                    <Button Classes="secTab" Classes.active="{Binding IsLabelsSection}"
+                            Command="{Binding ShowLabelsSectionCommand}" Content="Labels"
+                            ToolTip.Tip="Title and axis labels"/>
+                    <Button Classes="secTab" Classes.active="{Binding IsAxesSection}"
+                            Command="{Binding ShowAxesSectionCommand}" Content="Axes"
+                            ToolTip.Tip="Axis limits, autoscale and limit areas"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ══ TRACES section ══════════════════════════════════════════════ -->
+            <StackPanel Spacing="6" IsVisible="{Binding IsTracesSection}">
+
             <!-- ── §B Row 2: + Trace (left) / Freq + Legend + Font Size (right) ─── -->
             <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto,Auto">
 
@@ -677,6 +740,7 @@
                                         <!-- Measurements / S-Parameters → keep the ComboBox -->
                                         <ComboBox Grid.Column="1"
                                                   IsVisible="{Binding !IsViSelector}"
+                                                  IsEnabled="{Binding HasSignalChoices}"
                                                   ItemsSource="{Binding AvailableSignals}"
                                                   SelectedItem="{Binding SelectedSignal, Mode=TwoWay}"
                                                   PlaceholderText="{Binding PickerPlaceholder}"
@@ -2089,6 +2153,149 @@
                 </ItemsControl>
                 </Border>
             </ScrollViewer>
+
+            </StackPanel>
+
+            <!-- ══ LABELS section ══════════════════════════════════════════════
+                 A label that is off shows the generated one; on, it shows what is typed. -->
+            <Panel IsVisible="{Binding IsLabelsSection}">
+                <Grid DataContext="{Binding Labels}" x:DataType="vm:AxesLabelsViewModel"
+                      ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                      Margin="0,4,0,2">
+                    <CheckBox Grid.Row="0" Grid.Column="0" Classes="sec" Content="Title" Width="64"
+                              IsChecked="{Binding TitleOn, Mode=TwoWay}"/>
+                    <TextBox  Grid.Row="0" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                              Text="{Binding Title, Mode=TwoWay}" IsEnabled="{Binding TitleOn}"
+                              PlaceholderText="Plot title"/>
+
+                    <CheckBox Grid.Row="1" Grid.Column="0" Classes="sec" Content="X" Width="64"
+                              IsChecked="{Binding XLabelOn, Mode=TwoWay}"/>
+                    <TextBox  Grid.Row="1" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                              Text="{Binding XLabel, Mode=TwoWay}" IsEnabled="{Binding XLabelOn}"
+                              PlaceholderText="X-axis label"/>
+
+                    <CheckBox Grid.Row="2" Grid.Column="0" Classes="sec" Content="Y" Width="64"
+                              IsChecked="{Binding YLabelOn, Mode=TwoWay}"/>
+                    <TextBox  Grid.Row="2" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                              Text="{Binding YLabel, Mode=TwoWay}" IsEnabled="{Binding YLabelOn}"
+                              PlaceholderText="Y-axis label"/>
+
+                    <CheckBox Grid.Row="3" Grid.Column="0" Classes="sec" Content="Y2" Width="64"
+                              IsVisible="{Binding ShowY2}"
+                              IsChecked="{Binding Y2LabelOn, Mode=TwoWay}"/>
+                    <TextBox  Grid.Row="3" Grid.Column="1" Classes="sec"
+                              IsVisible="{Binding ShowY2}"
+                              Text="{Binding Y2Label, Mode=TwoWay}" IsEnabled="{Binding Y2LabelOn}"
+                              PlaceholderText="Right Y-axis label"/>
+                </Grid>
+            </Panel>
+
+            <!-- ══ AXES section ════════════════════════════════════════════════
+                 Auto is per axis and per plot: an axis with Auto on is fitted to its data after every
+                 run and every edit; off, it keeps the limits typed here. Fit now fits once. -->
+            <StackPanel Spacing="6" IsVisible="{Binding IsAxesSection}" Margin="0,4,0,2">
+                <Grid DataContext="{Binding Limits}" x:DataType="vm:AxesLimitsViewModel"
+                      ColumnDefinitions="30,*,14,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="X"
+                               ToolTip.Tip="{Binding XUnitLabel}"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding XMinText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
+                               ToolTip.Tip="Minimum"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Classes="label" Text="–"
+                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBox   Grid.Row="0" Grid.Column="3" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding XMaxText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
+                               ToolTip.Tip="Maximum"/>
+                    <CheckBox  Grid.Row="0" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                               IsChecked="{Binding XAutoscale, Mode=TwoWay}"
+                               ToolTip.Tip="Fit this axis to the data after every run and every edit"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Y"/>
+                    <TextBox   Grid.Row="1" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding YMinText, Mode=TwoWay}" IsEnabled="{Binding YFieldsEnabled}"
+                               ToolTip.Tip="Minimum"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Classes="label" Text="–"
+                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBox   Grid.Row="1" Grid.Column="3" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding YMaxText, Mode=TwoWay}" IsEnabled="{Binding YFieldsEnabled}"
+                               ToolTip.Tip="Maximum"/>
+                    <CheckBox  Grid.Row="1" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                               IsChecked="{Binding YAutoscale, Mode=TwoWay}"
+                               ToolTip.Tip="Fit this axis to the data after every run and every edit"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Y2" IsVisible="{Binding ShowY2}"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
+                               Text="{Binding Y2MinText, Mode=TwoWay}" IsEnabled="{Binding Y2FieldsEnabled}"
+                               ToolTip.Tip="Minimum"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Classes="label" Text="–" IsVisible="{Binding ShowY2}"
+                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBox   Grid.Row="2" Grid.Column="3" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
+                               Text="{Binding Y2MaxText, Mode=TwoWay}" IsEnabled="{Binding Y2FieldsEnabled}"
+                               ToolTip.Tip="Maximum"/>
+                    <CheckBox  Grid.Row="2" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                               IsVisible="{Binding ShowY2}"
+                               IsChecked="{Binding Y2Autoscale, Mode=TwoWay}"
+                               ToolTip.Tip="Fit the right-hand axis to its data after every run and every edit"/>
+
+                    <!-- The X axis's mapping and the 1:1 scale: Rect only. -->
+                    <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="4"
+                                Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowXScale}">
+                        <RadioButton Content="Linear X" FontSize="11" MinHeight="0"
+                                     IsChecked="{Binding !XLogScale}"/>
+                        <RadioButton Content="Log X" FontSize="11" MinHeight="0"
+                                     IsChecked="{Binding XLogScale, Mode=TwoWay}"/>
+                        <CheckBox Classes="sec" Content="1:1" IsChecked="{Binding EqualAspect, Mode=TwoWay}"
+                                  ToolTip.Tip="One unit as long along X as along Y: the plot box narrows to keep it. Linear axes only."/>
+                    </StackPanel>
+                </Grid>
+
+                <Button Content="Fit now" Command="{Binding FitNowCommand}" FontSize="11" Padding="8,2"
+                        HorizontalAlignment="Left"
+                        ToolTip.Tip="Fit every axis to the data once, leaving each axis's Auto as it is"/>
+
+                <!-- Limit areas: the side of a limit a curve must stay out of, hatched. X in the axis's
+                     own units (the plot's frequency unit on a frequency axis); an empty From or To runs
+                     the area to that edge of the plot. -->
+                <StackPanel Spacing="4" IsVisible="{Binding ShowLimitAreas}">
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+                        <TextBlock Classes="label" Text="Limit areas"/>
+                        <Button Grid.Column="1" Content="+ Area" Command="{Binding AddLimitAreaCommand}"
+                                FontSize="11" Padding="8,2"
+                                ToolTip.Tip="Hatch the side of a limit a curve must stay out of — a rejection, a ripple floor"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding LimitAreaRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LimitAreaRowViewModel">
+                                <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,Auto" Margin="0,0,0,4">
+                                    <ComboBox Grid.Column="0" Width="56"
+                                              ItemsSource="{x:Static vm:LimitAreaRowViewModel.SideChoices}"
+                                              SelectedIndex="{Binding SideIndex, Mode=TwoWay}"
+                                              ToolTip.Tip="Max: the curve must stay at or below the limit, and the area above it is hatched. Min: at or above it, and the area below is hatched."/>
+                                    <TextBox   Grid.Column="1" Classes="sec" Margin="4,0,0,0"
+                                               Text="{Binding LimitText, Mode=TwoWay}" ToolTip.Tip="Limit (Y)"/>
+                                    <TextBlock Grid.Column="2" Classes="label" Text="from" Margin="6,0,4,0"/>
+                                    <TextBox   Grid.Column="3" Classes="sec"
+                                               Text="{Binding FromText, Mode=TwoWay}" PlaceholderText="left"
+                                               ToolTip.Tip="Start along X; empty runs it from the left edge"/>
+                                    <TextBlock Grid.Column="4" Classes="label" Text="to" Margin="4,0,4,0"/>
+                                    <TextBox   Grid.Column="5" Classes="sec"
+                                               Text="{Binding ToText, Mode=TwoWay}" PlaceholderText="right"
+                                               ToolTip.Tip="End along X; empty runs it to the right edge"/>
+                                    <CheckBox  Grid.Column="6" Classes="sec" Content="Y2" Margin="6,0,0,0"
+                                               IsVisible="{Binding ShowSecondaryToggle}"
+                                               IsChecked="{Binding OnSecondaryAxis, Mode=TwoWay}"
+                                               ToolTip.Tip="Against the right-hand axis"/>
+                                    <Button    Grid.Column="7" Classes="removeTrace" Command="{Binding RemoveCommand}"
+                                               ToolTip.Tip="Remove this area">
+                                        <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
 
         </StackPanel>
 

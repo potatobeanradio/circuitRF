@@ -74,6 +74,32 @@ public sealed class FloatingLegendTests
             JsonSerializer.Serialize(DataDisplayViewModel.BuildPlotContainerConfig(c, "."), DataDisplayJson.Options));
     }
 
+    /// <summary>A plot dragged on the canvas carries its own floating legend (and marker info boxes) with it,
+    /// selected or not, and undo puts both back together.</summary>
+    [Fact]
+    public void DraggingAPlot_CarriesItsUnselectedFloatingLegend()
+    {
+        var (display, c) = RectWithTwoTraces();
+        c.Inspector.Legend = LegendPlacement.Inside;
+        display.LiftLegend(c, 700, 50, new Avalonia.Point(0, 0));
+        display.EndInfoBoxGroupDrag();
+        var box = Assert.Single(display.LegendBoxes);
+
+        display.SelectOnly(c);
+        Assert.False(box.IsSelected);
+        double l0 = c.Left, t0 = c.Top;
+
+        display.BeginMoveOperation();
+        c.MoveSelected(30, 20);
+        display.EndMoveOperation();
+
+        Assert.Equal((l0 + 30, t0 + 20), (c.Left, c.Top));
+        Assert.Equal((730.0, 70.0), (box.LogicalLeft, box.LogicalTop));
+        display.UndoRedo.Undo();
+        Assert.Equal((l0, t0), (c.Left, c.Top));
+        Assert.Equal((700.0, 50.0), (box.LogicalLeft, box.LogicalTop));
+    }
+
     [Fact]
     public void LiftIsOneUndoStep_DeleteTurnsASelectedLegendOff_UndoBringsItBack()
     {

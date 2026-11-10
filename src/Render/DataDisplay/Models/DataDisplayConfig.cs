@@ -169,6 +169,11 @@ public sealed class PlotContainerConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? SpecLines { get; set; }
 
+    /// <summary>The plot's hatched limit areas (<see cref="LimitArea"/>). Null when it has none, and then not
+    /// written, so a display without any saves the bytes it saved before.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LimitAreaConfig>? LimitAreas { get; set; }
+
     /// <summary>The colour bar. <b>True by default</b>, which is what a <c>.cdd</c> written before
     /// 2026-09-11 carries — the legend was unconditional then (below its font threshold) and a
     /// document that never had the setting must load with it on.</summary>

@@ -106,7 +106,8 @@ may not shadow them.
     <caption><code>phase</code> and the <code>.phase</code> cube transform both use <strong>degrees</strong>.
     <code>dB</code>/<code>dBm</code> are <a href="measurements.html">measurement</a> functions, not general
     built-ins (and so are never unit suffixes). So are <code>max_over(x, lo, hi)</code> and
-    <code>min_over(x, lo, hi)</code>, the <a href="measurements.html#spec">worst value over a band</a> —
+    <code>min_over(x, lo, hi)</code>, the <a href="measurements.html#spec">worst value over a band</a>, and
+    <code>value_at(x, v)</code>, the <a href="measurements.html#value-at">value at one frequency</a> —
     unlike <code>min(a,b)</code>/<code>max(a,b)</code>, which compare two values. The network metrics,
     the noise functions, <code>group_delay</code> and <code>vswr</code> are measurement
     functions too; a metric reads the analysis's own port reference impedances (and <code>nf</code> its

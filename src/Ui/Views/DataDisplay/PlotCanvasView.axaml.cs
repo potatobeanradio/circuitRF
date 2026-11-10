@@ -115,6 +115,17 @@ public partial class PlotCanvasView : UserControl
             PointerReleasedEvent, OnZoomBoxReleased,
             RoutingStrategies.Bubble, handledEventsToo: true);
 
+        // The edit recorder (DataDisplayViewModel.EditHistory.cs) holds off while a pointer is down on
+        // the canvas: a drag changes the display on every move, and its own command is pushed on release.
+        // Tunnel on press, so the recorder hears it before any child acts on it; bubble on release, so
+        // the children's release handlers have pushed their commands first.
+        _contentGrid?.AddHandler(
+            PointerPressedEvent, (_, _) => Display?.BeginCanvasGesture(),
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        _contentGrid?.AddHandler(
+            PointerReleasedEvent, (_, _) => Display?.EndCanvasGesture(),
+            RoutingStrategies.Bubble, handledEventsToo: true);
+
         // Escape reaches the document's own KeyBinding (DeselectAllCommand, which disarms the
         // magnifier first), so it is not handled here. Arrow keys are — see OnCanvasKeyDown.
         AddHandler(KeyDownEvent, OnCanvasKeyDown, RoutingStrategies.Bubble);

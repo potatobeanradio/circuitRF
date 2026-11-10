@@ -20,7 +20,7 @@ public partial class PlotInspectorViewModel : ITrialSelectionListener
     /// <summary>Re-reads the shared selection and redraws when a trace on this plot shows trials.</summary>
     public void OnTrialSelectionChanged()
     {
-        if (ApplyTrialSelection()) PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        if (ApplyTrialSelection()) PlotNeedsRedraw?.Invoke(this, DataRefreshEventArgs.Instance);
     }
 
     /// <summary>Copies each source's selection onto the traces bound to it; true when any trace's changed.</summary>

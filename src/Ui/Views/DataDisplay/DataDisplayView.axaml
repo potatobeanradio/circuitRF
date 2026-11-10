@@ -74,6 +74,31 @@
                 <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
             </Setter>
         </Style>
+        <!-- The snap-grid button's two "on" looks, transcribed from the symbol editor's: coarse is the
+             armed accent fill, fine the same accent at 40 %. -->
+        <Style Selector="Button.snap-coarse">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.snap-coarse /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-coarse:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-fine /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.4"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-fine:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.65"/></Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -118,6 +143,21 @@
                         Background="{DynamicResource SystemControlHighlightListAccentLowBrush}">
                     <TextBlock Text="{Binding ViewModel.Window.TrialChip}" FontSize="11"/>
                 </Border>
+
+                <!-- Freeze: keep the runs a re-run replaces on screen, fainter the older they are (up to
+                     five), across every plot of this display. Not saved; turning it off clears them. -->
+                <Button Command="{Binding ViewModel.Window.ToggleFreezeCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataSourceLibrary.IsFrozen}"
+                        ToolTip.Tip="Freeze — keep earlier runs on the plots, each older one fainter (up to 5). Tables show the latest run only. Click again to clear them."
+                        Margin="2,0,0,0"
+                        Padding="6,3">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                        <mi:MaterialIcon Kind="Snowflake" Width="16" Height="16"/>
+                        <TextBlock Text="{Binding ViewModel.Window.FrozenRunsText}" FontSize="11"
+                                   VerticalAlignment="Center"
+                                   IsVisible="{Binding ViewModel.Window.DataSourceLibrary.IsFrozen}"/>
+                    </StackPanel>
+                </Button>
 
                 <!-- Separator -->
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -216,6 +256,15 @@
                         ToolTip.Tip="Fit All  (F, Ctrl+0)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- The snap grid: coarse (full accent) → fine (half accent) → off, the symbol editor's button. -->
+                <Button Command="{Binding ViewModel.Window.CycleCanvasGridCommand}"
+                        Classes.snap-coarse="{Binding ViewModel.Window.IsGridCoarse}"
+                        Classes.snap-fine="{Binding ViewModel.Window.IsGridFine}"
+                        ToolTip.Tip="{Binding ViewModel.Window.GridTooltip}"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Separator -->

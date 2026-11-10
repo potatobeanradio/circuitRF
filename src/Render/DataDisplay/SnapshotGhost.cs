@@ -27,13 +27,14 @@ public static class SnapshotGhost
     /// or does not resolve against it. Never throws — a ghost is a convenience, and failing to draw
     /// one must not cost the live curve.
     /// </summary>
-    public static Trace? Of(Trace source, DataSet snapshot, PlotType plotType, FreqUnit freqUnit)
+    public static Trace? Of(Trace source, DataSet snapshot, PlotType plotType, FreqUnit freqUnit,
+                            double opacityFactor = OpacityFactor)
     {
         if (source.IsContourTrace || source.IsSummaryColumn) return null;
         try
         {
             var ghost = new Trace(source, includeMarkers: false);
-            ghost.Properties.LineOpacity   = source.Properties.LineOpacity * OpacityFactor;
+            ghost.Properties.LineOpacity   = source.Properties.LineOpacity * opacityFactor;
             ghost.Properties.MarkerEnabled = false;
             // A ghost is the plain "before" curve: no pass/fail colouring, band or nominal of its own (brief-yield-9).
             ghost.ColorBy     = null;

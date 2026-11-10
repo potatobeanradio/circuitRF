@@ -156,6 +156,8 @@ each one's own probes (`Iout1`, `IDC1`, `Iout2`, `IDC2`).
   `Vdd` sweep is wrapped around that, with no edit. There are no positional sweep arguments. To read
   one sweep point, pin its axis by name with `at`, which takes the point's position along that axis
   (0 is the first, −1 the last): `at(ENV1.P("Iout"), "Pin", -1)` is the power at the highest drive.
+  To read it by its value instead, use [`value_at`](#value-at): `value_at(ENV1.P("Iout"), 10, "Pin")`
+  is the power at 10 dBm of drive.
 - **Probe names** match like `I("…")`: the whole name, any case. An unknown name is an error that
   lists the analysis's IProbes.
 - **With two or more fundamentals**, `P("Iout")` is the sum over the carrier products, the same band
@@ -317,6 +319,29 @@ It needs a frequency axis to be. A run whose analyses produced none (DC only), o
 different frequency grids, leaves `freq` unresolved and the measurement's error says which of the
 two it was — rather than silently computing against the wrong grid. Under harmonic balance the
 spectral axis is `harmonic` (or `mixIndex`) and a small-signal sweep is `ssfreq`; neither is `freq`.
+
+## One point by its value: `value_at` {#value-at}
+
+`value_at(x, v)` is `x` at the frequency `v`. When `v` is a grid point it is read straight off; between
+two points it is interpolated linearly. Name another axis as the last argument to read along that one
+instead.
+
+```text
+measure  G_2G45   = value_at(dB(SP1.S(2,1)), 2.45GHz)      the gain at 2.45 GHz
+measure  NF_2G45  = value_at(SP1.NF, 2.45GHz)              the noise figure there
+measure  Pout_10  = value_at(dBm(ENV1.P("Iout")), 10, "Pin")   the output power at 10 dBm of drive
+```
+
+- **By value, not position.** `at(x, "freq", 19)` names the 20th point, which is a different frequency as
+  soon as the sweep changes. `value_at(x, 2.45GHz)` means 2.45 GHz on any grid that reaches it.
+- **Every other axis is kept**, as with `at`: over a parametric sweep you get one value per sweep point.
+- **Real or complex.** A complex value is interpolated as a complex number, so
+  `value_at(SP1.S(1,1), 2.45GHz)` is a reflection coefficient you can take `mag` or `dB` of afterwards.
+- **A value outside the axis is refused**, naming the axis's extent. Reading past the data would be a
+  number that looks right and is not.
+
+A measurement that comes out a single number shows as one cell of a [Table plot](data-display.html), so a
+few `value_at`, `max_over` and `min_over` lines make a readout of the numbers you care about.
 
 ## Spec checks: the worst value over a band {#spec}
 

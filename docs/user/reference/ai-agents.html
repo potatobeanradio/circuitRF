@@ -251,8 +251,9 @@ the topology and values can meet the spec before anything physical is drawn.</li
 <li><strong>Rebuild it from realisable elements</strong>: microstrip, vias and capacitors the process can make.
 Run it again, including tolerance corners. Each spec line becomes one <code>measure</code>: <code>max_over</code> and
 <code>min_over</code> give the worst value of a quantity over a frequency band, for example
-<code>measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)</code>. The agent reads them back with
-<code>read</code>. See <a href="measurements.html">Measurements</a>.</li>
+<code>measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)</code>, and <code>value_at</code> the value at one
+frequency, for example <code>measure G_2G45 = value_at(dB(SP1.S(2,1)), 2.45GHz)</code>. The agent reads them
+back with <code>read</code>. See <a href="measurements.html">Measurements</a>.</li>
 <li><strong>Draw the layout</strong> (<code>.clay</code>). Run <code>check</code> for DRC, <code>render</code> it to look at, and run <code>impedance</code>
 to compare each drawn line's Z0 with what the circuit model assumed.</li>
 <li><strong>Write the EM setup</strong> (<code>.cem</code>) and run <code>check</code> on it. Its notes report what the solver will mesh

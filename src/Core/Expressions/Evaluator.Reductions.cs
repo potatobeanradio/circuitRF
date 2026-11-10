@@ -32,6 +32,7 @@ public sealed partial class Evaluator
     {
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
         "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap", "deriv",
+        "value_at",
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
@@ -85,6 +86,88 @@ public sealed partial class Evaluator
         var (cube, axis, lo, hi) = ReduceOperand(cl, scope, name, 0, out _);
         return ReduceAlong(cube, axis, lo, hi, name, cube.Unit,
                            max ? xs => xs.Aggregate(Math.Max) : xs => xs.Aggregate(Math.Min));
+    }
+
+    // ── One point, by its value ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>value_at(x, v [, "axis"])</c>: x at the point whose axis value is <c>v</c>, read straight off the grid when
+    /// <c>v</c> is a grid point and interpolated linearly between the two either side of it when it is not. The axis
+    /// defaults to <c>freq</c>, then a rank-1 cube's only axis. Every other axis is kept, so a swept run gives one
+    /// value per sweep point; real and complex values alike (a complex one is interpolated as a complex number).
+    /// </summary>
+    /// <remarks>
+    /// <c>at</c>'s companion. <c>at(x, "freq", 19)</c> names a POSITION, which means something else as soon as the
+    /// sweep changes; <c>value_at(x, 2.45GHz)</c> means 2.45 GHz on any grid that reaches it. A value outside the
+    /// axis is refused with the axis's extent — extrapolating a measurement past the data is a wrong number that
+    /// looks right.
+    /// </remarks>
+    private Value EvalValueAt(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length is < 2 or > 3) throw new ArityException("value_at", 2, cl.Args.Length);
+        var v      = EvalExpr(cl.Args[0], scope);
+        var target = EvalExpr(cl.Args[1], scope);
+        if (target.Kind != ValueKind.Real)
+            throw new ExpressionException("value_at(): the point must be a number, e.g. value_at(x, 2.45GHz).");
+        double t = target.AsReal();
+
+        if (v.Kind != ValueKind.Cube)
+            throw new ExpressionException("value_at(): this value is a single number, so it has no axis to read along.");
+        var cube = v.AsCube();
+        string axes = string.Join(", ", cube.Axes.Select(a => a.Name));
+
+        string? axisName = null;
+        if (cl.Args.Length == 3)
+        {
+            var a = EvalExpr(cl.Args[2], scope);
+            axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
+        }
+        else if (cube.Axes.Any(a => a.Name == "freq")) axisName = "freq";
+        else if (cube.Rank == 1)                       axisName = cube.Axes[0].Name;
+        else throw new ExpressionException(
+            $"value_at(): this value has no 'freq' axis; name the axis as the last argument. Its axes are: {axes}.");
+        if (!cube.Axes.Any(a => a.Name == axisName))
+            throw new ExpressionException($"value_at(): no axis named '{axisName}'. Its axes are: {axes}.");
+
+        var xs = cube.Axis(axisName).Values;
+        if (xs.Length == 0) throw new ExpressionException($"value_at(): the '{axisName}' axis has no points.");
+
+        // A grid point, to the tolerance max_over uses for a band edge.
+        double tol = 1e-9 * Math.Max(Math.Abs(t), xs.Max(Math.Abs));
+        for (int k = 0; k < xs.Length; k++)
+            if (Math.Abs(xs[k] - t) <= tol) return Collapse(cube.At(axisName, k));
+
+        // Between two neighbouring points, in whichever direction the axis runs.
+        for (int k = 0; k + 1 < xs.Length; k++)
+        {
+            double x0 = xs[k], x1 = xs[k + 1];
+            if (!((t > x0 && t < x1) || (t < x0 && t > x1))) continue;
+            double s = (t - x0) / (x1 - x0);
+            var a = cube.At(axisName, k);
+            var b = cube.At(axisName, k + 1);
+            if (cube.DataKind == DataKind.Complex)
+            {
+                var ca = a.ComplexValues; var cb = b.ComplexValues;
+                var r = new System.Numerics.Complex[ca.Length];
+                for (int e = 0; e < r.Length; e++) r[e] = ca[e] + (cb[e] - ca[e]) * s;
+                return a.Rank == 0 ? new Value(r[0]) : new Value(new DataCube([.. a.Axes], r) { Unit = cube.Unit });
+            }
+            var ra = a.RealValues; var rb = b.RealValues;
+            var rr = new double[ra.Length];
+            for (int e = 0; e < rr.Length; e++) rr[e] = ra[e] + (rb[e] - ra[e]) * s;
+            return a.Rank == 0 ? new Value(rr[0]) : new Value(new DataCube([.. a.Axes], rr) { Unit = cube.Unit });
+        }
+
+        string extent = string.Create(CultureInfo.InvariantCulture,
+            $"{xs.Min():G6} to {xs.Max():G6} {cube.Axis(axisName).Unit}").TrimEnd();
+        throw new ExpressionException(string.Create(CultureInfo.InvariantCulture,
+            $"value_at(): {t:G6} is outside the '{axisName}' axis, which runs from {extent}."));
+
+        static Value Collapse(DataCube slice)
+        {
+            if (slice.Rank > 0) return new Value(slice);
+            return slice.DataKind == DataKind.Complex ? new Value(slice.ComplexValues[0]) : new Value(slice.RealValues[0]);
+        }
     }
 
     // ── The statistics of a sample ───────────────────────────────────────────────────

@@ -280,6 +280,7 @@ public sealed partial class Evaluator
             // Cube-only: pin one axis BY NAME (measurements.md §3.2). Not a scalar function — it is
             // the shape-independent counterpart of a positional slice.
             "at"        => EvalAt(cl, scope),
+            "value_at"  => EvalValueAt(cl, scope),
             // Band reductions (measurements.md "Spec checks"): the worst value of a real quantity over a
             // RANGE of one axis — the frequency band a spec line names. The axis is reduced away; every
             // other axis (a parametric sweep, say) is kept, so a swept run gives one worst case per point.

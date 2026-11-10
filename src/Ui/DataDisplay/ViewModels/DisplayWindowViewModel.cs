@@ -138,9 +138,73 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         set
         {
             if (value is null) return;
+            string? was = DataSourceLibrary.SelectedDataSourceRef;
+            if (was == value.LogicalId) return;
             _ = DataSourceLibrary.SelectDataSourceAsync(value.LogicalId);
             OnPropertyChanged();
+            // The selection is saved in the .cdd, so changing it is an edit like any other: undoable,
+            // or the document could never be made clean again by undoing.
+            if (was is not null)
+                DataDisplay?.UndoRedo.Push(new SelectDataSourceCommand(this, was, value.LogicalId));
         }
+    }
+
+    // ---- Canvas grid (the symbol editor's snap button, for this canvas) ------------------------
+
+    private CanvasGrid _canvasGrid = CanvasGrid.Off;
+
+    /// <summary>The snap grid for every tab of this display: coarse, fine or off.</summary>
+    public CanvasGrid CanvasGrid
+    {
+        get => _canvasGrid;
+        private set
+        {
+            if (!SetProperty(ref _canvasGrid, value)) return;
+            foreach (var tab in Tabs) tab.DataDisplay.CanvasGrid = value;
+            OnPropertyChanged(nameof(IsGridCoarse));
+            OnPropertyChanged(nameof(IsGridFine));
+            OnPropertyChanged(nameof(GridTooltip));
+        }
+    }
+
+    public bool IsGridCoarse => CanvasGrid == CanvasGrid.Coarse;
+    public bool IsGridFine   => CanvasGrid == CanvasGrid.Fine;
+
+    public string GridTooltip => CanvasGrid switch
+    {
+        CanvasGrid.Coarse => "Snap: Coarse Grid — plots move and resize onto it  (click for Fine)",
+        CanvasGrid.Fine   => "Snap: Fine Grid — plots move and resize onto it  (click for Off)",
+        _                 => "Snap: Off  (click for Coarse Grid)",
+    };
+
+    /// <summary>Coarse → fine → off, as the symbol editor's snap button cycles.</summary>
+    [RelayCommand]
+    private void CycleCanvasGrid() => CanvasGrid = CanvasGrid switch
+    {
+        CanvasGrid.Off    => CanvasGrid.Coarse,
+        CanvasGrid.Coarse => CanvasGrid.Fine,
+        _                 => CanvasGrid.Off,
+    };
+
+    /// <summary>Freeze on or off for the whole display (<see cref="DataSourceLibraryViewModel.IsFrozen"/>).</summary>
+    [RelayCommand]
+    private void ToggleFreeze() => DataSourceLibrary.IsFrozen = !DataSourceLibrary.IsFrozen;
+
+    /// <summary>Beside the Freeze button while it is on: how many earlier runs it is holding.</summary>
+    public string FrozenRunsText => DataSourceLibrary.FrozenRunCount switch
+    {
+        0 => "Frozen",
+        1 => "1 earlier run",
+        int n => $"{n} earlier runs",
+    };
+
+    /// <summary>Selects a datasource by its logical id for an undo or redo, and refreshes the combo.</summary>
+    internal async void SelectDataSourceForUndo(string logicalId)
+    {
+        await DataSourceLibrary.SelectDataSourceAsync(logicalId);
+        OnPropertyChanged(nameof(SelectedDataSourceItem));
+        OnPropertyChanged(nameof(AwaitingRunText));
+        RaiseDirtyChanged();
     }
 
     /// <summary>
@@ -375,6 +439,12 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
                 Avalonia.Threading.Dispatcher.UIThread.Post(endFrame, Avalonia.Threading.DispatcherPriority.Background);
 
         // Keep the combo selection in sync with the library selection.
+        DataSourceLibrary.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DataSourceLibraryViewModel.FrozenRunCount)
+                               or nameof(DataSourceLibraryViewModel.IsFrozen))
+                OnPropertyChanged(nameof(FrozenRunsText));
+        };
         DataSourceLibrary.SelectedDataSourceChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(SelectedDataSourceItem));
@@ -414,6 +484,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     {
         var tab = new TabViewModel(DataSourceLibrary, name, Tabs.Count < 1); // add empty plot only if there's no tabs
         tab.DataDisplay.Theme = CurrentTheme;
+        tab.DataDisplay.CanvasGrid = _canvasGrid;
         // New-plot auto-placement needs the visible viewport size. _getCanvasSizeAction
         // resolves the active tab's canvas; add-plot only ever targets the active tab, so
         // wiring every tab's DataDisplay to it is correct. Null-safe until the action is injected.
@@ -1050,4 +1121,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         CaptureBaseline();
         RaiseDirtyChanged();
     }
+}
+
+/// <summary>The toolbar's datasource changed: undo selects the one it was.</summary>
+internal sealed class SelectDataSourceCommand(DisplayWindowViewModel window, string from, string to) : IUndoableCommand
+{
+    public void Execute() => window.SelectDataSourceForUndo(to);
+    public void Undo()    => window.SelectDataSourceForUndo(from);
 }

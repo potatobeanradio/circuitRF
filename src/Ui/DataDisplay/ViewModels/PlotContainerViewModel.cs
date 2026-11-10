@@ -166,9 +166,28 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// the resulting height is Height × ZoomLevel, which is what
     /// AxisLabelControl expects for its h × 0.04 font formula.
     /// </summary>
-    public Thickness LabelStripMargin =>
-        new Thickness(0, TopLabelExtraLogical    * _parent.ZoomLevel,
-                      0, BottomLabelExtraLogical * _parent.ZoomLevel);
+    /// <remarks>
+    /// <b>On a Smith or Polar plot the strips span the DISC</b>, from the chart rectangle the renderer
+    /// actually draws — the rule the export already followed (<c>PlotComposer</c>). Taking the span
+    /// from the canvas extras instead centred a Y label on the canvas less its label rows, which is the
+    /// disc's centre only for a square box with no legend below it: a Smith box taller than it is wide,
+    /// or one whose Below legend has grown it, put the label well under the disc's centre.
+    /// </remarks>
+    public Thickness LabelStripMargin
+    {
+        get
+        {
+            var plot = PlotVM.Plot;
+            if (plot.PlotType.IsComplex() && ViewWidth > 0 && ViewHeight > 0)
+            {
+                var chart = PlotCanvasGeometry.ChartRect(plot, ViewWidth, ViewHeight);
+                if (chart.Height > 0)
+                    return new Thickness(0, chart.Top, 0, Math.Max(0, ViewHeight - chart.Top - chart.Height));
+            }
+            return new Thickness(0, TopLabelExtraLogical    * _parent.ZoomLevel,
+                                 0, BottomLabelExtraLogical * _parent.ZoomLevel);
+        }
+    }
 
     /// <summary>
     /// How far the chart disc's edge sits inside the canvas's, in screen pixels — what the label
@@ -233,6 +252,8 @@ public partial class PlotContainerViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewTotalWidth));
         OnPropertyChanged(nameof(ViewContainerLeft));
         OnPropertyChanged(nameof(LabelStripViewWidth));
+        OnPropertyChanged(nameof(LabelStripMargin));   // the disc a Smith strip spans moves with the height
+        NotifyStripTransforms();
         UpdateLabelStrips(widthAndThemeOnly: true);
     }
 
@@ -360,7 +381,13 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void RequestToggleSelect() => _parent.ToggleSelect(this);
 
     /// <summary>Move all currently-selected containers by (dx, dy) in logical coords.</summary>
-    public void MoveSelected(double dx, double dy) => _parent.MoveSelected(dx, dy);
+    public void MoveSelected(double dx, double dy) => _parent.MoveSelected(dx, dy, this);
+
+    /// <summary>A resize target with the box's far edges put on the display's grid when it is on.</summary>
+    internal (double W, double H) SnapResizeTarget(double w, double h)
+        => _parent.GridStep > 0
+            ? (_parent.SnapToGrid(Left + w) - Left, _parent.SnapToGrid(Top + h) - Top)
+            : (w, h);
 
     /// <summary>
     /// Resize this container to an absolute target size in logical coords,
@@ -689,6 +716,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         PlotVM.OnPlotChanged(sender, e);
         SyncTableWidth();    // re-fits box after column-drag resize
         UpdateLabelStrips();
+        Inspector.RefreshLimitTexts();   // a pan or a zoom moved the window the Axes section shows
         _parent.OnContainerPlotChanged(this);
     }
 
@@ -704,6 +732,16 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// on its PlotControl without going through the full PlotChanged pipeline.
     /// </summary>
     public void RequestPlotRedraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Puts the box back where and how big an undo says it was. Taken as the plot type's settled size,
+    /// so the next structural change does not re-coerce it as though the type had just changed.
+    /// </summary>
+    internal void RestoreGeometry(double left, double top, double width, double height)
+    {
+        _lastCoercedPlotType = PlotVM.Plot.PlotType;
+        Left = left; Top = top; Width = width; Height = height;
+    }
 
     /// <summary>
     /// Rebuilds the info-box VMs for this container (e.g. when ShowInfoBox is toggled).

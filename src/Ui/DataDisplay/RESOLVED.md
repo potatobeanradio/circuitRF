@@ -2555,3 +2555,37 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   so editing in the inspector deletes characters, not the selected plot (checked headlessly with `tools/UiSnapshot`).
 - Deleting a box that holds keyboard focus leaves focus outside `DataDisplayView`, so its `Meta+Z` binding does not
   fire. This was already true of a deleted info box; the shell's undo serves Cmd+Z there.
+
+## Data Display ideas round (GitHub discussion 52) — undo everywhere, paste keeps its data, Smith label
+
+- **Every edit is undoable, and undoing every edit leaves the `.cdd` clean.** Only canvas gestures had
+  commands; a trace card, a label, a limit or a plot-type change had no undo at all, so a replaced
+  expression was gone for good. `DataDisplayViewModel.EditHistory.cs` keeps each plot's saved form
+  (`BuildPlotContainerConfig(c, "", Library)` — the dirty check's own serialization) and turns any content
+  change no command made into one `PlotEditCommand` of before/after configs. Undo restores IN PLACE:
+  same container, same `Plot`, `PlotConfigLoader.ApplySettings` + `Plot.RestoreTypeAndUnit`, and a
+  trace whose saved form already matches is kept, so marker commands stay attached to a live trace.
+  Rules that make it hold: a command's push/undo/redo REBASES (`UndoRedo.StateChanged`, and the
+  wheel-zoom coalescing path, which extends an entry without pushing — missing that one broke
+  `ConsecutiveZoomSteps_CoalesceIntoOneUndoEntry`); nothing is recorded while a pointer is held on the
+  canvas (the drag's own command is pushed on release); new data is not an edit (`DataRefreshEventArgs`,
+  `WithoutEditRecording` around the datasource re-point). Typing a title or dragging a slider joins one
+  step when the same fields change within 1.5 s. `SetTraceLabelCommand` was retired: it held a
+  `TraceRowViewModel`, which a restore recreates, and recorded the label twice. The toolbar's datasource
+  is saved too, so changing it pushes `SelectDataSourceCommand`.
+- **Pasted plots came up empty when the pasting display had another source selected.** A trace that
+  follows the selection saves the sentinel `run.npy`, and one under `results/` a relative name; both
+  meant something else in the display pasted into. The clipboard JSON now carries resolved file paths
+  (`PlotExporter.BuildContainersJson`) and the paste turns each back into the reference that display
+  would save (`PastedSourceRef`) — the sentinel when it is that display's selected file. Works across
+  windows and workspaces (system clipboard).
+- **A Smith/Polar Y-label strip spanned the canvas less its label rows, not the disc.** On a box taller
+  than wide (the shipped Receiver Noise examples were 520×640 and 560×680) or with a Below legend the
+  label sat well below the disc's centre. `LabelStripMargin` now takes the disc's rectangle
+  (`PlotCanvasGeometry.ChartRect`), as `PlotComposer` always did, and the examples' Smith boxes are square.
+  Note any structural change squares a Smith box (`CoerceAspectForPlotType`), which is why the label
+  moved when a trace card was edited.
+- Freeze history lives on the window's library (`DataSourceLibraryViewModel.Freeze.cs`), captured in
+  `ReloadAsync` before the entry's data is replaced; ghosts reuse `SnapshotGhost` at 0.45·0.65^age.
+  Limit areas are stored in the plot's DISPLAYED X units, like `Axes.Window`, and rescale with
+  `FreqUnits` whether or not X is autoscaled.

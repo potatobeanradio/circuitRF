@@ -35,8 +35,21 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     public event EventHandler? ContentChanged;
 
-    private void RaiseContentChanged() => ContentChanged?.Invoke(this, EventArgs.Empty);
-    private void OnContainerRedraw(object? s, EventArgs e) => RaiseContentChanged();
+    // Every content change is first offered to the edit recorder (DataDisplayViewModel.EditHistory.cs),
+    // which turns a change no command made into an undo step.
+    private void RaiseContentChanged()
+    {
+        CheckpointEdits();
+        ContentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnContainerRedraw(object? s, EventArgs e)
+    {
+        // New data for the same traces is not an edit: take it as the plot's checkpoint.
+        if (e is DataRefreshEventArgs && s is PlotContainerViewModel c && _editCheckpoint.ContainsKey(c))
+            _editCheckpoint[c] = SavedFormOf(c);
+        RaiseContentChanged();
+    }
 
     private void OnPlotsCollectionChanged(object? s, NotifyCollectionChangedEventArgs e)
     {
@@ -44,6 +57,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             foreach (PlotContainerViewModel c in e.NewItems) c.PlotNeedsRedraw += OnContainerRedraw;
         if (e.OldItems is not null)
             foreach (PlotContainerViewModel c in e.OldItems) c.PlotNeedsRedraw -= OnContainerRedraw;
+        // A plot arriving or leaving is a command's business (add, remove, paste), never a recorded edit:
+        // the arriving one starts from the form it arrives in.
+        if (e.NewItems is not null)
+            foreach (PlotContainerViewModel c in e.NewItems) _editCheckpoint[c] = SavedFormOf(c);
+        if (e.OldItems is not null)
+            foreach (PlotContainerViewModel c in e.OldItems) _editCheckpoint.Remove(c);
+        if (e.Action == NotifyCollectionChangedAction.Reset) RebaseEditHistory();
         RaiseContentChanged();
     }
 
@@ -159,6 +179,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                      && top.Container == container)
         {
             top.ExtendTo(axes.Window, axes.WindowSecondary);
+            // The entry it extends is the undo step for this change too, so it is not an edit to record.
+            RebaseEditHistory();
             RaiseContentChanged();
             return;
         }
@@ -500,9 +522,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     internal void BeginMoveOperation()
     {
+        _moveRawDx = _moveRawDy = 0;
         _moveStartPlots    = _plots.Where(p => p.IsSelected)
                                    .Select(p => (p, p.Left, p.Top)).ToList();
-        _moveStartInfoBoxes = Boxes.Where(m => m.IsSelected)
+        _moveStartInfoBoxes = MovingBoxes()
                                    .Select(m => (m, m.LogicalLeft, m.LogicalTop)).ToList();
     }
 
@@ -563,7 +586,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         AppSettingsViewModel.Instance.PropertyChanged += OnSettingsPropertyChanged;
 
         _plots.CollectionChanged += OnPlotsCollectionChanged;
-        UndoRedo.StateChanged    += (_, _) => RaiseContentChanged();
+        // A command is its own undo step: what it changed is the new checkpoint, not an edit to record.
+        UndoRedo.StateChanged    += (_, _) =>
+        {
+            RebaseEditHistory();
+            ContentChanged?.Invoke(this, EventArgs.Empty);
+        };
 
         // Braced deliberately: the deselect used to sit at this indentation WITHOUT braces, so it
         // ran whether or not a plot had been added. Harmless only because `addEmptyPlot: false`
@@ -613,36 +641,41 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         // cube buffer and resurrect the previous source's curve (the reported bug). Network traces
         // get their SNP re-pointed to the new source (or a broken SNP) so they redraw the new data
         // or fall blank. RebuildAndNotify also autoscales, refreshes trace cards, and redraws.
-        foreach (var c in _plots)
+        // Not an edit: the same traces read another source. What it does to their saved form (nothing,
+        // for a trace that follows the selection) becomes the checkpoint rather than an undo step.
+        WithoutEditRecording(() =>
         {
-            foreach (var t in c.PlotVM.Plot.Traces)
+            foreach (var c in _plots)
             {
-                if (t.IsOwnerData) continue;   // no source — it does not follow the selection
-                if (string.IsNullOrEmpty(t.SourceRef) || t.SourceRef == DataSourceRef.Selected)
+                foreach (var t in c.PlotVM.Plot.Traces)
                 {
-                    t.SourcePath = _library.ResolveAbs(t.SourceRef);
-                    if (!t.IsCubeBound)
+                    if (t.IsOwnerData) continue;   // no source — it does not follow the selection
+                    if (string.IsNullOrEmpty(t.SourceRef) || t.SourceRef == DataSourceRef.Selected)
                     {
-                        // NetworkView first, Snp second, broken placeholder last — the same order
-                        // the picker's bind and the .cdd loader use.
-                        //
-                        // Reading Snp alone here is what actually made Max Gain and the stability
-                        // circles vanish on Run. Every trace whose SourceRef is the "Selected"
-                        // sentinel comes through this loop, and for a SIMULATED source
-                        // SelectedEntry.Snp is null by design — so each derived trace was handed
-                        // SNP.CreateBroken, a ZERO-PORT SNP. BuildDerivedPath clears its geometry
-                        // and returns at once below two ports, so the trace went blank; and since
-                        // that placeholder belongs to no library entry, the next LibraryChanged
-                        // swept it out of the plot for good. This fires on every re-run, because
-                        // the post-run refresh re-selects the datasource it just reloaded.
-                        var sel = _library.SelectedEntry;
-                        t.Data = sel?.NetworkView ?? sel?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+                        t.SourcePath = _library.ResolveAbs(t.SourceRef);
+                        if (!t.IsCubeBound)
+                        {
+                            // NetworkView first, Snp second, broken placeholder last — the same order
+                            // the picker's bind and the .cdd loader use.
+                            //
+                            // Reading Snp alone here is what actually made Max Gain and the stability
+                            // circles vanish on Run. Every trace whose SourceRef is the "Selected"
+                            // sentinel comes through this loop, and for a SIMULATED source
+                            // SelectedEntry.Snp is null by design — so each derived trace was handed
+                            // SNP.CreateBroken, a ZERO-PORT SNP. BuildDerivedPath clears its geometry
+                            // and returns at once below two ports, so the trace went blank; and since
+                            // that placeholder belongs to no library entry, the next LibraryChanged
+                            // swept it out of the plot for good. This fires on every re-run, because
+                            // the post-run refresh re-selects the datasource it just reloaded.
+                            var sel = _library.SelectedEntry;
+                            t.Data = sel?.NetworkView ?? sel?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+                        }
                     }
                 }
+                c.Inspector.RebuildAndNotify();
+                c.UpdateLabelStrips();
             }
-            c.Inspector.RebuildAndNotify();
-            c.UpdateLabelStrips();
-        }
+        });
         RaiseContentChanged();
         await Task.CompletedTask;
     }
@@ -1258,24 +1291,37 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Moves all currently-selected plots and InfoBoxes by (dx, dy) in
     /// logical (pre-zoom) coordinates.  Called during plot-container drag.
     /// </summary>
-    public void MoveSelected(double dx, double dy)
+    public void MoveSelected(double dx, double dy, PlotContainerViewModel? anchor = null)
     {
+        (dx, dy) = SnappedMoveStep(dx, dy, anchor);
         foreach (var p in _plots.Where(p => p.IsSelected))
         {
             p.Left += dx;
             p.Top  += dy;
         }
-        foreach (var m in Boxes.Where(m => m.IsSelected))
+        foreach (var m in MovingBoxes())
             m.TranslateLogical(dx, dy);
     }
+
+    /// <summary>
+    /// The boxes a plot move carries: every selected one, and every marker info box and floating legend of a
+    /// selected plot whether it is selected or not — a plot's labels keep their place relative to it, rather
+    /// than staying behind on the canvas when it is dragged.
+    /// </summary>
+    private IEnumerable<CanvasBoxViewModel> MovingBoxes()
+        => Boxes.Where(m => m.IsSelected || m.Container.IsSelected);
 
     // ---- InfoBox group drag (absolute window positions) -------------
     //  Called from MarkerInfoBoxView when the user drags a selected InfoBox.
     //  All currently-selected InfoBoxes are dragged together using the same
     //  reference point so their relative layout is preserved.
 
-    internal void StartInfoBoxGroupDrag(Point windowPt)
+    /// <summary>The box the pointer is dragging, whose corner the grid snaps (the rest keep their offsets to it).</summary>
+    private CanvasBoxViewModel? _boxDragAnchor;
+
+    internal void StartInfoBoxGroupDrag(Point windowPt, CanvasBoxViewModel? grabbed = null)
     {
+        _boxDragAnchor = grabbed ?? Boxes.FirstOrDefault(m => m.IsSelected);
         // Capture pre-drag logical positions for undo before the drag starts.
         _moveStartInfoBoxes = Boxes
             .Where(m => m.IsSelected)
@@ -1290,6 +1336,17 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         foreach (var m in Boxes)
             if (m.IsSelected) m.UpdateDrag(windowPt);
+
+        // The grid, when it is on: the grabbed box's corner lands on it, and every box dragged with it moves by the
+        // same amount so the group keeps its layout.
+        if (GridStep > 0 && _boxDragAnchor is { IsDragging: true } a)
+        {
+            double dx = SnapToGrid(a.LogicalLeft) - a.LogicalLeft;
+            double dy = SnapToGrid(a.LogicalTop)  - a.LogicalTop;
+            if (dx != 0 || dy != 0)
+                foreach (var m in Boxes)
+                    if (m.IsSelected) m.OffsetDrag(dx, dy);
+        }
     }
 
     internal void EndInfoBoxGroupDrag()
@@ -1719,6 +1776,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             LegendLeft                  = FloatingLegendCoord(plot, plot.LegendPos.X),
             LegendTop                   = FloatingLegendCoord(plot, plot.LegendPos.Y),
             SpecLines                   = plot.ShowSpecLines,
+            LimitAreas                  = plot.LimitAreas.Count > 0
+                                          ? plot.LimitAreas.Select(LimitAreaConfig.From).ToList()
+                                          : null,
             SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
             SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,
             SurfaceZoom                 = plot.SurfaceCamera.Zoom,
@@ -1988,6 +2048,22 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// entries when missing) so the DataSourceLibraryView shows every required path.
     /// Returns the list of newly-added containers (used to record a PasteCommand for undo).
     /// </summary>
+    /// <summary>
+    /// A pasted trace's source path as this display references it: the "selected" sentinel when it is the file
+    /// this display has selected (so it follows the selection like the plots already here), a name relative to
+    /// this workspace's results folder when it lives there, else the path itself. Anything that is not a rooted
+    /// path — a copy made before copies carried paths — is passed through as it was.
+    /// </summary>
+    private string? PastedSourceRef(string? path, bool followSelection = true)
+    {
+        if (string.IsNullOrEmpty(path) || !Path.IsPathRooted(path) || Library is not { } lib) return path;
+        string full = Path.GetFullPath(path);
+        if (followSelection && lib.SelectedDataSourceAbs is { } sel &&
+            string.Equals(Path.GetFullPath(sel), full, StringComparison.OrdinalIgnoreCase))
+            return DataSourceRef.Selected;
+        return ComputeSourceKey(full, lib);
+    }
+
     public async Task<IReadOnlyList<PlotContainerViewModel>> PasteFromConfigAsync(DataDisplayConfig config)
     {
         const double PasteOffset = 20.0;
@@ -2015,6 +2091,15 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 }
             if (pc.LegendLeft is { } ll) pc.LegendLeft = ll + PasteOffset;
             if (pc.LegendTop  is { } lt) pc.LegendTop  = lt + PasteOffset;
+
+            // The copy names each source by its file (PlotExporter.BuildContainersJson). Here it becomes
+            // the reference THIS display would save it under, so the pasted plot shows the data it showed
+            // where it was copied — from another tab, another window or another workspace alike.
+            foreach (var tc in pc.Traces)
+            {
+                tc.SourcePath  = PastedSourceRef(tc.SourcePath);
+                tc.XSourcePath = PastedSourceRef(tc.XSourcePath, followSelection: false);
+            }
 
             var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
 

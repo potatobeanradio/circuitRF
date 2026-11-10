@@ -770,7 +770,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             ShowPlotInspector();
         }
 
-        private void ShowPlotInspector(int scrollToTraceIndex = -1)
+        private void ShowPlotInspector(int scrollToTraceIndex = -1,
+                                       InspectorSection section = InspectorSection.Traces)
         {
             if (_plot is null || !CanEditPlotProperties) return;
 
@@ -781,6 +782,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // (e.g. PlotControl used outside PlotContainerView).
             _inspectorVm = ContainerProvider?.Invoke()?.Inspector
                            ?? new PlotInspectorViewModel(_plot, () => { }, _library);
+            _inspectorVm.Section = section;
 
             // Point the shared inspector's close (the flyout's ✕) at this flyout while it is open.
             _inspectorVm.SetCloseAction(() => _inspectorFlyout?.Hide());
@@ -846,8 +848,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private void OnInspectorColorPickEnded(object? sender, EventArgs e)
             => _suppressInspectorDismiss = false;
 
+        // The limits and the labels are sections of the Plot Inspector; the stand-alone flyouts remain for a plot
+        // whose inspector cannot be opened (a fixed read-out), where they are the only way in.
         private void OnMenuActionTwo(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-            => ShowAxesLimitsFlyout();
+        {
+            if (CanEditPlotProperties && _plot is { PlotType: PlotType.Rect or PlotType.Smith or PlotType.Polar })
+                ShowPlotInspector(section: InspectorSection.Axes);
+            else
+                ShowAxesLimitsFlyout();
+        }
 
         private void ShowAxesLimitsFlyout()
         {
@@ -881,7 +890,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         }
 
         private void OnMenuActionThree(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-            => ShowAxesLabelsFlyout();
+            => ShowLabelsEditor();
+
+        private void ShowLabelsEditor()
+        {
+            if (CanEditPlotProperties && _plot is { PlotType: PlotType.Rect or PlotType.Smith or PlotType.Polar })
+                ShowPlotInspector(section: InspectorSection.Labels);
+            else
+                ShowAxesLabelsFlyout();
+        }
 
         private void ShowAxesLabelsFlyout()
         {
@@ -2128,7 +2145,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 HitsRect(pos, hitRects.YLabel)  ||
                 HitsRect(pos, hitRects.Y2Label))
             {
-                ShowAxesLabelsFlyout();
+                ShowLabelsEditor();
                 return;
             }
 

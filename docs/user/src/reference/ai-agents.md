@@ -158,8 +158,9 @@ The order below keeps every expensive step behind a cheap check.
 4. **Rebuild it from realisable elements**: microstrip, vias and capacitors the process can make.
    Run it again, including tolerance corners. Each spec line becomes one `measure`: `max_over` and
    `min_over` give the worst value of a quantity over a frequency band, for example
-   `measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)`. The agent reads them back with
-   `read`. See [Measurements](measurements.html).
+   `measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)`, and `value_at` the value at one
+   frequency, for example `measure G_2G45 = value_at(dB(SP1.S(2,1)), 2.45GHz)`. The agent reads them
+   back with `read`. See [Measurements](measurements.html).
 5. **Draw the layout** (`.clay`). Run `check` for DRC, `render` it to look at, and run `impedance`
    to compare each drawn line's Z0 with what the circuit model assumed.
 6. **Write the EM setup** (`.cem`) and run `check` on it. Its notes report what the solver will mesh
