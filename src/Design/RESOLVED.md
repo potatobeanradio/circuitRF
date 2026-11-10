@@ -29481,3 +29481,28 @@ plane and the bottom copper and none with the pour.
   relative to the staging folder, is rewritten to the workspace-relative path of the placed one.
 - Gates: `tests/Ui.Tests/Plugins/` — manifest refusals, discovery starting nothing, every broken-plugin mode,
   permission and policy order, placement with a restore point that removes the cell.
+
+## Plugin panel (brief-plg-2, 2026-11-10)
+
+- **The panel runs its session with no update or action deadline of its own.** `PluginSession` KILLS a plugin past a
+  request's deadline, which is right for a dialog and the CLI but wrong for a panel, where `plugins.md` §6.2 says the
+  panel says "not responding" and offers Stop. So the window starts the session with `Timeout.InfiniteTimeSpan` for
+  `update` and `action` and `PluginPanelController` keeps the 30 s / 10 min watch itself; `hello` keeps its deadline.
+- **A plugin can answer and then exit before its answer is applied.** The reader thread completes the request and then
+  reads end-of-stream, so `Ended` and the reply's continuation race. Cancelling the in-flight request on `Ended` dropped
+  the reply that had already arrived; now `Ended` only posts the stopped line, and applying a reply re-reads
+  `session.Fatal` so the stopped line survives a reply applied after it.
+- **"Got no answer to its cancel" needs the session's help.** A cancelled request returns `Cancelled` at once and its
+  late reply is dropped inside the session, so the controller could not see whether the plugin was still busy.
+  `SettledAsync(within)` answers that from the session's cancelled-but-unanswered set; Stop restarts when it is false.
+- **A panel's text and table readouts have fixed heights and scroll.** A reply that said less (an error case with an
+  empty text) shrank the readout and moved the messages area and the button under it — the headless snapshot of the
+  error state showed it. Value readouts are one line, trimmed with the whole text as a tooltip.
+- **A field that cannot be sent is marked by a window style on the box's own border**, not with Avalonia's
+  `DataValidationErrors`, whose Fluent template adds the error text under the control and so moves the row below.
+- **The layout is validated by the manifest reader**, so a panel whose tree names an undeclared parameter is listed
+  dimmed with the reason, and the CLI refuses it the same way. PLG-1's manifest fixture carried `"ui": {"layout":
+  "row"}` as a placeholder; it is a real tree now.
+- Gates: `tests/Ui.Tests/Plugins/PluginLayoutTests.cs` and `PluginPanelControllerTests.cs`; controls-never-shift is
+  `tools/UiSnapshot --plugin-panel tools/plugin-examples/calculator --plugin-shift-check`.
+

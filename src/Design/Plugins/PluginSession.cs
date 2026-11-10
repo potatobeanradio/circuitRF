@@ -117,7 +117,7 @@ public sealed record PluginStartOptions
 /// <para><b>Nothing starts unless it may.</b> <see cref="Start"/> consults the policy and the trust store before a
 /// process exists; the catalogue never comes here at all.</para>
 /// </summary>
-public sealed class PluginSession : IAsyncDisposable
+public sealed class PluginSession : IPluginPanelSession
 {
     public const string Peer = "The plugin";
     private const int StderrLines = 200;
@@ -167,6 +167,10 @@ public sealed class PluginSession : IAsyncDisposable
 
     /// <summary>Raised from the reader thread for each <c>progress</c> frame.</summary>
     public event Action<PluginProgress>? Progress;
+
+    /// <summary>Raised once, from whichever thread noticed, when the session ends by failing — the process exited,
+    /// broke the protocol or ran past a deadline. Not raised by <see cref="ByeAsync"/>: closing is not a failure.</summary>
+    public event Action<PluginFailure>? Ended;
 
     /// <summary>The plugin's last stderr lines, oldest first (at most 200).</summary>
     public IReadOnlyList<string> StderrTail { get { lock (_stderr) return [.. _stderr]; } }
@@ -565,11 +569,29 @@ public sealed class PluginSession : IAsyncDisposable
         // Killed BEFORE anyone is answered: a caller told "it failed" may rightly assume nothing is left running.
         KillTree();
         foreach (var p in waiting) p.Done.TrySetResult(new Answer(null, failure));
+        if (Volatile.Read(ref _closed) == 0)
+            try { Ended?.Invoke(failure); } catch { /* a listener must not stop the session ending */ }
         return failure;
     }
 
     /// <summary>A failure of one request that leaves the session usable.</summary>
     private PluginFailure Soft(PluginFailureKind kind, string sentence) => new(kind, sentence, StderrTail);
+
+    /// <summary>
+    /// True once every request cancelled so far has been answered (and its answer dropped), or the session has ended;
+    /// false if <paramref name="within"/> passes first — a plugin still busy with work it was told to stop, which is
+    /// what the panel's Stop restarts (brief-plg-2 §2).
+    /// </summary>
+    public async Task<bool> SettledAsync(TimeSpan within)
+    {
+        var until = DateTime.UtcNow + within;
+        while (true)
+        {
+            lock (_gate) if (_fatal is not null || _cancelled.Count == 0) return true;
+            if (DateTime.UtcNow >= until) return false;
+            await Task.Delay(25);
+        }
+    }
 
     /// <summary>
     /// <c>bye</c>: the process gets 2 s to exit, then is killed with everything it started. The staging folder goes

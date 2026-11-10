@@ -19,7 +19,7 @@ namespace CircuitRF.Ui.ViewModels;
 public partial class WorkspaceViewModel
 {
     /// <summary>Opens <paramref name="entry"/> from the menu: refuses what cannot run here, asks permission the first
-    /// time, then shows the parameter dialog (a <c>panel</c> plugin opens the same dialog until brief 2).</summary>
+    /// time, then opens a <c>panel</c> plugin's window (brief-plg-2) or an <c>action</c> plugin's parameter dialog.</summary>
     internal async Task OpenPluginAsync(PluginEntry entry)
     {
         if (ResolveOwner(null) is not { } window) return;
@@ -43,6 +43,7 @@ public partial class WorkspaceViewModel
         }
 
         string? workspaceDir = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
+        if (entry.Manifest!.Kind == PluginKind.Panel) { OpenPluginPanel(window, entry, trust, workspaceDir); return; }
         await PluginActionDialog.ShowAsync(window, entry, workspaceDir,
             (values, keep, progress, cancel) => RunPluginAsync(window, entry, trust, workspaceDir, values, keep, progress, cancel));
     }
@@ -71,8 +72,33 @@ public partial class WorkspaceViewModel
         if (reply.Failure is { } uf) return Failed(uf);
         if (reply.Value!.HasError) return new PluginRunAnswer(false, reply.Value.Messages);
 
+        return await PlacePluginAsync(window, entry, workspaceDir, session, values, reply.Value.Messages, cancel);
+
+        PluginRunAnswer Failed(PluginFailure f) => PluginFailedAnswer(manifest, f);
+    }
+
+    /// <summary>A failure as the dialog or panel shows it, and posted to Messages.</summary>
+    private PluginRunAnswer PluginFailedAnswer(PluginManifest manifest, PluginFailure f)
+    {
+        if (f.Kind == PluginFailureKind.Cancelled) return new PluginRunAnswer(false, [new PluginMessage("info", "Stopped.")]);
+        var lines = new List<PluginMessage> { new("error", f.Sentence) };
+        if (f.Kind is PluginFailureKind.Exited or PluginFailureKind.Protocol or PluginFailureKind.Timeout)
+            lines.AddRange(f.StderrTail.TakeLast(5).Select(l => new PluginMessage("info", l)));
+        Messages.Error($"{manifest.Name}: {f.Sentence}");
+        return new PluginRunAnswer(false, lines);
+    }
+
+    /// <summary>
+    /// <b>Place in workspace</b> — <c>commit</c>, then each staged cell through <see cref="PluginPlacement"/>, asking
+    /// Replace or New name when a cell exists. The action dialog's OK and the panel's commit button both come here.
+    /// </summary>
+    private async Task<PluginRunAnswer> PlacePluginAsync(
+        Window window, PluginEntry entry, string? workspaceDir, IPluginPanelSession session, JsonObject values,
+        IReadOnlyList<PluginMessage> replyMessages, CancellationToken cancel)
+    {
+        var manifest = entry.Manifest!;
         if (workspaceDir is null)
-            return new PluginRunAnswer(false, [.. reply.Value.Messages, new PluginMessage("error", "Open a workspace to place what this plugin makes.")]);
+            return new PluginRunAnswer(false, [.. replyMessages, new PluginMessage("error", "Open a workspace to place what this plugin makes.")]);
 
         var placed = await session.CommitAsync(values, cancel);
         if (placed.Failure is { } cf) return Failed(cf);
@@ -92,7 +118,7 @@ public partial class WorkspaceViewModel
                     "A restore point is taken first. Or place it under another name:");
                 if (choice == CellExistsChoice.Cancel) return new PluginRunAnswer(false, [new PluginMessage("info", "Nothing was placed.")]);
                 if (choice == CellExistsChoice.Replace && OpenDocumentIn(Path.Combine(workspaceDir, result.CellName)) is { } open)
-                    return new PluginRunAnswer(false, [new PluginMessage("error", $"{Path.GetFileName(open)} is open, so cell {result.CellName} was not replaced. Close it and press OK again.")]);
+                    return new PluginRunAnswer(false, [new PluginMessage("error", $"{Path.GetFileName(open)} is open, so cell {result.CellName} was not replaced. Close it and try again.")]);
                 request = request with { Replace = choice == CellExistsChoice.Replace, CellName = choice == CellExistsChoice.NewName ? chosen : result.CellName };
                 result = await Task.Run(() => PluginPlacement.Place(request));
             }
@@ -106,18 +132,80 @@ public partial class WorkspaceViewModel
         if (last is not null) _factory.ProjectTreeTool?.Reveal(last);
         foreach (var m in placed.Value.Messages.Where(m => !m.IsError))
             Messages.Post(m.Severity == "warning" ? CircuitRF.Ui.Messages.MessageLevel.Warning : CircuitRF.Ui.Messages.MessageLevel.Info, $"{manifest.Name}: {m.Text}");
-        Messages.Info($"{manifest.Name} {manifest.Version} placed {(names.Count == 1 ? "cell" : "cells")} {string.Join(", ", names)}.", last);
-        return new PluginRunAnswer(true, []);
+        string done = $"{manifest.Name} {manifest.Version} placed {(names.Count == 1 ? "cell" : "cells")} {string.Join(", ", names)}.";
+        Messages.Info(done, last);
+        return new PluginRunAnswer(true, [new PluginMessage("info", done)]);
 
-        PluginRunAnswer Failed(PluginFailure f)
+        PluginRunAnswer Failed(PluginFailure f) => PluginFailedAnswer(manifest, f);
+    }
+
+    /// <summary>The open panel windows, by plugin id — choosing an open plugin again raises its window.</summary>
+    private readonly Dictionary<string, PluginWindow> _pluginWindows = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Opens a <c>panel</c> plugin's window (brief-plg-2): one process per open window, started now and restarted after
+    /// a crash by the controller. Its deadlines are the panel's, not the process host's — past one the panel says so
+    /// and offers Stop rather than killing the plugin — so the session waits indefinitely for an update or action.
+    /// </summary>
+    private void OpenPluginPanel(Window owner, PluginEntry entry, PluginTrustStore trust, string? workspaceDir)
+    {
+        var manifest = entry.Manifest!;
+        if (_pluginWindows.TryGetValue(manifest.Id, out var open)) { open.Activate(); return; }
+
+        var (layout, diagnostics) = PluginLayoutReader.Read(manifest);
+        if (layout is null)
         {
-            if (f.Kind == PluginFailureKind.Cancelled) return new PluginRunAnswer(false, [new PluginMessage("info", "Stopped.")]);
-            var lines = new List<PluginMessage> { new("error", f.Sentence) };
-            if (f.Kind is PluginFailureKind.Exited or PluginFailureKind.Protocol or PluginFailureKind.Timeout)
-                lines.AddRange(f.StderrTail.TakeLast(5).Select(l => new PluginMessage("info", l)));
-            Messages.Error($"{manifest.Name}: {f.Sentence}");
-            return new PluginRunAnswer(false, lines);
+            Messages.Error($"{manifest.Name}'s panel cannot be drawn: {string.Join("; ", diagnostics.Where(d => d.IsError))}");
+            return;
         }
+
+        var log = PluginLog.Open(manifest.Id);
+        PluginWindow? window = null;
+        IReadOnlyDictionary<string, string>? lastSent = null;   // remembered on close: the last values used, not unsent text
+        var controller = new PluginPanelController(manifest, () =>
+        {
+            var started = PluginSession.Start(entry, new PluginStartOptions
+            {
+                Trust = trust, Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, Log = log.Write,
+                Deadlines = new PluginDeadlines(Update: Timeout.InfiniteTimeSpan, Action: Timeout.InfiniteTimeSpan),
+            });
+            return started.Ok ? PluginOutcome<IPluginPanelSession>.Of(started.Value!) : PluginOutcome<IPluginPanelSession>.Fail(started.Failure!);
+        }, new PluginPanelOptions
+        {
+            Context = new PluginParamContext(workspaceDir),
+            Initial = PluginHost.LastParams(manifest.Id, workspaceDir),
+            Post = a => Dispatcher.UIThread.Post(a),
+            Sent = values => lastSent = values,
+            Commit = (session, values, cancel) => Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                if (window is null) return (IReadOnlyList<PluginMessage>)[];
+                var answer = await PlacePluginAsync(window, entry, workspaceDir, session, values, [], cancel);
+                return answer.Messages;
+            }),
+        });
+
+        window = new PluginWindow(layout, controller, workspaceDir, PluginHost.WindowMemory(manifest.Id))
+        {
+            Remember = (memory, _) =>
+            {
+                PluginHost.RecordWindowMemory(manifest.Id, memory);
+                if (lastSent is not null) PluginHost.RecordLastParams(manifest.Id, workspaceDir, lastSent);
+            },
+        };
+        _pluginWindows[manifest.Id] = window;
+        window.Closed += (_, _) =>
+        {
+            _pluginWindows.Remove(manifest.Id);
+            owner.Closed -= CloseWithOwner;
+            // The log outlives the window by the plugin's 2 s to say goodbye.
+            _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ => log.Dispose(), TaskScheduler.Default);
+        };
+        owner.Closed += CloseWithOwner;
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        window.Show();
+        controller.Open();
+
+        void CloseWithOwner(object? _, EventArgs __) => window.Close();
     }
 
     /// <summary>A document open from inside <paramref name="cellDir"/>, or null — Replace would change it under its editor.</summary>

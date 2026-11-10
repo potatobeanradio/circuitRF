@@ -380,6 +380,12 @@ was agreed in `hello`, so an unknown type means the two sides disagree about the
   Past it the panel says the plugin is not responding and offers Stop. The window never blocks on a plugin.
 - **One process per open panel.** It lives until the panel closes. If it exits unexpectedly the panel says so,
   keeps the last views, and restarts it on the next change.
+- **What a reply's fields mean to a panel** (brief-plg-2). `readouts` is keyed by `readout` parameter: a number is in
+  base SI and shown with an SI prefix in the parameter's `unit`, `{value, unit}` names its own unit, a string is shown
+  as written, and a `table` readout takes §5.2's object. `enabled` names parameters and buttons (by `action`, or label)
+  and is complete each time: a name absent from a reply is enabled. `set` changes those parameters' values as typing
+  them would, except that no further `update` is sent for them. **Stop** sends `cancel`; a plugin that has answered
+  nothing it was told to cancel within 2 s is restarted (`hello` only — the next change asks again).
 - **`context`** in `hello` says where the plugin was opened from: the workspace, and the selected cell, layout
   selection or result when it came from a right-click.
 

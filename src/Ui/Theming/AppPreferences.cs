@@ -168,6 +168,17 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, double>? PluginDialogWidths { get; set; }
 
+    // brief-plg-2 — plugin id → its panel window as last left: size, split positions, selected tabs. Per user.
+    [JsonPropertyName("plugin_windows")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, CircuitRF.Ui.Plugins.PluginWindowMemory>? PluginWindows { get; set; }
+
+    // brief-plg-2 — "<plugin id>|<workspace folder>" → the parameter text last sent from its panel there, so the panel
+    // reopens where it was left. Per user and never in .cws: a colleague opening the workspace starts from the defaults.
+    [JsonPropertyName("plugin_last_params")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, Dictionary<string, string>>? PluginLastParams { get; set; }
+
     // Which Python environment runs each gdsfactory kit on this machine, keyed by the kit's module
     // name (brief-gdf-2 R-gdf2-2b). Per USER, beside the trust decisions, and never in .cws: a
     // colleague opening the workspace is asked for theirs rather than handed a path from this machine.

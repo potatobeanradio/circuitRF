@@ -1,0 +1,43 @@
+{
+  "apiVersion": 1,
+  "id": "example.l-match",
+  "name": "L-Network Match",
+  "version": "1.0.0",
+  "summary": "A two-element L-network between two resistances, recalculated as you type.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "python": { "entry": "calculator.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "panel",
+  "menu": "Examples",
+  "params": [
+    { "name": "f0",      "label": "Frequency", "kind": "quantity", "unit": "Hz",  "default": "2.4 GHz", "min": "1 kHz", "chars": 10 },
+    { "name": "rs",      "label": "Source R",  "kind": "quantity", "unit": "Ohm", "default": "50 Ohm",  "min": "0.1 Ohm", "chars": 10 },
+    { "name": "rl",      "label": "Load R",    "kind": "quantity", "unit": "Ohm", "default": "200 Ohm", "min": "0.1 Ohm", "chars": 10 },
+    { "name": "style",   "label": "Response",  "kind": "choice",   "options": ["Low-pass", "High-pass"], "default": "Low-pass" },
+    { "name": "series",  "label": "Series",    "kind": "readout" },
+    { "name": "shunt",   "label": "Shunt",     "kind": "readout" },
+    { "name": "q",       "label": "Loaded Q",  "kind": "readout" },
+    { "name": "summary", "label": "Network",   "kind": "readout" }
+  ],
+
+  "ui": {
+    "title": "L-Network Match",
+    "size": [460, 600],
+    "layout": { "column": [
+      { "group": "Specification", "children": [
+        { "param": "f0" }, { "param": "rs" }, { "param": "rl" }, { "param": "style" }
+      ]},
+      { "group": "Elements", "children": [
+        { "readout": "series" }, { "readout": "shunt" }, { "readout": "q" }
+      ]},
+      { "readout": "summary", "as": "text" },
+      { "messages": true },
+      { "button": "Place in workspace", "action": "commit" }
+    ]}
+  }
+}

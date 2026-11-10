@@ -104,7 +104,7 @@ public sealed record PluginManifest
     public IReadOnlyList<string> Contexts { get; init; } = [];
     public IReadOnlyList<PluginParam> Params { get; init; } = [];
     public PluginTimeouts Timeouts { get; init; } = new(null, null, null);
-    /// <summary>The panel's layout tree, kept as text until brief 2 reads it.</summary>
+    /// <summary>The panel's layout tree as written; <see cref="PluginLayoutReader"/> reads it.</summary>
     public string? UiJson { get; init; }
 
     /// <summary>The <c>id</c>'s last dotted part — the cell name a placement falls back to.</summary>
@@ -229,7 +229,7 @@ public static partial class PluginManifestReader
 
             if (d.Any(x => x.IsError)) return (null, d);
 
-            return (new PluginManifest
+            var manifest = new PluginManifest
             {
                 ApiVersion   = api,
                 Id           = id,
@@ -247,7 +247,16 @@ public static partial class PluginManifestReader
                 Params       = parameters,
                 Timeouts     = timeouts,
                 UiJson       = ui,
-            }, d);
+            };
+
+            // A panel's layout is part of the manifest: a tree that names an undeclared parameter is refused here, so
+            // the list, the window and the command line all say so the same way (brief-plg-2 §1).
+            if (ui is not null && kind == PluginKind.Panel)
+            {
+                d.AddRange(PluginLayoutReader.Read(ui, manifest).Diagnostics);
+                if (d.Any(x => x.IsError)) return (null, d);
+            }
+            return (manifest, d);
         }
     }
 

@@ -435,6 +435,18 @@ dotnet run --project tools/UiSnapshot --no-build -- --plugin-trust <plugin folde
 dotnet run --project tools/UiSnapshot --no-build -- --plugin-dialog <plugin folder> [--plugin-workspace <dir>] [--plugin-dialog-width <px>] -o out.png
 ```
 
+**A `panel` plugin's window** (brief-plg-2), with the plugin really running. `--plugin-state` picks what is captured:
+`idle` (the first reply), `error` (starting from the `--plugin-set name=text` values — a plugin error, or a field marked
+because its text cannot be sent), `busy` (a second update held unanswered with a progress frame), `stopped` (the process
+reported ended after its first reply) or `disabled` (a second reply that disables every control). Only the last three
+alter what the plugin said. `--plugin-shift-check` captures `disabled` and prints every control's bounds before and after,
+exiting 1 if any moved. `--size WxH` and `--dark` apply.
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator [--plugin-state idle|busy|error|stopped|disabled] [--plugin-set rl="200 kOhm"] -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator --plugin-shift-check -o out.png
+```
+
 **The Run settings dialog** (brief CP-2) of an EM Field Data block's result record, what differs from its setup now marked:
 
 ```

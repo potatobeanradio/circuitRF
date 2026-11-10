@@ -194,6 +194,9 @@ string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? cellExistsDialog = null;                       // brief-isc-1
 string? pluginsMenu = null, pluginTrust = null, pluginDialog = null, pluginWorkspace = null;   // brief-plg-1
 double? pluginDialogWidth = null;
+string? pluginPanel = null, pluginState = null;   // brief-plg-2
+var pluginSets = new Dictionary<string, string>(StringComparer.Ordinal);
+bool pluginShiftCheck = false;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
@@ -298,6 +301,11 @@ for (int i = 0; i < args.Length; i++)
         case "--plugin-trust" when i + 1 < args.Length: pluginTrust = Path.GetFullPath(args[++i]); break;
         case "--plugin-dialog" when i + 1 < args.Length: pluginDialog = Path.GetFullPath(args[++i]); break;
         case "--plugin-workspace" when i + 1 < args.Length: pluginWorkspace = Path.GetFullPath(args[++i]); break;
+        case "--plugin-panel" when i + 1 < args.Length: pluginPanel = Path.GetFullPath(args[++i]); break;
+        case "--plugin-state" when i + 1 < args.Length: pluginState = args[++i]; break;
+        case "--plugin-set" when i + 1 < args.Length && args[i + 1].Contains('='):
+            { string kv = args[++i]; pluginSets[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..]; break; }
+        case "--plugin-shift-check": pluginShiftCheck = true; break;
         case "--plugin-dialog-width" when i + 1 < args.Length: pluginDialogWidth = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
@@ -466,6 +474,15 @@ if (cellExistsDialog is not null && output is not null)
     dialog.CaptureRenderedFrame()!.Save(output);
     Console.WriteLine($"wrote {output}");
     return 0;
+}
+// brief-plg-2 — a panel plugin's window, with the plugin running (PluginPanelSnapshot).
+if (pluginPanel is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } panelApp) panelApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return PluginPanelSnapshot.Run(pluginPanel, pluginState ?? "idle", pluginSets, pluginWorkspace, pluginShiftCheck,
+                                   sizeGiven ? width : null, sizeGiven ? height : null, output);
 }
 // brief-plg-1 — Tools ▸ Plugins (--plugins-menu <folder of plugin folders> | none), the permission prompt
 // (--plugin-trust <plugin folder>) and an action plugin's parameter dialog (--plugin-dialog <plugin folder>

@@ -112,6 +112,11 @@ public static class PluginParams
         return (errors.Count == 0 ? values : null, errors);
     }
 
+    /// <summary>One parameter's text as the plugin receives it, or why it cannot be sent — what a panel marks on the
+    /// control before anything is sent (brief-plg-2 §3).</summary>
+    public static (JsonNode? Node, string? Error) ResolveValue(PluginParam p, string text, PluginParamContext context)
+        => p.Kind == PluginParamKind.Readout ? (null, "a readout is filled by the plugin.") : ResolveOne(p, text, context);
+
     private static (JsonNode? Node, string? Error) ResolveOne(PluginParam p, string text, PluginParamContext ctx)
     {
         string t = text.Trim();

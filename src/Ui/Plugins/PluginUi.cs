@@ -1,7 +1,9 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
+using CircuitRF.Design.Plugins;
 
 namespace CircuitRF.Ui.Plugins;
 
@@ -34,6 +36,31 @@ internal static class PluginUi
         // The template's padding and border are not applied until the box is styled; this is what they add.
         const double Chrome = 22;
         return System.Math.Ceiling(text.Width + Chrome);
+    }
+
+    /// <summary>
+    /// A table readout (<c>plugins.md</c> §5.2): a header row and the rows, every cell already formatted in its column's
+    /// unit, numbers right-aligned. Brief 3's <c>table</c> view draws the same object.
+    /// </summary>
+    public static Control Table(PluginReadoutValue value)
+    {
+        if (!value.IsTable) return new SelectableTextBlock { Text = value.Text, FontSize = 12 };
+        var grid = new Grid { ColumnSpacing = 14, RowSpacing = 2 };
+        int cols = System.Math.Max(value.Columns!.Count, value.Rows!.Count == 0 ? 0 : value.Rows.Max(r => r.Count));
+        for (int c = 0; c < cols; c++) grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        for (int r = 0; r <= value.Rows.Count; r++) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        for (int c = 0; c < value.Columns.Count; c++)
+            Put(new TextBlock { Text = value.Columns[c], FontSize = 12, FontWeight = FontWeight.SemiBold, Opacity = 0.8 }, 0, c);
+        for (int r = 0; r < value.Rows.Count; r++)
+            for (int c = 0; c < value.Rows[r].Count; c++)
+            {
+                string text = value.Rows[r][c];
+                bool numeric = text.Length > 0 && (char.IsAsciiDigit(text[0]) || text[0] is '-' or '+' or '.');
+                Put(new SelectableTextBlock { Text = text, FontSize = 12, HorizontalAlignment = numeric ? HorizontalAlignment.Right : HorizontalAlignment.Left }, r + 1, c);
+            }
+        return grid;
+
+        void Put(Control cell, int row, int col) { Grid.SetRow(cell, row); Grid.SetColumn(cell, col); grid.Children.Add(cell); }
     }
 
     /// <summary>A theme resource as a brush: some keys hold a <see cref="Color"/>, which a brush property cannot take.</summary>

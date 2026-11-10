@@ -52,6 +52,32 @@ public static class PluginHost
             p.PluginDialogWidths[pluginId] = Math.Round(width);
         });
 
+    /// <summary><paramref name="pluginId"/>'s panel window as last left, or null.</summary>
+    public static PluginWindowMemory? WindowMemory(string pluginId)
+        => AppPreferencesIo.Load().PluginWindows?.GetValueOrDefault(pluginId);
+
+    /// <summary>Remembers <paramref name="pluginId"/>'s panel window, on this machine.</summary>
+    public static void RecordWindowMemory(string pluginId, PluginWindowMemory memory)
+        => AppPreferencesIo.Update(p =>
+        {
+            p.PluginWindows ??= new Dictionary<string, PluginWindowMemory>(StringComparer.Ordinal);
+            p.PluginWindows[pluginId] = memory;
+        });
+
+    private static string ParamsKey(string pluginId, string? workspaceDir) => $"{pluginId}|{workspaceDir ?? ""}";
+
+    /// <summary>The parameter text last sent from <paramref name="pluginId"/>'s panel in this workspace, or null.</summary>
+    public static IReadOnlyDictionary<string, string>? LastParams(string pluginId, string? workspaceDir)
+        => AppPreferencesIo.Load().PluginLastParams?.GetValueOrDefault(ParamsKey(pluginId, workspaceDir));
+
+    /// <summary>Remembers the parameter text last sent, per plugin per workspace, in this user's preferences.</summary>
+    public static void RecordLastParams(string pluginId, string? workspaceDir, IReadOnlyDictionary<string, string> values)
+        => AppPreferencesIo.Update(p =>
+        {
+            p.PluginLastParams ??= new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+            p.PluginLastParams[ParamsKey(pluginId, workspaceDir)] = new Dictionary<string, string>(values, StringComparer.Ordinal);
+        });
+
     /// <summary>Where the plugin came from, for the permission prompt.</summary>
     public static string SourceText(PluginEntry entry)
         => entry.Source == PluginSource.Linked ? $"the folder {entry.Directory}" : $"installed in {entry.Directory}";

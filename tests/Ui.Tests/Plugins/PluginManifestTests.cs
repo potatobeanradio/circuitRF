@@ -21,7 +21,7 @@ public class PluginManifestTests
         { "name": "lengths", "kind": "readout" }
       ],
       "timeouts": { "update": 5, "commit": 60 },
-      "ui": { "layout": "row" },
+      "ui": { "layout": { "row": [ { "param": "type" }, { "readout": "lengths", "as": "table" } ] } },
       "somethingNewer": { "ignored": true }
     }
     """;

@@ -10,6 +10,8 @@ responsive, say what happened and leave no process behind.
     wrongid    answers an update with an id it was never sent
     outside    places a file it wrote outside its staging folder
     stderr     writes 10 MB to stderr, then behaves
+    exit-after-first-reply
+               answers the first update, then exits - a plugin that crashes between two changes
 """
 import json
 import os
@@ -91,7 +93,12 @@ def main():
             staging = msg["staging"]
             send({"type": "hello", "apiVersion": 1})
         elif kind == "update":
-            send({"type": "reply", "id": msg["id"] + (1000 if mode == "wrongid" else 0), "readouts": {}})
+            send({"type": "reply", "id": msg["id"] + (1000 if mode == "wrongid" else 0), "readouts": {},
+                  "messages": [{"severity": "info", "text": "answered n=%s" % msg["params"].get("n")}]})
+            if mode == "exit-after-first-reply":
+                sys.stderr.write("exiting after the first reply\n")
+                sys.stderr.flush()
+                sys.exit(4)
         elif kind == "commit":
             outside = os.path.join(os.path.dirname(staging), "escaped.cnl")
             with open(outside, "w", encoding="utf-8") as f:

@@ -8,7 +8,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Design.Plugins;
 
@@ -65,7 +64,6 @@ public static class PluginActionDialog
         };
 
         var readers = new Dictionary<string, Func<string>>(StringComparer.Ordinal);
-        var readouts = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), RowSpacing = 6, ColumnSpacing = 8 };
         int row = 0;
 
@@ -76,93 +74,10 @@ public static class PluginActionDialog
             Grid.SetRow(label, row);
             grid.Children.Add(label);
 
-            Control editor;
-            Control? trailing = null;
-            string initial = PluginParams.DefaultText(p);
-            switch (p.Kind)
-            {
-                case PluginParamKind.Bool:
-                {
-                    var box = new CheckBox { IsChecked = initial == "true" };
-                    readers[p.Name] = () => box.IsChecked == true ? "true" : "false";
-                    editor = box;
-                    break;
-                }
-                case PluginParamKind.Choice:
-                case PluginParamKind.Substrate:
-                case PluginParamKind.Technology:
-                case PluginParamKind.Cell:
-                case PluginParamKind.Result:
-                {
-                    IReadOnlyList<string> items = p.Kind switch
-                    {
-                        PluginParamKind.Choice     => p.Options,
-                        PluginParamKind.Substrate  => PluginParams.SubstrateChoices(workspaceDir),
-                        PluginParamKind.Technology => PluginParams.TechnologyChoices(workspaceDir),
-                        PluginParamKind.Cell       => PluginParams.CellChoices(workspaceDir),
-                        _                          => PluginParams.ResultChoices(workspaceDir),
-                    };
-                    var combo = new ComboBox { ItemsSource = items, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
-                    combo.SelectedItem = items.Contains(initial) ? initial : items.FirstOrDefault();
-                    if (items.Count == 0) combo.PlaceholderText = workspaceDir is null ? "needs an open workspace" : "none in this workspace";
-                    readers[p.Name] = () => combo.SelectedItem as string ?? "";
-                    editor = combo;
-                    break;
-                }
-                case PluginParamKind.File:
-                {
-                    var box = new TextBox { Text = initial, FontSize = 12 };
-                    var pick = new Button { Content = "…", FontSize = 12, Padding = new Thickness(8, 2) };
-                    pick.Click += async (_, _) =>
-                    {
-                        var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-                        {
-                            AllowMultiple = false,
-                            FileTypeFilter = p.Extensions.Count == 0 ? null :
-                                [new FilePickerFileType(string.Join(", ", p.Extensions)) { Patterns = [.. p.Extensions.Select(e => "*" + (e.StartsWith('.') ? e : "." + e))] }],
-                        });
-                        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) box.Text = path;
-                    };
-                    readers[p.Name] = () => box.Text ?? "";
-                    editor = box;
-                    trailing = pick;
-                    break;
-                }
-                case PluginParamKind.Readout:
-                {
-                    var value = new TextBlock { Text = "—", FontSize = 12, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
-                    readouts[p.Name] = value;
-                    editor = value;
-                    break;
-                }
-                default:
-                {
-                    var box = new TextBox { Text = initial, FontSize = 12 };
-                    readers[p.Name] = () => box.Text ?? "";
-                    editor = box;
-                    if (p.Kind == PluginParamKind.Quantity)
-                        trailing = new TextBlock { Text = UnitGlyph(p.Unit!), FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, MinWidth = 28 };
-                    break;
-                }
-            }
-
-            if (p.IsTyped && p.ClampedChars is { } chars && editor is TextBox sized)
-            {
-                // The author's size hint: a box for about that many characters, its unit or picker right beside it.
-                sized.Width = PluginUi.TypedWidth(sized, chars);
-                sized.HorizontalAlignment = HorizontalAlignment.Left;
-                var together = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                together.Children.Add(sized);
-                if (trailing is not null) together.Children.Add(trailing);
-                Grid.SetRow(together, row); Grid.SetColumn(together, 1); Grid.SetColumnSpan(together, 2);
-                grid.Children.Add(together);
-            }
-            else
-            {
-                Grid.SetRow(editor, row); Grid.SetColumn(editor, 1);
-                grid.Children.Add(editor);
-                if (trailing is not null) { Grid.SetRow(trailing, row); Grid.SetColumn(trailing, 2); grid.Children.Add(trailing); }
-            }
+            // The same control the panel draws (PluginParamControls), so the dialog and the panel cannot differ.
+            var control = PluginParamControls.Build(p, workspaceDir, PluginParams.DefaultText(p), p.Chars, () => dialog);
+            if (p.Kind != PluginParamKind.Readout) readers[p.Name] = control.Read;
+            control.PlaceIn(grid, row);
             row++;
         }
 
@@ -266,7 +181,4 @@ public static class PluginActionDialog
     }
 
     private static Control Docked(Control c, Avalonia.Controls.Dock dock) { DockPanel.SetDock(c, dock); return c; }
-
-    /// <summary>The unit as the editors show it: Ω for Ohm, µ for u.</summary>
-    private static string UnitGlyph(string unit) => unit switch { "Ohm" => "Ω", "metre" => "m", _ => unit };
 }
