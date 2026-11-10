@@ -69,7 +69,7 @@ namespace RfCore.Signals
         }
 
         /// <summary>A mask that does not read, as the coded diagnostic it is, thrown as a <see cref="FormatException"/>.</summary>
-        private static FormatException Refusal(string id, string template, params (string, object)[] args)
+        private static FormatException Refusal(string id, string template, params (string Name, object? Value)[] args)
             => new(Diagnostic.Create(id, DiagnosticSeverity.Error, template, args).Render());
 
         private static double ParseOffset(string s, string item)
