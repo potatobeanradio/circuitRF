@@ -76,7 +76,11 @@ public sealed class ChainDesign
             foreach (var p in part.Parameters.Where(p => p.Numeric))
                 if (!ChainValue.TryParse(s.Get(p.Name), out _) && !(p.BlankAllowed && s.Get(p.Name).Trim().Length == 0))
                     r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number.");
-            if (part.Token == ChainParts.Combiner) combiners++;
+            if (part.Token == ChainParts.Combiner)
+            {
+                combiners++;
+                ChainParts.ReadCombiner(s, r);
+            }
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
         return r;

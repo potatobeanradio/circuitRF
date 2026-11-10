@@ -242,10 +242,10 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, CliEntry.Run(["chain", path, "--to-schematic", "--replace"]));
 
         // The drawing is the netlist: each bench extracts to the instances the transfer wrote, the array's four
-        // branches and the combiner's lines and resistors included.
+        // branches and the combiner included.
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch("Arr 1-Tone"));
         var names = model.Components.Select(c => c.InstanceName).ToHashSet();
-        foreach (string n in new[] { "SRC1", "SRC4", "LNA_1", "LNA_4", "PS_1", "PATH2", "CMB_L1", "CMB_L4", "CMB_R3", "CMB_IL", "BPF", "A2", "PO" })
+        foreach (string n in new[] { "SRC1", "SRC4", "LNA_1", "LNA_4", "PS_1", "PATH2", "CMB", "BPF", "A2", "PO" })
             Assert.Contains(n, names);
     }
 
@@ -258,15 +258,15 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.NotNull(dia);
         var names = dia!.Model.Components.ToDictionary(c => c.Id, c => c.InstanceName);
 
-        // Every element's branch, the combiner's Wilkinson, the receiver after it; none of a bench's sources or rows.
-        foreach (string n in new[] { "LNA_1", "LNA_4", "PS_1", "PS_4", "PATH2", "CMB_L1", "CMB_L4", "CMB_R3", "BPF", "A2" })
+        // Every element's branch, the library's N-way Combiner, the receiver after it; none of a bench's sources or rows.
+        foreach (string n in new[] { "LNA_1", "LNA_4", "PS_1", "PS_4", "PATH2", "CMB", "BPF", "A2" })
             Assert.Contains(n, names.Values);
         Assert.DoesNotContain(dia.Model.Components, c => c.Symbol == SymbolKind.Meas || c.InstanceName.StartsWith("SRC", StringComparison.Ordinal));
 
         // A click on any of a stage's parts selects that stage: every stage has parts, and each part one stage.
         Assert.Equal(Enumerable.Range(0, d.Stages.Count), dia.StageOfComponent.Values.Distinct().Order());
         Assert.Equal(0, dia.StageOfComponent[names.Single(kv => kv.Value == "LNA_3").Key]);
-        Assert.Equal(2, dia.StageOfComponent[names.Single(kv => kv.Value == "CMB_R2").Key]);
+        Assert.Equal(2, dia.StageOfComponent[names.Single(kv => kv.Value == "CMB").Key]);
 
         // Four lines over each stage; the cascade's line carries the budget's own numbers.
         var notes = dia.Model.CanvasObjects.OfType<EditableText>().Select(t => t.Text).ToList();
@@ -362,12 +362,196 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
     }
 
+    // ── the combiner's four variants ─────────────────────────────────────────
+
+    /// <summary>The RF array with the combiner as given; a tree's two levels set level by level.</summary>
+    private static ChainDesign Variant(string topology, string kind, string pathIl = "")
+    {
+        bool tree = topology == "Tree";
+        return new()
+        {
+            FrequencyHz = 2.45e9, BandwidthHz = 4.5e6, InputPowerDbm = -80, TemperatureK = 290,
+            Stages =
+            [
+                S("LNA", "Amp", ("Gain", "18"), ("NF", "1.2"), ("IP3", "10")),
+                S("PS", "PhaseShifter", ("Phase", "30"), ("IL", "5"), ("NF", "5"), ("IIP3", "15")),
+                S("CMB", "Combiner", ("N", "4"), ("Topology", topology), ("Kind", kind), ("IL", tree ? "0.5, 0.3" : "0.5"),
+                  ("PathIL", pathIl), ("Gain", tree ? "10, 8" : "10"), ("NF", tree ? "2, 3" : "2"), ("IIP3", tree ? "10, 16" : "10"),
+                  ("Steer", "45")),
+                S("A2", "Amp", ("Gain", "14"), ("NF", "2"), ("IP3", "20")),
+            ],
+        };
+    }
+
+    /// <summary>
+    /// Each variant's stage budget, by hand from the cascade of its levels: signal gain n·g and noise gain g for a
+    /// passive n-way level of loss 1/g, T0·(1/g − 1) of noise; an active level's amplifier after it. Referred to one
+    /// element's input. The tree's two levels are set one by one: IL 0.5 and 0.3 dB, and so on.
+    /// </summary>
+    [Fact]
+    public void EveryCombinerVariant_IsTheCascadeOfItsLevels()
+    {
+        const double t0 = 290;
+        StageBudget B(string topo, string kind, string path = "")
+        {
+            var r = ChainBudget.Evaluate(Variant(topo, kind, path));
+            Assert.Empty(r.Refusals);
+            return r.Stages[2].Stage;
+        }
+        double g1 = Lin(-0.5), g2 = Lin(-0.3);
+
+        var dp = B("Direct", "Passive");
+        Assert.Equal(Db(4 * g1), dp.GainDb, 12);
+        Assert.Equal(-0.5, dp.NoiseGainDb, 12);
+        Assert.Equal(0.5, dp.NfDb, 12);
+
+        // Two 2:1 levels: their losses cascade, and their noise as two pads at T0.
+        var tp = B("Tree", "Passive");
+        Assert.Equal(Db(2 * g1 * 2 * g2), tp.GainDb, 12);
+        Assert.Equal(0.8, tp.NfDb, 12);
+        Assert.Equal(Db(4), tp.GainDb - tp.NoiseGainDb, 12);
+
+        // Direct, active: the N:1 then one amplifier (10 dB, NF 2 dB, IIP3 10 dBm) seeing four elements' power.
+        var da = B("Direct", "Active");
+        double te = t0 * (1 / g1 - 1) + t0 * (Lin(2) - 1) / g1;
+        Assert.Equal(Db(4 * g1 * Lin(10)), da.GainDb, 12);
+        Assert.Equal(Db(1 + te / t0), da.NfDb, 12);
+        Assert.Equal(10 - Db(4 * g1), da.Iip3Dbm, 12);
+
+        // A tree, active: level 1 (2:1 at 0.5 dB, amplifier 10 dB / 2 dB / 10 dBm), level 2 (0.3 dB, 8 dB / 3 dB / 16 dBm).
+        var ta = B("Tree", "Active");
+        double gs = 1, gn = 1, inv3 = 0;
+        te = 0;
+        foreach (var (g, ga, nf, ip) in new[] { (g1, 10.0, 2.0, 10.0), (g2, 8.0, 3.0, 16.0) })
+        {
+            te += t0 * (1 / g - 1) / gn; gs *= 2 * g; gn *= g;
+            te += t0 * (Lin(nf) - 1) / gn; inv3 += gs / Lin(ip); gs *= Lin(ga); gn *= Lin(ga);
+        }
+        Assert.Equal(Db(gs), ta.GainDb, 12);
+        Assert.Equal(Db(gn), ta.NoiseGainDb, 12);
+        Assert.Equal(Db(1 + te / t0), ta.NfDb, 12);
+        Assert.Equal(-Db(inv3), ta.Iip3Dbm, 12);
+        Assert.Equal(-Db(inv3) - ChainParts.TanhP1dbBelowIip3, ta.Ip1dbDbm, 9);
+
+        // Unequal paths: signal (Σa)²/N, noise Σa²/N, array gain (Σa)²/Σa².
+        var w = B("Direct", "Passive", "1, 0, 0, 1");
+        double a = Math.Pow(10, -1 / 20.0), sa = 2 + 2 * a, sa2 = 2 + 2 * a * a;
+        Assert.Equal(Db(sa * sa / 4 * g1), w.GainDb, 12);
+        Assert.Equal(Db(sa2 / 4 * g1), w.NoiseGainDb, 12);
+        Assert.Equal(Db(sa * sa / sa2), ChainBudget.Evaluate(Variant("Direct", "Passive", "1, 0, 0, 1")).Totals!.ArrayGainDb, 12);
+    }
+
+    [Fact]
+    public void ACombinerThatCannotBeBuilt_IsRefusedWithItsReason()
+    {
+        string[] Why(params (string K, string V)[] p)
+        {
+            var d = Variant("Direct", "Passive");
+            foreach (var (k, v) in p) d.Stages[2].Parameters[k] = v;
+            return [.. ChainBudget.Evaluate(d).Refusals];
+        }
+        Assert.Contains(Why(("Topology", "Tree"), ("N", "6")), x => x.Contains("power of 2", StringComparison.Ordinal));
+        Assert.Contains(Why(("Topology", "Tree"), ("N", "8"), ("IL", "0.1, 0.2")), x => x.Contains("3 levels", StringComparison.Ordinal));
+        Assert.Contains(Why(("Kind", "Active"), ("PathIL", "1, 0, 0, 1")), x => x.Contains("passive combiner's", StringComparison.Ordinal));
+        Assert.Contains(Why(("PathIL", "1, 0")), x => x.Contains("one per element", StringComparison.Ordinal));
+        Assert.Contains(Why(("Topology", "Star")), x => x.Contains("neither Direct nor Tree", StringComparison.Ordinal));
+        Assert.Empty(Why(("Topology", "Tree"), ("N", "8"), ("IL", "0.1, 0.2, 0.3")));
+    }
+
+    /// <summary>
+    /// Every variant transferred and run: the S-parameter gain, NF and each stage's NF, the compression point, and the
+    /// two-tone intercepts and each stage's, against the budget. A tree places levels of 2:1 Combiners, an active
+    /// combiner an Amp after each.
+    /// </summary>
+    [Theory]
+    [InlineData("Direct", "Passive", "")]
+    [InlineData("Tree", "Passive", "")]
+    [InlineData("Direct", "Active", "")]
+    [InlineData("Tree", "Active", "")]
+    [InlineData("Tree", "Passive", "1, 0, 0, 1")]
+    public void EveryCombinerVariant_SimulatesToItsBudget(string topology, string kind, string pathIl)
+    {
+        var d = Variant(topology, kind, pathIl);
+        string chain = topology + kind + (pathIl.Length > 0 ? "W" : "");
+        var one = Bench(d, chain, ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
+        Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);
+        foreach (var s in d.Stages) Assert.InRange(Measure(one, $"NF_{s.Name}_sim") - Measure(one, $"NF_{s.Name}_calc"), -1e-6, 1e-6);
+        Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
+        var two = Bench(d, chain, ChainBench.TwoTone);
+        Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(two, "OIP3_err"), -1e-3, 1e-3);
+        foreach (var s in d.Stages)
+        {
+            Assert.InRange(Measure(two, $"G_{s.Name}_sim") - Measure(two, $"G_{s.Name}_calc"), -1e-3, 1e-3);
+            if (double.IsFinite(Measure(two, $"OIP3_{s.Name}_calc")))
+                Assert.InRange(Measure(two, $"OIP3_{s.Name}_sim") - Measure(two, $"OIP3_{s.Name}_calc"), -1e-3, 1e-3);
+        }
+        var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(ChainBenches.CellName(chain, ChainBench.OneTone)));
+        var combiners = model.Components.Count(c => c.Symbol == SymbolKind.Combiner);
+        Assert.Equal(topology == "Tree" ? 3 : 1, combiners);
+        Assert.Equal(kind == "Active" ? (topology == "Tree" ? 3 : 1) : 0, model.Components.Count(c => c.InstanceName.StartsWith("CMB_A", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// The Steering bench: a plane wave swept from −90° to 90° for three steer angles. The simulated pattern is the
+    /// closed-form array factor, with and without a taper set in its VAR block; at each beam's own peak the gain is the
+    /// budget's, the NF from the wave's port stays put, and the array gain is the budget's 10·log10 N.
+    /// </summary>
+    [Fact]
+    public void TheSteeringBench_PatternIsTheArrayFactor_AndTheNfStaysPut()
+    {
+        var d = Variant("Tree", "Active");
+        var st = Bench(d, "Beam", ChainBench.Steering);
+        foreach (string a in new[] { "m30", "0", "p30" })
+        {
+            Assert.InRange(Measure(st, $"G_{a}_err"), -1e-9, 1e-9);
+            Assert.InRange(Measure(st, $"NF_{a}_err"), -1e-9, 1e-9);
+            Assert.InRange(Measure(st, $"A_{a}_err"), -1e-9, 1e-9);
+        }
+        Assert.Equal(Db(4), Measure(st, "A_calc"), 12);
+        AssertPatternIsTheArrayFactor(st);
+
+        // A 6 dB taper set in the bench's own VAR block: the pattern and the closed form move together.
+        var tapered = Bench(d, "Beam", ChainBench.Steering, cnl => cnl.Replace("taper = 0", "taper = 6", StringComparison.Ordinal));
+        AssertPatternIsTheArrayFactor(tapered);
+        Assert.True(Measure(tapered, "G_0_err") < -0.1, "the taper's own coherent loss is in the peak");
+    }
+
+    private static void AssertPatternIsTheArrayFactor(DataSet ds)
+    {
+        var pat = ds["measurements.Pattern_sim"];
+        var err = ds["measurements.Pattern_err"].RealValues;
+        var p = pat.RealValues;
+        double worst = 0;
+        for (int i = 0; i < p.Length; i++)
+            if (p[i] > -40) worst = Math.Max(worst, Math.Abs(err[i]));
+        Assert.InRange(worst, 0, 1e-6);
+        Assert.Equal(543, p.Length);
+    }
+
+    /// <summary>The Combiners bench: the four variants side by side in one S-parameter run, gain and NF each on its
+    /// own budget.</summary>
+    [Fact]
+    public void TheCombinersBench_SetsTheFourVariantsSideBySide()
+    {
+        var d = Variant("Direct", "Passive");
+        var cb = Bench(d, "Four", ChainBench.Combiners);
+        foreach (var (_, _, code) in ChainBenches.CombinerVariants)
+        {
+            Assert.InRange(Measure(cb, $"G_{code}_err"), -1e-9, 1e-9);
+            Assert.InRange(Measure(cb, $"NF_{code}_err"), -1e-9, 1e-9);
+            Assert.Equal(ChainBudget.Evaluate(ChainBenches.Variant(d, code[0] == 'D' ? "Direct" : "Tree", code[1] == 'P' ? "Passive" : "Active"))
+                             .Totals!.GainDb, Measure(cb, $"G_{code}_calc"), 12);
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");
 
     /// <summary>Transfers <paramref name="d"/> and runs one of its benches as Simulate runs it.</summary>
-    private DataSet Bench(ChainDesign d, string chain, ChainBench which)
+    private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null)
     {
         Directory.CreateDirectory(_ws);
         if (!File.Exists(Path.Combine(_ws, ".cws")))
@@ -375,12 +559,13 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         if (!Directory.Exists(Path.Combine(_ws, ChainBenches.CellName(chain, which))))
         {
             var w = ChainBenches.Write(d, _ws, chain);
-            Assert.True(w.SchematicPaths.Count == 3, string.Join("\n", w.Refusals));
+            Assert.True(w.SchematicPaths.Count == ChainBenches.BenchesFor(d).Count, string.Join("\n", w.Refusals));
         }
         string cell = ChainBenches.CellName(chain, which);
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell));
         string netlist = Path.Combine(_ws, "netlist.cnl");
-        File.WriteAllText(netlist, SchematicCircuit.CnlTextOf(model, cell));
+        string text = SchematicCircuit.CnlTextOf(model, cell);
+        File.WriteAllText(netlist, edit?.Invoke(text) ?? text);
         var run = SchematicRunService.RunNetlist(netlist, _ws);
         Assert.True(run.Status == RunStatus.Success, $"{cell}: {run.StatusMessage}");
         foreach (var x in run.Warnings) output.WriteLine($"{cell}: warning: {x}");

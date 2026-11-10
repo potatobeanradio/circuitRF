@@ -2,18 +2,21 @@
 //
 // SEVEN ARE THE SYSTEM LIBRARY'S OWN BLOCKS — Amp, Mixer, Atten, Filter, Switch, Circulator, Coupler — and a stage of
 // one of them carries that block's own parameters, with the block's own defaults (read from ComponentTypeRegistry, so
-// a stage and a freshly placed block cannot disagree). The library has no phase shifter, limiter or N-way
-// splitter/combiner, so FOUR ARE COMPOSED of parts it does have, and the transfer places exactly that composition:
+// a stage and a freshly placed block cannot disagree). The splitter and the array combiner are the library's N-way
+// Combiner block, an active combiner that block with an Amp after it. The library has no phase shifter or limiter, so
+// TWO ARE COMPOSED of parts it does have, and the transfer places exactly that composition:
 //
 //   PhaseShifter  an Amp (gain −IL, its NF and intercept) and a TLIN whose electrical length is the phase
 //   Limiter       an Amp (gain −IL, NF = IL) whose intercept puts its 1 dB compression point at P1dB
-//   Splitter      an N-way Wilkinson divider of TLINs and resistors, one output used, the others terminated
-//   Combiner      the same N-way Wilkinson, every input used: the array combiner
+//   Splitter      a Combiner used from its common port, one output followed, the others terminated
+//   Combiner      Direct: one N:1 Combiner; Tree: log2(N) levels of 2:1 Combiners; Active: an Amp after each
 //
 // The budget of each is closed form. A matched passive part at T0 has NF = its loss. An ideal Amp's and Mixer's
 // 1 dB compression point is its tanh limiter's own, IIP3 − 8.9625 dB (src/Core/Devices/ThirdOrderLimiter.cs), which is
 // what the transfer's simulation then measures. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
-// gain: N element signals in phase add in amplitude, their uncorrelated noise in power.
+// gain: N element signals in phase add in amplitude, their uncorrelated noise in power. Each variant of the combiner is
+// budgeted as the cascade of its own levels (CombinerSpec.Budget), so a tree's losses, gains, noise and intercepts
+// accumulate level by level exactly as a chain's do.
 
 using CircuitRF.Design.Schematic;
 
@@ -164,25 +167,157 @@ public static class ChainParts
                 double il = Num(s, "IL"), p1 = Num(s, "P1dB", 10);
                 return new(-il, -il, il, p1 + TanhP1dbBelowIip3, p1, 1, []);
             }),
-        new(Splitter, "N-way splitter (composed)", false,
+        new(Splitter, "N-way splitter", true,
             [new("N", "2", "", Help: "number of ways"), new("IL", "0.3", "dB", Help: "excess loss above the split")],
-            "An N-way Wilkinson divider, one output followed: a loss of 10·log10(N) + IL, and that loss is its noise figure.",
+            "The library's N-way Combiner used from its common port, one output followed and the others terminated: a " +
+            "loss of 10·log10(N) + IL, and that loss is its noise figure.",
             s =>
             {
                 int n = Math.Max(2, (int)Math.Round(Num(s, "N", 2)));
                 return Passive(10 * Math.Log10(n) + Num(s, "IL"));
             }),
-        new(Combiner, "N-way array combiner (composed)", false,
+        new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
-             new("IL", "0.5", "dB", Help: "excess loss above the ideal combiner"),
+             new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree"],
+                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2"),
+             new("Kind", "Passive", "", Numeric: false, Options: ["Passive", "Active"],
+                 Help: "Active: an amplifier after each combiner"),
+             new("IL", "0.5", "dB", Numeric: false,
+                 Help: "each combiner's loss above the ideal split; a tree: one value for every level, or one per level"),
+             new("PathIL", "", "dB", Numeric: false, BlankAllowed: true,
+                 Help: "passive only: each element path's own extra loss, N values (a taper); blank: none"),
+             new("Gain", "10", "dB", Numeric: false, Help: "active only: each combiner's amplifier; one value, or one per level"),
+             new("NF", "2", "dB", Numeric: false, Help: "active only: each amplifier's noise figure; one value, or one per level"),
+             new("IIP3", "10", "dBm", Numeric: false, Help: "active only: each amplifier's input intercept; one value, or one per level"),
              new("Steer", "0", "deg", Help: "phase step between adjacent elements of the arriving wave; the phase shifters remove it")],
-            "An N-way Wilkinson combiner fed by N identical branches in phase: signal +10·log10(N), noise not, so the " +
-            "SNR improves by 10·log10(N). Its own noise figure is its excess loss.",
-            s =>
-            {
-                int n = Math.Max(2, (int)Math.Round(Num(s, "N", 4)));
-                double il = Num(s, "IL");
-                return new(10 * Math.Log10(n) - il, -il, il, double.PositiveInfinity, double.PositiveInfinity, n, []);
-            }),
+            "N identical branches combined in phase: signal +10·log10(N), uncorrelated noise not, so the SNR improves by " +
+            "10·log10(N). Direct is one N:1 combiner, Tree log2(N) levels of 2:1 ones; a passive combiner's noise figure " +
+            "is its loss, an active one cascades its amplifiers level by level.",
+            s => ReadCombiner(s).Budget()),
     ];
+
+    // ── the combiner's variants ──────────────────────────────────────────────
+
+    /// <summary>A text list of numbers, comma- or semicolon-separated, each with or without its unit.</summary>
+    internal static bool TryList(string text, out List<double> values)
+    {
+        values = [];
+        foreach (var item in text.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!ChainValue.TryParse(item, out double v)) return false;
+            values.Add(v);
+        }
+        return true;
+    }
+
+    /// <summary>A Combiner stage, read; the refusals that stop it are listed and the rest defaulted.</summary>
+    public static CombinerSpec ReadCombiner(ChainStage s, List<string>? refusals = null)
+    {
+        void No(string why) => refusals?.Add($"Stage '{s.Name}': {why}");
+        int n = Math.Max(2, (int)Math.Round(Num(s, "N", 4)));
+        string topo = s.Get("Topology").Trim(), kind = s.Get("Kind").Trim();
+        bool tree = topo.Equals("Tree", StringComparison.OrdinalIgnoreCase);
+        bool active = kind.Equals("Active", StringComparison.OrdinalIgnoreCase);
+        if (topo.Length > 0 && !tree && !topo.Equals("Direct", StringComparison.OrdinalIgnoreCase))
+            No($"Topology = '{topo}' is neither Direct nor Tree.");
+        if (kind.Length > 0 && !active && !kind.Equals("Passive", StringComparison.OrdinalIgnoreCase))
+            No($"Kind = '{kind}' is neither Passive nor Active.");
+        if (tree && (n & (n - 1)) != 0)
+        {
+            No($"a tree combines in pairs, so its N is a power of 2 (2, 4, 8, …), and {n} is not. Set Topology to Direct " +
+               $"for {n} elements.");
+            tree = false;
+        }
+        int levels = tree ? (int)Math.Round(Math.Log2(n)) : 1;
+
+        List<double> PerLevel(string key, string fallback)
+        {
+            string text = s.Get(key).Trim().Length > 0 ? s.Get(key) : fallback;
+            if (!TryList(text, out var v) || v.Count == 0) { No($"{key} = '{s.Get(key)}' is not a number or a list of numbers."); v = [0]; }
+            if (v.Count != 1 && v.Count != levels)
+            {
+                No($"{key} lists {v.Count} values, and this combiner has {levels} level{(levels == 1 ? "" : "s")}: give one value " +
+                   "for every level, or one per level.");
+                v = [v[0]];
+            }
+            return v.Count == 1 ? [.. Enumerable.Repeat(v[0], levels)] : v;
+        }
+        var il = PerLevel("IL", "0");
+        var gain = active ? PerLevel("Gain", "10") : [];
+        var nf = active ? PerLevel("NF", "2") : [];
+        var ip3 = active ? PerLevel("IIP3", "10") : [];
+
+        List<double> path = [];
+        if (s.Get("PathIL").Trim().Length > 0)
+        {
+            if (!TryList(s.Get("PathIL"), out path)) No($"PathIL = '{s.Get("PathIL")}' is not a list of numbers.");
+            else if (path.Count != n) No($"PathIL lists {path.Count} losses for {n} element paths: give one per element.");
+            else if (active) No("PathIL is a passive combiner's: an active one's paths are its amplifiers, and equal.");
+            if (path.Count != n || active) path = [];
+        }
+
+        var lv = new List<CombinerLevel>();
+        for (int l = 0; l < levels; l++)
+            lv.Add(new CombinerLevel(tree ? 2 : n, tree ? n >> (l + 1) : 1, il[l],
+                                     active ? gain[l] : 0, active ? nf[l] : 0, active ? ip3[l] : double.PositiveInfinity));
+        return new CombinerSpec(n, tree, active, lv, path);
+    }
+}
+
+/// <summary>One level of a combiner: <paramref name="Parts"/> combiners of <paramref name="Ways"/> inputs each, their
+/// loss above the ideal split, and (active) the amplifier after each.</summary>
+public sealed record CombinerLevel(int Ways, int Parts, double IlDb, double GainDb, double NfDb, double Iip3Dbm);
+
+/// <summary>
+/// A Combiner stage's variant: Direct (one N:1 level) or Tree (log2 N levels of 2:1), Passive or Active, and each
+/// element path's own loss.
+///
+/// <para><b>Its budget, per element, is the cascade of its levels.</b> Write a_k = 10^(−PathIL_k/20). The element paths
+/// first: N inputs of power P with these weights combine coherently to (Σa_k)²·P/N and their uncorrelated noise to
+/// (Σa_k²/N)·n², and the weighting itself is a matched passive network at T0, so it adds T0·(N/Σa_k² − 1) referred to
+/// its input (Bosma's theorem on its S). Then each level: a passive n-way combiner of loss L adds n of coherent signal
+/// gain over 1/L, 1/L of noise gain and T0·(L − 1) of noise; an active level's amplifier follows with its gain, noise
+/// figure and intercept. Signal and noise gains, noise temperatures and intercepts cascade through the levels as they do
+/// through a chain (Friis with the noise gains, the intercept sum with the signal gains), which gives the stage's
+/// signal gain, noise gain, noise figure and intercept, all referred to ONE element's input. The array gain
+/// is the signal gain over the noise gain, (Σa_k)²/Σa_k², N for equal paths.</para>
+/// </summary>
+public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<CombinerLevel> Levels,
+                                  IReadOnlyList<double> PathIlDb)
+{
+    /// <summary>Path k's amplitude weight (1-based), 1 with no PathIL.</summary>
+    public double Weight(int k) => PathIlDb.Count == N ? Math.Pow(10, -PathIlDb[k - 1] / 20) : 1;
+
+    public StageBudget Budget()
+    {
+        static double Lin(double db) => Math.Pow(10, db / 10);
+        static double Db(double x) => 10 * Math.Log10(x);
+        const double t0 = ChainBudget.T0;
+        double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0;
+        void Sub(double sGain, double nGain, double teIn, double iip3Mw)
+        {
+            te += teIn / gn;
+            if (double.IsFinite(iip3Mw)) { inv3 += gs / iip3Mw; inv1 += gs / (iip3Mw / Lin(ChainParts.TanhP1dbBelowIip3)); }
+            gs *= sGain; gn *= nGain;
+        }
+        double sa = 0, sa2 = 0;
+        for (int k = 1; k <= N; k++) { sa += Weight(k); sa2 += Weight(k) * Weight(k); }
+        // The weights, as a share of the equal-path combination: coherent (Σa)²/N², incoherent Σa²/N.
+        double wn = sa2 / N;
+        Sub(sa * sa / ((double)N * N), wn, t0 * (1 / wn - 1), double.PositiveInfinity);
+        foreach (var l in Levels)
+        {
+            double g = Lin(-l.IlDb);
+            Sub(l.Ways * g, g, t0 * (1 / g - 1), double.PositiveInfinity);
+            if (Active) Sub(Lin(l.GainDb), Lin(l.GainDb), t0 * (Lin(l.NfDb) - 1),
+                            l.Iip3Dbm >= ChainParts.AmpLinearDbm ? double.PositiveInfinity : Lin(l.Iip3Dbm));
+        }
+        return new StageBudget(Db(gs), Db(gn), Db(1 + te / t0),
+                               inv3 > 0 ? -Db(inv3) : double.PositiveInfinity, inv1 > 0 ? -Db(inv1) : double.PositiveInfinity,
+                               N, []);
+    }
+
+    /// <summary>"Direct, passive", "Tree of 3 levels, active", as the block view and the variants bench say it.</summary>
+    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1" : $"Direct {N}:1")
+                                + (Active ? ", active" : ", passive");
 }

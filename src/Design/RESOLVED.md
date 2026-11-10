@@ -29350,3 +29350,21 @@ findings, each now in the transfer and stated in `docs/design/chain-budget.md` �
   plus 1 kHz.
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
+
+## The chain's Steering bench: what measurement expressions do over a sweep's cube (2026-11-10)
+
+The Steering bench writes the closed-form array factor as a measurement over its two sweeps (`theta_in` within
+`theta_steer`), to set it beside the simulated pattern point by point. Two limits of the measurement evaluator met
+there, both now worked around in the bench and stated in `docs/design/chain-budget.md` §3:
+
+- **`sin`, `cos` and `exp` take a number, not a cube.** Over a swept variable they fail with "Value is Cube, not
+  Complex", while `^` broadcasts element-wise, complex exponents included. The bench writes e^(j·x) as
+  `2.718281828459045^(j*x)` and sin x as `imag(...)` of it.
+- **A variable derived from a swept one reads its nominal value in a measurement.** `psi_in = 360*d_over_lambda*
+  sin(theta_in*pi/180)` drives the circuit swept, but a measurement reading `psi_in` gets its value at `theta_in = 0`.
+  The bench's array factor is written from `theta_in` and `theta_steer` themselves, which ARE the sweeps' axes, and
+  arithmetic between cubes aligns them by axis name (the factor comes out theta_in first, the pattern theta_steer first,
+  and their difference is right).
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheSteeringBench_PatternIsTheArrayFactor_AndTheNfStaysPut`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Array_Steering_ThePatternIsTheArrayFactor_AndTheNfStaysPut`.

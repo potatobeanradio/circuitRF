@@ -5,7 +5,7 @@
 //   Noise (Friis)        Te_k = Σ Te_i / Gn_(i−1),  F = 1 + Te/T0        (noise gain Gn: a Combiner's is 1/L)
 //   Intercept            1/IIP3_k = Σ G_(i−1) / IIP3_i ,  OIP3 = IIP3·G  (in-phase IM3 addition, the worst case)
 //   Compression          1/IP1dB_k = Σ G_(i−1) / IP1dB_i ,  OP1dB = IP1dB + G − 1 dB   (an approximation, as for IP3)
-//   MDS                  10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A)       (A = N after a Combiner: the array gain)
+//   MDS                  10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A)       (A: the array gain, N for equal paths)
 //   SNR                  Pin − MDS ;  sensitivity = MDS + SNR_req ;  SFDR = (2/3)(IIP3 − MDS)
 //
 // The array: N branches whose signals add in phase and whose noise is uncorrelated, so the SNR rises by N while the
@@ -53,7 +53,7 @@ public static class ChainBudget
         foreach (var b in budgets) notes.AddRange(b.Notes);
 
         double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0, f = d.FrequencyHz;
-        int a = 1;
+        double a = 1;
         var shares = new double[budgets.Count];
         for (int i = 0; i < budgets.Count; i++)
         {
@@ -64,7 +64,7 @@ public static class ChainBudget
             if (!double.IsPositiveInfinity(b.Ip1dbDbm)) inv1 += gs / Lin(b.Ip1dbDbm);
             gs *= Lin(b.GainDb);
             gn *= Lin(b.NoiseGainDb);
-            a *= b.ArrayN;
+            a *= Lin(b.GainDb - b.NoiseGainDb);   // the array gain: signal over noise gain, N for equal paths
             if (d.Stages[i].Part == ChainParts.Mixer)
                 f = Math.Abs(f - ChainValue.Or(d.Stages[i].Get("Flo"), 0));
 

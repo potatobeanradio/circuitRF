@@ -542,10 +542,11 @@ internal static class ToolCatalog
                 new("chain", ["chain"],
                     [new("path", true, "The .cchain to budget.")],
                     [new("output", "-o", OptKind.Path, "Where the budget is written as a DataSet: .npy, .mat or .txt."),
-                     new("toSchematic", "--to-schematic", OptKind.Flag, "Also write the chain's three test benches beside the .cchain: "
+                     new("toSchematic", "--to-schematic", OptKind.Flag, "Also write the chain's test benches beside the .cchain: "
                        + "<name> 1-Tone (S-parameter noise, or harmonic-balance noise with a mixer, and a compression sweep), <name> 2-Tone "
-                       + "(two-tone intercepts) and <name> Envelope (SNR and EVM with noise), each with a Data Display of the budget "
-                       + "beside every simulated number."),
+                       + "(two-tone intercepts) and <name> Envelope (SNR and EVM with noise); for an array also <name> Steering (the "
+                       + "pattern against the arriving angle, steered from VAR theta_steer) and <name> Combiners (the four combiners "
+                       + "side by side); each with a Data Display of the budget beside every simulated number."),
                      new("name", "--name", OptKind.Str, "The benches' name stem; default the .cchain's file name."),
                      new("replace", "--replace", OptKind.Flag, "Write the benches again when they exist; without it an existing one is a refusal.")],
                     "An RF receive chain's budget: per stage, the cumulative gain, NF (Friis), IIP3/OIP3, IP1dB/OP1dB, output power, "

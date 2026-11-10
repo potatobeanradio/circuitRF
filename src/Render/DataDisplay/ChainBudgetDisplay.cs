@@ -5,8 +5,9 @@
 //  finds an authored display beside the bench first). Each is Table plots: the chain budget's prediction, the simulated
 //  value and their difference side by side, then the same per stage. 1-Tone: gain, NF and compression, and each stage's
 //  NF. 2-Tone: gain and the intercepts, and each stage's gain and OIP3. Envelope: SNR, EVM, output power and noise, and
-//  the output spectrum. Every column is a measurement the bench's MEAS block computes (ChainBenches), so nothing here
-//  computes a number.
+//  the output spectrum. Steering: the array pattern against the arriving angle for each steer angle, over the closed-form
+//  array factor, and the gain, NF and array gain at each beam's peak. Combiners: the four combiners side by side. Every
+//  column is a measurement the bench's MEAS block computes (ChainBenches), so nothing here computes a number.
 // ================================================================
 
 using System.Collections.Generic;
@@ -27,7 +28,7 @@ public static class ChainBudgetDisplay
     {
         var json = new JsonSerializerOptions(DataDisplayJson.Options) { WriteIndented = true };
         var paths = new List<string>();
-        foreach (var b in System.Enum.GetValues<ChainBench>())
+        foreach (var b in ChainBenches.BenchesFor(design))
         {
             string path = Path.Combine(dir, ChainBenches.CellName(chain, b) + ".cdd");
             AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(chain, b, design, budget), json));
@@ -39,6 +40,8 @@ public static class ChainBudgetDisplay
     public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget)
     {
         string src = ChainBenches.CellName(chain, bench) + ".npy";
+        if (bench is ChainBench.Steering or ChainBench.Combiners)
+            return Display(chain, bench, src, bench == ChainBench.Steering ? Steering(src) : Combiners(src, design));
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
         {
@@ -90,12 +93,82 @@ public static class ChainBudgetDisplay
             plots.Add(t);
         }
 
-        return new DataDisplayConfig
+        return Display(chain, bench, src, plots);
+    }
+
+    private static DataDisplayConfig Display(string chain, ChainBench bench, string src, List<PlotContainerConfig> plots) => new()
+    {
+        FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
+        SelectedDataSource = src,
+        Tabs               = [new TabConfig { Name = ChainBenches.CellName(chain, bench), Plots = plots }],
+    };
+
+    /// <summary>The pattern for each steer angle over the array factor, then a table a steer angle.</summary>
+    private static List<PlotContainerConfig> Steering(string src)
+    {
+        // One trace a steer angle, the simulation in its own colour and the closed form dashed over it. AF_calc's axes come
+        // out of the arithmetic theta_in first, the simulation's theta_steer first, so each is sliced in its own order.
+        TraceConfig One(string cube, int steer, string label, bool steerFirst, LineType line, double width, int color) => new()
         {
-            FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
-            SelectedDataSource = src,
-            Tabs               = [new TabConfig { Name = ChainBenches.CellName(chain, bench), Plots = plots }],
+            SourcePath = src, CubeName = cube, Label = label,
+            CubeSlice = steerFirst
+                ? [new AxisSliceConfig { AxisName = "theta_steer", Role = AxisRole.PinToIndex, Index = steer },
+                   new AxisSliceConfig { AxisName = "theta_in", Role = AxisRole.KeepAsX }]
+                : [new AxisSliceConfig { AxisName = "theta_in", Role = AxisRole.KeepAsX },
+                   new AxisSliceConfig { AxisName = "theta_steer", Role = AxisRole.PinToIndex, Index = steer }],
+            Properties = new TracePropertiesConfig { LineType = line, LineWidth = width, LineColorIndex = color, MarkerColorIndex = color },
         };
+        var traces = new List<TraceConfig>();
+        for (int i = 0; i < ChainBenches.SteerAnglesDeg.Length; i++)
+            traces.Add(One("Pattern_sim", i, $"steered to {ChainBenches.SteerAnglesDeg[i]:0}°", true, LineType.Solid, 2.5,
+                           TraceProperties.LineColorOrder[1 + i]));
+        for (int i = 0; i < ChainBenches.SteerAnglesDeg.Length; i++)
+            traces.Add(One("AF_calc", i, $"array factor, {ChainBenches.SteerAnglesDeg[i]:0}°", false, LineType.Dashed, 1.2, 5));
+        var plots = new List<PlotContainerConfig>
+        {
+            new()
+            {
+                PlotType = PlotType.Rect, Left = 0, Top = 0, Width = 720, Height = 380,
+                CustomTitle = "Array pattern against the arriving angle, one trace a steer angle", CustomTitleOn = true,
+                CustomXLabel = "theta_in, degrees", CustomXLabelOn = true,
+                CustomYLabel = "gain over the budget's, dB", CustomYLabelOn = true,
+                // The nulls go to −170 dB; the pattern that matters is the main lobe and the first sidelobes.
+                Axes = new AxesConfig { AutoscaleX = false, WindowX = -90, WindowWidth = 180, AutoscaleY = false, WindowY = -40, WindowHeight = 45 },
+                Traces = traces,
+            },
+        };
+        double y = 380 + Gap;
+        foreach (double a in ChainBenches.SteerAnglesDeg)
+        {
+            string n = a < 0 ? $"m{-a:0}" : a > 0 ? $"p{a:0}" : "0";
+            var t = Table($"Steered to {a:0}°: at the peak", src,
+                          [("G_calc", $"{a:0}°: G budget, dB"), ($"G_{n}_sim", "simulated"), ("NFw_calc", "NF budget, dB"),
+                           ($"NF_{n}_sim", "simulated"), ("A_calc", "array gain budget, dB"), ($"A_{n}_sim", "simulated")]);
+            t.Top = y;
+            y += H + Gap;
+            plots.Add(t);
+        }
+        return plots;
+    }
+
+    /// <summary>A table a combiner variant, in the bench's order.</summary>
+    private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
+    {
+        int n = design.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c ? ChainParts.ReadCombiner(c).N : 2;
+        var plots = new List<PlotContainerConfig>();
+        double y = 0;
+        foreach (var (topo, kind, code) in ChainBenches.CombinerVariants.Where(v => (n & (n - 1)) == 0 || v.Topology == "Direct"))
+        {
+            var t = Table($"{topo}, {kind.ToLowerInvariant()}", src,
+                          [($"G_{code}_calc", $"{topo}, {kind.ToLowerInvariant()}: G budget, dB"), ($"G_{code}_sim", "simulated"),
+                           ($"NF_{code}_calc", "NF budget, dB"), ($"NF_{code}_sim", "simulated"),
+                           ($"IIP3_{code}_calc", "IIP3 budget, dBm"), ($"OIP3_{code}_calc", "OIP3 budget, dBm"),
+                           ($"A_{code}_calc", "array gain, dB")], first: 190);
+            t.Top = y;
+            y += H + Gap;
+            plots.Add(t);
+        }
+        return plots;
     }
 
     /// <summary>
@@ -144,11 +217,12 @@ public static class ChainBudgetDisplay
         public RfCore.Data.DataSet? SelectedData => data;
     }
 
-    /// <summary>One Table plot of scalar measurement columns.</summary>
-    private static PlotContainerConfig Table(string title, string src, (string Cube, string Header)[] cols) => new()
+    /// <summary>One Table plot of scalar measurement columns; the first, which names the table, <paramref name="first"/>
+    /// wide.</summary>
+    private static PlotContainerConfig Table(string title, string src, (string Cube, string Header)[] cols, double first = Col) => new()
     {
         PlotType = PlotType.Table,
-        Width = Head + cols.Length * Col,
+        Width = Head + (cols.Length - 1) * Col + first,
         Height = H,
         CustomTitle = title,
         CustomTitleOn = true,
@@ -160,7 +234,7 @@ public static class ChainBudgetDisplay
                 SourcePath = src, CubeName = c.Cube, CubeSlice = [], Label = c.Header,
                 // A difference is read for its size, so it keeps its significant digits however small it is.
                 FormatString = c.Cube.EndsWith("_err", System.StringComparison.Ordinal) ? PrecisionFormat.G : PrecisionFormat.F,
-                MaximumFractionDigits = 4, ColumnWidth = Col,
+                MaximumFractionDigits = 4, ColumnWidth = i == 0 ? first : Col,
                 Properties = new TracePropertiesConfig
                 {
                     LineColorIndex = TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length],
