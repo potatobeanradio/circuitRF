@@ -231,10 +231,10 @@
                 </DockPanel>
             </Border>
 
-            <!-- The cascade and the levels node by node, as Data Display plots over the budget's own data: the cascade
-                 table over the stage axis; the levels over the node axis (0 the input, k stage k's output), with the
-                 transferred benches' simulated points once they have run, and a marker on a trace selecting that
-                 node's stage. -->
+            <!-- The cascade, the levels node by node and a canceller's depth, as Data Display plots over the budget's own
+                 data: the cascade table over the stage axis; the levels over the node axis (0 the input, k stage k's
+                 output), with the transferred benches' simulated points once they have run, and a marker on a trace
+                 selecting that node's stage; and the depth a canceller's errors leave, in closed form. -->
             <Border Classes="pane" Grid.Row="2" Height="280">
                 <TabControl Padding="0,4,0,0">
                     <TabItem Header="Cascade" FontSize="13">
@@ -254,6 +254,16 @@
                                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
                             </Grid>
                         </DockPanel>
+                    </TabItem>
+                    <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
+                        <Grid ColumnDefinitions="*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="DepthPhasePlotControl" ClipToBounds="True"
+                                             Plot="{Binding DepthPhasePlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="DepthBandPlotControl" ClipToBounds="True"
+                                             Plot="{Binding DepthBandPlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </Grid>
                     </TabItem>
                 </TabControl>
             </Border>

@@ -117,7 +117,7 @@ public sealed class ChainDesign
 }
 
 /// <summary>A stage parameter's text as a number: a bare number, or one with a unit (<c>2.35 GHz</c>, <c>16 dB</c>,
-/// <c>350MHz</c>). Frequency prefixes scale; dB, dBm, deg and Ohm do not.</summary>
+/// <c>350MHz</c>, <c>0.5 ns</c>). Frequency and time prefixes scale; dB, dBm, deg and Ohm do not.</summary>
 public static class ChainValue
 {
     public static bool TryParse(string? text, out double value)
@@ -133,6 +133,9 @@ public static class ChainValue
         if (!double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return false;
         if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K") return true;
         if (Units.Scale(unit) is { } s) { value *= s; return true; }
+        // A time: "s", or a prefix and "s" ("0.5 ns", "50 ps").
+        if (unit == "s") return true;
+        if (unit.Length > 1 && unit[^1] == 's' && Units.Scale(unit[..^1]) is { } ts) { value *= ts; return true; }
         return false;
     }
 

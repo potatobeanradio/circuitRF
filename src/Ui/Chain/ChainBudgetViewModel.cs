@@ -168,11 +168,16 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>Raised after the cascade table is refilled in place: a PlotControl repaints only when told.</summary>
     public event EventHandler? PlotsUpdated;
 
-    // ── the levels: Data Display plots over the budget's own data ──
+    // ── the levels and the canceller: Data Display plots over the budget's own data ──
 
-    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb;
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _depthPhase, _depthBand;
     public CircuitRF.Render.DataDisplay.Plot? LevelsPlot => _levels?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? LevelsDbPlot => _levelsDb?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
+
+    /// <summary>True when the chain has a canceller: its tab shows the depth its errors leave.</summary>
+    [ObservableProperty] private bool _hasCanceller;
 
     /// <summary>What the levels plots say about their simulated points: which bench results they read, or why none.</summary>
     [ObservableProperty] private string _levelsNote = "";
@@ -243,6 +248,19 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLevels(d, lv);
         Refill(ref _levels, nameof(LevelsPlot), cfg[0], BudgetSource, data);
         Refill(ref _levelsDb, nameof(LevelsDbPlot), cfg[1], BudgetSource, data);
+    }
+
+    /// <summary>The canceller's depth in closed form: against the phase error for a few amplitude errors, and against
+    /// the bandwidth for a few delay mismatches.</summary>
+    private void RefillCanceller(ChainDesign d)
+    {
+        var st = d.Stages.FirstOrDefault(x => x.Part == ChainParts.Canceller);
+        HasCanceller = st is not null;
+        if (st is null) return;
+        var c = CancellerSpec.Read(st);
+        var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c);
+        Refill(ref _depthPhase, nameof(DepthPhasePlot), cfg[0], BudgetSource, data);
+        Refill(ref _depthBand, nameof(DepthBandPlot), cfg[1], BudgetSource, data);
     }
 
     /// <summary>A marker on a levels trace selects the stage whose output that node is; node 0, the input, selects none.</summary>
@@ -399,6 +417,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Blocks(d, r);
         RefillCascade(r);
         RefillLevels(d, r);
+        RefillCanceller(d);
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes);
@@ -434,6 +453,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 ChainParts.Combiner => ChainParts.ReadCombiner(st).Describe()
                                        + (ChainValue.Or(st.Get("Steer"), 0) != 0 ? $", steer {st.Get("Steer")}°" : ""),
                 ChainParts.Splitter => $"1:{st.Get("N")}",
+                ChainParts.Canceller => CancellerSpec.Read(st) is var cs
+                    ? $"depth {cs.DepthDb:0.#} dB, residual {cs.ResidualDbm:0.#} dBm" : "",
                 _ => "",
             };
             if (i < r.Stages.Count)
@@ -468,7 +489,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
             ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
             ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
-            ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner, _ => SymbolKind.Amp,
+            ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner,
+            ChainParts.Canceller => SymbolKind.Coupler, _ => SymbolKind.Amp,
         };
         return [new ChainBlockGlyph(kind, st.Part == ChainParts.Splitter ? $"1:{st.Get("N")}" : "")];
     }
@@ -483,7 +505,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         {
             ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
             ChainParts.Switch => "SW", ChainParts.Circulator => "ISO", ChainParts.Coupler => "CPL",
-            ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL", _ => "CMB",
+            ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL",
+            ChainParts.Canceller => "CANC", _ => "CMB",
         };
         int n = 1;
         while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;

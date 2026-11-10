@@ -612,6 +612,96 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(d.Stages.Count + 1, cube.RealValues.Length);
     }
 
+    // ── the canceller ────────────────────────────────────────────────────────
+
+    private static ChainDesign FrontEnd() => new()
+    {
+        FrequencyHz = 2.45e9, BandwidthHz = 4.5e6, InputPowerDbm = -60, TemperatureK = 290,
+        Stages =
+        [
+            S("CANC", "Canceller", ("Coupling", "10"), ("IL", "0.2"), ("Pint", "-20"), ("Bint", "10 MHz"), ("Pref", "-10"),
+              ("NFref", "6"), ("AmpErr", "0.1"), ("PhaseErr", "1"), ("DelayErr", "0.1 ns")),
+            S("LNA", "Amp", ("Gain", "18"), ("NF", "1.2"), ("IP3", "20")),
+            S("BPF", "Filter", ("Response", "Butterworth"), ("F1", "2.35 GHz"), ("F2", "2.55 GHz"), ("IL", "1")),
+        ],
+    };
+
+    /// <summary>
+    /// The canceller's closed forms, by hand. On the wanted signal: the through arm's loss IL − 10·log10(1 − c), and the
+    /// reference path's noise, F = L_t + (F_ref·G_ref − 1)·c/(1 − c) with G_ref·P_ref·c = P_int·(1 − c). On the
+    /// interference: R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ), the band average of |1 − a·e^(j(φ − 2πfτ))|².
+    /// </summary>
+    [Fact]
+    public void TheCanceller_HasItsClosedForms()
+    {
+        var c = CancellerSpec.Read(FrontEnd().Stages[0]);
+        double cc = 0.1, lt = Lin(0.2) / (1 - cc);
+        Assert.Equal(Db(lt), c.ThroughLossDb, 12);
+        double gref = Lin(-20) * (1 - cc) / (cc * Lin(-10));
+        Assert.Equal(Db(gref), c.RefGainDb, 12);
+        Assert.Equal(Db(lt + (Lin(6) * gref - 1) * cc / (1 - cc)), c.Budget().NfDb, 12);
+        // The depth: the band average done numerically here against the closed form.
+        foreach (var (ae, pe, tau, bw, nu) in new[] { (0.1, 1.0, 0.0, 10e6, 0.0), (0.0, 0.0, 1e-9, 20e6, 0.0), (0.5, -3.0, 0.5e-9, 5e6, -15e6) })
+        {
+            double a = Math.Pow(10, ae / 20), sum = 0;
+            const int m = 20000;
+            for (int i = 0; i < m; i++)
+            {
+                double f = nu - bw / 2 + bw * (i + 0.5) / m, ph = pe * Math.PI / 180 - 2 * Math.PI * f * tau;
+                sum += 1 + a * a - 2 * a * Math.Cos(ph);
+            }
+            Assert.Equal(sum / m, CancellerSpec.Residual(ae, pe, tau, bw, nu), 6);
+        }
+        Assert.Equal(33.5436, -10 * Math.Log10(CancellerSpec.Residual(0.1, 1, 0, 1)), 4);
+        Assert.Equal(c.PintDbm - c.ThroughLossDb - c.DepthDb, c.ResidualDbm, 12);
+        // The levels carry the interference from the canceller's input on, its residual after it.
+        var lv = ChainLevels.Evaluate(FrontEnd(), ChainBudget.Evaluate(FrontEnd()));
+        Assert.Equal(-20, lv[0].InterferenceDbm, 12);
+        Assert.Equal(c.ResidualDbm, lv[1].InterferenceDbm, 12);
+        Assert.Equal(c.ResidualDbm + 18, lv[2].InterferenceDbm, 12);
+    }
+
+    /// <summary>The canceller on the ordinary benches: its coupler's through arm, and the reference path's noise into the
+    /// isolated port; gain and NF, each stage's NF, and the intercepts on the budget.</summary>
+    [Fact]
+    public void TheCanceller_OnTheOrdinaryBenches_IsItsThroughArmAndItsReferencePathsNoise()
+    {
+        var d = FrontEnd();
+        var one = Bench(d, "Fe", ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
+        Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);
+        foreach (var s in d.Stages) Assert.InRange(Measure(one, $"NF_{s.Name}_sim") - Measure(one, $"NF_{s.Name}_calc"), -1e-6, 1e-6);
+        var two = Bench(d, "Fe", ChainBench.TwoTone);
+        Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+        Assert.Contains(ChainBench.Canceller, ChainBenches.BenchesFor(d));
+    }
+
+    /// <summary>
+    /// The Canceller bench, with real signals: the interference's three carriers (10, 5 and 20 MHz) cancelled with each
+    /// error swept. Every simulated depth is the closed form at that carrier's bandwidth and offset; the wanted carriers'
+    /// EVM falls with cancellation.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void TheCancellerBench_DepthIsTheClosedForm_AtEveryErrorAndBandwidth()
+    {
+        var cb = Bench(FrontEnd(), "Fc", ChainBench.Canceller);
+        double worst = 0;
+        foreach (string sw in new[] { "P", "A", "D" })
+            for (int k = 1; k <= ChainBenches.CancInterference.Length; k++)
+            {
+                var sim = cb[$"measurements.Depth{sw}_I{k}_sim"].RealValues;
+                var calc = cb[$"measurements.Depth{sw}_I{k}_calc"].RealValues;
+                Assert.Equal(calc.Length, sim.Length);
+                // Relative to the depth: a deep null is a small residual, measured over one record.
+                for (int i = 0; i < sim.Length; i++) worst = Math.Max(worst, Math.Abs(sim[i] - calc[i]) / Math.Max(calc[i], 1));
+            }
+        output.WriteLine($"Canceller bench: worst |depth sim - closed form| = {100 * worst:G3} % of the depth");
+        Assert.InRange(worst, 0, 0.02);
+        Assert.True(Measure(cb, "EVM_QAM64_on") < Measure(cb, "EVM_QAM64_off") / 3, "cancellation cleans the 64-QAM carrier");
+        Assert.True(Measure(cb, "EVM_QPSK_on") < Measure(cb, "EVM_QPSK_off") / 3, "and the QPSK carrier");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

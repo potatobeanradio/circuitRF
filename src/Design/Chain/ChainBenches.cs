@@ -1,7 +1,7 @@
 // A chain, transferred: test benches of circuitRF's own System blocks, each drawn by NetlistSchematic (the drawing
 // `circuitrf netlist --to-schematic` makes), with the analyses that verify the budget already set up and the budget's
-// own numbers beside the simulated ones in a MEAS block. Four for every chain, one more when it has blockers, and two
-// more for an array:
+// own numbers beside the simulated ones in a MEAS block. Four for every chain; one more each when it has blockers and
+// when it has a canceller; and two more for an array:
 //
 //   <chain> 1-Tone    a P1Tone per element, a Port at the output. Without a mixer, an S-parameter run with Noise=yes:
 //                     gain, NF and each stage's share of it. With one, a harmonic-balance noise run with the LO: the
@@ -13,6 +13,8 @@
 //                     beside the budget's levels (ChainLevels) over a node axis.
 //   <chain> Blockers  the blockers alone, each at its own frequency and level, an isolator after every stage so that
 //                     each node reads the wave going forward.
+//   <chain> Canceller the chain's canceller with real signals: the wanted pair and a three-carrier interference from
+//                     two MOD_Sources, the depth against each error swept, and the EVM with and without cancellation.
 //   <chain> Steering  the elements and the combiner fed by a plane wave: one Port through a Combiner used as a
 //                     splitter whose path k has the wave's phase −(k − 1)·ψ_in, ψ = 360°·(d/λ)·sin θ. The phase
 //                     shifters steer from VAR theta_steer, a taper from VAR taper; a sweep of theta_in inside a sweep
@@ -41,7 +43,7 @@ using CircuitRF.Design.Symbol;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller }
 
 /// <summary>One bench: its cell name, its netlist and where each of its instances is drawn.</summary>
 public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout);
@@ -63,8 +65,18 @@ public static class ChainBenches
         ChainBench.Steering => chain + " Steering",
         ChainBench.Combiners => chain + " Combiners",
         ChainBench.Levels  => chain + " Levels",
-        _                  => chain + " Blockers",
+        ChainBench.Blockers => chain + " Blockers",
+        _                  => chain + " Canceller",
     };
+
+    /// <summary>The Canceller bench's sweeps: phase error, deg; amplitude error, dB; delay mismatch, s.</summary>
+    public static readonly double[] CancPhaseErrDeg = [-10, -3, -1, 0, 1, 3, 10];
+    public static readonly double[] CancAmpErrDb = [-2, -0.5, 0, 0.5, 2];
+    public static readonly double[] CancDelayErrS = [0, 0.5e-9, 1e-9, 2e-9];
+
+    /// <summary>The Canceller bench's interference carriers, (bandwidth, offset from the frequency), Hz: three
+    /// bandwidths for the depth a delay mismatch leaves, the first two under the wanted carriers.</summary>
+    public static readonly (int Mhz, double OffsetHz)[] CancInterference = [(10, 0), (5, -15e6), (20, 20e6)];
 
     /// <summary>The variable, and so the axis, the Levels displays plot against: the node, 0 the chain's input and k the
     /// output of stage k.</summary>
@@ -78,8 +90,8 @@ public static class ChainBenches
         [("Direct", "Passive", "DP"), ("Tree", "Passive", "TP"), ("Direct", "Active", "DA"), ("Tree", "Active", "TA")];
 
     /// <summary>
-    /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers;
-    /// for an array whose branch is linear (no
+    /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers,
+    /// Canceller when it has a canceller; for an array whose branch is linear (no
     /// mixer before the combiner, so an S-parameter run reaches the combiner), Combiners, and Steering when a phase
     /// shifter in the branch has something to steer with. <paramref name="why"/> says what was left out and why.
     /// </summary>
@@ -87,6 +99,7 @@ public static class ChainBenches
     {
         List<ChainBench> b = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope, ChainBench.Levels];
         if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
+        if (d.Stages.Any(s => s.Part == ChainParts.Canceller)) b.Add(ChainBench.Canceller);
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
         if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.Mixer))
@@ -313,6 +326,7 @@ public static class ChainBenches
         {
             if (bench == ChainBench.Steering) return EmitSteering();
             if (bench == ChainBench.Combiners) return EmitCombiners();
+            if (bench == ChainBench.Canceller) return EmitCanceller();
             int n = N, nb = Branch;
             bool array = n > 1;
             double frf = d.FrequencyHz;
@@ -593,6 +607,124 @@ public static class ChainBenches
             return Text();
         }
 
+        /// <summary>
+        /// The Canceller bench: the chain's (first) canceller on its own, with real signals. The wanted signal (two
+        /// carriers, 64-QAM and QPSK) and the interference (three carriers of 10, 5 and 20 MHz, the first two under the
+        /// wanted ones) come from MOD_Sources the Signal Designer edits. The interference is split: one share leaks into
+        /// the main path through a line of 1 ns, the other is the reference path, an Amp for the amplitude, a Combiner
+        /// path for a flat phase and a line for the delay, into the coupler's isolated port. Its VAR block sets the
+        /// errors: amp_err, phase_err, delay_err; canc_on and sig_on switch the reference path and the wanted signal.
+        /// Envelope runs: the interference uncancelled; the depth against each error, swept; and the wanted carriers'
+        /// EVM and SNR with and without cancellation. Beside each depth, the closed form (<see cref="CancellerSpec"/>)
+        /// at each interference carrier's bandwidth and offset.
+        /// </summary>
+        private ChainBenchText EmitCanceller()
+        {
+            int ci = d.Stages.FindIndex(st => st.Part == ChainParts.Canceller);
+            var c = CancellerSpec.Read(d.Stages[ci]);
+            double psig = ci == 0 ? d.InputPowerDbm : r.Stages[ci - 1].PoutDbm;
+            double cAmp = Math.Pow(10, -c.CouplingDb / 20), tauLeak = 1e-9;
+            // The reference path's gain at no error: the coupled arm's |S| against the through arm's, the two 3 dB shares
+            // (the splitter's and the flat phase's) cancelling the main combiner's and the leak's.
+            double g0 = 20 * Math.Log10(Math.Sqrt(1 - cAmp * cAmp) / cAmp);
+            var (_, bsig) = Carrier(5e6);
+            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psig = {F(psig)}", $"Pint = {F(c.PintDbm)}",
+                            $"amp_err = {F(c.AmpErrDb)}", $"phase_err = {F(c.PhaseErrDeg)}", $"delay_err = {c.DelayErrS.ToString("G12", CultureInfo.InvariantCulture)}",
+                            "canc_on = 1", "sig_on = 1", $"tau_leak = {G(tauLeak)}"]);
+            string name = d.Stages[ci].Name;
+            int ni = CancInterference.Length;
+            // Two wanted carriers at Psig each, 3 dB more for the main combiner's share; the interference's carriers at
+            // Pint each at the canceller's input, 6 dB more for the split and the combiner.
+            Line("MOD_Source:SIG  s  0  Fc=Frf  Pavg=Psig+6.0206+(sig_on-1)*300 dBm  Z=50 Ohm  " +
+                 "Carrier[1]=\"NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  " +
+                 $"Carrier[2]=\"NR;BW=5MHz;SCS=15kHz;Mod=QPSK;Off={F(CancInterference[1].OffsetHz / 1e6)}MHz;P=0;Seed=2\"  " +
+                 $"Record=0.00025  Noise=yes  Temp={F(d.TemperatureK - 273.15)}");
+            Place("SIG", 0, 200);
+            Line($"MOD_Source:INT  i  0  Fc=Frf  Pavg=Pint+6.0206+{G(10 * Math.Log10(ni))} dBm  Z=50 Ohm  " +
+                 string.Join("  ", CancInterference.Select((ic, k) =>
+                     $"Carrier[{k + 1}]=\"NR;BW={ic.Mhz}MHz;SCS=15kHz;Mod=64QAM;Off={F(ic.OffsetHz / 1e6)}MHz;P=0;Seed={k + 3}\"")) +
+                 "  Record=0.00025");
+            Place("INT", 0, 2600);
+            Line("Combiner:ISPL  i  0  il  0  ir  0  N=2  Z0=50 Ohm");
+            Place("ISPL", 900, 2400, mirror: true);
+            Line("TLIN:LEAK  il  lk  Z=50 Ohm  E=360*Frf*tau_leak deg  F=Frf Hz");
+            Place("LEAK", 1800, 1300);
+            Line("Combiner:MAIN  m  0  s  0  lk  0  N=2  Z0=50 Ohm");
+            Place("MAIN", 2700, 300);
+            _stage = ci;
+            Line($"Coupler:{name}  m  0  t  0  {name}_cp  0  {name}_iso  0  Coupling={F(c.CouplingDb)} dB  IL={F(c.IlDb)} dB  Phase=90 deg");
+            Line($"R:{name}_Rc  {name}_cp  0  R=50 Ohm");
+            Place(name, 3700, 400); Place($"{name}_Rc", 4000, 1000);
+            string nf = c.NfRefDb is { } nfr ? $"  NF={F(nfr)} dB" : "";
+            Line($"Amp:{name}_VMA  ir  0  r1  0  Gain={G(g0)}+amp_err+(canc_on-1)*300 dB{nf}  IP3=200 dBm  IP3Ref=Input");
+            Place($"{name}_VMA", 1900, 2700);
+            // A flat phase: one path of a 2-way Combiner, the other terminated. A line would be a delay as well. The
+            // phase is set where it nulls the carrier's centre, which takes back the delay mismatch's own phase there,
+            // 360°·Frf·delay_err, so the mismatch shows only across the band, as the closed form has it.
+            Line($"Combiner:{name}_VMP  r2  0  r1  0  {name}_VMP_t  0  N=2  Phase[1]=-90+phase_err+360*Frf*delay_err deg  Z0=50 Ohm");
+            Line($"R:{name}_VMP_T  {name}_VMP_t  0  R=50 Ohm");
+            Place($"{name}_VMP", 2800, 2600, mirror: true); Place($"{name}_VMP_T", 3500, 3100);
+            Line($"TLIN:{name}_DL  r2  {name}_iso  Z=50 Ohm  E=360*Frf*(tau_leak+delay_err) deg  F=Frf Hz");
+            Place($"{name}_DL", 3400, 2000);
+            _stage = -1;
+            Line("IProbe:Iout  t  load");
+            Line("R:RL  load  0  R=50 Ohm");
+            Place("Iout", 4600, 300); Place("RL", 5200, 600);
+
+            string env(string nm, bool noise) =>
+                $"analysis {nm} type=env Stop=0.25e-3 Step=auto Accuracy=draft MaxHarm=1 Segments=auto Warmup=auto Start=0 Tol=1e-6 " +
+                (noise ? "SaveWaveforms=no Noise=yes EvmSplit=yes" : "SaveWaveforms=no");
+            string list(IEnumerable<double> v) => string.Join(",", v.Select(x => x.ToString("G12", CultureInfo.InvariantCulture)));
+            // The interference alone, uncancelled: the reference for every depth.
+            _analyses.Add(env("ENVN", false));
+            _analyses.Add("analysis SWN2 type=parametric_sweep Var=canc_on Values=0 Inner=ENVN");
+            _analyses.Add("analysis SWN1 type=parametric_sweep Var=sig_on Values=0 Inner=SWN2");
+            // The depth against each error, the others at their nominal values.
+            foreach (var (an, v, vals) in new[] { ("ENVP", "phase_err", CancPhaseErrDeg), ("ENVA", "amp_err", CancAmpErrDb), ("ENVD", "delay_err", CancDelayErrS) })
+            {
+                _analyses.Add(env(an, false));
+                _analyses.Add($"analysis SW{an[3]}2 type=parametric_sweep Var={v} Values={list(vals)} Inner={an}");
+                _analyses.Add($"analysis SW{an[3]}1 type=parametric_sweep Var=sig_on Values=0 Inner=SW{an[3]}2");
+            }
+            // The wanted signal with and without cancellation, its noise on.
+            _analyses.Add(env("ENVO", true));
+            _analyses.Add("analysis SWO type=parametric_sweep Var=canc_on Values=0,1 Inner=ENVO");
+
+            _meas.Add($"Pint_calc = {G(c.PintDbm - c.ThroughLossDb)}");
+            for (int k = 0; k < ni; k++)
+            {
+                int carrier = 2 + k;   // the carrier axis: the wanted source's two, then the interference's
+                var (mhz, off) = CancInterference[k];
+                double bocc = Carrier(mhz * 1e6).OccupiedHz;
+                string tag = $"I{k + 1}";
+                // Each sweep prepends its axes: the two setters' single points, then the swept error.
+                _meas.Add($"Pref_{tag} = ENVN.ACLR[0, 0, \"Iout\", {carrier}, \"Pch_dBm\"]");
+                foreach (var (an, sw) in new[] { ("ENVP", "P"), ("ENVA", "A"), ("ENVD", "D") })
+                {
+                    _meas.Add($"Depth{sw}_{tag}_sim = Pref_{tag} - {an}.ACLR[0, :, \"Iout\", {carrier}, \"Pch_dBm\"]");
+                    // R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ): the swept error as its sweep's axis, the other two at the
+                    // stage's own values (a measurement reading any swept variable reads that sweep's axis, whichever
+                    // analysis it is about). cos and sin as e^(jx), which a sweep's cube takes.
+                    string amp = sw == "A" ? "amp_err" : $"({G(c.AmpErrDb)})", phs = sw == "P" ? "phase_err" : $"({G(c.PhaseErrDeg)})";
+                    string dly = sw == "D" ? "delay_err" : $"({c.DelayErrS.ToString("G12", CultureInfo.InvariantCulture)})";
+                    string x = $"(pi*{G(bocc)}*{dly} + 1e-300)";
+                    string ph = $"({phs}*pi/180 - 2*pi*{G(off)}*{dly})";
+                    _meas.Add($"Depth{sw}_{tag}_calc = -10*log10(1 + 10^({amp}/10) - 2*10^({amp}/20)*real(e^(j*{ph}))*imag(e^(j*{x}))/{x})");
+                }
+            }
+            // The wanted carriers, without (canc_on = 0) and with cancellation.
+            for (int k = 0; k < 2; k++)
+            {
+                string tag = k == 0 ? "QAM64" : "QPSK";
+                foreach (var (on, w) in new[] { (0, "off"), (1, "on") })
+                {
+                    _meas.Add($"EVM_{tag}_{w} = ENVO.EVM_pct[{on}, \"Iout\", {k}]");
+                    _meas.Add($"SNR_{tag}_{w} = ENVO.SNR_dB[{on}, \"Iout\", {k}]");
+                }
+            }
+            return Text();
+        }
+
         private static double Finite(double v, double fallback) => double.IsFinite(v) ? v : fallback;
         private static double Mod360(double deg) { double m = deg % 360; if (m < 0) m += 360; return Math.Abs(m) < 1e-9 || Math.Abs(m - 360) < 1e-9 ? 0 : m; }
 
@@ -750,6 +882,33 @@ public static class ChainBenches
                     }
                     _x += 300 + Lead + 400;
                     placed.Add(name);
+                    break;
+                }
+                case ChainParts.Canceller:
+                {
+                    // The through arm carries the chain; the coupled port is terminated, and the isolated port takes the
+                    // reference path. With no interference on these benches, the path is only its noise: a T0 termination
+                    // when passive, an Amp of the gain it would need, its own NF, from a T0 termination when not.
+                    var c = CancellerSpec.Read(s);
+                    Line($"Coupler:{name}  {a}  0  {b}  0  {name}_cp  0  {name}_iso  0  Coupling={F(c.CouplingDb)} dB  IL={F(c.IlDb)} dB  Phase=90 deg");
+                    Line($"R:{name}_Rc  {name}_cp  0  R=50 Ohm");
+                    _x += 300; Place(name, _x, _y + 100);
+                    Place($"{name}_Rc", _x + 300, _y + 700);
+                    if (c.NfRefDb is { } nfr)
+                    {
+                        Line($"Amp:{name}_REF  {name}_r  0  {name}_iso  0  Gain={F(c.RefGainDb)} dB  NF={F(nfr)} dB  IP3=200 dBm  IP3Ref=Input");
+                        Line($"R:{name}_RT  {name}_r  0  R=50 Ohm");
+                        Place($"{name}_REF", _x - 300, _y + 1100); Place($"{name}_RT", _x - 1000, _y + 1300);
+                        placed.AddRange([$"{name}_REF", $"{name}_RT"]);
+                    }
+                    else
+                    {
+                        Line($"R:{name}_Ri  {name}_iso  0  R=50 Ohm");
+                        Place($"{name}_Ri", _x - 300, _y + 700);
+                        placed.Add($"{name}_Ri");
+                    }
+                    if (c.IlDb > 0) placed.Add(name);
+                    _x += 300 + Lead;
                     break;
                 }
                 default:
@@ -1013,8 +1172,8 @@ public static class ChainBenches
                 case ChainBench.Levels:
                 {
                     // Two tones, each at the chain's input power: the signal and its IM3 at every node, on the 2-Tone
-                    // bench's mixing order. The budget's levels beside them, and its noise floor, SNR and margin, for
-                    // the display's node axis.
+                    // bench's mixing order. The budget's levels beside them, and its noise floor, SNR, margin and a
+                    // canceller's interference, for the display's node axis.
                     _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={5 + mix} Tol=1e-12");
                     var levels = ChainLevels.Evaluate(d, r);
                     var nodeNet = NodeNets(nets);
@@ -1037,6 +1196,8 @@ public static class ChainBenches
                     _meas.Add($"SNR_calc = {NodeCube(levels.Count, k => G(levels[k].SnrDb))}");
                     // A linear chain has no margin at all: above the display's window.
                     _meas.Add($"Margin_calc = {NodeCube(levels.Count, k => G(double.IsFinite(levels[k].MarginDb) ? levels[k].MarginDb : 300))}");
+                    if (levels.Any(l => double.IsFinite(l.InterferenceDbm)))
+                        _meas.Add($"Int_calc = {NodeCube(levels.Count, k => G(Lo(levels[k].InterferenceDbm)))}");
                     for (int k = 0; k < levels.Count; k++)
                     {
                         _meas.Add($"Psig_{k}_err = P1_{k} - {G(levels[k].SignalDbm)}");

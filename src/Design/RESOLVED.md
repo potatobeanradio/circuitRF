@@ -29394,3 +29394,23 @@ cannot hold NaN. Such a stage's OIP3 row is left out, and the display's per-stag
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheLevelsAndBlockersBenches_SimulateToTheBudgetNodeByNode`,
 `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`.
+
+## The chain's Canceller bench: a flat phase, a phase set at the centre, and the errors as constants (2026-11-10)
+
+The Canceller bench measures the depth a canceller's errors leave, swept, beside the closed form
+R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ). Three findings, each now in the bench and stated in
+`docs/design/chain-budget.md` §3:
+
+- **A line is not a phase setting.** A TLIN's electrical length is a delay, so a phase error set on one also tilts the
+  phase across the band. The reference path's phase is one path of a 2-way Combiner, whose `Phase[1]` is flat in
+  frequency, and the delay is a separate line.
+- **The phase is set where it nulls the carrier's centre.** With a delay mismatch τ, the reference path's extra
+  2π·Frf·τ at the centre would read as a phase error and the depth would collapse. The phase setting takes it back
+  (+360·Frf·delay_err), so the mismatch shows only across the band, which is what the closed form describes.
+- **A measurement reading a swept variable reads that sweep's axis, whichever analysis the row is about.** The closed
+  form for the phase sweep, written with `amp_err` and `delay_err` as variables, picked up the other two sweeps' axes
+  and came out 140 points against the simulation's 7. Each depth row now reads only its own swept error and writes the
+  other two as the stage's constants.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheCancellerBench_DepthIsTheClosedForm_AtEveryErrorAndBandwidth`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `FrontEnd_Canceller_DepthOnTheClosedForm_AndEvmWithAndWithout`.

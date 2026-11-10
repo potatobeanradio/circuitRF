@@ -10,6 +10,8 @@
 //   Limiter       an Amp (gain −IL, NF = IL) whose intercept puts its 1 dB compression point at P1dB
 //   Splitter      a Combiner used from its common port, one output followed, the others terminated
 //   Combiner      Direct: one N:1 Combiner; Tree: log2(N) levels of 2:1 Combiners; Active: an Amp after each
+//   Canceller     a Coupler whose isolated port takes a reference path (an Amp for the amplitude, a Combiner path for
+//                 a flat phase, a TLIN for the delay) that subtracts a copy of the interference from the main path
 //
 // The budget of each is closed form. A matched passive part at T0 has NF = its loss. An ideal Amp's and Mixer's
 // 1 dB compression point is its tanh limiter's own, IIP3 − 8.9625 dB (src/Core/Devices/ThirdOrderLimiter.cs), which is
@@ -50,7 +52,7 @@ public static class ChainParts
 {
     public const string Amp = "Amp", Mixer = "Mixer", Atten = "Atten", Filter = "Filter", Switch = "Switch",
                         Circulator = "Circulator", Coupler = "Coupler", PhaseShifter = "PhaseShifter",
-                        Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner";
+                        Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner", Canceller = "Canceller";
 
     /// <summary>tanh's 1 dB compression point below its input intercept, dB — the ideal Amp's and Mixer's own
     /// (<c>ThirdOrderLimiter</c>; system-components.md, Amplifier).</summary>
@@ -176,6 +178,20 @@ public static class ChainParts
                 int n = Math.Max(2, (int)Math.Round(Num(s, "N", 2)));
                 return Passive(10 * Math.Log10(n) + Num(s, "IL"));
             }),
+        new(Canceller, "Canceller (composed)", false,
+            [new("Coupling", "10", "dB", Help: "the injection coupler's coupling; the main path's through loss follows from it"),
+             new("IL", "0.2", "dB", Help: "the coupler's excess loss"),
+             new("Pint", "-30", "dBm", Help: "the interference at the canceller's main input"),
+             new("Bint", "20 MHz", "Hz", Help: "the interference's bandwidth"),
+             new("Pref", "0", "dBm", Help: "the reference input: the interfering signal at its source"),
+             new("NFref", "", "dB", BlankAllowed: true, Help: "the reference path's noise figure; blank: passive"),
+             new("AmpErr", "0.1", "dB", Help: "the cancellation path's amplitude error"),
+             new("PhaseErr", "1", "deg", Help: "its phase error"),
+             new("DelayErr", "0", "s", Help: "its delay mismatch against the interference's path")],
+            "A reference path — amplitude, phase and delay — subtracted from the main path through a directional " +
+            "coupler. Its depth is set by the amplitude and phase error and, over the interference's bandwidth, the delay " +
+            "mismatch; on the wanted signal it is the coupler's through loss and the noise the reference path injects.",
+            s => CancellerSpec.Read(s).Budget()),
         new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
              new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree"],
@@ -320,4 +336,64 @@ public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<C
     /// <summary>"Direct, passive", "Tree of 3 levels, active", as the block view and the variants bench say it.</summary>
     public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1" : $"Direct {N}:1")
                                 + (Active ? ", active" : ", passive");
+}
+
+/// <summary>
+/// A canceller stage read: a directional coupler of coupling c (linear, 10^(−C/10)) and excess loss L_ex, its main
+/// path the through arm, and a reference path into its isolated port that subtracts a copy of the interference.
+///
+/// <para><b>On the wanted signal</b> it is the through arm, loss L_t = L_ex/(1 − c), and the noise the reference
+/// path injects: an output at T0·F_ref·G_ref (its input at T0) coupled by c/(1 − c) relative to the through arm adds
+/// T0·(F_ref·G_ref − 1)·c/(1 − c) at the input, so F = L_t + (F_ref·G_ref − 1)·c/(1 − c). G_ref is the gain the
+/// path needs to cancel: G_ref·P_ref·c = P_int·(1 − c). A passive path (F_ref·G_ref = 1) adds nothing.</para>
+///
+/// <para><b>On the interference</b> the residual is the fraction R of it the subtraction leaves. With an amplitude
+/// ratio a = 10^(AmpErr/20), a phase error φ (an advance) and a delay mismatch τ (the reference path later), a carrier of
+/// bandwidth B and flat spectrum, centred ν from where the phase was set, leaves</para>
+/// <code>
+///   R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ),      sinc x = sin x / x
+/// </code>
+/// <para>the average over the band of |1 − a·e^(j(φ − 2πfτ))|². Its depth is −10·log10 R: 33.5 dB at 1° and 0.1 dB;
+/// with 1 ns of delay mismatch alone, 40.8 dB over 5 MHz, 28.8 dB over 20 MHz and 22.8 dB over 40 MHz.</para>
+/// </summary>
+public sealed record CancellerSpec(double CouplingDb, double IlDb, double PintDbm, double BintHz, double PrefDbm,
+                                   double? NfRefDb, double AmpErrDb, double PhaseErrDeg, double DelayErrS)
+{
+    public static CancellerSpec Read(ChainStage s) => new(
+        ChainValue.Or(s.Get("Coupling"), 10), ChainValue.Or(s.Get("IL"), 0), ChainValue.Or(s.Get("Pint"), -30),
+        ChainValue.Or(s.Get("Bint"), 20e6), ChainValue.Or(s.Get("Pref"), 0),
+        s.Get("NFref").Trim().Length == 0 ? null : ChainValue.Or(s.Get("NFref"), 0),
+        ChainValue.Or(s.Get("AmpErr"), 0), ChainValue.Or(s.Get("PhaseErr"), 0), ChainValue.Or(s.Get("DelayErr"), 0));
+
+    private double C => Math.Pow(10, -CouplingDb / 10);
+
+    /// <summary>The main path's through loss, dB: the coupled power and the excess loss.</summary>
+    public double ThroughLossDb => IlDb - 10 * Math.Log10(1 - C);
+
+    /// <summary>The reference path's gain the subtraction needs, dB.</summary>
+    public double RefGainDb => PintDbm + 10 * Math.Log10((1 - C) / C) - PrefDbm;
+
+    public StageBudget Budget()
+    {
+        double lt = Math.Pow(10, ThroughLossDb / 10);
+        double fr = NfRefDb is { } nf ? Math.Pow(10, nf / 10) * Math.Pow(10, RefGainDb / 10) : 1;
+        double f = lt + (fr - 1) * C / (1 - C);
+        return new StageBudget(-ThroughLossDb, -ThroughLossDb, 10 * Math.Log10(f), double.PositiveInfinity,
+                               double.PositiveInfinity, 1, []);
+    }
+
+    /// <summary>The fraction of the interference left, for these errors over a band <paramref name="bwHz"/> wide centred
+    /// <paramref name="offsetHz"/> from where the phase was set.</summary>
+    public static double Residual(double ampErrDb, double phaseErrDeg, double delayErrS, double bwHz, double offsetHz = 0)
+    {
+        double a = Math.Pow(10, ampErrDb / 20), x = Math.PI * bwHz * delayErrS;
+        double sinc = Math.Abs(x) < 1e-12 ? 1 : Math.Sin(x) / x;
+        return 1 + a * a - 2 * a * Math.Cos(phaseErrDeg * Math.PI / 180 - 2 * Math.PI * offsetHz * delayErrS) * sinc;
+    }
+
+    /// <summary>The cancellation depth, dB.</summary>
+    public double DepthDb => -10 * Math.Log10(Residual(AmpErrDb, PhaseErrDeg, DelayErrS, BintHz));
+
+    /// <summary>The residual interference at the canceller's output, dBm.</summary>
+    public double ResidualDbm => PintDbm - ThroughLossDb - DepthDb;
 }

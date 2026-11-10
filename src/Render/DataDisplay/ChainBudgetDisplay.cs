@@ -46,6 +46,7 @@ public static class ChainBudgetDisplay
             case ChainBench.Combiners: return Display(chain, bench, src, Combiners(src, design));
             case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false));
             case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true));
+            case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
         }
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
@@ -158,7 +159,7 @@ public static class ChainBudgetDisplay
         return plots;
     }
 
-    // ── the levels ────────────────────────────────────────────────────────────
+    // ── the levels and the canceller ──────────────────────────────────────────
 
     private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated) => new()
     {
@@ -189,8 +190,8 @@ public static class ChainBudgetDisplay
 
     /// <summary>
     /// The chain's levels node by node, the budget's as lines and the simulation's as points: the signal and its IM3
-    /// (the Levels bench), the noise floor and the NF (the 1-Tone bench), each blocker (the Blockers bench);
-    /// and in dB the NF, the SNR and the margin to compression. The x axis is the node, 0 the
+    /// (the Levels bench), the noise floor and the NF (the 1-Tone bench), each blocker (the Blockers bench), a
+    /// canceller's interference; and in dB the NF, the SNR and the margin to compression. The x axis is the node, 0 the
     /// input and k the output of stage k. <paramref name="blockersOnly"/>: the Blockers bench's own display.
     /// </summary>
     private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly)
@@ -216,7 +217,9 @@ public static class ChainBudgetDisplay
             traces.Add(Over(blk, $"Blk{k + 1}_calc", ChainBenches.NodeVar, name + ", budget", C(5 + k), false));
             traces.Add(Over(blk, $"Blk{k + 1}_sim", ChainBenches.NodeVar, name + ", simulated", C(5 + k), true));
         }
-        var finite = lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm }).Concat(n.BlockerDbm))
+        if (!blockersOnly && lv.Any(n => double.IsFinite(n.InterferenceDbm)))
+            traces.Add(Over(lev, "Int_calc", ChainBenches.NodeVar, "interference, budget", C(2), false));
+        var finite = lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }).Concat(n.BlockerDbm))
                        .Where(double.IsFinite).ToList();
         double lo = Math.Floor((finite.Min() - 10) / 10) * 10, hi = Math.Ceiling((finite.Max() + 10) / 10) * 10;
         var plots = new List<PlotContainerConfig>
@@ -240,6 +243,61 @@ public static class ChainBudgetDisplay
         return plots;
     }
 
+    /// <summary>The canceller's depth against each error, simulated and closed form for every interference carrier; the
+    /// wanted carriers' EVM and SNR without and with cancellation; their constellations both ways.</summary>
+    private static List<PlotContainerConfig> Canceller(string src)
+    {
+        var plots = new List<PlotContainerConfig>();
+        var bands = ChainBenches.CancInterference;
+        double x = 0;
+        foreach (var (sw, axis, title) in new[] { ("P", "phase_err", "phase error, deg"), ("A", "amp_err", "amplitude error, dB"), ("D", "delay_err", "delay mismatch, s") })
+        {
+            var t = new List<TraceConfig>();
+            for (int k = 0; k < bands.Length; k++)
+            {
+                string tag = $"I{k + 1}", what = $"{bands[k].Mhz} MHz";
+                t.Add(Over(src, $"Depth{sw}_{tag}_calc", axis, $"{what}, closed form", C(1 + k), false));
+                t.Add(Over(src, $"Depth{sw}_{tag}_sim", axis, $"{what}, simulated", C(1 + k), true));
+            }
+            plots.Add(Rect($"Depth against the {title[..title.IndexOf(',')]}", title, "depth, dB", x, 0, 420, 360, t));
+            x += 420 + Gap;
+        }
+        var evm = Table("The wanted carriers' EVM and SNR at the output", src,
+                        [("EVM_QAM64_off", "64-QAM EVM %, uncancelled"), ("EVM_QAM64_on", "cancelled"), ("SNR_QAM64_on", "SNR dB"),
+                         ("EVM_QPSK_off", "QPSK EVM %, uncancelled"), ("EVM_QPSK_on", "cancelled"), ("SNR_QPSK_on", "SNR dB")], first: 190);
+        evm.Top = 360 + Gap;
+        plots.Add(evm);
+        double y = 360 + Gap + H + Gap;
+        for (int k = 0; k < 2; k++)
+            for (int on = 0; on < 2; on++)
+            {
+                string kind = k == 0 ? "64-QAM" : "QPSK";
+                plots.Add(Constellation($"{kind}, {(on == 1 ? "cancelled" : "uncancelled")}", src, "ENVO",
+                                        $"[{on}, 0, {k}, :]", $"[{on}, {k}, :]", (k * 2 + on) * (300 + Gap), y, 300));
+            }
+        return plots;
+    }
+
+    /// <summary>A constellation as the signal-quality preset draws it: the received points over the ideal ones, Im
+    /// against Re on one scale.</summary>
+    private static PlotContainerConfig Constellation(string title, string src, string group, string at, string refAt, double left, double top, double size)
+    {
+        TraceConfig Points(string cube, string slice, string label, int color, MarkerType shape, double markerSize) => new()
+        {
+            SourcePath = src, Expression = $"imag({group}.{cube}{slice})", XSpec = $"real({group}.{cube}{slice})", Label = label,
+            Properties = new TracePropertiesConfig { LineEnabled = false, MarkerEnabled = true, MarkerType = shape, MarkerSize = markerSize,
+                                                     LineColorIndex = color, MarkerColorIndex = color },
+        };
+        return new PlotContainerConfig
+        {
+            PlotType = PlotType.Rect, Left = left, Top = top, Width = size, Height = size + 20,
+            CustomTitle = title, CustomTitleOn = true, CustomXLabel = "I", CustomXLabelOn = true, CustomYLabel = "Q", CustomYLabelOn = true,
+            Legend = LegendPlacement.Below,
+            Traces = [Points("Const", at, "received", C(1), MarkerType.Circle, 0.8), Points("ConstRef", refAt, "ideal", C(0), MarkerType.Cross, 1.6)],
+            Axes = new AxesConfig { WindowWidth = 0, WindowHeight = 0, WindowSecondaryWidth = 0, WindowSecondaryHeight = 0, EqualAspect = true },
+        };
+    }
+
     /// <summary>The window's Levels tab: the levels in dBm and the dB quantities, each budget cube as a line and each
     /// simulated cube the window found beside it (<c>Psig_sim</c>, …) as points, all over the in-memory node axis.</summary>
     public static IReadOnlyList<PlotContainerConfig> WindowLevels(ChainDesign d, IReadOnlyList<ChainNodeLevel> lv)
@@ -256,6 +314,7 @@ public static class ChainBudgetDisplay
             t.Add(Over(src, $"Blk{k + 1}_dBm", "node", $"blocker {k + 1}", C(5 + k), false));
             t.Add(Over(src, $"Blk{k + 1}_sim", "node", $"blocker {k + 1}, simulated", C(5 + k), true));
         }
+        if (lv.Any(n => double.IsFinite(n.InterferenceDbm))) t.Add(Over(src, "Int_dBm", "node", "interference", C(2), false));
         var db = new List<TraceConfig>
         {
             Over(src, "NF_dB", "node", "NF", C(1), false), Over(src, "NF_node_sim", "node", "NF, simulated", C(1), true),
@@ -264,6 +323,39 @@ public static class ChainBudgetDisplay
         return [Rect("Levels at each node, dBm", "node", "dBm", 0, 0, 560, 240, t),
                 Rect("NF, SNR and margin, dB", "node", "dB", 0, 0, 480, 240, db)];
     }
+
+    /// <summary>The window's Canceller tab, in closed form: the depth against the phase error for five amplitude errors,
+    /// and against the bandwidth for four delay mismatches, the stage's own errors marked by its own curve.</summary>
+    public static (RfCore.Data.DataSet Data, IReadOnlyList<PlotContainerConfig> Plots) WindowCanceller(CancellerSpec c)
+    {
+        var ds = new RfCore.Data.DataSet();
+        var ph = Enumerable.Range(0, 81).Select(i => -10 + 0.25 * i).ToArray();
+        var phAxis = new RfCore.Data.Axis("phase_err", ph, "deg");
+        // In MHz and unitless: an axis in Hz is a frequency, which the plot rescales to its own unit.
+        var bw = Enumerable.Range(0, 100).Select(i => 1.0 + i).ToArray();
+        var bwAxis = new RfCore.Data.Axis("bandwidth", bw, "");
+        var t1 = new List<TraceConfig>();
+        double[] amps = [0, 0.1, 0.5, 1, 2];
+        for (int k = 0; k < amps.Length; k++)
+        {
+            ds.Add($"DepthPh{k}", new RfCore.Data.DataCube([phAxis], [.. ph.Select(p => Depth(amps[k], p, c.DelayErrS, c.BintHz))]) { Unit = "dB" });
+            t1.Add(Over("budget", $"DepthPh{k}", "phase_err", $"amplitude error {amps[k]:0.##} dB", C(1 + k), false));
+        }
+        var t2 = new List<TraceConfig>();
+        double[] delays = [0.1e-9, 0.5e-9, 1e-9, 2e-9];
+        for (int k = 0; k < delays.Length; k++)
+        {
+            ds.Add($"DepthBw{k}", new RfCore.Data.DataCube([bwAxis], [.. bw.Select(b => Depth(c.AmpErrDb, c.PhaseErrDeg, delays[k], b * 1e6))]) { Unit = "dB" });
+            t2.Add(Over("budget", $"DepthBw{k}", "bandwidth", $"delay mismatch {delays[k] * 1e9:0.##} ns", C(1 + k), false));
+        }
+        return (ds, [Rect($"Depth against the phase error, delay mismatch {c.DelayErrS * 1e9:0.###} ns over {c.BintHz / 1e6:0.##} MHz",
+                          "phase error, deg", "depth, dB", 0, 0, 520, 240, t1, (0, 60), (-10, 10)),
+                     Rect($"Depth against the bandwidth, amplitude error {c.AmpErrDb:0.##} dB and phase error {c.PhaseErrDeg:0.##}°",
+                          "bandwidth, MHz", "depth, dB", 0, 0, 520, 240, t2, (0, 60), (0, 100))]);
+    }
+
+    private static double Depth(double ampErrDb, double phaseErrDeg, double delayErrS, double bwHz)
+        => -10 * System.Math.Log10(System.Math.Max(CancellerSpec.Residual(ampErrDb, phaseErrDeg, delayErrS, bwHz), 1e-12));
 
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
