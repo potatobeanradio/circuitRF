@@ -1,0 +1,950 @@
+{
+  "FormatVersion": 2,
+  "CellName": "7 VCO Phase Noise",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "VCC",
+      "Symbol": "Vdc",
+      "X": 0,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "5",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          270,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 300,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "4700",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "R2",
+      "Symbol": "Resistor",
+      "X": 300,
+      "Y": 2800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "4700",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Cb",
+      "Symbol": "Capacitor",
+      "X": 1500,
+      "Y": 2800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1",
+          "Unit": "nF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "RE",
+      "Symbol": "Resistor",
+      "X": 1500,
+      "Y": 4000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "470",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Srl",
+      "X": 600,
+      "Y": -0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "3.2",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        },
+        {
+          "Name": "R",
+          "Expression": "0.5",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 600,
+      "Y": -900,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "500",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 1500,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "2",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C2",
+      "Symbol": "Capacitor",
+      "X": 2700,
+      "Y": 2800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "4",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Q1",
+      "Symbol": "BjtNpn",
+      "X": -700,
+      "Y": 2200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Is",
+          "Expression": "1e-15",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Current"
+        },
+        {
+          "Name": "Bf",
+          "Expression": "100",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Rb",
+          "Expression": "10",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Cje",
+          "Expression": "0.3e-12",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Cjc",
+          "Expression": "0.1e-12",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Tf",
+          "Expression": "5e-12",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Kf",
+          "Expression": "1e-10",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          230,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Cc",
+      "Symbol": "Capacitor",
+      "X": 1800,
+      "Y": -0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "DV",
+      "Symbol": "Diode",
+      "X": 2400,
+      "Y": 500,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Is",
+          "Expression": "1e-14",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Current"
+        },
+        {
+          "Name": "Cj0",
+          "Expression": "1.5e-12",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Vj",
+          "Expression": "0.7",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "M",
+          "Expression": "0.5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          290,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Rt",
+      "Symbol": "Resistor",
+      "X": 3000,
+      "Y": -0,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "10000",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "VT",
+      "Symbol": "Vdc",
+      "X": 3600,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "Vtune",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          270,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "X1",
+      "Symbol": "OscProbe",
+      "X": 1200,
+      "Y": 300,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Mode",
+          "Expression": "shunt",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          265,
+          -268
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 3600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 1200,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 2400,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND5",
+      "Symbol": "Ground",
+      "X": 300,
+      "Y": 3000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND6",
+      "Symbol": "Ground",
+      "X": 1500,
+      "Y": 3000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND7",
+      "Symbol": "Ground",
+      "X": 1500,
+      "Y": 4200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND8",
+      "Symbol": "Ground",
+      "X": 2700,
+      "Y": 3000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -700,
+      "Y": -1900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vtune",
+          "Expression": "4",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 600,
+      "Y": -1900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Fosc_MHz",
+          "Expression": "OSC1.Fosc/1e6",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Kvco_MHz_per_V",
+          "Expression": "deriv(OSC1.Fosc)/1e6",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          3200,
+          0
+        ],
+        [
+          3600,
+          0
+        ],
+        [
+          3600,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          0
+        ],
+        [
+          2800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2400,
+          0
+        ],
+        [
+          2400,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          300,
+          1800
+        ],
+        [
+          300,
+          2600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          300,
+          2400
+        ],
+        [
+          1500,
+          2400
+        ],
+        [
+          1500,
+          2600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          300,
+          2400
+        ],
+        [
+          -500,
+          2400
+        ],
+        [
+          -500,
+          2600
+        ],
+        [
+          -1100,
+          2600
+        ],
+        [
+          -1100,
+          2200
+        ],
+        [
+          -900,
+          2200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          1800
+        ],
+        [
+          1500,
+          2300
+        ],
+        [
+          1200,
+          2300
+        ],
+        [
+          1200,
+          3600
+        ],
+        [
+          1500,
+          3600
+        ],
+        [
+          1500,
+          3800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          2300
+        ],
+        [
+          2700,
+          2300
+        ],
+        [
+          2700,
+          2600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          3200
+        ],
+        [
+          -700,
+          3200
+        ],
+        [
+          -700,
+          2400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          0
+        ],
+        [
+          200,
+          -900
+        ],
+        [
+          400,
+          -900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          100
+        ],
+        [
+          -300,
+          100
+        ],
+        [
+          -300,
+          1200
+        ],
+        [
+          300,
+          1200
+        ],
+        [
+          300,
+          1400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          1600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          0
+        ],
+        [
+          1200,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          0
+        ],
+        [
+          1000,
+          -900
+        ],
+        [
+          800,
+          -900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          0
+        ],
+        [
+          1000,
+          1200
+        ],
+        [
+          1500,
+          1200
+        ],
+        [
+          1500,
+          1400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          1100
+        ],
+        [
+          -700,
+          1100
+        ],
+        [
+          -700,
+          2000
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 0,
+      "Y": 1200,
+      "Name": "vcc",
+      "OwnerWireIndex": 11,
+      "SegmentIndex": 2,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 200,
+      "Y": 1100,
+      "Name": "c",
+      "OwnerWireIndex": 16,
+      "SegmentIndex": 0,
+      "AlongT": 0.47058823529411764,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2400,
+      "Y": 0,
+      "Name": "v",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3400,
+      "Y": 0,
+      "Name": "t",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 900,
+      "Y": 2400,
+      "Name": "b",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 300,
+      "Y": 3200,
+      "Name": "e",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 0,
+      "AlongT": 0.47368421052631576,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "osc",
+      "Name": "OSC1",
+      "Enabled": true,
+      "MaxHarmonicExpr": "7",
+      "FFTOverSampleExpr": "1",
+      "TolExpr": "1e-9",
+      "OscFguess": "2",
+      "OscUnit": "GHz",
+      "OscAguess": "2.2",
+      "OscPhaseNoise": true,
+      "OscPnStart": "100 Hz",
+      "OscPnStop": "10 MHz",
+      "OscPnNpts": "21",
+      "OscPnLog": true
+    },
+    {
+      "Type": "sweep",
+      "Name": "SW1",
+      "Enabled": true,
+      "PsaVarName": "Vtune",
+      "PsaInnerName": "OSC1",
+      "PsaMode": "StepSize",
+      "PsaStart": 3,
+      "PsaStop": 9,
+      "PsaStepOrCount": 0.5,
+      "PsaKind": "Linear"
+    }
+  ]
+}

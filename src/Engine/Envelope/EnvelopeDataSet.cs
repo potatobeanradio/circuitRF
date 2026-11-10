@@ -251,6 +251,9 @@ public static class EnvelopeDataSet
 
         var ks = multi ? r.CarrierMix.Distinct().ToArray() : [1];
         var (pk, pf) = ProbePower(r, t0, ks);
+        // brief NZ-11: a probe after a mixer is measured at the products its carriers reach (the IF)
+        var reads = CarrierReads(r, carSpecs, pk);
+        if (reads.Cast<CarrierRead>().Any(x => x.Sign != 0)) pf = CarrierBandPower(reads, pk, ks);
 
         // ── drive and supplies: scalars, they never depended on an output ──
         var drive = new Complex[nm];
@@ -299,17 +302,23 @@ public static class EnvelopeDataSet
                 {
                     for (int c = 0; c < nc; c++)
                     {
-                        int k = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
-                        var (f, d) = Delivered(b, k);
+                        // Delivered reads the product's physical spectrum, so a carrier the product holds conjugated, or
+                        // whose product is at a negative frequency, sits at −offset there and mirrored: lower and upper swap.
+                        var rd = reads[b, c];
+                        bool mirrored = rd.Sign != 0 && rd.Sign * Math.Sign(r.MixFreqHz![rd.M]) < 0;
+                        var (f, d) = Delivered(b, rd.M);
                         var (mb, sp) = SignalMeasure.AclrBands(carSpecs[c]);
-                        var a = SignalMeasure.Aclr(f, d, fs, r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0, mb, sp);
+                        var a = SignalMeasure.Aclr(f, d, fs, mirrored ? -rd.Off : rd.Off, mb, sp);
                         int o = (b * nc + c) * AclrLabels.Length;
                         aclr[o] = Dbm(a.ChannelPower);
-                        aclr[o + 1] = a.Acpr1L; aclr[o + 2] = a.Acpr1U; aclr[o + 3] = a.Acpr2L; aclr[o + 4] = a.Acpr2U;
+                        (double l1, double u1, double l2, double u2) = mirrored
+                            ? (a.Acpr1U, a.Acpr1L, a.Acpr2U, a.Acpr2L) : (a.Acpr1L, a.Acpr1U, a.Acpr2L, a.Acpr2U);
+                        aclr[o + 1] = l1; aclr[o + 2] = u1; aclr[o + 3] = l2; aclr[o + 4] = u2;
                         if (noRf[b]) Array.Fill(aclr, double.NaN, o, AclrLabels.Length);
                     }
-                    // the instantaneous delivered power of the first carrier product
-                    Complex[] v1 = ProbeV(b, ks[0]), i1 = ProbeI(b, ks[0]);
+                    // the instantaneous delivered power of the first carrier's product (its IF after a mixer)
+                    int k1 = nc > 0 ? reads[b, 0].M : ks[0];
+                    Complex[] v1 = ProbeV(b, k1), i1 = ProbeI(b, k1);
                     var pt = new double[nm];
                     for (int t = 0; t < nm; t++) pt[t] = 0.5 * (v1[t].Real * i1[t].Real + v1[t].Imaginary * i1[t].Imaginary);
                     papr[b] = noRf[b] ? double.NaN : SignalMeasure.PaprDb(pt, 1e-4);
@@ -323,7 +332,7 @@ public static class EnvelopeDataSet
                     new Axis("metric", Index(AclrLabels.Length), "", AclrLabels)], aclr));
                 ds.Add("PAPR_dB", new DataCube([branchAxis], papr));
                 ds.Add("CCDF", new DataCube([branchAxis, new Axis("prob", probAxis!)], ccdf));
-                AddEvm(ds, r, quiet, plan, t0, branchAxis, carSpecs, noRf, ProbeV, note);
+                AddEvm(ds, r, quiet, plan, t0, branchAxis, carSpecs, noRf, ProbeV, reads, note);
             }
             ds.Add("Pavg_dBm", new DataCube([branchAxis], [.. pf.Select(Dbm)]) { Unit = "dBm" });
             if (imd.Count > 0)
@@ -420,7 +429,7 @@ public static class EnvelopeDataSet
     /// </summary>
     private static void AddEvm(DataSet ds, EnvelopeRunResult r, EnvelopeRunResult? quiet, EnvelopeRunner.Plan plan, int t0,
                                Axis branchAxis, List<CarrierSpec> carSpecs, bool[] noRf, Func<int, int, Complex[]> probeV,
-                               Action<string>? note)
+                               CarrierRead[,] reads, Action<string>? note)
     {
         var meters = carSpecs.Select(c => MeterOf(c.Standard)).ToArray();
         if (meters.All(m => m == Meter.None)) return;
@@ -440,6 +449,14 @@ public static class EnvelopeDataSet
             return y;
         }
 
+        static Complex[] Stored(EnvelopeRunResult run, int t0, int b, int m, int sign)
+        {
+            int n = run.Time.Length - t0;
+            var y = new Complex[n];
+            for (int t = 0; t < n; t++) { var v = run.IProbeVoltage[t0 + t][b][m]; y[t] = sign > 0 ? v : Complex.Conjugate(v); }
+            return y;
+        }
+
         var err = Nan(nb * nc); var peak = Nan(nb * nc); var dev = Nan(nb * nc); var offs = Nan(nb * nc);
         double[]? dist = quiet is null ? null : Nan(nb * nc), noise = quiet is null ? null : Nan(nb * nc), snr = quiet is null ? null : Nan(nb * nc);
         var points = new Complex[nb, nc][]; var refs = new Complex[nc][];
@@ -453,20 +470,25 @@ public static class EnvelopeDataSet
             double off = r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0;
             for (int b = 0; b < nb; b++)
             {
-                var e = Read(meters[c], recs[c].rec, recs[c].record, probeV(b, k), fs, start, off, out why[c]);
+                // the product this carrier is read at, at this probe (CarrierReads)
+                var at0 = reads[b, c];
+                bool silent = noRf[b];
+                Complex[] Received(EnvelopeRunResult run, Func<int, int, Complex[]> own) =>
+                    at0.Sign == 0 ? own(b, k) : Stored(run, t0, b, at0.M, at0.Sign);
+                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, out why[c]);
                 if (e is null) break;
                 int n = e.Points?.Length ?? e.Freq?.Length ?? 0;
                 int stride = Math.Max(1, (n + ConstMaxSamples - 1) / ConstMaxSamples);
                 int kept = (n + stride - 1) / stride;
                 if (e.Ref is { } er) refs[c] ??= [.. Enumerable.Range(0, kept).Select(i => er[i * stride])];
                 if (e.FreqRef is { } fr) freqRef[c] ??= [.. Enumerable.Range(0, kept).Select(i => fr[i * stride])];
-                if (noRf[b]) continue;
+                if (silent) continue;
                 int at = b * nc + c;
                 err[at] = e.Err; peak[at] = e.Peak; dev[at] = e.Dev; offs[at] = e.Off;
                 if (e.Points is { } ep) points[b, c] = [.. Enumerable.Range(0, kept).Select(i => ep[i * stride])];
                 if (e.Freq is { } ef) freq[b, c] = [.. Enumerable.Range(0, kept).Select(i => ef[i * stride])];
                 if (quiet is null) continue;
-                var q = Read(meters[c], recs[c].rec, recs[c].record, QuietV(b, k), fs, start, off, out _);
+                var q = Read(meters[c], recs[c].rec, recs[c].record, Received(quiet, QuietV), fs, start, at0.Off, out _);
                 if (q is null) continue;
                 double diff = e.Err * e.Err - q.Err * q.Err;
                 dist![at] = q.Err;
@@ -628,6 +650,88 @@ public static class EnvelopeDataSet
     /// between products average out over a carrier period. Averaged from <paramref name="t0"/>, the built-in scalars'
     /// window. The fundamental band is <paramref name="fund"/>: harmonic 1, or the lattice's carrier products.
     /// </summary>
+    /// <summary>Where one carrier is read at one probe: the product <see cref="M"/>, whose stored envelope holds the carrier
+    /// itself (<see cref="Sign"/> +1) or its conjugate (−1), at offset <see cref="Off"/>; Sign 0 is the carrier's own product,
+    /// read as it always was.</summary>
+    internal readonly record struct CarrierRead(int M, int Sign, double Off);
+
+    /// <summary>
+    /// Where each carrier is read at each probe (brief NZ-11). At its own product, unless a mixer has moved it: a carrier's
+    /// tone combined with LO tones — a fundamental with no carrier (a P1Tone's) or whose carriers are all CW — reaches other
+    /// products, and at each probe the one delivering the most power of those and its own is read, so a receiver's IF is
+    /// measured where it is. A product stores the envelope at its signed frequency Σ k_u·f_u, which holds the carrier where
+    /// its tone's k is +1 and its conjugate where it is −1; the carrier's offset there is its own plus Σ k_u·(each LO's
+    /// offset), k normalised to +1 on the carrier's tone. A CW carrier is never moved. With no LO tone every carrier is at
+    /// its own product, as before.
+    /// </summary>
+    internal static CarrierRead[,] CarrierReads(EnvelopeRunResult r, List<CarrierSpec> carSpecs, double[] pk)
+    {
+        int nb = r.IProbeNames.Length, nc = carSpecs.Count;
+        int nk = nb > 0 ? pk.Length / nb : 0;
+        var reads = new CarrierRead[nb, nc];
+        for (int c = 0; c < nc; c++)
+        {
+            int own = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
+            double off0 = r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0;
+            for (int b = 0; b < nb; b++) reads[b, c] = new CarrierRead(own, 0, off0);
+        }
+        if (r.MixTones is not { } mt || r.CarrierMix.Length != nc || nb == 0) return reads;
+
+        int nTones = mt[0].Length;
+        int[] toneOf = [.. Enumerable.Range(0, nc).Select(c => Array.IndexOf(mt[r.CarrierMix[c]], 1))];
+        var loOff = new double?[nTones];
+        for (int u = 0; u < nTones; u++)
+        {
+            int[] on = [.. Enumerable.Range(0, nc).Where(c => toneOf[c] == u)];
+            if (on.Length == 0) loOff[u] = 0;
+            else if (on.All(c => carSpecs[c].Standard == CarrierStandard.Cw) && on.Length == 1)
+                loOff[u] = r.CarrierOffsetHz.Length > on[0] ? r.CarrierOffsetHz[on[0]] : 0;
+        }
+        for (int c = 0; c < nc; c++)
+        {
+            if (carSpecs[c].Standard == CarrierStandard.Cw || toneOf[c] < 0) continue;
+            int own = r.CarrierMix[c];
+            var cands = new List<CarrierRead>();
+            for (int m = 0; m < mt.Length; m++)
+            {
+                int sign = mt[m][toneOf[c]];
+                if (Math.Abs(sign) != 1 || m == own) continue;
+                double off = r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0;
+                bool ok = true;
+                for (int u = 0; u < nTones && ok; u++)
+                {
+                    if (u == toneOf[c] || mt[m][u] == 0) continue;
+                    if (loOff[u] is { } lo) off += sign * mt[m][u] * lo; else ok = false;
+                }
+                if (ok) cands.Add(new CarrierRead(m, sign, off));
+            }
+            if (cands.Count == 0) continue;
+            for (int b = 0; b < nb; b++)
+            {
+                double best = pk[b * nk + own];
+                foreach (var cr in cands)
+                    if (pk[b * nk + cr.M] > best) { best = pk[b * nk + cr.M]; reads[b, c] = cr; }
+            }
+        }
+        return reads;
+    }
+
+    /// <summary>The probe's carrier-band power: the sum over the distinct products its carriers are read at.</summary>
+    private static double[] CarrierBandPower(CarrierRead[,] reads, double[] pk, int[] fund)
+    {
+        int nb = reads.GetLength(0), nc = reads.GetLength(1);
+        var pf = new double[nb];
+        if (nb == 0) return pf;
+        int nk = pk.Length / nb;
+        for (int b = 0; b < nb; b++)
+        {
+            // as ProbePower's fund list when nothing moved: the same products in the same order
+            var ms = nc == 0 ? fund : [.. Enumerable.Range(0, nc).Select(c => reads[b, c].M).Distinct()];
+            foreach (int m in ms) pf[b] += pk[b * nk + m];
+        }
+        return pf;
+    }
+
     private static (double[] pk, double[] pf) ProbePower(EnvelopeRunResult r, int t0, int[] fund)
     {
         int nb = r.IProbeNames.Length, nt = r.Time.Length;

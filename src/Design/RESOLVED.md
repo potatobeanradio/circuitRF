@@ -29323,3 +29323,12 @@ the 10-port file as someone else's, "left it alone", and the workspace kept a ne
 Ownership is now the header up to the count (`OwnerPrefix`); a hand-written file of that name is still left alone.
 
 Test: `tests/Ui.Tests/Em3d/CoSimC3dBytesTests.cs` `ARerunWithMorePorts_ReplacesItsOwnNetlist_ButNotAHandWrittenOne`.
+
+## Drawing a netlist kept a loadpull grid's absolute path (brief NZ-11, 2026-11-09)
+
+`NetlistSchematic.Build` rebased every part's `File=` against the drawing's workspace root, but copied the
+analyses verbatim. `CnlReader` makes a loadpull's `Grid=` (and a pursuit's `OutputGrid=`) absolute against the
+netlist's folder, so `netlist --to-schematic` wrote the drawing machine's own path into `LpGridPath` — found when
+the Receiver Noise example's sourcepull bench, drawn from a scratch netlist, failed on another folder. The two
+paths are now rebuilt through the `.csch` analysis record relative to the same base a `File=` uses. Gate:
+`NetlistToSchematicTests.ALoadpullGridDrawnIntoACell_IsStoredAgainstTheWorkspaceRoot`.

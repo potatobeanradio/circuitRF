@@ -57,9 +57,11 @@ disagree with the simulation:
   small, it does not exist. Type a real number to turn a non-ideality on.
 - **Lossless except where a loss is typed in.** `IL` and `Loss` are the only dissipation in the
   family. There is no skin effect, no dielectric loss, no radiation.
-- **No spread, no temperature, no power, no noise.** No manufacturing tolerance, no drift, no DC
-  supply current, no bias pins, and no noise figure. An ideal amplifier is an ideal amplifier at any
-  temperature and consumes nothing.
+- **No spread, no temperature, no power.** No manufacturing tolerance, no drift, no DC supply current
+  and no bias pins. An ideal amplifier is an ideal amplifier at any temperature and consumes nothing.
+  Noise is the one exception, and only where it is asked for: an Amplifier and a Mixer are noisy by
+  their `NF`, and a block with loss is thermal by that loss, in the noise analyses
+  ([Simulations ▸ Noise](simulations.html#noise)). With `NF` blank, an Amplifier adds no noise and the run names it.
 
 <div class="callout note">
 <span class="label">"Ideal" means the term is absent, not small</span>
@@ -268,8 +270,8 @@ isolations and per-port impedances.
 `NF` states the mixer's noise figure and `NFType` whether it is a single-sideband (`ssb`, the
 default) or double-sideband (`dsb`) figure. An S-parameter run has no LO, so it has no conversion
 path: the mixer stays out of its noise exactly as it stays out of its S, and `explain` says so.
-[Harmonic-balance noise](simulations.html#hb-noise) uses it: the mixer is a noiseless multiplier with an equivalent noise
-source at its RF port, sized so its own DSB noise figure is `NF` (an SSB figure is taken as 3 dB above the DSB one, since
+[Harmonic-balance noise](simulations.html#hb-noise) and [envelope noise](simulations.html#envelope-noise) use it: the
+mixer is a noiseless multiplier with an equivalent noise source at its RF port, sized so its own DSB noise figure is `NF` (an SSB figure is taken as 3 dB above the DSB one, since
 the multiplier converts both sidebands equally). An SSB figure below 3 dB is below what a noiseless mixer reaches; the run
 says so and adds no noise.
 

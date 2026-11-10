@@ -355,12 +355,9 @@ public sealed record AmplifierNoiseSpec(double? NfDb, double? NfOptDb, double? R
     public TwoPortNoise Resolve(Complex zIn)
     {
         if (NfDb is < 0 || NfOptDb is < 0)
-            throw new InvalidOperationException(
-                $"Amp: a noise figure below 0 dB is less noise than the source's own (NF={NfDb}, NFopt={NfOptDb}); " +
-                "no two-port is quieter than a noiseless one.");
+            throw new InvalidOperationException(AmplifierNoiseDiagnostics.BelowZero(NfDb, NfOptDb).Render());
         if (NfDb is { } nf0 && NfOptDb is { } opt0 && nf0 < opt0 - 1e-12)
-            throw new InvalidOperationException(
-                $"Amp: NF={nf0} dB is below NFopt={opt0} dB, but NFopt is the lowest noise figure any source gives.");
+            throw new InvalidOperationException(AmplifierNoiseDiagnostics.BelowMinimum(nf0, opt0).Render());
 
         double r     = zIn.Real;
         double fmin  = Math.Pow(10, (NfOptDb ?? NfDb!.Value) / 10);
@@ -376,9 +373,7 @@ public sealed record AmplifierNoiseSpec(double? NfDb, double? NfOptDb, double? R
         {
             double mis = Sq(yIn - yopt);
             if (!(mis > 1e-24 * Sq(yIn)))
-                throw new InvalidOperationException(
-                    $"Amp: NF={nf} dB and NFopt={NfOptDb} dB differ, but with no Gopt the noise match is Zin itself, where " +
-                    "the noise figure is NFopt. State Gopt (or Rn) to say where the minimum lies.");
+                throw new InvalidOperationException(AmplifierNoiseDiagnostics.NoMinimumPlace(nf, NfOptDb.Value).Render());
             rn = (Math.Pow(10, nf / 10) - fmin) * yIn.Real / mis;
         }
         else rn = oneWave;
@@ -386,8 +381,7 @@ public sealed record AmplifierNoiseSpec(double? NfDb, double? NfOptDb, double? R
         var p = new TwoPortNoise(fmin, gamma, rn, r);
         if (!NoiseMetrics.IsRealizable(p, 1e-9 * Math.Max(1, fmin - 1)))
             throw new InvalidOperationException(
-                $"Amp: the noise parameters NFmin = {10 * Math.Log10(fmin):G6} dB, Rn = {rn:G6} Ohm and Gopt = {gamma:G6} " +
-                "describe no physical two-port: Fmin − 1 must not exceed 4·Rn·Re(Yopt). Raise Rn or move Gopt.");
+                AmplifierNoiseDiagnostics.Unphysical(10 * Math.Log10(fmin), rn, gamma.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)).Render());
         return p;
     }
 

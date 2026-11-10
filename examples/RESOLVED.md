@@ -978,3 +978,31 @@ a closed form (6 dB at 290 K and `1 + (T/T0)(L − 1)` to 6e-15 dB; Friis to 3e-
 - **`3 LNA Noise Circles.cdd` has a third row**: `Te` against `Tmin`, and `Zopt` as Re and Im against frequency, each with
   a marker at 4 GHz. At the match they meet: Te = Tmin, and Zopt is the 50 Ω port. Zopt is drawn as a rectangular
   plot rather than a second Smith trace, because on the chart it would sit exactly on `Sopt`.
+
+## Receiver Noise (brief NZ-11, 2026-11-09)
+
+Seven benches, each written as a `.cnl`, run headless until its numbers were right, then drawn by `netlist
+--to-schematic` from a copy placed at the workspace root (so a relative reference lands relative to the run base);
+the seven Data Displays by `ReceiverNoiseExampleTests.BuildTheDisplays` (`CRF_AUTHOR_RXNOISE=1`). Every number the
+README quotes is asserted by `ReceiverNoiseExampleTests`, every README table is full (the in-app viewer flattens a
+table to rows joined by dashes, so an empty cell reads as a stray dash), and `check` gives 0 errors and one warning
+per bench, the ambient set by `temp = 16.85`.
+
+- **Bench 6 needed three engine fixes** (`src/Engine/RESOLVED.md`, NZ-11): a P1Tone LO gets a fundamental of its own
+  (it drove nothing before), a carrier is measured at its IF after a mixer, and a Mixer's NF is in envelope noise.
+- **Every LO in the workspace is a P1Tone**, the part an LO is drawn with (owner). Bench 3's was a `V_1Tone` behind a
+  50 Ω resistor, whose thermal noise was 48 % of the mixer's; with a P1Tone, noiseless in HB as every source is, the
+  diode is the largest share, and the README says how to put the LO's own noise back. `EveryLoIsAP1Tone` holds it.
+- **Bench 6's LO mask is bench 7's PN at 3.5 V**, written by `PhaseNoiseMask.Assignment` (what Copy as Phase-Noise
+  Mask writes) and checked point for point by the VCO test. Change the VCO and the mask goes stale; the test says so.
+- **The VCO sweep starts at 3 V.** Below it the close-in and far-out phase noise disagree at their join (1.6 dB at
+  1 V, 0.8 dB at 2 V) and the run warns; at 2.5 V a fresh start-up also needed `Aguess` near the swing. `MaxHarm=9`
+  failed the amplitude ramp where 7 did not.
+- **A Smith chart is sized from its plot's width**, so a 620 × 520 box drew a chart taller than the box and the legend
+  ran into the plot below; the circles and contour charts are narrower than they are tall for that reason. A Smith
+  title at `Top = 0` sits above the page's edge, as it does in the S-Parameter Noise displays.
+- **`plot --trace cube=` takes a cube and a slice, not an expression**, so the EVM split in dB and the constellations
+  are authored as `TraceConfig`s with `Expression`/`XSpec`. A plot the verb writes has `Axes: null`; a log offset axis
+  needs a whole `AxesConfig` with zero windows (autoscaled), and `--freq-unit Hz` keeps an offset axis from being
+  drawn in GHz under an "Hz" label.
+- **The drawings are the drawer's.** Bench 7's Colpitts crosses a wire or two; it extracts and runs as written.

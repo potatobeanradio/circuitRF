@@ -274,7 +274,10 @@ public static class NetlistSchematic
         }
         PlaceDirectives(model, tb);
 
-        foreach (var a in tb.Analyses) model.Analyses.Add(a);
+        // A loadpull's grid and a pursuit's output grid come back from the reader absolute, as a part's File does, and are
+        // stored relative to the same base: copied verbatim, the drawing named a folder of the machine it was drawn on.
+        string? fileBase = FileBase(schematicDirectory);
+        foreach (var a in tb.Analyses) model.Analyses.Add(RebasePaths(a, fileBase));
 
         // The netlist's own technology becomes the schematic's (R-as6-1), relative to where it is written.
         if (tb.Technology is { Length: > 0 } technology)
@@ -734,6 +737,32 @@ public static class NetlistSchematic
         if (schematicDirectory is null) return null;
         string own = System.IO.Path.GetFullPath(schematicDirectory);
         return CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(own) ?? own;
+    }
+
+    /// <summary>An analysis whose file paths the reader made absolute, with them relative to <paramref name="dir"/>; any
+    /// other analysis as it is. Rebuilt through the .csch's own analysis record, which is how the drawing stores it.</summary>
+    private static Analysis RebasePaths(Analysis a, string? dir)
+    {
+        if (dir is null) return a;
+        string? Rel(string? p) => p is { Length: > 0 } && System.IO.Path.IsPathRooted(p)
+            ? System.IO.Path.GetRelativePath(dir, p).Replace('\\', '/') : p;
+        switch (a)
+        {
+            case LoadpullAnalysis lp when Rel(lp.GridPath) != lp.GridPath:
+            {
+                var dto = AnalysisSerialization.ToDto(a);
+                dto.LpGridPath = Rel(lp.GridPath);
+                return AnalysisSerialization.FromDto(dto) ?? a;
+            }
+            case LoadpullPursuitAnalysis lpp when Rel(lpp.OutputGridPath) != lpp.OutputGridPath:
+            {
+                var dto = AnalysisSerialization.ToDto(a);
+                dto.LppOutputGridPath = Rel(lpp.OutputGridPath);
+                return AnalysisSerialization.FromDto(dto) ?? a;
+            }
+            default:
+                return a;
+        }
     }
 
     /// <summary>A quoted absolute path, relative to <paramref name="dir"/> — what a schematic stores,

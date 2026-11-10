@@ -78,6 +78,64 @@ public sealed class EnvelopeEngineMt
         return res;
     }
 
+    /// <summary>Every P1Tone of the netlist with the frequency it is driven at: its own <c>Freq</c> (brief NZ-11).</summary>
+    public static List<(string Name, double Hz)> ToneSources(ElaboratedNetlist nl) =>
+        [.. nl.Components.Where(c => c.Model is P1ToneModel).Select(c => (c.InstancePath, ToneHz(c))).Where(t => t.Item2 > 0)];
+
+    /// <summary>A P1Tone's drive frequency, Hz: its <c>Freq</c>.</summary>
+    internal static double ToneHz(ElaboratedComponent ec) =>
+        ec.Parameters.TryGetValue("Freq", out var f) && f.Kind == Core.Expressions.ValueKind.Real ? f.AsReal() : ((P1ToneModel)ec.Model).FreqHz;
+
+    /// <summary>
+    /// Brief NZ-11: the run's fundamentals with its CW tone sources in them. The carriers' groups are <see cref="Plan(ModSourceModel[])"/>'s;
+    /// a P1Tone on a frequency they already reach (a harmonic of the one envelope, or a product of the two within
+    /// <paramref name="maxMixOrder"/>) adds nothing, and one on any other frequency — an LO — is a fundamental of its own,
+    /// with no carriers and no signal rate of its own. A tone inside a carrier group's band but not on one of its
+    /// frequencies is refused, as is a third fundamental: either would otherwise run with the tone driving nothing.
+    /// </summary>
+    /// <param name="f0Single">The single envelope's fundamental (the first MOD_Source's Fc), when the carriers make one group.</param>
+    public static List<(double centreHz, List<(int src, int car)> members, double needRate)> Plan(
+        ModSourceModel[] sources, IReadOnlyList<(string Name, double Hz)> tones, double f0Single, int maxHarm, int maxMixOrder)
+    {
+        var plan = Plan(sources);
+        if (tones.Count == 0 || plan.Count > 2) return plan;
+        var groupCentres = plan.Select(g => g.centreHz).ToArray();
+        bool Reached(double f)
+        {
+            if (groupCentres.Length == 1)
+            {
+                for (int k = 1; k <= Math.Max(1, maxHarm); k++) if (Math.Abs(f - k * f0Single) < 1.0) return true;
+                return false;
+            }
+            for (int a = -maxMixOrder; a <= maxMixOrder; a++)
+                for (int b = -(maxMixOrder - Math.Abs(a)); b <= maxMixOrder - Math.Abs(a); b++)
+                    if (Math.Abs(f - (a * groupCentres[0] + b * groupCentres[1])) < 1.0) return true;
+            return false;
+        }
+
+        var added = new List<(string Name, double Hz)>();
+        foreach (var (name, f) in tones)
+        {
+            if (Reached(f) || added.Any(x => Math.Abs(x.Hz - f) < 1.0)) continue;
+            // A fundamental must stand apart from every carrier as the carriers' own groups do: closer, its envelope would
+            // overlap theirs and count the same spectrum twice.
+            for (int s = 0; s < sources.Length; s++)
+                foreach (var c in sources[s].Signal.Carriers)
+                {
+                    double fc = sources[s].FcHz + c.OffsetHz, bw = Math.Max(c.Spec.BandwidthHz, 1e6);
+                    if (Math.Abs(f - fc) <= 3 * bw)
+                        throw new InvalidOperationException(EnvelopeToneDiagnostics.InsideCarrier(name, f, fc).Render());
+                }
+            added.Add((name, f));
+        }
+        if (plan.Count + added.Count > 2)
+            throw new InvalidOperationException(
+                EnvelopeToneDiagnostics.TooManyFundamentals(plan.Count, added, plan.Count + added.Count).Render());
+        foreach (var (_, f) in added) plan.Add((f, [], 0.0));
+        plan.Sort((x, y) => x.centreHz.CompareTo(y.centreHz));
+        return plan;
+    }
+
     private sealed class Prod
     {
         public double W;            // signed
@@ -96,11 +154,12 @@ public sealed class EnvelopeEngineMt
         var sw = Stopwatch.StartNew();
         var srcEcs = _nl.Components.Where(c => c.Model is ModSourceModel).ToArray();
         var sources = srcEcs.Select(c => (ModSourceModel)c.Model).ToArray();
-        var plan = Plan(sources);
+        var toneSources = ToneSources(_nl);
+        var plan = Plan(sources, toneSources, sources[0].FcHz, p.MaxHarm, maxMixOrder);
         if (plan.Count != 2)
             throw new InvalidOperationException(plan.Count > 2
                 ? $"envelope: {plan.Count} widely spaced carrier groups need {plan.Count} fundamentals; up to 2 are supported"
-                : "envelope: the multi-fundamental engine needs two carrier groups");
+                : "envelope: the multi-fundamental engine needs two fundamentals (two carrier groups, or a carrier group and a P1Tone)");
         int T = 2;
         var tones = plan.Select(g => g.centreHz).ToArray();
         double need = plan.Max(g => g.needRate);
@@ -156,8 +215,10 @@ public sealed class EnvelopeEngineMt
         int N = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
         double fc = tones.Average();
+        // Each P1Tone is driven at its own Freq (brief NZ-11): it is on a product, or a fundamental of its own. Driving
+        // every one at the first fundamental put an LO at the carrier's frequency.
         foreach (var ec in _nl.Components)
-            if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: fc, driveFreqHz: tones[0]);
+            if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: fc, driveFreqHz: ToneHz(ec) is > 0 and var hz ? hz : tones[0]);
             else if (ec.Model is PnToneModel pn) pn.SetToneContext(fc: fc);
         foreach (var s in sources) { s.SetToneContext(fc); s.EnvelopeDrive = Complex.Zero; }
         // Before the products are stamped: stamping an element alone re-numbers a source's branch.

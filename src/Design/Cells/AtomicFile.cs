@@ -1,3 +1,5 @@
+using CircuitRF.Diagnostics;
+
 namespace CircuitRF.Design.Cells;
 
 /// <summary>
@@ -55,7 +57,8 @@ public static class AtomicFile
                     continue;
                 }
                 if (e is UnauthorizedAccessException && !e.Message.Contains(path, StringComparison.OrdinalIgnoreCase))
-                    throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.", e);
+                    throw new UnauthorizedAccessException(Diagnostic.Create("file.access.denied", DiagnosticSeverity.Error,
+                        "Access to the path '{path}' is denied.", ("path", path)).Render(), e);
                 throw;
             }
         }

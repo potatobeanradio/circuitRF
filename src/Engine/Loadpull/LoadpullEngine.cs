@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Diagnostics;
 using CircuitRF.Engine.HarmonicBalance;
 using RfCore;
 using RfCore.Data;
@@ -195,7 +196,9 @@ public sealed class LoadpullEngine
                     "Loadpull " + FreqUnit.UnresolvedFieldMessage("NoiseFreq", analysis, keys.NoiseFreqExpr, ex), ex);
             }
             if (!(hz > 0) || !double.IsFinite(hz))
-                throw new InvalidOperationException($"Loadpull '{analysis}': NoiseFreq={keys.NoiseFreqExpr} is not a positive frequency.");
+                throw new InvalidOperationException(Diagnostic.Create("loadpull.noise.freq-not-positive", DiagnosticSeverity.Error,
+                    "Loadpull '{analysis}': NoiseFreq={expr} is not a positive frequency.",
+                    ("analysis", analysis), ("expr", keys.NoiseFreqExpr)).Render());
         }
         var k = HarmonicBalanceAnalysis.ParseSideband(keys.NoiseSidebandExpr);
         if (k is not { Length: 1 })

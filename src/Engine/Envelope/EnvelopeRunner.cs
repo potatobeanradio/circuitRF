@@ -214,9 +214,18 @@ public static class EnvelopeRunner
         var allSrc = first.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().ToArray();
         foreach (var m in allSrc) _ = m.Signal;
         int groups = EnvelopeEngineMt.Plan(allSrc).Count;
-        int fundamentals = plan.Mode == "single" ? 1 : groups;
+        // A P1Tone off the carriers' frequencies (an LO) is a fundamental of its own (brief NZ-11).
+        var toneSources = EnvelopeEngineMt.ToneSources(first);
+        int fundamentals = plan.Mode == "single"
+            ? 1
+            : EnvelopeEngineMt.Plan(allSrc, toneSources, allSrc[0].FcHz, p.MaxHarm, plan.MaxMixOrder).Count;
         if (plan.Mode == "single" && groups > 1)
             note?.Invoke($"envelope: Envelope=single - one envelope around {allSrc[0].FcHz / 1e9:0.####} GHz spans all {groups} carrier groups and their IM3 (no lattice)");
+        if (plan.Mode == "single")
+            foreach (var (name, hz) in toneSources)
+                if (!Enumerable.Range(1, Math.Max(1, p.MaxHarm)).Any(k => Math.Abs(hz - k * allSrc[0].FcHz) < 1.0))
+                    first.AddWarningOnce("envelope-tone-off:" + name,
+                        EnvelopeToneDiagnostics.OffSingleEnvelope(plan.Name, name, hz, allSrc[0].FcHz).Render());
         if (fundamentals > 2)
             throw new InvalidOperationException($"envelope: {fundamentals} widely spaced carrier groups would need {fundamentals} fundamentals; up to 2 are supported");
 

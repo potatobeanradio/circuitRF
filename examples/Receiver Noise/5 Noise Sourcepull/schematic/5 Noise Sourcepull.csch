@@ -1,0 +1,572 @@
+{
+  "FormatVersion": 2,
+  "CellName": "5 Noise Sourcepull",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "TS",
+      "Symbol": "Tuner",
+      "X": 0,
+      "Y": 600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "TunerName",
+          "Expression": "\"TS\"",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Zdefault",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "\"on\"",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbias",
+          "Expression": "-0.5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          330,
+          -413
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Rg",
+      "Symbol": "Resistor",
+      "X": 600,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "1",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "F1",
+      "Symbol": "FetStatz",
+      "X": 1800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vto",
+          "Expression": "-1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Beta",
+          "Expression": "0.1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B",
+          "Expression": "0.3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Alpha",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Lambda",
+          "Expression": "0.3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Cgs",
+          "Expression": "0.4",
+          "Unit": "pF",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Cgd",
+          "Expression": "0.05",
+          "Unit": "pF",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Ri",
+          "Expression": "3",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Tg",
+          "Expression": "300",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Td",
+          "Expression": "3000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          230,
+          -433
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Rs",
+      "Symbol": "Resistor",
+      "X": 1800,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "0.5",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "LS",
+      "Symbol": "Inductor",
+      "X": 1800,
+      "Y": 2800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "1",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          276,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Rd",
+      "Symbol": "Resistor",
+      "X": 2800,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "10",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Rstab",
+      "Symbol": "Resistor",
+      "X": 3400,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "82",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "TL",
+      "Symbol": "Tuner",
+      "X": 4200,
+      "Y": 600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "TunerName",
+          "Expression": "\"TL\"",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Zdefault",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "\"on\"",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbias",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          330,
+          -413
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 3400,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 1800,
+      "Y": 3000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 0,
+      "Y": -1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Ftone",
+          "Expression": "2.45",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          1800,
+          -200
+        ],
+        [
+          1800,
+          -400
+        ],
+        [
+          2400,
+          -400
+        ],
+        [
+          2400,
+          0
+        ],
+        [
+          2600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          1600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1800,
+          200
+        ],
+        [
+          1800,
+          1400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1800,
+          1800
+        ],
+        [
+          1800,
+          2600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3000,
+          0
+        ],
+        [
+          4200,
+          0
+        ],
+        [
+          4200,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3400,
+          0
+        ],
+        [
+          3400,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 200,
+      "Y": 0,
+      "Name": "g1",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1200,
+      "Y": 0,
+      "Name": "g",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2100,
+      "Y": -400,
+      "Name": "d",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1800,
+      "Y": 800,
+      "Name": "s",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3600,
+      "Y": 0,
+      "Name": "d2",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1800,
+      "Y": 2200,
+      "Name": "s1",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "lp",
+      "Name": "LP1",
+      "Enabled": true,
+      "LpLoadTunerName": "TL",
+      "LpSourceTunerName": "TS",
+      "LpGridPath": "5 Noise Sourcepull/schematic/source_grid.gam",
+      "LpToneExpr": "Ftone",
+      "LpPinStartExpr": "-30",
+      "LpPinMaxExpr": "0",
+      "LpPinStepExpr": "10",
+      "LpMaxHarmonicExpr": "5",
+      "LpSweepExpr": "Source",
+      "LpTuneHarmExpr": "1",
+      "LpCompressionExpr": "3",
+      "LpGainTypeExpr": "Gt",
+      "LpTickleExpr": "off",
+      "LpMaxIterExpr": "100",
+      "LpFftOverSampleExpr": "1",
+      "LpTolExpr": "1e-9",
+      "LpDriveSteppingExpr": "IfNecessary",
+      "LpGuardHarmonicExpr": "0",
+      "LpNoiseExpr": "yes"
+    }
+  ]
+}

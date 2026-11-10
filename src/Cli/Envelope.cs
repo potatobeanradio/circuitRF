@@ -262,10 +262,13 @@ internal static class EnvelopeVerb
                 var car = cube.Axes[1].Labels!;
                 double V(string k, int p, int c) => ds.Cubes[k].RealValues[p * car.Length + c];
                 Console.WriteLine($"  {head,-20}" + string.Concat(cols.Select(h => $" {h,10}")) + (split ? "     dist %    noise %     SNR dB" : ""));
-                foreach (int p in rf)
+                // a probe after a mixer carries no RF at the carrier's own product but is read at its IF (brief NZ-11)
+                int[] rows = [.. Enumerable.Range(0, branches.Length)
+                    .Where(p => rf.Contains(p) || Enumerable.Range(0, car.Length).Any(c => !double.IsNaN(V(err, p, c))))];
+                foreach (int p in rows)
                     for (int c = 0; c < car.Length; c++)
                     {
-                        if (double.IsNaN(V(err, p, c)) && !rf.Any(q => !double.IsNaN(V(err, q, c)))) continue;
+                        if (double.IsNaN(V(err, p, c)) && !rows.Any(q => !double.IsNaN(V(err, q, c)))) continue;
                         Console.WriteLine($"  {branches[p],-20}" + string.Concat(keys.Select(k => string.Format(inv, " {0,10:0.000}", V(k, p, c)))) +
                                           (split ? string.Format(inv, " {0,10:0.000} {1,10:0.000} {2,10:0.00}", V(dist, p, c), V(noise, p, c), V("SNR_dB", p, c)) : "") +
                                           $"   {car[c]}");

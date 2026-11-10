@@ -84,9 +84,11 @@ Nothing is stamped into the matrix at all, so the reverse path of a default circ
 small, it does not exist. Type a real number to turn a non-ideality on.</li>
 <li><strong>Lossless except where a loss is typed in.</strong> <code>IL</code> and <code>Loss</code> are the only dissipation in the
 family. There is no skin effect, no dielectric loss, no radiation.</li>
-<li><strong>No spread, no temperature, no power, no noise.</strong> No manufacturing tolerance, no drift, no DC
-supply current, no bias pins, and no noise figure. An ideal amplifier is an ideal amplifier at any
-temperature and consumes nothing.</li>
+<li><strong>No spread, no temperature, no power.</strong> No manufacturing tolerance, no drift, no DC supply current
+and no bias pins. An ideal amplifier is an ideal amplifier at any temperature and consumes nothing.
+Noise is the one exception, and only where it is asked for: an Amplifier and a Mixer are noisy by
+their <code>NF</code>, and a block with loss is thermal by that loss, in the noise analyses
+(<a href="simulations.html#noise">Simulations ▸ Noise</a>). With <code>NF</code> blank, an Amplifier adds no noise and the run names it.</li>
 </ul>
 <div class="callout note">
 <span class="label">"Ideal" means the term is absent, not small</span>
@@ -364,8 +366,8 @@ isolations and per-port impedances.</p>
 <p><code>NF</code> states the mixer's noise figure and <code>NFType</code> whether it is a single-sideband (<code>ssb</code>, the
 default) or double-sideband (<code>dsb</code>) figure. An S-parameter run has no LO, so it has no conversion
 path: the mixer stays out of its noise exactly as it stays out of its S, and <code>explain</code> says so.
-<a href="simulations.html#hb-noise">Harmonic-balance noise</a> uses it: the mixer is a noiseless multiplier with an equivalent noise
-source at its RF port, sized so its own DSB noise figure is <code>NF</code> (an SSB figure is taken as 3 dB above the DSB one, since
+<a href="simulations.html#hb-noise">Harmonic-balance noise</a> and <a href="simulations.html#envelope-noise">envelope noise</a> use it: the
+mixer is a noiseless multiplier with an equivalent noise source at its RF port, sized so its own DSB noise figure is <code>NF</code> (an SSB figure is taken as 3 dB above the DSB one, since
 the multiplier converts both sidebands equally). An SSB figure below 3 dB is below what a noiseless mixer reaches; the run
 says so and adds no noise.</p>
 <p>They are documented in full, with the conversion-gain arithmetic and the non-ideality table, under

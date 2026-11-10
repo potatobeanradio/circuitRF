@@ -42,6 +42,7 @@
 <nav class="toc">
     <h2>Analyses</h2>
     <ol>
+      <li><a href="#noise">Noise: which analysis answers what</a></li>
       <li><a href="#dc">DC (operating point)</a></li>
       <li><a href="#s-parameters">S-Parameters</a></li>
       <li><a href="#harmonic-balance">Harmonic Balance</a></li>
@@ -106,6 +107,68 @@ analysis that answers almost everything about them: port match, isolation, coupl
 a filter's passband and rejection, a duplexer's arm-to-arm leakage, and an amplifier's small-signal
 gain and stability.</p>
 <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
+<h2 id="noise">Noise: which analysis answers what</h2>
+<p>Noise is not an analysis of its own. Five analyses compute it, each switched on with <code>Noise=yes</code> (on the oscillator,
+<code>PhaseNoise=yes</code>), and each answers a different question. Without the key, every one of them runs exactly as before.</p>
+<ul>
+<li><strong><a href="#sp-noise">S-parameters</a></strong>: the small-signal noise figure of a two-port at its DC bias. NF and the four noise
+parameters (NFmin, Sopt, Rn), the noise temperatures, each part's share of the noise, and for any number of ports the
+correlation of the outgoing noise waves. This is where an LNA is designed, with the
+<a href="derived-metrics.html#lna-circles">noise, gain and stability circles</a>.</li>
+<li><strong><a href="#hb-noise">Harmonic balance</a></strong>: the noise figure with a large signal in the circuit. A mixer's SSB and DSB noise
+figure with its LO running, an LNA's noise figure while a blocker drives it, and how much noise folds in through each
+sideband.</li>
+<li><strong><a href="#lp-noise">Loadpull and sourcepull</a></strong>: NF as one more metric at every termination and drive level, with contours,
+for the trade between noise, gain and output power.</li>
+<li><strong><a href="#envelope-noise">Envelope</a></strong>: thermal noise and a source's phase-noise mask in a modulated run, and what they do to
+the signal: <a href="#envelope-evm">EVM, SNR and the constellation</a>, split into the noise's part and the distortion's.</li>
+<li><strong><a href="#oscillator-phase-noise">Oscillator</a></strong>: an oscillator's phase noise from the circuit's own noise sources, which an
+envelope run's LO can then carry.</li>
+</ul>
+<p>Each part's noise model is the same in all five. Passive parts are thermal at their own temperature. An SnP block with
+Touchstone noise data is noisy by that data. Diodes, BJTs, MOSFETs and FETs have shot, channel, thermal and flicker
+noise as their models declare. A system Amplifier and Mixer are noisy by their <code>NF</code>, and a compiled model by the sources
+it declares. A part the analysis cannot give noise to is named in a warning, and <code>Noise=no</code> on a part switches its noise
+off without one. <code>circuitrf explain &lt;file&gt; --analysis</code> lists every part's noise model.</p>
+<h3 id="noise-conventions">Conventions</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Densities</td>
+<td>Single-sided and absolute. A matched load's outgoing noise wave is kT W/Hz, a resistor's open-circuit noise voltage 4kTR V²/Hz, with k = 1.380649e-23 J/K exactly. Phase noise L(f) is single-sided, in dBc/Hz.</td>
+</tr>
+<tr>
+<td>Reference temperature</td>
+<td>A noise figure is referred to T0 = 290 K: its input termination is at T0.</td>
+</tr>
+<tr>
+<td>Part temperature</td>
+<td>Each part is at its own physical temperature: its <code>Temp</code>, or <code>Dtemp</code> above the ambient, or the ambient. The default ambient is 26.85 °C, which is <strong>300 K, not T0</strong>. A matched 6 dB pad at 300 K reads 6.111 dB, not 6.000 dB. <code>temp = 16.85</code> puts the whole design at 290 K.</td>
+</tr>
+<tr>
+<td>Noise data</td>
+<td>Noise data from a file is absolute, at T0, and does not move with the ambient. A device's <code>Tg</code> and <code>Td</code> are noise temperatures in kelvin.</td>
+</tr>
+<tr>
+<td>Ports and sources</td>
+<td>Noiseless. A port's termination enters only as the T0 reference of a noise figure. In an envelope run, <code>Noise=yes</code> on a source makes its impedance thermal.</td>
+</tr>
+<tr>
+<td>Random noise</td>
+<td>Only an envelope run draws random noise, from <code>Seed</code> (1 by default). The same seed gives the same bits on every computer and in every split of the run.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> checks the S-parameter noise against closed forms.
+<strong>File ▸ New ▸ Examples ▸ Receiver Noise</strong> goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
+the chain's budget against Friis, a diode mixer's SSB and DSB noise figure, the LNA under a blocker, a noise sourcepull,
+an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries.</p>
 <h3 id="sp-noise">Small-signal noise</h3>
 <p><code>Noise=yes</code> adds the circuit's small-signal noise to the S-parameter run. The noise comes from the same
 solve: one more back-substitution per port at each frequency, and no further factorization. S does not
@@ -221,6 +284,11 @@ stamp (Bosma's theorem), so a lossless part adds none, and a lossy one adds exac
 loss. Resistors, lossy reactances, transmission lines and coupled inductors (<code>Mutual</code>) are all covered.</li>
 <li><strong>An <a href="components.html#snp">SnP block</a></strong> whose two-port file has a Touchstone noise block is noisy by
 that data, even if it has gain. A passive file with no noise block is thermal, like any passive part.</li>
+<li><strong>The built-in nonlinear models</strong> are noisy at their DC operating point: a diode's and a BJT's shot and flicker
+noise and their series resistances, a MOSFET's channel noise, and a FET's <code>Ri</code>, <code>Tg</code>, <code>Td</code> and <code>Kf</code>
+(<a href="components.html">Components</a>). A FET with none of those keys set has no noise sources.</li>
+<li><strong>A system <a href="system-components.html#amp">Amplifier</a></strong> is noisy by its <code>NF</code> (and <code>NFopt</code>, <code>Gopt</code>, <code>Rn</code>). The other
+system blocks are thermal by their loss.</li>
 <li><strong>A <a href="veriloga.html">compiled model</a></strong> is noisy by the sources it declares (<code>white_noise</code>,
 <code>flicker_noise</code>). They are evaluated at the DC operating point the run linearises the device about, and
 multiplied by the instance's multiplicity.</li>
@@ -232,9 +300,10 @@ with it.</li>
 </ul>
 <p><strong>What is noiseless.</strong> The following parts have no noise model here:</p>
 <ul>
-<li>the built-in nonlinear device models (diodes, BJTs, FETs, the SDD);</li>
-<li>active or black-box linear parts, such as a controlled source, an amplifier block or a negative
+<li>an SDD, and a FET with no noise keys;</li>
+<li>active or black-box linear parts, such as a controlled source, an amplifier block with no <code>NF</code>, or a negative
 resistor;</li>
+<li>a Mixer, which has no conversion path in an S-parameter run;</li>
 <li>an SnP block with gain and no noise data;</li>
 <li>every Deembed;</li>
 <li>a compiled model that declares no noise sources.</li>
@@ -264,17 +333,11 @@ Its size is frequencies × parts × ports² complex values, which is why it is n
 its temperature in K, the file and band of an SnP block's noise data, a compiled model's noise sources,
 switched off, or noiseless with the reason. Read it before trusting an NF.</p>
 <h4 id="conventions-and-noise-data">Conventions and noise data</h4>
+<p>The densities, T0 and the ambient are in <a href="#noise-conventions">Noise ▸ Conventions</a>. Two more belong to this analysis:</p>
 <ul>
-<li><strong>Spectral densities are single-sided and absolute.</strong> A matched load's outgoing noise wave is kT W/Hz,
-and a resistor's open-circuit noise voltage is 4kTR V²/Hz. k is 1.380649e-23 J/K, exact.</li>
 <li><strong>The noise waves are the power waves S is defined on.</strong> Every port is terminated in its own noiseless
 Z0. This is why a port whose Z0 has no positive real part is refused with <code>Noise=yes</code>
 (<code>sparam.noise.reactive-z0</code>): there is no termination to define the waves against.</li>
-<li><strong>NF is referred to T0 = 290 K, but the default ambient is 26.85 °C = 300 K.</strong> A design that states no
-temperature is 10 K warmer than the standard, and its passive parts make that much more noise. A
-matched 6 dB pad reads F = 1 + (300/290)(L − 1), which is NF = 6.111 dB, not 6.000 dB. Set
-<code>temp = 16.85</code> to put the whole design at 290 K. Noise data from a file is absolute at T0, so it does
-not change with the ambient.</li>
 <li><strong>Sopt and Zopt are on Re Z0 of port 1</strong>, and <code>Rn</code> is in ohms. A Touchstone row's rn is Rn over that R,
 which <code>rn(SP1.S)</code> gives.</li>
 </ul>
@@ -650,6 +713,13 @@ when only the envelope's centre frequency moves. The lattice result does not mov
 the lattice is the reference. Both modes write the same <code>IMD</code> cube. The spectra (<code>VSD</code> and <code>PSD</code>)
 are continuous either way, and show every product of the baseband and fundamental zones.</p>
 </li>
+<li><p><strong>An LO is a P1Tone, and gets its own fundamental.</strong> A P1Tone on one of the frequencies the run already
+computes (the signal's own frequency or one of its harmonics) drives that product. A P1Tone anywhere else, such as a
+receiver's LO 350 MHz from the signal, is a fundamental of its own, and the signal and the LO mix on the two-tone
+lattice. Two fundamentals are the most a run has, so a second LO must sit on a product of the other two. A P1Tone
+closer to a carrier than three bandwidths, but not on its frequency, is refused: its envelope would overlap the
+carrier's. With <code>Envelope = single</code> a P1Tone off the one envelope's harmonics drives nothing, and the run warns.</p>
+</li>
 <li><p><strong>Parallel in time.</strong> The record is split into segments that run on all cores at once. Each segment
 starts a warm-up early from its own harmonic-balance point and discards it. The warm-up follows the
 circuit's slowest memory: five time constants of the slowest of a <a href="components.html#composedfet">ComposedFET</a>'s
@@ -725,7 +795,7 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <tr>
 <td>Envelope</td>
 <td>auto</td>
-<td><em>auto</em> / <em>lattice</em>: carriers more than 3× their bandwidth apart get their own fundamentals. <em>single</em>: one envelope around Fc spans every carrier and their IM3 (smaller step, slower).</td>
+<td><em>auto</em> / <em>lattice</em>: carriers more than 3× their bandwidth apart get their own fundamentals, and so does a P1Tone off the carriers' frequencies (an LO). <em>single</em>: one envelope around Fc spans every carrier and their IM3 (smaller step, slower).</td>
 </tr>
 <tr>
 <td>MaxMixOrder</td>
@@ -1136,7 +1206,8 @@ at those probes, then the pulse-to-pulse spread.</p>
 LO is a perfect tone. Two settings add what a receiver is limited by.</p>
 <p><strong>Thermal noise (<code>Noise=yes</code>).</strong> Every part the <a href="#sp-noise">S-parameter noise analysis</a> makes noisy
 adds noise to the run: resistors and other passive parts at their own temperature, S-parameter blocks
-with noise data, and system amplifiers with an <code>NF</code>. At every step, each harmonic band gets a random
+with noise data, system amplifiers with an <code>NF</code>, and a <a href="system-components.html#mixer">Mixer</a>'s <code>NF</code> as a source at
+its RF port, as in <a href="#hb-noise">harmonic balance</a>. At every step, each harmonic band gets a random
 current on the part's nodes, with the part's noise at the centre of that band. The noise is taken as
 flat across one band, so a part whose noise changes noticeably across the signal bandwidth is
 evaluated at the band centre. The <code>PSD</code> then shows the noise floor, and <code>ACLR</code> includes it.</p>
@@ -1282,6 +1353,11 @@ and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.</li>
 <li><strong>The record.</strong> A run of whole records (<code>Stop</code> a multiple of the source's record, with a warm-up)
 measures every symbol. A shorter run measures the symbols, bits or chirps it holds whole, apart
 from a few samples at each end. A run shorter than one has no result, and the run says so.</li>
+<li><strong>After a mixer.</strong> A carrier is read where it arrives. At a probe after a mixer, the carrier sits at the IF, not at its
+own frequency, and it is measured there: of the products that carry it through an LO's fundamental (a P1Tone's, or a
+CW carrier's), the one with the most power at that probe. Its EVM, and the probe's <code>Pavg_dBm</code>, <code>Gt_dB</code>, <code>ACLR</code> and
+<code>PAPR_dB</code>, are all read at that product. An IF below the LO (f_LO − f_RF) holds the carrier mirrored, and it is read
+mirrored back, its lower and upper adjacent channels included.</li>
 <li><strong>Other carriers.</strong> CW, a pulse and an imported I/Q file carry no symbols: their cells are blank,
 the run names them once, and NMSE remains their measure. Each set of cubes is written only when a
 carrier of its kind is in the run, and a run with none writes none of them.</li>

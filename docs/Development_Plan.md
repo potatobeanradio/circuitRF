@@ -17,7 +17,7 @@
 > surface** (Phase 7).
 > **What's left for v1:** Phase-8 hardening — installers, docs, and CI. **Deferred to v2:**
 > the Layout editor, a sparse block Jacobian for HB at scale, the Verilog-A/OSDI backend
-> (→ ASM-HEMT), and **noise analysis** (see §11; the small-signal S-parameter part is now done). The earlier refinements still hold: the result
+> (→ ASM-HEMT), and **noise analysis** (see §11; done in 2026-11 across the S-parameter, harmonic-balance, loadpull, envelope and oscillator analyses, with transient noise, noise in the SDD and a nonlinear device's own noise in envelope still deferred). The earlier refinements still hold: the result
 > model is a **`DataSet`** of single-kind **`DataCube`s**; **`RfCore` is an external sibling**
 > (`ProjectReference`); the device base is **`ComponentModel`**; analyses **and measurements**
 > attach to a **`TestBench`**; `.npy` exports the whole DataSet as one packed structured array.
@@ -226,17 +226,38 @@ this phase would be under-estimated.
 **LW1-vs-L8 sequencing** — the wirebond arc carries no DCIM risk and could reasonably precede the full-wave
 planar arc, which is a roadmap call that blocks neither design).*
 
-## 11. Noise analysis — the small-signal part done, the rest a green field
+## 11. Noise analysis — done, with three parts deferred
 
-circuitRF v1 had **no noise analysis**. The first half of the pass this section asked for is now in
-(2026-11, `docs/design/sparameter-noise.md`): **small-signal noise in the S-parameter analysis**. `Noise=yes`
-gives the noise-wave correlation of any N-port and, for a two-port, the noise figure and the noise parameters
-(Fmin, Sopt, Rn, and Te, Tmin and Zopt) over frequency. Passive parts are thermal at their own temperature, an
-SnP block is noisy by its Touchstone noise data, and a compiled (OSDI) model by its own declared noise sources.
-`nf()`, `te()`, `rn()` and `ns_circle()` read the result back, `nf()` and `te()` to any output port of an N-port,
-and the Touchstone noise block is written.
+circuitRF v1 had **no noise analysis**. It now has one in every analysis where noise has a meaning (2026-11; the briefs
+are `docs/briefs/brief-nz-*`, the design notes `docs/design/sparameter-noise.md` and `docs/design/hb-noise.md`). Each is
+opt-in with `Noise=yes` (`PhaseNoise=yes` on the oscillator) and changes nothing without it.
 
-**Still deferred** and still open to a contributor who wants to own them: noise in **harmonic balance**
-(mixers, and the noise of a large-signal stage), **phase noise** for oscillators, an **AC noise** analysis
-(output noise and its contributors at a node), and noise in the **built-in nonlinear models** (diode, BJT and
-FET shot and flicker noise, which the S-parameter noise analysis takes as noiseless and names in a warning).
+- **S-parameters**: the noise-wave correlation of any N-port; for a two-port the noise figure and the noise parameters
+  (Fmin, Sopt, Rn, Te, Tmin, Zopt), each part's share of F − 1 (`NFc`, `NFpct`) and, on request, of the whole correlation
+  (`NCs`). `nf()`, `te()`, `rn()` and `ns_circle()` read it back, `ga_circle()`, `gp_circle()` and `stab_circle()` draw
+  the gain and stability circles beside it, and the Touchstone noise block is read and written.
+- **Noise models**: passive parts thermal at their own temperature; SnP noise data; the built-in diode, BJT, MOSFET,
+  VDMOS and FET models (shot, channel, thermal and flicker noise, and the FET's two-temperature `Ri`/`Tg`/`Td`); the
+  system Amplifier's and Mixer's `NF`; a compiled model's declared sources; and `Noise=no` on any part.
+- **Harmonic balance**: noise on the conversion matrix about the large-signal solution, with each device's noise taken
+  over its own waveform: a mixer's SSB and DSB noise figure, the noise figure under a blocker, and the share arriving
+  through each sideband.
+- **Loadpull and sourcepull**: NF at every grid point and drive level, as a contour metric and a `.spl` column.
+- **Envelope**: seeded thermal noise from every noisy part and from a source's own impedance, a phase-noise mask on any
+  source, and EVM, MER, SNR and the constellation at every IProbe (measured at the IF after a mixer, whose LO is a P1Tone
+  with a fundamental of its own), split into noise and distortion.
+- **Oscillators**: an oscillator analysis (harmonic balance with the frequency an unknown), and its phase noise and
+  amplitude noise from the circuit's own sources, which copy as a phase-noise mask onto an envelope source.
+
+The worked example is `examples/Receiver Noise`.
+
+**Still deferred**, and open to a contributor who wants to own them:
+
+- **Transient noise.** circuitRF has no transient analysis (PRD scope).
+- **Noise in the SDD.** An equation-defined device declares no noise sources, and the analyses name it as noiseless.
+- **A nonlinear device's own noise in envelope.** Its noise changes with its state inside a step, so an envelope run
+  leaves it out and names the device in a warning.
+- **An AC noise analysis** of the output noise at an arbitrary node. The per-part shares cover the ports.
+
+Link-level simulation (bit error rate, coding, receiver DSP) is out of scope: EVM, SNR and the constellation are where
+an RF simulator stops.

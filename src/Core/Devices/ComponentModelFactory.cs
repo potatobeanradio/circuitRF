@@ -2142,8 +2142,7 @@ public static class ComponentModelFactory
         var spec = new AmplifierNoiseSpec(R("NF"), R("NFopt"), R("Rn"), gopt);
         if (spec.IsStated) return spec;
         if (spec.RnOhm is not null || spec.GammaOpt is not null)
-            throw new InvalidOperationException(
-                "Amp: Rn and Gopt shape a noise figure, and this amplifier states none. Add NF (or NFopt), or remove them.");
+            throw new InvalidOperationException(AmplifierNoiseDiagnostics.NoFigure().Render());
         return null;
     }
 

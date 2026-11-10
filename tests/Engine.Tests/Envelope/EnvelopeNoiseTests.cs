@@ -379,6 +379,84 @@ public sealed class EnvelopeNoiseTests(ITestOutputHelper output)
         Assert.Equal(Golden, bits);
     }
 
+    // ── Brief NZ-11: a receiver read after its mixer ─────────────────────────
+
+    /// <summary>An NR carrier at 2.45 GHz through a Mixer block whose LO is a P1Tone at <paramref name="loHz"/>, probed
+    /// before the mixer (RF) and after it (IF). The source and the load are noiseless, so with Noise=yes the mixer's NF is
+    /// the only noise in the run.</summary>
+    private static (DataSet Ds, IReadOnlyList<string> Warnings) Receiver(string mixer, string env, double loHz = 2.1e9)
+    {
+        var (lib, tb) = new CnlReader().Read($"""
+            MOD_Source:SRC s 0 Fc=2.45e9 Pavg=-40 Z=50 Record=0.5e-3 Carrier[1]="NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1"
+            IProbe:Irf s rf
+            Mixer:MIX rf 0 lo 0 if 0 ConvGain=0 dB Plo=7 dBm {mixer}
+            P1Tone:LO lo 0 Freq={N(loHz)} Pavl=7 dBm Z=50 Ohm
+            IProbe:Iif if b
+            R:RL b 0 R=50 Ohm Noise=no
+            analysis ENV1 type=env Stop=0.5e-3 Accuracy=draft MaxHarm=1 MaxMixOrder=2 Segments=1 {env}
+            """);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+        bool used = false;
+        ElaboratedNetlist Elab() { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return nl; }
+        var ds = EnvelopeRunner.Run(plan, Elab);
+        return (ds, [.. nl.Warnings]);
+    }
+
+    private static string N(double v) => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A P1Tone LO off the carrier is a fundamental of its own, and after the mixer the carrier is measured at the IF it
+    /// lands on: through an ideal 0 dB mixer its EVM and its power are what they were before the mixer. Below the carrier
+    /// (2.1 GHz) the IF holds the carrier as it is; above it (2.8 GHz) the IF is f_LO − f_RF and holds it mirrored, which
+    /// is read back unmirrored — read as it is, a 64QAM EVM would be near 100 %.
+    /// </summary>
+    [Theory]
+    [InlineData(2.1e9)]
+    [InlineData(2.8e9)]
+    public void AfterAMixer_TheCarrierIsMeasuredAtTheIf(double loHz)
+    {
+        var (ds, _) = Receiver("", "", loHz);
+        Assert.Equal(2, ds["__EnvFundamentals"].RealValues[0]);
+        var evm = ds["EVM_pct"];
+        var probes = evm.Axes[0].Labels!;
+        int nc = evm.Axes[1].Length, rfAt = Array.IndexOf(probes, "Irf"), ifAt = Array.IndexOf(probes, "Iif");
+        double rf = evm.RealValues[rfAt * nc], at = evm.RealValues[ifAt * nc];
+        var pavg = ds["Pavg_dBm"].RealValues;
+        output.WriteLine($"LO {loHz / 1e9} GHz: EVM before the mixer {rf:F4} %, after it {at:F4} %; " +
+                         $"power before {pavg[rfAt]:F3} dBm, after {pavg[ifAt]:F3} dBm");
+        Assert.Equal(rf, at, 0.01);
+        Assert.Equal(pavg[rfAt], pavg[ifAt], 0.05);
+    }
+
+    /// <summary>A P1Tone inside a carrier's band but off its frequency cannot be a fundamental of its own (its envelope
+    /// would overlap the carrier's), and is refused naming itself rather than run driving nothing.</summary>
+    [Fact]
+    public void AP1ToneInsideACarriersBand_IsRefused()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() => Receiver("", "", 2.452e9));
+        output.WriteLine(ex.Message);
+        Assert.Contains("P1Tone 'LO'", ex.Message);
+    }
+
+    /// <summary>A Mixer's NF is in an envelope run: with nothing else noisy, raising it from 20 to 30 dB lowers the IF SNR by
+    /// 10·log10((F_DSB,30 − 1)/(F_DSB,20 − 1)) = 10.08 dB, F_DSB being half the SSB figure.</summary>
+    [Fact]
+    public void MixerNf_IsTheNoiseInAnEnvelopeRun()
+    {
+        double Snr(double nf)
+        {
+            var (ds, warnings) = Receiver($"NF={nf}", "Noise=yes EvmSplit=yes");
+            Assert.DoesNotContain(warnings, w => w.Contains("no noise model", StringComparison.Ordinal));
+            var snr = ds["SNR_dB"];
+            return snr.RealValues[Array.IndexOf(snr.Axes[0].Labels!, "Iif") * snr.Axes[1].Length];
+        }
+        double s20 = Snr(20), s30 = Snr(30);
+        double closed = 10 * Math.Log10((Math.Pow(10, 3.0) / 2 - 1) / (Math.Pow(10, 2.0) / 2 - 1));
+        output.WriteLine($"SNR at NF 20 dB {s20:F2} dB, at NF 30 dB {s30:F2} dB: {s20 - s30:F3} dB apart, closed form {closed:F3} dB");
+        Assert.Equal(closed, s20 - s30, 0.3);
+    }
+
     private static readonly long[] Golden =
     [
         0x3FA9B09B0B7D13D7, 0x3FF2920AA0760A49, 0x3FD024C42881EE8D,

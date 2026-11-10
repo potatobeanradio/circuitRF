@@ -5,7 +5,9 @@
 //  Thermal (Noise=yes).  Every part the S-parameter noise analysis
 //  makes noisy (SParameterNoise.Sources: passive parts at their own
 //  temperature, S-parameter blocks with noise data, system amplifiers
-//  with NF=) injects, at every step of every product, a complex
+//  with NF=), and a Mixer's NF as the equivalent source at its RF port
+//  that harmonic-balance noise uses (brief NZ-11), injects, at every
+//  step of every product, a complex
 //  Gaussian current on its own nodes.  Its correlation is the part's
 //  NoiseCurrents C at the product's centre frequency, scaled to the
 //  envelope's sample bandwidth fs = 1/h:
@@ -85,12 +87,21 @@ internal sealed class EnvelopeNoise
             if (r.Converged) dc = r.NodeVoltages;
         }
         var devices = new List<string>();
+        var mixers = new List<NoiseSource>();
         var sources = SParameterNoise.Sources(nl, evalHz, dc, (row, parts) =>
         {
+            // A Mixer's NF is the stationary source at its RF port harmonic balance uses (brief NZ-11): flat, so every band
+            // carries it, the signal's and the image's alike.
+            if (row.Kind == NoiseModelKind.Noiseless && parts is [{ Model: MixerModel { NoiseFigureDb: double nfDb } mx } m])
+            {
+                mixers.Add(new NoiseSource(row.Label, HarmonicBalance.HbNoise.MixerSource(nl, m, mx, nfDb)));
+                return true;
+            }
             if (row.Kind != NoiseModelKind.DeviceSources) return false;
             devices.AddRange(parts.Select(ec => $"{ec.ComponentType}:{ec.InstancePath}"));
             return true;
         });
+        sources.AddRange(mixers);
         if (devices.Count > 0)
             nl.AddWarningOnce(NoiseDiagnostics.EnvelopeDevicesKey, NoiseDiagnostics.EnvelopeDevices(devices).Render());
         var noisySources = nl.Components.Where(ec => ec.NoiseOn && SourceImpedance(ec, 0, fcHz) is not null).ToList();

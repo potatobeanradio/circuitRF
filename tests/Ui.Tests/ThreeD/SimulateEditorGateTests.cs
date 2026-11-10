@@ -109,7 +109,7 @@ public sealed class SimulateEditorGateTests : IDisposable
     private static string Em3dTestRoot()
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);
-        while (d is not null && !File.Exists(Path.Combine(d.FullName, "circuitrf.slnx"))) d = d.Parent;
+        while (d is not null && !File.Exists(Path.Combine(d.FullName, "circuitRF.slnx"))) d = d.Parent;
         return d!.FullName;
     }
 

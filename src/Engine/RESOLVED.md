@@ -4297,3 +4297,40 @@ Design note: `docs/design/hb-noise.md` §10. Findings:
 - **A static adjoint at `ω_ss = 0` is well posed in two-sided form.** The ±k sideband unknowns are conjugates there, but the
   complex matrix is the complexification of the real Jacobian, so it is invertible exactly when the held circuit's
   Jacobian is; a slow real current has `u_{−k} = conj u_k`, which turns `Re(conj μ·δR)` into one complex row per sideband.
+
+## Brief NZ-11 — an LO in an envelope run, a receiver read after its mixer, and a Mixer's NF (2026-11-09)
+
+Three gaps the Receiver Noise example's EVM bench found, none visible until a signal went through a mixer.
+
+**A P1Tone LO drove nothing, silently.** An envelope run made fundamentals only from MOD_Source carriers. A P1Tone
+drives a product only where the product's frequency equals its `Freq` (`P1ToneModel.Stamp`), so a 2.1 GHz LO beside a
+2.45 GHz signal, a single envelope on 2.45 GHz and its harmonics, was a bare 50 Ω load: no conversion, no warning. In a
+two-fundamental run every P1Tone was driven at `tones[0]` whatever its own `Freq` said. Now
+`EnvelopeEngineMt.Plan(sources, tones, …)` places each P1Tone: on a frequency the carriers already reach (a harmonic of
+the one envelope, or a lattice product of two within MaxMixOrder) it adds nothing; anywhere else it is a fundamental of
+its own, with no carrier and no signal rate; inside 3× a carrier's bandwidth but off its frequency it is refused
+(`envelope.tone.inside-carrier`) — its envelope would overlap the carrier's; past two fundamentals it is refused
+(`envelope.tone.too-many-fundamentals`). `Envelope=single` keeps one fundamental and warns about a P1Tone off its
+harmonics (`envelope.tone.off-single-envelope`). Every P1Tone is driven at its own `Freq`. A run whose P1Tones all sit
+on the carrier's frequency, which is every existing test and example, plans exactly as before.
+
+**A carrier after a mixer was measured at its own product.** EVM, Pavg, Gt, ACLR and PAPR read each carrier at
+`CarrierMix[c]`, its tone's fundamental, so the IF probe was `noRf` and blank. `EnvelopeDataSet.CarrierReads` now picks,
+per probe and carrier, among the carrier's own product and every product reaching it through an LO tone (a fundamental
+with no carrier, or one CW carrier), the one delivering the most power, from the per-product power `ProbePower` already
+computes; every per-carrier probe measurement reads that one choice. A product stores the envelope at its signed
+frequency Σ k·f, holding the carrier where its tone's k is +1 and its conjugate where −1; `Window`'s own conjugation of
+negative-frequency products then decides whether the physical spectrum is mirrored, and a mirrored ACLR swaps lower and
+upper. With no LO tone every carrier is at its own product and `Pprobe_fund_W` is summed over the same products in the
+same order as before. Gate: `EnvelopeNoiseTests.AfterAMixer_TheCarrierIsMeasuredAtTheIf`, low-side and high-side LO —
+EVM and power through an ideal 0 dB mixer equal the RF probe's (0.3570 % both; read unmirrored, a mirrored 64QAM IF
+would be near 100 %).
+
+Without an IF filter an ideal mixer's sum and difference products carry equal power, so "the most power" is a tie;
+both hold the carrier un-mirrored and measure the same. A receiver bench should filter its IF anyway.
+
+**A Mixer's NF was missing from envelope noise.** `EnvelopeNoise.Thermal` claimed only device rows, so a Mixer fell
+through as `Noiseless` and was named in the warning, while HB noise (NZ-5) used its NF. It now takes the same
+`HbNoise.MixerSource` (an equivalent source at the RF port sized to F_DSB) in every band. Gate:
+`EnvelopeNoiseTests.MixerNf_IsTheNoiseInAnEnvelopeRun` — NF 20 → 30 dB moves the IF SNR by 10.079 dB, the closed form
+10·log10((F_DSB,30 − 1)/(F_DSB,20 − 1)) to three decimals.

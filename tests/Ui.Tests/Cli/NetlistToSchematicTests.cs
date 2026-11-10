@@ -166,6 +166,27 @@ public sealed class NetlistToSchematicTests(ITestOutputHelper output) : IDisposa
         Assert.True(File.Exists(SnpPathPolicy.Resolve("results/block.s2p", SchematicCircuit.ReferenceBaseOf(csch), null)));
     }
 
+    /// <summary>A loadpull's grid is stored against the workspace root as a part's File is: the reader hands it back
+    /// absolute, and the drawing used to keep that, naming a folder of the machine it was drawn on.</summary>
+    [Fact]
+    public void ALoadpullGridDrawnIntoACell_IsStoredAgainstTheWorkspaceRoot()
+    {
+        string ws = Path.Combine(_root, "ws");
+        string schDir = Path.Combine(ws, "Bench", "schematic");
+        Directory.CreateDirectory(schDir);
+        File.WriteAllText(Path.Combine(ws, ".cws"), "{\n  \"FormatVersion\": 2,\n  \"LibraryRefs\": [],\n  \"KnownFiles\": []\n}");
+        File.WriteAllText(Path.Combine(schDir, "grid.gam"), "# gamma Z0=50 mag_ang\n0 0\n");
+        string cnl = Path.Combine(ws, "bench.cnl");
+        File.WriteAllText(cnl,
+            "Tuner:TS a 0 Zdefault=50 Z0=50 BiasTee=on Vbias=0 Z[1]=50\nR:R1 a b R=10\n" +
+            "Tuner:TL b 0 Zdefault=50 Z0=50 BiasTee=on Vbias=0 Z[1]=50\n" +
+            "analysis LP1 type=loadpull Tone=1e9 LoadTuner=TL SourceTuner=TS Grid=\"Bench/schematic/grid.gam\" Sweep=Source\n");
+        var (lib, tb) = CnlReader.ReadFile(cnl);
+
+        var model = NetlistSchematic.Build(lib, tb, schDir).Schematic!;
+        Assert.Equal("Bench/schematic/grid.gam", model.Analyses.OfType<LoadpullAnalysis>().Single().GridPath);
+    }
+
     /// <summary>
     /// Readable in the two ways a machine can check: no symbol drawn over another, and no wire that
     /// is not horizontal or vertical. Over every netlist the gate draws.
