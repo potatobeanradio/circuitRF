@@ -131,7 +131,8 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save RF Chain Budget",
-            SuggestedFileName = current is not null ? Path.GetFileName(current) : "Chain" + ChainDesignIo.Extension,
+            // Without the extension: the picker adds DefaultExtension itself (SuggestedFileNameGateTests).
+            SuggestedFileName = current is not null ? Path.GetFileNameWithoutExtension(current) : "Chain",
             SuggestedStartLocation = dir is not null ? await StorageProvider.TryGetFolderFromPathAsync(dir) : null,
             DefaultExtension = ChainDesignIo.Extension.TrimStart('.'),
             ShowOverwritePrompt = true,
