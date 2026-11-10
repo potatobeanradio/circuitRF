@@ -228,6 +228,22 @@ public static class NetlistSchematic
     /// <param name="exact">The drawing as a picture drew it (brief-img-10 R-im10-4): each hinted instance where it says,
     /// unless its pins would land on another's — then that one alone is arranged automatically and named in
     /// <see cref="NetlistSchematicResult.PlacementFallbacks"/>. Null draws exactly as before, byte for byte.</param>
+    /// <summary>
+    /// A <c>.cnl</c> on disk, drawn: read as written with <see cref="CircuitRF.Core.Netlist.CnlReader"/> — NOT with the
+    /// technology binding a run uses, which would write the workspace's substrate into each line a second time — and
+    /// handed to <see cref="Build"/>. The one function <c>netlist --to-schematic</c> and a plugin's <c>schematic</c>
+    /// view both call (brief-plg-3 §4), so the two cannot draw one netlist two ways. Throws when the file cannot be
+    /// read; a netlist that reads and cannot be drawn is a result with <see cref="NetlistSchematicResult.Refusals"/>.
+    /// </summary>
+    /// <param name="schematicDirectory">Where the drawing will be saved, which decides how a relative file reference
+    /// in it is written. Null is the netlist's own folder.</param>
+    public static NetlistSchematicResult FromFile(string cnlPath, string? schematicDirectory = null)
+    {
+        string full = System.IO.Path.GetFullPath(cnlPath);
+        var (lib, tb) = CircuitRF.Core.Netlist.CnlReader.ReadFile(full);
+        return Build(lib, tb, schematicDirectory ?? System.IO.Path.GetDirectoryName(full));
+    }
+
     public static NetlistSchematicResult Build(Library lib, TestBench tb, string? schematicDirectory = null,
                                                IReadOnlyDictionary<string, (long X, long Y)>? hints = null,
                                                bool artworkSides = true, ExactPlacement? exact = null)

@@ -7,9 +7,9 @@ namespace CircuitRF.Cli;
 /// <c>circuitrf netlist &lt;path.cnl&gt; --to-schematic [-o out.csch]</c> — the extraction run
 /// backwards: a drawn schematic from a netlist (brief-agent-authoring-overview.md AA-6).
 ///
-/// <para><b>It owns no placement and no routing.</b> Every component, wire and label comes from
-/// <see cref="NetlistSchematic.Build"/> in <c>src/Design</c>, below the firewall, so the window can
-/// offer the same drawing later without a second copy of it. What is here is argument parsing,
+/// <para><b>It owns no reading, placement or routing.</b> The netlist is read and drawn by
+/// <see cref="NetlistSchematic.FromFile"/> in <c>src/Design</c>, below the firewall — the same call a plugin's
+/// <c>schematic</c> view makes (brief-plg-3 §4), so the panel and this verb cannot draw one netlist two ways. What is here is argument parsing,
 /// refusals and reporting, on <c>src/Cli/Authoring.cs</c>' terms.</para>
 ///
 /// <para><b>A flag, not an inference from <c>-o</c>'s extension.</b> Everywhere else the verb's
@@ -40,11 +40,7 @@ internal static class NetlistToSchematic
         string targetDir = Path.GetDirectoryName(target)!;
 
         NetlistSchematicResult drawn;
-        try
-        {
-            var (lib, tb) = CnlReader.ReadFile(full);
-            drawn = NetlistSchematic.Build(lib, tb, targetDir);
-        }
+        try { drawn = NetlistSchematic.FromFile(full, targetDir); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.NetlistToSchematicUnreadable(path, ex.Message)); }
 
         if (drawn.Schematic is null)

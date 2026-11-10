@@ -197,6 +197,8 @@ double? pluginDialogWidth = null;
 string? pluginPanel = null, pluginState = null;   // brief-plg-2
 var pluginSets = new Dictionary<string, string>(StringComparer.Ordinal);
 bool pluginShiftCheck = false;
+int? pluginTab = null; double? pluginDragMarker = null, pluginDragHandle = null;   // brief-plg-3
+string? pluginImage = null; (double, double)? pluginClick = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
@@ -306,6 +308,12 @@ for (int i = 0; i < args.Length; i++)
         case "--plugin-set" when i + 1 < args.Length && args[i + 1].Contains('='):
             { string kv = args[++i]; pluginSets[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..]; break; }
         case "--plugin-shift-check": pluginShiftCheck = true; break;
+        case "--plugin-tab" when i + 1 < args.Length: pluginTab = int.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
+        case "--plugin-drag-marker" when i + 1 < args.Length: pluginDragMarker = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
+        case "--plugin-drag-handle" when i + 1 < args.Length: pluginDragHandle = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
+        case "--plugin-image" when i + 1 < args.Length: pluginImage = Path.GetFullPath(args[++i]); break;
+        case "--plugin-click" when i + 1 < args.Length:
+            { var xy = args[++i].Split(','); pluginClick = (double.Parse(xy[0], System.Globalization.CultureInfo.InvariantCulture), double.Parse(xy[1], System.Globalization.CultureInfo.InvariantCulture)); break; }
         case "--plugin-dialog-width" when i + 1 < args.Length: pluginDialogWidth = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
@@ -482,7 +490,15 @@ if (pluginPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } panelApp) panelApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return PluginPanelSnapshot.Run(pluginPanel, pluginState ?? "idle", pluginSets, pluginWorkspace, pluginShiftCheck,
-                                   sizeGiven ? width : null, sizeGiven ? height : null, output);
+                                   sizeGiven ? width : null, sizeGiven ? height : null, output, pluginTab, pluginDragMarker, pluginDragHandle);
+}
+// brief-plg-3 — a plugin's image view, in a one-view panel scripted here (--plugin-image <png|svg> [--plugin-click fx,fy]).
+if (pluginImage is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } imgApp) imgApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return PluginPanelSnapshot.RunImage(pluginImage, sizeGiven ? width : null, sizeGiven ? height : null, output, pluginClick);
 }
 // brief-plg-1 — Tools ▸ Plugins (--plugins-menu <folder of plugin folders> | none), the permission prompt
 // (--plugin-trust <plugin folder>) and an action plugin's parameter dialog (--plugin-dialog <plugin folder>

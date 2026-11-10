@@ -1,0 +1,46 @@
+{
+  "apiVersion": 1,
+  "id": "example.single-stub",
+  "name": "Single-Stub Match",
+  "version": "1.0.0",
+  "summary": "An open shunt stub that matches a load to 50 ohms on a microstrip substrate, with its response, Smith chart, dimensions, artwork and circuit.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "python": { "entry": "stub.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "panel",
+  "menu": "Examples",
+  "params": [
+    { "name": "f0",        "label": "Frequency",  "kind": "quantity", "unit": "Hz",    "default": "2.4 GHz", "min": "10 MHz", "max": "40 GHz", "chars": 10 },
+    { "name": "rl",        "label": "Load R",     "kind": "quantity", "unit": "Ohm",   "default": "100 Ohm", "min": "1 Ohm", "chars": 10 },
+    { "name": "xl",        "label": "Load X",     "kind": "quantity", "unit": "Ohm",   "default": "25 Ohm", "chars": 10 },
+    { "name": "substrate", "label": "Substrate",  "kind": "substrate" },
+    { "name": "trim",      "label": "Stub trim",  "kind": "quantity", "unit": "metre", "default": "0 mm", "chars": 10 },
+    { "name": "summary",   "label": "Match",      "kind": "readout" }
+  ],
+
+  "ui": {
+    "title": "Single-Stub Match",
+    "size": [1180, 760],
+    "layout": { "split": "horizontal", "sizes": [1, 3], "children": [
+      { "column": [
+        { "group": "Load", "children": [ { "param": "f0" }, { "param": "rl" }, { "param": "xl" } ] },
+        { "group": "Line", "children": [ { "param": "substrate" }, { "param": "trim" } ] },
+        { "readout": "summary", "as": "text" },
+        { "messages": true },
+        { "button": "Place in workspace", "action": "commit" }
+      ]},
+      { "tabs": [
+        { "title": "Response",   "view": "response", "kind": "plot" },
+        { "title": "Smith",      "view": "match",    "kind": "smith" },
+        { "title": "Dimensions", "view": "dims",     "kind": "table" },
+        { "title": "Layout",     "view": "artwork",  "kind": "layout" },
+        { "title": "Schematic",  "view": "circuit",  "kind": "schematic" }
+      ]}
+    ]}
+  }
+}

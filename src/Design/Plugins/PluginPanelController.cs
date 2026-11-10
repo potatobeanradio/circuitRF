@@ -14,11 +14,15 @@ public interface IPluginPanelSession : IAsyncDisposable
     event Action<PluginFailure>? Ended;
     /// <summary>The failure that ended the session, or null while it is alive.</summary>
     PluginFailure? Fatal { get; }
+    /// <summary>The folder this session's plugin writes into — where a view's files resolve.</summary>
+    string StagingDirectory { get; }
 
     Task<PluginOutcome<PluginHello>> HelloAsync(CancellationToken ct = default);
     /// <summary><c>update</c>. Cancelling <paramref name="ct"/> sends <c>cancel</c> and drops the reply on arrival.</summary>
     Task<PluginOutcome<PluginReply>> UpdateAsync(JsonObject parameters, CancellationToken ct = default);
     Task<PluginOutcome<PluginReply>> ActionAsync(string name, JsonObject parameters, CancellationToken ct = default);
+    /// <summary><c>event</c>: a view gesture (brief-plg-3) — a bound marker or handle dragged, an image clicked.</summary>
+    Task<PluginOutcome<PluginReply>> EventAsync(string view, string kind, JsonObject fields, JsonObject parameters, CancellationToken ct = default);
     Task<PluginOutcome<PluginPlaced>> CommitAsync(JsonObject parameters, CancellationToken ct = default);
     /// <summary>True once every cancelled request has been answered, false if <paramref name="within"/> passes first.</summary>
     Task<bool> SettledAsync(TimeSpan within);
@@ -47,6 +51,17 @@ public sealed record PluginHostLine(PluginHostLineKind Kind, string Text, IReadO
 }
 
 /// <summary>
+/// One view as the last reply that carried it left it (brief-plg-3): its body, the frame payload its geometry indexes,
+/// the parameters that reply answered (a bound marker sits at one of them, <c>"technology": "self"</c> names one), and a
+/// serial that changes only when a reply carries the view again — so a window redraws a view only when it changed.
+/// </summary>
+public sealed record PluginViewBody(string Name, JsonNode Body, ReadOnlyMemory<long> Payload, JsonObject Params, long Serial)
+{
+    /// <summary>The staging folder of the session that sent it — a restarted plugin has a new one.</summary>
+    public string StagingDir { get; init; } = "";
+}
+
+/// <summary>
 /// Everything the panel shows, as one value. The controller builds a new one off the UI thread and applies it
 /// whole on it, so readouts, views, messages and <c>enabled</c> always come from the same reply.
 /// </summary>
@@ -59,6 +74,8 @@ public sealed record PluginPanelState
     /// <summary>Every view the plugin has shown, by name: a view absent from a reply keeps what it showed, one set to
     /// null is gone (<c>plugins.md</c> §5).</summary>
     public JsonObject Views { get; init; } = new();
+    /// <summary>The same views with what drawing them needs beside each body (<see cref="PluginViewBody"/>).</summary>
+    public IReadOnlyDictionary<string, PluginViewBody> ViewBodies { get; init; } = new Dictionary<string, PluginViewBody>();
     /// <summary>The plugin's messages for the current parameters, then a placement's own.</summary>
     public IReadOnlyList<PluginMessage> Messages { get; init; } = [];
     /// <summary>Parameters and buttons the last reply named, and whether each is enabled. Absent means enabled.</summary>
@@ -149,7 +166,8 @@ public sealed class PluginPanelController : IAsyncDisposable
         _post = _options.Post ?? (a => a());
         foreach (var p in manifest.Params)
             if (p.Kind != PluginParamKind.Readout)
-                _values[p.Name] = _options.Initial?.TryGetValue(p.Name, out var given) == true ? given : PluginParams.DefaultText(p);
+                _values[p.Name] = PluginParams.StartingText(p, _options.Initial?.TryGetValue(p.Name, out var given) == true ? given : null,
+                                                            _options.Context.WorkspaceDir);
     }
 
     public PluginManifest Manifest => _manifest;
@@ -172,7 +190,7 @@ public sealed class PluginPanelController : IAsyncDisposable
     // ── What the window calls ───────────────────────────────────────────────────
 
     /// <summary>Opens the panel: <c>hello</c>, then <c>update</c> with the starting values.</summary>
-    public void Open() => Send(null);
+    public void Open() => Send(Request.Update);
 
     /// <summary>The user changed <paramref name="name"/>. Debounced; text equal to the current value is not a change,
     /// which is how a value a reply <c>set</c> reaches its control without sending another <c>update</c>.</summary>
@@ -188,7 +206,7 @@ public sealed class PluginPanelController : IAsyncDisposable
         }
         _ = Task.Delay(_options.Debounce, debounce.Token).ContinueWith(t =>
         {
-            if (!t.IsCanceled) Send(null);
+            if (!t.IsCanceled) Send(Request.Update);
         }, TaskScheduler.Default);
     }
 
@@ -196,7 +214,41 @@ public sealed class PluginPanelController : IAsyncDisposable
     public void RunAction(string name)
     {
         if (name == PluginButtonLeaf.CommitAction) { Commit(); return; }
-        Send(name);
+        Send(new Request(name, null, null, null));
+    }
+
+    /// <summary>
+    /// A view gesture (brief-plg-3, <c>plugins.md</c> §6.2): sends <c>event {view, kind, …fields, params}</c> at once, with
+    /// no debounce, superseding whatever is in flight. With <paramref name="param"/>, the gesture changed that parameter —
+    /// a bound marker or a handle — so its text becomes <paramref name="text"/> first (the control shows it, as a reply's
+    /// <c>set</c> would), the event carries the new value, and the ordinary <c>update</c> follows the event's reply,
+    /// exactly as typing the value would have asked. An image click changes nothing, so nothing follows it.
+    /// </summary>
+    public void SendEvent(string view, string kind, JsonObject fields, string? param = null, string? text = null)
+    {
+        if (param is not null)
+        {
+            lock (_gate)
+            {
+                if (_closed || !_values.ContainsKey(param)) return;
+                _values[param] = text ?? "";
+                _debounce?.Cancel();     // the event carries this value; a pending update would only repeat it
+            }
+            Change(s => s with
+            {
+                Set = new Dictionary<string, string>(StringComparer.Ordinal) { [param] = text ?? "" },
+                SetSerial = s.SetSerial + 1,
+            });
+        }
+        Send(new Request(null, view, kind, fields) { FollowWithUpdate = param is not null });
+    }
+
+    /// <summary>What a request asks: <c>update</c> (no action, no view), <c>action</c> (a name) or <c>event</c> (a view).</summary>
+    private sealed record Request(string? Action, string? View, string? Kind, JsonObject? Fields)
+    {
+        public static readonly Request Update = new(null, null, null, null);
+        public bool IsUpdate => Action is null && View is null;
+        public bool FollowWithUpdate { get; init; }
     }
 
     /// <summary>Stop: cancels what is in flight; a plugin that has not answered its <c>cancel</c> within the grace is
@@ -300,7 +352,7 @@ public sealed class PluginPanelController : IAsyncDisposable
 
     /// <summary>Sends <c>update</c> (or <c>action</c> when <paramref name="action"/> is named) with the current text,
     /// superseding whatever is in flight — or marks the fields that cannot be sent and sends nothing.</summary>
-    private void Send(string? action)
+    private void Send(Request request)
     {
         var (values, errors) = Resolve();
         Change(s => s with { FieldErrors = errors });
@@ -320,14 +372,15 @@ public sealed class PluginPanelController : IAsyncDisposable
             sentText = new Dictionary<string, string>(_values);
         }
         prior?.Cts.Cancel();      // the session sends cancel for it, and drops its reply when it comes
-        if (action is null) try { _options.Sent?.Invoke(sentText); } catch { }
+        if (request.IsUpdate) try { _options.Sent?.Invoke(sentText); } catch { }
 
         Change(s => s with { InFlight = true, Progress = null });
-        _ = RunAsync(seq, cts, action, values);
+        _ = RunAsync(seq, cts, request, values);
     }
 
-    private async Task RunAsync(long seq, CancellationTokenSource cts, string? action, JsonObject values)
+    private async Task RunAsync(long seq, CancellationTokenSource cts, Request request, JsonObject values)
     {
+        string? action = request.Action;
         var deadline = action is null
             ? _options.UpdateDeadline ?? Secs(_manifest.Timeouts.Update) ?? TimeSpan.FromSeconds(30)
             : _options.ActionDeadline ?? Secs(_manifest.Timeouts.Action) ?? TimeSpan.FromMinutes(10);
@@ -351,7 +404,9 @@ public sealed class PluginPanelController : IAsyncDisposable
         PluginOutcome<PluginReply> outcome;
         try
         {
-            outcome = action is null ? await session.UpdateAsync(values, cts.Token) : await session.ActionAsync(action, values, cts.Token);
+            outcome = request.View is { } view ? await session.EventAsync(view, request.Kind!, request.Fields!, values, cts.Token)
+                    : action is null ? await session.UpdateAsync(values, cts.Token)
+                    : await session.ActionAsync(action, values, cts.Token);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
@@ -366,6 +421,8 @@ public sealed class PluginPanelController : IAsyncDisposable
             Finish(seq, session.Fatal is not null || IsFatal(f.Kind)
                 ? Stopped(f)
                 : new PluginHostLine(PluginHostLineKind.Failed, f.Sentence, []));
+            // The parameter did change; the plugin is asked about it as typing would have asked.
+            if (request.FollowWithUpdate && session.Fatal is null) Send(Request.Update);
             return;
         }
 
@@ -383,13 +440,22 @@ public sealed class PluginPanelController : IAsyncDisposable
                 if (_manifest.Params.FirstOrDefault(p => p.Name == name && p.Kind != PluginParamKind.Readout) is { } p)
                     set[name] = PluginValueFormat.ControlText(p, node);
 
+        bool applied = false;
         Change(s =>
         {
+            applied = true;
             var views = (JsonObject)s.Views.DeepClone();
+            var bodies = new Dictionary<string, PluginViewBody>(s.ViewBodies, StringComparer.Ordinal);
             foreach (var (name, body) in reply.Views)
             {
-                if (body is null) views.Remove(name);
-                else views[name] = body.DeepClone();
+                if (body is null) { views.Remove(name); bodies.Remove(name); }
+                else
+                {
+                    views[name] = body.DeepClone();
+                    bodies[name] = new PluginViewBody(name, body.DeepClone(), reply.Payload, (JsonObject)values.DeepClone(),
+                                                      (bodies.TryGetValue(name, out var was) ? was.Serial : 0) + 1)
+                    { StagingDir = session.StagingDirectory };
+                }
             }
             lock (_gate)
             {
@@ -398,13 +464,17 @@ public sealed class PluginPanelController : IAsyncDisposable
             }
             return s with
             {
-                Reply = reply, Readouts = readouts, Views = views, Messages = reply.Messages, Enabled = enabled,
+                Reply = reply, Readouts = readouts, Views = views, ViewBodies = bodies, Messages = reply.Messages, Enabled = enabled,
                 // A plugin may answer and then exit: the answer is shown, and so is the exit.
                 Host = session.Fatal is { } gone ? Stopped(gone) : null,
                 InFlight = false, Busy = false, Progress = null,
                 Set = set.Count > 0 ? set : s.Set, SetSerial = set.Count > 0 ? s.SetSerial + 1 : s.SetSerial,
             };
         }, () => IsCurrent(seq));
+
+        // A dragged marker or handle changed its parameter: the ordinary update follows the event's reply. Posted, so it
+        // runs after the reply above is applied and is not superseded by it.
+        if (request.FollowWithUpdate) _post(() => { if (applied) Send(Request.Update); });
     }
 
     /// <summary>The running session, starting one (and saying <c>hello</c>) when there is none or it has ended.

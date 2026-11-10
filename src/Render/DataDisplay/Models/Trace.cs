@@ -3297,6 +3297,27 @@ namespace CircuitRF.Render.DataDisplay
             return pts[CubeMarkerIndex(m)];
         }
 
+        /// <summary>
+        /// The cube X sample a marker on this single-curve cube trace sits on, or null for any other trace — what a
+        /// plugin's bound marker reports when it is dropped (brief-plg-3): the sample's own raw X, never one rebuilt
+        /// from a scaled position, so a frequency comes back exactly as the axis holds it.
+        /// </summary>
+        public int? CubeMarkerSampleIndex(Marker m)
+            => IsCubeBound && !IsFamily && _cubeXValues is { Length: > 0 } && Points.Count > 0 ? CubeMarkerSample(m).Sample : null;
+
+        /// <summary>Where a marker sits to read cube sample <paramref name="sample"/> of this single-curve cube trace —
+        /// its world point, on a Rect or a Smith plot alike — or null when the sample is not drawn.</summary>
+        public Vector2? CubeSamplePosition(int sample)
+        {
+            if (!IsCubeBound || IsFamily || sample < 0) return null;
+            if (_pointSample.Count == Points.Count)
+            {
+                for (int p = 0; p < _pointSample.Count; p++) if (_pointSample[p] == sample) return Points[p];
+                return null;
+            }
+            return sample < Points.Count ? Points[sample] : null;
+        }
+
         /// <summary>Index of the cube X sample nearest to <paramref name="x"/> (a raw cube X value).
         /// Used for Table markers, whose position is the row's X value (Marker.Freq), not a pixel/Points
         /// coordinate. Returns 0 when there are no X values.</summary>

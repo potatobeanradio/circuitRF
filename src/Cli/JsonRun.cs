@@ -385,6 +385,10 @@ internal static class JsonRun
     private static List<ResultOutput> Outputs => S.Outputs;
     private static List<DiagnosticJson> Diagnostics => S.Diagnostics;
 
+    /// <summary>The diagnostics the calling flow's state holds — what an <see cref="Isolate"/>d in-process call reads
+    /// its refusal from (brief-plg-3).</summary>
+    internal static IReadOnlyList<DiagnosticJson> CapturedDiagnostics => S.Diagnostics;
+
     // ── flags ────────────────────────────────────────────────────────────────
 
     /// <summary>

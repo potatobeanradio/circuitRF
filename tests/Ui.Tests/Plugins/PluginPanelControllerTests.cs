@@ -40,6 +40,7 @@ public class PluginPanelControllerTests
         public event Action<PluginProgress>? Progress { add { } remove { } }
         public event Action<PluginFailure>? Ended { add { } remove { } }
         public PluginFailure? Fatal => null;
+        public string StagingDirectory => System.IO.Path.GetTempPath();
 
         public Task<PluginOutcome<PluginHello>> HelloAsync(CancellationToken ct = default) => Task.FromResult(PluginOutcome<PluginHello>.Of(new PluginHello(1)));
 
@@ -51,6 +52,12 @@ public class PluginPanelControllerTests
         }
 
         public Task<PluginOutcome<PluginReply>> ActionAsync(string name, JsonObject parameters, CancellationToken ct = default) => UpdateAsync(parameters, ct);
+        public Task<PluginOutcome<PluginReply>> EventAsync(string view, string kind, JsonObject fields, JsonObject parameters, CancellationToken ct = default)
+        {
+            int n;
+            lock (Requests) { Requests.Add(("event", parameters, ct)); n = Requests.Count; }
+            return Answer(n, ct);
+        }
         public Task<PluginOutcome<PluginPlaced>> CommitAsync(JsonObject parameters, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> SettledAsync(TimeSpan within) => Task.FromResult(AnswersCancel);
         public Task ByeAsync() { SaidBye = true; return Task.CompletedTask; }

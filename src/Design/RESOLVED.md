@@ -29565,3 +29565,41 @@ plane and the bottom copper and none with the pour.
   (13 `.cem`s, dumped before and after).
 - Gates: `tests/Ui.Tests/Em/PlanarCoverTests.cs`. It replaces `SuperstrateNotInTheSolveTests`, whose two claims
   (the identity and the warning) are now false by design.
+
+## Plugin views (brief-plg-3, 2026-11-10)
+
+- **`netlist --to-schematic`'s drawing was already in `src/Design`** (`NetlistSchematic.Build`, AA-6); what the verb
+  still did itself was read the `.cnl` into it. That read is now `NetlistSchematic.FromFile`, which the verb and a
+  plugin's `schematic` view both call. The verb's output on all 40 committed netlists (stdout, stderr, exit code) is
+  byte-identical before and after.
+- **A plugin's plot spec cannot be composed below `src/Cli`.** `DataDisplayConfig` is in `src/Render`, which
+  references `src/Design`, and the `--trace` parser is in `PlotVerb`. So `PluginViews` (here) reads the data and keeps
+  the spec as JSON, and `src/Cli/PluginPlots.cs` spells the spec as the verb's flags and calls
+  `PlotVerb.ComposeArguments` — the verb's own middle, split out of `Run` as `Compose`, under `JsonRun.Isolate` so a
+  refusal is captured as its sentence rather than written to a run's diagnostics. `src/Ui` already references
+  `Cli.Verbs`. The `--spec-lines` refusal stayed in `Run`: it names the result PATH, which a plugin has none of.
+- **`y=db` is refused for plugins too**, with the verb's sentence: "cube=/y= mean what they mean in plot --trace". The
+  design's own example said `db`; it says `db20` now.
+- **A bound marker is an ordinary Data Display marker, and those sit on samples.** A drop reports the sample's raw
+  axis value (`Trace.CubeMarkerSampleIndex` / `CubeSamplePosition`, added for this), never one rebuilt from a scaled
+  position, so a frequency comes back exactly. The stub example's first grid did not contain 2.35 GHz and the drop
+  landed on 2.352 GHz; it sweeps on a 1-2-5 step now, so drags land on round values.
+- **A layout view's frame carries geometry the session threw away.** `PluginSession` read every frame's payload and
+  kept only its JSON; `PluginReply.Payload` keeps it, and `PluginViewBody` keeps it beside the view (with the
+  parameters that reply answered and its session's staging folder), because a later reply that omits the view must
+  leave its geometry — and a restarted plugin's files are in a new staging folder.
+- **Placement writes the preview, not a second description of it.** A placed cell may name a layout view
+  (`"layout": "artwork"`); `PluginPlacement` writes that view's shapes and port labels as `layout/<view>.clay`. The
+  alternative was every plugin author writing `.clay` JSON by hand, and a preview that disagreed with what was placed.
+- **A picker could show a value the panel was not sending** (PLG-2). A `substrate` with no default drew its first
+  choice while the controller held "", so the first update was refused with "'' does not name a conductor". One choices
+  list (`PluginParams.ChoicesFor`) now feeds both the picker and the controller's starting value (`StartingText`).
+- **A stackup conductor is not named like its drawing layer** ("Top Copper (1 oz)" is drawn on "Top Copper"), so the
+  `technology`/`substrate` values now carry each stackup entry's drawing-layer names (`layers`); a layout view's
+  shapes may name a layer instead of giving its GDS numbers.
+- **`Svg.Skia` and the `Svg` package declare the same `Svg` namespace.** `src/Ui` gained `Svg.Skia` 3.0.4 (the
+  doc-figure loader, on the app's SkiaSharp 3.x line) for the image view; its `Svg.Custom`/`Svg.Model` are referenced
+  under an alias (`CrfAliasSvgCustom` in the csproj), or `WindowsClipboard`'s `SvgDocument` is ambiguous.
+- Gates: `tests/Ui.Tests/Plugins/PluginViewTests.cs`; the UI is `tools/UiSnapshot --plugin-panel
+  tools/plugin-examples/stub` (with `--plugin-tab`, `--plugin-drag-marker`, `--plugin-drag-handle`) and
+  `--plugin-image`.

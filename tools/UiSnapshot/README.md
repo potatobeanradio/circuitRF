@@ -447,6 +447,18 @@ dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-
 dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator --plugin-shift-check -o out.png
 ```
 
+**A panel's views** (brief-plg-3). `--plugin-tab <n>` selects that tab of the panel's tab strip; `--plugin-set` applies in
+any state. `--plugin-drag-marker <x>` drops the first plot's bound marker 0 at that x (base SI) as a drag's release does,
+waits for the reply and prints what it answered; `--plugin-drag-handle <metres>` drags the first layout's first grip that
+far along its axis. `--plugin-image <png|svg>` draws an `image` view in a one-view panel scripted by the harness, and
+`--plugin-click fx,fy` clicks it at that fraction of the frame and prints the event it sent.
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/stub --plugin-workspace "examples/Patch Antenna" --plugin-tab 3 -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/stub --plugin-workspace "examples/Patch Antenna" --plugin-drag-marker 2.35e9 -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-image chart.svg --plugin-click 0.5,0.5 -o out.png
+```
+
 **The Run settings dialog** (brief CP-2) of an EM Field Data block's result record, what differs from its setup now marked:
 
 ```

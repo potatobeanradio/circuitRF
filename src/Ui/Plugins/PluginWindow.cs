@@ -10,6 +10,7 @@ using Avalonia.Styling;
 using CircuitRF.Design.Plugins;
 using CircuitRF.Ui.Converters;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Plugins.Views;
 using Material.Icons;
 using Material.Icons.Avalonia;
 
@@ -43,7 +44,6 @@ public sealed class PluginWindow : Window
     public const double TextHeight = 68;
     public const double TableHeight = 140;
     public const string StopText = "Stop";
-    public const string ViewPendingText = "view not available yet";
     public const string NoViewsYetText = "No views yet.";
     public const string NoViewsText = "This plugin shows no views.";
 
@@ -54,6 +54,9 @@ public sealed class PluginWindow : Window
     private readonly List<(PluginReadoutLeaf Leaf, ContentControl Host)> _readouts = [];
     private readonly List<(PluginButtonLeaf Leaf, Button Button)> _buttons = [];
     private readonly List<StackPanel> _messageLists = [];
+    private readonly List<PluginViewFrame> _views = [];
+    private readonly PluginViewContext _viewContext;
+    private readonly Func<string, bool>? _openDocument;
     private readonly List<(PluginSplitNode Node, Grid Grid)> _splits = [];
     private readonly List<(PluginTabsNode Node, TabControl Tabs, TextBlock Empty)> _tabs = [];
     private readonly ProgressBar _busy;
@@ -65,17 +68,25 @@ public sealed class PluginWindow : Window
     /// <summary>Hears what to remember when the window closes; null remembers nothing (a snapshot).</summary>
     public Action<PluginWindowMemory, IReadOnlyDictionary<string, string>>? Remember { get; set; }
 
+    /// <summary>Every view frame, in tree order — what a snapshot or a test reaches.</summary>
+    public IReadOnlyList<PluginViewFrame> Views => _views;
+
     /// <summary>Every parameter's control, by name — what a test measures.</summary>
     public IReadOnlyDictionary<string, PluginParamControl> ParamControls => _params;
     /// <summary>Every button, in tree order.</summary>
     public IReadOnlyList<Button> Buttons => _buttons.Select(b => b.Button).ToList();
     public Button StopButton => _stop;
 
-    public PluginWindow(PluginPanelLayout layout, PluginPanelController controller, string? workspaceDir, PluginWindowMemory? memory)
+    /// <param name="openDocument">Opens a document in the application — a plot view's <b>Open in Data Display</b>.
+    /// Null greys that button (a snapshot has no application to open it in).</param>
+    public PluginWindow(PluginPanelLayout layout, PluginPanelController controller, string? workspaceDir, PluginWindowMemory? memory,
+                        Func<string, bool>? openDocument = null)
     {
+        _openDocument = openDocument;
         _layout = layout;
         _controller = controller;
         _workspaceDir = workspaceDir;
+        _viewContext = new PluginViewContext(controller.Manifest, workspaceDir);
 
         Title = layout.Title;
         var (w, h) = memory is { Width: > 0, Height: > 0 } ? (memory.Width, memory.Height)
@@ -175,8 +186,16 @@ public sealed class PluginWindow : Window
                 frame.Bind(Border.BorderBrushProperty, frame.GetResourceObservable("SystemControlForegroundBaseLowBrush"));
                 return frame;
             }
+            case PluginViewLeaf v when v.IsKnownKind:
+            {
+                var frame = new PluginViewFrame(v.Name, v.Kind, _viewContext,
+                    (view, kind, fields, param, text) => _controller.SendEvent(view, kind, fields, param, text),
+                    _openDocument);
+                _views.Add(frame);
+                return frame;
+            }
             case PluginViewLeaf v:
-                return EmptyFrame(v.IsKnownKind ? ViewPendingText : $"A {v.Kind} view {PluginUnknownNode.Reason}.");
+                return EmptyFrame($"A {v.Kind} view {PluginUnknownNode.Reason}.");
             case PluginNoteLeaf n:
                 return new TextBlock { Text = n.Text, FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap, MaxLines = 2 };
             case PluginUnknownNode u:
@@ -345,8 +364,6 @@ public sealed class PluginWindow : Window
         foreach (var (leaf, button) in _buttons)
             button.IsEnabled = !s.Committing && s.IsEnabled(leaf.Action) && s.IsEnabled(leaf.Label);
 
-        foreach (var list in _messageLists) FillMessages(list, s);
-
         if (s.Reply is not null && !_replyTabsFilled)
         {
             _replyTabsFilled = true;
@@ -358,6 +375,11 @@ public sealed class PluginWindow : Window
                 if (tabs.Items.Count > 0) tabs.SelectedIndex = 0;
             }
         }
+
+        // Each view redraws only when a reply carried it again; one set to null clears.
+        foreach (var frame in _views) frame.Update(s.ViewBodies.GetValueOrDefault(frame.ViewName));
+
+        foreach (var list in _messageLists) FillMessages(list, s);
 
         _busy.Opacity = s.Busy ? 1 : 0;
         _busy.IsIndeterminate = s.Busy && s.Progress?.Fraction is null;
@@ -376,6 +398,12 @@ public sealed class PluginWindow : Window
         }
         foreach (var m in s.Messages)
             list.Children.Add(MessageRow(m.Severity switch { "error" => MessageLevel.Error, "warning" => MessageLevel.Warning, _ => MessageLevel.Info }, m.Text));
+        // What the views say about themselves: why one cannot be drawn, a layer its technology lacks — each once.
+        foreach (var frame in _views)
+        {
+            if (frame.Error is { } error) list.Children.Add(MessageRow(MessageLevel.Error, error));
+            foreach (string note in frame.Notes) list.Children.Add(MessageRow(MessageLevel.Warning, note));
+        }
         if (s.Host is { } host)
         {
             var level = host.Kind switch

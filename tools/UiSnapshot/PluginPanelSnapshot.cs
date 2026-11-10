@@ -1,3 +1,4 @@
+using Avalonia.VisualTree;
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
@@ -5,6 +6,7 @@ using Avalonia.Headless;
 using Avalonia.Threading;
 using CircuitRF.Design.Plugins;
 using CircuitRF.Ui.Plugins;
+using CircuitRF.Ui.Plugins.Views;
 
 /// <summary>
 /// brief-plg-2 — a <c>panel</c> plugin's window, with the plugin really running (<c>--plugin-panel &lt;folder&gt;</c>).
@@ -16,8 +18,13 @@ using CircuitRF.Ui.Plugins;
 /// </summary>
 static class PluginPanelSnapshot
 {
+    /// <summary>brief-plg-3: <paramref name="tab"/> selects that tab of the panel's tab strip;
+    /// <paramref name="dragMarker"/> drops the first plot's bound marker 0 at that x (base SI) and
+    /// <paramref name="dragHandle"/> drags the first layout's first grip that far along its axis (metres), each as the
+    /// gesture's release does, and waits for the reply that follows — gate 3's drag, in the harness.</summary>
     public static int Run(string pluginDir, string state, IReadOnlyDictionary<string, string> sets, string? workspace,
-                          bool shiftCheck, double? width, double? height, string output)
+                          bool shiftCheck, double? width, double? height, string output,
+                          int? tab = null, double? dragMarker = null, double? dragHandle = null)
     {
         var entry = PluginCatalog.Read(pluginDir, PluginSource.Linked);
         if (entry.Manifest is not { } manifest) { Console.Error.WriteLine(string.Join("\n", entry.Diagnostics)); return 1; }
@@ -42,7 +49,7 @@ static class PluginPanelSnapshot
         }, new PluginPanelOptions
         {
             Context = new PluginParamContext(workspace),
-            Initial = state == "error" ? sets : null,
+            Initial = sets.Count > 0 ? sets : null,
             Post = a => Dispatcher.UIThread.Post(a),
         });
 
@@ -53,6 +60,29 @@ static class PluginPanelSnapshot
         controller.Open();
         // Text that cannot be sent is marked and never sent, so an error state may have no reply to wait for.
         Pump(window, () => controller.State.Reply is not null || controller.State.FieldErrors.Count > 0, "the first reply");
+
+        if (tab is { } t)
+            foreach (var strip in window.GetVisualDescendants().OfType<TabControl>().Take(1)) strip.SelectedIndex = t;
+        Settle(window);
+        if (dragMarker is { } mx)
+        {
+            var plot = window.Views.Select(v => v.ViewControl).OfType<PluginPlotViewControl>().First();
+            var sent = controller.State.Reply;
+            if (!plot.DragBoundMarker(0, mx)) throw new InvalidOperationException("the plot has no bound marker 0");
+            Pump(window, () => !ReferenceEquals(controller.State.Reply, sent) && !controller.State.InFlight, "the reply to the marker drag");
+            var f0 = PluginViews.NumberOf(controller.State.ViewBodies.Values.First().Params[plot.Plot!.Traces[0].Markers[0].Name]);
+            Console.WriteLine($"marker dropped at {mx:R}; the reply answered f0 = {f0:R}");
+        }
+        if (dragHandle is { } hd)
+        {
+            var lay = window.Views.Select(v => v.ViewControl).OfType<PluginLayoutViewControl>().First();
+            var grip = lay.Overlay.Grips[0];
+            double d = hd * lay.View!.Layout.DbuPerMicron * 1e6, r = grip.AxisDeg * Math.PI / 180;
+            var sent = controller.State.Reply;
+            if (!lay.Overlay.DragTo(0, grip.X + d * Math.Cos(r), grip.Y + d * Math.Sin(r))) throw new InvalidOperationException("the grip did not solve");
+            Pump(window, () => !ReferenceEquals(controller.State.Reply, sent) && !controller.State.InFlight, "the reply to the handle drag");
+            Console.WriteLine($"handle dragged {hd:R} m; {grip.Parameter} = {controller.Value(grip.Parameter)}");
+        }
 
         Dictionary<string, Rect>? before = null;
         switch (state)
@@ -120,6 +150,81 @@ static class PluginPanelSnapshot
         return m;
     }
 
+    private static void Settle(Window window)
+    {
+        for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    }
+
+    /// <summary>
+    /// brief-plg-3 gate 6's image view: a one-view panel whose plugin is scripted here — it stages
+    /// <paramref name="image"/> and answers every update with it as a clickable <c>image</c> view.
+    /// <paramref name="click"/> clicks the picture at that fraction of the frame and prints the event it sent.
+    /// </summary>
+    public static int RunImage(string image, double? width, double? height, string output, (double X, double Y)? click)
+    {
+        var manifest = PluginManifestReader.Read("""
+            { "apiVersion": 1, "id": "snapshot.image", "name": "Image View", "version": "1",
+              "run": { "python": { "entry": "none.py" } }, "kind": "panel",
+              "params": [ { "name": "n", "label": "Points", "kind": "int", "default": 64 } ],
+              "ui": { "title": "Image View", "size": [760, 520], "layout": { "split": "horizontal", "sizes": [1, 3], "children": [
+                { "column": [ { "param": "n" }, { "messages": true } ] },
+                { "view": "chart", "kind": "image" } ] } } }
+            """).Manifest!;
+        var (layout, _) = PluginLayoutReader.Read(manifest);
+        string staging = Path.Combine(Path.GetTempPath(), "crf-plg-img-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(staging);
+        File.Copy(image, Path.Combine(staging, Path.GetFileName(image)));
+        var session = new ImageSession(staging, Path.GetFileName(image));
+        var controller = new PluginPanelController(manifest, () => PluginOutcome<IPluginPanelSession>.Of(session),
+            new PluginPanelOptions { Post = a => Dispatcher.UIThread.Post(a) });
+        var window = new PluginWindow(layout!, controller, null, null);
+        if (width is { } w) window.Width = w;
+        if (height is { } h) window.Height = h;
+        window.Show();
+        controller.Open();
+        Pump(window, () => controller.State.Reply is not null, "the first reply");
+        Settle(window);
+        if (click is { } c)
+        {
+            var img = window.Views.Select(v => v.ViewControl).OfType<PluginImageViewControl>().First();
+            var at = new Point(img.Bounds.Width * c.X, img.Bounds.Height * c.Y);
+            Console.WriteLine(img.Click(at) ? $"clicked; the plugin was sent {session.LastEvent}" : "the click was not on the picture");
+            Pump(window, () => session.Events > 0 && !controller.State.InFlight, "the click's reply");
+            Settle(window);
+        }
+        window.CaptureRenderedFrame()!.Save(output);
+        Console.WriteLine($"wrote {output}");
+        _ = controller.CloseAsync();
+        return 0;
+    }
+
+    /// <summary>The image panel's plugin, played here.</summary>
+    private sealed class ImageSession(string staging, string file) : IPluginPanelSession
+    {
+        public int Events;
+        public string LastEvent = "";
+        public event Action<PluginProgress>? Progress { add { } remove { } }
+        public event Action<PluginFailure>? Ended { add { } remove { } }
+        public PluginFailure? Fatal => null;
+        public string StagingDirectory => staging;
+        public Task<PluginOutcome<PluginHello>> HelloAsync(CancellationToken ct = default) => Task.FromResult(PluginOutcome<PluginHello>.Of(new PluginHello(1)));
+        private Task<PluginOutcome<PluginReply>> Reply(string? note) => Task.FromResult(PluginOutcome<PluginReply>.Of(new PluginReply(
+            new JsonObject(), new JsonObject { ["chart"] = new JsonObject { ["file"] = file, ["clickable"] = true } },
+            note is null ? [] : [new PluginMessage("info", note)], new JsonObject(), null)));
+        public Task<PluginOutcome<PluginReply>> UpdateAsync(JsonObject parameters, CancellationToken ct = default) => Reply(null);
+        public Task<PluginOutcome<PluginReply>> ActionAsync(string name, JsonObject parameters, CancellationToken ct = default) => Reply(null);
+        public Task<PluginOutcome<PluginReply>> EventAsync(string view, string kind, JsonObject fields, JsonObject parameters, CancellationToken ct = default)
+        {
+            Events++;
+            LastEvent = $"event {{view: {view}, kind: {kind}, x: {fields["x"]}, y: {fields["y"]}}}";
+            return Reply($"Clicked at ({fields["x"]}, {fields["y"]}) in the picture's pixels.");
+        }
+        public Task<PluginOutcome<PluginPlaced>> CommitAsync(JsonObject parameters, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> SettledAsync(TimeSpan within) => Task.FromResult(true);
+        public Task ByeAsync() => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private static void Pump(Window window, Func<bool> done, string what)
     {
         var until = DateTime.UtcNow.AddSeconds(30);
@@ -179,6 +284,8 @@ static class PluginPanelSnapshot
         }
 
         public Task<PluginOutcome<PluginReply>> ActionAsync(string name, JsonObject parameters, CancellationToken ct = default) => inner.ActionAsync(name, parameters, ct);
+        public Task<PluginOutcome<PluginReply>> EventAsync(string view, string kind, JsonObject fields, JsonObject parameters, CancellationToken ct = default) => inner.EventAsync(view, kind, fields, parameters, ct);
+        public string StagingDirectory => inner.StagingDirectory;
         public Task<PluginOutcome<PluginPlaced>> CommitAsync(JsonObject parameters, CancellationToken ct = default) => inner.CommitAsync(parameters, ct);
         public Task<bool> SettledAsync(TimeSpan within) => inner.SettledAsync(within);
         public Task ByeAsync() => inner.ByeAsync();

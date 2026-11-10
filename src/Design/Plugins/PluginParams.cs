@@ -178,6 +178,28 @@ public static class PluginParams
 
     // ── The workspace kinds ─────────────────────────────────────────────────────
 
+    /// <summary>What a picker offers for <paramref name="p"/>, or null when it is not a picker.</summary>
+    public static IReadOnlyList<string>? ChoicesFor(PluginParam p, string? workspaceDir) => p.Kind switch
+    {
+        PluginParamKind.Choice     => p.Options,
+        PluginParamKind.Substrate  => SubstrateChoices(workspaceDir),
+        PluginParamKind.Technology => TechnologyChoices(workspaceDir),
+        PluginParamKind.Cell       => CellChoices(workspaceDir),
+        PluginParamKind.Result     => ResultChoices(workspaceDir),
+        _                          => null,
+    };
+
+    /// <summary>
+    /// The text a parameter starts with: <paramref name="given"/> (the last used) or its default — except that a
+    /// picker whose text is not one of its choices starts on its first choice, which is what the picker shows. Without
+    /// that, a substrate with no default showed a substrate and sent nothing (brief-plg-3).
+    /// </summary>
+    public static string StartingText(PluginParam p, string? given, string? workspaceDir)
+    {
+        string text = given ?? DefaultText(p);
+        return ChoicesFor(p, workspaceDir) is { Count: > 0 } items && !items.Contains(text) ? items[0] : text;
+    }
+
     /// <summary>The technologies a picker offers: every <c>.ctech</c> in the workspace, as a path relative to it.
     /// Bounded and dot-folder-free, like every other workspace walk.</summary>
     public static IReadOnlyList<string> TechnologyChoices(string? workspaceDir)
@@ -263,6 +285,11 @@ public static class PluginParams
             {
                 ["kind"] = l.Kind.ToString().ToLowerInvariant(), ["name"] = l.Name, ["thickness"] = l.ThicknessDbu * metresPerDbu,
             };
+            // The drawing layers this entry is drawn on, by name — what a layout view's shapes name (brief-plg-3 §3).
+            if (l.DrawingLayers.Count > 0)
+                o["layers"] = new JsonArray([.. l.DrawingLayers
+                    .Select(k => tech.Layers.FirstOrDefault(d => d.Key == k)?.Name)
+                    .Where(n => n is not null).Select(n => (JsonNode)JsonValue.Create(n)!)]);
             if (l.Kind == StackupKind.Dielectric) { o["er"] = l.Epsr; o["tanD"] = l.TanD; o["mur"] = l.Mur; }
             if (l.Kind == StackupKind.Conductor)
             {

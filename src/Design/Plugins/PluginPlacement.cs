@@ -17,13 +17,16 @@ namespace CircuitRF.Design.Plugins;
 /// <param name="PluginMessages">The plugin's own messages with <c>placed</c>. An error among them refuses.</param>
 /// <param name="CellName">The name to place under — the user's New name. Null takes the plugin's, else the id's tail.</param>
 /// <param name="Replace">Write over an existing cell of that name. Without it an existing cell is a question.</param>
+/// <param name="Layout">The layout view <see cref="PluginPlacedCell.LayoutView"/> names, read from the reply the panel
+/// last drew — written as the cell's <c>.clay</c>. Null when the cell names none, or the caller could not read it.</param>
 public sealed record PluginPlacementRequest(
     string WorkspaceDir,
     PluginManifest Manifest,
     PluginPlacedCell Cell,
     IReadOnlyList<PluginMessage> PluginMessages,
     string? CellName = null,
-    bool Replace = false);
+    bool Replace = false,
+    PluginLayoutView? Layout = null);
 
 /// <summary>How a placement ended.</summary>
 public enum PluginPlacementOutcome
@@ -76,7 +79,9 @@ public static class PluginPlacement
     public static IReadOnlyList<string> Validate(PluginPlacedCell cell)
     {
         var why = new List<string>();
-        if (cell.Files.Count == 0) why.Add("The plugin placed a cell with no files.");
+        if (cell.Files.Count == 0 && cell.LayoutView is null) why.Add("The plugin placed a cell with no files.");
+        if (cell.LayoutView is not null && cell.Files.Any(f => f.EndsWith(".clay", StringComparison.OrdinalIgnoreCase)))
+            why.Add($"The plugin placed both a staged .clay and the {cell.LayoutView} view as one cell's layout; a placed cell has one.");
 
         foreach (var group in cell.Files.GroupBy(f => Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
             if (group.Count() > 1)
@@ -108,6 +113,9 @@ public static class PluginPlacement
         // 1. Validate. The plugin's own errors first: it knows best why its output is wrong.
         var refusals = request.PluginMessages.Where(m => m.IsError).Select(m => m.Text).ToList();
         refusals.AddRange(Validate(cell));
+        if (cell.LayoutView is { } lv && request.Layout is null)
+            refusals.Add($"The plugin placed its {lv} view as the layout, and there is no {lv} layout view to place.");
+        else if (request.Layout is { Problem: { } lp }) refusals.Add(lp);
         if (NameValidator.Validate(name) is { } badName) refusals.Add($"The cell name '{name}' cannot be used: {badName}");
         if (refusals.Count > 0) return Refused(refusals);
 
@@ -136,7 +144,8 @@ public static class PluginPlacement
             if (!exists) CellCreate.Create(request.WorkspaceDir, name, CellViews.None);
 
             if (exists)
-                foreach (string ext in cell.Files.Select(f => Path.GetExtension(f) ?? "").Distinct(StringComparer.OrdinalIgnoreCase))
+                foreach (string ext in cell.Files.Select(f => Path.GetExtension(f) ?? "").Concat(request.Layout is null ? [] : [".clay"])
+                                                 .Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     string home = Path.Combine(cellDir, Homes[ext]);
                     if (Directory.Exists(home))
@@ -144,6 +153,19 @@ public static class PluginPlacement
                 }
 
             string? placedLayout = cell.Files.FirstOrDefault(f => f.EndsWith(".clay", StringComparison.OrdinalIgnoreCase));
+            if (request.Layout is { } layoutView)
+            {
+                // The preview's own shapes and port labels, as the cell's layout: what is placed is what was drawn.
+                string stem = request.Cell.LayoutView!;
+                string home = Path.Combine(cellDir, CellFolder.LayoutSubFolder);
+                Directory.CreateDirectory(home);
+                string target = Path.Combine(home, stem + ".clay");
+                File.WriteAllText(target, LayoutPersistence.Serialize(PlacedLayout(layoutView, home, request.WorkspaceDir)));
+                written.Add(target);
+                // A staged .cem names it as the file it would have been beside it in the staging folder.
+                placedLayout = cell.Files.FirstOrDefault(f => f.EndsWith(".cem", StringComparison.OrdinalIgnoreCase)) is { } cem
+                    ? Path.Combine(Path.GetDirectoryName(cem)!, stem + ".clay") : null;
+            }
             foreach (string staged in cell.Files)
             {
                 string ext = Path.GetExtension(staged) ?? "";
@@ -175,6 +197,30 @@ public static class PluginPlacement
         return new PluginPlacementResult(PluginPlacementOutcome.Placed, name, cellDir, written, point, []);
 
         PluginPlacementResult Refused(IReadOnlyList<string> why) => new(PluginPlacementOutcome.Refused, name, null, [], null, why);
+    }
+
+    /// <summary>
+    /// A layout view as the <c>.clay</c> placed from it: its shapes (port labels among them), its units, and its
+    /// technology — named relative to the layout folder only when it is not the workspace's default, which is what a
+    /// null <c>TechRef</c> already means.
+    /// </summary>
+    public static LayoutView PlacedLayout(PluginLayoutView view, string layoutDir, string workspaceDir)
+    {
+        var placed = new LayoutView { DbuPerMicron = view.Layout.DbuPerMicron, DisplayUnit = view.Layout.DisplayUnit };
+        foreach (var s in view.Layout.Shapes) placed.Shapes.Add(s);
+        if (view.TechnologyPath is { } tp)
+        {
+            string? fallback = null;
+            try
+            {
+                var cws = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(workspaceDir, ".cws"));
+                if (cws.DefaultTechRef is { Length: > 0 } d) fallback = Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(workspaceDir, d));
+            }
+            catch (Exception e) when (e is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
+            if (!string.Equals(fallback, Path.GetFullPath(tp), StringComparison.OrdinalIgnoreCase))
+                placed.TechRef = Path.GetRelativePath(layoutDir, tp).Replace('\\', '/');
+        }
+        return placed;
     }
 
     /// <summary>

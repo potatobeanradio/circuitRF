@@ -60,12 +60,21 @@ public sealed record PluginHello(int ApiVersion);
 public sealed record PluginReply(
     JsonObject Readouts, JsonObject Views, IReadOnlyList<PluginMessage> Messages, JsonObject Enabled, JsonObject? Set)
 {
+    /// <summary>The reply frame's int64 payload — a <c>layout</c> view's geometry, which its shapes' spans index
+    /// (<c>pcell-wire-schema.md</c> §4.3). Empty when the frame carried none.</summary>
+    public ReadOnlyMemory<long> Payload { get; init; }
+
     public bool HasError => Messages.Any(m => m.IsError);
 }
 
 /// <summary>One cell a plugin staged: its suggested name (null takes the id's tail) and its files, each already
 /// resolved to a full path inside the staging folder.</summary>
-public sealed record PluginPlacedCell(string? Name, IReadOnlyList<string> Files);
+public sealed record PluginPlacedCell(string? Name, IReadOnlyList<string> Files)
+{
+    /// <summary>A <c>layout</c> view whose shapes and ports become the cell's <c>.clay</c> (brief-plg-3 §3): circuitRF
+    /// writes it, so what is placed is what the preview drew. Null when the plugin names none.</summary>
+    public string? LayoutView { get; init; }
+}
 
 /// <summary>A plugin's answer to <c>commit</c>.</summary>
 public sealed record PluginPlaced(IReadOnlyList<PluginPlacedCell> Cells, IReadOnlyList<PluginMessage> Messages)
@@ -178,7 +187,7 @@ public sealed class PluginSession : IPluginPanelSession
     /// <summary>The failure that ended the session, or null while it is alive.</summary>
     public PluginFailure? Fatal { get { lock (_gate) return _fatal; } }
 
-    private sealed record Answer(JsonObject? Message, PluginFailure? Failure);
+    private sealed record Answer(JsonObject? Message, PluginFailure? Failure, ReadOnlyMemory<long> Payload = default);
     private sealed record Pending(string Expect, TaskCompletionSource<Answer> Done);
 
     private PluginSession(Process process, PluginManifest manifest, string pluginDir, string staging, PluginStartOptions options)
@@ -330,6 +339,18 @@ public sealed class PluginSession : IPluginPanelSession
         => ReplyAsync("update", new JsonObject { ["params"] = parameters.DeepClone() },
                       _options.Deadlines.Update ?? Seconds(_manifest.Timeouts.Update) ?? TimeSpan.FromSeconds(30), ct);
 
+    /// <summary><c>event</c> (<c>plugins.md</c> §6.2): a bound marker or a handle was dragged, an image clicked.
+    /// <paramref name="fields"/> are the event's own (<c>marker</c>, <c>x</c>, <c>param</c>, <c>value</c>, …), sent beside
+    /// <c>view</c>, <c>kind</c> and the parameters. Its deadline is an <c>update</c>'s: it answers a gesture.</summary>
+    public Task<PluginOutcome<PluginReply>> EventAsync(string view, string kind, JsonObject fields, JsonObject parameters, CancellationToken ct = default)
+    {
+        var body = (JsonObject)fields.DeepClone();
+        body["view"] = view;
+        body["kind"] = kind;
+        body["params"] = parameters.DeepClone();
+        return ReplyAsync("event", body, _options.Deadlines.Update ?? Seconds(_manifest.Timeouts.Update) ?? TimeSpan.FromSeconds(30), ct);
+    }
+
     /// <summary><c>action</c>: a named button.</summary>
     public Task<PluginOutcome<PluginReply>> ActionAsync(string name, JsonObject parameters, CancellationToken ct = default)
         => ReplyAsync("action", new JsonObject { ["name"] = name, ["params"] = parameters.DeepClone() },
@@ -361,7 +382,8 @@ public sealed class PluginSession : IPluginPanelSession
                         if (!File.Exists(full)) return PluginOutcome<PluginPlaced>.Fail(Soft(PluginFailureKind.Protocol, $"{Peer} named {named}, which is not in its staging folder."));
                         files.Add(full!);
                     }
-                cells.Add(new PluginPlacedCell(name, files));
+                string? layoutView = cell["layout"] is JsonValue lv && lv.TryGetValue<string>(out var ln) && ln.Length > 0 ? ln : null;
+                cells.Add(new PluginPlacedCell(name, files) { LayoutView = layoutView });
             }
         return PluginOutcome<PluginPlaced>.Of(new PluginPlaced(cells, Messages(msg)));
     }
@@ -383,7 +405,10 @@ public sealed class PluginSession : IPluginPanelSession
             views.DeepClone().AsObject(),
             Messages(msg),
             (msg["enabled"] as JsonObject)?.DeepClone().AsObject() ?? new JsonObject(),
-            (msg["set"] as JsonObject)?.DeepClone().AsObject()));
+            (msg["set"] as JsonObject)?.DeepClone().AsObject())
+        {
+            Payload = answer.Payload,
+        });
     }
 
     private async Task<Answer> RequestAsync(string type, JsonObject body, string expect, TimeSpan deadline, CancellationToken ct)
@@ -482,12 +507,12 @@ public sealed class PluginSession : IPluginPanelSession
                 Fail(PluginFailureKind.Protocol, $"{Peer} sent a frame that is not a JSON object: \"{Quote(frame.Json)}\".");
                 return;
             }
-            if (!Dispatch(msg)) return;
+            if (!Dispatch(msg, frame.Payload)) return;
         }
     }
 
     /// <summary>Routes one message. False when it broke the protocol, which ends the session.</summary>
-    private bool Dispatch(JsonObject msg)
+    private bool Dispatch(JsonObject msg, ReadOnlyMemory<long> payload)
     {
         string? type = msg["type"] is JsonValue tv && tv.TryGetValue<string>(out var t) ? t : null;
         long? id = IdOf(msg["id"]);
@@ -540,7 +565,7 @@ public sealed class PluginSession : IPluginPanelSession
                     pending.Done.TrySetResult(new Answer(null, f));
                     return false;
                 }
-                pending.Done.TrySetResult(new Answer(msg, null));
+                pending.Done.TrySetResult(new Answer(msg, null, payload));
                 return true;
 
             default:
@@ -694,7 +719,7 @@ public sealed class PluginSession : IPluginPanelSession
             case JsonObject o:
                 foreach (var (key, value) in o)
                 {
-                    if (key is "path" or "file" && value is JsonValue v && v.TryGetValue<string>(out var s)) yield return s;
+                    if (key is "path" or "file" or "cnl" && value is JsonValue v && v.TryGetValue<string>(out var s)) yield return s;
                     foreach (var inner in NamedPaths(value)) yield return inner;
                 }
                 break;

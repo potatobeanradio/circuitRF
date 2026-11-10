@@ -115,14 +115,7 @@ public static class PluginParamControls
             case PluginParamKind.Cell:
             case PluginParamKind.Result:
             {
-                IReadOnlyList<string> items = p.Kind switch
-                {
-                    PluginParamKind.Choice     => p.Options,
-                    PluginParamKind.Substrate  => PluginParams.SubstrateChoices(workspaceDir),
-                    PluginParamKind.Technology => PluginParams.TechnologyChoices(workspaceDir),
-                    PluginParamKind.Cell       => PluginParams.CellChoices(workspaceDir),
-                    _                          => PluginParams.ResultChoices(workspaceDir),
-                };
+                IReadOnlyList<string> items = PluginParams.ChoicesFor(p, workspaceDir)!;
                 var combo = new ComboBox { ItemsSource = items, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
                 combo.SelectedItem = items.Contains(initial) ? initial : items.FirstOrDefault();
                 if (items.Count == 0) combo.PlaceholderText = workspaceDir is null ? "needs an open workspace" : "none in this workspace";

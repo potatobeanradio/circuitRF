@@ -273,73 +273,14 @@ internal static class PlotVerb
         if (data is null || data.Groups.Count == 0)
             return JsonRun.Fail(CliDiagnostics.PlotResultUnreadable(o.Result, "it holds no cubes"));
 
-        var traces = new List<TraceConfig>(o.Traces.Count);
-        for (int i = 0; i < o.Traces.Count; i++)
-        {
-            var (tc, refusal) = BuildTrace(o.Traces[i], data, Path.GetFileName(o.Result), i, o.Type);
-            if (refusal is { } r) return r;
-            tc!.Label = o.Traces[i].Label;
-            var (perCorner, cornerRefusal) = PinCorners(o.Traces[i], tc!, data, i);
-            if (cornerRefusal is { } cr) return cr;
-            foreach (var one in perCorner!)
-            {
-                if (TrialOptionRefusal(o.Traces[i], one, data, o.Type) is { } tr) return tr;
-                var (companion, statRefusal) = ApplyStatistics(o.Traces[i], one, data, o.Type);
-                if (statRefusal is { } sr) return sr;
-                traces.Add(one);
-                if (companion is not null) traces.Add(companion);
-            }
-            tc = perCorner![0];
-
-            // ── A CUT IS A PLANE, SO IT IS TWO TRACES (2026-09-10) ───────────────────────────
-            //
-            //  PlanarBeamwidth has said since ANT-5 that a cut runs from -theta_max through
-            //  broadside to +theta_max with the negative half on the phi + 180 branch — it samples
-            //  BOTH azimuths, and refuses when the grid has only one of them. The plot drew one
-            //  branch, so a polar cut was a QUARTER of the disc and a beamwidth read off the
-            //  picture was half the one the metric published. Measured on an imported 1.74 GHz
-            //  patch; ANT-7 §4 had already anticipated "a polar plot occupying a half-disc".
-            //
-            //  The back branch is an ORDINARY cube trace through the ordinary resolve — the same
-            //  spec with its cut moved 180 — carrying MirrorPatternAngle so it draws at -angle.
-            //  It keeps the front branch's colour, because the two halves are one curve; it keeps
-            //  its OWN label, because `phi=180 deg` is what says where the negative half came from.
-            //
-            //  Gated to a dB-radial POLAR plot, and that is not caution: on a linear polar plot
-            //  nothing reads MirrorPatternAngle, so the second trace would draw a duplicate curve
-            //  on top of the first, and on a rect plot the negative half is an x-axis question
-            //  rather than an angle one. `cut=all` is excluded because a family already carries
-            //  every azimuth, the back branch among them.
-            //  --whole-plane asks for the SAME picture out of ONE trace: the resolve fetches the
-            //  phi + 180 slice itself and draws the plane as one curve. Two cuts are then two
-            //  traces rather than four, with one colour, one label and one marker set each.
-            if (o.Type == PlotType.Polar && o.Radial == PolarRadialMode.Db
-                && o.Traces[i].BackBranchCut() is { } backCut)
-            {
-                if (o.WholePlane)
-                {
-                    tc!.PatternWholePlane = true;
-                }
-                else
-                {
-                    var (btc, brefusal) = BuildTrace(o.Traces[i].WithCut(backCut), data,
-                                                     Path.GetFileName(o.Result), i, o.Type);
-                    if (brefusal is { } br) return br;
-                    btc!.MirrorPatternAngle = true;
-                    traces.Add(btc);
-                }
-            }
-        }
-
-        // R-cp5-5 — a cut's curves over a sweep are told apart by the legend, so one opens unless --legend said otherwise.
-        if (!o.LegendStated && o.Traces.Exists(t => t.OverSweep)) o.Legend = LegendPlacement.Inside;
+        var (composed, composeRefusal) = Compose(o, data, Path.GetFileName(o.Result));
+        if (composeRefusal is { } cr0) return cr0;
+        var config = composed!;
 
         // --spec-lines draws the goals the RESULT records (brief-yield-8 R-ya8-3); a result recording none would leave
         // a picture with nothing the flag asked for in it.
         if (o.SpecLines == true && SpecLineResolve.GoalsOf(data).Count == 0)
             return JsonRun.Fail(CliDiagnostics.PlotSpecLinesNoGoals(o.Result));
-
-        var config = BuildConfig(o, traces);
 
         if (o.WriteCdd is { } cddPath)
         {
@@ -1561,6 +1502,95 @@ internal static class PlotVerb
             SelectedDataSource = Path.GetFileName(o.Result!),
             Tabs               = [new TabConfig { Name = "Tab 1", Plots = [container] }],
         };
+    }
+
+    /// <summary>
+    /// The verb's middle: the parsed options and the result's data as the document it draws — every trace built,
+    /// pinned, given its statistics and its back branch, then <see cref="BuildConfig"/>. Its own method so a plugin's
+    /// <c>plot</c> view is composed by this same code (<see cref="PluginPlots"/>, brief-plg-3 §1) rather than a copy.
+    /// </summary>
+    private static (DataDisplayConfig? Config, int? Refusal) Compose(Options o, DataSet data, string sourceName)
+    {
+        var traces = new List<TraceConfig>(o.Traces.Count);
+        for (int i = 0; i < o.Traces.Count; i++)
+        {
+            var (tc, refusal) = BuildTrace(o.Traces[i], data, sourceName, i, o.Type);
+            if (refusal is { } r) return (null, r);
+            tc!.Label = o.Traces[i].Label;
+            var (perCorner, cornerRefusal) = PinCorners(o.Traces[i], tc!, data, i);
+            if (cornerRefusal is { } cr) return (null, cr);
+            foreach (var one in perCorner!)
+            {
+                if (TrialOptionRefusal(o.Traces[i], one, data, o.Type) is { } tr) return (null, tr);
+                var (companion, statRefusal) = ApplyStatistics(o.Traces[i], one, data, o.Type);
+                if (statRefusal is { } sr) return (null, sr);
+                traces.Add(one);
+                if (companion is not null) traces.Add(companion);
+            }
+            tc = perCorner![0];
+
+            // ── A CUT IS A PLANE, SO IT IS TWO TRACES (2026-09-10) ───────────────────────────
+            //
+            //  PlanarBeamwidth has said since ANT-5 that a cut runs from -theta_max through
+            //  broadside to +theta_max with the negative half on the phi + 180 branch — it samples
+            //  BOTH azimuths, and refuses when the grid has only one of them. The plot drew one
+            //  branch, so a polar cut was a QUARTER of the disc and a beamwidth read off the
+            //  picture was half the one the metric published. Measured on an imported 1.74 GHz
+            //  patch; ANT-7 §4 had already anticipated "a polar plot occupying a half-disc".
+            //
+            //  The back branch is an ORDINARY cube trace through the ordinary resolve — the same
+            //  spec with its cut moved 180 — carrying MirrorPatternAngle so it draws at -angle.
+            //  It keeps the front branch's colour, because the two halves are one curve; it keeps
+            //  its OWN label, because `phi=180 deg` is what says where the negative half came from.
+            //
+            //  Gated to a dB-radial POLAR plot, and that is not caution: on a linear polar plot
+            //  nothing reads MirrorPatternAngle, so the second trace would draw a duplicate curve
+            //  on top of the first, and on a rect plot the negative half is an x-axis question
+            //  rather than an angle one. `cut=all` is excluded because a family already carries
+            //  every azimuth, the back branch among them.
+            //  --whole-plane asks for the SAME picture out of ONE trace: the resolve fetches the
+            //  phi + 180 slice itself and draws the plane as one curve. Two cuts are then two
+            //  traces rather than four, with one colour, one label and one marker set each.
+            if (o.Type == PlotType.Polar && o.Radial == PolarRadialMode.Db
+                && o.Traces[i].BackBranchCut() is { } backCut)
+            {
+                if (o.WholePlane)
+                {
+                    tc!.PatternWholePlane = true;
+                }
+                else
+                {
+                    var (btc, brefusal) = BuildTrace(o.Traces[i].WithCut(backCut), data,
+                                                     sourceName, i, o.Type);
+                    if (brefusal is { } br) return (null, br);
+                    btc!.MirrorPatternAngle = true;
+                    traces.Add(btc);
+                }
+            }
+        }
+
+        // R-cp5-5 — a cut's curves over a sweep are told apart by the legend, so one opens unless --legend said otherwise.
+        if (!o.LegendStated && o.Traces.Exists(t => t.OverSweep)) o.Legend = LegendPlacement.Inside;
+
+
+        return (BuildConfig(o, traces), null);
+    }
+
+    /// <summary>
+    /// <c>plot</c>'s own argument parse and composition, for an argument list that did not come from a command line
+    /// — a plugin's plot spec spelled as the flags it means (brief-plg-3 §1). No file is read and nothing is drawn;
+    /// a refusal is the sentence the verb would have printed, captured rather than written to the run's diagnostics.
+    /// </summary>
+    internal static (DataDisplayConfig? Config, string? Refusal) ComposeArguments(IReadOnlyList<string> args, DataSet data, string sourceName)
+    {
+        using var isolated = JsonRun.Isolate();
+        var o = new Options { Result = sourceName };
+        string? First() => JsonRun.CapturedDiagnostics.FirstOrDefault()?.Message;
+        if (Parse([.. args], o) is not null) return (null, First() ?? "the plot spec could not be read.");
+        if (o.Traces.Count == 0) return (null, "the plot names no traces.");
+        var (config, refusal) = Compose(o, data, sourceName);
+        if (refusal is not null) return (null, First() ?? "the plot could not be composed.");
+        return (config, null);
     }
 
     /// <summary>

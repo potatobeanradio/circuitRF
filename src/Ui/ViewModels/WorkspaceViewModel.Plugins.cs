@@ -92,9 +92,11 @@ public partial class WorkspaceViewModel
     /// <b>Place in workspace</b> — <c>commit</c>, then each staged cell through <see cref="PluginPlacement"/>, asking
     /// Replace or New name when a cell exists. The action dialog's OK and the panel's commit button both come here.
     /// </summary>
+    /// <param name="layoutView">A panel's layout view by name, read from the reply it last drew — what a placed cell's
+    /// <c>layout</c> names (brief-plg-3 §3). Null for an action plugin, which has no views.</param>
     private async Task<PluginRunAnswer> PlacePluginAsync(
         Window window, PluginEntry entry, string? workspaceDir, IPluginPanelSession session, JsonObject values,
-        IReadOnlyList<PluginMessage> replyMessages, CancellationToken cancel)
+        IReadOnlyList<PluginMessage> replyMessages, CancellationToken cancel, Func<string, PluginLayoutView?>? layoutView = null)
     {
         var manifest = entry.Manifest!;
         if (workspaceDir is null)
@@ -109,7 +111,8 @@ public partial class WorkspaceViewModel
         string? last = null;
         foreach (var cell in placed.Value.Cells)
         {
-            var request = new PluginPlacementRequest(workspaceDir, manifest, cell, placed.Value.Messages);
+            var request = new PluginPlacementRequest(workspaceDir, manifest, cell, placed.Value.Messages,
+                Layout: cell.LayoutView is { } lv ? layoutView?.Invoke(lv) : null);
             var result = await Task.Run(() => PluginPlacement.Place(request));
             while (result.Outcome == PluginPlacementOutcome.NameTaken)
             {
@@ -162,7 +165,8 @@ public partial class WorkspaceViewModel
         var log = PluginLog.Open(manifest.Id);
         PluginWindow? window = null;
         IReadOnlyDictionary<string, string>? lastSent = null;   // remembered on close: the last values used, not unsent text
-        var controller = new PluginPanelController(manifest, () =>
+        PluginPanelController controller = null!;   // read by the commit below, which runs only after it is assigned
+        controller = new PluginPanelController(manifest, () =>
         {
             var started = PluginSession.Start(entry, new PluginStartOptions
             {
@@ -179,12 +183,16 @@ public partial class WorkspaceViewModel
             Commit = (session, values, cancel) => Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 if (window is null) return (IReadOnlyList<PluginMessage>)[];
-                var answer = await PlacePluginAsync(window, entry, workspaceDir, session, values, [], cancel);
+                var answer = await PlacePluginAsync(window, entry, workspaceDir, session, values, [], cancel, name =>
+                    controller.State.ViewBodies.GetValueOrDefault(name) is { } body
+                        ? PluginViews.Read(body, "layout", new PluginViewContext(manifest, workspaceDir)) as PluginLayoutView
+                          ?? new PluginLayoutView(name, new LayoutView(), null, [], [], body.Params) { Problem = $"The {name} view is not a layout." }
+                        : null);
                 return answer.Messages;
             }),
         });
 
-        window = new PluginWindow(layout, controller, workspaceDir, PluginHost.WindowMemory(manifest.Id))
+        window = new PluginWindow(layout, controller, workspaceDir, PluginHost.WindowMemory(manifest.Id), OpenDocumentByPath)
         {
             Remember = (memory, _) =>
             {

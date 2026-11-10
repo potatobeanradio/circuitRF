@@ -158,6 +158,12 @@ Parameters are declared once, separately from where they appear, because the CLI
 Names are identifiers. Units are circuitRF's unit names. A `quantity` with a `min`/`max` is refused by circuitRF
 before the plugin is asked.
 
+**A picker starts on a choice** (brief-plg-3). A `choice`, `substrate`, `technology`, `cell` or `result` whose default
+(or last used value) is not one of its choices starts on its first choice — the one the picker shows — so a panel never
+shows a value it is not sending. Each `stackup` entry of a `technology` or `substrate` value carries `layers`: the names
+of the drawing layers it is drawn on, which is what a layout view's shapes name (a conductor called "Top Copper (1 oz)"
+is usually drawn on a layer called "Top Copper").
+
 **`chars`** (optional, on a `quantity`, `int`, `real`, `string` or `file`) is the author's size hint: about how many
 characters the box should hold — `4` for an order, `12` for a frequency, `40` for a path. circuitRF turns it into a width
 from the current theme's font and clamps it to 2–80, so a hint can never be a pixel size that breaks a theme or a
@@ -252,12 +258,12 @@ set to `null` is cleared.
   },
   "plot": {
     "y": { "label": "dB", "min": -60, "max": 0 },
-    "traces": [ { "cube": "S21", "y": "db" }, { "cube": "S11", "y": "db" } ],
+    "traces": [ { "cube": "S21", "y": "db20" }, { "cube": "S11", "y": "db20" } ],
     "markers": [
-      { "trace": "S21", "x": "f0", "draggable": true, "bind": "f0" },
+      { "trace": "S21", "bind": "f0", "draggable": true },
       { "trace": "S21", "x": 2.3e9 }
     ],
-    "lines": [ { "y": -20, "label": "spec" } ]
+    "lines": [ { "y": -20, "side": "above", "xStart": 2.3e9, "xEnd": 2.5e9 } ]
   }
 }
 ```
@@ -276,6 +282,25 @@ set to `null` is cleared.
 - `smith` is the same object on a Smith chart; its cubes are reflection coefficients or impedances, as the Smith
   plot type already accepts. A bound marker on a Smith chart is bound to a frequency parameter.
 
+**As built (brief-plg-3).** The `plot` object is spelled as `circuitRF plot`'s own flags and composed by that verb's
+code (`PluginPlots` → `PlotVerb.ComposeArguments`), then loaded by `PlotConfigLoader` as a `.cdd` is — there is no
+second trace parser. So:
+- A trace is an object of `--trace` fields (`cube`, `y`, `i`, `j`, `label`, `axis`, …) and is refused with the verb's
+  own sentence. **`"y": "db"` is refused**, as on the command line: it would be 10·log10 here and 20·log10 in a
+  measure line; say `db20` or `db10`.
+- The plot's fields are `title`, `x`, `y`, `y2` (each `{label, min, max}`), `freqUnit`, `legend`, `traces`, `markers`
+  and `lines`; any other is refused by name. An `x` range is base SI, as every value a plugin sends; `y` is in the
+  plot's own units (dB here).
+- A marker sits on a SAMPLE of its trace, as every Data Display marker on a cube does, and a dropped bound marker
+  reports that sample's value exactly as the axis holds it. A plugin whose markers should land on round values puts
+  round values on its axis (the `stub` example sweeps on a 1-2-5 step). `"x": "f0"` names the parameter a marker sits
+  at without making it draggable; `bind` makes it draggable.
+- A line is the Data Display's limit area: `y`, `side` (`above` hatches above the line — the curve must stay below it;
+  `below` the reverse), and optionally `xStart`/`xEnd` in base SI. A `label` is accepted and not drawn: limit areas
+  carry none.
+- **Open in Data Display** writes the data (`<view>.npy`, or the staged file itself) and `<view>.cdd` into the
+  staging folder and opens it as an ordinary document.
+
 ### 5.2 `table`
 
 ```json
@@ -290,14 +315,22 @@ A `readout` with `"as": "table"` takes the same object.
 ```json
 "artwork": {
   "technology": "self",
-  "shapes": "payload",
-  "layers": ["TopCopper", "Ground"],
-  "handles": [
-    { "kind": "linear", "param": "L3", "from": [x0, y0], "to": [x1, y1], "shape": 7 }
+  "shapes": [
+    { "kind": "rect", "layer": "Top Copper", "xy": { "at": 0, "count": 4 } },
+    { "kind": "path", "layer": "Top Copper", "xy": { "at": 4, "count": 6 }, "width": 1200000, "end": "flush" }
   ],
-  "ports": [ { "name": "P1", "at": [x, y], "layer": "TopCopper", "width": 1200 } ]
+  "handles": [
+    { "parameter": "L3", "kind": "linear", "span": { "at": 10, "count": 4 }, "axisDeg": 90, "label": "Stub length" }
+  ],
+  "ports": [ { "name": "1", "x": 0, "y": 0, "layer": "Top Copper", "width": 1200000, "outwardDeg": 180 } ]
 }
 ```
+
+`shapes`, `handles` and `ports` are the generate reply's `shapes`, `handles` and `pins`, word for word, with their
+spans indexing the reply frame's int64 payload; they are decoded by `PCellWireCodec.DecodeGenerateReply` itself. The
+one addition is that a `layer` may be a technology layer's **name** as well as `{layer, datatype}` — a plugin knows
+names (§3.1's `layers`), not GDS numbers. `"technology": "self"` is the technology the plugin's own `technology` or
+`substrate` parameter names; any other string is a `.ctech` path relative to the workspace.
 
 - **Shapes are the PCell wire's reply** (`pcell-wire-schema.md` §4.3–4.4): rectangles, polygons, paths and
   labels on technology layers by name, coordinates as int64 DBU in the frame's binary payload. circuitRF
@@ -307,7 +340,16 @@ A `readout` with `"as": "table"` takes the same object.
   parameter. Dragging one sends an `event` with the new parameter value, computed by circuitRF's existing handle
   solver, so the plugin never maps a mouse position to a length.
 - **Ports** are drawn as layout port labels and become real ports on placement (§6).
-- The preview is **read-only artwork**, like a PCell instance. Editing it by hand is what placement is for.
+- The preview is **read-only artwork**, like a PCell instance. Editing it by hand is what placement is for. Hover
+  shows the pointer's position; shift-drag measures.
+- **A handle is solved without asking the plugin** (brief-plg-3): while it is dragged only its own ghost moves, and on
+  release `PCellHandleSolver` — the solver a placed PCell's grips use — solves the parameter value against a grip that
+  moves one for one with it (a length in **metres** along its axis, an angle in **degrees** about its anchor). A
+  handle on any other kind of parameter is drawn and not draggable, and the messages say so.
+- **Placement takes the preview itself.** A cell in `placed` may name the view, `"layout": "artwork"`, instead of
+  staging a `.clay`: circuitRF writes that view's shapes and port labels (SDL-5's form) as the cell's
+  `layout/<view>.clay`, so what is placed is what the preview drew, and a plugin never writes `.clay` JSON. A staged
+  `.cem` names it as `<view>.clay` beside itself and is re-pointed at the placed one.
 
 ### 5.4 `schematic` — a `.cnl`
 
@@ -315,8 +357,8 @@ A `readout` with `"as": "table"` takes the same object.
 "circuit": { "cnl": "circuit.cnl" }
 ```
 
-The plugin writes a `.cnl` into the staging folder; circuitRF draws it as `netlist --toSchematic` draws one. This
-needs that drawing code moved out of `src/Cli` into `src/Design` (PLG-3) — by R-aut-2 it should already be there.
+The plugin writes a `.cnl` into the staging folder; circuitRF draws it as `netlist --to-schematic` draws one — both call
+`NetlistSchematic.FromFile` in `src/Design` — read-only, with pan, zoom and a double-click to fit.
 
 ### 5.5 `image` — the escape hatch
 
@@ -325,7 +367,8 @@ needs that drawing code moved out of `src/Cli` into `src/Design` (PLG-3) — by 
 ```
 
 A PNG or SVG the plugin drew itself, for a picture circuitRF has no view kind for. With `clickable`, a click sends
-`event {view, kind: "click", x, y}` in the image's own pixel coordinates. This is the only way a plugin draws, and
+`event {view, kind: "click", x, y}` in the image's own pixel coordinates (an SVG's user units); a click in the
+letterbox margin is not on the picture and sends nothing. This is the only way a plugin draws, and
 it is deliberately limited: no hover, no drag, no zoom beyond the picture's.
 
 ---
@@ -364,6 +407,12 @@ was agreed in `hello`, so an unknown type means the two sides disagree about the
 | `update {id, params}` | The panel opens, and after any parameter change (debounced 150 ms) | `reply {id, readouts, views, messages, enabled}` |
 | `action {id, name, params}` | A button | `reply` |
 | `event {id, view, kind, …, params}` | A bound marker or handle is dragged, an image is clicked | `reply`, optionally with `set: {param: value}` |
+
+The three events (brief-plg-3): `kind: "marker"` with `marker` (its index in the plot's `markers`) and `x` (base SI);
+`kind: "handle"` with `param` and `value` (base SI, solved by circuitRF); `kind: "click"` with `x` and `y`. A marker or a
+handle changes its parameter: `params` already carries the new value, the parameter's control shows it, and the
+ordinary `update` follows the event's reply — exactly one of each. A plugin with nothing particular to do for an event
+may answer it as it answers `update`.
 | `commit {id, params}` | **Place in workspace** | `placed {id, cells: [{name, files}]}` — the documents in the staging folder |
 | `cancel {id}` | A newer request supersedes `id`, or the user pressed Stop | Nothing required |
 | `bye` | The panel closes | The process exits within 2 s, or is killed |
