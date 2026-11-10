@@ -29,6 +29,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 
 ## Features
 - schematic + circuit simulation (DC, S-param, HB, Loadpull, Envelope)
+- noise analysis (noise figure, noise circles, phase noise)
 - 2D layout editor (imports and exports Gerber, GDSII, OASIS, DXF, .kicad_pcb)
 - 3D geometry editor (imports / exports Step)
 - hierarchy for all cell view types (including 3D)
@@ -86,28 +87,28 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.7.5-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.7.5-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.7.5-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.8.0-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.8.0-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.8.0-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.7.5-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.7.5-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.8.0-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.8.0-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.7.5-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.7.5-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-linux-arm64.tar.gz) |
-| Linux, Intel/AMD, AppImage | [circuitRF-1.7.5-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-linux-x64.AppImage) |
-| Linux, ARM, AppImage | [circuitRF-1.7.5-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.7.5/circuitRF-1.7.5-linux-arm64.AppImage) |
+| Linux, Intel/AMD | [circuitRF-1.8.0-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.8.0-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-linux-arm64.tar.gz) |
+| Linux, Intel/AMD, AppImage | [circuitRF-1.8.0-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-linux-x64.AppImage) |
+| Linux, ARM, AppImage | [circuitRF-1.8.0-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.8.0/circuitRF-1.8.0-linux-arm64.AppImage) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.7.5-linux-x64.tar.gz
-./circuitRF-1.7.5/install.sh
+tar xzf circuitRF-1.8.0-linux-x64.tar.gz
+./circuitRF-1.8.0/install.sh
 ```
 
-**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.7.5-linux-x64.AppImage`)
+**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.8.0-linux-x64.AppImage`)
 and run it. Nothing is installed, so keep it wherever you like. It does not update itself: when a new
 version is out, its line in the Messages panel has a **Download** button that saves the new AppImage
 next to the one you are running. AppImageUpdate can update it too. Use the tarball if you want updates
@@ -351,7 +352,6 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 ## What circuitRF doesn't do yet
 
-- **Noise analysis** — no noise figure, no phase noise, no Fmin / Γopt / Rn extraction.
 - **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
 
 If you want to contribute to any of the above, please contact me.
