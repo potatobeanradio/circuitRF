@@ -21215,6 +21215,13 @@ read; it imports with connectivity matching both its drawing and its declared ne
   part's list, most with no wire — a no-connect mark is the likely flag). Read unsigned, pin 24 was pin 65512 and the
   declared nets disagreed with the drawing. The magnitude is the pin.
 - Multi-unit parts still import one instance per unit (`U1`, `U1_2`), as before.
+- **Buses (designer feedback, 2026-11-10).** A two-page design with a bus was refused at "a record of type 0x04 with no
+  valid size". The list after the nets holds one 0x35 record per bus, and each is followed, OUTSIDE its stated size, by a
+  u16 count and that many u32 member net ids (four after the bus whose net name is a `[0-3]` range). Skipping by size
+  alone read the member count as the next header. The wire list also holds 0x15 records: a wire's layout on the bus's own
+  net. They are skipped and counted, not drawn: drawn, a bus wire would join every member it touches, and the members are
+  already joined by name. With both, the design imports and its connectivity matches its drawing and its declared nets.
+  The 48 unread items in the list after the off-page connectors are likely the bus entries; the check matched without them.
 
 ## DFR22-2: artwork schematics drawn as on the board (2026-10-20)
 
@@ -29286,6 +29293,14 @@ in place of `_sim`/`_cosim`; the panel's **Create now** (`EmSchematicNow`) makes
 
 Tests: `tests/Ui.Tests/Em/EmSchematicWithPartsTests.cs` (9, no solve; F1/F2 from the schematic-driven layout set and the shipped
 PCB Component Ports board).
+
+- **Parts drawn pin to pin came out on one SnP node (designer feedback, 2026-11-10).** A series C and a series L drawn
+  touching, with no wire between, were each on their own component port. Each re-tied pin got its own stub from the same
+  point, so the C's label and the L's label were one net: the L extracted on the C's node, and its own SnP pin was left
+  open. Before any stub is drawn, `Separate` finds pins at one point that go to different places and moves a part whose
+  every pin is re-tied (2, 4, 6 or 8 grid steps away from the point, then to either side) onto a spot where its pins land
+  on nothing and its body crosses no wire. A part that cannot move is named in a warning. The designer's 14-port sheet
+  now extracts each part on its own node. Gate: `PartsDrawnPinToPin_EachGetTheirOwnNode`.
 
 ## A pour with 2.5 µm slots sat in Gmsh's 2D meshing for 15+ minutes (designer feedback, 2026-11-09)
 

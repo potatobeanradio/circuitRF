@@ -150,6 +150,49 @@ public sealed class BinaryDsnReaderTests : IDisposable
         Assert.Equal(body, r.Pos);
     }
 
+    /// <summary>
+    /// A version-3 page with a bus: the list after the nets holds a 0x35 record followed, OUTSIDE its stated size, by a u16
+    /// count and that many u32 member net ids, and the wires include a 0x15 bus wire. Skipped by size alone, the member list
+    /// was read as a record header and a field design was refused; the page now reads, its one ordinary wire kept and the bus
+    /// wire left out and said.
+    /// </summary>
+    [Fact]
+    public void AV3PageWithABus_Reads_TheBusWireLeftOut()
+    {
+        var b = new List<byte>();
+        void U16(int v) => b.AddRange(BitConverter.GetBytes((ushort)v));
+        void U32(int v) => b.AddRange(BitConverter.GetBytes(v));
+        void Str(string v) { U16(v.Length); b.AddRange(Encoding.ASCII.GetBytes(v)); b.Add(0); }
+        void Record(byte type, Action body)
+        {
+            int at = b.Count;
+            b.Add(type); U32(0); U32(0);
+            U32(0);                                        // the counted block, empty
+            body();
+            BitConverter.GetBytes(b.Count - at - 9).CopyTo(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b)[(at + 1)..]);
+        }
+        void Wire(byte type, int id, int net) => Record(type, () => { U32(id); U32(net); U32(0); U32(0); U32(0); U32(100); U32(0); b.Add(0); U16(0); });
+
+        Record(0x0A, () =>
+        {
+            Str("RF"); Str("A3"); b.AddRange(new byte[8]);
+            var head = new byte[150];
+            BitConverter.GetBytes(1100).CopyTo(head, 16); BitConverter.GetBytes(850).CopyTo(head, 20); BitConverter.GetBytes(100).CopyTo(head, 24);
+            b.AddRange(head);
+            U16(1); Record(0x34, () => U32(7));            // nets
+            U16(1); Record(0x35, () => U32(9));            // buses: one, with two members after it
+            U16(2); U32(7); U32(8);
+            U16(1); Str("RF_IN"); U32(7);                  // net names
+            U16(2); Wire(0x14, 1, 7); Wire(0x15, 2, 9);    // wires: one ordinary, one on the bus
+            for (int i = 0; i < 9; i++) U16(0);            // parts, ports, globals, off-page, and the lists after them
+        });
+
+        var page = DsnPageV3.Read(new DsnBytes([.. b], "page", new EdifText(1252)), new DsnCache([], new EdifText(1252), 3));
+
+        Assert.Equal(7u, Assert.Single(page.Wires).Net);
+        Assert.Contains(page.Skipped, s => s.StartsWith("1 bus wire segment", StringComparison.Ordinal));
+    }
+
     /// <summary>The Hierarchy stream's occurrence records give each placed part the reference the design SHOWS, keyed by
     /// instance id: after the end marker and a counted block (empty, or a part's 37-byte display block), u32, the id, and
     /// the reference 16 bytes on. An empty reference, and an id met twice, give nothing.</summary>

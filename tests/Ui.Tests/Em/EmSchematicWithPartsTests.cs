@@ -184,6 +184,38 @@ public sealed class EmSchematicWithPartsTests : IDisposable
         Assert.Empty(model.Analyses);
     }
 
+    /// <summary>
+    /// Two parts drawn pin to pin, with no wire between them, each on its own component port: the touching pins are one point, so
+    /// a stub from it joined both SnP nodes and the second part extracted on the first part's node. One is moved clear, and each
+    /// stands on its own node and ground.
+    /// </summary>
+    [Fact]
+    public void PartsDrawnPinToPin_EachGetTheirOwnNode()
+    {
+        var p = SdlChecker.Prepare("F1-dc-block", _scratch);
+        var r7 = new EditableComponent { Symbol = SymbolKind.Resistor, InstanceName = "R7", X = 0, Y = 3000, Rotation = SymbolRotation.R90 };
+        var r8 = new EditableComponent { Symbol = SymbolKind.Resistor, InstanceName = "R8", X = 0, Y = 3000, Rotation = SymbolRotation.R90 };
+        foreach (var r in new[] { r7, r8 }) r.Parameters.Add(new EditableParameter { Name = "R", Expression = "10", Unit = "Ω" });
+        var (ax, ay) = r7.GetPortWorldCoord(1);
+        var (bx, by) = r8.GetPortWorldCoord(0);
+        r8.X += ax - bx; r8.Y += ay - by;
+        Assert.Equal(r7.GetPortWorldCoord(1), r8.GetPortWorldCoord(0));
+        p.Model.Components.AddRange([r7, r8]);
+        SchematicPersistence.SaveToFile(p.SchematicPath, p.Model);
+        string snp = Touchstone(p.Workspace, 4);
+        EmCoSimPort[] ports = [new(1, "1", "50", null), new(2, "2", "50", null), new(3, "R7", "50", Part("R7")), new(4, "R8", "50", Part("R8"))];
+
+        var made = EmSchematicWithParts.Create(p.Workspace, Setup(), p.CellDir, snp, ports, new Dictionary<int, EmPortFace>(), out _, checkLvs: false)!;
+        Assert.DoesNotContain(made.Warnings, w => w.Contains("pin to pin", StringComparison.Ordinal));
+        var (model, _, cell) = SchematicPersistence.LoadFromFile(made.SchematicPath!);
+        var tb = NetExtractor.Extract(model, cell).TestBench;
+        IReadOnlyList<string> Nets(string name) => tb.Instances.Single(i => i.InstanceName == name).NetBindings;
+        var em = Nets(EmSchematicWithParts.SnpInstanceName);
+        Assert.Equal(4, em.Distinct().Count());
+        Assert.Equal([em[2], "0"], Nets("R7"));
+        Assert.Equal([em[3], "0"], Nets("R8"));
+    }
+
     /// <summary>Gate 5 — with no Primary schematic the caller is told to make the ordinary cell, naming the cell it looked in; a second
     /// making leaves the first cell as it is.</summary>
     [Fact]

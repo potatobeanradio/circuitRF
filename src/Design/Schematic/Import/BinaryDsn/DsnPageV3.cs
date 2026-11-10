@@ -8,9 +8,9 @@
 //                unit its grid is stated in: µm with grid 2540, or 1/1000 inch with grid 100), then the
 //                title block(s) as 0x41 records
 //   nets         u16 count of 0x34 records
-//   (list)       u16 count of records, skipped by size
+//   buses        u16 count of 0x35 records, each FOLLOWED (outside its size) by u16 n and n × u32 member net ids
 //   net names    u16 count of (name, u32 net id), plain as in version 2; every net is named, auto-named ones "N…"
-//   wires        u16 count of 0x14 records: u32 id, u32 NET, u32 colour, x1 y1 x2 y2 (i32), a byte, u16 count of ALIAS
+//   wires        u16 count of 0x14 records (0x15: a bus's wire, the same layout, skipped): u32 id, u32 NET, u32 colour, x1 y1 x2 y2 (i32), a byte, u16 count of ALIAS
 //                records (u32 0, x y (i32), u32 colour, u32 rotation, u32, NAME), display properties, 8 bytes
 //   parts        u16 count of records: 0x0D parts (see Part) and 0x0C hierarchical blocks (see Block)
 //   ports        u16 count of 0x17 hierarchical ports (see Port); empty on a page with none
@@ -41,7 +41,7 @@ internal static class DsnPageV3
 
         var skipped = new List<string>();
         r.SkipRecords();                         // nets: the wires name theirs
-        Unread(r, "list after the nets", skipped);
+        Buses(r);
         int na = r.U16();
         var netNames = new List<(string, uint)>(na);
         for (int i = 0; i < na; i++) netNames.Add((r.Str(), r.U32()));
@@ -49,7 +49,15 @@ internal static class DsnPageV3
         int nw = r.U16();
         var wires = new List<DsnWire>(nw);
         var aliases = new List<DsnAlias>();
-        for (int i = 0; i < nw; i++) wires.Add(Wire(r, aliases));
+        int busWires = 0;
+        for (int i = 0; i < nw; i++)
+        {
+            // 0x15 is a bus's wire: a wire's layout on the bus's own net. Its members are joined by their names, so it is
+            // not drawn as a wire, which would join every member it touches.
+            if (r.Peek() == 0x15) { r.Pos = r.Record().End; busWires++; continue; }
+            wires.Add(Wire(r, aliases));
+        }
+        if (busWires > 0) skipped.Add($"{busWires} bus wire segment(s) on page {name} were not drawn; the nets on the bus are joined by name.");
         int np = r.U16();
         var parts = new List<DsnPart>(np);
         var blocks = new List<DsnBlock>();
@@ -96,6 +104,26 @@ internal static class DsnPageV3
         int at = r.Pos;
         int n = r.SkipRecords();
         if (n > 0) skipped.Add($"{n} item(s) in the page's {what} (at byte {at}) were not read; this reader has not seen one.");
+    }
+
+    /// <summary>
+    /// The list after the nets: 0x35 records, one per bus (DISP_C[0-3] on a field design, with four members), each followed
+    /// OUTSIDE its stated size by a u16 count and that many u32 member net ids. Skipping the record by its size alone left
+    /// the cursor on the member list, read as the next record's header. Nothing here is needed: a bus's members are joined
+    /// by their names, as the wires and aliases carry them. Any other record is skipped by its size, as before.
+    /// </summary>
+    private static void Buses(DsnBytes r)
+    {
+        int n = r.U16();
+        for (int i = 0; i < n; i++)
+        {
+            byte type = r.Peek();
+            r.Pos = r.Record().End;
+            if (type != 0x35) continue;
+            int members = r.U16();
+            if (r.Pos + 4L * members > r.Length) throw r.Fail($"a bus claims {members} member nets");
+            r.Skip(4 * members);
+        }
     }
 
     private static DsnWire Wire(DsnBytes r, List<DsnAlias> aliases)

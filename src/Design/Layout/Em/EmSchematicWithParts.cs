@@ -367,6 +367,7 @@ public static class EmSchematicWithParts
         var groundsGone = pins.Where(p => IsGroundSymbol(p.Comp) && deleted.Contains(net.ClassOf(p))).Select(p => p.Comp).ToHashSet(ReferenceEqualityComparer.Instance);
         var removedBox = Bounds(removed);
         model.Components.RemoveAll(c => removed.Contains(c) || groundsGone.Contains(c));
+        Separate(model, retied, warnings);
 
         // ── The SnP block (D8) ──
         var names = new HashSet<string>(model.Components.Select(c => c.InstanceName), StringComparer.OrdinalIgnoreCase);
@@ -407,7 +408,8 @@ public static class EmSchematicWithParts
         foreach (var ((comp, idx), target) in retied)
         {
             if (target is "" or "=" || removed.Contains(comp)) continue;
-            if (pins.FirstOrDefault(p => ReferenceEquals(p.Comp, comp) && p.Index == idx) is not { } pin) continue;
+            // Where the pin is now: Separate may have moved its part.
+            if (PinsOf(model, comp).FirstOrDefault(p => p.Index == idx) is not { } pin) continue;
             Tie(model, sheet, pin.X, pin.Y, Outward(pin.X - comp.X, pin.Y - comp.Y), target, Label);
         }
 
@@ -445,6 +447,79 @@ public static class EmSchematicWithParts
     }
 
     private static bool IsPortOrPin(EditableComponent c) => PortPlacement.IsPort(c) || c.Symbol == SymbolKind.Pin;
+
+    /// <summary>A component's attached pins where it stands now.</summary>
+    private static IEnumerable<PinRef> PinsOf(SchematicEditModel model, EditableComponent c)
+    {
+        foreach (var d in model.PortDefsOf(c).OrderBy(d => d.PortIndex))
+        {
+            if (c.IsPortDetached(d.PortIndex)) continue;
+            var (x, y) = SchematicGeometry.LocalToWorld(d.LocalX, d.LocalY, c.X, c.Y, c.Rotation, c.MirrorX);
+            yield return new PinRef(c, d.PortIndex, x, y);
+        }
+    }
+
+    /// <summary>
+    /// Pins drawn touching (two parts placed end to end, with no wire between them) are one net however each is re-tied: a stub
+    /// from that point joins both, so two parts on two component ports came out on one SnP node. Where pins at one point are
+    /// going to different places, a part whose every pin is re-tied anyway is moved clear — away from the point first, then to
+    /// either side — onto a spot where none of its pins lands on anything. A part that cannot move, or finds no spot, is named.
+    /// </summary>
+    private static void Separate(SchematicEditModel model, Dictionary<(EditableComponent, int), string> retied, List<string> warnings)
+    {
+        // Where a pin goes: its re-tied node, ground, a pin of its own when left open, or the net it is drawn on.
+        string Goes(PinRef p) => retied.TryGetValue((p.Comp, p.Index), out var t)
+            ? t switch { "" => $"open:{p.Comp.Id}:{p.Index}", "=" => "0", _ => t }
+            : "drawn";
+        bool Movable(EditableComponent c) => c.Symbol != SymbolKind.Ground
+            && PinsOf(model, c).All(p => retied.TryGetValue((p.Comp, p.Index), out var t) && t != "=");
+
+        var moved = new HashSet<EditableComponent>(ReferenceEqualityComparer.Instance);
+        var given = new HashSet<(long, long)>();
+        double step = model.GridSize > 0 ? model.GridSize : 100;
+        while (true)
+        {
+            var clash = model.Components.Where(c => c.Symbol != SymbolKind.Ground).SelectMany(c => PinsOf(model, c))
+                .GroupBy(p => Key((p.X, p.Y)))
+                .FirstOrDefault(g => !given.Contains(g.Key) && g.Select(p => p.Comp).Distinct(ReferenceEqualityComparer.Instance).Count() > 1
+                                     && g.Select(Goes).Distinct(StringComparer.Ordinal).Count() > 1);
+            if (clash is null) return;
+            var members = clash.ToList();
+            // The part that stays: one that cannot move when there is one, else the first.
+            var anchor = members.FirstOrDefault(p => !Movable(p.Comp)) ?? members[0];
+            bool clear = true;
+            foreach (var p in members)
+            {
+                if (ReferenceEquals(p.Comp, anchor.Comp) || Goes(p) == Goes(anchor)) continue;
+                if (moved.Contains(p.Comp) || !Movable(p.Comp) || !Move(model, p, step, retied)) { clear = false; continue; }
+                moved.Add(p.Comp);
+            }
+            if (!clear)
+            {
+                given.Add(clash.Key);
+                warnings.Add($"{string.Join(" and ", members.Select(p => p.Comp.InstanceName).Distinct())} are drawn pin to pin but go to different " +
+                             "SnP pins, and could not be moved apart, so they are joined; redraw them apart.");
+            }
+        }
+    }
+
+    /// <summary>Moves <paramref name="pin"/>'s part off its point, onto the first spot where its pins land on nothing.</summary>
+    private static bool Move(SchematicEditModel model, PinRef pin, double step, Dictionary<(EditableComponent, int), string> retied)
+    {
+        var c = pin.Comp;
+        var sheet = new Sheet(model, c);
+        var away = Outward(c.X - pin.X, c.Y - pin.Y);
+        (int, int)[] dirs = [away, (away.DY, away.DX), (-away.DY, -away.DX)];
+        foreach (int n in new[] { 2, 4, 6, 8 })
+            foreach (var (dx, dy) in dirs)
+            {
+                double x = c.X + dx * n * step, y = c.Y + dy * n * step;
+                if (!sheet.Fits(model, c, x, y)) continue;
+                c.X = x; c.Y = y;
+                return true;
+            }
+        return false;
+    }
 
     private static string Noun(EditableComponent c) => c.Symbol == SymbolKind.Pin ? "Pin" : "Port";
 
@@ -558,11 +633,13 @@ public static class EmSchematicWithParts
         private readonly List<(double MinX, double MinY, double MaxX, double MaxY)> _bodies = [];
         private readonly double _step;
 
-        public Sheet(SchematicEditModel model)
+        /// <param name="except">A component to leave out (one about to be moved).</param>
+        public Sheet(SchematicEditModel model, EditableComponent? except = null)
         {
             _step = model.GridSize > 0 ? model.GridSize : 100;
             foreach (var c in model.Components)
             {
+                if (ReferenceEquals(c, except)) continue;
                 foreach (var d in model.PortDefsOf(c))
                     _points.Add(Key(SchematicGeometry.LocalToWorld(d.LocalX, d.LocalY, c.X, c.Y, c.Rotation, c.MirrorX)));
                 AddBody(c);
@@ -583,6 +660,24 @@ public static class EmSchematicWithParts
         }
 
         public void Reserve(double x, double y) => _points.Add(Key((x, y)));
+
+        /// <summary>Whether <paramref name="c"/> stood at (<paramref name="x"/>, <paramref name="y"/>) would touch nothing: no
+        /// pin of it on a pin, wire or label, its body clear of every other body, and nothing's pin inside its body.</summary>
+        public bool Fits(SchematicEditModel model, EditableComponent c, double x, double y)
+        {
+            foreach (var d in model.PortDefsOf(c))
+            {
+                var (px, py) = SchematicGeometry.LocalToWorld(d.LocalX, d.LocalY, x, y, c.Rotation, c.MirrorX);
+                if (_points.Contains(Key((px, py))) || OnSegment(px, py)) return false;
+            }
+            var box = (MinX: x - 150, MinY: y - 150, MaxX: x + 150, MaxY: y + 150);
+            if (_bodies.Any(b => b.MinX < box.MaxX && b.MaxX > box.MinX && b.MinY < box.MaxY && b.MaxY > box.MinY)) return false;
+            return !_segments.Any(s => Crosses(s.A, s.B, box));
+        }
+
+        /// <summary>Whether an axis-aligned segment passes through the inside of a box.</summary>
+        private static bool Crosses((double X, double Y) a, (double X, double Y) b, (double MinX, double MinY, double MaxX, double MaxY) box)
+            => Math.Max(a.X, b.X) > box.MinX && Math.Min(a.X, b.X) < box.MaxX && Math.Max(a.Y, b.Y) > box.MinY && Math.Min(a.Y, b.Y) < box.MaxY;
 
         /// <summary>The SnP block: its pins, and the box its pins outline (which its own stubs leave outward).</summary>
         public void AddBlock(SchematicEditModel model, EditableComponent block)

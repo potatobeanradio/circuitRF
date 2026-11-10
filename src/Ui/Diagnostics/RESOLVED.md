@@ -731,6 +731,14 @@ A designer on 1.7.3, Windows x64, reported the application slow, with "Not respo
 - **Low CPU does not clear the UI thread:** one pegged thread on 16 logical processors reads about 6%.
 - **Leads, neither shown to apply:** one heavy canvas slowing the whole window through the single compositor (`src/Ui/RESOLVED.md`, "Why one slow canvas stops the whole window"), and `PGHook.dll`, also named in `src/RfCore/RESOLVED.md`.
 
+- **It came back (2026-11-09, 1.7.5, Windows x64, 7.5 GB RAM, 8 logical processors).** The same "killed" report, again ending
+  on the display a finished Palace run opens (`addPlot — Smith`, then `.npy` loads of 24 to 27 cubes), three times in 12 minutes.
+  No slowness was described this time. A third-party hook module, not the same one as before, was loaded from outside the
+  application. One of the designer's setups is estimated at about 9.3 GB for Palace, which is more than the machine has. Whether
+  a solve was running when it died is not known. The next thing to ask for is the Windows Application event log at that
+  minute (".NET Runtime" and "Application Error"): it names the exception code and the faulting module, which this report
+  cannot.
+
 **If it comes back,** take a stack before anything is restarted: `dotnet-stack report -p <pid>` two or three times during the slowness. First note whether a solver process is still running, whether closing other documents helps, and whether a small example workspace is slow too. An always-on UI-stall note in the trail was considered and not added, since it would run on every user's machine for a question a one-off stack answers better.
 
 ## `--figures` after many page edits recaptures far more than the edit, and can stop on an unrelated fixture (brief-de-3, 2026-11-07)
