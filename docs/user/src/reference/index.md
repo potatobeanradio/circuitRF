@@ -35,8 +35,8 @@ connected. Almost every early surprise is one of those two.</p>
 </div>
 
 <div class="callout note">
-<span class="label">Seven chapters that are easy to miss</span>
-<p>Six of these are tools in their own right rather than components with a dialog, and the seventh
+<span class="label">Eight chapters that are easy to miss</span>
+<p>Seven of these are tools in their own right rather than components with a dialog, and one
 is a whole class of parts.</p>
 <p><b><a href="match.html">The Match Component</a></b> synthesises a bandpass matching network that
 absorbs both terminations — closed-form, no optimiser, and <i>broadband</i>.
@@ -53,7 +53,9 @@ plays — LTE, NR, CW, or an I/Q file of your own — and shows its spectrum, CC
 <b><a href="system-components.html">System Components</a></b> covers the ideal blocks a system block
 diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, filter,
 duplexer and mixer — including where passive intermodulation comes from and what "ideal" costs
-you.</p>
+you. <b><a href="chain-budget.html">The RF Chain Budget</a></b> is a receive chain out of those blocks, as a
+table: the cascade in closed form, an array included, and one action that writes the test benches that
+check every number.</p>
 </div>
 
 <!-- =====================================================================

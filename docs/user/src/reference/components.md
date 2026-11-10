@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -2498,6 +2498,19 @@ meeting at one node rather than a parameter.
 In depth: [System Components › Duplexer](system-components.html#duplexer).
 
 {{table: components/Duplexer}}
+
+### Combiner {#combiner}
+
+{{symbol: combiner}}
+
+An N-way combiner, which read the other way is an N-way splitter: the common port `S` on the right and
+the paths `1` to `N` down the left, as many pins as `N` asks for. Ideal: matched, reciprocal, the paths
+isolated from each other, and frequency-flat. Every path takes `IL`; a path that needs its own loss or
+phase gets an `IL[k]` or a `Phase[k]` row.
+
+In depth: [System Components › Combiner](system-components.html#combiner).
+
+{{table: components/Combiner}}
 
 ## Annotation components
 

@@ -105,6 +105,8 @@ public static class ComponentModelFactory
             // "Coupler" serves the directional coupler and both hybrid tiles, with the coupling and
             // the phase parameters.
             "Atten", "Switch", "Circulator", "Coupler", "Balun",
+            // The N-way combiner, which is also the N-way splitter: N is a parameter, as Throws is.
+            "Combiner",
             // The ideal amplifier (brief-sys-5) — the one block in the family with a nonlinearity
             // of its own, and therefore the one that never takes a PIM.
             "Amp",
@@ -285,6 +287,8 @@ public static class ComponentModelFactory
             return CreateCouplerModel(parameters);
         if (typeName.Equals("Balun", StringComparison.OrdinalIgnoreCase))
             return CreateBalunModel(parameters);
+        if (typeName.Equals("Combiner", StringComparison.OrdinalIgnoreCase))
+            return CreateCombinerModel(parameters);
         if (typeName.Equals("Amp", StringComparison.OrdinalIgnoreCase))
             return CreateAmplifierModel(parameters);
         if (typeName.Equals("Filter", StringComparison.OrdinalIgnoreCase))
@@ -1909,6 +1913,7 @@ public static class ComponentModelFactory
         ("Switch",     n => Is(n, "Z0"),                       "Z0"),
         ("Circulator", n => Is(n, "Z0"),                       "Z0"),
         ("Coupler",    n => Is(n, "Z0"),                       "Z0"),
+        ("Combiner",   n => Is(n, "Z0"),                       "Z0"),
         ("Balun",      n => Is(n, "Zunb", "Zbal"),             "Zunb, Zbal"),
         ("Amp",        n => Is(n, "Zin", "Zout", "Gopt"),      "Zin, Zout, Gopt"),
         ("Filter",     n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
@@ -2091,6 +2096,25 @@ public static class ComponentModelFactory
             z0:            ImpedanceParam(parameters, "Z0", 50.0),
             pimDbm:        P("PIM",        -200.0),
             pimPcDbm:      P("PIMPc",        43.0));
+    }
+
+    /// <summary>
+    /// The ideal N-way combiner. Every path takes <c>IL</c> unless it states its own <c>IL[k]</c>, and a
+    /// <c>Phase[k]</c> it does not state is 0; <c>Phase[k]</c> arrives in RADIANS, the Elaborator having read
+    /// it with degrees as its site unit.
+    /// </summary>
+    private static CombinerModel CreateCombinerModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        int n = Math.Max(2, (int)Math.Round(P("N", 2.0)));
+        double il = P("IL", 0.0);
+        return new CombinerModel(
+            ways:         n,
+            pathLossDb:   [.. Enumerable.Range(1, n).Select(k => P($"IL[{k}]", il))],
+            pathPhaseRad: [.. Enumerable.Range(1, n).Select(k => P($"Phase[{k}]", 0.0))],
+            z0:           ImpedanceParam(parameters, "Z0", 50.0));
     }
 
     /// <summary>

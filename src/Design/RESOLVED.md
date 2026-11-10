@@ -29332,3 +29332,98 @@ netlist's folder, so `netlist --to-schematic` wrote the drawing machine's own pa
 the Receiver Noise example's sourcepull bench, drawn from a scratch netlist, failed on another folder. The two
 paths are now rebuilt through the `.csch` analysis record relative to the same base a `File=` uses. Gate:
 `NetlistToSchematicTests.ALoadpullGridDrawnIntoACell_IsStoredAgainstTheWorkspaceRoot`.
+
+## The RF chain budget's benches: what had to be added to make Friis exact (2026-11-10)
+
+`ChainBenches` writes a chain as three benches of System blocks, and the budget beside every simulated number. Three
+findings, each now in the transfer and stated in `docs/design/chain-budget.md` §3:
+
+- **A mixer's SSB NF assumes a T0 image termination.** A filter in front of the ideal Mixer reflects the image, and the
+  Mixer's equivalent RF-port noise current then develops about four times the matched noise voltage there: the 2.45 GHz
+  superhet's harmonic-balance NF read 2.833 dB against Friis' 2.549 dB. An isolator (a Circulator, third port terminated
+  at the ambient) in front of each mixer gives 2.5489 dB. It is the bench's, named `ISO_<mixer>`, and removing it is
+  the documented way to see an image termination's cost.
+- **Each LO adds one to every product's order.** Two tones and an LO need MaxMixOrder 5 + mixers for the IF stages' IM3
+  (0.012 dB off at 5), the compression sweep 3 + 2·mixers, the HB noise run 1 + 2·mixers (the image sideband).
+- **HB noise at an output frequency on the tone lattice is NaN by design** (a sideband and the negative of another are
+  the same frequency). The IF is a lattice point when the RF tone is in the analysis, so the noise run's output is the IF
+  plus 1 kHz.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
+
+## The chain's Steering bench: what measurement expressions do over a sweep's cube (2026-11-10)
+
+The Steering bench writes the closed-form array factor as a measurement over its two sweeps (`theta_in` within
+`theta_steer`), to set it beside the simulated pattern point by point. Two limits of the measurement evaluator met
+there, both now worked around in the bench and stated in `docs/design/chain-budget.md` §3:
+
+- **`sin`, `cos` and `exp` take a number, not a cube.** Over a swept variable they fail with "Value is Cube, not
+  Complex", while `^` broadcasts element-wise, complex exponents included. The bench writes e^(j·x) as
+  `2.718281828459045^(j*x)` and sin x as `imag(...)` of it.
+- **A variable derived from a swept one reads its nominal value in a measurement.** `psi_in = 360*d_over_lambda*
+  sin(theta_in*pi/180)` drives the circuit swept, but a measurement reading `psi_in` gets its value at `theta_in = 0`.
+  The bench's array factor is written from `theta_in` and `theta_steer` themselves, which ARE the sweeps' axes, and
+  arithmetic between cubes aligns them by axis name (the factor comes out theta_in first, the pattern theta_steer first,
+  and their difference is right).
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheSteeringBench_PatternIsTheArrayFactor_AndTheNfStaysPut`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Array_Steering_ThePatternIsTheArrayFactor_AndTheNfStaysPut`.
+
+## The chain's Levels and Blockers benches: one number per node as a curve, and the wave going forward (2026-11-10)
+
+`ChainLevels` follows the budget node by node, and the Levels and Blockers benches put a simulated point beside each
+node's budget, for a display to plot against the node. Four findings, each now in the benches and stated in
+`docs/design/chain-budget.md` §2.1 and §3:
+
+- **One scalar per node becomes a cube only through a sweep.** A measurement row is a number; a display trace needs a
+  cube over an axis. The benches sweep a variable over 0 … N around a trivial DC solve, and write each quantity as
+  Σ v_k·L_k(x), L_k the Lagrange basis polynomial that is 1 at node k and 0 at the others: exact at the integers, in
+  arithmetic alone, since a measurement reading a swept variable reads the sweep's axis.
+- **That variable cannot be called `node`.** A harmonic-balance result's voltage cube already has an axis named `node`
+  (its nets), and a measurement on that bench read the result's axis instead of the sweep's. The variable is `nodeix`.
+- **A node's voltage is not the wave going forward when a reflective stopband follows it.** A blocker in a filter's
+  stopband is reflected and stands on the filter's input: the blocker read 3 to 6 dB off the budget there. The Blockers
+  bench puts an isolator after every stage (`FWD_<stage>`, a Circulator, third port terminated), so each node sees a
+  match; the blockers then read 0.001 to 0.003 dB under the budget, their own compression.
+- **IM3 and blockers want different mixing orders.** In one harmonic-balance run with the blockers' tones, the order the
+  run could afford (3 + mixers) left the IF stages' IM3 0.45 dB off; IM3 needs 5 + mixers. Two benches, Levels (two
+  tones, 5 + mixers) and Blockers (3 + mixers), each read what it is accurate for.
+
+A related limit met on the 2-Tone bench: a stage before anything nonlinear has an infinite intercept, and a MEAS row
+cannot hold NaN. Such a stage's OIP3 row is left out, and the display's per-stage table with it.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheLevelsAndBlockersBenches_SimulateToTheBudgetNodeByNode`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`.
+
+## The chain's Canceller bench: a flat phase, a phase set at the centre, and the errors as constants (2026-11-10)
+
+The Canceller bench measures the depth a canceller's errors leave, swept, beside the closed form
+R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ). Three findings, each now in the bench and stated in
+`docs/design/chain-budget.md` §3:
+
+- **A line is not a phase setting.** A TLIN's electrical length is a delay, so a phase error set on one also tilts the
+  phase across the band. The reference path's phase is one path of a 2-way Combiner, whose `Phase[1]` is flat in
+  frequency, and the delay is a separate line.
+- **The phase is set where it nulls the carrier's centre.** With a delay mismatch τ, the reference path's extra
+  2π·Frf·τ at the centre would read as a phase error and the depth would collapse. The phase setting takes it back
+  (+360·Frf·delay_err), so the mismatch shows only across the band, which is what the closed form describes.
+- **A measurement reading a swept variable reads that sweep's axis, whichever analysis the row is about.** The closed
+  form for the phase sweep, written with `amp_err` and `delay_err` as variables, picked up the other two sweeps' axes
+  and came out 140 points against the simulation's 7. Each depth row now reads only its own swept error and writes the
+  other two as the stage's constants.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheCancellerBench_DepthIsTheClosedForm_AtEveryErrorAndBandwidth`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `FrontEnd_Canceller_DepthOnTheClosedForm_AndEvmWithAndWithout`.
+
+## The chain's Demo bench: two sources, and a noise floor left open (2026-11-10)
+
+- **A DBPSK carrier is a MOD_Source's only carrier.** The source refuses a second carrier beside it. The demo feeds each
+  element from two sources, NR 64-QAM and DBPSK, joined by a 2-way Combiner, each 3 dB up for its share; their two
+  noises at the source temperature average to it.
+- **Open: a noise floor of about 1 % EVM (40 dB of SNR).** Above −55 dBm the demo's EVM noise part stops falling at
+  about 1 % for both carriers, where the budget's SNR goes on to 93 dB. The distortion part's 1.23 % is the LO's mask
+  integrated over the channel (−38.2 dBc), as it should be. The Canceller bench, with no LO and another chain, stops at
+  41 dB, so the floor belongs to the envelope measurement rather than to either chain; which part of it was not found.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheDemo_EvmFollowsTheBudgetsSnr_UntilDistortionTakesOver`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_Demo_TheEvmIsTheBudgetsWhereNoiseDominates`.

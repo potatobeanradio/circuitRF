@@ -255,6 +255,9 @@ return JsonRun.Finish(exit);
     // CircuitRF.Render's, which is what makes a matching network gateable in CI rather than only
     // draggable in a window (smith-chart.md §9, P3).
     "smith"  => CircuitRF.Cli.Smith.Run,
+    // The RF Chain Budget window, with no display. It owns no arithmetic: the budget, the benches and the display are
+    // src/Design/Chain's and src/Render's, the calls the window's Transfer to Schematic makes.
+    "chain"  => CircuitRF.Cli.Chain.Run,
     // The S-Parameter Viewer, with no display. It owns no reading and no drawing: the file is read
     // through the TouchstoneSource the window reads it through, the plots are SParameterViewerPreset's
     // and the page is RenderDataDisplay's.

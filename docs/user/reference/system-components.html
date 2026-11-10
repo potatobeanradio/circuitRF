@@ -37,7 +37,7 @@
   </div>
 
   <h1>System Components</h1>
-  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
+  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
 
 <nav class="toc">
 <h2>On this page</h2>
@@ -61,7 +61,9 @@ by the same engines. Together they answer:</p>
 <ul>
 <li><strong>Level plans</strong> — what power is at each point in the chain.</li>
 <li><strong>Cascaded gain, and cascaded intercept</strong> — the amplifier and the mixer each carry one, and a
-harmonic-balance run cascades them for you rather than through a spreadsheet formula.</li>
+harmonic-balance run cascades them for you rather than through a spreadsheet formula. The
+<a href="chain-budget.html">RF Chain Budget</a> is the formula, written out stage by stage, and it transfers to
+benches of these blocks that check it.</li>
 <li><strong>Image and spurious paths</strong> — what a mixer's other sideband lands on, and what the filter after
 it does about that.</li>
 <li><strong>Band plans and isolation budgets</strong> — a duplexer's two arms, a circulator's reverse leakage, a
@@ -582,6 +584,89 @@ cancel a known delay elsewhere in a chain.</p>
 dependent sources with an ideal sensing pair, for building a device model. This block is a
 reciprocal, matched two-port in a <code>Z0</code> system, for building a signal chain.</p>
 <p>Parameters: <a href="components.html#delay">Components › Delay</a>.</p>
+<h3 id="combiner">Combiner</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 124.39L103.9 25.61Q103.9 25.53 103.9 25.45Q103.91 25.37 103.93 25.3Q103.94 25.22 103.96 25.14Q103.99 25.07 104.02 24.99Q104.05 24.92 104.09 24.85Q104.12 24.78 104.17 24.72Q104.21 24.65 104.26 24.59Q104.31 24.53 104.37 24.47Q104.42 24.42 104.48 24.37Q104.55 24.32 104.61 24.27Q104.68 24.23 104.75 24.19Q104.82 24.15 104.89 24.12Q104.96 24.09 105.04 24.07Q105.11 24.05 105.19 24.03Q105.27 24.02 105.35 24.01Q105.43 24 105.51 24L134.5 24Q134.57 24 134.65 24.01Q134.73 24.02 134.81 24.03Q134.89 24.05 134.96 24.07Q135.04 24.09 135.11 24.12Q135.18 24.15 135.25 24.19Q135.32 24.23 135.39 24.27Q135.46 24.32 135.52 24.37Q135.58 24.42 135.63 24.47Q135.69 24.53 135.74 24.59Q135.79 24.65 135.83 24.72Q135.88 24.78 135.92 24.85Q135.95 24.92 135.98 24.99Q136.01 25.07 136.04 25.14Q136.06 25.22 136.07 25.3Q136.09 25.37 136.1 25.45Q136.1 25.53 136.1 25.61L136.1 124.39Q136.1 124.47 136.1 124.55Q136.09 124.63 136.07 124.7Q136.06 124.78 136.04 124.86Q136.01 124.93 135.98 125.01Q135.95 125.08 135.92 125.15Q135.88 125.22 135.83 125.28Q135.79 125.35 135.74 125.41Q135.69 125.47 135.63 125.53Q135.58 125.58 135.52 125.63Q135.46 125.69 135.39 125.73Q135.32 125.77 135.25 125.81Q135.18 125.85 135.11 125.88Q135.04 125.91 134.96 125.93Q134.89 125.95 134.81 125.97Q134.73 125.98 134.65 125.99Q134.57 126 134.5 126L105.51 126Q105.43 126 105.35 125.99Q105.27 125.98 105.19 125.97Q105.11 125.95 105.04 125.93Q104.96 125.91 104.89 125.88Q104.82 125.85 104.75 125.81Q104.68 125.77 104.61 125.73Q104.55 125.69 104.48 125.63Q104.42 125.58 104.37 125.53Q104.31 125.47 104.26 125.41Q104.21 125.35 104.17 125.28Q104.12 125.22 104.09 125.15Q104.05 125.08 104.02 125.01Q103.99 124.93 103.96 124.86Q103.94 124.78 103.93 124.7Q103.91 124.63 103.9 124.55Q103.9 124.47 103.9 124.39Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.05 75L160.26 75" /><ellipse fill="#2D14C3" cx="128.05" cy="75" rx="1.34" ry="1.34" /><text fill="#2D14C3" transform="translate(150.87 71.78)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			S
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 34.74L103.9 34.74" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 34.74L128.05 75" /><text fill="#2D14C3" transform="translate(89.13 31.52)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			1
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 61.58L103.9 61.58" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 61.58L128.05 75" /><text fill="#2D14C3" transform="translate(89.13 58.36)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			2
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 88.42L103.9 88.42" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 88.42L128.05 75" /><text fill="#2D14C3" transform="translate(89.13 85.2)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			3
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 115.26L103.9 115.26" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 115.26L128.05 75" /><text fill="#2D14C3" transform="translate(89.13 112.04)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="157.26" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="76.74" y="31.74" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="76.74" y="58.58" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="76.74" y="85.42" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="76.74" y="112.26" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="86.5, 96.5, 104.5, 117.5, 126.5, 130.5, 139.5, 147.5" y="172.32">
+			Combiner
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 124.39L103.9 25.61Q103.9 25.53 103.9 25.45Q103.91 25.37 103.93 25.3Q103.94 25.22 103.96 25.14Q103.99 25.07 104.02 24.99Q104.05 24.92 104.09 24.85Q104.12 24.78 104.17 24.72Q104.21 24.65 104.26 24.59Q104.31 24.53 104.37 24.47Q104.42 24.42 104.48 24.37Q104.55 24.32 104.61 24.27Q104.68 24.23 104.75 24.19Q104.82 24.15 104.89 24.12Q104.96 24.09 105.04 24.07Q105.11 24.05 105.19 24.03Q105.27 24.02 105.35 24.01Q105.43 24 105.51 24L134.5 24Q134.57 24 134.65 24.01Q134.73 24.02 134.81 24.03Q134.89 24.05 134.96 24.07Q135.04 24.09 135.11 24.12Q135.18 24.15 135.25 24.19Q135.32 24.23 135.39 24.27Q135.46 24.32 135.52 24.37Q135.58 24.42 135.63 24.47Q135.69 24.53 135.74 24.59Q135.79 24.65 135.83 24.72Q135.88 24.78 135.92 24.85Q135.95 24.92 135.98 24.99Q136.01 25.07 136.04 25.14Q136.06 25.22 136.07 25.3Q136.09 25.37 136.1 25.45Q136.1 25.53 136.1 25.61L136.1 124.39Q136.1 124.47 136.1 124.55Q136.09 124.63 136.07 124.7Q136.06 124.78 136.04 124.86Q136.01 124.93 135.98 125.01Q135.95 125.08 135.92 125.15Q135.88 125.22 135.83 125.28Q135.79 125.35 135.74 125.41Q135.69 125.47 135.63 125.53Q135.58 125.58 135.52 125.63Q135.46 125.69 135.39 125.73Q135.32 125.77 135.25 125.81Q135.18 125.85 135.11 125.88Q135.04 125.91 134.96 125.93Q134.89 125.95 134.81 125.97Q134.73 125.98 134.65 125.99Q134.57 126 134.5 126L105.51 126Q105.43 126 105.35 125.99Q105.27 125.98 105.19 125.97Q105.11 125.95 105.04 125.93Q104.96 125.91 104.89 125.88Q104.82 125.85 104.75 125.81Q104.68 125.77 104.61 125.73Q104.55 125.69 104.48 125.63Q104.42 125.58 104.37 125.53Q104.31 125.47 104.26 125.41Q104.21 125.35 104.17 125.28Q104.12 125.22 104.09 125.15Q104.05 125.08 104.02 125.01Q103.99 124.93 103.96 124.86Q103.94 124.78 103.93 124.7Q103.91 124.63 103.9 124.55Q103.9 124.47 103.9 124.39Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.05 75L160.26 75" /><ellipse fill="#9684FA" cx="128.05" cy="75" rx="1.34" ry="1.34" /><text fill="#9684FA" transform="translate(150.87 71.78)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			S
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 34.74L103.9 34.74" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 34.74L128.05 75" /><text fill="#9684FA" transform="translate(89.13 31.52)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			1
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 61.58L103.9 61.58" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 61.58L128.05 75" /><text fill="#9684FA" transform="translate(89.13 58.36)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			2
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 88.42L103.9 88.42" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 88.42L128.05 75" /><text fill="#9684FA" transform="translate(89.13 85.2)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			3
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M79.74 115.26L103.9 115.26" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M103.9 115.26L128.05 75" /><text fill="#9684FA" transform="translate(89.13 112.04)" font-size="2.42" font-family="IBM Plex Sans" x="-0.5" y="0.9059">
+			4
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="157.26" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="76.74" y="31.74" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="76.74" y="58.58" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="76.74" y="85.42" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="76.74" y="112.26" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="86.5, 96.5, 104.5, 117.5, 126.5, 130.5, 139.5, 147.5" y="172.32">
+			Combiner
+	</text></svg></span>
+</span><figcaption>Combiner</figcaption></figure>
+<p>An N-way combiner, and the same part is the N-way splitter: one common port <code>S</code> and <code>N</code> paths into
+it, <code>N</code> being a parameter, so the symbol grows a pin per path. It is what an N-way Wilkinson does at
+its centre frequency, without the lines: matched at every port, the paths isolated from each other,
+reciprocal and flat with frequency. Path <code>k</code> has its own loss beyond the ideal split and its own
+transmission phase, and nothing else is in the matrix:</p>
+<pre><code>S(S,k) = S(k,S) = 10^(−IL_k/20) · e^(j·Phase_k) / √N        every other entry 0
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>N</code></td>
+<td>The number of paths, 2 or more.</td>
+</tr>
+<tr>
+<td><code>IL</code></td>
+<td>Every path's loss beyond the ideal split of 10·log10 N, in dB. 0 by default.</td>
+</tr>
+<tr>
+<td><code>IL[k]</code></td>
+<td>Path <code>k</code>'s own loss, in place of <code>IL</code>. Absent: <code>IL</code>.</td>
+</tr>
+<tr>
+<td><code>Phase[k]</code></td>
+<td>Path <code>k</code>'s transmission phase to <code>S</code>, in degrees (a bare number is degrees). Absent: 0.</td>
+</tr>
+<tr>
+<td><code>Z0</code></td>
+<td>The reference impedance of every port.</td>
+</tr>
+</tbody>
+</table>
+<p><code>IL[k]</code> and <code>Phase[k]</code> are not in a freshly placed combiner's list: add a row named, say, <code>IL[3]</code> or
+<code>Phase[2]</code> in its properties, or write them on its netlist line. Each is an ordinary expression, so a
+variable or a parametric sweep can drive it: <code>Phase[2] = -dpsi</code>, <code>Phase[3] = -2*dpsi</code> is a plane wave
+arriving across an array of elements, one <code>dpsi</code> apart.</p>
+<p><strong>Its noise is its loss, and nothing has to be set for it.</strong> It is passive, so its thermal noise
+follows from its S at its temperature, as every block's here does:</p>
+<ul>
+<li><strong>As a splitter</strong>, from <code>S</code> into path <code>k</code>, its noise figure is that path's whole loss,
+10·log10 N + <code>IL_k</code>: a 4-way split with 0.5 dB of excess loss has an NF of 6.52 dB.</li>
+<li><strong>As a combiner of N coherent inputs</strong> — the same signal on every path, in phase — the
+amplitudes add, so the signal gains 10·log10 N over one path, while uncorrelated noise on the N
+paths adds in power and gains nothing. Lossless, the isolation the matrix leaves out costs nothing
+either: a splitter followed by a combiner whose phases cancel the splitter's is a noiseless
+through. With losses, a matched passive two-port has NF = −20·log10 |S21|, which is what the run
+gives.</li>
+</ul>
+<p>Parameters: <a href="components.html#combiner">Components › Combiner</a>.</p>
 <h3 id="coupler">Directional Coupler</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70.13 118.01L70.13 31.99Q70.13 31.8 70.15 31.62Q70.17 31.44 70.2 31.26Q70.24 31.08 70.29 30.9Q70.34 30.73 70.41 30.56Q70.48 30.39 70.57 30.22Q70.66 30.06 70.76 29.91Q70.86 29.76 70.98 29.61Q71.1 29.47 71.23 29.34Q71.36 29.21 71.5 29.1Q71.64 28.98 71.79 28.88Q71.94 28.78 72.11 28.69Q72.27 28.6 72.44 28.53Q72.61 28.46 72.78 28.41Q72.96 28.35 73.14 28.32Q73.32 28.28 73.5 28.26Q73.69 28.25 73.87 28.25L166.13 28.25Q166.31 28.25 166.5 28.26Q166.68 28.28 166.86 28.32Q167.04 28.35 167.22 28.41Q167.39 28.46 167.56 28.53Q167.73 28.6 167.89 28.69Q168.06 28.78 168.21 28.88Q168.36 28.98 168.5 29.1Q168.65 29.21 168.78 29.34Q168.91 29.47 169.02 29.61Q169.14 29.76 169.24 29.91Q169.34 30.06 169.43 30.22Q169.52 30.39 169.59 30.56Q169.66 30.73 169.71 30.9Q169.76 31.08 169.8 31.26Q169.83 31.44 169.85 31.62Q169.87 31.8 169.87 31.99L169.87 118.01Q169.87 118.2 169.85 118.38Q169.83 118.56 169.8 118.74Q169.76 118.92 169.71 119.1Q169.66 119.28 169.59 119.44Q169.52 119.61 169.43 119.78Q169.34 119.94 169.24 120.09Q169.14 120.24 169.02 120.39Q168.91 120.53 168.78 120.66Q168.65 120.79 168.5 120.9Q168.36 121.02 168.21 121.12Q168.06 121.23 167.89 121.31Q167.73 121.4 167.56 121.47Q167.39 121.54 167.22 121.59Q167.04 121.65 166.86 121.68Q166.68 121.72 166.5 121.74Q166.31 121.75 166.13 121.75L73.87 121.75Q73.69 121.75 73.5 121.74Q73.32 121.72 73.14 121.68Q72.96 121.65 72.78 121.59Q72.61 121.54 72.44 121.47Q72.27 121.4 72.11 121.31Q71.94 121.23 71.79 121.12Q71.64 121.02 71.5 120.9Q71.36 120.79 71.23 120.66Q71.1 120.53 70.98 120.39Q70.86 120.24 70.76 120.09Q70.66 119.94 70.57 119.78Q70.48 119.61 70.41 119.44Q70.34 119.28 70.29 119.1Q70.24 118.92 70.2 118.74Q70.17 118.56 70.15 118.38Q70.13 118.2 70.13 118.01Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 43.83L213.51 43.83" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 106.17L213.51 106.17" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M107.53 43.83L129 97.49" /><path fill="#2D14C3" d="M132.47 106.17L124.94 99.11L133.05 95.87L132.47 106.17Z" /><text fill="#2D14C3" transform="translate(52.99 31.36)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">

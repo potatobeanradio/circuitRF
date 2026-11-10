@@ -779,6 +779,15 @@ public static class FigureCatalog
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),
 
+        // ── RF Chain Budget ───────────────────────────────────────────────────────
+
+        new("chain-budget", DocChainFixtures.Array, 1300, 960,
+            WindowFrame.Titled("RF Chain Budget — Array.cchain"),
+            "The RF Chain Budget on the example's four-element array: the chain as idealised blocks, the element's "
+          + "branch once and marked × 4 into one combiner block, each stage's own and cascaded numbers under it, the "
+          + "combiner selected here and in the stage list (the Schematic tab draws the same chain as it transfers); "
+          + "each stage's parameters; and the cascade as a Data Display table, one row per stage."),
+
         // ── Signal Designer (MOD_Source) ──────────────────────────────────────────
 
         new("signal-designer", DocSignalFixtures.DesignerNr20, 1199, 800,

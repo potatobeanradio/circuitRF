@@ -26,6 +26,8 @@ internal enum DocumentKind
     EmResult,
     Rail,
     Smith,
+    /// <summary>An RF chain budget, a <c>.cchain</c>.</summary>
+    Chain,
     /// <summary>A composed FET model, a <c>.cmodel</c> (brief-modelcomposer-1 R-mc1-2).</summary>
     ComposedModel,
     /// <summary>A Model Composer document, a <c>.cmc</c> (brief-modelcomposer-3 R-mc3-1).</summary>
@@ -79,6 +81,7 @@ internal static class DocumentKinds
         DocumentKind.EmResult      => "em-result",
         DocumentKind.Rail          => "rail",
         DocumentKind.Smith         => "smith",
+        DocumentKind.Chain         => "chain",
         DocumentKind.ComposedModel => "composed-model",
         DocumentKind.ComposerDocument => "composer-document",
         DocumentKind.Netlist       => "netlist",
@@ -152,6 +155,8 @@ internal static class DocumentKinds
             // so `check`, `explain` and `find` name it rather than calling it unreadable; the
             // `smith` verb that EVALUATES one is brief 10's.
             ".csmith" => DocumentKind.Smith,
+            // An RF chain budget; the `chain` verb budgets one and transfers it to a schematic.
+            ".cchain" => DocumentKind.Chain,
             // A composed FET model (brief-modelcomposer-1 R-mc1-2). A ZIP container, so classified by
             // name; `check` reads it through the model's own validator.
             ".cmodel" => DocumentKind.ComposedModel,

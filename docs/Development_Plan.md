@@ -261,3 +261,31 @@ The worked example is `examples/Receiver Noise`.
 
 Link-level simulation (bit error rate, coding, receiver DSP) is out of scope: EVM, SNR and the constellation are where
 an RF simulator stops.
+
+## 12. RF chain budget — done (2026-11)
+
+A receive chain's budget in closed form and its transfer to test benches that check it (`docs/design/chain-budget.md`,
+the reference page `chain-budget.md`, the example `examples/RF Chain Budget`). The calculator is `src/Design/Chain`; the
+window is Tools ▸ RF Chain Budget, shaped as `docs/design/plugins.md` shapes a tool (a pure core with CLI and MCP parity,
+the chain drawn by the schematic renderer, the cascade on the Data Display model, Transfer staged, validated and
+checkpointed); the CLI verb is `chain`; the benches are ordinary schematics of System blocks run by the existing
+S-parameter, harmonic-balance and envelope analyses. Nothing new in the engine.
+
+**Deferred:**
+
+- **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
+  benches terminate the image at T0 with an isolator. A chain whose filter passes the image would need the budget to
+  carry each stage's gain at the image frequency.
+- **Up-conversion and transmit chains.** A mixer stage down-converts to |f − Flo|; there is no sum-frequency or
+  transmit (output-power-referred) budget.
+- **A frequency sweep of the budget.** The budget is at one frequency; a filter's ripple and roll-off are not in it.
+- **More than one combiner stage** (sub-arrays of their own), and a tree whose N is not a power of 2 (refused; Direct,
+  with `PathIL` for its unequal paths, is the remedy).
+- **Unequal paths in an active combiner.** `PathIL` is a passive combiner's; an active one's level amplifiers would see
+  unequal powers, which the per-element budget does not follow.
+- **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep
+  or tune by hand; there is no loop that adapts them, and no stage of the budget follows a residual through a later
+  nonlinearity other than as a level.
+- **Per-node EVM.** The demo reads EVM at the output only; a probe at every node would give it node by node.
+- **The Steering bench through a mixer.** It needs an S-parameter run to reach the combiner, so an array whose branch
+  has a mixer gets no Steering or Combiners bench.

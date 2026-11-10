@@ -195,6 +195,8 @@
                       LogicalName="CircuitRF.Design.Reference.protected-models.md" />
     <EmbeddedResource Include="..\..\docs\user\src\reference\simulations.md"
                       LogicalName="CircuitRF.Design.Reference.simulations.md" />
+    <EmbeddedResource Include="..\..\docs\user\src\reference\chain-budget.md"
+                      LogicalName="CircuitRF.Design.Reference.chain-budget.md" />
     <EmbeddedResource Include="..\..\docs\user\src\reference\cosimulation.md"
                       LogicalName="CircuitRF.Design.Reference.cosimulation.md" />
     <EmbeddedResource Include="..\..\docs\user\src\reference\components.md"

@@ -1,0 +1,60 @@
+{
+  "FormatVersion": 1,
+  "FrequencyHz": 2450000000,
+  "BandwidthHz": 4500000,
+  "InputPowerDbm": -60,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "CANC",
+      "Part": "Canceller",
+      "Parameters": {
+        "Coupling": "10",
+        "IL": "0.2",
+        "Pint": "-40",
+        "Bint": "10 MHz",
+        "Pref": "-30",
+        "NFref": "6",
+        "AmpErr": "0.02",
+        "PhaseErr": "0.2",
+        "DelayErr": "0.05 ns"
+      }
+    },
+    {
+      "Name": "LNA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "18",
+        "NF": "1.2",
+        "IP3": "20",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "BPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "Fc": "1 GHz",
+        "F1": "2.35 GHz",
+        "F2": "2.55 GHz",
+        "Ripple": "0.1",
+        "Astop": "40",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "AMP2",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "14",
+        "NF": "3",
+        "IP3": "25",
+        "IP3Ref": "Output"
+      }
+    }
+  ]
+}

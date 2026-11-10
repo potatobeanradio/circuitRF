@@ -277,6 +277,12 @@ convention behind both.</p>
 <td>The ports, the ranked breakdown and the via check to stdout; <code>-o .csv/.npy/.mat/.txt/.svg/.pdf</code></td>
 </tr>
 <tr>
+<td><code>chain</code></td>
+<td><code>.cchain</code></td>
+<td>The same budget the <a href="chain-budget.html">RF Chain Budget</a> window recomputes on every edit, and its Transfer to Schematic</td>
+<td>The cascade to stdout; <code>-o .npy/.mat/.txt</code> for the budget as a DataSet; <code>--to-schematic</code> writes the test benches (and an array's Steering and Combiners benches) and their displays</td>
+</tr>
+<tr>
 <td><code>smith</code></td>
 <td><code>.csmith</code></td>
 <td>The same cascade evaluator the Smith Chart window walks on every edit</td>
@@ -2314,6 +2320,18 @@ and <code>date</code>), then <code>staleAcceptances</code>. With <code>--list-ch
 <p><strong>Exit codes:</strong> <strong>0</strong> when it ran, whatever it found; <strong>1</strong> on a refusal, or with <code>--severity warning</code> when
 an unaccepted finding remains; <strong>130</strong> on a cancellation, reporting the checks that finished. <code>review</code>
 writes nothing but <code>-o</code>'s PDF.</p>
+<h2 id="chain"><code>chain</code> — an RF chain budget, headless</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
+<p><code>chain</code> budgets a <strong><code>.cchain</code></strong> — the document the <a href="chain-budget.html">RF Chain Budget</a> window edits — and prints
+the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
+floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so <code>--json</code> carries it and <code>-o</code> writes it: per-stage
+cubes over a <code>stage</code> axis labelled with the stage names (<code>G_dB</code>, <code>NF_dB</code>, <code>IIP3_dBm</code>, …) and the totals as scalars.</p>
+<p><code>--to-schematic</code> is the window's <strong>Transfer to Schematic</strong>: the chain's <code>1-Tone</code>, <code>2-Tone</code>, <code>Envelope</code> and <code>Levels</code>
+test benches; <code>Blockers</code> for a chain with blockers, <code>Canceller</code> for one with a canceller; an array's <code>Steering</code> and
+<code>Combiners</code> benches; and with <code>--demo</code> (or <code>&quot;Demo&quot;: true</code> in the <code>.cchain</code>) the <code>Demo</code> bench, the chain demodulated end
+to end. Each comes with its Data Display, beside the <code>.cchain</code> or in <code>dir</code>. A bench that already exists is a refusal naming it; <code>--replace</code> writes it again. Nothing is written when any
+bench is refused. Exit <strong>0</strong> when it budgeted (and
+transferred), <strong>1</strong> on a refusal.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It

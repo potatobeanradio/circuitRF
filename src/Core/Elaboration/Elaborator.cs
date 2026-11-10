@@ -1605,7 +1605,12 @@ public sealed class Elaborator
                     $"but a '{inst.Reference}' takes a single value that cannot vary with frequency. " +
                     "Only Chain (A/B/C/D), Z_Port (Z[i,j]) and SDD (H[w]) are evaluated per frequency.");
 
-            result[ov.Name] = EvalOverride(inst, ov, parentScope);
+            // A Combiner's Phase[k] is an angle, and a bare number in it means degrees — the convention TLIN's E keeps —
+            // so it is read with deg as its site unit and reaches the model in radians.
+            result[ov.Name] = ov.Name.StartsWith("Phase[", StringComparison.Ordinal)
+                              && inst.Reference.Equals("Combiner", StringComparison.OrdinalIgnoreCase)
+                ? _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit ?? "deg", $"{inst.InstanceName}.{ov.Name}")
+                : EvalOverride(inst, ov, parentScope);
         }
 
         ValidatePortPairNetCount(inst, result);
@@ -1677,6 +1682,15 @@ public sealed class Elaborator
         // its band plan inverted, which simulates perfectly and answers a different question.
         if (inst.Reference.Equals("Duplexer", StringComparison.OrdinalIgnoreCase))
             return (6, "ant+, ant−, tx+, tx−, rx+, rx−");
+
+        // The common port, then the N paths; N is a parameter, as the Switch's throw count is.
+        if (inst.Reference.Equals("Combiner", StringComparison.OrdinalIgnoreCase))
+        {
+            int ways = 2;
+            if (resolved.TryGetValue("N", out var w) && w.Kind == ValueKind.Real)
+                ways = Math.Max(2, (int)Math.Round(w.AsReal()));
+            return (2 * (1 + ways), "S+, S−, " + string.Join(", ", Enumerable.Range(1, ways).Select(k => $"{k}+, {k}−")));
+        }
 
         if (inst.Reference.Equals("Switch", StringComparison.OrdinalIgnoreCase))
         {

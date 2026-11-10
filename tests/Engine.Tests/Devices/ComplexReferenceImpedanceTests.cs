@@ -274,6 +274,7 @@ Filter:F1  n1 0 n2 0  Response=Chebyshev Form=Bandpass Order=3 \
     [InlineData("Coupler",    "Z0")]
     [InlineData("Balun",      "Zbal")]
     [InlineData("Duplexer",   "Zant")]
+    [InlineData("Combiner",   "Z0")]
     public void AComplexValueOnAnImpedanceParameterIsAccepted(string type, string param)
     {
         var parameters = new Dictionary<string, Value>(StringComparer.Ordinal)

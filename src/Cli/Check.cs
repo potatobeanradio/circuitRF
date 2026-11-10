@@ -237,6 +237,7 @@ internal static class Check
                                           Scoped(path, kind, f, () => CheckDataDisplay(path, f)); break;
             case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
             case DocumentKind.Smith:      Scoped(path, kind, f, () => CheckSmith(path, f)); break;
+            case DocumentKind.Chain:      Scoped(path, kind, f, () => CheckChain(path, f)); break;
             case DocumentKind.ComposerDocument:
                                           Scoped(path, kind, f, () => CheckComposerDocument(path, f)); break;
             case DocumentKind.ComposedModel:
@@ -1470,6 +1471,20 @@ internal static class Check
     /// "nothing circuitRF reads is named this" — so `check` would have exited 1 on a perfectly good
     /// `.csmith` of a type the same change had just registered with three operating systems.</para>
     /// </summary>
+    /// <summary>A <c>.cchain</c>, through the reader and the budget the window uses: each refusal an error, the budget's
+    /// notes as information, and the gain and NF when it budgets.</summary>
+    private static void CheckChain(string path, Findings f)
+    {
+        CircuitRF.Design.Chain.ChainDesign design;
+        try { design = CircuitRF.Design.Chain.ChainDesignIo.LoadFromFile(path); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+        var r = CircuitRF.Design.Chain.ChainBudget.Evaluate(design);
+        foreach (var why in r.Refusals) f.Add(CliDiagnostics.ChainRefused(path, why));
+        foreach (var n in r.Notes) f.Add(CliDiagnostics.ChainNote(n));
+        if (r.Totals is { } t) f.Add(CliDiagnostics.CheckChainSummary(path, r.Stages.Count, t.GainDb, t.NfDb));
+    }
+
     private static void CheckSmith(string path, Findings f)
     {
         SmithDesign design;

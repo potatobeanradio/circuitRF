@@ -107,7 +107,8 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
     {
         Assert.DoesNotContain("cli", ReferenceLibrary.TopicNames);
         // 14 since simulations and cosimulation joined, so an agent can find the cubes of an envelope or far-field run to plot.
-        Assert.True(ReferenceLibrary.TopicNames.Count < 15,
+        // 15 since chain-budget joined: the parts and parameters a .cchain may name, which no verb's schema carries.
+        Assert.True(ReferenceLibrary.TopicNames.Count < 16,
                     "the topic set has grown past a curated one; R-aut6-2 says reading is the expensive direction.");
     }
 

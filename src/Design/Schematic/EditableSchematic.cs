@@ -319,6 +319,13 @@ public static class SymbolPortDefs
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
+            // Combiner: the common port S first, as its netlist line has it, then paths 1…N down the left, 200 apart
+            // and centred on S, so every pin is on the grid for any N.
+            case SymbolKind.Combiner:
+            {
+                int n = Math.Max(2, portCount);
+                return [("S", 300f, 0f), .. Enumerable.Range(1, n).Select(k => ($"{k}", -300f, (2f * k - n - 1) * 100f))];
+            }
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
@@ -1089,6 +1096,13 @@ public sealed class EditableComponent
             {
                 var pins = Parameters.FirstOrDefault(q => q.Name == "Pins");
                 return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
+            }
+
+            // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
+            if (Symbol is SymbolKind.Combiner)
+            {
+                var ways = Parameters.FirstOrDefault(q => q.Name == "N");
+                return ways is not null && int.TryParse(ways.Expression, out int nw) && nw >= 2 ? nw : 2;
             }
 
             if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed)

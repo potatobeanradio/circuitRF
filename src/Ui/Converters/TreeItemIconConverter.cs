@@ -35,6 +35,7 @@ public class TreeItemIconConverter : IValueConverter
                 NodeKind.RailFile        => MaterialIconKind.FlashOutline,
                 NodeKind.SmithFile       => MaterialIconKind.ChartScatterPlot,
                 NodeKind.ModelComposerFile => MaterialIconKind.IntegratedCircuitChip,
+                NodeKind.ChainFile       => MaterialIconKind.ArrowRightBoldBoxOutline,
                 NodeKind.ColorThemeFile  => MaterialIconKind.Palette,
                 NodeKind.KnownFile       => MaterialIconKind.FileOutline,
                 NodeKind.KnownFilesGroup => MaterialIconKind.FolderOutline,

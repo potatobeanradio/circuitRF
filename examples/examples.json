@@ -17,6 +17,11 @@
       "Summary": "The noise work of a 2.45 GHz receiver, bench by bench: a FET LNA noise-matched with its circles and which part sets its noise, the chain's budget against Friis, a diode mixer's SSB and DSB noise figure against LO drive, the LNA under a blocker, a noise sourcepull under drive, an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries."
     },
     {
+      "Folder": "RF Chain Budget",
+      "Title": "RF Chain Budget",
+      "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet and a four-element steered array into a combiner, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them."
+    },
+    {
       "Folder": "TRL and De-embedding",
       "Title": "TRL and De-embedding",
       "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."

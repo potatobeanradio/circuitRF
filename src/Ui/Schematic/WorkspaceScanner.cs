@@ -425,6 +425,7 @@ public static class WorkspaceScanner
             ".crail"  => NodeKind.RailFile,
             ".csmith" => NodeKind.SmithFile,
             ".cmc"    => NodeKind.ModelComposerFile,
+            ".cchain" => NodeKind.ChainFile,
             ".crlib"  => NodeKind.PartLibraryFile,
             ".cmat"   => NodeKind.MaterialLibraryFile,
             ".ccolor" => NodeKind.ColorThemeFile,

@@ -558,6 +558,8 @@
                         <NativeMenuItem Header="Smith Chart" Command="{Binding NewSmithChartCommand}"/>
                         <!-- The S-Parameter Viewer: one Touchstone file at a glance, in a window of its own. Mirrored below. -->
                         <NativeMenuItem Header="S-Parameter Viewer" Command="{Binding NewSParameterViewerCommand}"/>
+                        <!-- An RF receive chain as a budget, transferred to test benches. Mirrored below. -->
+                        <NativeMenuItem Header="RF Chain Budget" Command="{Binding NewChainBudgetCommand}"/>
                         <!-- brief-modelcomposer-14 R-mc14-1 — a window per .cmc; needs no workspace. Mirrored below. -->
                         <NativeMenuItem Header="Model Composer…" Command="{Binding NewModelComposerCommand}"/>
                         <!-- brief-img-14 R-im14-13: the picture dialog, empty, in plot mode. Mirrored below. -->
@@ -1675,6 +1677,12 @@
                     <MenuItem.Icon>
                         <uictl:PaletteGlyphControl Kind="Snp" PortCount="2" Monochrome="True" Width="16" Height="16"/>
                     </MenuItem.Icon>
+                </MenuItem>
+                <!-- RF Chain Budget — hand-mirrored with the macOS NativeMenu above. -->
+                <MenuItem Header="RF Chain _Budget"
+                          Command="{Binding NewChainBudgetCommand}"
+                          ToolTip.Tip="A receive chain stage by stage — gain, noise figure, intercepts, compression, sensitivity and dynamic range — and its transfer to test benches that verify every number. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowRightBoldBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- brief-modelcomposer-14 R-mc14-1 — hand-mirrored with the macOS NativeMenu above. -->
                 <MenuItem Header="Model _Composer…"

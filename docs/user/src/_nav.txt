@@ -45,6 +45,7 @@ reference/sdd.html                 | The Symbolically-Defined Device: writing a 
 reference/nonlinear-capacitor.html | C(V) as a Taylor series, and the C–V Editor that fits one.
 reference/veriloga.html            | Running a compact model you supply, from Verilog-A source or a compiled artefact.
 reference/match.html               | Direct synthesis of a bandpass matching network that absorbs both terminations.
+reference/chain-budget.html        | A receive chain's budget stage by stage, an array included, and its transfer to test benches that check every number.
 
 == Simulate
 reference/simulations.html  | DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.

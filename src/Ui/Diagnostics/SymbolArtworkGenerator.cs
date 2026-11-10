@@ -198,6 +198,8 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Atten,           "atten",             2),
         (SymbolKind.Duplexer,        "duplexer",          3),
         (SymbolKind.Delay,           "delay",             2),
+        // Variadic on N: the figure is the four-way combiner.
+        (SymbolKind.Combiner,        "combiner",          4),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

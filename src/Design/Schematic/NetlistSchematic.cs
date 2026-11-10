@@ -795,7 +795,9 @@ public static class NetlistSchematic
             && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
-            int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2 : nets.Count;
+            int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2
+                  : kind is SymbolKind.Combiner ? nets.Count / 2 - 1
+                  : nets.Count;
             if (n >= 1)
                 comp.Parameters.Add(new EditableParameter
                 {

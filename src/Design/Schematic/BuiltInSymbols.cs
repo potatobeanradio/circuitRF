@@ -155,6 +155,7 @@ public static class BuiltInSymbols
     // SnP cache key: (n, refNode, cfg, pitch)
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
@@ -276,6 +277,7 @@ public static class BuiltInSymbols
             case SymbolKind.Atten:      return _atten;
             case SymbolKind.Delay:      return _delay;
             case SymbolKind.Duplexer:   return _duplexer;
+            case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
             // Match keeps, so a caller that has no instance to ask (the palette tile, the ghost
             // preview, the documentation figure) still gets a real drawing.
@@ -2179,6 +2181,33 @@ public static class BuiltInSymbols
         L(-300, 0, -100, 0),
         L( 100, 0,  300, 0),
     ], SymbolKind.Delay);
+
+    // ── Combiner — N paths fanning into one ───────────────────────────────────
+    // Pins: S (+300,0) · paths 1…N at (-300, (2k − N − 1)·100). VARIADIC on N, cached per N.
+    //
+    // Each path's lead runs into the body and on to one junction, from which the common line leaves
+    // for S: the fan IS the statement that N become one (or, read the other way, one becomes N). The
+    // port numbers sit on the leads, outside the body, as the mixer's port names do.
+
+    private static Symbol BuildCombiner(int n)
+    {
+        double half = (n - 1) * 100 + 80;
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, 240, 2 * half, 12),                   // body, x in [-120,120]
+            L(60, 0, 300, 0),                                 // the common line, junction to S
+            Circ(60, 0, 10, filled: true),                    // the junction
+            Txt("S", 230, -24, fontSize: SddPortLabelFontSize),
+        };
+        for (int k = 1; k <= n; k++)
+        {
+            double y = (2 * k - n - 1) * 100;
+            prims.Add(L(-300, y, -120, y));                   // the lead, pin to body edge
+            prims.Add(L(-120, y, 60, 0));                     // and on into the junction
+            prims.Add(Txt($"{k}", -230, y - 24, fontSize: SddPortLabelFontSize));
+        }
+        return Sym(prims, SymbolKind.Combiner, n);
+    }
 
     // ── Duplexer — a junction that splits into two filters ────────────────────
     // Pins: ANT (-300,0) · TX (+300,-100) · RX (+300,+100).

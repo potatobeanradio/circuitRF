@@ -1,0 +1,610 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using CircuitRF.Design.Chain;
+using CircuitRF.Design.Schematic;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace CircuitRF.Ui.Chain;
+
+/// <summary>One parameter of one stage: its name, its text, and the choices when it names one.</summary>
+public sealed partial class ChainParamViewModel(ChainParam param, string value, Action changed) : ObservableObject
+{
+    public string Name => param.Name;
+    /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
+    /// ("2.35 GHz"), so none is shown for one.</summary>
+    public string Unit => param.Unit is "dB" or "dBm" or "deg" ? param.Unit : "";
+    public string Tip => param.Help.Length > 0 ? $"{param.Name}: {param.Help}" : param.Name;
+    public IReadOnlyList<string>? Options => param.Options;
+    public bool HasOptions => param.Options is { Count: > 0 };
+    public bool IsText => !HasOptions;
+    public string Watermark => param.Default.Length > 0 ? param.Default : param.BlankAllowed ? "blank" : "";
+
+    [ObservableProperty] private string _value = value;
+
+    partial void OnValueChanged(string value) => changed();
+}
+
+/// <summary>One symbol of a stage's block in the block view: the System block whose artwork it is drawn with, and a
+/// caption under it ("4:1", "2 × 2:1").</summary>
+public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption)
+{
+    public bool HasCaption => Caption.Length > 0;
+}
+
+/// <summary>One stage row: its name, its part, the part's parameters, and the stage's own budget.</summary>
+public sealed partial class ChainStageViewModel : ObservableObject
+{
+    private readonly Action _changed;
+
+    public ChainStageViewModel(ChainStage stage, Action changed)
+    {
+        _changed = changed;
+        _name = stage.Name;
+        _part = ChainParts.Find(stage.Part) ?? ChainParts.All[0];
+        Unlisted = stage.Parameters.Where(kv => _part.Parameters.All(p => p.Name != kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        Fill(stage);
+    }
+
+    /// <summary>Every part a stage can be, for the Part list.</summary>
+    public static IReadOnlyList<ChainPart> Parts => ChainParts.All;
+
+    [ObservableProperty] private string _name;
+    [ObservableProperty] private ChainPart _part;
+    [ObservableProperty] private string _summary = "";
+
+    // ── the block view: an idealised block per stage ─────────────────────────
+
+    /// <summary>The block drawn selected: the selected row's.</summary>
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>The symbols the block draws: one for most parts; a combiner's levels, each with its amplifier when
+    /// active.</summary>
+    [ObservableProperty] private IReadOnlyList<ChainBlockGlyph> _glyphs = [];
+
+    /// <summary>"× N" under an array branch's block, empty elsewhere.</summary>
+    [ObservableProperty] private string _timesN = "";
+
+    /// <summary>What the block says beside its symbol: a mixer's LO, a phase shifter's phase, a combiner's variant.</summary>
+    [ObservableProperty] private string _extra = "";
+
+    /// <summary>The stage's own numbers, and the cascade at its output.</summary>
+    [ObservableProperty] private string _keyLine = "";
+    [ObservableProperty] private string _cascadeLine = "";
+
+    /// <summary>Parameters the stage carries that its part does not list: kept, and written back, unchanged.</summary>
+    private Dictionary<string, string> Unlisted { get; }
+
+    public ObservableCollection<ChainParamViewModel> Parameters { get; } = [];
+
+    partial void OnNameChanged(string value) => _changed();
+
+    /// <summary>A new part keeps every parameter the two share by name and takes the new one's defaults for the rest.</summary>
+    partial void OnPartChanged(ChainPart value)
+    {
+        Fill(ToStage());
+        _changed();
+    }
+
+    private void Fill(ChainStage stage)
+    {
+        Parameters.Clear();
+        foreach (var p in Part.Parameters)
+            Parameters.Add(new ChainParamViewModel(p, stage.Parameters.TryGetValue(p.Name, out var v) ? v : p.Default, _changed));
+    }
+
+    public ChainStage ToStage()
+    {
+        var s = new ChainStage { Name = Name.Trim(), Part = Part.Token };
+        foreach (var (k, v) in Unlisted) s.Parameters[k] = v;
+        foreach (var p in Parameters) s.Parameters[p.Name] = p.Value ?? "";
+        return s;
+    }
+}
+
+/// <summary>
+/// The RF Chain Budget window: a <c>.cchain</c> as a table of stages and system inputs, its cascade recomputed on every
+/// edit by <see cref="ChainBudget"/>, and its Transfer to Schematic. Nothing here computes a number.
+/// </summary>
+public sealed partial class ChainBudgetViewModel : ObservableObject
+{
+    public const string ToolName = "RF Chain Budget";
+
+    private bool _loading;
+
+    public ChainBudgetViewModel() : this(Example()) { }
+
+    public ChainBudgetViewModel(ChainDesign design) => Load(design);
+
+    /// <summary>What a new chain starts as: an LNA, a filter and a second amplifier.</summary>
+    public static ChainDesign Example() => new()
+    {
+        Stages =
+        [
+            new ChainStage { Name = "LNA", Part = ChainParts.Amp, Parameters = { ["Gain"] = "16", ["NF"] = "1", ["IP3"] = "15" } },
+            new ChainStage { Name = "BPF", Part = ChainParts.Filter, Parameters = { ["Response"] = "Butterworth", ["F1"] = "2.35 GHz", ["F2"] = "2.55 GHz", ["IL"] = "1.5" } },
+            new ChainStage { Name = "AMP2", Part = ChainParts.Amp, Parameters = { ["Gain"] = "20", ["NF"] = "3", ["IP3"] = "25" } },
+        ],
+    };
+
+    public ObservableCollection<ChainStageViewModel> Stages { get; } = [];
+
+    [ObservableProperty] private ChainStageViewModel? _selectedStage;
+
+    /// <summary>The diagram and the table share one selection: the selected row's parts are drawn selected, and a
+    /// click on a part in the drawing selects its row.</summary>
+    partial void OnSelectedStageChanged(ChainStageViewModel? value)
+    {
+        foreach (var s in Stages) s.IsSelected = ReferenceEquals(s, value);
+        OnPropertyChanged(nameof(SelectedStageIndex));
+    }
+
+    public int SelectedStageIndex
+    {
+        get => SelectedStage is { } s ? Stages.IndexOf(s) : -1;
+        set
+        {
+            var next = value >= 0 && value < Stages.Count ? Stages[value] : null;
+            if (!ReferenceEquals(next, SelectedStage)) SelectedStage = next;
+        }
+    }
+
+    /// <summary>The chain as the benches draw it (<see cref="ChainBenches.Diagram"/>), annotated stage by stage.</summary>
+    [ObservableProperty] private ChainDiagram? _diagram;
+
+    /// <summary>The cascade, as a Data Display table over the budget's stage axis.</summary>
+    public CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel PlotHost { get; } =
+        new(new CircuitRF.Ui.DataDisplay.ViewModels.DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
+
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _cascade;
+
+    public CircuitRF.Render.DataDisplay.Plot? CascadePlot => _cascade?.PlotVM.Plot;
+
+    /// <summary>Raised after the cascade table is refilled in place: a PlotControl repaints only when told.</summary>
+    public event EventHandler? PlotsUpdated;
+
+    // ── the levels and the canceller: Data Display plots over the budget's own data ──
+
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _depthPhase, _depthBand;
+    public CircuitRF.Render.DataDisplay.Plot? LevelsPlot => _levels?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? LevelsDbPlot => _levelsDb?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
+
+    /// <summary>True when the chain has a canceller: its tab shows the depth its errors leave.</summary>
+    [ObservableProperty] private bool _hasCanceller;
+
+    /// <summary>What the levels plots say about their simulated points: which bench results they read, or why none.</summary>
+    [ObservableProperty] private string _levelsNote = "";
+
+    /// <summary>
+    /// Fills one plot, made on first use, with <paramref name="pc"/>'s traces over <paramref name="data"/>, which the
+    /// Data Display reads through <see cref="CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source"/> as it reads a
+    /// result file.
+    /// </summary>
+    private void Refill(ref CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? holder, string property,
+                        CircuitRF.Render.DataDisplay.PlotContainerConfig pc, string sourceName, RfCore.Data.DataSet data)
+    {
+        if (holder is null)
+        {
+            holder = PlotHost.AddPlot(pc.PlotType, CircuitRF.Render.DataDisplay.FreqUnit.GHz, 0, 0, pc.Width, pc.Height);
+            PlotHost.SelectOnly((CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?)null);
+            OnPropertyChanged(property);
+        }
+        var plot = holder.PlotVM.Plot;
+        plot.Traces.Clear();
+        var source = new CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source(sourceName, data);
+        foreach (var tc in pc.Traces)
+            if (CircuitRF.Render.DataDisplay.PlotConfigLoader.LoadTrace(tc, pc.PlotType, pc.FreqUnit, source) is { } t)
+                plot.Traces.Add(t);
+        plot.CustomTitle = pc.CustomTitle;
+        plot.CustomTitleOn = pc.CustomTitleOn;
+        plot.Legend = pc.Legend;
+        plot.CustomXLabel = pc.CustomXLabel; plot.CustomXLabelOn = pc.CustomXLabelOn;
+        plot.CustomYLabel = pc.CustomYLabel; plot.CustomYLabelOn = pc.CustomYLabelOn;
+        holder.OnPlotChanged(holder, EventArgs.Empty);
+        holder.RequestPlotRedraw();
+    }
+
+    /// <summary>
+    /// The levels at every node (<see cref="ChainLevels"/>), and, when the chain's Levels, Blockers and 1-Tone benches
+    /// have been simulated beside it, their simulated points on the same axes, read from the results Simulate wrote.
+    /// </summary>
+    private void RefillLevels(ChainDesign d, ChainBudgetResult r)
+    {
+        var lv = ChainLevels.Evaluate(d, r);
+        var data = ChainLevels.ToDataSet(lv);
+        var notes = new List<string>();
+        if (lv.Count > 0 && FilePath is { } path)
+        {
+            string chain = Path.GetFileNameWithoutExtension(path), results = Path.Combine(Path.GetDirectoryName(path)!, "results");
+            var axis = data["Psig_dBm"].Axes[0];
+            foreach (var (bench, cubes) in new (ChainBench, string[])[]
+                     {
+                         (ChainBench.Levels, ["Psig_sim", "IM3_sim"]), (ChainBench.OneTone, ["Noise_node_sim", "NF_node_sim"]),
+                         (ChainBench.Blockers, [.. Enumerable.Range(1, d.Blockers.Count).Select(k => $"Blk{k}_sim")]),
+                     })
+            {
+                if (cubes.Length == 0) continue;
+                string file = Path.Combine(results, ChainBenches.CellName(chain, bench) + ".npy");
+                if (!File.Exists(file)) { notes.Add($"{ChainBenches.CellName(chain, bench)} not simulated yet"); continue; }
+                var sim = CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(file).Data;
+                foreach (var c in cubes)
+                    if (sim is not null && sim.CubesIn("measurements").TryGetValue(c, out var cube) && cube.RealValues.Length == lv.Count)
+                        // A bench writes −300 where a quantity does not exist yet (the IM3 at the input): none, here.
+                        data.Add(c, new RfCore.Data.DataCube([axis], [.. cube.RealValues.Select(v => v <= -299 ? double.NaN : v)]) { Unit = cube.Unit });
+            }
+        }
+        LevelsNote = lv.Count == 0 ? "" : notes.Count == 0 && FilePath is not null
+            ? "Points: the simulated levels from the chain's Levels, Blockers and 1-Tone benches. Lines: the budget. " +
+              "Add a marker to a trace to select that node's stage."
+            : "Lines: the budget. " + (FilePath is null ? "Save and transfer the chain, then simulate its benches, for the simulated points."
+                                                         : string.Join("; ", notes) + ": simulate them for their points.");
+        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLevels(d, lv);
+        Refill(ref _levels, nameof(LevelsPlot), cfg[0], BudgetSource, data);
+        Refill(ref _levelsDb, nameof(LevelsDbPlot), cfg[1], BudgetSource, data);
+    }
+
+    /// <summary>The canceller's depth in closed form: against the phase error for a few amplitude errors, and against
+    /// the bandwidth for a few delay mismatches.</summary>
+    private void RefillCanceller(ChainDesign d)
+    {
+        var st = d.Stages.FirstOrDefault(x => x.Part == ChainParts.Canceller);
+        HasCanceller = st is not null;
+        if (st is null) return;
+        var c = CancellerSpec.Read(st);
+        var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c);
+        Refill(ref _depthPhase, nameof(DepthPhasePlot), cfg[0], BudgetSource, data);
+        Refill(ref _depthBand, nameof(DepthBandPlot), cfg[1], BudgetSource, data);
+    }
+
+    /// <summary>A marker on a levels trace selects the stage whose output that node is; node 0, the input, selects none.</summary>
+    public void SelectNode(double x)
+    {
+        // A marker keeps its position as a frequency in Hz, scaled by the plot's frequency unit: the node is x in the
+        // plot's own unit, which is the first of these scales that lands on a node.
+        foreach (double scale in new[] { 1.0, 1e9, 1e6, 1e3 })
+        {
+            double v = x / scale;
+            int node = (int)Math.Round(v);
+            if (Math.Abs(v - node) < 0.5 && node >= 0 && node <= Stages.Count)
+            {
+                SelectedStageIndex = node - 1;
+                return;
+            }
+        }
+    }
+
+    private void RefillCascade(ChainBudgetResult r)
+    {
+        var pc = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.CascadeTable(BudgetSource);
+        if (_cascade is null)
+        {
+            _cascade = PlotHost.AddPlot(CircuitRF.Render.DataDisplay.PlotType.Table, CircuitRF.Render.DataDisplay.FreqUnit.GHz, 0, 0, pc.Width, pc.Height);
+            PlotHost.SelectOnly((CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?)null);
+            OnPropertyChanged(nameof(CascadePlot));
+        }
+        var plot = _cascade.PlotVM.Plot;
+        plot.Traces.Clear();
+        var source = new CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source(BudgetSource, ChainBudget.ToDataSet(r));
+        if (r.Totals is not null)
+            foreach (var tc in pc.Traces)
+                if (CircuitRF.Render.DataDisplay.PlotConfigLoader.LoadTrace(tc, pc.PlotType, pc.FreqUnit, source) is { } t)
+                    plot.Traces.Add(t);
+        plot.CustomTitle = pc.CustomTitle;
+        plot.CustomTitleOn = pc.CustomTitleOn;
+        _cascade.OnPlotChanged(_cascade, EventArgs.Empty);
+        _cascade.RequestPlotRedraw();
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    private const string BudgetSource = "budget";
+    [ObservableProperty] private ChainPart _partToAdd = ChainParts.All[0];
+
+    // The system inputs, as typed: a frequency in GHz, a bandwidth in MHz, the rest in their own unit.
+    [ObservableProperty] private string _frequencyGHz = "";
+    [ObservableProperty] private string _bandwidthMHz = "";
+    [ObservableProperty] private string _inputPowerDbm = "";
+    [ObservableProperty] private string _temperatureK = "";
+    [ObservableProperty] private string _requiredSnrDb = "";
+
+    /// <summary>The blockers, as typed: "offset, level" pairs separated by ';' ("150 MHz, -40; 20 MHz, -50").</summary>
+    [ObservableProperty] private string _blockers = "";
+
+    /// <summary>Transfer also writes the modulated-signal demo bench.</summary>
+    [ObservableProperty] private bool _demo;
+
+    [ObservableProperty] private string _summary = "";
+    [ObservableProperty] private string _notes = "";
+    [ObservableProperty] private string _refusals = "";
+    [ObservableProperty] private string? _filePath;
+    [ObservableProperty] private bool _isDirty;
+
+    public bool HasRefusals => Refusals.Length > 0;
+    public bool HasNotes => Notes.Length > 0;
+    public string Title => (IsDirty ? "• " : "") + ToolName + (FilePath is { } p ? " — " + Path.GetFileName(p) : "");
+
+    /// <summary>The last budget computed: what Transfer writes from.</summary>
+    public ChainBudgetResult? Budget { get; private set; }
+
+    partial void OnFilePathChanged(string? value)
+    {
+        OnPropertyChanged(nameof(Title));
+        // The simulated levels live beside the file: a chain that has just been given one may have results to show.
+        if (!_loading) Recompute();
+    }
+    partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Title));
+    partial void OnRefusalsChanged(string value) => OnPropertyChanged(nameof(HasRefusals));
+    partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(HasNotes));
+    partial void OnFrequencyGHzChanged(string value) => Changed();
+    partial void OnBandwidthMHzChanged(string value) => Changed();
+    partial void OnInputPowerDbmChanged(string value) => Changed();
+    partial void OnTemperatureKChanged(string value) => Changed();
+    partial void OnRequiredSnrDbChanged(string value) => Changed();
+    partial void OnBlockersChanged(string value) => Changed();
+    partial void OnDemoChanged(bool value) => Changed();
+
+    private static string FormatBlockers(IEnumerable<ChainBlocker> b) =>
+        string.Join("; ", b.Select(x => $"{N(x.OffsetHz / 1e6)} MHz, {N(x.LevelDbm)}"));
+
+    /// <summary>The blockers typed, or null where an entry is not an offset and a level.</summary>
+    private List<ChainBlocker>? ParseBlockers()
+    {
+        var list = new List<ChainBlocker>();
+        foreach (var item in Blockers.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = item.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 || !ChainValue.TryParse(parts[0], out double off) || !ChainValue.TryParse(parts[1], out double lvl)) return null;
+            // A bare offset is in MHz, as the field says.
+            if (double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _)) off *= 1e6;
+            list.Add(new ChainBlocker(off, lvl));
+        }
+        return list;
+    }
+
+    private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
+
+    public void Load(ChainDesign d)
+    {
+        _loading = true;
+        FrequencyGHz = N(d.FrequencyHz / 1e9);
+        BandwidthMHz = N(d.BandwidthHz / 1e6);
+        InputPowerDbm = N(d.InputPowerDbm);
+        TemperatureK = N(d.TemperatureK);
+        RequiredSnrDb = N(d.RequiredSnrDb);
+        Blockers = FormatBlockers(d.Blockers);
+        Demo = d.Demo;
+        Stages.Clear();
+        foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Changed));
+        _loading = false;
+        Recompute();
+        IsDirty = false;
+    }
+
+    private static double Parse(string text, double scale, double fallback)
+        => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v * scale : fallback;
+
+    public ChainDesign ToDesign() => new()
+    {
+        FrequencyHz = Parse(FrequencyGHz, 1e9, double.NaN),
+        BandwidthHz = Parse(BandwidthMHz, 1e6, double.NaN),
+        InputPowerDbm = Parse(InputPowerDbm, 1, double.NaN),
+        TemperatureK = Parse(TemperatureK, 1, double.NaN),
+        RequiredSnrDb = Parse(RequiredSnrDb, 1, double.NaN),
+        Stages = [.. Stages.Select(s => s.ToStage())],
+        Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
+        Demo = Demo,
+    };
+
+    private void Changed()
+    {
+        if (_loading) return;
+        IsDirty = true;
+        Recompute();
+    }
+
+    private static string D(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) : "—";
+    private static string Dbm(double v) => double.IsFinite(v) ? D(v) + " dBm" : "none (linear)";
+
+    /// <summary>The cascade, again, from what the rows say now.</summary>
+    public void Recompute()
+    {
+        var d = ToDesign();
+        var r = ChainBudget.Evaluate(d);
+        Budget = r;
+        foreach (var (row, s) in Stages.Zip(r.Stages))
+            row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
+        Diagram = ChainBenches.Diagram(d, r);
+        Blocks(d, r);
+        RefillCascade(r);
+        RefillLevels(d, r);
+        RefillCanceller(d);
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+        Refusals = string.Join("\n", r.Refusals);
+        Notes = string.Join("\n", r.Notes);
+        Summary = r.Totals is not { } t ? "" :
+            $"Gain {D(t.GainDb)} dB    NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K)    IIP3 {D(t.Iip3Dbm)} dBm    OIP3 {D(t.Oip3Dbm)} dBm    " +
+            $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm\n" +
+            $"Thermal floor {D(t.ThermalFloorDbm)} dBm    Output noise {D(t.NoiseOutDbm)} dBm    MDS {D(t.MdsDbm)} dBm    " +
+            $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB" +
+            (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
+            (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "");
+    }
+
+    /// <summary>
+    /// The block view, idealised: one block per stage with its System block's symbol, its own numbers and the cascade
+    /// at its output. An array is drawn compactly — the branch's stages once, each marked "× N", into one combiner block
+    /// — and a combiner as its variant: Direct one N:1 symbol, a tree its levels of 2:1 (a deep one as "× levels"), an
+    /// amplifier after each when active.
+    /// </summary>
+    private void Blocks(ChainDesign d, ChainBudgetResult r)
+    {
+        int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
+        int n = cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1;
+        for (int i = 0; i < Stages.Count && i < d.Stages.Count; i++)
+        {
+            var row = Stages[i];
+            var st = d.Stages[i];
+            row.TimesN = i < cmb ? $"× {n}" : "";
+            row.Glyphs = Glyphs(st);
+            row.Extra = st.Part switch
+            {
+                ChainParts.Mixer => $"LO {ChainValue.Or(st.Get("Flo"), 0) / 1e6:0.###} MHz",
+                ChainParts.PhaseShifter => $"φ {st.Get("Phase")}°",
+                ChainParts.Combiner => ChainParts.ReadCombiner(st).Describe()
+                                       + (ChainValue.Or(st.Get("Steer"), 0) != 0 ? $", steer {st.Get("Steer")}°" : ""),
+                ChainParts.Splitter => $"1:{st.Get("N")}",
+                ChainParts.Canceller => CancellerSpec.Read(st) is var cs
+                    ? $"depth {cs.DepthDb:0.#} dB, residual {cs.ResidualDbm:0.#} dBm" : "",
+                _ => "",
+            };
+            if (i < r.Stages.Count)
+            {
+                var s = r.Stages[i];
+                row.KeyLine = $"G {D(s.Stage.GainDb)}  NF {D(s.Stage.NfDb)}\n" +
+                              (double.IsFinite(s.Stage.Iip3Dbm) ? $"IIP3 {D(s.Stage.Iip3Dbm)}  P1 {D(s.Stage.Ip1dbDbm)}" : "linear");
+                row.CascadeLine = $"Σ G {D(s.GainDb)}  NF {D(s.NfDb)}\nΣ IIP3 {D(s.Iip3Dbm)}  SNR {D(s.SnrDb)}";
+            }
+            else row.KeyLine = row.CascadeLine = "";
+        }
+    }
+
+    private static IReadOnlyList<ChainBlockGlyph> Glyphs(ChainStage st)
+    {
+        if (st.Part == ChainParts.Combiner)
+        {
+            var c = ChainParts.ReadCombiner(st);
+            var g = new List<ChainBlockGlyph>();
+            void Level(string caption)
+            {
+                g.Add(new ChainBlockGlyph(SymbolKind.Combiner, caption));
+                if (c.Active) g.Add(new ChainBlockGlyph(SymbolKind.Amp, ""));
+            }
+            if (!c.Tree) Level($"{c.N}:1");
+            else if (c.Levels.Count <= 3) foreach (var l in c.Levels) Level($"{l.Parts} × 2:1");
+            else Level($"2:1, × {c.Levels.Count} levels");
+            return g;
+        }
+        var kind = st.Part switch
+        {
+            ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
+            ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
+            ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
+            ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner,
+            ChainParts.Canceller => SymbolKind.Coupler, _ => SymbolKind.Amp,
+        };
+        return [new ChainBlockGlyph(kind, st.Part == ChainParts.Splitter ? $"1:{st.Get("N")}" : "")];
+    }
+
+    // ── the stage list ───────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void AddStage()
+    {
+        var part = PartToAdd;
+        string stem = part.Token switch
+        {
+            ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
+            ChainParts.Switch => "SW", ChainParts.Circulator => "ISO", ChainParts.Coupler => "CPL",
+            ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL",
+            ChainParts.Canceller => "CANC", _ => "CMB",
+        };
+        int n = 1;
+        while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;
+        var row = new ChainStageViewModel(new ChainStage { Name = $"{stem}{n}", Part = part.Token }, Changed);
+        int at = SelectedStage is { } sel ? Stages.IndexOf(sel) + 1 : Stages.Count;
+        Stages.Insert(at, row);
+        SelectedStage = row;
+        Changed();
+    }
+
+    [RelayCommand]
+    private void RemoveStage()
+    {
+        if (SelectedStage is not { } sel) return;
+        int at = Stages.IndexOf(sel);
+        Stages.Remove(sel);
+        SelectedStage = Stages.Count == 0 ? null : Stages[Math.Min(at, Stages.Count - 1)];
+        Changed();
+    }
+
+    [RelayCommand]
+    private void MoveUp() => Move(-1);
+
+    [RelayCommand]
+    private void MoveDown() => Move(+1);
+
+    private void Move(int by)
+    {
+        if (SelectedStage is not { } sel) return;
+        int at = Stages.IndexOf(sel), to = at + by;
+        if (to < 0 || to >= Stages.Count) return;
+        Stages.Move(at, to);
+        SelectedStage = sel;
+        Changed();
+    }
+
+    // ── files ────────────────────────────────────────────────────────────────
+
+    /// <summary>Asks where to save; null when the user cancels. Set by the window.</summary>
+    public Func<string?, Task<string?>>? PickSavePathAsync { get; set; }
+
+    /// <summary>Asks for a <c>.cchain</c> to open; null when the user cancels. Set by the window.</summary>
+    public Func<Task<string?>>? PickOpenPathAsync { get; set; }
+
+    /// <summary>Where errors and notes go. Set by the window.</summary>
+    public Action<string>? Report { get; set; }
+
+    public void LoadFile(string path)
+    {
+        Load(ChainDesignIo.LoadFromFile(path));
+        FilePath = Path.GetFullPath(path);
+    }
+
+    [RelayCommand]
+    private void New()
+    {
+        Load(Example());
+        FilePath = null;
+    }
+
+    [RelayCommand]
+    private async Task Open()
+    {
+        if (PickOpenPathAsync is null || await PickOpenPathAsync() is not { } path) return;
+        try { LoadFile(path); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        { Report?.Invoke($"{Path.GetFileName(path)} did not open: {ex.Message}"); }
+    }
+
+    [RelayCommand]
+    public async Task<bool> Save() => FilePath is { } p ? Write(p) : await SaveAs();
+
+    [RelayCommand]
+    private async Task<bool> SaveAs()
+    {
+        if (PickSavePathAsync is null || await PickSavePathAsync(FilePath) is not { } path) return false;
+        return Write(path);
+    }
+
+    private bool Write(string path)
+    {
+        try
+        {
+            ChainDesignIo.SaveToFile(path, ToDesign());
+            FilePath = Path.GetFullPath(path);
+            IsDirty = false;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Report?.Invoke($"{Path.GetFileName(path)} was not saved: {ex.Message}");
+            return false;
+        }
+    }
+}

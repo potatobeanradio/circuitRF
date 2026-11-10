@@ -356,6 +356,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
             IsCommon: false),
+        [SymbolKind.Combiner]      = new("Combiner", "CMB",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Combiner", "N-way combiner", "cmb", "splitter", "divider", "power divider",
+                          "Wilkinson", "N-way", "corporate feed", "array", "beamformer"],
+            IsCommon: false),
         // Ground is self-identifying via its symbol glyph; suppress both labels by default.
         [SymbolKind.Ground]        = new("GND",   "GND",
             DefaultShowTypeLabel: false, DefaultShowInstanceName: false,
@@ -955,6 +960,8 @@ public static class ComponentTypeRegistry
         SymbolKind.VerilogA                                  => "Pins",
         // 1 common port plus `Throws` throws. See the remarks above for why both tiles answer.
         SymbolKind.Switch or SymbolKind.SwitchD              => "Throws",
+        // N paths and the common port: N + 1 pins, generated from N as the boxes' are from NumPorts.
+        SymbolKind.Combiner                                  => "N",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
@@ -1004,6 +1011,10 @@ public static class ComponentTypeRegistry
         SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
+
+        SymbolKind.Combiner =>
+            "The common port S comes first, then the paths 1 to N in order. The paths differ only by "
+          + "their own IL[k] and Phase[k]; S is the port they combine into, or split from.",
 
         SymbolKind.MBend =>
             "The two terminals are interchangeable. One width and one angle describe the whole bend, "
@@ -1179,6 +1190,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Atten         => "Atten",
         SymbolKind.Delay         => "Delay",
         SymbolKind.Duplexer      => "Duplexer",
+        SymbolKind.Combiner      => "Combiner",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -1405,6 +1417,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.TestPad or SymbolKind.GsgPad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
+        or SymbolKind.Combiner
         // Noisy by their own NF (brief NZ-3) or noise sources (brief NZ-4).
         or SymbolKind.Amp or SymbolKind.Mixer or SymbolKind.MixerD
         or SymbolKind.Diode or SymbolKind.BjtNpn or SymbolKind.BjtPnp
@@ -2084,6 +2097,18 @@ public static class ComponentTypeRegistry
         (SymbolKind.Atten, "RL") =>
             "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
           + "entry is stamped at all.",
+        (SymbolKind.Combiner, "N") =>
+            "Number of paths into the common port S. The symbol draws one pin per path, plus S.",
+        (SymbolKind.Combiner, "IL") =>
+            "Every path's loss beyond the ideal split of 10*log10(N), in dB. A path with its own IL[k] row "
+          + "takes that instead.",
+        (SymbolKind.Combiner, "Z0") =>
+            "Reference impedance of every port.",
+        (SymbolKind.Combiner, _) when parameterName.StartsWith("IL[", StringComparison.Ordinal) =>
+            "This path's loss beyond the ideal split, in dB, in place of IL.",
+        (SymbolKind.Combiner, _) when parameterName.StartsWith("Phase[", StringComparison.Ordinal) =>
+            "This path's transmission phase to S, in degrees: what a steered element, or an arriving "
+          + "wave, puts on it. Absent: 0.",
 
         (SymbolKind.CLine, "Ze") =>
             "Even-mode characteristic impedance, in ohms: what each line looks like when both are "
@@ -2500,6 +2525,13 @@ public static class ComponentTypeRegistry
             case SymbolKind.Delay:
                 return [new("T",     "1",    "ns",  true,  UnitDimension.Time),
                         new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance)];
+            // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
+            // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
+            // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
+            case SymbolKind.Combiner:
+                return [new("N",  "2",  "",   true,  UnitDimension.None),
+                        new("IL", "0",  "dB", true,  UnitDimension.None),
+                        new("Z0", "50", "Ω",  false, UnitDimension.Resistance)];
             case SymbolKind.Atten:
                 return [new("Loss",  "10",   "dB",  true,  UnitDimension.None),
                         new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance),
@@ -3738,6 +3770,8 @@ public static class ComponentTypeRegistry
             case "DL":     kind = SymbolKind.Delay;        return true;
             case "DUPLEXER":
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
+            case "COMBINER":
+            case "CMB":    kind = SymbolKind.Combiner;     return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;

@@ -39,6 +39,7 @@ public static class NetExtractor
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
         SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
+        SymbolKind.Combiner,
     ];
 
     /// <param name="TestBench">The emitted Design model.</param>

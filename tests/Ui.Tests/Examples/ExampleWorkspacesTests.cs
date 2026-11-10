@@ -512,7 +512,7 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             {
                 string ext = Path.GetExtension(doc);
                 if (ext is not (".csch" or ".cem" or ".clay" or ".cws" or ".ccell"
-                                      or ".crail" or ".crlib" or ".ctech" or ".csmith" or ".c3d")) continue;
+                                      or ".crail" or ".crlib" or ".ctech" or ".csmith" or ".c3d" or ".cchain")) continue;
 
                 string text = File.ReadAllText(doc);
                 Assert.DoesNotContain("/Users/", text, StringComparison.Ordinal);

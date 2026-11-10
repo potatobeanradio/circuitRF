@@ -975,6 +975,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["run/center"]        = ["path"],
             ["run/doe"]           = ["path"],
             ["run/sensitivity"]   = ["path"],
+            ["run/chain"]         = ["path"],          // the RF chain budget: a .cchain
             ["check/"]            = ["path"],
             ["explain/"]          = ["path"],
             ["create/workspace"]  = ["path"],
