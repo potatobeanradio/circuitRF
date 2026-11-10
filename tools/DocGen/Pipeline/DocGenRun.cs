@@ -231,11 +231,13 @@ public sealed class DocGenRun
         var figures  = FigureCatalog.Catalog.ToDictionary(r => r.Id, StringComparer.Ordinal);
         var toolbars = ToolbarCatalog.Catalog.Select(r => "toolbar-" + r.Id).ToHashSet(StringComparer.Ordinal);
 
-        var unknown = OnlyFigures.Where(id => !figures.ContainsKey(id) && !toolbars.Contains(id)).ToList();
+        var unknown = OnlyFigures.Where(id => !figures.ContainsKey(id) && !toolbars.Contains(id)
+                                            && !SymbolStems.Contains(id)).ToList();
         if (unknown.Count > 0)
             throw new InvalidOperationException(
                 $"--figure: no figure named {string.Join(", ", unknown.Select(u => "'" + u + "'"))}. "
-              + $"Figures: {string.Join(", ", figures.Keys)}. Toolbars: {string.Join(", ", toolbars)}.");
+              + $"Figures: {string.Join(", ", figures.Keys)}. Toolbars: {string.Join(", ", toolbars)}. "
+              + $"Symbols: {string.Join(", ", SymbolStems.Order(StringComparer.Ordinal))}.");
 
         var staticAsked = OnlyFigures.Where(id => figures.TryGetValue(id, out var r) && r.Static && !_rebuildStatic).ToList();
         if (staticAsked.Count > 0)
@@ -245,6 +247,12 @@ public sealed class DocGenRun
     }
 
     // ── Which figures to capture ──────────────────────────────────────────────
+
+    /// <summary>The component symbols <c>--figure</c> accepts by their file stem (<c>atten</c>,
+    /// <c>vccs</c>) — the stem a <c>{{symbol: …}}</c> placeholder names, so the id the missing-figure
+    /// message prints is one this flag takes. A UI figure or toolbar of the same name wins.</summary>
+    private static readonly HashSet<string> SymbolStems =
+        SymbolArtworkGenerator.Catalog.Select(r => r.File).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>What one run recaptures: everything, or these ids of each kind.</summary>
     private sealed class FigureSelection
@@ -282,6 +290,8 @@ public sealed class DocGenRun
         {
             if (id.StartsWith("toolbar-", StringComparison.Ordinal) && !FigureCatalog.Catalog.Any(r => r.Id == id))
                 sel.Toolbars.Add(id["toolbar-".Length..]);
+            else if (SymbolStems.Contains(id) && !FigureCatalog.Catalog.Any(r => r.Id == id))
+                sel.Symbols.Add(id);
             else sel.Ui.Add(id);
         }
         if (Capture == FigureMode.None) return sel;

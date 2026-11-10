@@ -1,14 +1,16 @@
 using System.Numerics;
 using CircuitRF.Core.Elaboration;
-using CircuitRF.Core.Expressions;
 
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
-/// Ideal voltage-controlled voltage source (the "E element" of the SPICE family), linear and
-/// frequency-independent.
+/// Ideal voltage-controlled voltage source (the "E element" of the SPICE family), linear, with an
+/// optional delay.
 ///
-///   V(out+) − V(out−) = E · (V(ctrl+) − V(ctrl−))
+///   V(out+) − V(out−) = E · e^(−jωT) · (V(ctrl+) − V(ctrl−))
+///
+/// <para><b><c>T</c> is a delay in seconds (default 0)</b>, exactly as on the <see cref="VccsModel"/> —
+/// <see cref="ControlledSourceTransfer"/> is the one implementation.</para>
 ///
 /// <para><b>Four terminals, two ports, in the repository's own ± pair order</b> — the same 2N-net
 /// convention <see cref="VccsModel"/>, <c>Z_Port</c> and the SDD use, so <c>PortCount</c> is 2 and
@@ -34,10 +36,10 @@ namespace CircuitRF.Core.Devices;
 /// <para>There are no entries in the CONTROL rows — a control row entry would draw current through
 /// the sense pair, which is the bug this comment exists to prevent.</para>
 ///
-/// <para><b>Frequency-independent, unlike <see cref="VdcModel"/>.</b> A Vdc is a bias and becomes an
-/// ideal short away from DC; a VCVS is a TRANSFER and holds at every frequency, so nothing here
-/// looks at ω. A gain that shorted itself above DC would give an S-parameter run a silently
-/// different circuit from the one the DC solve saw.</para>
+/// <para><b>A transfer at every frequency, unlike <see cref="VdcModel"/>.</b> A Vdc is a bias and
+/// becomes an ideal short away from DC; a VCVS is a TRANSFER and holds at every frequency — ω enters
+/// only through the delay phase, which is 1 at DC. A gain that shorted itself above DC would give an
+/// S-parameter run a silently different circuit from the one the DC solve saw.</para>
 /// </summary>
 public sealed class VcvsModel : ComponentModel
 {
@@ -92,11 +94,7 @@ public sealed class VcvsModel : ComponentModel
 
         int op = c.Nodes[0], om = c.Nodes[1], cp = c.Nodes[2], cm = c.Nodes[3];
 
-        double gain = 1.0;
-        if (c.Parameters.TryGetValue("E", out var e))
-            gain = e.Kind == ValueKind.Real ? e.AsReal() : e.AsComplex().Real;
-        else if (c.Parameters.TryGetValue("Gain", out var g))
-            gain = g.Kind == ValueKind.Real ? g.AsReal() : g.AsComplex().Real;
+        var gain = ControlledSourceTransfer.At(c, ControlledSourceTransfer.Gain(c, 1.0, "E", "Gain"), omega);
 
         int br = mna.AddBranch();
         LastBranchIndex = br;
@@ -104,8 +102,8 @@ public sealed class VcvsModel : ComponentModel
         mna.AddBranchCurrent(br, op, om);
         mna.AddConstraint(br, op, new Complex(+1, 0));
         mna.AddConstraint(br, om, new Complex(-1, 0));
-        mna.AddConstraint(br, cp, new Complex(-gain, 0));
-        mna.AddConstraint(br, cm, new Complex(+gain, 0));
+        mna.AddConstraint(br, cp, -gain);
+        mna.AddConstraint(br, cm, +gain);
         mna.AddSourceValue(br, Complex.Zero);
     }
 }

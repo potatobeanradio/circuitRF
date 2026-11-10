@@ -143,6 +143,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _hybrid90      = BuildCoupler(SymbolKind.Hybrid90);
     private static readonly Symbol _hybrid180     = BuildCoupler(SymbolKind.Hybrid180);
     private static readonly Symbol _atten         = BuildAtten();
+    private static readonly Symbol _delay        = BuildDelay();
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
@@ -273,6 +274,7 @@ public static class BuiltInSymbols
             case SymbolKind.Hybrid90:   return _hybrid90;
             case SymbolKind.Hybrid180:  return _hybrid180;
             case SymbolKind.Atten:      return _atten;
+            case SymbolKind.Delay:      return _delay;
             case SymbolKind.Duplexer:   return _duplexer;
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
             // Match keeps, so a caller that has no instance to ask (the palette tile, the ghost
@@ -2163,6 +2165,20 @@ public static class BuiltInSymbols
         L(-300, 0, -120, 0),
         L( 120, 0,  300, 0),
     ], SymbolKind.Atten);
+
+    // ── Delay — a square carrying τ ───────────────────────────────────────────
+    // Pins: (-300,0) · (+300,0), interchangeable and therefore unlabelled, as the attenuator's are.
+    //
+    // A square block with the Greek tau in it — the letter a delay is written with — at the size
+    // the hybrids' phase label is NOT: this is the whole glyph, not a qualifier on one, so it fills
+    // the body. The delay's value shows as the parameter label.
+
+    private static Symbol BuildDelay() => Sym([
+        RRect(0, 0, 200, 200, 12),                    // body, x in [-100,100]  y in [-100,100]
+        Txt("τ", 0, 0, fontSize: 120),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+    ], SymbolKind.Delay);
 
     // ── Duplexer — a junction that splits into two filters ────────────────────
     // Pins: ANT (-300,0) · TX (+300,-100) · RX (+300,+100).

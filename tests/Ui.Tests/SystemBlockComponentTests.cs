@@ -19,12 +19,13 @@ namespace CircuitRF.Ui.Tests;
 /// </summary>
 public class SystemBlockComponentTests
 {
-    /// <summary>The eleven tiles this brief adds. Every mechanical gate below runs over all of them.</summary>
+    /// <summary>The eleven tiles this brief adds, and the Delay that issue 55 added after it. Every
+    /// mechanical gate below runs over all of them.</summary>
     public static readonly SymbolKind[] SystemBlocks =
     [
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
-        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer,
+        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
     ];
 
     public static TheoryData<SymbolKind> EachBlock()
@@ -399,6 +400,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Filter,     "Filter")]
     [InlineData(SymbolKind.Atten,      "Atten")]
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
+    [InlineData(SymbolKind.Delay,      "Delay")]
     public void EachTileNamesItsEngineComponent(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.EngineReference(kind));
 
@@ -429,6 +431,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Filter,     "Filter")]
     [InlineData(SymbolKind.Atten,      "Attenuator")]
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
+    [InlineData(SymbolKind.Delay,      "Delay")]
     public void EachTileIsNamedForWhatItIs_NotForItsAbbreviation(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.DisplayName(kind));
 
@@ -457,6 +460,8 @@ public class SystemBlockComponentTests
     [InlineData("Filter",     SymbolKind.Filter)]
     [InlineData("attenuator", SymbolKind.Atten)]
     [InlineData("Duplexer",   SymbolKind.Duplexer)]
+    [InlineData("dl",         SymbolKind.Delay)]
+    [InlineData("Delay",      SymbolKind.Delay)]
     public void TryParseCode_ResolvesEveryShortCode(string code, SymbolKind expected)
     {
         Assert.True(ComponentTypeRegistry.TryParseCode(code, out var kind, out _));

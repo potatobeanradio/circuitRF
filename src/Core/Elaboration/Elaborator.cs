@@ -1650,7 +1650,8 @@ public sealed class Elaborator
         if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase))
             return (6, "rf+, rf−, lo+, lo−, if+, if−");
 
-        if (inst.Reference.Equals("Atten", StringComparison.OrdinalIgnoreCase))
+        if (inst.Reference.Equals("Atten", StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals("Delay", StringComparison.OrdinalIgnoreCase))
             return (4, "1+, 1−, 2+, 2−");
 
         if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))

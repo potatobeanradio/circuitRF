@@ -197,6 +197,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Filter,          "filter",            2),
         (SymbolKind.Atten,           "atten",             2),
         (SymbolKind.Duplexer,        "duplexer",          3),
+        (SymbolKind.Delay,           "delay",             2),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

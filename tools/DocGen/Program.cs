@@ -47,8 +47,9 @@ public static class Program
                               _figure-stamps.txt records each page's hash), plus any cited figure
                               missing on disk. A figure only unchanged pages cite is left alone.
           --figure <id>[,<id>] recapture these too, by name, light and dark. An id is a FigureCatalog
-                              id (layout-editor) or a toolbar as toolbar-<id> (toolbar-layout);
-                              repeatable. An unknown id is an error that lists the real ones.
+                              id (layout-editor), a toolbar as toolbar-<id> (toolbar-layout) or a
+                              component symbol by its file stem (atten); repeatable. An unknown id
+                              is an error that lists the real ones.
           --all-figures       recapture everything. The only mode that catches a UI change moving a
                               figure whose page did not change, so check-docs-current.sh uses it.
           --mark-figures-current  capture nothing; record every page as captured, for after a full

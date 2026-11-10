@@ -313,6 +313,9 @@ public static class SymbolPortDefs
             // Attenuator: two interchangeable pins.
             case SymbolKind.Atten:
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
+            // Delay: two interchangeable pins, at the attenuator's spacing.
+            case SymbolKind.Delay:
+                return [("1", -300f, 0f), ("2", 300f, 0f)];
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];

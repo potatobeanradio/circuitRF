@@ -1,14 +1,16 @@
 using System.Numerics;
 using CircuitRF.Core.Elaboration;
-using CircuitRF.Core.Expressions;
 
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
-/// Ideal voltage-controlled current source (the "G element" of the SPICE family), linear and
-/// frequency-independent.
+/// Ideal voltage-controlled current source (the "G element" of the SPICE family), linear, with an
+/// optional delay.
 ///
-///   I = G · (V(c+) − V(c−))
+///   I = G · e^(−jωT) · (V(c+) − V(c−))
+///
+/// <para><b><c>T</c> is a delay in seconds (default 0)</b> and the only source of phase; <c>G</c> is
+/// real. <see cref="ControlledSourceTransfer"/> holds the arithmetic both controlled sources share.</para>
 ///
 /// <para><b>Four terminals, two ports, in the repository's own ± pair order</b> — the same 2N-net
 /// convention <c>Z_Port</c> and <c>SDD</c> use, so <c>PortCount</c> is 2 and
@@ -73,14 +75,12 @@ public sealed class VccsModel : ComponentModel
                 $"VCCS '{c.InstancePath}': expected 4 nets (out+, out−, ctrl+, ctrl−); " +
                 $"got {c.Nodes.Length}.");
 
-        double g = c.Parameters.TryGetValue("G", out var gv) && gv.Kind == ValueKind.Real
-                   ? gv.AsReal() : 0.0;
-        if (g == 0.0) return;   // G=0 is an open circuit, not a stamp of zeros
+        var gc = ControlledSourceTransfer.At(c, ControlledSourceTransfer.Gain(c, 0.0, "G"), omega);
+        if (gc == Complex.Zero) return;   // G=0 is an open circuit, not a stamp of zeros
 
         int op = c.Nodes[0], om = c.Nodes[1];   // output +, −
         int cp = c.Nodes[2], cm = c.Nodes[3];   // control +, −
 
-        var gc = new Complex(g, 0);
         mna.AddBlockAdmittance(op, cp, +gc);   // current flows IN at out+ …
         mna.AddBlockAdmittance(op, cm, -gc);
         mna.AddBlockAdmittance(om, cp, -gc);   // … and OUT at out−: down through the source.

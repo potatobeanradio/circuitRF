@@ -980,6 +980,7 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["BalunModel"]            = Activity.Passive,
         ["FilterModel"]           = Activity.Passive,
         ["DuplexerModel"]         = Activity.Passive,
+        ["DelayModel"]            = Activity.Passive,   // |e^(−jωT)| = 1 and matched
 
         // Two-terminal nonlinearities: a linearised C(V) or I(V) is a passive element at any bias.
         ["DiodeModel"]            = Activity.Passive,

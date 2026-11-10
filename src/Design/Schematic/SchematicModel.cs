@@ -670,6 +670,12 @@ public enum SymbolKind
     /// across its body. Ports 1…N/2 one side, the rest the other; N is even. Engine token <c>Deembed</c>.
     /// </summary>
     Deembed,
+
+    /// <summary>Ideal delay (engine "Delay"), a system block. Two pins, (−300,0) and (300,0),
+    /// interchangeable like the attenuator's: matched, reciprocal and lossless, with
+    /// S21 = S12 = e^(−jωT). A square body carrying τ. Appended last because it is newest — the
+    /// enum persists by NAME, so position carries no meaning in a file.</summary>
+    Delay,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -67,19 +67,22 @@ public class CurrentSourceComponentTests
         Assert.Equal("mA", ps.First(p => p.Name == "Idc").Unit);
         Assert.Equal(1e-3, CircuitRF.Core.Expressions.Units.Scale("mA"));
 
-        var g = ComponentTypeRegistry.DefaultParameters(SymbolKind.Vccs, 0).Single();
+        var g = ComponentTypeRegistry.DefaultParameters(SymbolKind.Vccs, 0).Single(p => p.Name == "G");
         Assert.Equal("mS", g.Unit);
         Assert.Equal(1e-3, CircuitRF.Core.Expressions.Units.Scale("mS"));
     }
 
     [Fact]
-    public void Vccs_DefaultParameters_AreTheSingleTransconductance()
+    public void Vccs_DefaultParameters_AreTheTransconductance_AndAHiddenZeroDelay()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.Vccs, 0);
-        var g  = Assert.Single(ps);
-        Assert.Equal("G", g.Name);
-        Assert.Equal(UnitDimension.Conductance, g.Dimension);
-        Assert.True(g.ShowOnSchematic);
+        Assert.Equal(["G", "T"], ps.Select(p => p.Name));
+        Assert.Equal(UnitDimension.Conductance, ps[0].Dimension);
+        Assert.True(ps[0].ShowOnSchematic);
+        // Issue 55: the delay is there to set, hidden and zero until it is.
+        Assert.Equal(UnitDimension.Time, ps[1].Dimension);
+        Assert.Equal("0", ps[1].Expression);
+        Assert.False(ps[1].ShowOnSchematic);
     }
 
     // ── Pin order is the engine contract ──────────────────────────────────────

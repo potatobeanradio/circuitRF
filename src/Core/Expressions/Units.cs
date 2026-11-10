@@ -101,6 +101,16 @@ public static class Units
         // Angle
         { "deg", Math.PI / 180.0 },
         { "rad", 1.0   },
+        // Time — a controlled source's delay T and the Delay block's T (issue 55). Lower-case "s",
+        // so it never meets the siemens ("S", "mS", "nS" …): the table is ordinal, and "ms" is a
+        // millisecond while "mS" is a millisiemens. Before these existed, "1 us" on an instance line
+        // was refused as an unknown unit, and so was the IGBT tile's own Tau default.
+        { "s",   1.0   },
+        { "ms",  1e-3  },
+        { "us",  1e-6  },
+        { "ns",  1e-9  },
+        { "ps",  1e-12 },
+        { "fs",  1e-15 },
         // Dimensionless / identity
         { "Ohms", 1.0  },  // alternate spelling seen in netlists
         { "ohms", 1.0  },  // lowercase variant
@@ -208,6 +218,8 @@ public static class Units
         // Angle. "deg" was the one scaled unit missing here, so BaseUnit("deg") returned "deg" while its scale is
         // π/180: a value converted to SI (radians) was labelled degrees (brief-yield-15 R-ya15-5).
         { "deg", "rad" },
+        // Time.
+        { "ms", "s" }, { "us", "s" }, { "ns", "s" }, { "ps", "s" }, { "fs", "s" },
     };
 
     /// <summary>

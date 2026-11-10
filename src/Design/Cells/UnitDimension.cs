@@ -23,4 +23,7 @@ public enum UnitDimension
     Power,
     Length,
     Angle,
+    /// <summary>Time, in seconds — a controlled source's delay <c>T</c> and the Delay block's.
+    /// Appended LAST: <c>.ccell</c> persists this enum, so no existing member's value moves.</summary>
+    Time,
 }

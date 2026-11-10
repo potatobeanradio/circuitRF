@@ -55,6 +55,23 @@ public class SystemBlockElaborationTests
         Assert.Equal(System.Numerics.Complex.Zero, s[0, 0]);   // RL = 200 means MATCHED
     }
 
+    // Issue 55. The tile's "1 ns" is the proof that the time units reach the engine through the
+    // schematic path (µs/ns glyphs, UnitNormalizer, the extractor's unit lift) and not only through
+    // a hand-written netlist.
+    [Fact]
+    public void AFreshlyPlacedDelayIsOneNanosecond_MatchedAtBothPorts()
+    {
+        var ec = Elaborate(SymbolKind.Delay);
+        var m  = Assert.IsType<DelayModel>(ec.Model);
+
+        Assert.Equal(4, ec.Nodes.Length);
+        Assert.Equal(1.0, m.DelaySeconds * 1e9, 12);
+        var s = m.SAt(2 * System.Math.PI * 0.25e9);   // a quarter turn at 250 MHz
+        Assert.Equal(System.Numerics.Complex.Zero, s[0, 0]);
+        Assert.Equal(0.0, s[1, 0].Real, 12);
+        Assert.Equal(-1.0, s[1, 0].Imaginary, 12);
+    }
+
     [Fact]
     public void AFreshlyPlacedSpstSwitchIsClosed_AndItsGlyphAgrees()
     {

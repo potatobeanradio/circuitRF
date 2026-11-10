@@ -38,7 +38,7 @@ public static class NetExtractor
         // a system block diagram draws a signal path, and its return is the ground plane.
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
-        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer,
+        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
     ];
 
     /// <param name="TestBench">The emitted Design model.</param>

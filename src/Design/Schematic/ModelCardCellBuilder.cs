@@ -390,6 +390,7 @@ public static class ModelCardCellBuilder
         UnitDimension.Power       => "W",
         UnitDimension.Length      => "metre",
         UnitDimension.Angle       => "rad",
+        UnitDimension.Time        => "s",
         _                         => "",
     };
 

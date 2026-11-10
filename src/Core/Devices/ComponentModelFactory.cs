@@ -111,6 +111,9 @@ public static class ComponentModelFactory
             // The frequency-dependent pair (brief-sys-6). "Duplexer" is two "Filter" responses
             // sharing a node, so the two read the same parameter set twice over with a Tx/Rx prefix.
             "Filter", "Duplexer",
+            // The ideal delay (issue 55): a matched, reciprocal two-port whose through path is
+            // e^(−jωT). The controlled sources' T is the same delay on a different element.
+            "Delay",
             // The op-amp: Pins (3 or 5) sets how many nets the line binds, so it is known at
             // construction rather than read at stamp time.
             "OpAmp",
@@ -272,6 +275,8 @@ public static class ComponentModelFactory
             return CreateMixerModel(parameters);
         if (typeName.Equals("Atten", StringComparison.OrdinalIgnoreCase))
             return CreateAttenuatorModel(parameters);
+        if (typeName.Equals("Delay", StringComparison.OrdinalIgnoreCase))
+            return CreateDelayModel(parameters);
         if (typeName.Equals("Switch", StringComparison.OrdinalIgnoreCase))
             return CreateSwitchModel(parameters);
         if (typeName.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
@@ -1908,6 +1913,11 @@ public static class ComponentModelFactory
         ("Amp",        n => Is(n, "Zin", "Zout", "Gopt"),      "Zin, Zout, Gopt"),
         ("Filter",     n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
         ("Duplexer",   n => Is(n, "Zant", "TxZ", "RxZ"),       "Zant, TxZ, RxZ"),
+        ("Delay",      n => Is(n, "Z0"),                       "Z0"),
+        // The controlled sources' phase comes from their delay T alone (issue 55); a complex gain
+        // used to be read as zero by the VCCS and as its real part by the VCVS, both silently.
+        ("VCCS",       _ => false,                             ""),
+        ("VCVS",       _ => false,                             ""),
         // The three terminations state a complex impedance PER HARMONIC. Their scalar `Z`/`Z0` is
         // the real reference the per-harmonic reflection coefficients G[k] convert against, which is
         // why it is not on the list and why the message points at Z[k].
@@ -1991,6 +2001,13 @@ public static class ComponentModelFactory
             returnLossDb: P("RL",  200.0),
             pimDbm:       P("PIM",  -200.0),
             pimPcDbm:     P("PIMPc",  43.0));
+    }
+
+    /// <summary>The ideal delay: <c>T</c> seconds of matched, reciprocal through path.</summary>
+    private static DelayModel CreateDelayModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double t = parameters.TryGetValue("T", out var v) && v.Kind == ValueKind.Real ? v.AsReal() : 0.0;
+        return new DelayModel(t, ImpedanceParam(parameters, "Z0", 50.0));
     }
 
     /// <summary>

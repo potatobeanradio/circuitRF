@@ -399,14 +399,19 @@ in an S-parameter run it is the passive impedance `Z`.
 {{symbol: vccs}}
 
 An ideal transconductance: the current it delivers is `G` times the voltage across a separate,
-purely-sensing control pair.
+purely-sensing control pair, optionally delayed by `T`.
 
-`I = G · (V(ctrl+) − V(ctrl−))`
+`I = G · e^(−jωT) · (V(ctrl+) − V(ctrl−))`
 
 Four terminals in two pairs — the **output** pair (`out+` top, `out−` bottom) carries the current, and
 the **control** pair (`ctrl+`, `ctrl−`, on the left) senses the controlling voltage. The control pair
 draws **no current at all**, which is what makes the source ideal and what makes the device
 unilateral: nothing travels backwards through it. `G` is the transconductance, in siemens.
+
+**`T` is a time delay** (hidden until you set it; 0 is no delay). It multiplies the gain by
+`e^(−jωT)`: unit magnitude, and a phase lag that grows in proportion to frequency, so the source has a
+constant group delay of `T`. A positive `T` lags. DC is unaffected, since `e^0 = 1`. `T` is the
+only source of phase: `G` itself is a real number.
 
 **The arrow says which way the current goes**, and it points **down**: a positive `G` and a positive
 control voltage draw current in at `out+` and out at `out−`. That is the SPICE `G` element's own
@@ -424,10 +429,11 @@ own arrow.
 <p>The VCCS is a <b>linear</b> device, so it is stamped into the matrix at every frequency the
 simulator solves at: DC, S-parameters, and <b>every retained harmonic of a harmonic-balance run</b>,
 plus everything built on those (parametric sweeps, loadpull, loadpull-pursuit). In HB it lives in the
-linear partition alongside the resistors and lines, so <code>G</code> is the same number at every
-harmonic — an ideal transconductance has no frequency dependence, no compression, and no delay. If you
-need any of those, the device you want is an <a href="sdd.html">SDD</a>, whose equations can state
-them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
+linear partition alongside the resistors and lines, and each harmonic sees its own delay phase,
+<code>e^(−jkω₀T)</code>. Apart from that delay, an ideal transconductance has no frequency
+dependence and no compression. If you need either, the device you want is an
+<a href="sdd.html">SDD</a>, whose equations can state them. The same is true of
+<a href="#currenttonesource">ITone</a>.</p>
 </div>
 
 {{table: components/Vccs}}
@@ -437,13 +443,16 @@ them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
 {{symbol: vcvs}}
 
 An ideal voltage gain: the voltage it holds across its output pair is `E` times the voltage across a
-separate, purely-sensing control pair.
+separate, purely-sensing control pair, optionally delayed by `T`.
 
-`V(out+) − V(out−) = E · (V(ctrl+) − V(ctrl−))`
+`V(out+) − V(out−) = E · e^(−jωT) · (V(ctrl+) − V(ctrl−))`
 
 Four terminals in two pairs, laid out exactly as the [VCCS](#vccs)'s are — the **output** pair
 (`out+` top, `out−` bottom) and the **control** pair (`ctrl+`, `ctrl−`, on the left), which draws
 **no current at all**. `E` is a voltage ratio and carries no unit.
+
+`T` is a time delay, exactly as on the [VCCS](#vccs): the gain becomes `E · e^(−jωT)`, and `E`
+itself is a real number.
 
 The two tiles differ in one thing: what the diamond carries. The VCCS's arrow points at the current
 it delivers; the VCVS has a **± pair** down its axis instead, because there is no current direction
@@ -457,11 +466,11 @@ it is loaded with. Put a series resistor after it if you want a source with an i
 <div class="callout note">
 <span class="label">It works in every analysis, harmonic balance included</span>
 <p>Like the VCCS, the VCVS is a <b>linear</b> device stamped at every frequency the simulator solves
-at, harmonic balance included, so <code>E</code> is the same number at every harmonic. It carries a
+at, harmonic balance included, with each harmonic seeing its own delay phase. It carries a
 branch-current unknown of its own where the VCCS carries none — a relation <i>between</i> node
 voltages is not something admittances can express — but nothing about that is visible from outside.
-For a gain that varies with frequency, drive or bias, the device you want is an
-<a href="sdd.html">SDD</a>.</p>
+For a gain that varies with frequency in any other way, or with drive or bias, the device you want
+is an <a href="sdd.html">SDD</a>.</p>
 </div>
 
 <div class="callout note">
@@ -2464,6 +2473,17 @@ passive-intermod specification it is a **PIM generator** you can place in front 
 In depth: [System Components › Attenuator](system-components.html#atten).
 
 {{table: components/Atten}}
+
+### Delay {#delay}
+
+{{symbol: delay}}
+
+A pure time delay in a matched signal path: `S21 = S12 = e^(−jωT)`, no reflection and no loss. Its
+two pins are interchangeable. The delay `T` shows as the label beside the symbol.
+
+In depth: [System Components › Delay](system-components.html#delay).
+
+{{table: components/Delay}}
 
 ### Duplexer {#duplexer}
 

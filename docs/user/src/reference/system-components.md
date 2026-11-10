@@ -3,8 +3,8 @@ title: System Components
 slug: reference/system-components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > System components
-lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, filter, duplexer and mixer. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
-keywords: mixer, amplifier, filter, attenuator, behavioural block, system level, intermod, IP3
+lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
+keywords: mixer, amplifier, filter, attenuator, delay, behavioural block, system level, intermod, IP3
 ---
 
 <nav class="toc">
@@ -100,7 +100,7 @@ Two analyses, and the split is not arbitrary:
   frequency at a time: port match, isolation, coupling, directivity, a filter's passband and
   rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain, stability and noise
   figure. This
-  is the analysis nine of the eleven blocks are entirely described by.
+  is the analysis ten of the twelve blocks are entirely described by.
 - **{{anchor: simulations#harmonic-balance|Harmonic balance}}** answers everything that moves energy
   between frequencies or depends on level: conversion gain, mixing products, compression, third-order
   intermodulation, and passive intermod. Drive it with two tones
@@ -428,6 +428,27 @@ which is what a VSWR figure on a datasheet means.</p>
 </div>
 
 It can carry a PIM specification. Parameters: {{anchor: components#circulator|Components › Circulator}}.
+
+### Delay {#delay}
+
+{{symbol: delay}}
+
+An ideal matched delay line, stated in time rather than in electrical length:
+
+`S11 = S22 = 0`, `S21 = S12 = e^(−jωT)`
+
+It has two interchangeable pins, a delay `T` and a reference impedance `Z0`. Its magnitude is 1 at
+every frequency and its group delay is exactly `T`, so it is how a block diagram states a cable run,
+a filter's latency or a processing delay without picking a frequency to quote a phase at. At DC it
+is an ideal through. A negative `T` is accepted. It is not causal, but it is the quickest way to
+cancel a known delay elsewhere in a chain.
+
+**It is not the controlled sources' delay.** A [VCCS](components.html#vccs) or
+[VCVS](components.html#vcvs) takes a `T` of its own with the same `e^(−jωT)`. Those are unilateral
+dependent sources with an ideal sensing pair, for building a device model. This block is a
+reciprocal, matched two-port in a `Z0` system, for building a signal chain.
+
+Parameters: {{anchor: components#delay|Components › Delay}}.
 
 ### Directional Coupler {#coupler}
 

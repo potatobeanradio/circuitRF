@@ -4602,3 +4602,28 @@ Brief NZ-4. One seam on `ComponentModel` — `NoiseSources`, `EvaluateNoise(v, k
 
 Gates: `tests/Engine.Tests/Linear/DeviceNoiseTests.cs`, `tests/Ui.Tests/ModelComposer/NoiseFitTests.cs`,
 `SystemBlockElaborationTests.AFreshlyPlacedFetStatesNoNoiseTemperature`.
+
+## Controlled-source delay, the Delay block and time units (2026-11-10, issue 55)
+
+A delay `T` on the VCCS and VCVS and an ideal `Delay` system block. `ControlledSourceTransfer` holds
+the shared arithmetic: `K · e^(−jωT)` with a REAL gain `K`.
+
+- **The delay is the only source of phase**, as in other frequency-domain simulators' controlled
+  sources: `e^(−jωT)`, positive `T` lags, DC untouched. A complex-gain option was built alongside it
+  and taken out at the owner's direction — two ways to state a phase on one part is confusing.
+- **A complex `G`/`E` is now a refusal by name** (`ComponentModelFactory`'s complex-parameter rules).
+  It used to be silent and wrong in two different ways: the VCCS read a complex `G` as **zero**
+  (`Kind == Real ? … : 0.0`, an open circuit) and the VCVS kept only the real part of `E`.
+- **circuitRF had no time units at all.** `s, ms, us, ns, ps, fs` are now in `Units` (lower-case `s`,
+  so never confused with the siemens: the table is ordinal, `ms` ≠ `mS`), with `UnitDimension.Time`
+  appended LAST because `.ccell` persists that enum. Before this, `R=1 us` on an instance line was
+  refused as an unknown unit — and the IGBT tile's `Tau` default row has always been `1 us`.
+- **HB needs nothing special.** The linear partition is stamped per harmonic ω, so each harmonic gets
+  its own delay phase; a 1 GHz HB run with `G=10 mS T=125 ps` into 50 Ω reads 0.5∠135° at the
+  fundamental (−0.5 lagged by 45°).
+- **The Delay block is an `IdealSBlockModel`** — matched, reciprocal, lossless, `S21 = S12 = e^(−jωT)`
+  — not a controlled source: a block diagram wants a two-port in a `Z0` system, a device model wants
+  a unilateral source with an ideal sense pair. Same phase factor, different element.
+
+Gates: `tests/Engine.Tests/Linear/DelayTests.cs`, and the Delay tile in `SystemBlockComponentTests` /
+`SystemBlockElaborationTests`.

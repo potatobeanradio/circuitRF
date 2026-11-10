@@ -378,10 +378,18 @@ public sealed class Placeholders
     {
         string abs = Path.Combine(_docsRoot, relPath);
         if (!File.Exists(abs))
+        {
+            // A snap glyph has no --figure id; every other figure (UI figure, toolbar, component
+            // symbol) does. --figures is the wrong advice for one new figure: it also recaptures
+            // every figure cited by every page edited since the last capture.
+            string id = FigureIdOf(relPath);
             throw new InvalidOperationException(
                 $"the figure file '{relPath}' has not been generated. An ordinary run captures no figures " +
-                "and inlines what is on disk, so a new catalog row needs one capture first: add " +
-                $"--figure {FigureIdOf(relPath)} (--figures also captures every cited figure that is missing).");
+                "and inlines what is on disk, so a new catalog row needs one capture first: " +
+                (id.StartsWith("snap-glyph-", StringComparison.Ordinal)
+                    ? "run with --out <dir> --figures, which captures every cited figure that is missing."
+                    : $"run with --out <dir> --figure {id}. --page cannot take it (it captures nothing)."));
+        }
 
         string svg = File.ReadAllText(abs);
 

@@ -159,6 +159,7 @@ public static class ComponentTypeRegistry
         // now agree everywhere rather than meaning different things in two places.
         [UnitDimension.Length]      = ["None", "nm", "µm", "mm", "cm", "metre", "mil"],
         [UnitDimension.Angle]       = ["None", "deg", "rad"],
+        [UnitDimension.Time]        = ["None", "fs", "ps", "ns", "µs", "ms", "s"],
     };
 
     /// <summary>Closed list of unit strings for a given physical dimension. Always has "None" at index 0.</summary>
@@ -345,6 +346,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.System,
             SearchTerms: ["Attenuator", "att", "atten", "pad", "loss", "dB"],
             IsCommon: true),
+        // The ideal delay (issue 55). "DL" is the prefix: "D" is a diode's and "DLY" reads as a
+        // code to decode rather than a name — the display name is the word itself.
+        [SymbolKind.Delay]         = new("Delay", "DL",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Delay", "time delay", "group delay", "tau", "lag", "latency", "dl"],
+            IsCommon: false),
         [SymbolKind.Duplexer]      = new("Duplexer", "DPX",
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
@@ -994,7 +1001,7 @@ public static class ComponentTypeRegistry
           + "beside 1 and 4 beside 2. Driving 1 of a matched pair, 2 is the through port, 3 the "
           + "coupled port and 4 the isolated port.",
 
-        SymbolKind.Atten or SymbolKind.Filter =>
+        SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
 
@@ -1170,6 +1177,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Hybrid180     => "Coupler",  // and again, at 3.01 dB / 180°
         SymbolKind.Filter        => "Filter",
         SymbolKind.Atten         => "Atten",
+        SymbolKind.Delay         => "Delay",
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
@@ -1464,6 +1472,7 @@ public static class ComponentTypeRegistry
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
+         : ControlledSourceParameterDescription(kind, parameterName) is { Length: > 0 } csDesc ? csDesc
          : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
          : TestPadParameterDescription(kind, parameterName) is { Length: > 0 } tpDesc ? tpDesc
          : MmicParameterDescription(kind, parameterName) is { Length: > 0 } mmicDesc ? mmicDesc
@@ -1494,6 +1503,20 @@ public static class ComponentTypeRegistry
                       + "result small.",
             _       => "",
         };
+
+    /// <summary>The VCCS's and VCVS's rows (issue 55): the gain, and the delay applied to it.</summary>
+    private static string ControlledSourceParameterDescription(SymbolKind kind, string parameterName)
+        => (kind, parameterName) switch
+    {
+        (SymbolKind.Vccs, "G") =>
+            "Transconductance: the output current per volt across the control pair.",
+        (SymbolKind.Vcvs, "E") =>
+            "Voltage gain: the output voltage per volt across the control pair.",
+        (SymbolKind.Vccs or SymbolKind.Vcvs, "T") =>
+            "Delay applied to the gain, as a time: the transfer becomes gain x e^(-jwT), a phase that "
+          + "grows in proportion to frequency. 0 is no delay, and DC is unaffected.",
+        _ => "",
+    };
 
     /// <summary>A Deembed's rows (brief-de-3): what each means for the network it removes, which no SnP row says.</summary>
     private static string DeembedParameterDescription(string parameterName) => parameterName switch
@@ -2052,6 +2075,12 @@ public static class ComponentTypeRegistry
           + "ideal through, which is a legitimate thing to place.",
         (SymbolKind.Atten, "Z0") =>
             "Reference impedance of both ports. Each port is this resistance to its own reference.",
+        (SymbolKind.Delay, "T") =>
+            "The delay, as a time: the through path is e^(-jwT), a phase that grows in proportion to "
+          + "frequency. Matched and lossless at every frequency, and an ideal through at DC. A negative "
+          + "delay is allowed and cancels a delay elsewhere.",
+        (SymbolKind.Delay, "Z0") =>
+            "Reference impedance of both ports. Each port is this resistance to its own reference.",
         (SymbolKind.Atten, "RL") =>
             "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
           + "entry is stamped at all.",
@@ -2255,10 +2284,14 @@ public static class ComponentTypeRegistry
                                                 new("Idc",   "0", "mA",  false, UnitDimension.Current),
                                                 .. PhaseNoiseRows];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
-            case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
+            // T (issue 55) is the delay, e^(−jωT) on the gain; 0 is no delay, and the row is hidden
+            // until it is set.
+            case SymbolKind.Vccs:       return [new("G", "10", "mS", true,  UnitDimension.Conductance),
+                                                new("T", "0",  "ps", false, UnitDimension.Time)];
             // VCVS: one parameter, the voltage gain. V(out+) − V(out−) = E·(V(ctrl+) − V(ctrl−)).
             // Dimensionless, so it carries no unit at all rather than a blank one.
-            case SymbolKind.Vcvs:       return [new("E", "1", "", true, UnitDimension.None)];
+            case SymbolKind.Vcvs:       return [new("E", "1", "",   true,  UnitDimension.None),
+                                                new("T", "0", "ps", false, UnitDimension.Time)];
             // Op-amp / OpAmp5: A=0 is the ideal op-amp (infinite gain — see OpAmpModel for why zero
             // spells it), Rout the output resistance, and Pins the tile's own fixed count.
             case SymbolKind.OpAmp:      return [new("A",    "0", "",  false, UnitDimension.None),
@@ -2464,6 +2497,9 @@ public static class ComponentTypeRegistry
             // as a label placeholder before there was a model to disagree with, and a tile whose
             // placed value differs from what the same component takes when the parameter is absent
             // is a trap rather than a choice.
+            case SymbolKind.Delay:
+                return [new("T",     "1",    "ns",  true,  UnitDimension.Time),
+                        new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance)];
             case SymbolKind.Atten:
                 return [new("Loss",  "10",   "dB",  true,  UnitDimension.None),
                         new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance),
@@ -3698,6 +3734,8 @@ public static class ComponentTypeRegistry
             case "FLT":    kind = SymbolKind.Filter;       return true;
             case "ATTENUATOR":
             case "ATT":    kind = SymbolKind.Atten;        return true;
+            case "DELAY":
+            case "DL":     kind = SymbolKind.Delay;        return true;
             case "DUPLEXER":
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "GND":    kind = SymbolKind.Ground;        return true;

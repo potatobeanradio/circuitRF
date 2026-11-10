@@ -793,12 +793,16 @@ in an S-parameter run it is the passive impedance <code>Z</code>.</p>
 	</text></svg></span>
 </span><figcaption>VCCS</figcaption></figure>
 <p>An ideal transconductance: the current it delivers is <code>G</code> times the voltage across a separate,
-purely-sensing control pair.</p>
-<p><code>I = G · (V(ctrl+) − V(ctrl−))</code></p>
+purely-sensing control pair, optionally delayed by <code>T</code>.</p>
+<p><code>I = G · e^(−jωT) · (V(ctrl+) − V(ctrl−))</code></p>
 <p>Four terminals in two pairs — the <strong>output</strong> pair (<code>out+</code> top, <code>out−</code> bottom) carries the current, and
 the <strong>control</strong> pair (<code>ctrl+</code>, <code>ctrl−</code>, on the left) senses the controlling voltage. The control pair
 draws <strong>no current at all</strong>, which is what makes the source ideal and what makes the device
 unilateral: nothing travels backwards through it. <code>G</code> is the transconductance, in siemens.</p>
+<p><strong><code>T</code> is a time delay</strong> (hidden until you set it; 0 is no delay). It multiplies the gain by
+<code>e^(−jωT)</code>: unit magnitude, and a phase lag that grows in proportion to frequency, so the source has a
+constant group delay of <code>T</code>. A positive <code>T</code> lags. DC is unaffected, since <code>e^0 = 1</code>. <code>T</code> is the
+only source of phase: <code>G</code> itself is a real number.</p>
 <p><strong>The arrow says which way the current goes</strong>, and it points <strong>down</strong>: a positive <code>G</code> and a positive
 control voltage draw current in at <code>out+</code> and out at <code>out−</code>. That is the SPICE <code>G</code> element's own
 direction, and the way a small-signal transconductance is drawn in a device model — the controlled
@@ -813,10 +817,11 @@ own arrow.</p>
 <p>The VCCS is a <b>linear</b> device, so it is stamped into the matrix at every frequency the
 simulator solves at: DC, S-parameters, and <b>every retained harmonic of a harmonic-balance run</b>,
 plus everything built on those (parametric sweeps, loadpull, loadpull-pursuit). In HB it lives in the
-linear partition alongside the resistors and lines, so <code>G</code> is the same number at every
-harmonic — an ideal transconductance has no frequency dependence, no compression, and no delay. If you
-need any of those, the device you want is an <a href="sdd.html">SDD</a>, whose equations can state
-them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
+linear partition alongside the resistors and lines, and each harmonic sees its own delay phase,
+<code>e^(−jkω₀T)</code>. Apart from that delay, an ideal transconductance has no frequency
+dependence and no compression. If you need either, the device you want is an
+<a href="sdd.html">SDD</a>, whose equations can state them. The same is true of
+<a href="#currenttonesource">ITone</a>.</p>
 </div>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
@@ -827,9 +832,10 @@ them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
 </tbody></table>
 <p class="small">The nets of an instance line, in this order.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>G</td><td><code>10</code></td><td>mS</td><td>shown</td></tr>
+<tr><td>G</td><td><code>10</code></td><td>mS</td><td>shown</td><td>Transconductance: the output current per volt across the control pair.</td></tr>
+<tr><td>T</td><td><code>0</code></td><td>ps</td><td>&mdash;</td><td>Delay applied to the gain, as a time: the transfer becomes gain x e^(-jwT), a phase that grows in proportion to frequency. 0 is no delay, and DC is unaffected.</td></tr>
 </tbody></table>
 <h3 id="vcvs">Voltage-Controlled Voltage Source (VCVS)</h3>
 <figure class="symbol"><span class="frame">
@@ -857,11 +863,13 @@ them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
 	</text></svg></span>
 </span><figcaption>VCVS</figcaption></figure>
 <p>An ideal voltage gain: the voltage it holds across its output pair is <code>E</code> times the voltage across a
-separate, purely-sensing control pair.</p>
-<p><code>V(out+) − V(out−) = E · (V(ctrl+) − V(ctrl−))</code></p>
+separate, purely-sensing control pair, optionally delayed by <code>T</code>.</p>
+<p><code>V(out+) − V(out−) = E · e^(−jωT) · (V(ctrl+) − V(ctrl−))</code></p>
 <p>Four terminals in two pairs, laid out exactly as the <a href="#vccs">VCCS</a>'s are — the <strong>output</strong> pair
 (<code>out+</code> top, <code>out−</code> bottom) and the <strong>control</strong> pair (<code>ctrl+</code>, <code>ctrl−</code>, on the left), which draws
 <strong>no current at all</strong>. <code>E</code> is a voltage ratio and carries no unit.</p>
+<p><code>T</code> is a time delay, exactly as on the <a href="#vccs">VCCS</a>: the gain becomes <code>E · e^(−jωT)</code>, and <code>E</code>
+itself is a real number.</p>
 <p>The two tiles differ in one thing: what the diamond carries. The VCCS's arrow points at the current
 it delivers; the VCVS has a <strong>± pair</strong> down its axis instead, because there is no current direction
 to point at. A VCVS states a <em>potential difference</em> and whatever current the rest of the circuit
@@ -872,11 +880,11 @@ it is loaded with. Put a series resistor after it if you want a source with an i
 <div class="callout note">
 <span class="label">It works in every analysis, harmonic balance included</span>
 <p>Like the VCCS, the VCVS is a <b>linear</b> device stamped at every frequency the simulator solves
-at, harmonic balance included, so <code>E</code> is the same number at every harmonic. It carries a
+at, harmonic balance included, with each harmonic seeing its own delay phase. It carries a
 branch-current unknown of its own where the VCCS carries none — a relation <i>between</i> node
 voltages is not something admittances can express — but nothing about that is visible from outside.
-For a gain that varies with frequency, drive or bias, the device you want is an
-<a href="sdd.html">SDD</a>.</p>
+For a gain that varies with frequency in any other way, or with drive or bias, the device you want
+is an <a href="sdd.html">SDD</a>.</p>
 </div>
 <div class="callout note">
 <span class="label">An ideal current source is an open circuit</span>
@@ -892,9 +900,10 @@ nothing else attached to it has no DC path to ground and the matrix is singular.
 </tbody></table>
 <p class="small">The nets of an instance line, in this order.</p>
 <table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>E</td><td><code>1</code></td><td>&mdash;</td><td>shown</td></tr>
+<tr><td>E</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Voltage gain: the output voltage per volt across the control pair.</td></tr>
+<tr><td>T</td><td><code>0</code></td><td>ps</td><td>&mdash;</td><td>Delay applied to the gain, as a time: the transfer becomes gain x e^(-jwT), a phase that grows in proportion to frequency. 0 is no delay, and DC is unaffected.</td></tr>
 </tbody></table>
 <h3 id="opamp">Operational Amplifier (OpAmp)</h3>
 <figure class="symbol"><span class="frame">
@@ -2870,7 +2879,7 @@ is why <code>Cgd</code> dominates the input match of a device long before <code>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Ri</td><td><code>0</code></td><td>Ω</td><td>&mdash;</td><td>Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.</td></tr>
 <tr><td>Tg</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device temperature.</td></tr>
-<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain temperature fitted against bias.</td></tr>
+<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain temperature that follows bias is a composed FET&#39;s (a .cmodel Noise block).</td></tr>
 <tr><td>Kf</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the drain current. 0 is off.</td></tr>
 <tr><td>Af</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise exponent on the current. 1 is the usual value.</td></tr>
 <tr><td>Betatc</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -2918,7 +2927,7 @@ is why <code>Cgd</code> dominates the input match of a device long before <code>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Ri</td><td><code>0</code></td><td>Ω</td><td>&mdash;</td><td>Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.</td></tr>
 <tr><td>Tg</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device temperature.</td></tr>
-<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain temperature fitted against bias.</td></tr>
+<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain temperature that follows bias is a composed FET&#39;s (a .cmodel Noise block).</td></tr>
 <tr><td>Kf</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the drain current. 0 is off.</td></tr>
 <tr><td>Af</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise exponent on the current. 1 is the usual value.</td></tr>
 <tr><td>Gammatc</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -2962,7 +2971,7 @@ is why <code>Cgd</code> dominates the input match of a device long before <code>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Ri</td><td><code>0</code></td><td>Ω</td><td>&mdash;</td><td>Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.</td></tr>
 <tr><td>Tg</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device temperature.</td></tr>
-<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain temperature fitted against bias.</td></tr>
+<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain temperature that follows bias is a composed FET&#39;s (a .cmodel Noise block).</td></tr>
 <tr><td>Kf</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the drain current. 0 is off.</td></tr>
 <tr><td>Af</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise exponent on the current. 1 is the usual value.</td></tr>
 <tr><td>Betatc</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -3007,7 +3016,7 @@ is why <code>Cgd</code> dominates the input match of a device long before <code>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Ri</td><td><code>0</code></td><td>Ω</td><td>&mdash;</td><td>Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.</td></tr>
 <tr><td>Tg</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device temperature.</td></tr>
-<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain temperature fitted against bias.</td></tr>
+<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain temperature that follows bias is a composed FET&#39;s (a .cmodel Noise block).</td></tr>
 <tr><td>Kf</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the drain current. 0 is off.</td></tr>
 <tr><td>Af</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise exponent on the current. 1 is the usual value.</td></tr>
 <tr><td>Alphatc</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -3055,7 +3064,7 @@ is why <code>Cgd</code> dominates the input match of a device long before <code>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Ri</td><td><code>0</code></td><td>Ω</td><td>&mdash;</td><td>Intrinsic gate resistance, in series with Cgs on an internal node. It is the resistance the gate temperature Tg applies to. 0 means none, and the model is then exactly what it was without it.</td></tr>
 <tr><td>Tg</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Gate noise temperature, in kelvin: Ri is thermal at this temperature. Blank is the device temperature.</td></tr>
-<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. It may be an expression, for a drain temperature fitted against bias.</td></tr>
+<tr><td>Td</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Drain noise temperature, in kelvin: the output conductance gds is thermal at it, a noise current 4k*Td*gds. Blank means no drain noise. One number at every bias: a drain temperature that follows bias is a composed FET&#39;s (a .cmodel Noise block).</td></tr>
 <tr><td>Kf</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise coefficient: a 1/f noise current Kf*|I|^Af/f on the drain current. 0 is off.</td></tr>
 <tr><td>Af</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>Flicker noise exponent on the current. 1 is the usual value.</td></tr>
 <tr><td>Alphatc</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -3217,7 +3226,7 @@ a p-channel model card is read as the quadratic law or Statz, never as either of
 </tr>
 <tr>
 <td><code>Td</code></td>
-<td>The drain noise temperature, in kelvin: the output conductance is thermal at it, a noise current <code>4k·Td·gds</code> from drain to source. It may be an expression, for a drain temperature fitted against bias.</td>
+<td>The drain noise temperature, in kelvin: the output conductance is thermal at it, a noise current <code>4k·Td·gds</code> from drain to source. One number at every bias; a drain temperature that follows bias needs a composed FET's <code>.cmodel</code> Noise block.</td>
 <td>Blank: no drain noise</td>
 </tr>
 <tr>
@@ -5064,6 +5073,34 @@ passive-intermod specification it is a <strong>PIM generator</strong> you can pl
 <tr><td>PIM</td><td><code>-200</code></td><td>dBm</td><td>&mdash;</td><td>Passive intermod: the third-order product this block puts on its output when two carriers of PIMPc each drive its input, as an absolute level. The -200 dBm default means there is no intermod here and none is calculated at all. A part quoted in dBc converts by adding PIMPc — -153 dBc at +43 dBm is -110 dBm.</td></tr>
 <tr><td>PIMPc</td><td><code>43</code></td><td>dBm</td><td>&mdash;</td><td>Power per carrier the PIM figure above was measured at — the second half of one specification. Two carriers at this power produce a product at exactly PIM; the product then rides the third power of drive, so 10 dB less carrier is 30 dB less product.</td></tr>
 </tbody></table>
+<h3 id="delay">Delay</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><text fill="#2D14C3" transform="translate(120 75)" font-size="37.4" font-family="IBM Plex Sans" x="-8.92" y="14.03">
+			τ
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.32, 110.66, 119.03, 123.44, 131.82" y="172.32">
+			Delay
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><text fill="#9684FA" transform="translate(120 75)" font-size="37.4" font-family="IBM Plex Sans" x="-8.92" y="14.03">
+			τ
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.32, 110.66, 119.03, 123.44, 131.82" y="172.32">
+			Delay
+	</text></svg></span>
+</span><figcaption>Delay</figcaption></figure>
+<p>A pure time delay in a matched signal path: <code>S21 = S12 = e^(−jωT)</code>, no reflection and no loss. Its
+two pins are interchangeable. The delay <code>T</code> shows as the label beside the symbol.</p>
+<p>In depth: <a href="system-components.html#delay">System Components › Delay</a>.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. The two terminals are interchangeable — this block is symmetric, and its parameters describe both ports at once.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>T</td><td><code>1</code></td><td>ns</td><td>shown</td><td>The delay, as a time: the through path is e^(-jwT), a phase that grows in proportion to frequency. Matched and lossless at every frequency, and an ideal through at DC. A negative delay is allowed and cancels a delay elsewhere.</td></tr>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>Reference impedance of both ports. Each port is this resistance to its own reference.</td></tr>
+</tbody></table>
 <h3 id="duplexer">Duplexer</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M67.01 120.51L67.01 29.49Q67.01 29.39 67.02 29.28Q67.02 29.17 67.03 29.07Q67.04 28.96 67.06 28.85Q67.08 28.75 67.1 28.64Q67.12 28.54 67.14 28.43Q67.17 28.33 67.2 28.23Q67.23 28.12 67.27 28.02Q67.3 27.92 67.35 27.82Q67.39 27.72 67.43 27.63Q67.48 27.53 67.53 27.44Q67.58 27.34 67.63 27.25Q67.69 27.16 67.75 27.07Q67.81 26.98 67.87 26.89Q67.94 26.81 68 26.73Q68.07 26.64 68.14 26.56Q68.22 26.48 68.29 26.41Q68.37 26.33 68.45 26.26Q68.53 26.19 68.61 26.12Q68.69 26.05 68.78 25.99Q68.86 25.92 68.95 25.87Q69.04 25.81 69.13 25.75Q69.23 25.7 69.32 25.65Q69.41 25.59 69.51 25.55Q69.61 25.5 69.71 25.46Q69.81 25.42 69.91 25.38Q70.01 25.35 70.11 25.32Q70.21 25.29 70.32 25.26Q70.42 25.23 70.53 25.21Q70.63 25.19 70.74 25.18Q70.84 25.16 70.95 25.15Q71.06 25.14 71.16 25.14Q71.27 25.13 71.38 25.13L168.62 25.13Q168.73 25.13 168.84 25.14Q168.94 25.14 169.05 25.15Q169.16 25.16 169.26 25.18Q169.37 25.19 169.48 25.21Q169.58 25.23 169.68 25.26Q169.79 25.29 169.89 25.32Q169.99 25.35 170.09 25.38Q170.19 25.42 170.29 25.46Q170.39 25.5 170.49 25.55Q170.59 25.59 170.68 25.65Q170.78 25.7 170.87 25.75Q170.96 25.81 171.05 25.87Q171.14 25.92 171.22 25.99Q171.31 26.05 171.39 26.12Q171.47 26.19 171.55 26.26Q171.63 26.33 171.71 26.41Q171.79 26.48 171.86 26.56Q171.93 26.64 172 26.73Q172.06 26.81 172.13 26.89Q172.19 26.98 172.25 27.07Q172.31 27.16 172.37 27.25Q172.42 27.34 172.47 27.44Q172.52 27.53 172.57 27.63Q172.61 27.72 172.66 27.82Q172.7 27.92 172.73 28.02Q172.77 28.12 172.8 28.23Q172.83 28.33 172.86 28.43Q172.88 28.54 172.9 28.64Q172.92 28.75 172.94 28.85Q172.96 28.96 172.97 29.07Q172.98 29.17 172.98 29.28Q172.99 29.39 172.99 29.49L172.99 120.51Q172.99 120.61 172.98 120.72Q172.98 120.83 172.97 120.93Q172.96 121.04 172.94 121.15Q172.92 121.25 172.9 121.36Q172.88 121.46 172.86 121.57Q172.83 121.67 172.8 121.77Q172.77 121.88 172.73 121.98Q172.7 122.08 172.66 122.18Q172.61 122.28 172.57 122.37Q172.52 122.47 172.47 122.56Q172.42 122.66 172.37 122.75Q172.31 122.84 172.25 122.93Q172.19 123.02 172.13 123.11Q172.06 123.19 172 123.28Q171.93 123.36 171.86 123.44Q171.79 123.52 171.71 123.59Q171.63 123.67 171.55 123.74Q171.47 123.81 171.39 123.88Q171.31 123.95 171.22 124.01Q171.14 124.08 171.05 124.14Q170.96 124.19 170.87 124.25Q170.78 124.3 170.68 124.36Q170.59 124.41 170.49 124.45Q170.39 124.5 170.29 124.54Q170.19 124.58 170.09 124.62Q169.99 124.65 169.89 124.68Q169.79 124.71 169.68 124.74Q169.58 124.77 169.48 124.79Q169.37 124.81 169.26 124.82Q169.16 124.84 169.05 124.85Q168.94 124.86 168.84 124.87Q168.73 124.87 168.62 124.87L71.38 124.87Q71.27 124.87 71.16 124.87Q71.06 124.86 70.95 124.85Q70.84 124.84 70.74 124.82Q70.63 124.81 70.53 124.79Q70.42 124.77 70.32 124.74Q70.21 124.71 70.11 124.68Q70.01 124.65 69.91 124.62Q69.81 124.58 69.71 124.54Q69.61 124.5 69.51 124.45Q69.41 124.41 69.32 124.36Q69.23 124.3 69.13 124.25Q69.04 124.19 68.95 124.14Q68.86 124.08 68.78 124.01Q68.69 123.95 68.61 123.88Q68.53 123.81 68.45 123.74Q68.37 123.67 68.29 123.59Q68.22 123.52 68.14 123.44Q68.07 123.36 68 123.28Q67.94 123.19 67.87 123.11Q67.81 123.02 67.75 122.93Q67.69 122.84 67.63 122.75Q67.58 122.66 67.53 122.56Q67.48 122.47 67.43 122.37Q67.39 122.28 67.35 122.18Q67.3 122.08 67.27 121.98Q67.23 121.88 67.2 121.77Q67.17 121.67 67.14 121.57Q67.12 121.46 67.1 121.36Q67.08 121.25 67.06 121.15Q67.04 121.04 67.03 120.93Q67.02 120.83 67.02 120.72Q67.01 120.61 67.01 120.51Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L67.01 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M67.01 75L91.95 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M91.95 75L110.65 46.95" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M91.95 75L110.65 103.05" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 39.23L129.57 39.93L130.41 40.55L131.25 41.05L132.09 41.37L132.94 41.48L133.78 41.37L134.62 41.05L135.46 40.55L136.3 39.93L137.14 39.23L137.98 38.54L138.83 37.91L139.67 37.42L140.51 37.1L141.35 36.99L142.19 37.1L143.03 37.42L143.88 37.91L144.72 38.54L145.56 39.23" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.18 37.97L139.11 41.62" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 46.95L129.57 47.64L130.41 48.27L131.25 48.76L132.09 49.08L132.94 49.19L133.78 49.08L134.62 48.76L135.46 48.27L136.3 47.64L137.14 46.95L137.98 46.25L138.83 45.63L139.67 45.13L140.51 44.81L141.35 44.7L142.19 44.81L143.03 45.13L143.88 45.63L144.72 46.25L145.56 46.95" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 54.66L129.57 55.36L130.41 55.98L131.25 56.48L132.09 56.8L132.94 56.91L133.78 56.8L134.62 56.48L135.46 55.98L136.3 55.36L137.14 54.66L137.98 53.97L138.83 53.34L139.67 52.85L140.51 52.53L141.35 52.42L142.19 52.53L143.03 52.85L143.88 53.34L144.72 53.97L145.56 54.66" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.18 52.28L139.11 55.92" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 95.34L129.57 96.03L130.41 96.66L131.25 97.15L132.09 97.47L132.94 97.58L133.78 97.47L134.62 97.15L135.46 96.66L136.3 96.03L137.14 95.34L137.98 94.64L138.83 94.02L139.67 93.52L140.51 93.2L141.35 93.09L142.19 93.2L143.03 93.52L143.88 94.02L144.72 94.64L145.56 95.34" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.18 94.08L139.11 97.72" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 103.05L129.57 103.75L130.41 104.37L131.25 104.87L132.09 105.19L132.94 105.3L133.78 105.19L134.62 104.87L135.46 104.37L136.3 103.75L137.14 103.05L137.98 102.36L138.83 101.73L139.67 101.24L140.51 100.92L141.35 100.81L142.19 100.92L143.03 101.24L143.88 101.73L144.72 102.36L145.56 103.05" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.73 110.77L129.57 111.46L130.41 112.09L131.25 112.58L132.09 112.9L132.94 113.01L133.78 112.9L134.62 112.58L135.46 112.09L136.3 111.46L137.14 110.77L137.98 110.07L138.83 109.45L139.67 108.95L140.51 108.63L141.35 108.52L142.19 108.63L143.03 108.95L143.88 109.45L144.72 110.07L145.56 110.77" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.18 108.38L139.11 112.03" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M172.99 43.83L213.51 43.83" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M172.99 106.17L213.51 106.17" /><text fill="#2D14C3" transform="translate(160.52 46.95)" font-size="9.35" font-family="IBM Plex Sans" x="-5.54, -0.1917" y="3.51">
@@ -5263,6 +5300,7 @@ itself: <a href="expressions.html#operators">operators</a>, <a href="expressions
 <tr><td><a href="#filter">Filter</a></td><td>Filter</td><td>System</td></tr>
 <tr><td><a href="#atten">Attenuator</a></td><td>Atten</td><td>System</td></tr>
 <tr><td><a href="#duplexer">Duplexer</a></td><td>Duplexer</td><td>System</td></tr>
+<tr><td><a href="#delay">Delay</a></td><td>Delay</td><td>System</td></tr>
 </tbody></table>
 <hr />
 <p>See also: <a href="dynamic-symbols.html">Dynamic symbols (SDD / ZPort / SnP)</a> ·
