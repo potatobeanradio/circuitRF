@@ -56,7 +56,7 @@ and an amplifier follows each.
 
 ## The benches
 
-Each chain has three, written by **Transfer to Schematic**, and the array two more:
+Each chain has these three, written by **Transfer to Schematic**, and a Levels bench (below); the array has two more:
 
 - **`1-Tone`**: a P1Tone per element and a Port at the output. With the mixer, harmonic-balance noise with the LO
   running gives the SSB NF and the conversion gain; a drive sweep at the predicted IP1dB gives the compression point.

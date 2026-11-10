@@ -194,8 +194,8 @@ where the combiner weighs it unequally.
 
 ## 4. Verification
 
-`testdata/chain/plot_chain_compare.py` runs the example's two chains and an RF-only array through the CLI and plots the
-budget against the simulation, stage by stage:
+`testdata/chain/plot_chain_compare.py` runs the example's superhet and array, and an RF-only array, through the CLI
+and plots the budget against the simulation, stage by stage:
 
 ![Superhet, stage by stage](../images/rf-chain-budget/per_stage_superhet.png)
 
