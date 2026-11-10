@@ -1184,7 +1184,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": 0,
-      "Y": -1200,
+      "Y": -1300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1223,6 +1223,13 @@
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
+        },
+        {
+          "Name": "nodeix",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
         }
       ]
     },
@@ -1230,7 +1237,7 @@
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
       "X": 1600,
-      "Y": -3600,
+      "Y": -3900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1497,6 +1504,34 @@
         {
           "Name": "OP1dB_err",
           "Expression": "OP1dB_sim - OP1dB_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF_node_sim",
+          "Expression": "(0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/40320 \u002B (NF_LNA_sim)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-5040 \u002B (NF_PS_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (NF_CMB_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (NF_RFBPF_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/576 \u002B (NF_MIX_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (NF_IFBPF_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (NF_IFA_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 8)/-5040 \u002B (NF_ATT_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)/40320",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF_node_calc",
+          "Expression": "(0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/40320 \u002B (1.1999999999999995)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-5040 \u002B (1.311457926083478)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (1.331050164527508)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (1.40457958047287)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/576 \u002B (2.3058046130860164)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (2.561390323613682)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (4.084660819865327)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 8)/-5040 \u002B (4.093110363318272)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)/40320",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Noise_node_sim",
+          "Expression": "(-107.44306205647467)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/40320 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_LNA_sim/10) - 1))*4500000) \u002B 30 \u002B 17.999999999999986))*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-5040 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_PS_sim/10) - 1))*4500000) \u002B 30 \u002B 12.999999999999972))*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/1440 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_CMB_sim/10) - 1))*4500000) \u002B 30 \u002B 12.5))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_RFBPF_sim/10) - 1))*4500000) \u002B 30 \u002B 11))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/576 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_MIX_sim/10) - 1))*4500000) \u002B 30 \u002B 4))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_IFBPF_sim/10) - 1))*4500000) \u002B 30 \u002B 3))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 7)*(nodeix - 8)/1440 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_IFA_sim/10) - 1))*4500000) \u002B 30 \u002B 23.000000000000014))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 8)/-5040 \u002B ((10*log10(1.380649E-23*(290 \u002B 290*(10^(NF_ATT_sim/10) - 1))*4500000) \u002B 30 \u002B 20.000000000000014))*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)/40320",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Noise_node_calc",
+          "Expression": "(-107.44306205647467)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/40320 \u002B (-88.24306205647467)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-5040 \u002B (-93.1316041303912)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (-93.61201189194716)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (-95.0384824760018)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/576 \u002B (-101.13725744338865)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)*(nodeix - 7)*(nodeix - 8)/-720 \u002B (-101.88167173286098)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 7)*(nodeix - 8)/1440 \u002B (-80.35840123660934)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 8)/-5040 \u002B (-83.3499516931564)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)*(nodeix - 7)/40320",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -2194,6 +2229,29 @@
         -20.716727
       ],
       "PsaInnerName": "HB1"
+    },
+    {
+      "Type": "dc",
+      "Name": "DCN",
+      "Enabled": true
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWN",
+      "Enabled": true,
+      "PsaVarName": "nodeix",
+      "PsaValues": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "PsaInnerName": "DCN"
     }
   ]
 }

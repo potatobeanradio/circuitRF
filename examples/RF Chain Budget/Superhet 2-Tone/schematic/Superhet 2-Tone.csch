@@ -667,13 +667,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_LNA_calc",
-          "Expression": "15",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_LNA",
           "Expression": "dB(HB2.V(\u0022n_LNA\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
           "Unit": "",
@@ -681,15 +674,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_LNA",
-          "Expression": "dB(HB2.V(\u0022n_LNA\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
+          "Name": "G_LNA_sim",
+          "Expression": "P1_LNA - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_LNA_sim",
-          "Expression": "P1_LNA - P2t",
+          "Name": "OIP3_LNA_calc",
+          "Expression": "15",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_LNA",
+          "Expression": "dB(HB2.V(\u0022n_LNA\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -709,13 +709,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_RFBPF_calc",
-          "Expression": "13.500000000000002",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_RFBPF",
           "Expression": "dB(HB2.V(\u0022n_RFBPF\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
           "Unit": "",
@@ -723,15 +716,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_RFBPF",
-          "Expression": "dB(HB2.V(\u0022n_RFBPF\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
+          "Name": "G_RFBPF_sim",
+          "Expression": "P1_RFBPF - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_RFBPF_sim",
-          "Expression": "P1_RFBPF - P2t",
+          "Name": "OIP3_RFBPF_calc",
+          "Expression": "13.500000000000002",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_RFBPF",
+          "Expression": "dB(HB2.V(\u0022n_RFBPF\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -751,13 +751,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_MIX_calc",
-          "Expression": "1.3962644414625283",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_MIX",
           "Expression": "dB(HB2.V(\u0022n_MIX\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
           "Unit": "",
@@ -765,15 +758,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_MIX",
-          "Expression": "dB(HB2.V(\u0022n_MIX\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Name": "G_MIX_sim",
+          "Expression": "P1_MIX - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_MIX_sim",
-          "Expression": "P1_MIX - P2t",
+          "Name": "OIP3_MIX_calc",
+          "Expression": "1.3962644414625283",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_MIX",
+          "Expression": "dB(HB2.V(\u0022n_MIX\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -793,13 +793,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_IFBPF_calc",
-          "Expression": "0.3962644414625274",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_IFBPF",
           "Expression": "dB(HB2.V(\u0022n_IFBPF\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
           "Unit": "",
@@ -807,15 +800,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_IFBPF",
-          "Expression": "dB(HB2.V(\u0022n_IFBPF\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Name": "G_IFBPF_sim",
+          "Expression": "P1_IFBPF - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_IFBPF_sim",
-          "Expression": "P1_IFBPF - P2t",
+          "Name": "OIP3_IFBPF_calc",
+          "Expression": "0.3962644414625274",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_IFBPF",
+          "Expression": "dB(HB2.V(\u0022n_IFBPF\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -835,13 +835,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_IFA_calc",
-          "Expression": "19.10439847001457",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_IFA",
           "Expression": "dB(HB2.V(\u0022n_IFA\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
           "Unit": "",
@@ -849,15 +842,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_IFA",
-          "Expression": "dB(HB2.V(\u0022n_IFA\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Name": "G_IFA_sim",
+          "Expression": "P1_IFA - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_IFA_sim",
-          "Expression": "P1_IFA - P2t",
+          "Name": "OIP3_IFA_calc",
+          "Expression": "19.10439847001457",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_IFA",
+          "Expression": "dB(HB2.V(\u0022n_IFA\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -877,13 +877,6 @@
           "Dimension": "None"
         },
         {
-          "Name": "OIP3_ATT_calc",
-          "Expression": "16.10439847001457",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
           "Name": "P1_ATT",
           "Expression": "dB(HB2.V(\u0022out\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
           "Unit": "",
@@ -891,15 +884,22 @@
           "Dimension": "None"
         },
         {
-          "Name": "P3_ATT",
-          "Expression": "dB(HB2.V(\u0022out\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Name": "G_ATT_sim",
+          "Expression": "P1_ATT - P2t",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "G_ATT_sim",
-          "Expression": "P1_ATT - P2t",
+          "Name": "OIP3_ATT_calc",
+          "Expression": "16.10439847001457",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_ATT",
+          "Expression": "dB(HB2.V(\u0022out\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

@@ -37,7 +37,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End"];
 
     private readonly string _ws = Path.Combine(Path.GetTempPath(), "crf-chainex-" + Guid.NewGuid().ToString("N")[..8]);
 
@@ -67,20 +67,30 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     {
         Assert.Equal(0, CliEntry.Run(["check", Workspace]));
         foreach (string chain in Chains)
-            foreach (var b in ChainBenches.BenchesFor(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, chain + ".cchain"))))
+        {
+            var benches = ChainBenches.BenchesFor(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, chain + ".cchain")));
+            // Each bench's MEAS rows, by the result file a display trace names: a display reads its own bench, and the
+            // Levels display also the 1-Tone and Blockers benches of its chain.
+            var rowsOf = benches.ToDictionary(b => ChainBenches.CellName(chain, b) + ".npy", b =>
+            {
+                var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(ChainBenches.CellName(chain, b), Workspace));
+                return model.Components.Where(c => c.Symbol == SymbolKind.Meas)
+                            .SelectMany(c => c.Parameters.Select(p => p.Name)).ToHashSet(StringComparer.Ordinal);
+            });
+            foreach (var b in benches)
             {
                 string cell = ChainBenches.CellName(chain, b);
-                var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell, Workspace));
-                var rows = model.Components.Where(c => c.Symbol == SymbolKind.Meas)
-                                .SelectMany(c => c.Parameters.Select(p => p.Name)).ToHashSet(StringComparer.Ordinal);
                 var cdd = JsonNode.Parse(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")))!;
                 foreach (var trace in cdd["Tabs"]![0]!["Plots"]!.AsArray().SelectMany(p => p!["Traces"]!.AsArray()))
                 {
-                    Assert.Equal(cell + ".npy", (string?)trace!["SourcePath"]);
+                    string src = (string?)trace!["SourcePath"] ?? "";
+                    Assert.True(rowsOf.ContainsKey(src), $"{cell}.cdd reads '{src}', which is not a bench of {chain}");
+                    if (b != ChainBench.Levels) Assert.Equal(cell + ".npy", src);
                     if ((string?)trace["CubeName"] is { Length: > 0 } cube)
-                        Assert.True(rows.Contains(cube), $"{cell}.cdd shows '{cube}', which {cell}'s MEAS block does not compute");
+                        Assert.True(rowsOf[src].Contains(cube), $"{cell}.cdd shows '{cube}', which {src}'s MEAS block does not compute");
                 }
             }
+        }
     }
 
     // ── 1-Tone: noise and compression, seconds ───────────────────────────────
@@ -145,6 +155,62 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.Equal(38.0206, M(ds, "G_TA_calc"), 4);
     }
 
+    [Fact]
+    public void Superhet_LevelsAndBlockers_EveryNodeOnTheBudget()
+    {
+        var lev = Simulate("Superhet Levels");
+        var blk = Simulate("Superhet Blockers");
+        for (int k = 0; k <= 6; k++)
+        {
+            Assert.InRange(M(lev, $"Psig_{k}_err"), -1e-4, 1e-4);
+            if (k > 0) Assert.InRange(M(lev, $"IM3_{k}_err"), -1e-3, 1e-3);
+            Assert.InRange(M(blk, $"Blk1_{k}_err"), -0.01, 1e-4);
+            Assert.InRange(M(blk, $"Blk2_{k}_err"), -0.01, 1e-4);
+        }
+    }
+
+    [Fact]
+    public void FrontEnd_1Tone_TheCancellersNoiseOnTheBudget()
+    {
+        var ds = Simulate("Front End 1-Tone");
+        Assert.InRange(M(ds, "G_err"), -1e-6, 1e-6);
+        Assert.InRange(M(ds, "NF_err"), -1e-6, 1e-6);
+        Assert.Equal(2.6685, M(ds, "NF_calc"), 4);
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void FrontEnd_Canceller_DepthOnTheClosedForm_AndEvmWithAndWithout()
+    {
+        var ds = Simulate("Front End Canceller");
+        double worst = 0;
+        string at = "";
+        foreach (string sw in new[] { "P", "A", "D" })
+            for (int k = 1; k <= ChainBenches.CancInterference.Length; k++)
+            {
+                var sim = ds[$"measurements.Depth{sw}_I{k}_sim"].RealValues;
+                var calc = ds[$"measurements.Depth{sw}_I{k}_calc"].RealValues;
+                for (int i = 0; i < sim.Length; i++)
+                    if (Math.Abs(sim[i] - calc[i]) / Math.Max(calc[i], 1) > worst) { worst = Math.Abs(sim[i] - calc[i]) / Math.Max(calc[i], 1); at = $"{sw}{k}[{i}]: {calc[i]:G4} dB deep, simulated {sim[i]:G4} dB"; }
+            }
+        output.WriteLine($"Front End Canceller: worst |depth - closed form| = {100 * worst:G3} % of the depth ({at}); EVM 64-QAM {M(ds, "EVM_QAM64_off"):G3} -> {M(ds, "EVM_QAM64_on"):G3} %, QPSK {M(ds, "EVM_QPSK_off"):G3} -> {M(ds, "EVM_QPSK_on"):G3} %");
+        Assert.InRange(worst, 0, 0.02);
+        Assert.True(M(ds, "EVM_QAM64_on") < M(ds, "EVM_QAM64_off") / 3);
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void Superhet_Demo_TheEvmIsTheBudgetsWhereNoiseDominates()
+    {
+        var ds = Simulate("Superhet Demo");
+        var err = ds["measurements.SNR_QAM_err"].RealValues;
+        var noise = ds["measurements.EVMnoise_QAM"].RealValues;
+        var calc = ds["measurements.EVM_QAM_calc"].RealValues;
+        output.WriteLine($"Superhet Demo: SNR err at the lowest power {err[0]:G3} dB; EVM noise {noise[0]:G3} % against {calc[0]:G3} %");
+        Assert.InRange(err[0], -0.5, 0.5);
+        Assert.InRange(noise[0] / calc[0], 0.9, 1.1);
+    }
+
     // ── 2-Tone and Envelope ──────────────────────────────────────────────────
 
     [Theory]
@@ -160,7 +226,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         foreach (var s in d.Stages)
         {
             Assert.InRange(M(ds, $"G_{s.Name}_sim") - M(ds, $"G_{s.Name}_calc"), -5e-4, 5e-4);
-            if (double.IsFinite(M(ds, $"OIP3_{s.Name}_calc")))
+            if (ds.CubesIn("measurements").ContainsKey($"OIP3_{s.Name}_calc"))
                 Assert.InRange(M(ds, $"OIP3_{s.Name}_sim") - M(ds, $"OIP3_{s.Name}_calc"), -5e-4, 5e-4);
         }
     }

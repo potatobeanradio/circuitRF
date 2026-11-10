@@ -75,5 +75,16 @@
         "Loss": "3"
       }
     }
-  ]
+  ],
+  "Blockers": [
+    {
+      "OffsetHz": 150000000,
+      "LevelDbm": -40
+    },
+    {
+      "OffsetHz": 20000000,
+      "LevelDbm": -50
+    }
+  ],
+  "Demo": true
 }

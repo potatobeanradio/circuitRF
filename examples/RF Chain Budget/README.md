@@ -3,13 +3,18 @@
 **Open a `.cchain` and the RF Chain Budget window shows its cascade.** The benches beside it are its Transfer to
 Schematic: open one, Simulate, and its Data Display opens with the budget's number beside every simulated one.
 
-Two receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already transferred:
+Three receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already transferred:
 
 1. **`Superhet.cchain`**: an LNA, an RF bandpass filter, a mixer to a 350 MHz IF, an IF filter, an IF amplifier and an
    attenuator. Every stage is a System block with its own parameters.
 2. **`Array.cchain`**: four elements, each an LNA and a phase shifter, into a 4-way combiner steered 45° per element, then
    the superhet's receiver from the RF filter on. The combiner is the library's N-way Combiner; the phase shifter is
    composed of the library's own parts, an amplifier and a line.
+3. **`Front End.cchain`**: a canceller in front of an LNA, a filter and a second amplifier. The canceller subtracts a
+   copy of a −40 dBm interference, 20 dB over the wanted signal, through a 10 dB coupler, with 0.02 dB, 0.2° and 0.05 ns
+   of error in its reference path: 47 dB of depth.
+
+The superhet also has two blockers at its input, 150 MHz and 20 MHz above the signal, and asks for the demo bench.
 
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
@@ -87,6 +92,22 @@ A tree's loss accumulates level by level (two 2:1 levels of 0.5 dB against one 4
 noise figure is set by its first amplifier and its intercept by its last, which sees the most power. All four keep the
 6.02 dB array gain.
 
+## Levels, blockers, the canceller and the demo
+
+- **`<chain> Levels`** (every chain): two tones at the input power, the signal and its IM3 at every node. Its display
+  puts them beside the budget's, with the noise floor and NF from the 1-Tone bench, each blocker from the Blockers
+  bench, and the SNR and the margin to compression, all against the node (0 the input, k stage k's output).
+- **`Superhet Blockers`**: the blockers alone, an isolator after every stage so each node reads the wave going forward.
+  The RF filter takes 10 dB off the one at 150 MHz; after the mixer it is at 500 MHz, and the IF filter takes 38 dB more.
+- **`Front End Canceller`**: the canceller with real signals. A wanted 64-QAM and QPSK pair under a three-carrier
+  interference (10, 5 and 20 MHz), each from a MOD_Source the Signal Designer edits. Its display: the depth against the
+  phase error, the amplitude error and the delay mismatch at each interference carrier, simulated beside the closed form;
+  the wanted carriers' EVM and SNR, and their constellations, with and without cancellation. Set `phase_err` or
+  `delay_err` in its VAR block and Simulate again.
+- **`Superhet Demo`**: the superhet demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, the input
+  power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's 1/√SNR, and its
+  noise and distortion parts.
+
 ## What the displays show
 
 Every number below is the simulation minus the budget.
@@ -107,6 +128,11 @@ The array's Steering pattern sits on the closed-form array factor to 3×10⁻⁹
 NF and array gain at each peak, like every variant's gain and NF on the Combiners bench, to 10⁻¹⁴ dB: an S-parameter run
 of ideal blocks has no drive level to differ by.
 
+The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.001 to
+0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 1.4 % of the
+depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.2 %. The demo's SNR is
+the budget's to 0.2 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.2 % until compression.
+
 **Run the bench first.** A display reads `results/<bench>.npy`, which Simulate writes. Measured wall clock, release build:
 
 | Bench | Superhet | Array |
@@ -116,3 +142,8 @@ of ideal blocks has no drive level to differ by.
 | Envelope | 9 s | 25 s |
 | Steering | | 2 s |
 | Combiners | | 1 s |
+| Levels | 7 s | |
+| Blockers | 3 s | |
+| Demo | 2 min 20 s | |
+
+The Front End's Canceller bench runs its envelope sweeps in about 40 s.

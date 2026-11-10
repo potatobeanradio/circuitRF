@@ -1,0 +1,1387 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Front End Canceller",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SIG",
+      "Symbol": "ModSource",
+      "X": 0,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Fc",
+          "Expression": "Frf",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavg",
+          "Expression": "Psig\u002B6.0206\u002B(sig_on-1)*300",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Carrier[1]",
+          "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Carrier[2]",
+          "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=QPSK;Off=-15MHz;P=0;Seed=2\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Record",
+          "Expression": "0.00025",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Noise",
+          "Expression": "yes",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "INT",
+      "Symbol": "ModSource",
+      "X": 0,
+      "Y": 2600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Fc",
+          "Expression": "Frf",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavg",
+          "Expression": "Pint\u002B6.0206\u002B4.771212547196624",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Carrier[1]",
+          "Expression": "\u0022NR;BW=10MHz;SCS=15kHz;Mod=64QAM;Off=0MHz;P=0;Seed=3\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Carrier[2]",
+          "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=-15MHz;P=0;Seed=4\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Carrier[3]",
+          "Expression": "\u0022NR;BW=20MHz;SCS=15kHz;Mod=64QAM;Off=20MHz;P=0;Seed=5\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Record",
+          "Expression": "0.00025",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "ISPL",
+      "Symbol": "Combiner",
+      "X": 900,
+      "Y": 2400,
+      "Rotation": "R0",
+      "MirrorX": true,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "N",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LEAK",
+      "Symbol": "Tline",
+      "X": 1800,
+      "Y": 1300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "360*Frf*tau_leak",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "Frf",
+          "Unit": "Hz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MAIN",
+      "Symbol": "Combiner",
+      "X": 2700,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "N",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "CANC",
+      "Symbol": "Coupler",
+      "X": 3700,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Coupling",
+          "Expression": "10",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "0.2",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Phase",
+          "Expression": "90",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        }
+      ]
+    },
+    {
+      "InstanceName": "CANC_Rc",
+      "Symbol": "Resistor",
+      "X": 4000,
+      "Y": 1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "CANC_VMA",
+      "Symbol": "Amp",
+      "X": 1900,
+      "Y": 2700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "9.542425094393248\u002Bamp_err\u002B(canc_on-1)*300",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "6",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "200",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Input",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "CANC_VMP",
+      "Symbol": "Combiner",
+      "X": 2800,
+      "Y": 2600,
+      "Rotation": "R0",
+      "MirrorX": true,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "N",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Phase[1]",
+          "Expression": "-90\u002Bphase_err\u002B360*Frf*delay_err",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "CANC_VMP_T",
+      "Symbol": "Resistor",
+      "X": 3500,
+      "Y": 3100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "CANC_DL",
+      "Symbol": "Tline",
+      "X": 3400,
+      "Y": 2000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "360*Frf*(tau_leak\u002Bdelay_err)",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "Frf",
+          "Unit": "Hz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Iout",
+      "Symbol": "IProbe",
+      "X": 4600,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
+      ]
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 5200,
+      "Y": 600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 2800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 4000,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 3500,
+      "Y": 3300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND5",
+      "Symbol": "Ground",
+      "X": 5200,
+      "Y": 800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 0,
+      "Y": -1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Frf",
+          "Expression": "2450000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig",
+          "Expression": "-60",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pint",
+          "Expression": "-40",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "amp_err",
+          "Expression": "0.02",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "phase_err",
+          "Expression": "0.2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "delay_err",
+          "Expression": "5E-11",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "canc_on",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "sig_on",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "tau_leak",
+          "Expression": "1E-09",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 1600,
+      "Y": -3000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pint_calc",
+          "Expression": "-40.65757490560675",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pref_I1",
+          "Expression": "ENVN.ACLR[0, 0, \u0022Iout\u0022, 2, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I1_sim",
+          "Expression": "Pref_I1 - ENVP.ACLR[0, :, \u0022Iout\u0022, 2, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I1_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*(phase_err*pi/180 - 2*pi*0*(5E-11))))*imag(e^(j*(pi*9360000*(5E-11) \u002B 1e-300)))/(pi*9360000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I1_sim",
+          "Expression": "Pref_I1 - ENVA.ACLR[0, :, \u0022Iout\u0022, 2, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I1_calc",
+          "Expression": "-10*log10(1 \u002B 10^(amp_err/10) - 2*10^(amp_err/20)*real(e^(j*((0.2)*pi/180 - 2*pi*0*(5E-11))))*imag(e^(j*(pi*9360000*(5E-11) \u002B 1e-300)))/(pi*9360000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I1_sim",
+          "Expression": "Pref_I1 - ENVD.ACLR[0, :, \u0022Iout\u0022, 2, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I1_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*((0.2)*pi/180 - 2*pi*0*delay_err)))*imag(e^(j*(pi*9360000*delay_err \u002B 1e-300)))/(pi*9360000*delay_err \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pref_I2",
+          "Expression": "ENVN.ACLR[0, 0, \u0022Iout\u0022, 3, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I2_sim",
+          "Expression": "Pref_I2 - ENVP.ACLR[0, :, \u0022Iout\u0022, 3, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I2_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*(phase_err*pi/180 - 2*pi*-15000000*(5E-11))))*imag(e^(j*(pi*4500000*(5E-11) \u002B 1e-300)))/(pi*4500000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I2_sim",
+          "Expression": "Pref_I2 - ENVA.ACLR[0, :, \u0022Iout\u0022, 3, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I2_calc",
+          "Expression": "-10*log10(1 \u002B 10^(amp_err/10) - 2*10^(amp_err/20)*real(e^(j*((0.2)*pi/180 - 2*pi*-15000000*(5E-11))))*imag(e^(j*(pi*4500000*(5E-11) \u002B 1e-300)))/(pi*4500000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I2_sim",
+          "Expression": "Pref_I2 - ENVD.ACLR[0, :, \u0022Iout\u0022, 3, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I2_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*((0.2)*pi/180 - 2*pi*-15000000*delay_err)))*imag(e^(j*(pi*4500000*delay_err \u002B 1e-300)))/(pi*4500000*delay_err \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pref_I3",
+          "Expression": "ENVN.ACLR[0, 0, \u0022Iout\u0022, 4, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I3_sim",
+          "Expression": "Pref_I3 - ENVP.ACLR[0, :, \u0022Iout\u0022, 4, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthP_I3_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*(phase_err*pi/180 - 2*pi*20000000*(5E-11))))*imag(e^(j*(pi*19080000*(5E-11) \u002B 1e-300)))/(pi*19080000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I3_sim",
+          "Expression": "Pref_I3 - ENVA.ACLR[0, :, \u0022Iout\u0022, 4, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthA_I3_calc",
+          "Expression": "-10*log10(1 \u002B 10^(amp_err/10) - 2*10^(amp_err/20)*real(e^(j*((0.2)*pi/180 - 2*pi*20000000*(5E-11))))*imag(e^(j*(pi*19080000*(5E-11) \u002B 1e-300)))/(pi*19080000*(5E-11) \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I3_sim",
+          "Expression": "Pref_I3 - ENVD.ACLR[0, :, \u0022Iout\u0022, 4, \u0022Pch_dBm\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "DepthD_I3_calc",
+          "Expression": "-10*log10(1 \u002B 10^((0.02)/10) - 2*10^((0.02)/20)*real(e^(j*((0.2)*pi/180 - 2*pi*20000000*delay_err)))*imag(e^(j*(pi*19080000*delay_err \u002B 1e-300)))/(pi*19080000*delay_err \u002B 1e-300))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_QAM64_off",
+          "Expression": "ENVO.EVM_pct[0, \u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_QAM64_off",
+          "Expression": "ENVO.SNR_dB[0, \u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_QAM64_on",
+          "Expression": "ENVO.EVM_pct[1, \u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_QAM64_on",
+          "Expression": "ENVO.SNR_dB[1, \u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_QPSK_off",
+          "Expression": "ENVO.EVM_pct[0, \u0022Iout\u0022, 1]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_QPSK_off",
+          "Expression": "ENVO.SNR_dB[0, \u0022Iout\u0022, 1]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_QPSK_on",
+          "Expression": "ENVO.EVM_pct[1, \u0022Iout\u0022, 1]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_QPSK_on",
+          "Expression": "ENVO.SNR_dB[1, \u0022Iout\u0022, 1]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          3100,
+          2700
+        ],
+        [
+          3500,
+          2700
+        ],
+        [
+          3500,
+          2900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3400,
+          500
+        ],
+        [
+          3200,
+          500
+        ],
+        [
+          3200,
+          1700
+        ],
+        [
+          3800,
+          1700
+        ],
+        [
+          3800,
+          2000
+        ],
+        [
+          3600,
+          2000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          2400
+        ],
+        [
+          0,
+          2200
+        ],
+        [
+          400,
+          2200
+        ],
+        [
+          400,
+          2400
+        ],
+        [
+          600,
+          2400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          2300
+        ],
+        [
+          1400,
+          2300
+        ],
+        [
+          1400,
+          1300
+        ],
+        [
+          1600,
+          1300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          2500
+        ],
+        [
+          1400,
+          2500
+        ],
+        [
+          1400,
+          2700
+        ],
+        [
+          1600,
+          2700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          1300
+        ],
+        [
+          2200,
+          1300
+        ],
+        [
+          2200,
+          400
+        ],
+        [
+          2400,
+          400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4700,
+          400
+        ],
+        [
+          4700,
+          600
+        ],
+        [
+          4400,
+          600
+        ],
+        [
+          4400,
+          0
+        ],
+        [
+          5200,
+          0
+        ],
+        [
+          5200,
+          400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3000,
+          300
+        ],
+        [
+          3400,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          -200
+        ],
+        [
+          2200,
+          -200
+        ],
+        [
+          2200,
+          200
+        ],
+        [
+          2400,
+          200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4000,
+          300
+        ],
+        [
+          4300,
+          300
+        ],
+        [
+          4300,
+          -100
+        ],
+        [
+          5800,
+          -100
+        ],
+        [
+          5800,
+          1000
+        ],
+        [
+          4600,
+          1000
+        ],
+        [
+          4600,
+          400
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 4000,
+      "Y": 800,
+      "Name": "CANC_cp",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4000,
+      "Y": 500,
+      "Name": "CANC_cp",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3100,
+      "Y": 2500,
+      "Name": "r1",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2200,
+      "Y": 2700,
+      "Name": "r1",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3200,
+      "Y": 2000,
+      "Name": "r2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2500,
+      "Y": 2600,
+      "Name": "r2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1100,
+      "Y": -200,
+      "Name": "s",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 200,
+      "Y": 2200,
+      "Name": "i",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1300,
+      "Y": 2300,
+      "Name": "il",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1300,
+      "Y": 2500,
+      "Name": "ir",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2100,
+      "Y": 1300,
+      "Name": "lk",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3200,
+      "Y": 300,
+      "Name": "m",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5000,
+      "Y": -100,
+      "Name": "t",
+      "OwnerWireIndex": 9,
+      "SegmentIndex": 2,
+      "AlongT": 0.4666666666666667,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3500,
+      "Y": 1700,
+      "Name": "CANC_iso",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 2,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3300,
+      "Y": 2700,
+      "Name": "CANC_VMP_t",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4800,
+      "Y": 0,
+      "Name": "load",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 3,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "env",
+      "Name": "ENVN",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.25e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWN2",
+      "Enabled": true,
+      "PsaVarName": "canc_on",
+      "PsaValues": [
+        0
+      ],
+      "PsaInnerName": "ENVN"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWN1",
+      "Enabled": true,
+      "PsaVarName": "sig_on",
+      "PsaValues": [
+        0
+      ],
+      "PsaInnerName": "SWN2"
+    },
+    {
+      "Type": "env",
+      "Name": "ENVP",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.25e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWP2",
+      "Enabled": true,
+      "PsaVarName": "phase_err",
+      "PsaValues": [
+        -10,
+        -3,
+        -1,
+        0,
+        1,
+        3,
+        10
+      ],
+      "PsaInnerName": "ENVP"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWP1",
+      "Enabled": true,
+      "PsaVarName": "sig_on",
+      "PsaValues": [
+        0
+      ],
+      "PsaInnerName": "SWP2"
+    },
+    {
+      "Type": "env",
+      "Name": "ENVA",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.25e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWA2",
+      "Enabled": true,
+      "PsaVarName": "amp_err",
+      "PsaValues": [
+        -2,
+        -0.5,
+        0,
+        0.5,
+        2
+      ],
+      "PsaInnerName": "ENVA"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWA1",
+      "Enabled": true,
+      "PsaVarName": "sig_on",
+      "PsaValues": [
+        0
+      ],
+      "PsaInnerName": "SWA2"
+    },
+    {
+      "Type": "env",
+      "Name": "ENVD",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.25e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWD2",
+      "Enabled": true,
+      "PsaVarName": "delay_err",
+      "PsaValues": [
+        0,
+        5E-10,
+        1E-09,
+        2E-09
+      ],
+      "PsaInnerName": "ENVD"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWD1",
+      "Enabled": true,
+      "PsaVarName": "sig_on",
+      "PsaValues": [
+        0
+      ],
+      "PsaInnerName": "SWD2"
+    },
+    {
+      "Type": "env",
+      "Name": "ENVO",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.25e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no",
+      "EnvNoise": "yes",
+      "EnvEvmSplit": "yes"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWO",
+      "Enabled": true,
+      "PsaVarName": "canc_on",
+      "PsaValues": [
+        0,
+        1
+      ],
+      "PsaInnerName": "ENVO"
+    }
+  ]
+}
