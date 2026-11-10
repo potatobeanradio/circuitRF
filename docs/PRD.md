@@ -130,6 +130,16 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
 
 **Acceptance** is held by the `tests/Ui.Tests/Statistics/` suite — among them reproducible streams at any parallelism, the Clopper–Pearson interval against binomial tail sums, a design whose exact yield is known analytically, nominal identity of every kit-statistics path, the panel's result byte-identical to the CLI's, and corner, centering and DOE runs on closed-form circuits — and by `tests/Ui.Tests/Examples/YieldExampleTests.cs`, which runs the shipped *Yield, Corners and Centering* example's three benches at their own settings and asserts the outcomes its README states. Design detail in [`design/yield.md`](design/yield.md).
 
+### 5.3 RF chain budget (v3.3)
+
+- **The budget** — a receive chain as an ordered list of stages, each a System block (amplifier, mixer, attenuator, filter, switch, isolator, coupler, N-way splitter, N-way array combiner) or a composed one (phase shifter, limiter) with the part's own parameters, and the system inputs (frequency, bandwidth, input power, source temperature, required SNR). Per stage the cumulative gain, NF (Friis), IIP3/OIP3, IP1dB/OP1dB, output power, SNR and share of F − 1; for the chain the thermal noise floor, output noise, MDS, sensitivity, SNR and SFDR. An array combiner makes the stages before it one element's branch: coherent signal gain, uncorrelated noise, the array gain in the SNR. The combiner is direct (N:1) or a tree of 2:1 levels, passive or active (an amplifier after each combiner), with a loss per level and per element path, each variant budgeted as the cascade of its levels.
+- **The Combiner block** — an ideal, matched, reciprocal N-way combiner and splitter in the System library, with a loss and a phase per path, its noise from its S.
+- **The document** — `.cchain`, JSON, the stage parameters as the part's own netlist text.
+- **Transfer to Schematic** — one action writes the chain as test benches of the same parts (1-Tone: S-parameter or harmonic-balance noise and a compression sweep; 2-Tone: the intercepts; Envelope: SNR and EVM with noise; for an array, Steering: a plane wave swept in angle against the steer angle, the pattern beside the closed-form array factor; and Combiners: the four combiner variants side by side), each with a Data Display putting the budget beside every simulated number.
+- **Headless** — `circuitrf chain` (and `run analysis=chain` on the MCP server) budgets a `.cchain` as a DataSet and, with `--to-schematic`, writes the same benches.
+
+**Acceptance** is held by `tests/Ui.Tests/Chain/ChainBudgetTests.cs` — the closed forms by hand, every part's bench simulated against its budget, the steered array — and `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`, which runs the shipped *RF Chain Budget* example's benches: gain, NF and intercepts within 5×10⁻⁴ dB, the compression point within 0.1 dB (the cascade formula's approximation), the envelope SNR within 0.5 dB (one noise record). Design detail in [`design/chain-budget.md`](design/chain-budget.md).
+
 ## 6. Components (functional requirements)
 
 Each component declares a variable number of typed parameters (with units). Adding a new component type must be straightforward — a single device interface (ports + linear `Stamp` and/or nonlinear `Evaluate`) plus factory registration.

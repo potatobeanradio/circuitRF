@@ -72,6 +72,8 @@ public static class ReferenceLibrary
         // analysis: a tool's schema names the run, and neither names the cubes a plot has to ask for.
         "simulations",
         "cosimulation",
+        // A receive chain's budget: the .cchain format, its parts and the formulas the `chain` verb applies.
+        "chain-budget",
         ComponentNotesTopic,
     ];
 

@@ -32,7 +32,9 @@ by the same engines. Together they answer:
 
 - **Level plans** — what power is at each point in the chain.
 - **Cascaded gain, and cascaded intercept** — the amplifier and the mixer each carry one, and a
-  harmonic-balance run cascades them for you rather than through a spreadsheet formula.
+  harmonic-balance run cascades them for you rather than through a spreadsheet formula. The
+  [RF Chain Budget](chain-budget.html) is the formula, written out stage by stage, and it transfers to
+  benches of these blocks that check it.
 - **Image and spurious paths** — what a mixer's other sideband lands on, and what the filter after
   it does about that.
 - **Band plans and isolation budgets** — a duplexer's two arms, a circulator's reverse leakage, a

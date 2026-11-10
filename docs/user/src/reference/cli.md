@@ -137,6 +137,7 @@ convention behind both.</p>
 | `yield sens` | `.csch` or `.cnl` | The [Sensitivity](sensitivity.html) panel's ranking — each value stepped up and down on its own | Per goal, the values that move it most and their shares, to stdout; the steps to `<design>.sens.npy`; **nothing** in the design |
 | `model new`, `import`, `deembed`, `fit`, `check-charge`, `explain`, `export`, `validate`, `report` | a `.cmc` | The [Model Composer](#model)'s steps — the same functions its window calls | The `.cmc`, its cache, a `.cmodel` or a cell, a report folder — as the noun says |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
+| `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, and its Transfer to Schematic | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -1566,6 +1567,21 @@ and `date`), then `staleAcceptances`. With `--list-checks` the result is `review
 **Exit codes:** **0** when it ran, whatever it found; **1** on a refusal, or with `--severity warning` when
 an unaccepted finding remains; **130** on a cancellation, reporting the checks that finished. `review`
 writes nothing but `-o`'s PDF.
+
+## `chain` — an RF chain budget, headless {#chain}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace]</code></pre>
+
+`chain` budgets a **`.cchain`** — the document the [RF Chain Budget](chain-budget.html) window edits — and prints
+the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
+floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so `--json` carries it and `-o` writes it: per-stage
+cubes over a `stage` axis labelled with the stage names (`G_dB`, `NF_dB`, `IIP3_dBm`, …) and the totals as scalars.
+
+`--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone` and `Envelope` test
+benches, and an array's `Steering` and `Combiners` benches, each with its Data Display, beside the `.cchain` or in
+`dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
+bench is refused. Exit **0** when it budgeted (and
+transferred), **1** on a refusal.
 
 ## `smith` — a matching network, headless {#smith}
 
