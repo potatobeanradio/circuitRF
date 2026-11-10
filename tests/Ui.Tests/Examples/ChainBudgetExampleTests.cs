@@ -4,7 +4,8 @@
 //  The two chains (a 2.45 GHz superhet and a four-element steered array) and their transferred benches, run as Simulate
 //  runs them (SchematicRunService.RunNetlist on the schematic's own netlist), in a temporary copy of the workspace:
 //
-//    - the shipped benches and displays are exactly what Transfer to Schematic writes from the shipped .cchain today;
+//    - the shipped benches and displays are what Transfer to Schematic writes from the shipped .cchain today, to the
+//      last bit of a computed number (which the platform's maths library decides);
 //    - the workspace checks clean, and every display column is a measurement its bench computes;
 //    - each bench's simulated gain, NF, intercepts, compression and SNR sit on the budget within the tolerances the
 //      README quotes, stage by stage;
@@ -56,9 +57,34 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
             foreach (var b in ChainBenches.BenchesFor(d))
             {
                 string cell = ChainBenches.CellName(chain, b);
-                Assert.Equal(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)));
-                Assert.Equal(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")));
+                SameUpToTheLastBit(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)), cell + ".csch");
+                SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
             }
+        }
+    }
+
+    /// <summary>
+    /// The same document, but for the last bit of a computed number. Transfer writes the budget's numbers round-trip,
+    /// and the budget is computed with the platform's maths library, whose log10 and pow can differ by an ulp between
+    /// operating systems: the shipped superhet bench read "1.4972226032470457" where macOS writes "…455". So every
+    /// character outside a number must match exactly, and every number to a relative 1e-12 — a thousand ulps, and a
+    /// million times finer than any tolerance a bench reads its numbers to. (Rounding the written numbers instead does
+    /// not cure it: 10·log10(4) = 6.020599913279625 sits on a rounding edge at 15 digits, and any digit count has such
+    /// values.)
+    /// </summary>
+    private static void SameUpToTheLastBit(string expected, string actual, string what)
+    {
+        var number = new System.Text.RegularExpressions.Regex(@"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?");
+        Assert.Equal(number.Replace(expected, "#"), number.Replace(actual, "#"));
+        var e = number.Matches(expected);
+        var a = number.Matches(actual);
+        for (int i = 0; i < e.Count; i++)
+        {
+            if (e[i].Value == a[i].Value) continue;
+            double x = double.Parse(e[i].Value, System.Globalization.CultureInfo.InvariantCulture);
+            double y = double.Parse(a[i].Value, System.Globalization.CultureInfo.InvariantCulture);
+            Assert.True(Math.Abs(x - y) <= 1e-12 * Math.Max(Math.Abs(x), Math.Abs(y)),
+                        $"{what}: {e[i].Value} written as {a[i].Value}");
         }
     }
 

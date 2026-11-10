@@ -4,7 +4,7 @@
 //  Copying a plot on Windows ended the process twice: Copy writes the clipboard and then re-reads it to
 //  decide whether Paste is enabled, and Avalonia's OLE wrapper threw a COMException ("EnumFormatEtc
 //  failed") out of that read. A clipboard the platform refuses to read now reads as one holding nothing
-//  pasteable (ClipboardRead). Also here: the mixed wBond clipboard parser refuses foreign JSON without
+//  pasteable (ClipboardRead): Paste stays enabled, as it is whenever a reader is wired, and adds nothing. Also here: the mixed wBond clipboard parser refuses foreign JSON without
 //  throwing, and the crash-recovery offer's Later no longer discards what it offered.
 // ================================================================
 
@@ -32,7 +32,10 @@ public sealed class DesignerRound21CrashTests
     }
 
     [Fact]
-    public async Task Copy_WhenTheClipboardCannotBeRead_DoesNotThrow_AndPasteStaysDisabled()
+    // Paste is enabled whenever a clipboard reader is wired and reads the clipboard when it runs (the plot paste
+    // between displays), so an unreadable clipboard no longer shows as a disabled Paste: it shows as a Paste that adds
+    // nothing. The crash this round fixed is the claim, and it is held both ways.
+    public async Task Copy_WhenTheClipboardCannotBeRead_DoesNotThrow_AndPastePastesNothing()
     {
         var vm = MakeVm();
         string? written = null;
@@ -44,10 +47,11 @@ public sealed class DesignerRound21CrashTests
         vm.SetGetClipboardTextAction(() => throw new COMException("EnumFormatEtc failed"));
 
         await vm.InvokeCopyAsync();
-
         Assert.NotNull(written);
-        Assert.False(vm.PasteCommand.CanExecute(null));
+
+        int plots = vm.DataDisplay!.Plots.Count;
         await vm.InvokePasteAsync();   // a refused read is "nothing to paste", not a crash
+        Assert.Equal(plots, vm.DataDisplay.Plots.Count);
     }
 
     [Fact]
