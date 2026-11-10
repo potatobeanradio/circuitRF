@@ -29506,3 +29506,62 @@ plane and the bottom copper and none with the pour.
 - Gates: `tests/Ui.Tests/Plugins/PluginLayoutTests.cs` and `PluginPanelControllerTests.cs`; controls-never-shift is
   `tools/UiSnapshot --plugin-panel tools/plugin-examples/calculator --plugin-shift-check`.
 
+## Dielectrics above the top analysis level enter the planar medium (brief-psv-1, 2026-11-10)
+
+- **`PlanarExtractor.BuildMediumStack` cuts on up to the top of the highest dielectric** and then terminates in air,
+  as before. Free space at the top of the stack is TRIMMED before the merge (`IsFreeSpace`: εᵣ 1, tanδ 0, µᵣ 1,
+  σ 0), so an explicit εᵣ = 1 entry above the top metal is the same medium bit for bit. The MMIC starter's own "Air"
+  between MIM Metal and Metal2 is that case whenever Metal2 is not analysed. Above the topmost level a region with
+  no dielectric host is air with no note: the "taken as free space" sentence is about the space between levels.
+- **A one-level covered problem must state its level's z.** `PlanarProblem.LevelZ` reads an unset `ZM` as
+  `EffectiveStack.TopZ`, which under a cover is the top of the cover. The extractor writes `ZM` whenever
+  `coverM > 0`; an uncovered one-level problem still leaves it NaN and keeps L8's path.
+- **Kept as before, and warned by name: a lid (`Stackup.Top = Ground`, unflipped frame only) or a
+  ground-designated conductor above the levels.** The planar medium has one return plane, beneath its levels.
+  Continuing dielectric up to or through a second plane describes neither structure. That warning covers
+  stripline-shaped setups, which the old ANT-12 warning used to catch by accident. **In a flipped run the far
+  boundary is `Stackup.Bottom`, whose default is Ground and which sits on the trace's own face. It is not read as
+  a lid,** so a bottom mask on a flipped run enters the medium.
+- **The R-em-4a absorption makes a thin conformal cover look thick.** The top level's own conductor band is filled
+  with the cover's material, as in kernel A, so 1 µm of nitride over 3 µm Metal2 is a 4 µm εᵣ 7 slab in the medium.
+  A 20 µm Metal2 line's Z₀ falls 138.3 → 118.3 Ω (planar). Kernel A reads 135.1 → 99.2 Ω on the same rule. The gap
+  is kernel A's thick strip, whose sidewalls sit wholly in the εᵣ 7 band; uncovered, the two are already 7.8 % apart
+  on ε_eff there.
+- **`PlanarSolve.GeneralStackCalibrationNote` said C_pul "neglects" the dielectric above the port, and it was
+  stale.** Since MIM-4, a calibrator whose medium is not the slab takes C_pul from `InteriorStaticImages` over the
+  whole stack. The note now branches on `InteriorFitResidual` (NaN = slab route) and says which route was taken.
+- **R-msh-8a's closed-form offers are cleared for a covered run**: they are open-microstrip formulas.
+- **Audit verdicts** (no code change unless stated): `RequiresGeneralKernel` sends a covered single-substrate line to
+  the general kernel, which is correct. An εᵣ 1.001 cover lands within 0.04 dB of the bare answer at 5.8 GHz.
+- **The covered patch was 6-13× slower per point, and 85 % of it was the MIM-8 closed form** (profiled with
+  `dotnet-trace`). `ShallowImageCore.CellPairMean` ran per near cell pair per frequency for seven images: the
+  cover's exact MIM-12a chain (1.07-4.28 mm deep, frequency-independent) and three fitted images of amplitude
+  1e-5 to 2e-4. A per-translation-class memo was tried and dropped: the patch's pitch-field mesh had 483,832
+  classes for 496k band pairs. Two changes in `SingularExtraction.FromDcimAtHeightsMinusShallowImages`:
+  (1) a peeled chain whose SHALLOWEST member is deeper than the shallow threshold stays in the terms whole, as a
+  deep fitted image does. All-or-nothing on purpose: a thin film's chain starts at its own thickness and is
+  always taken, so MIM-12a is untouched; splitting the chain per member moved `MimThinLayerTests.T1`'s pinned
+  digest and broke `T9`. (2) A fitted image below `ShallowImageMinAmplitude` (1e-3 of the direct term) stays in
+  the terms; what a missed peak can cost is of order its amplitude, below the kernel's own error. Neither moved a
+  MIM test. Five covered points 80 → 15.5 s (bare 7.6 s, bit-identical); |ΔS| 3.6e-5; the example's full sweep
+  464 → 91 s against 32 s bare; series f₀ unchanged to 10 kHz.
+- **The absorbed-band rule overstates a conformal cover's effect 3×** (Palace electrostatics, per-unit-length C
+  with PMC end walls, 20 × 3 µm gold on 100 µm GaAs, 1 µm εᵣ 7 nitride): ε_eff 7.597 bare, 7.762 true conformal,
+  7.760 for a 1 µm slab on top of the metal with air beside it, 8.117 absorbed (4 µm slab). Z₀ 75.98 / 75.17 /
+  75.18 / 73.51 Ω. Planar on the same line (sheet): absorbed +6.8 % ε_eff, a 1 µm slab over a 3 µm air band
+  +1.0 %. "Starts on top of the metal" is the better model for passivation in every solver; absorption is the
+  better one for solder mask. Not changed here: a per-entry choice needs the stackup model, `.ctech`, the
+  editor, and all three solvers' slab builders, and it sits beside PSV-2's `OpenWithLayer` on the same row. Dcim's `TopZ` reference and
+  `LowestFittableFrequency` take the whole stack height. That is the meaning they already have for every buried level,
+  and a taller stack only lowers the fit floor. The pole search (`SurfaceWavePoles`) runs on the
+  `LayerStack`, so a superstrate's modes are searched like any layer's; the far field reads the cross-region path
+  (`atTop` false) on a covered patch, as ANT-11 gated. The calibrator's structural comparison (`DescribedByTheSlab`)
+  refuses a two-layer stack, so a covered line's C_pul is MIM-4's interior route, cover included (gate 2).
+- **Measured gates.** Covered 50 Ω line on the RO4350B 20 mil starter, 2 GHz: planar vs kernel A +0.94 % ε_eff,
+  +2.64 % Z₀ (uncovered +1.26 % / +2.45 %); the cover moves ε_eff +5.0 % (planar) / +5.4 % (A). Patch with a
+  0.5 mm εᵣ 3 radome: patch mode (R peak) 5.937 → 5.712 GHz planar, 5.837 → 5.613 GHz EMerge 3D with a PEC floor:
+  shifts of 225.3 and 224.5 MHz against a 100 MHz uncovered planar-vs-3D gap. Series resonance −163.5 MHz planar,
+  −129 MHz 3D, against a 175 MHz uncovered gap. Every shipped example's medium, level heights and notes are unchanged
+  (13 `.cem`s, dumped before and after).
+- Gates: `tests/Ui.Tests/Em/PlanarCoverTests.cs`. It replaces `SuperstrateNotInTheSolveTests`, whose two claims
+  (the identity and the warning) are now false by design.

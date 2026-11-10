@@ -3060,7 +3060,9 @@ public static class PlanarSolve
                           "any cap produces bit-identical s-parameters.");
 
             if (general && calibrators.Count > 0)
-                notes.Add(GeneralStackCalibrationNote(problem, owners, fmt));
+                notes.Add(GeneralStackCalibrationNote(
+                    problem, owners, fmt,
+                    calibrators.All(c => !double.IsNaN(c.InteriorFitResidual))));
         }
         else notes.Add("De-embedding is OFF: these s-parameters include the port discontinuity and are " +
                        "NOT the structure's response. This path exists for diagnostics only.");
@@ -5167,10 +5169,15 @@ public static class PlanarSolve
     /// D3's two standing caveats for a general stack, stated once and rather than discovered: the
     /// standards are single-level uniform lines (a standard with a via in it is not a standard), and
     /// C_pul neglects everything above the port's own level.
+    ///
+    /// <para><b>The second caveat is true only of the one-slab image series.</b> A calibrator whose
+    /// medium is not that slab takes C_pul from MIM-4's interior electrostatics over the whole
+    /// stack, so the dielectric above the port's level IS in it — the case every covered line
+    /// (PSV-1) takes. <paramref name="wholeMedium"/> says every calibrator took that route.</para>
     /// </summary>
     private static string GeneralStackCalibrationNote(
         PlanarProblem problem, IReadOnlyList<PlanarPortResolution> ports,
-        SurfaceMesher.PlanarLengthFormat fmt)
+        SurfaceMesher.PlanarLengthFormat fmt, bool wholeMedium)
     {
         var stack = problem.EffectiveStack;
         double zPort = problem.LevelZ(ports[0].LayerIndex);
@@ -5181,10 +5188,16 @@ public static class PlanarSolve
                 above.Add($"{fmt(stack.Layers[i].ThicknessM)} of " +
                           $"εᵣ = {stack.Layers[i].Material.EpsR:G4}");
 
-        return "The calibration standards are SINGLE-LEVEL uniform lines on the port's own level — a " +
+        const string singleLevel =
+               "The calibration standards are SINGLE-LEVEL uniform lines on the port's own level — a " +
                "standard with a via in it is not a standard, because the two-line algebra models the " +
                "section between the reference planes as a uniform matched line and a via is a " +
-               "discontinuity in the middle of exactly that. And Z_c's C_pul is an electrostatic " +
+               "discontinuity in the middle of exactly that.";
+        if (wholeMedium)
+            return singleLevel + " Z_c's C_pul is solved in the whole layered medium at the port's level" +
+                   (above.Count == 0 ? "." : ", " + string.Join(" plus ", above) + " above it included.");
+
+        return singleLevel + " And Z_c's C_pul is an electrostatic " +
                "image series over the grounded slab alone, so it neglects " +
                (above.Count == 0
                    ? "nothing — there is no dielectric above the port's level."

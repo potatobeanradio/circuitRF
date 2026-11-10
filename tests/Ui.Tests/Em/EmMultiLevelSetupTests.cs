@@ -161,9 +161,9 @@ public sealed class EmMultiLevelSetupTests
     /// A structure with nothing left out ranks nothing, and the block takes no height.
     ///
     /// <para><b>All three conductors are drawn and ticked on purpose.</b> With Metal2 left out, the
-    /// topmost analysis level is MIM Metal and the Air above it is discarded from the medium — a
-    /// real and correctly-classed warning about a different thing, which would make this test pass
-    /// or fail on something it is not about.</para>
+    /// run reports Metal2's artwork as not in the analysis — a real and correctly-classed warning
+    /// about a different thing, which would make this test pass or fail on something it is not
+    /// about.</para>
     ///
     /// <para><b>And the NITRIDE is drawn, since MIM-11.</b> The shipped technology ties its MIM
     /// Dielectric to that mask rather than to the plate conductor, so a plate with no mask over it

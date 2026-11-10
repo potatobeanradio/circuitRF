@@ -1403,42 +1403,55 @@ public static class PlanarExtractor
         }
 
         // ── L9d/D5 — the general MEDIUM, and each level's own z on one of its interfaces ───────
-        var (mediumStack, levelZ, stackNote) = BuildMediumStack(stack, levels, groundTopM, floor);
-        if (stackNote is not null) notes.Add(stackNote);
-
-        // ── ANT-12 §1a — A COVER LAYER OVER THE TOP METAL IS NOT IN THE SOLVE, AND IT WAS SILENT ──
         //
-        // BuildMediumStack stops at `topOfInterest` = the topmost analysis level's own sheet, and the
-        // stack is then terminated in AIR at exactly that height. Anything the technology declares
-        // above it — a radome, a conformal coating, a gain-raising superstrate — is discarded, and
-        // until this note nothing said so. Measured on the shipped 5.8 GHz patch example: adding a
-        // 0.5 mm, eps_r = 3.0 cover over the top copper produced s-parameters BIT-IDENTICAL to the
-        // uncovered run, at every one of 11 frequencies, with the pattern and the power budget
-        // identical too. A real cover moves a patch's resonance by per cent and changes its
-        // surface-wave launch, so "no difference at all" is the one answer that cannot be right.
+        // PSV-1 — the medium continues above the topmost level through every dielectric the
+        // technology declares there (passivation, solder mask, a coating, a radome), unless the
+        // stack is closed above: a lid (`Stackup.Top = Ground`, in the stackup's own orientation)
+        // or a ground-designated conductor above the levels. The planar medium has one return plane,
+        // beneath its levels, and represents neither; those runs keep the stack ending at the
+        // topmost level, as before, and the warning below says what that leaves out.
         //
-        // A WARNING rather than a refusal, on the same terms as the skipped-ground-plane warning
-        // above: the layer is genuinely representable in the medium this kernel solves (a uniform
-        // superstrate is a layered medium), so the limit is in the EXTRACTION and not in the physics,
-        // and refusing would stop runs that are otherwise correct about everything below the metal.
-        var covers = stack
+        // The flipped frame needs nothing of its own: what lies above its topmost level is what lies
+        // below the lowest level in the stackup's orientation, and the mirrored bands already say
+        // so. Its far boundary is `Stackup.Bottom`, whose default is Ground and which in a flipped
+        // run sits on the face of the board the trace is on — not a lid, and not read as one.
+        double topSheetM = levels[^1].SheetM;
+        var aboveTop = stack
             .Where(b => b.Layer.Kind == StackupKind.Dielectric &&
-                        b.BottomM >= levels[^1].SheetM - 1e-15 && b.TopM > b.BottomM)
+                        b.TopM > topSheetM + 1e-15 && b.TopM > b.BottomM)
             .OrderBy(b => b.BottomM)
             .ToList();
-        if (covers.Count > 0)
+        var planeAbove = stack
+            .Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference &&
+                        b.BottomM >= topSheetM - 1e-15 && b.Index != groundBand?.Index)
+            .OrderBy(b => b.BottomM)
+            .FirstOrDefault();
+        bool lid = !flipped && tech.Stackup.Top == BoundaryCondition.Ground;
+        bool continueAbove = !lid && planeAbove is null;
+
+        var (mediumStack, levelZ, stackNote, coverNames, coverM) =
+            BuildMediumStack(stack, levels, groundTopM, floor, continueAbove);
+        if (stackNote is not null) notes.Add(stackNote);
+
+        if (coverNames.Count > 0)
+            notes.Add(
+                $"The medium continues {FormatLength(coverM)} above '{levels[^1].Layer.Name}', the topmost " +
+                $"analysis level, through {string.Join(", ", coverNames.Select(n => $"'{n}'"))}.");
+
+        // R-msh-8a's offers are open-microstrip closed forms, which answer a different question
+        // for a covered line; a wrong reference is worse than none, so a covered run makes none.
+        if (coverNames.Count > 0) alternatives.Clear();
+
+        if (!continueAbove && aboveTop.Count > 0)
             notes.Add(EmFinding.Warn(
-                $"{string.Join(", ", covers.Select(b => $"'{b.Layer.Name}'"))} " +
-                $"{(covers.Count == 1 ? "is a dielectric layer" : "are dielectric layers")} lying " +
-                $"ABOVE '{levels[^1].Layer.Name}', the topmost analysis level, and " +
-                $"{(covers.Count == 1 ? "it is NOT in this solve" : "they are NOT in this solve")}. " +
-                "The medium is built from the ground plane up to the topmost level and then terminated " +
-                "in an open air half-space at exactly that height, so a radome, a conformal coating or " +
-                "a superstrate over the metal is discarded rather than modelled — the answer is the " +
-                "answer for an UNCOVERED structure, and it will not look any different. On a patch " +
-                "antenna a real cover moves the resonance by per cent and changes the surface-wave " +
-                "launch. Remove the layer from the stackup if you did not mean it, and read the " +
-                "published resonance as the uncovered one if you did."));
+                (lid
+                    ? $"Technology '{tech.Name}' closes the stack above '{levels[^1].Layer.Name}' with a " +
+                      "ground lid (Stackup.Top = Ground)"
+                    : $"'{planeAbove!.Layer.Name}' is a ground plane above '{levels[^1].Layer.Name}', the " +
+                      "topmost analysis level") +
+                ". The planar medium has one return plane, beneath its levels, so it ends in open air " +
+                $"at '{levels[^1].Layer.Name}' and {string.Join(", ", aboveTop.Select(b => $"'{b.Layer.Name}'"))} " +
+                $"{(aboveTop.Count == 1 ? "is" : "are")} not in this solve."));
 
         // GVIA-1 — the plane's own artwork, classified once, is what tells a ground stitch from a
         // signal via passing through. It is built from the SAME polygons R-fg-2 reads above, so the
@@ -1502,7 +1515,9 @@ public static class PlanarExtractor
                 // A one-level problem keeps ZM UNSET, so it stays on L8's shipped path bit-for-bit
                 // (PlanarProblem.RequiresGeneralKernel). Naming the height is what turns the general
                 // kernel on, and it must only happen when there is something general to say.
-                levels.Count > 1 ? levelZ[i] : double.NaN,
+                // PSV-1: a covered level is not on the stack's top surface, and an unset ZM reads as
+                // exactly that (PlanarProblem.LevelZ), so a cover names the height too.
+                levels.Count > 1 || coverM > 0 ? levelZ[i] : double.NaN,
                 levels[i].Layer.RoughnessRmsM ?? 0.0)
             {
                 Films = filmsByLevel[i] is { } films ? films : [],
@@ -1582,13 +1597,11 @@ public static class PlanarExtractor
 
                 // ── AND ONLY IF IT IS ACTUALLY IN THE MEDIUM ────────────────────────────────
                 //
-                // `BuildMediumStack` stops at the topmost analysis level and terminates in air
-                // there, so a film ABOVE that level is discarded from the solve — which is exactly
-                // ANT-12 §1a's case, and its warning already names the band. Saying "this run
-                // CARRIES the film" beside "that film is NOT in this solve" would be two findings
-                // contradicting each other about one band, and the cover warning is the one that
-                // matters. MIM-11 found this while measuring: two runs differing only in the film's
-                // εᵣ came back BIT-IDENTICAL on a Metal1-only run, and the engine was right.
+                // A film above the topmost level is in the medium when the stack continues above
+                // that level (PSV-1), and is not when the stack is closed there by a lid or a plane
+                // above — the case the warning above names. Saying "this run CARRIES the film"
+                // beside "that film is NOT in this solve" would be two findings contradicting each
+                // other about one band.
                 //
                 // The SHEET note below is deliberately outside this guard. The sheet moved whether
                 // or not the film reached the medium — the substrate under this level really is
@@ -1596,7 +1609,9 @@ public static class PlanarExtractor
                 // nothing else explains the height.
                 var filmBand = stack.FirstOrDefault(
                     b => string.Equals(b.Layer.Name, carried.Film.Name, StringComparison.Ordinal));
-                bool inMedium = filmBand is not null && filmBand.BottomM < levels[^1].SheetM - 1e-15;
+                bool inMedium = filmBand is not null &&
+                                (filmBand.BottomM < levels[^1].SheetM - 1e-15 ||
+                                 coverNames.Contains(filmBand.Layer.Name));
 
                 double coveredM2 = defining.Sum(NetArea);
                 string coverage = extentM2 > 0
@@ -1681,6 +1696,9 @@ public static class PlanarExtractor
     /// <summary>MIM-11 — a percentage a reader can act on. "0 %" for a film that covers a thousandth
     /// of the layout is a rounding that argues the opposite of the truth, so anything below the
     /// first decimal is reported as a bound rather than as zero.</summary>
+    private static string FormatLength(double m) =>
+        m < 1e-3 ? $"{m * 1e6:G4} µm" : $"{m * 1e3:G4} mm";
+
     private static string FormatPercent(double pct) => pct switch
     {
         <= 0  => "0 %",
@@ -1913,8 +1931,29 @@ public static class PlanarExtractor
             : Termination.Pec;
     }
 
-    private static (LayerStack Stack, double[] LevelZ, string? Note) BuildMediumStack(
-        List<Band> bands, List<Band> levels, double groundTopM, Termination floor)
+    /// <summary>
+    /// The medium the planar kernel solves in: the ground plane's top surface up to the topmost
+    /// analysis level, and then — PSV-1 — on through every dielectric above that level, terminated
+    /// in open air above the highest one. A cover over the metal (passivation, solder mask, a
+    /// coating, a radome) is a layer of a layered medium like any other, and the kernel solves a
+    /// level with dielectric above it on every buried level of a multi-level stack.
+    ///
+    /// <para><b>A free-space slab at the top of the stack merges INTO the air termination.</b> It
+    /// is not an interface, so a stackup that writes an explicit εᵣ = 1 entry above its top metal
+    /// produces the same medium, bit for bit, as one that writes nothing there.</para>
+    ///
+    /// <para><paramref name="continueAbove"/> false keeps the stack ending at the topmost level,
+    /// which is what a stack closed above by a lid or by a ground plane gets: the planar medium has
+    /// one return plane, beneath its levels, and a dielectric continued up to (or through) a plane
+    /// it cannot represent would describe neither structure.</para>
+    ///
+    /// <para><c>Covers</c> names the dielectric entries that put material other than free space
+    /// above the topmost level, in stack order; <c>CoverM</c> is the medium's height above that
+    /// level. Both are empty/zero when nothing is above it.</para>
+    /// </summary>
+    private static (LayerStack Stack, double[] LevelZ, string? Note, List<string> Covers, double CoverM)
+        BuildMediumStack(List<Band> bands, List<Band> levels, double groundTopM, Termination floor,
+                         bool continueAbove)
     {
         var levelZ = new double[levels.Count];
         for (int i = 0; i < levels.Count; i++) levelZ[i] = levels[i].SheetM - groundTopM;
@@ -1924,19 +1963,28 @@ public static class PlanarExtractor
             .Where(b => b.Layer.Kind == StackupKind.Dielectric && b.TopM > groundTopM + 1e-15)
             .OrderBy(b => b.BottomM).ToList();
 
+        // PSV-1 — where the stack stops: the topmost level's sheet, or the top of the highest
+        // dielectric above it. A conductor band between the two is absorbed by the rule below, as
+        // every conductor band that is not a level is.
+        double stackTop = topOfInterest;
+        if (continueAbove)
+            foreach (var d in dielectrics)
+                if (d.TopM > stackTop) stackTop = d.TopM;
+
         // Every boundary the stack must carry: the ground plane, each level, and each material change
-        // up to (and including) the dielectric that encloses the topmost level.
+        // up to (and including) the highest dielectric the stack reaches.
         var cuts = new SortedSet<double> { groundTopM };
         foreach (var b in levels) cuts.Add(b.SheetM);
         foreach (var d in dielectrics)
         {
-            if (d.BottomM > groundTopM + 1e-15 && d.BottomM <= topOfInterest + 1e-15) cuts.Add(d.BottomM);
-            if (d.TopM    >  groundTopM + 1e-15 && d.TopM    <= topOfInterest + 1e-15) cuts.Add(d.TopM);
+            if (d.BottomM > groundTopM + 1e-15 && d.BottomM <= stackTop + 1e-15) cuts.Add(d.BottomM);
+            if (d.TopM    >  groundTopM + 1e-15 && d.TopM    <= stackTop + 1e-15) cuts.Add(d.TopM);
         }
         cuts.Add(topOfInterest);
+        cuts.Add(stackTop);
 
-        var ordered = cuts.Where(z => z <= topOfInterest + 1e-15).OrderBy(z => z).ToList();
-        var built = new List<(double Lo, double Hi, EmMaterial M)>();
+        var ordered = cuts.Where(z => z <= stackTop + 1e-15).OrderBy(z => z).ToList();
+        var built = new List<(double Lo, double Hi, EmMaterial M, string? Name)>();
         string? note = null;
 
         for (int i = 0; i + 1 < ordered.Count; i++)
@@ -1974,16 +2022,26 @@ public static class PlanarExtractor
 
             if (host is null)
             {
-                note = "Part of the space between the analysis levels is not covered by a dielectric " +
-                       "stackup entry and was taken as free space. Add the encapsulation or spacer to " +
-                       "the stackup so the medium is stated rather than assumed.";
-                built.Add((lo, hi, EmMaterial.Air));
+                // Above the topmost level a gap is free space by the same token as the termination
+                // over it, and the sentence below — about the space BETWEEN the levels — is not
+                // about it.
+                if (hi <= topOfInterest + 1e-15)
+                    note = "Part of the space between the analysis levels is not covered by a dielectric " +
+                           "stackup entry and was taken as free space. Add the encapsulation or spacer to " +
+                           "the stackup so the medium is stated rather than assumed.";
+                built.Add((lo, hi, EmMaterial.Air, null));
                 continue;
             }
             built.Add((lo, hi, new EmMaterial(host.Layer.Epsr, host.Layer.TanD,
                                               host.Layer.Mur <= 0 ? 1.0 : host.Layer.Mur)
-            { SigmaSm = host.Layer.SigmaSm }));
+            { SigmaSm = host.Layer.SigmaSm }, host.Layer.Name));
         }
+
+        // PSV-1 — free space at the top of the stack is the termination, not a layer. Trimmed
+        // BEFORE the merge below so a run of free-space regions above the level goes as one, and
+        // never below the topmost level's sheet, which must stay on an interface.
+        while (built.Count > 0 && built[^1].Lo >= topOfInterest - 1e-15 && IsFreeSpace(built[^1].M))
+            built.RemoveAt(built.Count - 1);
 
         // Merge adjacent same-material slabs — the same rule the cross-section extractor uses, and
         // for the same reason: a boundary between two identical materials is not an interface, and
@@ -2005,8 +2063,18 @@ public static class PlanarExtractor
             layers.Add(new MediumLayer(hi - lo, m));
         }
 
-        return (new LayerStack(floor, layers, Termination.Air), levelZ, note);
+        var covers = new List<string>();
+        foreach (var (lo, _, m, name) in built)
+            if (lo >= topOfInterest - 1e-15 && name is not null && !IsFreeSpace(m) && !covers.Contains(name))
+                covers.Add(name);
+        double coverM = built.Count > 0 && built[^1].Hi > topOfInterest ? built[^1].Hi - topOfInterest : 0.0;
+
+        return (new LayerStack(floor, layers, Termination.Air), levelZ, note, covers, coverM);
     }
+
+    /// <summary>The material of <see cref="Termination.Air"/>: εᵣ = 1, tan δ = 0, µᵣ = 1, σ = 0.</summary>
+    private static bool IsFreeSpace(EmMaterial m) =>
+        SameMaterial(m, EmMaterial.Air) && m.SigmaSm == 0;
 
     /// <summary>Is (x, y) on any of these polygons? Box-filtered, then the polygon's own even-odd
     /// test — the same rule everywhere metal is tested for coverage.</summary>

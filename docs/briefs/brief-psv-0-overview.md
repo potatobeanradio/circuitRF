@@ -24,6 +24,7 @@ the top metal, a pad-opening layer, and a via through two dielectric regions.
 | Brief | What | Depends on |
 |---|---|---|
 | `brief-psv-1-planar-covers.md` | Dielectrics above the top analysis level enter the planar medium; the ANT-12 warning goes | — |
+| `brief-psv-1b-conformal-covers.md` | `Conformal` on a dielectric: it starts on top of the metal below it, with air beside the metal, in every solver | 1 |
 | `brief-psv-2-passivation-openings.md` | `OpenWithLayer` on a dielectric stackup entry: cut out of the slab in 3D, a coverage note in planar, a picker in the stackup editor | 1 (planar half only) |
 | `brief-psv-3-via-through-interfaces.md` | The planar kernel splits a via at each dielectric interface it crosses, and the refusal goes | — |
 | `brief-psv-4-example-and-docs.md` | A small example workspace showing all three, user docs, MCP/CLI reference, DocGen | 1, 2, 3 |

@@ -431,9 +431,8 @@ physical, and it is ideally non-zero.</p>
   mechanism decides *whether* a layer is in the run, never *where it stops*. A radome, a conformal
   coating or a gain-raising superstrate is modelled as covering the whole run, to infinity — which moves
   resonance, gain and surface-wave launch by enough to matter.
-  **And a uniform cover layer is not in the solve at all today** — a dielectric declared ABOVE the
-  topmost analysis level is discarded, the run warns by name, and the answer is the bare board's. That
-  is measured, not inferred; see the [measured example](#example) below.
+  A **uniform** cover declared above the topmost analysis level is in the solve; see the
+  [measured example](#example) below.
 
 ## Worked example: a 5.8 GHz inset-fed patch {#example}
 
@@ -510,10 +509,13 @@ which is why the example leans on the resonance search. For design work, narrow 
 where f₀ is — 5.70–5.95 GHz at 5 MHz is 51 points and resolves the notch from the grid alone, at about
 four times the solve time.
 
-### A cover layer over the patch does nothing, and the run says so
+### A cover layer over the patch
 
-Adding a uniform 0.5 mm, ε<sub>r</sub> 3.0 radome to this technology's stackup produces s-parameters
-**bit-identical** to the uncovered run at every frequency. The medium is built from the ground plane up
-to the topmost analysis level and terminated in air there, so a dielectric above the metal is not in
-the solve. That is measured, not inferred, and the run now warns by name — but read the numbers as the
-bare board's.
+Adding a uniform 0.5 mm, ε<sub>r</sub> 3.0 radome to this technology's stackup moves the series
+resonance from 5.809 GHz to 5.645 GHz (−2.8 %), and the patch's own resonance, where R<sub>in</sub> peaks,
+from 5.937 GHz to 5.712 GHz. A 3D solve of the same board over the same infinite ground moves that peak
+by 224.5 MHz against the planar 225.3 MHz. Like every dielectric layer, the radome is modelled across
+the whole run.
+
+The solve costs more, because the patch is no longer on the top surface of its medium: this
+example's whole sweep with its resonance search takes about three times as long.

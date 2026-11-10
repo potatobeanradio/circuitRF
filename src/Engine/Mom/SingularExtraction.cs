@@ -386,6 +386,25 @@ public sealed class PlanarKernelTerms
     }
 
     /// <summary>
+    /// <b>PSV-1 — a FITTED image weaker than this, relative to the direct term, stays in the smooth
+    /// part however shallow it is.</b> The closed form exists for a peak the quadrature cannot see,
+    /// and what a missed peak can cost an entry is of order the image's own amplitude against the
+    /// direct term's unit one. At 1e-3 that is below the layered kernel's own accuracy (≤ 6e-3 scaled,
+    /// 1.6e-2 general) by a factor of several, and it never reaches the images MIM-8 exists for
+    /// (0.144 on the shipped MIM film). Measured on the 5.8 GHz patch under a 0.5 mm cover, where a
+    /// fit put three images of 1e-5 to 2e-4 at 20-420 µm: a frequency point 4× faster, |ΔS| 3.6e-5.
+    /// MIM-12a's peeled chain is exact rather than fitted and is not subject to it.
+    /// </summary>
+    internal const double ShallowImageMinAmplitude = 1e-3;
+
+    /// <summary>An image's depth as the evaluator uses it: √(b²) on the branch with positive real part.</summary>
+    private static Complex DepthOf(ComplexImage im)
+    {
+        Complex b = Complex.Sqrt(im.Depth * im.Depth);
+        return b.Real < 0 ? -b : b;
+    }
+
+    /// <summary>
     /// <b>MIM-8 — the same decomposition with every fitted image SHALLOWER than
     /// <paramref name="shallowDepthM"/> stripped of its STATIC part, and the list of what was
     /// stripped so the caller can put it back in closed form.</b>
@@ -411,13 +430,15 @@ public sealed class PlanarKernelTerms
     /// coefficients, same evaluator — so a run with no thin film in it is untouched, which is the
     /// property <c>MimThinLayerTests</c> gates byte for byte.</para>
     ///
-    /// <para><b>MIM-12a — <see cref="DcimModel.TransmittedImages"/> comes out unconditionally.</b>
-    /// A fitted image might or might not be resolved by the mesh and <paramref name="shallowDepthM"/>
-    /// is the question; a peeled transmitted chain is not a candidate for that question. It is the
-    /// exact closed form of the peak, the fit was asked for a remainder precisely because this part
-    /// is carried separately, and leaving it in the terms would hand a quadrature the one feature it
-    /// provably cannot see. The list is empty for every pairing but a thin cross-region one, so
-    /// nothing else moves.</para>
+    /// <para><b>MIM-12a — <see cref="DcimModel.TransmittedImages"/> comes out whole, unless the mesh
+    /// resolves all of it.</b> It is the exact closed form of the peak, the fit was asked for a
+    /// remainder precisely because this part is carried separately, and leaving a shallow member in
+    /// the terms would hand a quadrature the one feature it provably cannot see. When even its
+    /// shallowest member is deeper than <paramref name="shallowDepthM"/> the whole chain is smooth on
+    /// the cell scale and stays in the terms, as a deep fitted image does (PSV-1: a cover's chain
+    /// starts at twice its thickness; a thin film's starts at its own and is always taken). The list is empty for
+    /// every pairing but a thin cross-region one, so nothing else moves. A fitted image is also left
+    /// in the terms below <see cref="ShallowImageMinAmplitude"/>.</para>
     /// </summary>
     /// <param name="shallowDepthM">The depth below which a FITTED image's peak is taken to be
     /// unresolved; the fill derives it from the cells on the two levels concerned. Zero or negative
@@ -439,11 +460,23 @@ public sealed class PlanarKernelTerms
         // threshold says. It is not a fitted image that might or might not be resolved: it IS the
         // peak, its shallowest depth is the crossed thickness itself, and the only reason the fit
         // was asked for a remainder at all is that this part is carried in closed form.
-        foreach (var im in model.TransmittedImages)
-        {
-            (shallow ??= []).Add(im);
-            constant -= im.Amplitude / (4.0 * Math.PI * im.Depth);
-        }
+        //
+        // PSV-1 — UNLESS the mesh resolves the whole chain. When even its SHALLOWEST member is deeper
+        // than `shallowDepthM`, every member is as smooth on the cell scale as a deep fitted image
+        // (R-fil-8), and the evaluator and the constant already carry them, so they stay in the terms
+        // exactly as a deep fitted image does. A thin film's chain starts at the film's own
+        // thickness, which is shallow by construction, so it is taken whole as before. A COVER's
+        // chain starts at twice its thickness — millimetres on a radome — and was being integrated
+        // per near cell pair at every frequency: on the 5.8 GHz patch under a 0.5 mm cover, five
+        // points took 80 s with it and 62 s without, |ΔS| 4e-8.
+        bool chainResolved = shallowDepthM > 0 && model.TransmittedImages.Count > 0 &&
+                             model.TransmittedImages.All(im => DepthOf(im).Magnitude >= shallowDepthM);
+        if (!chainResolved)
+            foreach (var im in model.TransmittedImages)
+            {
+                (shallow ??= []).Add(im);
+                constant -= im.Amplitude / (4.0 * Math.PI * im.Depth);
+            }
 
         if (shallowDepthM > 0)
             foreach (var im in model.Images)
@@ -453,6 +486,7 @@ public sealed class PlanarKernelTerms
                 Complex b = Complex.Sqrt(im.Depth * im.Depth);
                 if (b.Real < 0) b = -b;
                 if (b.Magnitude >= shallowDepthM) continue;
+                if (im.Amplitude.Magnitude < ShallowImageMinAmplitude) continue;
 
                 (shallow ??= []).Add(new ComplexImage(im.Amplitude, b));
                 constant -= im.Amplitude / (4.0 * Math.PI * b);

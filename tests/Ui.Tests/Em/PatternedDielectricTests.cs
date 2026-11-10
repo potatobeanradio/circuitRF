@@ -412,9 +412,9 @@ public class PatternedDielectricTests
         // the list that switched the film on under MIM-7's plate tie. The only difference is a
         // rectangle on an unbound drawing layer, and it is what decides.
         //
-        // (Both name "Plate" for a reason that is not the tie at all: `BuildMediumStack` stops at
-        // the topmost analysis level, so a run with nothing above "Lower" discards the film from the
-        // medium whatever the tie says. That is ANT-12 §1a and it is reported by its own warning.)
+        // (Both name "Plate" so the film sits BETWEEN two levels, which is the case the tie is
+        // about. With "Lower" alone the film is a cover above the topmost level and enters the
+        // medium as one (PSV-1), which would make the A/B read the same physics two ways.)
         var levels = new EmExtractionSettings(AnalysisLevelNames: ["Lower", "Plate"]);
 
         var masked = LowerLineOnly();

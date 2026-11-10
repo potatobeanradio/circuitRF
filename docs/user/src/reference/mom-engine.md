@@ -156,11 +156,18 @@ not general 3D.
   plate. That mechanism decides **whether** a layer is in the run, never **where it stops**: inside a run
   every dielectric is laterally infinite. So a radome, a conformal coating or a gain-raising superstrate
   drawn over the patch alone is modelled as covering the **whole run, to infinity** — which moves
-  resonance, gain and surface-wave launch. **And a cover layer above the topmost analysis level is not
-  in the solve at all**: the medium is built from the ground plane up to that level and terminated in
-  air there, so a radome or coating is discarded and the run warns by name. Measured on the shipped
-  patch example — adding one gives bit-identical s-parameters. See
-  [Antennas](antennas.html#example).
+  resonance, gain and surface-wave launch. A **uniform** cover above the topmost analysis level —
+  passivation, solder mask, a coating, a radome — is in the solve as one more layer of the medium, and
+  the run's notes name it with the medium's total height above that level. The space beside the metal
+  is filled with the cover's material, so the modelled cover is the metal's own thickness plus the
+  cover's, as a flat slab. That suits a solder mask, which fills the gaps between traces. A conformal
+  coat such as passivation is thinner than that beside the metal, so its effect reads high: 1 µm of
+  ε<sub>r</sub> 7 nitride over a 20 µm wide, 3 µm thick gold line on GaAs raises ε<sub>eff</sub> by
+  6.8 % here, against 2.2 % for the true conformal coat. The uniform-line kernel draws the metal at
+  its real thickness, so on thick metal under a cover the two kernels differ by more than they do
+  uncovered. A stack closed above, by a lid (`Stackup.Top = Ground`) or by a ground plane
+  above the levels, ends at the topmost level instead, and the run warns, naming the layers it leaves
+  out. See [Antennas](antennas.html#example).
 - **Enclosures and absorbing boundaries.** There is no box. Real planar tools suppress port-to-port
   radiative and surface-wave coupling with box walls or absorbing boundaries; **this kernel has
   neither, by design**, and that is what sets the [de-embedding accuracy floor](#deembedding).
