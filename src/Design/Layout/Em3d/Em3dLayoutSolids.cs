@@ -326,7 +326,8 @@ public static class Em3dLayoutSolids
             var outlinePaths    = new List<LayoutShape>();
             int outlineStrokes  = 0, zeroWidthPaths = 0;
 
-            foreach (var s in geometry.Shapes)
+            // A via's pad is copper on its landing layer (PlanarExtractor.WithViaPads), as in the planar model.
+            foreach (var s in PlanarExtractor.WithViaPads(geometry.Shapes, conductorBinding.ContainsKey))
             {
                 if (s is LabelShape or BitmapShape) continue;
                 (byLayer.TryGetValue(s.Layer, out var list) ? list : byLayer[s.Layer] = []).Add(s);

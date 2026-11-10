@@ -267,7 +267,7 @@ public static class PlanarExtractor
         var maskLayers = PatternedDielectric.MaskLayers(tech);
         var maskShapes = new List<(LayoutShape Shape, string Mask)>();
 
-        foreach (var s in shapes)
+        foreach (var s in WithViaPads(shapes, binding.ContainsKey))
         {
             if (s is LabelShape or BitmapShape) { ignoredAnnotation++; continue; }
 
@@ -3108,6 +3108,25 @@ public static class PlanarExtractor
     /// of non-plated entries left out.</summary>
     internal static Dictionary<LayerKey, StackupLayer> ViaBinding(Stackup stackup, out int nonPlated)
         => BuildViaBinding(stackup, out nonPlated);
+
+    /// <summary>
+    /// <paramref name="shapes"/>, each via followed by its PAD: a disc of <see cref="ViaShape.PadSize"/> on its
+    /// <see cref="ViaShape.LandingLayer"/>, when that layer is one <paramref name="isConductor"/> accepts. A via is a
+    /// pad and a barrel (<see cref="ViaShape"/>), and the extractors built only the barrel. On a drawn trace that was
+    /// harmless, but an imported board's pour has the pad CARVED out of it (<see cref="Interchange.DrillPairingResult.CarvedPads"/>:
+    /// the copper moves from the pour to the via), so every stitching via stood in a ring of air and the pour floated:
+    /// a designer's notch filter put its inductor's ground pad 4 pF off the plane and the notch did not move. A pad no
+    /// wider than its drill adds nothing the barrel does not already cover.
+    /// </summary>
+    internal static IEnumerable<LayoutShape> WithViaPads(IEnumerable<LayoutShape> shapes, Func<LayerKey, bool> isConductor)
+    {
+        foreach (var s in shapes)
+        {
+            yield return s;
+            if (s is ViaShape { LandingLayer: { } landing } v && v.PadSize > 0 && v.PadSize > v.DrillSize && isConductor(landing))
+                yield return new CircleShape { Layer = landing, Net = v.Net, Cx = v.X, Cy = v.Y, R = v.PadSize / 2 };
+        }
+    }
 
     /// <summary>
     /// A shape as the polygons an extraction reads: a width-bearing Path outlined (ANT-1), then the

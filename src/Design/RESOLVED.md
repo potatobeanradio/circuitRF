@@ -29442,3 +29442,23 @@ Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheCancellerBench_DepthIsTheC
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheDemo_EvmFollowsTheBudgetsSnr_UntilDistortionTakesOver`,
 `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_Demo_TheEvmIsTheBudgetsWhereNoiseDominates`.
+
+## EM extraction left out every via's pad: an imported board's stitched pour floated (designer feedback, 2026-11-10)
+
+A designer's notch filter (a series LC to ground between two DC blocks) solved in 3D with its notch exactly at the parts'
+own LC value, 800 MHz, where the bench measured 683 MHz. Fitting the 4-port's impedances to three nodes (through line,
+C36-L7 node, L7's ground pad; all ten entries within 1.4 Ω) put L7's ground pad behind 1.2 nH in series with 4.1 pF to the
+plane: the top pour, about 20 mm² over 230 µm, was floating. In the mesh every stitching via shared nodes with the inner
+plane and the bottom copper and none with the pour.
+
+- **A via is a pad and a barrel (`ViaShape`), and both extractors built only the barrel.** `Em3dLayoutSolids` made the
+  drill cylinder; `PlanarExtractor` the equal-area square between levels. Neither put copper on `LandingLayer`.
+- **On an import that matters**: `DrillViaPairing` carves a composited pad out of its pour so the copper belongs to the
+  via (`CarvedPads`). The pour then has a pad-sized hole round every via, and a 300 µm barrel in a 600 µm hole touches
+  nothing. A drawn trace with a via on it hid this, and so do Update Layout's ground vias, which land on ties of their own
+  (the designer's low-pass board moved by about 1 Ω anywhere in its impedance matrix).
+- **Fix**: `PlanarExtractor.WithViaPads` follows each via with a `CircleShape` of `PadSize` on its landing layer when that
+  layer is a conductor and the pad is wider than the drill; both extractors read the shapes through it, so the pad merges
+  with the pour as any overlapping copper does. The notch board's L7 ground then reads 1.17 nH to the plane at every
+  frequency, and the notch moves to 685 MHz. Gate: `tests/Ui.Tests/Em3d/ViaPadCopperTests.cs` (both fail without it).
+- Results of imported boards with pour stitching vias solved before this are wrong in the same way and need re-running.
