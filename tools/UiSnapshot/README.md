@@ -424,6 +424,17 @@ first free one is offered), or Cancel. The argument is the existing cell's folde
 dotnet run --project tools/UiSnapshot --no-build -- --cell-exists-dialog <workspace>/<cell> -o out.png
 ```
 
+**Tools ▸ Plugins, the plugin permission prompt and an `action` plugin's parameter dialog** (brief-plg-1). The menu
+takes a folder whose sub-folders are plugins (or `none` for the empty menu) and draws its rows and each group's rows
+side by side, since a submenu's popup is not part of a window capture. The dialog's pickers list what
+`--plugin-workspace` holds, and `--plugin-dialog-width` opens it at the width a user widened it to. Nothing is started: each reads manifests only. `--dark` applies to all three.
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --plugins-menu <folder of plugins | none> -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-trust <plugin folder> -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-dialog <plugin folder> [--plugin-workspace <dir>] [--plugin-dialog-width <px>] -o out.png
+```
+
 **The Run settings dialog** (brief CP-2) of an EM Field Data block's result record, what differs from its setup now marked:
 
 ```

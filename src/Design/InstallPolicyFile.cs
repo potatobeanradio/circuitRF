@@ -1,16 +1,16 @@
-using System;
-using System.IO;
-
-namespace CircuitRF.Ui.Security;
+namespace CircuitRF.Design;
 
 /// <summary>
 /// The administrator's lock: a marker file dropped BESIDE an installation that turns one of
 /// circuitRF's permissions off and takes it out of the user's hands.
 ///
-/// <para><b>One lookup, two policies.</b> <c>no-auto-update</c> (design §11) and
-/// <c>no-device-workers</c> answer different questions but are found the same way, and a rule stated
+/// <para><b>One lookup, three policies.</b> <c>no-auto-update</c> (design §11), <c>no-device-workers</c>
+/// and <c>no-plugins</c> (<c>plugins.md</c> §9.4) answer different questions but are found the same way, and a rule stated
 /// twice is a rule that will eventually be two rules — the second copy is the one that forgets the
 /// macOS case below.</para>
+///
+/// <para>Below the firewall since brief-plg-1, because <c>PluginPolicy</c> is: the command line refuses a plugin
+/// on the same marker the application does. The install root stays an argument.</para>
 /// </summary>
 public static class InstallPolicyFile
 {

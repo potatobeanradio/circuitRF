@@ -399,6 +399,7 @@ public partial class WorkspaceWindow : Window
         // Locate the native Window item and hook NeedsUpdate now that AppKit has built the menu.
         EnsureWindowNativeItem();
         EnsureEditNativeItem();
+        EnsurePluginsNativeItem();
 
         // Seed the Window menu now. SubmenuOpened alone is not enough: an empty ItemsSource makes
         // the parent a leaf with no submenu, so that event would never fire and the menu would stay
@@ -874,6 +875,45 @@ public partial class WorkspaceWindow : Window
 
     /// <summary>The in-window Edit menu opening: Paste Image as … asks the clipboard (brief-img-6 R-im6-2). Only the
     /// Edit item's own opening — a submenu inside it bubbles the same event.</summary>
+    // ---- Tools ▸ Plugins (brief-plg-1) -------------------------------------------------
+
+    // The XAML-declared native "Plugins" submenu, found once by header walk (a NativeMenuItem gets no x:Name field).
+    private NativeMenu? _pluginsNativeMenu;
+
+    /// <summary>Finds Tools ▸ Plugins on the native bar and refills it just before Tools is shown — NeedsUpdate is
+    /// the macOS counterpart of the in-window menu's SubmenuOpened, which never fires there.</summary>
+    private void EnsurePluginsNativeItem()
+    {
+        if (_pluginsNativeMenu is not null || NativeMenu.GetMenu(this) is not { } rootMenu) return;
+        foreach (var top in rootMenu.Items)
+            if (top is NativeMenuItem { Header: "Tools", Menu: { } tools })
+            {
+                foreach (var sub in tools.Items)
+                    if (sub is NativeMenuItem { Header: "Plugins", Menu: { } plugins }) _pluginsNativeMenu = plugins;
+                if (_pluginsNativeMenu is null) return;
+                RebuildPluginsMenus();
+                tools.NeedsUpdate += (_, _) => RebuildPluginsMenus();
+                return;
+            }
+    }
+
+    private void OnToolsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, sender)) RebuildPluginsMenus();
+    }
+
+    /// <summary>Both surfaces from one catalogue read — manifests only, nothing started.</summary>
+    private void RebuildPluginsMenus()
+    {
+        IReadOnlyList<CircuitRF.Design.Plugins.PluginEntry> entries;
+        try { entries = CircuitRF.Ui.Plugins.PluginHost.Discover(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { entries = []; }
+
+        void Open(CircuitRF.Design.Plugins.PluginEntry entry) { if (_vm is { } vm) _ = vm.OpenPluginAsync(entry); }
+        CircuitRF.Ui.Plugins.PluginsMenu.Fill(PluginsMenuItem, entries, Open);
+        if (_pluginsNativeMenu is { } native) CircuitRF.Ui.Plugins.PluginsMenu.Fill(native, entries, Open);
+    }
+
     private void OnEditMenuOpened(object? sender, RoutedEventArgs e)
     {
         if (ReferenceEquals(e.Source, sender)) _ = _vm?.RefreshPasteImage();

@@ -285,14 +285,14 @@ src/Design/Layout/PCells/Wire/PCellWireCodec.cs|The PCell generator emitted a sh
 src/Design/Layout/PCells/Wire/PCellWireCodec.cs|The PCell generator emitted an edge of kind '{e.Kind}', which this build does not know.
 src/Design/Layout/PCells/Wire/PCellWireCodec.cs|The PCell generator sent an empty reply.
 src/Design/Layout/PCells/Wire/PCellWireCodec.cs|The PCell generator's reply was not valid JSON: {ex.Message}
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|Every frame must carry a control-plane object.
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|Refusing to send a frame of {json.Length} + {binBytes} bytes — beyond any plausible cell.
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator announced an implausible frame ({jsonLen} + {binLen} bytes). 
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator announced {binLen} payload bytes, which is not a whole number 
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator closed its output before sending a reply. It may have exited; 
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator sent a frame with no control-plane object; the stream is not in step.
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator's reply was truncated mid-frame.
-src/Design/Layout/PCells/Wire/PCellWireFrame.cs|The PCell generator's reply was truncated mid-payload.
+src/Design/Frames/WireFrame.cs|Every frame must carry a control-plane object.
+src/Design/Frames/WireFrame.cs|Refusing to send a frame of {json.Length} + {binBytes} bytes — beyond any plausible message.
+src/Design/Frames/WireFrame.cs|{peer} announced an implausible frame ({jsonLen} + {binLen} bytes). 
+src/Design/Frames/WireFrame.cs|{peer} announced {binLen} payload bytes, which is not a whole number 
+src/Design/Frames/WireFrame.cs|{peer} closed its output before sending a reply. It may have exited; 
+src/Design/Frames/WireFrame.cs|{peer} sent a frame with no control-plane object; the stream is not in step.
+src/Design/Frames/WireFrame.cs|{peer}'s reply was truncated mid-frame.
+src/Design/Frames/WireFrame.cs|{peer}'s reply was truncated mid-payload.
 src/Design/Layout/PCells/Wire/PCellWireHostServices.cs|A clip request arrived empty.
 src/Design/Layout/PCells/Wire/PCellWireHostServices.cs|A clip request described {at} coordinates but sent {span.Length}. 
 src/Design/Layout/PCells/Wire/PCellWireHostServices.cs|A clip request's {which} named a ring of {vertices} vertices.

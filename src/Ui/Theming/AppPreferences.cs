@@ -140,6 +140,34 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, bool>? PCellTrust { get; set; }
 
+    // brief-plg-1 — which PLUGINS this installation has agreed to run, keyed by the plugin's absolute installed
+    // directory. Its own key, so revoking a kit never touches a plugin; never in .cws for PCellTrust's reason.
+    [JsonPropertyName(CircuitRF.Design.Plugins.PluginTrustStore.PreferenceKey)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, bool>? PluginTrust { get; set; }
+
+    // Whether plugins may run at all; null is the default, ON. Read only through PluginHost.Policy, where the
+    // no-plugins file and CRF_NO_PLUGINS=1 override it.
+    [JsonPropertyName(CircuitRF.Design.Plugins.PluginPolicy.PreferenceKey)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PluginsEnabled { get; set; }
+
+    // Plugin id → the installed version that is active; absent, the highest is (brief-plg-6 writes it).
+    [JsonPropertyName("plugin_active")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? PluginActiveVersions { get; set; }
+
+    // Folders run in place as plugins — Link folder… (brief-plg-6) adds to it.
+    [JsonPropertyName("plugin_links")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? PluginLinkedFolders { get; set; }
+
+    // Plugin id → the width its parameter dialog was last left at, so a user who widened it to see a long path finds
+    // it that wide next time. Read and written only through PluginHost.
+    [JsonPropertyName("plugin_dialog_widths")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, double>? PluginDialogWidths { get; set; }
+
     // Which Python environment runs each gdsfactory kit on this machine, keyed by the kit's module
     // name (brief-gdf-2 R-gdf2-2b). Per USER, beside the trust decisions, and never in .cws: a
     // colleague opening the workspace is asked for theirs rather than handed a path from this machine.

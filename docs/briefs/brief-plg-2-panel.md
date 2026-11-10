@@ -16,7 +16,8 @@ slow or stops.
 - Validation returns diagnostics: a `param` leaf naming no declared parameter, a parameter placed twice, a
   `readout` naming a parameter not of kind `readout`, two views with one name, an unknown `kind` (listed as an
   empty frame saying "needs a newer circuitRF", never a refusal of the whole panel), a `split` whose `sizes` count
-  differs from its children.
+  differs from its children, a `chars` on a `param` leaf that is not a whole number from 1.
+- A `param` leaf's `chars` overrides the declaration's (`plugins.md` §3.1) for that placement only.
 - **No `ui`:** the default panel — parameters in one column, `messages`, a Place in workspace button, then one tab
   per view in the first reply (`plugins.md` §4).
 - This file is below the firewall because brief 5 lists a plugin's views from it.
@@ -27,7 +28,9 @@ slow or stops.
   remembered per plugin `id` with the split positions and the selected tab.
 - Each tree node maps to one Avalonia container; a `group` is styled as the analysis editor's groups are. A
   `param` leaf reuses the control PLG-1's parameter dialog built for its kind, so the dialog and the panel cannot
-  differ.
+  differ — including the `chars` size hint (measured in the theme's font, clamped 2–80, unit or `…` beside the box)
+  and, without one, a box that widens with the window. Move the per-kind control construction out of
+  `PluginActionDialog.Build` into one shared builder rather than copying it.
 - **`readout`:** `value` is a label formatted in display units; `table` uses brief 3's table view; `text` is
   selectable, wrapped, monospace off.
 - **`messages`:** errors, warnings and notes from the last reply, with the theme's severity glyphs, plus a line for

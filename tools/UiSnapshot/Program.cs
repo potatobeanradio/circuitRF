@@ -192,6 +192,8 @@ string? palette = null, paletteCategory = null, paletteSearch = null, schematic 
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? cellExistsDialog = null;                       // brief-isc-1
+string? pluginsMenu = null, pluginTrust = null, pluginDialog = null, pluginWorkspace = null;   // brief-plg-1
+double? pluginDialogWidth = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
@@ -292,6 +294,11 @@ for (int i = 0; i < args.Length; i++)
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
         case "--cell-exists-dialog" when i + 1 < args.Length: cellExistsDialog = args[++i]; break;
+        case "--plugins-menu" when i + 1 < args.Length: pluginsMenu = args[++i]; break;
+        case "--plugin-trust" when i + 1 < args.Length: pluginTrust = Path.GetFullPath(args[++i]); break;
+        case "--plugin-dialog" when i + 1 < args.Length: pluginDialog = Path.GetFullPath(args[++i]); break;
+        case "--plugin-workspace" when i + 1 < args.Length: pluginWorkspace = Path.GetFullPath(args[++i]); break;
+        case "--plugin-dialog-width" when i + 1 < args.Length: pluginDialogWidth = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--em-run-settings" when i + 1 < args.Length: emRunSettings = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
@@ -457,6 +464,54 @@ if (cellExistsDialog is not null && output is not null)
     dialog.Show();
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
     dialog.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
+}
+// brief-plg-1 — Tools ▸ Plugins (--plugins-menu <folder of plugin folders> | none), the permission prompt
+// (--plugin-trust <plugin folder>) and an action plugin's parameter dialog (--plugin-dialog <plugin folder>
+// [--plugin-workspace <dir>] for its pickers). Nothing is started: each reads manifests only.
+if ((pluginsMenu ?? pluginTrust ?? pluginDialog) is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } plgApp) plgApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    Window shown;
+    if (pluginsMenu is not null)
+    {
+        var linked = pluginsMenu == "none" ? [] : Directory.GetDirectories(Path.GetFullPath(pluginsMenu)).Order().ToList();
+        var entries = CircuitRF.Design.Plugins.PluginCatalog.Discover(new CircuitRF.Design.Plugins.PluginCatalogSources(null, linked));
+        // The submenu as it drops down: its own rows, and beside them the first group's rows, each in the presenter a
+        // real menu draws (a popup is a separate top level and does not land in a window capture).
+        var plugins = new MenuItem { Header = "Plugins" };
+        CircuitRF.Ui.Plugins.PluginsMenu.Fill(plugins, entries, _ => { });
+        var columns = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8) };
+        static Control Column(System.Collections.IEnumerable items) => new Border
+        {
+            BorderThickness = new Thickness(1), BorderBrush = Avalonia.Media.Brushes.Gray, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Child = new MenuFlyoutPresenter { ItemsSource = items.Cast<object>().ToList() },
+        };
+        var top = plugins.Items.Cast<object>().ToList();
+        plugins.Items.Clear();
+        columns.Children.Add(Column(top));
+        foreach (var group in top.OfType<MenuItem>().Where(m => m.Items.Count > 0).ToList())
+        {
+            var rows = group.Items.Cast<object>().ToList();
+            group.Items.Clear();
+            group.Items.Add(new MenuItem { Header = "…" });
+            columns.Children.Add(Column(rows));
+        }
+        shown = new Window { Width = 640, Height = 160, Content = columns };
+        shown.Bind(Window.BackgroundProperty, shown.GetResourceObservable("SystemControlBackgroundAltHighBrush"));
+    }
+    else if (pluginTrust is not null)
+        shown = CircuitRF.Ui.Plugins.PluginTrustDialog.Build(CircuitRF.Design.Plugins.PluginCatalog.Read(pluginTrust, CircuitRF.Design.Plugins.PluginSource.Linked), _ => { });
+    else
+        shown = CircuitRF.Ui.Plugins.PluginActionDialog.Build(
+            CircuitRF.Design.Plugins.PluginCatalog.Read(pluginDialog!, CircuitRF.Design.Plugins.PluginSource.Linked), pluginWorkspace,
+            (_, _, _, _) => Task.FromResult(new CircuitRF.Ui.Plugins.PluginRunAnswer(false, [])), pluginDialogWidth);
+    shown.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); shown.UpdateLayout(); }
+    shown.CaptureRenderedFrame()!.Save(output);
     Console.WriteLine($"wrote {output}");
     return 0;
 }

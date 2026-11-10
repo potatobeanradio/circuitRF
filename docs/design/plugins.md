@@ -158,6 +158,13 @@ Parameters are declared once, separately from where they appear, because the CLI
 Names are identifiers. Units are circuitRF's unit names. A `quantity` with a `min`/`max` is refused by circuitRF
 before the plugin is asked.
 
+**`chars`** (optional, on a `quantity`, `int`, `real`, `string` or `file`) is the author's size hint: about how many
+characters the box should hold — `4` for an order, `12` for a frequency, `40` for a path. circuitRF turns it into a width
+from the current theme's font and clamps it to 2–80, so a hint can never be a pixel size that breaks a theme or a
+re-skin; the unit or the file picker sits right beside the box. Without it the box takes the row's width and widens
+with the window. A picker ignores it: its choices are never cut short. The user can always widen the dialog or panel
+itself, and circuitRF remembers that width per plugin.
+
 **Lengths are physical here, and geometry is not.** A plugin computes physics, so a design length arrives and is
 returned in metres. The **shapes** a plugin returns for a layout view (§5.3) are int64 DBU, with `dbuPerMicron`
 from the technology parameter — the PCell wire's version-2 rule unchanged: the plugin scales its own numbers, and a
@@ -206,7 +213,7 @@ fractional coordinate cannot be expressed.
 
 | Node | Draws |
 |---|---|
-| `{"param": "f0"}` | The parameter's label and control, from its declaration. `"label"` overrides the label |
+| `{"param": "f0"}` | The parameter's label and control, from its declaration. `"label"` overrides the label, `"chars"` the size hint (§3.1) |
 | `{"readout": "lengths", "as": "value"\|"table"\|"text"}` | A value the plugin fills in each reply |
 | `{"button": "Label", "action": "name"}` | Sends `action`; `"commit"` is the reserved placement action (§6) |
 | `{"messages": true}` | The plugin's errors, warnings and notes for the current parameters |
@@ -341,6 +348,15 @@ frame is a protocol error (the Python helper redirects `print` for exactly this 
 ### 6.2 Messages
 
 Every request has an `id`. Every reply names the `id` it answers.
+
+**The envelope** (brief-plg-1). Every message is one JSON object with a `"type"` naming it — `hello`, `update`,
+`reply`, `placed` and the rest below, spelled as the tables spell them — and its fields beside it, not under a
+`body`. An `id` is an integer circuitRF counts up from 1 per session; a plugin copies it into its answer. `hello` carries
+an `id` too, but the plugin's `hello` answer may omit it (there is only ever one). `hello` also carries `mode`:
+`interactive` from a window, `headless` from `circuitRF plugin run`. A message is one of `messages: [{severity, text}]`
+with `severity` one of `error`, `warning`, `info`. In `placed`, each cell's `files` are paths relative to the staging
+folder (or absolute inside it). A message of a type circuitRF does not know is a protocol error, not ignored: the version
+was agreed in `hello`, so an unknown type means the two sides disagree about the contract.
 
 | circuitRF → plugin | When | Plugin replies |
 |---|---|---|

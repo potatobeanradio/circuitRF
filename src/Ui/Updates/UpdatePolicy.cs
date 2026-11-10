@@ -92,5 +92,5 @@ public static class UpdatePolicy
     /// application while meaning to disable its updater.
     /// </summary>
     public static bool PolicyFilePresent(string installRoot)
-        => Security.InstallPolicyFile.PresentBeside(installRoot, PolicyFileName);
+        => CircuitRF.Design.InstallPolicyFile.PresentBeside(installRoot, PolicyFileName);
 }

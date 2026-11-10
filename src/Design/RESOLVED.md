@@ -29462,3 +29462,22 @@ plane and the bottom copper and none with the pour.
   with the pour as any overlapping copper does. The notch board's L7 ground then reads 1.17 nH to the plane at every
   frequency, and the notch moves to 685 MHz. Gate: `tests/Ui.Tests/Em3d/ViaPadCopperTests.cs` (both fail without it).
 - Results of imported boards with pour stitching vias solved before this are wrong in the same way and need re-running.
+
+## Plugin runtime (brief-plg-1, 2026-11-10)
+
+- **The frame has one implementation, now in `src/Design/Frames/WireFrame.cs`.** `PCellWireProtocol` calls it and
+  wraps its failures as `PCellWireException`, so every PCell caller and message is unchanged. The namespace is
+  `CircuitRF.Design.Frames`, not `.Wire`: a namespace called `Wire` hides the `Wire` type everywhere under
+  `CircuitRF.Design` and broke sixteen files that use it.
+- **`InstallPolicyFile` moved below the firewall** (`CircuitRF.Design`) so `PluginPolicy` reads the `no-plugins` marker
+  the same way the two existing policies do; the install root stays an argument.
+- **Kill the process before answering a request with its failure.** The first version completed the waiting request
+  first and killed after, so a caller told "the plugin broke the protocol" could still see the process running. The
+  failure tests caught it.
+- **The process counter is per async flow** (`PluginSession.CountStartsInThisFlow`). A process-wide count let any
+  test that starts a plugin in parallel break the test asserting that listing starts nothing.
+- **A `.cnl` placed in a cell goes beside its `.csch` in `schematic/`**: primacy counts `.csch` files only, and the
+  project tree does not list loose files at a cell's root. A placed `.cem`'s `LayoutRef`, which names the staged layout
+  relative to the staging folder, is rewritten to the workspace-relative path of the placed one.
+- Gates: `tests/Ui.Tests/Plugins/` — manifest refusals, discovery starting nothing, every broken-plugin mode,
+  permission and policy order, placement with a restore point that removes the cell.

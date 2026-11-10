@@ -14,15 +14,19 @@ public enum CellExistsChoice { Cancel, Replace, NewName }
 /// <summary>
 /// brief-isc-1 — the question Create SnP schematic now asks when the cell it would make already exists: <b>Replace</b> writes the new
 /// schematic over the cell's schematic (its other views stay), <b>Create</b> makes a cell of the name typed (a free name is offered),
-/// Cancel makes nothing. Closing the window is Cancel. A run never asks: it leaves an existing cell alone.
+/// Cancel makes nothing. Closing the window is Cancel. A run never asks: it leaves an existing cell alone. Placing a plugin's cell
+/// (brief-plg-1) asks the same question in its own words.
 /// </summary>
 public static class CellExistsDialog
 {
     /// <summary>Asks about <paramref name="cellName"/> in <paramref name="workspaceDir"/>.</summary>
-    public static async Task<(CellExistsChoice Choice, string Name)> AskAsync(Window owner, string workspaceDir, string cellName)
+    /// <param name="title">The window's title — the command asking. Null is Create SnP Schematic's.</param>
+    /// <param name="explanation">What Replace does, for that command. Null is Create SnP Schematic's.</param>
+    public static async Task<(CellExistsChoice Choice, string Name)> AskAsync(Window owner, string workspaceDir, string cellName,
+                                                                             string? title = null, string? explanation = null)
     {
         var answer = (CellExistsChoice.Cancel, cellName);
-        var dialog = Build(workspaceDir, cellName, a => answer = a);
+        var dialog = Build(workspaceDir, cellName, a => answer = a, title, explanation);
         await dialog.ShowDialog(owner);
         return answer;
     }
@@ -47,12 +51,13 @@ public static class CellExistsDialog
          : null;
 
     /// <summary>The dialog, unshown; <paramref name="answered"/> hears the answer as the window closes. What a headless snapshot renders.</summary>
-    public static Window Build(string workspaceDir, string cellName, Action<(CellExistsChoice, string)> answered)
+    public static Window Build(string workspaceDir, string cellName, Action<(CellExistsChoice, string)> answered,
+                               string? title = null, string? explanation = null)
     {
         var result = (CellExistsChoice.Cancel, cellName);
         var dialog = new Window
         {
-            Title                 = "Create SnP Schematic",
+            Title                 = title ?? "Create SnP Schematic",
             Width                 = 520,
             SizeToContent         = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -87,7 +92,7 @@ public static class CellExistsDialog
                 new TextBlock { Text = $"Cell {cellName} already exists", FontWeight = FontWeight.SemiBold, FontSize = 15, TextWrapping = TextWrapping.Wrap },
                 new TextBlock
                 {
-                    Text = "Replace writes the new schematic over that cell's schematic; its other views and its Data Display stay as they are. " +
+                    Text = explanation ?? "Replace writes the new schematic over that cell's schematic; its other views and its Data Display stay as they are. " +
                            "Or make a new cell under another name:",
                     TextWrapping = TextWrapping.Wrap, FontSize = 12,
                 },

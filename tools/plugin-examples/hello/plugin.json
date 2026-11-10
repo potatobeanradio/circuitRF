@@ -1,0 +1,20 @@
+{
+  "apiVersion": 1,
+  "id": "example.hello",
+  "name": "Hello Divider",
+  "version": "1.0.0",
+  "summary": "The smallest plugin: one parameter, and a two-resistor cell to place.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "python": { "entry": "hello.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "action",
+  "menu": "Examples",
+  "params": [
+    { "name": "r", "label": "Resistance", "kind": "quantity", "unit": "Ohm", "default": "50 Ohm", "min": "1 Ohm" }
+  ]
+}

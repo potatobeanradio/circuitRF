@@ -28,7 +28,7 @@ headlessly from the CLI and MCP.
 | `brief-plg-4-host-services.md` | `simulate`, `resolve`, `evaluate`, `lineModel`; `window` plugins | 1 (2 for the panel's busy state) |
 | `brief-plg-5-cli-mcp.md` | `circuitRF plugin list/describe/run/install/uninstall` and the MCP `plugin` tool | 1, 3 |
 | `brief-plg-6-install.md` | Settings ▸ Plugins, `plugins/index.json`, install from the list, an address or a folder; updates, rollback, Python environments, the policy switch | 1 |
-| `brief-plg-7-docs-sdk-example.md` | The Python helper package, two example plugins, the user doc and the plugin-author guide | 2, 3, 4, 6 |
+| `brief-plg-7-docs-sdk-example.md` | The Python helper package, a NativeAOT C# `window` plugin with a headless form, the example plugins, the user doc and the plugin-author guide | 2, 3, 4, 6 |
 
 Briefs 4 and 6 can run in parallel with 2–3 once 1 is in. Brief 5 needs 3 because `run` writes views as files.
 
@@ -77,7 +77,8 @@ Briefs 4 and 6 can run in parallel with 2–3 once 1 is in. Brief 5 needs 3 beca
 3. **Headless and panel agree.** `plugin run` and the panel give byte-identical staged documents for the same
    parameters.
 4. **Placement is undoable.** A placed cell is one history checkpoint, and restoring it removes the cell.
-5. **An example plugin, written only from the user doc, works end to end** (brief 7).
+5. **An example plugin, written only from the user doc, works end to end** (brief 7) — once in Python as a panel,
+   once in C# as a NativeAOT `window` plugin.
 
 ## Rules that apply throughout
 

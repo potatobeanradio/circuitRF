@@ -1,0 +1,19 @@
+{
+  "apiVersion": 1,
+  "id": "example.broken",
+  "name": "Broken on Purpose",
+  "version": "1.0.0",
+  "summary": "A plugin that misbehaves in one chosen way, so circuitRF can be shown to survive it.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+
+  "run": {
+    "python": { "entry": "broken.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "panel",
+  "menu": "Examples",
+  "params": [
+    { "name": "n", "kind": "int", "default": 1 }
+  ]
+}

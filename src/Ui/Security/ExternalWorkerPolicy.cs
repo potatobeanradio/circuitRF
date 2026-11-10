@@ -75,7 +75,7 @@ public static class ExternalWorkerPolicy
         // first-run seeding anywhere.
         bool wanted = prefs.ExternalDeviceWorkers ?? true;
 
-        if (InstallPolicyFile.PresentBeside(installRoot, PolicyFileName))
+        if (CircuitRF.Design.InstallPolicyFile.PresentBeside(installRoot, PolicyFileName))
             return new ExternalWorkerPolicyState(false, ExternalWorkerOverride.PolicyFile,
                 "External device workers are disabled for this installation by an administrator "
                 + $"(a '{PolicyFileName}' file beside the application).");

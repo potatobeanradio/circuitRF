@@ -573,6 +573,14 @@
                              Tools menu below; the two surfaces are hand-maintained and must not drift.
                         <NativeMenuItem Header="wBond" Command="{Binding NewWBondCommand}"/>
                         -->
+                        <!-- brief-plg-1 — tools other people write. Filled in code from the plugin catalogue
+                             (PluginsMenu.Fill), the same rule as the in-window Tools ▸ Plugins below. -->
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Plugins">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu/>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -1632,7 +1640,7 @@
 
             <!-- Tools (D10 / R-h45-13) — hand-mirrored with the macOS NativeMenu above, as every
                  other menu on these two surfaces is. -->
-            <MenuItem Header="_Tools" Padding="8,4">
+            <MenuItem Header="_Tools" Padding="8,4" x:Name="ToolsMenuItem" SubmenuOpened="OnToolsMenuOpened">
                 <MenuItem Header="_harmonicaRF"
                           Command="{Binding NewHarmonicaCommand}"
                           ToolTip.Tip="Interactive harmonic-termination explorer. Opens with or without a workspace.">
@@ -1704,6 +1712,14 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 -->
+                <!-- brief-plg-1 — hand-mirrored with the macOS NativeMenu above; both are filled by PluginsMenu.Fill
+                     when Tools opens, so a plugin installed or linked meanwhile appears without a restart. -->
+                <Separator/>
+                <MenuItem Header="_Plugins" x:Name="PluginsMenuItem"
+                          ToolTip.Tip="Tools other people write, installed on this machine. Each asks before it first runs.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PuzzleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    <MenuItem Header="No plugins installed" IsEnabled="False"/>
+                </MenuItem>
             </MenuItem>
 
             <MenuItem Header="_View" Padding="8,4">
