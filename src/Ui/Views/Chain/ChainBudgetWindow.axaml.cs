@@ -36,9 +36,19 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         DataContextChanged += (_, _) =>
         {
             SyncPlotTheme();
-            if (Vm is { } vm) vm.PlotsUpdated += (_, _) => this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>("CascadePlotControl")?.InvalidateVisual();
+            if (Vm is { } vm) vm.PlotsUpdated += (_, _) => { foreach (var p in Plots()) p.InvalidateVisual(); };
         };
+        // A marker on a levels trace selects the stage whose output its node is, in the views and the stage list.
+        foreach (var name in new[] { "LevelsPlotControl", "LevelsDbPlotControl" })
+            if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } pc)
+            {
+                CircuitRF.Render.DataDisplay.Marker? last = null;
+                pc.MarkerAdded += (m, _) => { last = m; Vm?.SelectNode(NodeOf(m)); };
+                pc.MarkerMoved += (_, _) => { if (last is { } m) Vm?.SelectNode(NodeOf(m)); };
+            }
         ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
+        // Back to the window after simulating a bench: its levels pick up the new results.
+        Activated += (_, _) => Vm?.Recompute();
         Closed += (_, _) =>
         {
             foreach (var k in OpenByPath.Where(kv => ReferenceEquals(kv.Value, this)).Select(kv => kv.Key).ToList()) OpenByPath.Remove(k);
@@ -47,11 +57,21 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
 
     private ChainBudgetViewModel? Vm => DataContext as ChainBudgetViewModel;
 
+    // A marker on a cube trace keeps its x, the node, in its position and a frequency of 0; one on a frequency trace
+    // keeps it in its frequency.
+    private static double NodeOf(CircuitRF.Render.DataDisplay.Marker m) => m.Freq != 0 ? m.Freq : m.PositionStatic.X;
+
     private void SyncPlotTheme()
     {
         if (Vm is null) return;
         Vm.PlotHost.Theme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? CircuitRF.Render.DataDisplay.RenderTheme.Dark : CircuitRF.Render.DataDisplay.RenderTheme.Light;
-        this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>("CascadePlotControl")?.SetValue(CircuitRF.Ui.DataDisplay.Controls.PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+        foreach (var p in Plots()) p.SetValue(CircuitRF.Ui.DataDisplay.Controls.PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+    }
+
+    private IEnumerable<CircuitRF.Ui.DataDisplay.Controls.PlotControl> Plots()
+    {
+        foreach (var name in new[] { "CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl" })
+            if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } p) yield return p;
     }
 
     /// <summary>Tools ▸ RF Chain Budget: a new chain.</summary>

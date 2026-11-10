@@ -29368,3 +29368,29 @@ there, both now worked around in the bench and stated in `docs/design/chain-budg
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheSteeringBench_PatternIsTheArrayFactor_AndTheNfStaysPut`,
 `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Array_Steering_ThePatternIsTheArrayFactor_AndTheNfStaysPut`.
+
+## The chain's Levels and Blockers benches: one number per node as a curve, and the wave going forward (2026-11-10)
+
+`ChainLevels` follows the budget node by node, and the Levels and Blockers benches put a simulated point beside each
+node's budget, for a display to plot against the node. Four findings, each now in the benches and stated in
+`docs/design/chain-budget.md` §2.1 and §3:
+
+- **One scalar per node becomes a cube only through a sweep.** A measurement row is a number; a display trace needs a
+  cube over an axis. The benches sweep a variable over 0 … N around a trivial DC solve, and write each quantity as
+  Σ v_k·L_k(x), L_k the Lagrange basis polynomial that is 1 at node k and 0 at the others: exact at the integers, in
+  arithmetic alone, since a measurement reading a swept variable reads the sweep's axis.
+- **That variable cannot be called `node`.** A harmonic-balance result's voltage cube already has an axis named `node`
+  (its nets), and a measurement on that bench read the result's axis instead of the sweep's. The variable is `nodeix`.
+- **A node's voltage is not the wave going forward when a reflective stopband follows it.** A blocker in a filter's
+  stopband is reflected and stands on the filter's input: the blocker read 3 to 6 dB off the budget there. The Blockers
+  bench puts an isolator after every stage (`FWD_<stage>`, a Circulator, third port terminated), so each node sees a
+  match; the blockers then read 0.001 to 0.003 dB under the budget, their own compression.
+- **IM3 and blockers want different mixing orders.** In one harmonic-balance run with the blockers' tones, the order the
+  run could afford (3 + mixers) left the IF stages' IM3 0.45 dB off; IM3 needs 5 + mixers. Two benches, Levels (two
+  tones, 5 + mixers) and Blockers (3 + mixers), each read what it is accurate for.
+
+A related limit met on the 2-Tone bench: a stage before anything nonlinear has an infinite intercept, and a MEAS row
+cannot hold NaN. Such a stage's OIP3 row is left out, and the display's per-stage table with it.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheLevelsAndBlockersBenches_SimulateToTheBudgetNodeByNode`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`.

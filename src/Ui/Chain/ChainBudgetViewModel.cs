@@ -168,6 +168,100 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>Raised after the cascade table is refilled in place: a PlotControl repaints only when told.</summary>
     public event EventHandler? PlotsUpdated;
 
+    // ── the levels: Data Display plots over the budget's own data ──
+
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb;
+    public CircuitRF.Render.DataDisplay.Plot? LevelsPlot => _levels?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? LevelsDbPlot => _levelsDb?.PlotVM.Plot;
+
+    /// <summary>What the levels plots say about their simulated points: which bench results they read, or why none.</summary>
+    [ObservableProperty] private string _levelsNote = "";
+
+    /// <summary>
+    /// Fills one plot, made on first use, with <paramref name="pc"/>'s traces over <paramref name="data"/>, which the
+    /// Data Display reads through <see cref="CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source"/> as it reads a
+    /// result file.
+    /// </summary>
+    private void Refill(ref CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? holder, string property,
+                        CircuitRF.Render.DataDisplay.PlotContainerConfig pc, string sourceName, RfCore.Data.DataSet data)
+    {
+        if (holder is null)
+        {
+            holder = PlotHost.AddPlot(pc.PlotType, CircuitRF.Render.DataDisplay.FreqUnit.GHz, 0, 0, pc.Width, pc.Height);
+            PlotHost.SelectOnly((CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?)null);
+            OnPropertyChanged(property);
+        }
+        var plot = holder.PlotVM.Plot;
+        plot.Traces.Clear();
+        var source = new CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source(sourceName, data);
+        foreach (var tc in pc.Traces)
+            if (CircuitRF.Render.DataDisplay.PlotConfigLoader.LoadTrace(tc, pc.PlotType, pc.FreqUnit, source) is { } t)
+                plot.Traces.Add(t);
+        plot.CustomTitle = pc.CustomTitle;
+        plot.CustomTitleOn = pc.CustomTitleOn;
+        plot.Legend = pc.Legend;
+        plot.CustomXLabel = pc.CustomXLabel; plot.CustomXLabelOn = pc.CustomXLabelOn;
+        plot.CustomYLabel = pc.CustomYLabel; plot.CustomYLabelOn = pc.CustomYLabelOn;
+        holder.OnPlotChanged(holder, EventArgs.Empty);
+        holder.RequestPlotRedraw();
+    }
+
+    /// <summary>
+    /// The levels at every node (<see cref="ChainLevels"/>), and, when the chain's Levels, Blockers and 1-Tone benches
+    /// have been simulated beside it, their simulated points on the same axes, read from the results Simulate wrote.
+    /// </summary>
+    private void RefillLevels(ChainDesign d, ChainBudgetResult r)
+    {
+        var lv = ChainLevels.Evaluate(d, r);
+        var data = ChainLevels.ToDataSet(lv);
+        var notes = new List<string>();
+        if (lv.Count > 0 && FilePath is { } path)
+        {
+            string chain = Path.GetFileNameWithoutExtension(path), results = Path.Combine(Path.GetDirectoryName(path)!, "results");
+            var axis = data["Psig_dBm"].Axes[0];
+            foreach (var (bench, cubes) in new (ChainBench, string[])[]
+                     {
+                         (ChainBench.Levels, ["Psig_sim", "IM3_sim"]), (ChainBench.OneTone, ["Noise_node_sim", "NF_node_sim"]),
+                         (ChainBench.Blockers, [.. Enumerable.Range(1, d.Blockers.Count).Select(k => $"Blk{k}_sim")]),
+                     })
+            {
+                if (cubes.Length == 0) continue;
+                string file = Path.Combine(results, ChainBenches.CellName(chain, bench) + ".npy");
+                if (!File.Exists(file)) { notes.Add($"{ChainBenches.CellName(chain, bench)} not simulated yet"); continue; }
+                var sim = CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(file).Data;
+                foreach (var c in cubes)
+                    if (sim is not null && sim.CubesIn("measurements").TryGetValue(c, out var cube) && cube.RealValues.Length == lv.Count)
+                        // A bench writes −300 where a quantity does not exist yet (the IM3 at the input): none, here.
+                        data.Add(c, new RfCore.Data.DataCube([axis], [.. cube.RealValues.Select(v => v <= -299 ? double.NaN : v)]) { Unit = cube.Unit });
+            }
+        }
+        LevelsNote = lv.Count == 0 ? "" : notes.Count == 0 && FilePath is not null
+            ? "Points: the simulated levels from the chain's Levels, Blockers and 1-Tone benches. Lines: the budget. " +
+              "Add a marker to a trace to select that node's stage."
+            : "Lines: the budget. " + (FilePath is null ? "Save and transfer the chain, then simulate its benches, for the simulated points."
+                                                         : string.Join("; ", notes) + ": simulate them for their points.");
+        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLevels(d, lv);
+        Refill(ref _levels, nameof(LevelsPlot), cfg[0], BudgetSource, data);
+        Refill(ref _levelsDb, nameof(LevelsDbPlot), cfg[1], BudgetSource, data);
+    }
+
+    /// <summary>A marker on a levels trace selects the stage whose output that node is; node 0, the input, selects none.</summary>
+    public void SelectNode(double x)
+    {
+        // A marker keeps its position as a frequency in Hz, scaled by the plot's frequency unit: the node is x in the
+        // plot's own unit, which is the first of these scales that lands on a node.
+        foreach (double scale in new[] { 1.0, 1e9, 1e6, 1e3 })
+        {
+            double v = x / scale;
+            int node = (int)Math.Round(v);
+            if (Math.Abs(v - node) < 0.5 && node >= 0 && node <= Stages.Count)
+            {
+                SelectedStageIndex = node - 1;
+                return;
+            }
+        }
+    }
+
     private void RefillCascade(ChainBudgetResult r)
     {
         var pc = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.CascadeTable(BudgetSource);
@@ -201,6 +295,9 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     [ObservableProperty] private string _temperatureK = "";
     [ObservableProperty] private string _requiredSnrDb = "";
 
+    /// <summary>The blockers, as typed: "offset, level" pairs separated by ';' ("150 MHz, -40; 20 MHz, -50").</summary>
+    [ObservableProperty] private string _blockers = "";
+
     [ObservableProperty] private string _summary = "";
     [ObservableProperty] private string _notes = "";
     [ObservableProperty] private string _refusals = "";
@@ -214,7 +311,12 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>The last budget computed: what Transfer writes from.</summary>
     public ChainBudgetResult? Budget { get; private set; }
 
-    partial void OnFilePathChanged(string? value) => OnPropertyChanged(nameof(Title));
+    partial void OnFilePathChanged(string? value)
+    {
+        OnPropertyChanged(nameof(Title));
+        // The simulated levels live beside the file: a chain that has just been given one may have results to show.
+        if (!_loading) Recompute();
+    }
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Title));
     partial void OnRefusalsChanged(string value) => OnPropertyChanged(nameof(HasRefusals));
     partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(HasNotes));
@@ -223,6 +325,25 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     partial void OnInputPowerDbmChanged(string value) => Changed();
     partial void OnTemperatureKChanged(string value) => Changed();
     partial void OnRequiredSnrDbChanged(string value) => Changed();
+    partial void OnBlockersChanged(string value) => Changed();
+
+    private static string FormatBlockers(IEnumerable<ChainBlocker> b) =>
+        string.Join("; ", b.Select(x => $"{N(x.OffsetHz / 1e6)} MHz, {N(x.LevelDbm)}"));
+
+    /// <summary>The blockers typed, or null where an entry is not an offset and a level.</summary>
+    private List<ChainBlocker>? ParseBlockers()
+    {
+        var list = new List<ChainBlocker>();
+        foreach (var item in Blockers.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = item.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 || !ChainValue.TryParse(parts[0], out double off) || !ChainValue.TryParse(parts[1], out double lvl)) return null;
+            // A bare offset is in MHz, as the field says.
+            if (double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _)) off *= 1e6;
+            list.Add(new ChainBlocker(off, lvl));
+        }
+        return list;
+    }
 
     private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 
@@ -234,6 +355,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         InputPowerDbm = N(d.InputPowerDbm);
         TemperatureK = N(d.TemperatureK);
         RequiredSnrDb = N(d.RequiredSnrDb);
+        Blockers = FormatBlockers(d.Blockers);
         Stages.Clear();
         foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Changed));
         _loading = false;
@@ -252,6 +374,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         TemperatureK = Parse(TemperatureK, 1, double.NaN),
         RequiredSnrDb = Parse(RequiredSnrDb, 1, double.NaN),
         Stages = [.. Stages.Select(s => s.ToStage())],
+        Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
     };
 
     private void Changed()
@@ -275,6 +398,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Diagram = ChainBenches.Diagram(d, r);
         Blocks(d, r);
         RefillCascade(r);
+        RefillLevels(d, r);
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes);
         Summary = r.Totals is not { } t ? "" :

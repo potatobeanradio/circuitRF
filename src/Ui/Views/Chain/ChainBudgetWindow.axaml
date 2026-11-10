@@ -114,7 +114,10 @@
                 <TextBlock Classes="lbl" Text="Source temperature, K"/>
                 <TextBox Classes="p" Text="{Binding TemperatureK}" Margin="0,0,14,0" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
                 <TextBlock Classes="lbl" Text="Required SNR, dB"/>
-                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Margin="0,0,14,0" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                <TextBlock Classes="lbl" Text="Blockers"/>
+                <TextBox Classes="p" Text="{Binding Blockers}" MinWidth="200" Watermark="offset MHz, level dBm; …"
+                         ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
             </WrapPanel>
         </Border>
 
@@ -135,7 +138,7 @@
                  as its variant. Schematic: the chain itself, as Transfer to Schematic places it, drawn by circuitRF's own
                  schematic renderer with the same numbers over each stage; wheel to zoom, middle-drag to pan,
                  double-click to fit. A click on a block or a part selects its stage, in both and in the stage list. -->
-            <Border Classes="pane" Grid.Row="0" Height="330">
+            <Border Classes="pane" Grid.Row="0" Height="290">
                 <TabControl Padding="0,4,0,0">
                     <TabItem Header="Blocks" FontSize="13">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -228,12 +231,31 @@
                 </DockPanel>
             </Border>
 
-            <!-- The cascade: each stage's cumulative numbers at its output, referred to the input (to one element's,
-                 in an array), as a Data Display table over the budget's stage axis. -->
-            <Border Classes="pane" Grid.Row="2" Height="190">
-                <ddc:PlotControl Name="CascadePlotControl" ClipToBounds="True"
-                                 Plot="{Binding CascadePlot}" Library="{Binding PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+            <!-- The cascade and the levels node by node, as Data Display plots over the budget's own data: the cascade
+                 table over the stage axis; the levels over the node axis (0 the input, k stage k's output), with the
+                 transferred benches' simulated points once they have run, and a marker on a trace selecting that
+                 node's stage. -->
+            <Border Classes="pane" Grid.Row="2" Height="280">
+                <TabControl Padding="0,4,0,0">
+                    <TabItem Header="Cascade" FontSize="13">
+                        <ddc:PlotControl Name="CascadePlotControl" ClipToBounds="True"
+                                         Plot="{Binding CascadePlot}" Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </TabItem>
+                    <TabItem Header="Levels" FontSize="13">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding LevelsNote}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                            <Grid ColumnDefinitions="*,4,*">
+                                <ddc:PlotControl Grid.Column="0" Name="LevelsPlotControl" ClipToBounds="True"
+                                                 Plot="{Binding LevelsPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                <ddc:PlotControl Grid.Column="2" Name="LevelsDbPlotControl" ClipToBounds="True"
+                                                 Plot="{Binding LevelsDbPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            </Grid>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
             </Border>
         </Grid>
     </DockPanel>

@@ -1,6 +1,7 @@
 // A chain, transferred: test benches of circuitRF's own System blocks, each drawn by NetlistSchematic (the drawing
 // `circuitrf netlist --to-schematic` makes), with the analyses that verify the budget already set up and the budget's
-// own numbers beside the simulated ones in a MEAS block. Three for every chain, and two more for an array:
+// own numbers beside the simulated ones in a MEAS block. Four for every chain, one more when it has blockers, and two
+// more for an array:
 //
 //   <chain> 1-Tone    a P1Tone per element, a Port at the output. Without a mixer, an S-parameter run with Noise=yes:
 //                     gain, NF and each stage's share of it. With one, a harmonic-balance noise run with the LO: the
@@ -8,6 +9,10 @@
 //   <chain> 2-Tone    a PnTone per element: two tones 50 dB below the predicted IIP3, the intercept and each stage's.
 //   <chain> Envelope  a MOD_Source per element, an NR carrier with its source's noise: the in-channel SNR, the EVM's
 //                     noise part and the output noise floor.
+//   <chain> Levels    a PnTone per element, two tones each at the input power: the signal and its IM3 at every node,
+//                     beside the budget's levels (ChainLevels) over a node axis.
+//   <chain> Blockers  the blockers alone, each at its own frequency and level, an isolator after every stage so that
+//                     each node reads the wave going forward.
 //   <chain> Steering  the elements and the combiner fed by a plane wave: one Port through a Combiner used as a
 //                     splitter whose path k has the wave's phase −(k − 1)·ψ_in, ψ = 360°·(d/λ)·sin θ. The phase
 //                     shifters steer from VAR theta_steer, a taper from VAR taper; a sweep of theta_in inside a sweep
@@ -36,7 +41,7 @@ using CircuitRF.Design.Symbol;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers }
 
 /// <summary>One bench: its cell name, its netlist and where each of its instances is drawn.</summary>
 public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout);
@@ -56,8 +61,14 @@ public static class ChainBenches
         ChainBench.TwoTone => chain + " 2-Tone",
         ChainBench.Envelope => chain + " Envelope",
         ChainBench.Steering => chain + " Steering",
-        _                  => chain + " Combiners",
+        ChainBench.Combiners => chain + " Combiners",
+        ChainBench.Levels  => chain + " Levels",
+        _                  => chain + " Blockers",
     };
+
+    /// <summary>The variable, and so the axis, the Levels displays plot against: the node, 0 the chain's input and k the
+    /// output of stage k.</summary>
+    public const string NodeVar = "nodeix";
 
     /// <summary>The steer angles the Steering bench sweeps, degrees from broadside.</summary>
     public static readonly double[] SteerAnglesDeg = [-30, 0, 30];
@@ -67,13 +78,15 @@ public static class ChainBenches
         [("Direct", "Passive", "DP"), ("Tree", "Passive", "TP"), ("Direct", "Active", "DA"), ("Tree", "Active", "TA")];
 
     /// <summary>
-    /// The benches a chain transfers to: 1-Tone, 2-Tone and Envelope always; for an array whose branch is linear (no
+    /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers;
+    /// for an array whose branch is linear (no
     /// mixer before the combiner, so an S-parameter run reaches the combiner), Combiners, and Steering when a phase
     /// shifter in the branch has something to steer with. <paramref name="why"/> says what was left out and why.
     /// </summary>
     public static IReadOnlyList<ChainBench> BenchesFor(ChainDesign d, List<string>? why = null)
     {
-        List<ChainBench> b = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope];
+        List<ChainBench> b = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope, ChainBench.Levels];
+        if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
         if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.Mixer))
@@ -304,13 +317,20 @@ public static class ChainBenches
             bool array = n > 1;
             double frf = d.FrequencyHz;
             _vars.Add($"Frf = {G(frf)}");
-            if (bench == ChainBench.TwoTone)
+            if (bench is ChainBench.TwoTone or ChainBench.Levels)
             {
                 double df = Math.Min(1e6, d.BandwidthHz);
                 _vars.Add($"F1 = {G(frf - df / 2)}");
                 _vars.Add($"F2 = {G(frf + df / 2)}");
-                _vars.Add($"P2t = {F(Finite(_t.Iip3Dbm, 0) - TwoToneBackoffDb)}");
+                if (bench == ChainBench.TwoTone) _vars.Add($"P2t = {F(Finite(_t.Iip3Dbm, 0) - TwoToneBackoffDb)}");
+                else _vars.Add($"Pin = {F(d.InputPowerDbm)}");   // two tones, each at the chain's input power
             }
+            else if (bench == ChainBench.Blockers)
+                for (int k = 0; k < d.Blockers.Count; k++)
+                {
+                    _vars.Add($"FB{k + 1} = {G(frf + d.Blockers[k].OffsetHz)}");
+                    _vars.Add($"PB{k + 1} = {F(d.Blockers[k].LevelDbm)}");
+                }
             else if (bench == ChainBench.OneTone)
             {
                 // Pss is the small-signal drive and Pin the source's: the compression sweep moves Pin, and a row that
@@ -318,15 +338,16 @@ public static class ChainBenches
                 _vars.Add($"Pss = {F(Finite(_t.Ip1dbDbm, 0) - CompressionBackoffDb)}");
                 _vars.Add("Pin = Pss");
             }
-            else _vars.Add($"Pin = {F(d.InputPowerDbm)}");
+            else if (bench != ChainBench.Blockers) _vars.Add($"Pin = {F(d.InputPowerDbm)}");
 
             // Frequency and mixing-product tracking: v1 is the wanted product's index on the tone lattice and v3 the
             // lower IM3's, both updated by every mixer the signal passes.
-            int tones = (bench == ChainBench.TwoTone ? 2 : 1) + Mixers;
+            int signalTones = bench switch { ChainBench.TwoTone or ChainBench.Levels => 2, ChainBench.Blockers => d.Blockers.Count, _ => 1 };
+            int tones = signalTones + Mixers;
             var v1 = new int[tones]; v1[0] = 1;
             var v3 = new int[tones];
-            if (bench == ChainBench.TwoTone) { v3[0] = 2; v3[1] = -1; }
-            int lo = bench == ChainBench.TwoTone ? 2 : 1;
+            if (bench is ChainBench.TwoTone or ChainBench.Levels) { v3[0] = 2; v3[1] = -1; }
+            int lo = signalTones;
             var stageNet = new string[d.Stages.Count];
             var stageIdx = new (int[] V1, int[] V3)[d.Stages.Count];
             var stageParts = new List<string>[d.Stages.Count];
@@ -361,7 +382,7 @@ public static class ChainBenches
                     var parts = Stage(d.Stages[j], d.Stages[j].Name + (array ? $"_{k}" : ""), prev, net, ref bf, bv1, bv3, ref blo, k, n);
                     if (k == 1) { stageNet[j] = net; stageIdx[j] = ((int[])bv1.Clone(), (int[])bv3.Clone()); stageFreq[j] = bf; stageParts[j] = []; }
                     stageParts[j].AddRange(parts);
-                    prev = net;
+                    prev = Forward(net, d.Stages[j].Name + (array ? $"_{k}" : ""));
                     _stage = -1;
                 }
                 branchOut[k - 1] = prev;
@@ -383,7 +404,7 @@ public static class ChainBenches
                 if (s.Part == ChainParts.Combiner) parts = Combiner(s, branchOut, net);
                 else parts = Stage(s, s.Name, cur, net, ref f, v1, v3, ref lo, 1, 1);
                 stageNet[j] = net; stageIdx[j] = ((int[])v1.Clone(), (int[])v3.Clone()); stageFreq[j] = f; stageParts[j] = parts;
-                cur = net;
+                cur = j == d.Stages.Count - 1 ? net : Forward(net, s.Name);
                 _stage = -1;
             }
             if (cur != "out") { /* the last stage always writes "out" */ }
@@ -587,10 +608,15 @@ public static class ChainBenches
                     Line($"P1Tone:{name}  {net}  0  Num={k}  Freq=Frf  Pavl=Pin dBm  Z=50 Ohm"); break;
                 case ChainBench.TwoTone:
                     Line($"PnTone:{name}  {net}  0  Freq[1]=F1  Pavl[1]=P2t dBm  Phase[1]=0 deg  Freq[2]=F2  Pavl[2]=P2t dBm  Phase[2]=0 deg  Z=50 Ohm"); break;
+                case ChainBench.Levels:
+                    Line($"PnTone:{name}  {net}  0  Freq[1]=F1  Pavl[1]=Pin dBm  Phase[1]=0 deg  Freq[2]=F2  Pavl[2]=Pin dBm  Phase[2]=0 deg  Z=50 Ohm"); break;
+                case ChainBench.Blockers:
+                    Line($"PnTone:{name}  {net}  0" + string.Concat(Enumerable.Range(1, d.Blockers.Count).Select(b =>
+                             $"  Freq[{b}]=FB{b}  Pavl[{b}]=PB{b} dBm  Phase[{b}]=0 deg")) + "  Z=50 Ohm"); break;
                 default:
-                    var (mhz, _) = Carrier(d.BandwidthHz);
+                    var (mhz0, _) = Carrier(d.BandwidthHz);
                     Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
-                         $"Carrier[1]=\"NR;BW={mhz}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=yes  " +
+                         $"Carrier[1]=\"NR;BW={mhz0}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=yes  " +
                          $"Temp={F(d.TemperatureK - 273.15)}");
                     break;
             }
@@ -604,7 +630,7 @@ public static class ChainBenches
             switch (bench)
             {
                 case ChainBench.OneTone: Line($"Port:PO  out  0  Num={n + 1}  Z=50 Ohm"); Place("PO", _x, _y + 200); break;
-                case ChainBench.TwoTone: Line("R:RL  out  0  R=50 Ohm"); Place("RL", _x, _y + 200); break;
+                case ChainBench.TwoTone or ChainBench.Levels or ChainBench.Blockers: Line("R:RL  out  0  R=50 Ohm"); Place("RL", _x, _y + 200); break;
                 default:
                     Line("IProbe:Iout  out  load");
                     Line("R:RL  load  0  R=50 Ohm");
@@ -798,6 +824,51 @@ public static class ChainBenches
             return placed;
         }
 
+        /// <summary>
+        /// The Levels display's node axis: a variable <c>nodeix</c> swept over 0 … count − 1 around a DC solve, which is
+        /// what turns one scalar measurement per node into one cube over the nodes (a swept variable is its sweep's axis
+        /// in a measurement). The DC solve of these ideal blocks is trivial. Not <c>node</c>: a harmonic-balance
+        /// result's own voltage cube has an axis of that name, its nets, and a measurement would read that instead.
+        /// </summary>
+        private void NodeAxis(int count)
+        {
+            _vars.Add($"{NodeVar} = 0");
+            _analyses.Add("analysis DCN type=dc");
+            _analyses.Add($"analysis SWN type=parametric_sweep Var={NodeVar} Values={string.Join(",", Enumerable.Range(0, count))} Inner=DCN");
+        }
+
+        /// <summary>One cube over the node axis from one expression per node: Σ v_k·L_k(nodeix), L_k the Lagrange basis
+        /// polynomial that is 1 at node k and 0 at every other node — exact at the integers, in arithmetic alone.</summary>
+        private static string NodeCube(int count, Func<int, string> value)
+        {
+            var terms = new List<string>();
+            for (int k = 0; k < count; k++)
+            {
+                double den = 1;
+                var num = new List<string>();
+                for (int j = 0; j < count; j++)
+                    if (j != k) { num.Add($"({NodeVar} - {j})"); den *= k - j; }
+                string basis = num.Count == 0 ? "1" : $"{string.Join("*", num)}/{G(den)}";
+                terms.Add($"({value(k)})*{basis}");
+            }
+            return string.Join(" + ", terms);
+        }
+
+        /// <summary>On the Blockers bench, an isolator after a stage (a Circulator, its third port terminated), so the
+        /// stage's output node sees a match and its voltage is the forward wave; elsewhere the net itself.</summary>
+        private string Forward(string net, string stage)
+        {
+            if (bench != ChainBench.Blockers) return net;
+            string iso = $"FWD_{stage}";
+            Line($"Circulator:{iso}  {net}  0  {net}_f  0  {iso}_t  0  Direction=CW");
+            Line($"R:{iso}_R  {iso}_t  0  R=50 Ohm");
+            Inline(iso, 300); Place($"{iso}_R", _x - Lead - 300, _y + 900);
+            return net + "_f";
+        }
+
+        /// <summary>The nets the Levels displays read, node by node: element 1's input, then each stage's output.</summary>
+        private List<string> NodeNets(string[] stageNets) => [N > 1 ? "in1" : "in", .. stageNets];
+
         /// <summary>Σ a_k² / a_1²: how many element 1's the paths' noise is worth — N for equal paths.</summary>
         private double PathWeight()
         {
@@ -815,6 +886,7 @@ public static class ChainBenches
             string tonesDirective(bool two)
             {
                 var names = new List<string>(two ? ["F1", "F2"] : ["Frf"]);
+                if (bench == ChainBench.Blockers) names = [.. Enumerable.Range(1, d.Blockers.Count).Select(k => $"FB{k}")];
                 names.AddRange(Enumerable.Range(1, Mixers).Select(i => $"Flo{i}"));
                 return names.Count == 1 ? $"Tone=\"{names[0]}\" ToneUnit=Hz"
                      : $"NumFreqs={names.Count} " + string.Join(" ", names.Select((t, i) => $"Tone[{i + 1}]=\"{t}\" ToneUnit[{i + 1}]=Hz"));
@@ -890,6 +962,21 @@ public static class ChainBenches
                     _meas.Add("OP1dB_sim = IP1dB_sim + at(Ghb,\"Pin\",0) - 1");
                     _meas.Add("IP1dB_err = IP1dB_sim - IP1dB_calc");
                     _meas.Add("OP1dB_err = OP1dB_sim - OP1dB_calc");
+                    // The NF at each node, simulated (each stage's cumulative NF above) against the budget's, and the
+                    // noise floor in the bandwidth that NF gives at the node through the budget's noise gain: cubes over
+                    // the Levels display's node axis.
+                    var lv = ChainLevels.Evaluate(d, r);
+                    NodeAxis(lv.Count);
+                    _meas.Add($"NF_node_sim = {NodeCube(lv.Count, k => k == 0 ? "0" : $"NF_{rows[k - 1].Name}_sim")}");
+                    _meas.Add($"NF_node_calc = {NodeCube(lv.Count, k => G(lv[k].NfDb))}");
+                    string floor(int k)
+                    {
+                        if (k == 0) return G(lv[0].NoiseDbm);
+                        double gn = rows[k - 1].NoiseOutDbm - (10 * Math.Log10(ChainBudget.K * (d.TemperatureK + rows[k - 1].TeK) * d.BandwidthHz) + 30);
+                        return $"(10*log10({G(ChainBudget.K)}*({G(d.TemperatureK)} + {G(ChainBudget.T0)}*(10^(NF_{rows[k - 1].Name}_sim/10) - 1))*{G(d.BandwidthHz)}) + 30 + {G(gn)})";
+                    }
+                    _meas.Add($"Noise_node_sim = {NodeCube(lv.Count, floor)}");
+                    _meas.Add($"Noise_node_calc = {NodeCube(lv.Count, k => G(lv[k].NoiseDbm))}");
                     break;
                 }
                 case ChainBench.TwoTone:
@@ -912,12 +999,89 @@ public static class ChainBenches
                     {
                         string s = rows[j].Name, net = nets[j];
                         _meas.Add($"G_{s}_calc = {G(rows[j].GainDb)}");
-                        _meas.Add($"OIP3_{s}_calc = {G(Finite(rows[j].Oip3Dbm, double.NaN))}");
                         _meas.Add($"P1_{s} = dB(HB2.V(\"{net}\",{Idx(idx[j].V1)})) + 10");
-                        _meas.Add($"P3_{s} = dB(HB2.V(\"{net}\",{Idx(idx[j].V3)})) + 10");
                         // A branch node carries one element's signal; after the combiner the array's.
                         _meas.Add($"G_{s}_sim = P1_{s} - P2t");
+                        // A node before anything nonlinear has no intercept, and no IM3 to read one from.
+                        if (!double.IsFinite(rows[j].Oip3Dbm)) continue;
+                        _meas.Add($"OIP3_{s}_calc = {G(rows[j].Oip3Dbm)}");
+                        _meas.Add($"P3_{s} = dB(HB2.V(\"{net}\",{Idx(idx[j].V3)})) + 10");
                         _meas.Add($"OIP3_{s}_sim = P1_{s} + (P1_{s} - P3_{s})/2");
+                    }
+                    break;
+                }
+                case ChainBench.Levels:
+                {
+                    // Two tones, each at the chain's input power: the signal and its IM3 at every node, on the 2-Tone
+                    // bench's mixing order. The budget's levels beside them, and its noise floor, SNR and margin, for
+                    // the display's node axis.
+                    _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={5 + mix} Tol=1e-12");
+                    var levels = ChainLevels.Evaluate(d, r);
+                    var nodeNet = NodeNets(nets);
+                    var nodeV1 = new List<int[]> { Seed(1, 0) };
+                    var nodeV3 = new List<int[]> { Seed(2, -1) };
+                    for (int j = 0; j < rows.Count; j++) { nodeV1.Add(idx[j].V1); nodeV3.Add(idx[j].V3); }
+                    int[] Seed(int a0, int a1) { var v = new int[v1.Length]; v[0] = a0; v[1] = a1; return v; }
+                    for (int k = 0; k < nodeNet.Count; k++)
+                    {
+                        _meas.Add($"P1_{k} = dB(HBL.V(\"{nodeNet[k]}\",{Idx(nodeV1[k])})) + 10");
+                        if (k > 0) _meas.Add($"P3_{k} = dB(HBL.V(\"{nodeNet[k]}\",{Idx(nodeV3[k])})) + 10");
+                    }
+                    NodeAxis(levels.Count);
+                    double Lo(double v) => double.IsFinite(v) ? v : -300;
+                    _meas.Add($"Psig_sim = {NodeCube(levels.Count, k => $"P1_{k}")}");
+                    _meas.Add($"IM3_sim = {NodeCube(levels.Count, k => double.IsFinite(levels[k].Im3Dbm) ? $"P3_{k}" : "-300")}");
+                    _meas.Add($"Psig_calc = {NodeCube(levels.Count, k => G(levels[k].SignalDbm))}");
+                    _meas.Add($"IM3_calc = {NodeCube(levels.Count, k => G(Lo(levels[k].Im3Dbm)))}");
+                    _meas.Add($"Noise_calc = {NodeCube(levels.Count, k => G(levels[k].NoiseDbm))}");
+                    _meas.Add($"SNR_calc = {NodeCube(levels.Count, k => G(levels[k].SnrDb))}");
+                    // A linear chain has no margin at all: above the display's window.
+                    _meas.Add($"Margin_calc = {NodeCube(levels.Count, k => G(double.IsFinite(levels[k].MarginDb) ? levels[k].MarginDb : 300))}");
+                    for (int k = 0; k < levels.Count; k++)
+                    {
+                        _meas.Add($"Psig_{k}_err = P1_{k} - {G(levels[k].SignalDbm)}");
+                        if (double.IsFinite(levels[k].Im3Dbm)) _meas.Add($"IM3_{k}_err = P3_{k} - {G(levels[k].Im3Dbm)}");
+                    }
+                    break;
+                }
+                case ChainBench.Blockers:
+                {
+                    // The blockers alone, every one at its own frequency and level, through every stage; each node is a
+                    // stage's output into the bench's isolator after it, so its voltage is the forward wave, which is
+                    // what the budget carries (a reflective filter's stopband would otherwise stand on its input).
+                    _analyses.Add($"analysis HBK type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={3 + mix} Tol=1e-12");
+                    var levels = ChainLevels.Evaluate(d, r);
+                    var nodeNet = NodeNets(nets);
+                    var blkV = new List<List<int[]>>();
+                    for (int b = 0; b < d.Blockers.Count; b++)
+                    {
+                        var v = new int[v1.Length]; v[b] = 1;
+                        double fbk = d.FrequencyHz + d.Blockers[b].OffsetHz;
+                        var perNode = new List<int[]> { (int[])v.Clone() };
+                        int mi = 0;
+                        foreach (var st in d.Stages)
+                        {
+                            if (st.Part == ChainParts.Mixer)
+                            {
+                                double flo = ChainValue.Or(st.Get("Flo"), 0);
+                                int t = d.Blockers.Count + mi++;
+                                if (fbk > flo) { v[t] -= 1; fbk -= flo; }
+                                else { for (int i = 0; i < v.Length; i++) v[i] = -v[i]; v[t] += 1; fbk = flo - fbk; }
+                            }
+                            perNode.Add((int[])v.Clone());
+                        }
+                        blkV.Add(perNode);
+                    }
+                    for (int k = 0; k < nodeNet.Count; k++)
+                        for (int b = 0; b < d.Blockers.Count; b++)
+                            _meas.Add($"B{b + 1}_{k} = dB(HBK.V(\"{nodeNet[k]}\",{Idx(blkV[b][k])})) + 10");
+                    NodeAxis(levels.Count);
+                    for (int b = 0; b < d.Blockers.Count; b++)
+                    {
+                        int bb = b;
+                        _meas.Add($"Blk{b + 1}_sim = {NodeCube(levels.Count, k => $"B{bb + 1}_{k}")}");
+                        _meas.Add($"Blk{b + 1}_calc = {NodeCube(levels.Count, k => G(levels[k].BlockerDbm[bb]))}");
+                        for (int k = 0; k < levels.Count; k++) _meas.Add($"Blk{b + 1}_{k}_err = B{b + 1}_{k} - {G(levels[k].BlockerDbm[b])}");
                     }
                     break;
                 }

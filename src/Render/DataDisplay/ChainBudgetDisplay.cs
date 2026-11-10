@@ -40,8 +40,13 @@ public static class ChainBudgetDisplay
     public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget)
     {
         string src = ChainBenches.CellName(chain, bench) + ".npy";
-        if (bench is ChainBench.Steering or ChainBench.Combiners)
-            return Display(chain, bench, src, bench == ChainBench.Steering ? Steering(src) : Combiners(src, design));
+        switch (bench)
+        {
+            case ChainBench.Steering: return Display(chain, bench, src, Steering(src));
+            case ChainBench.Combiners: return Display(chain, bench, src, Combiners(src, design));
+            case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false));
+            case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true));
+        }
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
         {
@@ -85,8 +90,10 @@ public static class ChainBudgetDisplay
         // Per stage: one table a stage, its cumulative value at its output, predicted and simulated.
         foreach (var s in perStage.Length == 0 ? [] : budget.Stages.ToList())
         {
-            var cols = perStage.SelectMany(q => new[] { ($"{q.Item1}_{s.Name}_calc", $"{s.Name} {q.Item1} budget"), ($"{q.Item1}_{s.Name}_sim", "simulated") }).ToArray();
-            var t = Table($"{s.Name}: at its output, {string.Join(" and ", perStage.Select(q => q.Item2))}", src, cols);
+            // A stage before anything nonlinear has no intercept, and its bench no row for one.
+            var qs = perStage.Where(q => q.Item1 != "OIP3" || double.IsFinite(s.Oip3Dbm)).ToArray();
+            var cols = qs.SelectMany(q => new[] { ($"{q.Item1}_{s.Name}_calc", $"{s.Name} {q.Item1} budget"), ($"{q.Item1}_{s.Name}_sim", "simulated") }).ToArray();
+            var t = Table($"{s.Name}: at its output, {string.Join(" and ", qs.Select(q => q.Item2))}", src, cols);
             t.Left = 0;
             t.Top = y;
             y += H + Gap;
@@ -149,6 +156,113 @@ public static class ChainBudgetDisplay
             plots.Add(t);
         }
         return plots;
+    }
+
+    // ── the levels ────────────────────────────────────────────────────────────
+
+    private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated) => new()
+    {
+        SourcePath = src, CubeName = cube, Label = label,
+        CubeSlice = [new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX }],
+        Properties = simulated
+            ? new TracePropertiesConfig { LineEnabled = false, MarkerEnabled = true, MarkerType = MarkerType.Circle, MarkerSize = 1.8,
+                                          LineColorIndex = color, MarkerColorIndex = color }
+            : new TracePropertiesConfig { LineWidth = 2, LineColorIndex = color, MarkerColorIndex = color },
+    };
+
+    private static int C(int i) => TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length];
+
+    /// <summary>A Rect plot; a stated window fixes both axes (a window given for one axis alone leaves the other at
+    /// its default rather than autoscaling it), and none autoscales both.</summary>
+    private static PlotContainerConfig Rect(string title, string x, string y, double left, double top, double w, double h,
+                                            List<TraceConfig> traces, (double Lo, double Hi)? yWindow = null,
+                                            (double Lo, double Hi)? xWindow = null) => new()
+    {
+        PlotType = PlotType.Rect, Left = left, Top = top, Width = w, Height = h,
+        CustomTitle = title, CustomTitleOn = true, CustomXLabel = x, CustomXLabelOn = true, CustomYLabel = y, CustomYLabelOn = true,
+        Legend = LegendPlacement.Below, Traces = traces,
+        Axes = yWindow is { } yw && xWindow is { } xw
+            ? new AxesConfig { AutoscaleX = false, WindowX = xw.Lo, WindowWidth = xw.Hi - xw.Lo,
+                               AutoscaleY = false, WindowY = yw.Lo, WindowHeight = yw.Hi - yw.Lo }
+            : null,
+    };
+
+    /// <summary>
+    /// The chain's levels node by node, the budget's as lines and the simulation's as points: the signal and its IM3
+    /// (the Levels bench), the noise floor and the NF (the 1-Tone bench), each blocker (the Blockers bench);
+    /// and in dB the NF, the SNR and the margin to compression. The x axis is the node, 0 the
+    /// input and k the output of stage k. <paramref name="blockersOnly"/>: the Blockers bench's own display.
+    /// </summary>
+    private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly)
+    {
+        var lv = ChainLevels.Evaluate(d, r);
+        string lev = ChainBenches.CellName(chain, ChainBench.Levels) + ".npy";
+        string one = ChainBenches.CellName(chain, ChainBench.OneTone) + ".npy";
+        string blk = ChainBenches.CellName(chain, ChainBench.Blockers) + ".npy";
+        string nodes = string.Join(", ", lv.Select((n, i) => $"{i} {n.Node}"));
+        var traces = new List<TraceConfig>();
+        if (!blockersOnly)
+        {
+            traces.Add(Over(lev, "Psig_calc", ChainBenches.NodeVar, "signal, budget", C(1), false));
+            traces.Add(Over(lev, "Psig_sim", ChainBenches.NodeVar, "signal, simulated", C(1), true));
+            traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
+            traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
+            traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, "IM3, budget", C(4), false));
+            traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true));
+        }
+        for (int k = 0; k < d.Blockers.Count; k++)
+        {
+            string name = $"blocker {k + 1} ({d.Blockers[k].OffsetHz / 1e6:0.##} MHz, {d.Blockers[k].LevelDbm:0.#} dBm)";
+            traces.Add(Over(blk, $"Blk{k + 1}_calc", ChainBenches.NodeVar, name + ", budget", C(5 + k), false));
+            traces.Add(Over(blk, $"Blk{k + 1}_sim", ChainBenches.NodeVar, name + ", simulated", C(5 + k), true));
+        }
+        var finite = lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm }).Concat(n.BlockerDbm))
+                       .Where(double.IsFinite).ToList();
+        double lo = Math.Floor((finite.Min() - 10) / 10) * 10, hi = Math.Ceiling((finite.Max() + 10) / 10) * 10;
+        var plots = new List<PlotContainerConfig>
+        {
+            Rect(blockersOnly ? "The blockers at each node, dBm" : "Levels at each node, dBm", $"node: {nodes}", "dBm", 0, 0, 760, 420,
+                 traces, (lo, hi), (-0.5, lv.Count - 0.5)),
+        };
+        if (!blockersOnly)
+        {
+            var db = new List<TraceConfig>
+            {
+                Over(one, "NF_node_calc", ChainBenches.NodeVar, "NF, budget", C(1), false),
+                Over(one, "NF_node_sim", ChainBenches.NodeVar, "NF, simulated", C(1), true),
+                Over(lev, "SNR_calc", ChainBenches.NodeVar, "SNR, budget", C(3), false),
+                Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false),
+            };
+            double top = Math.Ceiling((lv.Select(n => n.SnrDb).Max() + 10) / 10) * 10;
+            plots.Add(Rect("NF, SNR and margin to compression at each node, dB", $"node: {nodes}", "dB", 0, 420 + Gap, 760, 340, db,
+                           (-5, top), (-0.5, lv.Count - 0.5)));
+        }
+        return plots;
+    }
+
+    /// <summary>The window's Levels tab: the levels in dBm and the dB quantities, each budget cube as a line and each
+    /// simulated cube the window found beside it (<c>Psig_sim</c>, …) as points, all over the in-memory node axis.</summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowLevels(ChainDesign d, IReadOnlyList<ChainNodeLevel> lv)
+    {
+        const string src = "budget";
+        var t = new List<TraceConfig>
+        {
+            Over(src, "Psig_dBm", "node", "signal", C(1), false), Over(src, "Psig_sim", "node", "signal, simulated", C(1), true),
+            Over(src, "Noise_dBm", "node", "noise floor", C(3), false), Over(src, "Noise_node_sim", "node", "noise floor, simulated", C(3), true),
+            Over(src, "IM3_dBm", "node", "IM3", C(4), false), Over(src, "IM3_sim", "node", "IM3, simulated", C(4), true),
+        };
+        for (int k = 0; k < d.Blockers.Count; k++)
+        {
+            t.Add(Over(src, $"Blk{k + 1}_dBm", "node", $"blocker {k + 1}", C(5 + k), false));
+            t.Add(Over(src, $"Blk{k + 1}_sim", "node", $"blocker {k + 1}, simulated", C(5 + k), true));
+        }
+        var db = new List<TraceConfig>
+        {
+            Over(src, "NF_dB", "node", "NF", C(1), false), Over(src, "NF_node_sim", "node", "NF, simulated", C(1), true),
+            Over(src, "SNR_dB", "node", "SNR", C(3), false), Over(src, "Margin_dB", "node", "margin to P1dB", C(4), false),
+        };
+        return [Rect("Levels at each node, dBm", "node", "dBm", 0, 0, 560, 240, t),
+                Rect("NF, SNR and margin, dB", "node", "dB", 0, 0, 480, 240, db)];
     }
 
     /// <summary>A table a combiner variant, in the bench's order.</summary>

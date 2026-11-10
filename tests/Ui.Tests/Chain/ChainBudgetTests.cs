@@ -230,7 +230,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         string path = Path.Combine(_ws, "Arr.cchain");
         ChainDesignIo.SaveToFile(path, RfArray());
         Assert.Equal(0, CliEntry.Run(["chain", path, "--to-schematic"]));
-        foreach (var b in Enum.GetValues<ChainBench>())
+        foreach (var b in ChainBenches.BenchesFor(RfArray()))
         {
             Assert.True(File.Exists(Csch(ChainBenches.CellName("Arr", b))));
             // Each bench's display beside it, where Simulate looks for one first.
@@ -319,7 +319,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         foreach (var s in d.Stages)
         {
             Assert.InRange(Measure(two, $"G_{s.Name}_sim") - Measure(two, $"G_{s.Name}_calc"), -1e-3, 1e-3);
-            if (double.IsFinite(Measure(two, $"OIP3_{s.Name}_calc")))
+            if (two.CubesIn("measurements").ContainsKey($"OIP3_{s.Name}_calc"))
                 Assert.InRange(Measure(two, $"OIP3_{s.Name}_sim") - Measure(two, $"OIP3_{s.Name}_calc"), -1e-3, 1e-3);
         }
     }
@@ -484,7 +484,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         foreach (var s in d.Stages)
         {
             Assert.InRange(Measure(two, $"G_{s.Name}_sim") - Measure(two, $"G_{s.Name}_calc"), -1e-3, 1e-3);
-            if (double.IsFinite(Measure(two, $"OIP3_{s.Name}_calc")))
+            if (two.CubesIn("measurements").ContainsKey($"OIP3_{s.Name}_calc"))
                 Assert.InRange(Measure(two, $"OIP3_{s.Name}_sim") - Measure(two, $"OIP3_{s.Name}_calc"), -1e-3, 1e-3);
         }
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(ChainBenches.CellName(chain, ChainBench.OneTone)));
@@ -544,6 +544,72 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(ChainBudget.Evaluate(ChainBenches.Variant(d, code[0] == 'D' ? "Direct" : "Tree", code[1] == 'P' ? "Passive" : "Active"))
                              .Totals!.GainDb, Measure(cb, $"G_{code}_calc"), 12);
         }
+    }
+
+    // ── the levels node by node ──────────────────────────────────────────────
+
+    /// <summary>
+    /// The levels at every node, by hand: the signal Pin + G, the noise floor k·(Ts + Te)·B·Gn, the IM3 3·P − 2·OIP3,
+    /// the margin OP1dB − P; and a blocker through a 3rd-order Butterworth bandpass written out here,
+    /// |S21|² = IL/(1 + Ω⁶) with Ω = (f² − f0²)/(f·BW), then moved by the mixer to |f − Flo| and filtered again.
+    /// </summary>
+    [Fact]
+    public void TheLevels_AreTheCascadeNodeByNode_AndABlockerIsCarriedThroughEveryFilter()
+    {
+        var d = Superhet();
+        d.Blockers.Add(new ChainBlocker(150e6, -40));
+        var r = ChainBudget.Evaluate(d);
+        var lv = ChainLevels.Evaluate(d, r);
+        Assert.Equal(d.Stages.Count + 1, lv.Count);
+        Assert.Equal("IN", lv[0].Node);
+        Assert.Equal(Db(ChainBudget.K * 290 * 4.5e6) + 30, lv[0].NoiseDbm, 12);
+        for (int k = 1; k < lv.Count; k++)
+        {
+            var row = r.Stages[k - 1];
+            Assert.Equal(d.InputPowerDbm + row.GainDb, lv[k].SignalDbm, 12);
+            Assert.Equal(Db(ChainBudget.K * (290 + row.TeK) * 4.5e6) + 30 + row.GainDb, lv[k].NoiseDbm, 9);
+            Assert.Equal(lv[k].SignalDbm - lv[k].NoiseDbm, lv[k].SnrDb, 12);
+            if (double.IsFinite(row.Oip3Dbm)) Assert.Equal(3 * lv[k].SignalDbm - 2 * row.Oip3Dbm, lv[k].Im3Dbm, 12);
+        }
+        static double Butter(double f, double f1, double f2, double il)
+        {
+            double f0 = Math.Sqrt(f1 * f2), w = (f * f - f0 * f0) / (f * (f2 - f1));
+            return -il - 10 * Math.Log10(1 + Math.Pow(w, 6));
+        }
+        double fb = 2.45e9 + 150e6, b = -40 + 16;                    // the LNA
+        Assert.Equal(b, lv[1].BlockerDbm[0], 9);
+        b += Butter(fb, 2.35e9, 2.55e9, 1.5);                         // the RF filter's rejection at 2.6 GHz
+        Assert.Equal(b, lv[2].BlockerDbm[0], 6);
+        b += -7; fb -= 2.1e9;                                         // the mixer: to 500 MHz
+        Assert.Equal(b, lv[3].BlockerDbm[0], 6);
+        b += Butter(fb, 320e6, 380e6, 1);                             // the IF filter at 500 MHz
+        Assert.Equal(b, lv[4].BlockerDbm[0], 6);
+        Assert.True(lv[4].BlockerDbm[0] < lv[4].SignalDbm - 15, "the IF filter takes the blocker under the signal");
+        Assert.True(double.IsNaN(lv[0].Im3Dbm));
+        Assert.Equal(r.Totals!.Ip1dbDbm - (-40), lv[0].MarginDb, 12);   // before anything compresses: the chain's, the blocker the strongest
+        Assert.Equal(r.Stages[^1].Op1dbDbm - lv[^1].SignalDbm, lv[^1].MarginDb, 12);
+    }
+
+    /// <summary>The Levels bench (two tones at the input power) and the Blockers bench (the blockers alone, an isolator
+    /// after every stage so each node is a forward wave), run: every node's signal, IM3 and blocker on the budget.</summary>
+    [Fact]
+    public void TheLevelsAndBlockersBenches_SimulateToTheBudgetNodeByNode()
+    {
+        var d = Superhet();
+        d.Blockers.AddRange([new ChainBlocker(150e6, -40), new ChainBlocker(20e6, -50)]);
+        var lev = Bench(d, "Lv", ChainBench.Levels);
+        var blk = Bench(d, "Lv", ChainBench.Blockers);
+        for (int k = 0; k <= d.Stages.Count; k++)
+        {
+            Assert.InRange(Measure(lev, $"Psig_{k}_err"), -1e-4, 1e-4);
+            if (k > 0) Assert.InRange(Measure(lev, $"IM3_{k}_err"), -1e-3, 1e-3);
+            // The blockers compress the LNA by a few thousandths of a dB; the budget carries them linearly.
+            Assert.InRange(Measure(blk, $"Blk1_{k}_err"), -0.01, 1e-4);
+            Assert.InRange(Measure(blk, $"Blk2_{k}_err"), -0.01, 1e-4);
+        }
+        var cube = lev["measurements.Psig_sim"];
+        output.WriteLine($"Psig_sim axes: {string.Join(", ", cube.Axes.Select(a => $"{a.Name}[{a.Values.Length}]"))}");
+        Assert.Equal(d.Stages.Count + 1, cube.RealValues.Length);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

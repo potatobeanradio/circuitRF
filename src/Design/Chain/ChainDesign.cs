@@ -34,6 +34,10 @@ public sealed class ChainStage
     public ChainStage Clone() => new() { Name = Name, Part = Part, Parameters = new(Parameters, StringComparer.Ordinal) };
 }
 
+/// <summary>A blocker at the chain's input: its offset from the chain's frequency, Hz, and its level, dBm (per element
+/// in an array, arriving as the signal does).</summary>
+public sealed record ChainBlocker(double OffsetHz, double LevelDbm);
+
 /// <summary>A receive chain: the system inputs and the stages, signal path order.</summary>
 public sealed class ChainDesign
 {
@@ -53,6 +57,10 @@ public sealed class ChainDesign
     public double RequiredSnrDb { get; set; } = 10;
 
     public List<ChainStage> Stages { get; set; } = [];
+
+    /// <summary>Blockers at the chain's input, each a carrier at an offset from the frequency and a level, carried
+    /// through every stage's gain and every filter's rejection at its own frequency (<see cref="ChainLevels"/>).</summary>
+    public List<ChainBlocker> Blockers { get; set; } = [];
 
     /// <summary>Why this design cannot be budgeted, or null. Every cause, one sentence each.</summary>
     public IReadOnlyList<string> Refusals()
@@ -83,6 +91,11 @@ public sealed class ChainDesign
             }
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
+        foreach (var b in Blockers)
+            if (!double.IsFinite(b.OffsetHz) || !double.IsFinite(b.LevelDbm))
+                r.Add("A blocker is an offset and a level, \"150 MHz, -40\"; one of them is not a number.");
+            else if (FrequencyHz + b.OffsetHz <= 0)
+                r.Add($"A blocker at {b.OffsetHz / 1e6:G4} MHz below the frequency is not at a positive frequency.");
         return r;
     }
 
@@ -99,7 +112,7 @@ public sealed class ChainDesign
     {
         FrequencyHz = FrequencyHz, BandwidthHz = BandwidthHz, InputPowerDbm = InputPowerDbm,
         TemperatureK = TemperatureK, RequiredSnrDb = RequiredSnrDb,
-        Stages = [.. Stages.Select(s => s.Clone())],
+        Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers],
     };
 }
 
@@ -152,12 +165,14 @@ public static class ChainDesignIo
         public double? TemperatureK { get; set; }
         public double? RequiredSnrDb { get; set; }
         public List<ChainStage>? Stages { get; set; }
+        public List<ChainBlocker>? Blockers { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
     {
         FrequencyHz = d.FrequencyHz, BandwidthHz = d.BandwidthHz, InputPowerDbm = d.InputPowerDbm,
         TemperatureK = d.TemperatureK, RequiredSnrDb = d.RequiredSnrDb, Stages = d.Stages,
+        Blockers = d.Blockers.Count > 0 ? d.Blockers : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -177,6 +192,7 @@ public static class ChainDesignIo
         d.InputPowerDbm = f.InputPowerDbm ?? d.InputPowerDbm;
         d.TemperatureK  = f.TemperatureK  ?? d.TemperatureK;
         d.RequiredSnrDb = f.RequiredSnrDb ?? d.RequiredSnrDb;
+        d.Blockers.AddRange(f.Blockers ?? []);
         foreach (var s in f.Stages ?? [])
             d.Stages.Add(new ChainStage
             {
