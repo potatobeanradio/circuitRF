@@ -702,6 +702,30 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.True(Measure(cb, "EVM_QPSK_on") < Measure(cb, "EVM_QPSK_off") / 3, "and the QPSK carrier");
     }
 
+    // ── the demo ─────────────────────────────────────────────────────────────
+
+    /// <summary>The demo bench: the superhet demodulated end to end over seven input powers. Where noise dominates, the
+    /// simulated SNR is the budget's and the EVM is 1/√SNR; past compression the EVM's distortion part takes over.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void TheDemo_EvmFollowsTheBudgetsSnr_UntilDistortionTakesOver()
+    {
+        var d = Superhet();
+        d.Demo = true;
+        var dm = Bench(d, "Dm", ChainBench.Demo);
+        var snrErr = dm["measurements.SNR_QAM_err"].RealValues;
+        var evm = dm["measurements.EVM_QAM_sim"].RealValues;
+        var evmCalc = dm["measurements.EVM_QAM_calc"].RealValues;
+        var dist = dm["measurements.EVMdist_QAM"].RealValues;
+        var noise = dm["measurements.EVMnoise_QAM"].RealValues;
+        for (int i = 0; i < evm.Length; i++)
+            output.WriteLine($"Demo: point {i}: EVM {evm[i]:G4} % (budget {evmCalc[i]:G4} %), noise {noise[i]:G4} %, distortion {dist[i]:G4} %, SNR err {snrErr[i]:G3} dB");
+        Assert.InRange(snrErr[0], -0.5, 0.5);
+        Assert.InRange(noise[0] / evmCalc[0], 0.9, 1.1);
+        Assert.True(dist[^1] > noise[^1], "past compression, distortion is most of the error");
+        Assert.True(dm["measurements.EVM_BPSK_sim"].RealValues[0] > 0, "the DBPSK carrier is demodulated too");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

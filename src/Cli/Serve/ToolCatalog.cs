@@ -548,7 +548,8 @@ internal static class ToolCatalog
                        + "pattern against the arriving angle, steered from VAR theta_steer) and <name> Combiners (the four combiners "
                        + "side by side); each with a Data Display of the budget beside every simulated number."),
                      new("name", "--name", OptKind.Str, "The benches' name stem; default the .cchain's file name."),
-                     new("replace", "--replace", OptKind.Flag, "Write the benches again when they exist; without it an existing one is a refusal.")],
+                     new("replace", "--replace", OptKind.Flag, "Write the benches again when they exist; without it an existing one is a refusal."),
+                     new("demo", "--demo", OptKind.Flag, "Also write <name> Demo: the chain demodulated end to end (NR and DBPSK, the LO with a phase-noise mask), its constellation and its EVM against the input power.")],
                     "An RF receive chain's budget: per stage, the cumulative gain, NF (Friis), IIP3/OIP3, IP1dB/OP1dB, output power, "
                   + "SNR and share of F - 1, and the chain's noise floor, MDS, sensitivity, SNR and SFDR; in an array (a Combiner "
                   + "stage) referred to one element, with the array gain. Each stage is a System block (Amp, Mixer, Atten, Filter, "

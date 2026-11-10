@@ -98,6 +98,10 @@
                         <TextBlock Text="Transfer to Schematic…"/>
                     </StackPanel>
                 </Button>
+                <CheckBox IsChecked="{Binding Demo}" Margin="0,0,8,0" VerticalAlignment="Center"
+                          ToolTip.Tip="Transfer also writes the Demo bench: the chain demodulated end to end, NR and DBPSK from the Signal Designer's source, the LO with a phase-noise mask, the constellation and the EVM against the input power">
+                    <TextBlock Text="with a modulated-signal demo" FontSize="12"/>
+                </CheckBox>
                 <Button Classes="tb" Click="OnHelpClick">Help</Button>
             </WrapPanel>
         </Border>

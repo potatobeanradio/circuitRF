@@ -47,6 +47,7 @@ public static class ChainBudgetDisplay
             case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false));
             case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true));
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
+            case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
         }
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
@@ -159,7 +160,7 @@ public static class ChainBudgetDisplay
         return plots;
     }
 
-    // ── the levels and the canceller ──────────────────────────────────────────
+    // ── the levels, the canceller and the demo ────────────────────────────────
 
     private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated) => new()
     {
@@ -275,6 +276,26 @@ public static class ChainBudgetDisplay
                 plots.Add(Constellation($"{kind}, {(on == 1 ? "cancelled" : "uncancelled")}", src, "ENVO",
                                         $"[{on}, 0, {k}, :]", $"[{on}, {k}, :]", (k * 2 + on) * (300 + Gap), y, 300));
             }
+        return plots;
+    }
+
+    /// <summary>The demo: the 64-QAM carrier's constellation at the middle input power and at the highest, the EVM
+    /// against the input power with the budget's from its SNR, its split into noise and distortion, and the SNR.</summary>
+    private static List<PlotContainerConfig> Demo(string src, double[] pins)
+    {
+        (double, double) px = (pins[0] - 2, pins[^1] + 2);
+        var plots = new List<PlotContainerConfig>
+        {
+            Rect("EVM against the input power", "input power per element, dBm", "EVM, %", 0, 0, 560, 380,
+                 [Over(src, "EVM_QAM_calc", "Pin", "64-QAM, budget 1/√SNR", C(1), false), Over(src, "EVM_QAM_sim", "Pin", "64-QAM, simulated", C(1), true),
+                  Over(src, "EVM_BPSK_sim", "Pin", "DBPSK, simulated", C(2), true)], (0, 30), px),
+            Rect("The 64-QAM carrier's error, split", "input power per element, dBm", "%", 560 + Gap, 0, 560, 380,
+                 [Over(src, "EVMnoise_QAM", "Pin", "noise", C(3), true), Over(src, "EVMdist_QAM", "Pin", "distortion", C(4), true)], (0, 30), px),
+            Rect("SNR in the carrier's channel", "input power per element, dBm", "dB", 0, 380 + Gap, 560, 320,
+                 [Over(src, "SNR_QAM_calc", "Pin", "budget", C(1), false), Over(src, "SNR_QAM_sim", "Pin", "simulated", C(1), true)]),
+        };
+        plots.Add(Constellation("64-QAM at the output, mid power", src, "ENVD", "[3, 0, 0, :]", "[3, 0, :]", 560 + Gap, 380 + Gap, 320));
+        plots.Add(Constellation("64-QAM at the output, highest power", src, "ENVD", "[6, 0, 0, :]", "[6, 0, :]", 900 + 2 * Gap, 380 + Gap, 320));
         return plots;
     }
 

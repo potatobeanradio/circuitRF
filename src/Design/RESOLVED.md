@@ -29414,3 +29414,16 @@ R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ). Three findings, each now i
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheCancellerBench_DepthIsTheClosedForm_AtEveryErrorAndBandwidth`,
 `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `FrontEnd_Canceller_DepthOnTheClosedForm_AndEvmWithAndWithout`.
+
+## The chain's Demo bench: two sources, and a noise floor left open (2026-11-10)
+
+- **A DBPSK carrier is a MOD_Source's only carrier.** The source refuses a second carrier beside it. The demo feeds each
+  element from two sources, NR 64-QAM and DBPSK, joined by a 2-way Combiner, each 3 dB up for its share; their two
+  noises at the source temperature average to it.
+- **Open: a noise floor of about 1 % EVM (40 dB of SNR).** Above −55 dBm the demo's EVM noise part stops falling at
+  about 1 % for both carriers, where the budget's SNR goes on to 93 dB. The distortion part's 1.23 % is the LO's mask
+  integrated over the channel (−38.2 dBc), as it should be. The Canceller bench, with no LO and another chain, stops at
+  41 dB, so the floor belongs to the envelope measurement rather than to either chain; which part of it was not found.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `TheDemo_EvmFollowsTheBudgetsSnr_UntilDistortionTakesOver`,
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `Superhet_Demo_TheEvmIsTheBudgetsWhereNoiseDominates`.

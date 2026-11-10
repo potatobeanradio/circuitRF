@@ -1,7 +1,7 @@
 // A chain, transferred: test benches of circuitRF's own System blocks, each drawn by NetlistSchematic (the drawing
 // `circuitrf netlist --to-schematic` makes), with the analyses that verify the budget already set up and the budget's
-// own numbers beside the simulated ones in a MEAS block. Four for every chain; one more each when it has blockers and
-// when it has a canceller; and two more for an array:
+// own numbers beside the simulated ones in a MEAS block. Four for every chain; one more each when it has blockers, when it
+// has a canceller and when it asks for the demo; and two more for an array:
 //
 //   <chain> 1-Tone    a P1Tone per element, a Port at the output. Without a mixer, an S-parameter run with Noise=yes:
 //                     gain, NF and each stage's share of it. With one, a harmonic-balance noise run with the LO: the
@@ -15,6 +15,8 @@
 //                     each node reads the wave going forward.
 //   <chain> Canceller the chain's canceller with real signals: the wanted pair and a three-carrier interference from
 //                     two MOD_Sources, the depth against each error swept, and the EVM with and without cancellation.
+//   <chain> Demo      the chain demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, over a
+//                     sweep of the input power: the constellation, the EVM and its noise and distortion parts.
 //   <chain> Steering  the elements and the combiner fed by a plane wave: one Port through a Combiner used as a
 //                     splitter whose path k has the wave's phase −(k − 1)·ψ_in, ψ = 360°·(d/λ)·sin θ. The phase
 //                     shifters steer from VAR theta_steer, a taper from VAR taper; a sweep of theta_in inside a sweep
@@ -43,7 +45,7 @@ using CircuitRF.Design.Symbol;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo }
 
 /// <summary>One bench: its cell name, its netlist and where each of its instances is drawn.</summary>
 public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout);
@@ -66,8 +68,20 @@ public static class ChainBenches
         ChainBench.Combiners => chain + " Combiners",
         ChainBench.Levels  => chain + " Levels",
         ChainBench.Blockers => chain + " Blockers",
+        ChainBench.Demo    => chain + " Demo",
         _                  => chain + " Canceller",
     };
+
+    /// <summary>The demo bench's input powers, dBm: from 5 dB of SNR (noise-limited) to 5 dB past the input 1 dB
+    /// compression point (compression-limited), in seven steps.</summary>
+    public static double[] DemoPowers(ChainTotals t)
+    {
+        double lo = t.MdsDbm + 5, hi = (double.IsFinite(t.Ip1dbDbm) ? t.Ip1dbDbm : t.MdsDbm + 80) + 5;
+        return [.. Enumerable.Range(0, 7).Select(i => Math.Round(lo + i * (hi - lo) / 6, 2))];
+    }
+
+    /// <summary>The demo's second carrier: DBPSK at this bit rate, offset from the NR carrier by twice the bandwidth.</summary>
+    public const double DemoDbpskRateBps = 1e6;
 
     /// <summary>The Canceller bench's sweeps: phase error, deg; amplitude error, dB; delay mismatch, s.</summary>
     public static readonly double[] CancPhaseErrDeg = [-10, -3, -1, 0, 1, 3, 10];
@@ -90,8 +104,8 @@ public static class ChainBenches
         [("Direct", "Passive", "DP"), ("Tree", "Passive", "TP"), ("Direct", "Active", "DA"), ("Tree", "Active", "TA")];
 
     /// <summary>
-    /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers,
-    /// Canceller when it has a canceller; for an array whose branch is linear (no
+    /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers, Demo
+    /// when it asks for it, Canceller when it has a canceller; for an array whose branch is linear (no
     /// mixer before the combiner, so an S-parameter run reaches the combiner), Combiners, and Steering when a phase
     /// shifter in the branch has something to steer with. <paramref name="why"/> says what was left out and why.
     /// </summary>
@@ -99,6 +113,7 @@ public static class ChainBenches
     {
         List<ChainBench> b = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope, ChainBench.Levels];
         if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
+        if (d.Demo) b.Add(ChainBench.Demo);
         if (d.Stages.Any(s => s.Part == ChainParts.Canceller)) b.Add(ChainBench.Canceller);
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
@@ -745,6 +760,24 @@ public static class ChainBenches
                 case ChainBench.Blockers:
                     Line($"PnTone:{name}  {net}  0" + string.Concat(Enumerable.Range(1, d.Blockers.Count).Select(b =>
                              $"  Freq[{b}]=FB{b}  Pavl[{b}]=PB{b} dBm  Phase[{b}]=0 deg")) + "  Z=50 Ohm"); break;
+                case ChainBench.Demo:
+                {
+                    // Two signals of two kinds, each at Pin: NR 64-QAM at the frequency and DBPSK beside it. A DBPSK
+                    // carrier is a source's only one, so each has its own source, the two joined by a 2-way Combiner
+                    // (3 dB more each for its share; their two noises at Ts average to Ts).
+                    var (mhz, _) = Carrier(d.BandwidthHz);
+                    string temp = $"Noise=yes  Temp={F(d.TemperatureK - 273.15)}";
+                    Line($"MOD_Source:{name}  {net}_q  0  Fc=Frf  Pavg=Pin+3.0103 dBm  Z=50 Ohm  " +
+                         $"Carrier[1]=\"NR;BW={mhz}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  {temp}");
+                    Line($"MOD_Source:{name}B  {net}_b  0  Fc=Frf  Pavg=Pin+3.0103 dBm  Z=50 Ohm  " +
+                         $"Carrier[1]=\"DBPSK;Rb={F(DemoDbpskRateBps / 1e6)}Mbps;Data=PN9;Off={F(2 * d.BandwidthHz / 1e6)}MHz;P=0\"  Record=0.0005  {temp}");
+                    Line($"Combiner:{name}C  {net}  0  {net}_q  0  {net}_b  0  N=2  Z0=50 Ohm");
+                    Place(name, _x - 600, _y - 200);
+                    Place($"{name}B", _x - 600, _y + 600);
+                    Place($"{name}C", _x + 200, _y, mirror: true);
+                    _x += 1000;
+                    return;
+                }
                 default:
                     var (mhz0, _) = Carrier(d.BandwidthHz);
                     Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
@@ -821,7 +854,9 @@ public static class ChainBenches
                         Inline(iso, 300); Place($"{iso}_R", _x - Lead - 300, _y + 900);
                     }
                     Line($"Mixer:{name}  {rf}  0  {lon}  0  {b}  0{Params(s, "Flo")}");
-                    Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm");
+                    // The demo's LO carries a phase-noise mask, which an envelope run plays as a random phase.
+                    string pn = bench == ChainBench.Demo ? $"  PhaseNoise=\"{DemoPhaseNoise}\"" : "";
+                    Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm{pn}");
                     Inline(name, 300); Place($"LO_{name}", _x - Lead - 300, _y + 900);
                     placed.Add($"{iso}_R");
                     if (ChainValue.TryParse(s.Get("NF"), out _) && r.Stages.First(x => x.Name == s.Name).Stage.NfDb > ChainParts.NoiselessMixerSsbDb + 1e-9)
@@ -1027,6 +1062,9 @@ public static class ChainBenches
 
         /// <summary>The nets the Levels displays read, node by node: element 1's input, then each stage's output.</summary>
         private List<string> NodeNets(string[] stageNets) => [N > 1 ? "in1" : "in", .. stageNets];
+
+        /// <summary>The demo LO's phase noise, single-sided, offset:level in dBc/Hz: a synthesizer's shape.</summary>
+        private const string DemoPhaseNoise = "1kHz:-75, 10kHz:-90, 100kHz:-100, 1MHz:-120, 10MHz:-140";
 
         /// <summary>Σ a_k² / a_1²: how many element 1's the paths' noise is worth — N for equal paths.</summary>
         private double PathWeight()
@@ -1244,6 +1282,27 @@ public static class ChainBenches
                         _meas.Add($"Blk{b + 1}_calc = {NodeCube(levels.Count, k => G(levels[k].BlockerDbm[bb]))}");
                         for (int k = 0; k < levels.Count; k++) _meas.Add($"Blk{b + 1}_{k}_err = B{b + 1}_{k} - {G(levels[k].BlockerDbm[b])}");
                     }
+                    break;
+                }
+                case ChainBench.Demo:
+                {
+                    // The chain demodulated end to end at the output probe, the input power swept from noise-limited to
+                    // compression-limited; the LO's phase noise on. Beside the simulated EVM, the budget's from its SNR,
+                    // EVM ≈ 1/√SNR, which holds where noise dominates.
+                    var (_, bocc) = Carrier(d.BandwidthHz);
+                    _analyses.Add($"analysis ENVD type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
+                                  "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no Noise=yes EvmSplit=yes");
+                    _analyses.Add($"analysis SWPIN type=parametric_sweep Var=Pin Values={string.Join(",", DemoPowers(_t).Select(F))} Inner=ENVD");
+                    double floor = 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + _t.TeK) * bocc) + 30;
+                    _meas.Add($"SNR_QAM_calc = Pin + {G(_t.ArrayGainDb)} - {G(floor)}");
+                    _meas.Add("EVM_QAM_calc = 100*10^(-SNR_QAM_calc/20)");
+                    _meas.Add("EVM_QAM_sim = ENVD.EVM_pct[:, \"Iout\", 0]");
+                    _meas.Add("EVMdist_QAM = ENVD.EVMdist_pct[:, \"Iout\", 0]");
+                    _meas.Add("EVMnoise_QAM = ENVD.EVMnoise_pct[:, \"Iout\", 0]");
+                    _meas.Add("SNR_QAM_sim = ENVD.SNR_dB[:, \"Iout\", 0]");
+                    _meas.Add("EVM_BPSK_sim = ENVD.EVM_pct[:, \"Iout\", 1]");
+                    _meas.Add("SNR_BPSK_sim = ENVD.SNR_dB[:, \"Iout\", 1]");
+                    _meas.Add("SNR_QAM_err = SNR_QAM_sim - SNR_QAM_calc");
                     break;
                 }
                 default:

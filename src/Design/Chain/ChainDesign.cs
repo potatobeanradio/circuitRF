@@ -62,6 +62,10 @@ public sealed class ChainDesign
     /// through every stage's gain and every filter's rejection at its own frequency (<see cref="ChainLevels"/>).</summary>
     public List<ChainBlocker> Blockers { get; set; } = [];
 
+    /// <summary>Transfer to Schematic also writes the modulated-signal demo bench: the chain demodulated end to end,
+    /// its constellation, and its EVM against the input power.</summary>
+    public bool Demo { get; set; }
+
     /// <summary>Why this design cannot be budgeted, or null. Every cause, one sentence each.</summary>
     public IReadOnlyList<string> Refusals()
     {
@@ -112,7 +116,7 @@ public sealed class ChainDesign
     {
         FrequencyHz = FrequencyHz, BandwidthHz = BandwidthHz, InputPowerDbm = InputPowerDbm,
         TemperatureK = TemperatureK, RequiredSnrDb = RequiredSnrDb,
-        Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers],
+        Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers], Demo = Demo,
     };
 }
 
@@ -169,13 +173,14 @@ public static class ChainDesignIo
         public double? RequiredSnrDb { get; set; }
         public List<ChainStage>? Stages { get; set; }
         public List<ChainBlocker>? Blockers { get; set; }
+        public bool? Demo { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
     {
         FrequencyHz = d.FrequencyHz, BandwidthHz = d.BandwidthHz, InputPowerDbm = d.InputPowerDbm,
         TemperatureK = d.TemperatureK, RequiredSnrDb = d.RequiredSnrDb, Stages = d.Stages,
-        Blockers = d.Blockers.Count > 0 ? d.Blockers : null,
+        Blockers = d.Blockers.Count > 0 ? d.Blockers : null, Demo = d.Demo ? true : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -196,6 +201,7 @@ public static class ChainDesignIo
         d.TemperatureK  = f.TemperatureK  ?? d.TemperatureK;
         d.RequiredSnrDb = f.RequiredSnrDb ?? d.RequiredSnrDb;
         d.Blockers.AddRange(f.Blockers ?? []);
+        d.Demo = f.Demo ?? false;
         foreach (var s in f.Stages ?? [])
             d.Stages.Add(new ChainStage
             {

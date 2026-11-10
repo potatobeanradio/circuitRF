@@ -6,7 +6,7 @@ using RfCore.Export;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name N] [--replace]</c> —
+/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name N] [--replace] [--demo]</c> —
 /// the RF Chain Budget window, headless.
 ///
 /// <para><b>It owns no arithmetic and no drawing.</b> The budget is <see cref="ChainBudget.Evaluate"/>, the benches
@@ -21,7 +21,7 @@ internal static class Chain
     public static int Run(string[] args)
     {
         string? path = null, output = null, into = null, name = null;
-        bool toSchematic = false, replace = false;
+        bool toSchematic = false, replace = false, demo = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -33,6 +33,7 @@ internal static class Chain
                     continue;
                 case "--name" when i + 1 < args.Length: name = args[++i]; continue;
                 case "--replace": replace = true; continue;
+                case "--demo": demo = true; continue;
             }
             if (args[i].StartsWith('-')) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
             if (path is not null) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
@@ -42,7 +43,7 @@ internal static class Chain
         {
             Console.Error.WriteLine(
                 "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}]\n" +
-                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace]");
+                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]");
             return 1;
         }
         JsonRun.InputPath = path;
@@ -51,7 +52,7 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainNotAChain(path, DocumentKinds.Name(kind)));
 
         ChainDesign design;
-        try { design = ChainDesignIo.LoadFromFile(path); }
+        try { design = ChainDesignIo.LoadFromFile(path); design.Demo |= demo; }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.ChainUnreadable(path, ex.Message)); }
 

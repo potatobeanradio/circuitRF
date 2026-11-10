@@ -316,6 +316,9 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>The blockers, as typed: "offset, level" pairs separated by ';' ("150 MHz, -40; 20 MHz, -50").</summary>
     [ObservableProperty] private string _blockers = "";
 
+    /// <summary>Transfer also writes the modulated-signal demo bench.</summary>
+    [ObservableProperty] private bool _demo;
+
     [ObservableProperty] private string _summary = "";
     [ObservableProperty] private string _notes = "";
     [ObservableProperty] private string _refusals = "";
@@ -344,6 +347,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     partial void OnTemperatureKChanged(string value) => Changed();
     partial void OnRequiredSnrDbChanged(string value) => Changed();
     partial void OnBlockersChanged(string value) => Changed();
+    partial void OnDemoChanged(bool value) => Changed();
 
     private static string FormatBlockers(IEnumerable<ChainBlocker> b) =>
         string.Join("; ", b.Select(x => $"{N(x.OffsetHz / 1e6)} MHz, {N(x.LevelDbm)}"));
@@ -374,6 +378,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         TemperatureK = N(d.TemperatureK);
         RequiredSnrDb = N(d.RequiredSnrDb);
         Blockers = FormatBlockers(d.Blockers);
+        Demo = d.Demo;
         Stages.Clear();
         foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Changed));
         _loading = false;
@@ -393,6 +398,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RequiredSnrDb = Parse(RequiredSnrDb, 1, double.NaN),
         Stages = [.. Stages.Select(s => s.ToStage())],
         Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
+        Demo = Demo,
     };
 
     private void Changed()
