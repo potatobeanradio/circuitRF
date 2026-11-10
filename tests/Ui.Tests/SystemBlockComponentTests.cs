@@ -24,7 +24,7 @@ public class SystemBlockComponentTests
     [
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
-        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer,
+        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Combiner,
     ];
 
     public static TheoryData<SymbolKind> EachBlock()
@@ -399,6 +399,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Filter,     "Filter")]
     [InlineData(SymbolKind.Atten,      "Atten")]
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
+    [InlineData(SymbolKind.Combiner,   "Combiner")]
     public void EachTileNamesItsEngineComponent(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.EngineReference(kind));
 
@@ -429,6 +430,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Filter,     "Filter")]
     [InlineData(SymbolKind.Atten,      "Attenuator")]
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
+    [InlineData(SymbolKind.Combiner,   "Combiner")]
     public void EachTileIsNamedForWhatItIs_NotForItsAbbreviation(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.DisplayName(kind));
 
@@ -671,6 +673,8 @@ public class SystemBlockComponentTests
     [InlineData("attenuator", SymbolKind.Atten)]
     [InlineData("rat race",   SymbolKind.Hybrid180)]
     [InlineData("duplexer",   SymbolKind.Duplexer)]
+    [InlineData("Wilkinson",  SymbolKind.Combiner)]
+    [InlineData("splitter",   SymbolKind.Combiner)]
     public void EachBlockIsFoundByTheWordAUserWouldSearchFor(string query, SymbolKind expected)
         => Assert.Contains(LibraryCatalog.Search(query), i => i.Kind == expected);
 

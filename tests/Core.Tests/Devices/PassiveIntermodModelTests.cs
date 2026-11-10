@@ -255,7 +255,7 @@ public class PassiveIntermodModelTests
         // the duplexer will be excluded because their S is frequency-dependent — which is why the
         // check lives at the factory's shared entry point rather than in each creator, where the
         // two that do not exist yet would have to remember to add it.
-        foreach (string type in new[] { "Balun", "Switch", "Filter", "Duplexer" })
+        foreach (string type in new[] { "Balun", "Switch", "Filter", "Duplexer", "Combiner" })
         {
             var ex = Assert.Throws<InvalidOperationException>(() => ComponentModelFactory.TryCreate(
                 type,

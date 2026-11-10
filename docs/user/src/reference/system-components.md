@@ -3,8 +3,8 @@ title: System Components
 slug: reference/system-components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > System components
-lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, filter, duplexer and mixer. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
-keywords: mixer, amplifier, filter, attenuator, behavioural block, system level, intermod, IP3
+lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, filter, duplexer and mixer. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
+keywords: mixer, amplifier, filter, attenuator, combiner, splitter, power divider, Wilkinson, behavioural block, system level, intermod, IP3
 ---
 
 <nav class="toc">
@@ -100,7 +100,7 @@ Two analyses, and the split is not arbitrary:
   frequency at a time: port match, isolation, coupling, directivity, a filter's passband and
   rejection, a duplexer's arm-to-arm leakage, an amplifier's small-signal gain, stability and noise
   figure. This
-  is the analysis nine of the eleven blocks are entirely described by.
+  is the analysis ten of the twelve blocks are entirely described by.
 - **{{anchor: simulations#harmonic-balance|Harmonic balance}}** answers everything that moves energy
   between frequencies or depends on level: conversion gain, mixing products, compression, third-order
   intermodulation, and passive intermod. Drive it with two tones
@@ -428,6 +428,47 @@ which is what a VSWR figure on a datasheet means.</p>
 </div>
 
 It can carry a PIM specification. Parameters: {{anchor: components#circulator|Components › Circulator}}.
+
+### Combiner {#combiner}
+
+{{symbol: combiner}}
+
+An N-way combiner, and the same part is the N-way splitter: one common port `S` and `N` paths into
+it, `N` being a parameter, so the symbol grows a pin per path. It is what an N-way Wilkinson does at
+its centre frequency, without the lines: matched at every port, the paths isolated from each other,
+reciprocal and flat with frequency. Path `k` has its own loss beyond the ideal split and its own
+transmission phase, and nothing else is in the matrix:
+
+```
+S(S,k) = S(k,S) = 10^(−IL_k/20) · e^(j·Phase_k) / √N        every other entry 0
+```
+
+| Parameter | Meaning |
+|---|---|
+| `N` | The number of paths, 2 or more. |
+| `IL` | Every path's loss beyond the ideal split of 10·log10 N, in dB. 0 by default. |
+| `IL[k]` | Path `k`'s own loss, in place of `IL`. Absent: `IL`. |
+| `Phase[k]` | Path `k`'s transmission phase to `S`, in degrees (a bare number is degrees). Absent: 0. |
+| `Z0` | The reference impedance of every port. |
+
+`IL[k]` and `Phase[k]` are not in a freshly placed combiner's list: add a row named, say, `IL[3]` or
+`Phase[2]` in its properties, or write them on its netlist line. Each is an ordinary expression, so a
+variable or a parametric sweep can drive it: `Phase[2] = -dpsi`, `Phase[3] = -2*dpsi` is a plane wave
+arriving across an array of elements, one `dpsi` apart.
+
+**Its noise is its loss, and nothing has to be set for it.** It is passive, so its thermal noise
+follows from its S at its temperature, as every block's here does:
+
+- **As a splitter**, from `S` into path `k`, its noise figure is that path's whole loss,
+  10·log10 N + `IL_k`: a 4-way split with 0.5 dB of excess loss has an NF of 6.52 dB.
+- **As a combiner of N coherent inputs** — the same signal on every path, in phase — the
+  amplitudes add, so the signal gains 10·log10 N over one path, while uncorrelated noise on the N
+  paths adds in power and gains nothing. Lossless, the isolation the matrix leaves out costs nothing
+  either: a splitter followed by a combiner whose phases cancel the splitter's is a noiseless
+  through. With losses, a matched passive two-port has NF = −20·log10 |S21|, which is what the run
+  gives.
+
+Parameters: {{anchor: components#combiner|Components › Combiner}}.
 
 ### Directional Coupler {#coupler}
 

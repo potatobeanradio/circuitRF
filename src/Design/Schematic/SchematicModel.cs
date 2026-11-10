@@ -496,6 +496,11 @@ public enum SymbolKind
     /// arms, and each arm carries its own passband stack with its name beside it.</summary>
     Duplexer,
 
+    /// <summary>Ideal N-way combiner, which is also the N-way splitter (engine "Combiner"). N + 1 pins,
+    /// VARIADIC on <c>N</c> — the common port S at (300,0), and paths 1…N down the left at
+    /// (−300, (2k − N − 1)·100), so every pin is on the grid whatever N is.</summary>
+    Combiner,
+
     // ── The RLC family ─────────────────────────────────────────────────────────────
     // A kind per COMBINATION, not one kind with a series/parallel selector: series and parallel
     // DRAW differently, and the topology is the whole of what tells them apart. A selector would
