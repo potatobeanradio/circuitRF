@@ -270,6 +270,41 @@ public sealed class PortEdgeWidthTests : IDisposable
         Assert.Empty(C3dHierarchy.StalePorts(doc, now));
     }
 
+    /// <summary>A port widened in the 3D view on purpose is not reported: the link remembers the sheet the label made, and
+    /// only a change to the LABEL is news. That memory is written to the file.</summary>
+    [Fact]
+    public void APortWidenedHere_IsNotReported_UntilItsLabelChanges()
+    {
+        var (cell, c3d, cws) = Board(Pour(plane: true));
+        var doc = C3dPersistence.Deserialize(C3dPersistence.Serialize(C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!));
+        var p1 = doc.Ports.Single(p => p.Number == 1);
+        p1.Rect = new C3dRect { Min = new C3dPoint2(p1.Rect.Min.U - Um(500), p1.Rect.Min.V), Size = new C3dPoint2(p1.Rect.Size.U + Um(1000), p1.Rect.Size.V) };
+        Assert.Empty(C3dHierarchy.StalePorts(doc, C3dHierarchy.PortsFromLayouts(doc, c3d, cws)));
+
+        CellCreate.WriteLayoutView(cell, "Board", Layout(Pour(useEdge: false, plane: true)));
+        var stale = Assert.Single(C3dHierarchy.StalePorts(doc, C3dHierarchy.PortsFromLayouts(doc, c3d, cws)));
+        Assert.True(stale.SinceTaken);
+        Assert.Equal((Um(3000), Um(1016)), (stale.OldWidthDbu, stale.NewWidthDbu));
+    }
+
+    /// <summary>No shipped example's 3D view reports a stale port when it is opened.</summary>
+    [Fact]
+    public void NoShippedExample_OpensWithAStalePort()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "circuitRF.slnx"))) dir = Path.GetDirectoryName(dir)!;
+        foreach (string c3d in Directory.EnumerateFiles(Path.Combine(dir, "examples"), "*.c3d", SearchOption.AllDirectories))
+        {
+            var doc = C3dPersistence.LoadFromFile(c3d);
+            if (doc.Ports.Count == 0 || !doc.Instances.Any(i => i.View == C3dInstanceView.Layout)) continue;
+            string? ws = Path.GetDirectoryName(c3d);
+            while (ws is not null && !Directory.EnumerateFiles(ws, "*.cws").Any()) ws = Path.GetDirectoryName(ws);
+            string? cwsPath = ws is null ? null : Directory.EnumerateFiles(ws, "*.cws").First();
+            var stale = C3dHierarchy.StalePorts(doc, C3dHierarchy.PortsFromLayouts(doc, c3d, cwsPath));
+            Assert.True(stale.Count == 0, $"{Path.GetRelativePath(dir, c3d)}: port {string.Join(", ", stale.Select(s => s.Number))} stale");
+        }
+    }
+
     /// <summary>Two placed instances of one layout both number their ports 1 and 2. Update brings the second instance's in
     /// at the next free numbers and says so; each record is linked to its instance's label, so a renumbered record is
     /// still found, and a Width edit is then reported against all four. The link is written to the file and is not there

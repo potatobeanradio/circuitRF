@@ -3,7 +3,7 @@
 // A .c3d's ports are its own records (a placed cell's port shapes are never read), made once when the view was created
 // from the layout. A Width or "Use edge width" edit on the layout afterwards changes what a 3D run of the layout builds and
 // not what the .c3d has. So: on open and whenever a placed layout changes, every port label is translated again in
-// memory (C3dHierarchy.PortsFromLayouts, the creation path's own translation) and a record whose rectangle now differs is
+// memory (C3dHierarchy.PortsFromLayouts, the creation path's own translation) and a record out of step with its label is
 // REPORTED, once per difference — never rewritten, since a .c3d port may have been edited by hand on purpose. Update
 // Ports from Layout is the one undoable write.
 
@@ -76,9 +76,13 @@ public sealed partial class C3dEditorViewModel
     private string StalePortSentence(C3dStalePort s)
     {
         string Len(long dbu) => LayoutUnits.Format(dbu, DisplayUnit, Document.DbuPerMicron) + " " + LayoutUnits.Suffix(DisplayUnit);
-        string widths = s.OldWidthDbu == s.NewWidthDbu
-            ? $"both {Len(s.OldWidthDbu)} wide, in a different place"
-            : $"{Len(s.OldWidthDbu)} wide here and {Len(s.NewWidthDbu)} as the layout builds it now";
+        string widths = s.SinceTaken
+            ? (s.OldWidthDbu == s.NewWidthDbu
+                ? $"the label has moved since the port was taken from it, still {Len(s.NewWidthDbu)} wide"
+                : $"the label was {Len(s.OldWidthDbu)} wide when the port was taken from it and is {Len(s.NewWidthDbu)} now")
+            : s.OldWidthDbu == s.NewWidthDbu
+                ? $"both {Len(s.OldWidthDbu)} wide, in a different place"
+                : $"{Len(s.OldWidthDbu)} wide here and {Len(s.NewWidthDbu)} as the layout builds it now";
         return $"Port {s.Number} of '{Path.GetFileName(FilePath)}' no longer matches its layout's port label: {widths}. " +
                "Update Ports from Layout (an instance's right-click menu) replaces it; nothing is changed until then.";
     }

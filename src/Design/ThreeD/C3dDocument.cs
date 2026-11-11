@@ -971,6 +971,32 @@ public sealed class C3dPortSource
 {
     public string Instance { get; set; } = "";
     public int    Port     { get; set; }
+
+    /// <summary>
+    /// The sheet the label translated to when the record was taken from it (New 3D View from Layout, Update Ports from
+    /// Layout). A record whose link has one is stale only when the LABEL has changed since — a Width or Use edge width edit on
+    /// the layout — so a port widened or moved here on purpose (a wave port spanning the box face) is not reported on every
+    /// open. Null on a link written before it existed: the record itself is then compared with the label.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dPortSheet? Taken { get; set; }
+
+    /// <summary>A link to <paramref name="label"/>, the label's translated record, remembering its sheet.</summary>
+    public static C3dPortSource Of(string instance, int port, C3dPort label) =>
+        new() { Instance = instance, Port = port, Taken = C3dPortSheet.Of(label) };
+}
+
+/// <summary>A port's sheet as plain values: its plane, offset and rectangle (<see cref="C3dPortSource.Taken"/>).</summary>
+public sealed class C3dPortSheet
+{
+    public C3dPlane  Plane  { get; set; }
+    public long      Offset { get; set; }
+    public C3dPoint2 Min    { get; set; }
+    public C3dPoint2 Size   { get; set; }
+
+    public static C3dPortSheet Of(C3dPort p) => new() { Plane = p.Plane, Offset = p.Offset, Min = p.Rect.Min, Size = p.Rect.Size };
+
+    public bool SameAs(C3dPort p) => Plane == p.Plane && Offset == p.Offset && Min == p.Rect.Min && Size == p.Rect.Size;
 }
 
 /// <summary>A wave port's stated voltage path, on the port's own plane: from the negative conductor to the positive one.</summary>

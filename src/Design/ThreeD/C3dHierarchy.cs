@@ -105,7 +105,9 @@ public sealed record C3dLayoutPorts(IReadOnlyList<C3dLayoutPort> Ports, IReadOnl
                                     IReadOnlyList<string> Notes);
 
 /// <summary>R-pw1-4 — one <c>.c3d</c> port whose rectangle differs from what its layout's port label now translates to.</summary>
-public sealed record C3dStalePort(int Number, long OldWidthDbu, long NewWidthDbu, C3dLayoutPort Translated);
+/// <param name="SinceTaken">True: the record's link remembers the label's sheet and the LABEL has changed since, so the widths are
+/// the label's then and now; false: a link without that memory, so the widths are the record's own and the label's now.</param>
+public sealed record C3dStalePort(int Number, long OldWidthDbu, long NewWidthDbu, C3dLayoutPort Translated, bool SinceTaken = false);
 
 /// <summary>brief-lcp-5 R-lcp5-1 — a layout's 3D view for one setup, in memory: the document, the path it would have had, or why
 /// none can be made; and what translating its ports noted.</summary>
@@ -970,7 +972,7 @@ public static class C3dHierarchy
                           ports, leftOut, moved);
             portsNote = DefaultSetupNote(ports.Count);
         }
-        foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
+        foreach (var (n, p) in ports) p.FromLayout = C3dPortSource.Of(doc.Instances[0].Name, n, p);
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
         // brief-sdl-8 D4 — a layout made from the cell's schematic brings one linked VAR per name that drives it.
         var linked = view.GeneratedPlacements.Count > 0 ? AddLinkedVariables(doc, cellDir) : [];
@@ -1069,7 +1071,7 @@ public static class C3dHierarchy
         bool anyDrawn = collected.Refusal is not null || collected.Shapes.Any(s => s is LabelShape { IsPort: true });
         if (anyDrawn && TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true) is { } refused)
             return new(null, c3dPath, refused, notes);
-        foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
+        foreach (var (n, p) in ports) p.FromLayout = C3dPortSource.Of(doc.Instances[0].Name, n, p);
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
         return new(doc, c3dPath, null, notes);
     }
@@ -1240,13 +1242,15 @@ public static class C3dHierarchy
         a.Plane == b.Plane && a.Offset == b.Offset && a.Rect.Min == b.Rect.Min && a.Rect.Size == b.Rect.Size;
 
     /// <summary>
-    /// R-pw1-4 — the document's ports that stand for a placed layout's port label (<see cref="MatchOf"/>) and whose sheet
-    /// differs from what that label translates to now, with both widths (the rectangle's longer side). Nothing is
+    /// R-pw1-4 — the document's ports that stand for a placed layout's port label (<see cref="MatchOf"/>) and are out of
+    /// step with it, with both widths (the rectangle's longer side). A record whose link remembers the label's sheet
+    /// (<see cref="C3dPortSource.Taken"/>) is out of step when the label translates differently now — the record itself may
+    /// have been widened or moved here on purpose; one without that memory when its own sheet differs. Nothing is
     /// rewritten.
     /// </summary>
     public static IReadOnlyList<C3dStalePort> StalePorts(C3dDocument doc, C3dLayoutPorts translated)
     {
-        static long Width(C3dPort p) => Math.Max(Math.Abs(p.Rect.Size.U), Math.Abs(p.Rect.Size.V));
+        static long Width(C3dPoint2 size) => Math.Max(Math.Abs(size.U), Math.Abs(size.V));
         var claimed = new HashSet<C3dLayoutPort>();
         var stale = new List<C3dStalePort>();
         foreach (var port in doc.Ports)
@@ -1254,8 +1258,14 @@ public static class C3dHierarchy
             if (MatchOf(port, translated, claimed) is not { } now) continue;
             claimed.Add(now);
             // A turned port was turned here, on purpose: it stands for its label and is left as it is.
-            if (port.Angle != 0 || SamePlace(port, now.Port)) continue;
-            stale.Add(new C3dStalePort(port.Number, Width(port), Width(now.Port), now));
+            if (port.Angle != 0) continue;
+            if (port.FromLayout?.Taken is { } taken)
+            {
+                if (!taken.SameAs(now.Port))
+                    stale.Add(new C3dStalePort(port.Number, Width(taken.Size), Width(now.Port.Rect.Size), now, SinceTaken: true));
+            }
+            else if (!SamePlace(port, now.Port))
+                stale.Add(new C3dStalePort(port.Number, Width(port.Rect.Size), Width(now.Port.Rect.Size), now));
         }
         return stale;
     }
@@ -1275,7 +1285,7 @@ public static class C3dHierarchy
         {
             if (MatchOf(record, translated, claimed) is not { } now) continue;
             claimed.Add(now);
-            record.FromLayout ??= new C3dPortSource { Instance = now.Instance, Port = now.LayoutNumber };
+            record.FromLayout = C3dPortSource.Of(now.Instance, now.LayoutNumber, now.Port);
             if (record.Angle != 0 || (SamePlace(record, now.Port) && record.Kind == now.Port.Kind)) continue;
             record.Plane = now.Port.Plane; record.Offset = now.Port.Offset; record.Kind = now.Port.Kind;
             record.Rect = new C3dRect { Min = now.Port.Rect.Min, Size = now.Port.Rect.Size };
@@ -1294,7 +1304,7 @@ public static class C3dHierarchy
             {
                 Number = n, Name = $"P{n}", Kind = p.Kind, Plane = p.Plane, Offset = p.Offset,
                 Rect = new C3dRect { Min = p.Rect.Min, Size = p.Rect.Size }, Z0 = p.Z0,
-                FromLayout = new C3dPortSource { Instance = label.Instance, Port = label.LayoutNumber },
+                FromLayout = C3dPortSource.Of(label.Instance, label.LayoutNumber, p),
             });
             added.Add((label, n));
         }

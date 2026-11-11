@@ -26,7 +26,13 @@
 			"Z0": "50",
 			"FromLayout": {
 				"Instance": "U1",
-				"Port": 1
+				"Port": 1,
+				"Taken": {
+					"Plane": "YZ",
+					"Offset": 0,
+					"Min": [-47500, 3000],
+					"Size": [95000, 106000]
+				}
 			}
 		}
 	],

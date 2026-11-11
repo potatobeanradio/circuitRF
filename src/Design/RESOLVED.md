@@ -29833,3 +29833,20 @@ a test in `tests/Ui.Tests/Plugins`.
 - Gates: `PassivationOpeningTests.AnOpeningOverAStackedPad_IsOverConductor`,
   `ConformalCoverTests.ThreeD_TheFillOnACoatThickerThanTheMetal_StartsOnTheCoat`,
   `Em3dWireTests.AnEndUnderAStackupCover_IsWarned_AndOneInItsOpeningIsNot`.
+
+## A port widened in a 3D view on purpose is not reported stale on every open (2026-11-10)
+
+The Passivated Pad example's `4 Bonded Pad.c3d` (and `2 Probe Pad.c3d`) warned on open that port 1 no longer matched its
+layout's port label, with nothing changed. Their wave ports were widened by hand to span the air-box face (1100 × 420 µm
+and 900 × 315 µm), while the probe pad's label translates to a 95 × 106 µm lumped sheet; `StalePorts` compared the RECORD
+with today's translation, so any deliberate edit of a linked port (or of an unlinked one on the label's edge, the bonded
+pad's case) warned forever. The check exists to catch a change to the LAYOUT after the view was made.
+
+- `C3dPortSource.Taken` remembers the sheet the label translated to when the record was taken from it (New 3D View from
+  Layout, the `.cem`-view path, Update Ports from Layout, each through `C3dPortSource.Of`). A record with it is stale only
+  when the label now translates differently, and the sentence then gives the label's widths then and now
+  (`C3dStalePort.SinceTaken`). A link written before it existed, or an unlinked record, is compared as before.
+- The two example ports carry the link with `Taken`. `PortEdgeWidthTests.NoShippedExample_OpensWithAStalePort` translates
+  every shipped `.c3d`'s placed layouts and asserts nothing is stale; it failed on `2 Probe Pad.c3d` before the change.
+- The "106 µm" in the warning was the sheet's HEIGHT (the die's 100 µm GaAs plus the stack): `Width` is the rectangle's
+  longer side, which for a YZ sheet on a thick die can be the vertical one.
