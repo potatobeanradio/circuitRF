@@ -664,6 +664,9 @@ the path of shapes the neutral problem cannot state as primitives.
 
 ### 6.3 Where the geometry comes from
 
+> The `.c3d` document's specification, and where constructs it does not hold yet would go, is
+> `docs/design/c3d-format.md`.
+
 **Tier A — generated from what circuitRF already holds (v2).** The layout (`.clay`), the
 technology's stackup (`.ctech`) and kernel W's wirebond parameters already describe most package and
 board geometry, and the planar EM extractors already turn them into an `EmProblem`. The 3D problem
