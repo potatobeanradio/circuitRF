@@ -38,5 +38,8 @@ surroundings with the εᵣ 3 dielectric alone would cost.
 **`refs/palace.s2p` is not a reference.** Both Palace runs are non-reciprocal: |S₂₁ − S₁₂| is 0.11 / 0.28 /
 0.34 here and 0.09 / 0.27 / 0.37 in `one-region/`, against 0 for planar and 2e-4 for EMerge. |S₂₁| itself
 agrees with the other two; the two phases do not. It happens without the interface too, so it is about
-the 3D ports of this fixture (port 1 is a wave port on a buried line), not about the via. It is kept so
-the defect can be reproduced.
+the 3D ports of this fixture, not about the via: Palace leaves each wave port's mode in an arbitrary
+phase (−9.86° on port 1's buried line, +0.41° on port 2 at 10 GHz), and the published S carries the
+difference. Rotating each port by its mode-voltage phase gives 0.025 against planar and 0.020 against
+EMerge at 10 GHz. The fix is `docs/briefs/brief-em3d-141-palace-wave-port-mode-phase.md`; the file is
+kept so the defect can be reproduced.
