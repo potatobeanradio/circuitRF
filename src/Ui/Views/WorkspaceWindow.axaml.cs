@@ -910,8 +910,9 @@ public partial class WorkspaceWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { entries = []; }
 
         void Open(CircuitRF.Design.Plugins.PluginEntry entry) { if (_vm is { } vm) _ = vm.OpenPluginAsync(entry); }
-        CircuitRF.Ui.Plugins.PluginsMenu.Fill(PluginsMenuItem, entries, Open);
-        if (_pluginsNativeMenu is { } native) CircuitRF.Ui.Plugins.PluginsMenu.Fill(native, entries, Open);
+        void Manage() => _vm?.OpenPluginSettings();
+        CircuitRF.Ui.Plugins.PluginsMenu.Fill(PluginsMenuItem, entries, Open, Manage);
+        if (_pluginsNativeMenu is { } native) CircuitRF.Ui.Plugins.PluginsMenu.Fill(native, entries, Open, Manage);
     }
 
     private void OnEditMenuOpened(object? sender, RoutedEventArgs e)

@@ -276,6 +276,19 @@ public sealed class PluginSession : IPluginPanelSession
         var run = manifest.ResolveRun();
         if (run.Entry is null)
             return Refuse(PluginFailureKind.NoBuild, $"{manifest.Name} has {run.Refusal}.");
+
+        // An installed Python plugin runs in its own environment (brief-plg-6 §3); one whose environment is not made yet,
+        // or could not be, does not fall back to another interpreter.
+        if (entry.Source == PluginSource.Installed && run.Entry.IsPython && PluginInstaller.RecordFor(entry.Directory) is { } record)
+        {
+            if (record.NeedsEnvironment)
+                return Refuse(PluginFailureKind.StartFailed, record.Environment == PluginActiveRecord.Pending
+                    ? $"{manifest.Name}'s Python environment has not been made yet. Allowing it in Settings ▸ Plugins makes it."
+                    : $"{manifest.Name}'s Python environment could not be made: {record.Environment}");
+            if (!PluginPythonEnvironment.IsPresent(entry.Directory, record.Environment))
+                return Refuse(PluginFailureKind.StartFailed,
+                    $"The Python environment {manifest.Name} runs in is missing ({PluginPythonEnvironment.InterpreterFor(entry.Directory, record.Environment)}). Set it to Ask and then Allowed in Settings ▸ Plugins to make it again.");
+        }
         return null;
 
         static PluginFailure Refuse(PluginFailureKind kind, string sentence) => new(kind, sentence, []);
@@ -292,6 +305,13 @@ public sealed class PluginSession : IPluginPanelSession
         {
             string? command = options.PythonCommand;
             IReadOnlyList<string> prefix = options.PythonArguments;
+            // The environment its requirements were installed into (brief-plg-6 §3): the shared one or its own. With none,
+            // the shared Python itself, found below as PDK kits find it.
+            if (command is null && entry.Source == PluginSource.Installed
+                && PluginPythonEnvironment.InterpreterFor(entry.Directory, PluginInstaller.RecordFor(entry.Directory)?.Environment) is { } env && File.Exists(env))
+                (command, prefix) = (env, []);
+            else if (command is null && File.Exists(PluginPythonEnvironment.Interpreter(entry.Directory)))
+                (command, prefix) = (PluginPythonEnvironment.Interpreter(entry.Directory), []);
             if (command is null)
             {
                 var found = PythonInterpreterDiscovery.Find(null, null, out var rejected);
@@ -373,6 +393,8 @@ public sealed class PluginSession : IPluginPanelSession
         if (api is null || api < PluginApi.Min || api > Math.Min(_manifest.ApiVersion, PluginApi.Max))
             return PluginOutcome<PluginHello>.Fail(await Task.Run(() => Fail(PluginFailureKind.Protocol,
                 $"{Peer} answered hello with contract version {(api?.ToString() ?? "none")}; this circuitRF speaks {PluginApi.Min}–{PluginApi.Max} and the manifest says {_manifest.ApiVersion}.")));
+        // It started: an update's previous version is no longer needed for a roll back (brief-plg-6 §1).
+        PluginInstaller.ConfirmStarted(PluginDirectory);
         return PluginOutcome<PluginHello>.Of(new PluginHello(api.Value));
     }
 

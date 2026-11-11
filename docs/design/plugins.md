@@ -525,7 +525,7 @@ back from the Plugins tab.
 | From | How | Trusted by |
 |---|---|---|
 | **The vetted list** | Settings ▸ Plugins lists `plugins/index.json` (§10); Install downloads the release asset named there and checks its SHA-256 | The review that put that version on the list, and the user's one-time permission |
-| **A GitHub address** | Install from address… takes a repository URL and a tag; circuitRF downloads that tag's release asset, or the source archive for a Python plugin | The user alone; the dialog says the plugin is not on the list |
+| **A GitHub or GitLab link** | Paste it on the Plugins tab, or Install from address…: the repository's page, a clone address or a release link, and a version picked from its releases (or tags); circuitRF downloads that tag's release asset for this platform, or the source archive | The user alone; the dialog says the plugin is not on the list |
 | **A folder** | Install from folder… copies it; Link folder… runs it in place, for a plugin under development, and re-reads the manifest on every start | The user alone |
 
 No address is fetched without the user asking. circuitRF holds no credential: a private repository is out of
@@ -537,11 +537,20 @@ own permission prompt the only gate, which is why it exists.
 
 ### 9.3 Python plugins
 
-A Python plugin declares `requiresPython` and may ship `requirements.txt`. At install circuitRF creates a virtual
-environment for that plugin version under its folder, with the interpreter `PythonInterpreterDiscovery` finds (the
-one Settings already lets the user choose for kits), and installs the requirements into it. That is the one step
-that reaches the network for a Python plugin, and the install dialog says so. A plugin with no requirements needs
-no network at install.
+**There is one Python.** Plugins run on the interpreter `PythonInterpreterDiscovery` finds — the one Settings already lets
+the user choose for kits — and circuitRF never installs another. A plugin declares `requiresPython` and may ship
+`requirements.txt`:
+
+- **No requirements** — it runs on that Python as it is. Nothing is made and nothing reaches the network.
+- **Requirements** — they go into ONE shared plugin environment, `<plugins>/.python`, so two plugins that need the same
+  package share one copy. The new plugin's requirements are resolved together with every sharing plugin's by
+  `pip install --dry-run` first, so the shared environment is never changed unless all of them fit; then installed
+  together and confirmed with `pip check`.
+- **Conflicting requirements** — only then does the plugin get an environment of its own under its version folder, and
+  the install log says which requirement could not share.
+
+PDK kits keep their own environments: a plugin's install must never be able to change a kit's packages. Installing
+requirements is the one step that reaches the network for a Python plugin, and the install dialog says so.
 
 ### 9.4 Permission
 
@@ -603,7 +612,7 @@ circuitRF plugin describe <id> [--json]                     # parameters, views,
 circuitRF plugin run <id> --set name=value … -o <dir>        # one update, writes views + readouts as files
 circuitRF plugin run <id> --set … --place <workspace> [--cell name] [--replace | --new-name name]
 circuitRF plugin deny <id>                                    # there is no allow: §9.4
-circuitRF plugin install <folder|address> [--tag t] / uninstall <id>
+circuitRF plugin install <folder|link|id> [--tag t] [--link] / uninstall <id> / update <id> / rollback <id>
 ```
 
 - `run` sends `hello`, one `update` and, with `--place`, one `commit`. Views are written as files into `-o`: a

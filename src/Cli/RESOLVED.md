@@ -3575,3 +3575,35 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
 - **The no-plugins marker needs the install root**, which only `src/Ui`'s `UpdateInstallSite` knows (a `.app` bundle, a
   `current` pointer). `CliEntry.InstallRoot` is set by the installed executable before it hands a verb over; a bare
   `src/Cli` run looks beside its own folder.
+
+## Brief PLG-6 — `plugin install | uninstall | update | rollback` and MCP install (2026-11-10)
+
+- **The window no longer undoes a denial from the command line.** PLG-5 recorded that `plugin deny` was lost at the open
+  window's next preference save. `AppPreferencesIo` now treats `plugin_trust` and `plugin_links` as FILE-owned: every
+  whole-file write takes their value from `preferences.json` as it is on disk, and the window changes one row only through
+  `AppPreferencesIo.UpdatePluginTrust` (one key, merged). `PluginHost.Trust` is read from the file on every consult. Gate:
+  `PluginTrustWindowTests`.
+- **An install outside the window runs nothing.** `plugin install` (and MCP's) unpacks and validates; a Python plugin's
+  `.venv` is made when the person allows it in the window (`PluginAllow`), because `pip` can run a package's build scripts.
+  `active.json` records `origin` (`cli`, or `mcp` when `JsonRun.InServe`) and `environment: pending`; `PluginSession`
+  refuses an installed Python plugin whose environment is not `ready` rather than falling back to another interpreter.
+- **PLG-5's source scan forbids the substring `UpdateAsync`** (the session's frame call), so the installer's update is
+  `UpdateToNewestAsync`. The scan now also forbids the store's own steps in `Plugin.cs` (`ZipArchive`, `SHA256`,
+  `Directory.Move`, `active.json`, `.partial`, `venv`, `pip`).
+- **A plugin id has dots and no separator**, so the MCP `source` positional cannot use `NamesAFile`: `IsFolderSource` treats
+  an `https://`/`git@` link and a bare name that is not a folder under the root as text, and anything path-shaped as a path,
+  confined as usual.
+- **The firewall's user-facing-text gate refuses thrown sentences below the firewall.** The HTTP seam (`IPluginHttp`)
+  returns its failure as a sentence (`PluginHttpResult`, `DownloadAsync` → `string?`) instead of throwing, as every other
+  plugin refusal already does — no allowlist lines were added.
+- **GitHub and GitLab links** (owner request): `PluginRepository.Parse` reads a repository page, an `https://…git` or
+  `git@host:` clone address, or a release/tag/tree link (which names the tag); GitLab subgroups are kept whole and its
+  project path ends at the `/-/` segment. A repository with no releases offers its tags, installed from source archives.
+  The vetted list's own rule (assets on github.com) is unchanged.
+- **One Python, one shared plugin environment** (owner decision, after the first cut made a `.venv` per plugin version).
+  A plugin with no `requirements.txt` runs on the discovered Python as it is (`environment: ready`); one with requirements
+  joins `<plugins>/.python` (`shared`) when a `pip install --dry-run` of its requirements TOGETHER with every sharing
+  plugin's resolves — so the shared environment is never changed on a conflict — and otherwise gets its own `.venv`
+  (`own`). A plugin whose requirements use a path relative to its own folder fails the shared dry run (pip resolves it
+  against the working directory) and so lands in its own environment, where it works. `pip install --dry-run` needs pip
+  22.2; an older pip in the shared environment sends every plugin to its own. PDK kits keep their own environments.

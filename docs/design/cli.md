@@ -5044,7 +5044,7 @@ byte; an example that fails it stores a reference in a spelling the repair rewri
 
 ## 42. `plugin` — a plugin with no display (brief-plg-5)
 
-`circuitrf plugin list | describe <id> | run <id> | deny <id>` is `plugins.md` §11 and P-7: anything a panel
+`circuitrf plugin list | describe <id> | run <id> | deny <id> | install | uninstall | update | rollback` is `plugins.md` §11 and P-7: anything a panel
 plugin does in its window, a script, a build machine or an agent can do here. ONE verb with nouns, on `Authoring.cs`' terms,
 and it **owns no plugin logic**: the catalogue is `PluginCatalog.Discover`, the settings `PluginPreferences` (the keys the
 window's Settings write), and a run is `PluginHeadless.RunAsync` in `src/Design/Plugins` — the process host, the
@@ -5085,12 +5085,29 @@ which the panel's Place in workspace calls too. A comment-stripped source scan o
   `plugin.permission.needs-user` (arguments `id`, `name`, `decision` = `not-asked` or `denied`, `directory`), a sentence
   written for an agent to relay: only the person can grant it, and where. **Exit codes:** 0; 1 for a refusal, a plugin `error` message or a failure (with its
   sentence and the last five stderr lines); 130 cancelled.
-- **`install` / `uninstall`** arrive with brief-plg-6. Until then a plugin in a folder of its own runs in place when
-  `CRF_PLUGIN_PATH` names the folder.
+- **`install <folder | link | id> [--tag t] [--link]`** (brief-plg-6 §5) calls `PluginInstaller` and nothing else — the
+  functions Settings ▸ Plugins calls. The source is inferred: an existing folder is copied in (`--link` runs it in place
+  instead, recorded in `plugin_links`); a GitHub or GitLab link — the repository's page, an `https://…git` or `git@host:`
+  clone address, or a link to one release, tag or tree, which names the tag — installs that tag's release asset whose
+  name holds this platform's RID or `any`, else its source archive (`--tag`, else the tag the link names, else the latest
+  release, else the newest tag; when the versions cannot be read, a refusal naming `--tag`, never a guess); anything else
+  is an id on the vetted list, downloaded and checked against its SHA-256 before anything is unpacked. Every install
+  unpacks into `<id>/<version>.partial/` and renames only when the manifest says what was asked for, so a failure or a
+  cancel leaves nothing and the previous version active. **An install never allows, and outside the window it runs
+  nothing**: no Python environment is made — `pip` can run a package's build scripts — and `active.json` records the
+  origin (`cli`, or `mcp` under `serve`) and time. Output: the folder, then id and version; `--json` as `list`'s row;
+  and the warning `plugin.permission.needs-user`, saying only the person can allow it. Exit 0, 1 refused, 130 cancelled.
+- **`uninstall <id> [--version v]`** removes the folder (or one version), its `plugin_trust` rows and what was remembered
+  for it — dialog width, window, last parameters. A linked plugin is unlinked and its folder kept.
+- **`update <id>`** installs the newer version from where the active one came from (the list, or the same repository's
+  latest release); the replaced version stays on disk until the new one answers `hello` once. **`rollback <id>`** makes
+  it active again and deletes the newer one.
 
-**MCP.** The `plugin` tool has `action: list | describe | run` with the same arguments, through the same verb, and its
-description says a plugin runs only once the person has allowed it in circuitRF. No tool grants permission. `install` and
-`uninstall` arrive with brief-plg-6 §5; `deny` stays off the tool.
+**MCP.** The `plugin` tool has `action: list | describe | run | install | uninstall` with the same arguments, through the
+same verb. `install`'s `source` is a folder under the root (confined as any path is), a GitHub or GitLab link, or a list
+id; `--link`, `update` and `rollback` are not offered — an update runs new code, and a link runs a folder that keeps
+changing. The tool carries the annotations `destructiveHint` and `openWorldHint`, so a client that confirms calls asks the
+person. No tool grants permission; `deny` stays off the tool. Gate: `tests/Ui.Tests/Plugins/PluginInstallCliTests.cs`.
 
 **`check` and `reference`.** A plugin folder or its `plugin.json` classifies as `plugin` (`DocumentKinds`); `check` reports
 every diagnostic `PluginManifestReader` returns — which reads the panel's layout tree against the parameters that did

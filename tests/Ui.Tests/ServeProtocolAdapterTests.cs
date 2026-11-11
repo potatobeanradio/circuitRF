@@ -1037,6 +1037,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["plugin/list"]        = [],
             ["plugin/describe"]    = ["id"],
             ["plugin/run"]         = ["id"],
+            ["plugin/install"]     = ["source"],
+            ["plugin/uninstall"]   = ["id"],
         };
 
         using var server = Start(Root);

@@ -66,34 +66,76 @@ public sealed record PluginPreferences(
     /// </summary>
     public bool RecordDenial(string pluginDirectory)
     {
-        var decisions = new Dictionary<string, bool>(PluginTrustStore.FromRecordedPreferences(Path).Decisions, StringComparer.OrdinalIgnoreCase)
-        {
-            [PluginTrustStore.Key(pluginDirectory)] = false,
-        };
-        try { WriteTrust(Path, decisions); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        string key = PluginTrustStore.Key(pluginDirectory);
+        if (!Edit(Path, root =>
+            {
+                var table = root[PluginTrustStore.PreferenceKey] as JsonObject ?? new JsonObject();
+                table[key] = false;
+                root[PluginTrustStore.PreferenceKey] = Sorted(table);
+            }))
+            return false;
         return PluginTrustStore.FromRecordedPreferences(Path).Decide(pluginDirectory) == PluginTrustDecision.Denied;
     }
 
-    private static void WriteTrust(string path, IReadOnlyDictionary<string, bool> decisions)
+    /// <summary>The per-plugin keys circuitRF remembers by id — what an uninstall forgets (brief-plg-6 §1).</summary>
+    public const string DialogWidthsKey = "plugin_dialog_widths", WindowsKey = "plugin_windows", LastParamsKey = "plugin_last_params";
+
+    /// <summary>
+    /// Changes <paramref name="path"/> by editing its JSON object in place and writing it back whole — every key the edit
+    /// does not touch is kept as it was in the file. Returns false, and writes nothing, when the file is not a JSON object
+    /// (it holds every other setting, so it is left alone rather than replaced) or cannot be written. A missing file is an
+    /// empty object.
+    /// </summary>
+    public static bool Edit(string path, Action<JsonObject> edit)
     {
-        JsonObject root = new();
-        if (File.Exists(path))
+        try
         {
-            // A file that is not a JSON object is left alone rather than replaced: it holds every other setting, and the
-            // caller learns the decision was not recorded by reading it back.
-            try { if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject read) root = read; else return; }
-            catch (JsonException) { return; }
+            JsonObject root = new();
+            if (File.Exists(path))
+            {
+                try { if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject read) root = read; else return false; }
+                catch (JsonException) { return false; }
+            }
+            edit(root);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!);
+            string temp = path + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
+            File.WriteAllText(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temp, path, overwrite: true);
+            return true;
         }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+    }
 
-        var table = new JsonObject();
-        foreach (var (key, allowed) in decisions.OrderBy(d => d.Key, StringComparer.OrdinalIgnoreCase)) table[key] = allowed;
-        root[PluginTrustStore.PreferenceKey] = table;
+    /// <summary>Removes the permission recorded for each of <paramref name="directories"/>: an uninstalled plugin's folder
+    /// is not asked about again, it is gone. Removing is not allowing — a later install there is <c>not asked</c>.</summary>
+    public static void RemoveTrust(JsonObject root, IEnumerable<string> directories)
+    {
+        if (root[PluginTrustStore.PreferenceKey] is not JsonObject table) return;
+        foreach (string dir in directories)
+        {
+            string key = PluginTrustStore.Key(dir);
+            foreach (string k in table.Select(kv => kv.Key).Where(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase)).ToList())
+                table.Remove(k);
+        }
+    }
 
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!);
-        string temp = path + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
-        File.WriteAllText(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, path, overwrite: true);
+    /// <summary>Forgets what was remembered for plugin <paramref name="id"/>: its dialog width, its window, the parameters
+    /// last sent from it in every workspace, and its recorded active version.</summary>
+    public static void Forget(JsonObject root, string id)
+    {
+        (root[DialogWidthsKey] as JsonObject)?.Remove(id);
+        (root[WindowsKey] as JsonObject)?.Remove(id);
+        (root[ActiveKey] as JsonObject)?.Remove(id);
+        if (root[LastParamsKey] is JsonObject last)
+            foreach (string k in last.Select(kv => kv.Key).Where(k => k.StartsWith(id + "|", StringComparison.Ordinal)).ToList())
+                last.Remove(k);
+    }
+
+    private static JsonObject Sorted(JsonObject table)
+    {
+        var sorted = new JsonObject();
+        foreach (var (k, v) in table.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList()) sorted[k] = v?.DeepClone();
+        return sorted;
     }
 }
 

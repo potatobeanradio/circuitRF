@@ -85,6 +85,13 @@ public static class CliEntry
     public static Func<string?>? InstallRoot { get; set; }
 
     /// <summary>
+    /// The release key the updater verifies with, base64 SubjectPublicKeyInfo — what a refreshed plugin list's signature is
+    /// checked against (brief-plg-6 §2). The key lives with the updater in <c>src/Ui</c>; the installed executable sets this
+    /// before it hands a verb over. Null (a bare <c>src/Cli</c> run) trusts no refreshed list, only the one built in.
+    /// </summary>
+    public static string? ReleasePublicKey { get; set; }
+
+    /// <summary>
     /// Dispatches one invocation and returns its exit code — the whole CLI, minus the process.
     /// </summary>
     public static int Run(string[] args)

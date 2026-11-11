@@ -18,7 +18,9 @@ namespace CircuitRF.Cli;
 /// Plugins, or Settings ▸ Plugins. Anything that can type a command line can be an agent, so a command line can only
 /// take permission away (<c>deny</c>). Owner decision, 2026-11-10.</para>
 ///
-/// <para><b>Install and uninstall are not here yet</b>; they arrive with brief-plg-6.</para>
+/// <para><b>Install, uninstall, update and roll back call <see cref="PluginInstaller"/> and nothing else</b> (brief-plg-6
+/// §5) — the functions Settings ▸ Plugins calls. An install never allows: what it installs is <c>not asked</c>, and it
+/// unpacks, validates the manifest and stops — no Python environment, no process.</para>
 /// </summary>
 internal static class Plugin
 {
@@ -26,7 +28,7 @@ internal static class Plugin
     /// executable said (<see cref="CliEntry.InstallRoot"/>), else beside this assembly's own folder.</summary>
     private static string? InstallRoot() => CliEntry.InstallRoot?.Invoke() ?? AppContext.BaseDirectory;
 
-    private const string Nouns = "list, describe, run or deny";
+    private const string Nouns = "list, describe, run, deny, install, uninstall, update or rollback";
 
     public static int Run(string[] args)
     {
@@ -40,8 +42,10 @@ internal static class Plugin
             "run"      => RunPlugin(rest),
             "allow"    => JsonRun.Fail(CliDiagnostics.PluginAllowOnlyInTheWindow()),
             "deny"     => Deny(rest),
-            "install" or "uninstall" => JsonRun.Fail(CliDiagnostics.PluginUsage(
-                $"'{noun}' is not available in this build. A plugin in a folder of its own runs in place when {PluginCatalogSources.EnvironmentVariable} names the folder.")),
+            "install"   => Install(rest),
+            "uninstall" => Uninstall(rest),
+            "update"    => Update(rest),
+            "rollback"  => Rollback(rest),
             _ => Usage($"'{args[0]}' is not something plugin does; it takes {Nouns}."),
         };
     }
@@ -54,7 +58,11 @@ internal static class Plugin
             "       circuitrf plugin describe <id>\n" +
             "       circuitrf plugin run <id> [--set name=value]... [--workspace <dir>] [--context <path>]\n" +
             "                            [-o <dir>] [--place <workspace> [--cell <name>] [--replace | --new-name <name>]]\n" +
-            "       circuitrf plugin deny <id>");
+            "       circuitrf plugin deny <id>\n" +
+            "       circuitrf plugin install <folder | github/gitlab link | id-from-the-list> [--tag <tag>] [--link]\n" +
+            "       circuitrf plugin uninstall <id> [--version <v>]\n" +
+            "       circuitrf plugin update <id>\n" +
+            "       circuitrf plugin rollback <id>");
         return 1;
     }
 
@@ -338,6 +346,131 @@ internal static class Plugin
         };
         return 0;
     }
+
+    // ── install, uninstall, update, rollback ──────────────────────────────────
+
+    /// <summary>
+    /// <c>install &lt;folder | address | id&gt;</c>: the source is inferred — an existing folder (<c>--link</c> runs it in
+    /// place), a GitHub or GitLab link (<c>--tag</c>, else the tag the link names, else its latest release), else an id on
+    /// the vetted list.
+    /// </summary>
+    private static int Install(string[] args)
+    {
+        const string takes = "a folder, a GitHub or GitLab link or a listed id, --tag and --link";
+        string? source = null, tag = null;
+        bool link = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--tag" when i + 1 < args.Length: tag = args[++i]; continue;
+                case "--link": link = true; continue;
+            }
+            if (args[i].StartsWith('-') || source is not null) return JsonRun.Fail(CliDiagnostics.PluginUnknownOption("install", args[i], takes));
+            source = args[i];
+        }
+        if (source is null) return Usage("install names a folder, a GitHub or GitLab repository link, or an id from the plugin list.");
+
+        var prefs = PluginPreferences.Read();
+        bool folder = Directory.Exists(source);
+        bool address = !folder && (source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || source.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                                   || source.StartsWith("git@", StringComparison.OrdinalIgnoreCase));
+        if (link && !folder) return JsonRun.Fail(CliDiagnostics.PluginUsage($"--link runs a folder in place, and '{source}' is not a folder."));
+        if (tag is not null && !address) return JsonRun.Fail(CliDiagnostics.PluginUsage("--tag names a release of a GitHub or GitLab repository; give its link too."));
+
+        using var http = folder ? null : new PluginHttp();
+        var ctx = Context(prefs, http);
+        PluginInstallResult result;
+        try
+        {
+            result = link    ? PluginInstaller.Link(ctx, source)
+                   : folder  ? PluginInstaller.InstallFolderAsync(ctx, source, RunHost.Cancellation).GetAwaiter().GetResult()
+                   : address ? PluginInstaller.InstallFromAddressAsync(ctx, source, tag, RunHost.Cancellation).GetAwaiter().GetResult()
+                   : PluginInstaller.InstallFromListAsync(ctx, Index(), source, null, RunHost.Cancellation).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) { result = PluginInstallResult.Stopped(); }
+        return Installed("install", result, link ? PluginSource.Linked : PluginSource.Installed);
+    }
+
+    private static int Uninstall(string[] args)
+    {
+        string? id = null, version = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--version" && i + 1 < args.Length) { version = args[++i]; continue; }
+            if (args[i].StartsWith('-') || id is not null) return JsonRun.Fail(CliDiagnostics.PluginUnknownOption("uninstall", args[i], "one installed plugin's id and --version"));
+            id = args[i];
+        }
+        if (id is null) return Usage("uninstall names a plugin.");
+        var prefs = PluginPreferences.Read();
+        var result = PluginInstaller.Uninstall(Context(prefs, null), id, version, prefs.LinkedFolders);
+        if (!result.Ok) return JsonRun.Fail(CliDiagnostics.PluginInstallRefused("uninstall", result.Refusal!));
+        Console.WriteLine($"{id}{(result.Version is { } v ? " " + v : "")} removed ({result.Directory}).");
+        JsonRun.Plugin = new JsonObject { ["action"] = "uninstall", ["id"] = id, ["version"] = result.Version, ["directory"] = result.Directory };
+        return 0;
+    }
+
+    /// <summary><c>update &lt;id&gt;</c>: the newer version from where the active one came from. The new version is not
+    /// asked about yet, so it does not run until the person allows it.</summary>
+    private static int Update(string[] args)
+    {
+        if (args.Length != 1 || args[0].StartsWith('-'))
+            return args.Length == 0 ? Usage("update names a plugin.") : JsonRun.Fail(CliDiagnostics.PluginUnknownOption("update", args[^1], "one installed plugin's id"));
+        var prefs = PluginPreferences.Read();
+        using var http = new PluginHttp();
+        PluginInstallResult result;
+        try { result = PluginInstaller.UpdateToNewestAsync(Context(prefs, http), Index(), args[0], RunHost.Cancellation).GetAwaiter().GetResult(); }
+        catch (OperationCanceledException) { result = PluginInstallResult.Stopped(); }
+        return Installed("update", result, PluginSource.Installed);
+    }
+
+    private static int Rollback(string[] args)
+    {
+        if (args.Length != 1 || args[0].StartsWith('-'))
+            return args.Length == 0 ? Usage("rollback names a plugin.") : JsonRun.Fail(CliDiagnostics.PluginUnknownOption("rollback", args[^1], "one installed plugin's id"));
+        var prefs = PluginPreferences.Read();
+        var result = PluginInstaller.Rollback(Context(prefs, null), args[0]);
+        if (!result.Ok) return JsonRun.Fail(CliDiagnostics.PluginInstallRefused("rollback", result.Refusal!));
+        Console.WriteLine(result.Directory);
+        var entry = PluginCatalog.Read(result.Directory!, PluginSource.Installed);
+        JsonRun.Plugin = Row(prefs.Trust(), entry, "rollback");
+        return 0;
+    }
+
+    /// <summary>What an install or update reports: the folder, id and version; <c>--json</c> as <c>plugin list</c>'s row;
+    /// and the notice that only the person can allow it.</summary>
+    private static int Installed(string noun, PluginInstallResult result, PluginSource source)
+    {
+        if (result.Cancelled) { JsonRun.Report(CliDiagnostics.PluginInstallCancelled(noun)); return 130; }
+        if (!result.Ok) return JsonRun.Fail(CliDiagnostics.PluginInstallRefused(noun, result.Refusal!));
+
+        var entry = PluginCatalog.Read(result.Directory!, source);
+        Console.WriteLine(result.Directory);
+        Console.WriteLine($"{result.Id} {result.Version}");
+        JsonRun.AddOutput("plugin", result.Directory!);
+        var trust = PluginPreferences.Read().Trust();
+        if (trust.Decide(entry.Directory) != PluginTrustDecision.Allowed)
+            JsonRun.Report(CliDiagnostics.PluginInstalledNeedsUser(result.Id!, entry.DisplayName, entry.Directory));
+        JsonRun.Plugin = Row(trust, entry, noun);
+        return 0;
+    }
+
+    private static JsonObject Row(PluginTrustStore trust, PluginEntry e, string action) => new()
+    {
+        ["action"] = action, ["id"] = e.Manifest?.Id, ["name"] = e.DisplayName, ["version"] = e.Manifest?.Version,
+        ["kind"] = KindName(e.Manifest), ["source"] = SourceName(e), ["directory"] = e.Directory,
+        ["permitted"] = Permitted(trust, e), ["available"] = e.DimReason is null, ["reason"] = e.DimReason,
+    };
+
+    /// <summary>The install context for this user: an install from here is the command line's or MCP's, and makes no Python
+    /// environment — that waits for the person to allow the plugin in the window.</summary>
+    private static PluginInstallContext Context(PluginPreferences prefs, IPluginHttp? http)
+        => new(PluginCatalogSources.DefaultRoot, prefs.Path, JsonRun.InServe ? PluginInstallOrigin.Mcp : PluginInstallOrigin.Cli, http,
+               line => Console.Error.WriteLine(line));
+
+    /// <summary>The vetted list in use: Refresh's signed copy when it verifies, else the one built in.</summary>
+    private static PluginIndex Index()
+        => PluginIndex.Current(PluginInstaller.IndexCache(PluginCatalogSources.DefaultRoot), CliEntry.ReleasePublicKey);
 
     // ── shared ────────────────────────────────────────────────────────────────
 

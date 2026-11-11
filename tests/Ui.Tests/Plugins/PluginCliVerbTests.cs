@@ -87,9 +87,13 @@ public class PluginCliVerbTests
                      "CellCreate", "WorkspaceCheckpoints", "PluginPlacement.", "File.Copy", "File.Move", "Directory.CreateDirectory",
                      // manifest parsing
                      "PluginManifestReader.Read", "JsonDocument", "JsonNode.Parse", "GetProperty(", "PluginLayoutReader.Read(m.UiJson",
+                     // installing (brief-plg-6 §5): the store's steps are PluginInstaller's alone
+                     "ZipFile", "ZipArchive", "SHA256", "Directory.Move", "Directory.Delete", "active.json", ".partial", "venv", "pip",
                  })
             Assert.DoesNotContain(forbidden, code);
         Assert.Contains("PluginHeadless.RunAsync(", code);
+        Assert.Contains("PluginInstaller.InstallFolderAsync(", code);
+        Assert.Contains("PluginInstaller.Uninstall(", code);
         Assert.Contains("PluginCatalog.Discover(", code);
     }
 
@@ -192,7 +196,7 @@ public class PluginCliVerbTests
     // ── gate 5: MCP ─────────────────────────────────────────────────────────────
 
     [PythonFact]
-    public void Gate5_TheMcpTool_ListsDescribesAndRunsTheStub_AndOffersNoInstall()
+    public void Gate5_TheMcpTool_ListsDescribesAndRunsTheStub()
     {
         var env = Env(allow: ["stub"]);
         string ws = Workspace(env, "ws");
@@ -201,9 +205,8 @@ public class PluginCliVerbTests
         var tool = JsonNode.Parse(server.Request("tools/list", new JsonObject()))!["result"]!["tools"]!.AsArray()
             .Single(t => t!["name"]!.GetValue<string>() == "plugin")!;
         var actions = tool["inputSchema"]!["properties"]!["action"]!["enum"]!.AsArray().Select(a => a!.GetValue<string>()).ToList();
-        Assert.Equal(["list", "describe", "run"], actions);   // no allow: permission is granted only in the window
-        Assert.DoesNotContain(actions, a => a.Contains("install"));
-        Assert.DoesNotContain(tool["inputSchema"]!["properties"]!.AsObject(), p => p.Key.Contains("install", StringComparison.OrdinalIgnoreCase));
+        // No allow and no deny: permission is granted only in the window (brief-plg-6 gate 7 adds install and uninstall).
+        Assert.Equal(["list", "describe", "run", "install", "uninstall"], actions);
 
         var list = server.Call(new JsonObject { ["action"] = "list" });
         Assert.Contains(list["result"]!["plugin"]!["plugins"]!.AsArray(), p => p!["id"]!.GetValue<string>() == StubId);
@@ -253,11 +256,11 @@ public class PluginCliVerbTests
 
     /// <param name="Scratch">This test's own folder.</param>
     /// <param name="Preferences">The preferences file the CLI reads and <c>deny</c> writes.</param>
-    private sealed record CliEnv(string Scratch, string State, string Preferences, bool NoPlugins = false);
+    internal sealed record CliEnv(string Scratch, string State, string Preferences, bool NoPlugins = false);
 
     /// <summary>A state directory whose preferences allow the named example plugins, and a plugin path linking the stub
     /// and the window example.</summary>
-    private static CliEnv Env(string[] allow)
+    internal static CliEnv Env(string[] allow)
     {
         string scratch = PluginTestKit.NewScratch(), state = Path.Combine(scratch, "state");
         Directory.CreateDirectory(state);
@@ -293,7 +296,7 @@ public class PluginCliVerbTests
         else psi.Environment.Remove(PluginPolicy.EnvironmentVariable);
     }
 
-    private static (int Exit, string StdOut, string StdErr) Cli(CliEnv env, params string[] args)
+    internal static (int Exit, string StdOut, string StdErr) Cli(CliEnv env, params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet")
         {
@@ -310,7 +313,7 @@ public class PluginCliVerbTests
     }
 
     /// <summary><c>serve --root &lt;scratch&gt;</c>, one request at a time; stderr drained on its own thread.</summary>
-    private sealed class Serve : IDisposable
+    internal sealed class Serve : IDisposable
     {
         private readonly Process _p;
         private readonly StringBuilder _err = new();
@@ -363,7 +366,7 @@ public class PluginCliVerbTests
         => Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .ToDictionary(f => Path.GetRelativePath(dir, f).Replace('\\', '/'), File.ReadAllBytes);
 
-    private static string StripComments(string code)
+    internal static string StripComments(string code)
         => Regex.Replace(code, @"//[^\n]*|/\*.*?\*/", "", RegexOptions.Singleline);
 
     private static string CliDll()
@@ -376,7 +379,7 @@ public class PluginCliVerbTests
         return dll;
     }
 
-    private static string RepoRoot([CallerFilePath] string here = "")
+    internal static string RepoRoot([CallerFilePath] string here = "")
     {
         string? dir = Path.GetDirectoryName(here);
         while (dir is not null && !File.Exists(Path.Combine(dir, "circuitRF.slnx"))) dir = Path.GetDirectoryName(dir);

@@ -953,6 +953,12 @@ any of the three packaging scripts — nothing about building circuitRF touches 
 prompted for it while building. It is used once, by `packaging/sign-release.sh`, after all nineteen
 artifacts exist. Day to day it sits in your password manager and nowhere else.
 
+**The plugin list is signed with the same key, before its PR is merged.** A change to `plugins/index.json` (a plugin
+version added to the vetted list) is signed with `dotnet run --project tools/ReleaseSigner -- sign-index
+plugins/index.json <private-key.pem>`, and the `plugins/index.json.sig` it writes is committed in the same PR. Settings ▸
+Plugins ▸ Refresh List uses the list on `main` only when that signature verifies; an unsigned or stale `.sig` makes
+every client keep the list its release was built with.
+
 **Letting someone else cut a release without giving them the key.** Signing is not part of the build:
 the thing that gets signed is `update-manifest.json`, a few kilobytes of file names and SHA-256s. So a
 contributor can build the nineteen artifacts, upload them to a **draft** release, run the `manifest` step

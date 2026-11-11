@@ -78,7 +78,12 @@ internal sealed record ToolOption(string Json, string Cli, OptKind Kind, string 
 /// which is a different query answered with nothing said about it. That case is a refusal naming the
 /// argument the caller left out.</para>
 /// </param>
-internal sealed record ToolPositional(string Json, bool IsPath, string Description, bool Required = true);
+/// <param name="IsSource">
+/// brief-plg-6 §5: a positional that is a FOLDER, an ADDRESS or a NAME — <c>plugin install</c>'s source. An
+/// <c>https://</c> address and a bare name that is not a folder under the root pass as written; anything shaped like a
+/// path, or naming a folder under the root, is confined exactly as <paramref name="IsPath"/> confines it.
+/// </param>
+internal sealed record ToolPositional(string Json, bool IsPath, string Description, bool Required = true, bool IsSource = false);
 
 /// <param name="Verb">The argv prefix — <c>["hb"]</c>, <c>["new","workspace"]</c>.</param>
 internal sealed record ToolMode(
@@ -104,13 +109,16 @@ internal sealed record ToolMode(
 /// that do not are here, where <c>ServeProtocolAdapterTests</c>'
 /// <c>EveryAdvertisedArgument_IsAFlagTheVerbActuallyReads</c> exempts them by name.</para>
 /// </param>
+/// <param name="Annotations">The MCP tool annotations <c>tools/list</c> carries (<c>destructiveHint</c>,
+/// <c>openWorldHint</c>, …), so a client that confirms calls asks the person — brief-plg-6 §5's plugin install.</param>
 internal sealed record ToolSpec(
     string        Name,
     string        Description,
     string?       SelectorName,
     string?       SelectorDescription,
     ToolMode[]    Modes,
-    ToolOption[]? Adapter = null);
+    ToolOption[]? Adapter = null,
+    (string Key, bool Value)[]? Annotations = null);
 
 /// <summary>
 /// The tool surface, and the ONLY thing that translates a tool call into a command line.
@@ -1957,10 +1965,12 @@ internal static class ToolCatalog
                          "gpu: also ask whether Palace solves on a GPU (a one-element solve, so only when asked).")], ""),
             ]),
 
-        // brief-plg-5: plugins — tools other people write, which circuitRF runs as separate programs. `install` and
-        // `uninstall` arrive with brief-plg-6. There is NO `allow`, here or on the command line, on purpose: permission to
-        // run someone else's program with the user's permissions is granted only by the person, in circuitRF's window
-        // (owner decision, 2026-11-10). A run refused for want of it returns plugin.permission.needs-user, which says so.
+        // brief-plg-5: plugins — tools other people write, which circuitRF runs as separate programs. brief-plg-6 §5 adds
+        // `install` and `uninstall`: installing puts files on disk and runs nothing, so an agent may do it for a source the
+        // person named. There is NO `allow`, here or on the command line, on purpose: permission to run someone else's
+        // program with the user's permissions is granted only by the person, in circuitRF's window (owner decision,
+        // 2026-11-10). `update`, `rollback` and `--link` are not offered: an update runs new code, and a link runs a folder
+        // that keeps changing. The annotations make a client that confirms calls ask the person.
         new("plugin",
             "Plugins installed here: tools other people write that circuitRF runs as separate programs. 'list' them, "
           + "'describe' one (its parameters with units, defaults and ranges, and its views), 'run' one with no display "
@@ -1968,8 +1978,10 @@ internal static class ToolCatalog
           + "data and a .cdd that render draws, a layout as a .clay, a schematic as its .cnl, a table as .csv — and "
           + "readouts.json; with place, its cells are placed in that workspace). A plugin runs only once the person has "
           + "allowed it in circuitRF itself (Tools > Plugins asks; Settings > Plugins); no tool can grant that, so a run "
-          + "refused with plugin.permission.needs-user is for the person to act on — tell them. 'reference plugins' is "
-          + "the contract for writing one.",
+          + "refused with plugin.permission.needs-user is for the person to act on — tell them. 'install' puts someone "
+          + "else's program on this machine from a source the person named (a folder under the root, a GitHub or GitLab "
+          + "link, or an id on circuitRF's plugin list) and runs nothing; it will not run until the person allows it in circuitRF. "
+          + "'uninstall' removes one and its permission. 'reference plugins' is the contract for writing one.",
             "action",
             "What to do.",
             [
@@ -2000,7 +2012,20 @@ internal static class ToolCatalog
                         new("newName", "--new-name", OptKind.Str, "With place: place under this name instead."),
                     ],
                     "Run a plugin once, with no display."),
-            ]),
+                new("install", ["plugin", "install"],
+                    [new("source", false,
+                        "Where the plugin is: a folder under the root, a GitHub or GitLab repository link (its page, a clone "
+                      + "address, or a release or tag link), or a plugin id on circuitRF's plugin list. Only a source the "
+                      + "person named.", IsSource: true)],
+                    [new("tag", "--tag", OptKind.Str, "With a link: the release tag. Defaults to the tag the link names, else the latest release.")],
+                    "Install someone else's program, from a source the person named. Runs nothing, makes no Python environment, "
+                  + "and is not allowed to run: the result carries plugin.permission.needs-user for the person to act on."),
+                new("uninstall", ["plugin", "uninstall"],
+                    [new("id", false, "The plugin's id, as 'list' reports it.")],
+                    [new("version", "--version", OptKind.Str, "Remove only this installed version.")],
+                    "Remove an installed plugin, its permission and what was remembered for it."),
+            ],
+            Annotations: [("destructiveHint", true), ("openWorldHint", true)]),
 
         new("reference",
             "What may be written in circuitRF's documents: the reference pages, the generated " +
@@ -2103,7 +2128,7 @@ internal static class ToolCatalog
             string? text = AsString(node, tool, p.Json, ref refusal);
             if (text is null) return null;
 
-            if (p.IsPath)
+            if (p.IsPath || (p.IsSource && IsFolderSource(text, root)))
             {
                 text = root.Resolve(text, out refusal);
                 if (text is null) return null;
@@ -2277,6 +2302,19 @@ internal static class ToolCatalog
         || value.Contains('/') || value.Contains('\\')
         || Path.GetExtension(value).Length > 0;
 
+    /// <summary>
+    /// Whether a source positional names a folder: not an <c>http(s)://</c> address, and either shaped like a path
+    /// (rooted, a separator, <c>.</c> or <c>..</c>) or naming a folder that exists under the root. A list id such as
+    /// <c>example.filter</c> has a dot and no separator, so only the folder test can make it a path.
+    /// </summary>
+    private static bool IsFolderSource(string value, PathRoot root)
+    {
+        if (value.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("git@", StringComparison.OrdinalIgnoreCase)) return false;
+        if (Path.IsPathRooted(value) || value.Contains('/') || value.Contains('\\') || value is "." or "..") return true;
+        return Directory.Exists(Path.Combine(root.Root, value));
+    }
+
     private static string? AsString(JsonNode node, string tool, string name, ref Diagnostic? refusal)
     {
         if (node.GetValue<JsonElement>().ValueKind == JsonValueKind.String) return node.GetValue<string>();
@@ -2350,7 +2388,7 @@ internal static class ToolCatalog
             if (spec.SelectorName is null)
                 foreach (var p in spec.Modes[0].Positionals.Where(p => p.Required)) required.Add(p.Json);
 
-            tools.Add(new JsonObject
+            var tool = new JsonObject
             {
                 ["name"]        = spec.Name,
                 ["description"] = spec.Description,
@@ -2360,7 +2398,14 @@ internal static class ToolCatalog
                     ["properties"] = properties,
                     ["required"]   = required,
                 },
-            });
+            };
+            if (spec.Annotations is { Length: > 0 } hints)
+            {
+                var annotations = new JsonObject();
+                foreach (var (key, value) in hints) annotations[key] = value;
+                tool["annotations"] = annotations;
+            }
+            tools.Add(tool);
         }
         return tools;
     }

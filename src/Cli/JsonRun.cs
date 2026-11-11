@@ -108,6 +108,10 @@ internal static class JsonRun
         return new Restore(previous);
     }
 
+    /// <summary>Whether this call came through <c>serve</c> — an MCP tool call, which <see cref="Isolate"/>s every call.
+    /// <c>plugin install</c> records it as the install's origin (brief-plg-6 §5).</summary>
+    internal static bool InServe => _scoped.Value is not null;
+
     private sealed class Restore(State? previous) : IDisposable
     {
         public void Dispose() => _scoped.Value = previous;

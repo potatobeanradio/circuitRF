@@ -199,6 +199,7 @@ var pluginSets = new Dictionary<string, string>(StringComparer.Ordinal);
 bool pluginShiftCheck = false;
 int? pluginTab = null; double? pluginDragMarker = null, pluginDragHandle = null;   // brief-plg-3
 string? pluginAction = null;   // brief-plg-4
+string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallProgress = false;   // brief-plg-6
 string? pluginImage = null; (double, double)? pluginClick = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
@@ -302,6 +303,9 @@ for (int i = 0; i < args.Length; i++)
         case "--cell-exists-dialog" when i + 1 < args.Length: cellExistsDialog = args[++i]; break;
         case "--plugins-menu" when i + 1 < args.Length: pluginsMenu = args[++i]; break;
         case "--plugin-trust" when i + 1 < args.Length: pluginTrust = Path.GetFullPath(args[++i]); break;
+        case "--settings-plugins" when i + 1 < args.Length: settingsPlugins = args[++i]; break;
+        case "--plugin-address-dialog": pluginAddressDialog = true; break;
+        case "--plugin-install-progress": pluginInstallProgress = true; break;
         case "--plugin-dialog" when i + 1 < args.Length: pluginDialog = Path.GetFullPath(args[++i]); break;
         case "--plugin-workspace" when i + 1 < args.Length: pluginWorkspace = Path.GetFullPath(args[++i]); break;
         case "--plugin-panel" when i + 1 < args.Length: pluginPanel = Path.GetFullPath(args[++i]); break;
@@ -501,6 +505,17 @@ if (pluginImage is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } imgApp) imgApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return PluginPanelSnapshot.RunImage(pluginImage, sizeGiven ? width : null, sizeGiven ? height : null, output, pluginClick);
+}
+// brief-plg-6 — Settings ▸ Plugins (--settings-plugins empty|full|outside|policy|dialog), the install-from-a-link dialog
+// (--plugin-address-dialog) and an install in progress (--plugin-install-progress). Nothing is fetched.
+if ((settingsPlugins is not null || pluginAddressDialog || pluginInstallProgress) && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } plg6App) plg6App.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return settingsPlugins is { } scenario ? PluginsSettingsSnapshot.Tab(scenario, output, sizeGiven ? width : 790, sizeGiven ? height : 700)
+         : pluginAddressDialog ? PluginsSettingsSnapshot.AddressDialog(output)
+         : PluginsSettingsSnapshot.InstallProgress(output);
 }
 // brief-plg-1 — Tools ▸ Plugins (--plugins-menu <folder of plugin folders> | none), the permission prompt
 // (--plugin-trust <plugin folder>) and an action plugin's parameter dialog (--plugin-dialog <plugin folder>

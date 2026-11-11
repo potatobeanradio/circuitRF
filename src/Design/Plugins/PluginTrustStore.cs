@@ -28,12 +28,18 @@ public sealed class PluginTrustStore
 
     private readonly Dictionary<string, bool> _decisions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Action<IReadOnlyDictionary<string, bool>>? _persist;
+    private readonly Action<string, bool>? _persistOne;
 
     /// <param name="seed">Decisions already recorded.</param>
     /// <param name="persist">Where a new decision goes; null keeps it in memory (a headless caller, a test).</param>
-    public PluginTrustStore(IEnumerable<KeyValuePair<string, bool>>? seed = null, Action<IReadOnlyDictionary<string, bool>>? persist = null)
+    /// <param name="persistOne">Where ONE new decision goes, by its key — what the window uses, so a decision is merged
+    /// into the file rather than this store's whole table written over it (brief-plg-6 §4). Wins over
+    /// <paramref name="persist"/>.</param>
+    public PluginTrustStore(IEnumerable<KeyValuePair<string, bool>>? seed = null, Action<IReadOnlyDictionary<string, bool>>? persist = null,
+        Action<string, bool>? persistOne = null)
     {
         _persist = persist;
+        _persistOne = persistOne;
         if (seed is null) return;
         foreach (var (path, allowed) in seed)
             if (Key(path) is { Length: > 0 } key) _decisions[key] = allowed;
@@ -44,6 +50,10 @@ public sealed class PluginTrustStore
     /// command line honours. A missing or malformed file is no decisions, never a throw.
     /// </summary>
     public static PluginTrustStore FromRecordedPreferences(string? preferencesPath = null)
+        => new(ReadRecorded(preferencesPath));
+
+    /// <summary>The <see cref="PreferenceKey"/> table as the file holds it now, or empty.</summary>
+    public static IReadOnlyDictionary<string, bool> ReadRecorded(string? preferencesPath = null)
     {
         var seed = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         try
@@ -61,7 +71,7 @@ public sealed class PluginTrustStore
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { }
-        return new PluginTrustStore(seed);
+        return seed;
     }
 
     public PluginTrustDecision Decide(string pluginDirectory)
@@ -76,7 +86,12 @@ public sealed class PluginTrustStore
         string key = Key(pluginDirectory);
         if (key.Length == 0) return;
         _decisions[key] = allowed;
-        try { _persist?.Invoke(_decisions); } catch { /* preferences are best-effort; the session's answer stands */ }
+        try
+        {
+            if (_persistOne is not null) _persistOne(key, allowed);
+            else _persist?.Invoke(_decisions);
+        }
+        catch { /* preferences are best-effort; the session's answer stands */ }
     }
 
     public IReadOnlyDictionary<string, bool> Decisions => _decisions;

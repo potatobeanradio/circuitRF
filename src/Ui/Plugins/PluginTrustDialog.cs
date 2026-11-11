@@ -50,6 +50,7 @@ public static class PluginTrustDialog
         Row("Version", m?.Version);
         Row("Author", m?.Author);
         Row("Source", PluginHost.SourceText(entry));
+        if (entry.Source == PluginSource.Linked) Row("", PluginHost.LinkedNote);
         Row("Runs", PluginHost.RunsText(entry));
 
         var dontAllow = new Button { Content = "Don't Allow", Width = 100, FontSize = 12, IsCancel = true, HorizontalContentAlignment = HorizontalAlignment.Center };

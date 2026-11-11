@@ -58,6 +58,7 @@ sealed class Program
         {
             // `plugin` refuses on an administrator's no-plugins marker beside the install, found as the window finds it.
             CircuitRF.Cli.CliEntry.InstallRoot = () => Updates.UpdateInstallSite.Detect().Root;
+            CircuitRF.Cli.CliEntry.ReleasePublicKey = Updates.ReleaseKeys.PublicKeySpkiBase64;
             Environment.Exit(CircuitRF.Cli.CliEntry.Run(args));
         }
 

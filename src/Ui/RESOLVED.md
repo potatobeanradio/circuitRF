@@ -42114,3 +42114,17 @@ curve over the sweep in the window, where Simulate runs both chains and `Pin` be
 row. The bench now keeps the small-signal drive in its own variable (`Pss`, with `Pin = Pss`) and the noise rows read it.
 The rule to remember when writing a bench with a parametric sweep: a row that means the variable's *value* must not
 name the swept variable.
+
+## Settings ▸ Plugins: an eighth tab, and two layout traps (brief-plg-6, 2026-11-10)
+
+- **The Plugins tab sits between Security & Permissions and Revision Control, which moves every later tab's index.**
+  `DocSettingsFixtures` selects figures by index, so Revision Control, Color Theme, Wirebonds and Solvers moved from 3–6 to
+  4–7. The settings figures change at the next DocGen run (the window is now 790 wide: eight headers measured one row,
+  ~14 px spare).
+- **A list row with an unbreakable long word widens the whole ListBox's rows past their column headers.** A note quoting a
+  folder path pushed every column of the Installed list right by its overflow. Rows are `ListBoxItem`s with one padding
+  shared with the header grid, horizontal scrolling is disabled, and the note names the folder by its last part (the full
+  path is the tooltip).
+- **A TextBox raises `TextChanged` again as it is first shown.** The link dialog's release lookup ran on `Opened`, then the
+  late `TextChanged` cleared the picker and started a second, debounced read. A read is now skipped when the link text is
+  the one last read.

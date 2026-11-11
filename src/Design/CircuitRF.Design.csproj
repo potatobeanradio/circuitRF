@@ -75,6 +75,12 @@
     <EmbeddedResource Include="resources\technologies\*.cmat" />
   </ItemGroup>
 
+  <!-- brief-plg-6 §2: the vetted plugin list as it stood when this release was built. The file lives at the repository
+       root (plugins/index.json) because it is data reviewed by PR; PluginIndex.Shipped reads it under this fixed name. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\plugins\index.json" LogicalName="CircuitRF.Design.plugins.index.json" Link="plugins\index.json" />
+  </ItemGroup>
+
   <!-- brief-silkscreen-stroke-font R-ssf-1: the stroke font every layout label is drawn in, read by StrokeFont out of
        this assembly under a fixed name; GlyphTemplates takes AS-10's matching templates out of the same copy. Its
        licence file sits beside it in the tree. -->

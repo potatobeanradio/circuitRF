@@ -69,13 +69,13 @@ public static class DocSettingsFixtures
     /// git (§4.3), and a figure that depended on whether the generating machine had git installed would
     /// not be reproducible.</para>
     /// </summary>
-    public static FigureScene RevisionControl() => Tab(3);
+    public static FigureScene RevisionControl() => Tab(4);
 
     /// <summary>Color Theme: the role list, the RGBA editor and the light/dark variant toggle.</summary>
-    public static FigureScene ColorTheme() => Tab(4);
+    public static FigureScene ColorTheme() => Tab(5);
 
     /// <summary>Wirebonds: the per-user creation defaults, and the built-in wire-clearance rule.</summary>
-    public static FigureScene Wirebonds() => Tab(5);
+    public static FigureScene Wirebonds() => Tab(6);
 
     /// <summary>
     /// Solvers (first headed "3D EM"): the Palace, Gmsh and openEMS rows (brief-em3d-6). Last, so nothing above it moved.
@@ -84,7 +84,7 @@ public static class DocSettingsFixtures
     /// SHOWN (its <c>Loaded</c>), which a captured tab never is — and a figure that ran it would show
     /// whatever the generating machine has installed.</para>
     /// </summary>
-    public static FigureScene Em3dSolvers() => Tab(6);
+    public static FigureScene Em3dSolvers() => Tab(7);
 
     // ── Shared ────────────────────────────────────────────────────────────────
 

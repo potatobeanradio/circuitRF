@@ -34,7 +34,14 @@ public partial class WorkspaceViewModel
         if (trust.Decide(entry.Directory) == PluginTrustDecision.Unknown)
         {
             if (await PluginTrustDialog.AskAsync(window, entry) is not { } answer) return;
-            trust.Record(entry.Directory, answer);
+            // Allow goes through the one allowing step — it makes an outside install's Python environment first.
+            if (!answer) PluginHost.RecordPermission(entry.Directory, false);
+            else if (await PluginAllow.AllowAsync(window, entry) is { } notAllowed)
+            {
+                Messages.Warning($"{entry.DisplayName} was not allowed: {notAllowed}");
+                return;
+            }
+            trust = PluginHost.Trust();
         }
         if (trust.Decide(entry.Directory) != PluginTrustDecision.Allowed)
         {
@@ -47,6 +54,15 @@ public partial class WorkspaceViewModel
         if (entry.Manifest.Kind == PluginKind.Window) { await OpenWindowPluginAsync(window, entry, trust, workspaceDir); return; }
         await PluginActionDialog.ShowAsync(window, entry, workspaceDir,
             (values, keep, progress, cancel) => RunPluginAsync(window, entry, trust, workspaceDir, values, keep, progress, cancel));
+    }
+
+    /// <summary>Tools ▸ Plugins ▸ Manage Plugins… — Settings, open on its Plugins tab (brief-plg-6 §4).</summary>
+    internal void OpenPluginSettings()
+    {
+        if (ResolveOwner(null) is not { } owner) return;
+        var settings = new SettingsView(CurrentWorkspacePath is { } ws ? Path.GetDirectoryName(ws) : null);
+        settings.SelectTab("Plugins");
+        settings.Show(owner);
     }
 
     private async Task<PluginRunAnswer> RunPluginAsync(

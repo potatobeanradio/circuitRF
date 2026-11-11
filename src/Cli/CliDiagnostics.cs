@@ -5307,6 +5307,24 @@ internal static class CliDiagnostics
               "grant it — not the command line, not a tool call. Ask them to, then try again.",
         ("id", id), ("name", name), ("decision", decision), ("directory", directory));
 
+    /// <summary>
+    /// After <c>plugin install</c> (brief-plg-6 §5): installed, and not allowed — the same id as a refused run, at warning
+    /// severity, so an agent relays it. An install never allows.
+    /// </summary>
+    public static Diagnostic PluginInstalledNeedsUser(string id, string name, string directory) => Diagnostic.Create(
+        "plugin.permission.needs-user", DiagnosticSeverity.Warning,
+        "{name} ({id}) is installed, and it will not run until the person allows it in circuitRF: Settings ▸ Plugins lists " +
+        "it as installed outside circuitRF, or Tools ▸ Plugins asks when they open it. Nothing else can grant it — not the " +
+        "command line, not a tool call.",
+        ("id", id), ("name", name), ("directory", directory));
+
+    /// <summary>An install, update, roll back or uninstall that did nothing, and why. Nothing is left half-done.</summary>
+    public static Diagnostic PluginInstallRefused(string noun, string why) => Diagnostic.Create(
+        "cli.plugin.install-refused", DiagnosticSeverity.Error, "plugin {noun}: {why}", ("noun", noun), ("why", why));
+
+    public static Diagnostic PluginInstallCancelled(string noun) => Diagnostic.Create(
+        "cli.plugin.install-cancelled", DiagnosticSeverity.Error, "plugin {noun}: cancelled; nothing was installed.", ("noun", noun));
+
     /// <summary><c>plugin allow</c>: there is no such noun, on purpose.</summary>
     public static Diagnostic PluginAllowOnlyInTheWindow() => Diagnostic.Create(
         "plugin.permission.window-only", DiagnosticSeverity.Error,

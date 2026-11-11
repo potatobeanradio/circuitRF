@@ -59,16 +59,19 @@ public static class PluginCatalog
         if (sources.PluginsRoot is { } root && Directory.Exists(root))
             foreach (string idDir in SafeDirectories(root))
             {
+                // A '.partial' folder is an install in progress or one that failed: never listed (brief-plg-6 §1).
                 var versions = SafeDirectories(idDir)
+                    .Where(v => !v.EndsWith(PluginInstaller.PartialSuffix, StringComparison.Ordinal))
                     .Where(v => File.Exists(Path.Combine(v, PluginManifestReader.FileName)))
                     .Select(v => Read(v, PluginSource.Installed))
                     .ToList();
                 if (versions.Count == 0) continue;
 
                 string id = Path.GetFileName(idDir);
-                string? active = sources.ActiveVersions?.GetValueOrDefault(id);
+                // active.json beside the versions is the record (brief-plg-6 §1); the preference is the older one.
+                string? active = PluginInstaller.ReadActive(idDir)?.Active ?? sources.ActiveVersions?.GetValueOrDefault(id);
                 var chosen = versions.FirstOrDefault(v => active is not null && string.Equals(Path.GetFileName(v.Directory), active, StringComparison.Ordinal))
-                             ?? versions.OrderByDescending(v => v.Manifest?.Version ?? Path.GetFileName(v.Directory), VersionComparer.Instance).First();
+                             ?? versions.OrderByDescending(v => v.Manifest?.Version ?? Path.GetFileName(v.Directory), PluginVersions.Comparer).First();
                 entries.Add(chosen);
             }
 
@@ -101,34 +104,5 @@ public static class PluginCatalog
     {
         try { return Directory.GetDirectories(dir).Where(d => !Path.GetFileName(d).StartsWith('.')); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
-    }
-
-    /// <summary>Dotted numeric parts compared as numbers ("0.10.0" after "0.9.1"); a pre-release suffix sorts
-    /// before its release; anything unparseable compares as text.</summary>
-    private sealed class VersionComparer : IComparer<string>
-    {
-        public static readonly VersionComparer Instance = new();
-
-        public int Compare(string? a, string? b)
-        {
-            a ??= ""; b ??= "";
-            var (ah, apre) = Split(a); var (bh, bpre) = Split(b);
-            string[] ap = ah.Split('.'), bp = bh.Split('.');
-            for (int i = 0; i < Math.Max(ap.Length, bp.Length); i++)
-            {
-                string x = i < ap.Length ? ap[i] : "0", y = i < bp.Length ? bp[i] : "0";
-                int c = long.TryParse(x, out long xn) && long.TryParse(y, out long yn) ? xn.CompareTo(yn) : string.CompareOrdinal(x, y);
-                if (c != 0) return c;
-            }
-            if (apre is null) return bpre is null ? 0 : 1;
-            if (bpre is null) return -1;
-            return string.CompareOrdinal(apre, bpre);
-        }
-
-        private static (string Head, string? Pre) Split(string v)
-        {
-            int dash = v.IndexOf('-');
-            return dash < 0 ? (v, null) : (v[..dash], v[(dash + 1)..]);
-        }
     }
 }

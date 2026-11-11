@@ -1021,12 +1021,67 @@ public static class AppPreferencesIo
         }
     }
 
-    private static void WriteLocked(AppPreferences prefs)
+    /// <summary>
+    /// brief-plg-6 §4 — the keys whose authority is the FILE, never this in-process copy. <c>circuitRF plugin deny</c>
+    /// (and <c>plugin install --link</c>, <c>uninstall</c>) merge them into <c>preferences.json</c> while the window may be
+    /// open; a whole-file save that wrote its own copy of them back would silently undo a revoked permission — a plugin
+    /// the person denied would become allowed again. So every write keeps the file's value of each, and the window
+    /// changes one only through <see cref="UpdatePluginTrust"/>, which merges a single key.
+    /// </summary>
+    private static readonly string[] FileOwnedKeys =
+        [CircuitRF.Design.Plugins.PluginTrustStore.PreferenceKey, CircuitRF.Design.Plugins.PluginPreferences.LinksKey];
+
+    /// <summary>
+    /// Records one plugin decision — <paramref name="directoryKey"/> allowed, denied, or (null) forgotten — merged into
+    /// the trust table AS THE FILE HOLDS IT NOW, every other row kept. The window's only way to change that table.
+    /// </summary>
+    public static void UpdatePluginTrust(string directoryKey, bool? allowed)
+    {
+        lock (_gate)
+        {
+            WriteLocked(Shared(), owned =>
+            {
+                string table = CircuitRF.Design.Plugins.PluginTrustStore.PreferenceKey;
+                var rows = owned[table] as System.Text.Json.Nodes.JsonObject ?? [];
+                foreach (string k in System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(rows, kv => kv.Key)))
+                    if (string.Equals(k, directoryKey, StringComparison.OrdinalIgnoreCase)) rows.Remove(k);
+                if (allowed is { } a) rows[directoryKey] = a;
+                owned[table] = rows.Count == 0 ? null : rows.DeepClone();
+            });
+        }
+    }
+
+    private static void WriteLocked(AppPreferences prefs, Action<System.Text.Json.Nodes.JsonObject>? editFileOwned = null)
     {
         try
         {
             Directory.CreateDirectory(PrefsDir);
-            File.WriteAllText(PrefsPath, JsonSerializer.Serialize(prefs, JsonOpts));
+            var node = JsonSerializer.SerializeToNode(prefs, JsonOpts) as System.Text.Json.Nodes.JsonObject ?? [];
+
+            // The file-owned keys come from the file as it is now. Only with no readable file at all — the first write
+            // on this machine — is the in-process copy the best answer there is.
+            System.Text.Json.Nodes.JsonObject? onDisk = null;
+            try
+            {
+                if (File.Exists(PrefsPath)) onDisk = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(PrefsPath)) as System.Text.Json.Nodes.JsonObject;
+            }
+            catch (JsonException) { }
+            var owned = new System.Text.Json.Nodes.JsonObject();
+            foreach (string key in FileOwnedKeys)
+                if ((onDisk ?? node)[key] is { } value) owned[key] = value.DeepClone();
+            editFileOwned?.Invoke(owned);
+
+            foreach (string key in FileOwnedKeys)
+            {
+                node.Remove(key);
+                if (owned[key] is { } value) node[key] = value.DeepClone();
+            }
+            File.WriteAllText(PrefsPath, node.ToJsonString(JsonOpts));
+
+            // The in-process copy follows what was written, so a later read in this window answers the same.
+            prefs.PluginTrust = owned[CircuitRF.Design.Plugins.PluginTrustStore.PreferenceKey]?.Deserialize<Dictionary<string, bool>>(JsonOpts) is { } t
+                ? new Dictionary<string, bool>(t, StringComparer.OrdinalIgnoreCase) : null;
+            prefs.PluginLinkedFolders = owned[CircuitRF.Design.Plugins.PluginPreferences.LinksKey]?.Deserialize<List<string>>(JsonOpts);
         }
         catch { /* non-critical — preference loss is recoverable */ }
     }

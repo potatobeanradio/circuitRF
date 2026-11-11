@@ -2,12 +2,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+        xmlns:plg="clr-namespace:CircuitRF.Ui.Plugins"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Dialogs.SettingsView"
         Title="circuitRF Settings"
-        Width="720"
+        Width="790"
         Height="640"
-        MinWidth="720"
+        MinWidth="790"
         MinHeight="440"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -78,7 +79,10 @@
 
                  The SEVENTH header took the second route: "Solvers" (brief-em3d-6, first headed "3D EM"),
                  estimated at ~66 px, ~6 px spare — see that tab's own comment for how the estimate was
-                 made and that it was not measured. An eighth header will not fit at 720. -->
+                 made and that it was not measured. An eighth header will not fit at 720.
+
+                 The EIGHTH header is "Plugins" (brief-plg-6), ~62 px by the same estimate, so MinWidth and Width are
+                 790: 762 px usable against ~748 px of headers. -->
             <TabControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -359,6 +363,18 @@
                         <dlg:VerilogACompilerSettingsView Margin="0,24,0,0"/>
 
                     </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Plugins tab (brief-plg-6 §4) ───────────────────────────────
+                 Between Security & Permissions and Revision Control: whether plugins may run, a box to paste a
+                 GitHub or GitLab link into, the installed plugins with each one's permission, and circuitRF's vetted
+                 list. With the first-run prompt, the ONLY place a plugin is allowed to run (plugins.md §9.4). The
+                 controls live in PluginsSettingsView, built in code beside the other plugin dialogs. The EIGHTH
+                 header, so MinWidth rose from 720 to 790 (see the note at the top of this TabControl). -->
+            <TabItem Header="Plugins">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <plg:PluginsSettingsView Name="PluginsSettings"/>
                 </ScrollViewer>
             </TabItem>
 

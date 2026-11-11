@@ -15,6 +15,9 @@ public static class PluginsMenu
 {
     public const string Empty = "No plugins installed";
 
+    /// <summary>The last row of Tools ▸ Plugins: opens Settings ▸ Plugins (brief-plg-6 §4).</summary>
+    public const string Manage = "Manage Plugins…";
+
     /// <summary>The rows, grouped: (group or null for the top level, entries).</summary>
     public static IReadOnlyList<(string? Group, IReadOnlyList<PluginEntry> Entries)> Groups(IReadOnlyList<PluginEntry> entries)
         => entries
@@ -36,9 +39,25 @@ public static class PluginsMenu
     }
 
     /// <summary>Refills an in-window submenu. Its <c>Items</c> are replaced; the item itself is kept.</summary>
-    public static void Fill(MenuItem target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open)
+    public static void Fill(MenuItem target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open, Action? manage = null)
     {
         target.Items.Clear();
+        if (manage is not null)
+        {
+            // Filled first, then moved to the end, so every return below still leaves it there.
+            var item = new MenuItem { Header = Manage };
+            ToolTip.SetTip(item, "Install, update, allow and remove plugins — Settings ▸ Plugins.");
+            item.Click += (_, _) => manage();
+            FillRows(target, entries, open);
+            target.Items.Add(new Separator());
+            target.Items.Add(item);
+            return;
+        }
+        FillRows(target, entries, open);
+    }
+
+    private static void FillRows(MenuItem target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open)
+    {
         if (entries.Count == 0) { target.Items.Add(new MenuItem { Header = Empty, IsEnabled = false }); return; }
 
         foreach (var (group, rows) in Groups(entries))
@@ -63,9 +82,19 @@ public static class PluginsMenu
 
     /// <summary>Refills a native submenu. Only its <c>Items</c> change — a window's <c>NativeMenu</c> objects are fixed
     /// for its lifetime (<c>src/Ui/CLAUDE.md</c>).</summary>
-    public static void Fill(NativeMenu target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open)
+    public static void Fill(NativeMenu target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open, Action? manage = null)
     {
         target.Items.Clear();
+        FillRows(target, entries, open);
+        if (manage is null) return;
+        var item = new NativeMenuItem(Manage);
+        item.Click += (_, _) => manage();
+        target.Items.Add(new NativeMenuItemSeparator());
+        target.Items.Add(item);
+    }
+
+    private static void FillRows(NativeMenu target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open)
+    {
         if (entries.Count == 0) { target.Items.Add(new NativeMenuItem(Empty) { IsEnabled = false }); return; }
 
         foreach (var (group, rows) in Groups(entries))

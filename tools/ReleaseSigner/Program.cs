@@ -33,6 +33,7 @@ internal static class Program
                 "manifest" => Manifest(args),
                 "sign"     => Sign(args),
                 "verify"   => Verify(args),
+                "sign-index" => SignIndex(args),
                 _          => Usage(),
             };
         }
@@ -64,6 +65,11 @@ internal static class Program
 
               verify <update-manifest.json> <update-manifest.json.sig> <public-key-base64>
                   What the client does. Run it against the files you are about to upload.
+
+              sign-index <plugins/index.json> <private-key.pem>
+                  Signs the vetted plugin list (brief-plg-6). Writes plugins/index.json.sig beside it,
+                  over the file's exact bytes. Commit BOTH in the PR that changes the list: circuitRF's
+                  Refresh uses the list on main only when this signature verifies with the release key.
             """);
         return 1;
     }
@@ -164,6 +170,31 @@ internal static class Program
 
         Console.WriteLine($"{outPath} written. Upload it with {Path.GetFileName(args[1])}.");
         Console.WriteLine("Both must be attached to the release, under exactly those names.");
+        return 0;
+    }
+
+    /// <summary>
+    /// The vetted plugin list's signature (brief-plg-6 §2) — the same scheme as the manifest, so the release key that
+    /// already guards updates guards the list, and a compromised mirror cannot add an entry. The list is checked for
+    /// being JSON with a "plugins" array first: signing a broken file would ship a list every client refuses.
+    /// </summary>
+    private static int SignIndex(string[] args)
+    {
+        if (args.Length < 3) return Usage();
+        byte[] list = File.ReadAllBytes(args[1]);
+        if (JsonNode.Parse(list) is not JsonObject root || root["plugins"] is not JsonArray)
+        {
+            Console.Error.WriteLine($"error: {args[1]} is not a plugin list (a JSON object with a \"plugins\" array).");
+            return 1;
+        }
+
+        using ECDsa key = ECDsa.Create();
+        key.ImportFromPem(File.ReadAllText(args[2]));
+        byte[] sig = key.SignData(list, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+
+        string outPath = args[1] + ".sig";
+        File.WriteAllText(outPath, Convert.ToBase64String(sig));
+        Console.WriteLine($"{outPath} written. Commit it with {Path.GetFileName(args[1])}; edit neither after signing.");
         return 0;
     }
 
