@@ -451,11 +451,24 @@ public static class CrossSectionExtractor
         var raw     = new List<(double Bottom, double Top, EmMaterial Mat, string Name)>();
         double prev = stack[0].BottomM;
 
-        foreach (var b in stack)
+        for (int k = 0; k < stack.Count; k++)
         {
+            var b = stack[k];
             if (b.Layer.Kind != StackupKind.Dielectric) continue;
             var mat = new EmMaterial(b.Layer.Epsr, b.Layer.TanD, b.Layer.Mur <= 0 ? 1.0 : b.Layer.Mur);
-            raw.Add((prev - groundM, b.TopM - groundM, mat, b.Layer.Name));
+
+            // PSV-1b — a CONFORMAL dielectric starts on top of the conductor directly below it, and
+            // that conductor's band is air beside the metal. The kernel meshes the real metal, so
+            // this is the 3D model exactly. Any band further down is still absorbed as before.
+            double start = prev;
+            if (k > 0 && stack[k - 1] is var c && c.BottomM >= prev - 1e-15 &&
+                Stackup.LeavesBandAsAir(c.Layer, b.Layer))
+            {
+                if (c.BottomM > prev + 1e-15) raw.Add((prev - groundM, c.BottomM - groundM, mat, b.Layer.Name));
+                raw.Add((c.BottomM - groundM, c.TopM - groundM, EmMaterial.Air, "Air"));
+                start = c.TopM;
+            }
+            raw.Add((start - groundM, b.TopM - groundM, mat, b.Layer.Name));
             prev = b.TopM;
         }
 

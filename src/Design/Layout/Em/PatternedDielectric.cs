@@ -331,7 +331,7 @@ internal static class PatternedDielectric
         DrawingLayers = [.. l.DrawingLayers],
         Films = l.Films,
         IsGroundReference = l.IsGroundReference, SheetAt = l.SheetAt,
-        PresentWithLayer = l.PresentWithLayer,
+        PresentWithLayer = l.PresentWithLayer, Conformal = l.Conformal,
         Fill = l.Fill, WallThicknessDbu = l.WallThicknessDbu,
         SpanFromLayer = l.SpanFromLayer, SpanToLayer = l.SpanToLayer,
     };

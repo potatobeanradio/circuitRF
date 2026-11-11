@@ -13465,3 +13465,34 @@ Worst |ΔS| from 1 to 40 GHz, sweep on a 40 GHz mesh:
 **On a layer not shielded by the crossover, the top two thirds below the crossover: 9.1 to 27 GHz on this stack.** γ has no dispersion there, phase reads about 2 % low and loss about 3 % low. |ΔS| is proportional to line length, so a longer line reads worse than the 0.035 measured here. Skin depth at the crossover against half the layer's thickness is what separates 1e4 S/m (0.3, reads 0.014) from 1000 S/m (0.96, reads 0.034). 100 S/m is in tolerance on this line and warned anyway, because the mechanism is the same.
 
 **A finer mesh does move the measured γ toward Palace** at 1000 S/m and 20 GHz: 523 + j3164 at 20 cells per wavelength, 546 + j3203 at 40 and 553 + j3213 at 80. The quasi-static γ does not move. So the mesh's own λ, taken from εᵣ, is too long on a slow wave, and a mesh sized from `EstimatedBetaAt` is what would be worth measuring next. Not done: it changes the DUT's mesh, which this brief did not set out to do.
+
+## Kernel A: an interface running across a conductor kept its refinement off the conductor (brief-psv-1b R-psv1b-0, 2026-11-10)
+
+- **`BoundaryMesher.PartitionFractions` rescaled every breakpoint by length/last when the walk overshot the
+  interval's end.** The last step is the coarsest of the walk, so the overshoot is a large fraction of a tail
+  cell: 8 % of the interval at the default mesh, 20 % with finer interface cells. The rescale is about the
+  interval's start. That is harmless when the grading is anchored at either end (an interface interval that
+  starts or stops at a conductor edge, a conductor perimeter), and every kernel-A number in `HISTORY.md` was
+  taken on such intervals. It is not harmless when the attractor is INSIDE the interval: a dielectric interface
+  running across a conductor (a cover above the metal, an interface below the strip) is one ±2 mm interval, and
+  its conductor-edge refinement moved ~170 µm to one side. The cells over the metal were then whatever the
+  displaced grading left there.
+- **Symptom:** 1 µm εᵣ 7 nitride over a 20 × 3 µm gold line on 100 µm GaAs read ε_eff 8.42, 7.98, 8.18, 8.41,
+  7.92, 9.88 as MinCellsAcrossWidth went 6, 8, 10, 12, 16, 24; capping the interface cells at a quarter of the
+  1 µm gap gave 5.61, below the uncovered line's 7.36. A thicker cover only hides it (10 µm: 8.46 … 8.85). The
+  panel integrals are exact; the thin layer was a red herring, and a slab with no metal near it was stable.
+- **Fix:** `PartitionFractions(cutOvershoot: true)` CUTS the last step at the end (a sliver is merged into the
+  cell before it) instead of rescaling. `AddInterfaceSegments` passes it only for an interval with an attractor
+  strictly inside it, so an ordinary microstrip, a coupled pair and every conductor perimeter mesh exactly as
+  before (bare line 7.3569 before and after). Covered line, after: 7.971 / 7.975 / 7.979 / 7.978 at Refined
+  1/2/4/8, and 7.965 … 7.981 across MinCellsAcrossWidth 6 … 24; truncation 20 vs 60 heights moves it 0.01 %.
+- **Kernel A against Palace on that line** (Palace electrostatic, Accurate, 1 mm padding): uncovered 7.389
+  (Refined 8) vs 7.586; the cover's effect on ε_eff +8.3 % absorbed vs +6.8 %, +1.8 % conformal vs +2.2 %; on Z₀
+  −3.9 % vs −3.2 % and −0.9 % vs −1.1 %. The +14.5 % this cover used to read was this defect. Palace's own
+  absolute ε_eff moved ~1 % with quality and box size here (bare 7.693 Standard/0.5 mm, 7.640 Accurate/0.5 mm,
+  7.586 Accurate/1 mm), so "within kernel A's own uncovered disagreement" is not a sharp test: conformal sits
+  3.5 % below Palace at the default mesh against 3.2 % uncovered.
+- **Existing gates:** 203 kernel-A tests in `Engine.Tests/Mom` unchanged. PSV-1's covered RO4350B line (a 25 µm
+  mask, whose top interface crosses the line) moved on the kernel-A side only: covered A ε_eff 2.9731, B − A
+  +0.79 % ε_eff / +2.71 % Z₀ (was +0.94 % / +2.64 %), inside the 4 % gate.
+- Gate: `tests/Engine.Tests/Mom/InterfaceAcrossConductorTests.cs`.

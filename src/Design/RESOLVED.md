@@ -29604,6 +29604,40 @@ plane and the bottom copper and none with the pour.
   tools/plugin-examples/stub` (with `--plugin-tab`, `--plugin-drag-marker`, `--plugin-drag-handle`) and
   `--plugin-image`.
 
+## A conformal cover starts on top of the metal (brief-psv-1b, 2026-11-10)
+
+- **`StackupLayer.Conformal`** (`bool?`, written only when set) and **`Stackup.LeavesBandAsAir(conductor,
+  dielectricAbove)`**, the one statement of the rule: the band is air when the dielectric directly above is
+  conformal and the conductor's sheet is at its band's bottom. Every reader calls it: `PlanarExtractor.
+  BuildMediumStack` (only when the absorbing neighbour is the one ABOVE in stackup order — a flipped run fills the
+  band from the stackup's other side, and a conformal cover there was never going to fill it), `CrossSectionExtractor.
+  BuildRegions` (and through it `TraceCrossSection`), `Em3dLayoutSolids`' inner-band absorption, `StackupScene`'s
+  "conformal" tag, the EM setup panel's stack summary, and the stackup editor's checkbox. `MmicStack.Gap` already
+  counts a conductor band as air, and `ComponentEmExtraction` does not restate the rule. `PatternedDielectric.Clone`
+  and `TechnologyMerge` carry the field.
+- **Planar:** the band is an εᵣ 1 region with no "taken as free space" note; the trim at the top of the stack
+  cannot reach it because the cover is above it. The cover note adds where the cover starts.
+- **The stackup drawing needed no geometry change:** every band is drawn on the one below, so a cover already
+  starts at the metal's top there. What it could not show was that the solvers model it so, hence the tag, shown
+  only where the setting acts.
+- **Gates, measured on 1 µm εᵣ 7 nitride over a 20 × 3 µm gold line on 100 µm GaAs:**
+  - 3D (Palace electrostatic, Accurate, PMC end walls, 1 mm padding): the layout-built problem's nitride solid is
+    z = metal top … +1 µm with air beside the metal. Its C is 5.0364e-14 F against 5.0371e-14 F for a hand-built
+    `.c3d` with a 1 µm slab on top of the metal at the same settings (0.014 %); unset, 5.2525e-14 F against a
+    hand-built 4 µm slab's 5.2581e-14 F (0.11 %). ε_eff 7.778 conformal, 8.112 absorbed, 7.586 bare (the brief's
+    7.760 / 8.117 / 7.597). Palace's absolute ε_eff moves ~1 % with quality and box size on this line, so compare
+    like with like.
+  - Planar (1 GHz): Z₀ 79.44 bare, 76.91 absorbed (−3.18 %), 79.05 conformal (−0.50 %); Palace −1.1 %.
+  - Cross-section: see `src/Engine/Mom/RESOLVED.md` — R-psv1b-0 found kernel A's interface mesher displaced the
+    refinement of a cover's interface, which is where its +14.5 % came from; fixed there. Conformal now +1.83 %
+    ε_eff / −0.90 % Z₀ at the default mesh against Palace's +2.2 % / −1.1 %, but 3.5 % below Palace absolutely
+    against 3.2 % uncovered, so the brief's gate 4 misses by 0.3 points, inside Palace's own ~1 % spread.
+  - A solder mask (field unset) on the RO4350B starter: the planar side of PSV-1's gate 2 is unchanged; kernel A's
+    side moved with the mesher fix (above).
+- Gates: `tests/Ui.Tests/Em/ConformalCoverTests.cs`, `tests/Engine.Tests/Mom/InterfaceAcrossConductorTests.cs`; the
+  solves are recorded here rather than tested (no new Benchmark test in this series). Editor:
+  `tools/UiSnapshot --ctech <tech> --tab 1`.
+
 ## Plugin host services and window plugins (brief-plg-4, 2026-11-10)
 
 - **`simulate`, a `reference` and an expression in a document are the CLI's verbs, run in-process.** The run they must

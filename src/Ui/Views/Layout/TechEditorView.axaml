@@ -1172,6 +1172,16 @@
                                                           ItemsSource="{Binding PresentWithChoices}"
                                                           SelectedItem="{Binding SelectedPresentWith, Mode=TwoWay}"
                                                           ToolTip.Tip="{x:Static lay:StackupCardText.PresentWithTip}"/>
+                                                <!-- PSV-1b. Always present on a dielectric card, enabled only where it
+                                                     acts, so the card never changes height; the tooltip says why when
+                                                     it is disabled (ShowOnDisabled). -->
+                                                <CheckBox Content="{x:Static lay:StackupCardText.Conformal}" FontSize="11"
+                                                          Margin="8,0,0,0" VerticalAlignment="Center"
+                                                          IsChecked="{Binding IsConformal, Mode=TwoWay}"
+                                                          IsEnabled="{Binding CanToggleConformal}"
+                                                          ToolTip.ShowOnDisabled="True"
+                                                          ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
+                                                          ToolTip.Tip="{Binding ConformalTip}"/>
                                             </StackPanel>
 
                                             <!-- Via span (R-via-3). Shown ONLY for a via, and shown at

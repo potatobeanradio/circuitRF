@@ -3109,6 +3109,12 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                                                        c.Name == plate)
                             ? $" · patterned with {plate} (air unless that level is analysed)"
                             : $" · patterned by the {plate} mask (air unless the layout draws it)"
+                        : "") +
+                    // PSV-1b — only where it acts, as the stackup drawing says it.
+                    (l.Conformal == true &&
+                     tech.Stackup.BandBeneath(tech.Stackup.Layers.IndexOf(l)) is { } beneath &&
+                     Stackup.LeavesBandAsAir(beneath, l)
+                        ? $" · conformal (starts on top of {beneath.Name})"
                         : ""),
                 StackupKind.Conductor =>
                     $"σ {l.SigmaSm.ToString("G4", CultureInfo.InvariantCulture)} S/m" +

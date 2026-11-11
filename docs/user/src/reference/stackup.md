@@ -224,6 +224,7 @@ which removes the entry.
 | **µ<sub>r</sub>** | Relative permeability — 1 for everything that is not a magnetic material. |
 | **σ** | Bulk conductivity, for a [conducting substrate](#conducting-substrate). Read in `S/m` or `Ω·cm`; the file states S/m. `—` means none. |
 | **Patterned with** | `(none)` for an ordinary, laterally continuous dielectric, which is what all three on this board are. Naming a conductor here says *this film exists only where that metal's artwork is* — the thin-film capacitor case, described in [The capacitor dielectric rides along only when its plate is analysed](#mim-tied). |
+| **Conformal** | For a coat deposited over the metal directly below, such as passivation: it starts on top of that metal, and the space beside the metal, in the metal's own layer, is air in every EM solver. Unticked, that space is filled with this dielectric, which suits a solder mask that flows between traces. Enabled only directly above a conductor whose **Metal thickness goes to** the layer above; the drawing tags the layer *conformal*. What it changes, measured: [the MoM engine](mom-engine.html#can-cannot). |
 
 **A dielectric has no drawing layer, and there is no picker for one.** It is not drawn: it is a sheet
 of material spanning the whole problem at its stated thickness.

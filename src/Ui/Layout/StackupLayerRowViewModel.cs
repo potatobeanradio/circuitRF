@@ -641,6 +641,61 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         }
     }
 
+    // ── PSV-1b — a conformal cover starts on top of the metal below it ──────────────────────────
+    //
+    // A checkbox: the field is a flag and its absence, and null is what every technology before it
+    // means. Written as null rather than false when cleared, so a technology that never had an opinion
+    // round-trips through the editor byte for byte. Enabled only where it acts — directly above a
+    // conductor whose metal thickness goes to the layer above — and left enabled while it is SET
+    // anywhere else, so a box the stack no longer honours can still be cleared. The box is always on a
+    // dielectric card, enabled or not, so the card's height never changes.
+    public bool IsConformal
+    {
+        get => Layer.Conformal == true;
+        set
+        {
+            if (IsConformal == value) return;
+            if (_isRefreshing) { OnPropertyChanged(); return; }
+            var before = _owner.SnapshotJson();
+            Layer.Conformal = value ? true : null;
+            _owner.CommitEdit(before, value ? $"Make {Layer.Name} conformal" : $"Make {Layer.Name} fill beside the metal");
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>The conductor whose band this dielectric would leave as air, or null where the setting
+    /// would have no effect — the same rule every solver reads (<see cref="Stackup.LeavesBandAsAir"/>).</summary>
+    private StackupLayer? ConformalOver()
+    {
+        var stackup = _owner.Working.Stackup;
+        int i = stackup.Layers.IndexOf(Layer);
+        return IsDielectric && i >= 0 && stackup.BandBeneath(i) is { Kind: StackupKind.Conductor } c &&
+               (c.SheetAt ?? ConductorSheetSurface.Bottom) != ConductorSheetSurface.Top ? c : null;
+    }
+
+    public bool CanToggleConformal => ConformalOver() is not null || IsConformal;
+
+    /// <summary>The card's tooltip: what the box does where it acts, and why it does nothing where it
+    /// does not.</summary>
+    public string ConformalTip
+    {
+        get
+        {
+            var stackup = _owner.Working.Stackup;
+            int i = stackup.Layers.IndexOf(Layer);
+            var beneath = i >= 0 ? stackup.BandBeneath(i) : null;
+            return beneath switch
+            {
+                null or not { Kind: StackupKind.Conductor } =>
+                    StackupCardText.ConformalTip + " " + StackupCardText.ConformalNoConductor,
+                { SheetAt: ConductorSheetSurface.Top } =>
+                    StackupCardText.ConformalTip + " " + string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture, StackupCardText.ConformalSheetAtTop, beneath.Name),
+                _ => StackupCardText.ConformalTip,
+            };
+        }
+    }
+
     [ObservableProperty] private string _stagedWallThickness = "";
 
     public IRelayCommand RemoveCommand   { get; }
@@ -757,6 +812,11 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         bool presentChanged  = Restate(ref _presentWithChoices, ComputePresentWithChoices(), nameof(PresentWithChoices));
         SelectedPresentWith  = Layer.PresentWithLayer is { Length: > 0 } p ? p : SpanNone;
         if (presentChanged) OnPropertyChanged(nameof(SelectedPresentWith));
+        // PSV-1b — read from the entry and from its neighbour below, either of which an edit, undo or
+        // move may have changed.
+        OnPropertyChanged(nameof(IsConformal));
+        OnPropertyChanged(nameof(CanToggleConformal));
+        OnPropertyChanged(nameof(ConformalTip));
 
         // The drawing-layer lists are rebuilt only when the technology's drawing layers changed; a
         // rebound row otherwise keeps its items and updates their ticks in place, so neither the combo

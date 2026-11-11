@@ -327,6 +327,28 @@ public static class TechValidation
                         "conductor whose artwork the film is deposited under."));
             }
 
+            // PSV-1b — Conformal acts on one band: the conductor directly beneath this dielectric, when
+            // R-em-4a would fill that band from above. Anywhere else it does nothing, and says so.
+            if (sl.Conformal == true)
+            {
+                var beneath = tech.Stackup.BandBeneath(tech.Stackup.Layers.IndexOf(sl));
+                string? why =
+                    sl.Kind != StackupKind.Dielectric
+                        ? $"Stackup layer \"{sl.Name}\" is a {sl.Kind} entry marked Conformal. Only a dielectric " +
+                          "can be a conformal coat, so the setting is ignored."
+                    : beneath is not { Kind: StackupKind.Conductor }
+                        ? $"Dielectric \"{sl.Name}\" is marked Conformal, but the entry directly below it is not a " +
+                          "conductor, so there is no metal for it to start on top of and the setting has no effect."
+                    : !Stackup.LeavesBandAsAir(beneath, sl)
+                        ? $"Dielectric \"{sl.Name}\" is marked Conformal, but \"{beneath.Name}\" below it puts its " +
+                          "metal thickness into the layer below (Metal thickness goes to: the substrate below), so " +
+                          "its band is filled from below and the setting has no effect."
+                    : null;
+                if (why is not null)
+                    problems.Add(new(TechProblemArea.Stackup, why,
+                        Id: Ids.ConformalNoEffect, Severity: DiagnosticSeverity.Warning));
+            }
+
             // GI1 R-gi1-2/R-gi1-3: a via entry that is NOT PLATED connects nothing, by definition —
             // it is a hole, not a vertical conductor — so a missing span is its correct state and not
             // a problem to report. The same is true of a routed layer, which reaches this as
@@ -425,6 +447,8 @@ public static class TechValidation
         public const string MaterialMissingProperty = "tech.material.missing-property";
         public const string MaterialPartial         = "tech.material.partial";
         public const string DielectricTanDAndSigma  = "tech.stackup.tand-and-sigma";
+        /// <summary>brief-psv-1b — <c>Conformal</c> on an entry where it changes nothing (warning).</summary>
+        public const string ConformalNoEffect       = "tech.stackup.conformal-no-effect";
         public const string MaterialDisagrees       = "tech.material.disagrees";
         public const string MaterialInvalid         = "tech.material.invalid";
         /// <summary>brief-em3d-73 R-em3d73-2b — a σ(T) or k(T) table disagreeing with its own constant at 20 °C (warning).

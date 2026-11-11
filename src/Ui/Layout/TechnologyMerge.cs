@@ -174,7 +174,9 @@ public static class TechnologyMerge
         // MIM-7, for the same reason: a dielectric tied to a plate is present only in runs that
         // analyse that plate, so two entries identical but for the tie are two different materials
         // in every interconnect run.
-        (s.PresentWithLayer is { Length: > 0 } plate ? $", patterned with {plate}" : "");
+        (s.PresentWithLayer is { Length: > 0 } plate ? $", patterned with {plate}" : "") +
+        // PSV-1b, for MIM-6's reason: it changes what fills the metal band beneath it.
+        (s.Conformal == true ? ", conformal" : "");
 
     private static string Describe(DrcRule r)
     {
@@ -543,7 +545,7 @@ public static class TechnologyMerge
         Kind = s.Kind, Name = s.Name, ThicknessDbu = s.ThicknessDbu,
         Epsr = s.Epsr, TanD = s.TanD, Mur = s.Mur, SigmaSm = s.SigmaSm,
         DrawingLayers = [.. s.DrawingLayers], IsGroundReference = s.IsGroundReference,
-        SheetAt = s.SheetAt, PresentWithLayer = s.PresentWithLayer,
+        SheetAt = s.SheetAt, PresentWithLayer = s.PresentWithLayer, Conformal = s.Conformal,
         Fill = s.Fill, WallThicknessDbu = s.WallThicknessDbu,
         SpanFromLayer = s.SpanFromLayer, SpanToLayer = s.SpanToLayer,
     };

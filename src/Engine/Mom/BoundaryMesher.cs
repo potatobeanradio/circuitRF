@@ -346,7 +346,17 @@ public static class BoundaryMesher
     /// Walk an interval placing cells of the local target size, then rescale so the last cell lands
     /// exactly on the end. Returns cumulative fractions in (0, 1], last element exactly 1.
     /// </summary>
-    public static double[] PartitionFractions(double length, Func<double, double> sizeAt, int minCells)
+    /// <param name="cutOvershoot">PSV-1b — when the walk's last step overshoots the end, CUT that
+    /// step at the end instead of rescaling every breakpoint by length/last. The rescale is about the
+    /// interval's start, so it is harmless to a grading anchored at either end (the overshoot is then
+    /// either scaled toward the start or tiny) and every kernel-A number taken on it stands. It is
+    /// NOT harmless to an attractor inside the interval: at the default mesh it moved the refinement
+    /// ~8 % of the interval to one side, which on a dielectric interface running across a conductor
+    /// (a cover above the metal, an interface below it) put the fine cells hundreds of µm off the
+    /// metal and left the answer at the mercy of where they happened to land (±30 % on a 1 µm
+    /// nitride cover). The caller passes true for exactly that case.</param>
+    public static double[] PartitionFractions(double length, Func<double, double> sizeAt, int minCells,
+                                              bool cutOvershoot = false)
     {
         var xs = new List<double>();
         double x = 0;
@@ -363,7 +373,14 @@ public static class BoundaryMesher
         if (xs.Count == 0) xs.Add(length);
 
         double last = xs[^1];
-        if (last > 0)
+        if (cutOvershoot && last > length)
+        {
+            // The last step is the coarsest of the walk at an end far from every attractor; a sliver
+            // the cut leaves is merged into the cell before it.
+            xs[^1] = length;
+            if (xs.Count >= 3 && xs[^1] - xs[^2] < 0.5 * (xs[^2] - xs[^3])) xs.RemoveAt(xs.Count - 2);
+        }
+        else if (last > 0)
             for (int i = 0; i < xs.Count; i++) xs[i] = xs[i] * length / last;
 
         if (xs.Count < minCells)
@@ -462,7 +479,10 @@ public static class BoundaryMesher
         {
             double len = q - p;
             if (len <= tol) continue;
-            var fr = PartitionFractions(len, s => IfaceSize(p + s), minCells: 3);
+            // PSV-1b — an interval with an attractor strictly inside it (an interface running across a
+            // conductor) must not have its grading rescaled off that attractor; see PartitionFractions.
+            bool attractorInside = att.Any(x => x > p + tol && x < q - tol);
+            var fr = PartitionFractions(len, s => IfaceSize(p + s), minCells: 3, cutOvershoot: attractorInside);
             double prev = 0;
             foreach (double f in fr)
             {

@@ -58,6 +58,26 @@ public static class StackupCardText
         "way, a run that does not carry it puts air at the same thickness in its place and says so " +
         "in its notes. Leave as (none) for an ordinary, laterally continuous dielectric.";
 
+    // ── Dielectric: a conformal cover starts on top of the metal (PSV-1b) ─────────────────────────
+
+    public const string Conformal = "Conformal";
+
+    public const string ConformalTip =
+        "For a coat deposited conformally over the metal below it, such as passivation: it starts on " +
+        "top of the metal and its own thickness is all it is, so the space beside the metal, in the " +
+        "metal's own layer, is air. Unticked, that space is filled with this dielectric, which is " +
+        "right for a solder mask that flows into the gaps between traces. Every EM solver and the " +
+        "drawing follow this setting.";
+
+    public const string ConformalNoConductor =
+        "The entry directly below this one is not a conductor, so there is no metal for it to start on " +
+        "top of.";
+
+    /// <summary>{0} is the conductor's name.</summary>
+    public const string ConformalSheetAtTop =
+        "'{0}' below gives its metal thickness to the layer below it, so its band is filled from below " +
+        "and this setting would change nothing.";
+
     // ── Via: is the hole metal at all (GI1 R-gi1-2) ───────────────────────────────────────────────
 
     /// <summary>The card's own spelling, on its "Fill:" row where the word "Plated" sits beside the

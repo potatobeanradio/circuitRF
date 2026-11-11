@@ -955,7 +955,19 @@ public sealed class StackupScene
         // always there.
         if (layer.PresentWithLayer is { Length: > 0 } plate)
             g.Add($"patterned: {plate}", StackupField.None, StackupLabelStyle.Accent, font, QuantityGap);
+
+        // PSV-1b — every band is drawn on top of the one beneath it, so a conformal cover already
+        // starts at the metal's top here. What the picture cannot show is that the solvers model it so
+        // (the metal's band beside the trace is air, not this dielectric), so it says it, and only
+        // where the setting acts: a "conformal" on an entry it does nothing for would be untrue.
+        if (layer.Conformal == true &&
+            tech.Stackup.BandBeneath(tech.Stackup.Layers.IndexOf(layer)) is { } beneath &&
+            Stackup.LeavesBandAsAir(beneath, layer))
+            g.Add(ConformalText, StackupField.None, StackupLabelStyle.Accent, font, QuantityGap);
     }
+
+    /// <summary>The tag a conformal cover's band carries (PSV-1b).</summary>
+    public const string ConformalText = "conformal";
 
     /// <summary>
     /// The films' strips: each inside its conductor's band, flush with the face it sits on, and those on
@@ -1307,6 +1319,7 @@ public sealed class StackupScene
             if (layer.WallThicknessDbu is { } w) Token(ThicknessText(w, tech), specFont);
             if (layer.PresentWithLayer is { Length: > 0 } plate)
                 Token($"patterned: {plate}", specFont);
+            if (layer.Conformal == true) Token(ConformalText, specFont);
             if (layer.Films is { } films)
                 foreach (var film in films)
                 {

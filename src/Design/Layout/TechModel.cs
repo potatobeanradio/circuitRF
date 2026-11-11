@@ -302,6 +302,27 @@ public sealed class StackupLayer
     /// </summary>
     public string? PresentWithLayer { get; set; }
 
+    /// <summary>
+    /// brief-psv-1b-conformal-covers.md: this dielectric starts on TOP of the conductor directly
+    /// below it, and that conductor's band beside its metal is AIR — a conformal coat such as CVD
+    /// passivation, which is its own thickness everywhere rather than flowing into the gaps between
+    /// traces as a solder mask does.
+    ///
+    /// <para>Null (and false) is the rule every technology had before this field: a conductor band
+    /// with its sheet at the bottom is filled, where no metal is drawn, by the dielectric above it
+    /// (R-em-4a), so a cover over the top metal is modelled as the metal's thickness plus its own.
+    /// True changes only which neighbour fills that one band, in every solver and in the stackup
+    /// drawing; nothing else about this dielectric moves. It has no effect when the entry directly
+    /// below is not a conductor, or is a conductor whose sheet is at its band's top (that band is
+    /// filled from below). Read through <see cref="Stackup.LeavesBandAsAir"/>, the one statement of
+    /// the rule.</para>
+    ///
+    /// <para>Additive, nullable, no <c>.ctech</c> <c>FormatVersion</c> bump — the
+    /// <see cref="PresentWithLayer"/> pattern; written only when true. Meaningless (ignored, and
+    /// warned) on a non-Dielectric entry.</para>
+    /// </summary>
+    public bool? Conformal { get; set; }
+
     // ── Via (Kind == StackupKind.Via only) — additive, nullable, no .ctech FormatVersion bump ──────
 
     /// <summary>R-via-2. Null for any non-Via entry.</summary>
@@ -428,6 +449,32 @@ public sealed class Stackup
                 if (l.Kind != StackupKind.Via) total += l.ThicknessDbu;
             return total;
         }
+    }
+
+    /// <summary>
+    /// brief-psv-1b R-psv1b-1/2 — <b>the one statement of the <see cref="StackupLayer.Conformal"/>
+    /// rule</b>, read by every solver and by the stackup drawing: is <paramref name="conductor"/>'s
+    /// band, where no metal is drawn, AIR rather than the dielectric directly above it? True when that
+    /// dielectric is conformal and the conductor's sheet sits at its band's bottom — the case in which
+    /// R-em-4a would otherwise fill the band from above. A conductor whose sheet is at its band's top
+    /// is filled from below, and this changes nothing for it.
+    ///
+    /// <para>The caller states the adjacency: <paramref name="dielectricAbove"/> must be the entry
+    /// directly above <paramref name="conductor"/> in stack order, which is what every caller's own
+    /// band walk already knows.</para>
+    /// </summary>
+    public static bool LeavesBandAsAir(StackupLayer conductor, StackupLayer dielectricAbove) =>
+        conductor.Kind == StackupKind.Conductor &&
+        (conductor.SheetAt ?? ConductorSheetSurface.Bottom) != ConductorSheetSurface.Top &&
+        dielectricAbove is { Kind: StackupKind.Dielectric, Conformal: true };
+
+    /// <summary>The entry directly BENEATH <c>Layers[index]</c> that has a z band at all (a Via entry
+    /// has none and is skipped), or null at the bottom of the stack.</summary>
+    public StackupLayer? BandBeneath(int index)
+    {
+        for (int j = index + 1; j < Layers.Count; j++)
+            if (Layers[j].Kind != StackupKind.Via) return Layers[j];
+        return null;
     }
 }
 

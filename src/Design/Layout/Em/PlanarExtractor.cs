@@ -1429,14 +1429,18 @@ public static class PlanarExtractor
         bool lid = !flipped && tech.Stackup.Top == BoundaryCondition.Ground;
         bool continueAbove = !lid && planeAbove is null;
 
-        var (mediumStack, levelZ, stackNote, coverNames, coverM) =
+        var (mediumStack, levelZ, stackNote, coverNames, coverM, conformalCovers) =
             BuildMediumStack(stack, levels, groundTopM, floor, continueAbove);
         if (stackNote is not null) notes.Add(stackNote);
 
         if (coverNames.Count > 0)
             notes.Add(
                 $"The medium continues {FormatLength(coverM)} above '{levels[^1].Layer.Name}', the topmost " +
-                $"analysis level, through {string.Join(", ", coverNames.Select(n => $"'{n}'"))}.");
+                $"analysis level, through {string.Join(", ", coverNames.Select(n => $"'{n}'"))}." +
+                // PSV-1b — a conformal cover's height starts at the metal's top, and the run says where.
+                string.Concat(conformalCovers.Select(c =>
+                    $" '{c.Name}' is conformal: it starts on top of the metal, {FormatLength(c.StartM)} above " +
+                    $"'{levels[^1].Layer.Name}', with free space beside the metal.")));
 
         // R-msh-8a's offers are open-microstrip closed forms, which answer a different question
         // for a covered line; a wrong reference is worse than none, so a covered run makes none.
@@ -1950,8 +1954,13 @@ public static class PlanarExtractor
     /// <para><c>Covers</c> names the dielectric entries that put material other than free space
     /// above the topmost level, in stack order; <c>CoverM</c> is the medium's height above that
     /// level. Both are empty/zero when nothing is above it.</para>
+    ///
+    /// <para><c>Conformal</c> (PSV-1b) names each cover above the topmost level that starts on top of
+    /// the metal (<see cref="StackupLayer.Conformal"/>), with the height above that level at which it
+    /// starts: the band beneath it is free space in the medium.</para>
     /// </summary>
-    private static (LayerStack Stack, double[] LevelZ, string? Note, List<string> Covers, double CoverM)
+    private static (LayerStack Stack, double[] LevelZ, string? Note, List<string> Covers, double CoverM,
+                    List<(string Name, double StartM)> Conformal)
         BuildMediumStack(List<Band> bands, List<Band> levels, double groundTopM, Termination floor,
                          bool continueAbove)
     {
@@ -1985,6 +1994,7 @@ public static class PlanarExtractor
 
         var ordered = cuts.Where(z => z <= stackTop + 1e-15).OrderBy(z => z).ToList();
         var built = new List<(double Lo, double Hi, EmMaterial M, string? Name)>();
+        var conformal = new List<(string Name, double StartM)>();
         string? note = null;
 
         for (int i = 0; i + 1 < ordered.Count; i++)
@@ -2018,6 +2028,20 @@ public static class PlanarExtractor
                 host = metal is not null && SurfaceOf(metal.Layer) == ConductorSheetSurface.Top
                     ? dielectrics.FirstOrDefault(d => Math.Abs(d.TopM    - lo) <= 1e-15)
                     : dielectrics.FirstOrDefault(d => Math.Abs(d.BottomM - hi) <= 1e-15);
+
+                // PSV-1b — a CONFORMAL dielectric starts on top of the metal, so the band it would
+                // absorb is air: stated, not assumed, so no "taken as free space" note. Only when the
+                // absorbing neighbour is the one directly above in the STACKUP's order (a smaller
+                // Index): in a flipped run the band is filled from the stackup's other side, and a
+                // conformal cover there was never going to fill it.
+                if (metal is not null && host is not null && host.Index < metal.Index &&
+                    Stackup.LeavesBandAsAir(metal.Layer, host.Layer))
+                {
+                    built.Add((lo, hi, EmMaterial.Air, null));
+                    if (hi > topOfInterest + 1e-15 && !conformal.Any(c => c.Name == host.Layer.Name))
+                        conformal.Add((host.Layer.Name, hi - topOfInterest));
+                    continue;
+                }
             }
 
             if (host is null)
@@ -2069,7 +2093,7 @@ public static class PlanarExtractor
                 covers.Add(name);
         double coverM = built.Count > 0 && built[^1].Hi > topOfInterest ? built[^1].Hi - topOfInterest : 0.0;
 
-        return (new LayerStack(floor, layers, Termination.Air), levelZ, note, covers, coverM);
+        return (new LayerStack(floor, layers, Termination.Air), levelZ, note, covers, coverM, conformal);
     }
 
     /// <summary>The material of <see cref="Termination.Air"/>: εᵣ = 1, tan δ = 0, µᵣ = 1, σ = 0.</summary>

@@ -619,7 +619,9 @@ public static class Em3dLayoutSolids
                 if (below.Layer.Kind != StackupKind.Dielectric || above.Layer.Kind != StackupKind.Dielectric) continue;
                 if (SheetOnTop(c))
                     _dielZ[below.Index] = (_dielZ[below.Index].Bottom, c.TopM);
-                else
+                // PSV-1b — a CONFORMAL dielectric starts on top of the metal: the band beside it stays
+                // air, as an outer band already is.
+                else if (!Stackup.LeavesBandAsAir(c.Layer, above.Layer))
                     _dielZ[above.Index] = (c.BottomM, _dielZ[above.Index].Top);
             }
 
