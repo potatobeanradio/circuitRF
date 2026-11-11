@@ -119,8 +119,9 @@ not general 3D.
 - **Arbitrary planar shapes**: lines, bends, tapers, stubs, spirals, pads, coupled sections.
 - **Multiple metal levels**, with **vias** carrying z-directed current between them. A via is either
   a placed via primitive or a **drawn region** — a rectangle or polygon on the via entry's drawing
-  layer, which is how a plate-sized connection is expressed. See
-  [Vias](stackup.html#vias).
+  layer, which is how a plate-sized connection is expressed. A via may pass through any number of
+  dielectric layers between its two metal levels; no metal is needed at an interface for it to cross.
+  See [Vias](stackup.html#vias).
 - **A ground plane** at the bottom of the stack, or an open boundary.
 - **Discontinuities and the coupling between them** — which is the entire point.
 - **Frequency sweeps**, with [adaptive sampling](#adaptive) so a resonant response does not need a fine
@@ -291,6 +292,15 @@ classic "nearly touching cells" problem is not where the difficulty lives here: 
 is numerical, and it sees a continuous function with a kink, which is a quadrature-order question.
 Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled matrix is right to
 **5.0 × 10<sup>-6</sup>**.
+
+**Vias.** A via carries one uniform current over its whole height. Its integral over that height is
+split the same way the in-plane one is: the part that is singular where two points of the via come
+close is integrated in closed form, and the smooth rest by quadrature. A via that passes through
+several dielectric layers is integrated layer by layer, and where its two layers meet, the term that
+crosses the interface is taken in closed form too. The charge the dielectric step induces on the via
+needs no term of its own, because the layered Green's function already carries it. Against a 3D solve, a
+via through ε<sub>r</sub> 10 and ε<sub>r</sub> 3 agrees as closely as the same via through one
+dielectric does.
 
 **The solve.** A dense complex factorisation per frequency, or — optionally — an iterative solve
 against a grid-accelerated matrix–vector product. The dense one exploits the fact that the matrix is

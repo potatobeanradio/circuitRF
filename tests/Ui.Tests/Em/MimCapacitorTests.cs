@@ -930,8 +930,9 @@ public class MimCapacitorTests(ITestOutputHelper output)
     /// shape, which is why the module could not simply be added to the starter and why circuitRF
     /// shipped two MMIC technologies.</para>
     ///
-    /// <para><b>The tie removes the premise rather than the refusal.</b> The kernel is untouched and
-    /// still refuses a via across an interface; there is simply no interface here, because this
+    /// <para><b>The tie removes the premise rather than the refusal.</b> MIM-7 left the kernel
+    /// untouched (PSV-3 later taught it to integrate a via across an interface, see
+    /// <c>PsvMimPostTests</c>); there is simply no interface here, because this
     /// layout draws no "Nitride" (MIM-11's mask, and before it no "MIM Metal" plate), so the film
     /// enters the medium as air and Metal1's sheet goes back to the bottom of its band. Both
     /// spellings of the tie answer this fixture the same way, which is what makes it the identity

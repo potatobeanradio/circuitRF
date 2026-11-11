@@ -701,17 +701,12 @@ public sealed class ViaBasisTests
     }
 
     [Fact]
-    public void M5_7_AViaCrossingADielectricInterface_IsRefusedByName_AndItsNeighbourIsAccepted()
+    public void M5_7_AViaCrossingADielectricInterface_IsAccepted_AndItsZIntegralIsSplitThere()
     {
-        // The one thing the z-integral's closed form COSTS, refused rather than approximated. The
-        // asymptote coefficients it integrates are the source REGION's own Fresnel coefficients, so a
-        // via with two regions under it has two different sets of them and the straddling height pairs
-        // have none — a single closed form over the whole span would put back a different function
-        // from the one that was removed, and the answer would be a plausible wrong inductance rather
-        // than an obvious failure.
-        //
-        // R-mom-17's shape: the legitimate NEIGHBOUR is accepted in the same test, so the refusal is
-        // scoped to the crossing rather than to "vias in a multi-layer medium".
+        // PSV-3. A via whose span crosses an interface carrying no conductor level solves: its basis
+        // is still one uniform current, and only its z-integral is cut at the interface so each
+        // sub-span lies in one region (ViaZIntegral.SubSpans). PsvViaThroughInterfaceTests holds the
+        // physics; this holds the plumbing — accepted by the kernel, cut at exactly the interface.
         static PlanarPolygon Rect(double x0, double y0, double x1, double y1) =>
             new([new EmPoint(x0, y0), new EmPoint(x1, y0), new EmPoint(x1, y1), new EmPoint(x0, y1)]);
 
@@ -729,15 +724,18 @@ public sealed class ViaBasisTests
             GroundedSlab.GaAsStarter, 10e9, null, split,
             [new PlanarVia(0, 1, [Rect(180e-6, 30e-6, 220e-6, 70e-6)], 4.1e7)]);
 
-        var no = new PlanarKernel().CanSolve(crossing);
-        Assert.False(no.Ok);
-        Assert.Contains("crosses a dielectric interface", no.Reason);
+        var verdict = new PlanarKernel().CanSolve(crossing);
+        Assert.True(verdict.Ok, verdict.Reason);
 
-        // …and the same artwork on a medium with no intervening interface solves, which is what makes
-        // the refusal about the crossing.
-        Assert.True(new PlanarKernel().CanSolve(TwoLevelWithVia()).Ok);
+        var levels = PlanarLevels.From(crossing);
+        var subs = ViaZIntegral.SubSpans(new ViaZIntegral.Span(levels.Of(0), levels.Of(1)), split);
+        Assert.Equal(2, subs.Length);
+        Assert.Equal(split.InterfaceZ[2], subs[0].Hi);
+        Assert.Equal(split.InterfaceZ[2], subs[1].Lo);
 
-        _out.WriteLine(no.Reason!);
+        // A via in one region is not cut at all: the same span object comes back, alone.
+        var whole = new ViaZIntegral.Span(levels.Of(0), levels.Of(1));
+        Assert.Equal([whole], ViaZIntegral.SubSpans(whole, LayerStacks.MmicTwoLevel));
     }
 
     [Trait("Category", "Benchmark")]

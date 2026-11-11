@@ -784,6 +784,53 @@ public sealed class PlanarKernelSet
     public LayeredSpectralGreens.InteriorAsymptote Asymptote(GreensKernel kernel, double z, double zp)
         => _greens.AsymptoticAtHeights(kernel, z, zp);
 
+    /// <summary>
+    /// <b>PSV-3 — <see cref="GetMinusStaticAsymptotes"/> for a height pair of ONE via split at an
+    /// interface</b>: the same view, with the direct term transmitted across the interface
+    /// (<see cref="TransmittedDirect"/>) also taken out, so the caller can put it back in closed form.
+    ///
+    /// <para><b>It is peeled from the SAMPLES, not subtracted from the fit</b> — MIM-12a's finding,
+    /// one term over: the term's structure lives at <c>k_ρ ~ 1/Δ</c>, and a via's node pairs sit a
+    /// fraction of the via's own length apart, which is below the near-field reach the sampling path
+    /// is built for. Fitted, it was carried badly enough to move a via's inductance by 0.5 % across
+    /// a fake interface; peeled, the fit is asked only for what is left. Same cache discipline as
+    /// <see cref="Model(GreensKernel, double, double, double)"/>, and a pair with no transmitted term
+    /// is <see cref="GetMinusStaticAsymptotes"/>'s own object.</para>
+    /// </summary>
+    public PlanarKernelTerms GetMinusStaticAndTransmitted(GreensKernel kernel, double zA, double zB)
+    {
+        Complex c = TransmittedDirect(kernel, zA, zB);
+        if (c == Complex.Zero) return GetMinusStaticAsymptotes(kernel, zA, zB);
+
+        var k = Key(kernel, zA, zB);
+        double depth = k.Hi - k.Lo;
+        var key = (k.Kernel, k.Lo, k.Hi, -1.0);          // −1: no thin-region threshold is negative
+        lock (_whole)
+            if (_whole.TryGetValue(key, out var hit)) return hit;
+
+        DcimModel model;
+        lock (_fits.Gate)
+        {
+            if (!_fits.Peeled.TryGetValue(key, out model!))
+            {
+                model = Dcim.FitAtHeights(_greens, kernel, k.Hi, k.Lo, _dcim,
+                                          [new ComplexImage(c, depth)]);
+                _fits.Peeled[key] = model;
+                _fits.Count++;
+            }
+        }
+        var terms = PlanarKernelTerms.MinusStaticPiece(
+            PlanarKernelTerms.FromDcimAtHeightsMinusStaticAsymptotes(model, _order, _rhoFloor), c, depth);
+        lock (_whole) _whole[key] = terms;
+        return terms;
+    }
+
+    /// <summary>PSV-3 — the static coefficient of the direct term transmitted across ONE interface
+    /// (<see cref="LayeredSpectralGreens.TransmittedDirectCoefficient"/>); zero unless the two heights
+    /// sit in adjacent regions. Costs no fit, like <see cref="Asymptote"/>.</summary>
+    public Complex TransmittedDirect(GreensKernel kernel, double z, double zp)
+        => _greens.TransmittedDirectCoefficient(kernel, z, zp);
+
     private static (GreensKernel Kernel, double Lo, double Hi) Key(GreensKernel k, double zA, double zB)
         => (k, Math.Min(zA, zB), Math.Max(zA, zB));
 

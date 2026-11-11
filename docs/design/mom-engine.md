@@ -1657,7 +1657,9 @@ and is built (MIM-1, 2026-08-30).
 > starter, because the capacitor dielectric is not the free addition the plan above assumed: an
 > airbridge post between the interconnect metals then crosses a dielectric interface and is refused
 > by `PlanarKernel.CanSolve` — a whole-run refusal — and the upper-metal line's substrate resolution
-> shifts. (2) A FIFTH gap surfaced: the extractor places a level's sheet at the BOTTOM of its
+> shifts. *(PSV-3, 2026-11: that refusal is gone. A via's z-integral is split at every interface it
+> crosses, and the direct term transmitted across an interface is taken in closed form like the
+> same-region one; `src/Engine/Mom/RESOLVED.md` §PSV-3.)* (2) A FIFTH gap surfaced: the extractor places a level's sheet at the BOTTOM of its
 > conductor band and absorbs the band into the dielectric above, so a plate pair solves at the
 > capacitor dielectric PLUS the lower plate's metal thickness — 3.2 µm where the process states
 > 0.2 µm. That was **brief MIM-6** (a per-conductor reference-surface field), sequenced before

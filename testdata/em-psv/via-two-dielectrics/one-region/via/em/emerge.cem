@@ -1,0 +1,91 @@
+{
+ "FormatVersion": 1,
+ "LayoutRef": "via/layout/via.clay",
+ "SignalStackupLayerName": "M2",
+ "GroundStackupLayerName": "Ground",
+ "Frequency": {
+  "StartExpr": "1",
+  "StopExpr": "1",
+  "StepExpr": "",
+  "NumPoints": 1,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "AdditionalFrequencies": [
+  {
+   "StartExpr": "5",
+   "StopExpr": "5",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  },
+  {
+   "StartExpr": "10",
+   "StopExpr": "10",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  }
+ ],
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "AnalysisLevelNames": [
+  "M2",
+  "M1"
+ ],
+ "Name": "emerge",
+ "Conductors": "Sheets",
+ "Ports3D": [
+  {
+   "Port": 1,
+   "Kind": "Wave"
+  },
+  {
+   "Port": 2,
+   "Kind": "Wave"
+  }
+ ],
+ "AirBox": {
+  "XMin": {
+   "PaddingUm": 0,
+   "Boundary": "Absorbing"
+  },
+  "XMax": {
+   "PaddingUm": 0,
+   "Boundary": "Absorbing"
+  },
+  "YMin": {
+   "PaddingUm": 900,
+   "Boundary": "Pec"
+  },
+  "YMax": {
+   "PaddingUm": 900,
+   "Boundary": "Pec"
+  },
+  "ZMin": {
+   "PaddingUm": 0,
+   "Boundary": "Pec"
+  },
+  "ZMax": {
+   "PaddingUm": 900,
+   "Boundary": "Pec"
+  }
+ },
+ "EMerge": {
+  "Quality": "Accurate"
+ },
+ "Solver3D": "Emerge"
+}

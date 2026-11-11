@@ -386,6 +386,23 @@ public sealed class PlanarKernelTerms
     }
 
     /// <summary>
+    /// <b>PSV-3 — the terms with one more static <c>c/(4πR)</c> piece at depth
+    /// <paramref name="depth"/> removed</b>: <see cref="FromDcimAtHeightsMinusStaticAsymptotes"/>'s
+    /// own subtraction, for a piece the model's asymptote list does not carry — the direct term a
+    /// via's sub-span pair transmits across one interface. The caller puts it back in closed form.
+    /// </summary>
+    public static PlanarKernelTerms MinusStaticPiece(PlanarKernelTerms t, Complex c, double depth)
+    {
+        ArgumentNullException.ThrowIfNull(t);
+        if (!(depth > 0)) throw new ArgumentOutOfRangeException(nameof(depth), "a piece at depth 0 is the direct term's own");
+        Complex k = c / (4.0 * Math.PI);
+        return new PlanarKernelTerms(
+            rho => t.Evaluate(rho) - k / Math.Sqrt(rho * rho + depth * depth),
+            t.Inverse, t.Log, t.Constant - k / depth, t.Linear,
+            t.Order, t.RhoFloor, t.SmallestImageDepth);
+    }
+
+    /// <summary>
     /// <b>PSV-1 — a FITTED image weaker than this, relative to the direct term, stays in the smooth
     /// part however shallow it is.</b> The closed form exists for a peak the quadrature cannot see,
     /// and what a missed peak can cost an entry is of order the image's own amplitude against the

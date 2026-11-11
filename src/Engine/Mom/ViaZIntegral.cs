@@ -64,6 +64,143 @@ internal static class ViaZIntegral
         public double Mid    => 0.5 * (Lo + Hi);
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // PSV-3 — A VIA THAT CROSSES A DIELECTRIC INTERFACE
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // The basis is unchanged: one uniform vertical current over the whole via. Only the z-integral
+    // is split, at every interface strictly inside the span, so each sub-span lies in one region.
+    //
+    // WHY NOTHING ELSE IS NEEDED — the interface's polarisation charge. A uniform current through an
+    // ε step leaves no FREE charge there (∇·J = 0), and the scalar kernel G_q is the potential of a
+    // free charge, built from the shunt-source line VOLTAGE, which is continuous in the source
+    // height across a junction. So ∫dz′ ∂_z′G_q over the via is exactly G_q at its two ends — the
+    // end pulses the fill already carries — and the bound charge the step induces is inside the
+    // kernels, not a term of its own: the point-source MPIE identity holds at every source height
+    // (VerticalCurrentTests.T1b), and the 1/ε_m it needs sits in G_A^zz's coefficient, which a
+    // per-region z-integral picks up region by region. PsvViaThroughInterfaceTests gates the
+    // integrated identity across an interface in the spectral domain.
+    //
+    // THE SUB-SPAN PAIRS:
+    //   • same region  — today's treatment exactly: the two asymptotes in closed form (PrismCore),
+    //                    the rest by the n_z Gauss rule on the terms.
+    //   • adjacent regions — the DIRECT term transmitted across the one interface between them does
+    //                    not decay: it travels exactly Δ = z′ − z, which is zero at the sub-spans'
+    //                    shared corner. It is taken out of the terms and put back with PrismCore,
+    //                    exactly as the same-region direct term is
+    //                    (LayeredSpectralGreens.TransmittedDirectCoefficient). Left in, a 2-point
+    //                    rule would be integrating a corner 1/R.
+    //   • regions further apart — every term crosses a whole region and is bounded by its
+    //                    thickness; the Gauss rule on the terms carries all of it.
+    // The rule's nodes sit on each SUB-span, so a thin film beside a thick substrate gets its nodes
+    // inside the film rather than one node straddling it.
+
+    /// <summary>
+    /// <b>PSV-3 — the span cut at every interface of <paramref name="stack"/> strictly inside it.</b>
+    /// A span that crosses none comes back as itself, alone, and the fill then takes exactly the path
+    /// it took before this existed — the property gate 1 is about.
+    /// </summary>
+    public static Span[] SubSpans(Span s, LayerStack stack)
+    {
+        double tol = 1e-9 * s.Length;
+        List<double>? cuts = null;
+        foreach (double zi in stack.InterfaceZ)
+            if (zi > s.Lo + tol && zi < s.Hi - tol) (cuts ??= []).Add(zi);
+        if (cuts is null) return [s];
+
+        cuts.Sort();
+        var subs = new Span[cuts.Count + 1];
+        double lo = s.Lo;
+        for (int i = 0; i < cuts.Count; i++) { subs[i] = new Span(lo, cuts[i]); lo = cuts[i]; }
+        subs[^1] = new Span(lo, s.Hi);
+        return subs;
+    }
+
+    /// <summary>One closed-form prism term of a split ẑẑ pair: <c>Coefficient/(4π)·PrismCore(A, B)</c>,
+    /// weighted by <c>ℓ_Aℓ_B/(ℓ_iℓ_j)</c> so it adds straight into the whole pair's normalised core.</summary>
+    internal readonly record struct PrismTerm(Span A, Span B, bool SumFamily, double FloorZ,
+                                              Complex Coefficient, double Weight);
+
+    /// <summary>
+    /// <b>PSV-3 — the ẑẑ pair of two vias, at least one of which crosses an interface.</b> The bounded
+    /// half's terms over every sub-span pair, combined with weights that normalise to the WHOLE spans
+    /// (so the fill's <c>ℓ_iℓ_j·core</c> is unchanged in form), and the list of singular terms to put
+    /// back in closed form.
+    /// </summary>
+    /// <param name="minusStatic">The per-height-pair terms with every static piece removed that the
+    /// returned prism list puts back — the same-region asymptotes, and across one interface the
+    /// transmitted direct term — in the fitted view or the direct one, as the fill's setting
+    /// chooses.</param>
+    internal static (PlanarKernelTerms Terms, PrismTerm[] Prisms) SplitTerms(
+        PlanarKernelSet set, GreensKernel kernel, Span si, Span sj, Span[] subI, Span[] subJ, int nz,
+        PlanarExtractionOrder order, double rhoFloor, Func<double, double, PlanarKernelTerms> minusStatic)
+    {
+        var stack = set.Stack;
+        double norm = 1.0 / (si.Length * sj.Length);
+        var parts  = new List<(double Weight, PlanarKernelTerms Terms)>();
+        var prisms = new List<PrismTerm>();
+
+        foreach (var a in subI)
+        foreach (var b in subJ)
+        {
+            bool sameRegion = stack.RegionOf(a.Mid) == stack.RegionOf(b.Mid);
+            var (za, wa) = Nodes(a, nz);
+            var (zb, wb) = Nodes(b, nz);
+            for (int p = 0; p < nz; p++)
+            for (int q = 0; q < nz; q++)
+                parts.Add((wa[p] * wb[q] * norm, minusStatic(za[p], zb[q])));
+
+            double w = a.Length * b.Length * norm;
+            if (sameRegion)
+            {
+                var asym = set.Asymptote(kernel, a.Mid, b.Mid);
+                if (asym.IsMixedForm) continue;
+                if (asym.DirectCoefficient != Complex.Zero)
+                    prisms.Add(new PrismTerm(a, b, false, 0.0, asym.DirectCoefficient, w));
+                if (asym.ImageCoefficient != Complex.Zero)
+                    prisms.Add(new PrismTerm(a, b, true, 0.5 * (a.Mid + b.Mid - asym.ImageDepth),
+                                             asym.ImageCoefficient, w));
+            }
+            else
+            {
+                Complex c = set.TransmittedDirect(kernel, a.Mid, b.Mid);
+                if (c != Complex.Zero) prisms.Add(new PrismTerm(a, b, false, 0.0, c, w));
+            }
+        }
+
+        return (PlanarKernelTerms.Combine(parts, order, rhoFloor), prisms.ToArray());
+    }
+
+    /// <summary>The split pair's singular half: every <see cref="PrismTerm"/>, in closed form.</summary>
+    internal static Complex SplitPrismPart(PlanarMesh mesh, PrismTerm[] prisms, int cellA, int cellB,
+                                           PlanarFillSettings st)
+    {
+        Complex v = Complex.Zero;
+        foreach (var p in prisms)
+            v += p.Weight * p.Coefficient / (4.0 * Math.PI)
+               * PrismCore(mesh, cellA, cellB, p.A, p.B, p.SumFamily, p.FloorZ, st, st.ViaZStaticNodes);
+        return v;
+    }
+
+    /// <summary>
+    /// <b>PSV-3 — the mixed block's z-average over a via split at the interfaces it crosses</b>: each
+    /// sub-span's own <see cref="AveragedMixedDerivative"/> (its own nodes, its own log asymptote
+    /// where it shares a region with the horizontal level), weighted by its share of the length.
+    /// </summary>
+    public static Func<double, Complex> AveragedMixedDerivativeSplit(
+        PlanarKernelSet set, Span sv, Span[] subs, double zh, int nz)
+    {
+        var parts = new (double W, Func<double, Complex> F)[subs.Length];
+        for (int i = 0; i < subs.Length; i++)
+            parts[i] = (subs[i].Length / sv.Length, AveragedMixedDerivative(set, subs[i], zh, nz));
+        return rho =>
+        {
+            Complex v = Complex.Zero;
+            foreach (var (w, f) in parts) v += w * f(rho);
+            return v;
+        };
+    }
+
     /// <summary>n-point Gauss-Legendre on the span; the weights sum to its LENGTH.</summary>
     public static (double[] Z, double[] W) Nodes(Span s, int n)
     {

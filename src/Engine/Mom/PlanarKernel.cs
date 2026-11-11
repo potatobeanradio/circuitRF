@@ -159,68 +159,10 @@ public sealed class PlanarKernel
             if (!midpoint.Ok) return midpoint;
         }
 
-        var oneRegion = EveryViaLiesInOneMediumRegion(problem, lengthFormat);
-        if (!oneRegion.Ok) return oneRegion;
-
-        return EmSuitability.Yes;
-    }
-
-    /// <summary>
-    /// <b>A via must lie inside ONE region of the medium, and this refusal is what the z-integral's
-    /// closed form costs.</b>
-    ///
-    /// <para><c>ViaZIntegral</c> integrates the two extracted asymptotes over the via's length in
-    /// closed form, and it can do that because their coefficients are the source REGION's own Fresnel
-    /// coefficients and therefore do not move with the heights. A via that crosses a dielectric
-    /// interface has two different sets of them over its own length, and the pairs that straddle the
-    /// interface have none at all (cross-region needs no extraction) — so a single closed form over
-    /// the whole span would be putting back a different function from the one that was removed.</para>
-    ///
-    /// <para>It is refused rather than approximated because the failure would be silent: the answer
-    /// would still be a plausible inductance. Handling it properly means splitting each via at the
-    /// interfaces it crosses and treating the sub-span pairs separately, which is real work and is
-    /// named as not built. <b>L9c's midpoint rule did not have this limit</b> — it evaluated one
-    /// height pair and never asked which region the rest of the via was in — so this is a narrowing,
-    /// stated rather than buried, of a case nothing ever validated.</para>
-    /// </summary>
-    private static EmSuitability EveryViaLiesInOneMediumRegion(
-        PlanarProblem problem, SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
-    {
-        if (problem.ViaList.Count == 0) return EmSuitability.Yes;
-        var fmt = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
-        var stack = problem.EffectiveStack;
-
-        foreach (var via in problem.ViaList)
-        {
-            // A GROUND ATTACHMENT has no lower LEVEL — its lower terminal is the plane itself, at the
-            // stack's own bottom. Asking LevelZ for it indexes Layers[-1], which is what this check
-            // did until L9's gate 4 ran a backside via through the product path and got a raw
-            // ArgumentOutOfRangeException instead of a verdict. The QUESTION is unchanged and is still
-            // worth asking of an attachment: a via from the plane up to a level that crosses a
-            // dielectric interface on the way has two sets of asymptotic coefficients under it.
-            double lo = via.ToGround ? stack.InterfaceZ[0] : problem.LevelZ(via.LowerLayerIndex);
-            double hi = problem.LevelZ(via.UpperLayerIndex);
-            if (!(hi > lo)) continue;
-
-            // Probed just inside each end, because a conductor level sits exactly ON an interface and
-            // RegionOf's own convention at a boundary is not the question being asked.
-            double eps = 1e-6 * (hi - lo);
-            int rLo = stack.RegionOf(lo + eps), rHi = stack.RegionOf(hi - eps);
-            if (rLo == rHi) continue;
-
-            return EmSuitability.No(
-                $"The via between {(via.ToGround ? "the ground plane" : $"level {via.LowerLayerIndex}")} " +
-                $"and level {via.UpperLayerIndex} spans " +
-                $"z = {fmt(lo)} to {fmt(hi)}, which crosses a " +
-                $"dielectric interface of the medium (region {rLo} to region {rHi}). This kernel " +
-                $"integrates a via's Green's function over its length in CLOSED FORM, and that form " +
-                $"is written in the source region's own asymptotic coefficients — a via with two " +
-                $"regions under it has two different sets of them, and the height pairs that straddle " +
-                $"the interface have none at all. Approximating it would give a plausible wrong " +
-                $"inductance rather than an obvious failure, which is why it is refused. Put a " +
-                $"conductor level on the intervening interface so the via is two stacked vias, or " +
-                $"remove the interface if it carries no physics.");
-        }
+        // PSV-3 — a via may cross any number of dielectric interfaces: the fill splits its z-integral
+        // at each one (ViaZIntegral.SubSpans / SplitTerms), with the direct term transmitted across
+        // an interface taken out in closed form as the same-region one is. The basis is one uniform
+        // current and its charge is its two end pulses, whatever the via crosses.
         return EmSuitability.Yes;
     }
 

@@ -1592,6 +1592,43 @@ public sealed class LayeredSpectralGreens
     }
 
     /// <summary>
+    /// <b>PSV-3 — the one cross-region term that does NOT decay: the DIRECT term transmitted across a
+    /// single interface, for <c>G_A^zz</c>.</b>
+    ///
+    /// <para><see cref="AsymptoticAtHeights"/> returns nothing for a cross-region pair because every
+    /// term "crosses a full region". That is true of two LEVELS, which sit on interfaces, and false
+    /// of two points of ONE via split at the interface it crosses: there z sits just below z_i and z′
+    /// just above, the transmitted direct wave travels <c>(z_i − z) + (z′ − z_i) = Δ</c> exactly, and
+    /// its spectral form decays like <c>e^{−k_ρΔ}</c> with Δ → 0 at the corner of the two sub-spans —
+    /// the same <c>1/R</c> the same-region direct term carries.</para>
+    ///
+    /// <para>Its coefficient, from the series-source line currents in the k_ρ → ∞ limit (every round
+    /// trip has died; the current transmitted across the junction is <c>v/(Z_m + Z_n)</c> on each
+    /// line, with <c>Z^e = k_z/(ωε)</c> and <c>Z^h = ωµ/k_z</c>), in the normalisation of
+    /// <see cref="InteriorAsymptote.DirectCoefficient"/>:</para>
+    /// <code>
+    ///   C = 2·[(µ_n ε_n + µ_m ε_m)/(ε_m + ε_n) − µ_n µ_m/(µ_m + µ_n)]
+    /// </code>
+    /// <para>Symmetric in the two regions, and with µ_m = µ_n = µ it is µ for EVERY ε contrast — so on
+    /// a non-magnetic stack the via's static <c>1/R</c> is continuous across a dielectric interface, and
+    /// with identical media on both sides this is exactly the same-region coefficient.</para>
+    ///
+    /// <para>Zero for every other kernel, for regions that are not adjacent (the term then crosses a
+    /// whole region and is bounded by its thickness), and for a same-region pair (that is
+    /// <see cref="AsymptoticAtHeights"/>'s).</para>
+    /// </summary>
+    public Complex TransmittedDirectCoefficient(GreensKernel kernel, double z, double zp)
+    {
+        if (kernel != GreensKernel.VerticalVectorPotential) return Complex.Zero;
+        int m = RegionOfOrThrow(zp, "source");
+        int n = RegionOfOrThrow(z,  "observer");
+        if (Math.Abs(m - n) != 1) return Complex.Zero;
+
+        Complex em = _eps[m], en = _eps[n], mm = _mu[m], mn = _mu[n];
+        return 2.0 * ((mn * en + mm * em) / (em + en) - mn * mm / (mm + mn));
+    }
+
+    /// <summary>
     /// <b>The k_ρ → ∞ limit of the generalised reflection across ONE interface, which is the local
     /// Fresnel coefficient there</b> — every round trip on the far side carries
     /// <c>e^{−2k_ρ t}</c> and has died. Written once because <see cref="AsymptoticAtHeights"/> and

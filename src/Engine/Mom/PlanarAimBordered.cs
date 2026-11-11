@@ -498,6 +498,8 @@ public sealed class PlanarBorderedAimOperator : IPlanarOperator
                 Complex core = zzPulse[si, sj]!.At(bi.CellA, bj.CellA);
                 core += PlanarFill.SingularPrismPartOf(_mesh, zz.Asym, bi.CellA, bj.CellA,
                                                        spanI, spanJ, st);
+                if (pr.ZzPrisms[si, sj] is { } prisms)
+                    core += ViaZIntegral.SplitPrismPart(_mesh, prisms, bi.CellA, bj.CellA, st);
 
                 Complex v = _scalarScale * s
                           + _vectorScale * spanI.Length * spanJ.Length * core;

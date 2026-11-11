@@ -162,8 +162,9 @@ what the line reads.</p>
 </li>
 <li><p><strong>Multiple metal levels</strong>, with <strong>vias</strong> carrying z-directed current between them. A via is either
 a placed via primitive or a <strong>drawn region</strong> — a rectangle or polygon on the via entry's drawing
-layer, which is how a plate-sized connection is expressed. See
-<a href="stackup.html#vias">Vias</a>.</p>
+layer, which is how a plate-sized connection is expressed. A via may pass through any number of
+dielectric layers between its two metal levels; no metal is needed at an interface for it to cross.
+See <a href="stackup.html#vias">Vias</a>.</p>
 </li>
 <li><p><strong>A ground plane</strong> at the bottom of the stack, or an open boundary.</p>
 </li>
@@ -203,11 +204,22 @@ in — see <a href="antennas.html#feeds">Antennas</a> for which feed to use inst
 plate. That mechanism decides <strong>whether</strong> a layer is in the run, never <strong>where it stops</strong>: inside a run
 every dielectric is laterally infinite. So a radome, a conformal coating or a gain-raising superstrate
 drawn over the patch alone is modelled as covering the <strong>whole run, to infinity</strong> — which moves
-resonance, gain and surface-wave launch. <strong>And a cover layer above the topmost analysis level is not
-in the solve at all</strong>: the medium is built from the ground plane up to that level and terminated in
-air there, so a radome or coating is discarded and the run warns by name. Measured on the shipped
-patch example — adding one gives bit-identical s-parameters. See
-<a href="antennas.html#example">Antennas</a>.</li>
+resonance, gain and surface-wave launch. A <strong>uniform</strong> cover above the topmost analysis level —
+passivation, solder mask, a coating, a radome — is in the solve as one more layer of the medium, and
+the run's notes name it with the medium's total height above that level. By default the space beside
+the metal is filled with the cover's material, so the modelled cover is the metal's own thickness
+plus the cover's, as a flat slab. That suits a solder mask, which fills the gaps between traces. For
+a coat deposited over the metal, such as passivation, tick <strong>Conformal</strong> on the cover's
+<a href="stackup.html#tab">stackup row</a>: the cover then starts on top of the metal and the space
+beside the metal is air, in this kernel, the uniform-line kernel and every 3D solver, and the note
+says where the cover starts. For 1 µm of ε<sub>r</sub> 7 nitride over a 20 µm wide, 3 µm thick gold
+line on 100 µm GaAs, a 3D electrostatic solve puts the cover's effect on ε<sub>eff</sub> at +2.2 %
+for the real coat, +2.1 % ticked and +6.8 % unticked. This kernel reads +0.9 % ticked and +6.8 %
+unticked, and moves Z<sub>0</sub> by −0.5 % ticked against −1.1 % in 3D. Both settings are flat
+slabs: the coat on the metal's sidewalls and on the substrate beside it is not modelled, and at these
+proportions it moves ε<sub>eff</sub> by 0.02 %. A stack closed above, by a lid (<code>Stackup.Top = Ground</code>) or by a ground plane
+above the levels, ends at the topmost level instead, and the run warns, naming the layers it leaves
+out. See <a href="antennas.html#example">Antennas</a>.</li>
 <li><strong>Enclosures and absorbing boundaries.</strong> There is no box. Real planar tools suppress port-to-port
 radiative and surface-wave coupling with box walls or absorbing boundaries; <strong>this kernel has
 neither, by design</strong>, and that is what sets the <a href="#deembedding">de-embedding accuracy floor</a>.</li>
@@ -309,6 +321,14 @@ classic &quot;nearly touching cells&quot; problem is not where the difficulty li
 is numerical, and it sees a continuous function with a kink, which is a quadrature-order question.
 Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled matrix is right to
 <strong>5.0 × 10<sup>-6</sup></strong>.</p>
+<p><strong>Vias.</strong> A via carries one uniform current over its whole height. Its integral over that height is
+split the same way the in-plane one is: the part that is singular where two points of the via come
+close is integrated in closed form, and the smooth rest by quadrature. A via that passes through
+several dielectric layers is integrated layer by layer, and where its two layers meet, the term that
+crosses the interface is taken in closed form too. The charge the dielectric step induces on the via
+needs no term of its own, because the layered Green's function already carries it. Against a 3D solve, a
+via through ε<sub>r</sub> 10 and ε<sub>r</sub> 3 agrees as closely as the same via through one
+dielectric does.</p>
 <p><strong>The solve.</strong> A dense complex factorisation per frequency, or — optionally — an iterative solve
 against a grid-accelerated matrix–vector product. The dense one exploits the fact that the matrix is
 symmetric: it factors it <strong>in place</strong>, in half the arithmetic a general solver would use, across

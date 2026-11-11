@@ -1,0 +1,163 @@
+{
+ "FormatVersion": 1,
+ "Name": "psv-via-3",
+ "DefaultDisplayUnit": "Um",
+ "DefaultSnapDbu": 1000,
+ "DefaultFlattenTolDbu": 10,
+ "DefaultLabelHeightDbu": 20000,
+ "DefaultViaPadDbu": 300000,
+ "DefaultViaDrillDbu": 150000,
+ "Layers": [
+  {
+   "Key": {
+    "Layer": 1,
+    "Datatype": 0
+   },
+   "Name": "M1",
+   "Color": {
+    "r": 224,
+    "g": 176,
+    "b": 64,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 1,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 2,
+    "Datatype": 0
+   },
+   "Name": "M2",
+   "Color": {
+    "r": 192,
+    "g": 128,
+    "b": 32,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 2,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "Name": "Via",
+   "Color": {
+    "r": 144,
+    "g": 144,
+    "b": 144,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 3,
+   "Purpose": "drawing"
+  }
+ ],
+ "Stackup": {
+  "Top": "Open",
+  "Bottom": "Ground",
+  "Layers": [
+   {
+    "Kind": "Conductor",
+    "Name": "M2",
+    "ThicknessDbu": 5000,
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 58000000,
+    "DrawingLayers": [
+     {
+      "Layer": 2,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "Upper",
+    "ThicknessDbu": 100000,
+    "Epsr": 3.0,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "Lower",
+    "ThicknessDbu": 100000,
+    "Epsr": 3.0,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "M1",
+    "ThicknessDbu": 5000,
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 58000000,
+    "DrawingLayers": [
+     {
+      "Layer": 1,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "Substrate",
+    "ThicknessDbu": 100000,
+    "Epsr": 3.0,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "Ground",
+    "ThicknessDbu": 5000,
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 58000000,
+    "DrawingLayers": [],
+    "IsGroundReference": true
+   },
+   {
+    "Kind": "Via",
+    "Name": "Via",
+    "ThicknessDbu": 0,
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 58000000,
+    "DrawingLayers": [
+     {
+      "Layer": 3,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false,
+    "Fill": "Solid",
+    "SpanFromLayer": "M1",
+    "SpanToLayer": "M2"
+   }
+  ]
+ },
+ "DrcRules": [],
+ "DeviceRules": []
+}

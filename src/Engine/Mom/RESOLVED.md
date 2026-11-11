@@ -13496,3 +13496,60 @@ Worst |ΔS| from 1 to 40 GHz, sweep on a 40 GHz mesh:
   mask, whose top interface crosses the line) moved on the kernel-A side only: covered A ε_eff 2.9731, B − A
   +0.79 % ε_eff / +2.71 % Z₀ (was +0.94 % / +2.64 %), inside the 4 % gate.
 - Gate: `tests/Engine.Tests/Mom/InterfaceAcrossConductorTests.cs`.
+
+## PSV-3 — a planar via that crosses a dielectric interface (2026-11-10)
+
+`docs/briefs/brief-psv-3-via-through-interfaces.md`. `PlanarKernel.EveryViaLiesInOneMediumRegion` is gone; a via
+may cross any number of interfaces between its two levels. Gates: `tests/Engine.Tests/Mom/PsvViaThroughInterfaceTests.cs`,
+`ViaBasisTests.M5_7`, `tests/Ui.Tests/Em/PsvMimPostTests.cs`, and `testdata/em-psv/via-two-dielectrics/`.
+
+### 1. The risk check: the interface charge is already in the kernels
+
+The brief's stop condition was a missing polarisation-charge term. It is not missing. A uniform current through an ε
+step carries no free charge there, and G_q is the potential of a FREE charge, built from the shunt-source line voltage,
+which is continuous in the source height across a junction. So ∫dz′ ∂_z′G_q over the via is exactly G_q at its two
+ends, which are the end pulses the fill already has. The 1/ε_m dependence lives in G_A^zz's `(µ_n/ε_m + µ_m/ε_n)` term
+and is picked up region by region. Checked in the spectral domain: a uniform segment across one or two interfaces, true
+E_z (superposed transmission-line dipoles) against the MPIE with end charges only, worst 6.7e-9; a 1/ε-jump interface
+term would have moved it by at least 6.7e-4.
+
+### 2. What was built
+
+The basis is unchanged. `ViaZIntegral.SubSpans` cuts the span at every interface strictly inside it; a span that crosses
+none comes back alone and takes the old path. `SplitTerms` sums the bounded half over sub-span pairs (n_z nodes on each
+SUB-span) and returns a list of closed-form prism terms: the same-region asymptotes as before, plus, for two sub-spans
+in ADJACENT regions, **the direct term transmitted across their shared interface**, which the brief said needed no
+extraction. It does: it travels exactly Δ = z′ − z, so it is a 1/R at the sub-spans' shared corner. Its static
+coefficient is `2[(µ_nε_n + µ_mε_m)/(ε_m+ε_n) − µ_nµ_m/(µ_m+µ_n)]` (`LayeredSpectralGreens.TransmittedDirectCoefficient`),
+which is µ for any ε contrast on a non-magnetic stack; checked against the kernel's own k_ρ → ∞ limit, including a
+magnetic pair (1.28205). Non-adjacent regions are bounded by the middle region's thickness and take the Gauss rule.
+The mixed block averages each sub-span's own derivative by length.
+
+**The transmitted term must be PEELED from the fit's samples, not subtracted after it** (`PlanarKernelSet.GetMinusStaticAndTransmitted`,
+on MIM-12a's `transmitted` hook). Node pairs sit a fraction of the via's length apart, below the sampling path's
+near-field reach, and fitting the term then subtracting it moved the gate-2 via by −0.52 %. Peeled: −0.005 %.
+
+### 3. Gates
+
+1. **Byte identity.** One-region vias go through the unchanged code: a two-level interior via (N = 400), a ground
+   attachment and an n_z = 3 fill hashed identical against a build of the previous commit.
+2. **A split at a fake interface** (air on both sides): worst 0.09 % over ℓ/w = 1 and 10 and cuts at 0.5, 0.2 and
+   0.3/0.7 (the double cut is the worst; it has a non-adjacent pair). n_z = 4 moves none of it.
+3. **Against 3D**, `testdata/em-psv/via-two-dielectrics/README.md`: planar vs EMerge 0.0056 / 0.0205 / 0.0333 at
+   1 / 5 / 10 GHz through εᵣ 10 | 3, against 0.0049 / 0.0245 / 0.0428 for the same via in one region. Both solvers put
+   the stack's own effect at 0.011 / 0.057 / 0.12. **Palace is not a reference on that fixture**: its result is
+   non-reciprocal by up to 0.37 on both stacks, the one-region one included, so it is a 3D wave-port problem (port 1
+   on a buried line, renormalised from each port's Z_PV) and was not chased here.
+4. **The MIM post.** With the capacitor film in every run's medium (the old MIM technology), the Metal1–Metal2 post
+   spans 103 → 106 µm across the film's top at 103.2 µm; it is accepted, solves reciprocal and passive. Its single-basis
+   series term is 0.149 pH, against 0.587 pH on the plain starter (100 → 106 µm) and 0.139 pH for 103 → 106 µm with no
+   film.
+
+**That last pair is not an inductance error and should not be gated as one.** The jωV part of one vertical basis is
+not magnetostatic in this formulation: G_A^zz carries the TE content of ∇φ and an R_e image at the via's foot, so it
+moves with the dielectric by design. The S-parameters are the physical comparison.
+
+### 4. No refusal kept
+
+The brief allowed one for a sub-span too thin for the z-rule against its partner. None was added: the rule's nodes sit
+inside each sub-span, the singular parts are closed form, and the MIM film (0.2 µm under a 3 µm post) solves.

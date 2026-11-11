@@ -2565,6 +2565,13 @@ public static partial class PlanarFill
                          LayeredSpectralGreens.InteriorAsymptote Asym)?[,] Zz;
         /// <summary>The mixed block's z-averaged radial derivative per (span, horizontal layer).</summary>
         public readonly Func<double, Complex>?[,] Mixed;
+        /// <summary>PSV-3 — each span cut at the interfaces of the medium it crosses; a span that
+        /// crosses none is itself, alone.</summary>
+        public readonly ViaZIntegral.Span[][] SubSpans;
+        /// <summary>PSV-3 — the closed-form singular terms of a ẑẑ span pair at least one of whose
+        /// spans crosses an interface; null for every other pair, whose singular half is
+        /// <see cref="Zz"/>'s own asymptote exactly as before.</summary>
+        public readonly ViaZIntegral.PrismTerm[]?[,] ZzPrisms;
 
         /// <summary>Each HORIZONTAL rooftop's two halves as the quadrature wants them, per basis —
         /// what <see cref="AddDirectionBlock"/> caches as <c>halves</c>. Default for a vertical basis.</summary>
@@ -2584,6 +2591,8 @@ public static partial class PlanarFill
             RemA   = new Func<double, Complex>?[layers, layers];
             Zz     = new (PlanarKernelTerms, Func<double, Complex>, LayeredSpectralGreens.InteriorAsymptote)?[spans, spans];
             Mixed  = new Func<double, Complex>?[spans, layers];
+            SubSpans = new ViaZIntegral.Span[spans][];
+            ZzPrisms = new ViaZIntegral.PrismTerm[]?[spans, spans];
             Halves = new (CellWeight, CellWeight)[n];
             Pulses = new CellWeight[m];
             Spans  = new ViaZIntegral.Span[spans];
@@ -2619,6 +2628,8 @@ public static partial class PlanarFill
             var r = new MultiLevelPairings(layers, spanList.Count, n, m);
             spanList.CopyTo(r.Spans);
             Array.Copy(spanIndex, r.SpanOfBasis, n);
+            for (int s = 0; s < r.Spans.Length; s++)
+                r.SubSpans[s] = ViaZIntegral.SubSpans(r.Spans[s], set.Stack);
 
             // ── the scalar block: every (layer, layer) that has a cell on both ─────────────────
             //
@@ -2729,7 +2740,11 @@ public static partial class PlanarFill
                 {
                     int sj = spanIndex[j];
                     if (sj < 0 || r.Zz[si, sj] is not null) continue;
-                    r.Zz[si, sj] = ZzTerms(cores, set, r.Spans[si], r.Spans[sj], st);
+                    if (r.SubSpans[si].Length == 1 && r.SubSpans[sj].Length == 1)
+                        r.Zz[si, sj] = ZzTerms(cores, set, r.Spans[si], r.Spans[sj], st);
+                    else
+                        (r.Zz[si, sj], r.ZzPrisms[si, sj]) = ZzSplitTerms(
+                            cores, set, r.Spans[si], r.Spans[sj], r.SubSpans[si], r.SubSpans[sj], st);
                 }
             }
 
@@ -2744,7 +2759,8 @@ public static partial class PlanarFill
                 for (int l = 0; l < layers; l++)
                 {
                     if (!horizontalLayers[l] || r.Mixed[sv, l] is not null) continue;
-                    r.Mixed[sv, l] = MixedDerivative(cores, set, r.Spans[sv], levels.Of(l), st);
+                    r.Mixed[sv, l] = MixedDerivative(cores, set, r.Spans[sv], r.SubSpans[sv],
+                                                     levels.Of(l), st);
                 }
             }
 
@@ -2792,11 +2808,44 @@ public static partial class PlanarFill
             return (t, r, asym);
         }
 
-        private static Func<double, Complex> MixedDerivative(PlanarFillCores cores, PlanarKernelSet set,
-                                                             ViaZIntegral.Span sv, double zh,
-                                                             PlanarFillSettings st)
+        /// <summary>
+        /// <b>PSV-3 — <see cref="ZzTerms"/> for a span pair at least one of which crosses an
+        /// interface.</b> Same two settings, same tabulation; the singular half is a LIST of
+        /// closed-form terms (<see cref="ViaZIntegral.SplitTerms"/>), so the pair's own asymptote is
+        /// returned empty and <see cref="SingularPrismPart"/> adds nothing for it.
+        /// </summary>
+        private static ((PlanarKernelTerms, Func<double, Complex>, LayeredSpectralGreens.InteriorAsymptote),
+                        ViaZIntegral.PrismTerm[])
+            ZzSplitTerms(PlanarFillCores cores, PlanarKernelSet set,
+                         ViaZIntegral.Span si, ViaZIntegral.Span sj,
+                         ViaZIntegral.Span[] subI, ViaZIntegral.Span[] subJ, PlanarFillSettings st)
         {
-            var raw = ViaZIntegral.AveragedMixedDerivative(set, sv, zh, st.ViaZNodes);
+            const GreensKernel k = GreensKernel.VerticalVectorPotential;
+            double rhoMax = Math.Max(cores.ExtentM, cores.MinCellEdgeM * 8);
+            Func<double, double, PlanarKernelTerms> minusStatic = st.DirectVerticalKernel
+                ? (za, zb) =>
+                  {
+                      var d = set.GetDirectMinusStaticAsymptotes(k, za, zb, rhoMax, st.VerticalTableSamples);
+                      Complex c = set.TransmittedDirect(k, za, zb);
+                      return c == Complex.Zero ? d : PlanarKernelTerms.MinusStaticPiece(d, c, Math.Abs(za - zb));
+                  }
+                : (za, zb) => set.GetMinusStaticAndTransmitted(k, za, zb);
+
+            var (t, prisms) = ViaZIntegral.SplitTerms(set, k, si, sj, subI, subJ, st.ViaZNodes,
+                                                     st.Order, cores.RhoFloorM, minusStatic);
+            // The direct view's per-pair terms are tables already; re-tabulating their sum would
+            // interpolate an interpolation, exactly as ZzTerms says.
+            var r = st.DirectVerticalKernel ? t.Remainder : Remainder(t, cores);
+            return ((t, r, default), prisms);
+        }
+
+        private static Func<double, Complex> MixedDerivative(PlanarFillCores cores, PlanarKernelSet set,
+                                                             ViaZIntegral.Span sv, ViaZIntegral.Span[] subs,
+                                                             double zh, PlanarFillSettings st)
+        {
+            var raw = subs.Length == 1
+                ? ViaZIntegral.AveragedMixedDerivative(set, sv, zh, st.ViaZNodes)
+                : ViaZIntegral.AveragedMixedDerivativeSplit(set, sv, subs, zh, st.ViaZNodes);
             if (!st.UseRadialTable) return raw;
             double spacing = st.TableCellFraction * cores.MinCellEdgeM;
             return RadialRemainderTable.BuildFrom(
@@ -2915,6 +2964,11 @@ public static partial class PlanarFill
                     // prisms in CLOSED FORM in z. This is the piece a Gauss rule cannot carry — see
                     // ViaZIntegral's header — and it is where the 0.673·(ℓ/w) went.
                     core += SingularPrismPart(mesh, asym, bi.CellA, bj.CellA, spanI, spanJ, st);
+
+                    // PSV-3 — a via that crosses an interface: its singular half is a list of
+                    // closed-form terms, one per sub-span pair. Null for every other pair.
+                    if (pr.ZzPrisms[si, sj] is { } prisms)
+                        core += ViaZIntegral.SplitPrismPart(mesh, prisms, bi.CellA, bj.CellA, st);
 
                     col[j - i] += vectorScale * spanI.Length * spanJ.Length * core;
                 }
