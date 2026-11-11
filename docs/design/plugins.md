@@ -551,6 +551,10 @@ and entry). **A plugin runs with the user's own permissions**: the prompt says t
 Nothing about a separate process is a sandbox. An update to a new version asks again unless the new version is on
 the vetted list and the old one was.
 
+**Permission is granted only in the window** — this prompt, or Settings ▸ Plugins — and never by the command line or
+an MCP tool call, on purpose: anything that can type a command can be an agent, and running someone else's program with
+the user's permissions is the person's decision. The command line and MCP can take permission away, never give it.
+
 `CRF_NO_PLUGINS=1` and a `no-plugins` file beside the install turn plugins off entirely, with the same precedence
 `ExternalWorkerPolicy` gives device workers, so a managed installation can forbid them.
 
@@ -597,15 +601,19 @@ the vetted list and the old one was.
 circuitRF plugin list [--json]
 circuitRF plugin describe <id> [--json]                     # parameters, views, version, where it came from
 circuitRF plugin run <id> --set name=value … -o <dir>        # one update, writes views + readouts as files
-circuitRF plugin run <id> --set … --place <workspace> [--cell name] [--replace]
+circuitRF plugin run <id> --set … --place <workspace> [--cell name] [--replace | --new-name name]
+circuitRF plugin deny <id>                                    # there is no allow: §9.4
 circuitRF plugin install <folder|address> [--tag t] / uninstall <id>
 ```
 
 - `run` sends `hello`, one `update` and, with `--place`, one `commit`. Views are written as files into `-o`: a
-  plot as its data plus a `.cdd`, a layout as a `.clay`, a schematic as its `.cnl`, readouts as `readouts.json`.
-- A plugin not yet permitted is a refusal naming `--allow`, which records the permission exactly as the prompt does.
-  `CRF_NO_PLUGINS` beats it.
-- The MCP `plugin` tool has the same actions and the same refusals.
+  plot as its data plus a `.cdd`, a layout as a `.clay`, a schematic as its `.cnl`, a table as `.csv`, readouts as
+  `readouts.json`.
+- A plugin not yet permitted is refused with `plugin.permission.needs-user`, which says only the person can allow it,
+  in circuitRF (§9.4). `CRF_NO_PLUGINS` beats any permission.
+- The MCP `plugin` tool has `list`, `describe` and `run`, with the same refusals, and `install`/`uninstall` from
+  brief-plg-6 §5. It never grants permission.
+- `cli.md` §42 is the verb's full description.
 
 ---
 

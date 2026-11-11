@@ -1957,6 +1957,51 @@ internal static class ToolCatalog
                          "gpu: also ask whether Palace solves on a GPU (a one-element solve, so only when asked).")], ""),
             ]),
 
+        // brief-plg-5: plugins — tools other people write, which circuitRF runs as separate programs. `install` and
+        // `uninstall` arrive with brief-plg-6. There is NO `allow`, here or on the command line, on purpose: permission to
+        // run someone else's program with the user's permissions is granted only by the person, in circuitRF's window
+        // (owner decision, 2026-11-10). A run refused for want of it returns plugin.permission.needs-user, which says so.
+        new("plugin",
+            "Plugins installed here: tools other people write that circuitRF runs as separate programs. 'list' them, "
+          + "'describe' one (its parameters with units, defaults and ranges, and its views), 'run' one with no display "
+          + "(one update with the defaults overridden by set; with output, each view is written as a file — a plot as its "
+          + "data and a .cdd that render draws, a layout as a .clay, a schematic as its .cnl, a table as .csv — and "
+          + "readouts.json; with place, its cells are placed in that workspace). A plugin runs only once the person has "
+          + "allowed it in circuitRF itself (Tools > Plugins asks; Settings > Plugins); no tool can grant that, so a run "
+          + "refused with plugin.permission.needs-user is for the person to act on — tell them. 'reference plugins' is "
+          + "the contract for writing one.",
+            "action",
+            "What to do.",
+            [
+                new("list", ["plugin", "list"], [], [],
+                    "Every plugin: id, version, kind, where it came from, whether it may run, and why one cannot."),
+                new("describe", ["plugin", "describe"],
+                    [new("id", false, "The plugin's id, as 'list' reports it.")], [],
+                    "One plugin's parameters, views and how it runs on this machine."),
+                new("run", ["plugin", "run"],
+                    [new("id", false, "The plugin's id, as 'list' reports it.")],
+                    [
+                        new("set", "--set", OptKind.StrRepeat,
+                            "name=value, one per parameter: a quantity with an SI prefix (2.4 GHz), a choice's option, a "
+                          + "substrate, technology, cell or result by name. Unset parameters take their defaults."),
+                        new("workspace", "--workspace", OptKind.Path,
+                            "The workspace parameters resolve against (its substrates, technologies, cells, results). "
+                          + "Defaults to place's."),
+                        new("context", "--context", OptKind.Path,
+                            "What the plugin is opened on: a cell folder, a .clay, a .ctech or a result."),
+                        new("output", "-o", OptKind.Path, "A folder to write each view and readouts.json into."),
+                        new("place", "--place", OptKind.Path,
+                            "A workspace to place the plugin's cells in, as the panel's Place in workspace does. A "
+                          + "restore point is taken first when the workspace keeps history."),
+                        new("cell", "--cell", OptKind.Str, "With place: the cell's name. Defaults to the plugin's."),
+                        new("replace", "--replace", OptKind.Flag,
+                            "With place: write over an existing cell of that name. Without it or newName, an existing "
+                          + "cell is a refusal."),
+                        new("newName", "--new-name", OptKind.Str, "With place: place under this name instead."),
+                    ],
+                    "Run a plugin once, with no display."),
+            ]),
+
         new("reference",
             "What may be written in circuitRF's documents: the reference pages, the generated " +
             "catalogue of every netlist primitive (start from 'component-index'), the " +

@@ -876,7 +876,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // (brief-review-2) is the Layout Review, a reviewer's checklist over the same artwork.
         // `job` (brief EMB-5) follows a run or check started with async=true — server state, like `batch`.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "reference", "batch",
+                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "plugin", "reference", "batch",
                       "job"],
                      tools);
 
@@ -1033,6 +1033,10 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["model/export"]       = ["path"],
             ["model/validate"]     = ["path"],
             ["model/report"]       = ["path"],
+            // brief-plg-5: plugins by id. No allow — permission is granted only in the window.
+            ["plugin/list"]        = [],
+            ["plugin/describe"]    = ["id"],
+            ["plugin/run"]         = ["id"],
         };
 
         using var server = Start(Root);

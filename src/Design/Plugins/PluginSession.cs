@@ -251,7 +251,12 @@ public sealed class PluginSession : IPluginPanelSession
     /// version, then a build for this machine — with no process started for any refusal. The staging folder is
     /// created before the process and named in <c>hello</c>.
     /// </summary>
-    public static PluginOutcome<PluginSession> Start(PluginEntry entry, PluginStartOptions options)
+    /// <summary>
+    /// Why <see cref="Start"/> would refuse <paramref name="entry"/> before starting anything — policy first, then the
+    /// manifest, permission, the contract version and a build for this machine — or null when it would start it. A
+    /// headless run asks this before it judges the parameters, so a plugin that may not run is never argued with.
+    /// </summary>
+    public static PluginFailure? Refusal(PluginEntry entry, PluginStartOptions options)
     {
         if (!options.Policy.Allowed)
             return Refuse(PluginFailureKind.DisabledByPolicy, options.Policy.Reason.Length > 0 ? options.Policy.Reason : "Plugins are turned off.");
@@ -269,8 +274,18 @@ public sealed class PluginSession : IPluginPanelSession
             return Refuse(PluginFailureKind.NeedsNewerCircuitRF, $"{manifest.Name} {newer} (it is written for plugin contract {manifest.ApiVersion}).");
 
         var run = manifest.ResolveRun();
-        if (run.Entry is not { } how)
+        if (run.Entry is null)
             return Refuse(PluginFailureKind.NoBuild, $"{manifest.Name} has {run.Refusal}.");
+        return null;
+
+        static PluginFailure Refuse(PluginFailureKind kind, string sentence) => new(kind, sentence, []);
+    }
+
+    public static PluginOutcome<PluginSession> Start(PluginEntry entry, PluginStartOptions options)
+    {
+        if (Refusal(entry, options) is { } refused) return PluginOutcome<PluginSession>.Fail(refused);
+        var manifest = entry.Manifest!;
+        var how = manifest.ResolveRun().Entry!;
 
         ProcessStartInfo info;
         if (how.IsPython)

@@ -463,7 +463,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
             ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "em-result", "wbond",
                                                "3d-view", "materials", "schematic", "cmc", "analyses", "tuning", "goals",
                                                "optimizers", "statistics", "component-index",
-                                               "components", "technologies", "examples", "shipped-materials"]),
+                                               "components", "technologies", "examples", "shipped-materials", "plugins"]),
             names);
 
         foreach (var t in topics.EnumerateArray())

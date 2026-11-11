@@ -200,23 +200,41 @@ public static class PluginPlacement
     }
 
     /// <summary>
+    /// The layout view a placed cell's <c>layout</c> names, read from the reply that carried it — what the panel's Place
+    /// in workspace and <c>plugin run --place</c> both hand <see cref="Place"/>. Null when no reply carried a view of that
+    /// name; a view that is not a layout, or cannot be read, comes back with its <see cref="PluginView.Problem"/>.
+    /// </summary>
+    public static PluginLayoutView? LayoutViewFor(PluginViewBody? body, string name, PluginManifest manifest, string? workspaceDir)
+    {
+        if (body is null) return null;
+        var view = PluginViews.Read(body, "layout", new PluginViewContext(manifest, workspaceDir));
+        return view as PluginLayoutView
+            ?? new PluginLayoutView(name, new LayoutView(), null, [], [], body.Params)
+               { Problem = view.Problem ?? $"The {name} view is not a layout." };
+    }
+
+    /// <summary>
     /// A layout view as the <c>.clay</c> placed from it: its shapes (port labels among them), its units, and its
     /// technology — named relative to the layout folder only when it is not the workspace's default, which is what a
-    /// null <c>TechRef</c> already means.
+    /// null <c>TechRef</c> already means. With no <paramref name="workspaceDir"/> (a view written out by
+    /// <c>plugin run -o</c>) there is no default, so the technology is always named.
     /// </summary>
-    public static LayoutView PlacedLayout(PluginLayoutView view, string layoutDir, string workspaceDir)
+    public static LayoutView PlacedLayout(PluginLayoutView view, string layoutDir, string? workspaceDir)
     {
         var placed = new LayoutView { DbuPerMicron = view.Layout.DbuPerMicron, DisplayUnit = view.Layout.DisplayUnit };
         foreach (var s in view.Layout.Shapes) placed.Shapes.Add(s);
         if (view.TechnologyPath is { } tp)
         {
             string? fallback = null;
-            try
+            if (workspaceDir is not null)
             {
-                var cws = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(workspaceDir, ".cws"));
-                if (cws.DefaultTechRef is { Length: > 0 } d) fallback = Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(workspaceDir, d));
+                try
+                {
+                    var cws = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(workspaceDir, ".cws"));
+                    if (cws.DefaultTechRef is { Length: > 0 } d) fallback = Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(workspaceDir, d));
+                }
+                catch (Exception e) when (e is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
             }
-            catch (Exception e) when (e is IOException or System.Text.Json.JsonException or UnauthorizedAccessException) { }
             if (!string.Equals(fallback, Path.GetFullPath(tp), StringComparison.OrdinalIgnoreCase))
                 placed.TechRef = Path.GetRelativePath(layoutDir, tp).Replace('\\', '/');
         }

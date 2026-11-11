@@ -72,7 +72,7 @@ public sealed class InstalledCliTests
         [
             "sparam", "dc", "hb", "lp", "loadpull", "lpp", "loadpull_pursuit", "pursuit", "em", "rail",
             "smith", "snp", "convert", "new", "import", "check", "history", "explain", "lvs", "impedance", "render", "read",
-            "netlist", "plot", "find", "reference", "serve", "elab", "--version",
+            "netlist", "plot", "find", "reference", "serve", "elab", "plugin", "--version",
             // Run lower-cases the verb, so IsVerb must agree with it.
             "Check", "SERVE",
         ];

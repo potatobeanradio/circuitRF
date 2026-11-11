@@ -55,7 +55,11 @@ sealed class Program
         // Event with no argument at all, so opening a document never reaches this branch.
         // ProgramHarmonica and ProgramWBond deliberately do not do this (out of AUT-13's scope).
         if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))
+        {
+            // `plugin` refuses on an administrator's no-plugins marker beside the install, found as the window finds it.
+            CircuitRF.Cli.CliEntry.InstallRoot = () => Updates.UpdateInstallSite.Detect().Root;
             Environment.Exit(CircuitRF.Cli.CliEntry.Run(args));
+        }
 
         // brief-em3d-25 R-em3d25-4b — the Windows Apps list's Uninstall runs `circuitRF.exe --uninstall`:
         // the warning, the solvers, then msiexec. Before everything below, for the CLI's reasons: it is not

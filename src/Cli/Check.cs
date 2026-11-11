@@ -238,6 +238,7 @@ internal static class Check
             case DocumentKind.Rail:       Scoped(path, kind, f, () => CheckRail(path, f)); break;
             case DocumentKind.Smith:      Scoped(path, kind, f, () => CheckSmith(path, f)); break;
             case DocumentKind.Chain:      Scoped(path, kind, f, () => CheckChain(path, f)); break;
+            case DocumentKind.Plugin:     Scoped(path, kind, f, () => CheckPlugin(path, f)); break;
             case DocumentKind.ComposerDocument:
                                           Scoped(path, kind, f, () => CheckComposerDocument(path, f)); break;
             case DocumentKind.ComposedModel:
@@ -1473,6 +1474,24 @@ internal static class Check
     /// </summary>
     /// <summary>A <c>.cchain</c>, through the reader and the budget the window uses: each refusal an error, the budget's
     /// notes as information, and the gain and NF when it budgets.</summary>
+    /// <summary>
+    /// A plugin's folder or <c>plugin.json</c> (brief-plg-5 §3), through <see cref="CircuitRF.Design.Plugins.PluginManifestReader"/>
+    /// — the reader the plugins menu, the panel and <c>circuitRF plugin</c> list it with, which also reads the panel's
+    /// layout tree against the declared parameters. No rule of its own: each finding is the reader's, naming its field.
+    /// </summary>
+    private static void CheckPlugin(string path, Findings f)
+    {
+        string manifestPath = Directory.Exists(path) ? Path.Combine(path, CircuitRF.Design.Plugins.PluginManifestReader.FileName) : path;
+        var (manifest, diagnostics) = CircuitRF.Design.Plugins.PluginManifestReader.ReadFile(manifestPath);
+        foreach (var d in diagnostics) f.Add(CliDiagnostics.CheckPluginManifest(manifestPath, d.Field, d.Message, d.IsError));
+        if (manifest is null) return;
+        int views = CircuitRF.Design.Plugins.PluginLayoutReader.Read(manifest).Layout?.Views.Count ?? 0;
+        f.Add(CliDiagnostics.CheckPluginSummary(manifestPath, manifest.Id, manifest.Version,
+            manifest.Kind.ToString().ToLowerInvariant(), manifest.Params.Count, views));
+        if ((manifest.NeedsNewerCircuitRF ?? manifest.ResolveRun().Refusal) is { } why)
+            f.Add(CliDiagnostics.CheckPluginCannotRunHere(manifestPath, why));
+    }
+
     private static void CheckChain(string path, Findings f)
     {
         CircuitRF.Design.Chain.ChainDesign design;

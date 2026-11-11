@@ -1610,3 +1610,6 @@ src/RfCore/NetworkInverse.cs|An S-matrix must be square; this one is {s.RowCount
 src/RfCore/NetworkInverse.cs|Both networks must have the same port count ({2 * k} and {y.RowCount}).
 src/RfCore/NetworkInverse.cs|The two networks resonate against each other at their junction (condition number {Fmt(c1)}).
 src/RfCore/NetworkInverse.cs|The two networks resonate against each other at their junction (condition number {Fmt(c2)}).
+# brief-plg-5: internal invariants of the embedded plugin contract (a build that lost the resource or its headings).
+src/Design/Plugins/PluginReference.cs|Embedded resource \"{ResourceName}\" not found.
+src/Design/Plugins/PluginReference.cs|docs/design/plugins.md no longer has its §3 and §9 headings.

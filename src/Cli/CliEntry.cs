@@ -77,6 +77,14 @@ public static class CliEntry
     private static readonly HashSet<string> _kitsAdded = [];
 
     /// <summary>
+    /// The installation's root — the <c>.app</c>, the folder holding <c>current</c>, or the install folder — beside which
+    /// an administrator drops a policy marker such as <c>no-plugins</c> (brief-plg-5). The installed executable is
+    /// <c>src/Ui</c>'s, whose install-site detection answers this before it hands a verb over; null (a bare
+    /// <c>src/Cli</c> run) looks beside the executable's own folder.
+    /// </summary>
+    public static Func<string?>? InstallRoot { get; set; }
+
+    /// <summary>
     /// Dispatches one invocation and returns its exit code — the whole CLI, minus the process.
     /// </summary>
     public static int Run(string[] args)
@@ -258,6 +266,9 @@ return JsonRun.Finish(exit);
     // The RF Chain Budget window, with no display. It owns no arithmetic: the budget, the benches and the display are
     // src/Design/Chain's and src/Render's, the calls the window's Transfer to Schematic makes.
     "chain"  => CircuitRF.Cli.Chain.Run,
+    // A plugin with no display (brief-plg-5): ONE verb with nouns. It owns no plugin logic — the run is
+    // src/Design/Plugins' PluginHeadless, the process host and the placement the panel calls.
+    "plugin" => CircuitRF.Cli.Plugin.Run,
     // The S-Parameter Viewer, with no display. It owns no reading and no drawing: the file is read
     // through the TouchstoneSource the window reads it through, the plots are SParameterViewerPreset's
     // and the page is RenderDataDisplay's.

@@ -6,6 +6,11 @@ Series: `brief-plg-0-overview.md`. Design: `docs/design/plugins.md` §11, P-7. D
 the clients the automation architecture exists for (`automation-architecture.md` R-aut-2). A filter plugin should be
 usable by an agent that is asked "design a 2.4 GHz bandpass on this substrate and simulate it" with no display.
 
+**Amended 2026-11-10 (owner decision):** there is no `plugin allow`, on the command line or over MCP. Permission is
+granted only in the window (`plugins.md` §9.4); `deny` stays on the command line. Where the text below says `allow`, the
+built verb refuses it with `plugin.permission.window-only`, and a run that is not permitted is
+`plugin.permission.needs-user`, naming where the person grants it.
+
 ## What to build
 
 ### 1. The verb — `src/Cli/Plugin.cs`

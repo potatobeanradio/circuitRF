@@ -112,4 +112,43 @@ public static class PluginValueFormat
             return num.ToString(p.Kind == PluginParamKind.Int ? "0" : "R", CultureInfo.InvariantCulture);
         return Text(value, null);
     }
+
+    /// <summary>
+    /// A <c>table</c> view or table readout (<c>plugins.md</c> §5.2) as CSV, for <c>plugin run -o</c>: the plugin's own
+    /// numbers in base SI, so a script reads back exactly what was sent, with each column's unit in its heading
+    /// (<c>Length [metre]</c>). Text cells are written as given. RFC 4180 quoting; lines end in <c>\n</c>.
+    /// </summary>
+    public static string Csv(JsonNode? table)
+    {
+        if (table is not JsonObject o || o["columns"] is not JsonArray cols) return "";
+        var units = o["units"] as JsonArray;
+        var sb = new System.Text.StringBuilder();
+        var heads = new List<string>();
+        for (int i = 0; i < cols.Count; i++)
+        {
+            string head = cols[i] is JsonValue hv && hv.TryGetValue<string>(out var hs) ? hs : cols[i]?.ToJsonString() ?? "";
+            string? u = units is not null && i < units.Count && units[i] is JsonValue uv && uv.TryGetValue<string>(out var us) && us.Length > 0 ? us : null;
+            heads.Add(u is null ? head : $"{head} [{u}]");
+        }
+        sb.Append(string.Join(",", heads.Select(Quote))).Append('\n');
+        if (o["rows"] is JsonArray rows)
+            foreach (var r in rows)
+            {
+                var cells = r is JsonArray ca ? ca.Select(Cell) : [];
+                sb.Append(string.Join(",", cells.Select(Quote))).Append('\n');
+            }
+        return sb.ToString();
+
+        static string Cell(JsonNode? c) => c switch
+        {
+            null => "",
+            JsonValue v when v.TryGetValue<double>(out double d) => d.ToString("R", CultureInfo.InvariantCulture),
+            JsonValue v when v.TryGetValue<string>(out var t) => t,
+            JsonObject q when q["value"] is JsonValue qv && qv.TryGetValue<double>(out double qd) => qd.ToString("R", CultureInfo.InvariantCulture),
+            _ => c.ToJsonString(),
+        };
+
+        static string Quote(string cell)
+            => cell.IndexOfAny([',', '"', '\n', '\r']) < 0 ? cell : "\"" + cell.Replace("\"", "\"\"") + "\"";
+    }
 }

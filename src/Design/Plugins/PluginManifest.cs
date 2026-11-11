@@ -232,8 +232,6 @@ public static partial class PluginManifestReader
 
             string? ui = root.TryGetProperty("ui", out var uiEl) && uiEl.ValueKind == JsonValueKind.Object ? uiEl.GetRawText() : null;
 
-            if (d.Any(x => x.IsError)) return (null, d);
-
             var manifest = new PluginManifest
             {
                 ApiVersion   = api,
@@ -255,13 +253,12 @@ public static partial class PluginManifestReader
             };
 
             // A panel's layout is part of the manifest: a tree that names an undeclared parameter is refused here, so
-            // the list, the window and the command line all say so the same way (brief-plg-2 §1).
+            // the list, the window and the command line all say so the same way (brief-plg-2 §1). Read even when the
+            // fields above were refused, against the parameters that did read, so an author running `check` hears about
+            // every defect at once rather than one per edit (brief-plg-5).
             if (ui is not null && kind == PluginKind.Panel)
-            {
                 d.AddRange(PluginLayoutReader.Read(ui, manifest).Diagnostics);
-                if (d.Any(x => x.IsError)) return (null, d);
-            }
-            return (manifest, d);
+            return d.Any(x => x.IsError) ? (null, d) : (manifest, d);
         }
     }
 

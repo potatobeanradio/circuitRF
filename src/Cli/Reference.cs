@@ -109,6 +109,9 @@ internal static partial class Reference
              "Generated from the material libraries that ship with circuitRF: every material's name, " +
              "role, electrical and thermal values and source, and how a technology uses one.",
              ByteLength(ShippedMaterialsText())),
+            // brief-plg-5: what a plugin may send and receive, for an author or an agent writing one.
+            (CircuitRF.Design.Plugins.PluginReference.Topic, CircuitRF.Design.Plugins.PluginReference.Title,
+             CircuitRF.Design.Plugins.PluginReference.Summary, ByteLength(CircuitRF.Design.Plugins.PluginReference.Text)),
         ];
     }
 
@@ -165,6 +168,18 @@ internal static partial class Reference
 
         if (string.Equals(topic, ShippedMaterialsTopic, StringComparison.OrdinalIgnoreCase))
             return item is null ? ShippedMaterials() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
+
+        // brief-plg-5: the plugin contract, for an author or an agent writing a plugin.
+        if (string.Equals(topic, CircuitRF.Design.Plugins.PluginReference.Topic, StringComparison.OrdinalIgnoreCase))
+        {
+            if (item is not null) return JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
+            string text = CircuitRF.Design.Plugins.PluginReference.Text;
+            JsonRun.Reference = new ReferenceReportJson(null, new ReferenceTopicJson(
+                CircuitRF.Design.Plugins.PluginReference.Topic, CircuitRF.Design.Plugins.PluginReference.Title,
+                CircuitRF.Design.Plugins.PluginReference.Summary, ByteLength(text), text), null);
+            Console.Out.Write(text);
+            return 0;
+        }
 
         if (DocumentSchema.Find(topic) is { } format)
         {

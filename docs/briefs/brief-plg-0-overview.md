@@ -27,7 +27,7 @@ headlessly from the CLI and MCP.
 | `brief-plg-3-views.md` | The views: `plot` and `smith` on the Data Display with bound markers, `table`, `layout` with handles, `schematic`, `image` | 2 |
 | `brief-plg-4-host-services.md` | `simulate`, `resolve`, `evaluate`, `lineModel`; `window` plugins | 1 (2 for the panel's busy state) |
 | `brief-plg-5-cli-mcp.md` | `circuitRF plugin list/describe/run/install/uninstall` and the MCP `plugin` tool | 1, 3 |
-| `brief-plg-6-install.md` | Settings ▸ Plugins, `plugins/index.json`, install from the list, an address or a folder; updates, rollback, Python environments, the policy switch | 1 |
+| `brief-plg-6-install.md` | Settings ▸ Plugins, `plugins/index.json`, install from the list, an address or a folder; updates, rollback, Python environments, the policy switch; `plugin install`/`uninstall` on the CLI and MCP; allowing only in the window | 1, 5 |
 | `brief-plg-7-docs-sdk-example.md` | The Python helper package, a NativeAOT C# `window` plugin with a headless form, the example plugins, the user doc and the plugin-author guide | 2, 3, 4, 6 |
 
 Briefs 4 and 6 can run in parallel with 2–3 once 1 is in. Brief 5 needs 3 because `run` writes views as files.
@@ -47,6 +47,9 @@ Briefs 4 and 6 can run in parallel with 2–3 once 1 is in. Brief 5 needs 3 beca
   checkpoints and goes through `CellCreate`/`ComponentImport`.
 - **D6 — Permission is per user, keyed by installed directory, never in a `.cws`** (P-6), with the same
   policy-file / environment / preference precedence `ExternalWorkerPolicy` has.
+- **D6a — Permission is granted only in the window** (owner decision, 2026-11-10): the first-run prompt or Settings ▸
+  Plugins. The command line and MCP can deny, install and uninstall, never allow — anything that can type a command can
+  be an agent, and running someone else's program with the user's permissions is the person's decision.
 - **D7 — Headless parity.** Anything a panel plugin can do, `circuitRF plugin run` and MCP can do (P-7).
 - **D8 — The vocabulary starts at what `plugins.md` lists and grows only for a real plugin** (P-8).
 - **D9 — The new code lives in `src/Design/Plugins/` (everything that does not draw) and `src/Ui/Plugins/` (everything

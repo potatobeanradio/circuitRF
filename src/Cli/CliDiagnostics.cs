@@ -5276,4 +5276,102 @@ internal static class CliDiagnostics
         "cli.yield.generate-names-taken", DiagnosticSeverity.Error,
         "yield corners: the design already has corners named {names}; nothing was written. Rename or remove those first.",
         ("names", names));
+    // ── `plugin` (brief-plg-5) ──────────────────────────────────────────────────
+
+    public static Diagnostic PluginUsage(string why) => Diagnostic.Create(
+        "cli.plugin.usage", DiagnosticSeverity.Error, "plugin: {why}", ("why", why));
+
+    public static Diagnostic PluginUnknownOption(string noun, string option, string takes) => Diagnostic.Create(
+        "plugin.args.unknown-option", DiagnosticSeverity.Error,
+        "plugin {noun} does not take '{option}'. It takes {takes}.", ("noun", noun), ("option", option), ("takes", takes));
+
+    public static Diagnostic PluginNotFound(string id, string known) => Diagnostic.Create(
+        "cli.plugin.not-found", DiagnosticSeverity.Error,
+        "No plugin '{id}' is installed or linked here. {known}", ("id", id), ("known", known));
+
+    /// <summary>A listed plugin that cannot run on this build and machine, and why.</summary>
+    public static Diagnostic PluginUnavailable(string id, string why) => Diagnostic.Create(
+        "cli.plugin.unavailable", DiagnosticSeverity.Error, "{id} cannot run here: {why}", ("id", id), ("why", why));
+
+    /// <summary>
+    /// Not yet allowed, or refused — written for an agent to relay: only the person can grant it, and only in the window.
+    /// <c>decision</c> is <c>not-asked</c> or <c>denied</c>.
+    /// </summary>
+    public static Diagnostic PluginNotPermitted(string id, string name, string decision, string directory) => Diagnostic.Create(
+        "plugin.permission.needs-user", DiagnosticSeverity.Error,
+        decision == "denied"
+            ? "{name} ({id}) is installed, and the person has refused it permission to run on this machine. Only they can " +
+              "change that, in circuitRF's Settings ▸ Plugins; nothing else can grant it."
+            : "{name} ({id}) is installed but the person has not allowed it to run on this machine. Only they can, in " +
+              "circuitRF: open it from Tools ▸ Plugins, which asks, or allow it in Settings ▸ Plugins. Nothing else can " +
+              "grant it — not the command line, not a tool call. Ask them to, then try again.",
+        ("id", id), ("name", name), ("decision", decision), ("directory", directory));
+
+    /// <summary><c>plugin allow</c>: there is no such noun, on purpose.</summary>
+    public static Diagnostic PluginAllowOnlyInTheWindow() => Diagnostic.Create(
+        "plugin.permission.window-only", DiagnosticSeverity.Error,
+        "Permission to run a plugin is granted only in circuitRF itself — open the plugin from Tools ▸ Plugins, which " +
+        "asks, or use Settings ▸ Plugins. A command line can only take it away: 'circuitRF plugin deny <id>'.");
+
+    public static Diagnostic PluginDisabled(string reason) => Diagnostic.Create(
+        "cli.plugin.disabled", DiagnosticSeverity.Error,
+        "{reason} That overrides any plugin's permission, so nothing was run.", ("reason", reason));
+
+    public static Diagnostic PluginPermissionNotRecorded(string id, string why) => Diagnostic.Create(
+        "cli.plugin.permission-not-recorded", DiagnosticSeverity.Error,
+        "The decision about {id} could not be recorded: {why}", ("id", id), ("why", why));
+
+    /// <summary>A parameter that does not resolve, or a plugin with no headless form — refused before it is started.</summary>
+    public static Diagnostic PluginRefused(string id, string why) => Diagnostic.Create(
+        "cli.plugin.refused", DiagnosticSeverity.Error, "{id}: {why}", ("id", id), ("why", why));
+
+    /// <summary>The plugin failed: exited, broke the protocol, ran past a deadline, would not start.</summary>
+    public static Diagnostic PluginFailed(string id, string kind, string sentence) => Diagnostic.Create(
+        "cli.plugin.failed", DiagnosticSeverity.Error, "{id}: {sentence}", ("id", id), ("kind", kind), ("sentence", sentence));
+
+    /// <summary>One of the plugin's last stderr lines, under a failure.</summary>
+    public static Diagnostic PluginStderr(string line) => Diagnostic.Create(
+        "cli.plugin.stderr", DiagnosticSeverity.Info, "  {line}", ("line", line));
+
+    /// <summary>One of the plugin's own messages, at its own severity.</summary>
+    public static Diagnostic PluginMessage(string id, string severity, string text) => Diagnostic.Create(
+        "cli.plugin.message",
+        severity == "error" ? DiagnosticSeverity.Error : severity == "warning" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Info,
+        "{id}: {text}", ("id", id), ("severity", severity), ("text", text));
+
+    /// <summary>A view the reply carried that cannot be written as a file.</summary>
+    public static Diagnostic PluginViewNotWritten(string view, string why) => Diagnostic.Create(
+        "cli.plugin.view-not-written", DiagnosticSeverity.Warning,
+        "The {view} view was not written: {why}", ("view", view), ("why", why));
+
+    /// <summary><c>--place</c> into a workspace that already has the cell, with neither answer given.</summary>
+    public static Diagnostic PluginCellExists(string cell, string workspace) => Diagnostic.Create(
+        "cli.plugin.cell-exists", DiagnosticSeverity.Error,
+        "Nothing was placed: {workspace} already has a cell {cell}. --replace writes over its views of the same kinds " +
+        "(a restore point is taken first); --new-name <name> places it under another name.",
+        ("cell", cell), ("workspace", workspace));
+
+    public static Diagnostic PluginPlacementRefused(string why) => Diagnostic.Create(
+        "cli.plugin.placement-refused", DiagnosticSeverity.Error, "Nothing was placed: {why}", ("why", why));
+
+    public static Diagnostic PluginPlacedNothing(string id) => Diagnostic.Create(
+        "cli.plugin.placed-nothing", DiagnosticSeverity.Error, "{id} placed nothing.", ("id", id));
+
+    public static Diagnostic PluginCancelled() => Diagnostic.Create(
+        "cli.plugin.cancelled", DiagnosticSeverity.Error, "plugin run: cancelled.");
+
+    /// <summary><c>check</c> on a manifest: one field's refusal or note, as the manifest reader states it.</summary>
+    public static Diagnostic CheckPluginManifest(string path, string field, string message, bool isError) => Diagnostic.Create(
+        "check.plugin.manifest", isError ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
+        "{path}: {field}: {message}", ("path", path), ("field", field), ("message", message));
+
+    /// <summary><c>check</c> on a manifest that reads: what it is, and whether it can run here.</summary>
+    public static Diagnostic CheckPluginSummary(string path, string id, string version, string kind, int parameters, int views) => Diagnostic.Create(
+        "check.plugin.summary", DiagnosticSeverity.Info,
+        "{path}: plugin {id} {version}, a {kind} plugin with {parameters} parameter(s) and {views} view(s).",
+        ("path", path), ("id", id), ("version", version), ("kind", kind), ("parameters", parameters), ("views", views));
+
+    public static Diagnostic CheckPluginCannotRunHere(string path, string why) => Diagnostic.Create(
+        "check.plugin.cannot-run-here", DiagnosticSeverity.Info,
+        "{path}: it cannot run on this machine: {why}", ("path", path), ("why", why));
 }

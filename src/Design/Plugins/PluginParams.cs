@@ -105,9 +105,12 @@ public static class PluginParams
             else values[p.Name] = node;
         }
 
+        var settable = declared.Where(p => p.Kind != PluginParamKind.Readout).Select(p => p.Name).ToList();
         foreach (string name in given.Keys)
-            if (!declared.Any(p => p.Name == name))
-                errors.Add($"{name}: the plugin declares no such parameter.");
+            if (declared.FirstOrDefault(p => p.Name == name) is not { } known)
+                errors.Add($"{name}: the plugin declares no such parameter. Its parameters are {string.Join(", ", settable)}.");
+            else if (known.Kind == PluginParamKind.Readout)
+                errors.Add($"{name}: a readout is filled by the plugin, never given. Its parameters are {string.Join(", ", settable)}.");
 
         return (errors.Count == 0 ? values : null, errors);
     }
@@ -126,22 +129,22 @@ public static class PluginParams
             {
                 var (v, error) = EvaluateQuantity(t, p.Unit!, ctx.Scope);
                 if (error is not null) return (null, error);
-                if (Bound(p.Min, p.Unit!) is { } lo && v < lo) return (null, $"{t} is below the minimum {Text(p.Min)}.");
-                if (Bound(p.Max, p.Unit!) is { } hi && v > hi) return (null, $"{t} is above the maximum {Text(p.Max)}.");
+                if (Bound(p.Min, p.Unit!) is { } lo && v < lo) return (null, $"{t} is below the minimum {Text(p.Min)}{Range()}.");
+                if (Bound(p.Max, p.Unit!) is { } hi && v > hi) return (null, $"{t} is above the maximum {Text(p.Max)}{Range()}.");
                 return (new JsonObject { ["value"] = v, ["unit"] = p.Unit, ["text"] = t }, null);
             }
             case PluginParamKind.Int:
             {
                 if (!long.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out long n)) return (null, $"'{t}' is not a whole number.");
-                if (p.Min is { ValueKind: JsonValueKind.Number } mi && n < mi.GetDouble()) return (null, $"{n} is below the minimum {mi.GetRawText()}.");
-                if (p.Max is { ValueKind: JsonValueKind.Number } ma && n > ma.GetDouble()) return (null, $"{n} is above the maximum {ma.GetRawText()}.");
+                if (p.Min is { ValueKind: JsonValueKind.Number } mi && n < mi.GetDouble()) return (null, $"{n} is below the minimum {mi.GetRawText()}{Range()}.");
+                if (p.Max is { ValueKind: JsonValueKind.Number } ma && n > ma.GetDouble()) return (null, $"{n} is above the maximum {ma.GetRawText()}{Range()}.");
                 return (JsonValue.Create(n), null);
             }
             case PluginParamKind.Real:
             {
                 if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double r) || !double.IsFinite(r)) return (null, $"'{t}' is not a number.");
-                if (p.Min is { ValueKind: JsonValueKind.Number } mi && r < mi.GetDouble()) return (null, $"{t} is below the minimum {mi.GetRawText()}.");
-                if (p.Max is { ValueKind: JsonValueKind.Number } ma && r > ma.GetDouble()) return (null, $"{t} is above the maximum {ma.GetRawText()}.");
+                if (p.Min is { ValueKind: JsonValueKind.Number } mi && r < mi.GetDouble()) return (null, $"{t} is below the minimum {mi.GetRawText()}{Range()}.");
+                if (p.Max is { ValueKind: JsonValueKind.Number } ma && r > ma.GetDouble()) return (null, $"{t} is above the maximum {ma.GetRawText()}{Range()}.");
                 return (JsonValue.Create(r), null);
             }
             case PluginParamKind.Bool:
@@ -174,6 +177,9 @@ public static class PluginParams
         double? Bound(JsonElement? e, string unit)
             => e is { } b ? EvaluateQuantity(b.ValueKind == JsonValueKind.String ? b.GetString()! : b.GetRawText(), unit, null).Value : null;
         static string Text(JsonElement? e) => e is { ValueKind: JsonValueKind.String } s ? s.GetString()! : e?.GetRawText() ?? "";
+        // The whole valid range, when both ends are declared: a refusal that names one bound leaves a caller guessing
+        // the other (brief-plg-5).
+        string Range() => p.Min is not null && p.Max is not null ? $"; it takes {Text(p.Min)} to {Text(p.Max)}" : "";
     }
 
     // ── The workspace kinds ─────────────────────────────────────────────────────

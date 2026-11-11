@@ -3550,3 +3550,28 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
   `AnalysisClonePropertyParityTests.CliOverrideRebuild_CarriesEveryPropertyItDoesNotOverride` holds them by reflection.
   `check` also runs the oscillator's own key resolution without `PhaseNoise=yes` (`check.osc.keys`) and an HB/loadpull
   noise run's ends (`check.noise.keys`).
+
+## Brief PLG-5 — the `plugin` verb and the MCP `plugin` tool (2026-11-10)
+
+- **Permission is granted only in the window; the command line can only deny** (owner decision). `plugin allow` is a
+  refusal (`plugin.permission.window-only`), the MCP tool has no `allow`, and below the window the trust store is
+  read-only: `PluginPreferences.Trust()` persists nothing and `RecordDenial` is the one write. A refused run is
+  `plugin.permission.needs-user`, worded for an agent to relay.
+- **`plugin deny` writes `preferences.json` behind a running window's back.** The application reads preferences ONCE
+  (`AppPreferencesIo`) and writes its whole copy back on every later change, so a denial recorded from the command line
+  while circuitRF is open is lost at the window's next preference save — the plugin becomes allowed again. The CLI
+  merges and reads back; the window-side fix is brief-plg-6 §4, with its gate.
+- **The manifest reader stopped before the layout check.** Any refused field returned before the panel's layout tree was
+  read, so an author fixing a duplicate parameter then learned of an undeclared one on the next run. It now reads the tree
+  against the parameters that did read and returns every diagnostic together; `check` relies on it (gate 6).
+- **Policy and permission come before parameters.** `PluginSession.Refusal` is `Start`'s pre-process checks on their own,
+  so a headless run asks them before it judges `--set`: a plugin that may not run is never argued with about a frequency.
+- **A plot view's inline data is rewritten each run.** `PluginPlots.WriteDataDisplay` keeps a data file that already
+  exists (right in a staging folder, where it was just written); in a reused `-o` folder that file is a previous run's, so
+  the writer deletes it first.
+- **A `.clay` written out of a workspace always names its technology.** `PluginPlacement.PlacedLayout` leaves `TechRef`
+  null when the technology is the workspace default; with no workspace beside the file (`workspaceDir: null`), there is no
+  default and `render` would fall back to the plain palette with a note.
+- **The no-plugins marker needs the install root**, which only `src/Ui`'s `UpdateInstallSite` knows (a `.app` bundle, a
+  `current` pointer). `CliEntry.InstallRoot` is set by the installed executable before it hands a verb over; a bare
+  `src/Cli` run looks beside its own folder.

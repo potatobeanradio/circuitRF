@@ -20,7 +20,7 @@ author needs to run the one they are writing without reinstalling it after every
 - **Uninstall** = remove the folder and its trust entry; preferences remembered per plugin (window size, last
   parameters) are removed too.
 - **Zip safety:** entries with `..`, absolute paths or links outside the target are refused by name.
-- All functions take paths and preferences as arguments (`src/Design/CLAUDE.md`), so PLG-5's `install` calls them.
+- All functions take paths and preferences as arguments (`src/Design/CLAUDE.md`), so §5's `plugin install` calls them.
 
 ### 2. Three sources
 
@@ -63,8 +63,59 @@ A new tab between Security & Permissions and Revision Control.
 - Buttons: Refresh list, Install from address…, Install from folder…, Link folder….
 - An install shows a progress dialog with its log and Cancel; Cancel leaves nothing behind.
 - Tools ▸ Plugins ▸ Manage Plugins… opens this tab.
+- **Allowing happens here and in the first-run prompt, and nowhere else** (owner decision, 2026-11-10; `plugins.md`
+  §9.4). The command line and MCP can deny, install and uninstall, never allow. This tab is therefore where an installed
+  plugin becomes runnable, and an installed plugin that is `not asked` and was installed outside the window (§5) is
+  listed first, marked "Installed outside circuitRF — not yet allowed" with its origin and time, its picker on Ask.
+- **A denial the command line recorded survives an open window — a security requirement, not a convenience.**
+  `circuitRF plugin deny` (PLG-5) merges `plugin_trust` into `preferences.json` while the application may be running.
+  Today the application reads preferences once and writes its whole copy back on every change, so it neither sees that
+  denial nor keeps it past its next save — a revoked plugin would quietly become allowed again (`src/Cli/RESOLVED.md`,
+  PLG-5). The trust table is read from the file whenever it is consulted (the prompt, this tab, a plugin's start) and
+  written by merging that one key — never from or by the in-memory copy, and the whole-file save keeps the file's
+  `plugin_trust` rather than its own. Gate: deny a plugin through the CLI with the application's preferences loaded,
+  change an unrelated preference in process, and the file still says denied, the Installed list shows Denied, and
+  opening the plugin from the menu does not run it.
 
-### 5. The list's own gate
+### 5. `circuitRF plugin install` / `uninstall`, and installing over MCP
+
+PLG-5's verb gains the two nouns it refuses today, each calling §1's functions and nothing else (the PLG-5 source scan
+extends to them):
+
+```
+circuitRF plugin install <folder | address | id-from-the-list> [--tag t] [--link]
+circuitRF plugin uninstall <id> [--version v]
+circuitRF plugin update <id> | rollback <id>
+```
+
+- The source is inferred: an existing folder is §2's folder source (`--link` links it instead of copying), a GitHub URL
+  is an address (`--tag` required when the release list cannot be read — a refusal naming it, never a guess), anything
+  else is an `id` looked up in the vetted list. Output: the installed folder, id and version; `--json` as `plugin list`'s
+  row. Exit 0, 1 on a refusal or failed install (the atomic rule of §1 holds), 130 cancelled with nothing left behind.
+- **Install never allows.** A freshly installed plugin is `not asked`, and the install's output carries PLG-5's
+  `plugin.permission.needs-user` notice: only the person can allow it, in circuitRF (§4).
+- **An install made outside the window runs nothing.** `pip install` of a `requirements.txt` can run a package's build
+  scripts, which is running code before anyone allowed it. So `plugin install` (CLI or MCP) unpacks, validates the
+  manifest and stops; §3's environment is created when the person allows the plugin in the window, with the install
+  dialog's progress and log, and a failure there leaves the plugin installed and not runnable, saying why. `active.json`
+  records the install's origin (`cli`, `mcp`, `settings`) and time.
+
+**Over MCP an agent may install and uninstall, and never allow.** Installing puts files on disk and runs nothing;
+running is what executes someone else's program with the user's own permissions, and that is granted only by the person
+in the window (§4). So no server flag is needed:
+
+- The `plugin` tool's `action` gains `install` and `uninstall`. Their descriptions say they install someone else's
+  program for a source the person named, and that it will not run until the person allows it in circuitRF. `tools/list`
+  marks both with the MCP annotations `destructiveHint: true` and `openWorldHint: true`, so a client that confirms tool
+  calls asks the person.
+- MCP's `install` takes a folder under the server root, an address or a list id — never a path outside the root.
+  `update`, `rollback` and `--link` are not offered over MCP: an update runs new code, and a link runs a folder that
+  keeps changing.
+- The flow: the user tells the agent where a plugin is; the agent calls `install` and relays the notice; the person
+  allows it in circuitRF; the agent calls `describe` and `run`. The server re-reads preferences on every call
+  (`PluginPreferences.Read`), so a grant made in the open window is seen by the next tool call with no restart.
+
+### 6. The list's own gate
 
 `tests/Ui.Tests/Plugins/PluginIndexTests.cs` reads the repository's `plugins/index.json` and fails on: a schema
 error, a duplicate `id`/`version`, a missing `sha256`, or an asset URL not on `github.com`. Commercial tool and PDK
@@ -83,7 +134,14 @@ repository.
 5. **No unasked network:** with a counting HTTP seam, opening Settings, listing and starting plugins make zero
    requests; only Refresh, Install and Update do.
 6. **Linked folder:** editing the linked plugin's script changes the next session's behaviour without reinstalling.
-7. **UI:** UiSnapshot PNGs of the Plugins tab (empty; with installed and available plugins; policy-overridden), the
+7. **CLI and MCP install:** `plugin install <folder>` and `uninstall` as a process give a byte-identical installed tree
+   to the in-process `PluginInstaller` call. Over MCP the `plugin` tool's actions are `list`, `describe`, `run`,
+   `install` and `uninstall` — never `allow` or `deny`; `install` puts a folder under the root in place (one outside it
+   is refused), creates no Python environment and starts no process (the counting probe), and its result carries
+   `plugin.permission.needs-user`; `run` then refuses with that id; after the grant is recorded as Settings ▸ Plugins
+   records it, the same `run` succeeds with no server restart; `uninstall` removes the folder and its trust entry.
+8. **UI:** UiSnapshot PNGs of the Plugins tab (empty; with installed and available plugins; one installed outside
+   circuitRF and not yet allowed; policy-overridden), the
    install-from-address dialog, and an install in progress; light and dark. Looked at and listed.
 
 ## Not in this brief

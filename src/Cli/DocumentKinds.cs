@@ -45,6 +45,9 @@ internal enum DocumentKind
     ModelPart,
     /// <summary>A model library's <c>library.clib</c> (brief vendorlib-6 R-vl6-2a).</summary>
     ModelLibraryManifest,
+    /// <summary>A plugin: its folder or its <c>plugin.json</c> (brief-plg-5). <c>check</c> reads the manifest and the
+    /// panel's layout with the reader the application lists plugins with.</summary>
+    Plugin,
     /// <summary>A file with one of circuitRF's extensions whose CONTENT is another program's — the
     /// motion-capture format that also uses <c>.c3d</c> (overview §1c). Named, never reported as a
     /// broken circuitRF document.</summary>
@@ -92,6 +95,7 @@ internal static class DocumentKinds
         DocumentKind.Picture       => "picture",
         DocumentKind.ModelPart     => "model-part",
         DocumentKind.ModelLibraryManifest => "model-library",
+        DocumentKind.Plugin        => "plugin",
         DocumentKind.Foreign       => "foreign",
         _                          => "unknown",
     };
@@ -121,6 +125,7 @@ internal static class DocumentKinds
         {
             if (File.Exists(Path.Combine(path, CwsFileName))) return DocumentKind.Workspace;
             if (LooksLikeCellFolder(path) || ModelFolder.Is(path)) return DocumentKind.Cell;
+            if (File.Exists(Path.Combine(path, CircuitRF.Design.Plugins.PluginManifestReader.FileName))) return DocumentKind.Plugin;
             return DocumentKind.Folder;
         }
 
@@ -132,6 +137,8 @@ internal static class DocumentKinds
             return DocumentKind.ModelPart;
         if (string.Equals(name, ModelFolder.LibraryFileName, StringComparison.OrdinalIgnoreCase))
             return DocumentKind.ModelLibraryManifest;
+        if (string.Equals(name, CircuitRF.Design.Plugins.PluginManifestReader.FileName, StringComparison.OrdinalIgnoreCase))
+            return DocumentKind.Plugin;
 
         var byExtension = Path.GetExtension(path).ToLowerInvariant() switch
         {

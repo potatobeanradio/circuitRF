@@ -205,7 +205,11 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExportPartReportJson? ExportPart = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Summarized = null);
+        string? Summarized = null,
+        // brief-plg-5: `plugin list | describe | run | allow`. A JSON object rather than a record of its own, because
+        // describe's half is the plugin's manifest normalised — the plugin contract's shape, not this document's.
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        System.Text.Json.Nodes.JsonObject? Plugin = null);
 
     /// <summary>
     /// Where an <c>em</c> run put its temporary files — so a caller can tell which disk a run filled, or why it was refused.

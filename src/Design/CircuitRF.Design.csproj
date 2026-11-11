@@ -203,6 +203,14 @@
                       LogicalName="CircuitRF.Design.Reference.components.md" />
   </ItemGroup>
 
+  <!-- brief-plg-5: `reference plugins` serves the plugin contract - the manifest, the panel, the views, the messages and
+       the host services - out of the design note that defines it, in place for the reason above. PluginReference
+       reads it; it is not a ReferenceLibrary topic, since the note has no front matter and most of it is not contract. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\design\plugins.md"
+                      LogicalName="CircuitRF.Design.Plugins.plugins.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <!--
       circuitRF's OWN Python package (circuitrf_pcell + cni), beside the executable.

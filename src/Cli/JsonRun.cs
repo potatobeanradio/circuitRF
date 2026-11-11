@@ -89,6 +89,7 @@ internal static class JsonRun
         public ConvertImageJson? ConvertImage;
         public ModelReportJson? Model;
         public VendorLibraryJson? Library;
+        public System.Text.Json.Nodes.JsonObject? Plugin;
         public TextWriter? Sink;
         public List<ResultOutput> Outputs = [];
         public List<DiagnosticJson> Diagnostics = [];
@@ -307,6 +308,8 @@ internal static class JsonRun
 
     /// <summary>What <c>import library</c> added (brief vendorlib-1 R-vl1-5a).</summary>
     public static VendorLibraryJson? Library { get => S.Library; set => S.Library = value; }
+    /// <summary>brief-plg-5 — what <c>plugin</c> listed, described, ran or recorded.</summary>
+    public static System.Text.Json.Nodes.JsonObject? Plugin { get => S.Plugin; set => S.Plugin = value; }
 
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
@@ -373,6 +376,7 @@ internal static class JsonRun
         ConvertImage        = null;
         Model               = null;
         Library             = null;
+        Plugin              = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -610,7 +614,7 @@ internal static class JsonRun
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
-         || Model is not null || Library is not null || Review is not null || ReviewChecks is not null)
+         || Model is not null || Library is not null || Review is not null || ReviewChecks is not null || Plugin is not null)
         {
             // EMB-5 R-emb5-8: `--result summary` on a report with no DataSet — the answer without its
             // per-trial, per-corner and per-iteration records, and a sentence saying what was left out.
@@ -632,7 +636,7 @@ internal static class JsonRun
                                      Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
-                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized);
+                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized, Plugin: Plugin);
         }
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and

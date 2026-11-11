@@ -246,10 +246,7 @@ public partial class WorkspaceViewModel
             {
                 if (window is null) return (IReadOnlyList<PluginMessage>)[];
                 var answer = await PlacePluginAsync(window, entry, workspaceDir, session, values, [], cancel, name =>
-                    controller.State.ViewBodies.GetValueOrDefault(name) is { } body
-                        ? PluginViews.Read(body, "layout", new PluginViewContext(manifest, workspaceDir)) as PluginLayoutView
-                          ?? new PluginLayoutView(name, new LayoutView(), null, [], [], body.Params) { Problem = $"The {name} view is not a layout." }
-                        : null);
+                    PluginPlacement.LayoutViewFor(controller.State.ViewBodies.GetValueOrDefault(name), name, manifest, workspaceDir));
                 return answer.Messages;
             }),
         });

@@ -5041,3 +5041,60 @@ What could not move is `WorkspaceCopy`'s reference repair, which needs the GUI's
 that repair must write nothing, and `ExamplesCliTests` installs every example both ways and compares the trees byte for
 byte; an example that fails it stores a reference in a spelling the repair rewrites. Gate: `ExamplesCliTests`.
 
+
+## 42. `plugin` — a plugin with no display (brief-plg-5)
+
+`circuitrf plugin list | describe <id> | run <id> | deny <id>` is `plugins.md` §11 and P-7: anything a panel
+plugin does in its window, a script, a build machine or an agent can do here. ONE verb with nouns, on `Authoring.cs`' terms,
+and it **owns no plugin logic**: the catalogue is `PluginCatalog.Discover`, the settings `PluginPreferences` (the keys the
+window's Settings write), and a run is `PluginHeadless.RunAsync` in `src/Design/Plugins` — the process host, the
+parameters resolved as the panel resolves them (`PluginParams`, the panel's starting values for anything not `--set`), and
+with `--place`, `commit` and then `PluginPlacement.Place` with the layout view read through `PluginPlacement.LayoutViewFor`,
+which the panel's Place in workspace calls too. A comment-stripped source scan of `src/Cli/Plugin.cs` holds that.
+
+- **`list`** reads manifests only (series gate 2): id, version, kind, `installed` or `linked`, `allowed` / `denied` /
+  `not asked`, and why a dimmed one cannot run. A policy that turns plugins off is reported beside the list.
+- **`describe`** is the manifest normalised (`--json` `result.plugin.manifest`): every parameter with kind, unit, default,
+  range and options; the panel's views by name and kind; `run` per platform; and how it runs on this machine.
+- **`run`** sends `hello` (`mode: "headless"`) and one `update`. `-o <dir>` writes each view as the document the panel
+  draws it from (`PluginViewFiles`): a plot or Smith chart as its data — the staged `.sNp`, or inline data as
+  `<view>.npy` — and the `.cdd` Open in Data Display writes, which `render --data` draws; a layout as the `.clay`
+  placement writes, its technology always named (there is no workspace default beside it); a schematic as its staged
+  `.cnl`; a table as CSV in base SI with each unit in its heading; an image as itself; and the readouts as the plugin sent
+  them in `readouts.json`. The plugin's messages go to stderr at their own severity. `--place <workspace>` places what
+  `commit` stages; an existing cell is `cli.plugin.cell-exists`, naming `--replace` and `--new-name <name>` (the question
+  the window's dialog asks). `--workspace` is the workspace parameters resolve against (it defaults to `--place`'s), and
+  `--context <path>` is `hello`'s `context` — a folder is a cell, a `.clay` a layout, a `.ctech` a technology, a Touchstone
+  file or `.npy` a result.
+- **`--set name=value`** is the panel's text: a quantity with an SI prefix or an expression, a `choice` option, and a
+  substrate, technology, cell or result by its picker text or its short name (a conductor, a folder) when that names one
+  choice. An unknown name lists the parameters; a value out of range states the range; a picker value that names nothing
+  lists what the workspace offers.
+- **There is no `allow`, on purpose** (owner decision, 2026-11-10). Permission to run someone else's program with the
+  user's own permissions is granted only by the person, in the window — the prompt when they open the plugin from
+  Tools ▸ Plugins, or Settings ▸ Plugins. Anything that can type a command line can be an agent, so the command line can
+  only take permission away: `plugin allow` is `plugin.permission.window-only`, and writes nothing. Below the window the
+  trust store is read-only (`PluginPreferences.Trust`), and `PluginPreferences.RecordDenial` is the one write.
+- **`deny`** records a refusal in `preferences.json`'s `plugin_trust` — the store the window's prompt writes — merged so
+  every other setting is kept, and read back so a denial that could not be written is a refusal, not a success. A plugin
+  is named by its id only: a path is not an id, so nothing reaches a plugin that is not installed or linked.
+  `CRF_NO_PLUGINS=1`, a `no-plugins` file beside the install (`CliEntry.InstallRoot`, set by the installed executable from
+  its own install-site detection) and the Settings switch turn every plugin off.
+- **Refusals before anything starts**, in the process host's order: policy, permission, the contract version and a build
+  for this machine; then a `window` plugin with no headless form; then the parameters. The permission refusal is
+  `plugin.permission.needs-user` (arguments `id`, `name`, `decision` = `not-asked` or `denied`, `directory`), a sentence
+  written for an agent to relay: only the person can grant it, and where. **Exit codes:** 0; 1 for a refusal, a plugin `error` message or a failure (with its
+  sentence and the last five stderr lines); 130 cancelled.
+- **`install` / `uninstall`** arrive with brief-plg-6. Until then a plugin in a folder of its own runs in place when
+  `CRF_PLUGIN_PATH` names the folder.
+
+**MCP.** The `plugin` tool has `action: list | describe | run` with the same arguments, through the same verb, and its
+description says a plugin runs only once the person has allowed it in circuitRF. No tool grants permission. `install` and
+`uninstall` arrive with brief-plg-6 §5; `deny` stays off the tool.
+
+**`check` and `reference`.** A plugin folder or its `plugin.json` classifies as `plugin` (`DocumentKinds`); `check` reports
+every diagnostic `PluginManifestReader` returns — which reads the panel's layout tree against the parameters that did
+read, so a duplicate parameter and a layout naming an undeclared one come back together — then a summary, and an info line
+when the plugin cannot run on this machine. `reference plugins` is `docs/design/plugins.md` §3–§8, embedded from the note
+itself (`PluginReference`). Gate: `tests/Ui.Tests/Plugins/PluginCliVerbTests.cs`, which drives the built CLI with a state
+directory and plugin path of its own.
