@@ -29688,3 +29688,44 @@ plane and the bottom copper and none with the pour.
   builds the same solids as no field": every added path is behind the field, and no pinned pre-change 3D hash exists to
   compare against. Snapshots: the stackup editor (`--ctech`, tab 1) and a `.c3d` from the layout (`--c3d --realistic`)
   of a two-pad fixture.
+
+## A Palace wave port's S is referred to its mode's phase (brief-em3d-141, 2026-11-10)
+
+- **Unit power fixes a mode's magnitude, not its phase.** Palace's wave-port mode is an eigenvector with a free phase, and
+  its `port-S.csv` carries e^(j(θᵢ − θⱼ)) between ports: on `testdata/em-psv/via-two-dielectrics` (a buried line and a
+  top line) θ is −9.86° on port 1 and about +0.1° on port 2 at 10 GHz, and |S₂₁ − S₁₂| is 0.33. Every earlier Palace
+  wave-port fixture has two ports of one cross-section, so the phases were equal and cancelled. The 124-era statement that
+  "Palace pins each mode's ∫E·dl real-positive along its path" is false: its `VoltagePath` fixes the polarity's SIGN only.
+- **The fix is a diagonal rotation before the renormalisation**, S′ = D S D⁻¹ with D = diag(e^(jθᵢ))
+  (`WavePortReferences.Rotate`), θᵢ the phase of port i's mode voltage. Each off-diagonal entry is multiplied by ONE factor
+  e^(j(θᵢ − θⱼ)), so equal θ leave a row bit-identical and the diagonal is never touched. A lumped port has θ = 0.
+- **θ is fitted from every excitation, not from the port's own** (`WavePortReferences.FitModeVoltages`): V_wu = v_w·P_wu
+  with P = 1 + S at the faces, and v_w the least-squares solution of its row. The brief asked for Vᵢᵢ/(1 + Sᵢᵢ) with a
+  fallback near a short; measured on the fixture's 10 GHz row, that leaves |S₂₁ − S₁₂| at 0.016 (above the gate's 0.01),
+  because port 2's own-excitation voltage is 1.7 % off √Z_PV in magnitude (the path also sees evanescent fields the modal
+  projection does not), while the row fit leaves 0.0012 and covers the near-short case with no threshold. It is the
+  one-entry case of the terminal transform's own per-face fit of M. `LeanedOn` and the run's note name the excitation
+  that carried a port's phase only where |1 + Sᵢᵢ| < 0.1 — on an ordinary thru line |S₂₁|² outweighs |1 + S₂₂|² and
+  that is not worth a note.
+- **The terminal path had the same defect for an UNGROUPED port in a mixed run.** `ModalTerminalTransform` fits a grouped
+  face's M whole (phase included), but gave a one-entry face M = √Z_PV, real. It now takes √Z_PV in magnitude and the
+  1×1 fit's phase, so a one-entry face is exactly Rotate + Renormalise (115's gate 3 compares them to 1e-12 on 113-a's
+  coax, now through the rotation). EMerge's terminal path feeds the same transform; its V is formed from T_V·W⁻¹(1 + S),
+  so the fit returns EMerge's own mode phase and its tests are unchanged.
+- **V_wp is taken at the port FACE and Palace's published S is de-embedded** by e^(j kₙ d) on each side for a port with an
+  Offset. A shifted port's P is read at the face by dividing that factor back out, with kₙ from the log or — an adaptive
+  sweep logs none — from the face's own 2D mode solve at the terminal path's knot frequencies, interpolated by `KnAt`.
+- **Every wave port PalaceConfigWriter writes states a VoltagePath**, so a missing V_wp means a missing or unreadable
+  `port-V.csv`: the run then publishes the unrotated S with a WARNING naming the phase error and Palace's own
+  |S_ij − S_ji|. A port whose path reads exactly zero keeps θ = 0 and is warned about by name.
+- **The run's note** gives each wave port's phase range and the largest |S_ij − S_ji| as Palace wrote it and as published;
+  the `.sNp` provenance line says the S is referred to the mode's impedance and phase.
+- **Measured**, adaptive 1 / 5 / 10 GHz: reciprocal to 0.0013 (two dielectrics) and 0.0012 (one region). Against EMerge
+  0.017 / 0.013 / 0.016, against planar 0.022 / 0.023 / 0.025: inside the planar–EMerge spread (0.0333) at 10 GHz, not
+  at 1 GHz (0.0056). The 1 GHz residue is in what a reciprocal rotation cannot move — S₁₁/S₂₂ (|S| ≈ 0.01 at a different
+  phase) and the mean of arg S₂₁ and arg S₁₂, which lags the other solvers by ~1° at every frequency — so it is Palace's
+  own solution, not the port phase. Symmetric fixtures: the kept TFR-V `zigzag-via` Palace runs have |θ₁ − θ₂| ≤ 0.004°,
+  moving any off-diagonal by ≤ 3.5e-5; 113-a's coax by 4.8e-10.
+- Gates: `tests/Ui.Tests/Em3d/PalaceWavePortPhaseTests.cs` (the recorded 10 GHz row: reciprocal after, the transform's
+  one-entry face equal to it, equal θ bit-identical, a near short taking the other column) and
+  `PalaceTerminalPortTests.Gate3_AOneEntryFaceIsTodaysRenormalisation`.

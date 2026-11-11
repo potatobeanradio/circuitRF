@@ -29,8 +29,10 @@
 //  - K uses REAL parts. Palace builds the Robin term and every mode's n×H from Re kₙ; the complex form misses what loss
 //    does by 0.0085 against openEMS, the real form by 0.0004.
 //
-// A one-entry face (an ungrouped wave port) has G = 1 and K = 1, and the transform reduces to renormalising that port from
-// its Z_PV to its Z₀ — what WavePortReferences.Renormalise does for a run with no group (gate 3 holds the two equal).
+// A one-entry face (an ungrouped wave port) has G = 1 and K = 1, and the transform reduces to referring that port to a mode
+// whose voltage along its path is real (the phase of its fitted M, brief-em3d-141) and renormalising it from its Z_PV to its
+// Z₀ — what WavePortReferences.Rotate and Renormalise do for a run with no group (gate 3 holds the two equal). A grouped
+// face needs no such step: its M is fitted whole, phase included, so U = M P is the field's own line integral.
 
 using System.Numerics;
 using NumFlat;
@@ -121,18 +123,28 @@ public static class ModalTerminalTransform
         // from that face's own rows, V_f = M_f · P_f over every excitation, by least squares. P = 1 + S_m itself is never
         // inverted: on a line a whole number of half-wavelengths long its thru terms approach −1 and it is nearly singular
         // (the 3D Wave Ports Coupled Microstrip at 7.5 GHz: |T_V,ii|² off Z_PV by 4.8 % through the inverse, 0.08 % by the
-        // fit), while each face's rows [1 + S_ff, S_fo] keep full rank. A one-entry face's T_V is √Z_PV, real: Palace pins
-        // each mode's ∫E·dl real-positive along its path, and Z_PV is the impedance today's renormalisation uses, so an
-        // ungrouped port is treated exactly as WavePortReferences.Renormalise treats it. What the full V·P⁻¹ puts outside the blocks
-        // is not used; what each face's fit leaves unexplained is the check that a terminal reads only its own face.
+        // fit), while each face's rows [1 + S_ff, S_fo] keep full rank. A one-entry face's T_V is √Z_PV in magnitude, the
+        // impedance the renormalisation uses, and its fit's phase: unit power fixes a mode's magnitude and not its phase, and
+        // Palace leaves the phase where its eigensolver put it (−9.9° on brief 141's buried line, +0.4° on the top one beside
+        // it). Taking √Z_PV real there dropped that phase and made a mixed run's S non-reciprocal; with it, an ungrouped port
+        // is treated as WavePortReferences.Rotate and Renormalise treat it. What the full V·P⁻¹ puts outside the blocks is not
+        // used; what each face's fit leaves unexplained is the check that a terminal reads only its own face.
         int[] faceOf = new int[n];
         for (int f = 0; f < faces.Count; f++) foreach (int e in faces[f]) faceOf[e] = f;
         var V = ToMat(sample.V);
         var M = new Mat<Complex>(n, n);
         foreach (var face in faces)
         {
-            if (face.Count == 1) { M[face[0], face[0]] = Math.Sqrt(sample.ZPv[face[0]]); continue; }
             var block = FitFace(V, P, face);
+            if (face.Count == 1)
+            {
+                // brief-em3d-141 — the magnitude Z_PV states, the phase the fit finds (none when the path read nothing).
+                Complex fitted = block[0, 0];
+                double mag = Complex.Abs(fitted);
+                M[face[0], face[0]] = mag > 0 && double.IsFinite(mag) ? Math.Sqrt(sample.ZPv[face[0]]) * fitted / mag
+                                                                     : Math.Sqrt(sample.ZPv[face[0]]);
+                continue;
+            }
             for (int a = 0; a < face.Count; a++)
                 for (int b = 0; b < face.Count; b++) M[face[a], face[b]] = block[a, b];
         }

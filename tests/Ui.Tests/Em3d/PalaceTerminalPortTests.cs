@@ -85,7 +85,8 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
         Assert.True(dS <= 0.001, $"max|ΔS| {dS}");
     }
 
-    /// <summary>113-a's coax run (two ports, each its own face, three frequencies): every port a one-entry face.</summary>
+    /// <summary>113-a's coax run (two ports, each its own face, three frequencies): every port a one-entry face. brief-em3d-141:
+    /// the ungrouped path refers each port to a mode whose voltage is real before renormalising, and so does the transform.</summary>
     [Fact]
     public void Gate3_AOneEntryFaceIsTodaysRenormalisation()
     {
@@ -94,7 +95,9 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
         var ports = new[] { Wave(1), Wave(2) };
         var s = PalaceRun.ReadPortS(Path.Combine(Fixture(name), PalaceRun.PortSFile), [1, 2], out _);
         var z = PalaceRun.ReadPortZ(Path.Combine(Fixture(name), PalaceRun.PortZFile), [1, 2], out _, out _)!;
-        var today = WavePortReferences.Renormalise(s, ports, ports, z);
+        var v = PalaceRun.ReadWavePortV(Path.Combine(Fixture(name), PalaceRun.PortVFile), [1, 2], out _)!.Value.V;
+        var theta = WavePortReferences.FitModeVoltages(s.S, [0, 1], v).Voltage.Select(r => r.Select(x => x.Phase).ToArray()).ToList();
+        var today = WavePortReferences.Renormalise(s with { S = WavePortReferences.Rotate(s.S, [0, 1], theta) }, ports, ports, z);
         var mine = PalaceTerminalS.Convert(samples, ports, out string? error);
         Assert.True(mine is not null, error);
         Assert.Equal(3, today.S.Length);

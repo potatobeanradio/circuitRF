@@ -13539,7 +13539,9 @@ near-field reach, and fitting the term then subtracting it moved the gate-2 via 
    1 / 5 / 10 GHz through εᵣ 10 | 3, against 0.0049 / 0.0245 / 0.0428 for the same via in one region. Both solvers put
    the stack's own effect at 0.011 / 0.057 / 0.12. **Palace is not a reference on that fixture**: its result is
    non-reciprocal by up to 0.37 on both stacks, the one-region one included, so it is a 3D wave-port problem (port 1
-   on a buried line, renormalised from each port's Z_PV) and was not chased here.
+   on a buried line, renormalised from each port's Z_PV) and was not chased here. brief-em3d-141 found it (each port's
+   mode in its own arbitrary phase) and fixed it: Palace is now reciprocal to 0.0013 there and within the planar–EMerge
+   spread at 10 GHz (`src/Design/RESOLVED.md` § brief-em3d-141).
 4. **The MIM post.** With the capacitor film in every run's medium (the old MIM technology), the Metal1–Metal2 post
    spans 103 → 106 µm across the film's top at 103.2 µm; it is accepted, solves reciprocal and passive. Its single-basis
    series term is 0.149 pH, against 0.587 pH on the plain starter (100 → 106 µm) and 0.139 pH for 103 → 106 µm with no

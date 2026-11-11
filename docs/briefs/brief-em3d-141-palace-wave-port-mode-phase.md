@@ -16,9 +16,9 @@ The cause, measured at 10 GHz from Palace's own `postpro`:
 - **Why nothing showed it before:** every Palace wave-port fixture so far has two ports of the same cross-section, so θ₁ = θ₂ and the factor cancels. Port 1 here is a line on a buried level, port 2 a line on the top surface.
 - **The terminal path is not affected.** `ModalTerminalTransform` forms the terminal voltages from V_wp directly (U = M P = V), so a grouped face already carries the phase. Its header's statement that a one-entry face "reduces to renormalising that port from its Z_PV" is true only when that port's mode voltage is real.
 
-## Decision for the owner before building
+## Decision made
 
-**D1. Fix it in the renormalisation, or route every Palace wave port through the terminal transform?** Recommended: the renormalisation. A one-entry face already takes it, and the change is one diagonal phase per port per frequency. Routing ungrouped ports through the transform would also run its Gram fit, its K and its checks on faces that do not need them.
+**D1. The phase is applied in the renormalisation path, not by routing every Palace wave port through the terminal transform.** A one-entry face already goes through the renormalisation, and the change is one diagonal phase per port per frequency. Routing ungrouped ports through the transform would also run its Gram fit, its K and its checks on faces that do not need them. The terminal path stays exactly as it is.
 
 ## Requirements
 

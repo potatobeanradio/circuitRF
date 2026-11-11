@@ -425,6 +425,13 @@ public static partial class Em3dRunService
             log.Notes.AddRange(checkNotes);
             log.Warnings.AddRange(checkWarnings);
         }
+        // brief-em3d-141 — one ungrouped wave port's kₙ at one frequency, by Palace's 2D mode solve of its face.
+        (Complex? Kn, string? Why) ShiftedKn(int number, double fHz)
+        {
+            int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == number).Attribute;
+            var kn = runner.FaceModes(runDir, configJson, palace.Path, attribute, 1, fHz, ct, out string? why);
+            return kn is { Count: > 0 } ? (kn[0], null) : (null, why);
+        }
         if (problem.HasWavePorts)
         {
             var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
@@ -442,8 +449,25 @@ public static partial class Em3dRunService
                     zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
                     return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
                                   "wave ports' S-parameters cannot be renormalised.");
+                // brief-em3d-141 — each mode's free phase, taken out before the renormalisation mixes the entries.
+                double before = WavePortReferences.Reciprocity(s.S);
+                double[][]? theta = null;
+                if (ports.Count > 1)
+                {
+                    theta = WavePortPhases(s, ports, wave, post, requestedHz, Path.Combine(runDir, PalaceRun.PalaceLogFile),
+                                           ShiftedKn, log, out string? phaseProblem);
+                    if (ct.IsCancellationRequested) return Cancelled();
+                    if (theta is null)
+                        log.Warnings.Add($"The wave ports' S-parameters are published in each mode's own phase, which Palace leaves " +
+                                         $"arbitrary: {phaseProblem} An S_ij between two ports whose cross-sections differ may carry a " +
+                                         $"phase error of arg vᵢ − arg vⱼ (the modes' voltages along their paths), and the largest " +
+                                         $"|S_ij − S_ji| of Palace's S is {before.ToString("G3", CultureInfo.InvariantCulture)}.");
+                    else s = s with { S = WavePortReferences.Rotate(s.S, [.. wave.Select(p => ports.IndexOf(p))], theta) };
+                }
                 s = WavePortReferences.Renormalise(s, ports, wave, modeZ);
                 log.Notes.Add(WavePortReferences.Note("Palace", "port-Z.csv", wave, modeZ));
+                if (theta is not null)
+                    log.Notes.Add(WavePortReferences.PhaseNote("Palace", wave, theta, before, WavePortReferences.Reciprocity(s.S)));
             }
             // R-em3d23-3 — a port face that supports a mode past its own gives an S that means something else. brief-em3d-115
             // R-em3d115-2c: on a terminal face its own are the terminals' modes, so the face is asked about mode N + 1.
@@ -803,6 +827,103 @@ public static partial class Em3dRunService
         return rows;
     }
 
+    /// <summary>
+    /// brief-em3d-141 R-em3d141-2/3 — each wave port's mode-voltage phase θ[k][w] for every row of <paramref name="s"/>, from
+    /// port-V.csv's V_wp by <see cref="WavePortReferences.FitModeVoltages"/>. Every wave port the configuration writes states a
+    /// voltage path (PalaceConfigWriter), so V_wp is missing only when the file is: then null, with the reason. A port whose
+    /// path read nothing keeps θ = 0 and is warned about by name. A port with a shifted reference plane needs its kₙ to undo
+    /// Palace's e^(j kₙ d) and read P at the face, where V_wp is taken: the log's, or <paramref name="solveKn"/>'s (the face's
+    /// own 2D mode solve) at a few frequencies when an adaptive sweep logged none.
+    /// </summary>
+    internal static double[][]? WavePortPhases(PalacePortS s, IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave, string post,
+                                               double[] requestedHz, string logPath, Func<int, double, (Complex? Kn, string? Why)> solveKn,
+                                               RunLog log, out string? problem)
+    {
+        problem = null;
+        var read = PalaceRun.ReadWavePortV(Path.Combine(post, PalaceRun.PortVFile), [.. wave.Select(p => p.Number)], out string? vError);
+        if (read is null)
+        {
+            problem = $"its {PalaceRun.PortVFile}, which says what that phase is, could not be read ({vError}).";
+            return null;
+        }
+        double[] vf = [.. read.Value.FrequenciesGHz.Select(f => f * 1e9)];
+        var v = read.Value.V;
+        if (vf.Length > s.FrequenciesHz.Length && SweepRows(vf, requestedHz) is { } rows)
+            (vf, v) = ([.. rows.Select(k => vf[k])], [.. rows.Select(k => v[k])]);
+        if (vf.Length != s.FrequenciesHz.Length || vf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
+        {
+            problem = $"its {PalaceRun.PortVFile} and {PalaceRun.PortSFile} do not list the same frequencies.";
+            return null;
+        }
+        var portList = ports.ToList();
+        int[] at = [.. wave.Select(p => portList.IndexOf(p))];
+
+        Complex[][]? deembed = null;
+        var shifted = wave.Where(p => p.ReferencePlane.ShiftM != 0).ToList();
+        if (shifted.Count > 0)
+        {
+            var numbers = shifted.Select(p => p.Number).ToList();
+            List<PalaceWaveModeSample> modes;
+            try { modes = [.. PalaceRun.ReadWaveModes(File.ReadLines(logPath))]; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { modes = []; }
+            if (!modes.Any(m => numbers.All(m.Modes.ContainsKey)))
+            {
+                var knots = PalaceTerminalS.KnotFrequenciesHz(s.FrequenciesHz);
+                foreach (double f in knots)
+                {
+                    var block = new Dictionary<int, PalaceWaveMode>();
+                    foreach (int number in numbers)
+                    {
+                        var (kn, why) = solveKn(number, f);
+                        if (kn is null)
+                        {
+                            problem = $"port {number}'s reference plane is shifted, and reading its mode's phase at the port face needs " +
+                                      $"its wavenumber kₙ, which Palace's log does not give and which could not be solved for ({why}).";
+                            return null;
+                        }
+                        block[number] = new PalaceWaveMode(number, 1, kn.Value);
+                    }
+                    modes.Add(new PalaceWaveModeSample(f, block));
+                }
+                log.Notes.Add($"Palace's adaptive sweep writes no wavenumber kₙ, which reading a shifted port's mode phase at its face " +
+                              $"needs: port{(numbers.Count > 1 ? "s" : "")} {string.Join(", ", numbers)}'s mode was solved on its own " +
+                              $"(Palace's 2D mode solve of the face) at {string.Join(", ", knots.Select(f => Fmt(f / 1e9)))} GHz and " +
+                              "interpolated between.");
+            }
+            deembed = new Complex[s.FrequenciesHz.Length][];
+            for (int k = 0; k < deembed.Length; k++)
+            {
+                var kn = PalaceTerminalS.KnAt(modes, s.FrequenciesHz[k], numbers, out string? knError);
+                if (kn is null)
+                {
+                    problem = knError;
+                    return null;
+                }
+                deembed[k] = [.. portList.Select(_ => Complex.One)];
+                for (int i = 0; i < shifted.Count; i++)
+                    deembed[k][portList.IndexOf(shifted[i])] = Complex.Exp(Complex.ImaginaryOne * kn[i] * shifted[i].ReferencePlane.ShiftM);
+            }
+        }
+
+        var fit = WavePortReferences.FitModeVoltages(s.S, at, v, deembed);
+        var theta = new double[s.S.Length][];
+        for (int k = 0; k < theta.Length; k++)
+            theta[k] = [.. fit.Voltage[k].Select(x => x == Complex.Zero ? 0 : x.Phase)];
+        for (int w = 0; w < wave.Count; w++)
+        {
+            if (fit.Voltage.Any(r => r[w] == Complex.Zero))
+                log.Warnings.Add($"Port {wave[w].Number}'s voltage path read no field in Palace's {PalaceRun.PortVFile}, so its S-parameters " +
+                                 "are published in its mode's own phase, which Palace leaves arbitrary: an S_ij between it and a port " +
+                                 "whose cross-section differs may carry that phase as an error.");
+            var leaned = Enumerable.Range(0, theta.Length).Where(k => fit.LeanedOn[k][w] >= 0).ToList();
+            if (leaned.Count > 0)
+                log.Notes.Add($"Port {wave[w].Number} looks into a near short at {string.Join(", ", leaned.Select(k => Fmt(s.FrequenciesHz[k] / 1e9)))} " +
+                              $"GHz (|1 + S_ii| small), so its mode's phase there was taken mostly from port " +
+                              $"{string.Join(" / ", leaned.Select(k => wave[fit.LeanedOn[k][w]].Number).Distinct())}'s excitation.");
+        }
+        return theta;
+    }
+
 
     // ── Results ──────────────────────────────────────────────────────────────────────────────
 
@@ -864,8 +985,10 @@ public static partial class Em3dRunService
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', " + (p.Kind == Em3dPortKind.Wave
                           // R-em3d23-2d — the file states the one reference its numbers are in, and where they came from.
-                          ? $"wave (mode 1), {R(p.Z0.Real)} Ohm: Palace's S is referred to the mode's own impedance Z_PV, " +
-                            $"renormalised here to {R(p.Z0.Real)} Ohm; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
+                          // brief-em3d-141 R-em3d141-5 — and to the mode's own phase, which is taken out here too.
+                          ? $"wave (mode 1), {R(p.Z0.Real)} Ohm: Palace's S is referred to the mode's own impedance Z_PV and " +
+                            $"phase, renormalised here to {R(p.Z0.Real)} Ohm with the mode's voltage along the port's path " +
+                            $"taken as real; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
                             "into the structure from the port face"
                           : $"lumped, {R(p.Z0.Real)} Ohm"));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
