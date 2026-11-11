@@ -11,6 +11,7 @@
 
 using System.Globalization;
 using CircuitRF.Design.Em3d;
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em;
@@ -52,17 +53,22 @@ public static class PlanarMemoryCheck
     /// and the EM panel call this so they agree with the run. Ports that do not resolve leave the report as it was
     /// — the run refuses them on their own account.
     /// </summary>
+    /// <param name="control">PMS-1 — the run's or the panel's control: the pricing opens its own stage and stops on its
+    /// cancellation.</param>
     public static PlanarMeshReport PriceStandards(PlanarMeshReport report, PlanarProblem meshed,
                                                   IReadOnlyList<PlanarPort> ports, IReadOnlyList<double> freqsHz,
-                                                  PlanarMeshSettings mesh, bool accelerated)
+                                                  PlanarMeshSettings mesh, bool accelerated, RunControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         if (accelerated || ports.Count == 0) return report;
+        // PMS-1 R-pms1-2 — the verdict is already decided; pricing could only refine a figure past the limit.
+        if (report.MatrixAlonePastLimit) return PlanarRunMemory.NotPriced(report);
         long std;
         try
         {
             var resolved = PlanarPorts.ResolveAll(report.Mesh, ports);
-            std = PlanarRunMemory.StandardBytes(meshed, resolved, freqsHz, PlanarSolveSettings.Default, report.Mesh);
+            std = PlanarRunMemory.StandardBytes(meshed, resolved, freqsHz, PlanarSolveSettings.Default, report.Mesh,
+                                                control);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { return report; }
         return PlanarRunMemory.WithStandards(report, std, mesh, accelerated);

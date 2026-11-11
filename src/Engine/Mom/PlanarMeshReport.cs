@@ -190,6 +190,14 @@ public sealed record PlanarMeshReport(
     public bool PastMachineLimit { get; init; }
 
     /// <summary>
+    /// <b>PMS-1 — the dense matrix ALONE is past the memory limit</b>: judged with cores of zero bytes, so no count of
+    /// this mesh's cores and no pricing of its calibration standards can bring the run back under the limit. The
+    /// verdict is decided, and the steps that would only refine the figure quoted beside it are skipped
+    /// (<see cref="PlanarRunMemory.NotPriced"/>). False with no limit, and on the accelerated path.
+    /// </summary>
+    public bool MatrixAlonePastLimit { get; init; }
+
+    /// <summary>
     /// <b>CAP-1 follow-up — what a de-embedded run's calibration standards hold beside the structure</b>, at
     /// the peak of one frequency point (they are solved concurrently with it). 0 for a run that de-embeds
     /// nothing, an accelerated run, or a report nothing has priced them for

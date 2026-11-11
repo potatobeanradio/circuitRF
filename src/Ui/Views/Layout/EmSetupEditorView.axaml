@@ -339,7 +339,7 @@
                 <Button Name="CancelMeshButton" Margin="4,0,0,0"
                         IsVisible="{Binding ViewModel.IsMeshing}"
                         Command="{Binding ViewModel.CancelMeshCommand}"
-                        ToolTip.Tip="Stop meshing. It stops at the next grid row.">
+                        ToolTip.Tip="Stop meshing.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="Stop" Width="14" Height="14"/>
                         <TextBlock Text="{Binding ViewModel.CancelButtonText}"/>

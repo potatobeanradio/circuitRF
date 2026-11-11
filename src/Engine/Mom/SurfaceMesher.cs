@@ -893,10 +893,15 @@ public static class SurfaceMesher
 
         int nx = gx.Length - 1, ny = gy.Length - 1;
 
+        // PMS-1 R-pms1-5 — each via footprint polygon is tested only over the cells its bounding box spans, so the
+        // scan is the footprints' own area rather than (via groups × the whole grid × every polygon of the group).
+        // Planned here, before the stage opens, so the stage can declare the rows it will really scan.
+        var footprints = ViaFootprintPlan.For(problem.ViaList, gx, gy);
+
         // One continuous stage bar across the whole scan: every conductor layer's rows, then every
         // via's. Declared up front so the bar is honest from the first row rather than restarting
         // per layer, which would read as progress going backwards on a multi-level design.
-        long scanRows = (long)ny * (problem.Layers.Count + problem.ViaList.Count);
+        long scanRows = (long)ny * problem.Layers.Count + footprints.Rows;
         control?.BeginStage($"testing {ny:N0} row(s) against the metal", scanRows);
 
         var cellAtPerLayer = new int[problem.Layers.Count][];
@@ -997,9 +1002,12 @@ public static class SurfaceMesher
         int firstVia = bases.Count;
         int viaFootprintCells = 0, viaUnattached = 0;
         int groundUnknowns = 0;
-        foreach (var via in problem.ViaList)
+        var rowMark = new int[Math.Max(nx, 0)];
+        int rowStamp = 0;
+        for (int vi = 0; vi < problem.ViaList.Count; vi++)
         {
-            control?.SetStageLabel("scanning via footprints");
+            var via = problem.ViaList[vi];
+            control?.SetStageLabel($"scanning via footprints ({vi + 1} of {problem.ViaList.Count})");
             // ── The GROUND-ATTACHMENT path (R-gv-5) ───────────────────────────────────────────
             //
             // A via to the plane has only ONE meshed foot, so the three-way coincidence above
@@ -1016,17 +1024,34 @@ public static class SurfaceMesher
             var upper = cellAtPerLayer[via.UpperLayerIndex];
             var lower = via.ToGround ? null : cellAtPerLayer[via.LowerLayerIndex];
 
-            for (int iy = 0; iy < ny; iy++)
+            // PMS-1 R-pms1-5 — the SAME cells in the SAME (IY, IX) order as the whole-grid scan this replaced, so the
+            // vertical bases are bit-identical: a polygon can contain a cell centre only inside its own bounding box
+            // (the even-odd test counts no crossing outside it), so marking each polygon over its box's index range
+            // and then walking the union's rows in order visits exactly the cells the old scan found covered. The
+            // mark is one reused row of stamps — never a set (R-msh-2).
+            var plan = footprints.Vias[vi];
+            for (int iy = plan.Y0; iy <= plan.Y1; iy++)
             {
                 control?.TickStage();
                 double yc = 0.5 * (gy[iy] + gy[iy + 1]);
-                for (int ix = 0; ix < nx; ix++)
+                int stamp = ++rowStamp;
+                int rx0 = int.MaxValue, rx1 = -1;
+                foreach (var box in plan.Boxes)
                 {
-                    double xc = 0.5 * (gx[ix] + gx[ix + 1]);
-                    bool covered = false;
-                    foreach (var poly in via.Polygons)
-                        if (poly.Contains(xc, yc)) { covered = true; break; }
-                    if (!covered) continue;
+                    if (iy < box.Y0 || iy > box.Y1) continue;
+                    var poly = via.Polygons[box.Polygon];
+                    for (int ix = box.X0; ix <= box.X1; ix++)
+                    {
+                        if (rowMark[ix] == stamp) continue;
+                        if (!poly.Contains(0.5 * (gx[ix] + gx[ix + 1]), yc)) continue;
+                        rowMark[ix] = stamp;
+                        if (ix < rx0) rx0 = ix;
+                        if (ix > rx1) rx1 = ix;
+                    }
+                }
+                for (int ix = rx0; ix <= rx1; ix++)
+                {
+                    if (rowMark[ix] != stamp) continue;
 
                     viaFootprintCells++;
                     int b = upper[iy * nx + ix];
@@ -1636,6 +1661,7 @@ public static class SurfaceMesher
             RimFraction:                   rimFraction)
         {
             PastMachineLimit    = pastMachine,
+            MatrixAlonePastLimit = pastWithNoCores,
             AcceleratedEstimate = aimEstimate,
             CoreBytes           = limit is null ? 0 : coreFootprint.Value.Bytes,
         };

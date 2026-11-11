@@ -44,8 +44,20 @@ public sealed record PlanarNearFieldEstimate(
     long   NearEntries,
     long?  FactorNonZeros,
     double? FactorWork,
-    (long Nodes, long Padded) GridNodes)
+    (long Nodes, long Padded) GridNodes,
+    int    RowsCounted = 0)
 {
+    /// <summary>
+    /// <b>PMS-1 R-pms1-6 — the count stopped past <see cref="AnalysedNearEntriesCap"/></b>, so
+    /// <see cref="NearEntries"/> is a LOWER BOUND over the first <see cref="RowsCounted"/> rows. Past the cap nothing is
+    /// analysed anyway, and on a chip-scale mesh counting the rest cost 58 s to report 89.6·10⁹ entries the sentence
+    /// already says are too many. Rows are counted in fixed blocks, so where it stops does not depend on the schedule.
+    /// </summary>
+    public bool CountStopped => RowsCounted > 0 && RowsCounted < HorizontalUnknowns;
+
+    /// <summary>PMS-1 — rows per block of the near count; the stop is decided between blocks.</summary>
+    public const int CountBlockRows = 4096;
+
     /// <summary>
     /// The factor's measured rate, in Σc² per second: CSparse's complex SparseLU with AMD, one core, Release, on
     /// synthetic near patterns of 3,120 to 19,800 unknowns and 24 to 214 entries per row — 5.4e8 to 7.5e8, flat from
@@ -68,10 +80,12 @@ public sealed record PlanarNearFieldEstimate(
     public const long AnalysedNearEntriesCap = 20_000_000;
 
     /// <summary>Near entries per horizontal row.</summary>
-    public double EntriesPerRow => (double)NearEntries / Math.Max(1, HorizontalUnknowns);
+    public double EntriesPerRow => (double)NearEntries / Math.Max(1, CountStopped ? RowsCounted : HorizontalUnknowns);
 
     /// <summary>The near matrix's density, near entries over N_h².</summary>
-    public double NearDensity => (double)NearEntries / Math.Max(1.0, (double)HorizontalUnknowns * HorizontalUnknowns);
+    public double NearDensity => CountStopped
+        ? EntriesPerRow / Math.Max(1.0, HorizontalUnknowns)
+        : (double)NearEntries / Math.Max(1.0, (double)HorizontalUnknowns * HorizontalUnknowns);
 
     /// <summary>Whether the radius is the floor rather than the support multiple.</summary>
     public bool NearRadiusIsFloored => NearRadiusFloorM >= NearRadiusM && NearRadiusFloorM > 0;
@@ -118,10 +132,14 @@ public sealed record PlanarNearFieldEstimate(
         string radius = NearRadiusIsFloored
             ? $"{fmt(NearRadiusM)} (the floor of twice the substrate height)"
             : $"{fmt(NearRadiusM)} (six of the largest basis support, {fmt(LargestSupportM)})";
-        string head =
-            $"Accelerated solve: the near field holds {NearEntries.ToString("N0", c)} entries, about " +
-            $"{EntriesPerRow.ToString("N0", c)} per row ({NearDensity.ToString("P1", c)} dense) over " +
-            $"{HorizontalUnknowns.ToString("N0", c)} unknowns, within a near radius of {radius}. ";
+        string head = CountStopped
+            ? $"Accelerated solve: the near field holds more than {NearEntries.ToString("N0", c)} entries — about " +
+              $"{EntriesPerRow.ToString("N0", c)} per row ({NearDensity.ToString("P1", c)} dense) over the first " +
+              $"{RowsCounted.ToString("N0", c)} of {HorizontalUnknowns.ToString("N0", c)} unknowns, where the count " +
+              $"stopped — within a near radius of {radius}. "
+            : $"Accelerated solve: the near field holds {NearEntries.ToString("N0", c)} entries, about " +
+              $"{EntriesPerRow.ToString("N0", c)} per row ({NearDensity.ToString("P1", c)} dense) over " +
+              $"{HorizontalUnknowns.ToString("N0", c)} unknowns, within a near radius of {radius}. ";
         string factor = FactorNonZeros is { } nnz
             ? $"Its exact sparse factor, the solve's preconditioner, is estimated at {nnz.ToString("N0", c)} non-zeros " +
               $"({Size(FactorBytes)}) and {Duration(FactorSeconds!.Value)} per frequency point on one core, estimated."
@@ -213,7 +231,7 @@ public sealed record PlanarNearFieldEstimate(
         }
 
         var near = new NearPattern(nh, m, centres, spans, p0, q0, radius, h);
-        long entries = near.Count(ct);
+        var (entries, rowsCounted) = near.Count(AnalysedNearEntriesCap, ct);
 
         long? factorNnz = null;
         double? work = null;
@@ -224,7 +242,7 @@ public sealed record PlanarNearFieldEstimate(
         }
 
         return new PlanarNearFieldEstimate(nh, nz, layers.Count, radius, floor, maxSpan, entries, factorNnz, work,
-                                           ((long)nx * ny, padded));
+                                           ((long)nx * ny, padded), rowsCounted);
     }
 
     /// <summary>
@@ -339,17 +357,24 @@ public sealed record PlanarNearFieldEstimate(
                 }
         }
 
-        public long Count(CancellationToken ct)
+        /// <summary>The entries, counted in blocks of <see cref="CountBlockRows"/> rows and stopped after the first block
+        /// that takes the total past <paramref name="cap"/> — and the rows counted (all of them when it did not stop).</summary>
+        public (long Entries, int Rows) Count(long cap, CancellationToken ct)
         {
             long total = 0;
             var options = new ParallelOptions { CancellationToken = ct };
-            Parallel.For(0, _n, options, () => 0L, (i, _, local) =>
+            for (int b0 = 0; b0 < _n; b0 += CountBlockRows)
             {
-                long k = 0;
-                Row(i, _ => k++);
-                return local + k;
-            }, local => Interlocked.Add(ref total, local));
-            return total;
+                int b1 = Math.Min(_n, b0 + CountBlockRows);
+                Parallel.For(b0, b1, options, () => 0L, (i, _, local) =>
+                {
+                    long k = 0;
+                    Row(i, _ => k++);
+                    return local + k;
+                }, local => Interlocked.Add(ref total, local));
+                if (total > cap) return (total, b1);
+            }
+            return (total, _n);
         }
 
         /// <summary>The pattern as CSC (it is symmetric, so rows and columns are one), each column's rows in the

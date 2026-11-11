@@ -34,9 +34,11 @@ public static class PlanarRunMemory
     /// NumFlat's L and U over the LONGEST standard's cells (48·m² bytes), run once after the first point's
     /// solves have finished — when the structure holds only its cores. Where that step is the larger, the
     /// standards' share is what makes the run's figure reach it.</param>
+    /// <param name="control">PMS-1 — the stage (<c>pricing the calibration standards</c>, one unit per port) and the
+    /// cancellation the count of each standard's cores checks once per batch of rows.</param>
     public static long StandardBytes(PlanarProblem problem, IReadOnlyList<PlanarPortResolution> ports,
                                      IReadOnlyList<double> freqsHz, PlanarSolveSettings? settings,
-                                     PlanarMesh? structure = null)
+                                     PlanarMesh? structure = null, RunControl? control = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
@@ -52,14 +54,20 @@ public static class PlanarRunMemory
         var slab   = problem.Slab;
         var owners = new List<PlanarPortResolution>();
         long total = 0, heldCores = 0, capacitance = 0;
+        var ct = control?.Token ?? default;
+        int deembeddable = 0;
+        foreach (var port in ports) if (port.IsDeembeddable) deembeddable++;
+        if (deembeddable > 0) control?.BeginStage(PricingStage, deembeddable, "port(s)");
         foreach (var port in ports)
         {
             if (!port.IsDeembeddable) continue;
+            ct.ThrowIfCancellationRequested();
+            control?.SetStageLabel($"{PricingStage} (port {port.Number})");
             int k = PlanarCalibration.EndRunCellsFor(port, slab, st.Calibration);
             bool shared = false;
             foreach (var o in owners)
                 if (PlanarPortCalibrator.SameCrossSection(o, port, k)) { shared = true; break; }
-            if (shared) continue;
+            if (shared) { control?.TickStage(); continue; }
             owners.Add(port);
 
             // A calibrator solves the SHORT line and the one long line a frequency selects
@@ -74,7 +82,11 @@ public static class PlanarRunMemory
             for (int i = 0; i < set.Length; i++)
             {
                 // CAP-3 — each standard's own counted cores and its fill's bounded transient.
-                var cores = PlanarCoreFootprint.Count(set[i].Mesh);
+                // PMS-1 R-pms1-3 — through For, so a standard is bounded exactly as the structure is: CountedUpTo, and
+                // the class cap a count stops at. On a chip-scale grid a standard inherits the chip's lines, and its
+                // exact count ran to tens of millions of classes (34 s and 5.9 GB for one).
+                var cores = PlanarCoreFootprint.For(set[i].Mesh, set[i].Mesh.SolvedUnknownCount, set[i].Mesh.Cells.Count,
+                                                    ct: ct);
                 long b = PlanarSystem.ResidentBytes(set[i].Mesh.SolvedUnknownCount, cores);
                 if (i == 0) { total += b; heldCores += cores.Bytes; }
                 else if (b > longest) { longest = b; longestCores = cores.Bytes; longestAt = i; }
@@ -89,14 +101,37 @@ public static class PlanarRunMemory
             long ml = last.Cells.Count;
             capacitance = Math.Max(capacitance, 48L * ml * ml);
             if (set.Length > 1 && longestAt != set.Length - 1 && !ReferenceEquals(set[^1], set[0]))
-                heldCores += PlanarCoreFootprint.Count(last).Bytes;
+                heldCores += PlanarCoreFootprint.For(last, last.SolvedUnknownCount, last.Cells.Count, ct: ct).Bytes;
+            control?.TickStage();
         }
         if (structure is null || capacitance == 0) return total;
 
-        var dut = PlanarCoreFootprint.For(structure, structure.SolvedUnknownCount, structure.Cells.Count);
+        var dut = PlanarCoreFootprint.For(structure, structure.SolvedUnknownCount, structure.Cells.Count, ct: ct);
         long dutPoint = PlanarSystem.ResidentBytes(structure.SolvedUnknownCount, dut);
         long staticStep = dut.Bytes + heldCores + capacitance;
         return Math.Max(total, staticStep - dutPoint);
+    }
+
+    /// <summary>PMS-1 — the stage <see cref="StandardBytes"/> opens, so a progress line names the step it is on rather than
+    /// the mesher's last.</summary>
+    public const string PricingStage = "pricing the calibration standards";
+
+    /// <summary>PMS-1 — the sentence a report carries when its standards were not priced because its dense matrix alone
+    /// is past the limit (<see cref="PlanarMeshReport.MatrixAlonePastLimit"/>).</summary>
+    public const string NotPricedNote =
+        "The calibration standards were not priced: the structure's own matrix is past the memory limit without them.";
+
+    /// <summary>
+    /// <b>PMS-1 R-pms1-2 — the report, with the pricing skipped and said.</b> For a report whose dense matrix alone is
+    /// past the limit (<see cref="PlanarMeshReport.MatrixAlonePastLimit"/>): pricing its standards can only add to a
+    /// figure already past the limit, and on a chip-scale grid it was the step that never finished. Every caller that
+    /// prices asks this first, so the pre-solve check, the panel and the run agree.
+    /// </summary>
+    public static PlanarMeshReport NotPriced(PlanarMeshReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        var findings = new List<EmFinding>(report.AllFindings) { EmFinding.Note(NotPricedNote) };
+        return report with { Findings = findings, Notes = EmFindings.Texts(findings) };
     }
 
     /// <summary>A heap this size or larger is collected after each finished solve (<see cref="ReleaseFinishedSolve"/>).</summary>

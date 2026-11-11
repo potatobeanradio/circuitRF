@@ -13555,3 +13555,69 @@ moves with the dielectric by design. The S-parameters are the physical compariso
 
 The brief allowed one for a sub-span too thin for the z-rule against its partner. None was added: the rule's nodes sit
 inside each sub-span, the singular parts are closed form, and the MIM film (0.2 µm under a 3 µm post) solves.
+
+## PMS-1 — a medium MMIC reaches its verdict without stalling (2026-11-11)
+
+Field report (discussion 57): a 1.4 mm GaAs MMIC never finished meshing — the progress line stopped at
+`scanning via footprints: N / N`, one core at 100 %, memory climbing past 4.5 GB. Reproduced on a synthetic chip
+(`tests/Engine.Tests/Mom/Support/SyntheticMmicChip.cs`, presets S and L; brief-pms-0 has the full table).
+
+### 1. The cause was the standards pricing, not the mesher
+
+The mesh of fixture S (941,867 unknowns, grid 795 × 790) returns in ~1 s. `PlanarRunMemory.StandardBytes` then
+built six calibration standards of 20,210–51,879 unknowns each — a standard is built on the DUT's own gridlines,
+which on a chip are the chip's (40 cells across a 70 µm line) — and counted each one's cores EXACTLY with
+`PlanarCoreFootprint.Count`. That count is bounded by N (`CountedUpTo`, 60,000), and these were all under it. But
+their pairs barely share a translation class: the smallest standard held **53.2 million classes, 34 s and 5.9 GB**,
+and the six never finished. The figure could not change the verdict — the structure alone was ~25× past the limit.
+Nothing opened a stage, so the panel showed the mesher's last label; nothing took a token, so Cancel did not reach it.
+The run path priced the standards again (`PlanarKernel`), so Simulate Anyway would have stalled a second time.
+
+### 2. What changed
+
+- **Decided verdicts skip the pricing.** `PlanarMeshReport.MatrixAlonePastLimit` is the mesher's own
+  `pastWithNoCores` (the dense matrix with zero-byte cores is already past the limit). `PlanarMemoryCheck.PriceStandards`
+  and the run path in `PlanarKernel` return `PlanarRunMemory.NotPriced(report)` then: the figure unchanged and one
+  note (`NotPricedNote`).
+- **A count stops at a class cap.** `PlanarFill.CountDistinctBandKeys` counts in batches of whole rows of about
+  `CountBatchPairs` band pairs. Workers read the count's one set and keep only keys it lacks; their sets merge
+  between batches. Past `CountedClassCap` it stops and `CountCores` states an estimate (`Counted: false`) of
+  `found × band / scanned`, clamped to [found, band]. Because the union of a fixed set of rows does not depend on
+  scheduling, the stop lands on the same batch every run (gated). `StandardBytes` now goes through
+  `PlanarCoreFootprint.For`, so a standard is bounded exactly as the structure is.
+- **A stage and a token.** `StandardBytes`/`PriceStandards` take a `RunControl`; the stage is `pricing the
+  calibration standards`, a unit per port, labelled with the port. The count checks the token once per batch.
+  `EmRunService.Preflight` and the panel's `ComputePlanarMesh` pass the control they hold. The panel's stop
+  sentence no longer promises "the next grid row".
+- **The via scan is bounded by each footprint** (`ViaFootprintPlan`): each polygon tested only over its bounding
+  box's index range, row by row with a reused stamp row, emitting the same cells in the same (via, IY, IX) order.
+  A polygon cannot contain a cell centre outside its box (no even-odd crossing there), so the bases are
+  bit-identical — gated against a whole-grid reference scan on fixture S (and checked on L once, at 7 s, not
+  kept in the routine gate). The stage declares the rows it really scans and says which group it is on.
+- **The accelerated estimate stops at its cap.** `NearPattern.Count` counts in blocks of `CountBlockRows` and
+  stops after the block that passes `AnalysedNearEntriesCap`; `NearEntries` is then a lower bound over
+  `RowsCounted` rows and the sentence says "more than". Below the cap the estimate is identical.
+
+### 3. The cap, measured (Release, dev machine)
+
+Pricing all six fixture-S standards directly (no skip), the process's peak resident set in brackets:
+
+| `CountedClassCap` / `CountBatchPairs` | pricing time | peak RSS | figure |
+|---|---|---|---|
+| unbounded (before) | did not finish in 5 min | climbing past 3 GB | — |
+| 8,000,000 / 4,000,000 | 23.2 s | 1.76 GB | 284,732 MB |
+| 4,000,000 / 1,000,000 | 2.7 s | 1.31 GB | 285,797 MB |
+| **2,000,000 / 1,000,000 (shipped)** | **0.8 s** | **0.92 GB** | 286,721 MB |
+
+The peak includes the 941,867-unknown structure's own mesh (~0.2 GB before pricing). The cost above the cap is
+nonlinear — 8 M classes spend most of their time growing the hash sets — so 2 M is where the count stays short.
+On regular artwork the cap is far away: an FR-4 line meshed at N = 170,059 (3.9·10⁹ band pairs) has 170,062
+classes, counts exactly, and takes 10.9 s against the unbatched count's 9.9 s. CAP-3's measured reuse (460–500× at
+29k–56k unknowns on FR-4 lines) puts those meshes near 1 M classes. A board whose class count passes 2 M is now quoted as an
+estimate from the count's own rows, which over-states rather than under-states (classes saturate as rows are added).
+
+### 4. End to end
+
+`circuitrf em chip.cem --dry-run` on fixture S drawn on the shipped MMIC technology (573,744 unknowns after the
+extractor merges overlapping artwork): **0.44 s, 169 MB peak**. It reports the past-the-machine warning, the
+not-priced note and every other finding.

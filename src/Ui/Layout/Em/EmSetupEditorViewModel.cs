@@ -2854,7 +2854,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // function the run and the pre-solve check ask, so the three agree on a de-embedded run.
         return PlanarMemoryCheck.PriceStandards(
             ComputeBarePlanarMesh(problem, mesh, control), problem, _pendingPlanarPorts, _pendingFrequencies,
-            mesh, Working.AcceleratedSolve);
+            mesh, Working.AcceleratedSolve, control);
     }
 
     private double[] _pendingFrequencies = [];

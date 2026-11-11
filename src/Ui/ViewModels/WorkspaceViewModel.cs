@@ -9792,7 +9792,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Cancel are one request, and the panel says so while the stop is pending.
         var cancellation = new RunCancellation($"meshing '{name}'", () =>
         {
-            Messages.Info("Stopping the mesh. It stops at the next grid row.");
+            Messages.Info("Stopping the mesh.");
             vm.IsCancelling = true;
             cts.Cancel();
         });

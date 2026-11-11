@@ -465,7 +465,8 @@ public static class EmRunService
         }
 
         // CAP-1 follow-up — priced with its calibration standards and judged again, as the run judges it.
-        report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve);
+        report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve,
+                                                  control);
 
         // MIM-13 item 3 — AllFindings, not AsNotes(Notes): the mesher classes its own sentences
         // now, and flattening them here is what put a warning at the weight of the core count.

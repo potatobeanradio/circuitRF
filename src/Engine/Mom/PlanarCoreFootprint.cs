@@ -92,22 +92,40 @@ public readonly record struct PlanarCoreFootprint(int Cells, long BandPairs, lon
     /// <b>The footprint a judgment of <paramref name="n"/> unknowns should use</b>: the mesh's own count when
     /// there is a mesh (up to <see cref="CountedUpTo"/> unknowns), the a-priori estimate otherwise.
     /// </summary>
-    public static PlanarCoreFootprint For(PlanarMesh? mesh, int n, int cellCount, PlanarFillSettings? settings = null)
+    public static PlanarCoreFootprint For(PlanarMesh? mesh, int n, int cellCount, PlanarFillSettings? settings = null,
+                                          CancellationToken ct = default)
         => mesh is not null && n <= CountedUpTo
-            ? Count(mesh, settings)
+            ? Count(mesh, settings, ct)
             : Estimate(n, cellCount > 0 ? cellCount : mesh?.Cells.Count ?? 0);
+
+    /// <summary>
+    /// <b>PMS-1 R-pms1-3 — a count stops once this many distinct classes are held</b>, and the footprint states an
+    /// estimate instead (<see cref="Counted"/> false), extrapolated from the classes found over the band pairs scanned
+    /// and clamped to [found, band]. <see cref="CountedUpTo"/> bounds a count by N, and that was not enough: a
+    /// calibration standard that inherits a chip-scale grid sits far under it (20,210 unknowns) while its pairs barely
+    /// share a class at all — 53 million classes in 34 s and 5.9 GB for one standard, and a set of six never finished
+    /// on a 7.6 GB machine. The class SET is the count's memory (≈ 30 bytes a class while counting), so this caps it
+    /// at a few hundred MB; the batch structure below makes where it stops a property of the mesh, not of the
+    /// schedule. RESOLVED.md §PMS-1 has the measurement.
+    /// </summary>
+    public const long CountedClassCap = 2_000_000;
+
+    /// <summary>PMS-1 — band pairs scanned per batch of a count. Each batch's new classes are merged into the count's
+    /// one set before the next batch starts, so a stop is decided at the same batch on every run.</summary>
+    public const long CountBatchPairs = 1_000_000;
 
     /// <summary>
     /// <b>The exact footprint of <see cref="PlanarFill.BuildCores"/>' cores for this mesh</b> at
     /// <paramref name="settings"/> (null = the shipped defaults). Cached per mesh and per the three settings
     /// the count depends on (the extraction order and the two τ thresholds in the class key).
     /// </summary>
-    public static PlanarCoreFootprint Count(PlanarMesh mesh, PlanarFillSettings? settings = null)
+    public static PlanarCoreFootprint Count(PlanarMesh mesh, PlanarFillSettings? settings = null,
+                                            CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
         var perMesh = Cache.GetValue(mesh, _ => new());
-        return perMesh.GetOrAdd((st.Order, st.NearRatio, st.FarRatio), _ => PlanarFill.CountCores(mesh, st));
+        return perMesh.GetOrAdd((st.Order, st.NearRatio, st.FarRatio), _ => PlanarFill.CountCores(mesh, st, ct));
     }
 }
 
@@ -118,7 +136,8 @@ public static partial class PlanarFill
     /// band, every band pair keyed exactly as the build keys it, the distinct keys counted. See
     /// PlanarCoreFootprint.cs.
     /// </summary>
-    internal static PlanarCoreFootprint CountCores(PlanarMesh mesh, PlanarFillSettings? settings)
+    internal static PlanarCoreFootprint CountCores(PlanarMesh mesh, PlanarFillSettings? settings,
+                                                   CancellationToken ct = default, long classCap = PlanarCoreFootprint.CountedClassCap)
     {
         var st = settings ?? PlanarFillSettings.Default;
         int n = mesh.Bases.Count, m = mesh.Cells.Count;
@@ -132,7 +151,10 @@ public static partial class PlanarFill
         long band = 0;
         for (int a = 0; a < m; a++) band += m - topo.MinInner[a];
 
-        int classes = DistinctBandKeys(mesh, topo, classifier, st).Length;
+        var (found, scanned, complete) = CountDistinctBandKeys(mesh, topo, classifier, st, classCap, ct);
+        long classes = complete || scanned <= 0
+            ? found
+            : Math.Clamp((long)Math.Ceiling((double)found * band / scanned), found, Math.Max(found, band));
 
         // Rows for what no class serves — CutRows' own arithmetic.
         static long Rows(int count, int rows, int kernels) => rows == 0 ? 0 : 4L * count + 8L * rows * count * kernels;
@@ -150,7 +172,65 @@ public static partial class PlanarFill
                    + 8L * n                             // VMoment
                    + classifier.Bytes + memo.Length     // ClassifierBytes
                    + cut;
-        return new PlanarCoreFootprint(m, band, classes, kernels, other, Counted: true);
+        return new PlanarCoreFootprint(m, band, classes, kernels, other, Counted: complete);
+    }
+
+    /// <summary>
+    /// <b>PMS-1 — the distinct-key COUNT, bounded.</b> The same keys <see cref="DistinctBandKeys"/> gathers, counted in
+    /// batches of whole rows of about <see cref="PlanarCoreFootprint.CountBatchPairs"/> band pairs: within a batch the
+    /// workers read the count's one set (nothing writes it then) and keep only keys it lacks; between batches their
+    /// sets are merged into it. So the set grows only by genuinely new classes, the merge is proportional to them rather
+    /// than to the band, and the stop at <paramref name="cap"/> lands on the same batch every run — the union of a fixed
+    /// set of rows does not depend on which worker took which. Returns the classes found, the band pairs scanned
+    /// (counted as the band is, <c>m − MinInner[a]</c> a row) and whether the count reached the end.
+    /// </summary>
+    internal static (long Found, long ScannedPairs, bool Complete) CountDistinctBandKeys(
+        PlanarMesh mesh, RampTopology topo, PairClassifier classifier, PlanarFillSettings st, long cap,
+        CancellationToken ct)
+    {
+        int m = mesh.Cells.Count;
+        var ok = classifier.Classifiable;
+        var distinct = new HashSet<long>();
+        long scanned = 0;
+        int a0 = 0;
+        while (a0 < m)
+        {
+            ct.ThrowIfCancellationRequested();
+            int a1 = a0;
+            long pairs = 0;
+            while (a1 < m && (pairs == 0 || pairs < PlanarCoreFootprint.CountBatchPairs))
+            {
+                pairs += m - topo.MinInner[a1];
+                a1++;
+            }
+
+            int rows = a1 - a0, chunks = Math.Min(rows, 64), start = a0;
+            var fresh = new List<HashSet<long>>();
+            var gate = new object();
+            ForRowsLocal(st, chunks, () => new HashSet<long>(), (k, local) =>
+            {
+                if (ct.IsCancellationRequested) return;
+                for (int a = start + (int)((long)rows * k / chunks), end = start + (int)((long)rows * (k + 1) / chunks);
+                     a < end; a++)
+                {
+                    if (!ok[a]) continue;
+                    var ca = mesh.Cells[a];
+                    for (int c = topo.MinInner[a]; c < m; c++)
+                        if (ok[c])
+                        {
+                            long key = classifier.Key(ca, mesh.Cells[c], st, out _);
+                            if (!distinct.Contains(key)) local.Add(key);
+                        }
+                }
+            }, local => { lock (gate) fresh.Add(local); });
+            ct.ThrowIfCancellationRequested();
+
+            foreach (var set in fresh) distinct.UnionWith(set);
+            scanned += pairs;
+            a0 = a1;
+            if (distinct.Count > cap) return (distinct.Count, scanned, a0 >= m);
+        }
+        return (distinct.Count, scanned, true);
     }
 
     /// <summary>
