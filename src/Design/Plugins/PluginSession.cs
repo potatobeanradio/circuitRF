@@ -31,6 +31,8 @@ public enum PluginFailureKind
     OutsideStaging,
     /// <summary>The request was cancelled — Stop, or a newer request.</summary>
     Cancelled,
+    /// <summary>A <c>window</c> plugin that is already running was started again (brief-plg-4 §3).</summary>
+    AlreadyRunning,
 }
 
 /// <summary>A failure, the sentence that says what happened, and the plugin's last stderr lines.</summary>
@@ -87,7 +89,17 @@ public sealed record PluginProgress(long Id, double? Fraction, string? Text);
 
 /// <summary>Deadline overrides. The manifest's <c>timeouts</c> come first; these override both for a caller that
 /// must not wait the default (a test of a plugin that never answers).</summary>
-public sealed record PluginDeadlines(TimeSpan? Hello = null, TimeSpan? Update = null, TimeSpan? Action = null, TimeSpan? Commit = null);
+public sealed record PluginDeadlines(TimeSpan? Hello = null, TimeSpan? Update = null, TimeSpan? Action = null, TimeSpan? Commit = null)
+{
+    /// <summary>How long a host call's <c>simulate</c> may run inside a request. Null is nine tenths of the request's own
+    /// manifest deadline (an <c>update</c>'s 30 s, an <c>action</c>'s 10 min), which leaves the plugin the last tenth
+    /// to report the cut-off — and is deliberately NOT <see cref="Update"/>, which a panel sets to infinite because
+    /// its own controller keeps the deadline (brief-plg-4 §2).</summary>
+    public TimeSpan? Simulate { get; init; }
+}
+
+/// <summary>What circuitRF did with a <c>window</c> plugin's <c>placed</c>: the cells it placed, or why not.</summary>
+public sealed record PluginWindowAnswer(IReadOnlyList<string> Cells, string? Error);
 
 /// <summary>Everything <see cref="PluginSession.Start"/> needs. Preferences are arguments, never read here.</summary>
 public sealed record PluginStartOptions
@@ -112,6 +124,15 @@ public sealed record PluginStartOptions
     public PluginDeadlines Deadlines { get; init; } = new();
     /// <summary>Each stderr line, for the run log.</summary>
     public Action<string>? Log { get; init; }
+    /// <summary>circuitRF's own verbs, which <c>simulate</c>, a <c>reference</c> and an expression in a document are
+    /// answered with (<see cref="IPluginVerbs"/>); null refuses those calls.</summary>
+    public IPluginVerbs? Verbs { get; init; }
+    /// <summary>A <c>window</c> plugin's <c>placed</c> (brief-plg-4 §3): places the cells, as §6.3 places a commit's.
+    /// Null refuses it.</summary>
+    public Func<PluginPlaced, Task<PluginWindowAnswer>>? WindowPlaced { get; init; }
+    /// <summary>A <c>window</c> plugin's <c>open</c>: opens a staged or workspace document, already checked to be one;
+    /// returns null, or why it could not. Null refuses it.</summary>
+    public Func<string, Task<string?>>? WindowOpen { get; init; }
 }
 
 /// <summary>
@@ -165,6 +186,11 @@ public sealed class PluginSession : IPluginPanelSession
     private readonly HashSet<long> _cancelled = [];
     private readonly LinkedList<string> _stderr = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly SemaphoreSlim _hostLock = new(1, 1);
+    private readonly Dictionary<long, CancellationTokenSource> _hostCalls = [];
+    private readonly CancellationTokenSource _life = new();
+    private readonly List<Task> _windowWork = [];
+    private readonly PluginHostServices _host;
     private long _nextId;
     private PluginFailure? _fatal;
     private int _closed;
@@ -188,7 +214,7 @@ public sealed class PluginSession : IPluginPanelSession
     public PluginFailure? Fatal { get { lock (_gate) return _fatal; } }
 
     private sealed record Answer(JsonObject? Message, PluginFailure? Failure, ReadOnlyMemory<long> Payload = default);
-    private sealed record Pending(string Expect, TaskCompletionSource<Answer> Done);
+    private sealed record Pending(string Type, string Expect, TaskCompletionSource<Answer> Done, DateTime Sent);
 
     private PluginSession(Process process, PluginManifest manifest, string pluginDir, string staging, PluginStartOptions options)
     {
@@ -199,6 +225,7 @@ public sealed class PluginSession : IPluginPanelSession
         StagingDirectory = staging;
         _stdin = process.StandardInput.BaseStream;
         _stdout = new RecordingStream(process.StandardOutput.BaseStream, QuoteBytes);
+        _host = new PluginHostServices(staging, options.WorkspaceDir, options.Verbs);
 
         process.ErrorDataReceived += (_, e) =>
         {
@@ -363,8 +390,13 @@ public sealed class PluginSession : IPluginPanelSession
         var answer = await RequestAsync("commit", new JsonObject { ["params"] = parameters.DeepClone() }, "placed",
                                         _options.Deadlines.Commit ?? Seconds(_manifest.Timeouts.Commit) ?? TimeSpan.FromMinutes(10), ct);
         if (answer.Failure is { } f) return PluginOutcome<PluginPlaced>.Fail(f);
-        var msg = answer.Message!;
+        return ParsePlaced(answer.Message!);
+    }
 
+    /// <summary>A <c>placed</c> message's cells, every file resolved inside the staging folder — a commit's answer or a
+    /// <c>window</c> plugin's own.</summary>
+    private PluginOutcome<PluginPlaced> ParsePlaced(JsonObject msg)
+    {
         var cells = new List<PluginPlacedCell>();
         if (msg["cells"] is JsonArray array)
             foreach (var c in array)
@@ -414,7 +446,7 @@ public sealed class PluginSession : IPluginPanelSession
     private async Task<Answer> RequestAsync(string type, JsonObject body, string expect, TimeSpan deadline, CancellationToken ct)
     {
         long id;
-        var pending = new Pending(expect, new TaskCompletionSource<Answer>(TaskCreationOptions.RunContinuationsAsynchronously));
+        var pending = new Pending(type, expect, new TaskCompletionSource<Answer>(TaskCreationOptions.RunContinuationsAsynchronously), DateTime.UtcNow);
         lock (_gate)
         {
             if (_fatal is { } dead) return new Answer(null, dead);
@@ -436,7 +468,9 @@ public sealed class PluginSession : IPluginPanelSession
 
         if (ct.IsCancellationRequested)
         {
-            lock (_gate) { _pending.Remove(id); _cancelled.Add(id); }
+            CancellationTokenSource? hostCall;
+            lock (_gate) { _pending.Remove(id); _cancelled.Add(id); _hostCalls.TryGetValue(id, out hostCall); }
+            try { hostCall?.Cancel(); } catch (ObjectDisposedException) { }   // a host call cancelled with its request
             _ = WriteAsync(new JsonObject { ["type"] = "cancel", ["id"] = id });
             return new Answer(null, Soft(PluginFailureKind.Cancelled, "Stopped."));
         }
@@ -483,7 +517,12 @@ public sealed class PluginSession : IPluginPanelSession
                 // The parameterless wait is the one that lets stderr's reader reach its end, so the last words are in
                 // the ring before the sentence quotes them — bounded, because a grandchild can hold the pipe open.
                 try { if (_process.WaitForExit(2000)) Task.Run(() => _process.WaitForExit()).Wait(2000); } catch { }
-                Fail(PluginFailureKind.Exited, ExitedSentence());
+                bool waiting;
+                lock (_gate) waiting = _pending.Count > 0;
+                // A window plugin that closes with nothing asked of it has simply been closed by its user.
+                Fail(PluginFailureKind.Exited, _manifest.Kind == PluginKind.Window && !waiting
+                    ? $"{_manifest.Name} closed{(ExitCode is { } c && c != 0 ? $" (exit code {c})" : "")}."
+                    : ExitedSentence());
                 return;
             }
             catch (WireFrameException)
@@ -529,12 +568,17 @@ public sealed class PluginSession : IPluginPanelSession
                 return true;
 
             case "host":
-                // Host services arrive in brief 4; until then every call is refused, and the plugin carries on.
-                _ = WriteAsync(new JsonObject
-                {
-                    ["type"] = "hostReply", ["id"] = msg["id"]?.DeepClone(),
-                    ["error"] = "not supported in this version",
-                });
+                // Answered off the reader thread, one at a time (brief-plg-4 §1), so a simulate never holds up a frame.
+                Track(() => AnswerHostAsync(msg, id));
+                return true;
+
+            case "open" when _manifest.Kind == PluginKind.Window:
+                Track(() => AnswerOpenAsync(msg));
+                return true;
+
+            case "placed" when _manifest.Kind == PluginKind.Window && !IsAwaited(id):
+                // A window plugin places when it chooses, under an id of its own (brief-plg-4 §3).
+                Track(() => AnswerPlacedAsync(msg));
                 return true;
 
             case "hello" or "reply" or "placed":
@@ -576,6 +620,137 @@ public sealed class PluginSession : IPluginPanelSession
         }
     }
 
+    // ── Host calls and window messages (brief-plg-4) ────────────────────────────
+
+    private void Track(Func<Task> work)
+    {
+        var task = Task.Run(work);
+        lock (_windowWork) { _windowWork.RemoveAll(t => t.IsCompleted); _windowWork.Add(task); }
+    }
+
+    /// <summary>Completes once every host call, placement and open already received has been answered — what a
+    /// window plugin's staging folder waits for before it is deleted.</summary>
+    public Task IdleAsync()
+    {
+        lock (_windowWork) return Task.WhenAll(_windowWork.ToArray());
+    }
+
+    private bool IsAwaited(long? id)
+    {
+        lock (_gate) return id is { } r && (_pending.ContainsKey(r) || _cancelled.Contains(r));
+    }
+
+    /// <summary>
+    /// One host call: answered by <see cref="PluginHostServices"/>, one at a time, and cancelled with the request it
+    /// arrived inside. A panel's busy bar says circuitRF is simulating while a <c>simulate</c> runs. Every refusal is a
+    /// <c>hostReply</c> error with a sentence; the session lives on.
+    /// </summary>
+    private async Task AnswerHostAsync(JsonObject msg, long? id)
+    {
+        await _hostLock.WaitAsync();
+        try
+        {
+            if (Fatal is not null) return;
+            Pending? request = null;
+            bool cancelled;
+            lock (_gate)
+            {
+                if (id is { } r) _pending.TryGetValue(r, out request);
+                cancelled = id is { } c && _cancelled.Contains(c);
+            }
+
+            JsonObject body;
+            if (cancelled)
+                body = new JsonObject { ["error"] = $"Request {id} was cancelled, so its host call was not made." };
+            else if (request is null && _manifest.Kind != PluginKind.Window)
+                body = new JsonObject { ["error"] = id is null
+                    ? "A host call carries the id of the request it is made for."
+                    : $"A host call is made before the reply to a request, and request {id} is not waiting for one." };
+            else
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
+                if (id is { } key) lock (_gate) _hostCalls[key] = cts;
+                bool simulating = msg["call"] is JsonValue cv && cv.TryGetValue<string>(out var call) && call == "simulate";
+                if (simulating && id is { } pid) RaiseProgress(new PluginProgress(pid, null, PluginHostServices.SimulatingText));
+                try
+                {
+                    body = await Task.Run(() => _host.Answer(msg, request is null ? null : Budget(request), cts.Token));
+                }
+                finally
+                {
+                    if (id is { } done) lock (_gate) if (_hostCalls.TryGetValue(done, out var mine) && ReferenceEquals(mine, cts)) _hostCalls.Remove(done);
+                    if (simulating && id is { } pid2) RaiseProgress(new PluginProgress(pid2, null, null));
+                }
+            }
+            body["type"] = "hostReply";
+            body["id"] = msg["id"]?.DeepClone();
+            await WriteAsync(body);
+        }
+        finally { _hostLock.Release(); }
+    }
+
+    /// <summary>What remains of nine tenths of <paramref name="request"/>'s deadline — or the override.</summary>
+    private TimeSpan Budget(Pending request)
+    {
+        if (_options.Deadlines.Simulate is { } fixedBudget) return fixedBudget;
+        TimeSpan deadline = request.Type switch
+        {
+            "action" => Seconds(_manifest.Timeouts.Action) ?? TimeSpan.FromMinutes(10),
+            "commit" => Seconds(_manifest.Timeouts.Commit) ?? TimeSpan.FromMinutes(10),
+            _        => Seconds(_manifest.Timeouts.Update) ?? TimeSpan.FromSeconds(30),
+        };
+        var left = deadline * 0.9 - (DateTime.UtcNow - request.Sent);
+        return left > TimeSpan.FromMilliseconds(1) ? left : TimeSpan.FromMilliseconds(1);
+    }
+
+    private void RaiseProgress(PluginProgress p)
+    {
+        try { Progress?.Invoke(p); } catch { /* a listener must not stop a host call */ }
+    }
+
+    /// <summary>A window plugin's <c>placed</c>: its files checked as a commit's are, then placed by the caller.</summary>
+    private async Task AnswerPlacedAsync(JsonObject msg)
+    {
+        var reply = new JsonObject { ["type"] = "placedReply", ["id"] = msg["id"]?.DeepClone() };
+        var parsed = ParsePlaced(msg);
+        if (parsed.Failure is { } f) reply["error"] = f.Sentence;
+        else if (_options.WindowPlaced is not { } place) reply["error"] = "This circuitRF places nothing from a plugin's own window here.";
+        else
+        {
+            PluginWindowAnswer answer;
+            try { answer = await place(parsed.Value!); }
+            catch (Exception e) when (e is not OutOfMemoryException) { answer = new PluginWindowAnswer([], e.Message); }
+            if (answer.Error is { } why) reply["error"] = why;
+            else reply["cells"] = new JsonArray([.. answer.Cells.Select(c => (JsonNode)JsonValue.Create(c)!)]);
+        }
+        await WriteAsync(reply);
+    }
+
+    /// <summary>A window plugin's <c>open {path}</c>: a document in its staging folder or the workspace, opened by the
+    /// caller.</summary>
+    private async Task AnswerOpenAsync(JsonObject msg)
+    {
+        var reply = new JsonObject { ["type"] = "openReply", ["id"] = msg["id"]?.DeepClone() };
+        string? named = msg["path"] is JsonValue pv && pv.TryGetValue<string>(out var p) ? p : null;
+        string? path = named is null ? null : _host.Document(named);
+        if (path is null) reply["error"] = named is null ? "open names its document as path." : $"{named} is not a document in the workspace or the staging folder.";
+        else if (_options.WindowOpen is not { } open) reply["error"] = "This circuitRF opens nothing for a plugin here.";
+        else
+        {
+            string? refusal;
+            try { refusal = await open(path); }
+            catch (Exception e) when (e is not OutOfMemoryException) { refusal = e.Message; }
+            if (refusal is not null) reply["error"] = refusal;
+        }
+        await WriteAsync(reply);
+    }
+
+    /// <summary>The process's exit code once it has exited, else null.</summary>
+    public int? ExitCode
+    {
+        get { try { return _process.HasExited ? _process.ExitCode : null; } catch (InvalidOperationException) { return null; } }
+    }
+
     // ── Ending ──────────────────────────────────────────────────────────────────
 
     /// <summary>Records <paramref name="kind"/> as the end of the session — the first one wins — answers every
@@ -593,6 +768,7 @@ public sealed class PluginSession : IPluginPanelSession
         }
         // Killed BEFORE anyone is answered: a caller told "it failed" may rightly assume nothing is left running.
         KillTree();
+        try { _life.Cancel(); } catch (ObjectDisposedException) { }   // and no host call it asked for runs on
         foreach (var p in waiting) p.Done.TrySetResult(new Answer(null, failure));
         if (Volatile.Read(ref _closed) == 0)
             try { Ended?.Invoke(failure); } catch { /* a listener must not stop the session ending */ }
@@ -635,6 +811,7 @@ public sealed class PluginSession : IPluginPanelSession
         }
         catch (InvalidOperationException) { }
         lock (_gate) _fatal ??= new PluginFailure(PluginFailureKind.Exited, $"{Peer} was closed.", []);
+        try { _life.Cancel(); } catch (ObjectDisposedException) { }
         await Task.Run(KillTree);
         lock (Live) Live.Remove(this);
         if (!_options.KeepStaging) PluginStaging.Delete(StagingDirectory);

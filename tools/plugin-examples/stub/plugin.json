@@ -32,6 +32,7 @@
         { "group": "Line", "children": [ { "param": "substrate" }, { "param": "trim" } ] },
         { "readout": "summary", "as": "text" },
         { "messages": true },
+        { "button": "Simulate in circuitRF", "action": "simulate" },
         { "button": "Place in workspace", "action": "commit" }
       ]},
       { "tabs": [

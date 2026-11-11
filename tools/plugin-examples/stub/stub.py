@@ -16,6 +16,9 @@ admittance to 1/Z0 + jB; an open stub of length l across that point adds -jB. Wi
 
 The microstrip width and effective permittivity come from the closed-form microstrip equations. Every value arrives and
 leaves in base SI; geometry crosses as int64 database units, 1000 per micrometre.
+
+The "Simulate in circuitRF" button asks circuitRF to run the staged circuit with its own engine (the `simulate` host
+call) and draws that S11 beside the closed form's, so the two can be compared before anything is placed.
 """
 import json
 import math
@@ -180,6 +183,56 @@ def netlist(m):
     return "\n".join(lines) + "\n"
 
 
+def read_s1p(path):
+    """A one-port Touchstone file's S11 by frequency in hertz: RI, MA or DB, any frequency unit."""
+    scale = {"hz": 1.0, "khz": 1e3, "mhz": 1e6, "ghz": 1e9}
+    unit, fmt, freqs, values = 1e9, "ma", [], []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.split("!")[0].strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                words = line[1:].lower().split()
+                for w in words:
+                    if w in scale:
+                        unit = scale[w]
+                    elif w in ("ri", "ma", "db"):
+                        fmt = w
+                continue
+            a, b, c = (float(x) for x in line.split()[:3])
+            if fmt == "ri":
+                v = complex(b, c)
+            else:
+                mag = 10 ** (b / 20) if fmt == "db" else b
+                v = mag * complex(math.cos(math.radians(c)), math.sin(math.radians(c)))
+            freqs.append(a * unit)
+            values.append(v)
+    return freqs, values
+
+
+def simulate(msg, staging, body):
+    """The `simulate` host call: circuitRF runs circuit.cnl, and its S11 joins the response plot as a second trace."""
+    send({"type": "host", "id": msg["id"], "call": "simulate", "cnl": "circuit.cnl"})
+    while True:
+        answer = read_message()
+        if answer is None:
+            sys.exit(0)
+        if answer.get("type") == "hostReply" and answer.get("id") == msg["id"]:
+            break
+    if "error" in answer:
+        body["messages"].append({"severity": "error", "text": "circuitRF could not simulate the circuit: " + answer["error"]})
+        return
+    freqs, values = read_s1p(answer["touchstone"])
+    response = body["views"]["response"]
+    response["data"] = json.loads(json.dumps(response["data"]))      # its own copy: the Smith chart shares the data
+    response["data"]["axes"]["freq_circuitRF"] = {"unit": "Hz", "values": freqs}
+    response["data"]["cubes"]["S11_circuitRF"] = {
+        "axes": ["freq_circuitRF"], "kind": "complex", "re": [v.real for v in values], "im": [v.imag for v in values]}
+    response["plot"]["traces"].append({"cube": "S11_circuitRF", "y": "db20", "label": "S11, circuitRF"})
+    body["messages"].append({"severity": "info", "text": "circuitRF simulated the circuit: " + os.path.basename(answer["touchstone"])})
+
+
 def reply(msg, staging):
     p = msg["params"]
     m = design(p)
@@ -228,6 +281,8 @@ def main():
         elif kind in ("update", "action", "event"):
             # An event is a dragged marker or handle; its parameter is already in params, so it is answered as an update.
             body, payload = reply(msg, staging)
+            if kind == "action" and msg.get("name") == "simulate" and "views" in body:
+                simulate(msg, staging, body)
             send(body, payload)
         elif kind == "commit":
             m = design(msg["params"])

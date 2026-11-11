@@ -14,7 +14,11 @@ using CircuitRF.Design.Plugins;
 namespace CircuitRF.Ui.Plugins;
 
 /// <summary>What one OK did: whether the dialog may close, and what to show if not.</summary>
-public sealed record PluginRunAnswer(bool Close, IReadOnlyList<PluginMessage> Messages);
+public sealed record PluginRunAnswer(bool Close, IReadOnlyList<PluginMessage> Messages)
+{
+    /// <summary>The cells placed, when the run placed some.</summary>
+    public IReadOnlyList<string> Cells { get; init; } = [];
+}
 
 /// <summary>Runs a plugin with the resolved parameters — <c>hello</c>, <c>update</c>, <c>commit</c> and placement —
 /// supplied by the workspace, so the dialog holds no process and no workspace logic.</summary>

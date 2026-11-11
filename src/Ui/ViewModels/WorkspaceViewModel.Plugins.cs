@@ -44,6 +44,7 @@ public partial class WorkspaceViewModel
 
         string? workspaceDir = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
         if (entry.Manifest!.Kind == PluginKind.Panel) { OpenPluginPanel(window, entry, trust, workspaceDir); return; }
+        if (entry.Manifest.Kind == PluginKind.Window) { await OpenWindowPluginAsync(window, entry, trust, workspaceDir); return; }
         await PluginActionDialog.ShowAsync(window, entry, workspaceDir,
             (values, keep, progress, cancel) => RunPluginAsync(window, entry, trust, workspaceDir, values, keep, progress, cancel));
     }
@@ -57,7 +58,7 @@ public partial class WorkspaceViewModel
         var started = PluginSession.Start(entry, new PluginStartOptions
         {
             Trust = trust, Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, KeepStaging = keepStaging,
-            Log = log.Write,
+            Log = log.Write, Verbs = CircuitRF.Cli.PluginVerbs.Instance,
         });
         if (started.Failure is { } refused) return Failed(refused);
 
@@ -103,15 +104,24 @@ public partial class WorkspaceViewModel
             return new PluginRunAnswer(false, [.. replyMessages, new PluginMessage("error", "Open a workspace to place what this plugin makes.")]);
 
         var placed = await session.CommitAsync(values, cancel);
-        if (placed.Failure is { } cf) return Failed(cf);
-        if (placed.Value!.HasError) return new PluginRunAnswer(false, placed.Value.Messages);
-        if (placed.Value.Cells.Count == 0) return new PluginRunAnswer(false, [.. placed.Value.Messages, new PluginMessage("warning", $"{manifest.Name} placed nothing.")]);
+        if (placed.Failure is { } cf) return PluginFailedAnswer(manifest, cf);
+        return await PlaceStagedAsync(window, entry, workspaceDir, placed.Value!, layoutView);
+    }
+
+    /// <summary>§6.3's placement of cells a plugin staged — a commit's answer, or a <c>window</c> plugin's own
+    /// <c>placed</c> (brief-plg-4 §3).</summary>
+    private async Task<PluginRunAnswer> PlaceStagedAsync(
+        Window window, PluginEntry entry, string workspaceDir, PluginPlaced placed, Func<string, PluginLayoutView?>? layoutView)
+    {
+        var manifest = entry.Manifest!;
+        if (placed.HasError) return new PluginRunAnswer(false, placed.Messages);
+        if (placed.Cells.Count == 0) return new PluginRunAnswer(false, [.. placed.Messages, new PluginMessage("warning", $"{manifest.Name} placed nothing.")]);
 
         var names = new List<string>();
         string? last = null;
-        foreach (var cell in placed.Value.Cells)
+        foreach (var cell in placed.Cells)
         {
-            var request = new PluginPlacementRequest(workspaceDir, manifest, cell, placed.Value.Messages,
+            var request = new PluginPlacementRequest(workspaceDir, manifest, cell, placed.Messages,
                 Layout: cell.LayoutView is { } lv ? layoutView?.Invoke(lv) : null);
             var result = await Task.Run(() => PluginPlacement.Place(request));
             while (result.Outcome == PluginPlacementOutcome.NameTaken)
@@ -133,13 +143,64 @@ public partial class WorkspaceViewModel
 
         _factory.ProjectTreeTool?.Refresh();
         if (last is not null) _factory.ProjectTreeTool?.Reveal(last);
-        foreach (var m in placed.Value.Messages.Where(m => !m.IsError))
+        foreach (var m in placed.Messages.Where(m => !m.IsError))
             Messages.Post(m.Severity == "warning" ? CircuitRF.Ui.Messages.MessageLevel.Warning : CircuitRF.Ui.Messages.MessageLevel.Info, $"{manifest.Name}: {m.Text}");
         string done = $"{manifest.Name} {manifest.Version} placed {(names.Count == 1 ? "cell" : "cells")} {string.Join(", ", names)}.";
         Messages.Info(done, last);
-        return new PluginRunAnswer(true, [new PluginMessage("info", done)]);
+        return new PluginRunAnswer(true, [new PluginMessage("info", done)]) { Cells = names };
+    }
 
-        PluginRunAnswer Failed(PluginFailure f) => PluginFailedAnswer(manifest, f);
+    /// <summary>
+    /// Starts a <c>window</c> plugin (brief-plg-4 §3): <c>hello</c>, then circuitRF draws nothing and answers what it
+    /// sends — <c>placed</c> places as a commit does, <c>open</c> opens a document, <c>host</c> calls are answered — until
+    /// it exits. One at a time per plugin; a second start says it is running, since its window is not ours to raise.
+    /// </summary>
+    private async Task OpenWindowPluginAsync(Window owner, PluginEntry entry, PluginTrustStore trust, string? workspaceDir)
+    {
+        var manifest = entry.Manifest!;
+        var log = PluginLog.Open(manifest.Id);
+        var started = PluginWindows.Start(entry, new PluginStartOptions
+        {
+            Trust = trust, Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, Log = log.Write,
+            Verbs = CircuitRF.Cli.PluginVerbs.Instance,
+            WindowPlaced = placed => Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                if (workspaceDir is null) return new PluginWindowAnswer([], "Open a workspace to place what this plugin makes.");
+                var answer = await PlaceStagedAsync(owner, entry, workspaceDir, placed, null);
+                foreach (var m in answer.Messages.Where(m => m.IsError)) Messages.Error($"{manifest.Name}: {m.Text}");
+                return answer.Close
+                    ? new PluginWindowAnswer(answer.Cells, null)
+                    : new PluginWindowAnswer([], string.Join(" ", answer.Messages.Select(m => m.Text)));
+            }),
+            WindowOpen = path => Dispatcher.UIThread.InvokeAsync<string?>(() =>
+                OpenDocumentByPath(path) ? null : $"circuitRF could not open {Path.GetFileName(path)}.").GetTask(),
+        });
+        if (started.Failure is { } refused)
+        {
+            log.Dispose();
+            if (refused.Kind == PluginFailureKind.AlreadyRunning) Messages.Info(refused.Sentence);
+            else Messages.Warning($"{manifest.Name}: {refused.Sentence}");
+            return;
+        }
+
+        var session = started.Value!;
+        session.Ended += f =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (f.Kind == PluginFailureKind.Exited && session.ExitCode is null or 0) Messages.Info(f.Sentence);
+                else Messages.Warning($"{manifest.Name}: {f.Sentence}");
+            });
+            _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ => log.Dispose(), TaskScheduler.Default);
+        };
+        var hello = await session.HelloAsync();
+        if (hello.Failure is { } hf)
+        {
+            Messages.Warning($"{manifest.Name}: {hf.Sentence}");
+            await session.ByeAsync();
+            return;
+        }
+        Messages.Info($"{manifest.Name} {manifest.Version} is running in its own window.");
     }
 
     /// <summary>The open panel windows, by plugin id — choosing an open plugin again raises its window.</summary>
@@ -172,6 +233,7 @@ public partial class WorkspaceViewModel
             {
                 Trust = trust, Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, Log = log.Write,
                 Deadlines = new PluginDeadlines(Update: Timeout.InfiniteTimeSpan, Action: Timeout.InfiniteTimeSpan),
+                Verbs = CircuitRF.Cli.PluginVerbs.Instance,
             });
             return started.Ok ? PluginOutcome<IPluginPanelSession>.Of(started.Value!) : PluginOutcome<IPluginPanelSession>.Fail(started.Failure!);
         }, new PluginPanelOptions

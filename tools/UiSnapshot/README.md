@@ -438,12 +438,14 @@ dotnet run --project tools/UiSnapshot --no-build -- --plugin-dialog <plugin fold
 **A `panel` plugin's window** (brief-plg-2), with the plugin really running. `--plugin-state` picks what is captured:
 `idle` (the first reply), `error` (starting from the `--plugin-set name=text` values — a plugin error, or a field marked
 because its text cannot be sent), `busy` (a second update held unanswered with a progress frame), `stopped` (the process
-reported ended after its first reply) or `disabled` (a second reply that disables every control). Only the last three
-alter what the plugin said. `--plugin-shift-check` captures `disabled` and prints every control's bounds before and after,
+reported ended after its first reply) or `disabled` (a second reply that disables every control); `simulating` is
+`busy` with the bar a `simulate` host call shows (brief-plg-4). Only the last four alter what the plugin said.
+`--plugin-action <name>` presses that action's button after the first reply and draws its answer, host calls answered
+by circuitRF's own verbs as in the application (`--plugin-action simulate` on the stub). `--plugin-shift-check` captures `disabled` and prints every control's bounds before and after,
 exiting 1 if any moved. `--size WxH` and `--dark` apply.
 
 ```
-dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator [--plugin-state idle|busy|error|stopped|disabled] [--plugin-set rl="200 kOhm"] -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator [--plugin-state idle|busy|simulating|error|stopped|disabled] [--plugin-set rl="200 kOhm"] -o out.png
 dotnet run --project tools/UiSnapshot --no-build -- --plugin-panel tools/plugin-examples/calculator --plugin-shift-check -o out.png
 ```
 

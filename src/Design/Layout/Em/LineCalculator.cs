@@ -204,17 +204,9 @@ public static class LineCalculator
             (false, true)  => "SLIN",
             _              => null,
         };
-        IReadOnlyList<ParameterAssignment> overrides = [];
-        string? substrateWarning = null;
-        if (component == "MLIN")
-            overrides = MicrostripSubstrateInjection.BuildOverrides(tech, out substrateWarning, layer.Conductor.Name);
-        else if (component is not null)
-        {
-            var kind = component == "CPWG" ? SymbolKind.Cpwg : SymbolKind.Slin;
-            var binding = PlanarLineSubstrateInjection.Build(tech, kind, layer.Conductor.Name, null);
-            overrides = binding.Overrides;
-            substrateWarning = binding.Refusal ?? (binding.Warnings.Count > 0 ? string.Join(" ", binding.Warnings) : null);
-        }
+        var (overrides, substrateWarning) = component is null
+            ? ([], null)
+            : SubstrateOverrides(tech, component, layer.Conductor.Name);
         var warnings = new List<string>();
         if (substrateWarning is not null && overrides.Count > 0) warnings.Add(substrateWarning);
 
@@ -304,6 +296,52 @@ public static class LineCalculator
         };
     }
 
+    /// <summary>The substrate a <paramref name="component"/> ("MLIN", "CPWG" or "SLIN") on <paramref name="conductor"/> is
+    /// given — what a schematic's extraction and a <c>.cnl</c>'s technology binding inject — and what the injection said.
+    /// Empty overrides when none resolves.</summary>
+    private static (IReadOnlyList<ParameterAssignment> Overrides, string? Warning) SubstrateOverrides(
+        Technology tech, string component, string conductor)
+    {
+        if (component == "MLIN")
+            return (MicrostripSubstrateInjection.BuildOverrides(tech, out var warning, conductor), warning);
+        var binding = PlanarLineSubstrateInjection.Build(tech, component == "CPWG" ? SymbolKind.Cpwg : SymbolKind.Slin, conductor, null);
+        return (binding.Overrides, binding.Refusal ?? (binding.Warnings.Count > 0 ? string.Join(" ", binding.Warnings) : null));
+    }
+
+    /// <summary>
+    /// The circuit model alone — no cross-section — of a <paramref name="component"/> line ("MLIN", "CPWG" or "SLIN")
+    /// <paramref name="widthM"/> wide on <paramref name="layer"/>, at each of <paramref name="freqsHz"/>: ONE elaborated
+    /// line, given the substrate <see cref="Calculate"/>'s model column is given, asked
+    /// <see cref="IPlanarLineModel.LineParameters"/> at every frequency. What a plugin's <c>lineModel</c> host call
+    /// answers (brief-plg-4), so a plugin's line agrees with the part it will be placed as.
+    /// </summary>
+    public static (IReadOnlyList<MicrostripLineParameters>? Points, IReadOnlyList<string> Warnings, string? Refusal) ModelSweep(
+        Technology tech, string layer, string component, double widthM, double? gapM, IReadOnlyList<double> freqsHz)
+    {
+        ArgumentNullException.ThrowIfNull(tech);
+        if (ResolveLayer(tech, layer) is not { } resolved)
+            return (null, [], $"'{layer}' is not a copper layer of technology '{tech.Name}'. Its copper layers are: " +
+                              string.Join(", ", CopperLayerNames(tech)) + ".");
+        if (!(widthM > 0 && double.IsFinite(widthM))) return (null, [], "The width must be a positive length.");
+        if (component == "CPWG" && !(gapM is { } g && g > 0 && double.IsFinite(g))) return (null, [], "The coplanar gap must be a positive length.");
+        if (freqsHz.Any(f => !(f >= 0 && double.IsFinite(f)))) return (null, [], "Every frequency must be a number of hertz, 0 or more.");
+
+        var (overrides, warning) = SubstrateOverrides(tech, component, resolved.Conductor.Name);
+        if (overrides.Count == 0)
+            return (null, [], $"{component} has no substrate on {resolved.LayerName}: {warning ?? "the technology resolves none"}");
+
+        var (line, refusal) = ElaborateLine(component, widthM, gapM, overrides);
+        if (line is null) return (null, [], refusal);
+        using (line.Value.Netlist)
+        {
+            var points = freqsHz.Select(f => line.Value.Model.LineParameters(f)).ToList();
+            var warnings = new List<string>();
+            if (warning is not null) warnings.Add(warning);
+            warnings.AddRange(line.Value.Model.DrainWarnings().Select(w => w.Message).Distinct());
+            return (points, warnings, null);
+        }
+    }
+
     private static double Parse(IReadOnlyList<ParameterAssignment> overrides, string name) =>
         double.Parse(overrides.Single(o => o.Name == name).Expression, CultureInfo.InvariantCulture);
 
@@ -311,6 +349,22 @@ public static class LineCalculator
     /// substrate, ELABORATED — the model a run stamps, asked for its line parameters.</summary>
     internal static (LineCalcModel? Model, string? Refusal) ModelAt(
         string component, double wM, double? gapM, IReadOnlyList<ParameterAssignment> substrate, double? freqHz)
+    {
+        var (elaborated, refusal) = ElaborateLine(component, wM, gapM, substrate);
+        if (elaborated is not { } e) return (null, refusal);
+        using (e.Netlist)
+        {
+            var line = e.Model.LineParameters(freqHz ?? 0.0);
+            var warnings = e.Model.DrainWarnings().Select(w => w.Message).ToList();
+            double? lambda = freqHz is { } f ? MicrostripLoss.SpeedOfLight / (f * Math.Sqrt(line.Eeff)) : null;
+            return (new LineCalcModel(wM, line, lambda, warnings, component), null);
+        }
+    }
+
+    /// <summary>A one-instance test bench of <paramref name="component"/> on <paramref name="substrate"/>, ELABORATED —
+    /// the model a run stamps. The caller disposes the netlist.</summary>
+    private static ((ElaboratedNetlist Netlist, IPlanarLineModel Model)? Line, string? Refusal) ElaborateLine(
+        string component, double wM, double? gapM, IReadOnlyList<ParameterAssignment> substrate)
     {
         var tb = new TestBench("line");
         var parameters = new List<ParameterAssignment>
@@ -321,18 +375,20 @@ public static class LineCalculator
         if (component == "CPWG") parameters.Add(new("G", gapM!.Value.ToString("R", CultureInfo.InvariantCulture)));
         parameters.AddRange(substrate);
         tb.Instances.Add(new Instance("TL1", component, ["a", "b"], parameters));
+        ElaboratedNetlist? netlist = null;
         try
         {
-            using var netlist = new Elaborator(new Library("line")).Elaborate(tb);
+            netlist = new Elaborator(new Library("line")).Elaborate(tb);
             if (netlist.Components.Single().Model is not IPlanarLineModel lineModel)
+            {
+                netlist.Dispose();
                 return (null, $"{component} did not elaborate to a line model");
-            var line = lineModel.LineParameters(freqHz ?? 0.0);
-            var warnings = lineModel.DrainWarnings().Select(w => w.Message).ToList();
-            double? lambda = freqHz is { } f ? MicrostripLoss.SpeedOfLight / (f * Math.Sqrt(line.Eeff)) : null;
-            return (new LineCalcModel(wM, line, lambda, warnings, component), null);
+            }
+            return ((netlist, lineModel), null);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
+            netlist?.Dispose();
             return (null, ex.Message);
         }
     }

@@ -35,10 +35,8 @@ public static class PluginHost
     /// <summary>The catalogue as the menu shows it. Reads manifests only.</summary>
     public static IReadOnlyList<PluginEntry> Discover() => PluginCatalog.Discover(Sources());
 
-    /// <summary>Why a listed plugin cannot be started from the menu in this version, or null when it can — a
-    /// <c>window</c> plugin waits for brief 4.</summary>
-    public static string? UnavailableReason(PluginEntry entry)
-        => entry.DimReason ?? (entry.Manifest?.Kind == PluginKind.Window ? "opens its own window, which a later version supports" : null);
+    /// <summary>Why a listed plugin cannot be started from the menu, or null when it can.</summary>
+    public static string? UnavailableReason(PluginEntry entry) => entry.DimReason;
 
     /// <summary>The width <paramref name="pluginId"/>'s parameter dialog was last left at, or null for the default.</summary>
     public static double? DialogWidth(string pluginId)

@@ -198,6 +198,7 @@ string? pluginPanel = null, pluginState = null;   // brief-plg-2
 var pluginSets = new Dictionary<string, string>(StringComparer.Ordinal);
 bool pluginShiftCheck = false;
 int? pluginTab = null; double? pluginDragMarker = null, pluginDragHandle = null;   // brief-plg-3
+string? pluginAction = null;   // brief-plg-4
 string? pluginImage = null; (double, double)? pluginClick = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
@@ -311,6 +312,7 @@ for (int i = 0; i < args.Length; i++)
         case "--plugin-tab" when i + 1 < args.Length: pluginTab = int.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--plugin-drag-marker" when i + 1 < args.Length: pluginDragMarker = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--plugin-drag-handle" when i + 1 < args.Length: pluginDragHandle = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
+        case "--plugin-action" when i + 1 < args.Length: pluginAction = args[++i]; break;
         case "--plugin-image" when i + 1 < args.Length: pluginImage = Path.GetFullPath(args[++i]); break;
         case "--plugin-click" when i + 1 < args.Length:
             { var xy = args[++i].Split(','); pluginClick = (double.Parse(xy[0], System.Globalization.CultureInfo.InvariantCulture), double.Parse(xy[1], System.Globalization.CultureInfo.InvariantCulture)); break; }
@@ -490,7 +492,7 @@ if (pluginPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } panelApp) panelApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return PluginPanelSnapshot.Run(pluginPanel, pluginState ?? "idle", pluginSets, pluginWorkspace, pluginShiftCheck,
-                                   sizeGiven ? width : null, sizeGiven ? height : null, output, pluginTab, pluginDragMarker, pluginDragHandle);
+                                   sizeGiven ? width : null, sizeGiven ? height : null, output, pluginTab, pluginDragMarker, pluginDragHandle, pluginAction);
 }
 // brief-plg-3 — a plugin's image view, in a one-view panel scripted here (--plugin-image <png|svg> [--plugin-click fx,fy]).
 if (pluginImage is not null && output is not null)

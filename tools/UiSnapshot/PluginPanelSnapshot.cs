@@ -24,7 +24,7 @@ static class PluginPanelSnapshot
     /// gesture's release does, and waits for the reply that follows — gate 3's drag, in the harness.</summary>
     public static int Run(string pluginDir, string state, IReadOnlyDictionary<string, string> sets, string? workspace,
                           bool shiftCheck, double? width, double? height, string output,
-                          int? tab = null, double? dragMarker = null, double? dragHandle = null)
+                          int? tab = null, double? dragMarker = null, double? dragHandle = null, string? action = null)
     {
         var entry = PluginCatalog.Read(pluginDir, PluginSource.Linked);
         if (entry.Manifest is not { } manifest) { Console.Error.WriteLine(string.Join("\n", entry.Diagnostics)); return 1; }
@@ -42,10 +42,12 @@ static class PluginPanelSnapshot
                 Policy = PluginPolicy.Resolve(null, null, _ => null),
                 ScratchRoot = scratch, WorkspaceDir = workspace,
                 Deadlines = new PluginDeadlines(TimeSpan.FromSeconds(20), Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan),
+                Verbs = CircuitRF.Cli.PluginVerbs.Instance,      // brief-plg-4: host calls answered as the application answers them
             });
-            return started.Ok
-                ? PluginOutcome<IPluginPanelSession>.Of(new Scripted(started.Value!, state, manifest))
-                : PluginOutcome<IPluginPanelSession>.Fail(started.Failure!);
+            if (!started.Ok) return PluginOutcome<IPluginPanelSession>.Fail(started.Failure!);
+            var scripted = new Scripted(started.Value!, state, manifest);
+            started.Value!.Progress += scripted.Raise;
+            return PluginOutcome<IPluginPanelSession>.Of(scripted);
         }, new PluginPanelOptions
         {
             Context = new PluginParamContext(workspace),
@@ -84,9 +86,19 @@ static class PluginPanelSnapshot
             Console.WriteLine($"handle dragged {hd:R} m; {grip.Parameter} = {controller.Value(grip.Parameter)}");
         }
 
+        if (action is not null)
+        {
+            // brief-plg-4: a button that makes host calls — the stub's "Simulate in circuitRF" — pressed, and its reply drawn.
+            var sent = controller.State.Reply;
+            controller.RunAction(action);
+            Pump(window, () => !ReferenceEquals(controller.State.Reply, sent) && !controller.State.InFlight, $"the reply to {action}");
+            foreach (var m in controller.State.Reply!.Messages) Console.WriteLine($"{m.Severity}: {m.Text}");
+        }
+
         Dictionary<string, Rect>? before = null;
         switch (state)
         {
+            case "simulating":
             case "busy":
                 Change(window, controller, manifest);
                 Pump(window, () => controller.State.Busy && controller.State.Progress is not null, "the busy bar");
@@ -251,6 +263,9 @@ static class PluginPanelSnapshot
 
         public Task<PluginOutcome<PluginHello>> HelloAsync(CancellationToken ct = default) => inner.HelloAsync(ct);
 
+        /// <summary>The real session's progress — a host call's busy text among it — passed on.</summary>
+        public void Raise(PluginProgress p) => Progress?.Invoke(p);
+
         public async Task<PluginOutcome<PluginReply>> UpdateAsync(JsonObject parameters, CancellationToken ct = default)
         {
             int n = Interlocked.Increment(ref _updates);
@@ -266,9 +281,11 @@ static class PluginPanelSnapshot
                     });
                 return first;
             }
-            if (state == "busy")
+            if (state is "busy" or "simulating")
             {
-                Progress?.Invoke(new PluginProgress(n, 0.4, "Solving section 2 of 5…"));
+                // "simulating" is the bar a simulate host call shows (brief-plg-4), its text the session's own.
+                Progress?.Invoke(state == "busy" ? new PluginProgress(n, 0.4, "Solving section 2 of 5…")
+                                                 : new PluginProgress(n, null, PluginHostServices.SimulatingText));
                 await Task.Delay(Timeout.Infinite, ct).ContinueWith(_ => { });
                 return PluginOutcome<PluginReply>.Fail(new PluginFailure(PluginFailureKind.Cancelled, "Stopped.", []));
             }

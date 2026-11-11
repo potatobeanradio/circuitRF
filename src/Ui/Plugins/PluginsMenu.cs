@@ -23,9 +23,17 @@ public static class PluginsMenu
             .Select(g => (g.Key, (IReadOnlyList<PluginEntry>)g.ToList()))
             .ToList();
 
-    /// <summary>The tooltip a row shows: why it is dimmed, else its summary.</summary>
+    /// <summary>A <c>window</c> plugin's note: circuitRF starts it, and it draws itself (brief-plg-4 §3).</summary>
+    public const string OwnWindowNote = "Opens its own window.";
+
+    /// <summary>The tooltip a row shows: why it is dimmed, else its summary — and, for a <c>window</c> plugin, that it
+    /// opens its own window.</summary>
     public static string Tip(PluginEntry e)
-        => PluginHost.UnavailableReason(e) is { } why ? $"{e.DisplayName} {why}." : e.Manifest?.Summary ?? e.DisplayName;
+    {
+        if (PluginHost.UnavailableReason(e) is { } why) return $"{e.DisplayName} {why}.";
+        string tip = e.Manifest?.Summary ?? e.DisplayName;
+        return e.Manifest?.Kind == PluginKind.Window ? $"{tip}\n{OwnWindowNote}" : tip;
+    }
 
     /// <summary>Refills an in-window submenu. Its <c>Items</c> are replaced; the item itself is kept.</summary>
     public static void Fill(MenuItem target, IReadOnlyList<PluginEntry> entries, Action<PluginEntry> open)

@@ -1,0 +1,17 @@
+{
+  "apiVersion": 1,
+  "id": "example.own-window",
+  "name": "Own Window",
+  "version": "1.0.0",
+  "summary": "A plugin that draws its own window: here it opens none, and places a two-resistor attenuator cell.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "python": { "entry": "window.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "window",
+  "menu": "Examples"
+}

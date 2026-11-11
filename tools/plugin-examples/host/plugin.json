@@ -1,0 +1,34 @@
+{
+  "apiVersion": 1,
+  "id": "example.host-calls",
+  "name": "Host Calls",
+  "version": "1.0.0",
+  "summary": "Sends one host call - simulate, resolve, evaluate or lineModel - written as JSON, and shows circuitRF's answer.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "python": { "entry": "host.py", "requiresPython": ">=3.8" }
+  },
+
+  "kind": "panel",
+  "menu": "Examples",
+  "params": [
+    { "name": "call",   "label": "Host call", "kind": "string", "default": "{\"call\": \"evaluate\", \"expr\": \"2 * 2.4 GHz\", \"unit\": \"Hz\"}", "chars": 60 },
+    { "name": "answer", "label": "Answer",    "kind": "readout" },
+    { "name": "last",   "label": "Previous",  "kind": "readout" }
+  ],
+
+  "ui": {
+    "title": "Host Calls",
+    "size": [760, 320],
+    "layout": { "column": [
+      { "param": "call" },
+      { "readout": "answer", "as": "text" },
+      { "readout": "last", "as": "text" },
+      { "messages": true },
+      { "button": "Send again", "action": "call" }
+    ]}
+  }
+}

@@ -114,6 +114,11 @@ public sealed record PluginManifest
     /// missing build for this machine is <see cref="ResolveRun"/>'s.</summary>
     public string? NeedsNewerCircuitRF => ApiVersion > PluginApi.Max ? "needs a newer circuitRF" : null;
 
+    /// <summary>Whether <c>circuitRF plugin run</c> can drive it (brief-plg-4 §3): a <c>window</c> plugin only when it also
+    /// declares <c>params</c>, and then it answers <c>commit</c> without a window when <c>hello</c>'s <c>mode</c> is
+    /// <c>headless</c>. Every other kind always can.</summary>
+    public bool HasHeadlessForm => Kind != PluginKind.Window || Params.Count > 0;
+
     /// <summary>
     /// This machine's entry: the RID's own, else <c>python</c>, else the refusal "no build for &lt;rid&gt;". A compiled
     /// build for the platform wins over Python because it is what the author shipped for it.

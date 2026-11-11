@@ -420,7 +420,13 @@ may answer it as it answers `update`.
 | plugin → circuitRF, before its reply | Meaning |
 |---|---|
 | `progress {id, fraction, text}` | Shown on the panel's busy bar |
-| `host {id, call, …}` | A host service (§7); circuitRF answers `hostReply {id, …}` |
+| `host {id, call, …}` | A host service (§7); circuitRF answers `hostReply {id, …}` or `hostReply {id, error}` |
+
+| `window` plugin → circuitRF, whenever it chooses (§8; `id` is the plugin's own) | circuitRF answers |
+|---|---|
+| `placed {id, cells: [{name, files}]}` | `placedReply {id, cells: [names placed]}` or `placedReply {id, error}` |
+| `open {id, path}` — a document in its staging folder or the workspace | `openReply {id}` or `openReply {id, error}` |
+| `host {id, call, …}` | `hostReply`, as for any plugin |
 
 - **Stale replies are dropped.** circuitRF sends `cancel` for a superseded request and ignores its reply, so a slow
   plugin never draws an old answer over a new one.
@@ -454,22 +460,34 @@ a placed filter opens ready to simulate.
 
 ## 7. Host services — work a plugin asks circuitRF to do
 
-A plugin is allowed to ask; it is never handed circuitRF's internals.
+A plugin is allowed to ask; it is never handed circuitRF's internals. It sends `host {id, call, …}` before its reply to
+request `id` (several may precede one reply, answered one at a time), and circuitRF answers `hostReply {id, …}` — or
+`hostReply {id, error}` with a sentence, after which the session carries on. Results land in the staging folder,
+never the workspace. Each call is a thin wrapper over a capability circuitRF already has
+(`src/Design/Plugins/PluginHostServices.cs`, held by a source scan); the CLI's verbs it uses run **in circuitRF's own
+process** through `src/Cli/PluginVerbs.cs`, with the isolation `serve` gives a tool call (brief-plg-4).
 
-| `call` | Does | Returns |
-|---|---|---|
-| `simulate` | Runs an analysis line on a `.cnl` the plugin wrote (`type=sparam …`), in-process, as `circuitRF sparam` does | The result's path (`.npy`/`.sNp`) and its cube names |
-| `resolve` | Resolves a technology, a substrate, a cell's views, or a reference, as `explain` does | The resolved object |
-| `evaluate` | Evaluates an expression in the workspace scope | `{value, unit}` |
-| `lineModel` | A microstrip / stripline / CPW line's Z0 and εeff from circuitRF's own planar models | `{z0, eeff, loss}` per frequency |
+| `call` | Arguments | Is | Returns |
+|---|---|---|---|
+| `simulate` | `cnl`: a staged `.cnl`; `analysis`: its analysis's name (optional when the file has one) | `circuitRF sparam`, `dc` or `hb` on that file, picked by the analysis's kind; a named inner analysis runs its sweep | `{result: <staged .npy>, touchstone: <staged .sNp, for a plain sparam>, cubes: [names], messages}` |
+| `resolve` | `what`: `technology`, `substrate`, `cell` or `reference`; `name` (a technology path, `"conductor : technology"` or the substrate a parameter delivered, a cell folder); for a reference `ref` and `from` (default the workspace) | A technology, substrate or cell is the object a parameter of that kind delivers (§3.1), so a plugin gets one shape either way; a technology with no `name` is the workspace's default. A reference is `explain <from> --ref <ref>` | `{resolved}` — for a reference, `explain --json`'s report, walks and all |
+| `evaluate` | `expr`; `unit` (a base unit, optional); `path` (optional) | With `path`, `explain <path> --expr` — that document's resolved scope. Without, as a quantity parameter's text is evaluated: a workspace has no variables of its own | `{value, unit}` (with `path`, also `kind` and `text`) |
+| `lineModel` | `line` (`microstrip`, `stripline`, `cpwg`), `substrate`, `width` (m), `gap` (m, CPWG), `freq` (Hz, a number or an array) | The elaborated MLIN, SLIN or CPWG on the substrate the line calculator gives its model column (`LineCalculator.ModelSweep`) | `{z0: [...], eeff: [...], alphaDbPerM: [...], messages}` |
 
-`simulate` is what lets a synthesis plugin show the response of the circuit it designed using circuitRF's own
-engine and models, rather than a second, private approximation that disagrees with what the user will get after
-placement. `lineModel` is the same reason applied to a single line.
-
-A host call answers in the same process the panel runs in and is cancelled with its request. A plugin's
-`simulate` that would take minutes is the plugin's responsibility to avoid in an `update`: put it behind an
-`action`.
+- **`line`, not `type`**: every message's `type` names the message, so a host message cannot carry a second one.
+- **`cpw` is refused**: circuitRF models no coplanar line without a ground plane below it; `cpwg` is its coplanar line.
+- **`simulate` refuses EM** (`model=em` anywhere in the chain, a `.cem` or a `.c3d`) with "EM runs are placed and run by
+  the user", **and loadpull and pursuit** for the same reason: a plugin update must not start a run measured in minutes.
+  `sparam` and `dc` take no analysis name, so the analysis must be the file's first of its kind; stage another in a file
+  of its own.
+- **Deadlines and cancel.** A `simulate` is given nine tenths of its request's manifest deadline (an `update`'s 30 s, an
+  `action`'s 10 min); past it the run is stopped at its next work boundary and the reply says so, leaving the plugin the
+  last tenth to report it — a slow sweep belongs behind an `action`. `cancel {id}` stops the run its request started,
+  through the run's own cancellation token.
+- **The busy bar** says "circuitRF is simulating…" while a `simulate` runs.
+- `simulate` is what lets a synthesis plugin show the response of the circuit it designed with circuitRF's own engine
+  and models, rather than a second, private approximation that disagrees with what the user will get after placement.
+  `lineModel` is the same reason applied to a single line.
 
 ---
 
@@ -477,13 +495,20 @@ A host call answers in the same process the panel runs in and is cancelled with 
 
 `kind: window` is for a tool that needs more than the vocabulary: a live tuner, a drawing editor, an instrument
 front panel. circuitRF starts the program with the same `hello` (workspace, context, staging folder) and then
-only listens:
-- `placed {cells}` places, exactly as §6.3;
-- `host` calls are answered as §7;
-- `open {path}` opens a document in circuitRF.
+draws nothing and only listens, until the process exits:
+- `placed {id, cells}` places, exactly as §6.3, and is answered `placedReply`;
+- `host` calls are answered as §7 (with no request deadline);
+- `open {id, path}` opens a staged or workspace document in circuitRF, answered `openReply`.
 
-circuitRF draws nothing for it and cannot make it look native. It has no headless form unless it also declares
-`params` and answers `commit` without a window.
+`id` on these is the plugin's own; circuitRF answers with the same one. It is listed under Tools ▸ Plugins with
+"Opens its own window." in its tooltip. **One instance per plugin**: choosing it again while it runs brings nothing
+forward — circuitRF cannot raise another process's window — and says it is already running. When circuitRF exits it
+sends `bye` to each, waits 2 s, then kills (`PluginWindows.CloseAll`). A window plugin that exits by itself has been
+closed by its user, and Messages says so.
+
+It has no headless form unless it also declares `params` and answers `commit` without a window when `hello`'s `mode`
+is `headless` (`PluginManifest.HasHeadlessForm`); `circuitRF plugin run` refuses one without, saying it "has no
+headless form".
 
 ---
 

@@ -1361,6 +1361,8 @@ public partial class App : Application
                 { /* the RelaunchSession note stays; the next launch honours it */ }
         }
 
+        // brief-plg-4 §3: every plugin drawing its own window is told bye, given 2 s, then killed.
+        CircuitRF.Design.Plugins.PluginWindows.CloseAll();
         Environment.Exit(0);
     }
 

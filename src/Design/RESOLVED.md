@@ -29603,3 +29603,34 @@ plane and the bottom copper and none with the pour.
 - Gates: `tests/Ui.Tests/Plugins/PluginViewTests.cs`; the UI is `tools/UiSnapshot --plugin-panel
   tools/plugin-examples/stub` (with `--plugin-tab`, `--plugin-drag-marker`, `--plugin-drag-handle`) and
   `--plugin-image`.
+
+## Plugin host services and window plugins (brief-plg-4, 2026-11-10)
+
+- **`simulate`, a `reference` and an expression in a document are the CLI's verbs, run in-process.** The run they must
+  equal lives in `src/Cli/CliEntry.cs`, above this project, so `PluginHostServices` takes an `IPluginVerbs` and
+  `src/Cli/PluginVerbs.cs` implements it as `serve` runs a tool call: `JsonRun.Isolate`, a string `Sink`,
+  `RunHost.Install` for the token, `--json --result summary`. The `.npy` beside a plain `sparam`'s Touchstone is the
+  verb's own `JsonRun.Data` through `DataSetExporter`, read before `JsonRun.Reset`, so one run writes both. The
+  Touchstone is written where `circuitRF sparam x.cnl` writes it (beside the staged netlist), because the port count
+  — and so the `.sNp` name — is not known before the run. Gate 1 compares it with the CLI run as a PROCESS.
+- **With a `Sink` set, `Console.Out` is not redirected**, so a verb's own `Wrote …` line reaches the host process's
+  stdout (harmless in the application). `serve` avoids it by nulling `Console.Out` process-wide; brief 5's `plugin run`
+  without `--json` will need to do the same, or its human output carries the inner verb's lines.
+- **The brief's `lineModel type` collides with the envelope**: every message's `type` names the message, so the
+  argument is `line`. The example plugin found it by sending `dict(fields, type="host")`, which overwrote it.
+- **No `explain` spelling exists for a substrate**, and a workspace has no expression scope of its own. So `resolve`
+  of a technology, substrate or cell answers with the object a parameter of that kind already delivers
+  (`PluginParams.ResolveValue`) — one shape for a plugin either way — and `evaluate` without a `path` evaluates as a
+  quantity parameter's text does; with a `path` both go through `explain`. `explain` reports no MLIN Z0 either, so
+  gate 2 compares `lineModel` with the line calculator's model column (`impedance --tech`), itself an elaborated MLIN.
+  `LineCalculator.ModelSweep` elaborates the line once and evaluates every frequency on it.
+- **A trace's `cube` is parsed as an expression**: a cube named `S11 (circuitRF)` drew nothing and reported "No cube
+  'circuitRF'". The stub's second trace is `S11_circuitRF`.
+- **A `simulate` budget is not the session's `Update` deadline**: the panel sets that to infinite (its controller keeps
+  the deadline), so the budget is nine tenths of the manifest's, measured from the request — the last tenth is the
+  plugin's to report the cut-off before the request's own deadline lands. `PluginDeadlines.Simulate` overrides it.
+- **A window plugin's staging folder outlives its process until its last message is answered**
+  (`PluginSession.IdleAsync`): one that sends `placed` and exits at once would otherwise have its files deleted under
+  the placement.
+- Gates: `tests/Ui.Tests/Plugins/PluginHostServicesTests.cs`. Snapshots: `--plugin-panel …/stub --plugin-action simulate`,
+  `--plugin-state simulating`, `--plugins-menu tools/plugin-examples`.
