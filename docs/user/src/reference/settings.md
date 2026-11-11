@@ -14,6 +14,7 @@ keywords: preferences, options, configuration, theme, dark mode, colours, colors
 <li><a href="#general">General</a></li>
 <li><a href="#technology">Technology</a></li>
 <li><a href="#security">Security &amp; Permissions</a></li>
+<li><a href="#plugins">Plugins</a></li>
 <li><a href="#revision-control">Revision Control</a></li>
 <li><a href="#color-theme">Color Theme</a></li>
 <li><a href="#wirebonds">Wirebonds</a></li>
@@ -314,6 +315,28 @@ at all: it names a program circuitRF is permitted to <b>run</b>. Which compiler 
 with the source and where the built artefact is cached are all in
 {{anchor: veriloga.html#compiler|the Verilog-A chapter}}.</p>
 </div>
+
+## Plugins {#plugins}
+
+{{ui: settings-plugins}}
+
+Plugins are tools other people write that circuitRF runs as separate programs and draws the panels of. This tab is
+where they are installed, allowed and removed; {{anchor: plugins.html|Using Plugins}} covers the whole subject and
+{{anchor: writing-plugins.html|Writing a Plugin}} how to make one.
+
+- **Allow plugins to run** turns every plugin on or off for you. A managed installation can turn them off for everyone
+  (`CRF_NO_PLUGINS=1`, or a `no-plugins` file beside the application); the tab then says which, and the box is disabled.
+- **Paste a GitHub or GitLab link** — a repository's page, a clone address, or a link to a release or tag — and
+  **Install…** asks which version and installs it. **Install from Folder…** copies a plugin folder in; **Link Folder…**
+  runs one in place, for its author; **Install from Address…** is the paste box as a dialog.
+- **Installed** lists each plugin with its version, where it came from, and whether it is permitted — **Ask**,
+  **Allowed** or **Denied**, changed here. This and the prompt a plugin shows the first time it opens are the only places
+  permission is given: the command line and MCP can deny, never allow. **Update**, **Roll Back**, **Uninstall** and
+  **Open Folder** act on the selected plugin.
+- **Available** is the vetted list: **Install** downloads a reviewed release and checks it against the list before
+  unpacking anything; **Refresh List** fetches the newest list, used only if its signature verifies.
+
+Nothing on this tab reaches the network until you press Install, Update or Refresh List.
 
 ## Revision Control {#revision-control}
 

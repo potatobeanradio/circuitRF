@@ -659,6 +659,12 @@ public static class FigureCatalog
           + "are kept, and the two disk-space actions. Every control that reduces what is kept carries "
           + "its consequence in a sentence beside it."),
 
+        new("settings-plugins", DocSettingsFixtures.Plugins,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, Plugins: the switch that allows plugins to run, a box to paste a GitHub or GitLab link, the three "
+          + "ways to install, the installed plugins with their permission and update, and the vetted list."),
+
         new("settings-color-theme", DocSettingsFixtures.ColorTheme,
             DocSettingsFixtures.Width, DocSettingsFixtures.Height,
             WindowFrame.Titled("circuitRF Settings"),

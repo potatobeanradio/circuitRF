@@ -71,8 +71,9 @@ public class RevisionControlSettingsTests
     public void TheTabIsImmediatelyAfterSecurityAndPermissions()
     {
         Assert.Equal(
-            // "Solvers" (the solver paths) arrived with brief-em3d-6, at the end, first headed "3D EM".
-            ["General", "Technology", "Security & Permissions", "Revision Control", "Color Theme",
+            // "Solvers" (the solver paths) arrived with brief-em3d-6, at the end, first headed "3D EM". "Plugins" sits
+            // between Security & Permissions and Revision Control, where brief-plg-6 placed it.
+            ["General", "Technology", "Security & Permissions", "Plugins", "Revision Control", "Color Theme",
              "Wirebonds", "Solvers"],
             TabHeaders());
     }
@@ -143,6 +144,7 @@ public class RevisionControlSettingsTests
             ("General",         "General"),
             ("Technology",      "Technology"),
             ("Security",        "Security & Permissions"),
+            ("Plugins",         "Plugins"),
             ("RevisionControl", "Revision Control"),
             ("ColorTheme",      "Color Theme"),
             ("Wirebonds",       "Wirebonds"),

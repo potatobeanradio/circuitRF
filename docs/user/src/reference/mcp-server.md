@@ -98,7 +98,7 @@ the same documents.
 
 ## The tools {#tools}
 
-**Twenty-one tools, and all but two are a verb you already have:**
+**Twenty-two tools, and all but two are a verb you already have:**
 
 | Tool | Runs |
 |---|---|
@@ -121,6 +121,7 @@ the same documents.
 | `history` | [`history checkpoint`, `list` or `restore`](history.html) — the correction nouns (`rename`, `retitle`, `correct`, `review`) are on the verb but not on this server |
 | `solver` | [`solver list`](cli.html#solver) — which 3D solvers are installed and what each build can do, and this machine's cores and memory, which `run`'s `cores` is chosen against |
 | `reference` | `reference` |
+| `plugin` | [`plugin`](cli.html#plugin) `list`, `describe`, `run`, `install` or `uninstall`, chosen by `action` — a [plugin](plugins.html) run headless, or installed. It never grants permission: a plugin the person has not allowed in circuitRF is refused with `plugin.permission.needs-user`, for the agent to relay, and the next call after they allow it succeeds with no restart |
 | `job` | No verb: the status, cancellation and result of a run started with `async=true` |
 | `batch` | No verb: it holds a restore-point batch open across several calls, which a process that exits after one command cannot |
 

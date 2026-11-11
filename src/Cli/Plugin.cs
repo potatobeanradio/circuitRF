@@ -252,6 +252,9 @@ internal static class Plugin
         if (run.Reply is { } reply)
         {
             foreach (var msg in reply.Messages) JsonRun.Report(CliDiagnostics.PluginMessage(label, msg.Severity, msg.Text));
+            // An error the plugin reported (a caught exception, say) comes with its log, as a crash does (cli.md §42).
+            if (run.Failure is null && reply.Messages.Any(m => m.IsError))
+                foreach (string line in run.StderrTail.TakeLast(5)) JsonRun.Report(CliDiagnostics.PluginStderr(line));
             foreach (var p in manifest!.Params.Where(p => p.Kind == PluginParamKind.Readout))
                 if (reply.Readouts[p.Name] is { } value)
                 {

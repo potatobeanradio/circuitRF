@@ -1,0 +1,32 @@
+{
+  "apiVersion": 1,
+  "id": "example.line-section",
+  "name": "Line Section",
+  "version": "1.0.0",
+  "summary": "A microstrip line of a chosen impedance and electrical length, sized by circuitRF's own line model, placed with its layout, circuit and EM setup.",
+  "author": "circuitRF examples",
+  "license": "MIT",
+  "minCircuitRF": "1.8.0",
+
+  "run": {
+    "win-x64":     { "exe": "bin/win-x64/line-section.exe" },
+    "win-arm64":   { "exe": "bin/win-arm64/line-section.exe" },
+    "osx-x64":     { "exe": "bin/osx-x64/line-section" },
+    "osx-arm64":   { "exe": "bin/osx-arm64/line-section" },
+    "linux-x64":   { "exe": "bin/linux-x64/line-section" },
+    "linux-arm64": { "exe": "bin/linux-arm64/line-section" }
+  },
+
+  "kind": "window",
+  "menu": "Examples",
+  "params": [
+    { "name": "f0",        "label": "Frequency",         "kind": "quantity", "unit": "Hz",  "default": "2.4 GHz", "min": "1 MHz" },
+    { "name": "z0",        "label": "Impedance",         "kind": "quantity", "unit": "Ohm", "default": "50 Ohm", "min": "10 Ohm", "max": "150 Ohm" },
+    { "name": "degrees",   "label": "Electrical length", "kind": "real",     "default": 90, "min": 1, "max": 720 },
+    { "name": "substrate", "label": "Substrate",         "kind": "substrate" },
+    { "name": "width",     "label": "Width",             "kind": "readout", "unit": "metre" },
+    { "name": "length",    "label": "Length",            "kind": "readout", "unit": "metre" },
+    { "name": "eeff",      "label": "Effective permittivity", "kind": "readout" },
+    { "name": "modelZ0",   "label": "Modelled impedance", "kind": "readout", "unit": "Ohm" }
+  ]
+}

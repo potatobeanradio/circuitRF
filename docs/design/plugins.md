@@ -1,6 +1,6 @@
 # circuitRF — plugins: tools other people write, that circuitRF draws
 
-**Status:** proposed · **Date:** 2026-11-09 · **Briefs:** `docs/briefs/brief-plg-0-overview.md` and PLG-1…7 ·
+**Status:** current — built by PLG-1…7 · **Date:** 2026-11-10 · **Briefs:** `docs/briefs/brief-plg-0-overview.md` and PLG-1…7 ·
 **Reads with:** `automation-architecture.md` (capabilities → adapters → clients), `pcell-wire-schema.md` (frames,
 DBU on the wire, editor hints, host services), `pcell-parameter-handles.md`, `pdk-external-devices.md` §4 (the device
 worker's frames), `data-display.md` (the `.cdd` model), `cli.md`, `auto-update.md` (signed downloads, install layouts)
@@ -82,8 +82,10 @@ is something circuitRF supports from then on. Each one is added because a real p
 | The panel: widgets, views, the plugin window, Tools ▸ Plugins, the trust prompt, Settings ▸ Plugins | `src/Ui/Plugins/` | Draws |
 | `plugin` verb | `src/Cli/Plugin.cs` | Argument parsing and reporting only, on `Authoring.cs`' terms |
 | `plugin` MCP tool | `src/Cli/Serve/` | Adapter only |
-| Python helper package | `tools/plugin-python/circuitrf_plugin/` | Like `tools/pcell-python`; references nothing in the repo |
+| Python helper package | `tools/plugin-python/circuitrf_plugin/` | Like `tools/pcell-python`; references nothing in the repo. Copied into a plugin, so its frame code is a copy of `circuitrf_pcell/wire.py`, not an import |
 | Example plugins used by the tests | `tools/plugin-examples/` | Independent implementations of the contract |
+| A compiled `window` plugin with a headless form | `tools/plugin-examples/csharp-window/` | C#, NativeAOT, its own Avalonia window; not in the solution, empty `Directory.Build.*` so nothing of the repository's leaks in. Its `golden/` frames are decoded by circuitRF's readers and the Python helper's in the routine tests (`PluginFrameGoldenTests`) |
+| The user doc and the author's guide | `docs/user/src/reference/plugins.md`, `writing-plugins.md` | The guide is the contract an author (or an assistant) writes a plugin from |
 | The vetted list | `plugins/index.json` at the repo root | Data, reviewed by PR |
 
 `.cws`, `.clay`, `.csch` and every other document format are unchanged by this design.
@@ -349,7 +351,8 @@ names (§3.1's `layers`), not GDS numbers. `"technology": "self"` is the technol
 - **Placement takes the preview itself.** A cell in `placed` may name the view, `"layout": "artwork"`, instead of
   staging a `.clay`: circuitRF writes that view's shapes and port labels (SDL-5's form) as the cell's
   `layout/<view>.clay`, so what is placed is what the preview drew, and a plugin never writes `.clay` JSON. A staged
-  `.cem` names it as `<view>.clay` beside itself and is re-pointed at the placed one.
+  `.cem` names it as `<view>.clay` beside itself and is re-pointed at the placed one; validation reads such a `.cem` and
+  takes that reference as the view's, since the file exists only once placement writes it (brief-plg-7).
 
 ### 5.4 `schematic` — a `.cnl`
 

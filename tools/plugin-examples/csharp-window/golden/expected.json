@@ -1,0 +1,25 @@
+[
+  {
+    "file": "hello.bin",
+    "json": "{\"type\":\"hello\",\"apiVersion\":1}",
+    "payload": []
+  },
+  {
+    "file": "payload.bin",
+    "json": "{\"type\":\"reply\",\"id\":7,\"readouts\":{\"width\":0.001668},\"messages\":[]}",
+    "payload": [
+      "0",
+      "-834",
+      "16217594",
+      "834",
+      "-9223372036854775808",
+      "9223372036854775807",
+      "-1"
+    ]
+  },
+  {
+    "file": "non-ascii.bin",
+    "json": "{\"type\":\"reply\",\"id\":8,\"messages\":[{\"severity\":\"info\",\"text\":\"Z0 = 50 Ω, εeff ≈ 2.85, 1.668 µm — ±0.1 °\"}]}",
+    "payload": []
+  }
+]

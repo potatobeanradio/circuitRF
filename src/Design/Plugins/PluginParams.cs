@@ -267,6 +267,7 @@ public static class PluginParams
         return (new JsonObject
         {
             ["technology"]   = techPath,
+            ["dbuPerMicron"] = LayoutUnits.DefaultDbuPerMicron,   // so a plugin with only a substrate scales shapes right
             ["signal"]       = sub.SignalConductorName,
             ["ground"]       = sub.GroundConductorName,
             ["h"]            = sub.HeightMeters,

@@ -42128,3 +42128,11 @@ name the swept variable.
 - **A TextBox raises `TextChanged` again as it is first shown.** The link dialog's release lookup ran on `Opened`, then the
   late `TextChanged` cleared the picker and started a second, debounced read. A read is now skipped when the link text is
   the one last read.
+
+## The Plugins tab had no figure, and the tab-count test was left at 7 (brief-plg-7, 2026-11-10)
+
+- PLG-6 inserted Settings ▸ Plugins at index 3. `SettingsDialogHelpAndTooltipsTests.EveryTabOfTheDialogHasItsOwnFigure…`
+  still asserted seven tabs, so it failed from PLG-6 on; its own comment is the rule — a new tab needs its own figure and
+  its chapter section. Added `DocSettingsFixtures.Plugins() => Tab(3)`, the `settings-plugins` figure, the settings.md
+  section citing it, and the Plugins row in `RevisionControlSettingsTests.EachSettingsFigureSelectsTheTabItClaimsToShow`.
+  The four fixtures below it were already re-pointed by PLG-6.

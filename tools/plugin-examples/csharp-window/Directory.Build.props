@@ -1,0 +1,4 @@
+<Project>
+  <!-- Deliberately empty: it stops MSBuild walking up into the circuitRF repository's own Directory.Build.props, whose
+       version stamping and test settings are not this plugin's. Copied out of the repository, it changes nothing. -->
+</Project>

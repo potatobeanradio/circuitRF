@@ -23,7 +23,7 @@ namespace CircuitRF.Ui.Diagnostics.Fixtures;
 public static class DocSettingsFixtures
 {
     /// <summary>The dialog's own declared size, less the synthetic title bar.</summary>
-    public const int Width  = 720;
+    public const int Width  = 790;   // the dialog's MinWidth since the eighth tab (brief-plg-6)
     public const int Height = 506;
 
     /// <summary>General: launch behaviour, copy/export, the export-time DRC gate, message timestamps.</summary>
@@ -55,6 +55,11 @@ public static class DocSettingsFixtures
         try { return Tab(2); }
         finally { PCellTrustSettingsView.RowsForCapture = null; }
     }
+
+    /// <summary>Plugins (brief-plg-6): the paste-a-link box, the install buttons, and the Installed and Available lists — empty,
+    /// as a new installation shows them, because <c>tools/DocGen</c> redirects the per-user state directory to a throwaway
+    /// one. Index 3, inserted between Security and Revision Control, which moved the four below it.</summary>
+    public static FigureScene Plugins() => Tab(3);
 
     /// <summary>
     /// Revision Control: which git, who changes are attributed to, what is kept and for how long.

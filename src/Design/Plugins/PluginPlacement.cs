@@ -100,7 +100,13 @@ public static class PluginPlacement
                 continue;
             }
             if (ext.Equals(".cnl", StringComparison.OrdinalIgnoreCase)) { if (NetlistDefect(file) is { } d) why.Add($"{name}: {d}"); continue; }
-            if (ext.Equals(".cem", StringComparison.OrdinalIgnoreCase)) { if (EmSetupDefect(file, cache) is { } d) why.Add($"{name}: {d}"); }
+            if (ext.Equals(".cem", StringComparison.OrdinalIgnoreCase))
+            {
+                // A .cem may name the cell's layout VIEW as the .clay it will be beside it (§5.3): that file is written
+                // only at placement, so here the setup must read and the reference is taken as the view's.
+                string? deferred = cell.LayoutView is { } layoutView ? Path.Combine(Path.GetDirectoryName(file)!, layoutView + ".clay") : null;
+                if (EmSetupDefect(file, cache, deferred) is { } d) why.Add($"{name}: {d}");
+            }
         }
         return why;
     }
@@ -276,12 +282,18 @@ public static class PluginPlacement
         }
     }
 
-    /// <summary>A <c>.cem</c> must read, and its layout must resolve — what <c>check</c> asks before it meshes.</summary>
-    private static string? EmSetupDefect(string path, TechnologyCache cache)
+    /// <summary>A <c>.cem</c> must read, and its layout must resolve — what <c>check</c> asks before it meshes — unless it
+    /// names <paramref name="deferredLayout"/>, the layout view placement is about to write beside it.</summary>
+    private static string? EmSetupDefect(string path, TechnologyCache cache, string? deferredLayout)
     {
         EmSetup setup;
         try { setup = EmSetupPersistence.LoadFromFile(path); }
         catch (Exception e) when (e is not OutOfMemoryException) { return $"it could not be read ({e.Message})."; }
+
+        if (deferredLayout is not null && setup.LayoutRef is { Length: > 0 } reference
+            && string.Equals(Path.GetFullPath(reference, Path.GetDirectoryName(Path.GetFullPath(path))!), Path.GetFullPath(deferredLayout),
+                             OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
+            return null;
 
         var resolution = EmSetupResolver.Resolve(Path.GetFullPath(path), setup.LayoutRef, null, cache);
         if (resolution.Source is not null) return null;

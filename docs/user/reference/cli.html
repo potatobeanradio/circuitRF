@@ -84,6 +84,7 @@
 <li><a href="#plot"><code>plot</code> — a picture of a result</a></li>
 <li><a href="#find"><code>find</code> — what is in this folder?</a></li>
 <li><a href="#reference"><code>reference</code> — what may I write?</a></li>
+<li><a href="#plugin"><code>plugin</code> — a plugin, with no window</a></li>
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#json"><code>--json</code> — one machine-readable document</a></li>
 <li><a href="#serve"><code>serve</code> — the MCP server</a></li>
@@ -413,6 +414,12 @@ convention behind both.</p>
 <td><code>.cnl</code> or <code>.csch</code></td>
 <td>Elaboration only, no analysis</td>
 <td>The elaborated netlist, to stdout</td>
+</tr>
+<tr>
+<td><code>plugin list</code>, <code>describe</code>, <code>run</code>, <code>deny</code>, <code>install</code>, <code>uninstall</code>, <code>update</code>, <code>rollback</code></td>
+<td>a plugin's id (or, to install, a folder, a link or a list id)</td>
+<td>The same code <strong>Tools ▸ Plugins</strong> and <strong>Settings ▸ Plugins</strong> run</td>
+<td><code>run</code>: each view as a file with <code>-o</code>, or a placed cell with <code>--place</code>; the others manage what is installed</td>
 </tr>
 <tr>
 <td><code>serve</code></td>
@@ -4375,6 +4382,47 @@ the other way round — writable in a <code>.cnl</code>, with no palette tile an
 parameter with its default, unit, dimension and visibility:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf reference components --json | jq -r '.result.reference.components[].type'</code></pre>
 <hr />
+<h2 id="plugin"><code>plugin</code> — a plugin, with no window</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf plugin list [--json]
+<span class="prompt">$ </span>circuitrf plugin describe &lt;id&gt; [--json]
+<span class="prompt">$ </span>circuitrf plugin run &lt;id&gt; [--set name=value …] [--workspace &lt;dir&gt;] [--context &lt;path&gt;] -o &lt;dir&gt;
+<span class="prompt">$ </span>circuitrf plugin run &lt;id&gt; [--set …] --place &lt;workspace&gt; [--cell &lt;name&gt;] [--replace | --new-name &lt;name&gt;]
+<span class="prompt">$ </span>circuitrf plugin deny &lt;id&gt;
+<span class="prompt">$ </span>circuitrf plugin install &lt;folder | link | id&gt; [--tag &lt;t&gt;] [--link]
+<span class="prompt">$ </span>circuitrf plugin uninstall &lt;id&gt; [--version &lt;v&gt;]
+<span class="prompt">$ </span>circuitrf plugin update &lt;id&gt;
+<span class="prompt">$ </span>circuitrf plugin rollback &lt;id&gt;</code></pre>
+<p>Anything a <a href="plugins.html">plugin</a>'s panel does, this does with no window: the same process host, the same parameters,
+the same placement. It holds no plugin logic of its own.</p>
+<ul>
+<li><strong><code>list</code></strong> reads manifests only — nothing is started: id, version, kind, <code>installed</code> or <code>linked</code>, whether it is
+<code>allowed</code>, <code>denied</code> or <code>not asked</code>, and why one that cannot run here cannot.</li>
+<li><strong><code>describe</code></strong> prints the manifest as circuitRF read it: every parameter with its kind, unit, default and range, the
+panel's views, and how it runs on this machine.</li>
+<li><strong><code>run</code></strong> starts the plugin, sends <code>hello</code> in headless mode and one <code>update</code> with the parameters, and with **`-o<dir>`** writes each view as a file: a plot or Smith chart as its data and a `.cdd` (which
+[`render --data`](#render-cdd) draws), a layout as a `.clay`, a schematic as its `.cnl`, a table as CSV in base SI,
+an image as itself, and the readouts as `readouts.json`. The readouts are also printed; the plugin's messages go to
+stderr. **`--place <workspace>`** then sends `commit` and places the cell exactly as **Place in workspace** does —
+validated, behind a restore point. A cell name that is taken is a refusal naming `--replace` and `--new-name`.
+</li>
+<li><strong><code>--set name=value</code></strong> is what you would type in the panel: a quantity with an SI prefix or an expression
+(<code>--set f0=&quot;2.4 GHz&quot;</code>), a choice's option, a substrate, technology, cell or result by its picker text or a short name
+that picks one. A parameter you do not set starts where the panel starts it. An unknown name lists the parameters; a
+value out of range states the range.</li>
+<li><strong><code>--workspace</code></strong> is the workspace the parameters resolve against (by default <code>--place</code>'s); <strong><code>--context &lt;path&gt;</code></strong> is
+where the plugin is told it was opened from — a cell folder, a <code>.clay</code>, a <code>.ctech</code> or a result.</li>
+<li><strong>There is no <code>allow</code>.</strong> Permission to run someone else's program is given only in circuitRF's window. <strong><code>deny</code></strong>
+takes it away. A plugin not yet allowed is refused with <code>plugin.permission.needs-user</code>, which says only you can allow
+it, and where.</li>
+<li><strong><code>install</code></strong> copies a folder in (<code>--link</code> runs it in place instead), installs a GitHub or GitLab release — the
+release's asset for this platform, else its source archive (<code>--tag</code> picks one) — or installs a version from the vetted
+list, checked against its SHA-256. An install never allows the plugin and, from here, runs nothing — a Python plugin's
+requirements are installed once you allow it in the window. <strong><code>uninstall</code></strong>, <strong><code>update</code></strong> and <strong><code>rollback</code></strong> do what
+Settings ▸ Plugins' buttons do.</li>
+</ul>
+<p>A <code>window</code> plugin runs here only if it declares a headless form (<a href="writing-plugins.html#window">Writing a Plugin</a>).
+<code>CRF_NO_PLUGINS=1</code> turns every plugin off. Exit codes: 0; 1 for a refusal, a plugin error message or a failure; 130 when
+cancelled.</p>
 <h2 id="elab"><code>elab</code> — the elaborated netlist</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf elab &lt;file.cnl|.csch&gt;</code></pre>
 <p>Elaborates and stops: flattens the hierarchy, resolves every parameter and expression top-down, and

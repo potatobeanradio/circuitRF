@@ -52,6 +52,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#plot"><code>plot</code> — a picture of a result</a></li>
 <li><a href="#find"><code>find</code> — what is in this folder?</a></li>
 <li><a href="#reference"><code>reference</code> — what may I write?</a></li>
+<li><a href="#plugin"><code>plugin</code> — a plugin, with no window</a></li>
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#json"><code>--json</code> — one machine-readable document</a></li>
 <li><a href="#serve"><code>serve</code> — the MCP server</a></li>
@@ -160,6 +161,7 @@ convention behind both.</p>
 | `find` | a directory | Nothing — it reads documents | **Nothing** — the workspaces, cells, views and analyses under it |
 | `reference` | **nothing** | Nothing — it reads no file | **Nothing** — the reference pages, and every netlist primitive with its terminals and parameters |
 | `elab` | `.cnl` or `.csch` | Elaboration only, no analysis | The elaborated netlist, to stdout |
+| `plugin list`, `describe`, `run`, `deny`, `install`, `uninstall`, `update`, `rollback` | a plugin's id (or, to install, a folder, a link or a list id) | The same code **Tools ▸ Plugins** and **Settings ▸ Plugins** run | `run`: each view as a file with `-o`, or a placed cell with `--place`; the others manage what is installed |
 | `serve` | `--root <dir>` | An MCP server for an external client | Whatever the tool it is asked for writes |
 
 `hb`, `lp` and `lpp` all run **the whole parametric sweep** when one wraps the analysis — see
@@ -3589,6 +3591,50 @@ parameter with its default, unit, dimension and visibility:
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf reference components --json | jq -r '.result.reference.components[].type'</code></pre>
 
 ---
+
+## `plugin` — a plugin, with no window {#plugin}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf plugin list [--json]
+<span class="prompt">$ </span>circuitrf plugin describe &lt;id&gt; [--json]
+<span class="prompt">$ </span>circuitrf plugin run &lt;id&gt; [--set name=value …] [--workspace &lt;dir&gt;] [--context &lt;path&gt;] -o &lt;dir&gt;
+<span class="prompt">$ </span>circuitrf plugin run &lt;id&gt; [--set …] --place &lt;workspace&gt; [--cell &lt;name&gt;] [--replace | --new-name &lt;name&gt;]
+<span class="prompt">$ </span>circuitrf plugin deny &lt;id&gt;
+<span class="prompt">$ </span>circuitrf plugin install &lt;folder | link | id&gt; [--tag &lt;t&gt;] [--link]
+<span class="prompt">$ </span>circuitrf plugin uninstall &lt;id&gt; [--version &lt;v&gt;]
+<span class="prompt">$ </span>circuitrf plugin update &lt;id&gt;
+<span class="prompt">$ </span>circuitrf plugin rollback &lt;id&gt;</code></pre>
+
+Anything a [plugin](plugins.html)'s panel does, this does with no window: the same process host, the same parameters,
+the same placement. It holds no plugin logic of its own.
+
+- **`list`** reads manifests only — nothing is started: id, version, kind, `installed` or `linked`, whether it is
+  `allowed`, `denied` or `not asked`, and why one that cannot run here cannot.
+- **`describe`** prints the manifest as circuitRF read it: every parameter with its kind, unit, default and range, the
+  panel's views, and how it runs on this machine.
+- **`run`** starts the plugin, sends `hello` in headless mode and one `update` with the parameters, and with **`-o
+  <dir>`** writes each view as a file: a plot or Smith chart as its data and a `.cdd` (which
+  [`render --data`](#render-cdd) draws), a layout as a `.clay`, a schematic as its `.cnl`, a table as CSV in base SI,
+  an image as itself, and the readouts as `readouts.json`. The readouts are also printed; the plugin's messages go to
+  stderr. **`--place <workspace>`** then sends `commit` and places the cell exactly as **Place in workspace** does —
+  validated, behind a restore point. A cell name that is taken is a refusal naming `--replace` and `--new-name`.
+- **`--set name=value`** is what you would type in the panel: a quantity with an SI prefix or an expression
+  (`--set f0="2.4 GHz"`), a choice's option, a substrate, technology, cell or result by its picker text or a short name
+  that picks one. A parameter you do not set starts where the panel starts it. An unknown name lists the parameters; a
+  value out of range states the range.
+- **`--workspace`** is the workspace the parameters resolve against (by default `--place`'s); **`--context <path>`** is
+  where the plugin is told it was opened from — a cell folder, a `.clay`, a `.ctech` or a result.
+- **There is no `allow`.** Permission to run someone else's program is given only in circuitRF's window. **`deny`**
+  takes it away. A plugin not yet allowed is refused with `plugin.permission.needs-user`, which says only you can allow
+  it, and where.
+- **`install`** copies a folder in (`--link` runs it in place instead), installs a GitHub or GitLab release — the
+  release's asset for this platform, else its source archive (`--tag` picks one) — or installs a version from the vetted
+  list, checked against its SHA-256. An install never allows the plugin and, from here, runs nothing — a Python plugin's
+  requirements are installed once you allow it in the window. **`uninstall`**, **`update`** and **`rollback`** do what
+  Settings ▸ Plugins' buttons do.
+
+A `window` plugin runs here only if it declares a headless form ([Writing a Plugin](writing-plugins.html#window)).
+`CRF_NO_PLUGINS=1` turns every plugin off. Exit codes: 0; 1 for a refusal, a plugin error message or a failure; 130 when
+cancelled.
 
 ## `elab` — the elaborated netlist {#elab}
 

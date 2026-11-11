@@ -45,6 +45,8 @@ reference/sdd.html                 | The Symbolically-Defined Device: writing a 
 reference/nonlinear-capacitor.html | C(V) as a Taylor series, and the C–V Editor that fits one.
 reference/veriloga.html            | Running a compact model you supply, from Verilog-A source or a compiled artefact.
 reference/match.html               | Direct synthesis of a bandpass matching network that absorbs both terminations.
+reference/plugins.html             | Tools other people write that circuitRF draws: opening one, allowing it, installing, updating and removing them.
+reference/writing-plugins.html     | Writing a plugin: the manifest, the panel, every message, view and host call, in Python or a compiled language.
 reference/chain-budget.html        | A receive chain's budget stage by stage, an array included, and its transfer to test benches that check every number.
 
 == Simulate

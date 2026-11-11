@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Using Plugins</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/plugins.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Using Plugins</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="match.html" title="Previous: The Match Component"><span class="arrow">‹</span><span class="name">The Match Component</span></a>
+      <a class="next" href="writing-plugins.html" title="Next: Writing a Plugin"><span class="name">Writing a Plugin</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>Using Plugins</h1>
+  <p class="lede">Tools other people write that circuitRF draws - opening one, what allowing it means, installing, updating and removing them, and running one from the command line.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What a plugin is</a></li>
+<li><a href="#open">Opening one: Tools ▸ Plugins</a></li>
+<li><a href="#permission">Allowing a plugin, and what that means</a></li>
+<li><a href="#place">Placing what it makes</a></li>
+<li><a href="#settings">Settings ▸ Plugins: install, update, roll back, remove</a></li>
+<li><a href="#python">Python plugins</a></li>
+<li><a href="#list">The vetted list, and what "vetted" covers</a></li>
+<li><a href="#managed">Turning plugins off on a managed installation</a></li>
+<li><a href="#cli">Plugins on the command line and through MCP</a></li>
+</ol>
+</nav>
+<h2 id="what">What a plugin is</h2>
+<p>A <strong>plugin</strong> is a tool somebody else writes and maintains — a filter synthesiser, an impedance calculator, a coupler
+generator, an importer — that you install into circuitRF without rebuilding it. It is a <strong>separate program</strong>: circuitRF
+starts it, sends it your inputs, and draws what it returns with its own plots, Smith charts, layout and schematic views,
+so a plugin's panel looks and behaves like the rest of circuitRF. When you are happy with the result, circuitRF places
+what the plugin made as a cell in your workspace.</p>
+<p>A plugin is one of three kinds:</p>
+<ul>
+<li><strong>A panel</strong> — a tool window circuitRF builds from the plugin's description: its inputs on the left, its views in
+tabs, recalculated as you type. Markers on its plots and grips on its layout can be dragged, and change the inputs.</li>
+<li><strong>An action</strong> — a dialog of inputs, then one run that places a cell.</li>
+<li><strong>A window</strong> — the plugin's own program window. circuitRF draws none of it. Its tooltip says &quot;Opens its own window.&quot;</li>
+</ul>
+<p>Writing one is covered in <a href="writing-plugins.html">Writing a Plugin</a>.</p>
+<h2 id="open">Opening one: Tools ▸ Plugins</h2>
+<p><strong>Tools ▸ Plugins</strong> lists every installed and linked plugin, grouped by the submenu its author chose. Hover one for its
+summary. A plugin dimmed in the menu cannot run here, and its tooltip says why: it has no build for this computer, it
+needs a newer circuitRF, or plugins are turned off. <strong>Manage Plugins…</strong> at the foot of the menu opens Settings ▸ Plugins.</p>
+<p>A panel opens as a tool window, as Match Designer does, and remembers its size and layout per plugin. While the plugin
+works the panel shows a busy bar; <strong>Stop</strong> asks it to stop, and restarts it if it does not. If the plugin fails, the
+panel says so, keeps the last views, and shows the plugin's own log under its messages.</p>
+<p>A window plugin runs one instance at a time: choosing it again while it is open says it is already running (circuitRF
+cannot bring another program's window forward). When you quit circuitRF, its plugin windows are asked to close.</p>
+<h2 id="permission">Allowing a plugin, and what that means</h2>
+<p>The first time you open a plugin, circuitRF asks:</p>
+<blockquote>
+<p><strong>Allow <em>name</em> to run?</strong>
+A plugin runs with your permissions and can read and write your files. Allow it only if you trust where it came from.</p>
+</blockquote>
+<p>with its version, author, where it came from, whether it is on the vetted list, and exactly what will run (the program,
+or the Python interpreter and script). <strong>Allow</strong> or <strong>Don't Allow</strong>.</p>
+<div class="callout warn">
+<span class="label">A plugin runs as you</span>
+<p>Running in a separate process protects circuitRF from a plugin that crashes; it does <b>not</b> protect your files
+from a plugin that misbehaves. A plugin is a program, and it can do whatever a program you start yourself can do. The
+rules circuitRF enforces — it places only what the plugin staged, it validates every file, it takes a restore point
+first — keep your <em>workspace</em> safe from a buggy plugin, not your computer from a hostile one. Allow what you would
+run yourself.</p>
+</div>
+<ul>
+<li>Your answer is remembered <strong>on this computer, per user</strong> — never in a workspace, so opening someone else's workspace
+never runs a plugin you have not allowed.</li>
+<li>An update to a new version asks again, unless both versions are on the vetted list.</li>
+<li><strong>Permission is given only in circuitRF's window</strong> — this prompt, or Settings ▸ Plugins. The command line and an
+AI agent through MCP can take permission away, never give it: anything that can type a command can be an agent, and
+running someone else's program with your permissions is your decision.</li>
+</ul>
+<h2 id="place">Placing what it makes</h2>
+<p>A plugin never writes into your workspace. It writes into a staging folder circuitRF gives it, and <strong>Place in
+workspace</strong> (a button the plugin provides) has circuitRF:</p>
+<ol>
+<li>check every file the plugin staged with the reader that file kind already has, and refuse with the reasons if any
+fails — nothing is placed half-way;</li>
+<li>ask for the cell's name, with <strong>Replace</strong> or <strong>New name</strong> when that name is taken;</li>
+<li>take a <a href="restore-points.html">restore point</a> named after the plugin and its version;</li>
+<li>create the cell and refresh the Project Tree.</li>
+</ol>
+<p>So every placement can be undone from <a href="history.html">History</a>. A plugin may place a layout with its ports as port labels
+and an EM setup naming them, so a placed cell can open ready for an EM run.</p>
+<h2 id="settings">Settings ▸ Plugins: install, update, roll back, remove</h2>
+<p><strong>Settings ▸ Plugins</strong> (also <strong>Tools ▸ Plugins ▸ Manage Plugins…</strong>) has three parts.</p>
+<p><strong>At the top</strong>, <strong>Allow plugins to run</strong> turns every plugin on or off for this user, and a box to <strong>paste a GitHub or
+GitLab link</strong>: the repository's page, a clone address, or a link to a release or tag. <strong>Install…</strong> asks which version
+(from the repository's releases, or its tags) and installs it. Below it:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Install from Folder…</strong></td>
+<td>Copies a plugin folder in</td>
+</tr>
+<tr>
+<td><strong>Link Folder…</strong></td>
+<td>Runs a folder in place, for a plugin you are writing: circuitRF re-reads it every time the plugin starts, so an edit takes effect the next time you open it</td>
+</tr>
+<tr>
+<td><strong>Install from Address…</strong></td>
+<td>The same as pasting a link, with the address typed in the dialog</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Installed</strong> lists each installed or linked plugin: its version, where it came from, whether it is permitted (<strong>Ask</strong>,
+<strong>Allowed</strong> or <strong>Denied</strong> — change it here), and whether an update is available. For the selected one:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Update</strong></td>
+<td>Installs the newer version from where this one came from. It asks again before it runs, unless both versions are on the list</td>
+</tr>
+<tr>
+<td><strong>Roll Back</strong></td>
+<td>Goes back to the version the last update replaced. The old version is kept until the new one has started once</td>
+</tr>
+<tr>
+<td><strong>Uninstall</strong></td>
+<td>Removes the plugin, its permission and what circuitRF remembered for it. A linked folder is unlinked and left where it is</td>
+</tr>
+<tr>
+<td><strong>Open Folder</strong></td>
+<td>Shows the plugin's folder</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Available</strong> lists the <a href="#list">vetted list</a>: <strong>Install</strong> downloads the reviewed release and checks it against the
+list before unpacking anything; <strong>Refresh List</strong> fetches the newest list.</p>
+<p>Every install is all-or-nothing: an install that fails at any step — a bad archive, a manifest that is not what was
+asked for, a cancelled download — leaves nothing behind and the previous version still active. Nothing reaches the
+network unless you press Install, Update or Refresh List. Plugins live per user, beside your preferences, one folder per
+plugin and version.</p>
+<h2 id="python">Python plugins</h2>
+<p>A plugin written in Python runs on <strong>the same Python</strong> circuitRF uses for kit scripts: the first <code>python3</code> on your
+<code>PATH</code> (on Windows, <code>python.exe</code> on the <code>PATH</code>, then the <code>py</code> launcher, then the standard installation folders) — so an
+activated virtual environment is used. circuitRF never installs another.</p>
+<ul>
+<li>A plugin that needs <strong>no other packages</strong> runs on that Python as it is. Installing it makes nothing and downloads
+nothing.</li>
+<li>A plugin that ships a <code>requirements.txt</code> has them installed at install time into <strong>one shared plugin environment</strong>,
+so two plugins that need the same package share one copy. circuitRF first checks that the new plugin's requirements
+fit together with every other plugin's in that environment, and changes it only if they do.</li>
+<li>Only when they conflict does the plugin get an environment of its own; the install log says which requirement could
+not be shared.</li>
+</ul>
+<p>Installing requirements is the one step that reaches the network for a Python plugin, and the install dialog says so.
+Kits keep their own environments: installing a plugin never changes a kit's packages.</p>
+<h2 id="list">The vetted list, and what &quot;vetted&quot; covers</h2>
+<p>The <strong>Available</strong> list comes from <code>plugins/index.json</code> in the circuitRF repository, shipped with each release and
+refreshed when you press <strong>Refresh List</strong> (a refreshed list is used only if its signature verifies).</p>
+<p><strong>What is vetted is one version, not the author.</strong> A version goes on the list after a review of that release: its
+source matches its tag, it writes only into its staging folder, it reaches the network only when a parameter or button
+says so, it starts no background process, and its licence is stated. A later version is reviewed again before it is
+listed. Being on the list is not a promise that a plugin is correct or that it suits your work, and a plugin installed
+from a link or a folder has had no review at all — the permission prompt says which.</p>
+<h2 id="managed">Turning plugins off on a managed installation</h2>
+<p>Plugins can be turned off for every user of an installation, before anyone can turn them on:</p>
+<ul>
+<li>an environment variable <code>CRF_NO_PLUGINS=1</code>, or</li>
+<li>a file named <code>no-plugins</code> beside the installed application.</li>
+</ul>
+<p>Either beats every user's settings and every permission, the same way the switches for external device workers do.
+Settings ▸ Plugins then says which one is in force.</p>
+<h2 id="cli">Plugins on the command line and through MCP</h2>
+<p>Every plugin with a panel — and every window plugin that declares a headless form — runs headless:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitRF plugin list
+<span class="prompt">$ </span>circuitRF plugin describe example.single-stub
+<span class="prompt">$ </span>circuitRF plugin run example.single-stub --set f0="5.8 GHz" --set rl="75 Ohm" --workspace ws -o out
+<span class="prompt">$ </span>circuitRF plugin run example.single-stub --set f0="5.8 GHz" --place ws</code></pre>
+<p><code>run</code> writes every view as a file (a plot as its data and a <code>.cdd</code>, a layout as a <code>.clay</code>, a table as CSV, the readouts
+as <code>readouts.json</code>); <code>--place</code> places the cell exactly as the panel's button does. <code>install</code>, <code>uninstall</code>, <code>update</code>,
+<code>rollback</code> and <code>deny</code> manage plugins; there is no <code>allow</code>. The <a href="cli.html#plugin">CLI reference</a> has every option, and
+the <a href="mcp-server.html#tools">MCP server</a>'s <code>plugin</code> tool offers <code>list</code>, <code>describe</code>, <code>run</code>, <code>install</code> and <code>uninstall</code> to an
+agent. A plugin you have not allowed is refused with a message saying that only you can allow it, in circuitRF.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="match.html"><span class="dir">Previous</span><span class="name">The Match Component</span></a>
+  <a class="next" href="writing-plugins.html"><span class="dir">Next</span><span class="name">Writing a Plugin</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

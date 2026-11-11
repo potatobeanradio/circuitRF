@@ -154,7 +154,7 @@ public class SettingsDialogHelpAndTooltipsTests
     {
         string page = Read("docs", "user", "src", "reference", "settings.md");
 
-        foreach (var id in new[] { "settings-general", "settings-technology", "settings-security",
+        foreach (var id in new[] { "settings-general", "settings-technology", "settings-security", "settings-plugins",
                                    "settings-revision-control", "settings-color-theme",
                                    "settings-wirebonds", "settings-3d-em" })
         {
@@ -163,7 +163,7 @@ public class SettingsDialogHelpAndTooltipsTests
         }
 
         int tabs = Occurrences(Dialog("SettingsView.axaml"), "<TabItem Header=");
-        Assert.Equal(7, tabs);
+        Assert.Equal(8, tabs);
     }
 
     /// <summary>

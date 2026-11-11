@@ -29729,3 +29729,20 @@ plane and the bottom copper and none with the pour.
 - Gates: `tests/Ui.Tests/Em3d/PalaceWavePortPhaseTests.cs` (the recorded 10 GHz row: reciprocal after, the transform's
   one-entry face equal to it, equal θ bit-identical, a near short taking the other column) and
   `PalaceTerminalPortTests.Gate3_AOneEntryFaceIsTodaysRenormalisation`.
+
+## A staged `.cem` may name the layout view it will sit beside (brief-plg-7, 2026-11-10)
+
+- **`plugins.md` §5.3 promised it and placement refused it.** A plugin that places its layout VIEW (`"layout": "artwork"`)
+  and stages a `.cem` naming `artwork.clay` beside itself was refused at validation — "Layout file not found …/staging/
+  artwork.clay" — because that file exists only once placement writes it, and `EmSetupDefect` resolved the reference
+  before then. The re-pointing code after the write (`RepointLayout`) was correct and had simply never been reached: no
+  example plugin staged a `.cem` until the stub did in PLG-7.
+- **Fix:** `Validate` hands `EmSetupDefect` the deferred path (`<the .cem's folder>/<view>.clay`) when the cell names a
+  layout view; a `.cem` whose `LayoutRef` resolves to it must still read, and its reference is taken as the view's. Any
+  other reference is resolved as before. The placed `.cem`'s `LayoutRef` is `<cell>/layout/<view>.clay` and `check` and
+  `em --dry-run` take it with no refusal. Gate: `PluginCliVerbTests.Gate1_…` (the stub's placed `em/stub.cem` names
+  `stub/layout/artwork.clay`, byte-identical between `plugin run --place` and the panel).
+- **The frame does not drift under a compiled plugin**: `tools/plugin-examples/csharp-window/golden/` holds the C#
+  example's own encoding of three messages, read back by `WireFrames`, `PCellWireProtocol` and the Python helper, and
+  re-encoded by `WireFrames.Write` to the same bytes (`PluginFrameGoldenTests`). Regenerate with the published program's
+  `--write-golden-frames <dir>` only when the frame itself is meant to change — which it never is (`plugins.md` §12).

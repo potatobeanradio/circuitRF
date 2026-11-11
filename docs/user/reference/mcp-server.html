@@ -108,7 +108,7 @@ may give up waiting for it:</p>
 next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
 the same documents.</p>
 <h2 id="tools">The tools</h2>
-<p><strong>Twenty-one tools, and all but two are a verb you already have:</strong></p>
+<p><strong>Twenty-two tools, and all but two are a verb you already have:</strong></p>
 <table>
 <thead>
 <tr>
@@ -192,6 +192,10 @@ the same documents.</p>
 <tr>
 <td><code>reference</code></td>
 <td><code>reference</code></td>
+</tr>
+<tr>
+<td><code>plugin</code></td>
+<td><a href="cli.html#plugin"><code>plugin</code></a> <code>list</code>, <code>describe</code>, <code>run</code>, <code>install</code> or <code>uninstall</code>, chosen by <code>action</code> — a <a href="plugins.html">plugin</a> run headless, or installed. It never grants permission: a plugin the person has not allowed in circuitRF is refused with <code>plugin.permission.needs-user</code>, for the agent to relay, and the next call after they allow it succeeds with no restart</td>
 </tr>
 <tr>
 <td><code>job</code></td>

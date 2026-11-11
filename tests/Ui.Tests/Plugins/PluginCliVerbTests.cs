@@ -70,7 +70,13 @@ public class PluginCliVerbTests
         Assert.Equal(a.Keys.Order(), b.Keys.Order());
         Assert.Contains("layout/artwork.clay", a.Keys);
         Assert.Contains("schematic/stub.cnl", a.Keys);
+        Assert.Contains("schematic/stub.csch", a.Keys);
+        Assert.Contains("em/stub.cem", a.Keys);
         foreach (string k in a.Keys) Assert.True(a[k].SequenceEqual(b[k]), $"{k} differs between plugin run --place and the panel");
+
+        // The staged .cem named the artwork VIEW as the .clay beside it; placed, it names the placed layout (§5.3).
+        var cem = JsonNode.Parse(Encoding.UTF8.GetString(a["em/stub.cem"]))!;
+        Assert.Equal("stub/layout/artwork.clay", (string)cem["LayoutRef"]!);
     }
 
     // ── gate 2: no logic in the verb ────────────────────────────────────────────

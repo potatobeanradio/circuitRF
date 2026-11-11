@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Writing a Plugin</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/writing-plugins.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Writing a Plugin</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="plugins.html" title="Previous: Using Plugins"><span class="arrow">‹</span><span class="name">Using Plugins</span></a>
+      <a class="next" href="chain-budget.html" title="Next: RF Chain Budget"><span class="name">RF Chain Budget</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>Writing a Plugin</h1>
+  <p class="lede">Everything a plugin author needs - the manifest, the panel, every message, view and host call - complete enough to hand to an AI assistant and get back a plugin that installs and runs.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What you are writing</a></li>
+<li><a href="#smallest">The smallest plugin</a></li>
+<li><a href="#manifest">The manifest, <code>plugin.json</code></a></li>
+<li><a href="#params">Parameters</a></li>
+<li><a href="#panel">The panel: a layout tree</a></li>
+<li><a href="#units">Units: base SI, and DBU for shapes</a></li>
+<li><a href="#conversation">The conversation</a></li>
+<li><a href="#views">Views</a></li>
+<li><a href="#host">Host calls: work you ask circuitRF to do</a></li>
+<li><a href="#placing">Placing: what <code>commit</code> stages</a></li>
+<li><a href="#window">Window plugins</a></li>
+<li><a href="#helper">The Python helper, <code>circuitrf_plugin</code></a></li>
+<li><a href="#stub">A walk through the stub plugin</a></li>
+<li><a href="#compiled">Writing a plugin in C# (or any compiled language)</a></li>
+<li><a href="#rules">The rules circuitRF enforces</a></li>
+<li><a href="#testing">Testing a plugin</a></li>
+<li><a href="#vetted">Getting a plugin on the list</a></li>
+<li><a href="#which">Plugin, PCell, or pull request?</a></li>
+</ol>
+</nav>
+<p>This page is the contract. It is written for an engineer who will often hand it to an AI assistant along with one of
+the example plugins, so every table here is complete: if a field is not on this page, circuitRF does not read it.
+<a href="plugins.html">Using Plugins</a> covers installing and running them.</p>
+<h2 id="what">What you are writing</h2>
+<p>A plugin is <strong>a separate program</strong> in a folder with a <code>plugin.json</code> beside it. circuitRF starts the program, talks to
+it over its standard input and output, and never loads its code. That gives you three things for free: your plugin
+cannot crash circuitRF, it can be written in any language under any licence, and it does not break when circuitRF's
+own code changes — only the messages on this page are the contract.</p>
+<p><strong>circuitRF draws; your plugin describes.</strong> You return numbers, a plot description, shapes in database units, a
+netlist. circuitRF draws them with the same renderers, colours, zoom and markers as the rest of the application. Your
+plugin writes no drawing code and no mouse code.</p>
+<p>There are three kinds:</p>
+<table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th>What the user sees</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>panel</code></td>
+<td>A tool window circuitRF builds from your manifest: your parameters, readouts, buttons and views, recalculated as the user types</td>
+<td>Almost everything: synthesis, calculators, generators</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>A parameter dialog, then one run that places a cell</td>
+<td>A generator with no preview</td>
+</tr>
+<tr>
+<td><code>window</code></td>
+<td>Your own program's window. circuitRF draws nothing and only listens</td>
+<td>An existing desktop tool, an instrument front panel, anything the panel vocabulary cannot express</td>
+</tr>
+</tbody>
+</table>
+<p>Every plugin ends the same way: it writes documents into a <strong>staging folder</strong> circuitRF gives it, and circuitRF
+<strong>places</strong> them in the workspace — validated, behind a restore point, with the Replace / New name question. A plugin
+never writes into the workspace itself.</p>
+<h2 id="smallest">The smallest plugin</h2>
+<p>A folder with two files. <code>plugin.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;apiVersion&quot;: 1,
+  &quot;id&quot;: &quot;example.quarter-wave&quot;,
+  &quot;name&quot;: &quot;Quarter-Wave Transformer&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;kind&quot;: &quot;panel&quot;,
+  &quot;run&quot;: { &quot;python&quot;: { &quot;entry&quot;: &quot;qw.py&quot;, &quot;requiresPython&quot;: &quot;&gt;=3.8&quot; } },
+  &quot;params&quot;: [
+    { &quot;name&quot;: &quot;zl&quot;, &quot;label&quot;: &quot;Load&quot;, &quot;kind&quot;: &quot;quantity&quot;, &quot;unit&quot;: &quot;Ohm&quot;, &quot;default&quot;: &quot;100 Ohm&quot;, &quot;min&quot;: &quot;1 Ohm&quot; },
+    { &quot;name&quot;: &quot;zt&quot;, &quot;label&quot;: &quot;Line impedance&quot;, &quot;kind&quot;: &quot;readout&quot;, &quot;unit&quot;: &quot;Ohm&quot; }
+  ]
+}
+</code></pre>
+<p><code>qw.py</code>, using the helper package (copy <code>tools/plugin-python/circuitrf_plugin/</code> from the circuitRF repository into the
+folder beside it — it is standard library only):</p>
+<pre><code class="language-python">import math
+from circuitrf_plugin import Plugin, Reply
+
+plugin = Plugin()
+
+@plugin.update
+def update(p, ctx):
+    return Reply(readouts={&quot;zt&quot;: math.sqrt(50.0 * p.zl)})   # p.zl is the load in ohms, base SI
+
+plugin.run()
+</code></pre>
+<p>Link the folder (Settings ▸ Plugins ▸ <strong>Link Folder…</strong>), allow it, and open it from <strong>Tools ▸ Plugins</strong>. With no <code>ui</code>
+in the manifest you get the default panel: the parameters in a column, then one tab per view your first reply
+contains. The same plugin runs headless with <code>circuitRF plugin run example.quarter-wave --set zl=&quot;75 Ohm&quot; -o out</code>.</p>
+<h2 id="manifest">The manifest, <code>plugin.json</code></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code></td>
+<td>yes</td>
+<td>The message set you wrote against: <code>1</code>. A whole number</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>yes</td>
+<td>Unique, reverse-DNS-like: lower-case letters, digits, <code>.</code> and <code>-</code> only (<code>yourname.coupled-filter</code>). The key for permission, the list, the CLI and every result</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>yes</td>
+<td>What the menu shows</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>yes</td>
+<td>Your version, e.g. <code>0.3.0</code>. An update is a new version</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>yes</td>
+<td><code>panel</code>, <code>action</code> or <code>window</code></td>
+</tr>
+<tr>
+<td><code>run</code></td>
+<td>yes</td>
+<td>How to start your program, per platform (below)</td>
+</tr>
+<tr>
+<td><code>summary</code></td>
+<td></td>
+<td>One sentence: the menu tooltip and the list</td>
+</tr>
+<tr>
+<td><code>author</code>, <code>license</code>, <code>homepage</code></td>
+<td></td>
+<td>Shown in the permission prompt and Settings</td>
+</tr>
+<tr>
+<td><code>minCircuitRF</code></td>
+<td></td>
+<td>The oldest circuitRF it needs, e.g. <code>1.8.0</code></td>
+</tr>
+<tr>
+<td><code>menu</code></td>
+<td></td>
+<td>The submenu of Tools ▸ Plugins it appears under (<code>Filters</code>, <code>Calculators</code>)</td>
+</tr>
+<tr>
+<td><code>contexts</code></td>
+<td></td>
+<td>Also offer it from a right-click: any of <code>cell</code>, <code>layout</code>, <code>result</code>, <code>technology</code></td>
+</tr>
+<tr>
+<td><code>params</code></td>
+<td></td>
+<td>The parameters (next section). Required for a <code>window</code> plugin's headless form</td>
+</tr>
+<tr>
+<td><code>ui</code></td>
+<td></td>
+<td>The panel's layout tree, for <code>kind: panel</code>. Leave it out for the default panel</td>
+</tr>
+<tr>
+<td><code>timeouts</code></td>
+<td></td>
+<td><code>{&quot;update&quot;: s, &quot;action&quot;: s, &quot;commit&quot;: s}</code> in seconds, to replace the deadlines</td>
+</tr>
+</tbody>
+</table>
+<p>An unknown optional field is ignored, never refused, so a manifest written for a later circuitRF still reads.</p>
+<p><strong><code>run</code></strong> has one entry per platform, keyed by .NET runtime identifier, or one <code>python</code> entry that runs everywhere:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Entry</th>
+<th>Started as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>python</code></td>
+<td><code>{&quot;entry&quot;: &quot;my_plugin.py&quot;, &quot;requiresPython&quot;: &quot;&gt;=3.10&quot;}</code></td>
+<td><code>&lt;python&gt; -u &lt;entry&gt;</code>, with <code>PYTHONIOENCODING=utf-8</code>, on the Python circuitRF finds for kit scripts (the first <code>python3</code> on the <code>PATH</code>)</td>
+</tr>
+<tr>
+<td><code>win-x64</code>, <code>win-arm64</code>, <code>win-x86</code></td>
+<td><code>{&quot;exe&quot;: &quot;bin/win-x64/tool.exe&quot;}</code></td>
+<td>The program itself</td>
+</tr>
+<tr>
+<td><code>osx-x64</code>, <code>osx-arm64</code></td>
+<td><code>{&quot;exe&quot;: &quot;bin/osx-arm64/tool&quot;}</code></td>
+<td>The program itself</td>
+</tr>
+<tr>
+<td><code>linux-x64</code>, <code>linux-arm64</code></td>
+<td><code>{&quot;exe&quot;: &quot;bin/linux-x64/tool&quot;}</code></td>
+<td>The program itself</td>
+</tr>
+</tbody>
+</table>
+<p>Paths are relative to the plugin folder and must stay inside it. The working directory is the plugin folder. A platform
+with no entry lists the plugin dimmed with the reason. A Python plugin may ship <code>requirements.txt</code> beside the manifest;
+circuitRF installs it at install time (see <a href="plugins.html#python">Using Plugins</a>).</p>
+<h2 id="params">Parameters</h2>
+<p>Parameters are declared once, separately from where the panel shows them, because the command line and MCP need them
+with no panel. Each is <code>{&quot;name&quot;, &quot;kind&quot;, …}</code>; a <code>name</code> is an identifier (<code>[A-Za-z_][A-Za-z0-9_]*</code>) and unique.</p>
+<table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th>Fields</th>
+<th>The user gives</th>
+<th>Your plugin receives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>quantity</code></td>
+<td><code>unit</code> (required), <code>default</code>, <code>min</code>, <code>max</code>, <code>chars</code></td>
+<td>A value with an SI prefix (<code>2.4 GHz</code>, <code>2.4G</code>, <code>2.4e9</code>) or an expression</td>
+<td><code>{&quot;value&quot;: 2.4e9, &quot;unit&quot;: &quot;Hz&quot;, &quot;text&quot;: &quot;2.4 GHz&quot;}</code> — <code>value</code> in base SI</td>
+</tr>
+<tr>
+<td><code>int</code></td>
+<td><code>default</code>, <code>min</code>, <code>max</code>, <code>chars</code></td>
+<td>A whole number</td>
+<td>The number</td>
+</tr>
+<tr>
+<td><code>real</code></td>
+<td><code>default</code>, <code>min</code>, <code>max</code>, <code>chars</code></td>
+<td>A number</td>
+<td>The number</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td><code>default</code></td>
+<td>A check box</td>
+<td><code>true</code> / <code>false</code></td>
+</tr>
+<tr>
+<td><code>string</code></td>
+<td><code>default</code>, <code>chars</code></td>
+<td>Text</td>
+<td>The text</td>
+</tr>
+<tr>
+<td><code>choice</code></td>
+<td><code>options</code> (required), <code>default</code></td>
+<td>A picker</td>
+<td>The chosen option's text</td>
+</tr>
+<tr>
+<td><code>file</code></td>
+<td><code>extensions</code> (e.g. <code>[&quot;.s2p&quot;]</code>), <code>chars</code></td>
+<td>A file picker</td>
+<td>The absolute path</td>
+</tr>
+<tr>
+<td><code>substrate</code></td>
+<td></td>
+<td>A picker over the workspace technologies' conductors</td>
+<td>The resolved substrate (below)</td>
+</tr>
+<tr>
+<td><code>technology</code></td>
+<td></td>
+<td>A picker over the workspace's technologies</td>
+<td><code>{id, path, dbuPerMicron, layers: [{name, layer, datatype, purpose}], stackup}</code> — <code>stackup</code> as the substrate's, below</td>
+</tr>
+<tr>
+<td><code>cell</code></td>
+<td></td>
+<td>A picker over the workspace's cells</td>
+<td><code>{path, name, views}</code></td>
+</tr>
+<tr>
+<td><code>result</code></td>
+<td></td>
+<td>A picker over the workspace's Touchstone files and run <code>.npy</code></td>
+<td><code>{path}</code>, plus <code>ports</code>, <code>fmin</code>, <code>fmax</code> for a Touchstone file</td>
+</tr>
+<tr>
+<td><code>readout</code></td>
+<td><code>unit</code> (optional)</td>
+<td>Nothing: your reply fills it</td>
+<td>Never sent</td>
+</tr>
+</tbody>
+</table>
+<p>Every parameter takes an optional <code>label</code> (what the panel shows; the name stays the identifier).</p>
+<ul>
+<li><strong>Units</strong> are circuitRF's unit names: <code>Hz</code>, <code>Ohm</code>, <code>F</code>, <code>H</code>, <code>S</code>, <code>V</code>, <code>A</code>, <code>W</code>, <code>dB</code>, <code>dBm</code>, <code>deg</code>, <code>metre</code> and the
+rest of <a href="units.html">Units</a>. Declare the <strong>base</strong> unit: <code>Hz</code>, not <code>GHz</code> — the user may still type <code>GHz</code>. A length is
+<code>metre</code>, never <code>m</code>, because <code>m</code> is milli.</li>
+<li>A <code>quantity</code>'s <code>default</code>, <code>min</code> and <code>max</code> are text with a unit (<code>&quot;2.4 GHz&quot;</code>); an <code>int</code>'s or <code>real</code>'s are numbers.
+A value outside <code>min</code>/<code>max</code> is refused by circuitRF before your plugin is asked.</li>
+<li>A <code>quantity</code> may be an expression in the workspace's variables (<code>2*fc</code>); you receive the evaluated number. A bare
+number takes the declared unit: <code>200</code> for an <code>Ohm</code> quantity is 200 Ω.</li>
+<li>A <code>readout</code> with no <code>unit</code> is shown as a plain number.</li>
+<li><strong>A picker starts on a choice.</strong> A <code>choice</code>, <code>substrate</code>, <code>technology</code>, <code>cell</code> or <code>result</code> whose default is not one of
+its choices starts on its first choice, so the panel never shows a value it is not sending.</li>
+<li><strong><code>chars</code></strong> is a size hint: about how many characters the box should hold (<code>4</code> for an order, <code>12</code> for a frequency,
+<code>40</code> for a path). circuitRF turns it into a width from its theme's font and clamps it to 2–80.</li>
+</ul>
+<p><strong>The substrate object</strong> — what a <code>substrate</code> parameter delivers, and what <code>resolve substrate</code> returns:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>technology</code></td>
+<td>The <code>.ctech</code> path, absolute — <code>resolve technology</code> takes it as <code>name</code> for the layer numbers</td>
+</tr>
+<tr>
+<td><code>dbuPerMicron</code></td>
+<td>The technology's database units per µm, for scaling your shapes</td>
+</tr>
+<tr>
+<td><code>signal</code>, <code>ground</code></td>
+<td>The signal conductor's and the ground reference's names in the stackup</td>
+</tr>
+<tr>
+<td><code>h</code></td>
+<td>Dielectric height between them, metres</td>
+</tr>
+<tr>
+<td><code>er</code>, <code>tanD</code></td>
+<td>Relative permittivity and loss tangent</td>
+</tr>
+<tr>
+<td><code>t</code>, <code>sigma</code>, <code>roughness</code></td>
+<td>Conductor thickness (m), conductivity (S/m), RMS roughness (m)</td>
+</tr>
+<tr>
+<td><code>stripline</code></td>
+<td><code>true</code> when there is a ground above as well</td>
+</tr>
+<tr>
+<td><code>stackup</code></td>
+<td>Every stackup entry, top to bottom: <code>{kind, name, thickness}</code> with <code>thickness</code> in metres and <code>kind</code> one of <code>conductor</code>, <code>dielectric</code> or <code>via</code>; <code>er</code>, <code>tanD</code>, <code>mur</code> on a dielectric; <code>sigma</code>, <code>isGround</code>, <code>roughness</code> on a conductor; and on any entry drawn on layers, <code>layers</code> — the drawing layer names. Skip a kind you do not use: more may be added</td>
+</tr>
+</tbody>
+</table>
+<p>Shapes in a layout view name <strong>drawing layers</strong> (<code>Top Copper</code>), which are not the stackup conductor's name
+(<code>Top Copper (1 oz)</code>): take the layer from the conductor's <code>layers</code>.</p>
+<h2 id="panel">The panel: a layout tree</h2>
+<p><code>ui</code> is <code>{&quot;title&quot;, &quot;size&quot;: [width, height], &quot;layout&quot;: &lt;node&gt;}</code>. A node is an object naming one container or one leaf.</p>
+<pre><code class="language-json">&quot;ui&quot;: {
+  &quot;title&quot;: &quot;Single-Stub Match&quot;,
+  &quot;size&quot;: [1180, 760],
+  &quot;layout&quot;: { &quot;split&quot;: &quot;horizontal&quot;, &quot;sizes&quot;: [1, 3], &quot;children&quot;: [
+    { &quot;column&quot;: [
+      { &quot;group&quot;: &quot;Load&quot;, &quot;children&quot;: [ { &quot;param&quot;: &quot;f0&quot; }, { &quot;param&quot;: &quot;rl&quot; } ] },
+      { &quot;readout&quot;: &quot;summary&quot;, &quot;as&quot;: &quot;text&quot; },
+      { &quot;messages&quot;: true },
+      { &quot;button&quot;: &quot;Place in workspace&quot;, &quot;action&quot;: &quot;commit&quot; }
+    ]},
+    { &quot;tabs&quot;: [
+      { &quot;title&quot;: &quot;Response&quot;, &quot;view&quot;: &quot;response&quot;, &quot;kind&quot;: &quot;plot&quot; },
+      { &quot;title&quot;: &quot;Layout&quot;,   &quot;view&quot;: &quot;artwork&quot;,  &quot;kind&quot;: &quot;layout&quot; }
+    ]}
+  ]}
+}
+</code></pre>
+<p><strong>Containers</strong></p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{&quot;row&quot;: [...]}</code> / <code>{&quot;column&quot;: [...]}</code></td>
+<td>Children side by side / stacked</td>
+</tr>
+<tr>
+<td><code>{&quot;group&quot;: &quot;Title&quot;, &quot;children&quot;: [...]}</code></td>
+<td>A titled box</td>
+</tr>
+<tr>
+<td><code>{&quot;tabs&quot;: [{&quot;title&quot;: &quot;…&quot;, …a leaf or a container}]}</code></td>
+<td>Tabs; each tab is a node with a <code>title</code> added</td>
+</tr>
+<tr>
+<td><code>{&quot;split&quot;: &quot;horizontal&quot; \| &quot;vertical&quot;, &quot;sizes&quot;: [1, 3], &quot;children&quot;: [...]}</code></td>
+<td>A resizable split; one size per child, as proportions</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Leaves</strong></p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Draws</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{&quot;param&quot;: &quot;f0&quot;}</code></td>
+<td>The parameter's label and control. <code>&quot;label&quot;</code> and <code>&quot;chars&quot;</code> override the declaration's</td>
+</tr>
+<tr>
+<td><code>{&quot;readout&quot;: &quot;lengths&quot;, &quot;as&quot;: &quot;value&quot; \| &quot;table&quot; \| &quot;text&quot;}</code></td>
+<td>A <code>readout</code> parameter your reply fills; <code>as</code> defaults to <code>value</code>. <code>&quot;label&quot;</code> overrides</td>
+</tr>
+<tr>
+<td><code>{&quot;button&quot;: &quot;Label&quot;, &quot;action&quot;: &quot;name&quot;}</code></td>
+<td>Sends <code>action {name}</code>. <code>&quot;commit&quot;</code> is the reserved placement action</td>
+</tr>
+<tr>
+<td><code>{&quot;messages&quot;: true}</code></td>
+<td>Your messages for the current parameters</td>
+</tr>
+<tr>
+<td><code>{&quot;view&quot;: &quot;name&quot;, &quot;kind&quot;: &quot;plot&quot; \| &quot;smith&quot; \| &quot;layout&quot; \| &quot;schematic&quot; \| &quot;image&quot; \| &quot;table&quot;}</code></td>
+<td>A view your reply fills</td>
+</tr>
+<tr>
+<td><code>{&quot;note&quot;: &quot;text&quot;}</code></td>
+<td>Fixed text, one or two lines</td>
+</tr>
+</tbody>
+</table>
+<p>A view name is placed once. An element or view kind this circuitRF does not know is drawn as an empty frame and noted,
+not refused. <strong>circuitRF holds the panel's rules, so you cannot break them:</strong> controls never shift (a widget you
+disable is greyed, never hidden; an empty view draws an empty frame with the reason), colours and fonts are the theme's,
+and the panel remembers its size and split positions per plugin.</p>
+<h2 id="units">Units: base SI, and DBU for shapes</h2>
+<p><strong>Physical values cross in base SI</strong>: hertz, ohms, metres, farads, seconds. A <code>quantity</code> arrives as base SI, a readout
+number is read as base SI in its parameter's unit, a table cell is base SI in its column's unit, a plot axis is base SI.
+You never format a number for display — circuitRF does, in the user's units — and you never parse <code>&quot;2.4 GHz&quot;</code>.</p>
+<p><strong>Layout geometry crosses as integer database units (DBU)</strong>, as int64 in the frame's binary part: 1 DBU is
+1/<code>dbuPerMicron</code> µm, and <code>dbuPerMicron</code> is the technology's (1000 today, so 1 DBU = 1 nm). Convert each coordinate
+once, rounding half away from zero (<code>round(metres · 1e6 · dbuPerMicron)</code>), and do arithmetic in DBU after that.
+The reason is the same as for circuitRF's own layout: a fractional coordinate cannot be expressed, so it can never be
+silently rounded by whoever reads it, and a sum of rounded values cannot drift.</p>
+<h2 id="conversation">The conversation</h2>
+<h3 id="the-frame">The frame</h3>
+<p>Every message, both ways, is one <strong>frame</strong> on stdin (circuitRF → you) or stdout (you → circuitRF):</p>
+<pre><code>[ uint32 jsonLen ][ uint32 binLen ][ jsonLen bytes of UTF-8 JSON ][ binLen bytes of int64 ]
+</code></pre>
+<p>Both lengths and every int64 are <strong>little-endian</strong>. <code>binLen</code> counts <strong>bytes</strong> (a multiple of 8). The binary part is
+empty except in a reply carrying a layout view. <a href="#compiled">Writing a plugin in C#</a> shows two frames byte by byte.</p>
+<ul>
+<li><strong>stdout is frames and nothing else.</strong> One stray print corrupts the stream and circuitRF ends the session. Send
+logging to <strong>stderr</strong>: it is your log. circuitRF keeps the last 200 lines and shows them under the panel's messages
+when the plugin fails; <code>plugin run</code> prints the last five when the plugin fails or replies with an error.</li>
+<li><strong>A pipe returns partial reads.</strong> Loop until you have the whole header, then the whole JSON, then the whole payload.
+A reader that treats a short read as the end works in testing and fails under load.</li>
+<li><strong>Flush after every frame.</strong> circuitRF is waiting for it.</li>
+<li><strong>End of input is the end.</strong> When stdin closes between frames, exit.</li>
+</ul>
+<h3 id="messages">Messages</h3>
+<p>Every message is one JSON object with a <code>&quot;type&quot;</code> naming it and its fields beside it. Requests from circuitRF carry an
+integer <code>id</code>, counted up from 1 per session; your answer copies it. A message of a type the other side does not know is
+a protocol error, because the version was agreed in <code>hello</code>.</p>
+<p><strong>circuitRF → plugin</strong></p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>When</th>
+<th>You answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hello {id, apiVersion, circuitRF, platform, staging, workspace, context, mode}</code></td>
+<td>Once, first</td>
+<td><code>hello {apiVersion}</code> — the version you will speak (≤ the one offered); it needs no <code>id</code></td>
+</tr>
+<tr>
+<td><code>update {id, params}</code></td>
+<td>The panel opens, and after any parameter change (debounced 150 ms)</td>
+<td><code>reply</code></td>
+</tr>
+<tr>
+<td><code>action {id, name, params}</code></td>
+<td>A button</td>
+<td><code>reply</code></td>
+</tr>
+<tr>
+<td><code>event {id, view, kind, …, params}</code></td>
+<td>A bound marker or handle is dragged, an image is clicked</td>
+<td><code>reply</code></td>
+</tr>
+<tr>
+<td><code>commit {id, params}</code></td>
+<td><strong>Place in workspace</strong>, or <code>plugin run --place</code></td>
+<td><code>placed</code></td>
+</tr>
+<tr>
+<td><code>cancel {id}</code></td>
+<td>A newer request supersedes <code>id</code>, or the user pressed Stop</td>
+<td>Nothing required — see below</td>
+</tr>
+<tr>
+<td><code>bye</code></td>
+<td>The panel closes, or circuitRF exits</td>
+<td>Exit within 2 s, or you are killed</td>
+</tr>
+<tr>
+<td><code>hostReply {id, …}</code></td>
+<td>The answer to your <code>host</code> call</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>placedReply</code>, <code>openReply</code></td>
+<td>The answers to a window plugin's <code>placed</code> and <code>open</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>hello</code>'s fields: <code>platform</code> is this machine's runtime identifier; <code>staging</code> is your staging folder (absolute); <code>workspace</code>
+is the workspace folder, or null; <code>context</code> is where you were opened from — <code>{workspace, cell | layout | technology | result, path}</code> when it was a right-click; <code>mode</code> is <code>interactive</code> (a window) or <code>headless</code> (<code>circuitRF plugin run</code>).</p>
+<p><strong>plugin → circuitRF</strong></p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reply</code></td>
+<td><code>id</code>, and any of: <code>readouts</code> <code>{name: value}</code>, <code>views</code> <code>{name: view or null}</code>, <code>messages</code> <code>[{severity, text}]</code>, <code>enabled</code> <code>{name: false}</code>, <code>set</code> <code>{param: value}</code></td>
+</tr>
+<tr>
+<td><code>placed</code></td>
+<td><code>id</code>, <code>cells: [{name, files, layout?}]</code>, optional <code>messages</code></td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td><code>id</code>, <code>fraction</code> (0–1, optional), <code>text</code> (optional) — before your reply, shown on the panel's busy bar</td>
+</tr>
+<tr>
+<td><code>host</code></td>
+<td><code>id</code> (the request you are answering), <code>call</code>, and its arguments — before your reply (<a href="#host">Host calls</a>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>params</code></strong> in <code>update</code>, <code>action</code>, <code>event</code> and <code>commit</code> is an object keyed by parameter name, each value as
+<a href="#params">Parameters</a> says it arrives:</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;update&quot;, &quot;id&quot;: 4,
+  &quot;params&quot;: { &quot;f0&quot;: { &quot;value&quot;: 2.4e9, &quot;unit&quot;: &quot;Hz&quot;, &quot;text&quot;: &quot;2.4 GHz&quot; }, &quot;order&quot;: 5, &quot;substrate&quot;: { &quot;technology&quot;: &quot;…&quot;, &quot;signal&quot;: &quot;Top Copper (1 oz)&quot;, &quot;h&quot;: 7.62e-4, &quot;…&quot;: &quot;…&quot; } } }
+</code></pre>
+<p><strong>What a reply's fields mean.</strong></p>
+<ul>
+<li><code>readouts</code>: keyed by <code>readout</code> parameter. A number is base SI, shown with an SI prefix in that parameter's <code>unit</code>;
+<code>{&quot;value&quot;, &quot;unit&quot;}</code> names its own unit; a string is shown as written; a table readout takes a <a href="#table">table</a>.</li>
+<li><code>views</code>: keyed by view name. A view left out keeps what it showed; <code>null</code> clears it.</li>
+<li><code>messages</code>: <code>severity</code> is <code>error</code>, <code>warning</code> or <code>info</code>.</li>
+<li><code>enabled</code>: names parameters and buttons (a button by its <code>action</code>); a name left out is enabled. It is complete each
+time, not a change.</li>
+<li><code>set</code>: changes parameters' values as typing them would, without another <code>update</code> for them.</li>
+</ul>
+<p><strong>Events.</strong> <code>kind: &quot;marker&quot;</code> carries <code>marker</code> (its index in the plot's <code>markers</code>) and <code>x</code> (base SI); <code>kind: &quot;handle&quot;</code>
+carries <code>param</code> and <code>value</code> (base SI, solved by circuitRF); <code>kind: &quot;click&quot;</code> carries <code>x</code> and <code>y</code> in the image's own pixel
+coordinates. A marker or handle changes its parameter: <code>params</code> already holds the new value, and the ordinary <code>update</code>
+follows your reply. <strong>If you have nothing particular to do for an event, answer it exactly as you answer <code>update</code>.</strong></p>
+<p><strong>Deadlines.</strong> An <code>update</code> has 30 s; an <code>action</code> or <code>commit</code> 10 min (<code>timeouts</code> replaces them). Past it the panel says
+the plugin is not responding and offers Stop. Put anything slow behind a button (<code>action</code>), not in <code>update</code>.</p>
+<p><strong>Cancel.</strong> circuitRF sends <code>cancel {id}</code> when a newer request supersedes one, and ignores whatever you then answer to
+it, so a slow plugin never draws an old answer over a new one. You may ignore <code>cancel</code> and still be correct; honouring
+it only saves time. After the user presses <strong>Stop</strong>, a plugin that has answered nothing it was told to cancel within 2 s
+is restarted — so <strong>answer every request, even a cancelled one</strong> (an empty <code>reply {id}</code> is enough).</p>
+<p><strong>One process per panel.</strong> It lives until the panel closes. If it exits unexpectedly the panel says so, keeps the last
+views and starts it again on the next change, with a fresh <code>hello</code>.</p>
+<p><strong>Be a function of your parameters.</strong> The same parameters must give the same reply and the same staged bytes. circuitRF
+relies on it: the panel and <code>plugin run</code> must agree, and a test can call your plugin with no display.</p>
+<h2 id="views">Views</h2>
+<h3 id="plot"><code>plot</code> and <code>smith</code></h3>
+<pre><code class="language-json">&quot;response&quot;: {
+  &quot;data&quot;: {
+    &quot;axes&quot;:  { &quot;freq&quot;: { &quot;unit&quot;: &quot;Hz&quot;, &quot;values&quot;: [2.0e9, 2.01e9] } },
+    &quot;cubes&quot;: { &quot;S11&quot;: { &quot;axes&quot;: [&quot;freq&quot;], &quot;kind&quot;: &quot;complex&quot;, &quot;re&quot;: [0.1, 0.09], &quot;im&quot;: [-0.2, -0.19] } }
+  },
+  &quot;plot&quot;: {
+    &quot;y&quot;: { &quot;label&quot;: &quot;dB&quot;, &quot;min&quot;: -40, &quot;max&quot;: 0 },
+    &quot;traces&quot;:  [ { &quot;cube&quot;: &quot;S11&quot;, &quot;y&quot;: &quot;db20&quot;, &quot;label&quot;: &quot;S11&quot; } ],
+    &quot;markers&quot;: [ { &quot;trace&quot;: &quot;S11&quot;, &quot;bind&quot;: &quot;f0&quot; } ],
+    &quot;lines&quot;:   [ { &quot;y&quot;: -20, &quot;side&quot;: &quot;above&quot;, &quot;xStart&quot;: 2.3e9, &quot;xEnd&quot;: 2.5e9 } ]
+  }
+}
+</code></pre>
+<ul>
+<li><strong><code>data</code></strong> is named axes (<code>unit</code>, <code>values</code>) and named cubes over them: <code>kind: &quot;complex&quot;</code> with <code>re</code> and <code>im</code>, or
+<code>kind: &quot;real&quot;</code> with <code>values</code>. A large result is a staged file instead: <code>&quot;data&quot;: {&quot;file&quot;: &quot;response.s2p&quot;}</code> (a
+Touchstone file or <code>.npy</code> in your staging folder).</li>
+<li><strong><code>plot</code></strong> fields: <code>title</code>; <code>x</code>, <code>y</code>, <code>y2</code> (each <code>{label, min, max}</code> — <code>x</code> in base SI, <code>y</code> in the plot's own units);
+<code>freqUnit</code> (<code>GHz</code>…); <code>legend</code>; <code>traces</code>; <code>markers</code>; <code>lines</code>. Any other field is refused by name.</li>
+<li><strong>A trace</strong> is <code>cube</code> plus any of <code>y</code> (<code>db20</code>, <code>db10</code>, <code>mag</code>, <code>phase</code>, <code>real</code>, <code>imag</code>, <code>conj</code>, <code>none</code>), <code>i</code> and <code>j</code>
+(1-based port numbers into an S-matrix cube), <code>label</code>, and <code>axis</code> (<code>left</code> or <code>right</code>). These are <code>circuitRF plot --trace</code>'s fields. <strong><code>&quot;y&quot;: &quot;db&quot;</code> is refused</strong>: say <code>db20</code> for a voltage ratio or <code>db10</code> for a power.</li>
+<li><strong>A marker</strong> sits on <code>trace</code>, at <code>x</code> (base SI, or a parameter's name) or <strong>bound</strong> to a <code>quantity</code> parameter with
+<code>&quot;bind&quot;: &quot;f0&quot;</code> — the user drags it and the parameter follows, as if typed. The bound parameter's unit must be the
+plot's x unit. A marker sits on a sample of its trace, so put round values on your axis if you want it to land on
+round values.</li>
+<li><strong>A line</strong> is a limit area: <code>y</code>, <code>side</code> (<code>above</code> hatches above it: the curve must stay below; <code>below</code> the reverse),
+optional <code>xStart</code>/<code>xEnd</code> in base SI.</li>
+<li><strong><code>smith</code></strong> is the same object on a Smith chart: cubes are reflection coefficients or impedances; a bound marker is
+bound to a frequency parameter.</li>
+</ul>
+<p>The user can zoom, add markers, export, and <strong>Open in Data Display</strong>, which writes your data and a <code>.cdd</code> into the
+staging folder and opens it as an ordinary document. None of that is your plugin's business, and you are not told.</p>
+<h3 id="table"><code>table</code></h3>
+<pre><code class="language-json">&quot;dims&quot;: { &quot;columns&quot;: [&quot;Section&quot;, &quot;Width&quot;, &quot;Length&quot;], &quot;units&quot;: [&quot;&quot;, &quot;metre&quot;, &quot;metre&quot;],
+          &quot;rows&quot;: [[&quot;Feed&quot;, 1.61e-3, 3e-3], [&quot;Stub&quot;, 1.61e-3, 29.0e-3]] }
+</code></pre>
+<p>Numbers in base SI; circuitRF formats each column in its unit. <code>&quot;&quot;</code> is a plain number or text.</p>
+<h3 id="layout"><code>layout</code></h3>
+<pre><code class="language-json">&quot;artwork&quot;: {
+  &quot;technology&quot;: &quot;self&quot;,
+  &quot;shapes&quot;:  [ { &quot;kind&quot;: &quot;rect&quot;, &quot;layer&quot;: &quot;Top Copper&quot;, &quot;xy&quot;: { &quot;at&quot;: 0, &quot;count&quot;: 4 } } ],
+  &quot;handles&quot;: [ { &quot;parameter&quot;: &quot;trim&quot;, &quot;kind&quot;: &quot;linear&quot;, &quot;span&quot;: { &quot;at&quot;: 4, &quot;count&quot;: 4 }, &quot;axisDeg&quot;: 90, &quot;label&quot;: &quot;Stub length&quot; } ],
+  &quot;ports&quot;:   [ { &quot;name&quot;: &quot;1&quot;, &quot;x&quot;: 0, &quot;y&quot;: 0, &quot;layer&quot;: &quot;Top Copper&quot;, &quot;width&quot;: 1610000, &quot;outwardDeg&quot;: 180 } ]
+}
+</code></pre>
+<p><strong>Every shape and handle coordinate is a span into the frame's int64 payload</strong>: <code>{&quot;at&quot;: i, &quot;count&quot;: n}</code>, in int64
+elements, <code>n</code> even (x, y pairs). A port's <code>x</code>, <code>y</code> and <code>width</code>, and lengths that are not coordinates (a path width, a
+radius), are JSON integers in DBU, refused with a fractional part.</p>
+<p><code>technology</code> is <code>&quot;self&quot;</code> (the technology your <code>technology</code> or <code>substrate</code> parameter names) or a <code>.ctech</code> path relative to
+the workspace. A <code>layer</code> is a drawing layer's <strong>name</strong> (<code>&quot;Top Copper&quot;</code>) or <code>{&quot;layer&quot;: 1, &quot;datatype&quot;: 0}</code>. A layer the
+technology does not have is drawn on a fallback colour and named in the messages.</p>
+<table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th><code>xy</code> holds</th>
+<th>Other fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rect</code></td>
+<td>4 values: x1, y1, x2, y2</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>poly</code></td>
+<td>The outline, ≥ 3 points</td>
+<td><code>holes</code>: a list of spans</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>The centreline, ≥ 2 points</td>
+<td><code>width</code> (DBU), <code>end</code>: <code>flush</code>, <code>round</code>, <code>square</code> or <code>extended</code></td>
+</tr>
+<tr>
+<td><code>rrect</code></td>
+<td>4 values: x1, y1, x2, y2</td>
+<td><code>cornerRadius</code> (DBU)</td>
+</tr>
+<tr>
+<td><code>circle</code></td>
+<td>2 values: the centre</td>
+<td><code>radius</code> (DBU)</td>
+</tr>
+<tr>
+<td><code>via</code></td>
+<td>2 values: the centre</td>
+<td><code>padSize</code>, <code>drillSize</code> (DBU), optional <code>landingLayer</code></td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>2 values: the anchor</td>
+<td><code>text</code>, <code>height</code> (DBU), <code>rotation</code> (<code>R0</code>, <code>R90</code>, <code>R180</code>, <code>R270</code>)</td>
+</tr>
+<tr>
+<td><code>curve</code></td>
+<td>The outline</td>
+<td><code>edges</code> (one per vertex: <code>{&quot;kind&quot;: &quot;line&quot;}</code> or <code>{&quot;kind&quot;: &quot;arc&quot;, &quot;bulge&quot;: tan(sweep/4)}</code>), <code>holes</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every shape also takes an optional <code>net</code>.</p>
+<p><strong>Handles</strong> are grips the user drags to change a <code>quantity</code> parameter. <code>span</code> is exactly 4 values: <strong>anchor x, anchor y,
+grip x, grip y</strong>. <code>kind</code> is <code>linear</code> (a length along <code>axisDeg</code>, measured from the anchor) or <code>angular</code> (an angle about
+the anchor). Optional: <code>label</code>, <code>min</code>, <code>max</code> (parameter values, base SI — not coordinates). circuitRF solves the new value
+itself and sends an <code>event {kind: &quot;handle&quot;, param, value}</code>: your plugin never maps a mouse position to a length. A
+handle on any other parameter kind is drawn and not draggable.</p>
+<p><strong>Ports</strong> are drawn as layout port labels and become real ports when the layout is placed: <code>name</code> (the port number as
+text), <code>x</code>, <code>y</code>, <code>layer</code>, <code>width</code> (DBU), and <code>outwardDeg</code> — the direction pointing <strong>out of</strong> the conductor (180 for a
+line's left end, 0 for its right).</p>
+<p>The preview is read-only artwork with rulers, pan, zoom, hover position and shift-drag measurement.</p>
+<h3 id="schematic"><code>schematic</code></h3>
+<pre><code class="language-json">&quot;circuit&quot;: { &quot;cnl&quot;: &quot;circuit.cnl&quot; }
+</code></pre>
+<p>A <code>.cnl</code> you wrote into the staging folder (<a href="netlist.html">The netlist format</a>), drawn by circuitRF read-only.</p>
+<h3 id="image"><code>image</code></h3>
+<pre><code class="language-json">&quot;chart&quot;: { &quot;file&quot;: &quot;groupdelay.svg&quot;, &quot;clickable&quot;: true }
+</code></pre>
+<p>A PNG or SVG in the staging folder, for a picture circuitRF has no view kind for. With <code>clickable</code>, a click sends
+<code>event {view, kind: &quot;click&quot;, x, y}</code> in the image's own pixel coordinates (an SVG's user units). No hover, drag or zoom:
+this is the escape hatch, not a drawing API.</p>
+<h2 id="host">Host calls: work you ask circuitRF to do</h2>
+<p>While answering a request, send <code>host {id, call, …}</code> with <strong>that request's id</strong>, then read until <code>hostReply</code> with the
+same id arrives — its fields beside <code>type</code> and <code>id</code>, as the table's last column lists them (other messages, such as a <code>cancel</code>, may arrive first: keep them for afterwards). Several host calls may
+precede one reply, one at a time. A failed call is <code>hostReply {id, error: &quot;&lt;sentence&gt;&quot;}</code> and the session carries on.
+Results land in your staging folder, never in the workspace.</p>
+<table>
+<thead>
+<tr>
+<th><code>call</code></th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lineModel</code></td>
+<td><code>line</code>: <code>microstrip</code>, <code>stripline</code> or <code>cpwg</code>; <code>substrate</code>: the object a <code>substrate</code> parameter delivered, or <code>&quot;conductor : technology path&quot;</code>; <code>width</code> (m); <code>gap</code> (m, for <code>cpwg</code>); <code>freq</code>: Hz, a number or an array</td>
+<td><code>{z0: [...], eeff: [...], alphaDbPerM: [...], messages}</code>, real numbers, one entry per frequency — circuitRF's own model of that line. <code>messages</code> is <code>[{severity, text}]</code>, as in a reply: pass them on</td>
+</tr>
+<tr>
+<td><code>simulate</code></td>
+<td><code>cnl</code>: a staged <code>.cnl</code>; <code>analysis</code>: its analysis name (optional when the file has one)</td>
+<td><code>{result: &lt;staged .npy&gt;, touchstone: &lt;staged .sNp, for a plain S-parameter run&gt;, cubes: [names], messages}</code></td>
+</tr>
+<tr>
+<td><code>resolve</code></td>
+<td><code>what</code>: <code>technology</code>, <code>substrate</code>, <code>cell</code> or <code>reference</code>; <code>name</code> (a technology path; a substrate as <code>&quot;conductor : technology path&quot;</code>, the path absolute or relative to the workspace; a cell folder); for a reference, <code>ref</code> and <code>from</code></td>
+<td><code>{resolved}</code>: the same object a parameter of that kind delivers. A <code>technology</code> with no <code>name</code> is the workspace's default</td>
+</tr>
+<tr>
+<td><code>evaluate</code></td>
+<td><code>expr</code>; optional <code>unit</code> (a base unit); optional <code>path</code> (a document whose variables are in scope)</td>
+<td><code>{value, unit}</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><code>line</code>, not <code>type</code>: every message's <code>type</code> is the message's own.</li>
+<li><code>cpw</code> is refused: circuitRF's coplanar line is <code>cpwg</code>, with a ground plane below.</li>
+<li><strong><code>simulate</code> refuses EM, loadpull and pursuit</strong>: a plugin update must not start a run measured in minutes. It is given
+nine tenths of its request's deadline; a slow sweep belongs behind a button.</li>
+<li>Use them. <code>lineModel</code> and <code>simulate</code> make your plugin agree with what the user gets after placement, instead of
+computing a private approximation that disagrees with circuitRF's own models.</li>
+</ul>
+<h2 id="placing">Placing: what <code>commit</code> stages</h2>
+<p>On <strong>Place in workspace</strong> (or <code>plugin run --place</code>) circuitRF sends <code>commit</code>. Write your documents into the staging
+folder and answer <code>placed {id, cells: [{name, files, layout?}]}</code>:</p>
+<ul>
+<li><p><code>name</code> is the suggested cell name (any text without <code>&lt; &gt; : &quot; / \ | ? *</code> or control characters). <code>files</code> are paths relative to the staging folder; each extension has one home in
+the cell, and a cell has at most one file of each:</p>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Placed in</th>
+<th>Checked by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.cnl</code></td>
+<td><code>schematic/</code></td>
+<td>It must read and elaborate</td>
+</tr>
+<tr>
+<td><code>.csch</code></td>
+<td><code>schematic/</code></td>
+<td>circuitRF's schematic reader</td>
+</tr>
+<tr>
+<td><code>.csym</code></td>
+<td><code>symbol/</code></td>
+<td>circuitRF's symbol reader</td>
+</tr>
+<tr>
+<td><code>.clay</code></td>
+<td><code>layout/</code></td>
+<td>circuitRF's layout reader</td>
+</tr>
+<tr>
+<td><code>.c3d</code></td>
+<td><code>3d/</code></td>
+<td>circuitRF's 3D view reader</td>
+</tr>
+<tr>
+<td><code>.cem</code></td>
+<td><code>em/</code></td>
+<td>It must read, and its layout must resolve</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li><p><strong><code>layout</code>: name a <code>layout</code> view instead of staging a <code>.clay</code>.</strong> <code>&quot;layout&quot;: &quot;artwork&quot;</code> has circuitRF write the
+artwork view of your last reply, ports as port labels, as the cell's <code>layout/artwork.clay</code> — what was drawn is what
+is placed, and you never write <code>.clay</code> JSON. A cell has one layout: a staged <code>.clay</code> <em>and</em> <code>layout</code> is refused.</p>
+</li>
+<li><p><strong>A <code>.cem</code> may name that view as the file it will be beside it:</strong> <code>&quot;LayoutRef&quot;: &quot;artwork.clay&quot;</code> in a staged <code>.cem</code>
+is re-pointed at the placed layout. A <code>.cem</code>'s ports are the layout's port labels, so a placed cell opens ready for
+an EM run.</p>
+</li>
+</ul>
+<p><strong>To fail a placement</strong>, answer <code>placed</code> with no cells and an <code>error</code> message saying why; nothing is placed and the
+message is shown. The placed cell is a folder named after the cell holding a <code>.ccell</code> and its view folders.
+circuitRF validates every file, asks for the name (Replace / New name when it exists), takes a restore point named
+after your plugin and version, and places the cell. Any failure places nothing and lists every reason.</p>
+<h3 id="cnl">The netlist, in brief</h3>
+<p>A <code>.cnl</code> is one part per line: <code>Type:Name node node … Param=value …</code>. Node <code>0</code> is ground; any other node is a name
+you choose. A value carries its unit (<code>50 Ohm</code>, <code>3 mm</code>, <code>1.5 pF</code>); a length is written in <code>mm</code> or <code>um</code>, since <code>m</code> is
+milli. A line starting with <code>;</code> is a comment. Stage a netlist with its <code>analysis</code> line, so the placed cell runs as it is. The parts a
+plugin most often needs:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Port:P1 in 0 Num=1 Z=50 Ohm</code></td>
+<td>Port 1 between <code>in</code> and ground, 50 Ω reference</td>
+</tr>
+<tr>
+<td><code>R:R1 a b R=100 Ohm</code>, <code>L:L1 a b L=2 nH</code>, <code>C:C1 a b C=1 pF</code></td>
+<td>A resistor, inductor, capacitor</td>
+</tr>
+<tr>
+<td><code>TLIN:TL1 a b Z=50 Ohm L=12.3 mm Eeff=2.87</code></td>
+<td>An ideal transmission line of impedance <code>Z</code>, physical length <code>L</code> and effective permittivity <code>Eeff</code></td>
+</tr>
+<tr>
+<td><code>fc = 2.4 GHz</code></td>
+<td>A variable other values can use</td>
+</tr>
+<tr>
+<td><code>analysis SP1 type=sparam start=1 stop=6 npts=51 Unit=GHz</code></td>
+<td>An S-parameter sweep (<code>start</code>/<code>stop</code> in <code>Unit</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><a href="netlist.html">The netlist format</a> has every part and analysis; <code>circuitRF reference</code> prints them all.</p>
+<h3 id="clay">A <code>.clay</code>, in brief</h3>
+<p>A panel plugin never writes one: it names its layout view in <code>placed</code>. A <strong>window</strong> plugin has no view to name, so it
+stages a <code>.clay</code> (the Python helper's <code>clay_text</code> writes one from a <code>Layout</code>). A line with a port at each end:</p>
+<pre><code class="language-json">{
+  &quot;FormatVersion&quot;: 1,
+  &quot;DbuPerMicron&quot;: 1000,
+  &quot;Shapes&quot;: [
+    { &quot;$type&quot;: &quot;Rect&quot;, &quot;X1&quot;: 0, &quot;Y1&quot;: -805000, &quot;X2&quot;: 18439000, &quot;Y2&quot;: 805000, &quot;Layer&quot;: { &quot;Layer&quot;: 1, &quot;Datatype&quot;: 0 } },
+    { &quot;$type&quot;: &quot;Label&quot;, &quot;X&quot;: 0, &quot;Y&quot;: 0, &quot;Text&quot;: &quot;1&quot;, &quot;Height&quot;: 805000, &quot;Rotation&quot;: &quot;R0&quot;,
+      &quot;IsPort&quot;: true, &quot;PortDirection&quot;: &quot;R0&quot;, &quot;PortLayer&quot;: { &quot;Layer&quot;: 1, &quot;Datatype&quot;: 0 }, &quot;Layer&quot;: { &quot;Layer&quot;: 1, &quot;Datatype&quot;: 0 } },
+    { &quot;$type&quot;: &quot;Label&quot;, &quot;X&quot;: 18439000, &quot;Y&quot;: 0, &quot;Text&quot;: &quot;2&quot;, &quot;Height&quot;: 805000, &quot;Rotation&quot;: &quot;R0&quot;,
+      &quot;IsPort&quot;: true, &quot;PortDirection&quot;: &quot;R180&quot;, &quot;PortLayer&quot;: { &quot;Layer&quot;: 1, &quot;Datatype&quot;: 0 }, &quot;Layer&quot;: { &quot;Layer&quot;: 1, &quot;Datatype&quot;: 0 } }
+  ],
+  &quot;Instances&quot;: []
+}
+</code></pre>
+<ul>
+<li>Coordinates are integer DBU at <code>DbuPerMicron</code>. A layer is <code>{Layer, Datatype}</code> <strong>numbers</strong>, from the technology's
+<code>layers</code> (<code>resolve technology</code> gives them by name).</li>
+<li>Shapes: <code>Rect</code> (<code>X1, Y1, X2, Y2</code>), <code>Poly</code> (<code>Xy</code>: a flat <code>[x0, y0, x1, y1, …]</code>, optional <code>Holes</code>: a list of such),
+<code>Path</code> (<code>Xy</code>, <code>Width</code>, <code>End</code>: <code>Flush</code>, <code>Round</code>, <code>Square</code> or <code>Extended</code>), <code>Label</code> (<code>X, Y, Text, Height, Rotation</code>).</li>
+<li><strong>A port is a <code>Label</code> with <code>IsPort: true</code></strong>: its text is the port number, its <code>PortLayer</code> the conductor's layer, and
+<strong><code>PortDirection</code> points INTO the conductor</strong> — <code>R0</code> at a line's left end, <code>R180</code> at its right — the opposite of a
+layout view's <code>outwardDeg</code>. The port's width is the conductor's; <code>Height</code> is only the label's text size.</li>
+<li><strong><code>TechRef</code></strong> names the technology relative to the placed file, <code>&lt;workspace&gt;/&lt;cell&gt;/layout/</code> — so a technology at
+<code>&lt;workspace&gt;/tech/board.ctech</code> is <code>&quot;../../tech/board.ctech&quot;</code> from any cell. Leave it out for the workspace's default.</li>
+<li><code>check</code> notes that port labels &quot;carry no manufacturable area&quot;: that is expected of every port label.</li>
+</ul>
+<h2 id="window">Window plugins</h2>
+<p>A <code>window</code> plugin gets the same <code>hello</code> and then circuitRF draws nothing and only listens. Whenever <strong>your</strong> user asks,
+send, with an <code>id</code> of your own (count up from 1):</p>
+<table>
+<thead>
+<tr>
+<th>You send</th>
+<th>circuitRF answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>placed {id, cells}</code> — placed exactly as above</td>
+<td><code>placedReply {id, cells: [the names they were placed under]}</code> or <code>placedReply {id, error}</code></td>
+</tr>
+<tr>
+<td><code>open {id, path}</code> — a document in your staging folder or the workspace</td>
+<td><code>openReply {id}</code> or <code>openReply {id, error}</code></td>
+</tr>
+<tr>
+<td><code>host {id, call, …}</code></td>
+<td><code>hostReply</code>, as above, with no deadline</td>
+</tr>
+</tbody>
+</table>
+<p>Your ids are your own: count up from 1, one per message, and match each answer by it; they never collide with
+circuitRF's. Between <code>hello</code> and <code>bye</code> circuitRF sends a window plugin nothing but these answers. <code>placed</code> cannot
+name a layout view (a window has no reply for it to come from): stage a <code>.clay</code>. A window gets no parameters: to read
+a value the user typed with a unit, ask <code>evaluate</code> with <code>unit</code> (<code>{&quot;expr&quot;: &quot;2.4G&quot;, &quot;unit&quot;: &quot;Hz&quot;}</code> → 2.4e9).</p>
+<p>There is one instance per plugin: choosing it again while it runs says it is already running (circuitRF cannot raise
+another program's window). When circuitRF exits it sends <code>bye</code>, waits 2 s, then kills. A window plugin that exits by
+itself has been closed by its user.</p>
+<p><strong>A headless form.</strong> If the manifest declares <code>params</code> and your program answers <code>update</code> (readouts) and <code>commit</code>
+(placed) when <code>hello</code>'s <code>mode</code> is <code>headless</code> — opening no window — then <code>circuitRF plugin run</code> and MCP can run it.
+Without one, <code>plugin run</code> refuses it, saying it &quot;has no headless form&quot;. The headless <code>update</code> reply is a panel's reply:
+readouts, messages, and views too, which <code>-o</code> writes as files. Make both forms call the same code, and stage a <code>.clay</code>
+in both, so they stage the same bytes for the same parameters.</p>
+<h2 id="helper">The Python helper, <code>circuitrf_plugin</code></h2>
+<p><code>tools/plugin-python/circuitrf_plugin/</code> in the circuitRF repository: copy the folder into your plugin. It depends on
+nothing but the standard library (Python 3.8+), handles the frame, <code>hello</code>, cancel, progress, host calls and <code>bye</code>, and
+<strong>redirects <code>print</code> to stderr</strong> (at the descriptor, so a library writing to stdout cannot corrupt a frame either).</p>
+<pre><code class="language-python">from circuitrf_plugin import Plugin, Reply, Placed, Plot, Smith, Layout, Table, Schematic, Netlist, error, warning, info
+
+plugin = Plugin()
+
+@plugin.update                      # every parameter change; also answers an event or action with no handler
+def update(p, ctx): ...             # -&gt; Reply
+
+@plugin.action(&quot;simulate&quot;)          # a button whose action is &quot;simulate&quot;
+def simulate(p, ctx): ...           # -&gt; Reply
+
+@plugin.event                       # optional: a dragged marker or handle, or an image click
+def event(p, ctx, ev): ...          # ev is the message: ev[&quot;view&quot;], ev[&quot;kind&quot;], ...
+
+@plugin.commit                      # Place in workspace
+def commit(p, ctx): ...             # -&gt; Placed(cells, messages) or a list of cells
+
+plugin.run()
+</code></pre>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>p[&quot;f0&quot;]</code></td>
+<td>The parameter as delivered (<code>{&quot;value&quot;, &quot;unit&quot;, &quot;text&quot;}</code> for a quantity)</td>
+</tr>
+<tr>
+<td><code>p.f0</code></td>
+<td>A quantity's <code>value</code> in base SI; any other kind's value as delivered</td>
+</tr>
+<tr>
+<td><code>ctx.staging</code>, <code>ctx.workspace</code>, <code>ctx.mode</code>, <code>ctx.headless</code>, <code>ctx.context</code>, <code>ctx.hello</code></td>
+<td>From <code>hello</code></td>
+</tr>
+<tr>
+<td><code>ctx.stage(name, text_or_bytes)</code></td>
+<td>Writes a file in the staging folder (UTF-8, <code>\n</code> line ends); refuses a name outside it; returns the name</td>
+</tr>
+<tr>
+<td><code>ctx.path(name)</code></td>
+<td>The absolute path of a staged file</td>
+</tr>
+<tr>
+<td><code>ctx.dbu(metres)</code></td>
+<td>Metres to DBU, rounded once, half away from zero, at the <code>dbuPerMicron</code> of the request's <code>technology</code> or <code>substrate</code> parameter (1000 otherwise; set <code>ctx.dbu_per_micron</code> to override)</td>
+</tr>
+<tr>
+<td><code>ctx.progress(fraction, text)</code></td>
+<td>The busy bar; also a cancellation point</td>
+</tr>
+<tr>
+<td><code>ctx.check()</code></td>
+<td>Raises <code>Cancelled</code> once the request is cancelled — call it in long loops. Let it propagate: the helper answers the cancelled request</td>
+</tr>
+<tr>
+<td><code>ctx.line_model(line, substrate, width, freq, gap=None)</code></td>
+<td><code>lineModel</code></td>
+</tr>
+<tr>
+<td><code>ctx.simulate(cnl, analysis=None)</code>, <code>ctx.resolve(what, name=None, ref=None, from_=None)</code>, <code>ctx.evaluate(expr, unit=None, path=None)</code></td>
+<td>The other host calls; a failure raises <code>HostError</code> with circuitRF's sentence</td>
+</tr>
+<tr>
+<td><code>Reply(readouts, views, messages, enabled, set)</code></td>
+<td>A reply; a message is <code>error(t)</code>, <code>warning(t)</code>, <code>info(t)</code> or a plain string</td>
+</tr>
+<tr>
+<td><code>Plot(title, x, y, y2, freq_unit, legend)</code> / <code>Smith(…)</code></td>
+<td>All optional (<code>y={&quot;label&quot;: &quot;dB&quot;, &quot;min&quot;: -40, &quot;max&quot;: 0}</code>). <code>.axis(name, unit, values)</code>, <code>.cube(name, axes, values)</code> (complex values become re/im), <code>.data_file(staged)</code>, <code>.share_data(other)</code>, <code>.trace(cube, y=…, label=…)</code>, <code>.marker(trace, bind=… or x=…, draggable=…)</code>, <code>.line(y, side, x_start, x_end)</code></td>
+</tr>
+<tr>
+<td><code>Table(columns, units, rows)</code></td>
+<td><code>.row(*cells)</code></td>
+</tr>
+<tr>
+<td><code>Layout(technology=&quot;self&quot;)</code></td>
+<td><code>.rect</code>, <code>.polygon</code>, <code>.path</code>, <code>.circle</code>, <code>.via</code>, <code>.label</code>, <code>.port(name, x, y, layer, width, outward_deg)</code>, <code>.handle(parameter, anchor, grip, axis_deg, …)</code> — <strong>every coordinate an <code>int</code>; a float is refused</strong> with a message naming <code>ctx.dbu</code></td>
+</tr>
+<tr>
+<td><code>Schematic(cnl)</code>, <code>Image(file, clickable)</code></td>
+<td>The other views</td>
+</tr>
+<tr>
+<td><code>Netlist()</code></td>
+<td><code>.part(kind, name, *nodes, **params)</code>, <code>.analysis(name, **keys)</code>, <code>.line(text)</code>, <code>.text()</code> — a <code>.cnl</code> with no hand-written lines</td>
+</tr>
+<tr>
+<td><code>clay_text(layout, technology, tech_ref=None)</code></td>
+<td>A <code>.clay</code> from a <code>Layout</code>, for a <code>window</code> or <code>action</code> plugin with no view to name</td>
+</tr>
+</tbody>
+</table>
+<p>A handler that raises is reported in the panel as an error message, and the session carries on.</p>
+<h2 id="stub">A walk through the stub plugin</h2>
+<p><code>tools/plugin-examples/stub/</code> is the reference plugin: a single open stub matching a load to 50 Ω on a microstrip
+substrate. Its arithmetic is textbook, so every number in it can be checked by hand, and it uses every view kind. It
+speaks the frame itself rather than through the helper, so it shows the whole contract in one file.</p>
+<p><strong><code>plugin.json</code>.</strong> Six parameters — <code>f0</code>, <code>rl</code> and <code>xl</code> (quantities in <code>Hz</code> and <code>Ohm</code>), <code>substrate</code>, <code>trim</code> (a length in
+<code>metre</code>, the stub's handle) and <code>summary</code> (a text readout). The <code>ui</code> is a horizontal split: the inputs, the readout, the
+messages and two buttons (<strong>Simulate in circuitRF</strong> sends <code>action simulate</code>; <strong>Place in workspace</strong> is <code>commit</code>) on the
+left; five tabs on the right — a response plot, a Smith chart, a dimensions table, the layout and the schematic.</p>
+<p><strong><code>stub.py</code></strong>, top to bottom:</p>
+<ol>
+<li><strong>The frame</strong>: <code>read_exact</code> loops over partial reads; <code>read_frame</code> reads one message; <code>send</code> writes one and flushes.
+<code>WAITING</code> keeps messages that arrive while a host call is answered, so <code>read_message</code> returns them in order.</li>
+<li><strong><code>host()</code></strong> sends a host call carrying the request's id and reads until its <code>hostReply</code>.</li>
+<li><strong>The line</strong>: <code>solve_width</code> asks <code>lineModel</code> for the impedance of a guessed width (the closed-form microstrip
+equations give the first guess) and runs a secant search on ln(width) to 50 Ω, then rounds the width to a whole DBU
+and asks once more for the effective permittivity <em>at that width</em>. So the line it draws is circuitRF's 50 Ω line.</li>
+<li><strong>The match</strong>: <code>design()</code> turns the load into a line length <code>d</code> and a stub length <code>l</code> (the formulas are in the file's
+header), plus the trim.</li>
+<li><strong>The views</strong>: <code>sweep()</code> puts the response on a 1-2-5 step so a dragged marker lands on round frequencies; <code>data()</code>
+is the S11 cube; <code>artwork()</code> returns the shapes and the payload — two rectangles, a <code>linear</code> handle on <code>trim</code> along
+90°, and a port at each end of the line; <code>netlist()</code> is the <code>.cnl</code>.</li>
+<li><strong><code>reply()</code></strong> answers <code>update</code>, <code>event</code> and <code>action</code> alike: every view, a one-line summary, and <code>enabled</code> greying
+Place when the trim makes the stub negative.</li>
+<li><strong><code>simulate()</code></strong> is the button: <code>simulate</code> on the staged <code>circuit.cnl</code>, whose S11 is drawn beside the closed form's.</li>
+<li><strong><code>commit</code></strong> stages <code>stub.cnl</code>, <code>stub.csch</code> (the same circuit drawn: <code>schematic()</code> lays the parts out on the grid)
+and <code>stub.cem</code>, and answers <code>placed</code> with <code>&quot;layout&quot;: &quot;artwork&quot;</code> — so the cell gets the artwork as <code>layout/artwork.clay</code>
+and the <code>.cem</code> naming it, and opens ready for an EM run.</li>
+</ol>
+<h2 id="compiled">Writing a plugin in C# (or any compiled language)</h2>
+<p>Nothing about a plugin is Python-specific. A compiled program needs the frame, the messages on this page, and a <code>run</code>
+entry per platform. <code>tools/plugin-examples/csharp-window/</code> is a complete one: a C# program with its own Avalonia window,
+published with NativeAOT to one native program per platform, with a headless form. It is the template for an author
+who already has a .NET desktop tool and wants it to place cells instead of exporting interchange files.</p>
+<h3 id="the-frame-byte-by-byte">The frame, byte by byte</h3>
+<p>The answer to <code>hello</code> — <code>{&quot;type&quot;:&quot;hello&quot;,&quot;apiVersion&quot;:1}</code>, 31 bytes of JSON, no payload:</p>
+<pre><code>00000000: 1f 00 00 00  00 00 00 00  7b 22 74 79 70 65 22 3a   ........{&quot;type&quot;:
+00000010: 22 68 65 6c  6c 6f 22 2c  22 61 70 69 56 65 72 73   &quot;hello&quot;,&quot;apiVers
+00000020: 69 6f 6e 22  3a 31 7d                               ion&quot;:1}
+</code></pre>
+<p><code>1f 00 00 00</code> is jsonLen = 31, little-endian; <code>00 00 00 00</code> is binLen = 0. A frame with a payload —
+<code>{&quot;type&quot;:&quot;reply&quot;,&quot;id&quot;:2}</code> (23 bytes) carrying the two int64 values 1000 and −500:</p>
+<pre><code>00000000: 17 00 00 00  10 00 00 00  7b 22 74 79 70 65 22 3a   jsonLen 23, binLen 16
+00000010: 22 72 65 70  6c 79 22 2c  22 69 64 22 3a 32 7d e8   ...&quot;id&quot;:2}  then 1000 = e8 03 00 00 00 00 00 00
+00000020: 03 00 00 00  00 00 00 0c  fe ff ff ff ff ff ff      -500 = 0c fe ff ff ff ff ff ff
+</code></pre>
+<p>The JSON is UTF-8; non-ASCII text such as <code>Ω</code> may be written as UTF-8 or escaped (<code>Ω</code>).</p>
+<h3 id="run-per-platform"><code>run</code>, per platform</h3>
+<p>A compiled plugin ships one program per runtime identifier it supports, each in its own folder, and names them in
+<code>run</code>:</p>
+<pre><code class="language-json">&quot;run&quot;: {
+  &quot;win-x64&quot;:   { &quot;exe&quot;: &quot;bin/win-x64/line-section.exe&quot; },
+  &quot;win-arm64&quot;: { &quot;exe&quot;: &quot;bin/win-arm64/line-section.exe&quot; },
+  &quot;osx-arm64&quot;: { &quot;exe&quot;: &quot;bin/osx-arm64/line-section&quot; },
+  &quot;osx-x64&quot;:   { &quot;exe&quot;: &quot;bin/osx-x64/line-section&quot; },
+  &quot;linux-x64&quot;: { &quot;exe&quot;: &quot;bin/linux-x64/line-section&quot; }
+}
+</code></pre>
+<p>A platform you leave out lists the plugin dimmed there, saying why. A native library your program loads (a UI
+toolkit's, say) sits beside it in the same folder.</p>
+<h3 id="window-or-panel"><code>window</code> or <code>panel</code>?</h3>
+<p><strong>A panel is the default choice even in C#</strong>: circuitRF draws it, it looks like the rest of the application, and it
+runs headless for free. Your program is then a loop that answers <code>update</code> and <code>commit</code>. Choose <strong><code>window</code></strong> when the tool
+already has a window you want to keep, or needs interaction the panel vocabulary cannot express (a live tuner, a drawing
+editor, an instrument front panel). A window plugin should also have a <strong>headless form</strong> (<a href="#window">above</a>), or it
+cannot run from the command line or an agent.</p>
+<h3 id="nativeaots-two-traps">NativeAOT's two traps</h3>
+<p>NativeAOT compiles your program to one native executable with no .NET runtime to install, which is what a plugin
+wants. Two things go wrong silently:</p>
+<ol>
+<li><strong>Reflection-based JSON is trimmed away.</strong> <code>JsonSerializer.Serialize(obj)</code> without type information compiles, runs
+under <code>dotnet run</code>, and throws at run time in the published program — on the first message. Use <strong>System.Text.Json
+source generation</strong>: declare your message types on a <code>JsonSerializerContext</code> and pass its type info to every call.
+(Reading with <code>JsonDocument</code> and writing with <code>Utf8JsonWriter</code> is AOT-safe too, and simpler for passing an object
+such as the substrate straight through.) Set <code>IsAotCompatible</code> in the project so the build warns about anything
+else that would be trimmed.</li>
+<li><strong>NativeAOT cannot cross operating systems.</strong> It links with the platform's own native toolchain (Xcode's
+command-line tools on macOS; clang on Linux; Visual Studio's C++ workload on Windows), so each operating system's
+programs are published <strong>on that operating system</strong>. Cross-architecture on the same OS (arm64 → x64 on macOS) works.
+A <code>run</code> entry with no program behind it fails for whoever installs it, not for you: publish every RID you list.</li>
+</ol>
+<h3 id="a-walk-through-csharp-window">A walk through <code>csharp-window/</code></h3>
+<p>It makes a microstrip line section of a given impedance and electrical length. Every file stands on its own:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Frame.cs</code></td>
+<td>The frame codec, BCL only, written to be copied into another program unchanged: little-endian header and payload, partial reads looped, a clean end of stream between frames returned as null, and a stream ending inside a frame an error</td>
+</tr>
+<tr>
+<td><code>Protocol.cs</code></td>
+<td>The messages as classes on a source-generated <code>JsonSerializerContext</code> (<code>PluginJson</code>); <code>ReadHello</code>; one background reader thread; <code>AskAsync</code>, which sends a message with an id and completes when circuitRF's answer with that id arrives; <code>ResolveAsync</code> and <code>LineModelAsync</code></td>
+</tr>
+<tr>
+<td><code>LineSection.cs</code></td>
+<td>The deterministic part: the parameters and circuitRF's line model in, the three documents out. A secant search on ln(width) finds the impedance, the width is rounded to a whole DBU, and length = (degrees/360) · c / (f · √εeff). Both the window and the headless form call it, so they stage identical bytes</td>
+</tr>
+<tr>
+<td><code>MainWindow.cs</code></td>
+<td>An Avalonia window built in code (no XAML): a conductor picker, frequency, impedance and electrical length, <strong>Place in workspace</strong> (<code>placed</code>), <strong>Open in circuitRF</strong> (<code>open</code> for the placed <code>.clay</code>) and a status line. Every message is awaited, so the UI thread never waits on the pipe</td>
+</tr>
+<tr>
+<td><code>Program.cs</code></td>
+<td><code>Main</code> keeps stdout for frames and points <code>Console.Out</code> at stderr <strong>before anything else runs</strong> (the C# version of the helper's print redirect), reads <code>hello</code>, and opens the window or runs the headless form by <code>mode</code></td>
+</tr>
+<tr>
+<td><code>plugin.json</code></td>
+<td><code>kind: window</code>, the parameters of the headless form (including <code>substrate</code>) and its readouts, and a <code>run</code> entry per RID</td>
+</tr>
+<tr>
+<td><code>publish.sh</code>, <code>publish.ps1</code></td>
+<td>One <code>dotnet publish -c Release -r &lt;rid&gt; -p:PublishAot=true -o bin/&lt;rid&gt;</code> per RID; each refuses a RID of another operating system rather than skipping it</td>
+</tr>
+<tr>
+<td><code>LineSection.csproj</code></td>
+<td><code>net10.0</code>, <code>IsAotCompatible</code>, <code>InvariantGlobalization</code>, and Avalonia. It references nothing in the circuitRF repository; empty <code>Directory.Build.props</code>/<code>.targets</code> beside it stop MSBuild reading the repository's own</td>
+</tr>
+</tbody>
+</table>
+<p>The window asks <code>resolve</code> (no name) for the workspace's default technology and offers its signal conductors. As the
+user types, it asks <code>lineModel</code> for each width the search tries. <strong>Place in workspace</strong> stages <code>line.clay</code> (the
+rectangle, and a port label at each end facing into the line), <code>line.cnl</code> (an ideal line of circuitRF's modelled
+impedance and εeff between two ports) and <code>line.cem</code> (naming <code>line.clay</code>, both ports at the line's impedance), then
+sends <code>placed</code>. Headless, the same code answers <code>update</code> with the width, length, εeff and modelled impedance as
+readouts, and <code>commit</code> with <code>placed</code>.</p>
+<p><strong>To make it yours:</strong> rename the project, <code>AssemblyName</code>, <code>id</code> and the <code>run</code> paths; replace <code>LineSection.cs</code> with your
+tool's computation (keep it a function of its inputs); replace <code>MainWindow.cs</code>'s controls with your own window; keep
+<code>Frame.cs</code> and the message classes as they are, adding a class to <code>PluginJson</code> for each new message you send.</p>
+<h2 id="rules">The rules circuitRF enforces</h2>
+<ul>
+<li><strong>Write only into the staging folder.</strong> A file named outside it, in <code>placed</code> or a view, is refused. Placement is the
+only way into the workspace.</li>
+<li><strong>stdout carries frames only.</strong> Anything else ends the session with a protocol error.</li>
+<li><strong>Answer every request</strong>, within its deadline, with the id it carried, by the type expected (<code>reply</code>, or <code>placed</code> for
+<code>commit</code>). An answer to an id you were never sent is a protocol error.</li>
+<li><strong>Exit within 2 s of <code>bye</code></strong>, or the process and everything it started is killed.</li>
+<li><strong>Be deterministic</strong>: the same parameters, the same reply and the same staged bytes.</li>
+<li><strong>No network access unless a parameter or button says so</strong>, and no background process that outlives yours.</li>
+</ul>
+<p>A plugin that crashes, hangs, writes garbage or never answers leaves circuitRF responsive; the panel says what happened
+and shows your stderr.</p>
+<h2 id="testing">Testing a plugin</h2>
+<ul>
+<li><strong>Link Folder…</strong> (Settings ▸ Plugins) runs your folder in place and re-reads the manifest on every start: edit, close
+the panel, open it again. Allow it once.</li>
+<li><strong>Keep staging</strong> (a check box on an action plugin's dialog) keeps the staging folder after the run and names it in
+Messages, so you can read what your plugin wrote.</li>
+<li><strong><code>circuitRF check plugin.json</code></strong> (or the folder) reports every manifest error with the field it is in, including the
+panel's layout tree.</li>
+<li><strong><code>circuitRF plugin describe &lt;id&gt;</code></strong> shows the manifest as circuitRF read it, and how it will run on this machine.</li>
+<li><strong><code>circuitRF plugin run &lt;id&gt; --set name=value … --workspace &lt;ws&gt; -o &lt;dir&gt;</code></strong> sends <code>hello</code> (<code>mode: headless</code>) and one
+<code>update</code>, and writes every view as a file: a plot as its data and a <code>.cdd</code>, a layout as a <code>.clay</code>, a schematic as its
+<code>.cnl</code>, a table as CSV, the readouts as <code>readouts.json</code> (also printed). Your messages go to stderr, with the last five
+lines of your own stderr when you fail or reply with an error.
+<ul>
+<li><strong><code>--workspace</code></strong> is the workspace parameters resolve against. A <code>substrate</code>, <code>technology</code>, <code>cell</code> or <code>result</code>
+parameter needs one.</li>
+<li><strong><code>--set</code></strong> takes what the panel's box takes: a quantity with or without a prefix or unit, a choice's option, and a
+substrate as <code>&quot;Top Copper (1 oz) : tech/board.ctech&quot;</code> or just its conductor's name when that names one. A
+parameter you leave out starts where the panel starts it. An unknown name or a value out of range is refused,
+listing what is allowed.</li>
+<li><strong><code>--place &lt;workspace&gt;</code></strong> then sends <code>commit</code> and places what you stage — the same placement the panel's button
+does. <code>--cell &lt;name&gt;</code> names the cell; a name that is taken is refused unless you add <code>--replace</code> or
+<code>--new-name &lt;name&gt;</code>.</li>
+<li>Exit code 0; 1 for a refusal, an error message from your plugin, or a failure; 130 when cancelled.</li>
+<li>Your stderr is not shown when a run succeeds. To look at what circuitRF sent you while developing, put it in a
+readout: it is printed and written to <code>readouts.json</code>.</li>
+</ul>
+</li>
+<li><code>CRF_PLUGIN_PATH</code> (folders separated by <code>:</code> on macOS and Linux, <code>;</code> on Windows) links plugin folders for one run of
+circuitRF, without touching Settings.</li>
+</ul>
+<p>The command line cannot grant permission: allow the plugin once in the window, and <code>plugin run</code> uses that permission.</p>
+<h2 id="vetted">Getting a plugin on the list</h2>
+<p>circuitRF's Settings ▸ Plugins lists the plugins in <code>plugins/index.json</code> in the circuitRF repository. <strong>A version is
+vetted, not a plugin</strong>: each release goes on the list by its own pull request.</p>
+<ol>
+<li><strong>Release it</strong> from your repository with a tag (<code>v0.3.0</code>) and a zip asset holding the plugin folder — <code>plugin.json</code>
+at the top of the zip, or in one folder at its top. Leave out your build folders (<code>bin/</code>, <code>obj/</code> of a project kept
+inside the plugin folder): ship only what <code>run</code> names and what it loads. One zip for every platform is named in the list as <code>any</code>; or one
+zip per runtime identifier. Build each zip with a tool that keeps Unix permissions (<code>zip -r</code> on macOS or Linux), or a
+native program arrives without its execute bit and cannot start.</li>
+<li><strong>Take its SHA-256</strong>: <code>shasum -a 256 plugin-0.3.0.zip</code> (macOS, Linux) or <code>Get-FileHash plugin-0.3.0.zip</code> (Windows).</li>
+<li><strong>Open a pull request</strong> to circuitRF adding your version to <code>plugins/index.json</code>:</li>
+</ol>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;yourname.coupled-filter&quot;,
+  &quot;name&quot;: &quot;Coupled-Line Filter&quot;,
+  &quot;summary&quot;: &quot;Edge-coupled bandpass filters on a microstrip substrate.&quot;,
+  &quot;repo&quot;: &quot;https://github.com/yourname/crf-coupled-filter&quot;,
+  &quot;versions&quot;: [
+    { &quot;version&quot;: &quot;0.3.0&quot;, &quot;tag&quot;: &quot;v0.3.0&quot;, &quot;minCircuitRF&quot;: &quot;1.8.0&quot;, &quot;apiVersion&quot;: 1,
+      &quot;assets&quot;: { &quot;any&quot;: { &quot;url&quot;: &quot;https://github.com/yourname/crf-coupled-filter/releases/download/v0.3.0/plugin-0.3.0.zip&quot;,
+                           &quot;sha256&quot;: &quot;…&quot; } },
+      &quot;reviewed&quot;: &quot;&quot; }
+  ]
+}
+</code></pre>
+<p>Asset URLs must be on <code>github.com</code>. circuitRF checks the download against <code>sha256</code> before unpacking anything.</p>
+<p><strong>What the review checks</strong>:</p>
+<ul>
+<li>the release asset is built from the tagged source, and the source is readable;</li>
+<li>it writes only into its staging folder;</li>
+<li>it reaches the network only when a parameter or button says so;</li>
+<li>it starts no background process that outlives it;</li>
+<li>it names no commercial EDA tool or design kit, in code, manifest or text;</li>
+<li>its licence is stated.</li>
+</ul>
+<p>Being on the list means <strong>that version</strong> was reviewed. It is not an endorsement of the author or of later versions.</p>
+<h2 id="which">Plugin, PCell, or pull request?</h2>
+<table>
+<thead>
+<tr>
+<th>If the tool…</th>
+<th>It is a…</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>is one parameterised layout cell that should stay live in a layout</td>
+<td><strong>PCell</strong> (<a href="pcells.html">PCells</a>)</td>
+</tr>
+<tr>
+<td>is a device model</td>
+<td><strong>external device or Verilog-A</strong> (<a href="veriloga.html">Verilog-A</a>)</td>
+</tr>
+<tr>
+<td>synthesises, calculates, imports or reports, and its author wants to own it</td>
+<td><strong>plugin</strong></td>
+</tr>
+<tr>
+<td>is broadly useful, maintained, and fits circuitRF's standards</td>
+<td><strong>pull request</strong>, often after it proved itself as a plugin</td>
+</tr>
+</tbody>
+</table>
+
+<nav class="page-nav">
+  <a class="prev" href="plugins.html"><span class="dir">Previous</span><span class="name">Using Plugins</span></a>
+  <a class="next" href="chain-budget.html"><span class="dir">Next</span><span class="name">RF Chain Budget</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>
