@@ -788,6 +788,7 @@ public static class PlanarFarField
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
+        mesh.EnsureNoBlocks("the far field");   // PMS-4 — refused by name until it reads blocks
 
         var g  = grid ?? PlanarFarFieldGrid.Hemisphere();
         var ok = CanCompute(problem, mesh, fHz, g);

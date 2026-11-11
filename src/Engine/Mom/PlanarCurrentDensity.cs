@@ -147,6 +147,7 @@ public static class PlanarCurrentDensity
         PlanarMesh mesh, Vec<Complex> basisCurrents, int drivenPortNumber, double fHz)
     {
         ArgumentNullException.ThrowIfNull(mesh);
+        mesh.EnsureNoBlocks("the current-density map");   // PMS-4 — refused by name until it reads blocks
         if (basisCurrents.Count != mesh.Bases.Count)
             throw new ArgumentException(
                 $"The solution has {basisCurrents.Count} unknowns and the mesh has " +

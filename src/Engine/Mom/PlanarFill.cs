@@ -1096,6 +1096,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
+        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
         // Every fill in the engine passes through here, so this is the one place the settings
         // have to be sound — see PlanarFillSettings.Validate for why each check exists.
         (settings ?? PlanarFillSettings.Default).Validate();
@@ -1267,6 +1268,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCoresByPairs(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
+        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
@@ -1377,6 +1379,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildGeometryOnlyCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
+        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
@@ -1458,6 +1461,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCoresByHalves(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
+        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;

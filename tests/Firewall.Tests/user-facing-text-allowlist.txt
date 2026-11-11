@@ -1613,3 +1613,5 @@ src/RfCore/NetworkInverse.cs|The two networks resonate against each other at the
 # brief-plg-5: internal invariants of the embedded plugin contract (a build that lost the resource or its headings).
 src/Design/Plugins/PluginReference.cs|Embedded resource \"{ResourceName}\" not found.
 src/Design/Plugins/PluginReference.cs|docs/design/plugins.md no longer has its §3 and §9 headings.
+# brief-pms-4: an internal invariant of the local grid's step supports (a caller handing it a cut cell).
+src/Engine/Mom/PlanarLocalGrid.cs|A cut cell's support is not a rectangle; use PlanarBasisFunctions.Supports.

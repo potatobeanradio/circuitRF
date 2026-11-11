@@ -182,6 +182,7 @@ public sealed record PlanarNearFieldEstimate(
                                               CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(mesh);
+        mesh.EnsureNoBlocks("the accelerated solve's estimate");   // PMS-4 — refused by name until it reads blocks
         var st = aim ?? PlanarAimSettings.Default;
         var bases = mesh.Bases;
         int nh = 0;

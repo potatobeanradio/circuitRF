@@ -2054,6 +2054,7 @@ public static class PlanarSolve
         ArgumentNullException.ThrowIfNull(ports);
         ArgumentNullException.ThrowIfNull(freqsHz);
         if (freqsHz.Count == 0) throw new ArgumentException("A sweep needs at least one frequency.", nameof(freqsHz));
+        mesh.EnsureNoBlocks("the solve");   // PMS-4 — refused by name until the fill reads blocks
 
         var st    = settings ?? PlanarSolveSettings.Default;
         var fmt   = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;

@@ -548,7 +548,9 @@ public static class EmSnpProvenance
              // PM-2 — omitted while off, so every .snp stamped before the flag existed stays current.
              + (m.RooftopMerging ? "|merge=True" : "")
              // PMS-3 — omitted while off, for the same reason.
-             + (m.StackedRegions ? "|stacked=True" : ""));
+             + (m.StackedRegions ? "|stacked=True" : "")
+             // PMS-4 — omitted while off, for the same reason.
+             + (m.LocalGrid ? "|local=True" : ""));
 
     /// <summary>
     /// A port's identity for staleness purposes is its number, its POSITION, its inferred side and

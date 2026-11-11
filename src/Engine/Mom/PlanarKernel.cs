@@ -289,6 +289,8 @@ public sealed class PlanarKernel
                           lengthFormat: lengthFormat, ports: ports, leads: leads,
                           aimOn: st.Fill?.Aim is not null);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
+        // PMS-4 — a local-grid mesh is meshed and reported, and refused here until the fill reads blocks.
+        report.Mesh.EnsureNoBlocks("the solve");
 
         ct.ThrowIfCancellationRequested();
 
@@ -518,6 +520,7 @@ public sealed class PlanarKernel
                                 st0.Fill?.Aim is not null, meshed.RequiresGeneralKernel),
                             lengthFormat: lengthFormat, ports: ports, leads: heatLeads);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
+        report.Mesh.EnsureNoBlocks("the current-density map");
 
         var resolved = PlanarPorts.ResolveAll(report.Mesh, ports);
         int j = -1;

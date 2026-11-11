@@ -119,6 +119,13 @@ public sealed class CemPlanarMesh
     /// meshed as one conductor inside a rim. Omitted at its default (off), so a file written before it gains no byte.
     /// </summary>
     public bool? StackedRegions { get; set; }
+
+    /// <summary>
+    /// PMS-4 — <see cref="PlanarMeshSettings.LocalGrid"/>: each gridline is kept near the feature that asked for it, and
+    /// a cell is a block of the shared grid elsewhere. Omitted at its default (off), so a file written before it gains
+    /// no byte.
+    /// </summary>
+    public bool? LocalGrid { get; set; }
 }
 
 /// <summary>The solve region, micrometres in layout coordinates. See <see cref="EmSolveRegion"/>.</summary>
@@ -1717,6 +1724,8 @@ public static class EmSetupPersistence
                                  ? null : s.PlanarMesh.RooftopMerging,
             StackedRegions = s.PlanarMesh.StackedRegions == EmSetup.DefaultPlanarMesh.StackedRegions
                                  ? null : s.PlanarMesh.StackedRegions,
+            LocalGrid = s.PlanarMesh.LocalGrid == EmSetup.DefaultPlanarMesh.LocalGrid
+                            ? null : s.PlanarMesh.LocalGrid,
         },
         Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
         Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
@@ -1834,7 +1843,8 @@ public static class EmSetupPersistence
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
                                      null,
                                      pm.RooftopMerging ?? EmSetup.DefaultPlanarMesh.RooftopMerging,
-                                     pm.StackedRegions ?? EmSetup.DefaultPlanarMesh.StackedRegions)
+                                     pm.StackedRegions ?? EmSetup.DefaultPlanarMesh.StackedRegions,
+                                     pm.LocalGrid ?? EmSetup.DefaultPlanarMesh.LocalGrid)
             : EmSetup.DefaultPlanarMesh,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,

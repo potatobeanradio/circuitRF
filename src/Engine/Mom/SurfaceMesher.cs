@@ -482,6 +482,9 @@ public static class SurfaceMesher
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
+        // PMS-4 — the local grid is decided from the lines' own provenance, so it needs the instrument PMS-2 built; it
+        // is filled and never read by the grid itself, so the lines are identical whoever supplies it.
+        var gridDiag = gridDiagnostics ?? (s.LocalGrid ? new PlanarGridDiagnostics() : null);
         double edgeCap = double.IsNaN(edgeRefinementCap)
             ? PlanarMeshSettings.MaxEdgeRefinement
             : edgeRefinementCap;
@@ -678,7 +681,7 @@ public static class SurfaceMesher
         var (hardX, hardY, attractX, attractY, staircased, reentrantCorners) =
             CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor,
                                  reentrantFans: s.EdgeMesh && s.EdgeCells > 0,
-                                 diag: gridDiagnostics, ports: ports);
+                                 diag: gridDiag, ports: ports);
 
         // brief-port-width-planar-and-c3d R-pw1-1 — an edge port narrower than its edge is cut on cell boundaries: a hard
         // gridline at each end of its span, across the port's current. A span-width feed lead (PlanarFeedExtension)
@@ -695,7 +698,7 @@ public static class SurfaceMesher
                             // PMS-2 — the span line serves the port's own neighbourhood: one span width either side.
                             double w = sp.HiM - sp.LoM;
                             double along = p.Direction == PlanarBasisDirection.X ? p.Location.X : p.Location.Y;
-                            (p.Direction == PlanarBasisDirection.X ? gridDiagnostics?.Y : gridDiagnostics?.X)
+                            (p.Direction == PlanarBasisDirection.X ? gridDiag?.Y : gridDiag?.X)
                                 ?.HardOrigins.Add(new(t, PlanarGridLineSource.PortSpan, along - w, along + w, -1));
                         }
                 }
@@ -871,15 +874,15 @@ public static class SurfaceMesher
         double[] gy = BuildGridLines(y0, y1, hardY, gradedY, hMaxY, anyGrowthY, pitch?.AtY);
 
         // PMS-2 R-pms2-2 — attribute every final line. Reads what the grid was built from and writes nothing back.
-        if (gridDiagnostics is not null)
+        if (gridDiag is not null)
         {
-            gridDiagnostics.DetailFloorM = detailFloor;
-            gridDiagnostics.PitchField = pitch is not null;
+            gridDiag.DetailFloorM = detailFloor;
+            gridDiag.PitchField = pitch is not null;
             double CapX(double v) => pitch is null ? hMaxX : Math.Min(hMaxX, pitch.AtX(v));
             double CapY(double v) => pitch is null ? hMaxY : Math.Min(hMaxY, pitch.AtY(v));
-            gridDiagnostics.AttributeAxis(gridDiagnostics.X, gx, CapX, gradedX, attractX, anyGrowthX,
+            gridDiag.AttributeAxis(gridDiag.X, gx, CapX, gradedX, attractX, anyGrowthX,
                                           hWave, narrowX / s.MinCellsAcrossConductor, hMaxX);
-            gridDiagnostics.AttributeAxis(gridDiagnostics.Y, gy, CapY, gradedY, attractY, anyGrowthY,
+            gridDiag.AttributeAxis(gridDiag.Y, gy, CapY, gradedY, attractY, anyGrowthY,
                                           hWave, narrowY / s.MinCellsAcrossConductor, hMaxY);
         }
 
@@ -1020,9 +1023,44 @@ public static class SurfaceMesher
             cells.AddRange(kept);
         }
 
+        // ── PMS-4 — THE LOCAL GRID: today's cells, coarsened into blocks where no line inside is needed ────────────
+        //
+        // Decided on the cells the tensor grid just built (after any stacked region), so a block is a union of whole
+        // elementary cells and tiles exactly what they tile. Off, nothing here runs and every line below is the
+        // tensor grid's own path.
+        PlanarLocalGridResult? local = null;
+        if (s.LocalGrid)
+        {
+            control?.SetStageLabel("coarsening the grid away from the features");
+            local = PlanarLocalGrid.Coarsen(new PlanarLocalGrid.Inputs(
+                    problem, gx, gy, gridDiag!,
+                    CapX: v => pitch is null ? hWave : pitch.AtX(v),
+                    CapY: v => pitch is null ? hWave : pitch.AtY(v),
+                    BaseStepX: pitch is null ? hWave : pitch.MaxPitchX,
+                    BaseStepY: pitch is null ? hWave : pitch.MaxPitchY,
+                    DetailFloorM: detailFloor,
+                    MinCellsAcross: s.MinCellsAcrossConductor,
+                    Reach: s.LocalReachCells,
+                    Balance: s.LocalGridBalance,
+                    ForceElementary: s.LocalGridForceElementary,
+                    Ports: ports,
+                    Footprints: footprints),
+                cells, cellAtPerLayer, control);
+            Array.Clear(perLayerCells);
+            foreach (var c in cells) perLayerCells[c.LayerIndex]++;
+        }
+
         for (int li = 0; li < problem.Layers.Count; li++)
         {
             var cellAt = cellAtPerLayer[li];
+
+            if (local is not null)
+            {
+                int first = bases.Count;
+                LocalGridRooftops(li, cellAt, cells, gx, gy, nx, ny, mergedAfterLayer[li] > 0, conformal, bases);
+                perLayerUnknowns[li] = bases.Count - first;
+                continue;
+            }
 
             // R-msh-6: N is the number of SHARED INTERNAL EDGES — one rooftop per adjacent pair.
             //
@@ -1122,6 +1160,9 @@ public static class SurfaceMesher
                 for (int ix = rx0; ix <= rx1; ix++)
                 {
                     if (rowMark[ix] != stamp) continue;
+                    // PMS-4 — one vertical basis per BLOCK, emitted at its low corner, so the order is (via, IY0, IX0)
+                    // and the two feet are the same block on both levels. Every position of a block is covered alike.
+                    if (local is not null && !local.IsCorner(iy * nx + ix, nx)) continue;
 
                     viaFootprintCells++;
                     // PMS-3 — a stacked region's interior carries no vertical basis: its levels are one sheet there.
@@ -1208,9 +1249,13 @@ public static class SurfaceMesher
         // Nothing above this line reads the flag, so the cells, the elemental rooftops and every
         // gridline are the ones it off produces; only the unknown count the verdict is asked of
         // changes. Dense and single-level only — see PlanarRooftopMerge's header.
+        bool hasBlocks = local is not null && mesh.HasBlocks;
         if (s.RooftopMerging)
         {
-            if (accel)
+            if (hasBlocks)
+                notes.Add("Rooftop merging is on but was not applied: this mesh is on the local grid, which already " +
+                          "coarsens where the size field allows.");
+            else if (accel)
                 notes.Add("Rooftop merging is on but was not applied: it is for the DENSE solve, and " +
                           "this setup uses the accelerated one. Turn the accelerated solve off to use it.");
             else if (!PlanarRooftopMerge.CanApplyTo(problem))
@@ -1256,7 +1301,9 @@ public static class SurfaceMesher
         }
         if (cells.Count == 0) { minEdge = 0; maxEdge = 0; }
 
-        int across = MinCellsAcrossRun(mesh, nx, ny, problem.Layers.Count);
+        int across = local is null
+            ? MinCellsAcrossRun(mesh, nx, ny, problem.Layers.Count)
+            : MinBlocksAcrossRun(cellAtPerLayer, nx, ny);
 
         // ── The notes a user would otherwise have to guess at ─────────────────────────────────
         if (double.IsInfinity(lambdaG))
@@ -1641,7 +1688,8 @@ public static class SurfaceMesher
         // stands in for the bytes quoted beside it.
         bool pastWithNoCores = limit is not null && !accel
             && n > CeilingFor(false, limit, new PlanarCoreFootprint(cells.Count, 0, 0, 2, 0, Counted: false));
-        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null || pastWithNoCores
+        // PMS-4 — a block mesh's cores are not yet counted (the fill does not read blocks), so they are estimated.
+        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null || pastWithNoCores || hasBlocks
             ? PlanarCoreFootprint.Estimate(n, cells.Count)
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
         if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);
@@ -1652,7 +1700,7 @@ public static class SurfaceMesher
         // the dense bytes, so they also say what the accelerated operator this run actually builds holds — its own
         // estimate, from the near set it will factor (PlanarNearFieldEstimate) — or a run the accelerator holds in
         // well under a gigabyte reads as needing tens.
-        PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && problem.Slab.HeightM > 0
+        PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && !hasBlocks && problem.Slab.HeightM > 0
             ? PlanarNearFieldEstimate.For(mesh, problem.Slab.HeightM, null, control?.Token ?? default)
             : null;
         var verdict = pastMachine ? PlanarBudgetVerdict.Warn
@@ -1677,6 +1725,20 @@ public static class SurfaceMesher
                       $"({stacked.SavedRooftops:N0} rooftops, {stacked.SavedVertical:N0} vertical): " +
                       $"{stacked.Regions:N0} via-joined region(s), {stacked.AreaM2 * 1e12:N0} µm², carry metal on " +
                       "every joined level throughout.";
+        // PMS-4 R-pms4-3 — the local grid's own count beside the budget's cells and unknowns.
+        int steps = local is null ? 0 : RefinementSteps(mesh);
+        if (local is not null)
+        {
+            budget += $" Local grid: {local.CoarseBlocks:N0} of {local.Blocks:N0} block(s) coarser than one grid cell, " +
+                      $"{steps:N0} refinement step(s) (faces meeting more than one neighbour).";
+            notes.Add($"The grid is local: each gridline is kept within {s.LocalReachCells} cell(s) of the feature that " +
+                      "asked for it and wherever the size field needs it, and elsewhere a cell is a block of the shared " +
+                      $"grid. Where they cross metal, on average {local.ActiveFractionX * (gx.Length - 2):N0} of the " +
+                      $"{Math.Max(gx.Length - 2, 0):N0} candidate x-lines and {local.ActiveFractionY * (gy.Length - 2):N0} " +
+                      $"of the {Math.Max(gy.Length - 2, 0):N0} y-lines are active ({local.ActiveFractionX:P0} / " +
+                      $"{local.ActiveFractionY:P0})." +
+                      (hasBlocks ? " The solve cannot read a block mesh yet; it is shown so the grid can be seen." : ""));
+        }
         notes.Insert(0, budget);
 
         string? refusal = null;
@@ -1766,6 +1828,11 @@ public static class SurfaceMesher
             MatrixAlonePastLimit = pastWithNoCores,
             StackedRegionCount  = stacked?.Regions ?? 0,
             StackedUnknownsSaved = stackApplied ? stacked!.SavedRooftops + stackedVertical : stacked?.SavedUnknowns ?? 0,
+            LocalGrid           = local is not null,
+            RefinementSteps     = steps,
+            LocalGridBlocks     = local?.Blocks ?? 0,
+            ActiveLineFractionX = local?.ActiveFractionX ?? 1.0,
+            ActiveLineFractionY = local?.ActiveFractionY ?? 1.0,
             AcceleratedEstimate = aimEstimate,
             CoreBytes           = limit is null ? 0 : coreFootprint.Value.Bytes,
         };
@@ -3787,6 +3854,75 @@ public static class SurfaceMesher
         return Math.Max(1, (int)Math.Round(Math.Log(hMax / c0) / Math.Log(ratio)));
     }
 
+    // ── PMS-4: rooftops on the local grid ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <b>D-pms4-4 / D-pms4-5 — one rooftop per face SEGMENT</b>: a maximal run of positions along a shared gridline with
+    /// the same cell on each side. Emitted at the segment's low end, scanning positions in (IY, IX) order, X face before
+    /// Y face — integers throughout, and exactly the tensor grid's own order when every block is 1 × 1 (each run is then
+    /// one position long and the merged-cell membership set is today's). A segment shorter than either cell's face is a
+    /// refinement step and carries its span (<see cref="PlanarBasis.SegmentLo"/>); a whole-face rooftop carries none.
+    /// </summary>
+    private static void LocalGridRooftops(int li, int[] cellAt, List<PlanarCell> cells, double[] gx, double[] gy,
+                                          int nx, int ny, bool merged, ConformalCounts conformal, List<PlanarBasis> bases)
+    {
+        var seen = merged ? new HashSet<(int, int, int)>() : null;   // membership only, never iterated (R-msh-2)
+        for (int iy = 0; iy < ny; iy++)
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int p = iy * nx + ix;
+                int a = cellAt[p];
+                if (a < 0) continue;
+
+                if (ix + 1 < nx && cellAt[p + 1] is var bx && bx >= 0 && bx != a
+                    && !(iy > 0 && cellAt[p - nx] == a && cellAt[p - nx + 1] == bx)
+                    && (seen is null || seen.Add((Math.Min(a, bx), Math.Max(a, bx), 0))))
+                {
+                    int k = iy + 1;
+                    while (k < ny && cellAt[k * nx + ix] == a && cellAt[k * nx + ix + 1] == bx) k++;
+                    if (FaceCarriesABasis(cells[a], cells[bx], PlanarBasisDirection.X, gx[ix + 1], conformal))
+                    {
+                        var ca = cells[a]; var cb = cells[bx];
+                        bool step = k - iy < ca.IY1 - ca.IY || k - iy < cb.IY1 - cb.IY;
+                        bases.Add(step
+                            ? new PlanarBasis(li, a, bx, PlanarBasisDirection.X) { SegmentLo = iy, SegmentHi = k }
+                            : new PlanarBasis(li, a, bx, PlanarBasisDirection.X));
+                    }
+                }
+                if (iy + 1 < ny && cellAt[p + nx] is var by && by >= 0 && by != a
+                    && !(ix > 0 && cellAt[p - 1] == a && cellAt[p - 1 + nx] == by)
+                    && (seen is null || seen.Add((Math.Min(a, by), Math.Max(a, by), 1))))
+                {
+                    int k = ix + 1;
+                    while (k < nx && cellAt[iy * nx + k] == a && cellAt[(iy + 1) * nx + k] == by) k++;
+                    if (FaceCarriesABasis(cells[a], cells[by], PlanarBasisDirection.Y, gy[iy + 1], conformal))
+                    {
+                        var ca = cells[a]; var cb = cells[by];
+                        bool step = k - ix < ca.IX1 - ca.IX || k - ix < cb.IX1 - cb.IX;
+                        bases.Add(step
+                            ? new PlanarBasis(li, a, by, PlanarBasisDirection.Y) { SegmentLo = ix, SegmentHi = k }
+                            : new PlanarBasis(li, a, by, PlanarBasisDirection.Y));
+                    }
+                }
+            }
+    }
+
+    /// <summary>PMS-4 — faces meeting more than one neighbour: one per (cell, side) that carries a step rooftop.</summary>
+    private static int RefinementSteps(PlanarMesh mesh)
+    {
+        var faces = new HashSet<(int Cell, int Side)>();   // counted, never iterated
+        foreach (var b in mesh.Bases)
+        {
+            if (!b.IsSegment) continue;
+            var ca = mesh.Cells[b.CellA]; var cb = mesh.Cells[b.CellB];
+            int len = b.SegmentHi - b.SegmentLo;
+            bool x = b.Direction == PlanarBasisDirection.X;
+            if ((x ? ca.IY1 - ca.IY : ca.IX1 - ca.IX) > len) faces.Add((b.CellA, x ? 0 : 1));
+            if ((x ? cb.IY1 - cb.IY : cb.IX1 - cb.IX) > len) faces.Add((b.CellB, x ? 2 : 3));
+        }
+        return faces.Count;
+    }
+
     // ── Metrics ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -3822,6 +3958,39 @@ public static class SurfaceMesher
                     bool on = iy < ny && present[iy * nx + ix];
                     if (on) run++;
                     else { if (run > 0) best = Math.Min(best, run); run = 0; }
+                }
+            }
+        }
+        return best == int.MaxValue ? 0 : best;
+    }
+
+    /// <summary>PMS-4 — <see cref="MinCellsAcrossRun"/> on the local grid: the fewest CELLS (blocks) in any contiguous
+    /// run of metal along a grid row or column, a block counted once however many positions it spans.</summary>
+    private static int MinBlocksAcrossRun(int[][] cellAtPerLayer, int nx, int ny)
+    {
+        int best = int.MaxValue;
+        foreach (var at in cellAtPerLayer)
+        {
+            for (int iy = 0; iy < ny; iy++)
+            {
+                int run = 0, prev = -1;
+                for (int ix = 0; ix <= nx; ix++)
+                {
+                    int c = ix < nx ? at[iy * nx + ix] : -1;
+                    if (c >= 0) { if (c != prev) run++; }
+                    else if (run > 0) { best = Math.Min(best, run); run = 0; }
+                    prev = c;
+                }
+            }
+            for (int ix = 0; ix < nx; ix++)
+            {
+                int run = 0, prev = -1;
+                for (int iy = 0; iy <= ny; iy++)
+                {
+                    int c = iy < ny ? at[iy * nx + ix] : -1;
+                    if (c >= 0) { if (c != prev) run++; }
+                    else if (run > 0) { best = Math.Min(best, run); run = 0; }
+                    prev = c;
                 }
             }
         }

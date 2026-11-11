@@ -61,6 +61,23 @@ public sealed record PlanarCell(
     /// </summary>
     public int Stack { get; init; } = -1;
 
+    // PMS-4 — the block's high corner. Null on every cell a tensor grid makes, so a 1 × 1 cell is the record it always was
+    // (value equality, bit-identity gates) and only a coarsened block carries the two numbers.
+    private readonly int? _ix1, _iy1;
+
+    /// <summary>
+    /// <b>PMS-4 — the block's exclusive high corner in x</b>: the cell spans <c>GridX[IX] … GridX[IX1]</c>. A local-grid
+    /// cell is a BLOCK of the shared grid's elementary cells (D-pms4-1); every cell a tensor grid makes is the 1 × 1
+    /// case, <c>IX + 1</c>. <see cref="IX"/> / <see cref="IY"/> are the block's low corner.
+    /// </summary>
+    public int IX1 { get => _ix1 ?? IX + 1; init => _ix1 = value; }
+
+    /// <inheritdoc cref="IX1"/>
+    public int IY1 { get => _iy1 ?? IY + 1; init => _iy1 = value; }
+
+    /// <summary>PMS-4 — true when this cell is a block of more than one elementary cell of the shared grid.</summary>
+    public bool IsBlock => IX1 - IX > 1 || IY1 - IY > 1;
+
     /// <summary>The GRID rectangle's width — the quadrature's own frame and the λ_g cap's subject.
     /// <b>Not</b> the metal's extent when <see cref="Region"/> is set.</summary>
     public double Width   => XMax - XMin;
@@ -129,7 +146,23 @@ public enum PlanarBasisDirection
 /// than matching a sign in prose.</para>
 /// </param>
 public sealed record PlanarBasis(int LayerIndex, int CellA, int CellB, PlanarBasisDirection Direction,
-                                 bool AttachesToGround = false);
+                                 bool AttachesToGround = false)
+{
+    /// <summary>
+    /// <b>PMS-4 — a rooftop across a refinement step (D-pms4-4)</b>: the segment of the shared face this basis spans, as
+    /// gridline indices ACROSS the current — y lines for an x-directed basis, x lines for a y-directed one — or −1 when
+    /// the basis spans the whole face of both cells, which is every rooftop a tensor grid makes. Where a coarse cell's
+    /// face meets two finer faces there is one rooftop per fine face, and its half-support on the coarse side is the
+    /// strip of the coarse cell this segment spans (<see cref="PlanarLocalGrid.Supports"/>).
+    /// </summary>
+    public int SegmentLo { get; init; } = -1;
+
+    /// <inheritdoc cref="SegmentLo"/>
+    public int SegmentHi { get; init; } = -1;
+
+    /// <summary>PMS-4 — true when this rooftop spans part of a coarse cell's face rather than the whole of it.</summary>
+    public bool IsSegment => SegmentLo >= 0;
+}
 
 /// <summary>
 /// The surface mesh: one tensor-product grid shared by every conductor layer (D8), the cells of it
@@ -200,6 +233,34 @@ public sealed record PlanarMesh(
     public double? FilmSheetResistanceOf(PlanarCell cell)
         => cell.Film < 0 ? null : Films[cell.Film].SheetResistanceOhmPerSq;
 
+    /// <summary>
+    /// <b>PMS-4 — whether this mesh carries a local-grid block or a rooftop across a refinement step</b>, i.e. anything a
+    /// tensor-grid consumer would read wrongly. Every consumer not yet converted asks this and refuses with
+    /// <see cref="LocalGridRefusal"/>, by name, rather than reading a block as one elementary cell.
+    /// </summary>
+    public bool HasBlocks
+    {
+        get
+        {
+            foreach (var c in Cells) if (c.IsBlock) return true;
+            foreach (var b in Bases) if (b.IsSegment) return true;
+            return false;
+        }
+    }
+
+    /// <summary>PMS-4 — the one refusal sentence for a consumer that cannot yet read a local-grid mesh.</summary>
+    public static string LocalGridRefusal(string consumer)
+        => $"This mesh was built on the local grid (Local grid is on), and {consumer} cannot yet use one: its cells " +
+           "are blocks of the shared grid and some rooftops cross a refinement step. Turn Local grid off to solve; the " +
+           "mesh view and the unknown count are still shown.";
+
+    /// <summary>PMS-4 — throws <see cref="PlanarLocalGridRefusedException"/> naming <paramref name="consumer"/> when this
+    /// mesh <see cref="HasBlocks"/>.</summary>
+    public void EnsureNoBlocks(string consumer)
+    {
+        if (HasBlocks) throw new PlanarLocalGridRefusedException(consumer);
+    }
+
     /// <summary>The size of the matrix the DENSE path holds and factors — the merged count when
     /// <see cref="Merge"/> is set, the basis count otherwise. What every dense ceiling is asked of.</summary>
     public int SolvedUnknownCount => Merge?.Count ?? Bases.Count;
@@ -218,3 +279,14 @@ public sealed record PlanarMeshFilm(int LayerIndex, string Name, double SheetRes
 /// the region's interior. A cell naming it carries every one of those levels' sheets in parallel.
 /// </summary>
 public sealed record PlanarMeshStack(int LowerLayerIndex, int UpperLayerIndex, int KeptLayerIndex);
+
+/// <summary>
+/// <b>PMS-4 — a consumer was handed a local-grid mesh it cannot yet read.</b> A refusal, not an engine error: the mesh is
+/// sound, and turning Local grid off is the remedy. The message is <see cref="PlanarMesh.LocalGridRefusal"/>.
+/// </summary>
+public sealed class PlanarLocalGridRefusedException(string consumer)
+    : NotSupportedException(PlanarMesh.LocalGridRefusal(consumer))
+{
+    /// <summary>What refused — "the solve", "the current-density map", …</summary>
+    public string Consumer { get; } = consumer;
+}

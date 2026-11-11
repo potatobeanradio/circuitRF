@@ -172,6 +172,7 @@ public sealed class PlanarConductors
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
+        mesh.EnsureNoBlocks("the conduction check");   // PMS-4 — refused by name until it reads blocks
 
         var conn = Of(mesh);
 

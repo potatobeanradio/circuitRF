@@ -9142,3 +9142,20 @@ via's ground attachment was found to vanish with the level it landed on. And the
 one-cell rim (+2.6–3.0 % on a 63 mΩ path, 1.7e-5 in |ΔS|), which widening the rim closes. Fixture S: 941,867 → 524,066
 unknowns; with MIM capacitors 1,587,760 → 655,539. A1 stacked against full: 3.9e-5 / 1.9e-4 / 3.7e-4 at 1 / 5 / 10 GHz;
 the refined full reference the brief's tolerance needs was priced at 28.7 GB and not run. `RESOLVED.md` §PMS-3.
+
+---
+
+## PMS-4 — a locally refined shared grid: the mesher (2026-11-11)
+
+`PlanarMeshSettings.LocalGrid`, off by default. The shared gridlines are built exactly as before; a cell then becomes a
+block of the tensor grid's own cells wherever no line inside it is needed — PMS-2's estimator rules moved into
+`PlanarLocalGrid`, plus one the estimator lacked: a block must be homogeneous (whole cells of one film and stack on every
+level, every via covering all of it or none), so the tiling is the tensor grid's to the bit and oblique rims, cut and
+merged cells keep today's pitch. Rooftops are one per face segment, emitted in an integer order that is exactly today's
+when every block is 1 × 1 — gated bit-identical on eight fixtures, conformal and stacked included, and the off mesh
+bit-identical to the parent commit's. Fixture S at 1.4 mm: 941,867 → 150,770 unknowns (the estimator's 142,615; with
+square backside vias the two are equal cell for cell, so the 5–6 % gap is the octagonal rims). Port feeds are protected
+by a window rather than by the whole polygon, because an extracted polygon is a net. Nothing solves a block mesh yet:
+every unconverted consumer refuses it with one sentence, and the panel still shows the mesh and its count.
+`RESOLVED.md` §PMS-4.
+

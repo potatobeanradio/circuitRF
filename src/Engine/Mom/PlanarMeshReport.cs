@@ -199,6 +199,24 @@ public sealed record PlanarMeshReport(
     /// <summary>PMS-3 — the unknowns merging those regions removes (removed, when the setting is on).</summary>
     public int StackedUnknownsSaved { get; init; }
 
+    /// <summary><b>PMS-4 — this mesh was built on the local grid</b> (<see cref="PlanarMeshSettings.LocalGrid"/>). Its cells
+    /// may be blocks of the shared grid; <see cref="PlanarMesh.HasBlocks"/> says whether any is.</summary>
+    public bool LocalGrid { get; init; }
+
+    /// <summary>PMS-4 — faces meeting more than one neighbouring face on the local grid: the coarse side of every
+    /// refinement step, counted once per (cell, side). 0 on a tensor grid.</summary>
+    public int RefinementSteps { get; init; }
+
+    /// <summary>PMS-4 — the local grid's blocks, empty ones included; 0 on a tensor grid.</summary>
+    public int LocalGridBlocks { get; init; }
+
+    /// <summary>PMS-4 — of every crossing of an interior x-line with metal, the share where the line is a cell boundary
+    /// on the local grid. 1 on a tensor grid, where every line runs across the whole part.</summary>
+    public double ActiveLineFractionX { get; init; } = 1.0;
+
+    /// <summary>PMS-4 — <see cref="ActiveLineFractionX"/> for the y-lines.</summary>
+    public double ActiveLineFractionY { get; init; } = 1.0;
+
     /// <summary>
     /// <b>PMS-1 — the dense matrix ALONE is past the memory limit</b>: judged with cores of zero bytes, so no count of
     /// this mesh's cores and no pricing of its calibration standards can bring the run back under the limit. The

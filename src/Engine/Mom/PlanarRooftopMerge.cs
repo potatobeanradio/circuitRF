@@ -248,6 +248,7 @@ public sealed class PlanarRooftopMerge
                                            int portProtected = 0)
     {
         ArgumentNullException.ThrowIfNull(mesh);
+        mesh.EnsureNoBlocks("rooftop merging");   // PMS-4 — refused by name until it reads blocks
         var gx = mesh.GridX; var gy = mesh.GridY;
         int nx = gx.Count - 1, ny = gy.Count - 1, layers = mesh.LayerNames.Count;
         int cellCount = mesh.Cells.Count;

@@ -261,6 +261,15 @@ public enum PlanarCurrentModel
 /// before any rooftop is built, so R-msh-2 / R-via-5 hold on what remains. It changes the mesh, so it is hashed
 /// (when on) and does not survive as a resolution choice: it SURVIVES <see cref="Auto"/>.
 /// </param>
+/// <param name="LocalGrid">
+/// <b>PMS-4 — keep each gridline near the feature that asked for it.</b> Off by default (brief-pms-7 decides the
+/// default). The shared grid's lines are built exactly as before; a cell then becomes a BLOCK of its elementary cells
+/// wherever no line inside the block is needed — a hard line within <see cref="LocalReachCells"/> of its own feature,
+/// or a finer pitch the size field asks for there — with a 2:1 balance between neighbouring blocks and port feeds kept
+/// elementary. Every level shares the one partition, so a via's blocks still pair in z. It changes the mesh, so it is
+/// hashed (when on) and SURVIVES <see cref="Auto"/>. Until the fill reads blocks, a mesh with any block is refused by
+/// the solve (<see cref="PlanarMesh.LocalGridRefusal"/>); the mesh view and the unknown count work.
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
@@ -273,8 +282,33 @@ public sealed record PlanarMeshSettings(
     int  DetailFloorDivisor = 200,
     long? MemoryLimitBytes  = null,
     bool RooftopMerging     = false,
-    bool StackedRegions     = false)
+    bool StackedRegions     = false,
+    bool LocalGrid          = false)
 {
+    /// <summary>
+    /// <b>PMS-4 — how many elementary cells beyond its feature's own stretch a hard line, or an edge fan, stays needed
+    /// on the local grid.</b> Engine-only: no <c>.cem</c> key. Measured: see <c>RESOLVED.md</c> §PMS-4.
+    /// </summary>
+    public int LocalReachCells { get; init; } = DefaultLocalReachCells;
+
+    /// <summary>
+    /// <b>PMS-4 — the local grid's balance</b>: a cell face meets at most this many neighbouring faces on a level they
+    /// share. 2 is the 2:1 rule D-pms4-2 names. Engine-only: no <c>.cem</c> key. Measured: see <c>RESOLVED.md</c> §PMS-4.
+    /// </summary>
+    public int LocalGridBalance { get; init; } = DefaultLocalGridBalance;
+
+    /// <summary>
+    /// <b>PMS-4 — a test hook: every line is needed everywhere</b>, so every block is 1 × 1 and the local grid must
+    /// reproduce the tensor grid's cells, bases and order exactly (gate 1). Never a user control; no <c>.cem</c> key.
+    /// </summary>
+    public bool LocalGridForceElementary { get; init; }
+
+    /// <summary>PMS-4 — <see cref="LocalReachCells"/>' default.</summary>
+    public const int DefaultLocalReachCells = 2;
+
+    /// <summary>PMS-4 — <see cref="LocalGridBalance"/>' default.</summary>
+    public const int DefaultLocalGridBalance = 2;
+
     /// <summary>
     /// <b>PMS-3 — how many cells across, in BOTH axes, a stacked region must be before it is merged.</b> An ordinary
     /// post is a few cells and never qualifies. Engine-only: no <c>.cem</c> key.
@@ -504,9 +538,13 @@ public sealed record PlanarMeshSettings(
                                  DetailFloorDivisor: DetailFloorDivisor,
                                  MemoryLimitBytes: MemoryLimitBytes,
                                  RooftopMerging: RooftopMerging,
-                                 StackedRegions: StackedRegions)
+                                 StackedRegions: StackedRegions,
+                                 LocalGrid: LocalGrid)
           {
               MemoryLimitSource     = MemoryLimitSource,
+              LocalReachCells       = LocalReachCells,
+              LocalGridBalance      = LocalGridBalance,
+              LocalGridForceElementary = LocalGridForceElementary,
               StackedRegionMinCells = StackedRegionMinCells,
               StackedRegionRimCells = StackedRegionRimCells,
               StackedRegionParallelSheet = StackedRegionParallelSheet,
@@ -519,6 +557,8 @@ public sealed record PlanarMeshSettings(
             DetailFloorDivisor      = Math.Max(0, DetailFloorDivisor),
             StackedRegionMinCells   = Math.Max(3, StackedRegionMinCells),
             StackedRegionRimCells   = Math.Max(1, StackedRegionRimCells),
+            LocalReachCells         = Math.Max(0, LocalReachCells),
+            LocalGridBalance        = Math.Max(1, LocalGridBalance),
         };
 }
 

@@ -165,6 +165,7 @@ bool settingsGeneral = false;
 bool settingsSolvers = false;
 bool reviewRun = false;
 string? componentPortsCem = null;   // brief-lcp-4: --clay with a .cem's component ports drawn as the open .cem pushes them
+string? planarMeshCem = null;       // brief-pms-4: --clay with a .cem's planar mesh drawn on the canvas, as Mesh draws it
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? chainFile = null, chainBlocksPng = null;
@@ -327,6 +328,7 @@ for (int i = 0; i < args.Length; i++)
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
         case "--component-ports" when i + 1 < args.Length: componentPortsCem = Path.GetFullPath(args[++i]); break;
+        case "--planar-mesh" when i + 1 < args.Length: planarMeshCem = Path.GetFullPath(args[++i]); break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--layer-list": layerList = true; break;
@@ -835,6 +837,23 @@ else if (clay is not null)
         Await(run);
         if (run.Result is { } review)
             foreach (var f in review.Findings) Console.WriteLine($"{f.CheckId} {f.LayerName}: {f.Sentence}");
+    }
+    if (planarMeshCem is not null)
+    {
+        // brief-pms-4: the .cem's planar mesh on this editor's model — meshed by the preflight `check` and `em --dry-run`
+        // run, on the same extraction and mesher the panel's Mesh uses — drawn by the canvas's own overlay.
+        var meshSetup = CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(planarMeshCem);
+        var pre = CircuitRF.Design.Layout.Em.EmRunService.Preflight(meshSetup,
+            new CircuitRF.Design.Layout.Em.EmLayoutSource(clay, layoutVm.Model, layoutVm.Technology, layoutVm.Model.DbuPerMicron),
+            null);
+        if (pre.PlanarMesh is not { } meshReport)
+        { Console.Error.WriteLine($"--planar-mesh: no planar mesh ({pre.Refusal})"); return 2; }
+        layoutVm.PlanarMeshReport = meshReport;
+        layoutVm.ShowPlanarMesh = true;
+        Console.WriteLine($"planar mesh: {meshReport.CellCount:N0} cells, {meshReport.UnknownCount:N0} unknowns" +
+                          (meshReport.LocalGrid ? $", local grid, {meshReport.RefinementSteps:N0} refinement steps" : "") +
+                          (pre.Refusal is { } refused ? $"; refused: {refused}" : ""));
+        Pump();
     }
     if (componentPortsCem is not null)
     {

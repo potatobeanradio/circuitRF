@@ -1008,6 +1008,7 @@ public static class PlanarPorts
         PlanarMesh mesh, IReadOnlyList<PlanarPort> ports)
     {
         ArgumentNullException.ThrowIfNull(ports);
+        mesh.EnsureNoBlocks("port resolution");   // PMS-4 — refused by name until it reads blocks
         var list = new List<PlanarPortResolution>(ports.Count);
         foreach (var p in ports) list.Add(Resolve(mesh, p));
         RefuseCoincidentCuts(list);

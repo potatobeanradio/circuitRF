@@ -144,6 +144,7 @@ public static class PlanarDcSolve
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
+        mesh.EnsureNoBlocks("the DC solve");   // PMS-4 — refused by name until it reads blocks
         if (ports.Count == 0)
             throw new ArgumentException("A DC solve needs at least one port.", nameof(ports));
 

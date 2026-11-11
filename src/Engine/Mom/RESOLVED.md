@@ -13860,3 +13860,109 @@ DC network) already reads cells through `SheetClassOf`. Not carrying it (Metal1'
 mostly |S21| reading about 6e-5 low (the thinner metal's extra loss over the whole plate). Inside gate 2's bound, so the
 simpler path could have shipped; the parallel sheet ships because it is the physics and costs nothing per frequency.
 
+
+## PMS-4 — a locally refined shared grid: the mesher (2026-11-11)
+
+Built behind `PlanarMeshSettings.LocalGrid`, default off (brief 7 decides the default); `.cem` key `LocalGrid`, omitted at
+off; `EmSnpProvenance.MeshHash` appends `|local=True` only when on. Engine-only seams, no `.cem` key: `LocalReachCells`
+(2), `LocalGridBalance` (2) and the test hook `LocalGridForceElementary`. The code is `PlanarLocalGrid.cs`; the mesher
+calls it once every level's cells exist (after any stacked region), so it coarsens the cells the tensor grid built rather
+than building cells of its own. Measured with a scratch harness in Release on the dev machine; the harness is not
+committed.
+
+### 1. What it does
+
+- **The partition** is PMS-2's estimator's rule set, moved into the product: base blocks at the λ cap (or the pitch
+  field's coarsest pitch), split per axis while a hard line inside is needed (its feature's own stretch ± `LocalReachCells`)
+  or the size field asks for a finer pitch at the block (the λ cap or pitch field at its ends and middle,
+  MinCellsAcrossConductor on the narrowest metal run through it floored at the detail floor, the fan of every attractor
+  whose edge reaches it), then a k:1 balance between blocks that share a level. Split at the gridline nearest the middle.
+- **One rule the estimator did not have: a block is coarser than 1 × 1 only where it is HOMOGENEOUS** — on every level
+  either no position carries a cell or every position carries a whole (uncut, unmerged) cell of one film and one stack,
+  and every via footprint covers all of it or none. So a block is a union of the tensor grid's own cells, the tiling is
+  the tensor grid's to the bit, and an oblique rim keeps today's elementary staircase. Cut and merged conformal cells,
+  film boundaries, stacked-region rims and via footprint edges all stay at today's pitch by the same test.
+- **Cells.** The tensor grid's cells are walked in their own order; a 1 × 1 block keeps the very record, a coarse block
+  becomes one cell at its low corner (`IX1`/`IY1` set, `IsBlock`), so the order stays (LayerIndex, IY, IX).
+- **Rooftops (D-pms4-4/5).** One per face SEGMENT: a maximal run of positions along a shared gridline with the same cell
+  on each side, emitted at the run's low end while positions are scanned in (IY, IX) order, X face before Y face. That is
+  the brief's "X faces, then Y faces, segments ascending" stated per position rather than per cell, and it is what makes
+  the degenerate case exact even with conformal merges (a merged cell spans two positions; the old membership set still
+  de-duplicates it). A segment shorter than either cell's face carries `SegmentLo`/`SegmentHi`; a whole-face rooftop
+  carries none, so every tensor-grid basis is the record it was. `CellA` is still the low-coordinate side; on a block mesh
+  it is no longer always the lower index (a coarse block to the right can start on a lower row).
+  `PlanarLocalGrid.Supports` is D-pms4-4's definition for the fill: the coarse half is the strip of the coarse cell the
+  segment spans, pulse ±1/(strip area).
+- **Vertical bases** are emitted only at a block's low corner during the bounded via scan, so they are (via, IY0, IX0),
+  one per block, and both feet are the same block.
+- **Port feeds stay elementary, in a WINDOW**, not over the whole polygon the port sits on (the estimator's rule). Through
+  the extractor a polygon is a whole net: on A2 the estimator's rule forced every metal cell of the block (the mesher's own
+  note read 100 % of lines active). The window is the feed's own chord across the port by ±max(3 substrate heights,
+  chord) along it, either side, which takes in the end run, the cells a calibration standard is cut from and any lead the
+  solver grows outward. On the engine fixtures it changed no count (each feed polygon lies inside it).
+- **R-pms4-4.** `PlanarMesh.HasBlocks`, `PlanarMesh.LocalGridRefusal(consumer)` and `PlanarLocalGridRefusedException`.
+  Asked at the entry of port resolution, the fill's four core builders, the current-density map, the far field, the
+  conduction check, the DC solve, the core count, the accelerated estimate and rooftop merging, and by `PlanarKernel.Solve`
+  and `PlanarSolve.Run` as "the solve". The mesher itself skips what would trip it (it estimates rather than counts the
+  cores, skips the accelerated estimate and does not merge rooftops on a block mesh), `PlanarMemoryCheck.PriceStandards`
+  returns the report unpriced, the preflight returns the solve's sentence beside the mesh, and the run service reports it
+  as Refused, not EngineError. The panel's mesh view and unknown count work.
+- **R-pms4-3.** `PlanarMeshReport.LocalGrid`, `RefinementSteps` (the coarse side of every step, once per (cell, side)),
+  `LocalGridBlocks`, `ActiveLineFractionX/Y`; the budget note adds the coarse block count and the steps; a note says the
+  grid is local and how many of the candidate lines are active where they cross metal. `MinCellEdgeM`/`MaxCellEdgeM` read
+  the block rectangles; `MinCellsAcrossRun` counts blocks (`MinBlocksAcrossRun`).
+
+### 2. Gates
+
+1. **Degenerate is bit-identical.** With every block forced 1 × 1, cells, bases and order equal the setting-off mesh on
+   A1, A2, S 0.6 / 1.0 / 1.4 mm, L, S 0.6 mm with 45° traces and with MIM capacitors (harness, value hashes); conformal on
+   A1, the 45° chip and the MIM chip, and stacked regions on A1, S 0.6 mm and the MIM chip, also identical.
+   `ForcedElementary_IsTheTensorGrid` holds nine of these routinely, including a conformal taper.
+2. **Off is bit-identical** to the parent commit's mesher on the same eight fixtures (a worktree of the parent, value
+   hashes of every cell, basis and gridline).
+3. **The count against brief 2's estimator** (default settings, 10 GHz, reach 2):
+
+   | Fixture | Tensor | Estimate | Built | Built / estimate | Tensor / built |
+   |---|---|---|---|---|---|
+   | A1 | 22,005 | 13,387 | 13,581 | 1.014 | 1.62 |
+   | A2 | 11,199 | 9,192 | 9,383 | 1.021 | 1.19 |
+   | S 0.6 mm | 236,166 | 51,499 | 53,901 | 1.047 | 4.38 |
+   | S 1.0 mm | 352,803 | 70,940 | 74,683 | 1.053 | 4.72 |
+   | S 1.4 mm | 941,867 | 142,615 | 150,770 | 1.057 | 6.25 |
+   | L 1.4 mm | 1,748,989 | 226,792 | 241,159 | 1.063 | 7.25 |
+   | S 0.6 / 1.0 / 1.4 mm, square backside vias | 229,752 / 321,800 / 812,067 | 51,993 / 71,112 / 141,281 | the same | **1.000** | 4.42 / 4.53 / 5.75 |
+   | L 1.4 mm, square backside vias | 1,584,865 | 230,038 | 230,038 | **1.000** | 6.89 |
+
+   **S 1.0, S 1.4 and L are 5.3–6.3 % over the estimate, past the brief's 5 %, and all of it is the octagonal rims.** With
+   the backside vias square the built mesh IS the estimate, cell for cell, on every size. The estimator re-staircases an
+   oblique rim at the coarse local pitch (a block takes the majority's metal); the mesher keeps today's elementary
+   staircase there, because the alternative changes the tiled artwork and the staircase error with it. That is the
+   homogeneity rule's whole cost. `OnManhattanArtwork_TheCountIsTheEstimate` holds the square-via S 0.6 mm equality.
+   With stacked regions on as well: A1 10,543, S 0.6 mm 42,214, S 1.4 mm **117,688** (PMS-2's "both" estimate 106,705).
+   Through the extractor (the GUI's path) S 1.0 mm meshes at 227,527 tensor and **36,721** local (6.2×).
+4. **Structural soundness** on A1, A2, S 0.6 mm, the 45° chip and the MMIC coil (`TheLocalGrid_IsStructurallySound`):
+   every block is its gridlines' rectangle and no two of one level overlap; every rooftop's supports are rectangles inside
+   their cells with centres on metal; pulses sum to 0 (−1 on a ground attachment); no rooftop pairs a cell with itself;
+   every face two different cells of a level share is covered by exactly one segment; a vertical basis pairs one block.
+5. **Exactness.** Each level's tiled area equals the tensor grid's (`TheTiling_IsTheTensorGrids`, square-via S 0.6 mm,
+   the coil, and the 45° chip, whose staircase is therefore today's — nothing to report beyond it).
+6. **The mesh view.** `LayoutRenderer.PlanarMesh` needed no change: it draws each cell's rectangle, and the decimated
+   branch draws cell edges, so blocks draw as blocks. UiSnapshot gained `--planar-mesh <file.cem>` (with `--clay`; the
+   preflight's mesh on the editor's model, through the canvas's own overlay). Fixture S at 1.0 mm on the shipped MMIC
+   technology, tensor and local, looked at: the region via's interior is coarse blocks with lines only where Metal1 runs
+   underneath, the feeds and octagons stay at today's pitch, and the preflight prints the solve's refusal.
+
+### 3. Decisions, measured
+
+- **2:1 balance (D-pms4-2).** k = 1 / 2 / 3 / 4 / unbalanced: A1 16,889 / 13,581 / 13,509 / 13,428 / 13,416; A2 10,605 /
+  9,383 / 9,311 / 9,290 / 9,278; S 0.6 mm 118,666 / 53,901 / 52,584 / 52,245 / 52,040; S 1.4 mm 518,984 / 150,770 /
+  146,591 / 145,434 / 144,506. 2:1 costs 0.5–1.2 % over 3:1 and 1.2–4.3 % over no balance. **Kept at 2:1**: it bounds a
+  step rooftop's coarse strip to half the coarse face, the smallest departure from today's rooftop, for a few per cent.
+  The brief's "same accuracy" half needs a fill that reads blocks (brief 5) and is not measured here; brief 5 should
+  re-ask it with `LocalGridBalance`, which is the seam for that.
+- **Reach 2 (`LocalReachCells`).** 0 / 1 / 2 / 4 / 8: A1 13,496 / 13,528 / 13,581 / 13,689 / 14,044; S 1.4 mm 142,073 /
+  146,759 / 150,770 / 155,204 / 162,618. PMS-2's k-attribution starting point, kept; its accuracy is also brief 5's.
+- **Cells across.** The local mesh reports the narrowest run in blocks: 6 against the tensor grid's 10 on A1, 5 against 7
+  on S 0.6 mm (the tensor grid's extra cells there are other features' lines), and the same 4 / 3 where the detail floor
+  binds (S 1.0 / 1.4 mm). Never under the target the size field asks for.
+- **Wall time** (Release, whole `SurfaceMesher.Mesh`): S 1.4 mm 0.15–0.23 s off, 0.24–0.28 s on; L 0.22–0.27 s both.

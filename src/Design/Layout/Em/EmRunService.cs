@@ -472,6 +472,12 @@ public static class EmRunService
         // now, and flattening them here is what put a warning at the weight of the core count.
         findings.AddRange(report.AllFindings);
 
+        // PMS-4 — the run refuses a local-grid mesh with blocks (PlanarKernel.Solve) until the fill reads them, so the
+        // preflight says so with the run's own sentence, beside the mesh it would have solved.
+        if (report.CanSolve && report.LocalGrid && report.Mesh.HasBlocks)
+            return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
+                                         PlanarMesh.LocalGridRefusal("the solve"), report);
+
         // The memory check a run makes before it fills anything, said here as a warning (a check
         // asks no one). The run's own mesh also carries any feed it grows, so it can be a little larger.
         // A run past the machine's own memory already carries the mesh's warning, which says it more exactly.
@@ -1313,6 +1319,14 @@ public static class EmRunService
             // rather than an EngineError — the same treatment, and for the same reason, as the feed
             // clearance above. See PlanarPorts.ResolveAll.
             var d = EmDiagnostics.Forwarded("ports", ex.Message);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
+        catch (PlanarLocalGridRefusedException ex)
+        {
+            // PMS-4 — the local grid built a mesh the solve cannot read yet. The user's setting, so a refusal naming it.
+            var d = EmDiagnostics.Forwarded("mesh", ex.Message);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);
