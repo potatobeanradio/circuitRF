@@ -80,16 +80,13 @@ public static class ShallowImageCore
 
         var (nodes, panels) = PlanarFill.RuleForCells(a, b, settings);
         var (gx, gw) = Legendre.Nodes(nodes);
-        var e = PlanarFill.PanelEdgesFor(panels);
 
         double invAa = 1.0 / a.Area, invAb = 1.0 / b.Area;
         Complex sum = Complex.Zero;
 
-        for (int qx = 0; qx < panels; qx++)
-        for (int qy = 0; qy < panels; qy++)
+        // PMS-5 — the panels PlanarFill.CellPairCores takes, so an overlapping strip and block are cut the same way.
+        foreach (var (xa, xb, ya, yb) in PlanarLocalGridFill.OuterPanels(a, b, panels, settings.SelfPanels))
         {
-            double xa = a.XMin + e[qx] * a.Width,  xb = a.XMin + e[qx + 1] * a.Width;
-            double ya = a.YMin + e[qy] * a.Height, yb = a.YMin + e[qy + 1] * a.Height;
             double cx = 0.5 * (xa + xb), hx = 0.5 * (xb - xa);
             double cy = 0.5 * (ya + yb), hy = 0.5 * (yb - ya);
 

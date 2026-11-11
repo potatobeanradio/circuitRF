@@ -13966,3 +13966,106 @@ committed.
   on S 0.6 mm (the tensor grid's extra cells there are other features' lines), and the same 4 / 3 where the detail floor
   binds (S 1.0 / 1.4 mm). Never under the target the size field asks for.
 - **Wall time** (Release, whole `SurfaceMesher.Mesh`): S 1.4 mm 0.15–0.23 s off, 0.24–0.28 s on; L 0.22–0.27 s both.
+
+## PMS-5 — a locally refined grid: the fill (2026-11-11)
+
+The fill, the dense solve and the core count read a local-grid mesh. Edge ports, the accelerated solve, current density,
+the far field, DC and the product's run (`PlanarKernel.Solve`, the run service's preflight) still refuse it by name for
+brief 6. Measured with a scratch harness in Release on the dev machine; the harness is not committed.
+
+### 1. What it does
+
+- **R-pms5-1 — the support mesh.** `PlanarLocalGridFill.SupportMesh` turns a block mesh into one cell per distinct support
+  rectangle (a whole block, or the strip of a coarse block a step rooftop uses, deduplicated by gridline indices) and the
+  source's bases, in the source's order, naming their two supports. `BuildCores`, `BuildCoresByPairs`, `PlanarSolveContext`
+  and `PlanarCoreFootprint.Count` take it, so every fill path (class table, multi-level blocks, via arms, shallow images)
+  integrates the supports with no code of its own, and ports keep their basis indices. `PlanarMesh.BlockSource` points back.
+  A 1 × 1 mesh has no support mesh (HasBlocks is false), so forced-elementary is the tensor grid's fill by construction.
+- **Overlap.** A strip lies inside its block and strips of two faces cross, a pair the tensor grid never produces.
+  `PlanarLocalGridFill.OuterPanels` cuts the outer rectangle at every inner edge that crosses it and integrates each piece on
+  the self panels; `CellPairCores`, `ShallowImageCore.CellPairMean` and the mixed arm's `MixedHalf` (both sides) use it. A
+  pair that does not overlap gets the very panel boxes it always had.
+- **R-pms5-2 — long strips.** One elementary column across a block's depth reaches 194:1 on S at 0.6 mm. In a near or
+  overlapping pair with a block or strip in it, a piece longer than `MaxPieceAspect` widths is cut into equal lengths along
+  its long side. The piece count is taken a billionth under the threshold, because a whole number of cells puts the aspect
+  exactly on a multiple and a class representative's quantised edges sit ~1e-10 from the member's (the same reason P5 keys
+  its τ band) — without it the class table and the per-pair reference differed by 5.8e-7.
+- **R-pms5-3 — classes.** A pair of two elementary cells keeps P5's key bit for bit. A pair with a block or strip is keyed
+  per axis by its three edge positions from the outer support's low edge (outer high, inner low, inner high), quantised to
+  2⁻⁴⁰ of the axis extent, so coincident gridlines stay coincident in the representative; sign pattern 7 marks the key,
+  and it is not rotation-folded. `CountCores`/`DistinctBandKeys` count the same keys; the mesher now counts a block mesh's
+  cores rather than estimating them.
+- **R-pms5-4.** Via feet are whole blocks on both levels (identical or disjoint, never overlapping), so `ViaZIntegral` takes
+  the block rectangle unchanged; the ẑx̂ arm integrates against strips through the overlap rule.
+- **R-pms5-5 — the Gram.** Built on the block source, per physical block, over each two same-direction halves'
+  intersection: L∩·Δ/(3 L_m L_n), or /6 for opposite outer edges — CL1's Δ/(3L), Δ/(6L) when the supports coincide. A cut
+  cell (only ever a whole support) takes CL1's own integral.
+- **R-pms5-6.** `PlanarSolve.Run`, the multi-level fill, the via fill and the conduction check accept a block mesh.
+  `PlanarPorts.ResolveAll` resolves internal delta-gap ports on one (the mesher keeps a window around each port it was given
+  elementary, and a gap that would cross a block is refused) and refuses an edge or via port by name; an accelerated
+  `PlanarSolveContext` and `BuildGeometryOnlyCores` refuse it as "the accelerated solve".
+
+### 2. Gates
+
+1. **1 × 1 is bit-identical.** `ForcedElementary_FillsAsTheTensorGrid` (multi-level with a post and a ground attachment,
+   entry for entry). The existing fill classes — P3's pinned digests, P4, P5, vias, MIM thin layers, the Gram, the fill
+   tiers, memory accounting and PMS-4, 108 tests — pass unchanged, which is the evidence the non-overlap panel boxes are
+   the old expressions.
+2. **Accuracy against the tensor grid** (internal delta-gap ports, undeembedded, `MinCellsAcrossConductor` 2; the finer
+   reference is 3). Ports: two gaps on the Metal2 line (x = 45 and 200 µm) and one on the Metal1 line (y = 150 µm).
+   Max |ΔS| over entries:
+
+   | Block | f | local − tensor | finer − tensor | local − finer |
+   |---|---|---|---|---|
+   | A2 (N 5,083 / 4,433 local / 9,911 finer) | 1 GHz | 3.2e-8 | 7.6e-5 | 7.6e-5 |
+   | | 5 GHz | 1.0e-7 | 3.8e-4 | 3.8e-4 |
+   | | 10 GHz | 8.8e-7 | 7.5e-4 | 7.5e-4 |
+   | A1 (N 8,805 / 6,194 local) | 1 GHz | 2.1e-6 | not run | |
+   | | 5 GHz | 1.0e-5 | not run | |
+   | | 10 GHz | 1.9e-5 | not run | |
+
+   On A2 the local grid moves the answer three decades less than one refinement step does. **A1's finer reference
+   (17,927 unknowns, past the engine-direct 10,000 ceiling, ~25 min a point here) was stopped on the owner's call**: A1's
+   local-against-tensor difference is already under the 1e-2 bound by three decades and 4–40× under A2's refinement step,
+   so the reference could only have confirmed a margin already clear. A1's self-calibrated half is not measured. A2's local run used `MaxPieceAspect`
+   4 rather than the shipped 16 — the two differ only on near pairs past 16:1, by under 1e-6 relative in a core. A delta gap
+   is a series source, so at an end of a line it sees an open stub and |S| sits near 1; the differences above are still
+   the comparison the brief asks for, but they are smaller than an edge port's would be.
+3. **Charge and reciprocity.** `Z_IsSymmetric_AndEveryBasisIsChargeNeutral`: Z complex-symmetric to the bit; every basis's
+   pulses integrate to 0 over its supports (−1 on the ground attachment), on the source and on the support mesh.
+4. **Quadrature on strips.** `OnTheWorstStrip_TheRulesHoldTheFillsGate`, on S at 0.6 mm's worst strip (0.03 × 5.59 µm,
+   194:1, in a 0.39 µm block), against `PlanarPairOracle` (pulse and three ramp primitives, 1/R and ln r): worst 1.6e-6,
+   the block ⊃ strip overlap. Without the long-side rule the strip's self term was 4.3e-5. The ladder (worst self 1/R) at
+   `MaxPieceAspect` 4 / 8 / 16 / 32 / 64: 1.7e-7 / 2.2e-7 / 4.1e-7 / 1.0e-6 / 2.8e-6. **16 shipped**: a decade inside the
+   gate, and a block under 16:1 is not paneled at all.
+5. **Cost** (reported, not asserted). Per frequency point, dense, all three arms:
+
+   | Fixture | Tensor N | Local N | Tensor s/point | Local s/point | Classes tensor / local | Cores MB |
+   |---|---|---|---|---|---|---|
+   | A2 | 5,083 | 4,433 | 115 | 82–89 | 2.73 M / 2.31 M | 341 / 289 |
+   | A1 | 8,805 | 6,194 | 478 (quiet) / 537–596 (loaded) | 336–348 (load unknown) | 5.34 M / 3.54 M | 673 / 446 |
+   | S 0.6 mm | 236,166 | 53,901 | not fillable (1,182 GB) | not fillable (90.5 GB) | ~2.8 G / ~262 M | ~359,000 / ~33,000 |
+
+   S at 0.6 mm cannot be filled densely on 16 GB either way, so its row is the bounded core count (both extrapolated past
+   the 2 M class cap) and `PlanarSystem.ResidentBytes`. Class counts above 2 M are extrapolated by the same cap.
+
+   **Where local is NOT faster, and why.** On a 40–80 µm test block (tensor 546–795, local 260–318) the local fill was the
+   same or up to 1.8× slower. Sampled stacks put the time in the per-PAIR terms of the multi-level scalar block (the MIM-8
+   shallow-image closed form and the four-call remainder) and in the mixed via arm, none of which is class-cached: τ is
+   separation over the LARGER diagonal, so a coarse block makes its neighbours near or mid out to several block widths. On
+   that block the local mesh had half the near-tier pairs of the tensor one but the same mixed-arm work (5.2e8 kernel
+   evaluations both) and the same shallow-image work without the long-side rule (4.8e6 closed forms both); with the rule
+   at `MaxPieceAspect` 4 the local mesh's rose to 7.1e6, which is part of why 16 shipped and why the mixed arm is left
+   without the rule. On A2, a block with real coarsening, local is 25–30 % faster per point.
+   Class-caching the shallow-image and remainder terms for block pairs is the lever if this binds; it was not built.
+   Block keys also dedupe less than P5's (local 69 % of the band is distinct classes on S at 0.6 mm, tensor 58 %): they
+   are not rotation-folded, and blocks of one index size are rarely one metric size.
+
+### 3. Not done
+
+- PMS-4 left the accuracy half of the 2:1 balance and reach-2 decisions to this brief (`LocalGridBalance`,
+  `LocalReachCells`). Not re-measured: each point of that ladder is a full A1/A2 solve set (§2 gate 2, ~10–30 min per
+  block per mesh here). The seams are there.
+- A1's refinement reference (gate 2, above).
+- The routine tests' three fills run 30–55 s each in Debug under a loaded machine (the multi-level via and shallow-image
+  arms dominate even at N ≈ 300–550); they are not tagged.

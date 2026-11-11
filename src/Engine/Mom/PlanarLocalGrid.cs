@@ -68,11 +68,19 @@ public static class PlanarLocalGrid
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(basis);
-        var a = mesh.Cells[basis.CellA];
-        var b = mesh.Cells[basis.CellB];
-        if (a.Region is not null || b.Region is not null)
+        if (mesh.Cells[basis.CellA].Region is not null || mesh.Cells[basis.CellB].Region is not null)
             throw new ArgumentException("A cut cell's support is not a rectangle; use PlanarBasisFunctions.Supports.",
                                         nameof(basis));
+        return SupportsAnyCell(mesh, basis);
+    }
+
+    /// <summary>PMS-5 — <see cref="Supports"/> without the cut-cell refusal: a cut cell's half comes back as its GRID
+    /// rectangle, which is right for a caller that only asks which cell and which transverse span a half occupies (the
+    /// Gram, which integrates a cut cell's halves with CL1's own supports).</summary>
+    internal static (PlanarStepSupport A, PlanarStepSupport B) SupportsAnyCell(PlanarMesh mesh, PlanarBasis basis)
+    {
+        var a = mesh.Cells[basis.CellA];
+        var b = mesh.Cells[basis.CellB];
 
         if (basis.AttachesToGround)
             return (Whole(basis.CellB, b, -1.0), Whole(basis.CellB, b, 0.0));

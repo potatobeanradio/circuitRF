@@ -9159,3 +9159,18 @@ by a window rather than by the whole polygon, because an extracted polygon is a 
 every unconverted consumer refuses it with one sentence, and the panel still shows the mesh and its count.
 `RESOLVED.md` §PMS-4.
 
+
+---
+
+## PMS-5 — a locally refined grid: the fill (2026-11-11)
+
+The fill reads a local-grid mesh by being handed a different mesh rather than by being rewritten: the SUPPORT mesh has one
+cell per distinct support rectangle — whole blocks and the strips of a coarse block that rooftops across a refinement step
+use — and the source's bases in the source's order, so every fill path integrates the supports unchanged and ports keep
+their basis indices. Two things a tensor grid never produced needed their own rule: overlapping supports (a strip inside
+its block), whose outer domain is cut at the inner rectangle's edges, and long strips (194:1 on fixture S), whose self rule
+missed the 5e-6 gate by a decade until a near pair's long side was paneled at 16:1. Classes key a block pair by quantised
+edge positions; the Gram is taken on the source over each pair's overlap. Forced 1 × 1 is the tensor fill by construction,
+and the existing fill tests pass unchanged. Against the tensor grid, with internal delta-gap ports, the local grid moves S
+three decades less than one refinement step (A2: 3e-8 to 9e-7 against 8e-5 to 7e-4; A1: 2e-6 to 2e-5, its own refinement reference not run). Edge ports, AIM,
+the field results and the product's run stay refused for brief 6. `RESOLVED.md` §PMS-5.

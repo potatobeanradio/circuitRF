@@ -123,10 +123,11 @@ public readonly record struct PlanarCoreFootprint(int Cells, long BandPairs, lon
                                             CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        mesh.EnsureNoBlocks("the core count");   // PMS-4 — refused by name until it reads blocks
         var st = settings ?? PlanarFillSettings.Default;
         var perMesh = Cache.GetValue(mesh, _ => new());
-        return perMesh.GetOrAdd((st.Order, st.NearRatio, st.FarRatio), _ => PlanarFill.CountCores(mesh, st, ct));
+        // PMS-5 — a block mesh's cores are its support mesh's, so that is what is counted (R-pms5-3).
+        var fill = PlanarLocalGridFill.ForFill(mesh);
+        return perMesh.GetOrAdd((st.Order, st.NearRatio, st.FarRatio), _ => PlanarFill.CountCores(fill, st, ct));
     }
 }
 

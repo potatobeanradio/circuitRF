@@ -187,6 +187,11 @@ public sealed class PlanarSolveContext
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
+        // PMS-5 — a block mesh is solved on its support mesh: the same bases in the same order, so the ports' basis
+        // indices are unchanged, and every cell index this context hands the fill is a support's. The accelerator does
+        // not read one yet (brief 6).
+        if (mesh.HasBlocks && settings?.Aim is not null) mesh.EnsureNoBlocks("the accelerated solve");
+        mesh     = PlanarLocalGridFill.ForFill(mesh);
         Mesh     = mesh;
         Ports    = ports;
         Levels   = levels;
@@ -2054,7 +2059,9 @@ public static class PlanarSolve
         ArgumentNullException.ThrowIfNull(ports);
         ArgumentNullException.ThrowIfNull(freqsHz);
         if (freqsHz.Count == 0) throw new ArgumentException("A sweep needs at least one frequency.", nameof(freqsHz));
-        mesh.EnsureNoBlocks("the solve");   // PMS-4 — refused by name until the fill reads blocks
+        // PMS-5 — a block mesh solves: the fill reads its support mesh (PlanarSolveContext). What reads the cells
+        // themselves and is not yet converted (edge ports, the accelerator, current density, the far field, DC) refuses
+        // by name where it is asked.
 
         var st    = settings ?? PlanarSolveSettings.Default;
         var fmt   = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;

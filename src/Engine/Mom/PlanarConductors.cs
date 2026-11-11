@@ -172,7 +172,8 @@ public sealed class PlanarConductors
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
-        mesh.EnsureNoBlocks("the conduction check");   // PMS-4 — refused by name until it reads blocks
+        // PMS-5 — the basis graph is the same graph on a block mesh: a rooftop across a refinement step joins its two
+        // blocks, and a block's centroid lies in its own metal (a block is homogeneous), so nothing here reads a grid index.
 
         var conn = Of(mesh);
 

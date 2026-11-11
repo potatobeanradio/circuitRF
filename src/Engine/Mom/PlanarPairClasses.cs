@@ -177,15 +177,104 @@ internal sealed class PairClassifier
     public readonly Axis X, Y;
     /// <summary>Per cell: a whole rectangle whose width and height ARE its grid spacings (a cut or
     /// merged cell is never memoised; neither is any cell whose rectangle disagrees with the grid,
-    /// which the mesher does not produce but a hand-built mesh could).</summary>
+    /// which the mesher does not produce but a hand-built mesh could). PMS-5: or a whole rectangle that
+    /// IS a block of the grid's lines, which a support mesh's blocks and strips are.</summary>
     public readonly bool[] Classifiable;
 
-    private PairClassifier(Axis x, Axis y, bool[] classifiable)
+    /// <summary>PMS-5 — the block axes, or null on a mesh whose classifiable cells are all elementary (every
+    /// tensor-grid mesh), on which the key is exactly P5's.</summary>
+    public readonly BlockAxis? BX, BY;
+
+    private PairClassifier(Axis x, Axis y, bool[] classifiable, BlockAxis? bx, BlockAxis? by)
     {
-        X = x; Y = y; Classifiable = classifiable;
+        X = x; Y = y; Classifiable = classifiable; BX = bx; BY = by;
     }
 
-    public long Bytes => X.Bytes + Y.Bytes + Classifiable.Length;
+    public long Bytes => X.Bytes + Y.Bytes + Classifiable.Length + (BX?.Bytes ?? 0) + (BY?.Bytes ?? 0);
+
+    // ── PMS-5 — a pair with a block or a strip in it ──────────────────────────────────────────────
+    //
+    // R-pms5-3. P5's key reads a pair as the LIST of spacings from the outer cell to the inner one, which
+    // presumes each cell is one spacing. A support mesh's cell is a run of them, and two supports can
+    // overlap (a strip inside its block), so neither "from" nor "toward" is defined. Along one axis the
+    // pair is instead its three edge positions measured from the outer support's low edge — the outer's
+    // high edge, the inner's low and high edges — QUANTISED to 2⁻⁴⁰ of the axis's extent. That is the
+    // same job P5's 1e-12-relative spacing classes do (the mesher writes a bulk line as a + len·i/n, and
+    // equal spans differ in the last bits), done on positions rather than spacings so a coincident
+    // gridline stays coincident in the representative: two edges on one line are the same difference
+    // from the same origin and quantise identically, so a strip and its block still share three edges
+    // exactly and OverlapPanels sees the same pair the member is. Same-size supports at the same offset
+    // share a class wherever they are, which on a coarse region of uniform blocks is most of them.
+    //
+    // A pair of two ELEMENTARY cells keeps P5's key bit for bit, so a support mesh's tensor part is classed
+    // exactly as the tensor grid's is. A block key carries sign pattern 7, which P5's patterns (0–4)
+    // never use, and is never rotated: the 180° fold is P5's economy and not a correctness matter.
+
+    /// <summary>The sign-pattern value that marks a PMS-5 block key.</summary>
+    internal const int BlockPattern = 7;
+
+    /// <summary>PMS-5 — one axis's support spans and the quantised geometry of every pair of them.</summary>
+    internal sealed class BlockAxis
+    {
+        public readonly int Lines;          // gridlines
+        public readonly int[] SpanAt;       // (lo · Lines + hi) → span id, or −1
+        public readonly int Spans;
+        public readonly int[] PairId;       // (outer span · Spans + inner span) → pair-geometry id
+        public readonly long[] Hi, InnerLo, InnerHi;   // per pair-geometry id, in quanta from the outer's low edge
+        public readonly double Quantum;
+
+        private BlockAxis(int lines, int[] spanAt, int spans, int[] pairId, long[] hi, long[] lo2, long[] hi2, double q)
+        {
+            Lines = lines; SpanAt = spanAt; Spans = spans; PairId = pairId;
+            Hi = hi; InnerLo = lo2; InnerHi = hi2; Quantum = q;
+        }
+
+        public long Bytes => 4L * (SpanAt.Length + PairId.Length) + 8L * (Hi.Length + InnerLo.Length + InnerHi.Length);
+
+        public int Id(int outerLo, int outerHi, int innerLo, int innerHi)
+            => PairId[SpanAt[outerLo * Lines + outerHi] * Spans + SpanAt[innerLo * Lines + innerHi]];
+
+        public static BlockAxis Build(IReadOnlyList<double> grid, IEnumerable<(int Lo, int Hi)> used)
+        {
+            int lines = grid.Count;
+            var spanAt = new int[(long)lines * lines];
+            Array.Fill(spanAt, -1);
+            var los = new List<int>(); var his = new List<int>();
+            foreach (var (lo, hi) in used)
+            {
+                long k = (long)lo * lines + hi;
+                if (spanAt[k] >= 0) continue;
+                spanAt[k] = los.Count; los.Add(lo); his.Add(hi);
+            }
+            int sCount = los.Count;
+            double quantum = Math.Max(grid[^1] - grid[0], double.Epsilon) * Math.Pow(2, -40);
+            long Q(double v) => (long)Math.Round(v / quantum);
+
+            (long, long, long) Geometry(int a, int c)
+            {
+                double o = grid[los[a]];
+                return (Q(grid[his[a]] - o), Q(grid[los[c]] - o), Q(grid[his[c]] - o));
+            }
+
+            var distinct = new HashSet<(long, long, long)>();
+            for (int a = 0; a < sCount; a++)
+                for (int c = 0; c < sCount; c++) distinct.Add(Geometry(a, c));
+            var sorted = distinct.ToArray();
+            Array.Sort(sorted);                       // ids are a function of the mesh alone (R-fil-11)
+            var idOf = new Dictionary<(long, long, long), int>(sorted.Length);
+            for (int i = 0; i < sorted.Length; i++) idOf[sorted[i]] = i;
+            if (sorted.Length > IdMask)
+                throw new InvalidOperationException(
+                    $"{sorted.Length:N0} distinct support-pair geometries on one axis exceed the class key's {IdBits} bits.");
+
+            var pairId = new int[(long)sCount * sCount];
+            for (int a = 0; a < sCount; a++)
+                for (int c = 0; c < sCount; c++) pairId[(long)a * sCount + c] = idOf[Geometry(a, c)];
+            var hiArr = new long[sorted.Length]; var lo2 = new long[sorted.Length]; var hi2 = new long[sorted.Length];
+            for (int i = 0; i < sorted.Length; i++) (hiArr[i], lo2[i], hi2[i]) = sorted[i];
+            return new BlockAxis(lines, spanAt, sCount, pairId, hiArr, lo2, hi2, quantum);
+        }
+    }
 
     public static PairClassifier Build(PlanarMesh mesh)
     {
@@ -193,18 +282,42 @@ internal sealed class PairClassifier
         var y = Axis.Build(mesh.GridY);
         int m = mesh.Cells.Count;
         var ok = new bool[m];
+        bool anyBlock = false;
         for (int c = 0; c < m; c++)
         {
             var cell = mesh.Cells[c];
             if (cell.IsCut) continue;
             if (cell.IX < 0 || cell.IX >= x.Count || cell.IY < 0 || cell.IY >= y.Count) continue;
+            if (cell.IsBlock)
+            {
+                // PMS-5 — a support mesh's block or strip: its rectangle must BE its gridlines' rectangle.
+                if (cell.IX1 > x.Count || cell.IY1 > y.Count) continue;
+                ok[c] = cell.XMin == mesh.GridX[cell.IX] && cell.XMax == mesh.GridX[cell.IX1]
+                     && cell.YMin == mesh.GridY[cell.IY] && cell.YMax == mesh.GridY[cell.IY1];
+                anyBlock |= ok[c];
+                continue;
+            }
             double gw = mesh.GridX[cell.IX + 1] - mesh.GridX[cell.IX];
             double gh = mesh.GridY[cell.IY + 1] - mesh.GridY[cell.IY];
             ok[c] = Math.Abs(cell.Width - gw) <= SpacingTolerance * gw
                  && Math.Abs(cell.Height - gh) <= SpacingTolerance * gh
                  && cell.XMin == mesh.GridX[cell.IX] && cell.YMin == mesh.GridY[cell.IY];
         }
-        return new PairClassifier(x, y, ok);
+
+        BlockAxis? bx = null, by = null;
+        if (anyBlock)
+        {
+            var sx = new List<(int, int)>(); var sy = new List<(int, int)>();
+            for (int c = 0; c < m; c++)
+            {
+                if (!ok[c]) continue;
+                var cell = mesh.Cells[c];
+                sx.Add((cell.IX, cell.IX1)); sy.Add((cell.IY, cell.IY1));
+            }
+            bx = BlockAxis.Build(mesh.GridX, sx);
+            by = BlockAxis.Build(mesh.GridY, sy);
+        }
+        return new PairClassifier(x, y, ok, bx, by);
     }
 
     // ── the key ───────────────────────────────────────────────────────────────────────────────
@@ -220,6 +333,13 @@ internal sealed class PairClassifier
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public long Key(PlanarCell outer, PlanarCell inner, PlanarFillSettings st, out bool rotated)
     {
+        if (BX is not null && (outer.IsBlock || inner.IsBlock))
+        {
+            rotated = false;
+            long bxId = BX.Id(outer.IX, outer.IX1, inner.IX, inner.IX1);
+            long byId = BY!.Id(outer.IY, outer.IY1, inner.IY, inner.IY1);
+            return (long)Band(outer, inner, st) | ((long)BlockPattern << 2) | (bxId << 5) | (byId << 34);
+        }
         int sx = Math.Sign(inner.IX - outer.IX), sy = Math.Sign(inner.IY - outer.IY);
         rotated = sx < 0 || (sx == 0 && sy < 0);
         if (rotated) { sx = -sx; sy = -sy; }
@@ -274,6 +394,18 @@ internal sealed class PairClassifier
         int pattern = (int)((key >> 2) & 7);
         int xId = (int)((key >> 5) & IdMask);
         int yId = (int)((key >> 34) & IdMask);
+
+        if (pattern == BlockPattern)
+        {
+            // PMS-5 — outer at the origin, every edge at its quantised position, so coincident lines coincide.
+            double qx = BX!.Quantum, qy = BY!.Quantum;
+            // Both marked as blocks (IX1 = 2), so a pair keyed here is integrated as the member pair is — PlanarLocalGridFill.
+            // OuterPanels' long-side rule reads whether either cell of a pair is a block.
+            var o = new PlanarCell(0, 0, 0, 0.0, 0.0, BX.Hi[xId] * qx, BY.Hi[yId] * qy) { IX1 = 2, IY1 = 2 };
+            var i = new PlanarCell(0, 0, 0, BX.InnerLo[xId] * qx, BY.InnerLo[yId] * qy,
+                                   BX.InnerHi[xId] * qx, BY.InnerHi[yId] * qy) { IX1 = 2, IY1 = 2 };
+            return (o, i);
+        }
 
         double wA = X.Rep[X.First[xId]], wC = X.Rep[X.Last[xId]], dx = X.Delta[xId];
         double hA = Y.Rep[Y.First[yId]], hC = Y.Rep[Y.Last[yId]], dy = Y.Delta[yId];

@@ -1615,3 +1615,8 @@ src/Design/Plugins/PluginReference.cs|Embedded resource \"{ResourceName}\" not f
 src/Design/Plugins/PluginReference.cs|docs/design/plugins.md no longer has its §3 and §9 headings.
 # brief-pms-4: an internal invariant of the local grid's step supports (a caller handing it a cut cell).
 src/Engine/Mom/PlanarLocalGrid.cs|A cut cell's support is not a rectangle; use PlanarBasisFunctions.Supports.
+# brief-pms-5: internal invariants of the fill on a local grid (a strip of a cut cell, a class key's width) and an
+# engine caller's port that was not in the mesher's port list (the product run refuses a block mesh before resolving).
+src/Engine/Mom/PlanarLocalGridFill.cs|Cell {s.Cell} is a cut cell and a rooftop across a refinement step asks for a strip of it. The local 
+src/Engine/Mom/PlanarPairClasses.cs|{sorted.Length:N0} distinct support-pair geometries on one axis exceed the class key's {IdBits} bits.
+src/Engine/Mom/PlanarPort.cs|Port {r.Number}'s gap crosses a coarse block of the local grid, where its cut is not one 

@@ -34,6 +34,10 @@
 //   • A VERTICAL (via) basis is deliberately NOT here. Its current crosses a footprint and returns
 //     through a barrel WALL, which is a series impedance in ohms rather than an ohms-per-square
 //     times a Gram entry — PlanarSurfaceImpedance.Barrel, and the via arm of the fill.
+//   • PMS-5 — on a LOCAL-GRID mesh a rooftop across a refinement step has a STRIP of a coarse block as its half, and
+//     two rooftops on one block can have different strips that overlap (or a strip and the whole block). Those pairs
+//     share metal without sharing a support, so the Gram of a support mesh is taken on its BlockSource, per physical
+//     block, over each pair's intersection — PlanarLocalGridFill.GramEntries.
 //
 // SYMMETRIC: ⟨f_m, f_n⟩ = ⟨f_n, f_m⟩ identically, so only j ≥ i is stored and R-fil-2's
 // "computed on m ≤ n and mirrored" is untouched, as is P7's complex-symmetric factorisation.
@@ -151,6 +155,9 @@ public sealed class PlanarGram
     public static PlanarGram Build(PlanarMesh mesh)
     {
         ArgumentNullException.ThrowIfNull(mesh);
+        var source = mesh.BlockSource;
+        if (source is null && mesh.HasBlocks) source = mesh;
+        if (source is not null) mesh = source;      // the bases are the same list, in the same order
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
 
@@ -200,6 +207,16 @@ public sealed class PlanarGram
         var acc = new Dictionary<(int I, int J), (double V, int Layer, double V2, int Layer2)>();
         bool anySecond = false;
 
+        // PMS-5 (R-pms5-5) — a SUPPORT mesh's cells are support rectangles, and two of them can be one block's metal:
+        // the Gram is taken on the block mesh it came from, per physical block, over the supports' intersection.
+        if (source is not null)
+        {
+            foreach (var (bi, bj, g, cell) in PlanarLocalGridFill.GramEntries(source, (cell, p, q) =>
+                         CellIntegral(cell, SupportOf(p.Basis, p.Half), SupportOf(q.Basis, q.Half),
+                                      source.Bases[p.Basis].Direction == PlanarBasisDirection.X)))
+                Add(bi, bj, g, cell);
+        }
+        else
         for (int c = 0; c < m; c++)
         {
             var cell = mesh.Cells[c];
@@ -217,22 +234,26 @@ public sealed class PlanarGram
                 double g = CellIntegral(cell, SupportOf(bi, halfOf[p]), SupportOf(bj, halfOf[q]),
                                         di == PlanarBasisDirection.X);
                 if (g == 0) continue;
-
-                var key = (bi, bj);
-                int sheetClass = mesh.SheetClassOf(cell);
-                if (!acc.TryGetValue(key, out var prev)) acc[key] = (g, sheetClass, 0.0, -1);
-                else if (prev.Layer == sheetClass) acc[key] = (prev.V + g, prev.Layer, prev.V2, prev.Layer2);
-                else if (prev.Layer2 < 0 || prev.Layer2 == sheetClass)
-                {
-                    acc[key] = (prev.V, prev.Layer, prev.V2 + g, sheetClass);
-                    anySecond = true;
-                }
-                else
-                    throw new InvalidOperationException(
-                        $"Rooftops {bi} and {bj} share cells of three different sheet classes. A " +
-                        "same-direction pair shares at most two cells, so this mesh has produced a " +
-                        "support the two-contribution Gram slot does not cover.");
+                Add(bi, bj, g, cell);
             }
+        }
+
+        void Add(int bi, int bj, double g, PlanarCell cell)
+        {
+            var key = (bi, bj);
+            int sheetClass = mesh.SheetClassOf(cell);
+            if (!acc.TryGetValue(key, out var prev)) acc[key] = (g, sheetClass, 0.0, -1);
+            else if (prev.Layer == sheetClass) acc[key] = (prev.V + g, prev.Layer, prev.V2, prev.Layer2);
+            else if (prev.Layer2 < 0 || prev.Layer2 == sheetClass)
+            {
+                acc[key] = (prev.V, prev.Layer, prev.V2 + g, sheetClass);
+                anySecond = true;
+            }
+            else
+                throw new InvalidOperationException(
+                    $"Rooftops {bi} and {bj} share cells of three different sheet classes. A " +
+                    "same-direction pair shares at most two cells, so this mesh has produced a " +
+                    "support the two-contribution Gram slot does not cover.");
         }
 
         // ── pack to CSR, rows ascending, columns ascending within a row ───────────────────────

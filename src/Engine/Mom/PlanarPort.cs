@@ -1008,9 +1008,28 @@ public static class PlanarPorts
         PlanarMesh mesh, IReadOnlyList<PlanarPort> ports)
     {
         ArgumentNullException.ThrowIfNull(ports);
-        mesh.EnsureNoBlocks("port resolution");   // PMS-4 — refused by name until it reads blocks
+        // PMS-5 — an INTERNAL DELTA GAP resolves on a block mesh: the mesher keeps a window around every port elementary,
+        // so its cut is today's cut on today's cells. An edge port (its calibration standards are cut from the mesh) and
+        // a via port are brief 6's, and are refused by name until then.
+        bool blocks = mesh.HasBlocks;
+        if (blocks)
+            foreach (var p in ports)
+                if (p.Kind != PlanarPortKind.InternalDeltaGap)
+                    throw new PlanarLocalGridRefusedException(
+                        p.Kind == PlanarPortKind.Internal ? "a via (internal) port" : "an edge port");
         var list = new List<PlanarPortResolution>(ports.Count);
         foreach (var p in ports) list.Add(Resolve(mesh, p));
+        if (blocks)
+            foreach (var r in list)
+                foreach (int bi in r.BasisIndices)
+                {
+                    var b = mesh.Bases[bi];
+                    if (b.IsSegment || mesh.Cells[b.CellA].IsBlock || mesh.Cells[b.CellB].IsBlock)
+                        throw new InvalidOperationException(
+                            $"Port {r.Number}'s gap crosses a coarse block of the local grid, where its cut is not one " +
+                            "line of today's cells. The local grid keeps a window around each port it was given at " +
+                            "meshing elementary; mesh with this port in the port list, or turn Local grid off.");
+                }
         RefuseCoincidentCuts(list);
         return list;
     }
@@ -1726,7 +1745,11 @@ public static class PlanarPorts
         for (int c = 0; c < mesh.Cells.Count; c++)
         {
             var cell = mesh.Cells[c];
-            if (cell.LayerIndex == layerIndex) at[cell.IY * nx + cell.IX] = c;
+            if (cell.LayerIndex != layerIndex) continue;
+            // PMS-5 — a block covers every position it spans, so "is there metal here" reads true across it; on a tensor
+            // grid IX1 = IX + 1 and IY1 = IY + 1, and this is the one store it always was.
+            for (int iy = cell.IY; iy < cell.IY1; iy++)
+                for (int ix = cell.IX; ix < cell.IX1; ix++) at[iy * nx + ix] = c;
         }
 
         int CellAt(int iLong, int iTran) =>

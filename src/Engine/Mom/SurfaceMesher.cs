@@ -1688,8 +1688,8 @@ public static class SurfaceMesher
         // stands in for the bytes quoted beside it.
         bool pastWithNoCores = limit is not null && !accel
             && n > CeilingFor(false, limit, new PlanarCoreFootprint(cells.Count, 0, 0, 2, 0, Counted: false));
-        // PMS-4 — a block mesh's cores are not yet counted (the fill does not read blocks), so they are estimated.
-        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null || pastWithNoCores || hasBlocks
+        // PMS-5 — a block mesh's cores are its support mesh's, and PlanarCoreFootprint counts those (R-pms5-3).
+        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null || pastWithNoCores
             ? PlanarCoreFootprint.Estimate(n, cells.Count)
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
         if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);

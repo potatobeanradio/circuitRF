@@ -289,7 +289,9 @@ public sealed class PlanarKernel
                           lengthFormat: lengthFormat, ports: ports, leads: leads,
                           aimOn: st.Fill?.Aim is not null);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
-        // PMS-4 — a local-grid mesh is meshed and reported, and refused here until the fill reads blocks.
+        // PMS-4/5 — a local-grid mesh is meshed and reported, and the PRODUCT's run refuses it here: the fill and the dense
+        // solve read blocks since PMS-5 (PlanarSolve.Run, with internal delta-gap ports), but this path's edge ports,
+        // their calibration standards and the current-density map it captures by default are brief 6's.
         report.Mesh.EnsureNoBlocks("the solve");
 
         ct.ThrowIfCancellationRequested();

@@ -195,7 +195,8 @@ public class Pms4LocalGridTests(ITestOutputHelper output)
     }
 
     /// <summary>R-pms4-4 — a mesh with blocks is meshed and reported (its count and its note), and every unconverted
-    /// consumer refuses it by name with the one sentence; the solve is one of them.</summary>
+    /// consumer refuses it by name with the one sentence. Since PMS-5 the fill and the dense solve read blocks
+    /// (Pms5LocalGridFillTests); an edge port and the product's run are still refused.</summary>
     [Fact]
     public void ABlockMesh_IsReported_AndRefusedByTheSolve()
     {
@@ -204,11 +205,8 @@ public class Pms4LocalGridTests(ITestOutputHelper output)
         Assert.True(report.UnknownCount > 0);
         Assert.Contains(report.Notes, n => n.StartsWith("The grid is local", StringComparison.Ordinal));
 
-        var solve = Assert.Throws<PlanarLocalGridRefusedException>(
-            () => PlanarSolve.Run(f.Problem, report.Mesh, [], [10e9]));
-        Assert.Equal(PlanarMesh.LocalGridRefusal("the solve"), solve.Message);
-        Assert.Throws<PlanarLocalGridRefusedException>(() => PlanarPorts.ResolveAll(report.Mesh, f.Ports));
-        Assert.Throws<PlanarLocalGridRefusedException>(() => PlanarFill.BuildCores(report.Mesh));
+        var ports = Assert.Throws<PlanarLocalGridRefusedException>(() => PlanarPorts.ResolveAll(report.Mesh, f.Ports));
+        Assert.Equal(PlanarMesh.LocalGridRefusal("an edge port"), ports.Message);
 
         var kernel = Assert.Throws<PlanarLocalGridRefusedException>(() => new PlanarKernel().Solve(
             f.Problem, PlanarMeshSettings.Default with { LocalGrid = true, MemoryLimitBytes = 16_000_000_000L }, f.Ports,

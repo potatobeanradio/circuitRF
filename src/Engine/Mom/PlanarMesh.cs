@@ -242,6 +242,7 @@ public sealed record PlanarMesh(
     {
         get
         {
+            if (BlockSource is not null) return true;
             foreach (var c in Cells) if (c.IsBlock) return true;
             foreach (var b in Bases) if (b.IsSegment) return true;
             return false;
@@ -260,6 +261,15 @@ public sealed record PlanarMesh(
     {
         if (HasBlocks) throw new PlanarLocalGridRefusedException(consumer);
     }
+
+    /// <summary>
+    /// <b>PMS-5 — the local-grid mesh this one is the SUPPORT mesh of</b>, or null on every mesh a mesher makes. A support
+    /// mesh (<see cref="PlanarLocalGridFill.SupportMesh"/>) is what the fill integrates on a block mesh: its cells are the
+    /// distinct support rectangles — whole blocks and the strips of a coarse block a rooftop across a refinement step
+    /// uses — and its bases are the source's, in the source's order, each naming its two supports. It is the fill's own
+    /// object: ports, the conduction check and the excitation read the source, by basis index, which the two share.
+    /// </summary>
+    public PlanarMesh? BlockSource { get; init; }
 
     /// <summary>The size of the matrix the DENSE path holds and factors — the merged count when
     /// <see cref="Merge"/> is set, the basis count otherwise. What every dense ceiling is asked of.</summary>

@@ -1096,7 +1096,9 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
+        ArgumentNullException.ThrowIfNull(mesh);
+        // PMS-5 — a block mesh is filled on its support mesh: one cell per support rectangle, the same bases.
+        mesh = PlanarLocalGridFill.ForFill(mesh);
         // Every fill in the engine passes through here, so this is the one place the settings
         // have to be sound — see PlanarFillSettings.Validate for why each check exists.
         (settings ?? PlanarFillSettings.Default).Validate();
@@ -1149,7 +1151,7 @@ public static partial class PlanarFill
             long key = classKey[cls];
             var (outer, inner) = classifier.Representative(key);
             var (nodes, panels) = PairClassifier.CoreRule(key, st);
-            var q = CellPairCores(outer, inner, nodes, panels, wantRad);
+            var q = CellPairCores(outer, inner, nodes, panels, wantRad, st.SelfPanels);
             long o = (long)cls * stride;
             void Put(int slot, CoreTriple t)
             {
@@ -1268,7 +1270,8 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCoresByPairs(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
+        ArgumentNullException.ThrowIfNull(mesh);
+        mesh = PlanarLocalGridFill.ForFill(mesh);   // PMS-5 — the reference reads the same support mesh
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
@@ -1379,7 +1382,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildGeometryOnlyCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
+        mesh.EnsureNoBlocks("the accelerated solve");   // PMS-4/5 — AIM's geometry is brief 6's
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
@@ -1461,7 +1464,7 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildCoresByHalves(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        mesh.EnsureNoBlocks("the matrix fill");   // PMS-4 — refused by name until it reads blocks
+        mesh.EnsureNoBlocks("L8c's reference core build");   // PMS-5 — P4's own reference stays tensor-only
         (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
         var st = settings ?? PlanarFillSettings.Default;
@@ -1757,27 +1760,27 @@ public static partial class PlanarFill
         var a = mesh.Cells[outer];
         var b = mesh.Cells[inner];
         var (nodes, panels) = RuleFor(a, b, st);
-        return CellPairCores(a, b, nodes, panels, wantRad);
+        return CellPairCores(a, b, nodes, panels, wantRad, st.SelfPanels);
     }
 
     /// <summary>P5 — the same pass on two cells with the rule given, which is how a translation
     /// class's representative is integrated: the rule is the class's (it is in the key), never
     /// re-derived from the representative's own floats.</summary>
-    internal static CellPairMoments CellPairCores(PlanarCell a, PlanarCell b, int nodes, int panels, bool wantRad)
+    /// <param name="overlapPanels">PMS-5 — the panels per axis of each piece of the outer cell when the two cells
+    /// OVERLAP (a support mesh's strip and its block, PlanarLocalGridFill.OuterPanels); the settings' self panels. A
+    /// pair that does not overlap never reads it, so every tensor-grid pair is the pass it was.</param>
+    internal static CellPairMoments CellPairCores(PlanarCell a, PlanarCell b, int nodes, int panels, bool wantRad,
+                                                  int overlapPanels)
     {
         var (gx, gw) = Legendre.Nodes(nodes);
         double invAb = 1.0 / b.Area, invAa = 1.0 / a.Area;
-        var t = PanelEdges(panels);
 
         double p0 = 0, pl = 0, pr = 0;
         double x10i = 0, x10l = 0, x10r = 0, x01i = 0, x01l = 0, x01r = 0, x11i = 0, x11l = 0, x11r = 0;
         double y10i = 0, y10l = 0, y10r = 0, y01i = 0, y01l = 0, y01r = 0, y11i = 0, y11l = 0, y11r = 0;
 
-        for (int qx = 0; qx < panels; qx++)
-            for (int qy = 0; qy < panels; qy++)
+        foreach (var (xa, xb, ya, yb) in PlanarLocalGridFill.OuterPanels(a, b, panels, overlapPanels))
             {
-                double xa = a.XMin + t[qx] * a.Width,  xb = a.XMin + t[qx + 1] * a.Width;
-                double ya = a.YMin + t[qy] * a.Height, yb = a.YMin + t[qy + 1] * a.Height;
                 double cx = 0.5 * (xa + xb), hx = 0.5 * (xb - xa);
                 double cy = 0.5 * (ya + yb), hy = 0.5 * (yb - ya);
 
@@ -3241,7 +3244,6 @@ public static partial class PlanarFill
                   : tau < st.FarRatio  ? st.MidNodes : st.FarNodes;
         int panels = tau < st.NearRatio ? st.TouchPanels : 1;
         var (gx, gw) = Legendre.Nodes(nodes);
-        var t = PanelEdges(panels);
 
         double invAv = 1.0 / v.Area;
         Complex sum = Complex.Zero;
@@ -3253,11 +3255,16 @@ public static partial class PlanarFill
         bool whole = half.Strips is null;
         double invAc = 1.0 / c.Area;
 
-        for (int px = 0; px < panels; px++)
-        for (int py = 0; py < panels; py++)
+        // PMS-5 (R-pms5-4) — on a support mesh the horizontal half can be a STRIP of the via's own foot block: each
+        // rectangle is then cut at the other's edges (PlanarLocalGridFill.OuterPanels), so every piece pair is equal or
+        // touching as on a tensor grid. A pair that does not overlap gets the panels it always had. The long-side rule
+        // the cores take is NOT applied here: this arm is a 4-D graded quadrature, so it would multiply the cost of every
+        // near pair a long strip is in, and its accuracy is carried by the end-to-end comparison (RESOLVED.md §PMS-5).
+        var vBoxes = PlanarLocalGridFill.OuterPanels(v, c, panels, st.SelfPanels, longSide: false);
+        var cBoxes = whole ? PlanarLocalGridFill.OuterPanels(c, v, panels, st.SelfPanels, longSide: false) : null;
+
+        foreach (var (xa, xb, ya, yb) in vBoxes)
         {
-            double xa = v.XMin + t[px] * v.Width,  xb = v.XMin + t[px + 1] * v.Width;
-            double ya = v.YMin + t[py] * v.Height, yb = v.YMin + t[py + 1] * v.Height;
             double cx = 0.5 * (xa + xb), hx = 0.5 * (xb - xa);
             double cy = 0.5 * (ya + yb), hy = 0.5 * (yb - ya);
 
@@ -3270,11 +3277,8 @@ public static partial class PlanarFill
                 if (whole)
                 {
                     // OuterNodes' whole-rectangle branch, inline: panel (qx, qy), node (i′, j′).
-                    for (int qx = 0; qx < panels; qx++)
-                    for (int qy = 0; qy < panels; qy++)
+                    foreach (var (xpa, xpb, ypa, ypb) in cBoxes!)
                     {
-                        double xpa = c.XMin + t[qx] * c.Width,  xpb = c.XMin + t[qx + 1] * c.Width;
-                        double ypa = c.YMin + t[qy] * c.Height, ypb = c.YMin + t[qy + 1] * c.Height;
                         double cpx = 0.5 * (xpa + xpb), hpx = 0.5 * (xpb - xpa);
                         double cpy = 0.5 * (ypa + ypb), hpy = 0.5 * (ypb - ypa);
 
@@ -4284,7 +4288,7 @@ public sealed class PlanarEntryCores
     {
         var (a, b) = Classifier.Representative(key);
         var (nodes, panels) = PairClassifier.CoreRule(key, Settings);
-        var cores = PlanarFill.CellPairCores(a, b, nodes, panels, WantRad);
+        var cores = PlanarFill.CellPairCores(a, b, nodes, panels, WantRad, Settings.SelfPanels);
         Interlocked.Increment(ref _passes);
 
         lock (_grow)
