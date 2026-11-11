@@ -142,6 +142,11 @@
       "Summary": "A thin-film resistor on a level of its own on a silicon back-end, contacted through vias, with a Metal1 line crossing under it that does not touch it."
     },
     {
+      "Folder": "Passivated Pad",
+      "Title": "Passivated Pad",
+      "Summary": "Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via."
+    },
+    {
       "Folder": "System Design",
       "Title": "System Design (TX and RX)",
       "Summary": "A 2.4 GHz transmitter and receiver drawn twice \u2014 direct conversion and superheterodyne \u2014 from the System block library, plus a transmitter whose final stage is a nonlinear FET and a cascade gain/IP3/noise budget."

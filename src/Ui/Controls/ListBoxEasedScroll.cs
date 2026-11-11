@@ -70,6 +70,12 @@ internal static class ListBoxEasedScroll
     /// row is asked for again: an item now realised and not at the top is eased the rest of the way from its real
     /// position, and one still unrealised from a fresh estimate. A few rounds at most, so an item that can never be
     /// reached (a list still filling) cannot keep the list moving.</para>
+    ///
+    /// <para><b>When the estimates run out, the list is asked to realise the row.</b> A virtualizing list re-estimates its
+    /// own extent as it scrolls (4,858 px, then 3,162, then 4,695 within one scroll of the .ctech stackup's cards), so a
+    /// fresh estimate can miss as badly as the first and the row stays unrealised every round: the cards stopped on
+    /// whatever was there. The last round then calls <c>ScrollIntoView</c>, which realises the row from wherever the
+    /// scroll ended, and puts the row's top at the top. It is a jump, but a short one from a near miss, and only then.</para>
     /// </summary>
     internal static void BringToTop(ListBox list, object item, int index, int count, ScrollOffsetAnimator animator)
         => BringToTop(list, item, index, count, animator, rounds: 3);
@@ -83,7 +89,16 @@ internal static class ListBoxEasedScroll
         double target = TopOffsetOf(list, item, scroll) ?? EstimatedOffsetOf(index, count, scroll);
         animator.AnimateTo(scroll, target, () => TopOffsetOf(list, item, scroll), landed: () =>
         {
-            if (rounds <= 1) return;
+            if (rounds <= 1)
+            {
+                if (TopOffsetOf(list, item, scroll) is not null) return;
+                list.ScrollIntoView(item);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (TopOffsetOf(list, item, scroll) is { } top) scroll.Offset = scroll.Offset.WithY(top);
+                }, Avalonia.Threading.DispatcherPriority.Background);
+                return;
+            }
             // After layout, so a row the last frames brought into view has been realised and measured.
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {

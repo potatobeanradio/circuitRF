@@ -37,9 +37,38 @@ public static class SlabLateralBound
     /// already had (a board outline's cut-outs) are kept. Integer nanometres, as <see cref="ClipToRect"/>.
     /// </summary>
     public static IReadOnlyList<PlanarPolygon> Subtract(IReadOnlyList<PlanarPolygon> slab, IReadOnlyList<PlanarPolygon> cuts)
+        => Boolean(ClipType.Difference, slab, cuts);
+
+    /// <summary>PSV-4 — the region <paramref name="a"/> and <paramref name="b"/> share, as outer rings with holes.</summary>
+    public static IReadOnlyList<PlanarPolygon> Intersect(IReadOnlyList<PlanarPolygon> a, IReadOnlyList<PlanarPolygon> b)
+        => a.Count == 0 || b.Count == 0 ? [] : Boolean(ClipType.Intersection, a, b);
+
+    /// <summary>
+    /// PSV-4 — <paramref name="polys"/> grown outward by <paramref name="delta"/> metres with square corners: the footprint a
+    /// conformal coat of that thickness takes round the metal. A mitred corner sets the wall at the coat's thickness on
+    /// both faces, which is the coat a straight-walled process leaves; a rounded one would add facets the mesh pays for.
+    /// </summary>
+    public static IReadOnlyList<PlanarPolygon> Inflate(IReadOnlyList<PlanarPolygon> polys, double delta)
+    {
+        if (polys.Count == 0) return [];
+        var normal = Clipper.Union(Paths(polys), FillRule.EvenOdd);
+        var grown  = Clipper.InflatePaths(normal, delta * NmPerMetre, JoinType.Miter, EndType.Polygon, miterLimit: 2.0);
+        return Boolean(ClipType.Union, Tree(grown), []);
+    }
+
+    private static IReadOnlyList<PlanarPolygon> Tree(Paths64 paths)
+    {
+        var result = new List<PlanarPolygon>();
+        foreach (var path in paths)
+            if (path.Count >= 3) result.Add(new PlanarPolygon(Ring(path)));
+        return result;
+    }
+
+    private static IReadOnlyList<PlanarPolygon> Boolean(ClipType op, IReadOnlyList<PlanarPolygon> a, IReadOnlyList<PlanarPolygon> b)
     {
         var tree = new PolyTree64();
-        Clipper.BooleanOp(ClipType.Difference, Paths(slab), Paths(cuts), tree, FillRule.EvenOdd);
+        // A union of rings that came out of an offset is read non-zero, so a hole ring the offset kept stays a hole.
+        Clipper.BooleanOp(op, Paths(a), Paths(b), tree, op == ClipType.Union ? FillRule.NonZero : FillRule.EvenOdd);
         var result = new List<PlanarPolygon>();
         void Walk(PolyPath64 node)
         {

@@ -1,0 +1,27 @@
+{
+ "FormatVersion": 1,
+ "Name": "Through-Silicon Via",
+ "LayoutRef": "3 Through-Silicon Via/layout/3 Through-Silicon Via.clay",
+ "SignalStackupLayerName": "Metal3",
+ "GroundStackupLayerName": "Backside Metal",
+ "Frequency": {
+  "StartExpr": "2",
+  "StopExpr": "14",
+  "StepExpr": "",
+  "NumPoints": 3,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "AnalysisLevelNames": [
+  "Metal3"
+ ],
+ "AnalysisKind": "Planar",
+ "DispersionCorrection": true
+}

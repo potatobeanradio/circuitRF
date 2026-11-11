@@ -60,10 +60,53 @@ public sealed class MarkdownDocument : Document, IFileBackedDocument
     /// repository is hard-wrapped at its author's editor column, and honouring those breaks would put
     /// a ragged edge down the middle of every paragraph at a width that has nothing to do with the
     /// window. <see cref="SmallMarkdown.Parse"/>'s own parameter carries the argument.</para>
+    /// <para><b>Pictures</b> are resolved here, against the file's own folder, because only the document
+    /// knows where it is — see <see cref="ResolveImage"/>.</para>
     /// </summary>
     /// <exception cref="IOException">Unreadable; the caller reports it.</exception>
     public static MarkdownDocument Load(string absolutePath)
-        => new(absolutePath, SmallMarkdown.Parse(File.ReadAllText(absolutePath), joinSoftWraps: true));
+    {
+        var parsed = SmallMarkdown.Parse(File.ReadAllText(absolutePath), joinSoftWraps: true, images: true);
+        string? folder = Path.GetDirectoryName(absolutePath);
+        var lines = new List<MarkdownLine>(parsed.Count);
+        foreach (MarkdownLine line in parsed)
+            lines.Add(line.Image is { } image
+                ? line with { Image = image with { Path = ResolveImage(folder, image.Source) } }
+                : line);
+        return new(absolutePath, lines);
+    }
+
+    /// <summary>The picture formats drawn. Each is one Avalonia decodes; SVG is not among them.</summary>
+    public static readonly IReadOnlySet<string> ImageExtensions =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+
+    /// <summary>
+    /// The local file a picture's target names, or null to show its alt text instead.
+    ///
+    /// <para><b>Local files only.</b> A target with a scheme (<c>https://</c>, <c>data:</c>) is not
+    /// fetched: opening a workspace must not reach the network, and the same README on GitHub still shows
+    /// the picture from the repository. A relative target resolves against the README's own folder, as
+    /// GitHub resolves it, so one file reads the same in both places; <c>%20</c> is decoded, because that
+    /// is how GitHub wants a space in a path written. A missing file or a format not in
+    /// <see cref="ImageExtensions"/> is null as well — the alt text is the honest fallback.</para>
+    /// </summary>
+    public static string? ResolveImage(string? folder, string source)
+    {
+        if (string.IsNullOrWhiteSpace(source) || folder is null) return null;
+        if (source.Contains("://", StringComparison.Ordinal)
+            || source.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            || source.StartsWith("//", StringComparison.Ordinal)) return null;
+
+        string decoded;
+        try { decoded = Uri.UnescapeDataString(source); }
+        catch (UriFormatException) { return null; }
+
+        string full;
+        try { full = Path.GetFullPath(Path.Combine(folder, decoded.Replace('/', Path.DirectorySeparatorChar))); }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+
+        return ImageExtensions.Contains(Path.GetExtension(full)) && File.Exists(full) ? full : null;
+    }
 
     /// <summary>Whether <paramref name="path"/> is a file this document can open.</summary>
     public static bool IsMarkdown(string? path)

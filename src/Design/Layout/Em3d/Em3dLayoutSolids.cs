@@ -237,6 +237,10 @@ public static class Em3dLayoutSolids
         private readonly Dictionary<int, List<PlanarPolygon>> _filmPolys = [];
         /// <summary>PSV-2 — each opened dielectric band's mask name and its merged openings (StackupLayer.OpenWithLayer).</summary>
         private readonly Dictionary<int, (string Mask, List<PlanarPolygon> Polys)> _openings = [];
+        /// <summary>PSV-4 — a conformal cover's band index → the conductor band it follows.</summary>
+        private readonly Dictionary<int, int> _conformalOver = [];
+        /// <summary>PSV-4 — a dielectric's band index → the conformal cover directly below it, whose topography it fills.</summary>
+        private readonly Dictionary<int, int> _fillsConformal = [];
         private readonly List<PlanarPolygon> _outline = [];
 
         /// <summary>Where <see cref="ClipDisc"/> cut a board edge, for <see cref="ShareCutVertices"/>.</summary>
@@ -625,6 +629,16 @@ public static class Em3dLayoutSolids
                 // air, as an outer band already is.
                 else if (!Stackup.LeavesBandAsAir(c.Layer, above.Layer))
                     _dielZ[above.Index] = (c.BottomM, _dielZ[above.Index].Top);
+                // PSV-4 — and in 3D it FOLLOWS the metal (BuildSolids, ConformalCoat): its thickness on the metal's top,
+                // down its sides and on the floor of the metal's band beside it. A dielectric directly above it fills
+                // down into what that leaves, as a spin-on layer does.
+                else
+                {
+                    _conformalOver[above.Index] = c.Index;
+                    if (i + 2 < _inProblem.Count && _inProblem[i + 2] is { Layer.Kind: StackupKind.Dielectric } fill
+                        && fill.Layer.PresentWithLayer is not { Length: > 0 })
+                        _fillsConformal[fill.Index] = above.Index;
+                }
             }
 
             // ── Patterned films (PresentWithLayer is simply true in 3D, §4.1a) ─────────────────
@@ -771,6 +785,25 @@ public static class Em3dLayoutSolids
             return null;
         }
 
+        /// <summary>PSV-4 — every piece of metal on a conductor band, as drawn.</summary>
+        private List<PlanarPolygon> MetalOf(int band) => Pieces.TryGetValue(band, out var ps) ? [.. ps.Select(p => p.Poly)] : [];
+
+        /// <summary>
+        /// PSV-4 — a conformal cover of thickness <paramref name="t"/> over the metal of <paramref name="band"/>, inside
+        /// <paramref name="region"/> (the cover's outline less its openings): Field, the coat on the band's floor away from
+        /// the metal; Walls, the ring of width t round the metal; Top, the coat on the metal. Disjoint by construction.
+        /// </summary>
+        private (IReadOnlyList<PlanarPolygon> Field, IReadOnlyList<PlanarPolygon> Walls, IReadOnlyList<PlanarPolygon> Top)
+            ConformalCoat(int band, double t, IReadOnlyList<PlanarPolygon> region)
+        {
+            var metal = MetalOf(band);
+            if (metal.Count == 0) return (region, [], []);
+            var grown = SlabLateralBound.Inflate(metal, t);
+            return (SlabLateralBound.Subtract(region, grown),
+                    SlabLateralBound.Intersect(SlabLateralBound.Subtract(grown, metal), region),
+                    SlabLateralBound.Intersect(metal, region));
+        }
+
         /// <summary>The content bounds (R-em3d3-6), from everything Prepare built.</summary>
         private void Extent()
         {
@@ -838,6 +871,20 @@ public static class Em3dLayoutSolids
                 return new Em3dBox(new Point3(x0, y0, z0), new Point3(x1, y1, z1));
             }
 
+            // PSV-4 — one piece of a conformal cover, or of the fill above one, as dielectric solids of the entry's own
+            // material at the current order: `name`, `name/2`… for the cover itself, `name/wall`, `name/top/2`… for the rest.
+            void Emit(string entry, string part, IReadOnlyList<PlanarPolygon> polys, double z0, double z1)
+            {
+                if (z1 <= z0) return;
+                var layer = _inProblem.First(x => x.Layer.Name == entry).Layer;
+                string material = DielectricMaterial(layer);
+                string stem = part.Length == 0 ? entry : $"{entry}/{part}";
+                for (int k = 0; k < polys.Count; k++)
+                    solids.Add(Origin(new Em3dSolid(polys.Count == 1 ? stem : $"{stem}/{k + 1}", material, Em3dRole.Dielectric,
+                                                    Extrude(polys[k], z0, z1), order),
+                                      Em3dObjectKind.Dielectric, entry));
+            }
+
             //
             // Bottom-up: dielectrics, then the air above the stack, then bodies, then conductors (metal
             // wins over what it is embedded in), then vias, then bond wires (brief 4). STATED
@@ -867,8 +914,40 @@ public static class Em3dLayoutSolids
                               $"it, {Fmt(areaM2 * 1e12)} µm² in all, with straight walls.");
                 }
                 if (lateral is { Count: 0 }) continue;
+                if (_conformalOver.TryGetValue(b.Index, out int follows))
+                {
+                    // PSV-4 — a conformal cover follows the metal. Three pieces that do not overlap, so no backend's
+                    // overlap order decides anything: on the floor of the metal's band away from the metal, a wall round
+                    // each piece of metal up to the coat's top, and a coat on the metal's top. Openings are already out
+                    // of `lateral`.
+                    order++;
+                    var region = lateral ?? [new PlanarPolygon([new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)])];
+                    _dielectricOutlines.AddRange(region);
+                    var coat = ConformalCoat(follows, z1 - z0, region);
+                    var c = _bandByIndex[follows];
+                    Emit(b.Layer.Name, "", coat.Field, c.BottomM, c.BottomM + (z1 - z0));
+                    Emit(b.Layer.Name, "wall", coat.Walls, c.BottomM, z1);
+                    Emit(b.Layer.Name, "top", coat.Top, z0, z1);
+                    airBottom = double.IsNaN(airBottom) ? z1 : Math.Max(airBottom, z1);
+                    continue;
+                }
                 order++;
                 if (lateral is not null) _dielectricOutlines.AddRange(lateral);
+                if (_fillsConformal.TryGetValue(b.Index, out int coatIndex) && _conformalOver.TryGetValue(coatIndex, out int metalBand))
+                {
+                    // PSV-4 — the dielectric directly on a conformal cover fills what the cover's topography leaves beside
+                    // the metal, down to the coat on the band's floor, as a spin-on layer does; over the metal it starts
+                    // where it always did.
+                    var region = lateral ?? [new PlanarPolygon([new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)])];
+                    var (c0, c1) = _dielZ[coatIndex];
+                    double t = c1 - c0;
+                    var c = _bandByIndex[metalBand];
+                    var coatOpen = _openings.TryGetValue(coatIndex, out var co) ? co.Polys : [];
+                    var grown = SlabLateralBound.Inflate(MetalOf(metalBand), t);
+                    if (c.TopM > c.BottomM + t)
+                        Emit(b.Layer.Name, "fill", SlabLateralBound.Subtract(region, grown), c.BottomM + t, c.TopM);
+                    Emit(b.Layer.Name, "fill-top", SlabLateralBound.Subtract(region, SlabLateralBound.Subtract(grown, coatOpen)), c.TopM, c1);
+                }
                 if (lateral is null)
                 {
                     solids.Add(Origin(new Em3dSolid(b.Layer.Name, material, Em3dRole.Dielectric, FullExtent(z0, z1), order),

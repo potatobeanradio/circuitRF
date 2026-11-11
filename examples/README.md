@@ -23,7 +23,10 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
 4. Write a `README.md` beside the `.cws` saying what the example teaches. **It is what the user
    sees first**: a workspace whose open restores no documents of its own opens on its README,
    read-only, instead of the Welcome tab. Headings, bold, italics, bullets, fenced code blocks
-   and two-column tables all render; anything else degrades to plain text (`src/Ui/Markdown/`).
+   and two-column tables all render, and so does a picture on a line of its own
+   (`![what it shows](pictures/name.png)`, relative to the README, PNG, JPEG, GIF, BMP or WebP);
+   anything else degrades to plain text (`src/Ui/Markdown/`). A picture inside a sentence, or one
+   that does not resolve, shows its alt text, so write the alt text as a sentence.
 
 `tests/Ui.Tests/Examples/ExampleWorkspacesTests.cs` holds the rest shut: the index and the disk
 agree both ways, every design document is a view of a cell, every schematic still extracts with

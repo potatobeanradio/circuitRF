@@ -19,6 +19,10 @@
 
     There is no edit affordance anywhere in here, which is the whole of how this document is
     read-only — see MarkdownDocument.
+
+    LineSpacing, not LineHeight: a fixed LineHeight holds a line with a picture in it to that height,
+    and the picture is then drawn upward over the lines above it. Spacing ADDS to each line's own
+    height, so a text line keeps the old 20 px pitch and a picture's line is as tall as the picture.
   -->
 
   <ScrollViewer Name="BodyScroll"
@@ -28,7 +32,7 @@
     <SelectableTextBlock Name="BodyText"
                          TextWrapping="Wrap"
                          FontSize="13"
-                         LineHeight="20"
+                         LineSpacing="4"
                          MaxWidth="820"
                          Margin="28,24,28,32"
                          HorizontalAlignment="Center"

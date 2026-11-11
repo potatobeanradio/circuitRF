@@ -1,0 +1,61 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 5,
+ "AngleMode": "AnyAngle",
+ "TechRef": "../../tech/rfic-Si_3LM_TFR_100um.ctech",
+ "Shapes": [
+  {
+   "$type": "Rect",
+   "X1": 0,
+   "Y1": -50000,
+   "X2": 800000,
+   "Y2": 50000,
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 380000,
+   "Y1": -20000,
+   "X2": 420000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 8,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 0,
+   "Y": 0,
+   "Text": "1",
+   "Height": 20000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 800000,
+   "Y": 0,
+   "Text": "2",
+   "Height": 20000,
+   "Rotation": "R180",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  }
+ ],
+ "Instances": []
+}

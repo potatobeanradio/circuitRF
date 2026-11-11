@@ -89,6 +89,51 @@ public sealed class MarkdownDocumentTests : IDisposable
         Assert.Contains(doc.Lines, l => Flat(l) == "A line.");
     }
 
+    // ══ 2b. Pictures ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// A line that is one picture is a picture line for a README, and stays its alt text for the
+    /// Release Notes dialog, whose network-fed body asks for no pictures.
+    /// </summary>
+    [Fact]
+    public void APictureLineIsAPictureOnlyWhenAsked()
+    {
+        const string md = "![The pad, opened](pictures/pad.png \"title\")";
+
+        var asked = Assert.Single(SmallMarkdown.Parse(md, images: true));
+        Assert.Equal(new MarkdownImage("The pad, opened", "pictures/pad.png"), asked.Image);
+        Assert.Equal("The pad, opened", Flat(asked));
+
+        var notAsked = Assert.Single(SmallMarkdown.Parse(md));
+        Assert.Null(notAsked.Image);
+        Assert.Equal("The pad, opened", Flat(notAsked));
+
+        // Inside a sentence it is the alt text either way: a picture is a block, not a word.
+        Assert.All(SmallMarkdown.Parse("See ![the pad](pad.png) here.", images: true), l => Assert.Null(l.Image));
+    }
+
+    /// <summary>
+    /// A picture resolves against the README's own folder, as GitHub resolves it, with <c>%20</c> decoded;
+    /// a URL, a missing file and a format the reader cannot draw resolve to nothing, and show their alt text.
+    /// </summary>
+    [Fact]
+    public void APictureResolvesAgainstTheReadmesFolder_AndNeverToAUrl()
+    {
+        Directory.CreateDirectory(Path.Combine(_tmp, "pictures"));
+        string pad = Path.Combine(_tmp, "pictures", "probe pad.png");
+        File.WriteAllBytes(pad, [0x89, 0x50, 0x4E, 0x47]);
+        File.WriteAllText(Path.Combine(_tmp, "pictures", "drawing.svg"), "<svg/>");
+        string path = Path.Combine(_tmp, "README.md");
+        File.WriteAllText(path, string.Join("\n\n",
+            "![a](pictures/probe%20pad.png)", "![b](<pictures/probe pad.png>)", "![c](https://example.com/pad.png)",
+            "![d](pictures/missing.png)", "![e](pictures/drawing.svg)"));
+
+        var images = MarkdownDocument.Load(path).Lines.Select(l => l.Image).OfType<MarkdownImage>().ToList();
+
+        Assert.Equal(["a", "b", "c", "d", "e"], images.Select(i => i.Alt));
+        Assert.Equal([pad, pad, null, null, null], images.Select(i => i.Path));
+    }
+
     // ══ 3. Tables, flattened ════════════════════════════════════════════════
 
     [Fact]
@@ -236,6 +281,10 @@ public sealed class MarkdownDocumentTests : IDisposable
             {
                 Assert.DoesNotContain("|---", Flat(line));
                 Assert.DoesNotContain("```",  Flat(line));
+                // A picture an example's README shows is a file it ships, so a renamed one fails here
+                // rather than turning into a line of alt text nobody notices.
+                if (line.Image is { } image)
+                    Assert.True(image.Path is not null, $"'{example.Title}' README shows {image.Source}, which does not resolve.");
             }
         }
     }

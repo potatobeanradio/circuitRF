@@ -154,22 +154,40 @@ public sealed class ConformalCoverTests
         Assert.Equal((103e-6, 104e-6), (Math.Round(conformal[2].YBottomMeters, 12), Math.Round(conformal[2].YTopMeters, 12)));
     }
 
-    /// <summary><b>3D.</b> On the RO4350B starter's microstrip under a 25 µm mask: the mask solid starts on
-    /// the substrate (absorbing the copper's band) when unset, and on the copper's top when conformal.</summary>
+    /// <summary><b>3D.</b> On the RO4350B starter's microstrip under a 25 µm mask: unset, the mask is one slab from the
+    /// substrate's top (absorbing the copper's band). Conformal, it FOLLOWS the copper (PSV-4): 25 µm on the copper's top,
+    /// a 25 µm wall round its sides up to that coat's top, and 25 µm on the substrate beside it.</summary>
     [Fact]
-    public void ThreeD_AConformalMaskSolid_StartsOnTheCoppersTop()
+    public void ThreeD_AConformalMask_FollowsTheCopper_TopWallsAndFloor()
     {
-        double MaskBottom(bool? conformal)
+        IReadOnlyList<Em3dSolid> Mask(bool? conformal)
         {
             var (setup, source) = Em3dGeneratorTests.Microstrip();
             source.Technology!.Stackup.Layers.Insert(0, Dielectric("Mask", 25, 3.5, conformal));
             var r = Em3dGenerator.Generate(setup, source, source.Technology!);
             Assert.True(r.Ok, r.Refusal);
-            return Assert.IsType<Em3dBox>(r.Problem!.Solids.Single(s => s.Name == "Mask").Primitive).Min.Z;
+            return [.. r.Problem!.Solids.Where(s => s.Name == "Mask" || s.Name.StartsWith("Mask/", StringComparison.Ordinal))];
         }
 
-        Assert.Equal(543e-6, MaskBottom(null), 12);    // the substrate's top
-        Assert.Equal(578e-6, MaskBottom(true), 12);    // the copper's top
+        var flat = Assert.Single(Mask(null));
+        Assert.Equal(543e-6, Assert.IsType<Em3dBox>(flat.Primitive).Min.Z, 12);    // the substrate's top
+
+        var coat = Mask(true).ToDictionary(s => s.Name, s => Em3dProblem.Bounds(s.Primitive));
+        Assert.Equal(["Mask", "Mask/top", "Mask/wall"], coat.Keys.Order(StringComparer.Ordinal));
+        // On the substrate beside the copper, 25 µm thick.
+        Assert.Equal((543e-6, 568e-6), (coat["Mask"].Z0, coat["Mask"].Z1), new Tol());
+        // On the copper's top, 25 µm thick, exactly over the 1.1 mm strip.
+        Assert.Equal((578e-6, 603e-6), (coat["Mask/top"].Z0, coat["Mask/top"].Z1), new Tol());
+        Assert.Equal((-550e-6, 550e-6), (coat["Mask/top"].Y0, coat["Mask/top"].Y1), new Tol());
+        // The wall: from the substrate to the coat's top, 25 µm outside the strip's edges.
+        Assert.Equal((543e-6, 603e-6), (coat["Mask/wall"].Z0, coat["Mask/wall"].Z1), new Tol());
+        Assert.Equal((-575e-6, 575e-6), (coat["Mask/wall"].Y0, coat["Mask/wall"].Y1), new Tol());
+    }
+
+    private sealed class Tol : IEqualityComparer<(double, double)>
+    {
+        public bool Equals((double, double) a, (double, double) b) => Math.Abs(a.Item1 - b.Item1) < 1e-9 && Math.Abs(a.Item2 - b.Item2) < 1e-9;
+        public int GetHashCode((double, double) v) => 0;
     }
 
     /// <summary>The stackup drawing tags a conformal cover, and only where the setting acts.</summary>

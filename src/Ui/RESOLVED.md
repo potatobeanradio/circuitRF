@@ -42136,3 +42136,41 @@ name the swept variable.
   its chapter section. Added `DocSettingsFixtures.Plugins() => Tab(3)`, the `settings-plugins` figure, the settings.md
   section citing it, and the Plugins row in `RevisionControlSettingsTests.EachSettingsFigureSelectsTheTabItClaimsToShow`.
   The four fixtures below it were already re-pointed by PLG-6.
+
+## A README shows pictures (2026-11-10)
+
+`SmallMarkdown.Parse(..., images: true)` makes a line that is exactly one `![alt](target)` a picture line
+(`MarkdownLine.Image`); `MarkdownDocument.Load` resolves the target against the README's folder (`%20` decoded,
+`<…>` accepted) to a local PNG/JPEG/GIF/BMP/WebP, and `MarkdownInlines` draws it as an `InlineUIContainer` inside
+the one `SelectableTextBlock`, so selection still runs through the page. The Release Notes dialog does not ask for
+images: its body comes from the network and its pictures are URLs. A URL, a missing file or SVG falls back to the alt
+text, in italics, and so does a picture inside a sentence.
+
+- **A fixed `LineHeight` draws an inline picture over the text above it.** With `LineHeight="20"` the picture's line
+  stayed 20 px tall and the picture extended upward over ~25 lines. `LineSpacing="4"` adds to each line's own height
+  instead; a text line's pitch measured the same (20 px) on the Via Contact Resistor README before and after.
+- The text block measures an inline control at its own size, so `MarkdownDocumentView` holds each picture to the
+  visible column on `SizeChanged`, and disposes the decoded bitmaps when the page is rebuilt.
+- `tools/UiSnapshot --readme <file.md>` renders the document view headlessly.
+- `MarkdownDocumentTests`' loop over every shipped example README now fails on a picture that does not resolve.
+
+## A click on a stackup band whose card is far away stopped the card list on other cards (2026-11-10)
+
+On the silicon starter, a click on the TFR Level band (its films fill it) after an earlier click had scrolled the cards
+left the list on other cards; a click on Silicon from the top did too, stopping mid-way through a conductor card.
+
+- **Cause.** `TechEditorView.ScrollStackupSelectionIntoView` kept its own copy of the eased scroll: when the card is
+  unrealised it eases to an estimate (the card's share of `Extent.Height`) and takes the real position only if the card
+  is realised before 85 % of the ease. A virtualizing list re-estimates its extent while it scrolls (4,858 → 3,162 →
+  2,184 → 4,695 px within one scroll, traced), so the estimate lands where the card is not, the card is never realised,
+  and nothing checked the landing.
+- **Fix.** The view calls `ListBoxEasedScroll.BringToTop` (the RF Chain Budget's stage list already did), which asks for
+  the card again on landing and re-aims from its real position or a fresh estimate, up to three rounds. When the last
+  round still finds it unrealised, `BringToTop` now calls `ScrollIntoView` from where the ease ended and puts the card's
+  top at the top. A card already wholly on screen still does not move, and nothing measures by jumping and restoring.
+- **The harness could not show any of it.** UiSnapshot's `--wait` pumped `RunJobs`, which never promotes a
+  `DispatcherTimer`, so the animator never ticked headlessly (a shot that did end scrolled was something else). `--wait`
+  now runs `Dispatcher.UIThread.MainLoop` until the time is up, with a render tick and a layout pass every 16 ms.
+- Gates: `StackupSelectionTests`' two source scans now hold the no-jump rules against `BringToTop`; UiSnapshot
+  `--ctech rfic-Si_3LM_TFR_100um.ctech --tab 1 --size 1100x950` with `--click 500,358`, `--click 300,585`, Silicon then
+  TFR, Backside Metal then TFR, and ILD1 each land on the card's top.

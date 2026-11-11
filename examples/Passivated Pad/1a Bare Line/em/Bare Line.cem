@@ -1,0 +1,27 @@
+{
+ "FormatVersion": 1,
+ "Name": "Bare Line",
+ "LayoutRef": "1a Bare Line/layout/1a Bare Line.clay",
+ "SignalStackupLayerName": "Metal2",
+ "GroundStackupLayerName": "Backside Metal",
+ "Frequency": {
+  "StartExpr": "10",
+  "StopExpr": "40",
+  "StepExpr": "",
+  "NumPoints": 4,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "AnalysisLevelNames": [
+  "Metal2"
+ ],
+ "AnalysisKind": "Planar",
+ "DispersionCorrection": true
+}

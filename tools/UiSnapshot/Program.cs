@@ -157,6 +157,7 @@ string? netsHighlight = null;
 string? netsFilter = null;
 bool netsDim = false, netsZoom = false;
 bool planarMemoryDialog = false;
+string? readme = null;            // --readme <file.md>: a README as the workspace opens it, pictures included
 string? dxfMappingDialog = null;     // brief DFR38-1: the Layer Mapping dialog and its preview on a DXF
 string? dxfMappingTech = null, dxfMappingMap = null;
 bool unsavedSetupDialog = false;     // the question New 3D View from Layout asks of an EM setup with unsaved edits
@@ -292,6 +293,7 @@ for (int i = 0; i < args.Length; i++)
         case "--nets-dim": netsDim = true; break;
         case "--nets-zoom": netsZoom = true; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
+        case "--readme" when i + 1 < args.Length: readme = Path.GetFullPath(args[++i]); break;
         case "--dxf-mapping-dialog" when i + 1 < args.Length: dxfMappingDialog = Path.GetFullPath(args[++i]); break;
         case "--dxf-mapping-tech" when i + 1 < args.Length: dxfMappingTech = args[++i]; break;
         case "--dxf-mapping-map" when i + 1 < args.Length: dxfMappingMap = args[++i]; break;
@@ -439,6 +441,13 @@ if (dxfMappingDialog is not null && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowDxfMappingDialog(dxfMappingDialog, dxfMappingTech ?? "pcb-2layer_RO4350B_20mil_1oz", dxfMappingMap, output, width, height, sizeGiven);
+}
+if (readme is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowReadme(readme, output, sizeGiven ? width : 1000, sizeGiven ? height : 1400);
 }
 if (planarMemoryDialog && output is not null)
 {
@@ -1375,9 +1384,23 @@ foreach (var (kind, arg) in steps)
             break;
         case "--wait":
         {
-            // Real time passes with the dispatcher pumped, so a timer the view runs (snap tracking's dwell) fires.
-            var until = DateTime.UtcNow.AddMilliseconds(int.Parse(arg, System.Globalization.CultureInfo.InvariantCulture));
-            while (DateTime.UtcNow < until) { Thread.Sleep(20); Pump(); }
+            // Real time passes with the dispatcher's MAIN LOOP running, so a DispatcherTimer the view runs fires: RunJobs alone
+            // never promotes a timer (an eased scroll's animator stood still under it). Render ticks and layout passes run
+            // beside it every 16 ms, as a window's render loop would.
+            int ms = int.Parse(arg, System.Globalization.CultureInfo.InvariantCulture);
+            using var stopLoop = new CancellationTokenSource();
+            var frames = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Normal,
+                                             (_, _) => { AvaloniaHeadlessPlatform.ForceRenderTimerTick(); host?.UpdateLayout(); });
+            var stop = new DispatcherTimer(TimeSpan.FromMilliseconds(ms), DispatcherPriority.Normal, (s, _) =>
+            {
+                ((DispatcherTimer)s!).Stop();
+                stopLoop.Cancel();
+            });
+            frames.Start();
+            stop.Start();
+            Dispatcher.UIThread.MainLoop(stopLoop.Token);
+            frames.Stop();
+            Pump();
             break;
         }
         case "--rclick":
@@ -2622,6 +2645,24 @@ static int ShowDxfMappingDialog(string dxf, string techId, string? map, string p
         });
     Console.WriteLine($"cancelled: {Directory.GetFileSystemEntries(scratch).Length} item(s) created");
     Directory.Delete(scratch, recursive: true);
+    return 0;
+}
+
+// --readme <file.md>: the read-only README document as a workspace opens it (MarkdownDocument + its view).
+static int ShowReadme(string md, string path, double w, double h)
+{
+    var window = new Window
+    {
+        Width = w, Height = h,
+        Content = new CircuitRF.Ui.Views.Content.MarkdownDocumentView
+        {
+            DataContext = CircuitRF.Ui.Markdown.MarkdownDocument.Load(md),
+        },
+    };
+    window.Show();
+    for (int k = 0; k < 8; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
     return 0;
 }
 

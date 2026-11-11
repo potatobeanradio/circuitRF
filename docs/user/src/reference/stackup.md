@@ -224,10 +224,12 @@ which removes the entry.
 | **µ<sub>r</sub>** | Relative permeability — 1 for everything that is not a magnetic material. |
 | **σ** | Bulk conductivity, for a [conducting substrate](#conducting-substrate). Read in `S/m` or `Ω·cm`; the file states S/m. `—` means none. |
 | **Patterned with** | `(none)` for an ordinary, laterally continuous dielectric, which is what all three on this board are. Naming a conductor here says *this film exists only where that metal's artwork is* — the thin-film capacitor case, described in [The capacitor dielectric rides along only when its plate is analysed](#mim-tied). |
-| **Conformal** | For a coat deposited over the metal directly below, such as passivation: it starts on top of that metal, and the space beside the metal, in the metal's own layer, is air in every EM solver. Unticked, that space is filled with this dielectric, which suits a solder mask that flows between traces. Enabled only directly above a conductor whose **Metal thickness goes to** the layer above; the drawing tags the layer *conformal*. What it changes, measured: [the MoM engine](mom-engine.html#can-cannot). |
+| **Conformal** | For a coat deposited over the metal directly below, such as passivation. A 3D solve lays it as deposited: its thickness on the metal's top, down the metal's sides and on the floor of the metal's own layer beside it, and a dielectric directly above fills what that leaves. The planar and uniform-line kernels start it on top of the metal, with air beside the metal. Unticked, the space beside the metal is filled with this dielectric in every solver, which suits a solder mask that flows between traces. Enabled only directly above a conductor whose **Metal thickness goes to** the layer above; the drawing tags the layer *conformal*. What it changes, measured: [the MoM engine](mom-engine.html#can-cannot). |
+| **Opened by** | `(none)`, or the drawing layer this dielectric's openings are drawn on: the dielectric is everywhere **except** where that layer is drawn, as a passivation is opened over a bond pad. The inverse of **Patterned with**, and choosing one clears the other. Only drawing layers are offered, because an opening is drawn on a mask. The drawing notches the layer and tags it with the mask's name. See [Covers and openings](#covers). |
 
-**A dielectric has no drawing layer, and there is no picker for one.** It is not drawn: it is a sheet
-of material spanning the whole problem at its stated thickness.
+**A dielectric is not drawn**: it is a sheet of material spanning the whole problem at its stated
+thickness. The two pickers above tie it to artwork without making it artwork: **Patterned with** keeps
+it only where a metal is drawn, **Opened by** removes it where a mask is drawn.
 
 ### A Via entry
 
@@ -386,8 +388,37 @@ print the single ε<sub>r</sub> it uses to *size* the calibration standards and 
 series-capacitance equivalent of the stack. That number is a mesh-sizing average and never the
 reference impedance the answer is published against.
 
-Layers *above* the top conductor are not part of that slab: the top boundary is what is above, and it
-is `Open` unless you say otherwise.
+Layers *above* the top conductor are not part of that slab. They are the covers, described next, and
+above them is the top boundary, `Open` unless you say otherwise.
+
+## Covers and openings {#covers}
+
+A dielectric above the topmost metal, such as a passivation, a polyimide, a solder mask or a coating, is
+entered as an ordinary Dielectric entry above it, in the order the process states, as many as there are.
+Every solver includes them: the planar kernel as more layers of its medium, the uniform-line kernel and
+every 3D solver as slabs. A planar run's notes name each cover and how far the medium continues above the
+top level. A stack closed above, by a lid or a ground plane over the levels, is the exception: the planar
+kernel stops at the top level there and says which layers it left out.
+
+- **Conformal** says how a cover meets the metal. A coat deposited over the metal follows it in 3D, and
+  starts on its top with air beside it in the planar kernels; a mask that flows between traces fills the
+  space beside the metal. [The MoM engine](mom-engine.html#can-cannot)
+  gives the measured difference.
+- **Opened by** cuts openings in a cover: draw the opening on the named mask layer, over the pad it
+  exposes. Several covers can name the same mask, which opens all of them at once. Every 3D route
+  (the layout's 3D view, a 3D EM setup, a layout placed in a 3D view, a thermal solve) cuts the opening
+  out of the slab and its notes say how much was cut. The planar medium is laterally infinite, so a
+  planar run keeps the cover everywhere, openings included, and its notes give the fraction of the
+  layout the mask opens.
+
+In 3D a cover reaches as far as the substrate: to the layout's board or die outline when it draws one,
+and otherwise to the box round what the layout draws, which leaves the substrate flush with the outermost
+metal. Draw the outline when the edge matters, as a probe pad does.
+
+**The planar kernels model every cover as a flat slab, and every opening has straight walls.** A 3D solve
+lays a conformal cover over the metal's steps with square corners; a real coat rounds them, and a real
+opening's walls slope. The **Passivated Pad** example
+(**File ▸ New ▸ Examples**) has two covers, an opening over a probe pad and a via through two dielectrics.
 
 ## Vias {#vias}
 
@@ -407,8 +438,11 @@ there is no footprint to mesh. Draw the region instead.
 
 Three rules the extractor applies, each reported when it bites:
 
-- **The two conductors must be adjacent in the stack.** A via that skips a level is not built, because
-  there is nothing to connect it to in between.
+- **A via may pass through any number of dielectrics** between its two conductors, with no metal where
+  one dielectric meets the next, and the planar kernel solves it as one via. A via that passes another
+  **analysis level** is built as a chain, one via per gap, its own cross-section carried onto each level
+  it passes; where that level has metal of its own under the barrel, the via connects to it, as the
+  artwork says.
 - **A via may terminate on the ground plane**, and that is the common backside/through-hole case: the
   named conductor is the ground-designated one, so the via runs from a signal level down to the plane.
   A via naming some *other* non-analysis conductor is ignored with a note — it would otherwise silently

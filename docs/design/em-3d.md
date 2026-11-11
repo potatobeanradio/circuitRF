@@ -318,10 +318,20 @@ carrying a thermal property. The technology gains:
   overmold). A separate list rather than a new `StackupKind`, so an older build simply ignores it and
   the planar extractor, which must never see one, has nothing to skip.
 - **Lateral extent.** The planar solvers treat every dielectric as laterally infinite; a 3D problem
-  cannot. A dielectric entry extends to the board-outline drawing layer when the layout draws one and
-  to the air box otherwise. `PresentWithLayer` — "this film exists only where this mask is drawn" —
+  cannot. A dielectric entry extends to the board-outline drawing layer when the layout draws one, and
+  otherwise to the air box in a 3D EM setup, or to the box round the drawn geometry when the layout is
+  placed in a 3D view (`SlabLateralBound`). `PresentWithLayer` — "this film exists only where this mask is drawn" —
   was an approximation the planar extractor made as well as it could; in 3D it is simply true, and the
-  film is extruded from the mask.
+  film is extruded from the mask. `OpenWithLayer` is its inverse — "this dielectric exists everywhere
+  except where this mask is drawn", a passivation's pad openings (PSV-2). Every 3D route subtracts the
+  merged openings from the slab's lateral outline (`SlabLateralBound.Subtract`), so the slab stays one
+  solid with hole rings or notches rather than relying on an air solid's overlap order; the planar
+  extractor keeps the slab everywhere and notes the open fraction. The two ties are exclusive on one
+  entry, and an opening resolves only as a drawing layer. A `Conformal` cover follows the metal (PSV-4): three
+  disjoint solids, the coat on the floor of the metal's band away from the metal, a wall of the coat's thickness round
+  each piece of metal (`SlabLateralBound.Inflate`, square corners), and the coat on the metal's top, each less the
+  openings; the dielectric directly above it fills down into what they leave. Disjoint, so no backend's overlap order
+  decides the shape.
 
 **Wire metals resolve through the technology in a 3D setup.** A wire's `Material` is looked up in the
 technology first. A name only the `.wBond` defines comes from the `.wBond`, which stays
@@ -330,7 +340,7 @@ are used, for the same reason a named stackup material wins. Air is implicit: wh
 claims inside the air box.
 
 The fields are additive and nullable, following the pattern of every field the technology has
-gained since the stackup existed (`SheetAt`, `Fill`, `PresentWithLayer`), so there is no `FormatVersion`
+gained since the stackup existed (`SheetAt`, `Fill`, `PresentWithLayer`, `OpenWithLayer`), so there is no `FormatVersion`
 bump. The generated reference page (`circuitrf reference technology`) describes them the day they
 exist, with no page to write.
 

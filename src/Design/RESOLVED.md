@@ -29781,3 +29781,26 @@ a test in `tests/Ui.Tests/Plugins`.
 - Smaller: `lineModel` let a non-numeric frequency through as NaN; the index reader's `GetInt32` threw on `1.5`; a view
   name from a reply became a file name in `plugin run -o` and in Open in Data Display unchecked (`../x`); a host call's
   verb printed "Wrote …" onto `plugin run`'s stdout, the result channel (silenced, counted, while any host-call verb runs).
+
+## A conformal cover follows the metal in 3D; a wire bonded under a cover is warned of (PSV-4 follow-up, 2026-11-10)
+
+- **Conformal in 3D** (`Em3dLayoutSolids.ConformalCoat`). PSV-1b's 3D cover started on the metal's top with the metal's
+  band left as air beside it, so off the metal a cover hung over 3 µm (the metal's thickness) of air. A conformal cover
+  is now three disjoint solids: the coat on the band's floor away from the metal (`Passivation`), a wall of the coat's
+  thickness round each piece of metal from the floor to the coat's top (`Passivation/wall`), and the coat on the metal's
+  top (`Passivation/top`); each is less the cover's openings. The dielectric directly above fills down into what they
+  leave (`Polyimide/fill`, `Polyimide/fill-top`), as a spin-on layer does; with nothing above, it is air. Disjoint by
+  construction, so no backend's overlap order is relied on, and in sheet-conductor mode the metal's own volume stays
+  unclaimed as before. The wall is `SlabLateralBound.Inflate` with mitred corners: square, not rounded, to keep facets
+  out of the mesh. Planar and the uniform-line kernel are unchanged. On the Passivated Pad probe pad the 3D pad reads
+  83.9 fF (82.0 with the flat cover); planar 83.3 fF.
+- What stays air under it on the GaAs starter is the starter's own `Air` entry (2.55 µm under Metal2) and the bands
+  below it with nothing drawn: the starter models Metal2 as an airbridge level everywhere.
+- **A drawn 3D wire on a covered pad** (`C3dElaborator.CoversOver`, `C3dWires.CoveredEnd`). The pad lookup reads
+  conductors only, so a ball set on a pad a passivation still covers landed silently and solved as connected through
+  the dielectric. Each end is now tested against the placed layouts' STACKUP dielectrics (origin `Dielectric` with a
+  stackup entry, εr > 1) just above the pad's top; a hit is a warning naming the covers and the two ways out. 3D bodies
+  and drawn boxes (an overmold) are not covers: they go on after bonding. Not covered: a layout's own paired `.wBond`
+  wires, which land in `Em3dWires.Build`.
+- Gates: `tests/Ui.Tests/Em/ConformalCoverTests.ThreeD_AConformalMask_FollowsTheCopper_TopWallsAndFloor`,
+  `tests/Ui.Tests/ThreeD/BondOnCoveredPadTests`.

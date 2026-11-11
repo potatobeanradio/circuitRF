@@ -1476,6 +1476,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     return;
                 }
                 _warnings.AddRange(r.Warnings);
+                foreach (var (pad, at, which) in new[] { (result.StartPad!, result.Axis[0], "start"), (result.EndPad!, result.Axis[^1], "end") })
+                    if (CoversOver(pad, at) is { Count: > 0 } covers)
+                        _warnings.Add(C3dWires.CoveredEnd(name, which, pad.Name, covers));
                 var values = Resolve(material!, out string source);
                 string key = Register(techName, material!.Name, values, TechSource(tech, techName, material!.Name) + source);
                 void Solid(string solidName, Em3dPrimitive primitive)
@@ -1504,6 +1507,37 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                         _builtInWireValues.Add((name, "ball diameter and height"));
                 }
             }
+        }
+
+        /// <summary>
+        /// The stackup dielectrics of a placed layout that still cover a wire end's pad where the end lands, bottom first:
+        /// a passivation with no opening drawn over the pad, and whatever is deposited on it. Empty when the metal there
+        /// is bare.
+        ///
+        /// <para>The pad lookup reads conductors only, so a ball set on a pad a cover still hides lands, and the solve
+        /// connects it through the cover, which no bond does. Only a layout's STACKUP dielectrics count: they are there
+        /// before the die is bonded. A 3D body or a drawn box over the pad (an overmold, a glob top) is put on after
+        /// bonding and encloses the wire, which is what it should do. A dielectric of εr 1 is air, whatever it is
+        /// called.</para>
+        /// </summary>
+        private List<string> CoversOver(C3dWirePad pad, Point3 at)
+        {
+            const double Above = 1e-8;   // 10 nm: inside a cover that starts on the metal, never inside the metal itself
+            var covers = new List<(double Bottom, string Name)>();
+            bool covered = false;
+            foreach (var s in _solids)
+            {
+                if (s.Role != Em3dRole.Dielectric
+                    || !_origins.TryGetValue(s.Name, out var o) || o is not { Kind: Em3dObjectKind.Dielectric, StackupEntry: { } entry }
+                    || _materials.FirstOrDefault(m => m.Name == s.Material).Values is not { Epsr: > 1 })
+                    continue;
+                var (_, _, z0, _, _, z1) = Em3dProblem.Bounds(s.Primitive);
+                bool onMetal = C3dThermal.Inside(s.Primitive, new Point3(at.X, at.Y, pad.TopM + Above), 0);
+                bool overIt  = z0 >= pad.TopM - Above && C3dThermal.Inside(s.Primitive, new Point3(at.X, at.Y, 0.5 * (z0 + z1)), 0);
+                if (onMetal) covered = true;
+                if (onMetal || overIt) covers.Add((z0, entry));
+            }
+            return covered ? [.. covers.OrderBy(c => c.Bottom).Select(c => c.Name).Distinct()] : [];
         }
 
         /// <summary>One instance: resolved, then elaborated once per array element.</summary>

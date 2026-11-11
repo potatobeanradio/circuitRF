@@ -352,6 +352,19 @@ public static class C3dWires
         return new(resolution, startProcess, endProcess, startPad, endPad, resolution.Refusal) { Axis = axis };
     }
 
+    /// <summary>
+    /// The warning a wire end gets when it lands on metal that a placed layout's cover still hides: which wire, which end,
+    /// which pad, which covers, and the two ways out. A warning, not a refusal: the geometry is buildable and the run says
+    /// what it is solving.
+    /// </summary>
+    public static string CoveredEnd(string name, string which, string pad, IReadOnlyList<string> covers)
+    {
+        string list = string.Join(", ", covers.Select(c => $"'{c}'"));
+        return $"Wire '{name}': its {which} lands on '{pad}' under {list}, which {(covers.Count == 1 ? "covers" : "cover")} the pad " +
+               "there. A bond reaches bare metal only, and this run connects the wire through the dielectric. Draw an opening on " +
+               "the cover's Opened by layer over the pad, or move the end into the opening.";
+    }
+
     /// <summary>R-em3d50-3c — the sentence an end that is on no pad gets: which wire, which end, and what is under it.</summary>
     public static string NoPad(string name, string which, Point3 q, IReadOnlyList<C3dWirePad> pads, double tolM, string unit)
     {

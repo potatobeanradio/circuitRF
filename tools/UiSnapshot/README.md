@@ -131,6 +131,13 @@ Don't Simulate), with the verdict `PlanarMemoryCheck` gives a de-embedded 36,000
 dotnet run --project tools/UiSnapshot --no-build -- --planar-memory-dialog -o out.png
 ```
 
+**A README as a workspace opens it** (`MarkdownDocument` in its view), pictures included. Default 1000 × 1400; `--size`
+makes the window taller for a long one, `--dark` the dark variant:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --readme "examples/Passivated Pad/README.md" -o out.png
+```
+
 **Settings ▸ General** (brief SDL-5), on a throwaway per-user state directory with Create or update EM setup on
 Update Layout from Schematic ticked, scrolled to the Layout group's options:
 

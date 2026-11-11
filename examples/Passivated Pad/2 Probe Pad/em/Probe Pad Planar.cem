@@ -1,0 +1,28 @@
+{
+ "FormatVersion": 1,
+ "Name": "Probe Pad Planar",
+ "LayoutRef": "2 Probe Pad/layout/2 Probe Pad.clay",
+ "SignalStackupLayerName": "Metal2",
+ "GroundStackupLayerName": "Backside Metal",
+ "Frequency": {
+  "StartExpr": "1",
+  "StopExpr": "40",
+  "StepExpr": "",
+  "NumPoints": 2,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "AnalysisLevelNames": [
+  "Metal2",
+  "Metal1"
+ ],
+ "AnalysisKind": "Planar",
+ "DispersionCorrection": true
+}

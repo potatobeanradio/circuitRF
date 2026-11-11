@@ -1009,3 +1009,51 @@ per bench, the ambient set by `temp = 16.85`.
   needs a whole `AxesConfig` with zero windows (autoscaled), and `--freq-unit Hz` keeps an offset axis from being
   drawn in GHz under an "Hz" label.
 - **The drawings are the drawer's.** Bench 7's Colpitts crosses a wire or two; it extracts and runs as written.
+
+## Passivated Pad (PSV-4, 2026-11-10)
+
+`docs/briefs/brief-psv-4-example-and-docs.md`. Two covers over the GaAs starter's Metal2, an opening over a probe pad, and
+a via through two dielectrics. Files written by `circuitrf new workspace/cell/view3d`; layouts and setups by hand.
+
+- **No via on the GaAs starter crosses an interface in an ordinary run.** The capacitor film is in the medium only when
+  its mask is drawn, and a run that models the capacitor analyses `MIM Metal`, so a Metal1–Metal2 post is built as a
+  CHAIN split at that level, each piece inside one region. The post crosses the film only with the mask drawn and
+  `MIM Metal` left out, which leaves the capacitor's own plate out of the run. Bench 3 therefore sits on the silicon
+  starter (copied unchanged): its through-silicon via crosses the oxide and the silicon.
+- **That TSV is a near-short, and a near-short exposes the de-embedding floor.** With the via as a shunt (|S21| 0.008
+  at 2 GHz) or terminating a 1-port (|S11| ≈ 1), σ_max(S) reaches 1.003–1.01 from about 18 GHz, identically with the
+  oxide set to εr 11.9 (via in one region) and with the silicon's σ removed, so it is not PSV-3's split. The split does
+  double the per-point cost here (27 s → 64 s for 8 points); the fixed cost is the calibration replay, ~22 s. The bench
+  stops at 14 GHz. A single-basis via of 105 µm is refused above 39.57 GHz (k·ℓ 0.3).
+- **A layout placed in a 3D view bounds its slabs by its outline, else by the box round its drawn metal**, while a 3D
+  `.cem` on the same layout spans its air box. With no outline the pad's substrate ended flush with the pad and the
+  `.c3d` read 70 fF against the `.cem`'s 82 fF and planar's 83 fF. The example's technology gained a `Die Edge` layer
+  (Gerber function `Profile,NP`, as the 3D Package example's MMIC technology has) and the pad cell draws it; both 3D
+  routes then read 82.0 fF. A drawing layer bound to the substrate (`Substrate`) is not an outline and changed nothing.
+  `docs/design/em-3d.md`'s lateral-extent paragraph said "the air box otherwise" for every route and now says which.
+- **Metal2 on the GaAs starter sits over the airbridge gap**, so 50 Ω is 150 µm wide by the cross-section (the MLIN
+  formula, which has no gap, says 72 µm). The README says so in one clause.
+- **Numbers** (EMerge 3.0.0 Accurate for 3D): covers raise ε_eff by 3.3 % (S21 −102.35° → −104.03° at 40 GHz); pad
+  82.0 fF 3D / 83.3 fF planar at 1 GHz, S11 within 1° to 40 GHz; TSV ≈ 15 pH. Runs 8 s, 19–33 s, 14 s, 22 s, 36–56 s.
+- **The README's picture** is `render <c3d> --look realistic --iso`; `--transparency` takes only whole instances, so the
+  covers cannot be made see-through in it.
+- **`4 Bonded Pad`** (follow-up): the probe-pad die placed in a 3D view on a gold floor beside a 127 µm alumina carrier,
+  a ball–wedge 1 mil gold wire from the pad (inside the opening, at the metal's top, 112 µm) to a 120 µm trace, held
+  100 µm loop. A held loop needs a drawn arch: two points are refused as straight. EMerge lost port 1's modes at 1 GHz
+  with PEC side walls (the port face crosses the die's thin layers); absorbing side walls 150 µm out solve. Passive
+  to about 1 % of the power above 14 GHz at Accurate (accepted by the owner); Palace's estimate was 371k unknowns and
+  7 GB and a run was stopped at 10 min. A wire on the die with the opening deleted now warns (src/Design/RESOLVED.md).
+- **The probe pad is stacked** (owner: the 3D view should look like the real part): Metal1 under the Metal2 pad and the
+  Metal1–Metal2 post over the whole footprint, so nothing under the pad is the starter's airbridge `Air`. Planar and 3D
+  agree, 130.6 / 128.8 fF at 1 GHz with the feed. Two costs came with it: the planar run is two-level, and two levels
+  6 µm apart cost ~70 s per frequency on this stack with or without the covers (measured), so it is solved at 1 and
+  40 GHz only (2 min 17 s); and EMerge at Accurate fails in Gmsh on the bonded pad (inconsistent mesh in `U1/GaAs` / air
+  box, the 0.2 µm air sliver an undrawn capacitor film leaves at 106–106.2 µm), so bench 4 runs at Standard (11 s,
+  passive to 0.8 %). A setup cannot choose Gmsh's 3D algorithm, which is EMerge's own suggested fix.
+- **The example's stack is corrected for the 3D view** (owner): the shipped process's 2.55 µm `Air` under Metal2 (an
+  airbridge level everywhere) is a 2.55 µm polyimide `Interlayer` (εr 3.3), and the capacitor nitride is a blanket layer
+  (no `PresentWithLayer`), so the die is solid from the backside up. Dropping the tie stops the MIM device rule deriving
+  `MimCapDensity`, which warned on every run; the technology states it as a `Constants` entry. `1a` uses
+  `mmic-GaAs_2LM_100um_uncovered.ctech`, the same stack without the covers. 50 Ω on Metal2 is 95 µm. Numbers: covers
+  +2.0 % ε_eff; pad 143.8 fF 3D / 140.5 fF planar (1 GHz); bonded pad at Accurate again (the sliver that broke Gmsh is
+  gone), passive to 0.9 %. The planar pad is now ~110 s per frequency (two levels 6 µm apart, polyimide between).

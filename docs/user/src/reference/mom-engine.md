@@ -163,21 +163,29 @@ not general 3D.
   the metal is filled with the cover's material, so the modelled cover is the metal's own thickness
   plus the cover's, as a flat slab. That suits a solder mask, which fills the gaps between traces. For
   a coat deposited over the metal, such as passivation, tick **Conformal** on the cover's
-  [stackup row](stackup.html#tab): the cover then starts on top of the metal and the space
-  beside the metal is air, in this kernel, the uniform-line kernel and every 3D solver, and the note
-  says where the cover starts. For 1 µm of ε<sub>r</sub> 7 nitride over a 20 µm wide, 3 µm thick gold
-  line on 100 µm GaAs, a 3D electrostatic solve puts the cover's effect on ε<sub>eff</sub> at +2.2 %
-  for the real coat, +2.1 % ticked and +6.8 % unticked. This kernel reads +0.9 % ticked and +6.8 %
-  unticked, and moves Z<sub>0</sub> by −0.5 % ticked against −1.1 % in 3D. Both settings are flat
-  slabs: the coat on the metal's sidewalls and on the substrate beside it is not modelled, and at these
-  proportions it moves ε<sub>eff</sub> by 0.02 %. A stack closed above, by a lid (`Stackup.Top = Ground`) or by a ground plane
+  [stackup row](stackup.html#tab): here and in the uniform-line kernel the cover then starts on top of
+  the metal with air beside the metal, and the note says where the cover starts. A 3D solve lays a ticked
+  cover as it is deposited: on the metal's top, down its sides and on the floor beside it. For 1 µm of
+  ε<sub>r</sub> 7 nitride over a 20 µm wide, 3 µm thick gold line on 100 µm GaAs, a 3D electrostatic
+  solve puts the coat's effect on ε<sub>eff</sub> at +2.2 %, against +2.1 % for the same cover starting on
+  the metal with air beside it and +6.8 % unticked. This kernel reads +0.9 % ticked and +6.8 % unticked,
+  and moves Z<sub>0</sub> by −0.5 % ticked against −1.1 % in 3D. Both settings are flat slabs here: the coat
+  on the metal's sidewalls and on the substrate beside it is not modelled, and at these proportions it
+  moves ε<sub>eff</sub> by 0.02 %. A stack closed above, by a lid (`Stackup.Top = Ground`) or by a ground plane
   above the levels, ends at the topmost level instead, and the run warns, naming the layers it leaves
-  out. See [Antennas](antennas.html#example).
+  out. See [Antennas](antennas.html#example). **An opening in a cover** (**Opened by**, a passivation
+  opened over a pad) is the same limit again: the cover stays across the opening here, and the run's
+  notes give the fraction of the layout the mask opens. A 3D solve cuts the opening; on a 200 µm stacked
+  probe pad and its feed, opened to 180 µm under 1 µm of nitride and 5 µm of polyimide, the two read
+  140.5 fF here and 143.8 fF in 3D. See [Covers and openings](stackup.html#covers).
 - **Enclosures and absorbing boundaries.** There is no box. Real planar tools suppress port-to-port
   radiative and surface-wave coupling with box walls or absorbing boundaries; **this kernel has
   neither, by design**, and that is what sets the [de-embedding accuracy floor](#deembedding).
 - **Vertical conductors other than vias.** A via is a z-directed current path through the stack. An
-  edge-plated wall, a connector barrel, a heatsink is not.
+  edge-plated wall, a connector barrel, a heatsink is not. A via may cross any number of dielectric
+  interfaces with no metal where it crosses, and is solved as one via; what it may not be is long. It
+  carries one uniform current over its height, so one longer than k·ℓ = 0.3 at the top of the sweep is
+  refused with the frequency to stop at: 39.6 GHz for a 105 µm through-silicon via.
 - **Non-planar dielectrics.** A partially milled cavity, a moulded package body, a coating that follows
   the metal — the medium is stratified, so a dielectric is a slab spanning the whole plane or it is not
   representable.

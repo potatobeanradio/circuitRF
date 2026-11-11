@@ -418,35 +418,47 @@ public class StackupSelectionTests
     /// This asserts the shape that has no jump in it, which is the part a source scan can see; the
     /// re-aiming itself is <see cref="TheScrollEasesOut_StartingAtOnceAndSettlingAtTheEnd"/>'s
     /// neighbour below.</para>
+    ///
+    /// <para>The scroll is <c>ListBoxEasedScroll.BringToTop</c>'s now, which checks where it landed. The view's own
+    /// copy of the ease had no such check, and a virtualizing list re-estimates its extent as it scrolls, so a card
+    /// unrealised when the scroll set out (the TFR Level after Silicon) was missed and never found.</para>
     /// </summary>
     [Fact]
     public void TheCardScrollNeverJumpsTheListToMeasureIt()
     {
-        var code = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs"));
+        // The view hands the scroll to the shared eased scroll, with its own one animator.
+        var view = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs"));
+        var handler = StripComments(view[At(view, "private void ScrollStackupSelectionIntoView()")..
+                                         At(view, "private readonly ScrollOffsetAnimator")]);
+        At(handler, "ListBoxEasedScroll.BringToTop(StackupList, current, rows.IndexOf(current), rows.Count, _stackupScroll)");
+        Assert.DoesNotContain("ScrollIntoView", handler, StringComparison.Ordinal);
 
-        int at   = At(code, "private void ScrollStackupSelectionIntoView()");
-        // COMMENTS STRIPPED FIRST, the convention every source scan in this repo follows: the block
-        // being scanned explains at length why it no longer calls ScrollIntoView, and a scan that read
-        // its own rationale would fail on the words describing the fix.
-        var body = StripComments(
-            code[at..code.IndexOf("private double EstimatedOffsetOf", at, StringComparison.Ordinal)]);
+        var code = RepoFile(Path.Combine("src", "Ui", "Controls", "ListBoxEasedScroll.cs"));
+        int at   = At(code, "private static void BringToTop(");
+        // COMMENTS STRIPPED FIRST, the convention every source scan in this repo follows.
+        var body = StripComments(code[at..]);
 
         // The exact position when it is knowable, an estimate when it is not, and a retarget callback
         // so the ease is re-aimed as the card is realised.
-        At(body, "TopOffsetOf(current, scroll) ?? EstimatedOffsetOf(current, scroll)");
-        At(body, "_stackupScroll.AnimateTo(scroll, target, () => TopOffsetOf(current, scroll))");
+        At(body, "TopOffsetOf(list, item, scroll) ?? EstimatedOffsetOf(index, count, scroll)");
+        int animate = At(body, "animator.AnimateTo(scroll, target, () => TopOffsetOf(list, item, scroll)");
 
-        // The list is only ever ScrollIntoView'd on the path that has NO scroller to animate — never
-        // as a way of measuring, which is the jump this replaced.
-        int fallback = At(body, "if (scroll is null)");
-        int animate  = At(body, "_stackupScroll.AnimateTo");
-        int jump     = body.IndexOf("ScrollIntoView", StringComparison.Ordinal);
-        Assert.True(jump > fallback && jump < animate,
-            "ScrollIntoView may only appear in the no-scroller fallback");
-        Assert.Equal(jump, body.LastIndexOf("ScrollIntoView", StringComparison.Ordinal));
+        // ScrollIntoView appears in two places only, and neither measures and puts the offset back: the path with
+        // no scroller to animate, before anything moves, and the LAST round's fallback, after the ease has landed
+        // and the card is still unrealised, which moves the list on toward the card from where the ease ended.
+        int fallback  = At(body, "if (scroll is null)");
+        int first     = body.IndexOf("ScrollIntoView", StringComparison.Ordinal);
+        int lastRound = At(body, "if (rounds <= 1)");
+        int second    = body.IndexOf("ScrollIntoView", first + 1, StringComparison.Ordinal);
+        Assert.True(first > fallback && first < animate, "the first ScrollIntoView is the no-scroller fallback");
+        Assert.True(second > lastRound, "the second is the last round's, after landing");
+        Assert.Equal(second, body.LastIndexOf("ScrollIntoView", StringComparison.Ordinal));
 
-        // And nothing writes the offset directly: every movement goes through the ease.
-        Assert.DoesNotContain("scroll.Offset =", body, StringComparison.Ordinal);
+        // And the one direct offset write puts the realised card's top at the top, after that fallback — every
+        // other movement goes through the ease.
+        int write = At(body, "scroll.Offset = ");
+        Assert.True(write > second, "the only direct write follows the last round's ScrollIntoView");
+        Assert.Equal(write, body.LastIndexOf("scroll.Offset = ", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -484,12 +496,11 @@ public class StackupSelectionTests
     [Fact]
     public void ACardAlreadyOnScreenIsNotScrolledAtAll()
     {
-        var code = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs"));
-        var body = StripComments(code[At(code, "private void ScrollStackupSelectionIntoView()")..
-                                      At(code, "private readonly ScrollOffsetAnimator")]);
+        var code = RepoFile(Path.Combine("src", "Ui", "Controls", "ListBoxEasedScroll.cs"));
+        var body = StripComments(code[At(code, "private static void BringToTop(")..]);
 
-        int guard   = At(body, "IsFullyVisible(current, scroll)");
-        int animate = At(body, "_stackupScroll.AnimateTo");
+        int guard   = At(body, "if (IsFullyVisible(list, item, scroll)) return;");
+        int animate = At(body, "animator.AnimateTo");
         Assert.True(guard < animate, "the do-nothing case is decided before anything moves");
     }
 

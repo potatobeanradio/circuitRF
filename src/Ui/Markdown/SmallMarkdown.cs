@@ -28,12 +28,25 @@ public sealed record MarkdownRun(string Text, bool Bold, bool Italic);
 /// spaces kept. Carried on the LINE rather than on a run because it is not emphasis — nothing inside
 /// it was parsed, so there is no run structure to attach it to, and its indentation is content.
 /// </param>
+/// <param name="Image">
+/// A line that is a picture and nothing else (<c>![alt](file.png)</c> on its own line), or null. Its
+/// <see cref="Runs"/> carry the alt text, so a picture that cannot be drawn still says what it was.
+/// </param>
 public sealed record MarkdownLine(int Indent, string? Bullet, IReadOnlyList<MarkdownRun> Runs,
-                                     int HeadingLevel = 0, bool IsCode = false)
+                                     int HeadingLevel = 0, bool IsCode = false, MarkdownImage? Image = null)
 {
     /// <summary>True for the blank line between two paragraphs.</summary>
     public bool IsBlank => Runs.Count == 0 && Bullet is null;
 }
+
+/// <summary>A picture a document line shows.</summary>
+/// <param name="Alt">The alt text: what is drawn instead when the picture cannot be.</param>
+/// <param name="Source">The target as written, angle brackets and title removed.</param>
+/// <param name="Path">
+/// The local file it resolved to, or null — set by the document that knows its own folder
+/// (<see cref="MarkdownDocument"/>), never by the parse, which has no folder.
+/// </param>
+public sealed record MarkdownImage(string Alt, string Source, string? Path = null);
 
 /// <summary>
 /// The deliberately small Markdown reader: <b>bold, italic, bullets, indentation, headings and
@@ -53,6 +66,13 @@ public sealed record MarkdownLine(int Indent, string? Bullet, IReadOnlyList<Mark
 /// <para><b>Everything it does not understand degrades to plain text</b> rather than to an error or
 /// to raw delimiters on screen: inline code loses its backticks, and a link keeps its text and drops
 /// its target — a URL nothing here can follow is noise around the sentence the user is reading.</para>
+///
+/// <para><b>Pictures, for a README only.</b> With <c>images</c> set, a line that is one
+/// <c>![alt](file)</c> and nothing else is a picture line (<see cref="MarkdownLine.Image"/>); the
+/// README document resolves the file against its own folder and draws it. Off, which is what the
+/// Release Notes dialog asks for, a picture is its alt text as it always was: a release body is
+/// fetched from the network, and its pictures are URLs this reader does not fetch. A picture inside a
+/// sentence is its alt text either way.</para>
 ///
 /// <para>Pure, and framework-free on purpose: <c>Ui.Tests</c> calls no Avalonia runtime API, so the
 /// only way this is testable at all is for the parse to produce data and
@@ -89,7 +109,10 @@ public static class SmallMarkdown
     /// <para>A continuation joins the line above it, bullet included — a wrapped list item stays one
     /// item. Headings, table rows and blank lines end a paragraph and are never joined into.</para>
     /// </param>
-    public static IReadOnlyList<MarkdownLine> Parse(string? markdown, bool joinSoftWraps = false)
+    /// <param name="images">Whether a line that is one picture and nothing else becomes a picture line
+    /// (see the class remarks). Off by default: the network-fed caller keeps the alt text.</param>
+    public static IReadOnlyList<MarkdownLine> Parse(string? markdown, bool joinSoftWraps = false,
+                                                    bool images = false)
     {
         var lines = new List<MarkdownLine>();
         if (string.IsNullOrWhiteSpace(markdown)) return lines;
@@ -189,6 +212,15 @@ public static class SmallMarkdown
             }
 
             int indent = Math.Min(spaces / SpacesPerLevel, MaxIndent);
+
+            // Checked before the soft-wrap join: a picture is its own block and never the end of the
+            // sentence above it, nor something the next line could continue.
+            if (images && TryTakeImageLine(body, out MarkdownImage? image))
+            {
+                lines.Add(new MarkdownLine(0, null, [new MarkdownRun(image!.Alt, false, true)], Image: image));
+                canContinue = false;
+                continue;
+            }
 
             if (TryTakeBullet(body, out string? item))
             {
@@ -293,6 +325,43 @@ public static class SmallMarkdown
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// A line that is exactly one <c>![alt](target)</c>. The target may be written in angle brackets
+    /// (<c>![a](&lt;pictures/my pad.png&gt;)</c>, the CommonMark spelling of a path with a space in it)
+    /// and may carry a quoted title, which is dropped. Anything after the closing parenthesis makes it
+    /// a sentence, and a sentence is not a picture line.
+    /// </summary>
+    private static bool TryTakeImageLine(string body, out MarkdownImage? image)
+    {
+        image = null;
+        if (!body.StartsWith("![", StringComparison.Ordinal)) return false;
+
+        int close = body.IndexOf("](", 2, StringComparison.Ordinal);
+        if (close < 0 || !body.EndsWith(')')) return false;
+
+        string alt    = StripInline(body[2..close]);
+        string target = body[(close + 2)..^1].Trim();
+
+        if (target.StartsWith('<'))
+        {
+            int end = target.IndexOf('>');
+            if (end < 0) return false;
+            target = target[1..end];
+        }
+        else
+        {
+            // A title follows the target after whitespace; the target itself has none unencoded.
+            int space = target.IndexOfAny([' ', '\t']);
+            if (space >= 0) target = target[..space];
+            // A bare target holds no parenthesis, so one here means the line went on past the picture.
+            if (target.Contains(')', StringComparison.Ordinal)) return false;
+        }
+
+        if (target.Length == 0) return false;
+        image = new MarkdownImage(alt, target);
+        return true;
     }
 
     // ── tables, flattened ───────────────────────────────────────────────────────────────────────

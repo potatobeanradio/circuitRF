@@ -412,75 +412,21 @@ public partial class TechEditorView : UserControl
             if (_subscribedVm?.StackupScrollTargetRow is not { } current) return;
             if (StackupList is null) return;
 
-            var scroll = StackupScroller();
-            if (scroll is null) { StackupList.ScrollIntoView(current); return; }
-
-            // A card that is already wholly on screen is left exactly where the user has it. Clicking
-            // a band whose card is right there and having the list yank it to the top is movement for
-            // its own sake — and with the ListBox's own auto-scroll off (see the .axaml), this is the
-            // only thing that decides not to move.
-            if (IsFullyVisible(current, scroll)) return;
-
-            // ── NOTHING JUMPS, and that is the point ────────────────────────────────────────────
-            //
-            // This used to call ScrollIntoView to REALISE the card's container, measure off it, put
-            // the offset straight back and then ease from there — all in one dispatcher frame, so the
-            // jump itself was never painted. It still flashed, going DOWN (owner, 2026-09-13): the
-            // jump de-realises everything at the origin, and the restored offset gets rendered before
-            // the virtualizing panel has realised it again. What flashes is not the wrong position,
-            // it is a blank viewport.
-            //
-            // So the list is never moved anywhere it is not going. The scroll sets out on an ESTIMATE
-            // when the card is not realised yet, and the animator asks TopOffsetOf for the truth on
-            // every frame — which starts answering the moment the scroll gets close enough to realise
-            // it, and re-aims the ease without restarting it.
-            double target = TopOffsetOf(current, scroll) ?? EstimatedOffsetOf(current, scroll);
-            _stackupScroll.AnimateTo(scroll, target, () => TopOffsetOf(current, scroll));
+            // ListBoxEasedScroll eases to the card, and checks where it landed: a virtualizing list re-estimates its
+            // extent as it scrolls, so a card that was not realised when the scroll set out can be missed by the
+            // estimate and has to be found again from where the ease ended. This view used to keep its own copy of the
+            // ease, without that check, and a click on a band whose card was far away (the TFR Level after Silicon)
+            // stopped the list on other cards. A card already wholly on screen is left exactly where the user has it.
+            var rows = _subscribedVm.FilteredStackupLayers;
+            ListBoxEasedScroll.BringToTop(StackupList, current, rows.IndexOf(current), rows.Count, _stackupScroll);
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>
-    /// Roughly where a card that has not been realised yet will turn out to be: its share of the
-    /// list's own extent.
-    ///
-    /// <para>It is the same estimate the virtualizing panel is itself using — <c>Extent.Height</c> for
-    /// a list of unrealised, variable-height items IS an estimate — so it is close, and being close is
-    /// all it has to be: the ease is re-aimed from the realised container as soon as there is one.</para>
-    /// </summary>
-    private double EstimatedOffsetOf(StackupLayerRowViewModel row, ScrollViewer scroll)
-    {
-        var rows = _subscribedVm?.FilteredStackupLayers;
-        return ListBoxEasedScroll.EstimatedOffsetOf(rows?.IndexOf(row) ?? -1, rows?.Count ?? 0, scroll);
-    }
-
     /// <summary>The one eased scroll of the card list. Held by the view so a second selection cancels
-    /// the first one's scroll rather than racing it.</summary>
+    /// the first one's scroll rather than racing it. <see cref="ListBoxEasedScroll.BringToTop"/> puts a card's own TOP
+    /// at the top of the pane — a bare <c>ScrollIntoView</c> brings a card taller than the pane only minimally into view,
+    /// which going up lands its bottom edge and scrolls its first fields away.</summary>
     private readonly ScrollOffsetAnimator _stackupScroll = new();
-
-    private ScrollViewer? StackupScroller()
-        => StackupList is null ? null : ListBoxEasedScroll.ScrollerOf(StackupList);
-
-    /// <summary>Whether <paramref name="row"/>'s card is realised and wholly inside the viewport.
-    /// False for a card taller than the pane, which can never be wholly inside one and therefore
-    /// always wants its top put at the top.</summary>
-    private bool IsFullyVisible(StackupLayerRowViewModel row, ScrollViewer scroll)
-        => StackupList is not null && ListBoxEasedScroll.IsFullyVisible(StackupList, row, scroll);
-
-    /// <summary>
-    /// The offset that puts <paramref name="row"/>'s card's own TOP edge at the top of the pane, or
-    /// null when its container has not been realised.
-    ///
-    /// <para><b><c>ScrollIntoView</c> alone is not enough, and the case it gets wrong is the common
-    /// one</b> (owner, 2026-09-13: click the bottom entry, then the top one, and only half the card
-    /// is showing). <c>ScrollIntoView</c> brings an item MINIMALLY into view, so for an item taller
-    /// than the viewport — which a conductor card is, against a pane that now opens at four field rows
-    /// (<see cref="TechEditorMetrics.StackupCardPaneOpeningHeight"/>) — it lands the item's BOTTOM at
-    /// the viewport's bottom when scrolling up, and the fields at the top of the card are the ones
-    /// scrolled away. Clicking a band has to land on that band's fields, so the top is the edge that
-    /// matters.</para>
-    /// </summary>
-    private double? TopOffsetOf(StackupLayerRowViewModel row, ScrollViewer scroll)
-        => StackupList is null ? null : ListBoxEasedScroll.TopOffsetOf(StackupList, row, scroll);
 
     /// <summary>
     /// R-stk3-9. Clears the selection — which clears the drawing's outline, the card's shading and

@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
+using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 namespace CircuitRF.Ui.Markdown;
 
@@ -60,8 +63,14 @@ public static class MarkdownInlines
     ///
     /// <para>No trailing break after the last line: it would add an empty row the scroll bar counts.</para>
     /// </summary>
+    /// <param name="imageMaxWidth">The widest a picture is drawn, in device-independent pixels: the text
+    /// block's own measure, so a picture is never wider than the column it sits in. A smaller picture is
+    /// drawn at its own size.</param>
+    /// <param name="owned">Receives each bitmap a picture line decoded, for the caller to dispose when it
+    /// clears the block. Null when the lines carry no pictures.</param>
     public static void Append(InlineCollection? inlines, IReadOnlyList<MarkdownLine> lines,
-                              double bodyFontSize)
+                              double bodyFontSize, double imageMaxWidth = 0,
+                              ICollection<IDisposable>? owned = null)
     {
         if (inlines is null) return;
 
@@ -69,7 +78,21 @@ public static class MarkdownInlines
         {
             MarkdownLine line = lines[i];
 
-            if (line.IsCode)
+            if (line.Image is { Path: { } picture } && imageMaxWidth > 0 && TryLoad(picture) is { } bitmap)
+            {
+                owned?.Add(bitmap);
+                // Inside the one text block, as an inline, so a selection still runs through the whole
+                // document; the alt text is the tooltip, since it is no longer on the page.
+                var image = new Image
+                {
+                    Source   = bitmap,
+                    Stretch  = Stretch.Uniform,
+                    MaxWidth = Math.Min(imageMaxWidth, bitmap.Size.Width),
+                };
+                if (line.Image.Alt.Length > 0) ToolTip.SetTip(image, line.Image.Alt);
+                inlines.Add(new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Bottom });
+            }
+            else if (line.IsCode)
             {
                 // Its own leading spaces are content and an ordinary space at the start of a line is
                 // exactly what a text layout drops, so they become the one character that survives.
@@ -101,6 +124,14 @@ public static class MarkdownInlines
 
             if (i < lines.Count - 1) inlines.Add(new LineBreak());
         }
+    }
+
+    /// <summary>The decoded picture, or null to fall back to its alt text: a file that changed or broke
+    /// since the document resolved it is not an error in a README.</summary>
+    private static Bitmap? TryLoad(string path)
+    {
+        try { return new Bitmap(path); }
+        catch (Exception) { return null; }
     }
 
     /// <summary>The same text with its LEADING spaces made non-breaking, so the layout keeps them.</summary>
