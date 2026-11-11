@@ -245,9 +245,11 @@ public partial class WorkspaceViewModel
         PluginPanelController controller = null!;   // read by the commit below, which runs only after it is assigned
         controller = new PluginPanelController(manifest, () =>
         {
+            // The trust store is read again at every (re)start: a plugin revoked while its panel is open — in Settings or by
+            // `circuitRF plugin deny` — must not come back with the next restart after a crash.
             var started = PluginSession.Start(entry, new PluginStartOptions
             {
-                Trust = trust, Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, Log = log.Write,
+                Trust = PluginHost.Trust(), Policy = PluginHost.Policy, WorkspaceDir = workspaceDir, Log = log.Write,
                 Deadlines = new PluginDeadlines(Update: Timeout.InfiniteTimeSpan, Action: Timeout.InfiniteTimeSpan),
                 Verbs = CircuitRF.Cli.PluginVerbs.Instance,
             });
@@ -262,7 +264,7 @@ public partial class WorkspaceViewModel
             {
                 if (window is null) return (IReadOnlyList<PluginMessage>)[];
                 var answer = await PlacePluginAsync(window, entry, workspaceDir, session, values, [], cancel, name =>
-                    PluginPlacement.LayoutViewFor(controller.State.ViewBodies.GetValueOrDefault(name), name, manifest, workspaceDir));
+                    PluginPlacement.LayoutViewFor(controller.State.ViewBodies.GetValueOrDefault(name), name, manifest, workspaceDir, values));
                 return answer.Messages;
             }),
         });

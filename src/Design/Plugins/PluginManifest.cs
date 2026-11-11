@@ -110,9 +110,9 @@ public sealed record PluginManifest
     /// <summary>The <c>id</c>'s last dotted part — the cell name a placement falls back to.</summary>
     public string IdTail => Id[(Id.LastIndexOf('.') + 1)..];
 
-    /// <summary>Why this plugin cannot run on this build, or null. A newer contract is the reason here; a
-    /// missing build for this machine is <see cref="ResolveRun"/>'s.</summary>
-    public string? NeedsNewerCircuitRF => ApiVersion > PluginApi.Max ? "needs a newer circuitRF" : null;
+    /// <summary>Why this plugin cannot run on this build, or null: a newer contract, or a <c>minCircuitRF</c> above this
+    /// release. A missing build for this machine is <see cref="ResolveRun"/>'s.</summary>
+    public string? NeedsNewerCircuitRF => ApiVersion > PluginApi.Max ? "needs a newer circuitRF" : PluginVersions.NeedsNewer(MinCircuitRF);
 
     /// <summary>Whether <c>circuitRF plugin run</c> can drive it (brief-plg-4 §3): a <c>window</c> plugin only when it also
     /// declares <c>params</c>, and then it answers <c>commit</c> without a window when <c>hello</c>'s <c>mode</c> is
@@ -164,8 +164,10 @@ public static partial class PluginManifestReader
 {
     public const string FileName   = "plugin.json";
     public const string PythonKey  = "python";
+    public const double MaxTimeoutSeconds = 86400;
 
-    [GeneratedRegex("^[a-z0-9.-]+$")]
+    // Starts and ends with a letter or digit: the id names a folder, so '.', '..' and '.hidden' are not ids.
+    [GeneratedRegex("^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")]
     private static partial Regex IdPattern();
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
@@ -201,7 +203,7 @@ public static partial class PluginManifestReader
 
             string id = Str(root, "id") ?? "";
             if (id.Length == 0) d.Add(new("id", "is required."));
-            else if (!IdPattern().IsMatch(id)) d.Add(new("id", $"'{id}' may hold only lower-case letters, digits, '.' and '-'."));
+            else if (!IdPattern().IsMatch(id)) d.Add(new("id", $"'{id}' may hold only lower-case letters, digits, '.' and '-', and starts and ends with a letter or digit."));
 
             string name = Str(root, "name") ?? "";
             if (name.Trim().Length == 0) d.Add(new("name", "is required."));
@@ -384,8 +386,10 @@ public static partial class PluginManifestReader
     private static double? Seconds(JsonElement t, string key, List<PluginDiagnostic> d)
     {
         if (!t.TryGetProperty(key, out var v)) return null;
-        if (v.ValueKind == JsonValueKind.Number && v.GetDouble() > 0) return v.GetDouble();
-        d.Add(new($"timeouts.{key}", "must be a positive number of seconds."));
+        // At most a day: a deadline is a TimeSpan and a timer, and a value past either's range would throw at the first
+        // request rather than be refused here.
+        if (v.ValueKind == JsonValueKind.Number && v.GetDouble() is > 0 and <= MaxTimeoutSeconds) return v.GetDouble();
+        d.Add(new($"timeouts.{key}", $"must be a positive number of seconds, at most {MaxTimeoutSeconds:0} (a day)."));
         return null;
     }
 

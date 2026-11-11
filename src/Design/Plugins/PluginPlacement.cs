@@ -209,10 +209,17 @@ public static class PluginPlacement
     /// The layout view a placed cell's <c>layout</c> names, read from the reply that carried it — what the panel's Place
     /// in workspace and <c>plugin run --place</c> both hand <see cref="Place"/>. Null when no reply carried a view of that
     /// name; a view that is not a layout, or cannot be read, comes back with its <see cref="PluginView.Problem"/>.
+    /// With <paramref name="committed"/> — the parameters <c>commit</c> was sent — a view drawn for other parameters is a
+    /// problem too: the panel may not have redrawn since the last change, and placing it beside files staged for the new
+    /// values would make one cell out of two designs.
     /// </summary>
-    public static PluginLayoutView? LayoutViewFor(PluginViewBody? body, string name, PluginManifest manifest, string? workspaceDir)
+    public static PluginLayoutView? LayoutViewFor(PluginViewBody? body, string name, PluginManifest manifest, string? workspaceDir,
+                                                  JsonObject? committed = null)
     {
         if (body is null) return null;
+        if (committed is not null && !JsonNode.DeepEquals(body.Params, committed))
+            return new PluginLayoutView(name, new LayoutView(), null, [], [], body.Params)
+                { Problem = $"The {name} view was drawn for other values than the ones placed. Wait for the panel to update, then place again." };
         var view = PluginViews.Read(body, "layout", new PluginViewContext(manifest, workspaceDir));
         return view as PluginLayoutView
             ?? new PluginLayoutView(name, new LayoutView(), null, [], [], body.Params)

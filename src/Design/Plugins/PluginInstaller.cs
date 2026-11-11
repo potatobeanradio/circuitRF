@@ -155,7 +155,7 @@ public static class PluginInstaller
             string? idDir = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(versionDir));
             if (idDir is null || ReadActive(idDir) is not { } r || r.Started) return;
             if (!string.Equals(r.Active, Path.GetFileName(Path.TrimEndingDirectorySeparator(versionDir)), StringComparison.Ordinal)) return;
-            if (r.Previous is { } prev) TryDelete(Path.Combine(idDir, prev));
+            if (r.Previous is { } prev && SafeName(prev)) TryDelete(Path.Combine(idDir, prev));
             WriteActive(idDir, r with { Started = true, Previous = null });
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
@@ -338,6 +338,7 @@ public static class PluginInstaller
     /// </summary>
     public static async Task<PluginInstallResult> UpdateToNewestAsync(PluginInstallContext ctx, PluginIndex index, string id, CancellationToken ct = default)
     {
+        if (NotAnId(id) is { } bad) return bad;
         string idDir = Path.Combine(ctx.PluginsRoot, id);
         if (ReadActive(idDir) is not { } r) return PluginInstallResult.Refused($"{id} is not installed here.");
         if (r.Source == "list")
@@ -371,12 +372,13 @@ public static class PluginInstaller
     /// </summary>
     public static PluginInstallResult Rollback(PluginInstallContext ctx, string id)
     {
+        if (NotAnId(id) is { } bad) return bad;
         string idDir = Path.Combine(ctx.PluginsRoot, id);
         if (ReadActive(idDir) is not { } r) return PluginInstallResult.Refused($"{id} is not installed here.");
-        if (r.Previous is not { } prev || !Directory.Exists(Path.Combine(idDir, prev)))
+        // active.json is a file on disk like any other: a version in it that is not a folder name is not followed.
+        if (r.Previous is not { } prev || !SafeName(prev) || !SafeName(r.Active) || !Directory.Exists(Path.Combine(idDir, prev)))
             return PluginInstallResult.Refused($"{id} has no earlier version to go back to.");
         string failed = Path.Combine(idDir, r.Active);
-        var back = RecordFor(Path.Combine(idDir, prev));
         WriteActive(idDir, r with { Active = prev, Previous = null, Started = true, Environment = EnvironmentOf(Path.Combine(idDir, prev)) });
         TryDelete(failed);
         PluginPreferences.Edit(ctx.PreferencesPath, root => PluginPreferences.RemoveTrust(root, [failed]));
@@ -389,6 +391,11 @@ public static class PluginInstaller
     /// </summary>
     public static PluginInstallResult Uninstall(PluginInstallContext ctx, string id, string? version = null, IReadOnlyList<string>? linkedFolders = null)
     {
+        // An id and a version name folders under the plugins root and nothing else: '..', a separator or an absolute path
+        // would make the delete below reach outside it.
+        if (NotAnId(id) is { } bad) return bad;
+        if (version is not null && !SafeName(version))
+            return PluginInstallResult.Refused($"'{version}' is not a plugin version; a version is letters, digits, '.', '-', '_' and '+'.");
         string idDir = Path.Combine(ctx.PluginsRoot, id);
         if (!Directory.Exists(idDir) || ReadActive(idDir) is null && !Directory.EnumerateDirectories(idDir).Any())
         {
@@ -499,7 +506,7 @@ public static class PluginInstaller
             var old = ReadActive(idDir);
             // One earlier version is kept, the one this replaces; an older one left behind by an update that never
             // started is removed now.
-            if (old?.Previous is { } stale && stale != old.Active) TryDelete(Path.Combine(idDir, stale));
+            if (old?.Previous is { } stale && stale != old.Active && SafeName(stale)) TryDelete(Path.Combine(idDir, stale));
             string? previous = old is not null && Directory.Exists(Path.Combine(idDir, old.Active)) ? old.Active : null;
             WriteActive(idDir, new PluginActiveRecord(m.Version, previous, OriginName(ctx.Origin), DateTimeOffset.UtcNow, source, false, environment));
             ctx.Say($"Installed {m.Name} {m.Version} in {final}.");
@@ -536,6 +543,10 @@ public static class PluginInstaller
         return m is not null ? (m, null)
             : (null, $"The manifest in {where} is refused: {string.Join("; ", diagnostics.Where(d => d.IsError))}.");
     }
+
+    /// <summary>The refusal for an id that cannot name a folder under the plugins root, or null.</summary>
+    private static PluginInstallResult? NotAnId(string id)
+        => SafeName(id) ? null : PluginInstallResult.Refused($"'{id}' is not a plugin id; an id is letters, digits, '.', '-' and '_'.");
 
     private static bool SafeName(string s)
         => s.Length is > 0 and < 128 && s != "." && s != ".." && !s.StartsWith('.') && !s.EndsWith(PartialSuffix, StringComparison.Ordinal)
@@ -619,9 +630,17 @@ public static class PluginInstaller
         return zip.GetEntry(prefix + PluginManifestReader.FileName) is not null ? prefix : null;
     }
 
+    /// <summary>
+    /// Unpacks the archive under <paramref name="into"/>. <b>Every link is made last</b>, after every file and folder: a
+    /// link checked only by its text (<see cref="UnsafeEntry"/>) can still lead out once another link is followed — a link
+    /// to <c>.</c> makes <c>d/..</c> the folder above — so nothing is ever written THROUGH a link the archive made, and
+    /// a link whose own folder, or whose target, turns out to be outside is refused by name.
+    /// </summary>
     private static string? Extract(ZipArchive zip, string prefix, string into, CancellationToken ct)
     {
         string root = Path.GetFullPath(into) + Path.DirectorySeparatorChar;
+        string realRoot = PCellTrustStore.ResolvedDirectory(into) + Path.DirectorySeparatorChar;
+        var links = new List<(ZipArchiveEntry Entry, string To)>();
         foreach (var e in zip.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -633,19 +652,34 @@ public static class PluginInstaller
             if (!to.StartsWith(root, StringComparison.Ordinal) && to + Path.DirectorySeparatorChar != root)
                 return $"The archive's entry '{e.FullName}' leads outside the plugin's folder. Nothing was installed.";
             if (name.EndsWith('/')) { Directory.CreateDirectory(to); continue; }
+            if (IsLink(e)) { links.Add((e, to)); continue; }
             Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-            if (IsLink(e))
-            {
-                string target;
-                using (var r = new StreamReader(e.Open())) target = r.ReadToEnd();
-                if (OperatingSystem.IsWindows()) continue;
-                File.CreateSymbolicLink(to, target);
-                continue;
-            }
             e.ExtractToFile(to, overwrite: true);
             int mode = (e.ExternalAttributes >> 16) & 0x1FF;
             if (!OperatingSystem.IsWindows() && mode != 0)
                 File.SetUnixFileMode(to, (UnixFileMode)mode | UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        if (OperatingSystem.IsWindows()) return null;   // a link needs a privilege there; the archive's links are left out
+
+        foreach (var (e, to) in links)
+        {
+            ct.ThrowIfCancellationRequested();
+            string target;
+            using (var r = new StreamReader(e.Open())) target = r.ReadToEnd();
+            string parent = Path.GetDirectoryName(to)!;
+            Directory.CreateDirectory(parent);
+            string at = Path.Combine(PCellTrustStore.ResolvedDirectory(parent), Path.GetFileName(to));
+            if (!at.StartsWith(realRoot, StringComparison.Ordinal))
+                return $"The archive's entry '{e.FullName}' would be made outside the plugin's folder through another of its links. Nothing was installed.";
+            var made = File.CreateSymbolicLink(at, target);
+            string? resolved = null;
+            try { resolved = made.ResolveLinkTarget(returnFinalTarget: true)?.FullName; } catch (IOException) { }
+            resolved ??= Path.GetFullPath(target, Path.GetDirectoryName(at)!);
+            if (!(PCellTrustStore.ResolvedDirectory(resolved) + Path.DirectorySeparatorChar).StartsWith(realRoot, StringComparison.Ordinal))
+            {
+                File.Delete(at);
+                return $"The archive's entry '{e.FullName}' is a link that leads outside the plugin's folder once its other links are followed. Nothing was installed.";
+            }
         }
         return null;
     }
@@ -654,7 +688,8 @@ public static class PluginInstaller
     /// development environment and Python's caches. A link leading outside the folder is refused by name.</summary>
     private static string? CopyFolder(string from, string into, CancellationToken ct)
     {
-        string root = Path.TrimEndingDirectorySeparator(from) + Path.DirectorySeparatorChar;
+        // Links resolve to real paths, so the folder is compared by its real path too (a /tmp that is /private/tmp).
+        string root = PCellTrustStore.ResolvedDirectory(from) + Path.DirectorySeparatorChar;
         var stack = new Stack<string>([from]);
         while (stack.Count > 0)
         {
@@ -666,13 +701,24 @@ public static class PluginInstaller
                 if (name is ".git" or VenvFolder or "__pycache__" or ".DS_Store") continue;
                 string rel = Path.GetRelativePath(from, path);
                 var info = new FileInfo(path);
+                string to = Path.Combine(into, rel);
                 if (info.LinkTarget is not null)
                 {
                     string? target = info.ResolveLinkTarget(true)?.FullName;
-                    if (target is null || !target.StartsWith(root, StringComparison.Ordinal))
+                    if (target is null || !(PCellTrustStore.ResolvedDirectory(target) + Path.DirectorySeparatorChar).StartsWith(root, StringComparison.Ordinal))
                         return $"'{rel}' is a link to '{info.LinkTarget}', outside the plugin's folder. Nothing was installed.";
+                    // A link to a folder is copied as the link, never followed: one that points at a folder above it
+                    // would otherwise be copied into itself without end.
+                    if (Directory.Exists(path))
+                    {
+                        if (OperatingSystem.IsWindows())
+                            return $"'{rel}' is a link to a folder, which an install does not copy on Windows. Nothing was installed.";
+                        // An absolute target would still name the author's folder; relative, it names the copy's.
+                        Directory.CreateSymbolicLink(to, Path.IsPathRooted(info.LinkTarget)
+                            ? Path.GetRelativePath(PCellTrustStore.ResolvedDirectory(Path.GetDirectoryName(path)!), target) : info.LinkTarget);
+                        continue;
+                    }
                 }
-                string to = Path.Combine(into, rel);
                 if (Directory.Exists(path)) { Directory.CreateDirectory(to); stack.Push(path); }
                 else
                 {

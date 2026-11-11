@@ -27,7 +27,15 @@ public static class PluginPlots
 {
     /// <summary>The source name an inline data set is known by in the plot and in a saved <c>.cdd</c>: the view's own
     /// name, as the <c>.npy</c> <b>Open in Data Display</b> writes it under.</summary>
-    public static string InlineSourceName(string view) => view + ".npy";
+    public static string InlineSourceName(string view) => FileStem(view) + ".npy";
+
+    /// <summary>A view's name as a file name: the plugin chose it, so anything that is not a plain name character — a
+    /// separator, a '..' — is replaced, and the file stays in the folder it is written to.</summary>
+    public static string FileStem(string view)
+    {
+        string stem = new([.. view.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_')]);
+        return stem.Length == 0 ? "view" : stem.Length > 100 ? stem[..100] : stem;
+    }
 
     private static readonly HashSet<string> PlotFields = new(StringComparer.Ordinal)
         { "title", "x", "y", "y2", "traces", "markers", "lines", "freqUnit", "legend" };
@@ -136,7 +144,7 @@ public static class PluginPlots
             SelectedDataSource = c.SourceName,
             Tabs = [new TabConfig { Name = view, Plots = [pc] }],
         };
-        string cdd = Path.Combine(stagingDir, view + ".cdd");
+        string cdd = Path.Combine(stagingDir, FileStem(view) + ".cdd");
         File.WriteAllText(cdd, System.Text.Json.JsonSerializer.Serialize(config, DataDisplayJson.Options), new System.Text.UTF8Encoding(false));
         return cdd;
     }

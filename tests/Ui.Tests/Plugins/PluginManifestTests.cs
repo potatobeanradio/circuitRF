@@ -43,6 +43,8 @@ public class PluginManifestTests
 
     [Theory]
     [InlineData("\"id\": \"example.filter\"", "\"id\": \"Example Filter\"", "id")]
+    [InlineData("\"id\": \"example.filter\"", "\"id\": \"..\"", "id")]                     // the id names a folder
+    [InlineData("\"timeouts\": { \"update\": 5", "\"timeouts\": { \"update\": 1e300", "timeouts.update")]   // would overflow a TimeSpan
     [InlineData("{ \"name\": \"order\", \"kind\": \"int\"", "{ \"name\": \"type\", \"kind\": \"int\"", "params.type.name")]
     [InlineData("\"default\": \"Chebyshev\"", "\"default\": \"Elliptic\"", "params.type.default")]
     [InlineData("\"unit\": \"Hz\"", "\"unit\": \"furlong\"", "params.f0.unit")]
@@ -89,5 +91,15 @@ public class PluginManifestTests
     {
         var (m, _) = PluginManifestReader.Read(Valid.Replace("\"apiVersion\": 1", $"\"apiVersion\": {PluginApi.Max + 1}"));
         Assert.Equal("needs a newer circuitRF", m!.NeedsNewerCircuitRF);
+    }
+
+    /// <summary>Review fix: <c>minCircuitRF</c> was read and never consulted, so a plugin needing a later release started
+    /// and failed in ways nobody could attribute. It now dims the plugin as a newer contract does.</summary>
+    [Fact]
+    public void AMinCircuitRFAboveThisRelease_IsListedDimmed()
+    {
+        var (m, _) = PluginManifestReader.Read(Valid.Replace("\"minCircuitRF\": \"1.8.0\"", "\"minCircuitRF\": \"999.0.0\""));
+        Assert.Equal("needs circuitRF 999.0.0", m!.NeedsNewerCircuitRF);
+        Assert.Null(PluginManifestReader.Read(Valid).Manifest!.NeedsNewerCircuitRF);
     }
 }

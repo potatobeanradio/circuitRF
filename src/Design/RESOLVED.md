@@ -29746,3 +29746,38 @@ plane and the bottom copper and none with the pour.
   example's own encoding of three messages, read back by `WireFrames`, `PCellWireProtocol` and the Python helper, and
   re-encoded by `WireFrames.Write` to the same bytes (`PluginFrameGoldenTests`). Regenerate with the published program's
   `--write-golden-frames <dir>` only when the frame itself is meant to change — which it never is (`plugins.md` §12).
+
+## Plugin series review (PLG-0…7, 2026-11-10)
+
+A read-through of the finished series found these; each is fixed and, where it can be tested without a window, held by
+a test in `tests/Ui.Tests/Plugins`.
+
+- **Uninstall could delete outside the plugins root.** `PluginInstaller.Uninstall`/`Rollback`/`UpdateToNewestAsync`
+  took the id (and `--version`) as typed and `Path.Combine`d it under the root, and both the CLI and the MCP `plugin`
+  tool pass it through — `uninstall ..` fell through to `TryDelete(<plugins>/..)`, the user-state folder. Every id and
+  version is now checked with the install's own `SafeName` first, and so are the versions read back from `active.json`
+  before anything is deleted by them.
+- **Two archive links could lead out together.** `UnsafeEntry` checks each link's text on its own, and `Extract` made
+  links in archive order, so a link to `.` followed by a link `d/e` → `..` (each lexically inside) put a link to the
+  folder above inside the plugin, and a later entry could be written through it. Every link is now made after every file
+  and folder, at its REAL location, and is refused when that location or its resolved target is outside.
+- **Install from folder could copy forever.** `CopyFolder` recursed into a link to a folder above it (`a/b/up` → `..`).
+  A folder link is now recreated as a link (an absolute target made relative), never followed; the folder is compared by
+  its real path, so a folder under `/tmp` on macOS no longer refuses every link it holds.
+- **`minCircuitRF` was read and never consulted** for an installed or linked plugin (the list's own `minCircuitRF` was).
+  `PluginManifest.NeedsNewerCircuitRF` now asks it, so the plugin is dimmed with "needs circuitRF x.y" and not started.
+- **A manifest could crash its first request.** `timeouts` accepted any positive number, and `TimeSpan.FromSeconds(1e300)`
+  throws inside `UpdateAsync`. A timeout above 86400 s is now a manifest refusal. The id pattern now also requires a
+  letter or digit at both ends — `..` and `.x` matched it, and the id names folders.
+- **A revoked plugin came back after a crash.** The panel's restart reused the trust store captured when the window
+  opened; it now reads `PluginHost.Trust()` at every start, so a deny made in Settings or by `circuitRF plugin deny`
+  while the panel is open holds.
+- **Place in workspace could make one cell out of two designs.** It commits the panel's current values but writes the
+  `.clay` from the layout view last DRAWN; changed and placed before the redraw, the two differed. `LayoutViewFor` takes
+  the committed values and refuses a view drawn for others. A view's recorded parameters now include what the reply
+  `set`, or a plugin using `set` could never place.
+- **A cancel racing its reply** marked an already-answered id cancelled, so `SettledAsync` waited out Stop's grace and
+  restarted a healthy plugin. Only a request still waiting is marked.
+- Smaller: `lineModel` let a non-numeric frequency through as NaN; the index reader's `GetInt32` threw on `1.5`; a view
+  name from a reply became a file name in `plugin run -o` and in Open in Data Display unchecked (`../x`); a host call's
+  verb printed "Wrote …" onto `plugin run`'s stdout, the result channel (silenced, counted, while any host-call verb runs).

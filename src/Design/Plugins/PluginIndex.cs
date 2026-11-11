@@ -166,7 +166,7 @@ public sealed record PluginIndex(IReadOnlyList<PluginIndexEntry> Plugins, Plugin
         {
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return (null, ["the list is not a JSON object"]);
-            if (!root.TryGetProperty("schema", out var schema) || schema.ValueKind != JsonValueKind.Number || schema.GetInt32() != Schema)
+            if (!root.TryGetProperty("schema", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out int sv) || sv != Schema)
                 errors.Add($"schema: must be {Schema}");
             if (!root.TryGetProperty("plugins", out var plugins) || plugins.ValueKind != JsonValueKind.Array)
                 return (null, [.. errors, "plugins: must be an array"]);
@@ -197,7 +197,7 @@ public sealed record PluginIndex(IReadOnlyList<PluginIndexEntry> Plugins, Plugin
                         if (string.IsNullOrWhiteSpace(version)) { errors.Add($"{id}.versions: an entry has no version"); continue; }
                         string vat = $"{id} {version}";
                         if (!seen.Add(version)) errors.Add($"{vat}: listed twice");
-                        int api = v.TryGetProperty("apiVersion", out var a) && a.ValueKind == JsonValueKind.Number ? a.GetInt32() : 0;
+                        int api = v.TryGetProperty("apiVersion", out var a) && a.ValueKind == JsonValueKind.Number && a.TryGetInt32(out int av) ? av : 0;
                         if (api < 1) errors.Add($"{vat}.apiVersion: missing");
 
                         var assets = new Dictionary<string, PluginIndexAsset>(StringComparer.Ordinal);

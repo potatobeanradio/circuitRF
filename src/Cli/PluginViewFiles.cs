@@ -35,6 +35,13 @@ internal static class PluginViewFiles
 
         foreach (var body in bodies)
         {
+            // A view's name is the plugin's and becomes a file name in -o: one that is not a plain name could write outside it.
+            if (!IsFileName(body.Name))
+            {
+                written.Add(new(body.Name, declared.GetValueOrDefault(body.Name) ?? "view", [],
+                    $"'{body.Name}' cannot name a file; a view written to a folder is named by letters, digits, '.', '-' and '_'."));
+                continue;
+            }
             var view = PluginViews.Read(body, declared.GetValueOrDefault(body.Name), ctx);
             if (view.Problem is { } problem) { written.Add(new(body.Name, view.Kind, [], problem)); continue; }
             try
@@ -82,6 +89,9 @@ internal static class PluginViewFiles
         string cdd = PluginPlots.WriteDataDisplay(c, outDir, view.Name);
         return new(view.Name, view.Kind, [data, cdd], null);
     }
+
+    private static bool IsFileName(string name)
+        => name.Length is > 0 and <= 100 && name[0] != '.' && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');
 
     private static PluginViewFile One(string name, string kind, string path, Action<string> write)
     {

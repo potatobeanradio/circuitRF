@@ -439,6 +439,13 @@ public sealed class PluginPanelController : IAsyncDisposable
             foreach (var (name, node) in setObj)
                 if (_manifest.Params.FirstOrDefault(p => p.Name == name && p.Kind != PluginParamKind.Readout) is { } p)
                     set[name] = PluginValueFormat.ControlText(p, node);
+        // What the reply's views were drawn for: the values sent, with whatever the reply set — a bound marker sits at a
+        // set value, and placement compares a layout view's parameters with the ones it commits.
+        var answered = (JsonObject)values.DeepClone();
+        foreach (var (name, text) in set)
+            if (_manifest.Params.FirstOrDefault(p => p.Name == name) is { } p
+                && PluginParams.ResolveValue(p, text, _options.Context) is { Node: { } node, Error: null })
+                answered[name] = node;
 
         bool applied = false;
         Change(s =>
@@ -452,7 +459,7 @@ public sealed class PluginPanelController : IAsyncDisposable
                 else
                 {
                     views[name] = body.DeepClone();
-                    bodies[name] = new PluginViewBody(name, body.DeepClone(), reply.Payload, (JsonObject)values.DeepClone(),
+                    bodies[name] = new PluginViewBody(name, body.DeepClone(), reply.Payload, (JsonObject)answered.DeepClone(),
                                                       (bodies.TryGetValue(name, out var was) ? was.Serial : 0) + 1)
                     { StagingDir = session.StagingDirectory };
                 }

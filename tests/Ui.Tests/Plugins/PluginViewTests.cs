@@ -429,6 +429,18 @@ public class PluginViewTests
         Assert.Contains("'blob'", refused.Problem);
     }
 
+    /// <summary>Review fix: Place in workspace commits the panel's CURRENT values but writes the layout view the panel last
+    /// drew. Changed and placed before the redraw, the two came from different values — one cell, two designs.</summary>
+    [Fact]
+    public void ALayoutViewDrawnForOtherValues_IsNotPlacedBesideACommitOfNewOnes()
+    {
+        var drawnFor = new JsonObject { ["n"] = 1 };
+        var body = new PluginViewBody("art", new JsonObject { ["shapes"] = new JsonArray() }, default, drawnFor, 1);
+
+        Assert.Null(PluginPlacement.LayoutViewFor(body, "art", Manifest, null, new JsonObject { ["n"] = 1 })!.Problem);
+        Assert.Contains("drawn for other values", PluginPlacement.LayoutViewFor(body, "art", Manifest, null, new JsonObject { ["n"] = 2 })!.Problem);
+    }
+
     [Fact]
     public void ATableView_IsTheReadoutFormattersTable_AndCopiesAsTabSeparatedText()
     {

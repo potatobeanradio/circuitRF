@@ -257,6 +257,7 @@ public sealed class PluginHostServices(string stagingDir, string? workspaceDir, 
             _ => new List<double>(),
         };
         if (freqs.Count == 0) return Error("lineModel names its frequencies in hertz, as freq.");
+        if (freqs.Any(f => !double.IsFinite(f) || f <= 0)) return Error("lineModel's freq is a positive number of hertz, or a list of them.");
 
         int sep = text.IndexOf(" : ", StringComparison.Ordinal);
         string conductor = text[..sep].Trim(), techText = text[(sep + 3)..].Trim();

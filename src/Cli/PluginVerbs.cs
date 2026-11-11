@@ -15,7 +15,21 @@ public sealed class PluginVerbs : IPluginVerbs
 {
     public static PluginVerbs Instance { get; } = new();
 
+    private static readonly object QuietGate = new();
+    private static int _quiet;
+    private static TextWriter? _stdout;
+
     public PluginVerbRun Run(IReadOnlyList<string> argv, string? exportDataTo, CancellationToken ct)
+    {
+        // A verb with a Sink leaves Console.Out alone, so its "Wrote …" lines would reach this process's real stdout —
+        // under `plugin run` the caller's result channel, where a script would read them as output paths. Silenced for
+        // as long as any host call's verb runs (counted, so two sessions' calls cannot restore each other's silence).
+        lock (QuietGate) { if (_quiet++ == 0) { _stdout = Console.Out; Console.SetOut(TextWriter.Null); } }
+        try { return RunQuietly(argv, exportDataTo, ct); }
+        finally { lock (QuietGate) { if (--_quiet == 0 && _stdout is not null) { Console.SetOut(_stdout); _stdout = null; } } }
+    }
+
+    private static PluginVerbRun RunQuietly(IReadOnlyList<string> argv, string? exportDataTo, CancellationToken ct)
     {
         using var isolated = JsonRun.Isolate();
         var document = new StringWriter();

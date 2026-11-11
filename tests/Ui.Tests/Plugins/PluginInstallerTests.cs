@@ -183,6 +183,76 @@ public class PluginInstallerTests
         Assert.False(Directory.Exists(Path.Combine(root, Id)));
     }
 
+    /// <summary>Review fix: two links that each read as inside — one to '.', one through it to '..' — lead out together.
+    /// Links are made last and checked by where they really lead, so nothing is written outside the plugin's folder.</summary>
+    [Fact]
+    public async Task Gate4_LinksThatLeadOutOnlyTogether_AreRefused_AndNothingIsWrittenOutside()
+    {
+        if (OperatingSystem.IsWindows()) return;   // an archive's links are left out there
+        var (root, ctx) = Store();
+        string file = Path.Combine(root, "chain.zip");
+        using (var zip = ZipFile.Open(file, ZipArchiveMode.Create))
+        {
+            foreach (string f in Directory.GetFiles(Plugin("1.0.0"))) zip.CreateEntryFromFile(f, Path.GetFileName(f));
+            void Link(string name, string target)
+            {
+                var e = zip.CreateEntry(name);
+                e.ExternalAttributes = unchecked((int)(0xA1FFu << 16));
+                using var w = new StreamWriter(e.Open());
+                w.Write(target);
+            }
+            // "d/e" reads as d/.. — the folder itself — but d is the folder, so it is the folder above.
+            Link("d", ".");
+            Link("d/e", "..");
+        }
+
+        var result = await PluginInstaller.InstallZipAsync(ctx, file, "test");
+
+        Assert.False(result.Ok);
+        Assert.Contains("leads outside the plugin's folder", result.Refusal);
+        Assert.False(Directory.Exists(Path.Combine(root, Id)));
+    }
+
+    /// <summary>Review fix: a folder holding a link to a folder above it is installed with the link as a link, not copied
+    /// into itself without end.</summary>
+    [Fact]
+    public async Task InstallFolder_CopiesALinkToAFolderAboveIt_AsALink()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (_, ctx) = Store();
+        string from = Plugin("1.0.0");
+        Directory.CreateDirectory(Path.Combine(from, "a", "b"));
+        Directory.CreateSymbolicLink(Path.Combine(from, "a", "b", "up"), "..");
+
+        var install = PluginInstaller.InstallFolderAsync(ctx, from);
+        Assert.True(await Task.WhenAny(install, Task.Delay(TimeSpan.FromSeconds(20))) == install, "the copy did not finish");
+        var result = await install;
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal("..", new DirectoryInfo(Path.Combine(result.Directory!, "a", "b", "up")).LinkTarget);
+    }
+
+    /// <summary>Review fix: an id or version names a folder under the plugins root and nothing else, so '..' or an absolute
+    /// path is refused before anything is deleted — the command line and MCP pass them through as typed.</summary>
+    [Theory]
+    [InlineData("..", null)]
+    [InlineData("/", null)]
+    [InlineData(Id, "../..")]
+    public void Uninstall_OfAnIdOrVersionThatIsNotAFolderName_IsRefused_AndDeletesNothing(string id, string? version)
+    {
+        var (root, ctx) = Store();
+        string beside = Path.Combine(Path.GetDirectoryName(root)!, "keep.txt");
+        File.WriteAllText(beside, "x");
+        Directory.CreateDirectory(Path.Combine(root, Id, "1.0.0"));
+
+        var result = PluginInstaller.Uninstall(ctx, id, version);
+
+        Assert.False(result.Ok);
+        Assert.Contains("is not a plugin", result.Refusal);
+        Assert.True(File.Exists(beside));
+        Assert.True(Directory.Exists(Path.Combine(root, Id, "1.0.0")));
+    }
+
     // ── gate 5: no unasked network ──────────────────────────────────────────────
 
     [Fact]

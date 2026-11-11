@@ -333,7 +333,7 @@ public static class PluginHeadless
                     CellName: answer.Cells.Count == 1 ? request.CellName : null,
                     Replace: request.Replace,
                     Layout: cell.LayoutView is { } lv
-                        ? PluginPlacement.LayoutViewFor(bodies.FirstOrDefault(b => b.Name == lv), lv, session.Manifest, request.WorkspaceDir ?? workspace)
+                        ? PluginPlacement.LayoutViewFor(bodies.FirstOrDefault(b => b.Name == lv), lv, session.Manifest, request.WorkspaceDir ?? workspace, values)
                         : null));
                 placements.Add(result);
                 if (result.Outcome != PluginPlacementOutcome.Placed) break;

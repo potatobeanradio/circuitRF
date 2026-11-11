@@ -152,7 +152,7 @@ contains. The same plugin runs headless with <code>circuitRF plugin run example.
 <tr>
 <td><code>id</code></td>
 <td>yes</td>
-<td>Unique, reverse-DNS-like: lower-case letters, digits, <code>.</code> and <code>-</code> only (<code>yourname.coupled-filter</code>). The key for permission, the list, the CLI and every result</td>
+<td>Unique, reverse-DNS-like: lower-case letters, digits, <code>.</code> and <code>-</code> only, starting and ending with a letter or digit (<code>yourname.coupled-filter</code>). The key for permission, the list, the CLI and every result</td>
 </tr>
 <tr>
 <td><code>name</code></td>
@@ -187,7 +187,7 @@ contains. The same plugin runs headless with <code>circuitRF plugin run example.
 <tr>
 <td><code>minCircuitRF</code></td>
 <td></td>
-<td>The oldest circuitRF it needs, e.g. <code>1.8.0</code></td>
+<td>The oldest circuitRF it needs, e.g. <code>1.8.0</code>. An older circuitRF lists the plugin dimmed and does not start it</td>
 </tr>
 <tr>
 <td><code>menu</code></td>
@@ -212,7 +212,7 @@ contains. The same plugin runs headless with <code>circuitRF plugin run example.
 <tr>
 <td><code>timeouts</code></td>
 <td></td>
-<td><code>{&quot;update&quot;: s, &quot;action&quot;: s, &quot;commit&quot;: s}</code> in seconds, to replace the deadlines</td>
+<td><code>{&quot;update&quot;: s, &quot;action&quot;: s, &quot;commit&quot;: s}</code> in seconds (at most 86400, a day), to replace the deadlines</td>
 </tr>
 </tbody>
 </table>

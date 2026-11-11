@@ -247,11 +247,6 @@ public sealed class PluginSession : IPluginPanelSession
     // ── Start ───────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Starts <paramref name="entry"/>'s program, or refuses — policy first, then permission, then the contract
-    /// version, then a build for this machine — with no process started for any refusal. The staging folder is
-    /// created before the process and named in <c>hello</c>.
-    /// </summary>
-    /// <summary>
     /// Why <see cref="Start"/> would refuse <paramref name="entry"/> before starting anything — policy first, then the
     /// manifest, permission, the contract version and a build for this machine — or null when it would start it. A
     /// headless run asks this before it judges the parameters, so a plugin that may not run is never argued with.
@@ -271,7 +266,9 @@ public sealed class PluginSession : IPluginPanelSession
                 : $"{manifest.Name} has not been allowed to run on this machine yet.");
 
         if (manifest.NeedsNewerCircuitRF is { } newer)
-            return Refuse(PluginFailureKind.NeedsNewerCircuitRF, $"{manifest.Name} {newer} (it is written for plugin contract {manifest.ApiVersion}).");
+            return Refuse(PluginFailureKind.NeedsNewerCircuitRF, manifest.ApiVersion > PluginApi.Max
+                ? $"{manifest.Name} {newer} (it is written for plugin contract {manifest.ApiVersion})."
+                : $"{manifest.Name} {newer}; this is circuitRF {PluginVersions.CircuitRF}.");
 
         var run = manifest.ResolveRun();
         if (run.Entry is null)
@@ -294,6 +291,11 @@ public sealed class PluginSession : IPluginPanelSession
         static PluginFailure Refuse(PluginFailureKind kind, string sentence) => new(kind, sentence, []);
     }
 
+    /// <summary>
+    /// Starts <paramref name="entry"/>'s program, or refuses — policy first, then permission, then the contract
+    /// version, then a build for this machine — with no process started for any refusal. The staging folder is
+    /// created before the process and named in <c>hello</c>.
+    /// </summary>
     public static PluginOutcome<PluginSession> Start(PluginEntry entry, PluginStartOptions options)
     {
         if (Refusal(entry, options) is { } refused) return PluginOutcome<PluginSession>.Fail(refused);
@@ -506,9 +508,17 @@ public sealed class PluginSession : IPluginPanelSession
         if (ct.IsCancellationRequested)
         {
             CancellationTokenSource? hostCall;
-            lock (_gate) { _pending.Remove(id); _cancelled.Add(id); _hostCalls.TryGetValue(id, out hostCall); }
+            bool waiting;
+            lock (_gate)
+            {
+                // Only a request still waiting is marked: one whose answer arrived a moment ago has nothing left to drop,
+                // and marking it would leave SettledAsync waiting for an answer that never comes (a needless restart).
+                waiting = _pending.Remove(id);
+                if (waiting) _cancelled.Add(id);
+                _hostCalls.TryGetValue(id, out hostCall);
+            }
             try { hostCall?.Cancel(); } catch (ObjectDisposedException) { }   // a host call cancelled with its request
-            _ = WriteAsync(new JsonObject { ["type"] = "cancel", ["id"] = id });
+            if (waiting) _ = WriteAsync(new JsonObject { ["type"] = "cancel", ["id"] = id });
             return new Answer(null, Soft(PluginFailureKind.Cancelled, "Stopped."));
         }
 

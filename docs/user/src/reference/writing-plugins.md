@@ -102,19 +102,19 @@ contains. The same plugin runs headless with `circuitRF plugin run example.quart
 | Field | Required | Meaning |
 |---|---|---|
 | `apiVersion` | yes | The message set you wrote against: `1`. A whole number |
-| `id` | yes | Unique, reverse-DNS-like: lower-case letters, digits, `.` and `-` only (`yourname.coupled-filter`). The key for permission, the list, the CLI and every result |
+| `id` | yes | Unique, reverse-DNS-like: lower-case letters, digits, `.` and `-` only, starting and ending with a letter or digit (`yourname.coupled-filter`). The key for permission, the list, the CLI and every result |
 | `name` | yes | What the menu shows |
 | `version` | yes | Your version, e.g. `0.3.0`. An update is a new version |
 | `kind` | yes | `panel`, `action` or `window` |
 | `run` | yes | How to start your program, per platform (below) |
 | `summary` | | One sentence: the menu tooltip and the list |
 | `author`, `license`, `homepage` | | Shown in the permission prompt and Settings |
-| `minCircuitRF` | | The oldest circuitRF it needs, e.g. `1.8.0` |
+| `minCircuitRF` | | The oldest circuitRF it needs, e.g. `1.8.0`. An older circuitRF lists the plugin dimmed and does not start it |
 | `menu` | | The submenu of Tools ▸ Plugins it appears under (`Filters`, `Calculators`) |
 | `contexts` | | Also offer it from a right-click: any of `cell`, `layout`, `result`, `technology` |
 | `params` | | The parameters (next section). Required for a `window` plugin's headless form |
 | `ui` | | The panel's layout tree, for `kind: panel`. Leave it out for the default panel |
-| `timeouts` | | `{"update": s, "action": s, "commit": s}` in seconds, to replace the deadlines |
+| `timeouts` | | `{"update": s, "action": s, "commit": s}` in seconds (at most 86400, a day), to replace the deadlines |
 
 An unknown optional field is ignored, never refused, so a manifest written for a later circuitRF still reads.
 
