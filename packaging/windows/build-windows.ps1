@@ -759,21 +759,42 @@ $($components.ToString().TrimEnd())
             # what to emit, and the .wxs preprocessor cannot read it back. It selects the UpgradeCode,
             # which is per scope AND per architecture - see the note at the head of circuitRF.wxs. An
             # architecture with no code of its own is a wix ERROR there, never a silently shared one.
-            wix build circuitRF.wxs Files.wxs `
-                -arch $Arch `
-                -d "Arch=$Arch" `
-                -d "Version=$CrfMsiVersion" `
-                -d "VersionText=$CrfVersion" `
-                -d "Scope=$Scope" `
-                -d "PublishDir=$publish" `
-                -d "IconFile=$icon" `
-                -d "StubFile=$stubFile" `
-                -d "CurrentFile=$currentFile" `
-                -d "HasConsole=$hasConsole" `
-                -d "ConsoleFile=$consoleFile" `
-                -ext $extensionRef `
-                -o $msi
-            if ($LASTEXITCODE -ne 0) { throw 'wix build failed.' }
+            #
+            # RETRIED, but only for one failure. Every wix build unpacks the UI extension's bitmaps
+            # (bannrbmp.bmp, dlgbmp.bmp, ...) into a fresh %TEMP%\<random>\...\wix-ir\ folder and reads
+            # them straight back; on Windows that read intermittently fails on a file named under
+            # wix-ir\, and the identical command then succeeds. Nothing in the inputs differs between
+            # the two, so a retry is the fix and a person re-running the whole script is the cost it
+            # removes. Any other failure - a WIX0091, a missing PublishDir file - is deterministic and
+            # still stops on the first attempt. The output is captured to make that distinction, so the
+            # preference is relaxed for the capture (see the tool checks above for why that matters).
+            $wixExit = 1
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+                $previousEap = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                $wixOutput = wix build circuitRF.wxs Files.wxs `
+                    -arch $Arch `
+                    -d "Arch=$Arch" `
+                    -d "Version=$CrfMsiVersion" `
+                    -d "VersionText=$CrfVersion" `
+                    -d "Scope=$Scope" `
+                    -d "PublishDir=$publish" `
+                    -d "IconFile=$icon" `
+                    -d "StubFile=$stubFile" `
+                    -d "CurrentFile=$currentFile" `
+                    -d "HasConsole=$hasConsole" `
+                    -d "ConsoleFile=$consoleFile" `
+                    -ext $extensionRef `
+                    -o $msi 2>&1 | ForEach-Object { $line = "$_"; Write-Host $line; $line }
+                $wixExit = $LASTEXITCODE
+                $ErrorActionPreference = $previousEap
+
+                if ($wixExit -eq 0) { break }
+                if ((($wixOutput -join "`n") -notmatch '\\wix-ir\\') -or $attempt -eq 3) { break }
+                Write-Host "  wix failed reading a file it had just unpacked from the UI extension; retrying (attempt $($attempt + 1) of 3) ..."
+                Start-Sleep -Seconds 2
+            }
+            if ($wixExit -ne 0) { throw 'wix build failed.' }
         }
         finally { Pop-Location }
 

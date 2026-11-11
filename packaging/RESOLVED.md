@@ -1624,3 +1624,24 @@ The `.zsync` files are ordinary assets: `sign-release.sh` uploads everything in 
 manifest, and the updater matches the AppImage by exact name, so it ignores them. A release is now 19 files
 (`EXPECTED_FILES`). Not run end to end here: the packing runs only on Linux. Gate:
 `PackagingScriptTests.TheAppImage_CarriesUpdateInformation_ThatFindsTheNextReleasesZsync`.
+
+---
+
+## `wix build` failed about half the time on a file under `wix-ir\` (2026-11-10)
+
+**Symptom:** a Windows run stopped at `throw 'wix build failed.'` after wix named a path like
+`%TEMP%\<random>\WixToolset.UI.wixext_<hash>\wix-ir\bannrbmp.bmp`; re-running the script, with
+nothing changed, succeeded. It was reported on the ARM64 VM with nothing else running on the guest
+(the host was signing and notarizing the macOS build at the time).
+
+**Why it is not ours to fix in the inputs:** every `wix build` unpacks the UI extension's embedded
+bitmaps into a fresh random folder under `%TEMP%` and reads them straight back. The read that fails is
+of a file wix itself wrote moments earlier, in a folder no other process knows the name of, so no
+input of this script is involved. The most likely holder is an on-access scan of the newly written
+file, which is slower when the VM's host is busy; that was not confirmed.
+
+**Fix:** `build-windows.ps1` captures wix's output (under `'Continue'`, per the stderr rule above)
+and retries up to three attempts **only** when a failed run's output contains `\wix-ir\`. Every other
+failure (WIX0091, a missing published file) is deterministic and still stops on the first attempt.
+Checked off Windows against a fake `wix`: the flaky case builds on its second call, a WIX0091 throws
+after one, and a clean build runs once.
