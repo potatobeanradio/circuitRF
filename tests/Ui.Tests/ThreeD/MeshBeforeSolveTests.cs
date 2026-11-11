@@ -162,7 +162,7 @@ public sealed class MeshBeforeSolveTests : IDisposable
             (ClipPlane3D Plane, CancellationToken Token, SemaphoreSlim Go) cut = default;
             Drain(() => cuts.TryTake(out cut));
             long shown = viewer.SectionOverlay.Version;
-            cut.Go.Release();
+            cut.Go!.Release();
             Drain(() => viewer.SectionOverlay.Version != shown);
 
             viewer.MeshPlanePosition = 0.6;
@@ -196,7 +196,7 @@ public sealed class MeshBeforeSolveTests : IDisposable
             (ClipPlane3D Plane, CancellationToken Token, SemaphoreSlim Go) cut = default;
             Drain(() => cuts.TryTake(out cut));
             long shown = viewer.SectionOverlay.Version;
-            cut.Go.Release();
+            cut.Go!.Release();
             Drain(() => viewer.SectionOverlay.Version != shown);
 
             viewer.MeshPlaneQuietMs = 300;

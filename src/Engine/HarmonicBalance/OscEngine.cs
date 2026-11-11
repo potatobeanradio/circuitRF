@@ -194,6 +194,9 @@ public static class OscEngine
         var probe = FindProbe(nl, p.Analysis, p.Probe);
         bool shunt = OscProbeModel.IsShunt(probe);
         var dc = NonlinearDcEngine.Run(nl, settings);
+        // The search linearises every device at this point, which reads charge: a linearised-charge core is frozen here
+        // first, as every other engine that reads charge freezes it (BiasFreeze).
+        BiasFreeze.Apply(nl, dc.Converged ? dc.NodeVoltages : null, dc.NodeVoltages);
 
         Complex W(double hz)
         {

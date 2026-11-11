@@ -327,7 +327,7 @@ public sealed class ReceiverNoiseExampleTests(ITestOutputHelper output) : IDispo
         Assert.Equal(mask["PhaseNoise=".Length..].Trim('"'), lo.Expression.Trim('"'));
         var flo = sch.Components.Single(c => c.InstanceName == "VAR1").Parameters.Single(p => p.Name == "Flo");
         Assert.Equal(("2101.2", "MHz"), (flo.Expression, flo.Unit));
-        Assert.Empty(run.Warnings.Where(w => w.Contains("differ by", StringComparison.Ordinal)));
+        Assert.DoesNotContain(run.Warnings, w => w.Contains("differ by", StringComparison.Ordinal));
     }
 
     // ── check ───────────────────────────────────────────────────────────────────────────────────────────────────

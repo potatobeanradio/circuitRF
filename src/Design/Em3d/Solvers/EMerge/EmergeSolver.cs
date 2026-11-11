@@ -19,6 +19,7 @@ public static class EmergeSolver
         Spelling = "Emerge",
         ResultToken = "emerge",
         Method = Em3dSolverFit.Fem,
+        Quality = s => s.Emerge?.Quality ?? PalaceQuality.Standard,
         Capabilities = new()
         {
             Problems = new HashSet<Em3dProblemType> { Em3dProblemType.Driven, Em3dProblemType.Eigenmode },

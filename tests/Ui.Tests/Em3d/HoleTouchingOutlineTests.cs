@@ -92,6 +92,6 @@ public sealed class HoleTouchingOutlineTests : IDisposable
         Assert.Contains(g.Notes, n => n.Contains("moved 1 corner off a stretch", StringComparison.Ordinal));
         var pour = Assert.IsType<Em3dExtrudedPolygon>(g.Problem!.Solids.Single(s => s.Name.Contains("/SIG", StringComparison.Ordinal)).Primitive);
         Assert.Contains(pour.Holes.Single(), q => Math.Abs(q.X - 500.5e-6) < 1e-9 && Math.Abs(q.Y - 1000e-6) < 1e-9);
-        Assert.Empty(Em3dGeometryCheck.Check(g.Problem!, 0).Where(f => f.Kind == Em3dGeometryKind.PointTouch));
+        Assert.DoesNotContain(Em3dGeometryCheck.Check(g.Problem!, 0), f => f.Kind == Em3dGeometryKind.PointTouch);
     }
 }

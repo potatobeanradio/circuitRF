@@ -78,7 +78,7 @@ public sealed class SimulateEditorGateTests : IDisposable
     /// <summary>A setup panel opened before the 3D view has been built lists the placed parts once it is, with no edit: it read
     /// "not built yet", showed only the parts its setup names, and stayed so until something refreshed it.</summary>
     [Fact]
-    public void TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit()
+    public async Task TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit()
     {
         string ws = Path.Combine(_root, "filter");
         string src = Path.Combine(Em3dTestRoot(), "examples", "PCB Component Ports");
@@ -95,14 +95,14 @@ public sealed class SimulateEditorGateTests : IDisposable
         vm.RestoreActiveSetup(null);
         vm.SelectedSetupItem = vm.SetupItems.First(i => !i.IsExternal);
         var panel = vm.SetupEditor!.ViewModel;
-        panel.ComponentPartsListing.GetAwaiter().GetResult();
+        await panel.ComponentPartsListing;
         Assert.DoesNotContain(panel.ComponentPortRows, r => r.Refdes == "TL1");   // not built yet: only the parts the setup names
 
         vm.Viewer.Resized(W, H);
         vm.Viewer.Session.EnsureBackend();
         vm.Start();
         Settle(vm);
-        panel.ComponentPartsListing.GetAwaiter().GetResult();
+        await panel.ComponentPartsListing;
         Assert.Contains(panel.ComponentPortRows, r => r.Refdes == "TL1");          // placed, not named: listed from the view
     }
 

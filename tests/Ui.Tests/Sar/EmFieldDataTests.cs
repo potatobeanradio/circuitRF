@@ -172,7 +172,7 @@ public sealed class EmFieldDataTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_dir, ".cws"), "{}");
         var (lib, tb) = new CnlReader().Read(Around + Block + Fields, "t", _dir);
-        var schematic = NetlistSchematic.Build(lib, tb, _dir).Schematic;
+        var schematic = NetlistSchematic.Build(lib, tb, _dir).Schematic!;
         Assert.DoesNotContain(_dir, SchematicCircuit.CnlTextOf(schematic, "t"), StringComparison.Ordinal);
         schematic.SchematicDirectory = Directory.CreateDirectory(Path.Combine(_dir, "cell", "schematic")).FullName;
         Assert.NotEmpty(Assert.Single(EmFieldBlocks.Data(schematic)).StoredHz);
@@ -184,7 +184,7 @@ public sealed class EmFieldDataTests : IDisposable
         string text = Around + Block + Fields;
         var (lib, tb) = new CnlReader().Read(text, "t", _dir);
         var drawn = NetlistSchematic.Build(lib, tb, _dir);
-        var block = drawn.Schematic.Components.Single(c => c.Symbol == SymbolKind.EmFieldData);
+        var block = drawn.Schematic!.Components.Single(c => c.Symbol == SymbolKind.EmFieldData);
         Assert.Equal(2, block.PortCount);
         drawn.Schematic.SchematicDirectory = _dir;
 
@@ -214,7 +214,7 @@ public sealed class EmFieldDataTests : IDisposable
 
         var (lib, tb) = new CnlReader().Read(Around + snpLine + Fields, "t", _dir);
         var drawn = NetlistSchematic.Build(lib, tb, _dir);
-        drawn.Schematic.SchematicDirectory = _dir;
+        drawn.Schematic!.SchematicDirectory = _dir;
         var vm = new SchematicViewModel(drawn.Schematic, messageSink: null);
         var offer = ChangeToEmFieldDataCommand.For(vm, plain);
         Assert.NotNull(offer);

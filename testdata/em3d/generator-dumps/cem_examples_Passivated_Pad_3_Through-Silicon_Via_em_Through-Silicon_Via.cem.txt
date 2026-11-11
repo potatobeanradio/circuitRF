@@ -1,0 +1,48 @@
+refusal (none)
+note Port 1 ('1') at (0, 0 µm) was taken to be on the conductor's low-x (left) end (inferred from the nearest conductor boundary), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (800, 0 µm) was taken to be on the conductor's high-x (right) end (inferred from the nearest conductor boundary), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 100 µm wide and 104.85 µm tall from 'Metal3' down to 'Backside Metal' (the air box's floor): as this setup names.
+note Port 2 at its line's end is a vertical lumped sheet 100 µm wide and 104.85 µm tall from 'Metal3' down to 'Backside Metal' (the air box's floor): as this setup names.
+note Via barrels in this EM problem are solid: 'Through-Silicon Via' (Fill Plated, 3 µm wall) is built solid. A hollow barrel's air core changes nothing an RF answer can see and meshes into inverted elements; a thermal problem keeps the wall.
+note The air box's floor is 'Backside Metal' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+note 'Metal3/1' is under 3 skin depths thick at 2 GHz, so Thin Metal Correction gives the faces that thickness (2.9 µm on 'Metal3/1'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
+solid Silicon Silicon, 10 kΩ·cm Dielectric 1 box (-0.0008,-0.0008500000000000001,3E-06) (0.0016,0.0008500000000000001,0.00010300000000000001)
+solid ILD1 ILD1 Dielectric 2 box (-0.0008,-0.0008500000000000001,0.00010300000000000001) (0.0016,0.0008500000000000001,0.00010400000000000001)
+solid ILD2 Lower ILD2 Lower Dielectric 3 box (-0.0008,-0.0008500000000000001,0.00010400000000000001) (0.0016,0.0008500000000000001,0.0001054)
+solid ILD2 Upper ILD2 Upper Dielectric 4 box (-0.0008,-0.0008500000000000001,0.0001054) (0.0016,0.0008500000000000001,0.00010585000000000001)
+solid ILD3 ILD3 Dielectric 5 box (-0.0008,-0.0008500000000000001,0.00010585000000000001) (0.0016,0.0008500000000000001,0.00010785)
+solid air Air Air 6 box (-0.0008,-0.0008500000000000001,0.00010785) (0.0016,0.0008500000000000001,0.0002187)
+solid Metal3/1 Aluminium Conductor 7 extrude 0.00010785 0.00011085000000000001 [0,-5E-05 0.0008,-5E-05 0.0008,5E-05 0,5E-05]
+solid via/1 Gold Conductor 8 extrude 3E-06 0.00011085000000000001 [0.00038,-2E-05 0.00042,-2E-05 0.00042,2E-05 0.00038,2E-05]
+material Aluminium 1 - 0 1 37700000
+material Silicon, 10 kΩ·cm 11.9 - 0 1 0.01
+material ILD1 4.1 - 0.001 1 0
+material ILD2 Lower 4.1 - 0.001 1 0
+material ILD2 Upper 4.1 - 0.001 1 0
+material ILD3 4.1 - 0.001 1 0
+material Air 1 - 0 1 0
+material Gold 1 - 0 1 41000000
+port 1 port/1 Lumped Metal3/1 airbox/zmin (0,-5E-05,3E-06) (0,5E-05,0.00010785) (0,0,1) 50 0 (0,0,5.5425000000000006E-05) (1,0,0) 0 - -
+port 2 port/2 Lumped Metal3/1 airbox/zmin (0.0008,-5E-05,3E-06) (0.0008,5E-05,0.00010785) (0,0,1) 50 0 (0.0008,0,5.5425000000000006E-05) (-1,0,0) 0 - -
+box (-0.0008,-0.0008500000000000001,3E-06) (0.0016,0.0008500000000000001,0.0002187) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 2000000000 14000000000 3 Linear 20
+type Driven eigen 3 2000000000
+ground 
+origin ILD1 Dielectric ILD1 - -
+origin ILD2 Lower Dielectric ILD2 Lower - -
+origin ILD2 Upper Dielectric ILD2 Upper - -
+origin ILD3 Dielectric ILD3 - -
+origin Metal3/1 Conductor Metal3 LayerKey { Layer = 3, Datatype = 0 } -
+origin Silicon Dielectric Silicon - -
+origin air Air - - -
+origin via/1 Via Through-Silicon Via LayerKey { Layer = 8, Datatype = 0 } -
+material-source Air built in (free space)
+material-source Aluminium technology 'RFIC Si (3 Layer Metal + TFR, 100um, example)' Materials
+material-source Gold technology 'RFIC Si (3 Layer Metal + TFR, 100um, example)' Materials
+material-source ILD1 stackup entry 'ILD1' (its own numbers)
+material-source ILD2 Lower stackup entry 'ILD2 Lower' (its own numbers)
+material-source ILD2 Upper stackup entry 'ILD2 Upper' (its own numbers)
+material-source ILD3 stackup entry 'ILD3' (its own numbers)
+material-source Silicon, 10 kΩ·cm technology 'RFIC Si (3 Layer Metal + TFR, 100um, example)' Materials
+no-alpha 
+unknown-temperature 

@@ -184,6 +184,26 @@ public sealed class ConformalCoverTests
         Assert.Equal((-575e-6, 575e-6), (coat["Mask/wall"].Y0, coat["Mask/wall"].Y1), new Tol());
     }
 
+    /// <summary><b>3D, the fill above a coat thicker than the metal.</b> A 50 µm conformal mask over the starter's 35 µm
+    /// copper puts its floor piece's top 15 µm ABOVE the copper's top. The dielectric on the coat fills beside the metal
+    /// from that height, never from the copper's top, so no two solids of different materials share a volume.</summary>
+    [Fact]
+    public void ThreeD_TheFillOnACoatThickerThanTheMetal_StartsOnTheCoat()
+    {
+        var (setup, source) = Em3dGeneratorTests.Microstrip();
+        source.Technology!.Stackup.Layers.InsertRange(0, [Dielectric("Coat", 100, 3.0), Dielectric("Mask", 50, 3.5, conformal: true)]);
+        var r = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(r.Ok, r.Refusal);
+        var b = r.Problem!.Solids.Where(s => s.Name.StartsWith("Mask", StringComparison.Ordinal) ||
+                                             s.Name.StartsWith("Coat", StringComparison.Ordinal))
+                 .ToDictionary(s => s.Name, s => Em3dProblem.Bounds(s.Primitive));
+
+        Assert.Equal(["Coat", "Coat/fill", "Mask", "Mask/top", "Mask/wall"], b.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal((543e-6, 593e-6), (b["Mask"].Z0, b["Mask"].Z1), new Tol());        // on the substrate, 50 µm
+        Assert.Equal((593e-6, 628e-6), (b["Coat/fill"].Z0, b["Coat/fill"].Z1), new Tol()); // on that, up to the coat's top
+        Assert.Equal((628e-6, 728e-6), (b["Coat"].Z0, b["Coat"].Z1), new Tol());
+    }
+
     private sealed class Tol : IEqualityComparer<(double, double)>
     {
         public bool Equals((double, double) a, (double, double) b) => Math.Abs(a.Item1 - b.Item1) < 1e-9 && Math.Abs(a.Item2 - b.Item2) < 1e-9;

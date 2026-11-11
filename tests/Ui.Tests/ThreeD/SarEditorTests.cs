@@ -183,7 +183,11 @@ public sealed class SarEditorTests : IDisposable
     public void TheInspector_OffersTheTopologyAsAChoice()
     {
         var vm = WithLumpedElement();
+        // The scene's rebuild after the placement rewrites the Inspector's rows; read them once it has landed, or a full
+        // run's load lets it land mid-read (a "Collection was modified" from the Single below).
+        Settle(vm);
         vm.TreeSelectionChanged([LumpedRow(vm)]);
+        Settle(vm);
         var fields = vm.Properties.ThermalFields;
         Assert.Equal(["Parallel", "Series"], fields.Single(f => f.Key == "Topology").Choices);
         Assert.Equal(C3dEditorViewModel.LumpedUnits["C"], fields.Single(f => f.Key == "CUnit").Choices);

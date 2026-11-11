@@ -3110,6 +3110,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                             ? $" · patterned with {plate} (air unless that level is analysed)"
                             : $" · patterned by the {plate} mask (air unless the layout draws it)"
                         : "") +
+                    // PSV-2 — as the stackup drawing tags it; a tie beside it wins, so it is not shown then.
+                    (l.OpenWithLayer is { Length: > 0 } opening && l.PresentWithLayer is not { Length: > 0 }
+                        ? $" · opened by {opening}"
+                        : "") +
                     // PSV-1b — only where it acts, as the stackup drawing says it.
                     (l.Conformal == true &&
                      tech.Stackup.BandBeneath(tech.Stackup.Layers.IndexOf(l)) is { } beneath &&

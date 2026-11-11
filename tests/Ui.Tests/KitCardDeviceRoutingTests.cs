@@ -39,7 +39,7 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
         D1 a b dsyn area=area0 pj=4u
         D2 a b dsyn area=area0
         .ends dpart
-        .model dsyn d is=1e-15 n=1.05 rs=2 kf=1e-14
+        .model dsyn d is=1e-15 n=1.05 rs=2 ffe=1.1
         """;
 
     private void Write(string relative, string text)
@@ -171,7 +171,7 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
 
         // Two instances of one card: each thing the card leaves behind is said once.
         Assert.Single(ext.Conflicts, c => c.Contains("'dsyn'", StringComparison.Ordinal)
-                                       && c.Contains("kf", StringComparison.Ordinal));
+                                       && c.Contains("ffe", StringComparison.OrdinalIgnoreCase));
         Assert.Single(ext.Conflicts, c => c.Contains("'dsyn'", StringComparison.Ordinal)
                                        && c.Contains("'pj'", StringComparison.Ordinal));
     }

@@ -64,7 +64,7 @@ up. `PAD_OPEN` is drawn 10 µm inside the pad's edge, so both covers overlap the
 - **The planar setup** (`em/Probe Pad Planar.cem`) cannot make a dielectric stop, so it keeps both covers across the
   opening, and its notes say so with the fraction of the layout that is opened: 32.4 %.
 
-With its feed, the pad reads 143.8 fF at 1 GHz in 3D and 140.5 fF in the planar run, and the two S11 phases are 2.1°
+With its feed, the pad reads 144.0 fF at 1 GHz in 3D and 140.5 fF in the planar run, and the two S11 phases are 2.1°
 apart at 40 GHz. The 3D run took 30 s and the planar one 3 min 41 s: the post makes it a two-level run, and two levels
 6 µm apart cost close to two minutes per frequency on this stack.
 

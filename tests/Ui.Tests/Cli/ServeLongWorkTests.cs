@@ -168,8 +168,12 @@ public sealed class ServeLongWorkTests : IDisposable
         var explainSize = explain["result"]!["explain"]!["em3d"]!["size"]!;
         Assert.Equal(explainSize.ToJsonString(), drySize.ToJsonString());
 
-        string palace = drySize.AsArray().First(r => r!["backend"]!.GetValue<string>() == "palace")!["note"]!.GetValue<string>();
-        Assert.Contains("palace: " + palace.TrimEnd('.'), Message(dry, "em.dry-run.estimate"));
+        // The estimate restates the rows of the setup's OWN solver only (an EMerge setup quoting Palace's figures named a run
+        // no one would see), so the row compared is that solver's.
+        string solver = explain["result"]!["explain"]!["em3d"]!["solver"]!.GetValue<string>();
+        var own = drySize.AsArray().First(r => solver.Contains(r!["backend"]!.GetValue<string>(), StringComparison.OrdinalIgnoreCase))!;
+        string backend = own["backend"]!.GetValue<string>(), note = own["note"]!.GetValue<string>();
+        Assert.Contains(backend + ": " + note.TrimEnd('.'), Message(dry, "em.dry-run.estimate"));
     }
 
     /// <summary>A real em run with a progress token: its FIRST progress notification is the estimate, before any
@@ -209,7 +213,6 @@ public sealed class ServeLongWorkTests : IDisposable
     [InlineData("check-c3d")]
     [InlineData("explain-c3d")]
     [InlineData("run-em")]
-    [InlineData("run-sparam")]
     public void ALongVerb_CancelledMidStage_StopsAndFreesItsLane(string which)
     {
         int observed = 0;
@@ -233,8 +236,10 @@ public sealed class ServeLongWorkTests : IDisposable
             // The planar kernel: its first observation is a stage start, which is always delivered and comes before any
             // solve. The cross-section kernel reports only throttled ticks, and once the code is JIT-compiled a 400-point
             // run fits inside one throttle window, so its first observation is the final tick — after the last check.
+            // The S-parameter engine is the cross-section kernel's case: throttled ticks only, and a warm process (late in a
+            // full run) finished a 20,001-point attenuator inside one throttle window, observing nothing. Not a case here.
             "run-em"      => ("run", new JsonObject { ["analysis"] = "em", ["path"] = PlanarFixture(points: 3) }),
-            _             => ("run", new JsonObject { ["analysis"] = "sparam", ["path"] = Attenuator("long.cnl", points: 20_001) }),
+            _             => throw new ArgumentOutOfRangeException(nameof(which)),
         };
 
         var stopped = JsonDocument.Parse(server.Call(tool, arguments)).RootElement;

@@ -3,6 +3,7 @@
 // and handed to src/Design as an argument where a setup is made there (C3dHierarchy.NewFromLayout).
 
 using CircuitRF.Design.Em3d;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Ui.Theming;
 
@@ -14,16 +15,13 @@ public static class EmSolverPreference
     internal static bool TestOverrideActive;
     internal static string? TestLayoutStore, TestThreeDStore;
 
-    /// <summary>The 3D solvers a setting can name, in the order the Settings combos list them after Planar.</summary>
-    public static IReadOnlyList<Em3dSolverId> ThreeDChoices { get; } = [Em3dSolverId.Palace, Em3dSolverId.Emerge, Em3dSolverId.OpenEms];
+    /// <summary>The 3D solvers a setting can name, in the order the Settings combos list them after Planar: the registry's
+    /// solvers, FEM first (a stable sort, so each method keeps the registry's order).</summary>
+    public static IReadOnlyList<Em3dSolverId> ThreeDChoices { get; } =
+        [.. Em3dSolvers.All.OrderBy(d => d.Method == Em3dSolverFit.Fem ? 0 : 1).Select(d => d.Id)];
 
     /// <summary>A combo row's words: <c>Palace (FEM)</c>, <c>EMerge (FEM)</c>, <c>openEMS (FDTD)</c>.</summary>
-    public static string Label(Em3dSolverId id) => id switch
-    {
-        Em3dSolverId.Emerge  => "EMerge (FEM)",
-        Em3dSolverId.OpenEms => "openEMS (FDTD)",
-        _                    => "Palace (FEM)",
-    };
+    public static string Label(Em3dSolverId id) => $"{Em3dSolvers.Get(id).DisplayName} ({Em3dSolvers.Get(id).MethodName})";
 
     public const string PlanarLabel = "Planar (MoM)";
     public const string ThermalLabel = "Thermal (FEM)";

@@ -47,6 +47,7 @@ using WireMaterial = CircuitRF.WBond.WireMaterial;
 using WBondDesign = CircuitRF.WBond.WBondDesign;
 using WBondCell = CircuitRF.Design.Layout.WBondCell;
 using WBondIo = CircuitRF.WBond.WBondIo;
+using C3dWires = CircuitRF.Design.ThreeD.C3dWires;
 
 namespace CircuitRF.Design.Layout.Em3d;
 
@@ -204,7 +205,8 @@ public static class Em3dWires
     /// <see cref="Em3dWireBuild.PadRefusal"/>.</param>
     internal static Em3dWireBuild Build(Em3dWireSource source, IReadOnlyList<Em3dWirePad> pads, double zOriginM,
                                         Technology tech, double tempC, Func<Em3dMaterial, bool, string> addMaterial,
-                                        bool padsOptional = false)
+                                        bool padsOptional = false,
+                                        Func<string, Point3, IReadOnlyList<string>>? coversAt = null)
     {
         var build  = new Em3dWireBuild();
         var design = source.Design;
@@ -287,6 +289,12 @@ public static class Em3dWires
                 build.Solids.Add((name, material!, sweep));
                 foreach (var (ballName, ball) in balls) build.Solids.Add((ballName, material!, ball));
                 build.Reports.Add(report with { Array = array.Name, Member = k + 1, Material = material! });
+                // PSV-4 — an end on metal a stackup dielectric still covers there: the pad lookup reads conductors only, so
+                // the solve would connect the wire through the cover. The sentence a wire drawn in a .c3d gets.
+                if (coversAt is not null)
+                    foreach (var (pad, at, which) in new[] { (startPad!, pts[0], "start"), (endPad!, pts[^1], "end") })
+                        if (pad.Name != "(no pad)" && coversAt(pad.Name, at) is { Count: > 0 } covers)
+                            build.Warnings.Add(C3dWires.CoveredEnd(name, which, pad.Name, covers));
 
                 bool hasWedge = report.Start.Style == BondStyle.Wedge || report.End.Style == BondStyle.Wedge;
                 bool hasBall  = report.Start.Style == BondStyle.Ball  || report.End.Style == BondStyle.Ball;

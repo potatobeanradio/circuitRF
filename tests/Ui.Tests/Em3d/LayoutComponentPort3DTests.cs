@@ -163,7 +163,7 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.Contains(g.Notes, n => n.Contains("Solve region", StringComparison.Ordinal));
         Assert.Equal(["C1"], g.ComponentPorts!.Ports.Where(p => p.Ok).Select(p => p.Refdes));
         Assert.Contains("solve region", Assert.Single(g.ComponentPorts.Ports, p => p.Refdes == "C2").Refusal);
-        Assert.Equal(1, g.Problem!.Ports.Count);
+        Assert.Single(g.Problem!.Ports);
         setup.SolveRegion = null;
         var whole = Em3dSetupProblem.Of(setup, source, board.Tech);
         Assert.True(whole.Ok, whole.Refusal);

@@ -1,0 +1,45 @@
+refusal (none)
+note 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (0, 0 µm) was taken to be on the conductor's low-x (left) end (inferred from the nearest conductor boundary) of level 0 ('M1'), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (2300, 0 µm) was taken to be on the conductor's high-x (right) end (inferred from the nearest conductor boundary) of level 1 ('M2'), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 200 µm wide and 100 µm tall from 'M1' down to 'Ground' (the air box's floor): as this setup names.
+note Port 2 at its line's end is a vertical lumped sheet 200 µm wide and 305 µm tall from 'M2' down to 'Ground' (the air box's floor): as this setup names.
+note 'M1', 'M2', 'Via' name no material, so their σ is a number of unknown temperature and is used as given at 20 °C. Name a material with an α₂₀ to have it evaluated at the operating temperature.
+note The air box's floor is 'Ground' as a PEC plane at 5 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+note 'M1/1' and 1 other conductor(s) are under 3 skin depths thick at 1 GHz, so Thin Metal Correction gives the faces that thickness (4.87 µm on 'M1/1'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
+solid Substrate Substrate Dielectric 1 box (-0.0023,-0.00245,5E-06) (0.0046,0.00245,0.000105)
+solid Lower Lower Dielectric 2 box (-0.0023,-0.00245,0.000105) (0.0046,0.00245,0.00021)
+solid Upper Upper Dielectric 3 box (-0.0023,-0.00245,0.00021) (0.0046,0.00245,0.00031)
+solid air Air Air 4 box (-0.0023,-0.00245,0.00031) (0.0046,0.00245,0.000625)
+solid M1/1 M1 Conductor 5 extrude 0.000105 0.00011 [0.0013000000000000002,0.00015000000000000001 0.001,0.00015000000000000001 0.001,0.0001 0,0.0001 0,-0.0001 0.001,-0.0001 0.001,-0.00015000000000000001 0.0013000000000000002,-0.00015000000000000001]
+solid M2/1 M2 Conductor 6 extrude 0.00031 0.000315 [0.0013000000000000002,-0.0001 0.0023,-0.0001 0.0023,0.0001 0.0013000000000000002,0.0001 0.0013000000000000002,0.00015000000000000001 0.001,0.00015000000000000001 0.001,-0.00015000000000000001 0.0013000000000000002,-0.00015000000000000001]
+solid via/1 Via Conductor 7 extrude 0.000105 0.000315 [0.001075,-7.500000000000001E-05 0.0012250000000000002,-7.500000000000001E-05 0.0012250000000000002,7.500000000000001E-05 0.001075,7.500000000000001E-05]
+material M1 1 - 0 1 58000000
+material M2 1 - 0 1 58000000
+material Substrate 3 - 0.001 1 0
+material Lower 10 - 0.001 1 0
+material Upper 3 - 0.001 1 0
+material Air 1 - 0 1 0
+material Via 1 - 0 1 58000000
+port 1 port/1 Lumped M1/1 airbox/zmin (0,-0.0001,5E-06) (0,0.0001,0.000105) (0,0,1) 50 0 (0,0,5.5E-05) (1,0,0) 0 - -
+port 2 port/2 Lumped M2/1 airbox/zmin (0.0023,-0.0001,5E-06) (0.0023,0.0001,0.00031) (0,0,1) 50 0 (0.0023,0,0.0001575) (-1,0,0) 0 - -
+box (-0.0023,-0.00245,5E-06) (0.0046,0.00245,0.000625) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 1000000000 10000000000 3 Linear 20
+type Driven eigen 3 1000000000
+ground 
+origin Lower Dielectric Lower - -
+origin M1/1 Conductor M1 LayerKey { Layer = 1, Datatype = 0 } -
+origin M2/1 Conductor M2 LayerKey { Layer = 2, Datatype = 0 } -
+origin Substrate Dielectric Substrate - -
+origin Upper Dielectric Upper - -
+origin air Air - - -
+origin via/1 Via Via LayerKey { Layer = 3, Datatype = 0 } -
+material-source Air built in (free space)
+material-source Lower stackup entry 'Lower' (its own numbers)
+material-source M1 stackup entry 'M1' (its own numbers)
+material-source M2 stackup entry 'M2' (its own numbers)
+material-source Substrate stackup entry 'Substrate' (its own numbers)
+material-source Upper stackup entry 'Upper' (its own numbers)
+material-source Via stackup entry 'Via' (its own numbers)
+no-alpha 
+unknown-temperature M1,M2,Via

@@ -13,7 +13,8 @@ namespace CircuitRF.Ui.Tests;
 /// wrong value is visible in the dialog, while prefilling a field the schematic could not actually
 /// answer — two load tuners, a unitless frequency — is a wrong run that looks entirely normal.
 /// </summary>
-public sealed class AnalysisSeedingTests
+[Collection(UserStateDirectoryCollection.Name)]
+public sealed class AnalysisSeedingTests : FirstLaunchUserState
 {
     // ── Fixtures ──────────────────────────────────────────────────────────────
 

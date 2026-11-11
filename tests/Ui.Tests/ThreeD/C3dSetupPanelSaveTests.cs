@@ -35,7 +35,7 @@ public sealed class C3dSetupPanelSaveTests : IDisposable
 
         var saved = C3dPersistence.LoadFromFile(path);
         Assert.Equal("keep", Assert.Single(saved.Objects).Name);
-        Assert.Equal(1.7, C3dSetups.Read(saved).Single().Setup.Palace?.Grading);
+        Assert.Equal(1.7, C3dSetups.Read(saved).Single().Setup!.Palace?.Grading);
         Assert.False(c3d.IsDirty);
     }
 }

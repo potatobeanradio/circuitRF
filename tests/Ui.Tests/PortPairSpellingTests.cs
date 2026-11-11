@@ -34,6 +34,6 @@ public sealed class PortPairSpellingTests
 
         Assert.True(TraceExpression.TryEvaluate("DUT_2(2,1) - DUT_2(1,1)", ds, PlotType.Rect,
             out _, out _, out var re, out _, out _, out _, out err), err);
-        Assert.Equal([10.0, 10.0, 10.0], re);   // S21 - S11 = 21 - 11 at every frequency
+        Assert.Equal([10.0, 10.0, 10.0], re!);   // S21 - S11 = 21 - 11 at every frequency
     }
 }

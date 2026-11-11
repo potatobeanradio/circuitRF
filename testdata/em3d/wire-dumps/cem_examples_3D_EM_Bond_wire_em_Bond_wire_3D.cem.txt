@@ -5,6 +5,7 @@ note Port 2 ('2') at (550, 0 µm) was taken to be on the conductor's high-x (rig
 note Port 1 at its line's end is a vertical lumped sheet 100 µm wide and 100 µm tall from 'Pads' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note Port 2 at its line's end is a vertical lumped sheet 100 µm wide and 100 µm tall from 'Pads' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note The air box's floor is 'Ground' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+note 'Pads/2' and 1 other conductor(s) are under 3 skin depths thick at 1 GHz, so Thin Metal Correction gives the faces that thickness (2.83 µm on 'Pads/2'). Its resistance levels off at the DC value. Near two to three skin depths a line can still read up to 25 % low. A wide line close to ground can read high, because its faces carry unequal current: up to 20 % on a line 5 times wider than its height over ground, and 50 % at 50 times.
 solid Substrate Alumina Dielectric 1 box (-0.0015,-0.001,3E-06) (0.0015,0.001,0.00010300000000000001)
 solid air Air Air 2 box (-0.0015,-0.001,0.00010300000000000001) (0.0015,0.001,0.001243663281114457)
 solid Pads/1 Gold Conductor 3 extrude 0.00010300000000000001 0.000106 [-0.00055,-5E-05 -0.00045000000000000004,-5E-05 -0.00045000000000000004,5E-05 -0.00055,5E-05]

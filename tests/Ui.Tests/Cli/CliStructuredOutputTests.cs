@@ -305,9 +305,15 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
     [Fact]
     public void DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct()
     {
-        string[] ids = DeclaredCliDiagnosticIds();
+        string[] declared = DeclaredCliDiagnosticIds();
+        // One id is declared twice ON PURPOSE (brief-plg-6 §5): an install that leaves a plugin not allowed says it with the
+        // id a refused run says it with, at warning severity, so an agent relays both the same way. Any other repeat is two
+        // diagnostics a caller cannot tell apart.
+        string[] sharedOnPurpose = ["plugin.permission.needs-user"];
+        var repeated = declared.GroupBy(x => x, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        Assert.Equal(sharedOnPurpose, repeated);
+        string[] ids = [.. declared.Distinct(StringComparer.Ordinal)];
 
-        Assert.Equal(ids.Length, ids.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(ids.Length, ids.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         foreach (string id in ids)
             Assert.Matches(@"^[a-z][a-z0-9]*(\.[a-z0-9]+(-[a-z0-9]+)*)+$", id);
@@ -414,6 +420,12 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "batch.rule",
         "batch.state",
         "batch.was-not-open",
+        "chain.document.refused",
+        "chain.document.unreadable",
+        "chain.note",
+        "chain.option.unknown",
+        "chain.path.not-a-chain",
+        "chain.transfer.refused",
         "check.analysis.none",
         "check.args.multiple-paths",
         "check.args.path-required",
@@ -439,6 +451,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.cem.component-port",
         "check.cem.component-port-refused",
         "check.cem.component-port-warning",
+        "check.chain.summary",
         "check.cmc.refused",
         "check.cmc.summary",
         "check.cmc.warning",
@@ -475,9 +488,19 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.model.library-summary",
         "check.model.library-unreadable",
         "check.name.invalid",
+        "check.noise.evm-split-nothing",
+        "check.noise.inert-switch",
+        "check.noise.keys",
+        "check.noise.phase-mask",
+        "check.noise.phase-steady-state",
+        "check.noise.source-ideal",
+        "check.noise.source-steady-state",
         // brief-oasis-gdstk.md §10b — an OASIS file's header, read through the gdstk worker.
         "check.oasis.no-worker",
         "check.oasis.summary",
+        "check.osc.keys",
+        "check.osc.phase-noise",
+        "check.osc.probe",
         "check.path.foreign",
         "check.path.interchange",
         "check.path.not-found",
@@ -485,6 +508,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // brief-img-2 R-im2-6 — a picture named by the kind of drawing it reads as.
         "check.picture.kind",
         "check.picture.no-drawing",
+        "check.plugin.cannot-run-here",
+        "check.plugin.summary",
         "check.rail.no-reference-layer",
         "check.rail.order",
         "check.rail.summary",
@@ -591,6 +616,21 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.opt.preset-needs-schematic",
         "cli.opt.vars-not-optimized",
         "cli.opt.vars-whole-complex",
+        "cli.plugin.cancelled",
+        "cli.plugin.cell-exists",
+        "cli.plugin.disabled",
+        "cli.plugin.failed",
+        "cli.plugin.install-cancelled",
+        "cli.plugin.install-refused",
+        "cli.plugin.not-found",
+        "cli.plugin.permission-not-recorded",
+        "cli.plugin.placed-nothing",
+        "cli.plugin.placement-refused",
+        "cli.plugin.refused",
+        "cli.plugin.stderr",
+        "cli.plugin.unavailable",
+        "cli.plugin.usage",
+        "cli.plugin.view-not-written",
         // brief-gdf-6 R-gdf6-4: a per-module --python no kit in the run used.
         "cli.python.module-unused",
         "cli.run.failed",
@@ -1017,6 +1057,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "plot.whole-plane.needs-pattern",
         "plot.window.on-complex",
         "plot.zoom.malformed",
+        "plugin.args.unknown-option",
+        "plugin.permission.needs-user",
+        "plugin.permission.window-only",
         // `rail` (brief-railrf-10-cli-verb.md). Every one of these NAMES A FLAG, because each is a
         // refusal the window answers by turning a control red (R-rail7-4) and a terminal has no
         // control to turn.

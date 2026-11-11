@@ -11,7 +11,8 @@ namespace CircuitRF.Ui.Tests.Signals;
 /// The MOD_Source Signal Designer: what it reads from the part, what Apply writes back (one undo step,
 /// expressions untouched), the presets and carrier rows, and the preview data it plots.
 /// </summary>
-public class SignalDesignerTests
+[Collection(UserStateDirectoryCollection.Name)]
+public class SignalDesignerTests : FirstLaunchUserState
 {
     private static (SchematicViewModel vm, EditableComponent src) Bench(string fc = "RFfreq", string fcUnit = "",
                                                                           string pavg = "Pin")

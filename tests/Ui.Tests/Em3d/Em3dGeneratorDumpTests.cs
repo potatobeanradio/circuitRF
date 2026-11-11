@@ -64,12 +64,14 @@ public sealed class Em3dGeneratorDumpTests
                 var setup = EmSetupPersistence.LoadFromFile(cem);
                 if (!setup.Is3D) setup.Solver3D = Em3dSolverId.Palace;
                 setup.AirBox = GoldenAirBoxes.Merge(setup.AirBox, box);
-                var resolution = EmSetupResolver.Resolve(cem, setup.LayoutRef,
-                                                         WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)),
-                                                         new TechnologyCache());
+                string? cws = WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem));
+                var resolution = EmSetupResolver.Resolve(cem, setup.LayoutRef, cws, new TechnologyCache());
                 if (resolution.Source?.Technology is not { } tech)
                     return new Em3dGenerationResult(null, "unresolved: " + string.Join(" ", resolution.Diagnostics), []);
-                return Em3dGenerator.Generate(setup, resolution.Source, tech);
+                // A setup naming component ports is built where the application builds it (the generator refuses one).
+                return setup.ComponentPorts.Count > 0
+                    ? CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(setup, resolution.Source, tech, workspaceCws: cws)
+                    : Em3dGenerator.Generate(setup, resolution.Source, tech);
             });
         }
 

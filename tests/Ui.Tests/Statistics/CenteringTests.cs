@@ -101,7 +101,7 @@ public sealed class CommonRandomNumbersTests
 /// <summary>R-ya11-6: the center line round-trips byte-stable through .cnl and .csch, defaults never written.</summary>
 public sealed class CenteringSettingsRoundTripTests
 {
-    private const string Full = "center algorithm=simplex trials=300 verify=2000 maxiter=40 maxevals=50000 timelimit=\"60 s\" width=0.1 parallel=4 seed=7 surrogate=quadratic";
+    private const string Full = "center algorithm=simplex trials=300 verify=2000 maxiter=40 maxevals=50000 timelimit=60 s width=0.1 parallel=4 seed=7 surrogate=quadratic";
 
     private static string CenterLine(string cnl) => cnl.Split('\n').Select(l => l.TrimEnd('\r')).Single(l => l.StartsWith("center", StringComparison.Ordinal));
 

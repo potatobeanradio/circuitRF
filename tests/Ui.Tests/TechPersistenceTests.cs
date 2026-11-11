@@ -73,7 +73,8 @@ public class TechPersistenceTests
         // artwork in it carries none of it.
         Assert.Equal(10, tech.Stackup.Layers.Count);
         Assert.Equal(BoundaryCondition.Ground, tech.Stackup.Bottom);
-        Assert.Equal(4, tech.DrcRules.Count);
+        // Metal1 and Metal2 width and spacing, and the resistor film's two (the TFR series).
+        Assert.Equal(6, tech.DrcRules.Count);
     }
 
     // ── Gate 6: format_version reject-on-mismatch ─────────────────────────────

@@ -4375,3 +4375,9 @@ classified at the frequencies the run reads (the small-signal sweep; the noise r
 
 **Found, not changed.** MOSFET channel thermal noise is on by default (GammaN = 2/3), as NZ-4's table says, though its
 gate 5 lists only diode/BJT shot and series-R thermal.
+
+## The oscillator start-up search freezes the bias point (suite review, 2026-11-10)
+
+- `OscEngine.Startup` linearises every device at its DC point (`StampLinearized`) and never called `BiasFreeze`, so an
+  oscillator built on a composed FET with `LinearC=true` would have met the unfrozen core's refusal. It freezes at the DC
+  solution it has just solved, as `SParameterEngine` does. Gate: `BiasFreezeTests.EveryEngineEntryPointThatReadsCharge_Freezes`.

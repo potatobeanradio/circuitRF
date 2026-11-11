@@ -67,13 +67,15 @@ public static class ComponentEmExtraction
             return null;
         }
 
-        // A layer the stackup does not carry is invisible to the solve. A capacitor mask is the one
-        // exception — it is how a patterned film enters a run (PresentWithLayer) — so it is not one.
+        // A layer the stackup does not carry is invisible to the solve. A capacitor mask is one
+        // exception — it is how a patterned film enters a run (PresentWithLayer) — so it is not one, and
+        // an opening mask (OpenWithLayer, a pad's passivation opening) is the other.
         // Anything else would extract the part WITHOUT that piece. A resistive film is carried: it is an
         // entry on its level, which the extractor meshes as a sheet between the contacts.
         var bound = new HashSet<LayerKey>(technology.Stackup.Layers.SelectMany(l => l.DrawingLayers));
         foreach (var (_, film) in ResistiveFilms.All(technology)) bound.Add(film.Layer);
-        var masks = new HashSet<string>(technology.Stackup.Layers.Select(l => l.PresentWithLayer).OfType<string>(),
+        var masks = new HashSet<string>(technology.Stackup.Layers.Select(l => l.PresentWithLayer)
+                                            .Concat(technology.Stackup.Layers.Select(l => l.OpenWithLayer)).OfType<string>(),
                                         StringComparer.OrdinalIgnoreCase);
         var unseen = art.Shapes.Select(s => s.Layer).Distinct()
             .Where(k => !bound.Contains(k))

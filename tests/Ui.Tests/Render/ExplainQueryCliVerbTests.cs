@@ -84,10 +84,12 @@ public sealed class ExplainQueryCliVerbTests(ITestOutputHelper output) : IDispos
         // nothing. The fixture holds six cells, one of them a folder deep and one under the reserved
         // generated-cells folder.
         Assert.Equal(6, listed.Length);
-        Assert.Equal(6, checkedDirs.Length);
-
-        Assert.Equal(checkedDirs, listed.Intersect(checkedDirs, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray());
-        Assert.Empty(checkedDirs.Except(listed, StringComparer.Ordinal));
+        // `check` walks no hidden folder (a cache or a history, walked only when named), and the generated-cells store is
+        // one: its walk is every listed cell but that one.
+        string generated = Path.DirectorySeparatorChar + ".generated-cells" + Path.DirectorySeparatorChar;
+        Assert.Equal(5, checkedDirs.Length);
+        Assert.Equal(listed.Where(d => !d.Contains(generated, StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+                     checkedDirs.Order(StringComparer.Ordinal));
     }
 
     // ══ gate 2 — the awkward cells are listed WITH their state ════════════════════════════════════

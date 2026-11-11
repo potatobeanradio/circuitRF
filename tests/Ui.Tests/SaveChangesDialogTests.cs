@@ -14,12 +14,13 @@ public sealed class SaveChangesDialogTests
 {
     private static ParameterInfo TitleParam()
     {
-        // (message, saveLabel, dontSaveLabel, cancelLabel, title, destructive)
+        // (message, saveLabel, dontSaveLabel, cancelLabel, title, destructive, bullets, footer)
         var ctor = typeof(SaveChangesDialog).GetConstructor(
-            [typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool)]);
+            [typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool),
+             typeof(IReadOnlyList<string>), typeof(string)]);
         Assert.NotNull(ctor);
         var p = ctor.GetParameters();
-        Assert.Equal(6, p.Length);
+        Assert.Equal(8, p.Length);
         Assert.Equal("destructive", p[5].Name);
         return p[4];
     }

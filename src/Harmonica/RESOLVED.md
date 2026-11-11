@@ -858,3 +858,10 @@ here — a per-DUT default window would be a decision of its own.
 **Open for the owner** (brief §5): extrinsic is the DUT's own terminals, as chosen; the termination-plane reading
 (beyond package and embedding — what a load-pull system measures with no de-embedding) was not built. A DCIV family at
 the operating trap state and temperature is the natural GaN follow-on and is not started.
+
+## A native FET's blank noise temperatures broke the DUT line (suite review, 2026-11-10)
+
+- **Set DUT to any native FET law failed to elaborate since NZ-4.** The registry declares `Tg` and `Td` with a blank default
+  (the device's own temperature / off), and `HarmonicaNetlist.DutLine` wrote every parameter, so the line read
+  `Tg=  Td=  Kf=0 …` and the reader took `Td=` as Tg's expression ("Unexpected '=' at position 2"). A blank value is now
+  left off the line, as `NetExtractor` leaves it off a schematic's. Gates: `HarmonicaSetDutTests` (3 tests).

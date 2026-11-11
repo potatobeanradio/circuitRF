@@ -29789,7 +29789,7 @@ a test in `tests/Ui.Tests/Plugins`.
   is now three disjoint solids: the coat on the band's floor away from the metal (`Passivation`), a wall of the coat's
   thickness round each piece of metal from the floor to the coat's top (`Passivation/wall`), and the coat on the metal's
   top (`Passivation/top`); each is less the cover's openings. The dielectric directly above fills down into what they
-  leave (`Polyimide/fill`, `Polyimide/fill-top`), as a spin-on layer does; with nothing above, it is air. Disjoint by
+  leave (`Polyimide/fill`), as a spin-on layer does; with nothing above, it is air. Disjoint by
   construction, so no backend's overlap order is relied on, and in sheet-conductor mode the metal's own volume stays
   unclaimed as before. The wall is `SlabLateralBound.Inflate` with mitred corners: square, not rounded, to keep facets
   out of the mesh. Planar and the uniform-line kernel are unchanged. On the Passivated Pad probe pad the 3D pad reads
@@ -29800,7 +29800,36 @@ a test in `tests/Ui.Tests/Plugins`.
   conductors only, so a ball set on a pad a passivation still covers landed silently and solved as connected through
   the dielectric. Each end is now tested against the placed layouts' STACKUP dielectrics (origin `Dielectric` with a
   stackup entry, εr > 1) just above the pad's top; a hit is a warning naming the covers and the two ways out. 3D bodies
-  and drawn boxes (an overmold) are not covers: they go on after bonding. Not covered: a layout's own paired `.wBond`
-  wires, which land in `Em3dWires.Build`.
+  and drawn boxes (an overmold) are not covers: they go on after bonding. A layout's own paired `.wBond` wires get the
+  same warning since the series review (below).
 - Gates: `tests/Ui.Tests/Em/ConformalCoverTests.ThreeD_AConformalMask_FollowsTheCopper_TopWallsAndFloor`,
   `tests/Ui.Tests/ThreeD/BondOnCoveredPadTests`.
+
+## PSV series review (2026-11-10)
+
+- **An opening over a stacked pad was called bare substrate.** `Em3dLayoutSolids` tested each opening against ONE
+  even-odd operand built from the metal of every band below the cover; Metal1 under the Metal2 pad overlaps it exactly,
+  so even-odd read the overlap as outside both, and both Passivated Pad 3D views said their pad opening exposed bare
+  substrate. Each piece is now tested on its own (box-filtered).
+- **A fill on a conformal coat thicker than its metal overlapped the coat.** The fill beside the metal started at the
+  metal's top while the coat's floor piece reaches floor + t, which is higher when t exceeds the metal's thickness:
+  two dielectric solids of different materials in one volume, decided by backend order. The fill beside the metal is
+  now ONE solid from floor + t to the coat's top (`/fill`); where the coat is opened and the fill is not, it reaches
+  the floor beside the metal and the metal's top over it (`/fill-floor`, `/fill-wall`, `/fill-top`). On the example
+  this merges what were two stacked solids into one; EMerge's probe pad moved 143.83 → 143.96 fF (README now 144.0).
+- **A resistive film's sheet is not metal a conformal coat climbs** (`MetalOf` skips film pieces).
+- **A `.wBond` paired with a layout now gets the covered-pad warning** (`Em3dWires.Build`'s `coversAt`, answered by
+  `Em3dLayoutSolids.CoversAt` from the bands: the dielectric at the pad's top there, unless an opening is drawn over the
+  point or a patterned film is absent there, plus everything above it). Same sentence as a wire drawn in a `.c3d`.
+- **`ComponentEmExtraction` accepted a PCell drawing a capacitor mask but refused one drawing an opening mask** as "a
+  layer the stackup does not carry"; `OpenWithLayer` masks are accepted the same way now.
+- **The EM setup panel's stack summary** shows "opened by <mask>", beside "patterned with" and "conformal".
+- **Every other MMIC example is unchanged.** Pre-series build (c47326ffd) against this one, solved: `ViaResistor`,
+  `ThinFilmResistor`, `SpiralInductor` byte-identical S-data, `SpiralResonator` within 1.1e-10 (the printed precision).
+  `em --dry-run` over all 17 example `.cem`s differs only in the Passivated Pad setups and in `ThinFilmResistor` losing
+  the old "dielectric above the topmost level is NOT in this solve" warning (its covers are air and an untied film, which
+  merge into the termination). `check` is clean on LVS, PDK PCells, Via Contact Resistor, 3D Package and the GaN thermal
+  example; none of their files changed in the series.
+- Gates: `PassivationOpeningTests.AnOpeningOverAStackedPad_IsOverConductor`,
+  `ConformalCoverTests.ThreeD_TheFillOnACoatThickerThanTheMetal_StartsOnTheCoat`,
+  `Em3dWireTests.AnEndUnderAStackupCover_IsWarned_AndOneInItsOpeningIsNot`.

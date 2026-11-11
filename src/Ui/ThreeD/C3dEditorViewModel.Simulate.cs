@@ -83,12 +83,7 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
         {
             if (setup is null || !setup.Is3D || setup.IsThermal) return "";
             var legs = CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D)
-                .Select(d => (d.DisplayName, Quality: d.Id switch
-                {
-                    Em3dSolverId.Palace => setup.Palace?.Quality ?? PalaceQuality.Standard,
-                    Em3dSolverId.Emerge => setup.Emerge?.Quality ?? PalaceQuality.Standard,
-                    _                   => (PalaceQuality?)null,
-                }))
+                .Select(d => (d.DisplayName, Quality: d.Quality(setup)))
                 .Where(l => l.Quality is not null).ToList();
             if (legs.Count == 0) return "";
             return legs.Select(l => l.Quality).Distinct().Count() == 1

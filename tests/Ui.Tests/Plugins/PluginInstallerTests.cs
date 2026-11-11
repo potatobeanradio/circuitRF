@@ -267,7 +267,7 @@ public class PluginInstallerTests
         var rows = PluginsSettingsModel.Installed(sources, new PluginTrustStore(), index);
         PluginsSettingsModel.Available(index, rows);
         var entry = PluginCatalog.Discover(sources).Single();
-        PluginSession.Start(entry, PluginTestKit.Allowed(entry, root)).Value?.DisposeAsync().AsTask().Wait();
+        if (PluginSession.Start(entry, PluginTestKit.Allowed(entry, root)).Value is { } session) await session.DisposeAsync();
         Assert.Equal(0, http.Requests);
 
         await PluginIndex.RefreshAsync(http, PluginInstaller.IndexCache(root), null);

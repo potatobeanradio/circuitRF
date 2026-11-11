@@ -1012,7 +1012,7 @@ public class DocsFactoryTests
         var offenders = new List<string>();
         foreach (var f in AllSvgs().Concat(AllPages()))
         {
-            var found = SvgLint.Measurements(File.ReadAllText(f));
+            var found = SvgLint.Measurements(GeneratedText(f));
             if (found.Count > 0)
                 offenders.Add($"{Path.GetFileName(f)}: "
                             + string.Join(", ", found.Select(x => $"\"{x.Snippet}\" ({x.Element})")));
@@ -1023,6 +1023,23 @@ public class DocsFactoryTests
           + "regeneration:\n  " + string.Join("\n  ", offenders)
           + "\nSuppress the number while UiArtworkGenerator.HeadlessCapture is set — see "
           + "RailRfViewModel.StatusLine and HarmonicaView's idle summary.");
+    }
+
+    /// <summary>
+    /// What a regeneration can change: a page less every <c>&lt;text&gt;</c> node it carries verbatim from its own Markdown
+    /// source. A figure written by hand in the source (the Model Composer's trapping plots, titled "1 ms down to −6 V") is
+    /// copied as written on every run, so a number in it is a stated quantity, never a measurement of the machine.
+    /// </summary>
+    private static string GeneratedText(string file)
+    {
+        string text = File.ReadAllText(file);
+        if (!file.EndsWith(".html", StringComparison.OrdinalIgnoreCase)) return text;
+        string rel = Path.GetRelativePath(DocsRoot(), file);
+        string source = Path.Combine(DocsRoot(), "src", Path.ChangeExtension(rel, ".md"));
+        if (!File.Exists(source)) return text;
+        string md = File.ReadAllText(source);
+        return Regex.Replace(text, @"<text\b[^>]*>.*?</text>", m => md.Contains(m.Value, StringComparison.Ordinal) ? "" : m.Value,
+                             RegexOptions.Singleline);
     }
 
     /// <summary>

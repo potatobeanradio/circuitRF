@@ -271,7 +271,10 @@ public sealed class HarmonicaNetlist
         // `m=2` is swallowed into the last equation's text and fails to parse — found by the test,
         // not by review.
         string head = dut.Multiplicity != 1.0 ? $"  m={Num(dut.Multiplicity)}" : "";
-        string tail = head + string.Concat(instanceParams.Select(p => $"  {p.Key}={p.Value}"));
+        // A BLANK value is the model's own default (a FET's Tg and Td, brief NZ-4) and is left off the line, as the
+        // schematic's netlist leaves it off: written, `Tg=  Td=1500` reads Td's whole assignment as Tg's expression.
+        string tail = head + string.Concat(instanceParams.Where(p => !string.IsNullOrWhiteSpace(p.Value))
+                                                         .Select(p => $"  {p.Key}={p.Value}"));
 
         return dut.Kind switch
         {

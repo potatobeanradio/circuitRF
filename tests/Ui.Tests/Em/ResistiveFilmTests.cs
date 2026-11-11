@@ -205,14 +205,14 @@ public sealed class ResistiveFilmTests
         {
             def.ThicknessDbu = 100;
             def.At = ConductorSheetSurface.Bottom;
-            var p = Em3dGenerator.Generate(setup, source, source.Technology).Problem!;
+            var p = Em3dGenerator.Generate(setup, source, source.Technology!).Problem!;
             var film = Assert.Single(p.Sheets);
             Assert.Equal(100e-9, film.ThicknessM, 15);
             Assert.Equal(2e5, p.Materials.Single(m => m.Name == film.Material).SigmaSm, 3);
             // The bottom of Metal1's band: 3 µm of backside metal and 100 µm of GaAs up.
             Assert.Equal(103e-6, film.Z, 12);
 
-            var copy = ResistiveFilms.Of(TechPersistence.Clone(source.Technology), Resistor)!;
+            var copy = ResistiveFilms.Of(TechPersistence.Clone(source.Technology!), Resistor)!;
             Assert.Equal(100, copy.ThicknessDbu);
             Assert.Equal(ConductorSheetSurface.Bottom, copy.At);
         }

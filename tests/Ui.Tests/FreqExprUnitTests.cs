@@ -12,7 +12,8 @@ namespace CircuitRF.Ui.Tests;
 /// Gate tests for frequency expression + unit in the VM/serialization layer
 /// (brief-analysis-freq-expr-unit.md, Tests 9-10 and brief-analysis-freq-preview-units.md, Tests 1-7).
 /// </summary>
-public class FreqExprUnitTests
+[Collection(UserStateDirectoryCollection.Name)]
+public class FreqExprUnitTests : FirstLaunchUserState
 {
     private static SchematicEditModel Model() => new SchematicEditModel();
 

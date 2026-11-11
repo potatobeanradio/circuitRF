@@ -316,14 +316,16 @@ public class GateControlledPaletteWiringTests
         };
 
         var probe = new List<double>();
-        foreach (var v in biases)
+        foreach (var stated in biases)
         {
+            var v = PaletteNoiseProbe.Ports(m, stated);
             var r = m.Evaluate(new PortVoltages(v));
             probe.AddRange(r.I);
             probe.AddRange(r.Q);
             for (int i = 0; i < r.Dg.GetLength(0); i++)
                 for (int j = 0; j < r.Dg.GetLength(1); j++)
                 { probe.Add(r.Dg[i, j]); probe.Add(r.Dc[i, j]); }
+            PaletteNoiseProbe.Append(m, v, probe);
         }
         return [.. probe];
     }
@@ -454,6 +456,7 @@ public class GateControlledPaletteWiringTests
     {
         var registryNames = ComponentTypeRegistry.DefaultParameters(kind, 0).Select(p => p.Name).ToList();
         var activation = Activation(kind);
+        PaletteNoiseProbe.AddTo(activation, registryNames);
 
         // The two name sets must agree. A parameter added to the registry and not here (or the
         // reverse) means one was updated alone — which is the drift this test exists to prevent.
@@ -568,8 +571,7 @@ public class GateControlledPaletteWiringTests
         // Straight off the palette, with nothing edited: the defaults must parse as numbers, build,
         // and evaluate finitely. A default that is merely a placeholder gives a broken part on the
         // first drag.
-        var defaults = ComponentTypeRegistry.DefaultParameters(kind, 0)
-            .ToDictionary(p => p.Name, p => double.Parse(p.Expression, CultureInfo.InvariantCulture));
+        var defaults = PaletteNoiseProbe.Defaults(kind);
 
         var m = Build(kind, defaults);
         Assert.Equal(ModelKind.Nonlinear, m.Kind);

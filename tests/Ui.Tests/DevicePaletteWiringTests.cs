@@ -258,14 +258,16 @@ public class DevicePaletteWiringTests
                 : [[-1.5, 1.0], [-0.5, 3.0], [0.3, 5.0], [0.1, 0.4], [0.8, 0.2]];
 
         var probe = new List<double>();
-        foreach (var v in vs)
+        foreach (var stated in vs)
         {
+            var v = PaletteNoiseProbe.Ports(m, stated);
             var r = m.Evaluate(new PortVoltages(v));
             probe.AddRange(r.I);
             probe.AddRange(r.Q);
             for (int i = 0; i < r.Dg.GetLength(0); i++)
                 for (int j = 0; j < r.Dg.GetLength(1); j++)
                 { probe.Add(r.Dg[i, j]); probe.Add(r.Dc[i, j]); }
+            PaletteNoiseProbe.Append(m, v, probe);
         }
         return probe.ToArray();
     }
@@ -314,6 +316,7 @@ public class DevicePaletteWiringTests
         var registryNames = ComponentTypeRegistry.DefaultParameters(kind, 0)
                                                  .Select(p => p.Name).ToList();
         var activation = Activation(kind);
+        PaletteNoiseProbe.AddTo(activation, registryNames);
 
         // The two name sets must agree. A parameter added to the registry and not here (or the
         // reverse) means one of the two was updated alone — which is exactly the drift this whole
@@ -356,9 +359,7 @@ public class DevicePaletteWiringTests
         // Straight off the palette, with nothing edited: the defaults must parse as numbers, build,
         // and evaluate to finite values. A default that is merely a placeholder gives the user a
         // broken part on first drag.
-        var defaults = ComponentTypeRegistry.DefaultParameters(kind, 0)
-            .ToDictionary(p => p.Name, p => double.Parse(p.Expression,
-                                                         System.Globalization.CultureInfo.InvariantCulture));
+        var defaults = PaletteNoiseProbe.Defaults(kind);
 
         var m = Build(kind, defaults);
         Assert.Equal(ModelKind.Nonlinear, m.Kind);

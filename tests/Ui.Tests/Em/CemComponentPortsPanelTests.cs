@@ -94,7 +94,7 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
     /// <summary>R-lcp3-4/-5 — an entry naming a part that is not placed keeps a marked row and is not dropped from the file;
     /// Check names it; a layout edit then marks the verdicts stale without rebuilding.</summary>
     [Fact]
-    public void APartNotPlaced_KeepsAMarkedRow_AndCheckNamesIt()
+    public async Task APartNotPlaced_KeepsAMarkedRow_AndCheckNamesIt()
     {
         var setup = PlanarComponentPortTests.Setup(["C1"]);
         setup.ComponentPorts = [.. setup.ComponentPorts, new EmComponentPort("C7", Z0: "40")];
@@ -104,7 +104,7 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
         Assert.True(c7.IsIncluded);
         Assert.True(c7.IsMarked);
 
-        vm.CheckComponentPortsCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+        await vm.CheckComponentPortsCommand.ExecuteAsync(null);
         Assert.Contains(_posted, m => m.Warning && m.Text.Contains("C7 is no part placed", StringComparison.Ordinal));
         Assert.Contains(_posted, m => !m.Warning && m.Text.StartsWith("C1: component port 3", StringComparison.Ordinal));
         Assert.DoesNotContain(_posted, m => m.Text.Contains("delta gap", StringComparison.OrdinalIgnoreCase));
@@ -136,7 +136,7 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
     /// <summary>R-lcp3-2 — shown on Planar and a driven 3D .cem, hidden on the uniform-line kernel and an electrostatic setup;
     /// a 3D .cem's Check builds them in a 3D view of the layout (LCP-5).</summary>
     [Fact]
-    public void WhereTheSectionShows()
+    public async Task WhereTheSectionShows()
     {
         Assert.True(Open(PlanarComponentPortTests.Setup(["C1"])).ShowComponentPorts);
 
@@ -155,7 +155,7 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
         Assert.True(vm.ShowComponentPorts);
         Assert.Equal(["C1", "C2"], vm.ComponentPortRows.Select(r => r.Refdes));
         Assert.Equal(EmSetupEditorViewModel.ComponentPortsTip3D, vm.ComponentPortsTip);
-        vm.CheckComponentPortsCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+        await vm.CheckComponentPortsCommand.ExecuteAsync(null);
         // This board's ground is its stackup's and a 3D view solves drawn copper, so its drawn ports do not resolve: Check says the
         // view's own refusal (LayoutComponentPort3DTests builds the same board with a drawn plane).
         string why = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(driven, board.Source(), board.Tech).Refusal!;

@@ -136,7 +136,7 @@ public sealed class PassivationOpeningTests
         var p = Invalid(Mmic(opening: "Nowhere"));
         Assert.Equal(DiagnosticSeverity.Error, p.Severity);
         Assert.Contains("not one of this technology's drawing layers", p.Message, StringComparison.Ordinal);
-        Assert.Empty(TechValidation.Analyze(Mmic()).Where(q => q.Id?.StartsWith("tech.stackup.open-with", StringComparison.Ordinal) == true));
+        Assert.DoesNotContain(TechValidation.Analyze(Mmic()), q => q.Id?.StartsWith("tech.stackup.open-with", StringComparison.Ordinal) == true);
     }
 
     // ── Gate 3 — the hole, in both routes ───────────────────────────────────────────────────────────
@@ -224,6 +224,26 @@ public sealed class PassivationOpeningTests
         Assert.Contains(notes, n => n.Contains("2 opening(s) cut through it, 8500 µm² in all", StringComparison.Ordinal));
         Assert.Contains(notes, n => n.Contains("1 of the 2 opening(s) on 'PadOpen' in 'Passivation' lie over no conductor",
                                                StringComparison.Ordinal));
+    }
+
+    /// <summary>A stacked pad — a lower metal under the pad's whole area — is metal under the opening. Its two levels
+    /// overlap, and read as one even-odd region they cancelled exactly there, so the opening was called bare substrate.</summary>
+    [Fact]
+    public void AnOpeningOverAStackedPad_IsOverConductor()
+    {
+        var under = new LayerKey(3, 0);
+        var tech = Mmic();
+        tech.Layers.Add(new LayerDef { Key = under, Name = "Under", ZOrder = 3, Purpose = "drawing" });
+        int gaas = tech.Stackup.Layers.FindIndex(l => l.Name == "GaAs");
+        tech.Stackup.Layers.InsertRange(gaas,
+        [
+            new StackupLayer { Kind = StackupKind.Dielectric, Name = "Spacer", ThicknessDbu = Um(1), Epsr = 7, Mur = 1 },
+            new StackupLayer { Kind = StackupKind.Conductor, Name = "UnderMetal", ThicknessDbu = Um(1), SigmaSm = 4.1e7,
+                               DrawingLayers = [under] },
+        ]);
+        var notes = Cem(tech, [.. Pad(), Rect(under, 0, 0, 100, 100)]).Notes;
+        Assert.Contains(notes, n => n.Contains("1 opening(s) cut through it", StringComparison.Ordinal));
+        Assert.DoesNotContain(notes, n => n.Contains("lie over no conductor", StringComparison.Ordinal));
     }
 
     // ── Gate 6 — planar keeps the slab and says how much is open ────────────────────────────────────

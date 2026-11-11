@@ -11,6 +11,15 @@
   </PropertyGroup>
 
   <!--
+    The runsettings name every project's result file last-run.trx, on purpose: a run's failures are read from it afterwards.
+    VSTest prints "WARNING: Overwriting results file" for each project whose previous one is still there, which is every
+    run, so the previous file is deleted just before the run that writes the next one.
+  -->
+  <Target Name="CrfClearLastRunTrx" BeforeTargets="VSTest" Condition="'$(IsTestProject)' == 'true'">
+    <Delete Files="$(MSBuildProjectDirectory)/TestResults/last-run.trx" ContinueOnError="true" />
+  </Target>
+
+  <!--
     ═══ THE VERSION NUMBER, ONCE ═══════════════════════════════════════════════════════════════
 
     The repo-root `VERSION` file is the ONLY place circuitRF's version is written: one line, e.g.

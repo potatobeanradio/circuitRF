@@ -226,7 +226,7 @@ public sealed class WslLocationTests : IDisposable
     /// <summary>The reader stops at tar's end-of-archive marker, but tar pads its output to a whole record and a Windows pipe holds
     /// about 4 KB: the rest of the stream must still be read, or wsl.exe blocks on its write and the copy never ends.</summary>
     [Fact]
-    public void Gate4e_TheStreamIsReadToItsEnd_PastTheEndOfArchiveMarker()
+    public async Task Gate4e_TheStreamIsReadToItsEnd_PastTheEndOfArchiveMarker()
     {
         var (wsl, runDir) = FieldRun();
         wsl.TarTrailing = true;
@@ -234,9 +234,10 @@ public sealed class WslLocationTests : IDisposable
         Assert.True(runner.Solve(runDir, "{}", "/home/user/palace/bin/palace", 1, null, CancellationToken.None, out _, null, 0).Ok);
 
         var bring = Task.Run(() => runner.BringFields(runDir, null, CancellationToken.None));
-        Assert.True(bring.Wait(TimeSpan.FromSeconds(60)), "the field copy did not end");
-        Assert.Null(bring.Result.Warning);
-        Assert.Contains("as one stream", bring.Result.Note);
+        Assert.True(await Task.WhenAny(bring, Task.Delay(TimeSpan.FromSeconds(60))) == bring, "the field copy did not end");
+        var brought = await bring;
+        Assert.Null(brought.Warning);
+        Assert.Contains("as one stream", brought.Note);
         Assert.Equal(3 << 20, new FileInfo(Path.Combine(runDir, "postpro", "paraview", "driven", "Cycle000001", "proc000000.vtu")).Length);
     }
 

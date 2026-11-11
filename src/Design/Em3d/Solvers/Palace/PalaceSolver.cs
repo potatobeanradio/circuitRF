@@ -18,6 +18,7 @@ public static class PalaceSolver
         Spelling = "Palace",
         ResultToken = "palace",
         Method = Em3dSolverFit.Fem,
+        Quality = s => s.Palace?.Quality ?? PalaceQuality.Standard,
         Capabilities = new()
         {
             Fields = true,

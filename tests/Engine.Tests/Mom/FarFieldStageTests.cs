@@ -61,7 +61,11 @@ public class FarFieldStageTests(ITestOutputHelper output)
         var (golden, _) = DataSetImporter.Import(GoldenPath);
         var want = golden.CubesIn(PlanarFarField.Group);
         var have = ds.CubesIn(PlanarFarField.Group);
-        Assert.Equal(want.Keys.OrderBy(k => k, StringComparer.Ordinal), have.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        // EM-TFR added one cube after the golden was taken: the power a resistive film absorbs. This line has no film,
+        // so it is zero, and every cube the golden holds must still be byte-identical.
+        Assert.Equal(want.Keys.Append("PowerFilm").OrderBy(k => k, StringComparer.Ordinal),
+                     have.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.All(have["PowerFilm"].RealValues.ToArray(), v => Assert.Equal(0.0, v));
         foreach (var (name, g) in want)
         {
             var h = have[name];

@@ -252,7 +252,7 @@ public static class WireMaterials
     }
 
     /// <summary>
-    /// The wire metals a <c>.cmat</c> holds — every record stating <c>Sigma20</c>, with its <c>Alpha20</c>
+    /// The wire metals a <c>.cmat</c> holds — every record stating <c>Sigma20</c> and no <c>Epsr</c>, with its <c>Alpha20</c>
     /// (0 when unstated) and its σ(T) table — and the names of the records that state no conductivity, so a
     /// caller asked for one of those can say WHY it is not a metal rather than that it does not exist.
     /// Reads the format the Materials editor writes, gzipped or not. Throws <see cref="JsonException"/> or
@@ -279,6 +279,10 @@ public static class WireMaterials
             if (Prop(m, "Name") is not { ValueKind: JsonValueKind.String } nameElement) continue;
             string name = nameElement.GetString()!;
             if (Prop(m, "Sigma20") is not { ValueKind: JsonValueKind.Number } s20) { others.Add(name); continue; }
+            // A record stating a permittivity is a DIELECTRIC with a conductivity — silicon by resistivity (SI-SIG) — not
+            // a metal, whatever its σ: the rule the 3D build applies to the same record (Em3dLayoutSolids: no εr and σ > 0
+            // is a conductor). Without it the four silicon grades were offered as bond-wire metals.
+            if (Prop(m, "Epsr") is { ValueKind: JsonValueKind.Number }) { others.Add(name); continue; }
 
             List<SigmaPoint>? table = null;
             if (Prop(m, "SigmaVsTemp") is { ValueKind: JsonValueKind.Array } rows)
@@ -318,7 +322,7 @@ public static class WireMaterials
 }
 
 /// <summary>What a <c>.cmat</c> offers a wire: its conductors, and the names of its records that are not
-/// conductors (no σ₂₀).</summary>
+/// conductors (no σ₂₀, or a dielectric that states εr beside its σ₂₀).</summary>
 public sealed record WireMaterialLibrary(IReadOnlyList<WireMaterial> Conductors, IReadOnlyList<string> NonConductors)
 {
     /// <summary>Reads a <c>.cmat</c> file. See <see cref="WireMaterials.ReadLibrary"/>.</summary>

@@ -178,7 +178,8 @@ public class EmMessageLevelRoutingSourceTests
         string body = RunEmSetupBody();
         // Each sentence is posted through PostEmSentence (brief-em3d-97), which posts at the level it is handed.
         // A note or warning already streamed while the run went is skipped (brief-dfr27-5), never re-levelled.
-        Assert.Matches(@"Unposted\(result\.Notes \?\? \[\], warning: false\)\)\s*PostEmSentence\(Messages, MessageLevel\.Info,", body);
+        // A pattern note folds behind one row (RunMessages.PostPatternNotes); every other note is posted at Info.
+        Assert.Matches(@"Unposted\(result\.Notes \?\? \[\], warning: false\)\)\s*\{[^}]*?else PostEmSentence\(Messages, MessageLevel\.Info,", body);
         Assert.Matches(@"Unposted\(result\.Warnings, warning: true\)\)\s*PostEmSentence\(Messages, MessageLevel\.Warning,", body);
         Assert.Contains("result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error,", body, StringComparison.Ordinal);
     }

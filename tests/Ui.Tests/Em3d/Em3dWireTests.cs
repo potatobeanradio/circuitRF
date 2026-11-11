@@ -124,6 +124,35 @@ public sealed class Em3dWireTests
                                             w.Contains("overhangs", StringComparison.Ordinal) && w.Contains("125"));
     }
 
+    // ── PSV-4 — an end on a pad a stackup cover still hides is warned of, as a wire drawn in a .c3d is ──────
+
+    [Fact]
+    public void AnEndUnderAStackupCover_IsWarned_AndOneInItsOpeningIsNot()
+    {
+        var tech = CaseATech();
+        tech.Layers.Add(new LayerDef { Key = new LayerKey(2, 0), Name = "Open" });
+        tech.Stackup.Layers.Insert(0, new StackupLayer { Kind = StackupKind.Dielectric, Name = "Cover", ThicknessDbu = 2_000,
+                                                         Epsr = 3.0, OpenWithLayer = "Open" });
+        var design = OneWire(
+            new WPoint3(-475_000, 0, 112_700), new WPoint3(-400_000, 30_000, 250_000),
+            new WPoint3(300_000, 0, 250_000), new WPoint3(475_000, 0, 112_700));
+
+        var covered = Generate(design, tech);
+        Assert.True(covered.Ok, covered.Refusal);
+        Assert.Contains(covered.Warnings, w => w.Contains("its start lands on", StringComparison.Ordinal) &&
+                                               w.Contains("under 'Cover'", StringComparison.Ordinal));
+        Assert.Contains(covered.Warnings, w => w.Contains("its end lands on", StringComparison.Ordinal));
+
+        // An opening over the start pad: that end is on bare metal, the other is still covered.
+        var opened = Generate(design, tech, extraShapes:
+            [new RectShape { Layer = new LayerKey(2, 0), X1 = -540_000, Y1 = -40_000, X2 = -460_000, Y2 = 40_000 }]);
+        Assert.True(opened.Ok, opened.Refusal);
+        Assert.DoesNotContain(opened.Warnings, w => w.Contains("its start lands on", StringComparison.Ordinal));
+        Assert.Contains(opened.Warnings, w => w.Contains("its end lands on", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(Generate(design).Warnings, w => w.Contains("A bond reaches bare metal", StringComparison.Ordinal));
+    }
+
     // ── 5. A ball end: a neck when the path does not arrive vertically, none when it does ──────
 
     [Fact]
@@ -352,7 +381,8 @@ public sealed class Em3dWireTests
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     internal static Em3dGenerationResult Generate(WBondDesign design, Technology? tech = null,
-                                                 Em3dWireSource? wires = null, EmAirBox? airBox = null)
+                                                 Em3dWireSource? wires = null, EmAirBox? airBox = null,
+                                                 IEnumerable<LayoutShape>? extraShapes = null)
     {
         tech ??= CaseATech();
         const string clay = """
@@ -370,6 +400,7 @@ public sealed class Em3dWireTests
             }
             """;
         var view = LayoutPersistence.Deserialize(clay);
+        if (extraShapes is not null) view.Shapes.AddRange(extraShapes);
         var setup = new EmSetup
         {
             Name = "caseA", LayoutRef = "caseA/layout/caseA.clay",

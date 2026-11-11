@@ -116,6 +116,10 @@ public sealed class Em3dSolverDescriptor
     /// <summary>brief-em3d-65 — what it will not respect of a kernel solid, with the settings its run would use.</summary>
     public Func<Em3dProblem, EmSetup, IEnumerable<Em3dFidelityFinding>> Fidelity { get; init; } = (_, _) => [];
 
+    /// <summary>The quality preset a setup runs it at — the setup's own, or the preset's default — or null for a solver
+    /// with no preset (openEMS).</summary>
+    public Func<EmSetup, PalaceQuality?> Quality { get; init; } = _ => null;
+
     /// <summary>Its memory estimate for a setup, when it has one.</summary>
     public Func<EmSetup, EmLayoutSource, Em3dMemoryVerdict>? MemoryVerdict { get; init; }
 

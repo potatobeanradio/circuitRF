@@ -139,7 +139,8 @@ public sealed partial class FarFieldCosimTests
         foreach (string file in new[] { "src/Cli/NetlistToSchematic.cs", "src/Design/Layout/Em/EmCoSimNetlist.cs" })
         {
             string code = Regex.Replace(Regex.Replace(File.ReadAllText(Path.Combine(root, file)), @"/\*.*?\*/", "", RegexOptions.Singleline), @"//[^\n]*", "");
-            Assert.Contains("NetlistSchematic.Build(", code, StringComparison.Ordinal);
+            // Build, or FromFile (which reads the file and calls Build): one drawing either way.
+            Assert.Matches(@"NetlistSchematic\.(Build|FromFile)\(", code);
             Assert.DoesNotContain("SchematicAutoRouter", code, StringComparison.Ordinal);
             Assert.DoesNotContain("Wires.Add", code, StringComparison.Ordinal);
             Assert.DoesNotContain("Components.Add", code, StringComparison.Ordinal);

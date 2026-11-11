@@ -665,7 +665,8 @@ public static class TuningDirectiveText
         if (c.Verify is { } v)         sb.Append(" verify=").Append(v.ToString(CultureInfo.InvariantCulture));
         if (c.MaxIterations is { } mi) sb.Append(" maxiter=").Append(mi.ToString(CultureInfo.InvariantCulture));
         if (c.MaxEvaluations is { } me) sb.Append(" maxevals=").Append(me.ToString(CultureInfo.InvariantCulture));
-        Opt(sb, "timelimit", c.TimeLimit);
+        // A duration, written as optimize writes one: `60 s`, `2 min` unquoted.
+        if (c.TimeLimit is { } limit)  sb.Append(" timelimit=").Append(Value(limit, duration: true));
         if (c.Width is { } w)          sb.Append(" width=").Append(w.ToString("R", CultureInfo.InvariantCulture));
         if (c.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
         if (c.Seed is { } seed)        sb.Append(" seed=").Append(seed.ToString(CultureInfo.InvariantCulture));

@@ -3464,8 +3464,8 @@ public static class ComponentModelFactory
             if (library.NonConductors.Contains(wanted, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
                     $"{instance} asks for wire material '{wanted}', which the material library '{path}' defines " +
-                    "with no electrical conductivity (σ₂₀), so it cannot be a wire. Open the library in the " +
-                    "Materials editor and state its σ₂₀, or choose another material.");
+                    "with no electrical conductivity (σ₂₀), or as a dielectric (it states εr), so it cannot be a wire. " +
+                    "Open the library in the Materials editor and give a metal its σ₂₀ and no εr, or choose another material.");
         }
 
         foreach (var metal in library.Conductors)

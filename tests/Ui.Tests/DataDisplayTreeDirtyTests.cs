@@ -174,7 +174,10 @@ public sealed class DataDisplayTreeDirtyTests : IDisposable
     {
         string ws = Src("src", "Ui", "ViewModels", "WorkspaceViewModel.cs");
 
-        Assert.Equal(3, Regex.Matches(ws, @"WireDataDisplayTreeDirty\((?:doc|newDoc)\);").Count);
+        // One wiring per document the shell makes: a new way to open a display that forgets it fails here.
+        int made = Regex.Matches(ws, @"new DataDisplayDocument\(").Count;
+        Assert.True(made >= 3, $"only {made} DataDisplayDocument construction site(s) found");
+        Assert.Equal(made, Regex.Matches(ws, @"WireDataDisplayTreeDirty\((?:doc|newDoc)\);").Count);
 
         string wire = Between(ws, "private void WireDataDisplayTreeDirty(DataDisplayDocument doc)");
         Assert.Contains("DirtyChanged", wire, StringComparison.Ordinal);

@@ -871,7 +871,7 @@ public sealed partial class FarFieldCosimTests : IDisposable
         plot.AutoscaleX = false;
         plot.AutoscaleY = false;
         var camera = plot.SurfaceCamera;
-        var pinned = trace.Slice.ToArray();
+        var pinned = trace.Slice!.ToArray();
         object? Shape() => type == PlotType.Surface3D ? trace.SurfaceGrid : trace.Points.ToArray();
         var before = Shape();
 

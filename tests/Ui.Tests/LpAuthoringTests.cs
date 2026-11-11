@@ -10,7 +10,8 @@ namespace CircuitRF.Ui.Tests;
 /// Loadpull UI brief 05 gate: authoring a LoadpullAnalysis in the Add/Edit Analysis dialog VM.
 /// The tone is a coefficient + unit pair (var-unit-wins resolves at run time; brief 04b).
 /// </summary>
-public sealed class LpAuthoringTests
+[Collection(UserStateDirectoryCollection.Name)]
+public sealed class LpAuthoringTests : FirstLaunchUserState
 {
     private static SchematicEditModel ModelWithTuners()
     {

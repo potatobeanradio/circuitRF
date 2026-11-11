@@ -42174,3 +42174,29 @@ left the list on other cards; a click on Silicon from the top did too, stopping 
 - Gates: `StackupSelectionTests`' two source scans now hold the no-jump rules against `BringToTop`; UiSnapshot
   `--ctech rfic-Si_3LM_TFR_100um.ctech --tab 1 --size 1100x950` with `--click 500,358`, `--click 300,585`, Silicon then
   TFR, Backside Metal then TFR, and ILD1 each land on the card's top.
+
+## A full-suite review: tests that read the developer's preferences, and drift (2026-11-10)
+
+- **Preferred units leak into tests.** Settings ▸ General ▸ Units seeds every NEW frequency, and a new plot's unit, from the
+  user's real `preferences.json`; on a machine preferring MHz a 1 GHz tone opens as "1000" "MHz" and a GHz-built trace is
+  re-derived in the plot's own MHz unit. Every class whose answer depends on it now derives from
+  `tests/Ui.Tests/FirstLaunchUserState` (state directory moved to an empty folder) and joins `UserStateDirectoryCollection`
+  — `AnalysisSeedingTests`, `SignalDesignerTests`, `LpAuthoringTests`, `LppAuthoringTests`, `FreqExprUnitTests`,
+  `PlotsAndTuningRound26Tests`. xUnit reads `[Collection]` off the class itself, never its base, so each carries it.
+- **The palette-wiring tests probe noise.** NZ-4's Ri/Tg/Td/Kf/Af/GammaN reach a model's noise sources, not its currents,
+  so `PaletteNoiseProbe` adds each source's density (as logs, at 1 kHz and 1 GHz) to the fingerprint, sets each away from
+  its default, maps a FET with Ri onto its four ports, and reads a default as the app does (blank omitted, `2/3` evaluated).
+- **Settings ▸ Solvers named solvers by id** (`EmSolverPreference`, the `.c3d` panel's quality label). The choices and
+  labels come from the registry (FEM first, `DisplayName (MethodName)`), and the descriptor carries `Quality`.
+- Smaller drift brought up to date: the `.c3d` writer's form for the Passivated Pad's bonded pad, generator dumps for the
+  new `.cem`s (a setup naming component ports built through `Em3dSetupProblem.Of`), the wire dump's Thin Metal Correction
+  note, 51 diagnostic ids added since the committed set was last updated (one shared on purpose, PLG-6 §5), the Tools
+  menu's Plugins entry, `SaveChangesDialog`'s two new parameters, an unescaped `|` in components.md, the inline trapping
+  figures' fonts (IBM Plex Sans; no monospace face ships), and the measurement lint skipping text a page carries verbatim
+  from its own Markdown, which a regeneration cannot change.
+- **Two load-dependent tests.** `ServeLongWorkTests`' `run-sparam` case is gone: the S-parameter engine reports throttled ticks
+  only (40 ms), and in a warm process a 20,001-point attenuator finished inside one window, observing nothing — the test's own
+  reason for not using the cross-section kernel. `SarEditorTests.TheInspector_OffersTheTopologyAsAChoice` read the
+  Inspector's rows while the scene's rebuild rewrote them; it settles first, as the file's other tests do.
+- `dotnet test` printed "WARNING: Overwriting results file" for every project on every run (the runsettings name each one
+  `last-run.trx` on purpose); `Directory.Build.props`' `CrfClearLastRunTrx` deletes the previous file just before VSTest.

@@ -344,3 +344,11 @@ copies no metal; Duplicate copies it), so R-wbt-1c needed no code.
   `WireTempState` 3, and the circuit's own non-convergence message names nodes, not the wBond, so the two were not
   connected. `WireTemperatureCubes.Compute` warns once per solved instance per run, naming the point.
   Gate: `WBondWireTemperatureTests.ACircuitThatDoesNotConverge_IsState3_AndSaysSoByName`.
+
+## Silicon by resistivity is not a wire metal (suite review, 2026-11-10)
+
+- SI-SIG added four silicon grades to the shipped library with `Epsr` AND `Sigma20`, and `WireMaterials.ReadLibrary` took
+  every record stating `Sigma20` as a metal, so the four were offered as bond-wire metals. A record stating a permittivity
+  is a dielectric with a conductivity, the rule `Em3dLayoutSolids` applies to the same record; it is listed among the
+  library's non-conductors, and the refusal a wire asking for one gets now says "or as a dielectric (it states εr)".
+  Gates: `WireMaterialTableTests`, `WBondTemperatureAndMaterialTests`.

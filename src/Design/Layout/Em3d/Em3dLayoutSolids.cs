@@ -695,9 +695,17 @@ public static class Em3dLayoutSolids
                     continue;
                 }
                 // An opening over bare substrate is legal and usually a drawing mistake: a note, not a refusal.
+                // Each piece is tested on its own: pieces on different bands overlap (a stacked pad is Metal1 under
+                // Metal2), and one even-odd operand made of all of them reads their overlap as outside both.
                 var metalBelow = Pieces.Where(kv => _bandByIndex[kv.Key].TopM <= b.TopM + 1e-15)
-                                       .SelectMany(kv => kv.Value).Select(p => p.Poly).ToList();
-                int bare = polys.Count(o => SlabLateralBound.IntersectionArea([o], metalBelow) <= 0);
+                                       .SelectMany(kv => kv.Value).Select(p => (p.Poly, Box: p.Poly.Bounds())).ToList();
+                int bare = polys.Count(o =>
+                {
+                    var ob = o.Bounds();
+                    return !metalBelow.Any(m => m.Box.MinX < ob.MaxX && m.Box.MaxX > ob.MinX &&
+                                                m.Box.MinY < ob.MaxY && m.Box.MaxY > ob.MinY &&
+                                                SlabLateralBound.IntersectionArea([o], [m.Poly]) > 0);
+                });
                 if (bare > 0)
                     Notes.Add($"{bare} of the {polys.Count} opening(s) on '{opening}' in '{b.Layer.Name}' lie over no " +
                               "conductor, so they expose bare substrate. That is legal, and is usually a drawing mistake.");
@@ -758,7 +766,7 @@ public static class Em3dLayoutSolids
                     ? $".wBond '{Path.GetFileName(wbPath)}' Materials" : "the .wBond's Materials";
                 WireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, tempC,
                                             (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource(m.Name)),
-                                            options.PadsOptional);
+                                            options.PadsOptional, CoversAt);
                 Notes.AddRange(WireBuild.Notes);
                 WarningList.AddRange(WireBuild.Warnings);
                 if (WireBuild.Refusal is { } wireRefusal)
@@ -785,8 +793,36 @@ public static class Em3dLayoutSolids
             return null;
         }
 
-        /// <summary>PSV-4 — every piece of metal on a conductor band, as drawn.</summary>
-        private List<PlanarPolygon> MetalOf(int band) => Pieces.TryGetValue(band, out var ps) ? [.. ps.Select(p => p.Poly)] : [];
+        /// <summary>
+        /// PSV-4 — the stackup dielectrics that still cover the pad named <paramref name="padName"/> at the plan position of
+        /// <paramref name="at"/>, bottom first: the one at the pad's top surface there (absorbing the metal's band, or a
+        /// conformal coat on it) and every one above it. Empty when the metal there is bare: an opening is drawn over it, a
+        /// patterned film is absent there, or nothing is above. The test <c>C3dElaborator.CoversOver</c> makes on placed solids, read
+        /// here from the bands, for a layout's own paired <c>.wBond</c>. A dielectric of εr 1 is air, whatever it is called.
+        /// </summary>
+        private IReadOnlyList<string> CoversAt(string padName, Point3 at)
+        {
+            const double Above = 1e-8;   // 10 nm, as C3dElaborator's
+            if (Pieces.Values.SelectMany(l => l).FirstOrDefault(p => p.Name == padName) is not { } pad) return [];
+            double top = pad.IsSheet ? pad.SheetZ : pad.ZTop;
+            var covers = new List<(double Bottom, string Name)>();
+            bool covered = false;
+            foreach (var b in _inProblem)
+            {
+                if (!_dielZ.TryGetValue(b.Index, out var z) || !(b.Layer.Epsr > 1)) continue;
+                if (_filmPolys.TryGetValue(b.Index, out var film) && !film.Any(f => f.Contains(at.X, at.Y))) continue;
+                if (_openings.TryGetValue(b.Index, out var opened) && opened.Polys.Any(o => o.Contains(at.X, at.Y))) continue;
+                bool onMetal = z.Bottom <= top + Above && z.Top > top + Above;
+                if (onMetal) covered = true;
+                if (onMetal || z.Bottom >= top - Above) covers.Add((z.Bottom, b.Layer.Name));
+            }
+            return covered ? [.. covers.OrderBy(c => c.Bottom).Select(c => c.Name)] : [];
+        }
+
+        /// <summary>PSV-4 — every piece of metal on a conductor band, as drawn. A resistive film's sheet on the band is not metal the coat climbs over: it is tens of nanometres thick, so
+        /// the coat lies on the band's floor across it.</summary>
+        private List<PlanarPolygon> MetalOf(int band) =>
+            Pieces.TryGetValue(band, out var ps) ? [.. ps.Where(p => !p.IsFilm).Select(p => p.Poly)] : [];
 
         /// <summary>
         /// PSV-4 — a conformal cover of thickness <paramref name="t"/> over the metal of <paramref name="band"/>, inside
@@ -938,15 +974,26 @@ public static class Em3dLayoutSolids
                     // PSV-4 — the dielectric directly on a conformal cover fills what the cover's topography leaves beside
                     // the metal, down to the coat on the band's floor, as a spin-on layer does; over the metal it starts
                     // where it always did.
+                    //
+                    // Beside the metal it starts on the coat's floor piece, whose top is floor + t: that is ABOVE the
+                    // metal's top when the coat is thicker than the metal, so the fill there starts at floor + t and
+                    // never at the metal's top, or the two would overlap. Where the coat is opened there is no coat to
+                    // sit on, and the fill goes down to the floor beside the metal and to the metal's top over it.
                     var region = lateral ?? [new PlanarPolygon([new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)])];
                     var (c0, c1) = _dielZ[coatIndex];
                     double t = c1 - c0;
                     var c = _bandByIndex[metalBand];
-                    var coatOpen = _openings.TryGetValue(coatIndex, out var co) ? co.Polys : [];
-                    var grown = SlabLateralBound.Inflate(MetalOf(metalBand), t);
-                    if (c.TopM > c.BottomM + t)
-                        Emit(b.Layer.Name, "fill", SlabLateralBound.Subtract(region, grown), c.BottomM + t, c.TopM);
-                    Emit(b.Layer.Name, "fill-top", SlabLateralBound.Subtract(region, SlabLateralBound.Subtract(grown, coatOpen)), c.TopM, c1);
+                    var metal = MetalOf(metalBand);
+                    var grown = SlabLateralBound.Inflate(metal, t);
+                    Emit(b.Layer.Name, "fill", SlabLateralBound.Subtract(region, grown), c.BottomM + t, c1);
+                    if (_openings.TryGetValue(coatIndex, out var co))
+                    {
+                        var open = SlabLateralBound.Intersect(region, co.Polys);
+                        var openNear = SlabLateralBound.Intersect(open, grown);
+                        Emit(b.Layer.Name, "fill-floor", SlabLateralBound.Subtract(open, grown), c.BottomM, c.BottomM + t);
+                        Emit(b.Layer.Name, "fill-wall", SlabLateralBound.Subtract(openNear, metal), c.BottomM, c1);
+                        Emit(b.Layer.Name, "fill-top", SlabLateralBound.Intersect(openNear, metal), c.TopM, c1);
+                    }
                 }
                 if (lateral is null)
                 {

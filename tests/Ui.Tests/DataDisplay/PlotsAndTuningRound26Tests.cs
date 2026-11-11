@@ -30,7 +30,8 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.DataDisplay;
 
-public sealed class PlotsAndTuningRound26Tests
+[Collection(UserStateDirectoryCollection.Name)]
+public sealed class PlotsAndTuningRound26Tests : FirstLaunchUserState
 {
     // ---- 1. Two independent circuits (R-dfr26-6-1) -------------------------------------
 

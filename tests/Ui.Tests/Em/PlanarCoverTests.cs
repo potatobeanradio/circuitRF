@@ -165,7 +165,7 @@ public sealed class PlanarCoverTests(ITestOutputHelper output)
         Assert.Equal(2, stack.LayerCount);
         Assert.Equal(3.5, stack.Layers[1].Material.EpsR);
         Assert.Contains(r.Notes, n => n.Contains("'Bottom Mask'", StringComparison.Ordinal));
-        Assert.Empty(r.Warnings.Where(w => w.Contains("Bottom Mask", StringComparison.Ordinal)));
+        Assert.DoesNotContain(r.Warnings, w => w.Contains("Bottom Mask", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -284,6 +284,6 @@ public sealed class PlanarCoverTests(ITestOutputHelper output)
         var b = Run(EmAnalysisKind.Planar);
         var a = planarOnly ? null : Run(EmAnalysisKind.CrossSection);
         return new Pair(a is null ? new Line2(double.NaN, double.NaN) : Read(a, "tline"),
-                        Read(b, PlanarKernel.DiagnosticsGroup), [.. b.Notes, .. b.Warnings]);
+                        Read(b, PlanarKernel.DiagnosticsGroup), [.. b.Notes ?? [], .. b.Warnings]);
     }
 }

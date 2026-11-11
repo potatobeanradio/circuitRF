@@ -177,7 +177,7 @@ not general 3D.
   opened over a pad) is the same limit again: the cover stays across the opening here, and the run's
   notes give the fraction of the layout the mask opens. A 3D solve cuts the opening; on a 200 µm stacked
   probe pad and its feed, opened to 180 µm under 1 µm of nitride and 5 µm of polyimide, the two read
-  140.5 fF here and 143.8 fF in 3D. See [Covers and openings](stackup.html#covers).
+  140.5 fF here and 144.0 fF in 3D. See [Covers and openings](stackup.html#covers).
 - **Enclosures and absorbing boundaries.** There is no box. Real planar tools suppress port-to-port
   radiative and surface-wave coupling with box walls or absorbing boundaries; **this kernel has
   neither, by design**, and that is what sets the [de-embedding accuracy floor](#deembedding).

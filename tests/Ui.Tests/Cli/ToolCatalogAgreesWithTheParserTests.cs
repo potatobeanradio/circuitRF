@@ -135,7 +135,7 @@ public sealed class ToolCatalogAgreesWithTheParserTests : IDisposable
         var flags = System.Text.RegularExpressions.Regex.Matches(source, "case \"(--[a-z0-9-]+)\"").Select(m => m.Groups[1].Value).Distinct().ToList();
         Assert.Contains("--radial", flags);
         var offered = ToolCatalog.Tools.Single(t => t.Name == "plot").Modes.SelectMany(m => m.Options).Select(o => o.Cli).ToHashSet();
-        Assert.Empty(flags.Where(f => !offered.Contains(f)));
+        Assert.DoesNotContain(flags, f => !offered.Contains(f));
 
         string npy = Path.Combine(_root, "run.npy"), png = Path.Combine(_root, "pattern.png");
         RfCore.Export.DataSetExporter.Export(CircuitRF.Ui.Tests.DataDisplay.PatternFixture.Data, npy, RfCore.Export.ExportFormat.Npy);
