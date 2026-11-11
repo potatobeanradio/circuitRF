@@ -5884,3 +5884,23 @@ wires and the netlist were right all along — only the artwork was wrong, which
 change once it was fixed. The palette tile, the documentation figure and the chain window's block view call
 `Primitives(kind, n)` with the path count directly and never showed it. Gate: `DynamicSymbolGeometryTests`'
 `PortCountOf_MapsPinCountToPortCount_PerKind` (Combiner, 3 pins → 2).
+
+## A crowded label column draws the stack taller, and a via's row sits on the band with room (2026-11-10)
+
+`StackupSceneTests.ASpecRowLinesUpWithItsBand_OnEveryShippedTechnology` had failed on `rfic-Si_3LM_TFR_100um`: ILD1's spec
+sat 63.8 px from its band. Between Metal3 and ILD1 the label column must hold about 17 rows — a row per band, a span row
+per via, and the film level's own row plus one per film — against 223 px of bands, so even packed from the top ILD1's row
+could not come within 30 px. No placement inside the column could fix it.
+
+- **A via's span row is anchored on a band its barrel crosses**: the one the fewest other via rows sit on, then the
+  tallest, then the one nearest the barrel's middle (`ViaSpecAnchorY`). It was the barrel's middle, which put the
+  through-silicon via's row among the thin layers instead of beside the 100 µm silicon it mostly crosses. "Tallest" alone
+  put two vias' rows on MMIC's Air and pushed Air's own spec 31 px off; "fewest taken" first is what keeps them apart.
+- **When a band's own spec lands more than half a row outside the band, `Build` builds the scene again with every band
+  height multiplied by 1.15** (up to six times). One factor scales `HeightScale`'s floor and ceiling together, and its map
+  is homogeneous in both, so every ratio, every within-kind ordering and both `Compressed` flags are untouched.
+  Growing the crowded bands one by one was tried first and broke all three (a 1 µm metal drawn taller than a 3 µm one).
+  A stricter trigger (any spec centre outside its band) chased the rfic stack to the 2.3× cap and grew the 4-layer board.
+- Measured at 900 px: rfic is drawn at 1.52× (worst 18.9 px), the 10-layer board at 1.15× (worst 11.3, from 25.8); the
+  2-, 4- and 6-layer boards and MMIC are built once and draw exactly as before. `ABandsNameSitsOnTheBand…` now states the
+  hairline stack's floor as the scene's thinnest conductor, since that stack is drawn 1.15× taller too.

@@ -235,6 +235,8 @@ public static class Em3dLayoutSolids
         private List<PlanarExtractor.StackBand> _inProblem = [];
         private readonly Dictionary<int, (double Bottom, double Top)> _dielZ = [];
         private readonly Dictionary<int, List<PlanarPolygon>> _filmPolys = [];
+        /// <summary>PSV-2 — each opened dielectric band's mask name and its merged openings (StackupLayer.OpenWithLayer).</summary>
+        private readonly Dictionary<int, (string Mask, List<PlanarPolygon> Polys)> _openings = [];
         private readonly List<PlanarPolygon> _outline = [];
 
         /// <summary>Where <see cref="ClipDisc"/> cut a board edge, for <see cref="ShareCutVertices"/>.</summary>
@@ -653,6 +655,41 @@ public static class Em3dLayoutSolids
                               "is drawn there, so it is not in the 3D problem.");
             }
 
+            // ── Openings (PSV-2): a dielectric that exists everywhere except where its mask is drawn ──
+            // Gathered here, cut in BuildSolids, where the slab's lateral outline is known. A tie that also
+            // carries PresentWithLayer is a validation error; the patterned film above wins, and nothing is cut.
+            foreach (var b in _inProblem.Where(b => b.Layer.Kind == StackupKind.Dielectric &&
+                                                    b.Layer.OpenWithLayer is { Length: > 0 } &&
+                                                    b.Layer.PresentWithLayer is not { Length: > 0 }))
+            {
+                string opening = b.Layer.OpenWithLayer!;
+                if (tech.Layers.FirstOrDefault(l => l.Name == opening) is not { } mask)
+                {
+                    Notes.Add($"Dielectric '{b.Layer.Name}' is opened by '{opening}', which is not a drawing layer, so " +
+                              "the slab is whole.");
+                    continue;
+                }
+                var polys = new List<PlanarPolygon>();
+                if (byLayer.TryGetValue(mask.Key, out var maskShapes))
+                    foreach (var (shape, _) in PlanarExtractor.MergeOverlapping(
+                                 [.. maskShapes.Select(s => (s, 0))], tech, out _, out _))
+                        polys.AddRange(PlanarExtractor.ToPolygons(shape, tech, _perDbu));
+                if (polys.Count == 0)
+                {
+                    Notes.Add($"Dielectric '{b.Layer.Name}' is opened by '{opening}', and nothing is drawn there, so " +
+                              "the slab is whole.");
+                    continue;
+                }
+                // An opening over bare substrate is legal and usually a drawing mistake: a note, not a refusal.
+                var metalBelow = Pieces.Where(kv => _bandByIndex[kv.Key].TopM <= b.TopM + 1e-15)
+                                       .SelectMany(kv => kv.Value).Select(p => p.Poly).ToList();
+                int bare = polys.Count(o => SlabLateralBound.IntersectionArea([o], metalBelow) <= 0);
+                if (bare > 0)
+                    Notes.Add($"{bare} of the {polys.Count} opening(s) on '{opening}' in '{b.Layer.Name}' lie over no " +
+                              "conductor, so they expose bare substrate. That is legal, and is usually a drawing mistake.");
+                _openings[b.Index] = (opening, polys);
+            }
+
             // ── Bodies (brief 2's, R-em3d3-5e) ────────────────────────────────────────────────
             foreach (var body in tech.Bodies)
             {
@@ -813,6 +850,22 @@ public static class Em3dLayoutSolids
                 IReadOnlyList<PlanarPolygon>? lateral =
                     _filmPolys.TryGetValue(b.Index, out var film) ? film : bound ? Bounded(b.Layer.Name)
                     : _outline.Count > 0 ? _outline : null;
+                if (_openings.TryGetValue(b.Index, out var opened))
+                {
+                    // PSV-2 — the slab's outline as it would be without the field, less the openings: one solid with
+                    // hole rings (a notch where an opening crosses its edge), never an air solid ordered above it.
+                    if (lateral is null)
+                    {
+                        if (fullExtent is not null) unboundedDielectrics++;
+                        lateral = [new PlanarPolygon([new(x0, y0), new(x1, y0), new(x1, y1), new(x0, y1)])];
+                    }
+                    var whole = lateral;
+                    lateral = SlabLateralBound.Subtract(whole, opened.Polys);
+                    int cut = opened.Polys.Count(o => SlabLateralBound.IntersectionArea(whole, [o]) > 0);
+                    double areaM2 = whole.Sum(p => p.Area()) - lateral.Sum(p => p.Area());
+                    Notes.Add($"Dielectric '{b.Layer.Name}' is opened by '{opened.Mask}': {cut} opening(s) cut through " +
+                              $"it, {Fmt(areaM2 * 1e12)} µm² in all, with straight walls.");
+                }
                 if (lateral is { Count: 0 }) continue;
                 order++;
                 if (lateral is not null) _dielectricOutlines.AddRange(lateral);

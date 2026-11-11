@@ -176,7 +176,9 @@ public static class TechnologyMerge
         // in every interconnect run.
         (s.PresentWithLayer is { Length: > 0 } plate ? $", patterned with {plate}" : "") +
         // PSV-1b, for MIM-6's reason: it changes what fills the metal band beneath it.
-        (s.Conformal == true ? ", conformal" : "");
+        (s.Conformal == true ? ", conformal" : "") +
+        // PSV-2: the slab has holes where this mask is drawn, which changes every 3D run.
+        (s.OpenWithLayer is { Length: > 0 } opening ? $", opened by {opening}" : "");
 
     private static string Describe(DrcRule r)
     {
@@ -546,6 +548,7 @@ public static class TechnologyMerge
         Epsr = s.Epsr, TanD = s.TanD, Mur = s.Mur, SigmaSm = s.SigmaSm,
         DrawingLayers = [.. s.DrawingLayers], IsGroundReference = s.IsGroundReference,
         SheetAt = s.SheetAt, PresentWithLayer = s.PresentWithLayer, Conformal = s.Conformal,
+        OpenWithLayer = s.OpenWithLayer,
         Fill = s.Fill, WallThicknessDbu = s.WallThicknessDbu,
         SpanFromLayer = s.SpanFromLayer, SpanToLayer = s.SpanToLayer,
     };

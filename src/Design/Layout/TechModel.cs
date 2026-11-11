@@ -323,6 +323,23 @@ public sealed class StackupLayer
     /// </summary>
     public bool? Conformal { get; set; }
 
+    /// <summary>
+    /// brief-psv-2-passivation-openings.md: the DRAWING layer whose shapes are holes in this dielectric —
+    /// a passivation's pad-opening mask. The inverse of <see cref="PresentWithLayer"/>: that one says the
+    /// film exists only where its layer is drawn, this one says the slab exists everywhere except there.
+    /// The two are exclusive on one entry.
+    ///
+    /// <para>Only a drawing layer is meaningful: an opening is drawn on a mask, not on a conductor. In
+    /// every 3D route the opening is cut out of the slab, with straight walls. The planar medium is
+    /// laterally infinite, so a planar run keeps the slab everywhere and its notes say what fraction of
+    /// the analysed area the mask opens.</para>
+    ///
+    /// <para>Additive, nullable, no <c>.ctech</c> <c>FormatVersion</c> bump — the
+    /// <see cref="PresentWithLayer"/> pattern; written only when set. Meaningless (ignored, and warned)
+    /// on a non-Dielectric entry.</para>
+    /// </summary>
+    public string? OpenWithLayer { get; set; }
+
     // ── Via (Kind == StackupKind.Via only) — additive, nullable, no .ctech FormatVersion bump ──────
 
     /// <summary>R-via-2. Null for any non-Via entry.</summary>

@@ -29,4 +29,54 @@ public static class SlabLateralBound
         return [.. clipped.Where(r => r.Count >= 3)
                           .Select(r => new PlanarPolygon([.. r.Select(q => new EmPoint(q.X / NmPerMetre, q.Y / NmPerMetre))]))];
     }
+
+    /// <summary>
+    /// PSV-2 — <paramref name="slab"/> less <paramref name="cuts"/>: a dielectric that exists everywhere except where its
+    /// opening mask is drawn. An opening inside the slab becomes a hole ring and one crossing its edge a notch; the result
+    /// is one honest solid per region rather than an air solid that relies on a backend's overlap order. Holes the slab
+    /// already had (a board outline's cut-outs) are kept. Integer nanometres, as <see cref="ClipToRect"/>.
+    /// </summary>
+    public static IReadOnlyList<PlanarPolygon> Subtract(IReadOnlyList<PlanarPolygon> slab, IReadOnlyList<PlanarPolygon> cuts)
+    {
+        var tree = new PolyTree64();
+        Clipper.BooleanOp(ClipType.Difference, Paths(slab), Paths(cuts), tree, FillRule.EvenOdd);
+        var result = new List<PlanarPolygon>();
+        void Walk(PolyPath64 node)
+        {
+            for (int i = 0; i < node.Count; i++)
+            {
+                var outer = node[i];
+                var holes = new List<IReadOnlyList<EmPoint>>();
+                for (int j = 0; j < outer.Count; j++)
+                {
+                    if (outer[j].Polygon is { Count: >= 3 } hole) holes.Add(Ring(hole));
+                    Walk(outer[j]);
+                }
+                if (outer.Polygon is { Count: >= 3 } ring)
+                    result.Add(new PlanarPolygon(Ring(ring), holes.Count > 0 ? holes : null));
+            }
+        }
+        Walk(tree);
+        return result;
+    }
+
+    /// <summary>PSV-2 — the area (m²) <paramref name="a"/> and <paramref name="b"/> share, each read even-odd.</summary>
+    public static double IntersectionArea(IReadOnlyList<PlanarPolygon> a, IReadOnlyList<PlanarPolygon> b)
+    {
+        if (a.Count == 0 || b.Count == 0) return 0;
+        var both = Clipper.BooleanOp(ClipType.Intersection, Paths(a), Paths(b), FillRule.EvenOdd);
+        return Math.Abs(both.Sum(p => Clipper.Area(p))) / (NmPerMetre * NmPerMetre);
+    }
+
+    private static Paths64 Paths(IReadOnlyList<PlanarPolygon> polys)
+    {
+        var paths = new Paths64();
+        foreach (var p in polys)
+            foreach (var ring in new[] { p.Outer }.Concat(p.HoleRings))
+                paths.Add(new Path64(ring.Select(q => new Point64((long)Math.Round(q.X * NmPerMetre), (long)Math.Round(q.Y * NmPerMetre)))));
+        return paths;
+    }
+
+    private static IReadOnlyList<EmPoint> Ring(Path64 path)
+        => [.. path.Select(q => new EmPoint(q.X / NmPerMetre, q.Y / NmPerMetre))];
 }

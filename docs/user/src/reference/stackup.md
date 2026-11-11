@@ -641,7 +641,7 @@ in the schematic.
 **＋ Film Level** adds a Conductor entry with no metal, and asks for its film: an unused drawing layer or a new one, a sheet
 resistance, and which entry it goes below. In the `.ctech` it is a `Conductor` whose `DrawingLayers` is empty and whose `Films` is not.
 Its card shows its name, thickness and films, since nothing else on a conductor's card means anything without metal, and the drawing
-fills its band with its film. Checking a drawing layer on the card gives it metal, and it is an ordinary metal level from then on,
+fills its row with its film. Checking a drawing layer on the card gives it metal, and it is an ordinary metal level from then on,
 whose film is overlap-contact.
 
 A film level needs:
@@ -679,7 +679,7 @@ Each film states:
 | **Thickness** | On a level with metal. Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which. |
 | **Face** | On a level with metal. Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet. |
 
-The drawing shows a film as a strip on its conductor, against its face, in its layer's colour. On a film level the strip fills the band.
+The drawing shows a film as a strip on its conductor, against its face, in its layer's colour. On a film level the strip fills the level's whole thickness.
 
 | Gesture | Means |
 |---|---|
@@ -725,7 +725,7 @@ frequency is solved with its own value. A tanδ beside it is a separate mechanis
 | 10 Ω·cm | 10 S/m | 15 | 3.0 | 0.38 | 2.7 mm |
 | 0.01 Ω·cm | 10⁴ S/m | 15,000 | 3,000 | 380 | 71 µm |
 
-**When to state σ rather than tanδ.** State σ for any semiconductor substrate swept over more than a narrow band. A constant tanδ
+**When to state σ rather than tanδ.** State σ for any semiconductor substrate swept over more than a narrow frequency range. A constant tanδ
 is right for a laminate or an oxide, whose loss really is close to constant.
 
 The substrate falls into one of three regimes, and the run's notes say which:
@@ -734,7 +734,7 @@ The substrate falls into one of three regimes, and the run's notes say which:
   than displacement current.
 - **Moderate, about 10 Ω·cm: the silicon conducts and the oxide does not.** Below about 15 GHz at 10 Ω·cm, most of the voltage
   appears across the oxide, so a line over oxide has a high capacitance and slows down. Its Z<sub>c</sub> is well below its value at the top
-  of the band, and is not close to real: 27 + j13 Ω at 5 GHz on a line that is 50 Ω on high-resistivity silicon.
+  of the sweep, and is not close to real: 27 + j13 Ω at 5 GHz on a line that is 50 Ω on high-resistivity silicon.
 - **Low, about 0.01 Ω·cm: a lossy ground plane.** The skin depth reaches the substrate's thickness, so return current moves from the backside
   metal into the silicon as frequency rises.
 

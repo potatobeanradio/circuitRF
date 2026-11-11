@@ -327,6 +327,34 @@ public static class TechValidation
                         "conductor whose artwork the film is deposited under."));
             }
 
+            // PSV-2 — an opening is a hole in a dielectric drawn on a MASK layer. MIM-11's conductor-first
+            // namespace is right for a film tied to its plate and wrong here: a conductor's own name says
+            // nothing about where the slab is open, so only a drawing layer resolves.
+            if (sl.OpenWithLayer is { Length: > 0 } opening)
+            {
+                string? error =
+                    sl.Kind != StackupKind.Dielectric ? null
+                    : sl.PresentWithLayer is { Length: > 0 } tie
+                        ? $"Dielectric \"{sl.Name}\" is both patterned with \"{tie}\" (Present with layer) and opened " +
+                          $"by \"{opening}\" (Opened by layer). A dielectric exists only where one layer is drawn, or " +
+                          "everywhere except where one is drawn, not both: clear one of them."
+                    : tech.Layers.Any(l => l.Name == opening) ? null
+                    : conductorNames.Contains(opening)
+                        ? $"Dielectric \"{sl.Name}\" is opened by \"{opening}\", which is a conductor in this stackup. " +
+                          "An opening is drawn on a mask layer, not on a conductor: name the drawing layer the " +
+                          "openings are drawn on."
+                    : $"Dielectric \"{sl.Name}\" is opened by \"{opening}\", which is not one of this technology's " +
+                      "drawing layers. Name the mask layer the openings are drawn on.";
+                if (sl.Kind != StackupKind.Dielectric)
+                    problems.Add(new(TechProblemArea.Stackup,
+                        $"Stackup layer \"{sl.Name}\" is a {sl.Kind} entry opened by \"{opening}\". Only a dielectric " +
+                        "can have openings, so the setting is ignored.",
+                        Id: Ids.OpenWithLayerIgnored, Severity: DiagnosticSeverity.Warning));
+                else if (error is not null)
+                    problems.Add(new(TechProblemArea.Stackup, error, Id: Ids.OpenWithLayerInvalid,
+                                     Severity: DiagnosticSeverity.Error));
+            }
+
             // PSV-1b — Conformal acts on one band: the conductor directly beneath this dielectric, when
             // R-em-4a would fill that band from above. Anywhere else it does nothing, and says so.
             if (sl.Conformal == true)
@@ -449,6 +477,10 @@ public static class TechValidation
         public const string DielectricTanDAndSigma  = "tech.stackup.tand-and-sigma";
         /// <summary>brief-psv-1b — <c>Conformal</c> on an entry where it changes nothing (warning).</summary>
         public const string ConformalNoEffect       = "tech.stackup.conformal-no-effect";
+        /// <summary>brief-psv-2 — <c>OpenWithLayer</c> naming no drawing layer, or set beside <c>PresentWithLayer</c> (error).</summary>
+        public const string OpenWithLayerInvalid    = "tech.stackup.open-with-layer";
+        /// <summary>brief-psv-2 — <c>OpenWithLayer</c> on a non-dielectric entry, where it is ignored (warning).</summary>
+        public const string OpenWithLayerIgnored    = "tech.stackup.open-with-layer-ignored";
         public const string MaterialDisagrees       = "tech.material.disagrees";
         public const string MaterialInvalid         = "tech.material.invalid";
         /// <summary>brief-em3d-73 R-em3d73-2b — a σ(T) or k(T) table disagreeing with its own constant at 20 °C (warning).

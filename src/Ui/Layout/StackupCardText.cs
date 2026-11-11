@@ -58,6 +58,17 @@ public static class StackupCardText
         "way, a run that does not carry it puts air at the same thickness in its place and says so " +
         "in its notes. Leave as (none) for an ordinary, laterally continuous dielectric.";
 
+    // ── Dielectric: opened where a mask is drawn (PSV-2) ───────────────────────────────────────
+
+    public const string OpenWith = "Opened by:";
+
+    public const string OpenWithTip =
+        "For a passivation or other cover with openings in it, such as over the bond pads: the DRAWING " +
+        "LAYER the openings are drawn on. The dielectric exists everywhere except where that layer is " +
+        "drawn. A 3D run cuts each opening out of the slab with straight walls; a planar run keeps the " +
+        "slab everywhere and says in its notes how much of the layout is open. Choosing a layer here " +
+        "clears Patterned with, and the reverse. Leave as (none) for a slab with no openings.";
+
     // ── Dielectric: a conformal cover starts on top of the metal (PSV-1b) ─────────────────────────
 
     public const string Conformal = "Conformal";

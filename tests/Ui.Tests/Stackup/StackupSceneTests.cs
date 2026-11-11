@@ -488,11 +488,14 @@ public class StackupSceneTests
             "a band's own name sits ON the band, in fixed dark ink.");
 
         // A band compressed to its kind's floor cannot hold its own padded name, so the name moves to
-        // the label column ahead of the spec.
+        // the label column ahead of the spec. The floor is the scene's: a stack this crowded is drawn
+        // taller by one factor so its specs land beside their bands, so C0 is the thinnest conductor
+        // drawn rather than exactly ConductorMinHeight.
         var moved = StackupScene.Build(HairlineStack(10), Wide);
         var c0    = moved.Bands.Single(b => b.Name == "C0");
         var label = moved.Labels.Single(l => l.LayerName == "C0" && l.Field == StackupField.Name);
-        Assert.Equal(StackupScene.ConductorMinHeight, c0.Rect.Height, 0.01);
+        Assert.Equal(moved.Bands.Where(b => b.Kind == StackupKind.Conductor).Min(b => b.Rect.Height), c0.Rect.Height, 0.01);
+        Assert.True(c0.Rect.Height >= StackupScene.ConductorMinHeight);
         Assert.False(c0.Rect.Contains(label.Rect));
     }
 

@@ -266,6 +266,10 @@ public static class PlanarExtractor
         // keeps every classification it had, and only the final catch-all below changes.
         var maskLayers = PatternedDielectric.MaskLayers(tech);
         var maskShapes = new List<(LayoutShape Shape, string Mask)>();
+        // PSV-2 — an opening mask is read the same way: not metal, but it says how much of a dielectric
+        // the 3D routes would cut away, which the planar medium cannot.
+        var openingLayers = OpeningMaskLayers(tech);
+        var openingShapes = new List<(LayoutShape Shape, string Mask)>();
 
         foreach (var s in WithViaPads(shapes, binding.ContainsKey))
         {
@@ -273,6 +277,8 @@ public static class PlanarExtractor
 
             bool onAMask = maskLayers.TryGetValue(s.Layer, out string? maskName);
             if (onAMask) maskShapes.Add((s, maskName!));
+            bool onAnOpening = openingLayers.TryGetValue(s.Layer, out string? openingName);
+            if (onAnOpening) openingShapes.Add((s, openingName!));
 
             // L9d/D5 — a ViaShape on a layer bound to a StackupKind.Via entry is now ARTWORK, not
             // annotation. Before L9d it was skipped with everything else that is not a filled region
@@ -347,7 +353,7 @@ public static class PlanarExtractor
 
             // MIM-11 — read, not ignored. It bound to no conductor and no via because a mask is
             // neither; it still decided whether a layer of the medium is present.
-            if (onAMask) continue;
+            if (onAMask || onAnOpening) continue;
 
             ignoredOther++;
             ignoredLayers[s.Layer] = ignoredLayers.GetValueOrDefault(s.Layer) || s is not PathShape { Width: <= 0 };
@@ -1227,8 +1233,10 @@ public static class PlanarExtractor
         //
         // UNIONED FIRST. Two overlapping nitride rectangles are one opening in the mask, and summing
         // their areas would report more film than exists — on a cell array, considerably more.
-        var maskPolysByName = new Dictionary<string, List<PlanarPolygon>>(StringComparer.Ordinal);
-        foreach (var group in maskShapes.GroupBy(m => m.Mask, StringComparer.Ordinal))
+        Dictionary<string, List<PlanarPolygon>> MaskPolys(List<(LayoutShape Shape, string Mask)> source)
+        {
+        var byName = new Dictionary<string, List<PlanarPolygon>>(StringComparer.Ordinal);
+        foreach (var group in source.GroupBy(m => m.Mask, StringComparer.Ordinal))
         {
             var operands = group.Select(m => m.Shape).ToList();
             IReadOnlyList<LayoutShape> merged;
@@ -1253,8 +1261,13 @@ public static class PlanarExtractor
                     polys.Add(new PlanarPolygon(mOuter, mHoles.Count == 0 ? null : mHoles));
                 }
             }
-            maskPolysByName[group.Key] = polys;
+            byName[group.Key] = polys;
         }
+        return byName;
+        }
+        var maskPolysByName = MaskPolys(maskShapes);
+        // PSV-2 — the opening masks, through the same conversion, unioned first for the same reason.
+        var openingPolysByName = MaskPolys(openingShapes);
 
         // ── ANT-11 §2 — the ground pour, through the CONDUCTOR PATH'S OWN conversion ─────────
         //
@@ -1445,6 +1458,27 @@ public static class PlanarExtractor
         // R-msh-8a's offers are open-microstrip closed forms, which answer a different question
         // for a covered line; a wrong reference is worse than none, so a covered run makes none.
         if (coverNames.Count > 0) alternatives.Clear();
+
+        // PSV-2 — an opened dielectric. The planar medium is laterally infinite, so the slab stays
+        // everywhere; the run says how much of what it analysed the mask opens, on MIM-11's pattern.
+        // Only for a dielectric that is in this medium: one dropped above the top level already has
+        // its own warning, and a second sentence about the same band would contradict it.
+        foreach (var band in stack.Where(b => b.Layer.Kind == StackupKind.Dielectric &&
+                                              b.Layer.OpenWithLayer is { Length: > 0 } &&
+                                              b.Layer.PresentWithLayer is not { Length: > 0 }))
+        {
+            if (!(band.BottomM < levels[^1].SheetM - 1e-15 || coverNames.Contains(band.Layer.Name))) continue;
+            string mask = band.Layer.OpenWithLayer!;
+            if (!openingPolysByName.TryGetValue(mask, out var openings) || openings.Count == 0) continue;
+            double extentM2 = ExtentArea(polysByLevel, regionViaPolys.Select(v => v.Poly),
+                                         groundOutlinePolys, maskPolysByName.Values.Concat(openingPolysByName.Values));
+            if (extentM2 <= 0) continue;
+            notes.Add(
+                $"'{band.Layer.Name}' is opened by '{mask}' over " +
+                FormatPercent(100.0 * Math.Min(openings.Sum(NetArea) / extentM2, 1.0)) +
+                " of this layout's extent. The 2.5D medium has no way to make a dielectric laterally finite, " +
+                "so the planar solve keeps it everywhere, openings included; a 3D solve cuts them.");
+        }
 
         if (!continueAbove && aboveTop.Count > 0)
             notes.Add(EmFinding.Warn(
@@ -1695,6 +1729,19 @@ public static class PlanarExtractor
         foreach (var m in maskPolys) foreach (var p in m) Grow(p);
 
         return maxX > minX && maxY > minY ? (maxX - minX) * (maxY - minY) : 0.0;
+    }
+
+    /// <summary>PSV-2 — the drawing layers an opened dielectric (<see cref="StackupLayer.OpenWithLayer"/>)
+    /// names, keyed by layer, with the name the tie carries. Empty on every technology without one.</summary>
+    private static Dictionary<LayerKey, string> OpeningMaskLayers(Technology tech)
+    {
+        var result = new Dictionary<LayerKey, string>();
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Dielectric && l.OpenWithLayer is { Length: > 0 } name &&
+                l.PresentWithLayer is not { Length: > 0 } &&
+                tech.Layers.FirstOrDefault(d => d.Name == name) is { } drawn)
+                result.TryAdd(drawn.Key, name);
+        return result;
     }
 
     /// <summary>MIM-11 — a percentage a reader can act on. "0 %" for a film that covers a thousandth

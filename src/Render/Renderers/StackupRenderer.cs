@@ -239,6 +239,19 @@ public static class StackupRenderer
             canvas.DrawRect(band.Rect, stroke);
         }
 
+        // PSV-2 — an opened dielectric's notch: the ground shows through it (or nothing, on a transparent
+        // picture), with the band's edge down both cut walls.
+        foreach (var opening in scene.Openings)
+        {
+            using var gap = new SKPaint { Style = SKPaintStyle.Fill, Color = theme.Background,
+                                          BlendMode = transparentBackground ? SKBlendMode.Clear : SKBlendMode.SrcOver };
+            canvas.DrawRect(opening.Rect, gap);
+            stroke.Color       = theme.BandEdge;
+            stroke.StrokeWidth = BandEdgeWidth;
+            canvas.DrawLine(opening.Rect.Left,  opening.Rect.Top, opening.Rect.Left,  opening.Rect.Bottom, stroke);
+            canvas.DrawLine(opening.Rect.Right, opening.Rect.Top, opening.Rect.Right, opening.Rect.Bottom, stroke);
+        }
+
         // A film is a feature of its band, so it is under the same bore clip and under the barrels.
         foreach (var film in scene.Films)
         {

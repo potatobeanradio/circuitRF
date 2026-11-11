@@ -635,9 +635,48 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             if (Layer.PresentWithLayer == v) return;
             var before = _owner.SnapshotJson();
             Layer.PresentWithLayer = v;
+            // PSV-2 — the two ties are exclusive, so choosing one clears the other in the same edit.
+            if (v is not null) Layer.OpenWithLayer = null;
             _owner.CommitEdit(before, v is null
                 ? $"Make {Layer.Name} a continuous dielectric"
                 : $"Pattern {Layer.Name} with {v}");
+        }
+    }
+
+    // ── PSV-2 — a dielectric opened where a mask is drawn (a passivation's pad openings) ─────────
+    //
+    // The inverse of "Patterned with", and exclusive with it: choosing one clears the other in the same
+    // undoable edit, so the two cannot be set together from here. DRAWING layers only — an opening is
+    // drawn on a mask, and a conductor's name says nothing about where the slab is open.
+    public IReadOnlyList<string> OpenWithChoices => _openWithChoices ??= ComputeOpenWithChoices();
+    private IReadOnlyList<string>? _openWithChoices;
+
+    private IReadOnlyList<string> ComputeOpenWithChoices()
+    {
+        var names = _owner.Working.Layers.Select(l => l.Name).Where(n => n is { Length: > 0 })
+                          .Distinct(StringComparer.Ordinal).ToList();
+        // A name the technology does not draw is listed as itself, so the row shows what the file holds;
+        // check reports it.
+        if (Layer.OpenWithLayer is { Length: > 0 } stated && !names.Contains(stated, StringComparer.Ordinal))
+            names.Add(stated);
+        return [SpanNone, .. names];
+    }
+
+    private string _selectedOpenWith = SpanNone;
+    public string SelectedOpenWith
+    {
+        get => _selectedOpenWith;
+        set
+        {
+            if (!SetProperty(ref _selectedOpenWith, value) || _isRefreshing) return;
+            string? v = value == SpanNone ? null : value;
+            if (Layer.OpenWithLayer == v) return;
+            var before = _owner.SnapshotJson();
+            Layer.OpenWithLayer = v;
+            if (v is not null) Layer.PresentWithLayer = null;
+            _owner.CommitEdit(before, v is null
+                ? $"Close the openings in {Layer.Name}"
+                : $"Open {Layer.Name} where {v} is drawn");
         }
     }
 
@@ -812,6 +851,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         bool presentChanged  = Restate(ref _presentWithChoices, ComputePresentWithChoices(), nameof(PresentWithChoices));
         SelectedPresentWith  = Layer.PresentWithLayer is { Length: > 0 } p ? p : SpanNone;
         if (presentChanged) OnPropertyChanged(nameof(SelectedPresentWith));
+        bool openChanged     = Restate(ref _openWithChoices, ComputeOpenWithChoices(), nameof(OpenWithChoices));
+        SelectedOpenWith     = Layer.OpenWithLayer is { Length: > 0 } opened ? opened : SpanNone;
+        if (openChanged) OnPropertyChanged(nameof(SelectedOpenWith));
         // PSV-1b — read from the entry and from its neighbour below, either of which an edit, undo or
         // move may have changed.
         OnPropertyChanged(nameof(IsConformal));

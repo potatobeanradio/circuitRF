@@ -201,11 +201,16 @@ public sealed class TechEditorHelpAndStackupSummaryTests
         Assert.True(i >= 0, "the Stackup tab must still offer an Add Dielectric button");
 
         // The three buttons used to live in a DockPanel.Dock="Bottom" strip — a full stackup's
-        // scroll away from the row being added to.
-        var panel = axaml[(i - 700)..(i + 700)];
+        // scroll away from the row being added to. The row they are on now is the WrapPanel that holds
+        // them, so the window starts there: a fixed reach back from the first button stopped reaching it
+        // once the boundary combos and a comment were put ahead of the buttons in the same row.
+        int row = axaml.LastIndexOf("<WrapPanel", i, StringComparison.Ordinal);
+        Assert.True(row >= 0, "the Add buttons must sit in the toolbar's WrapPanel");
+        var panel = axaml[row..(i + 700)];
         Assert.DoesNotContain("DockPanel.Dock=\"Bottom\"", panel);
-        Assert.Contains("Grid.Row=\"0\"", panel);
-        Assert.Contains("HorizontalAlignment=\"Right\"", panel);
+        Assert.StartsWith("<WrapPanel Grid.Row=\"0\"", panel, StringComparison.Ordinal);
+        // No longer right-aligned: they flow in the WrapPanel after the boundary combos, which is what
+        // keeps them from painting over the combos on a narrow pane (the test below).
 
         // All three together, or the row is half moved.
         Assert.Contains("AddConductorLayerCommand", panel);

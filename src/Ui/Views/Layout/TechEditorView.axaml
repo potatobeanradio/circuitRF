@@ -1184,6 +1184,19 @@
                                                           ToolTip.Tip="{Binding ConformalTip}"/>
                                             </StackPanel>
 
+                                            <!-- PSV-2. The inverse of Patterned with: the mask the
+                                                 dielectric's openings are drawn on. Its own row, always
+                                                 on a dielectric card, so nothing beside it moves. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsDielectric}">
+                                                <TextBlock Text="{x:Static lay:StackupCardText.OpenWith}" Width="86" FontSize="11"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"
+                                                           ToolTip.Tip="{x:Static lay:StackupCardText.OpenWithTip}"/>
+                                                <ComboBox Classes="cell" MinWidth="110"
+                                                          ItemsSource="{Binding OpenWithChoices}"
+                                                          SelectedItem="{Binding SelectedOpenWith, Mode=TwoWay}"
+                                                          ToolTip.Tip="{x:Static lay:StackupCardText.OpenWithTip}"/>
+                                            </StackPanel>
+
                                             <!-- Via span (R-via-3). Shown ONLY for a via, and shown at
                                                  all because the stackup list is in LIST order, which a
                                                  via is deliberately outside of (it has no z band of its

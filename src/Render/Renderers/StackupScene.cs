@@ -95,6 +95,11 @@ public sealed record StackupFilmStrip(
     FillPattern?          Pattern,
     ConductorSheetSurface Face);
 
+/// <summary>PSV-2 — a notch drawn through an opened dielectric's band (<see cref="StackupLayer.OpenWithLayer"/>):
+/// the stackup picture's way of saying the slab has holes where its mask is drawn. Its position is the
+/// picture's own, not the layout's; there is one per opened band.</summary>
+public sealed record StackupOpening(string DielectricName, string Mask, SKRect Rect);
+
 /// <summary>A conductor or dielectric band, placed.</summary>
 /// <param name="Fill">The TECHNOLOGY's colour, not the theme's: a conductor takes the colour of the
 /// drawing layer it is bound to (R-stk1-5) so the cross-section and the layout editor agree about
@@ -453,6 +458,7 @@ public sealed class StackupScene
     public IReadOnlyList<StackupHit>    Hits    { get; private init; } = [];
     public IReadOnlyList<StackupBand>   Bands   { get; private init; } = [];
     public IReadOnlyList<StackupFilmStrip> Films { get; private init; } = [];
+    public IReadOnlyList<StackupOpening> Openings { get; private init; } = [];
     public IReadOnlyList<StackupBarrel> Barrels { get; private init; } = [];
     public IReadOnlyList<StackupLabel>  Labels  { get; private init; } = [];
 
@@ -568,6 +574,32 @@ public sealed class StackupScene
         ArgumentNullException.ThrowIfNull(tech);
         options ??= StackupSceneOptions.Default;
 
+        // A run of thin bands can need more label rows than it is tall: one per band, one per via whose span
+        // row anchors there, one per film. The label column then spreads, and a thin band's spec lands rows
+        // away from it (64 px on a three-metal process with a film level). When a band's own spec is placed
+        // more than half a row outside the band, the whole stack is drawn taller by one factor and built
+        // again. One factor for every band keeps every ratio and every ordering the height scale promises;
+        // a stack whose specs already land on their bands is built once and draws exactly as before.
+        var scene = BuildPass(tech, width, options, 1f);
+        for (int pass = 0; pass < MaxGrowPasses && scene._misaligned; pass++)
+            scene = BuildPass(tech, width, options, scene._heightFactor * GrowStep);
+        return scene;
+    }
+
+    /// <summary>How much taller each pass draws a stack whose specs do not land on their bands, and how many
+    /// passes it may take (1.15⁶ ≈ 2.3×).</summary>
+    internal const float GrowStep = 1.15f;
+    internal const int   MaxGrowPasses = 6;
+
+    /// <summary>The factor this scene's band heights were drawn at (1 unless its label column was crowded).</summary>
+    private float _heightFactor = 1f;
+
+    /// <summary>Some band's own spec was placed more than half a row outside the band.</summary>
+    private bool _misaligned;
+
+    private static StackupScene BuildPass(Technology tech, float width, StackupSceneOptions options, float heightFactor)
+    {
+
         using var nameFont = new SKFont(SkiaFonts.PlexSemiBold, BandNameSize);
         using var specFont = new SKFont(SkiaFonts.PlexRegular,  SpecSize);
         using var noteFont = new SKFont(SkiaFonts.PlexSemiBold, NoteSize);
@@ -608,10 +640,10 @@ public sealed class StackupScene
 
         var conductorScale  = HeightScale.For(
             bandLayers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.ThicknessDbu),
-            ConductorMinHeight, ConductorMaxHeight);
+            ConductorMinHeight * heightFactor, ConductorMaxHeight * heightFactor);
         var dielectricScale = HeightScale.For(
             bandLayers.Where(l => l.Kind == StackupKind.Dielectric).Select(l => l.ThicknessDbu),
-            DielectricMinHeight, DielectricMaxHeight);
+            DielectricMinHeight * heightFactor, DielectricMaxHeight * heightFactor);
 
         var labels  = new List<StackupLabel>();
         var hits    = new List<StackupHit>();
@@ -650,6 +682,7 @@ public sealed class StackupScene
         float stackBottom = y;
 
         var films = BuildFilmStrips(tech, bandLayers, bands);
+        var openings = BuildOpenings(bandLayers, bands);
 
         // ── Barrels, and the lane spread they occupy ─────────────────────────────────────────────
         var barrels     = new List<StackupBarrel>();
@@ -764,6 +797,7 @@ public sealed class StackupScene
             }
         }
 
+        var viaRowsOn = new Dictionary<float, int>();   // via spec rows already anchored, by band centre
         for (int i = 0; i < barrels.Count; i++)
         {
             var barrel = barrels[i];
@@ -795,15 +829,26 @@ public sealed class StackupScene
             {
                 LayerName = via.Name,
                 Index     = groups.Count,
-                AnchorY   = barrel.Rect.MidY,
+                AnchorY   = ViaSpecAnchorY(bands, barrel.Rect, viaRowsOn),
             };
             if (!besideBarrel)
                 group.Add(via.Name, StackupField.Name, StackupLabelStyle.ColumnName, nameFont, 0f);
             AddViaSpecPieces(group, via, barrel, tech, specFont);
-            if (group.PieceCount > 0) groups.Add(group);
+            if (group.PieceCount > 0)
+            {
+                groups.Add(group);
+                viaRowsOn[group.AnchorY] = viaRowsOn.GetValueOrDefault(group.AnchorY) + 1;
+            }
         }
 
         Separate(groups, dropLabels ? stackBottom + NoteGap : stackTop, LabelGap);
+
+        // Whether a band's own spec landed more than half a row outside it. Only beside the stack: below it (a
+        // dropped column) nothing is aligned with a band to begin with.
+        float halfRow = FaceHeight(specFont) * 0.5f + LabelPadY;
+        bool misaligned = !dropLabels && bands.Any(b => groups.Any(g =>
+            g.FilmLayer is null && g.Left == labelLeft && string.Equals(g.LayerName, b.Name, StringComparison.Ordinal) &&
+            Math.Abs(g.Top + g.Height * 0.5f - b.Rect.MidY) > b.Rect.Height * 0.5f + halfRow));
 
         foreach (var group in groups) group.Emit(labels, hits);
 
@@ -868,6 +913,7 @@ public sealed class StackupScene
             Height                = bottom + FooterPad,
             Bands                 = bands,
             Films                 = films,
+            Openings              = openings,
             Barrels               = barrels,
             Labels                = labels,
             Hits                  = ordered,
@@ -882,6 +928,8 @@ public sealed class StackupScene
         };
         foreach (var band in bands)     scene._rectByName.TryAdd(band.Name,   band.Rect);
         foreach (var barrel in barrels) scene._rectByName.TryAdd(barrel.Name, barrel.Rect);
+        scene._heightFactor = heightFactor;
+        scene._misaligned   = misaligned;
         return scene;
     }
 
@@ -955,6 +1003,10 @@ public sealed class StackupScene
         // always there.
         if (layer.PresentWithLayer is { Length: > 0 } plate)
             g.Add($"patterned: {plate}", StackupField.None, StackupLabelStyle.Accent, font, QuantityGap);
+        // PSV-2 — the inverse tie, said the same way. A both-ties entry is a validation error and the
+        // patterned film wins in every solver, so the picture says only that.
+        else if (layer.OpenWithLayer is { Length: > 0 } opening)
+            g.Add(OpenedText(opening), StackupField.None, StackupLabelStyle.Accent, font, QuantityGap);
 
         // PSV-1b — every band is drawn on top of the one beneath it, so a conformal cover already
         // starts at the metal's top here. What the picture cannot show is that the solvers model it so
@@ -968,6 +1020,29 @@ public sealed class StackupScene
 
     /// <summary>The tag a conformal cover's band carries (PSV-1b).</summary>
     public const string ConformalText = "conformal";
+
+    /// <summary>The tag an opened dielectric's band carries (PSV-2).</summary>
+    public static string OpenedText(string mask) => $"opened: {mask}";
+
+    /// <summary>Where an opened band's notch sits, as fractions of the band's width: right of centre,
+    /// clear of the default via lanes' left half.</summary>
+    internal const float OpeningLeftFraction = 0.70f, OpeningRightFraction = 0.82f;
+
+    /// <summary>PSV-2 — one notch through each opened dielectric's band, the full band high, so the picture
+    /// shows the slab is cut through. Empty on every technology with no opening, so its scene is unchanged.</summary>
+    private static List<StackupOpening> BuildOpenings(List<StackupLayer> bandLayers, List<StackupBand> bands)
+    {
+        var openings = new List<StackupOpening>();
+        for (int i = 0; i < bandLayers.Count; i++)
+        {
+            if (bandLayers[i] is not { Kind: StackupKind.Dielectric, OpenWithLayer: { Length: > 0 } mask } layer ||
+                layer.PresentWithLayer is { Length: > 0 }) continue;
+            var r = bands[i].Rect;
+            openings.Add(new StackupOpening(layer.Name, mask, new SKRect(
+                r.Left + r.Width * OpeningLeftFraction, r.Top, r.Left + r.Width * OpeningRightFraction, r.Bottom)));
+        }
+        return openings;
+    }
 
     /// <summary>
     /// The films' strips: each inside its conductor's band, flush with the face it sits on, and those on
@@ -1283,6 +1358,31 @@ public sealed class StackupScene
     }
 
     /// <summary>
+    /// Where a via's spec row in the label column wants to sit: a band its barrel crosses, choosing the one
+    /// fewest other via rows already sit on, then the tallest, then the one nearest the barrel's middle. The row
+    /// describes the whole barrel, so any band along it is a truthful place for it, and those are the ones with
+    /// room. The barrel's own middle put a through-silicon via's row among the thin layers above the substrate
+    /// it mostly crosses, where every band already has a row of its own.
+    /// </summary>
+    private static float ViaSpecAnchorY(List<StackupBand> bands, SKRect barrel, Dictionary<float, int> viaRowsOn)
+    {
+        float best = barrel.MidY, bestHeight = -1f, bestNear = float.PositiveInfinity;
+        int bestTaken = int.MaxValue;
+        foreach (var band in bands)
+        {
+            if (band.Rect.Bottom <= barrel.Top || band.Rect.Top >= barrel.Bottom) continue;
+            int   taken = viaRowsOn.GetValueOrDefault(band.Rect.MidY);
+            float near  = Math.Abs(band.Rect.MidY - barrel.MidY);
+            bool better = taken < bestTaken
+                       || (taken == bestTaken && (band.Rect.Height > bestHeight ||
+                                                  (band.Rect.Height == bestHeight && near < bestNear)));
+            if (!better) continue;
+            (best, bestHeight, bestNear, bestTaken) = (band.Rect.MidY, band.Rect.Height, near, taken);
+        }
+        return best;
+    }
+
+    /// <summary>
     /// The widest piece of text the scene can emit that it is not allowed to break.
     ///
     /// <para><b>It measures NAMES and formatted VALUES, and deliberately not the static words.</b>
@@ -1319,6 +1419,8 @@ public sealed class StackupScene
             if (layer.WallThicknessDbu is { } w) Token(ThicknessText(w, tech), specFont);
             if (layer.PresentWithLayer is { Length: > 0 } plate)
                 Token($"patterned: {plate}", specFont);
+            else if (layer.OpenWithLayer is { Length: > 0 } opening)
+                Token(OpenedText(opening), specFont);
             if (layer.Conformal == true) Token(ConformalText, specFont);
             if (layer.Films is { } films)
                 foreach (var film in films)

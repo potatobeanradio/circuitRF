@@ -29668,3 +29668,23 @@ plane and the bottom copper and none with the pour.
   the placement.
 - Gates: `tests/Ui.Tests/Plugins/PluginHostServicesTests.cs`. Snapshots: `--plugin-panel …/stub --plugin-action simulate`,
   `--plugin-state simulating`, `--plugins-menu tools/plugin-examples`.
+
+## Passivation openings: `StackupLayer.OpenWithLayer` (brief-psv-2, 2026-11-10)
+
+- **The opening is a subtraction, not an air solid.** `Em3dLayoutSolids` gathers the mask's merged shapes in `Prepare`
+  and cuts them in `BuildSolids`, where the slab's lateral outline is known: the board outline, the drawn-geometry box
+  (an instance), or — for an unbounded slab in a generated problem — the air box's own rectangle, which until then was an
+  `Em3dBox` and becomes an extruded rectangle with hole rings. `SlabLateralBound.Subtract` does it in Clipper2 on the
+  same nanometre grid `ClipToRect` uses, so both routes give the same ring to the bit (gate 3 compares them exactly).
+  Nothing fills the hole: what no solid claims is the mesher's background air, so the pad's metal and air are all
+  that occupy the opening.
+- **Validation resolves only a drawing layer.** A name that is a drawing layer is accepted even when a conductor shares
+  it (the fixture's `Metal`), because the 3D cut reads the drawing layer; a conductor-only name is the error about masks.
+  `PresentWithLayer` wins wherever both are set (an error), in 3D, planar and the stackup drawing.
+- **Planar**: the opening mask's shapes are read in the extractor's one layout walk, beside MIM-11's masks, and are no
+  longer counted as ignored artwork. The coverage note uses MIM-11's extent (with the openings in it) and is said only
+  for a dielectric in the medium.
+- Gates: `tests/Ui.Tests/Em/PassivationOpeningTests.cs`. Gate 5 is asserted as "a field with nothing drawn on its mask
+  builds the same solids as no field": every added path is behind the field, and no pinned pre-change 3D hash exists to
+  compare against. Snapshots: the stackup editor (`--ctech`, tab 1) and a `.c3d` from the layout (`--c3d --realistic`)
+  of a two-pad fixture.
