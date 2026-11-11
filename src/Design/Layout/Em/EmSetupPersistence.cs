@@ -113,6 +113,12 @@ public sealed class CemPlanarMesh
     /// <c>false</c> is ever written. <c>AdaptiveSampling</c>'s polarity, for the same reason.
     /// </summary>
     public bool? RooftopMerging { get; set; }
+
+    /// <summary>
+    /// PMS-3 — <see cref="PlanarMeshSettings.StackedRegions"/>: a via-joined region with metal on every joined level is
+    /// meshed as one conductor inside a rim. Omitted at its default (off), so a file written before it gains no byte.
+    /// </summary>
+    public bool? StackedRegions { get; set; }
 }
 
 /// <summary>The solve region, micrometres in layout coordinates. See <see cref="EmSolveRegion"/>.</summary>
@@ -1709,6 +1715,8 @@ public static class EmSetupPersistence
             // PM-3 — omitted at the PRODUCT default (on); an explicit off is the only value written.
             RooftopMerging = s.PlanarMesh.RooftopMerging == EmSetup.DefaultPlanarMesh.RooftopMerging
                                  ? null : s.PlanarMesh.RooftopMerging,
+            StackedRegions = s.PlanarMesh.StackedRegions == EmSetup.DefaultPlanarMesh.StackedRegions
+                                 ? null : s.PlanarMesh.StackedRegions,
         },
         Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
         Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
@@ -1825,7 +1833,8 @@ public static class EmSetupPersistence
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
                                      null,
-                                     pm.RooftopMerging ?? EmSetup.DefaultPlanarMesh.RooftopMerging)
+                                     pm.RooftopMerging ?? EmSetup.DefaultPlanarMesh.RooftopMerging,
+                                     pm.StackedRegions ?? EmSetup.DefaultPlanarMesh.StackedRegions)
             : EmSetup.DefaultPlanarMesh,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,

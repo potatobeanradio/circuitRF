@@ -937,6 +937,7 @@ public static class SurfaceMesher
         control?.BeginStage($"testing {ny:N0} row(s) against the metal", scanRows);
 
         var cellAtPerLayer = new int[problem.Layers.Count][];
+        var mergedAfterLayer = new int[problem.Layers.Count];
         var conformal = new ConformalCounts();
         for (int li = 0; li < problem.Layers.Count; li++)
         {
@@ -985,6 +986,43 @@ public static class SurfaceMesher
                 }
             }
             perLayerCells[li] = cells.Count - firstCell;
+            mergedAfterLayer[li] = conformal.Merged;
+        }
+
+        // ── PMS-3 — STACKED REGIONS: decided once every level's cells exist, applied before any rooftop ────────
+        //
+        // Off, the plan is still found so the budget can say what turning it on would save; nothing is removed and
+        // the cells and bases are exactly the setting-off mesh. On, the upper levels' interior cells are removed here,
+        // on the cell lists, and the kept level's cell names the stack — so R-msh-2's (LayerIndex, IY, IX) order and
+        // R-via-5's horizontal-then-vertical order hold unchanged on what remains.
+        control?.SetStageLabel("finding via-joined stacked regions");
+        var stacked = PlanarStackedRegions.Find(problem, gx, gy, cells, cellAtPerLayer, footprints,
+                                                s.StackedRegionMinCells, s.StackedRegionRimCells, ports);
+        bool stackApplied = s.StackedRegions && stacked is { Any: true };
+        if (stackApplied)
+        {
+            var oldToNew = new int[cells.Count];
+            var kept = new List<PlanarCell>(cells.Count - stacked!.DroppedCells);
+            Array.Clear(perLayerCells);
+            for (int ci = 0; ci < cells.Count; ci++)
+            {
+                if (stacked.DropCell[ci]) { oldToNew[ci] = -1; continue; }
+                oldToNew[ci] = kept.Count;
+                var c = cells[ci];
+                kept.Add(stacked.StackOfCell[ci] >= 0 && s.StackedRegionParallelSheet
+                    ? c with { Stack = stacked.StackOfCell[ci] } : c);
+                perLayerCells[c.LayerIndex]++;
+            }
+            foreach (var at in cellAtPerLayer)
+                for (int k = 0; k < at.Length; k++)
+                    if (at[k] >= 0) at[k] = oldToNew[at[k]];
+            cells.Clear();
+            cells.AddRange(kept);
+        }
+
+        for (int li = 0; li < problem.Layers.Count; li++)
+        {
+            var cellAt = cellAtPerLayer[li];
 
             // R-msh-6: N is the number of SHARED INTERNAL EDGES — one rooftop per adjacent pair.
             //
@@ -996,7 +1034,7 @@ public static class SurfaceMesher
             // unknown counted twice and a singular matrix. The `seen` set is a MEMBERSHIP test only —
             // it is never iterated, so R-msh-2's ordering contract is untouched — and it is allocated
             // only when a merge actually happened.
-            var seen = conformal.Merged > 0 ? new HashSet<(int, int, int)>() : null;
+            var seen = mergedAfterLayer[li] > 0 ? new HashSet<(int, int, int)>() : null;
             int firstBasis = bases.Count;
             for (int iy = 0; iy < ny; iy++)
                 for (int ix = 0; ix < nx; ix++)
@@ -1032,7 +1070,7 @@ public static class SurfaceMesher
         // attachment mode rather than a dangling filament — a via that lands where there is no metal
         // has nothing to conserve charge against, and is dropped and counted rather than solved.
         int firstVia = bases.Count;
-        int viaFootprintCells = 0, viaUnattached = 0;
+        int viaFootprintCells = 0, viaUnattached = 0, stackedVertical = 0;
         int groundUnknowns = 0;
         var rowMark = new int[Math.Max(nx, 0)];
         int rowStamp = 0;
@@ -1086,6 +1124,13 @@ public static class SurfaceMesher
                     if (rowMark[ix] != stamp) continue;
 
                     viaFootprintCells++;
+                    // PMS-3 — a stacked region's interior carries no vertical basis: its levels are one sheet there.
+                    if (stackApplied && stacked!.ChainOfVia[vi] >= 0 &&
+                        stacked.InteriorChainAt[iy * nx + ix] == stacked.ChainOfVia[vi])
+                    {
+                        stackedVertical++;
+                        continue;
+                    }
                     int b = upper[iy * nx + ix];
 
                     if (via.ToGround)
@@ -1130,7 +1175,26 @@ public static class SurfaceMesher
                           "extent, which is the union of the conductor artwork.");
         }
 
-        var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy) { Films = MeshFilms(problem) };
+        var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy)
+        {
+            Films  = MeshFilms(problem),
+            Stacks = stackApplied && s.StackedRegionParallelSheet ? stacked!.Stacks : [],
+        };
+        if (stackApplied)
+            notes.Add($"Stacked regions: {stacked!.Regions:N0} via-joined region(s), {stacked.AreaM2 * 1e12:N0} µm² in " +
+                      $"all, are meshed as one conductor inside a {s.StackedRegionRimCells}-cell rim. Not created: " +
+                      $"{stacked.DroppedCells:N0} cell(s) on the joined levels, {stacked.SavedRooftops:N0} rooftop(s) and " +
+                      $"{stackedVertical:N0} vertical basis function(s) — {stacked.SavedRooftops + stackedVertical:N0} " +
+                      "unknowns. The interior keeps the lowest joined level, which carries every joined level's sheet " +
+                      "in parallel" +
+                      (stacked.WhollyInsidePieces > 0
+                          ? $"; {stacked.WhollyInsidePieces:N0} piece(s) of metal on a dropped level lay wholly inside an " +
+                            "interior and went with it"
+                          : "") +
+                      (stacked.PortProtectedRegions > 0
+                          ? $"; {stacked.PortProtectedRegions:N0} region(s) under a port are meshed as before"
+                          : "") +
+                      ".");
         if (mesh.Films.Count > 0)
         {
             int filmCells = cells.Count(c => c.Film >= 0);
@@ -1607,6 +1671,12 @@ public static class SurfaceMesher
                                     rimFraction: rimFraction,
                                     edgeMesh: s.EdgeMesh && s.EdgeCells > 0,
                                     limit: limit, limitSource: limitSource, aimEstimate: aimEstimate);
+        // PMS-3 — off, a qualifying region is a remedy that binds: it removes those unknowns and nothing else does.
+        if (!s.StackedRegions && stacked is { Any: true })
+            budget += $" Stacked regions would save {stacked.SavedUnknowns:N0} of these unknowns " +
+                      $"({stacked.SavedRooftops:N0} rooftops, {stacked.SavedVertical:N0} vertical): " +
+                      $"{stacked.Regions:N0} via-joined region(s), {stacked.AreaM2 * 1e12:N0} µm², carry metal on " +
+                      "every joined level throughout.";
         notes.Insert(0, budget);
 
         string? refusal = null;
@@ -1694,6 +1764,8 @@ public static class SurfaceMesher
         {
             PastMachineLimit    = pastMachine,
             MatrixAlonePastLimit = pastWithNoCores,
+            StackedRegionCount  = stacked?.Regions ?? 0,
+            StackedUnknownsSaved = stackApplied ? stacked!.SavedRooftops + stackedVertical : stacked?.SavedUnknowns ?? 0,
             AcceleratedEstimate = aimEstimate,
             CoreBytes           = limit is null ? 0 : coreFootprint.Value.Bytes,
         };

@@ -252,6 +252,15 @@ public enum PlanarCurrentModel
 /// single-level mesh on the dense path only; an accelerated or multi-level run meshes as before and
 /// says so.</para>
 /// </param>
+/// <param name="StackedRegions">
+/// <b>PMS-3 — mesh a via-joined stacked region as one conductor with a rim.</b> Off by default (brief-pms-7 decides
+/// the default). Where one via group (or a chain of groups with one footprint) joins levels that carry metal on
+/// every cell of a region at least <see cref="StackedRegionMinCells"/> cells across, the region's interior keeps
+/// only the LOWEST level's cells, carrying every level's sheet in parallel, and emits no vertical basis; a rim
+/// <see cref="StackedRegionRimCells"/> cells wide keeps every level and today's vertical bases. Cells are removed
+/// before any rooftop is built, so R-msh-2 / R-via-5 hold on what remains. It changes the mesh, so it is hashed
+/// (when on) and does not survive as a resolution choice: it SURVIVES <see cref="Auto"/>.
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
@@ -263,8 +272,32 @@ public sealed record PlanarMeshSettings(
     PlanarCurrentModel CurrentModel = PlanarCurrentModel.None,
     int  DetailFloorDivisor = 200,
     long? MemoryLimitBytes  = null,
-    bool RooftopMerging     = false)
+    bool RooftopMerging     = false,
+    bool StackedRegions     = false)
 {
+    /// <summary>
+    /// <b>PMS-3 — how many cells across, in BOTH axes, a stacked region must be before it is merged.</b> An ordinary
+    /// post is a few cells and never qualifies. Engine-only: no <c>.cem</c> key.
+    /// </summary>
+    public int StackedRegionMinCells { get; init; } = DefaultStackedRegionMinCells;
+
+    /// <summary><b>PMS-3 — the rim, in cells</b>, inside a stacked region's boundary that keeps every level and its
+    /// vertical bases. Engine-only: no <c>.cem</c> key.</summary>
+    public int StackedRegionRimCells { get; init; } = DefaultStackedRegionRimCells;
+
+    /// <summary>
+    /// <b>PMS-3 — the interior carries its stack's sheets in parallel (the default), or only the kept level's own.</b>
+    /// False is the oracle R-pms3-3 measures the parallel sheet against; it is kept reachable for that alone, on
+    /// <see cref="PlanarFillSettings.PerfectConductor"/>'s pattern. Engine-only: no <c>.cem</c> key.
+    /// </summary>
+    public bool StackedRegionParallelSheet { get; init; } = true;
+
+    /// <summary>PMS-3 — <see cref="StackedRegionMinCells"/>' default. Measured: see <c>RESOLVED.md</c> §PMS-3.</summary>
+    public const int DefaultStackedRegionMinCells = 18;
+
+    /// <summary>PMS-3 — <see cref="StackedRegionRimCells"/>' default.</summary>
+    public const int DefaultStackedRegionRimCells = 1;
+
     /// <summary>
     /// <b>CAP-1 — whose number <see cref="MemoryLimitBytes"/> is</b>: the machine-wide limit (the default)
     /// or the machine's physical memory. The engine never reads the machine; this changes only the
@@ -470,14 +503,22 @@ public sealed record PlanarMeshSettings(
                                  CurrentModel: CurrentModel,
                                  DetailFloorDivisor: DetailFloorDivisor,
                                  MemoryLimitBytes: MemoryLimitBytes,
-                                 RooftopMerging: RooftopMerging)
-          { MemoryLimitSource = MemoryLimitSource }
+                                 RooftopMerging: RooftopMerging,
+                                 StackedRegions: StackedRegions)
+          {
+              MemoryLimitSource     = MemoryLimitSource,
+              StackedRegionMinCells = StackedRegionMinCells,
+              StackedRegionRimCells = StackedRegionRimCells,
+              StackedRegionParallelSheet = StackedRegionParallelSheet,
+          }
         : this with
         {
             CellsPerWavelength      = Math.Max(2, CellsPerWavelength),
             EdgeCells               = Math.Max(0, EdgeCells),
             MinCellsAcrossConductor = Math.Max(1, MinCellsAcrossConductor),
             DetailFloorDivisor      = Math.Max(0, DetailFloorDivisor),
+            StackedRegionMinCells   = Math.Max(3, StackedRegionMinCells),
+            StackedRegionRimCells   = Math.Max(1, StackedRegionRimCells),
         };
 }
 

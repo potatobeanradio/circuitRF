@@ -190,6 +190,16 @@ public sealed record PlanarMeshReport(
     public bool PastMachineLimit { get; init; }
 
     /// <summary>
+    /// <b>PMS-3 — the via-joined stacked regions this mesh qualifies</b>, whether or not
+    /// <see cref="PlanarMeshSettings.StackedRegions"/> merged them (<see cref="PlanarMesh.Stacks"/> is non-empty only
+    /// when it did).
+    /// </summary>
+    public int StackedRegionCount { get; init; }
+
+    /// <summary>PMS-3 — the unknowns merging those regions removes (removed, when the setting is on).</summary>
+    public int StackedUnknownsSaved { get; init; }
+
+    /// <summary>
     /// <b>PMS-1 — the dense matrix ALONE is past the memory limit</b>: judged with cores of zero bytes, so no count of
     /// this mesh's cores and no pricing of its calibration standards can bring the run back under the limit. The
     /// verdict is decided, and the steps that would only refine the figure quoted beside it are skipped

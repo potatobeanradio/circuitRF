@@ -27,7 +27,7 @@ public sealed class ViaBasisTests
     /// through the spacer. Both levels are plain rectangles, so the mesh is exact and every count
     /// below is checkable by hand.
     /// </summary>
-    private static PlanarProblem TwoLevelWithVia(double fHz = 10e9, bool withVia = true,
+    internal static PlanarProblem TwoLevelWithVia(double fHz = 10e9, bool withVia = true,
                                                  bool viaOffMetal = false)
     {
         var stack = LayerStacks.MmicTwoLevel;

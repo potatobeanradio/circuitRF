@@ -9126,3 +9126,19 @@ region at a further 1.34× only, and so decided: briefs 4–6 GO, brief 3 NO-GO 
 that would pass it flagged for the owner). Neither, nor both, makes a whole 1.4 mm chip solvable on 16 GB; about
 0.5 mm of chip fits with the local grid. Tables, the line attribution and the accuracy references:
 `RESOLVED.md` §PMS-2.
+
+---
+
+## PMS-3 — a via-joined stacked-metal region is one conductor (2026-11-11)
+
+Built on the owner's decision against PMS-2's NO-GO (the MIM-option figure). `PlanarMeshSettings.StackedRegions`, off by
+default: where a via group, or a chain of groups with one footprint, joins levels that carry metal on every cell of a
+region at least 18 cells across, the interior keeps only the lowest level, carrying every joined level's sheet in
+parallel through a new sheet class on EM-TFR's path, and emits no vertical basis; a one-cell rim is meshed as before.
+The mesher's per-level loop was split so every level's cells exist before any rooftop is built. Three things moved from
+the brief. The kept level is the LOWEST, not the top: keeping the top was 18× further from the full solve on A1 and would
+divide a MIM window's capacitance by about fifteen. Any position another via also covers is left whole, after a backside
+via's ground attachment was found to vanish with the level it landed on. And the DC gate is not met at the brief's
+one-cell rim (+2.6–3.0 % on a 63 mΩ path, 1.7e-5 in |ΔS|), which widening the rim closes. Fixture S: 941,867 → 524,066
+unknowns; with MIM capacitors 1,587,760 → 655,539. A1 stacked against full: 3.9e-5 / 1.9e-4 / 3.7e-4 at 1 / 5 / 10 GHz;
+the refined full reference the brief's tolerance needs was priced at 28.7 GB and not run. `RESOLVED.md` §PMS-3.

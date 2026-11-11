@@ -54,6 +54,13 @@ public sealed record PlanarCell(
     /// </summary>
     public int Film { get; init; } = -1;
 
+    /// <summary>
+    /// <b>PMS-3 — which stack of <see cref="PlanarMesh.Stacks"/> this cell stands for, or −1.</b> Set only on the
+    /// interior of a via-joined stacked region, where the stack's other levels were not meshed: the cell carries
+    /// their sheets in parallel with its own. Never set together with <see cref="Film"/>.
+    /// </summary>
+    public int Stack { get; init; } = -1;
+
     /// <summary>The GRID rectangle's width — the quadrature's own frame and the λ_g cap's subject.
     /// <b>Not</b> the metal's extent when <see cref="Region"/> is set.</summary>
     public double Width   => XMax - XMin;
@@ -164,18 +171,30 @@ public sealed record PlanarMesh(
     public IReadOnlyList<PlanarMeshFilm> Films { get; init; } = [];
 
     /// <summary>
+    /// <b>PMS-3 — the stacked regions' level sets this mesh's cells can name.</b> Empty unless
+    /// <see cref="PlanarMeshSettings.StackedRegions"/> merged something, on which every table is today's.
+    /// </summary>
+    public IReadOnlyList<PlanarMeshStack> Stacks { get; init; } = [];
+
+    /// <summary>
     /// <b>EM-TFR — the entry of a sheet table this cell reads its Z_s from.</b> The level's metal is
     /// the level's own index, so a mesh with no film has exactly today's table; film <c>k</c> follows
     /// the levels at <c>LayerNames.Count + k</c>.
     /// </summary>
     public int SheetClassOf(PlanarCell cell)
-        => cell.Film < 0 ? cell.LayerIndex : Math.Max(LayerNames.Count, 1) + cell.Film;
+        => cell.Film >= 0 ? Math.Max(LayerNames.Count, 1) + cell.Film
+         : cell.Stack >= 0 ? StackClassOf(cell.Stack)
+         : cell.LayerIndex;
 
-    /// <summary>The number of sheet classes: every level's metal, then every film.</summary>
-    public int SheetClassCount => Math.Max(LayerNames.Count, 1) + Films.Count;
+    /// <summary>The number of sheet classes: every level's metal, then every film, then every stack (PMS-3).</summary>
+    public int SheetClassCount => Math.Max(LayerNames.Count, 1) + Films.Count + Stacks.Count;
 
-    /// <summary>True when a sheet-class index names a film rather than a level's metal.</summary>
-    public bool IsFilmClass(int sheetClass) => sheetClass >= Math.Max(LayerNames.Count, 1);
+    /// <summary>True when a sheet-class index names a film rather than a level's metal or a stack.</summary>
+    public bool IsFilmClass(int sheetClass)
+        => sheetClass >= Math.Max(LayerNames.Count, 1) && sheetClass < Math.Max(LayerNames.Count, 1) + Films.Count;
+
+    /// <summary>PMS-3 — the sheet-class index of stack <paramref name="stack"/>: after every level and every film.</summary>
+    public int StackClassOf(int stack) => Math.Max(LayerNames.Count, 1) + Films.Count + stack;
 
     /// <summary>The sheet resistance of a cell's own material, or null when it is the level's metal.</summary>
     public double? FilmSheetResistanceOf(PlanarCell cell)
@@ -192,3 +211,10 @@ public sealed record PlanarMesh(
 /// loss model at all still owes the film its term: a film is a circuit element, not a loss correction.
 /// </summary>
 public sealed record PlanarMeshFilm(int LayerIndex, string Name, double SheetResistanceOhmPerSq);
+
+/// <summary>
+/// <b>PMS-3 — one stacked region's level set as the mesh carries it:</b> the via-joined levels
+/// <see cref="LowerLayerIndex"/> … <see cref="UpperLayerIndex"/>, of which only <see cref="KeptLayerIndex"/> is meshed in
+/// the region's interior. A cell naming it carries every one of those levels' sheets in parallel.
+/// </summary>
+public sealed record PlanarMeshStack(int LowerLayerIndex, int UpperLayerIndex, int KeptLayerIndex);

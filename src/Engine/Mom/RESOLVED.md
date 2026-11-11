@@ -13760,3 +13760,103 @@ the kernel's own sequence and asserts the recorded unknown counts.
 
 Reciprocal to the file's printed digits; no passivity note on either run. Port 3's line ends on the backside via,
 hence abs(S33) near 1.
+
+## PMS-3 — a via-joined stacked-metal region is one conductor (2026-11-11)
+
+Built on the owner's decision against PMS-2's NO-GO, on the MIM-option figure §PMS-2 §4 flagged (1.58–1.71× on top of a
+local grid). Behind `PlanarMeshSettings.StackedRegions`, default off (brief 7 decides the default); `.cem` key
+`StackedRegions`, omitted at off; `EmSnpProvenance.MeshHash` appends `|stacked=True` only when on. Measured on the
+synthetic chip family with a scratch harness, in Release; the harness is not committed.
+
+### 1. What it does
+
+`PlanarStackedRegions.Find` runs in `SurfaceMesher.Mesh` once every level's cells exist. To make that possible the
+per-level loop was split in two: every level's cells first, then every level's rooftops. Cells are compacted before any
+rooftop is built, so R-msh-2's (LayerIndex, IY, IX) order and R-via-5's horizontal-then-vertical order hold on what
+remains.
+
+- **Chains.** Non-ground via groups with one footprint whose gaps run consecutively are one stack, as
+  `PlanarExtractor.AddSpan` builds a post through MIM Metal.
+- **Candidates.** A position qualifies when its chain's footprint covers it, every level of the chain carries a whole
+  (uncut, non-film) cell there, and no level above the chain carries metal there. **A position any other via group also
+  covers — another chain, or a backside via — is left exactly as today.** Without that rule a backside via inside fixture
+  S's region lost its meshed foot when the region kept a different level, and its ground attachment vanished with
+  nothing failing but a count (2,510 attachments; the "off predicts on" assertion in `Pms3StackedRegionTests` caught it).
+- **Regions.** 4-connected components at least `StackedRegionMinCells` across in both axes. A component within two cells
+  of a port's location is left whole (a port resolves on its own level's cells and an internal port cuts a whole
+  gridline). The interior is what survives `StackedRegionRimCells` passes of 8-neighbour erosion, so it never shares an
+  edge or a corner with anything outside.
+- **Interior.** Only the LOWEST joined level's cells are kept; each carries `PlanarCell.Stack`, a sheet class after the
+  levels and films whose Z_s is the joined levels' sheets in parallel (`PlanarConductorLoss.SheetTable`; a perfect level
+  makes the stack perfect). The other levels' cells and every vertical basis of the chain are not created. The DC
+  network reads the same parallel sheet (`PlanarDcSolve.CellSheetResistance`).
+- **Rim.** Every level and today's vertical bases.
+- **Notes.** On: one note with the region count, the area and the cells, rooftops and vertical bases not created. Off,
+  with a region that qualifies: the budget note ends with the unknowns turning it on would save (a remedy that binds).
+- `PlanarMeshReport.StackedRegionCount` / `StackedUnknownsSaved`; `PlanarMeshSettings.StackedRegionParallelSheet`
+  (default true) is the R-pms3-3 oracle and has no `.cem` key.
+
+### 2. Which level is kept — the LOWEST, not the top the brief named
+
+The kept sheet is where the region's charge is put. Three rules were built and measured on A1 (reference settings,
+de-embedded, 1/5/10 GHz, against `testdata/pms2/A1.s3p`):
+
+| Kept level | max\|ΔS\| 1 GHz | 5 GHz | 10 GHz | DC R12 vs full (across 2 / 4) |
+|---|---|---|---|---|
+| lowest (Metal1) — shipped | 3.9e-5 | 1.9e-4 | 3.7e-4 | +2.63 % / +3.0 % |
+| the level outside metal arrives on (Metal2 here; ties to the top, i.e. the brief's rule on A1) | 6.7e-4 | 3.4e-3 | 6.9e-3 | +0.41 % / +0.11 % |
+
+Keeping the top is 18× further from the full solve at RF: the region is a 120 µm plate 100 µm over the ground plane and
+its charge sits on its lower face, so lifting the sheet 3 µm moves S11/S22. For a MIM Via window the top would be worse
+than wrong: MIM Metal joined to Metal2 over the Metal1 bottom plate 0.2 µm below — keeping Metal2 moves the capacitor's
+plate to 3 µm and divides its capacitance by about fifteen. The DC advantage of the arriving level is real but small in
+the units the run publishes (next section). Because the lowest is always kept, a position with metal on a level ABOVE
+the chain is not a candidate: that metal would otherwise see the kept sheet one stack lower.
+
+### 3. Gates
+
+1. **Off is bit-identical.** Cells and bases hashed (every coordinate round-trip formatted) against the mesher before the
+   change, from a worktree of the parent commit: A1, A2, A1 at 2 across, S 0.6 mm with and without MIM, S and L — all
+   identical. `Off_MeshesExactlyAsBefore` pins A1 and A2. 260 tests across the existing mesh, conformal, via, film,
+   sheet-impedance and DC classes pass unchanged.
+2. **Accuracy on A1.** Stacked against full (the committed reference): **3.9e-5 / 1.9e-4 / 3.7e-4** at 1 / 5 / 10 GHz,
+   under the 1e-2 bound. **The self-calibrated half could not be run on this machine**: cells/λ × 1.5 leaves A1's mesh
+   identical (the block is geometry-bound, N = 11,655 at 20 and 30 cells/λ), and Min cells across 2 → 3 takes the full
+   solve to 23,912 unknowns, priced at 28.7 GB per point (12.8 GB of it the six calibration standards) on a 16 GB
+   machine. So the refinement difference the brief's tolerance is defined by is not measured. The stacked solve took
+   623 s against the reference's 1,617 s (N 9,382 against 11,655).
+3. **DC.** `PlanarDcSolve` on A1: port 3 to ground (no region on its path) identical; **port 1 to port 2 +2.63 % at 2
+   across, +3.0 % at 4 — the brief's 1 % is NOT met.** Current reaching the region on Metal2 must drop to Metal1 inside
+   the one-cell rim, where the full mesh lets 60 % of it stay on Metal2. With near-perfect via metal (σ × 1000) the gap
+   halves (+1.43 % / +1.04 %): about half is that transfer, half is the kept level's sheet alone across the rim/interior
+   boundary. It closes with rim width — +1.63 / +1.19 / +0.68 % at rims 2 / 3 / 5 (across 2), +1.63 / +1.31 / +0.90 % at 4
+   — and not with mesh density. In S it is **1.7e-5 at 0 Hz** (a 1.7 mΩ error on a 63 mΩ path against 50 Ω). Giving
+   the kept level's rim cells the parallel sheet too was measured and rejected: +0.37 % at 2 across, +1.38 % at 4, and
+   overshooting to −1 % to −3 % at wider rims (the ring then counts the upper sheet twice).
+   `AtDc_TheResistancesAgree_ToTheMeasuredRimError` holds the measured state, not the brief's figure.
+   `StackedRegionRimCells = 5` meets 1 % on A1 at both meshes, and costs savings on small regions (a MIM window is
+   20–50 cells across). **The owner accepted the one-cell rim's ~3 % DC error (2026-11-11); the rim stays at 1.**
+4. **The saving, on S.** 941,867 → **524,066** (1.80×) against brief 2's estimate of 515,450; the difference is the
+   backside vias inside the region, now left as holes with their own rims (§1). The test asserts the count fell by more
+   than the cells removed, and that the off mesh's "would save" figure equals the real difference. Others: S 0.6 mm
+   236,166 → 134,191 (1.76×); with MIM 402,520 → 175,593 (2.29×); S 1.4 mm with MIM 1,587,760 → 655,539 (2.42×); L
+   1,748,989 → 1,043,080 (1.68×); A1 22,005 → 15,211.
+5. **No merge on a post.** L9c's two-level via, the MMIC coil's posts and A2 mesh identically with it on.
+
+### 4. `StackedRegionMinCells` = 18 is a narrow window, and a cell count is the wrong unit
+
+Posts reach 5 cells across on S at 0.6 mm and **15 on L at 1.4 mm** (posts land in fan-dense parts of a fine grid);
+A1's 120 µm region at the gate's mesh (2 across) is only **~23**. 18 sits between. A cell count measures the mesh, not
+the artwork: on a coarser mesh a real region falls under it, on a finer one a post can rise over it. Brief 2's
+estimator used 30 µm; a physical floor (or both) is the obvious change if brief 7 makes this the default.
+
+### 5. R-pms3-3 — the parallel sheet, and the error of not carrying it
+
+A per-cell sheet class on the EM-TFR path rather than a film-like region, because the parallel Z_s is frequency-dependent
+(each level's own `PlanarSurfaceImpedance.Sheet`) and a film's is a constant: a new class is one table entry per stack,
+computed from the entries already in the table, and every consumer (the Gram, the merged fill, the conductor power, the
+DC network) already reads cells through `SheetClassOf`. Not carrying it (Metal1's own Z_s on the interior):
+**7.4e-5 / 2.1e-4 / 4.1e-4** against full at 1 / 5 / 10 GHz, and 5.9e-5 / 5.1e-5 / 6.2e-5 against the parallel sheet,
+mostly |S21| reading about 6e-5 low (the thinner metal's extra loss over the whole plate). Inside gate 2's bound, so the
+simpler path could have shipped; the parallel sheet ships because it is the physics and costs nothing per frequency.
+

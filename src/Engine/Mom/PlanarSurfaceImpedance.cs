@@ -377,6 +377,21 @@ public sealed class PlanarConductorLoss
                     "wrong conductor.");
             t[i] = SheetAt(resolved, omegaRadS);
         }
+        // PMS-3 — a stacked region's interior is one meshed sheet standing for every via-joined level of the stack,
+        // shorted together over the whole interior, so it carries their sheets in PARALLEL. A perfect level in the
+        // stack makes the stack perfect.
+        for (int k = 0; k < mesh.Stacks.Count; k++)
+        {
+            var st = mesh.Stacks[k];
+            Complex admittance = Complex.Zero;
+            bool perfect = false;
+            for (int l = st.LowerLayerIndex; l <= st.UpperLayerIndex && !perfect; l++)
+            {
+                if (t[l] == Complex.Zero) perfect = true;
+                else admittance += 1.0 / t[l];
+            }
+            t[mesh.StackClassOf(k)] = perfect ? Complex.Zero : 1.0 / admittance;
+        }
         return t;
     }
 

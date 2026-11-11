@@ -455,7 +455,16 @@ public static class PlanarDcSolve
             => ViaSigmaFor(problem, b, cell);
 
         private static double CellSheetResistance(PlanarProblem problem, PlanarMesh mesh, PlanarCell cell, ref bool anyPec)
-            => mesh.FilmSheetResistanceOf(cell) ?? SheetResistance(problem, cell.LayerIndex, ref anyPec);
+        {
+            if (mesh.FilmSheetResistanceOf(cell) is { } film) return film;
+            if (cell.Stack < 0) return SheetResistance(problem, cell.LayerIndex, ref anyPec);
+            // PMS-3 — a stacked region's interior cell conducts through every level of its stack in parallel.
+            var st = mesh.Stacks[cell.Stack];
+            double g = 0;
+            for (int l = st.LowerLayerIndex; l <= st.UpperLayerIndex; l++)
+                g += 1.0 / SheetResistance(problem, l, ref anyPec);
+            return 1.0 / g;
+        }
 
         private static double SheetResistance(PlanarProblem problem, int layerIndex, ref bool anyPec)
         {
