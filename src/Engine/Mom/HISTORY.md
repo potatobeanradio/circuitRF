@@ -9110,3 +9110,19 @@ convention for wall-clock-heavy work — and the test
 (`MimResonatorCompositionTests.MIM14_TheSpiralAndTheCapacitorArePREFLIGHTED_…`) carries the half that
 moved and costs a second: the real `.cem` through the real `EmRunService.Preflight`, not refused,
 with the plate level in the run, the film in the medium and the via built as a chain.
+
+---
+
+## PMS-2 — measuring what drives N on an MMIC (2026-11-11)
+
+Brief 2 of the PMS series (discussion 57's 1.4 mm GaAs chip) built no product behaviour. It added an instrument —
+`PlanarGridDiagnostics`, which attributes every gridline of the shared tensor grid to the feature, fan or bulk rule
+that asked for it — and, in test support, an offline estimator of a locally refined grid whose cells are blocks of
+today's (`LocalGridEstimate`), calibrated by reproducing today's mesh exactly when every block is forced elementary.
+On the synthetic chip family it found the tensor grid at chip scale to be the union of the features' own lines (on
+S at 1.4 mm, 486 of 807 lines per axis are hard edges and 282 are fan; 83 % of line-on-metal crossings are far from
+the feature that asked for the line), estimated a local grid at 6.6× fewer unknowns on that chip and a stacked-metal
+region at a further 1.34× only, and so decided: briefs 4–6 GO, brief 3 NO-GO by its rule (with the MIM-option result
+that would pass it flagged for the owner). Neither, nor both, makes a whole 1.4 mm chip solvable on 16 GB; about
+0.5 mm of chip fits with the local grid. Tables, the line attribution and the accuracy references:
+`RESOLVED.md` §PMS-2.

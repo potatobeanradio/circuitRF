@@ -21,13 +21,33 @@ public sealed record SyntheticMmicChipSpec(
     int    BacksideVias     = 20,
     double RegionUm         = 625,
     bool   OctagonalBackside = true,
-    int    Seed             = 7)
+    int    Seed             = 7,
+    bool   MimCapacitors    = false,
+    bool   DiagonalTraces   = false)
 {
     /// <summary>brief-pms-0's fixture S.</summary>
     public static SyntheticMmicChipSpec S => new();
 
     /// <summary>brief-pms-0's fixture L: denser posts and traces.</summary>
     public static SyntheticMmicChipSpec L => new(TracesPerLevel: 30, SmallVias: 150);
+
+    /// <summary>PMS-2 R-pms2-1 — density S or L at another chip size. Feature counts scale with area and the region's
+    /// side with the size, so every member has the density of the 1.4 mm preset; at 1,400 µm it IS that preset.</summary>
+    public static SyntheticMmicChipSpec Family(char density, double sizeUm)
+    {
+        var at = density switch { 'S' => S, 'L' => L, _ => throw new ArgumentOutOfRangeException(nameof(density)) };
+        if (sizeUm == at.SizeUm) return at;
+        double area = sizeUm * sizeUm / (at.SizeUm * at.SizeUm);
+        int Scale(int n) => Math.Max(1, (int)Math.Round(n * area));
+        return at with
+        {
+            SizeUm = sizeUm,
+            TracesPerLevel = Scale(at.TracesPerLevel),
+            SmallVias = Scale(at.SmallVias),
+            BacksideVias = Scale(at.BacksideVias),
+            RegionUm = at.RegionUm * sizeUm / at.SizeUm,
+        };
+    }
 }
 
 /// <summary>A generated chip: rings in µm, by role, and the three ports' drawn locations.</summary>
@@ -41,6 +61,12 @@ public sealed class SyntheticMmicChip
     /// <summary>Metal1–Metal2 posts, the large region included (last).</summary>
     public List<List<(double X, double Y)>> Posts { get; } = [];
     public List<List<(double X, double Y)>> Backside { get; } = [];
+    /// <summary>MIM capacitor top plates (the MIM Metal level), with the option on.</summary>
+    public List<List<(double X, double Y)>> MimMetal { get; } = [];
+    /// <summary>MIM Via windows joining a MIM plate to the Metal2 pad over it.</summary>
+    public List<List<(double X, double Y)>> MimVia { get; } = [];
+    /// <summary>Ports fed on Metal1 rather than Metal2 (the accuracy blocks' third port).</summary>
+    public HashSet<int> PortsOnMetal1 { get; } = [];
     /// <summary>Port number, location on its feed's drawn end (µm), and the side it is fed from.</summary>
     public List<(int Number, double X, double Y, PlanarPortSide Side)> PortSites { get; } = [];
 
@@ -76,7 +102,7 @@ public sealed class SyntheticMmicChip
         chip.PortSites.Add((3, x3 + 35, 0, PlanarPortSide.MinY));
 
         // The region: Metal2 over Metal1, joined by one via footprint the size of the overlap.
-        double rx = size / 2, ry = 100, r = spec.RegionUm;
+        double rx = size / 2, ry = size * 100 / 1400, r = spec.RegionUm;
         bool region = r > 0;
         if (region)
         {
@@ -102,6 +128,78 @@ public sealed class SyntheticMmicChip
             if (spec.OctagonalBackside) { chip.Metal1.Add(Octagon(x, y, 80)); chip.Backside.Add(Octagon(x, y, 60)); }
             else { chip.Metal1.Add(Rect(x - 40, y - 40, x + 40, y + 40)); chip.Backside.Add(Rect(x - 30, y - 30, x + 30, y + 30)); }
         }
+
+        // PMS-2 options, each on its own stream so the presets above are unchanged with them off.
+        if (spec.MimCapacitors)
+        {
+            // A MIM capacitor: a Metal1 bottom plate, the MIM Metal top plate 4 µm inside it, a Metal2 pad over the top
+            // plate, and a MIM Via window 4 µm inside the plate joining the two. Six per 1.4 mm chip, 40–100 µm plates.
+            var mr = new Random(spec.Seed + 101);
+            int caps = Math.Max(1, (int)Math.Round(6 * size * size / (1400.0 * 1400.0)));
+            for (int i = 0, tries = 0; i < caps && tries < 500; tries++)
+            {
+                double side = 40 + mr.Next(0, 7) * 10;
+                double x = mr.NextDouble() * (size - side - 120) + 60, y = mr.NextDouble() * (size - side - 120) + 60;
+                if (region && x + side > rx - 20 && x < rx + r + 20 && y + side > ry - 20 && y < ry + r + 20) continue;
+                chip.Metal1.Add(Rect(x - 4, y - 4, x + side + 4, y + side + 4));
+                chip.MimMetal.Add(Rect(x, y, x + side, y + side));
+                chip.Metal2.Add(Rect(x, y, x + side, y + side));
+                chip.MimVia.Add(Rect(x + 4, y + 4, x + side - 4, y + side - 4));
+                i++;
+            }
+        }
+        if (spec.DiagonalTraces)
+        {
+            // One 45° trace per level: a 15 µm strip, up to 300 µm long, staircased by the tensor grid.
+            var dr = new Random(spec.Seed + 202);
+            double len = Math.Min(300, 0.4 * size);
+            foreach (var into in new[] { chip.Metal1, chip.Metal2 })
+            {
+                double d = 15 / Math.Sqrt(2), l = len / Math.Sqrt(2);
+                double x, y;
+                int tries = 0;
+                do
+                {
+                    x = dr.NextDouble() * (size - len - 60) + 30; y = dr.NextDouble() * (size - len - 60) + 30;
+                }
+                // Kept off the region, where both levels are already metal and the trace would add nothing.
+                while (region && tries++ < 500 && x + l + d > rx && x < rx + r && y + l > ry && y - d < ry + r);
+                into.Add([(x, y), (x + d, y - d), (x + d + l, y - d + l), (x + l, y + l)]);
+            }
+        }
+        return chip;
+    }
+
+    /// <summary>
+    /// PMS-2 R-pms2-1 — the accuracy blocks. A 250 µm block on the same medium: a 20 µm Metal2 line across it
+    /// (ports 1 and 2), a 20 µm Metal1 line from the bottom edge (port 3) up to an 80 µm backside-via pad, two posts on
+    /// each line (6 µm cuts on 14 µm pads on both levels), and — <paramref name="regionVia"/>, A1 — a 120 µm region
+    /// where Metal2 overlaps Metal1 and is joined to it, on the Metal2 line. A2 is the same block without the region.
+    /// </summary>
+    public static SyntheticMmicChip AccuracyBlock(bool regionVia)
+    {
+        var chip = new SyntheticMmicChip(new SyntheticMmicChipSpec(
+            SizeUm: 250, TracesPerLevel: 1, SmallVias: 4, BacksideVias: 1, RegionUm: regionVia ? 120 : 0));
+        chip.Metal2.Add(Rect(0, 115, 250, 135));
+        chip.Metal1.Add(Rect(200, 0, 220, 200));
+        chip.Metal1.Add(Octagon(212, 212, 80));
+        chip.Backside.Add(Octagon(212, 212, 60));
+        foreach (var (x, y) in new[] { (30.0, 125.0), (230.0, 125.0), (210.0, 40.0), (210.0, 80.0) })
+        {
+            chip.Metal1.Add(Rect(x - 7, y - 7, x + 7, y + 7));
+            chip.Metal2.Add(Rect(x - 7, y - 7, x + 7, y + 7));
+            chip.Posts.Add(Rect(x - 3, y - 3, x + 3, y + 3));
+        }
+        if (regionVia)
+        {
+            chip.Metal1.Add(Rect(60, 60, 180, 180));
+            chip.Metal2.Add(Rect(60, 60, 180, 180));
+            chip.Posts.Add(Rect(60, 60, 180, 180));
+        }
+        chip.PortSites.Add((1, 0, 125, PlanarPortSide.MinX));
+        chip.PortSites.Add((2, 250, 125, PlanarPortSide.MaxX));
+        chip.PortSites.Add((3, 210, 0, PlanarPortSide.MinY));
+        chip.PortsOnMetal1.Add(3);
         return chip;
     }
 
@@ -110,9 +208,20 @@ public sealed class SyntheticMmicChip
         [new MediumLayer(100e-6, new EmMaterial(12.90, 0.0020)), new MediumLayer(3e-6, new EmMaterial(2.70, 0.0020))],
         Termination.Air);
 
+    /// <summary>PMS-2 — the three-level medium with MIM Metal ticked: 100 µm GaAs, the 0.2 µm εr 6.8 MIM dielectric
+    /// (Metal1 under it, MIM Metal on it), then 2.8 µm εr 2.7 up to Metal2.</summary>
+    public static LayerStack MimStack => new(Termination.Pec,
+        [new MediumLayer(100e-6, new EmMaterial(12.90, 0.0020)), new MediumLayer(0.2e-6, new EmMaterial(6.8, 0.001)),
+         new MediumLayer(2.8e-6, new EmMaterial(2.70, 0.0020))],
+        Termination.Air);
+
+    /// <summary>Metal2's level index in <see cref="ToProblem"/>.</summary>
+    public int Metal2Level => Spec.MimCapacitors ? 2 : 1;
+
     /// <summary>The chip as the planar kernel's input, at <paramref name="maxFrequencyHz"/>.</summary>
     public PlanarProblem ToProblem(double maxFrequencyHz = 10e9)
     {
+        if (Spec.MimCapacitors) return ToMimProblem(maxFrequencyHz);
         var stack = Stack;
         var vias = new List<PlanarVia>();
         if (Posts.Count > 0) vias.Add(new PlanarVia(0, 1, Posts.Select(Poly).ToList(), SigmaGold));
@@ -123,9 +232,36 @@ public sealed class SyntheticMmicChip
             GroundedSlab.GaAsStarter, maxFrequencyHz, null, stack, vias);
     }
 
-    /// <summary>The three edge ports, on Metal2 (level 1), 50 Ω.</summary>
+    /// <summary>
+    /// The MIM option as <c>PlanarExtractor</c> resolves it: Metal1, MIM Metal and Metal2 as three levels. A post spans
+    /// MIM Metal, so it becomes a chain — its footprint put on MIM Metal and one via per gap — exactly as
+    /// <c>PlanarExtractor</c>'s <c>AddSpan</c> builds it; the MIM Via windows join MIM Metal to Metal2.
+    /// </summary>
+    private PlanarProblem ToMimProblem(double maxFrequencyHz)
+    {
+        var stack = MimStack;
+        var posts = Posts.Select(Poly).ToList();
+        var mim = MimMetal.Select(Poly).ToList();
+        mim.AddRange(posts);
+        var vias = new List<PlanarVia>();
+        if (posts.Count > 0)
+        {
+            vias.Add(new PlanarVia(0, 1, posts, SigmaGold));
+            vias.Add(new PlanarVia(1, 2, posts, SigmaGold));
+        }
+        if (MimVia.Count > 0) vias.Add(new PlanarVia(1, 2, MimVia.Select(Poly).ToList(), SigmaGold));
+        if (Backside.Count > 0) vias.Add(new PlanarVia(PlanarVia.GroundTerminal, 0, Backside.Select(Poly).ToList(), SigmaGold));
+        return new PlanarProblem(
+            [new PlanarConductorLayer("M1", Metal1.Select(Poly).ToList(), SigmaGold, 2e-6, stack.InterfaceZ[1]),
+             new PlanarConductorLayer("MIM", mim, SigmaGold, 0.25e-6, stack.InterfaceZ[2]),
+             new PlanarConductorLayer("M2", Metal2.Select(Poly).ToList(), SigmaGold, 3e-6, stack.TopZ)],
+            GroundedSlab.GaAsStarter, maxFrequencyHz, null, stack, vias);
+    }
+
+    /// <summary>The edge ports, 50 Ω: on Metal2 unless listed in <see cref="PortsOnMetal1"/>.</summary>
     public List<PlanarPort> Ports()
-        => PortSites.Select(p => new PlanarPort(p.Number, new EmPoint(p.X * 1e-6, p.Y * 1e-6), p.Side, 50, 1)).ToList();
+        => PortSites.Select(p => new PlanarPort(p.Number, new EmPoint(p.X * 1e-6, p.Y * 1e-6), p.Side, 50,
+                                                PortsOnMetal1.Contains(p.Number) ? 0 : Metal2Level)).ToList();
 
     private static PlanarPolygon Poly(List<(double X, double Y)> ring)
         => new(ring.Select(v => new EmPoint(v.X * 1e-6, v.Y * 1e-6)).ToList());

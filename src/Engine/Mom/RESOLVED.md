@@ -13621,3 +13621,142 @@ estimate from the count's own rows, which over-states rather than under-states (
 `circuitrf em chip.cem --dry-run` on fixture S drawn on the shipped MMIC technology (573,744 unknowns after the
 extractor merges overlapping artwork): **0.44 s, 169 MB peak**. It reports the past-the-machine warning, the
 not-priced note and every other finding.
+
+## PMS-2 — what drives N on an MMIC, and what to build (2026-11-11)
+
+Measured on the synthetic chip family (`tests/Engine.Tests/Mom/Support/SyntheticMmicChip.cs`) with a scratch harness, in
+Release, default mesh settings at 10 GHz, meshed as the preflight meshes (`PlanarGroundPath.Extend`, then
+`SurfaceMesher.Mesh` with `LocalConductorWidth` and the ports). The instruments are committed; the harness is not.
+
+### 1. The instruments
+
+- **`PlanarGridDiagnostics`** (R-pms2-2), passed to `SurfaceMesher.Mesh` as `gridDiagnostics`. It records every final
+  gridline's source, every hard-line request with the stretch of the line its feature occupies, and every fan
+  attractor with the stretch of its edge (`EdgeAttractor.AlongLo/AlongHi`, read by nothing else). A line several
+  things asked for takes the first of: port feed, conductor, film, via footprint, port span; a line no hard edge asked
+  for is EdgeFan where the fan's field is finer than the bulk cap there, else Bulk (λ cap or MinCellsAcross, whichever
+  binds the axis). The mesh is identical with it attached, and the attribution sums to the line count on every fixture
+  (`Pms2MeshDriverTests`).
+- **`LocalGridEstimate`** (test support; R-pms2-3/4). A local cell is a BLOCK of today's elementary cells, as
+  brief-pms-4 D-pms4-1 defines it, so it works over today's line arrays in index space. One partition for every level.
+  It starts from blocks at the λ cap and splits a block, per axis, while a hard line inside it is needed there (its
+  feature's own stretch widened by `Reach` cells), or while the size field asks for a finer pitch than the block has:
+  the λ cap, MinCellsAcrossConductor on the metal run through the block (floored at the detail floor), and the fan of
+  every attractor whose edge comes within `Reach` cells. Port feed polygons stay elementary. Then a 2:1 balance
+  between blocks sharing a metal level (no face meets more than two). An oblique boundary is left staircased at the
+  local pitch, its block taking the majority metal. Rooftops are one per adjacent block pair per level (one per fine
+  face segment across a step); vertical bases one per covered block with metal on both levels. The stacked-region
+  transform: a via-joined region of a non-ground via group whose blocks carry metal on both its levels and which is
+  at least 30 µm on each side keeps its upper level; its lower level and its vertical bases are dropped everywhere
+  but a one-block rim.
+- **Calibration (gate 1).** It measures metal and footprints from the polygons itself, never from the mesh. Forced
+  uniform (every block 1 × 1) it reproduces `SurfaceMesher.Mesh`'s cells, rooftops and vertical bases **exactly
+  (0.000 %) on all 16 fixtures of the family run**, the staircased 45° and three-level MIM ones included. Routine gate on A1, A2 and
+  S at 0.6 mm.
+- **The fixture family** (R-pms2-1): `SyntheticMmicChipSpec.Family('S'|'L', size)` keeps each preset's density —
+  counts scale with area, the region's side with the size — and at 1,400 µm it IS the preset (PMS-1's tests unchanged).
+  `MimCapacitors` adds six 40–100 µm MIM capacitors per 1.4 mm (Metal1 bottom plate, MIM Metal plate, Metal2 pad, MIM
+  Via window 4 µm inside) on a three-level stack, with every post chained through MIM Metal as `PlanarExtractor`'s
+  `AddSpan` builds it. `DiagonalTraces` adds one 15 µm 45° trace per level, kept off the region (where both levels are
+  metal already and the first draw at 1.0 mm added nothing). `AccuracyBlock` builds A1 and A2 (§5).
+
+### 2. Where the lines come from
+
+Per axis (x; y within a few lines). Remote: of every crossing of an interior line with a metal cell, the share more
+than k = 2 cells along the line from what asked for it (bulk lines never counted remote).
+
+| Fixture | Lines | Conductor | Port feed | Via footprint | Edge fan | Bulk | Remote at k = 2 / 4 / 8 | Detail floor |
+|---|---|---|---|---|---|---|---|---|
+| S 0.3 mm | 151 | 15 | 6 | 10 | 60 | 60 | 31 % | 6 µm, removes 0 lines |
+| S 0.6 mm | 423 | 55 | 6 | 38 | 206 | 118 | 58 / 58 / 56 % | 12 µm, removes 60 |
+| S 1.0 mm | 493 | 142 | 6 | 102 | 159 | 84 | 69 / 69 / 67 % | 20 µm, removes 464 |
+| S 1.4 mm | 807 | 280 | 6 | 200 | 282 | 39 | 83 / 82 / 81 % | 28 µm, removes 752 |
+| L 1.4 mm | 1,108 | 459 | 6 | 340 | 286 | 17 | 87 / 87 / 86 % | 28 µm, removes 917 |
+
+- **At chip scale the grid is the union of the features' own lines.** On S at 1.4 mm, 280 + 200 + 6 lines per axis
+  are hard edges and 282 are fan; only 39 are bulk. 765 of the 807 x-lines cross metal more than 2 cells from the
+  feature that asked for them, and 83 % of all line-on-metal crossings are of that kind. Widening the reach to 8 cells
+  changes that by 2 points: the lines are not needed near their neighbours, they are needed nowhere but at their
+  origin.
+- **The detail floor is already doing half the work, and it scales with the chip.** Its cap is 2 % of the artwork's
+  extent, so it is 6 µm at 0.3 mm and 28 µm at 1.4 mm. At 1.4 mm it suppresses 700 fans and 752 lines per axis; with
+  it off S is 3,137,263 unknowns. That is also why N does not scale with area across the family (S 0.6 mm meshes at a
+  3 µm pitch, S 1.4 mm at 7 µm).
+- The region via is what the tensor grid makes expensive, not what it is: inside it today's pitch is the chip's mean
+  line spacing (≈ 1.7 µm on S at 1.4 mm), not the 156 µm its own 625 µm width asks for.
+
+### 3. The table
+
+N, then one dense frequency point's resident memory (`PlanarSystem.ResidentBytes` on the estimated footprint). Local
+grid at reach k = 2. A1 and A2 here at default settings (the references in §5 are solved at 2 cells across).
+
+| Fixture | Today | Stacked | Local | Both | Today | Stacked | Local | Both |
+|---|---|---|---|---|---|---|---|---|
+| A1 | 22,005 | 15,211 | 13,387 | 10,349 | 4.2 GB | 2.1 GB | 1.6 GB | 1.0 GB |
+| A2 | 11,199 | 11,199 | 9,192 | 9,192 | 1.2 GB | 1.2 GB | 0.8 GB | 0.8 GB |
+| S 0.3 mm | 28,667 | 18,298 | 9,933 | 9,090 | 7.1 GB | 3.0 GB | 0.9 GB | 0.8 GB |
+| S 0.6 mm | 236,166 | 126,773 | 51,499 | 38,120 | 478 GB | 143 GB | 23 GB | 13 GB |
+| S 1.0 mm | 352,803 | 193,222 | 70,940 | 50,760 | 1,068 GB | 333 GB | 44 GB | 23 GB |
+| S 1.4 mm | 941,867 | 515,450 | 142,615 | 106,705 | 7,611 GB | 2,368 GB | 178 GB | 102 GB |
+| L 0.3 mm | 45,410 | 29,197 | 12,758 | 12,134 | 18 GB | 7.7 GB | 1.5 GB | 1.4 GB |
+| L 0.6 mm | 370,202 | 229,814 | 80,730 | 64,019 | 1,180 GB | 469 GB | 57 GB | 37 GB |
+| L 1.0 mm | 630,964 | 361,671 | 124,159 | 92,186 | 3,420 GB | 1,164 GB | 135 GB | 76 GB |
+| L 1.4 mm | 1,748,989 | 1,023,312 | 226,792 | 181,800 | 26,311 GB | 9,324 GB | 452 GB | 296 GB |
+| S 0.6 mm + MIM | 402,520 | 159,789 | 74,551 | 45,165 | 1,374 GB | 228 GB | 48 GB | 18 GB |
+| S 1.0 mm + MIM | 575,898 | 233,219 | 102,530 | 59,891 | 2,814 GB | 485 GB | 91 GB | 32 GB |
+| S 1.4 mm + MIM | 1,587,760 | 634,204 | 198,420 | 125,379 | 21,383 GB | 3,585 GB | 340 GB | 141 GB |
+| S 0.6 mm + 45° | 249,151 | 136,098 | 54,554 | 40,925 | 533 GB | 165 GB | 26 GB | 15 GB |
+| S 1.0 mm + 45° | 357,033 | 197,452 | 72,319 | 52,139 | 1,094 GB | 348 GB | 46 GB | 24 GB |
+| S 1.4 mm + 45° | 945,961 | 519,544 | 143,563 | 107,653 | 7,680 GB | 2,407 GB | 180 GB | 104 GB |
+
+Reach sensitivity on S at 1.4 mm: local 142,615 / 147,193 / 154,825 and both 106,705 / 109,159 / 113,114 at
+k = 2 / 4 / 8. Where the ~40,600-unknown dense ceiling on 16 GB is crossed (S, local; both): 0.40 mm 21,215; 19,345 —
+0.50 mm 35,347; 27,455 — 0.55 mm 40,043; 32,594 — 0.70 mm 54,932; 39,992 — 0.80 mm 52,738; 36,341. Not monotone in
+size, because counts are rounded and placed at random and the detail floor grows with the extent.
+
+### 4. The decision
+
+- **Local grid (briefs 4–6): GO.** It cuts fixture S at 1.4 mm 6.6× (6.4× at k = 4, 6.1× at k = 8), past the 5× rule.
+  It does NOT bring S at 1.0 mm under 40,000 (70,940).
+- **Stacked region (brief 3): NO-GO.** On top of the local grid it cuts fixture S 1.09× at 0.3 mm, 1.35× at 0.6 mm,
+  1.40× at 1.0 mm and 1.34× at 1.4 mm, under the 1.5× rule: the local grid already coarsens the region's interior to
+  its own 156 µm pitch, and what is left is the rim. Two things the owner may weigh against the rule: on the tensor
+  grid alone it is 1.83× on S at 1.4 mm, and with MIM capacitors on (three-level chains, so every MIM Via window is a
+  stacked region too) it is 1.65× at 0.6 mm, 1.71× at 1.0 mm and 1.58× at 1.4 mm on top of the local grid, which
+  passes. The discussion-57 chip had MIM windows.
+- **The risk, plainly: a whole 1.4 mm chip stays past the ceiling with both.** 106,705 unknowns, about 100 GB for one
+  dense frequency point, against ~40,600 on 16 GB; L is 181,800. What fits on 16 GB is about **0.5 mm of chip with the
+  local grid alone, and about 0.7–0.8 mm with both**. The local grid buys solvable SUB-BLOCKS of a medium MMIC, not
+  the whole chip. And at the ceiling a dense point is slow: the shipped estimate (∝ N³ from 24.5 s at N = 11,201)
+  puts N = 40,000 at about 19 minutes per frequency point.
+
+### 5. The accuracy references (gate 3)
+
+`testdata/pms2/A1.s3p` and `A2.s3p`, with a README giving the structure and every setting. Today's tensor-grid solve,
+dense and de-embedded at 1, 5 and 10 GHz, in Release, through `PlanarKernel.Solve`. Two settings differ from the
+engine defaults, and both are recorded beside the files:
+
+- **MinCellsAcrossConductor = 2.** At the default 4, A1 meshes at 22,005 unknowns before the solver's own feed
+  leads, which no dense run finishes in minutes.
+- **EdgePortReturn = Ground**, the product's default. The engine's series-gap port dropped the 1 GHz point on both
+  blocks as below its de-embedding floor (reliable above 2.62 GHz here); the grounded port keeps all three.
+
+The block is shorter than the 300 µm of feed a calibration standard replaces, so the solver grows a uniform lead on
+every port (127–300 µm) and peels it off again; the leads triple the meshed extent. **A1: 11,655 unknowns (1,188
+vertical), six standards of 2,287–4,887; 1,617 s. A2: 7,308 (328 vertical); 497 s. Peak resident 6.7 GB.** That is
+longer than the brief's "a few minutes", and it is set by the leads and the standards solved at every point rather
+than by the DUT; briefs 3–6 should budget a gate against these references as a ~30-minute Release run, not a routine
+test. `Pms2MeshDriverTests.TheAccuracyReferences_DescribeTheFixtures` holds the fixture: it meshes both blocks through
+the kernel's own sequence and asserts the recorded unknown counts.
+
+| Block | f | abs(S21) | abs(S11) | abs(S31) | abs(S33) |
+|---|---|---|---|---|---|
+| A1 | 1 GHz | 0.99898 | 0.00130 | 0.00025 | 0.99210 |
+| A1 | 5 GHz | 0.99864 | 0.00431 | 0.00202 | 0.99188 |
+| A1 | 10 GHz | 0.99801 | 0.00780 | 0.00665 | 0.99127 |
+| A2 | 1 GHz | 0.99853 | 0.00692 | 0.00007 | 0.99161 |
+| A2 | 5 GHz | 0.99757 | 0.03409 | 0.00099 | 0.99155 |
+| A2 | 10 GHz | 0.99498 | 0.06882 | 0.00370 | 0.99089 |
+
+Reciprocal to the file's printed digits; no passivity note on either run. Port 3's line ends on the backside via,
+hence abs(S33) near 1.

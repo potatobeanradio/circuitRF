@@ -83,7 +83,14 @@ public enum PlanarEdgeReference
 /// raised it. <see cref="LocalWidthM"/> is 0 when the width could not be measured — the caller
 /// floors it, so 0 means "use the global reference" rather than "zero wide".
 /// </summary>
-internal readonly record struct EdgeAttractor(double Coord, double LocalWidthM);
+internal readonly record struct EdgeAttractor(double Coord, double LocalWidthM)
+{
+    /// <summary>PMS-2 — the stretch, along the edge, of the boundary that raised this attractor. Read only by
+    /// <see cref="PlanarGridDiagnostics"/>; nothing in the mesher looks at it.</summary>
+    public double AlongLo { get; init; }
+    /// <inheritdoc cref="AlongLo"/>
+    public double AlongHi { get; init; }
+}
 
 /// <summary>
 /// An attractor resolved against a reference: its coordinate, its OWN finest cell, and its OWN
@@ -455,6 +462,8 @@ public static class SurfaceMesher
     /// current model at <see cref="PlanarCurrentModel.None"/></b>, which is what keeps the pre-solve
     /// report and the run in step —
     /// the panel and <c>PlanarKernel.Mesh</c> reach this from different places.</param>
+    /// <param name="gridDiagnostics">PMS-2 — filled with every gridline's attributed source and the requests behind it,
+    /// or null for none. Never read here: the mesh is identical with it attached.</param>
     public static PlanarMeshReport Mesh(
         PlanarProblem       problem,
         PlanarMeshSettings? settings      = null,
@@ -468,7 +477,8 @@ public static class SurfaceMesher
         IReadOnlyList<PlanarPort>? ports  = null,
         double              edgeRefinementCap = double.NaN,
         IReadOnlyList<PlanarFeedLead>? leads = null,
-        bool                aimOn         = false)
+        bool                aimOn         = false,
+        PlanarGridDiagnostics? gridDiagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
@@ -667,7 +677,8 @@ public static class SurfaceMesher
         control?.BeginStage("building the grid");
         var (hardX, hardY, attractX, attractY, staircased, reentrantCorners) =
             CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor,
-                                 reentrantFans: s.EdgeMesh && s.EdgeCells > 0);
+                                 reentrantFans: s.EdgeMesh && s.EdgeCells > 0,
+                                 diag: gridDiagnostics, ports: ports);
 
         // brief-port-width-planar-and-c3d R-pw1-1 — an edge port narrower than its edge is cut on cell boundaries: a hard
         // gridline at each end of its span, across the port's current. A span-width feed lead (PlanarFeedExtension)
@@ -678,7 +689,15 @@ public static class SurfaceMesher
                 {
                     var (lines, lo, hi) = p.Direction == PlanarBasisDirection.X ? (hardY, y0, y1) : (hardX, x0, x1);
                     foreach (double t in new[] { sp.LoM, sp.HiM })
-                        if (t > lo && t < hi) lines.Add(t);
+                        if (t > lo && t < hi)
+                        {
+                            lines.Add(t);
+                            // PMS-2 — the span line serves the port's own neighbourhood: one span width either side.
+                            double w = sp.HiM - sp.LoM;
+                            double along = p.Direction == PlanarBasisDirection.X ? p.Location.X : p.Location.Y;
+                            (p.Direction == PlanarBasisDirection.X ? gridDiagnostics?.Y : gridDiagnostics?.X)
+                                ?.HardOrigins.Add(new(t, PlanarGridLineSource.PortSpan, along - w, along + w, -1));
+                        }
                 }
 
         long estX = EstimateLineCount(x0, x1, hardX, hx);
@@ -850,6 +869,19 @@ public static class SurfaceMesher
 
         double[] gx = BuildGridLines(x0, x1, hardX, gradedX, hMaxX, anyGrowthX, pitch?.AtX);
         double[] gy = BuildGridLines(y0, y1, hardY, gradedY, hMaxY, anyGrowthY, pitch?.AtY);
+
+        // PMS-2 R-pms2-2 — attribute every final line. Reads what the grid was built from and writes nothing back.
+        if (gridDiagnostics is not null)
+        {
+            gridDiagnostics.DetailFloorM = detailFloor;
+            gridDiagnostics.PitchField = pitch is not null;
+            double CapX(double v) => pitch is null ? hMaxX : Math.Min(hMaxX, pitch.AtX(v));
+            double CapY(double v) => pitch is null ? hMaxY : Math.Min(hMaxY, pitch.AtY(v));
+            gridDiagnostics.AttributeAxis(gridDiagnostics.X, gx, CapX, gradedX, attractX, anyGrowthX,
+                                          hWave, narrowX / s.MinCellsAcrossConductor, hMaxX);
+            gridDiagnostics.AttributeAxis(gridDiagnostics.Y, gy, CapY, gradedY, attractY, anyGrowthY,
+                                          hWave, narrowY / s.MinCellsAcrossConductor, hMaxY);
+        }
 
         // ── MIM-13 — WHERE THE GRIDLINES WENT: BULK AGAINST FAN, MEASURED RATHER THAN ESTIMATED ──
         //
@@ -2944,10 +2976,16 @@ public static class SurfaceMesher
     private static (List<double> HardX, List<double> HardY, List<EdgeAttractor> AttractX, List<EdgeAttractor> AttractY, int Staircased, int ReentrantCorners)
         CollectBoundaryLines(PlanarProblem problem, double x0, double y0, double x1, double y1,
                              PlanarRimGrading rimGrading = PlanarRimGrading.None,
-                             double detailFloorM = 0, bool reentrantFans = false)
+                             double detailFloorM = 0, bool reentrantFans = false,
+                             PlanarGridDiagnostics? diag = null, IReadOnlyList<PlanarPort>? ports = null)
     {
         var hardX = new List<double> { x0, x1 };
         var hardY = new List<double> { y0, y1 };
+        // PMS-2 — the extent lines are conductor extremes; they carry no stretch of their own.
+        diag?.X.HardOrigins.Add(new(x0, PlanarGridLineSource.Conductor, double.PositiveInfinity, double.NegativeInfinity, -1));
+        diag?.X.HardOrigins.Add(new(x1, PlanarGridLineSource.Conductor, double.PositiveInfinity, double.NegativeInfinity, -1));
+        diag?.Y.HardOrigins.Add(new(y0, PlanarGridLineSource.Conductor, double.PositiveInfinity, double.NegativeInfinity, -1));
+        diag?.Y.HardOrigins.Add(new(y1, PlanarGridLineSource.Conductor, double.PositiveInfinity, double.NegativeInfinity, -1));
         var attX  = new List<EdgeAttractor>();
         var attY  = new List<EdgeAttractor>();
         var cornerX = new List<EdgeAttractor>();
@@ -2972,20 +3010,30 @@ public static class SurfaceMesher
         // singularity. Grading it anyway measured 2,448 unknowns against 424 for the same fixture —
         // a 5.8× cost for one 40 µm via, from four graded edges at 3% of the reference length. Hard
         // gridlines only: the footprint is tiled exactly and nothing else changes.
-        var artwork = new List<(IReadOnlyList<PlanarPolygon> Polys, bool Grade)>();
-        foreach (var layer in problem.Layers) artwork.Add((layer.Polygons, true));
-        foreach (var via in problem.ViaList) artwork.Add((via.Polygons, false));
+        var artwork = new List<(IReadOnlyList<PlanarPolygon> Polys, bool Grade, PlanarGridLineSource Source, int Layer)>();
+        for (int li = 0; li < problem.Layers.Count; li++)
+            artwork.Add((problem.Layers[li].Polygons, true, PlanarGridLineSource.Conductor, li));
+        foreach (var via in problem.ViaList) artwork.Add((via.Polygons, false, PlanarGridLineSource.ViaFootprint, -1));
         // EM-TFR — a film's boundary with the metal is the same kind of line a via footprint is: an
         // interior feature of continuous conductor, with no charge singularity, so hard gridlines and
         // no graded fan. The film's OUTER edges are conductor edges, and they are graded because they
         // are in the level's own outline above.
-        foreach (var layer in problem.Layers)
-            foreach (var film in layer.Films) artwork.Add((film.Polygons, false));
+        for (int li = 0; li < problem.Layers.Count; li++)
+            foreach (var film in problem.Layers[li].Films)
+                artwork.Add((film.Polygons, false, PlanarGridLineSource.Film, li));
 
-        foreach (var (group, grade) in artwork)
+        foreach (var (group, grade, groupSource, groupLayer) in artwork)
             foreach (var poly in group)
             {
                 var (pbx0, pby0, pbx1, pby1) = poly.Bounds();
+                // PMS-2 — a conductor polygon a port sits on is that port's feed. Asked only for the diagnostic.
+                var lineSource = groupSource;
+                if (diag is not null && ports is not null && groupSource == PlanarGridLineSource.Conductor)
+                    foreach (var p in ports)
+                        if ((p.LayerIndex is null || p.LayerIndex == groupLayer) &&
+                            p.Location.X >= pbx0 - tolX && p.Location.X <= pbx1 + tolX &&
+                            p.Location.Y >= pby0 - tolY && p.Location.Y <= pby1 + tolY)
+                        { lineSource = PlanarGridLineSource.PortFeed; break; }
                 double extX = Math.Max(pbx1 - pbx0, 1e-30);
                 double extY = Math.Max(pby1 - pby0, 1e-30);
                 bool anyOblique = false;
@@ -3011,19 +3059,29 @@ public static class SurfaceMesher
                         {
                             double at = 0.5 * (ax + bx);
                             hardX.Add(at);
+                            diag?.X.HardOrigins.Add(new(at, lineSource, Math.Min(ay, by), Math.Max(ay, by), groupLayer));
+                            if (diag is not null && grade && Math.Abs(by - ay) < detailFloorM
+                                && Crowds(Math.Abs(by - ay), extY, cap))
+                                diag.FansSuppressedByDetailFloor++;
                             if (grade && Math.Abs(by - ay) >= detailFloorM
                                       && Crowds(Math.Abs(by - ay), extY, cap))
                                 attX.Add(new EdgeAttractor(
-                                    at, LocalWidthAt(poly, at, Math.Min(ay, by), Math.Max(ay, by), vertical: true)));
+                                    at, LocalWidthAt(poly, at, Math.Min(ay, by), Math.Max(ay, by), vertical: true))
+                                    { AlongLo = Math.Min(ay, by), AlongHi = Math.Max(ay, by) });
                         }
                         else if (horizontal && !vertical)
                         {
                             double at = 0.5 * (ay + by);
                             hardY.Add(at);
+                            diag?.Y.HardOrigins.Add(new(at, lineSource, Math.Min(ax, bx), Math.Max(ax, bx), groupLayer));
+                            if (diag is not null && grade && Math.Abs(bx - ax) < detailFloorM
+                                && Crowds(Math.Abs(bx - ax), extX, cap))
+                                diag.FansSuppressedByDetailFloor++;
                             if (grade && Math.Abs(bx - ax) >= detailFloorM
                                       && Crowds(Math.Abs(bx - ax), extX, cap))
                                 attY.Add(new EdgeAttractor(
-                                    at, LocalWidthAt(poly, at, Math.Min(ax, bx), Math.Max(ax, bx), vertical: false)));
+                                    at, LocalWidthAt(poly, at, Math.Min(ax, bx), Math.Max(ax, bx), vertical: false))
+                                    { AlongLo = Math.Min(ax, bx), AlongHi = Math.Max(ax, bx) });
                         }
                         else if (!horizontal && !vertical)
                         {
@@ -3079,9 +3137,11 @@ public static class SurfaceMesher
             if (vLen < detailFloorM || hLen < detailFloorM) continue;
 
             cornerX.Add(new EdgeAttractor(
-                p1.X, LocalWidthAt(poly, p1.X, Math.Min(p1.Y, vEnd.Y), Math.Max(p1.Y, vEnd.Y), vertical: true)));
+                p1.X, LocalWidthAt(poly, p1.X, Math.Min(p1.Y, vEnd.Y), Math.Max(p1.Y, vEnd.Y), vertical: true))
+                { AlongLo = Math.Min(p1.Y, vEnd.Y), AlongHi = Math.Max(p1.Y, vEnd.Y) });
             cornerY.Add(new EdgeAttractor(
-                p1.Y, LocalWidthAt(poly, p1.Y, Math.Min(p1.X, hEnd.X), Math.Max(p1.X, hEnd.X), vertical: false)));
+                p1.Y, LocalWidthAt(poly, p1.Y, Math.Min(p1.X, hEnd.X), Math.Max(p1.X, hEnd.X), vertical: false))
+                { AlongLo = Math.Min(p1.X, hEnd.X), AlongHi = Math.Max(p1.X, hEnd.X) });
             count++;
         }
         return count;
@@ -3107,6 +3167,9 @@ public static class SurfaceMesher
             if (k >= 0)
             {
                 if (e.LocalWidthM < into[k].LocalWidthM) into[k] = into[k] with { LocalWidthM = e.LocalWidthM };
+                // PMS-2 — the merged attractor serves both edges; only the diagnostic reads the stretch.
+                into[k] = into[k] with { AlongLo = Math.Min(into[k].AlongLo, e.AlongLo),
+                                         AlongHi = Math.Max(into[k].AlongHi, e.AlongHi) };
                 continue;
             }
             into.Add(e);
@@ -3353,13 +3416,13 @@ public static class SurfaceMesher
         // LocalWidthAt instead would scan through the run's own curvature and report a chord.
         if (gradeX)
         {
-            attX.Add(new EdgeAttractor(xMin, xMax - xMin));
-            if (xMax > xMin) attX.Add(new EdgeAttractor(xMax, xMax - xMin));
+            attX.Add(new EdgeAttractor(xMin, xMax - xMin) { AlongLo = yMin, AlongHi = yMax });
+            if (xMax > xMin) attX.Add(new EdgeAttractor(xMax, xMax - xMin) { AlongLo = yMin, AlongHi = yMax });
         }
         if (gradeY)
         {
-            attY.Add(new EdgeAttractor(yMin, yMax - yMin));
-            if (yMax > yMin) attY.Add(new EdgeAttractor(yMax, yMax - yMin));
+            attY.Add(new EdgeAttractor(yMin, yMax - yMin) { AlongLo = xMin, AlongHi = xMax });
+            if (yMax > yMin) attY.Add(new EdgeAttractor(yMax, yMax - yMin) { AlongLo = xMin, AlongHi = xMax });
         }
 
         if (mode != PlanarRimGrading.PerRunSampled || (!gradeX && !gradeY)) return;
@@ -3385,8 +3448,8 @@ public static class SurfaceMesher
                 double py = run[i - 1].Y + t * (run[i].Y - run[i - 1].Y);
                 double tx = Math.Abs(run[i].X - run[i - 1].X), ty = Math.Abs(run[i].Y - run[i - 1].Y);
 
-                if (tx >= ty) { if (gradeY) attY.Add(new EdgeAttractor(py, yMax - yMin)); }
-                else          { if (gradeX) attX.Add(new EdgeAttractor(px, xMax - xMin)); }
+                if (tx >= ty) { if (gradeY) attY.Add(new EdgeAttractor(py, yMax - yMin) { AlongLo = xMin, AlongHi = xMax }); }
+                else          { if (gradeX) attX.Add(new EdgeAttractor(px, xMax - xMin) { AlongLo = yMin, AlongHi = yMax }); }
                 break;
             }
         }
