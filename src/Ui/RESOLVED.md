@@ -42200,3 +42200,18 @@ left the list on other cards; a click on Silicon from the top did too, stopping 
   Inspector's rows while the scene's rebuild rewrote them; it settles first, as the file's other tests do.
 - `dotnet test` printed "WARNING: Overwriting results file" for every project on every run (the runsettings name each one
   `last-run.trx` on purpose); `Directory.Build.props`' `CrfClearLastRunTrx` deletes the previous file just before VSTest.
+
+## Touchstone pickers hid an .s20p (2026-11-12)
+
+- Every multi-port Touchstone picker spelled out its own pattern list, and each stopped somewhere (`*.s4p`, `*.s6p`,
+  `*.s12p`), so a 20-port file was not shown in the dialog on any platform. They now all take `TouchstonePatterns.Snp`
+  (`*.s1p` … `*.s99p` and `*.snp`, both cases — GTK matches case-sensitively). Spelled out per port count rather than
+  `*.s*p`, which not every platform's dialog honours and which also admits `.step` and `.sp`. The Data Display library's
+  own load check stopped at `.s24p` and now uses the viewer's rule. Pickers for one port count (TRL's `.s2p`, the Smith
+  chart's one-port, a Save dialog) are deliberate and unchanged.
+
+## RF Chain Budget plots offered Add Marker (2026-11-12)
+
+- The chain window's plots never draw a marker, yet Add Marker was live. `PlotControl.CanAddMarkers` (default true) greys
+  the item, the table menu's item and the double-tap add; the five chain plots set it false. The marker-to-stage
+  selection hooks they carried had nothing to listen to and are gone with `ChainBudgetViewModel.SelectNode`.

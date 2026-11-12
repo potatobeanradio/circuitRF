@@ -924,8 +924,7 @@ public partial class SmithChartView : UserControl
             FileTypeFilter =
             [
                 new FilePickerFileType("Touchstone")
-                    { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp",
-                                  "*.S1P", "*.S2P", "*.S3P", "*.S4P", "*.SNP"] },
+                    { Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.Snp },
                 new FilePickerFileType("All files") { Patterns = ["*"] },
             ],
         });

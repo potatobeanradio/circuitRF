@@ -263,7 +263,7 @@ public partial class ParameterEditorView : UserControl
                 new FilePickerFileType("EM result record (*.cemr)") { Patterns = ["*.cemr"] },
                 new FilePickerFileType("Older EM result (*.sNp)")
                 {
-                    Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.s5p","*.s6p","*.s7p","*.s8p","*.s9p","*.s10p","*.s12p","*.s16p","*.s24p","*.s32p"],
+                    Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.Snp,
                 },
             ],
         });
@@ -295,10 +295,7 @@ public partial class ParameterEditorView : UserControl
             [
                 new FilePickerFileType("Touchstone (*.sNp, *.snp)")
                 {
-                    Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.s5p","*.s6p","*.s7p","*.s8p",
-                                "*.s9p","*.s10p","*.s11p","*.s12p","*.snp",
-                                "*.S1P","*.S2P","*.S3P","*.S4P","*.S5P","*.S6P","*.S7P","*.S8P",
-                                "*.S9P","*.S10P","*.S11P","*.S12P","*.SNP"],
+                    Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.Snp,
                 },
                 FilePickerFileTypes.All,
             ],

@@ -3133,12 +3133,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             FileTypeFilter =
             [
                 new FilePickerFileType("Loadpull / Data Files")
-                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.ds", "*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.ds", .. CircuitRF.Ui.Controls.TouchstonePatterns.Snp] },
                 new FilePickerFileType("Loadpull (SPL)")  { Patterns = ["*.spl"] },
                 new FilePickerFileType("Loadpull (LPCW)") { Patterns = ["*.lpcwave"] },
                 new FilePickerFileType("NumPy Array")     { Patterns = ["*.npy"] },
                 new FilePickerFileType("Binary dataset (*.ds)") { Patterns = ["*.ds"] },
-                new FilePickerFileType("Touchstone")      { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                new FilePickerFileType("Touchstone")      { Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.Snp },
                 new FilePickerFileType("Hertzon project") { Patterns = ["*.hzn"] },
                 new FilePickerFileType("All Files")       { Patterns = ["*.*"] },
             ],

@@ -47,14 +47,6 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
                 };
             }
         };
-        // A marker on a levels trace selects the stage whose output its node is, in the views and the stage list.
-        foreach (var name in new[] { "LevelsPlotControl", "LevelsDbPlotControl" })
-            if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } pc)
-            {
-                CircuitRF.Render.DataDisplay.Marker? last = null;
-                pc.MarkerAdded += (m, _) => { last = m; Vm?.SelectNode(NodeOf(m)); };
-                pc.MarkerMoved += (_, _) => { if (last is { } m) Vm?.SelectNode(NodeOf(m)); };
-            }
         // The plots are bare PlotControls, so this window tells each which container holds its plot, as the S-Parameter
         // Viewer does: its context menu's Copy and Export render the CONTAINER, and with no provider they did nothing.
         foreach (var p in Plots())
@@ -65,6 +57,17 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         // The Blocks view's menu acts where it was opened: the right-click is recorded on the way down, before a block's
         // own press handler takes it.
         BlocksScroller?.AddHandler(PointerPressedEvent, RecordBlocksRightClick, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        // A left click on the Blocks view's empty space, off every block, clears the selection; Escape anywhere but a text
+        // box does too. Bubbled and not handled-too, so the schematic's own Escape (an armed zoom box) and an open
+        // drop-down's keep theirs.
+        BlocksScroller?.AddHandler(PointerPressedEvent, OnBlocksBackgroundPressed, Avalonia.Interactivity.RoutingStrategies.Bubble);
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape || e.KeyModifiers != Avalonia.Input.KeyModifiers.None || e.Source is TextBox) return;
+            if (Vm is not { SelectedStage: not null } vm) return;
+            vm.SelectedStage = null;
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble);
         // Leaving a box, or Enter in it, puts a value the chain refuses back to its last good one.
         AddHandler(LostFocusEvent, (_, e) => { if (e.Source is TextBox) Vm?.CommitEdits(); },
                    Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
@@ -80,10 +83,6 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     private ChainBudgetViewModel? Vm => DataContext as ChainBudgetViewModel;
-
-    // A marker on a cube trace keeps its x, the node, in its position and a frequency of 0; one on a frequency trace
-    // keeps it in its frequency.
-    private static double NodeOf(CircuitRF.Render.DataDisplay.Marker m) => m.Freq != 0 ? m.Freq : m.PositionStatic.X;
 
     private void SyncPlotTheme()
     {
@@ -176,7 +175,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     private static readonly FilePickerFileType TouchstoneFiles =
-        new("Touchstone") { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp", "*.ts"] };
+        new("Touchstone") { Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs };
 
     /// <summary>The "…" beside an SnP stage's File: pick the Touchstone file.</summary>
     private void OnPickFileClick(object? sender, RoutedEventArgs e)
@@ -350,6 +349,15 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         e.Handled = true;
     }
 
+    private void OnBlocksBackgroundPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (Vm is not { } vm || BlocksScroller is not { } scroller || !e.GetCurrentPoint(scroller).Properties.IsLeftButtonPressed) return;
+        var under = (e.Source as Avalonia.Visual)?.GetSelfAndVisualAncestors().OfType<Control>().ToList() ?? [];
+        if (under.Any(c => c is Avalonia.Controls.Primitives.ScrollBar || c.DataContext is ChainStageViewModel)) return;
+        vm.SelectedStage = null;
+        scroller.Focus();
+    }
+
     private void OnBlockCaptureLost(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e) => EndBlockDrag();
 
     private void EndBlockDrag()
@@ -388,7 +396,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
 
     /// <summary>
     /// Brings the selected stage's row to the top of the stage list with an eased scroll, when the selection came from
-    /// somewhere else: a block, the schematic or a levels marker. A row picked in the list itself is where the user is
+    /// somewhere else: a block or the schematic. A row picked in the list itself is where the user is
     /// already looking, so the list stays put. Posted at Background priority so the list has arranged first, as the
     /// .ctech editor posts its own.
     /// </summary>

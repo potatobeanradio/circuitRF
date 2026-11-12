@@ -827,14 +827,10 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
     // ---- Extension helpers ------------------------------------------------
 
-    private static readonly HashSet<string> _snpExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        { ".s1p", ".s2p", ".s3p", ".s4p", ".s5p", ".s6p", ".s7p", ".s8p", ".s9p", ".s10p",
-        ".s11p", ".s12p", ".s13p", ".s14p", ".s15p", ".s16p", ".s17p", ".s18p", ".s19p", ".s20p",
-        ".s21p", ".s22p", ".s23p", ".s24p",
-        ".snp", ".ts" };
-
-    private static bool IsSnpExtension(string ext)     => _snpExtensions.Contains(ext);
+    /// <summary>A Touchstone extension of any port count (<c>.s1p</c>, <c>.s20p</c>, …), <c>.snp</c> or <c>.ts</c> — the
+    /// viewer's own rule, so a file the pickers offer is one this library loads.</summary>
+    private static bool IsSnpExtension(string ext) =>
+        string.Equals(ext, ".snp", StringComparison.OrdinalIgnoreCase) || Archive.WorkspaceArchiveScanner.IsTouchstone(ext);
     private static bool IsNpyExtension(string ext)      =>
         string.Equals(ext, ".npy",      StringComparison.OrdinalIgnoreCase);
     private static bool IsSplExtension(string ext)      =>

@@ -160,6 +160,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             set => SetValue(CanEditAxesLabelsProperty, value);
         }
 
+        public static readonly StyledProperty<bool> CanAddMarkersProperty =
+            AvaloniaProperty.Register<PlotControl, bool>(nameof(CanAddMarkers), defaultValue: true);
+
+        /// <summary>
+        /// When false, the context menu's <b>Add Marker</b> is shown disabled and a double-tap near a trace adds none — for
+        /// a host whose plot draws no marker (the RF Chain Budget's), where the item looked live and did nothing.
+        /// </summary>
+        public bool CanAddMarkers
+        {
+            get => GetValue(CanAddMarkersProperty);
+            set => SetValue(CanAddMarkersProperty, value);
+        }
+
         // ============================================================
         //  Events
         // ============================================================
@@ -711,6 +724,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (change.Property == CanDeletePlotProperty || change.Property == CanEditPlotPropertiesProperty
                 || change.Property == CanEditAxesLabelsProperty)
                 ApplyMenuAvailability();
+            else if (change.Property == CanAddMarkersProperty)
+                RefreshAddMarkerSubmenu();
         }
 
         /// <summary>
@@ -1085,7 +1100,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // on railRF's |Z| plot eleven of the thirteen rows here were those — burying the two
             // that answer anything. Counted as well as listed, so a plot carrying only annotation
             // greys the item out rather than opening an empty submenu.
-            bool hasTraces  = _plot?.Traces.Any(t => !t.IsAnnotation) == true
+            bool hasTraces  = CanAddMarkers
+                           && _plot?.Traces.Any(t => !t.IsAnnotation) == true
                            && _plot.PlotType != PlotType.Surface3D;
             bool hasMarkers = _plot?.Traces.Any(t => t.Markers.Count > 0) ?? false;
             _addMarkerMenuItem.IsEnabled = hasTraces;
@@ -2175,7 +2191,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             }
 
             // If the tap lands close to a trace, add a marker there.
-            if (TryAddMarkerNearPoint(pos)) return;
+            if (CanAddMarkers && TryAddMarkerNearPoint(pos)) return;
 
             // Default: show the PlotInspector.
             ShowPlotInspector();
@@ -2844,7 +2860,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             menu.Items.Clear();
 
-            bool canAddMarker = _rightClickedDataTrace is not null && !double.IsNaN(_rightClickedDataFreq);
+            bool canAddMarker = CanAddMarkers && _rightClickedDataTrace is not null && !double.IsNaN(_rightClickedDataFreq);
             var icon = new MaterialIcon { Kind = MaterialIconKind.TriangleDown };
             var itemAddMarker = new MenuItem
             {

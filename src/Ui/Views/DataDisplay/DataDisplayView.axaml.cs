@@ -152,14 +152,11 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
-                                       "*.spl", "*.lpcwave", "*.ds" }
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts" }
+                    Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
                 new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
@@ -319,14 +316,11 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
-                                       "*.spl", "*.lpcwave", "*.ds" }
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts" }
+                    Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
                 new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
@@ -362,9 +356,7 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
-                                       "*.spl", "*.lpcwave", "*.ds" }
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
                 },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }

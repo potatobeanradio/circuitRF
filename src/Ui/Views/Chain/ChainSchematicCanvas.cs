@@ -193,8 +193,8 @@ public sealed class ChainSchematicCanvas : Control
         var hit = _model.Components.FirstOrDefault(c => wx >= c.GlyphBbMinX - tol && wx <= c.GlyphBbMaxX + tol
                                                       && wy >= c.GlyphBbMinY - tol && wy <= c.GlyphBbMaxY + tol
                                                       && d.StageOfComponent.ContainsKey(c.Id));
-        if (hit is null) return;
-        SelectedStage = d.StageOfComponent[hit.Id];
+        // A click off every part clears the selection, as a click on the Blocks view's empty space does.
+        SelectedStage = hit is null ? -1 : d.StageOfComponent[hit.Id];
         e.Handled = true;
     }
 

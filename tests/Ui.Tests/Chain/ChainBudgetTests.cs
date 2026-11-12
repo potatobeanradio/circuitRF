@@ -280,6 +280,29 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Null(ChainBenches.Diagram(bad, ChainBudget.Evaluate(bad)));
     }
 
+    /// <summary>
+    /// The diagram's IN and OUT Ports are wired with one bend: up from the pin to the row, then along it. Placed with
+    /// their pin level with the row, the router (kept a grid step clear of the glyph except straight out of the pin)
+    /// climbed past the row and came back down to it.
+    /// </summary>
+    [Fact]
+    public void TheDiagramsPorts_AreWiredWithOneBend_NoJog()
+    {
+        foreach (var d in new[] { Superhet(), RfArray() })
+        {
+            var dia = ChainBenches.Diagram(d, ChainBudget.Evaluate(d))!;
+            var ports = dia.Model.Components.Where(c => c.InstanceName is "OUT" || c.InstanceName.StartsWith("IN", StringComparison.Ordinal)).ToList();
+            Assert.Equal(d.Stages.Any(s => s.Part == ChainParts.Combiner) ? 5 : 2, ports.Count);
+            foreach (var port in ports)
+            {
+                // The wire ending at the Port's pin: in its column, just above its origin (an array's Ports share one).
+                var wire = Assert.Single(dia.Model.Wires, w => new[] { w.Points[0], w.Points[^1] }
+                                             .Any(p => Math.Abs(p.X - port.X) < 1e-6 && p.Y < port.Y && p.Y > port.Y - 500));
+                Assert.True(wire.Points.Count <= 3, $"{port.InstanceName}: {string.Join(" ", wire.Points)}");
+            }
+        }
+    }
+
     // ── the benches, run ─────────────────────────────────────────────────────
 
     /// <summary>

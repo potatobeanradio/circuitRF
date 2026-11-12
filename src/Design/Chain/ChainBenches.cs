@@ -292,6 +292,8 @@ public static class ChainBenches
         private int _stage = -1;
 
         private const double Lead = 500, BranchPitch = 1400;
+        /// <summary>How far below the row the diagram's IN and OUT Ports sit: their pin two grid steps under it.</summary>
+        private const double DiagramPortDrop = 400;
         private readonly StringBuilder _parts = new();
         private readonly List<string> _vars = ["temp = 16.85"], _analyses = [], _meas = [];
         private readonly Dictionary<string, ExactInstance> _at = new(StringComparer.Ordinal);
@@ -788,13 +790,16 @@ public static class ChainBenches
                          $"Temp={F(d.TemperatureK - 273.15)}");
                     break;
             }
-            Place(name, _x, _y + 200);
+            // The diagram's Port two grid steps below the row, so its wire rises straight to the row and turns once. Any
+            // higher and the router, kept a grid step clear of the glyph everywhere but straight out of the pin, climbed
+            // past the row and came back down to it: a jog.
+            Place(name, _x, _y + (diagram ? DiagramPortDrop : 200));
             _x += Lead;
         }
 
         private void Load(int n)
         {
-            if (diagram) { Line($"Port:OUT  out  0  Num={n + 1}  Z=50 Ohm"); Place("OUT", _x, _y + 200); return; }
+            if (diagram) { Line($"Port:OUT  out  0  Num={n + 1}  Z=50 Ohm"); Place("OUT", _x, _y + DiagramPortDrop); return; }
             switch (bench)
             {
                 case ChainBench.OneTone: Line($"Port:PO  out  0  Num={n + 1}  Z=50 Ohm"); Place("PO", _x, _y + 200); break;

@@ -298,23 +298,6 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Refill(ref _depthBand, nameof(DepthBandPlot), cfg[1], BudgetSource, data);
     }
 
-    /// <summary>A marker on a levels trace selects the stage whose output that node is; node 0, the input, selects none.</summary>
-    public void SelectNode(double x)
-    {
-        // A marker keeps its position as a frequency in Hz, scaled by the plot's frequency unit: the node is x in the
-        // plot's own unit, which is the first of these scales that lands on a node.
-        foreach (double scale in new[] { 1.0, 1e9, 1e6, 1e3 })
-        {
-            double v = x / scale;
-            int node = (int)Math.Round(v);
-            if (Math.Abs(v - node) < 0.5 && node >= 0 && node <= Stages.Count)
-            {
-                SelectedStageIndex = node - 1;
-                return;
-            }
-        }
-    }
-
     private void RefillCascade(ChainBudgetResult r)
     {
         var pc = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.CascadeTable(BudgetSource);

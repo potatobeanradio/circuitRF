@@ -36,7 +36,7 @@ public partial class ModelImportDialog : Window
                     // Every port count a passive block can have (designer round 28: a board's .s6p was hidden behind All Files).
                     new FilePickerFileType("Data")
                     {
-                        Patterns = [.. Enumerable.Range(1, 12).Select(n => $"*.s{n}p"), "*.snp",
+                        Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.Snp,
                                     "*.csv", "*.tsv", "*.txt", "*.npy", "*.npz", "*.mat", "*.ds", "*.spl", "*.lpcwave"],
                     },
                     new FilePickerFileType("All Files") { Patterns = ["*.*"] },

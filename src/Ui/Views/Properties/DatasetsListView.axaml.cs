@@ -66,9 +66,7 @@ public partial class DatasetsListView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
-                                       "*.spl", "*.lpcwave", "*.ds" }
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
                 },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }

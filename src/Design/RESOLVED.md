@@ -30594,3 +30594,12 @@ pad's case) warned forever. The check exists to catch a change to the LAYOUT aft
   every shipped `.c3d`'s placed layouts and asserts nothing is stale; it failed on `2 Probe Pad.c3d` before the change.
 - The "106 µm" in the warning was the sheet's HEIGHT (the die's 100 µm GaAs plus the stack): `Width` is the rectangle's
   longer side, which for a YZ sheet on a thick die can be the vertical one.
+
+## RF Chain Budget diagram: IN/OUT Port wires jogged (2026-11-12)
+
+- The chain diagram is auto-routed (`ExactPlacement.AutoRoute`). `NetlistSchematic.KeepOut` walls every glyph in one grid
+  step proud and exempts only the cell straight out of each pin, so a Port whose pin sat level with the row could not
+  turn there: the wire rose a second step, crossed, and came back down to the row. Moving the Port one step lower changes
+  nothing (its stub cell is again walled on the side). The pin has to be TWO steps below the row: the stub cell is the
+  exemption and the next one up is clear of the margin, so the wire rises and turns once (`ChainBenches.DiagramPortDrop`).
+  Only the diagram moved; a bench's sources and loads keep their places.
