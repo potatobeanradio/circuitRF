@@ -372,6 +372,16 @@ The levels, the canceller and the demo, read from the example's benches as the G
 
 ![The demo's display: EVM against the input power, its split, the SNR and two constellations](../images/rf-chain-budget/demo-display.png)
 
+**The link and its readouts** have no circuit of their own: `testdata/chain/link_reference.py` (standard library only)
+works a 26 GHz link out at five points (three carriers, a transmitter that meets the receiver's ceiling, a receive array
+of six) and the budget agrees with its 140 numbers to 10⁻⁹ (`ChainLinkBudgetTests.TheLinkBudget_IsTheIndependentReference`).
+The example's 26 GHz link checks the receiver at the −59.41 dBm its link delivers: 1-Tone −1.1×10⁻⁴ dB in gain and
++2.8×10⁻⁴ dB in NF, 2-Tone +8.7×10⁻⁴ dB in IIP3, Steering and Combiners 10⁻¹⁴ dB, Envelope −0.02 dB in SNR; its
+Levels bench, two tones each at that power 24 dB under the input P1dB, −0.013 dB in signal and −0.030 dB in IM3 at the
+mixer's output, their own compression. Its TX bench: 0.92 dB of compression and 6.3 % EVM at the 8 dB back-off, and
+the PA 0.44 dB under Psat at 10 dB of overdrive. Two points of a frequency sweep, each transferred, read G and NF within
+10⁻⁶ dB.
+
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.
 

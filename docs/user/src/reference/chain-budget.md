@@ -679,7 +679,10 @@ within 5×10⁻³ dB. Each conversion's Demo reads its SNR at the lowest power o
 counted (−0.48 dB to MIX1's output, +0.08 dB to the end).
 
 The 26 GHz link's receiver, run at the −59.41 dBm its link delivers to each element, reads −1.1×10⁻⁴ dB in gain and
-+2.8×10⁻⁴ dB in NF on its 1-Tone bench, and its eight-element Steering and Combiners benches 10⁻¹⁴ dB. Its link has
++2.8×10⁻⁴ dB in NF on its 1-Tone bench, +9×10⁻⁴ dB in IIP3 on its 2-Tone bench, and its eight-element Steering and
+Combiners benches 10⁻¹⁴ dB. Its Levels bench drives two tones each at that power, 24 dB under the receiver's input
+P1dB, and reads the mixer's output 0.013 dB under the budget, its IM3 0.030 dB: the tones' own slight compression.
+Its Envelope bench reads the SNR in the 50 MHz NR carrier's channel 0.02 dB under the budget's 43.15 dB. Its link has
 no circuit: EIRP, the path and every readout agree with an independent calculation (`testdata/chain/link_reference.py`)
 to 10⁻⁹ at five points. Its TX bench reads the output at 10 dB of overdrive 0.44 dB under `Psat`, and at the 8 dB
 back-off 0.92 dB under the budget's `Psat − Backoff − Loss`, at 6.3 % EVM and −30.3 dBc ACPR.

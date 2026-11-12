@@ -189,7 +189,12 @@ the LNA may have 16.7 dB of NF together before they cost the chain 1 dB.
 swept over its back-off. At the link's 8 dB the output is 0.92 dB below the budget's Psat − 8 dB, the EVM 6.3 % and the
 adjacent-channel ratio −30.3 dBc; at 12 dB, 0.41 dB, 2.9 % and −36.9 dBc. The receiver's own benches run at the
 −59.41 dBm the link delivers to each element: its 1-Tone bench reads −0.0001 dB in gain and +0.0003 dB in NF, its
-Steering and Combiners benches 10⁻¹⁴ dB. Release build: 1-Tone 1 s, Steering 2 s, Combiners 1 s, TX 35 s.
+Steering and Combiners benches 10⁻¹⁴ dB, its 2-Tone bench +9×10⁻⁴ dB in IIP3 and +6×10⁻⁴ dB in OIP3. Its Levels bench
+drives two tones each at the link's −59.41 dBm, 24 dB under the receiver's input P1dB, and reads the signal within
+0.0015 dB of the budget up to the filter and 0.013 dB under it at the mixer's output, the IM3 0.030 dB under: the tones'
+own slight compression, at the power the link really delivers.
+Its Envelope bench, eight NR carriers of 50 MHz each noisy at 290 K, reads the SNR in the carrier's 48.6 MHz 0.02 dB
+under the budget's 43.15 dB, and the output power 0.006 dB under.
 
 ## Levels, blockers, the canceller and the demo
 
@@ -271,15 +276,19 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 
 **Run the bench first.** A display reads `results/<bench>.npy`, which Simulate writes. Measured wall clock, release build:
 
-| Bench | Superhet | Array | Dual Conversion, each conversion |
-|---|---|---|---|
-| 1-Tone | 3 s | 6 s | 4 s |
-| 2-Tone | 7 s | 50 s | 1.5 to 3 min, the whole chain |
-| Envelope | 9 s | 25 s | 12 s, 18 s |
-| Steering | | 2 s | |
-| Combiners | | 1 s | |
-| Levels | 7 s | | 4 s, 7 s |
-| Blockers | 3 s | | 1 s |
-| Demo | 2 min 20 s | | 1 min 45 s, 3 min |
+| Bench | Superhet | Array | Dual Conversion, each conversion | 26 GHz Link |
+|---|---|---|---|---|
+| 1-Tone | 3 s | 6 s | 4 s | 1 s |
+| 2-Tone | 7 s | 50 s | 1.5 to 3 min, the whole chain | 3 min |
+| Envelope | 9 s | 25 s | 12 s, 18 s | 33 min |
+| Steering | | 2 s | | 2 s |
+| Combiners | | 1 s | | 1 s |
+| Levels | 7 s | | 4 s, 7 s | 4 min |
+| Blockers | 3 s | | 1 s | |
+| Demo | 2 min 20 s | | 1 min 45 s, 3 min | |
+| TX | | | | 35 s to 1 min |
+
+The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
+envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).
 
 The Front End's Canceller bench runs its envelope sweeps in about 40 s.

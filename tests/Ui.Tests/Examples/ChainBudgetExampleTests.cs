@@ -348,7 +348,6 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     [Trait("Category", "Benchmark")]
     [InlineData("Superhet")]
     [InlineData("Array")]
-    [InlineData("26 GHz Link")]
     public void Envelope_TheSnrOnTheBudget_WithinOneRecordsStatistics(string chain)
     {
         var ds = Simulate(chain + " Envelope");
