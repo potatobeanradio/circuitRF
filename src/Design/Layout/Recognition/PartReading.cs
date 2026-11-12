@@ -681,6 +681,8 @@ public static class PartReading
     /// <summary>A body is at least this many times as long as it is wide, so its two ends are known.</summary>
     public const double MinBodyAspect = 1.2;
 
+    private const string BodyOutlineNote = "read from its body outline over a gap in the copper; it has no land of its own";
+
     /// <summary>
     /// R-as4-1 (3½): the parts whose body outline straddles a gap in the copper. A body is a closed, near-rectangular
     /// outline (<see cref="MinRectangularity"/>) on a silkscreen or assembly layer, longer than it is wide
@@ -751,7 +753,7 @@ public static class PartReading
                 var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
                 d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
                 d.Pads.Add(new PlacedPin(null, "2", null, b.X, b.Y, PinSource.Artwork) { Layer = b.Layer });
-                d.Notes.Add("read from its body outline over a gap in the copper; it has no land of its own");
+                d.Notes.Add(BodyOutlineNote);
                 parts.Add(d);
             }
         }
@@ -983,7 +985,9 @@ public static class PartReading
             $"{Plural(silk.Count, "part was", "parts were")} named by the silkscreen: {Names(silk)}.");
         var land = bySource.GetValueOrDefault(PartEvidenceSource.Generated) ?? [];
         Add(RecognitionFindingClass.PartsFromLandPatternOnly, land,
-            $"{Plural(land.Count, "part was", "parts were")} found from land patterns or body outlines alone and given generated designators: {Names(land)}.");
+            $"{Plural(land.Count, "part was", "parts were")} found from land patterns " +
+            (land.Any(r => r.Notes.Any(n => n.StartsWith(BodyOutlineNote, StringComparison.Ordinal))) ? "or body outlines " : "") +
+            $"alone and given generated designators: {Names(land)}.");
 
         var unknown = rows.Where(r => r.Kind == PartKind.Unknown && r.IsModelled).ToList();
         Add(RecognitionFindingClass.PartKindsUnknown, unknown,

@@ -835,3 +835,18 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   ties go to the first candidate but give isomorphic circuits under a mirror, so they are unchanged. Gate:
   `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` (both ways up) and
   `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich`, the first mirror-invariance test.
+- **Six spellings of one board, one circuit.** `make_boards.py` (Python standard library; DXF is text) writes the board as
+  R12 closed `POLYLINE`/`VERTEX` with `TEXT`; R2000 `LWPOLYLINE` with bulges, solid `HATCH` pours with their holes, `MTEXT`,
+  a `LAYER` table and drill marks and part bodies in `INSERT`ed blocks, one block placing two others; the same in inches
+  with `$INSUNITS` 1; R12 in inches with no `$INSUNITS` (`--dxf-units 1` answers it); every outline stroked as `LINE` and
+  `ARC`; and the mirror image. Drill marks are circles, squares (closed, and four lines), octagons and two-arc
+  polylines. With the hand-written expected circuit (`DxfBoardRecognitionTests`: 14 parts and ports by what shares each of
+  their nodes, 11 lines by type, width and length to 1 %) every spelling, circuitRF's own export of it read back with a map
+  of the technology's names, and `convert` → `recognize` → `check` from the command line give the same circuit with the
+  copper check agreeing. The shipped Artwork to Schematic example writes the same `.cnl` byte for byte as before, with
+  and without its placement and bill of materials; its report gains only the agreement line.
+- **Left open: a signal island holding copper wider than any trace reads as a separate pour**, and a separate pour gets no
+  edge port. `ArtworkRecognition` marks a piece a pour when it survives erosion by half the widest trace the review reads
+  (`BoardCopper.IsWide`, 5.08 mm on a 0.508 mm laminate); a 6 mm device pad on the line made the whole island a pour and its
+  output line lost its port at the board's edge. The board's pad is 5 mm, under the limit. The trace review's own pour rule
+  (area against piece area, vias) would not have called it one; making the two agree is its own change.

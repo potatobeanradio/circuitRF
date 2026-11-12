@@ -1,0 +1,2342 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+4
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LAYER
+ 70
+6
+  0
+LAYER
+  2
+0
+ 70
+0
+ 62
+1
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+COPPER_TOP
+ 70
+0
+ 62
+2
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+COPPER_BOTTOM
+ 70
+0
+ 62
+3
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+DRILL
+ 70
+0
+ 62
+4
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+SILK_TOP
+ 70
+0
+ 62
+5
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+BOARD
+ 70
+0
+ 62
+6
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+BLOCKS
+  0
+BLOCK
+  8
+0
+  2
+*Model_Space
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+*Model_Space
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+*Paper_Space
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+*Paper_Space
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+DRILL_CIRCLE
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+DRILL_CIRCLE
+  0
+CIRCLE
+  5
+100
+  8
+0
+ 10
+0
+ 20
+0
+ 40
+0.2
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+DRILL_SQUARE
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+DRILL_SQUARE
+  0
+LWPOLYLINE
+  5
+101
+  8
+0
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+-0.2
+ 20
+-0.2
+ 10
+0.2
+ 20
+-0.2
+ 10
+0.2
+ 20
+0.2
+ 10
+-0.2
+ 20
+0.2
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+DRILL_SQUARE_LINES
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+DRILL_SQUARE_LINES
+  0
+LINE
+  5
+102
+  8
+0
+ 10
+-0.2
+ 20
+-0.2
+ 11
+0.2
+ 21
+-0.2
+  0
+LINE
+  5
+103
+  8
+0
+ 10
+0.2
+ 20
+-0.2
+ 11
+0.2
+ 21
+0.2
+  0
+LINE
+  5
+104
+  8
+0
+ 10
+0.2
+ 20
+0.2
+ 11
+-0.2
+ 21
+0.2
+  0
+LINE
+  5
+105
+  8
+0
+ 10
+-0.2
+ 20
+0.2
+ 11
+-0.2
+ 21
+-0.2
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+DRILL_OCTAGON
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+DRILL_OCTAGON
+  0
+LWPOLYLINE
+  5
+106
+  8
+0
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+8
+ 70
+1
+ 10
+0.2
+ 20
+-0.0828427
+ 10
+0.2
+ 20
+0.0828427
+ 10
+0.0828427
+ 20
+0.2
+ 10
+-0.0828427
+ 20
+0.2
+ 10
+-0.2
+ 20
+0.0828427
+ 10
+-0.2
+ 20
+-0.0828427
+ 10
+-0.0828427
+ 20
+-0.2
+ 10
+0.0828427
+ 20
+-0.2
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+DRILL_BULGE_CIRCLE
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+DRILL_BULGE_CIRCLE
+  0
+LWPOLYLINE
+  5
+107
+  8
+0
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+2
+ 70
+1
+ 10
+-0.2
+ 20
+0
+ 42
+1
+ 10
+0.2
+ 20
+0
+ 42
+1
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+STITCH_PAIR
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+STITCH_PAIR
+  0
+INSERT
+  5
+108
+  8
+0
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_CIRCLE
+ 10
+0
+ 20
+0
+  0
+INSERT
+  5
+109
+  8
+0
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE
+ 10
+0
+ 20
+4
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+BODY_0603
+ 70
+0
+ 10
+0
+ 20
+0
+  3
+BODY_0603
+  0
+LWPOLYLINE
+  5
+10A
+  8
+0
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+-0.8
+ 20
+-0.4
+ 10
+0.8
+ 20
+-0.4
+ 10
+0.8
+ 20
+0.4
+ 10
+-0.8
+ 20
+0.4
+  0
+ENDBLK
+  8
+0
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+LWPOLYLINE
+  5
+10B
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+0
+ 20
+14.45
+ 10
+6
+ 20
+14.45
+ 10
+6
+ 20
+15.55
+ 10
+0
+ 20
+15.55
+  0
+LWPOLYLINE
+  5
+10C
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+24
+ 70
+1
+ 10
+16.5
+ 20
+17.25
+ 42
+0.4142136
+ 10
+16.25
+ 20
+17.5
+ 10
+15
+ 20
+17.5
+ 10
+15
+ 20
+22.5
+ 10
+13
+ 20
+22.5
+ 10
+13
+ 20
+17.5
+ 10
+11.75
+ 20
+17.5
+ 42
+0.4142136
+ 10
+11.5
+ 20
+17.25
+ 10
+11.5
+ 20
+15.55
+ 10
+6.5
+ 20
+15.55
+ 10
+6.5
+ 20
+14.45
+ 10
+11.5
+ 20
+14.45
+ 10
+11.5
+ 20
+12.75
+ 42
+0.4142136
+ 10
+11.75
+ 20
+12.5
+ 10
+13
+ 20
+12.5
+ 10
+13
+ 20
+7.5
+ 10
+15
+ 20
+7.5
+ 10
+15
+ 20
+12.5
+ 10
+16.25
+ 20
+12.5
+ 42
+0.4142136
+ 10
+16.5
+ 20
+12.75
+ 10
+16.5
+ 20
+14.45
+ 10
+22.5
+ 20
+14.45
+ 10
+22.5
+ 20
+15.55
+ 10
+16.5
+ 20
+15.55
+  0
+LWPOLYLINE
+  5
+10D
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+13
+ 20
+0
+ 10
+15
+ 20
+0
+ 10
+15
+ 20
+7
+ 10
+13
+ 20
+7
+  0
+LWPOLYLINE
+  5
+10E
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+13
+ 20
+23
+ 10
+15
+ 20
+23
+ 10
+15
+ 20
+30
+ 10
+13
+ 20
+30
+  0
+LWPOLYLINE
+  5
+10F
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+12
+ 70
+1
+ 10
+31.6
+ 20
+14.45
+ 10
+40
+ 20
+14.45
+ 10
+40
+ 20
+15.55
+ 10
+31.6
+ 20
+15.55
+ 10
+31.6
+ 20
+15.85
+ 10
+26
+ 20
+15.85
+ 10
+26
+ 20
+16.5
+ 10
+23
+ 20
+16.5
+ 10
+23
+ 20
+13.5
+ 10
+26
+ 20
+13.5
+ 10
+26
+ 20
+14.15
+ 10
+31.6
+ 20
+14.15
+  0
+HATCH
+  5
+110
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbHatch
+ 10
+0
+ 20
+0
+ 30
+0
+210
+0
+220
+0
+230
+1
+  2
+SOLID
+ 70
+1
+ 71
+0
+ 91
+1
+ 92
+3
+ 72
+0
+ 73
+1
+ 93
+6
+ 10
+0
+ 20
+0
+ 10
+12.5
+ 20
+0
+ 10
+12.5
+ 20
+12
+ 10
+11
+ 20
+12
+ 10
+11
+ 20
+13.95
+ 10
+0
+ 20
+13.95
+ 97
+0
+ 75
+0
+ 76
+1
+ 98
+0
+  0
+HATCH
+  5
+111
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbHatch
+ 10
+0
+ 20
+0
+ 30
+0
+210
+0
+220
+0
+230
+1
+  2
+SOLID
+ 70
+1
+ 71
+0
+ 91
+1
+ 92
+3
+ 72
+0
+ 73
+1
+ 93
+6
+ 10
+11
+ 20
+16.05
+ 10
+11
+ 20
+18
+ 10
+12.5
+ 20
+18
+ 10
+12.5
+ 20
+30
+ 10
+0
+ 20
+30
+ 10
+0
+ 20
+16.05
+ 97
+0
+ 75
+0
+ 76
+1
+ 98
+0
+  0
+HATCH
+  5
+112
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbHatch
+ 10
+0
+ 20
+0
+ 30
+0
+210
+0
+220
+0
+230
+1
+  2
+SOLID
+ 70
+1
+ 71
+0
+ 91
+1
+ 92
+3
+ 72
+0
+ 73
+1
+ 93
+12
+ 10
+15.5
+ 20
+12
+ 10
+15.5
+ 20
+0
+ 10
+40
+ 20
+0
+ 10
+40
+ 20
+13.95
+ 10
+31.6
+ 20
+13.95
+ 10
+31.6
+ 20
+13.64
+ 10
+26.5
+ 20
+13.64
+ 10
+26.5
+ 20
+13
+ 10
+22.5
+ 20
+13
+ 10
+22.5
+ 20
+13.95
+ 10
+17
+ 20
+13.95
+ 10
+17
+ 20
+12
+ 97
+0
+ 75
+0
+ 76
+1
+ 98
+0
+  0
+HATCH
+  5
+113
+  8
+COPPER_TOP
+100
+AcDbEntity
+100
+AcDbHatch
+ 10
+0
+ 20
+0
+ 30
+0
+210
+0
+220
+0
+230
+1
+  2
+SOLID
+ 70
+1
+ 71
+0
+ 91
+1
+ 92
+3
+ 72
+0
+ 73
+1
+ 93
+12
+ 10
+40
+ 20
+30
+ 10
+15.5
+ 20
+30
+ 10
+15.5
+ 20
+18
+ 10
+17
+ 20
+18
+ 10
+17
+ 20
+16.05
+ 10
+22.5
+ 20
+16.05
+ 10
+22.5
+ 20
+17
+ 10
+26.5
+ 20
+17
+ 10
+26.5
+ 20
+16.65
+ 10
+31.6
+ 20
+16.65
+ 10
+31.6
+ 20
+16.05
+ 10
+40
+ 20
+16.05
+ 97
+0
+ 75
+0
+ 76
+1
+ 98
+0
+  0
+LWPOLYLINE
+  5
+114
+  8
+COPPER_BOTTOM
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+0
+ 20
+0
+ 10
+40
+ 20
+0
+ 10
+40
+ 20
+30
+ 10
+0
+ 20
+30
+  0
+INSERT
+  5
+115
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+2
+ 20
+2
+  0
+INSERT
+  5
+116
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+2
+ 20
+10
+  0
+INSERT
+  5
+117
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+2
+ 20
+18
+  0
+INSERT
+  5
+118
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+2
+ 20
+22
+  0
+INSERT
+  5
+119
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_CIRCLE
+ 10
+2
+ 20
+26
+  0
+INSERT
+  5
+11A
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE
+ 10
+6
+ 20
+2
+  0
+INSERT
+  5
+11B
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+6
+ 20
+6
+  0
+INSERT
+  5
+11C
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+6
+ 20
+10
+  0
+INSERT
+  5
+11D
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+6
+ 20
+18
+  0
+INSERT
+  5
+11E
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+6
+ 20
+22
+  0
+INSERT
+  5
+11F
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+10
+ 20
+2
+  0
+INSERT
+  5
+120
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+10
+ 20
+6
+  0
+INSERT
+  5
+121
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+10
+ 20
+10
+  0
+INSERT
+  5
+122
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+10
+ 20
+18
+  0
+INSERT
+  5
+123
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+10
+ 20
+26
+  0
+INSERT
+  5
+124
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+18
+ 20
+2
+  0
+INSERT
+  5
+125
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+18
+ 20
+6
+  0
+INSERT
+  5
+126
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_CIRCLE
+ 10
+18
+ 20
+10
+  0
+INSERT
+  5
+127
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE
+ 10
+18
+ 20
+18
+  0
+INSERT
+  5
+128
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+18
+ 20
+22
+  0
+INSERT
+  5
+129
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+18
+ 20
+26
+  0
+INSERT
+  5
+12A
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+22
+ 20
+2
+  0
+INSERT
+  5
+12B
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+22
+ 20
+6
+  0
+INSERT
+  5
+12C
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+22
+ 20
+18
+  0
+INSERT
+  5
+12D
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+22
+ 20
+22
+  0
+INSERT
+  5
+12E
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+22
+ 20
+26
+  0
+INSERT
+  5
+12F
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+26
+ 20
+2
+  0
+INSERT
+  5
+130
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+26
+ 20
+10
+  0
+INSERT
+  5
+131
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+26
+ 20
+18
+  0
+INSERT
+  5
+132
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+26
+ 20
+22
+  0
+INSERT
+  5
+133
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_CIRCLE
+ 10
+26
+ 20
+26
+  0
+INSERT
+  5
+134
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE
+ 10
+30
+ 20
+2
+  0
+INSERT
+  5
+135
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+30
+ 20
+6
+  0
+INSERT
+  5
+136
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+30
+ 20
+10
+  0
+INSERT
+  5
+137
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+30
+ 20
+18
+  0
+INSERT
+  5
+138
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+30
+ 20
+22
+  0
+INSERT
+  5
+139
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+34
+ 20
+2
+  0
+INSERT
+  5
+13A
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+34
+ 20
+6
+  0
+INSERT
+  5
+13B
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+34
+ 20
+10
+  0
+INSERT
+  5
+13C
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+STITCH_PAIR
+ 10
+34
+ 20
+18
+  0
+INSERT
+  5
+13D
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+34
+ 20
+26
+  0
+INSERT
+  5
+13E
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+38
+ 20
+2
+  0
+INSERT
+  5
+13F
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_BULGE_CIRCLE
+ 10
+38
+ 20
+6
+  0
+INSERT
+  5
+140
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_CIRCLE
+ 10
+38
+ 20
+10
+  0
+INSERT
+  5
+141
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE
+ 10
+38
+ 20
+18
+  0
+INSERT
+  5
+142
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_SQUARE_LINES
+ 10
+38
+ 20
+22
+  0
+INSERT
+  5
+143
+  8
+DRILL
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+DRILL_OCTAGON
+ 10
+38
+ 20
+26
+  0
+INSERT
+  5
+144
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+6.25
+ 20
+15
+  0
+MTEXT
+  5
+145
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+5.6
+ 20
+16.2
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C1
+  0
+INSERT
+  5
+146
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+12
+ 20
+17.75
+ 50
+90
+  0
+MTEXT
+  5
+147
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+10.2
+ 20
+18
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C2
+  0
+INSERT
+  5
+148
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+12
+ 20
+12.25
+ 50
+90
+  0
+MTEXT
+  5
+149
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+10.2
+ 20
+11.2
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C3
+  0
+INSERT
+  5
+14A
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+14
+ 20
+22.75
+ 50
+90
+  0
+MTEXT
+  5
+14B
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+15.8
+ 20
+22.5
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+R1
+  0
+INSERT
+  5
+14C
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+14
+ 20
+7.25
+ 50
+90
+  0
+MTEXT
+  5
+14D
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+15.8
+ 20
+6.7
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+R2
+  0
+INSERT
+  5
+14E
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+15.25
+ 20
+25.85
+  0
+MTEXT
+  5
+14F
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+16.4
+ 20
+26.6
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C4
+  0
+INSERT
+  5
+150
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+15.25
+ 20
+4.15
+  0
+MTEXT
+  5
+151
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+16.4
+ 20
+2.6
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C5
+  0
+INSERT
+  5
+152
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+22.75
+ 20
+15
+  0
+MTEXT
+  5
+153
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+22.3
+ 20
+16.2
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C8
+  0
+INSERT
+  5
+154
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+31.2
+ 20
+16.25
+ 50
+90
+  0
+MTEXT
+  5
+155
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+32
+ 20
+17.3
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C6
+  0
+INSERT
+  5
+156
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbBlockReference
+  2
+BODY_0603
+ 10
+31.2
+ 20
+13.895
+ 50
+90
+  0
+MTEXT
+  5
+157
+  8
+SILK_TOP
+100
+AcDbEntity
+100
+AcDbMText
+ 10
+32
+ 20
+12
+ 30
+0
+ 40
+0.8
+ 71
+7
+ 72
+1
+  1
+C7
+  0
+LWPOLYLINE
+  5
+158
+  8
+BOARD
+100
+AcDbEntity
+100
+AcDbPolyline
+ 90
+8
+ 70
+1
+ 10
+1
+ 20
+0
+ 10
+39
+ 20
+0
+ 42
+0.4142136
+ 10
+40
+ 20
+1
+ 10
+40
+ 20
+29
+ 42
+0.4142136
+ 10
+39
+ 20
+30
+ 10
+1
+ 20
+30
+ 42
+0.4142136
+ 10
+0
+ 20
+29
+ 10
+0
+ 20
+1
+ 42
+0.4142136
+  0
+ENDSEC
+  0
+EOF

@@ -1047,7 +1047,7 @@ nothing.
 |---|---|---|
 | A stackup conductor | **Filled** | `LINE`, `ARC` and open polylines chain into loops, with `CIRCLE`s and closed polylines beside them. The outermost region is copper, what it encloses is not, and so on inward. |
 | A stackup conductor | **Filled, inverted** | The same loops at the other parity: what the outermost loops enclose is the copper. |
-| A via or drill layer | **Vias** | A plated via from each `CIRCLE`, across the layer's stack entry. A circle on the copper at the same point is its pad; otherwise the pad is the hole's size. Anything else on the layer is reported and stays as drawn. |
+| A via or drill layer | **Vias** | A plated via from each drill mark, across the layer's stack entry: a `CIRCLE`, or a small closed outline whose box is square &mdash; a square, an octagon, a polyline of two arcs, or `LINE`s and `ARC`s that close &mdash; no wider than the layer's widest circle or 3 mm. An outline's hole is its box's width across, so a square's is the circle inside it. A circle or such an outline on the copper at the same point is its pad; otherwise the pad is the hole's size. Anything else on the layer is reported and stays as drawn. |
 | The board outline | **Board outline** | The layer's outlines close into the board's edge. |
 | Any of these | **As drawn** | Each entity stays the shape it is. |
 

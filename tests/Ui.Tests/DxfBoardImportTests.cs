@@ -23,7 +23,7 @@ namespace CircuitRF.Ui.Tests;
 public sealed class DxfBoardImportTests : IDisposable
 {
     private const string BoardMap = "PATTERN=Top Copper,HOLE=Drill,PARTS=Silk Top,SHELL=Outline";
-    private const string TechId = "pcb-2layer_RO4350B_20mil_1oz";
+    internal const string TechId = "pcb-2layer_RO4350B_20mil_1oz";
 
     private readonly string _root = Directory.CreateTempSubdirectory("crf-dxf-board-").FullName;
 

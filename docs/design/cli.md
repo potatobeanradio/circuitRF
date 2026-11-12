@@ -122,7 +122,9 @@ character the stroke font lacks (drawn as a hollow box) — none is lost without
 reporting around `HznConvert.Convert`, the function the Convert to .c3d dialog calls (a source scan holds it). The target is a cell folder, created when absent;
 `--design` is required when the project holds several 3D designs (the refusal lists them); an existing `3d/<cell>.c3d` is a refusal unless `--replace`; a material
 the workspace technology lacks is reported and written to it only with `--add-materials`, and one of the same name with other properties is a refusal listing both.
-The source `.hzn` is never written. Detail: `src/Design/RESOLVED.md` §HZN-6; gate `tests/Ui.Tests/Hzn/HznConvertTests.cs`.
+The source `.hzn` is never written. A source is a Hertzon project by its `.hzn` extension alone, a damaged one included: by
+content, every DXF, GDSII, OASIS or STEP file is "not JSON" too. Detail: `src/Design/RESOLVED.md` §HZN-6; gate
+`tests/Ui.Tests/Hzn/HznConvertTests.cs`.
 
 **`convert part.step -o <cell>/3d/<name>.c3d` makes a NEW 3D view from a STEP file** (brief-em3d-68 R-em3d68-7).
 `step` is a SOURCE with exactly one legal target, a `.c3d` that does not exist yet; importing into an existing one
