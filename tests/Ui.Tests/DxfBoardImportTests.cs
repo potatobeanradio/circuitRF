@@ -132,15 +132,18 @@ public sealed class DxfBoardImportTests : IDisposable
         })]);
     }
 
-    /// <summary>R-dfr38-1-4 as revised: a drill layer's circles and regular polygons — a square (a closed polyline, and four
-    /// lines), a 45° diamond, a hexagon, an octagon, a two-arc polyline — are each a via whose drill is the circle inside it,
-    /// and a circle drawn in a square at one centre is one via. A long rectangle, and a square wider than the layer's widest
-    /// circle, are no holes and are said.</summary>
+    /// <summary>R-dfr38-1-4 as revised: on a drill layer a circle is a via, and so is a closed, convex outline square to its box
+    /// and filling it, or a regular polygon, its drill the circle inside it — a square (closed; four lines; its closing vertex
+    /// repeated; a corner drawn twice), a 45° diamond and the same of four lines, a rounded square, a triangle, a hexagon, an
+    /// octagon, a two-arc polyline. A circle in a square, and two circles, at one centre are one via, the smaller. A long
+    /// rectangle, a 1.3:1 one, and a square wider than the layer's widest circle are no holes and are said.</summary>
     [Fact]
     public void RegularPolygonsOnADrillLayer_AreVias_OneSymbolIsOneVia_AndARectangleOrAnOversizeSquareIsLeftAsDrawn()
     {
+        const double b = 0.41421356237309503;   // tan(π/8): a quarter-circle corner
+        double d = 0.2 * Math.Sqrt(2);
         var entities = new List<(int, object)>();
-        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (26, 0, 0), (26, 10, 0), (0, 10, 0)));
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (44, 0, 0), (44, 10, 0), (0, 10, 0)));
         entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 2.0), (20, 5.0), (40, 0.2)]);
         entities.AddRange(Regular("HOLE", 4, 4, 45));                                // a square
         entities.AddRange(Line("HOLE", 5.8, 4.8, 6.2, 4.8));                         // a square of four lines
@@ -153,24 +156,39 @@ public sealed class DxfBoardImportTests : IDisposable
         entities.AddRange(Regular("HOLE", 14, 4, 0));                                // a diamond
         entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 16.0), (20, 5.0), (40, 0.2)]);
         entities.AddRange(Regular("HOLE", 16, 4, 45));                               // the same drill, its square drawn round it
-        entities.AddRange(Polyline("HOLE", (18, 4.8, 0), (20, 4.8, 0), (20, 5.2, 0), (18, 5.2, 0)));   // a long rectangle
-        entities.AddRange(Polyline("HOLE", (21.5, 4.5, 0), (22.5, 4.5, 0), (22.5, 5.5, 0), (21.5, 5.5, 0)));   // 1 mm: past the circles
+        entities.AddRange(Polyline("HOLE", (23.8, 4.8, 0), (24.2, 4.8, 0), (24.2, 5.2, 0), (23.8, 5.2, 0), (23.8, 4.8, 0)));   // closing vertex repeated
+        entities.AddRange(Polyline("HOLE", (25.8, 4.8, 0), (26.2, 4.8, 0), (26.2, 4.8, 0), (26.2, 5.2, 0), (25.8, 5.2, 0)));   // a corner twice
+        entities.AddRange(Line("HOLE", 28 + d, 5, 28, 5 + d));                       // a diamond of four lines
+        entities.AddRange(Line("HOLE", 28, 5 + d, 28 - d, 5));
+        entities.AddRange(Line("HOLE", 28 - d, 5, 28, 5 - d));
+        entities.AddRange(Line("HOLE", 28, 5 - d, 28 + d, 5));
+        entities.AddRange(Regular("HOLE", 30, 3, 90));                               // a triangle, a drill chart's symbol
+        entities.AddRange(Polyline("HOLE", (31.88, 4.8, 0), (32.12, 4.8, b), (32.2, 4.88, 0), (32.2, 5.12, b), (32.12, 5.2, 0),
+                                           (31.88, 5.2, b), (31.8, 5.12, 0), (31.8, 4.88, b)));                     // a rounded square
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 34.0), (20, 5.0), (40, 0.2)]);
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 34.0), (20, 5.0), (40, 0.4)]);                         // two circles, one centre
+        entities.AddRange(Polyline("HOLE", (35.74, 4.8, 0), (36.26, 4.8, 0), (36.26, 5.2, 0), (35.74, 5.2, 0)));   // 1.3:1
+        entities.AddRange(Polyline("HOLE", (38, 4.8, 0), (40, 4.8, 0), (40, 5.2, 0), (38, 5.2, 0)));               // a long rectangle
+        entities.AddRange(Polyline("HOLE", (41.5, 4.5, 0), (42.5, 4.5, 0), (42.5, 5.5, 0), (41.5, 5.5, 0)));       // 1 mm: past the circles
 
         var tech = Tech();
         var result = Import(Drawing("drill-marks.dxf", [.. entities]), "marks", tech, "PATTERN=Top Copper,HOLE=Drill");
         var view = LoadOnly(result);
 
         var vias = view.Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
-        Assert.Equal([2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000, 12_000_000, 14_000_000, 16_000_000], vias.Select(v => v.X));
+        Assert.Equal([2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000, 12_000_000, 14_000_000, 16_000_000,
+                      24_000_000, 26_000_000, 28_000_000, 30_000_000, 32_000_000, 34_000_000],
+                     vias.Select(v => (long)Math.Round(v.X / 1e6) * 1_000_000));
         Assert.All(vias, v => Assert.InRange(v.Y, 4_999_000, 5_001_000));
         Assert.All(vias, v => Assert.InRange(v.DrillSize, 398_000, 401_000));
-        Assert.Contains(result.Messages, m => m.Contains("2 circles, 2 polygons, 2 squares, 1 arc outline, 1 square of lines read as holes",
+        Assert.Contains(result.Messages, m => m.Contains("4 squares, 3 circles, 3 polygons, 2 arc outlines, 2 squares of lines read as holes",
                                                          StringComparison.Ordinal));
-        Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 mark was drawn at another's centre", StringComparison.Ordinal));
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 2 marks were drawn at another's centre", StringComparison.Ordinal));
 
         var drill = LayerNamed(tech, "Drill");
-        Assert.Equal(2, view.Shapes.Count(s => s.Layer == drill && s is PolygonShape));   // the rectangle and the 1 mm square, as drawn
-        Assert.Contains(result.Messages, m => m.Contains("HOLE: 2 entities are not a circle or a small regular polygon", StringComparison.Ordinal));
+        Assert.Equal(3, view.Shapes.Count(s => s.Layer == drill && s is PolygonShape));   // the two rectangles and the 1 mm square
+        Assert.DoesNotContain(view.Shapes, s => s.Layer == drill && s is PathShape);        // every line drew a hole
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 3 entities are not a circle or a small square or regular outline", StringComparison.Ordinal));
     }
 
     /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a

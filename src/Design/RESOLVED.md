@@ -29808,6 +29808,18 @@ a square pad lost a fifth of its copper and a trace meeting its edge touched the
 `DxfBoardImportTests.RegularPolygonsOnADrillLayer_AreVias_OneSymbolIsOneVia_AndARectangleOrAnOversizeSquareIsLeftAsDrawn`
 and `ASquarePadRoundADrill_IsTheViasPad_AndKeepsItsShape`.
 
+**… and settled on re-review.** The regular-polygon rule alone let a rectangle up to about 1.38:1 through (its corners lie on
+one circle and its area was within the 0.95) and turned rounded squares away (about 0.8 of the regular polygon), and a
+square whose closing vertex is drawn again, or with one corner drawn twice, was no longer a hole: the repeated point gave a
+zero-length neighbour, and the corner beside it was dropped as collinear. Points drawn twice in a row are now one point
+before the collinear test. A hole is a closed, convex outline that is EITHER square to its box within 5 % and filling 0.7
+of it (circles, rounded squares, squares, octagons; the hole the box's width) OR a regular polygon — corners within 5 % of
+their mean radius, edges within 5 % of their mean length, 0.95 of the regular polygon's area (triangles, which drill charts
+use as symbols, squares at any angle, hexagons; the hole the circle inside it). Two marks at one centre are the smaller hole,
+the conservative reading. Four `LINE`s of a turned square are consumed by their own box, not the hole's, so its corners are
+not left as drawn beside its via. The cap stays the widest circle when the layer has circles; the trade-off is that on a
+layer mixing drill sizes, a polygon mark wider than every circle is left as drawn.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was

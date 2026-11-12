@@ -254,59 +254,83 @@ public static class DxfBoardReading
         [.. tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Count > 0)
                                .Select(l => l.DrawingLayers[0])];
 
-    /// <summary>A closed outline on a drill layer is a hole when it is a regular polygon: every corner within this share of
-    /// their mean distance from their centre ...</summary>
+    /// <summary>A closed, convex outline on a drill layer is a hole when its box is square within this share of its width ...</summary>
+    public const double HoleSquareness = 0.05;
+
+    /// <summary>... and it fills at least this share of its box: a circle fills π/4 of it, a rounded square or an octagon more,
+    /// a square all of it ...</summary>
+    public const double HoleFill = 0.7;
+
+    /// <summary>... or when it is a regular polygon — a triangle, a square at any angle, a hexagon: every corner within this share
+    /// of their mean distance from their centre, and every edge within it of their mean length ...</summary>
     public const double HoleRoundness = 0.05;
 
-    /// <summary>... with at least this share of the area of the regular polygon of that many corners on that circle, so a
-    /// rectangle — its corners are on one circle too — and a star are not holes.</summary>
+    /// <summary>... with at least this share of the area of the regular polygon of that many corners on that circle.</summary>
     public const double HoleRegularity = 0.95;
 
-    /// <summary>... and no wider across than the widest circle on the layer, or this many microns on a layer with no circle:
-    /// a drawn pad, a frame or a part outline on the layer is not a hole. A pad round a hole may be this wide.</summary>
+    /// <summary>Either way it is no wider across than the widest circle on the layer, or this many microns on a layer with no
+    /// circle: a drawn pad, a frame or a part outline on the layer is not a hole. A pad round a hole may be this wide.</summary>
     public const double HoleCapMicrons = 3000;
 
     /// <summary>A drill mark: where, how wide across, and what it was drawn as (for the message).</summary>
     private readonly record struct HoleMark(long X, long Y, long Diameter, string Kind);
 
     /// <summary>
-    /// <paramref name="ring"/> read as a hole, or null: a regular polygon (<see cref="HoleRoundness"/>,
-    /// <see cref="HoleRegularity"/>) — a square at any angle, a hexagon, an octagon, a flattened circle — its centre, and the
-    /// circle inside it for its width: the conservative reading (R-dfr38-1-4, revised: see <see cref="ViasOf"/>).
+    /// <paramref name="ring"/> read as a hole, or null (R-dfr38-1-4, revised: see <see cref="ViasOf"/>). It must be closed and
+    /// convex, and either square to its box and filling it (<see cref="HoleSquareness"/>, <see cref="HoleFill"/>: a circle, a
+    /// rounded square, a square, an octagon), its hole the box's centre and width; or a regular polygon
+    /// (<see cref="HoleRoundness"/>, <see cref="HoleRegularity"/>: a triangle, a square at any angle, a hexagon), its hole its
+    /// centre and the circle inside it. Either is the circle inside a square, the conservative reading; a rectangle is neither.
     /// <paramref name="four"/> names a four-cornered one for the message, <paramref name="more"/> the rest.
     /// </summary>
     private static HoleMark? HoleOf(long[] ring, long capDbu, string four, string more)
     {
-        // Corners only: a point on a straight edge, or drawn twice, is no corner.
+        // A point drawn twice in a row — a closing vertex repeated, a corner drawn twice — is one point; then a point on a
+        // straight edge is no corner.
+        var drawn = new List<(double X, double Y)>();
+        for (int i = 0; i + 1 < ring.Length; i += 2)
+            if (drawn.Count == 0 || drawn[^1] != (ring[i], ring[i + 1])) drawn.Add((ring[i], ring[i + 1]));
+        while (drawn.Count > 1 && drawn[0] == drawn[^1]) drawn.RemoveAt(drawn.Count - 1);
         var pts = new List<(double X, double Y)>();
-        int n0 = ring.Length / 2;
-        for (int i = 0; i < n0; i++)
+        var turns = new List<double>();
+        for (int i = 0, m = drawn.Count; i < m; i++)
         {
-            var (px, py) = ((double)ring[2 * ((i + n0 - 1) % n0)], (double)ring[2 * ((i + n0 - 1) % n0) + 1]);
-            var (x, y) = ((double)ring[2 * i], (double)ring[2 * i + 1]);
-            var (nx, ny) = ((double)ring[2 * ((i + 1) % n0)], (double)ring[2 * ((i + 1) % n0) + 1]);
+            var (px, py) = drawn[(i + m - 1) % m];
+            var (x, y) = drawn[i];
+            var (nx, ny) = drawn[(i + 1) % m];
             double cross = (x - px) * (ny - y) - (y - py) * (nx - x);
-            if (Math.Abs(cross) > 1e-9 * (Math.Abs(x - px) + Math.Abs(y - py)) * (Math.Abs(nx - x) + Math.Abs(ny - y))) pts.Add((x, y));
+            if (Math.Abs(cross) <= 1e-9 * (Math.Abs(x - px) + Math.Abs(y - py)) * (Math.Abs(nx - x) + Math.Abs(ny - y))) continue;
+            pts.Add((x, y));
+            turns.Add(cross);
         }
         int n = pts.Count;
-        if (n < 3) return null;
-        double cx = pts.Average(p => p.X), cy = pts.Average(p => p.Y);
-        var radii = pts.Select(p => Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy))).ToList();
-        double r = radii.Average();
-        if (r <= 0 || radii.Any(q => Math.Abs(q - r) > HoleRoundness * r)) return null;
+        if (n < 3 || !(turns.All(t => t > 0) || turns.All(t => t < 0))) return null;   // closed, and convex
+
         double area = 0, inner = double.MaxValue;
+        double cx = pts.Average(p => p.X), cy = pts.Average(p => p.Y);
+        var edges = new double[n];
         for (int i = 0; i < n; i++)
         {
             var (x0, y0) = pts[i];
             var (x1, y1) = pts[(i + 1) % n];
             area += x0 * y1 - x1 * y0;
-            double len = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
-            if (len > 0) inner = Math.Min(inner, Math.Abs((x1 - x0) * (y0 - cy) - (y1 - y0) * (x0 - cx)) / len);
+            edges[i] = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+            if (edges[i] > 0) inner = Math.Min(inner, Math.Abs((x1 - x0) * (y0 - cy) - (y1 - y0) * (x0 - cx)) / edges[i]);
         }
-        if (Math.Abs(area) / 2 < HoleRegularity * 0.5 * n * r * r * Math.Sin(2 * Math.PI / n)) return null;
-        long diameter = (long)Math.Round(2 * inner);
+        area = Math.Abs(area) / 2;
+        double bx0 = pts.Min(p => p.X), bx1 = pts.Max(p => p.X), by0 = pts.Min(p => p.Y), by1 = pts.Max(p => p.Y);
+        double w = bx1 - bx0, h = by1 - by0;
+        var radii = pts.Select(p => Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy))).ToList();
+        double r = radii.Average(), e = edges.Average();
+
+        bool square = w > 0 && h > 0 && Math.Abs(w - h) <= HoleSquareness * Math.Max(w, h) && area >= HoleFill * w * h;
+        bool regular = r > 0 && radii.All(q => Math.Abs(q - r) <= HoleRoundness * r) && edges.All(q => Math.Abs(q - e) <= HoleRoundness * e)
+                       && area >= HoleRegularity * 0.5 * n * r * r * Math.Sin(2 * Math.PI / n);
+        if (!square && !regular) return null;
+        var (hx, hy, d) = square ? ((bx0 + bx1) / 2, (by0 + by1) / 2, Math.Min(w, h)) : (cx, cy, 2 * inner);
+        long diameter = (long)Math.Round(d);
         if (diameter <= 0 || diameter > capDbu) return null;
-        return new HoleMark((long)Math.Round(cx), (long)Math.Round(cy), diameter, n == 4 ? four : more);
+        return new HoleMark((long)Math.Round(hx), (long)Math.Round(hy), diameter, n == 4 ? four : more);
     }
 
     /// <summary>A shape drawn closed as a hole, or null: a circle as itself, a closed polyline or a closed outline with arcs
@@ -324,12 +348,12 @@ public static class DxfBoardReading
     private static string Plural(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 
     /// <summary>
-    /// A drill layer's marks as plated vias. A CIRCLE is a hole of its own diameter. So is a closed outline that is a regular
-    /// polygon (<see cref="HoleRoundness"/>, <see cref="HoleRegularity"/>) no wider than the layer's widest circle, or
-    /// <see cref="HoleCapMicrons"/> on a layer with none: a square at any angle, a regular hexagon or octagon, a two-bulge
-    /// polyline, or LINEs and ARCs that chain into such a loop as copper outlines chain (<see cref="DxfCopperLoops"/>). Its hole
-    /// is its centre and the circle inside it — for a square, the inscribed circle. Two marks at one centre (a drill symbol of
-    /// a circle in a square) are one hole, the circle's. This revises R-dfr38-1-4 ("a non-circular entity on the layer is reported, not guessed at"): many
+    /// A drill layer's marks as plated vias. A CIRCLE is a hole of its own diameter. So is a closed, convex outline that is
+    /// square to its box and fills it, or a regular polygon (<see cref="HoleOf(long[], long, string, string)"/>) — a circle or
+    /// a rounded square drawn with arcs, a square at any angle, a triangle, a hexagon, an octagon, or LINEs and ARCs that chain
+    /// into such a loop as copper outlines chain (<see cref="DxfCopperLoops"/>) — no wider than the layer's widest circle, or
+    /// <see cref="HoleCapMicrons"/> on a layer with none. Its hole is the circle inside it — for a square, the inscribed circle.
+    /// Two marks at one centre (a drill symbol of a circle in a square, two circles) are one hole, the smaller. This revises R-dfr38-1-4 ("a non-circular entity on the layer is reported, not guessed at"): many
     /// drawings mark drills as squares or polygons, and leaving them as drawing cut every pour they stitch from its plane.
     /// It is not <c>ImageTrace.RoundHole</c>'s rule (R-dfr30-3-2), which keeps a square out of a picture's holes on
     /// purpose: in a picture a square blob may be a pad; here the user has mapped the layer as the drill layer, which
@@ -366,19 +390,23 @@ public static class DxfBoardReading
                 if (HoleOf(loop, cap, "square of lines", "outline of lines") is { } mark)
                 {
                     marks.Add(mark);
-                    long r = mark.Diameter / 2 + joinDbu + 1;
-                    holes.Add(new Bbox(mark.X - r, mark.Y - r, mark.X + r, mark.Y + r));
+                    // The loop's own box: a turned square's corners stand outside the circle inside it.
+                    long x0 = long.MaxValue, y0 = long.MaxValue, x1 = long.MinValue, y1 = long.MinValue;
+                    for (int i = 0; i + 1 < loop.Length; i += 2)
+                        (x0, y0, x1, y1) = (Math.Min(x0, loop[i]), Math.Min(y0, loop[i + 1]), Math.Max(x1, loop[i]), Math.Max(y1, loop[i + 1]));
+                    long g = joinDbu + 1;
+                    holes.Add(new Bbox(x0 - g, y0 - g, x1 + g, y1 + g));
                 }
             foreach (var (xy, shape) in strokes)
                 if (!holes.Any(b => Enumerable.Range(0, xy.Length / 2).All(i => b.Contains(xy[2 * i], xy[2 * i + 1])))) drawn.Add(shape);
         }
         asDrawn.AddRange(drawn);
 
-        // One drill symbol drawn as two marks at one centre — a circle in a square, a cross-hatched pair — is one hole:
-        // the circle's, else the wider.
+        // One drill symbol drawn as two marks at one centre — a circle in a square, two circles — is one hole: the smaller,
+        // the conservative reading.
         var holesRead = new List<HoleMark>();
         int twice = 0;
-        foreach (var m in marks.OrderBy(m => m.Kind == "circle" ? 0 : 1).ThenByDescending(m => m.Diameter))
+        foreach (var m in marks.OrderBy(m => m.Diameter))
         {
             if (holesRead.Any(u => Math.Sqrt((double)(u.X - m.X) * (u.X - m.X) + (double)(u.Y - m.Y) * (u.Y - m.Y))
                                    <= Math.Max(joinDbu, 0.05 * Math.Min(u.Diameter, m.Diameter)))) { twice++; continue; }
@@ -391,14 +419,14 @@ public static class DxfBoardReading
                          .Select(g => Plural(g.Count(), g.Key, g.Key.EndsWith(" of lines", StringComparison.Ordinal)
                                                                    ? g.Key[..^9] + "s of lines" : g.Key + "s")).ToList();
         if (marks.Any(m => m.Kind != "circle"))
-            messages.Add($"{name}: {string.Join(", ", kinds)} read as holes; a closed outline is one when it is a regular polygon no " +
-                         $"wider than {Micron(cap, dbuPerMicron)} µm across, the hole the circle inside it.");
+            messages.Add($"{name}: {string.Join(", ", kinds)} read as holes; a closed outline is one when it is square to its box or a " +
+                         $"regular polygon, no wider than {Micron(cap, dbuPerMicron)} µm across, the hole the circle inside it.");
         if (twice > 0)
             messages.Add($"{name}: {Plural(twice, "mark was drawn", "marks were drawn")} at another's centre, one drill symbol " +
-                         "of two shapes, and read as that hole.");
+                         "of two shapes, and read as one hole, the smaller.");
         if (drawn.Count > 0)
-            messages.Add($"{name}: {Plural(drawn.Count, "entity is", "entities are")} not a circle or a small regular polygon, so " +
-                         "not a via. Left as drawn on the layer.");
+            messages.Add($"{name}: {Plural(drawn.Count, "entity is", "entities are")} not a circle or a small square or regular " +
+                         "outline, so not a via. Left as drawn on the layer.");
 
         var span = DrillViaPairing.MapSpan(null, barrel, copper);
 
