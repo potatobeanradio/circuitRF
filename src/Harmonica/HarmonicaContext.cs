@@ -416,25 +416,14 @@ public sealed class HarmonicaContext
                                     EffectiveTol, _model.Settings.Lambda,
                                     _model.Settings.GuardHarmonic);
 
-        var (iNl, qNl, _, _, buckets) = HbNewton.EvaluateNonlinear(
-            v, N, K, gridN, _netlist, _interface.DeviceNodes);
-
-        double omega0 = 2.0 * Math.PI * _model.Settings.FrequencyHz;
-        var total = new Complex[N, K + 1];
-        for (int n = 0; n < N; n++)
-            for (int k = 0; k <= K; k++)
-            {
-                Complex t = iNl[n, k];
-                if (k > 0) t += new Complex(0, k * omega0) * qNl[n, k];
-                foreach (var b in buckets) t += b.Model.Weight(b.W, k * omega0) * b.WNl[n, k];
-                total[n, k] = t;
-            }
-
-        return new OperatingPoint(v, iNl, result.Converged, result.Iterations, pavlDbm)
+        // The solve's own last evaluation is AT v, whichever way it returned, so its conduction spectrum and its total
+        // (conduction + jkω·charge + the higher-weight buckets, HbNewton.TotalInjection) are what evaluating the devices
+        // again here returned, bit for bit — at one evaluation less per solve (LP-0: 13-21 % of a warm solve).
+        return new OperatingPoint(v, result.Conduction!, result.Converged, result.Iterations, pavlDbm)
         {
             YNN      = yNN,
             ISrc     = iSrc,
-            INlTotal = total,
+            INlTotal = result.INl,
             Residual = result.IterTrace.Count > 0 ? result.IterTrace[^1].ResidualNorm : double.NaN,
         };
     }

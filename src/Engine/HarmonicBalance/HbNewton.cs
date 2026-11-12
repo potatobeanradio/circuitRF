@@ -178,7 +178,14 @@ public static class HbNewton
         /// the RF excitation itself — see <see cref="RfExcitationScale"/>. Carries that scale so a
         /// caller can say which two numbers are in the wrong order.
         /// </summary>
-        double VacuousToleranceScale = double.NaN);
+        double VacuousToleranceScale = double.NaN,
+        /// <summary>
+        /// The CONDUCTION spectrum of the evaluation at the reported iterate — the <c>iNl</c> half of what
+        /// <see cref="INl"/> totals. Returned for the same reason as <see cref="G"/>: harmonicaRF reports it beside the
+        /// total, and evaluating the devices again at the same <c>V</c> to get it back cost a fifth of a warm solve, and a
+        /// worker round trip on an external device (LP-0). Null from the multi-tone loops, which have no consumer for it.
+        /// </summary>
+        Complex[,]? Conduction = null);
 
     /// <summary>
     /// The size of the RF excitation this solve is driven by: ‖iSrc[k]‖₂ over the signal harmonics
@@ -294,12 +301,12 @@ public static class HbNewton
                 if (iter == 0 && IsToleranceVacuous(iSrc, K, tol, out double rfScale))
                     return new SolveResult(false, 0, trace,
                         TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
-                        G, C, higherBuckets, rfScale);
+                        G, C, higherBuckets, rfScale, iNl);
 
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 return new SolveResult(true, iter + 1, trace,
                     TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
-                    G, C, higherBuckets);
+                    G, C, higherBuckets, Conduction: iNl);
             }
 
             // ── 2. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
@@ -316,7 +323,7 @@ public static class HbNewton
                 Console.Error.WriteLine($"[HB] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
                 return new SolveResult(false, iter + 1, trace,
                     TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
-                    G, C, higherBuckets);
+                    G, C, higherBuckets, Conduction: iNl);
             }
 
             // ── 4. Update V[k=0..K] += λ·ΔV, λ from the backtracking line search ──
@@ -354,7 +361,7 @@ public static class HbNewton
             WorstNode: last, WorstShare: lastShare));
         return new SolveResult(false, settings.HbMaxIter, trace,
             TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
-            G, C, higherBuckets);
+            G, C, higherBuckets, Conduction: iNl);
     }
 
     // ── Backtracking line search (HB-P3 M1) ──────────────────────────────────
