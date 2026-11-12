@@ -122,7 +122,7 @@ public sealed class ChainLink
             {
                 string text = Get(set, ps, p.Name);
                 if (!ChainValue.TryParse(text, out _) && !(p.BlankAllowed && text.Trim().Length == 0))
-                    r.Add($"{what}: {p.Name} = '{text}' is not a number.");
+                    r.Add($"{what}: {p.Name} = '{text}' is not a number{ChainScaling.WhyNotANumber(text)}.");
             }
         if (Elements is null) r.Add($"Transmitter: Elements = '{GetTx("Elements")}' is not a whole number of elements, 1 or more.");
         if (!TryMetres(GetPath("Distance"), out double d) || !(d > 0))

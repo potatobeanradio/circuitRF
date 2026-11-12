@@ -108,6 +108,28 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(r.Refusals, x => x.StartsWith("Stage 'LNA': NF = 'log10(f_GHz - 200)' cannot be evaluated at 140 GHz", StringComparison.Ordinal));
     }
 
+    /// <summary>A text that is not a number says why it is not an expression either, and a unit set apart from its
+    /// number gets the remedy; an LO that cannot be read is one refusal, the stages after it not read at a frequency it
+    /// does not have.</summary>
+    [Fact]
+    public void ABadExpression_IsRefusedWithTheParsersReason_AndAnUnreadLoOnce()
+    {
+        var d = Scaled();
+        d.Stages[2].Parameters["Flo"] = "freq - 3 GHz";
+        d.Stages[3].Parameters["NF"] = "nf_after_the_mixer.csv";   // would be a second refusal if read at a wrong IF
+        var r = ChainBudget.Evaluate(d);
+        var only = Assert.Single(r.Refusals);
+        Assert.StartsWith("Stage 'MIX': Flo = 'freq - 3 GHz' is not a number, nor an expression: ", only, StringComparison.Ordinal);
+        Assert.EndsWith("; glue a unit to its number: 3GHz.", only, StringComparison.Ordinal);
+        Assert.Equal("freq - 3 GHz", d.Stages[2].Parameters["Flo"]);   // the text as typed
+
+        d = Scaled();
+        d.Stages[0].Parameters["NF"] = "0.045*f_GHz +";
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.StartsWith("Stage 'LNA': NF = '0.045*f_GHz +' is not a number, nor an expression: ", StringComparison.Ordinal));
+        d.Stages[0].Parameters["NF"] = "0.05*fghz + 0.5";
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("NF = '0.05*fghz + 0.5' is not a number, nor a value of the frequency: it reads fghz", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void TheBenches_CarryTheResolvedNumbers_NotTheExpressions()
     {

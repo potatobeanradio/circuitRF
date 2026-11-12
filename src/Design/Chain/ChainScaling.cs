@@ -34,6 +34,28 @@ public static class ChainScaling
         catch (ExpressionException) { return false; }
     }
 
+    /// <summary>
+    /// Why a text that is not a number is not a value of the frequency either, as a clause to follow "is not a number":
+    /// the expression parser's own message, or the names it reads besides <c>freq</c> and <c>f_GHz</c>. A number
+    /// separated from its frequency unit ("3 GHz") gets the remedy, a unit glued to its number; the text itself is never
+    /// rewritten.
+    /// </summary>
+    public static string WhyNotANumber(string? text)
+    {
+        string t = (text ?? "").Trim();
+        if (t.Length == 0) return "";
+        string why;
+        try
+        {
+            var other = AstWalker.CollectRefs(Parser.Parse(t)).Where(n => n is not (FreqVar or FreqGhzVar)).ToList();
+            why = other.Count == 0 ? "" : $", nor a value of the frequency: it reads {string.Join(", ", other)}, and a value reads only {FreqVar} and {FreqGhzVar}";
+        }
+        catch (ExpressionException ex) { why = $", nor an expression: {ex.Message.TrimEnd('.')}"; }
+        if (System.Text.RegularExpressions.Regex.Match(t, @"\d\s+([kMGT]?Hz)\b") is { Success: true } m)
+            why += $"; glue a unit to its number: 3{m.Groups[1].Value}";
+        return why;
+    }
+
     /// <summary>The value of a number, an expression or a table at <paramref name="fHz"/>, or null and why not (a phrase
     /// to follow "NF = '…'"). Never throws.</summary>
     public static double? At(string text, double fHz, string? baseDirectory, out string why)
@@ -83,7 +105,15 @@ public static class ChainScaling
                 if (At(text, f, d.BaseDirectory, out string why) is { } v) s.Parameters[p.Name] = v.ToString("R", CultureInfo.InvariantCulture);
                 else refusals.Add($"Stage '{s.Name}': {p.Name} = '{text.Trim()}' {why}.");
             }
-            if (s.Part == ChainParts.Mixer) f = Math.Abs(f - ChainValue.Or(s.Get("Flo"), 0));
+            if (s.Part != ChainParts.Mixer) continue;
+            // The stages after a mixer whose LO cannot be read have no frequency to be read at: one refusal, not theirs too.
+            if (!ChainValue.TryParse(s.Get("Flo"), out double flo))
+            {
+                if (!refusals.Any(x => x.StartsWith($"Stage '{s.Name}': Flo = ", StringComparison.Ordinal)))
+                    refusals.Add($"Stage '{s.Name}': Flo = '{s.Get("Flo").Trim()}' is not a number{WhyNotANumber(s.Get("Flo"))}.");
+                break;
+            }
+            f = Math.Abs(f - flo);
         }
         return r;
     }

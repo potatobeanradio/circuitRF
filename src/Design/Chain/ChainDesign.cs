@@ -120,7 +120,7 @@ public sealed class ChainDesign
         if (!(BandwidthHz > 0)) r.Add("The bandwidth must be above 0 Hz.");
         if (!(TemperatureK >= 0)) r.Add("The source temperature cannot be below 0 K.");
         if (FractionalBandwidth is { } fbw && !(fbw > 0 && fbw < 2)) r.Add("The fractional bandwidth is a fraction of the frequency, above 0 and below 2.");
-        if (Streams < 1) r.Add("A link carries one stream at least.");
+        if (Streams < 1) r.Add("Streams must be 1 or more.");
         if (!(NfAllowanceDb > 0)) r.Add("The NF allowance must be above 0 dB.");
         if (!double.IsFinite(RxBackoffDb)) r.Add("The receiver back-off must be a number of dB.");
         if (Stages.Count == 0) r.Add("The chain has no stages.");
@@ -140,7 +140,7 @@ public sealed class ChainDesign
             int before = r.Count;
             foreach (var p in part.Parameters.Where(p => p.Numeric))
                 if (!ChainValue.TryParse(s.Get(p.Name), out _) && !(p.BlankAllowed && s.Get(p.Name).Trim().Length == 0))
-                    r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number.");
+                    r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number{ChainScaling.WhyNotANumber(s.Get(p.Name))}.");
             if (r.Count == before && ChainValue.Or(s.Get("Pdc"), 0) < 0) r.Add($"Stage '{s.Name}': Pdc = '{s.Get("Pdc")}' is below 0 W.");
             if (part.Token == ChainParts.Amp && r.Count == before && ChainValue.TryParse(s.Get("GainPerStage"), out double gps)
                 && ChainParts.StageCount(s) is null)
