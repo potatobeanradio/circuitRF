@@ -210,7 +210,7 @@
         },
         {
           "Name": "Psat",
-          "Expression": "24.01016",
+          "Expression": "24.01015991217509",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

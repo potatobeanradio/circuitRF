@@ -58,6 +58,14 @@
             <Setter Property="Padding"   Value="4,1"/>
             <Setter Property="MinHeight" Value="24"/>
         </Style>
+        <!-- A parameter's own box and pick grow with what is typed, from a narrower floor than the inputs': the ten fields
+             of a combiner stage then fit on one line at the window's default width. -->
+        <Style Selector="TextBox.param">
+            <Setter Property="MinWidth"  Value="38"/>
+        </Style>
+        <Style Selector="ComboBox.param">
+            <Setter Property="MinWidth"  Value="66"/>
+        </Style>
         <Style Selector="Border.block">
             <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -98,9 +106,9 @@
     <!-- A parameter row's field, for the rows that are not stages (the Link tab's): the stage list's own template. -->
     <Window.DataTemplates>
         <DataTemplate DataType="vm:ChainParamViewModel">
-            <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
+            <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
                 <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}"/>
+                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}"/>
                 <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
             </StackPanel>
         </DataTemplate>
@@ -347,7 +355,7 @@
                              AutoScrollToSelectedItem="False">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:ChainStageViewModel">
-                                <Grid ColumnDefinitions="110,220,*" Margin="0,2">
+                                <Grid ColumnDefinitions="90,208,*" Margin="0,2">
                                     <TextBox Grid.Column="0" Classes="p" Text="{Binding Name}" Classes.invalid="{Binding NameInvalid}" VerticalAlignment="Top" ToolTip.Tip="The stage's name: its instance name on the schematic"/>
                                     <ComboBox Grid.Column="1" Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding Part}"
                                               Margin="6,0" HorizontalAlignment="Stretch" VerticalAlignment="Top" ToolTip.Tip="{Binding Part.Summary}">
@@ -362,10 +370,10 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:ChainParamViewModel">
-                                                    <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
                                                         <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                                                        <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
-                                                        <ComboBox Classes="p" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
+                                                        <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
+                                                        <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
                                                         <Button Content="…" IsVisible="{Binding IsFile}" Click="OnPickFileClick" Padding="6,0" Margin="3,0,0,0"
                                                                 VerticalAlignment="Stretch" ToolTip.Tip="Pick the Touchstone file"/>
                                                         <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
@@ -417,6 +425,12 @@
                                           ToolTip.Tip="A transmit array and a line-of-sight path in front of the chain: the power each receive element gets becomes the input power, and the receive array is the chain's Combiner">
                                     <TextBlock Text="a transmitter and a path in front of the chain" FontSize="12"/>
                                 </CheckBox>
+                                <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
+                                                 Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
+                                                 Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
                                 <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto">
                                     <TextBlock Classes="lbl" Text="Transmitter" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
                                     <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
@@ -435,12 +449,6 @@
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     </ItemsControl>
                                 </Grid>
-                                <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
-                                                 Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
-                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
-                                <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
-                                                 Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
-                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>

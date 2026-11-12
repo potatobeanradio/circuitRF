@@ -25,7 +25,8 @@ using RfCore.Data;
 namespace CircuitRF.Design.Chain;
 
 /// <summary>The receiver readouts of one budget.</summary>
-/// <param name="NfAllowedDb">After each stage, the largest NF the stages after it may have together, dB.</param>
+/// <param name="NfAllowedDb">After each stage, the largest NF the stages after it may have together, dB; NaN after the
+/// last.</param>
 /// <param name="Ip1dbSharePct">Each stage's share of the cascade's 1/IP1dB, %; 0 for a linear stage.</param>
 public sealed record ChainReadout(double BandwidthHz, double NfArrayDb, double SnrDb, double MarginDb,
                                   int Streams, double RateBps, double CeilingDbm,
@@ -47,7 +48,8 @@ public static class ChainCapacity
         for (int i = 0; i < r.Stages.Count; i++)
         {
             gn *= Lin(r.Stages[i].Stage.NoiseGainDb);
-            allow[i] = Db(1 + Lin(r.Stages[i].NfDb) * x * gn);
+            // After the last stage there is nothing left to allow an NF to: none, the table's NaN.
+            allow[i] = i == r.Stages.Count - 1 ? double.NaN : Db(1 + Lin(r.Stages[i].NfDb) * x * gn);
         }
         return new ChainReadout(d.BandwidthHz, t.NfDb - t.ArrayGainDb, t.SnrDb, t.SnrDb - d.RequiredSnrDb, d.Streams,
                                 rate, t.Ip1dbDbm - d.RxBackoffDb, allow, Shares(r.Stages));

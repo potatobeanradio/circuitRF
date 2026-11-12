@@ -20,7 +20,7 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public string Name => param.Name;
     /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
     /// ("2.35 GHz"), so none is shown for one.</summary>
-    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "W" or "dBi" or "%" or "m" or "dB/km" ? param.Unit : "";
+    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "dBi" or "%" or "dB/km" ? param.Unit : "";
 
     /// <summary>A budget-only value left blank is not written into the stage, so a chain that does not use one saves as
     /// it always did.</summary>
@@ -236,7 +236,17 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             if (s is null) continue;
             var data = ChainBudget.Sweep(d, s, notes);
             var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowSweep(s.Of);
-            for (int i = 0; i < cfg.Count; i++) Refill(ref _sweep[k][i], props[k], cfg[i], BudgetSource, data);
+            for (int i = 0; i < cfg.Count; i++)
+            {
+                Refill(ref _sweep[k][i], props[k], cfg[i], BudgetSource, data);
+                // An array sweep's x axis is a log one (its sizes are spread in ratio), autoscaled on that scale.
+                if (cfg[i].Axes is { } axes && _sweep[k][i] is { } holder)
+                {
+                    holder.PlotVM.Plot.Axes.XScale = axes.XScale;
+                    holder.PlotVM.Plot.Autoscale();
+                    holder.RequestPlotRedraw();
+                }
+            }
         }
     }
     public CircuitRF.Render.DataDisplay.Plot? LinkPlot => _linkTable?.PlotVM.Plot;

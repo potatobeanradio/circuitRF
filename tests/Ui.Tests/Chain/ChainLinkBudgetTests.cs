@@ -254,6 +254,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
             d.NfAllowanceDb = x;
             var r = ChainBudget.Evaluate(d);
             var o = ChainCapacity.Read(r)!;
+            Assert.True(double.IsNaN(o.NfAllowedDb[^1]));
             for (int k = 0; k < d.Stages.Count - 1; k++)
             {
                 // The rest replaced by one stage of exactly that NF (a noise gain of 1: Friis reads only its noise factor).
@@ -651,6 +652,11 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
             {
                 double[] want = v is System.Text.Json.Nodes.JsonArray a ? [.. a.Select(x => (double)x!)] : [(double)v!];
                 double[] got = key == "Nstg_LNA" ? [ds["Nstg"].RealValues[1]] : ds[key].RealValues;
+                if (key == "NFallow_dB")   // nothing is left after the last stage to allow an NF to
+                {
+                    Assert.True(double.IsNaN(got[^1]));
+                    got = got[..^1];
+                }
                 Assert.Equal(want.Length, got.Length);
                 for (int i = 0; i < want.Length; i++, n++)
                 {

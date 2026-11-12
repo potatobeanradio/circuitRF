@@ -1016,8 +1016,8 @@ public static class ChainBenches
             var bos = TxBackoffsDb.Append(bo).Distinct().Order().ToArray();
             var (mhz, _) = Carrier(d.BandwidthHz);
             EnvelopeFits([], [(d.FrequencyHz, mhz * 1e6)]);   // one fundamental, the carrier: no LO on this bench
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {F(psat)}", $"PaGain = {F(g)}", $"Loss = {F(loss)}",
-                            $"BO = {F(bo)}", "Pin = Psat - BO - PaGain"]);
+            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}",
+                            $"BO = {G(bo)}", "Pin = Psat - BO - PaGain"]);
             Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
                  $"Carrier[1]=\"NR;BW={mhz}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=no");
             Place("SRC", 0, 200);
