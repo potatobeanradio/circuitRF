@@ -178,6 +178,26 @@ public sealed class ElaboratedNetlist : IDisposable
     }
 
     /// <summary>
+    /// The keyed warnings and notes recorded since the last call, in arrival order, with their keys forgotten so the next
+    /// piece of work can raise them again.
+    ///
+    /// <para><b>Why this exists.</b> A parallel loadpull runs many loads on one elaborated copy, and the serial run reports
+    /// each key as the FIRST LOAD IN GRID ORDER raised it ("first seen at Γ = …"). Taken per load and replayed into the
+    /// caller's netlist in grid order, the copies report exactly that, however the loads were shared between them; left to
+    /// the copy's own once-per-key rule, a load solved early on one copy would hide the same key from an earlier load
+    /// solved later on it.</para>
+    /// </summary>
+    public (IReadOnlyList<(string Key, string Message)> Warnings, IReadOnlyList<(string Key, string Message)> Notes) TakeRunDiagnostics()
+    {
+        var taken = (Warnings: _keyedWarnings.ToArray(), Notes: _keyedNotes.ToArray());
+        _keyedWarnings.Clear();
+        _keyedNotes.Clear();
+        foreach (var (key, _) in taken.Warnings) _seenWarningKeys.Remove(key);
+        foreach (var (key, _) in taken.Notes)    _seenWarningKeys.Remove(key);
+        return taken;
+    }
+
+    /// <summary>
     /// R-mk-7/R-mk-8 (brief-mklopf-performance-and-messages.md): after stamping a component, drains
     /// and records any warnings it accumulated during <c>Stamp</c> (e.g. a microstrip validity-range
     /// violation) — the ONLY route from deep inside a per-frequency <c>Stamp()</c> call, which has no

@@ -829,12 +829,12 @@ public static class CircuitEvaluation
                 // Post-process: add the derived display metrics (Pout_dBm, Zin, IRL, AMPM) so the
                 // Data Display renders the same contours as a measured .spl (loadpull-postprocessor.md).
                 return RfCore.Loadpull.LoadpullPostProcessor.Enrich(
-                    new LoadpullEngine(nl, tb).Run(p, control));
+                    new LoadpullEngine(nl, tb, lib: lib, baseDirectory: baseDirectory).Run(p, control));
             }
 
             case LoadpullPursuitAnalysis lppa:
             {
-                var lpEngine      = new LoadpullEngine(nl, tb);
+                var lpEngine      = new LoadpullEngine(nl, tb, lib: lib, baseDirectory: baseDirectory);
                 var pursuitEngine = new LoadpullPursuitEngine(lpEngine);
                 var p             = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 return pursuitEngine.Run(p, control: control);

@@ -39,7 +39,10 @@ public sealed record LoadpullAnalysisParams(
     /// from before. Its ports are the tuners unless the directive named others.</summary>
     HbNoiseRequest?    Noise = null,
     /// <summary>Brief NZ-6: the output frequency the noise is read at, Hz (<c>NoiseFreq=</c>; the tone when absent).</summary>
-    double             NoiseFreqHz = 0);
+    double             NoiseFreqHz = 0,
+    /// <summary>LP-1: <c>Workers=</c> — loads solved at once; 0 defers to <see cref="AnalysisSettings.MaxParallelism"/>
+    /// (itself 0 = one per core), 1 is the serial loop.</summary>
+    int                Workers = 0);
 
 /// <summary>
 /// The core loadpull engine — outer Γ/Z grid × inner adaptive Pin sweep (loadpull.md §2–§5).
@@ -66,10 +69,30 @@ public sealed class LoadpullEngine
     // Run(), and reports NF there. 0 = no noise.
     private double _noiseHz;
 
-    public LoadpullEngine(ElaboratedNetlist netlist, TestBench tb, AnalysisSettings? settings = null)
+    // LP-1 — what a parallel grid needs to elaborate each worker's own copy of the netlist (null pins Run to the serial
+    // loop), the settings each worker's engine is built from, and where this engine's progress lines go: Console.Error,
+    // or a parallel load's own buffer, flushed in grid order.
+    private readonly Library?          _lib;
+    private readonly string?           _baseDir;
+    private readonly AnalysisSettings? _settings;
+    private TextWriter?                _log;
+    private TextWriter Log => _log ?? Console.Error;
+
+    /// <summary>How many workers the last <see cref="Run"/> on this thread solved its loads with. Test-facing: the claim is
+    /// that the loads ran side by side, which a timing cannot hold steadily and a count can.</summary>
+    [ThreadStatic] internal static int LastLoadpullDegree;
+
+    /// <param name="lib">The library <paramref name="netlist"/> was elaborated from, and the base directory that
+    /// elaboration used — needed ONLY to elaborate the per-worker copies of a parallel grid (LP-1). Null pins
+    /// <see cref="Run"/> to the serial loop, which is what every caller had before.</param>
+    public LoadpullEngine(ElaboratedNetlist netlist, TestBench tb, AnalysisSettings? settings = null,
+                          Library? lib = null, string? baseDirectory = null)
     {
-        _netlist = netlist;
-        _tb      = tb;
+        _netlist  = netlist;
+        _tb       = tb;
+        _settings = settings;
+        _lib      = lib;
+        _baseDir  = baseDirectory;
 
         var base_ = settings ?? AnalysisSettings.Default;
         // Force InductanceRegularization=Always (loadpull.md §2.1).
@@ -84,6 +107,7 @@ public sealed class LoadpullEngine
             DcBiasStepping            = base_.DcBiasStepping,
             DriveStepping             = base_.DriveStepping,
             NonlinearAbsTol           = base_.NonlinearAbsTol,
+            MaxParallelism            = base_.MaxParallelism,
         };
         _hbEngine = new HbEngine(netlist, tb, _lpSettings);
     }
@@ -149,6 +173,7 @@ public sealed class LoadpullEngine
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
         double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
+        int    workers    = Math.Max(0, (int)Num(lpa.WorkersExpr, 0));
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();
@@ -171,7 +196,7 @@ public sealed class LoadpullEngine
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, grid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz, workers);
     }
 
     /// <summary>
@@ -399,8 +424,10 @@ public sealed class LoadpullEngine
     {
         var ctx           = PrepareContext(p);
         var gridPoints    = new List<GridPointResult>();
-        var convergedV    = new Dictionary<int, Complex[,]>();
         var gridPointList = p.Grid.Points;
+        var firstV        = new Complex[,]?[gridPointList.Count];
+        int degree        = PlanDegree(gridPointList.Count, p.Workers);
+        LastLoadpullDegree = degree;
         _collectWBondCurrents = true;
         bool moved = false;
         if (p.Noise is { } req) HbNoise.ValidateEnds(_netlist, req);
@@ -416,7 +443,8 @@ public sealed class LoadpullEngine
                 "small signal beside the drive sees. Set NoiseFreq to read it elsewhere.");
         try
         {
-            for (int gi = 0; gi < gridPointList.Count; gi++)
+            if (degree > 1) gridPoints.AddRange(RunParallel(p, ctx, degree, control));
+            else for (int gi = 0; gi < gridPointList.Count; gi++)
             {
                 control?.Tick();
 
@@ -424,12 +452,9 @@ public sealed class LoadpullEngine
                 var gamma = gp.Gamma;
                 var z     = gp.Z;
 
-                Console.Error.WriteLine(
-                    $"[LP] Grid {gi+1}/{gridPointList.Count}: " +
-                    $"Γ={gamma.Real:F4}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F4}j  " +
-                    $"Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
+                GridLine(Log, gi, gridPointList.Count, gp);
 
-                Complex[,]? gridSeed = FindNearestSeed(gi, gamma, convergedV, gridPointList);
+                Complex[,]? gridSeed = FindNearestSeed(gi, gamma, firstV, gridPointList);
                 var gpr = RunOneTermination(p, ctx, z, gi, gridSeed);
 
                 // The neighbour seed is this load's FIRST converged rung — the tickle, or PinStart without one — because that is
@@ -437,14 +462,10 @@ public sealed class LoadpullEngine
                 // −50 dBm tickle from it asked one Newton solve to walk the whole drive-up back down: a device whose network,
                 // thermal and trap nodes all sit in the nonlinear partition (an exported Verilog-A model) failed it at 48 of
                 // 49 loads where the same model as a ComposedFET did not (brief MC-30 R-mc30-5; src/Engine/RESOLVED.md).
-                var firstConv = gpr.PinSteps.FirstOrDefault(s => s.Converged);
-                if (firstConv is not null)
-                    convergedV[gi] = firstConv.V;
+                firstV[gi] = gpr.PinSteps.FirstOrDefault(s => s.Converged)?.V;
 
                 gridPoints.Add(gpr);
-                Console.Error.WriteLine(
-                    $"[LP]   Stop={gpr.StopReason}  ({gpr.PinSteps.Count} Pin steps, " +
-                    $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
+                StopLine(Log, gpr);
             }
         }
         finally { _collectWBondCurrents = false; _noiseHz = 0; }
@@ -456,6 +477,166 @@ public sealed class LoadpullEngine
         var ds = BuildLoadpullDataSet(gridPoints, p, ctx);
         AddWireTemperature(ds, gridPoints, p);
         return ds;
+    }
+
+    private static void GridLine(TextWriter w, int gi, int count, GamReader.GamPoint gp)
+    {
+        Complex gamma = gp.Gamma, z = gp.Z;
+        w.WriteLine(
+            $"[LP] Grid {gi+1}/{count}: " +
+            $"Γ={gamma.Real:F4}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F4}j  " +
+            $"Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
+    }
+
+    private static void StopLine(TextWriter w, GridPointResult gpr)
+        => w.WriteLine(
+            $"[LP]   Stop={gpr.StopReason}  ({gpr.PinSteps.Count} Pin steps, " +
+            $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
+
+    // ── LP-1: the grid's loads in parallel, with the serial loop's results ──────
+
+    /// <summary>
+    /// How many workers <see cref="Run"/> will solve <paramref name="gridCount"/> loads with. Public to the tests, because
+    /// "did it take the serial path?" is otherwise only answerable by timing. 1 — the serial loop — without a
+    /// <see cref="Library"/> to elaborate the copies from, at <see cref="AnalysisSettings.MaxParallelism"/> = 1, for fewer
+    /// than two loads, and for a netlist that may not be elaborated twice (an external device is a slot in ONE worker
+    /// process, whose channel serialises every call anyway; <see cref="SParameterEngine.CanElaborateInParallel"/>).
+    /// Otherwise the cap — <paramref name="workers"/> (the directive's <c>Workers=</c>) when it is set, else
+    /// <see cref="AnalysisSettings.MaxParallelism"/>, 0 meaning <see cref="Environment.ProcessorCount"/> — and never more
+    /// workers than loads.
+    /// </summary>
+    public int PlanDegree(int gridCount, int workers = 0)
+    {
+        int requested = workers > 0 ? workers : _lpSettings.MaxParallelism;
+        if (requested == 1 || _lib is null || gridCount < 2) return 1;
+        if (!SParameterEngine.CanElaborateInParallel(_netlist)) return 1;
+        return Math.Min(requested > 1 ? requested : Environment.ProcessorCount, gridCount);
+    }
+
+    /// <summary>
+    /// The grid on <paramref name="degree"/> workers, each with its own elaborated copy of the netlist and its own engine —
+    /// a model writes state while it stamps, so the copies are the whole thread-safety story, as in the S-parameter sweep
+    /// (SP-P3). <b>Bit-identical to the serial loop at any degree</b>, because nothing a load computes depends on another
+    /// load except its warm start, and that is reproduced exactly:
+    ///
+    /// <list type="bullet">
+    /// <item>A load's seed is the first converged rung of the VSWR-nearest EARLIER load (<see cref="FindNearestSeed"/>,
+    /// ties to the lower index). A ladder stops at its first failed rung, so that rung is always the load's FIRST solve:
+    /// each load publishes it the moment it is solved (<see cref="RunOneTermination"/>'s <c>onFirstRung</c>), and load
+    /// <c>i</c> waits only until loads <c>0 … i−1</c> have published. The first solves follow one another in grid order;
+    /// everything after them — the drive-up, its continuations, the noise — runs side by side.</item>
+    /// <item>Each worker's tuners carry the caller's harmonic overrides (a pursuit's follow-on Zsource), and every solve
+    /// is a pure function of the tuner state, the drive and the seed — a reused factorisation is reused only when the
+    /// re-stamped matrix is bit-identical (HB-P2), so which worker solved which load earlier does not matter.</item>
+    /// <item>Diagnostics are taken per load (<see cref="ElaboratedNetlist.TakeRunDiagnostics"/>) and replayed into the
+    /// caller's netlist in grid order; progress lines are buffered per load and printed in grid order as the completed
+    /// prefix grows. A failure is the lowest failing load's, raised after the loads running beside it finish, with the
+    /// findings of the loads before it — what the serial loop would have stopped with.</item>
+    /// </list>
+    /// </summary>
+    private GridPointResult[] RunParallel(LoadpullAnalysisParams p, PursuitContext ctx, int degree, RunControl? control)
+    {
+        var grid      = p.Grid.Points;
+        int n         = grid.Count;
+        var results   = new GridPointResult?[n];
+        var firstV    = new Complex[,]?[n];
+        var published = new bool[n];
+        var logs      = new string?[n];
+        var diags     = new (IReadOnlyList<(string Key, string Message)> Warnings,
+                             IReadOnlyList<(string Key, string Message)> Notes)?[n];
+        var faults    = new Exception?[n];
+        Exception? setupFault = null;
+        int next = -1, prefix = 0, flushed = 0, abort = 0;
+        object gate = new(), elaborating = new();
+
+        void Publish(int gi, Complex[,]? v)
+        {
+            lock (gate)
+            {
+                if (published[gi]) return;
+                published[gi] = true;
+                firstV[gi]    = v;
+                while (prefix < n && published[prefix]) prefix++;
+                Monitor.PulseAll(gate);
+            }
+        }
+
+        Parallel.For(0, degree, new ParallelOptions { MaxDegreeOfParallelism = degree }, _ =>
+        {
+            ElaboratedNetlist? copy = null;
+            try
+            {
+                // One elaboration at a time: the Elaborator reads the TestBench, which nothing else may be changing then.
+                lock (elaborating) copy = new Elaborator(_lib!) { BaseDirectory = _baseDir }.Elaborate(_tb);
+                var eng  = new LoadpullEngine(copy, _tb, _settings) { _collectWBondCurrents = _collectWBondCurrents, _noiseHz = _noiseHz };
+                var wctx = eng.PrepareContext(p);
+                Mirror(ctx.SrcModel, wctx.SrcModel);
+                Mirror(ctx.LoadModel, wctx.LoadModel);
+                copy.TakeRunDiagnostics();   // its elaboration's and setup's: the caller's netlist holds its own
+
+                while (Volatile.Read(ref abort) == 0)
+                {
+                    int gi = Interlocked.Increment(ref next);
+                    if (gi >= n) break;
+                    var log = new StringWriter();
+                    eng._log = log;
+                    try
+                    {
+                        control?.Tick();
+                        Complex[,]? seed;
+                        lock (gate)
+                        {
+                            while (prefix < gi) Monitor.Wait(gate);
+                            seed = FindNearestSeed(gi, grid[gi].Gamma, firstV, grid);
+                        }
+                        GridLine(log, gi, n, grid[gi]);
+                        var gpr = eng.RunOneTermination(p, wctx, grid[gi].Z, gi, seed, v => Publish(gi, v));
+                        StopLine(log, gpr);
+                        results[gi] = gpr;
+                    }
+                    catch (Exception ex)
+                    {
+                        faults[gi] = ex;
+                        Volatile.Write(ref abort, 1);
+                    }
+                    finally
+                    {
+                        Publish(gi, null);   // a load that failed, or solved nothing, must not leave a later one waiting
+                        diags[gi] = copy.TakeRunDiagnostics();
+                        lock (gate)
+                        {
+                            logs[gi] = log.ToString();
+                            while (flushed < n && logs[flushed] is { } text) { Console.Error.Write(text); flushed++; }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (gate) setupFault ??= ex;
+                Volatile.Write(ref abort, 1);
+            }
+            finally { copy?.Dispose(); }
+        });
+
+        int failed = Array.FindIndex(faults, f => f is not null);
+        for (int gi = 0; gi < n && (failed < 0 || gi <= failed); gi++)
+        {
+            if (diags[gi] is not { } d) continue;
+            foreach (var (key, message) in d.Warnings) _netlist.AddWarningOnce(key, message);
+            foreach (var (key, message) in d.Notes)    _netlist.AddNoteOnce(key, message);
+        }
+        if (failed >= 0) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(faults[failed]!).Throw();
+        if (results.Any(r => r is null))
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(
+                setupFault ?? new InvalidOperationException("Loadpull: a parallel grid left a load unsolved.")).Throw();
+        return results!;
+    }
+
+    private static void Mirror(TunerModel from, TunerModel to)
+    {
+        if (from.HarmonicOverride is { } o) to.SetHarmonicOverride(o.Harmonic, o.Z);
+        else to.ClearHarmonicOverride();
     }
 
     /// <summary>
@@ -707,13 +888,18 @@ public sealed class LoadpullEngine
     /// Gamma is derived from Z and the grid's Z0 (RfCore convention). Callers need not supply it.
     ///
     /// <paramref name="warmStart"/> — optional warm-start V from a nearby converged solve.
+    ///
+    /// <paramref name="onFirstRung"/> — called once, as soon as the ladder's first rung is recorded, with that rung's V if
+    /// it converged and null if it did not: what a later load seeds from, which a parallel grid hands on without waiting
+    /// for the rest of this load's drive-up. Not called when the Pin sequence is empty.
     /// </summary>
     public GridPointResult RunOneTermination(
         LoadpullAnalysisParams p,
         PursuitContext         ctx,
         Complex                z,
         int                    gridIndex,
-        Complex[,]?            warmStart = null)
+        Complex[,]?            warmStart = null,
+        Action<Complex[,]?>?   onFirstRung = null)
     {
         // B7: compute Γ from Z using the grid's actual Z0 (not hardcoded 50 Ω).
         double z0    = p.Grid.Z0 > 0 ? p.Grid.Z0 : 50.0;
@@ -721,6 +907,11 @@ public sealed class LoadpullEngine
         ctx.SweptModel.SetHarmonicOverride(p.TuneHarm, z);
 
         var pinSteps  = new List<PinStepResult>();
+        void Record(PinStepResult s)
+        {
+            pinSteps.Add(s);
+            if (pinSteps.Count == 1) onFirstRung?.Invoke(s.Converged ? s.V : null);
+        }
         // Brief NZ-6 — each converged solve, by the step it made, so the noise is read after the ladder on the rungs it
         // kept (a continuation's discarded probes cost nothing). Null when no noise was asked for.
         var noisePoints = p.Noise is not null && _noiseHz > 0
@@ -825,9 +1016,9 @@ public sealed class LoadpullEngine
                 // Record the failed attempt so the caller can still see WHERE it stopped, exactly as
                 // this loop always did — SolveAt returns null on non-convergence, so the recorded step
                 // is re-made here rather than carried through the guard as a half-valid one.
-                pinSteps.Add(NonConvergedStep(p, ctx, pavlDbm, isTickle, innerSeed));
+                Record(NonConvergedStep(p, ctx, pavlDbm, isTickle, innerSeed));
                 stopReason = "NonConvergence";
-                Console.Error.WriteLine(
+                Log.WriteLine(
                     $"[LP]   Pin={pavlDbm:F1}: non-convergence. Stopping." +
                     (lastFailReason is null ? "" : $"  {lastFailReason}"));
                 // Once per run, not once per grid point: a setup fault repeats at every termination,
@@ -837,7 +1028,7 @@ public sealed class LoadpullEngine
                 break;
             }
 
-            pinSteps.Add(step);
+            Record(step);
             innerSeed = step.V;
             if (!isTickle) prevRung = step;
             else tickleRung = step;
@@ -849,7 +1040,7 @@ public sealed class LoadpullEngine
             {
                 if (gain > gMax) { gMax = gain; poutAtGMaxDbm = WattsToDbm(step.PoutW); }
                 double compression = gMax - gain;
-                Console.Error.WriteLine(
+                Log.WriteLine(
                     $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(step.PoutW):F2} dBm  " +
                     $"{gainTag}={gain:F2} dB  compr={compression:F2} dB");
 
@@ -1013,23 +1204,27 @@ public sealed class LoadpullEngine
 
     // ── Γ-grid warm-start ────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The seed of load <paramref name="currentIdx"/>: the first converged rung of the VSWR-nearest EARLIER load that has
+    /// one, ties to the lower index. Never a later load, whatever has been solved — that is what keeps a parallel grid's
+    /// seeds, and so its results, the serial loop's (LP-1).
+    /// </summary>
     private static Complex[,]? FindNearestSeed(
         int currentIdx, Complex currentGamma,
-        Dictionary<int, Complex[,]> convergedV,
+        IReadOnlyList<Complex[,]?> firstV,
         IReadOnlyList<GamReader.GamPoint> grid)
     {
-        if (convergedV.Count == 0) return null;
-
         double     bestVswr = double.MaxValue;
         Complex[,]? bestV   = null;
 
-        foreach (var kv in convergedV)
+        for (int j = 0; j < currentIdx; j++)
         {
-            double vswr = GammaDeltaVswr(currentGamma, grid[kv.Key].Gamma);
+            if (firstV[j] is not { } v) continue;
+            double vswr = GammaDeltaVswr(currentGamma, grid[j].Gamma);
             if (vswr < bestVswr)
             {
                 bestVswr = vswr;
-                bestV    = kv.Value;
+                bestV    = v;
             }
         }
         return bestV;

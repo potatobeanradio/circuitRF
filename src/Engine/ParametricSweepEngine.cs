@@ -692,7 +692,7 @@ public static class ParametricSweepEngine
                 // tone (LoadpullEngine.Resolve reads the swept tone via var-unit-wins). Enrich per point
                 // so every freq slice carries the canonical display metrics before stacking.
                 var lp = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(netlist, tb).Run(lp));
+                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(netlist, tb, settings, lib, baseDirectory).Run(lp));
             }
 
             case LoadpullPursuitAnalysis lppa:
@@ -710,7 +710,7 @@ public static class ParametricSweepEngine
                 bool hasOutput = !string.IsNullOrEmpty(pp.OutputGridPath);
                 bool append    = hasOutput && writeState.FirstGamWriteDone;
                 if (hasOutput) writeState.FirstGamWriteDone = true;
-                return new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb))
+                return new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb, settings, lib, baseDirectory))
                     .Run(pp, appendOutputBlock: append);
             }
 

@@ -1160,7 +1160,7 @@ static int RunLoadpull(string[] args, bool pursuit)
                 $"Loadpull-pursuit '{lppa.Name}': f0={pp.LpParams.ToneHz / 1e9:G6} GHz, " +
                 $"{pp.SearchMethod}, {(pp.UsePae ? "PAE" : "DE")} at {pp.LpParams.Compression:G3} dB " +
                 $"compression, Zsource OBO {pp.ZsourceOBoDB:G3} dB");
-            ds = new LoadpullPursuitEngine(new LoadpullEngine(nl, tb, settings)).Run(pp, control: RunHost.Control);
+            ds = new LoadpullPursuitEngine(new LoadpullEngine(nl, tb, settings, lib, refBase)).Run(pp, control: RunHost.Control);
         }
         else
         {
@@ -1176,7 +1176,7 @@ static int RunLoadpull(string[] args, bool pursuit)
             // metrics — Pout_dBm, Zin, IRL, AMPM — are present in a headless export too. Without this
             // a .npy written here and one written by the GUI would not carry the same cubes.
             ds = RfCore.Loadpull.LoadpullPostProcessor.Enrich(
-                     new LoadpullEngine(nl, tb, settings).Run(p, RunHost.Control));
+                     new LoadpullEngine(nl, tb, settings, lib, refBase).Run(p, RunHost.Control));
         }
 
         PrintWarnings(nl, shown);
@@ -1395,6 +1395,7 @@ internal static Analysis ApplyLoadpullOverrides(
                     DriveSteppingExpr    = l.DriveSteppingExpr,
                     GuardHarmonicExpr    = l.GuardHarmonicExpr,
                     ContinuityMarginExpr = l.ContinuityMarginExpr,
+                    WorkersExpr          = l.WorkersExpr,
                     NoiseExpr            = l.NoiseExpr,
                     NoiseFreqExpr        = l.NoiseFreqExpr,
                     NoiseFreqUnit        = l.NoiseFreqUnit,
@@ -1428,6 +1429,7 @@ internal static Analysis ApplyLoadpullOverrides(
                     DriveSteppingExpr         = p.DriveSteppingExpr,
                     GuardHarmonicExpr         = p.GuardHarmonicExpr,
                     ContinuityMarginExpr      = p.ContinuityMarginExpr,
+                    WorkersExpr               = p.WorkersExpr,
                     NoiseExpr            = p.NoiseExpr,
                     NoiseFreqExpr        = p.NoiseFreqExpr,
                     NoiseFreqUnit        = p.NoiseFreqUnit,
