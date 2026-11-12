@@ -248,7 +248,8 @@ and under <code>circuitrf sparam</code>.</p>
 <p>Measurements are evaluated in declaration order, and each is in scope by name for the ones after
 it — so a complex figure of merit builds from intermediates. Also in scope: every global
 <a href="components.html#var">VAR</a> variable (by name). The element-wise helpers <code>conj</code>, <code>real</code>, <code>imag</code>,
-<code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>, <code>ln</code> broadcast over cubes; <code>max_over</code> and
+<code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>, <code>ln</code> broadcast over cubes, and so do the
+<a href="expressions.html#constants">math functions</a> (<code>sin</code>, <code>exp</code>, …); <code>max_over</code> and
 <code>min_over</code> <a href="#spec">reduce one</a>. Referencing an unknown
 analysis raises an error naming the available ones; a failing measurement is reported as a run
 note and does not fail the whole run.</p>

@@ -4627,3 +4627,21 @@ the shared arithmetic: `K · e^(−jωT)` with a REAL gain `K`.
 
 Gates: `tests/Engine.Tests/Linear/DelayTests.cs`, and the Delay tile in `SystemBlockComponentTests` /
 `SystemBlockElaborationTests`.
+
+## The one-argument math built-ins take a cube (2026-11-12)
+
+- **Root cause.** `UnaryMath` serves `sin cos tan asin acos atan sinh cosh tanh exp floor ceil round int`. It branched
+  Real against everything else and called `AsComplex()` on the rest, so a cube threw "Value is Cube, not Complex". In a
+  measurement every swept variable is a cube. The operators and `^` already broadcast (`Value`), and `sqrt`, `log`,
+  `log10`, `abs` had been made cube-aware one at a time as each was found. So `e^(j*x)` worked where `exp(j*x)` failed,
+  which is why the RF Chain Budget's Steering and Canceller benches write e^(jx) as a power of e.
+- **Fix.** `UnaryMath` maps a cube element by element (`MapCube`). The axes are kept, a real cube stays real and a complex
+  one complex, and NaN stays NaN. `imag`, `phase`, `phase_rad`, `conj` and `sign` required a complex cube
+  (`DataCube.RequireComplex`). They now take a real cube too and give what they give a real number. `sign` of a complex
+  cube is refused, as `sign(j)` is.
+- **Unchanged on purpose.** `sqrt` keeps its own cube rule: a negative element promotes the whole cube to Complex.
+  `log`/`log10` of a cube keep reading `|z|`, because `20*log10(SP1.S(2,1))` is a dB spelling a measurement may already
+  use, and a complex log would change those results. The two-argument `atan2`, `min`, `max`, `polar`, `complex` and `if`
+  still take numbers.
+
+Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.

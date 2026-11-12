@@ -259,7 +259,8 @@ and under `circuitrf sparam`.
 Measurements are evaluated in declaration order, and each is in scope by name for the ones after
 it — so a complex figure of merit builds from intermediates. Also in scope: every global
 [VAR](components.html#var) variable (by name). The element-wise helpers `conj`, `real`, `imag`,
-`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes; `max_over` and
+`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes, and so do the
+[math functions](expressions.html#constants) (`sin`, `exp`, …); `max_over` and
 `min_over` [reduce one](#spec). Referencing an unknown
 analysis raises an error naming the available ones; a failing measurement is reported as a run
 note and does not fail the whole run.

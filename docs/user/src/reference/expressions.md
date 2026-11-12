@@ -116,6 +116,19 @@ may not shadow them.
     it is drawn for each instance. A variable holding one is not tunable.</caption>
   </table>
 
+<div class="callout note">
+    <span class="label">Over a cube</span>
+    <p>In a <a href="measurements.html">measurement</a> an operand can be a cube: a result over frequency, or a
+    <a href="measurements.html#swept">swept variable</a>, which reads as one value per sweep point. The functions of
+    one argument take a cube element by element and keep its axes, as the operators do: a real cube stays real, a
+    complex one complex, and an element with no value (NaN) stays NaN. So <code>exp(j*theta)</code> over a swept
+    <code>theta</code> is one phasor per point, the same as <code>e^(j*theta)</code>. Three of them differ from their
+    number form: <code>sqrt</code> of a real cube with a negative element makes the whole cube complex, and
+    <code>log</code> and <code>log10</code> of a cube take its magnitude, <code>log10(|z|)</code>, so a negative or
+    complex element is not refused. <code>atan2</code>, <code>min</code>, <code>max</code>, <code>polar</code>,
+    <code>complex</code> and <code>if</code> take numbers only.</p>
+  </div>
+
 ## Units {#units}
 
 A unit attaches in two places. At the **assignment** level (after the expression, or in the row's unit
