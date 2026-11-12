@@ -814,3 +814,11 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   is a trace; every land the earlier cases name (0201 and 0402 lands, a square pad) is a width or so long and still
   trimmed, and a review with no scope is unchanged. The same geometry with equal gaps (CPWG) and with no coplanar ground
   (MLIN) is in the gate: `PadsAndTapsTests.ALineFromAPad_IsKept_WhateverItsCoplanarGround`.
+- **Everything on one pad is one node** (F5; R-as5-5, R-as5-6, R-as3-5). Where an input line, two bias lines and two shunt
+  capacitors meet on a 5 mm device pad, each line end attached to the nearest part terminal within its reach (2·W + 1 mm)
+  or stayed loose, so the pad came out as three nodes, none joined, and one line end open; the pad itself is not modelled
+  (D14). The end kinds were right — every end there reads `"pad"`; nothing joined what stands on one pad. Line
+  recognition now takes each signal island's copper minus every trace piece's strip as pad copper, and per connected
+  region joins the nodes of the `"pad"` ends running into it and of the attachments inside it, the pad an ideal short
+  (`PadsJoinTheirMembers`). Junction centres are untouched: their arms end as `"junction"`. Modelling the pad as a wide
+  line or a junction is left for later. Gate: `PadsAndTapsTests.EverythingOnAWidePad_IsOneNode`.

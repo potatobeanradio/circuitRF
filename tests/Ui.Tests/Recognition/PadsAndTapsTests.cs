@@ -88,4 +88,49 @@ public sealed class PadsAndTapsTests
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CopperJoinedWithoutLine));
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
     }
+
+    /// <summary>
+    /// A 30 × 30 mm board: a 5 mm square device pad with a 1.1 mm line in from the left edge and one out to the right, a
+    /// 1 mm bias line from its top to the top edge and one from its bottom to the bottom edge, and C2 and C3 from its left
+    /// corners to the pour, which stands 0.5 mm clear of everything.
+    /// </summary>
+    private static LayoutView DevicePad()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 30_000));
+        view.Shapes.Add(Rect(Top, 0, 14_450, 10_000, 15_550));
+        view.Shapes.Add(Rect(Top, 10_000, 12_500, 15_000, 17_500));
+        view.Shapes.Add(Rect(Top, 12_000, 17_500, 13_000, 30_000));
+        view.Shapes.Add(Rect(Top, 12_000, 0, 13_000, 12_500));
+        view.Shapes.Add(Rect(Top, 15_000, 14_450, 30_000, 15_550));
+        foreach (var (x0, y0, x1, y1) in new[]
+                 {
+                     (0, 18_000, 11_500, 30_000), (0, 16_050, 9_500, 18_000), (0, 0, 11_500, 12_000), (0, 12_000, 9_500, 13_950),
+                     (13_500, 18_000, 30_000, 30_000), (15_500, 16_050, 30_000, 18_000), (13_500, 0, 30_000, 12_000), (15_500, 12_000, 30_000, 13_950),
+                 })
+            view.Shapes.Add(Rect(Top, x0, y0, x1, y1));
+        foreach (var (x, y) in new[] { (3_000, 25_000), (3_000, 5_000), (25_000, 25_000), (25_000, 5_000) }) view.Shapes.Add(ViaAt(x, y));
+        view.Shapes.AddRange(Part("C2", 10_750, 17_750, alongX: false));
+        view.Shapes.AddRange(Part("C3", 10_750, 12_250, alongX: false));
+        return view;
+    }
+
+    /// <summary>Every line end on the pad and both shunt parts' terminals are one node — the pad an ideal short — where
+    /// each line end used to be a node of its own, and the report names the pad.</summary>
+    [Fact]
+    public void EverythingOnAWidePad_IsOneNode()
+    {
+        var result = Read(DevicePad());
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(4, Lines(result).Count());
+        string node = result.Lines.NodeOf("C2.1");
+        Assert.Equal(node, result.Lines.NodeOf("C3.1"));
+        Assert.All(Lines(result), line => Assert.Contains(node, line.Nodes));
+        var pads = result.Report.Of(RecognitionFindingClass.PadsJoinTheirMembers)!;
+        Assert.Equal(1, pads.Count);
+        Assert.Contains("4 line ends and 2 terminals", pads.Sentence);
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.OpenEnds));
+    }
 }

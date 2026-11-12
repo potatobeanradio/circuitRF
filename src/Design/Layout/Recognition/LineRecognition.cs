@@ -10,12 +10,16 @@
 //   3. each junction resolved (LineJunctions): an MTEE or MCROSS, or a plain node;
 //   4. each remaining end attached: the nearest attachment on its island within reach — a via's line stops at
 //      its land's edge — else the nearest other loose end within two widths, else an open end, listed;
+//   4½. each pad one node: an island's copper that no trace piece covers is pad copper, and the line ends running into
+//      one pad and the part terminals, via ends and ports on it are joined by an ideal short (PadNodes);
 //   5. a line with no length left is absorbed (its nodes become one), and anything on an island no line
 //      reached joins the nearest line end there, or the island's other attachments;
 //   6. the elements written in SI, a TLIN's Z, εeff and loss from its cuts (R-as5-7);
 //   7. coupled pairs (R-as5-8) and the report (R-as5-9).
 
+using Clipper2Lib;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Design.Layout.Recognition;
@@ -229,6 +233,21 @@ public static class LineRecognition
             SetEnd(atStart ? t.First : t.Last, atStart, looseNode[i]!);
         }
 
+        // ── 4½. pads: everything on one piece of pad copper is one node ──────────────────────────────
+        // A line ends at a pad's edge and a part's terminal stands on the pad (R-as5-5), so step 4 meets them only within a
+        // line end's reach. On a wide pad that is not enough: a device pad where the input line, two bias lines and two shunt
+        // parts meet came out as one node per line end, none joined, with the pad itself not modelled. The pad is modelled as
+        // an ideal short now; modelling it as a wide line or a junction is a later step.
+        var pads = PadNodes(ctx, traces, attachments, dbu);
+        var onPads = new HashSet<string>();
+        foreach (var pad in pads)
+        {
+            for (int i = 1; i < pad.Members.Count; i++) Union(pad.Members[0], pad.Members[i]);
+            onPads.UnionWith(pad.Members);
+        }
+        reached.UnionWith(onPads.Where(attachmentOf.ContainsKey));
+        openEnds.RemoveAll(o => onPads.Contains(o.Node));
+
         // A "junction" of two arms is the review's reading of a sliver between two pieces — both ends of a
         // short piece near both of its neighbours. The piece is gone but its length is in the arms, run to the
         // centre; where they are one line type and one width they are ONE line, and the sliver is absorbed.
@@ -383,6 +402,14 @@ public static class LineRecognition
         // ── 7. coupled pairs, and the report ──────────────────────────────────────────────────────────
         var coupled = CoupledPairs(elements, ctx.TopFrequencyHz, dbu);
         Report(result, report, options, counts, plainJunctions, coplanarJunctions, openEnds, absorbed, coupled, fmt);
+        report.Add(RecognitionFindingClass.PadsJoinTheirMembers, pads.Count,
+            $"{Plural(pads.Count, "pad joins its", "pads each join their")} line ends and part terminals into one node, the pad an " +
+            "ideal short (it is not modelled as a line or a junction): " +
+            string.Join("; ", pads.Take(8).Select(p => $"{fmt.Point((p.Box.MinX + p.Box.MaxX) / 2, (p.Box.MinY + p.Box.MaxY) / 2)}, " +
+                                                    $"{(p.Box.MaxX - p.Box.MinX) / (1000.0 * dbu):0.##} × {(p.Box.MaxY - p.Box.MinY) / (1000.0 * dbu):0.##} mm, " +
+                                                    $"{Plural(p.Ends, "line end", "line ends")} and {Plural(p.Terminals, "terminal", "terminals")}")) +
+            (pads.Count > 8 ? "; …" : "") + ".",
+            [.. pads.Select(p => new RecognitionAnchor((p.Box.MinX + p.Box.MaxX) / 2, (p.Box.MinY + p.Box.MaxY) / 2))]);
         report.Add(RecognitionFindingClass.CopperJoinedWithoutLine, farJoins.Count,
             $"{Plural(farJoins.Count, "part terminal, port or via end no line reaches was", "part terminals, ports and via ends no line reaches were")} " +
             "joined to the nearest line end across copper no line models — a trace the reading did not take, shorted: " +
@@ -391,6 +418,64 @@ public static class LineRecognition
             (farJoins.Count > 8 ? "; …" : "") + ".",
             [.. farJoins.Select(f => new RecognitionAnchor(f.A.X, f.A.Y, f.A.Layer))]);
         return result;
+    }
+
+    /// <summary>
+    /// The pads of the signal islands, each with what is on it: an island's copper that no trace piece's strip covers, split
+    /// into its connected regions, and in each the node of every line end the trace review names a "pad" end whose step
+    /// beyond it lands there, and every part terminal, via end and port inside it. A region with fewer than two members is
+    /// no join. A junction's centre is not a pad: its arms end on it as "junction", never "pad".
+    /// </summary>
+    private static List<(List<string> Members, int Ends, int Terminals, Bbox Box)> PadNodes(
+        LineRecognitionContext ctx, List<TraceLines> traces, List<Attachment> attachments, int dbu)
+    {
+        var board = ctx.Board;
+        var copper = board.Copper;
+        var strips = new Dictionary<LayerKey, List<(Bbox Box, Path64 Path)>>();
+        foreach (var layer in ctx.Review.Layers)
+            foreach (var run in layer.Traces)
+                foreach (var (x0, y0, x1, y1, w) in run.Pieces)
+                {
+                    double len = Math.Sqrt(Sq(x1 - x0) + Sq(y1 - y0));
+                    if (len <= 0) continue;
+                    // The strip a piece covers, a micron wider each side so the copper along its edges goes with it.
+                    double h = 0.5 * w + dbu, nx = -(y1 - y0) / len * h, ny = (x1 - x0) / len * h;
+                    var path = Clipper.MakePath(new[] { (long)(x0 + nx), (long)(y0 + ny), (long)(x1 + nx), (long)(y1 + ny),
+                                                        (long)(x1 - nx), (long)(y1 - ny), (long)(x0 - nx), (long)(y0 - ny) });
+                    long r = (long)Math.Ceiling(h);
+                    var box = new Bbox(Math.Min(x0, x1) - r, Math.Min(y0, y1) - r, Math.Max(x0, x1) + r, Math.Max(y0, y1) + r);
+                    (strips.TryGetValue(run.Layer, out var list) ? list : strips[run.Layer] = []).Add((box, path));
+                }
+
+        var pads = new List<(List<string>, int, int, Bbox)>();
+        for (int piece = 0; piece < copper.Count && piece < board.IslandOfPiece.Length; piece++)
+        {
+            int island = board.IslandOfPiece[piece];
+            if (island < 0 || board.Islands[island].Kind != IslandKind.Signal) continue;
+            var layer = copper.LayerOfPiece(piece);
+            var ends = new List<(double X, double Y, string Node)>();
+            foreach (var t in traces.Where(t => t.Island == island && t.Run.Layer == layer))
+                foreach (var (end, node) in new[] { (t.Start, t.First.Nodes[0]), (t.End, t.Last.Nodes[^1]) })
+                    if (end.Kind == "pad")
+                        ends.Add((end.X + 0.5 * end.Width * end.Dx, end.Y + 0.5 * end.Width * end.Dy, node));
+            var on = attachments.Where(a => a.Island == island && (a.Layer is null || a.Layer == layer)).ToList();
+            if (ends.Count + on.Count < 2) continue;
+
+            var bounds = copper.BoundsOfPiece(piece);
+            var cut = new Paths64(strips.GetValueOrDefault(layer, []).Where(s => s.Box.Intersects(bounds)).Select(s => s.Path));
+            var rest = cut.Count == 0 ? copper.PathsOfPiece(piece) : Clipper.Difference(copper.PathsOfPiece(piece), cut, LayoutClipper.Rule);
+            foreach (var region in Drc.DrcRegions.Components(rest))
+            {
+                var endsIn = ends.Where(e => Regions.Contains(region, (long)Math.Round(e.X), (long)Math.Round(e.Y))).Select(e => e.Node).ToList();
+                var onIt = on.Where(a => Regions.Contains(region, a.X, a.Y)).Select(a => a.Name).ToList();
+                var members = endsIn.Concat(onIt).Distinct().ToList();
+                if (members.Count < 2) continue;
+                var box = Bbox.Empty;
+                foreach (var path in region) foreach (var pt in path) box = box.Union(new Bbox(pt.X, pt.Y, pt.X, pt.Y));
+                pads.Add((members, endsIn.Count, onIt.Count, box));
+            }
+        }
+        return pads;
     }
 
     /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width

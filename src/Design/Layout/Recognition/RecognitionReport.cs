@@ -200,6 +200,9 @@ public enum RecognitionFindingClass
     /// <summary>Short pieces and lines with no length left, absorbed into a neighbour.</summary>
     SliversAbsorbed,
 
+    /// <summary>Pads whose line ends and part terminals were joined into one node, the pad an ideal short.</summary>
+    PadsJoinTheirMembers,
+
     /// <summary>Pairs of lines close and parallel for more than λ/20: coupled, modelled uncoupled.</summary>
     CoupledPairs,
 

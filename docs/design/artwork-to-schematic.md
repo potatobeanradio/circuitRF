@@ -397,8 +397,13 @@ Nodes are named for what they are: `R1.2` (a part's terminal, AS-4's row and ter
 island), `P1` (a port), `J2` / `J2.3` (a plain junction / an MTEE or MCROSS arm), `T5_2` (between two elements of trace
 T5), `O1` (an open end). A trace's end attaches to the nearest part terminal, port or via on its island within
 2·W + 1 mm (a via within its land's radius plus a width); else to another loose end within two widths on the island
-(a gentle bend the review did not join); else it is an **open end** — an open line, no open-end model, listed. A part
-terminal, via or port no line reaches joins the nearest line end on its island, or the island's other attachments.
+(a gentle bend the review did not join); else it is an **open end** — an open line, no open-end model, listed. **A pad is
+one node**: an island's copper that no trace piece covers (each piece's strip taken away, a micron wider each side) is pad
+copper, and in each connected region of it every line end the review names a `"pad"` end (half a width past it) and every
+part terminal, via end and port is joined by an ideal short, reported as `PadsJoinTheirMembers` with the pad's size. A
+junction's centre is no pad: its arms end on it as `"junction"`. Modelling a pad as a wide line or a junction is a later
+step. A part terminal, via or port no line reaches joins the nearest line end on its island, or the island's other
+attachments.
 `LineRecognitionResult.NodeOf(name)` gives the node any of those names ended up as.
 
 ### 6.6 Parameters (R-as5-7)
