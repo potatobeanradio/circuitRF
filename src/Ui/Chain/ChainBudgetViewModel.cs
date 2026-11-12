@@ -20,7 +20,7 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public string Name => param.Name;
     /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
     /// ("2.35 GHz"), so none is shown for one.</summary>
-    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "W" ? param.Unit : "";
+    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "W" or "dBi" or "%" or "m" or "dB/km" ? param.Unit : "";
 
     /// <summary>A budget-only value left blank is not written into the stage, so a chain that does not use one saves as
     /// it always did.</summary>
@@ -216,6 +216,29 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
 
     private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _linkTable, _receiverTable;
+
+    // The sweeps' tabs: four plots each, the carrier's, the transmit array's and the receive array's.
+    private readonly CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[][] _sweep = [new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4], new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4], new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4]];
+    private static readonly string[] SweepOf = [ChainSweep.Frequency, ChainSweep.TxElements, ChainSweep.RxElements];
+    public CircuitRF.Render.DataDisplay.Plot?[] FrequencySweepPlots => [.. _sweep[0].Select(h => h?.PlotVM.Plot)];
+    public CircuitRF.Render.DataDisplay.Plot?[] TxSweepPlots => [.. _sweep[1].Select(h => h?.PlotVM.Plot)];
+    public CircuitRF.Render.DataDisplay.Plot?[] RxSweepPlots => [.. _sweep[2].Select(h => h?.PlotVM.Plot)];
+    [ObservableProperty] private bool _hasFrequencySweep, _hasTxSweep, _hasRxSweep;
+
+    /// <summary>Each sweep the chain asks for, budgeted point by point, into its tab's plots; its notes join the chain's.</summary>
+    private void RefillSweeps(ChainDesign d, List<string> notes)
+    {
+        string[] props = [nameof(FrequencySweepPlots), nameof(TxSweepPlots), nameof(RxSweepPlots)];
+        for (int k = 0; k < 3; k++)
+        {
+            var s = d.Sweeps.FirstOrDefault(x => x.Of == SweepOf[k]);
+            if (k == 0) HasFrequencySweep = s is not null; else if (k == 1) HasTxSweep = s is not null; else HasRxSweep = s is not null;
+            if (s is null) continue;
+            var data = ChainBudget.Sweep(d, s, notes);
+            var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowSweep(s.Of);
+            for (int i = 0; i < cfg.Count; i++) Refill(ref _sweep[k][i], props[k], cfg[i], BudgetSource, data);
+        }
+    }
     public CircuitRF.Render.DataDisplay.Plot? LinkPlot => _linkTable?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? ReceiverPlot => _receiverTable?.PlotVM.Plot;
 
@@ -485,6 +508,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Streams = Parse(Rx("Streams"), 1, double.NaN) is var st && st >= 1 && st == Math.Round(st) && st < int.MaxValue ? (int)st : 0,
         NfAllowanceDb = Parse(Rx("NfAllowance"), 1, double.NaN),
         RxBackoffDb = Parse(Rx("RxBackoff"), 1, double.NaN),
+        Sweeps = ParseSweeps(),
     };
 
     // ── the link, and the receiver's readout inputs: rows of parameters as a stage's are ──
@@ -505,7 +529,33 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public ObservableCollection<ChainParamViewModel> LinkTx { get; } = [];
     public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
     public ObservableCollection<ChainParamViewModel> ReceiverInputs { get; } = [];
-    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs);
+    public ObservableCollection<ChainParamViewModel> SweepInputs { get; } = [];
+    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs);
+
+    /// <summary>The sweeps, one line each as the Blockers are: "from, to, points".</summary>
+    public static readonly IReadOnlyList<ChainParam> SweepParameters =
+    [
+        new(ChainSweep.Frequency, "", "", Numeric: false, BlankAllowed: true, Help: "the carrier: from, to, points (\"24.25 GHz, 27.5 GHz, 66\"); blank: none"),
+        new(ChainSweep.TxElements, "", "", Numeric: false, BlankAllowed: true, Help: "the transmit array: from, to, sizes spread in ratio (\"4, 1024, 9\"); blank: none"),
+        new(ChainSweep.RxElements, "", "", Numeric: false, BlankAllowed: true, Help: "the receive array, the Combiner's N: from, to, sizes (\"2, 64, 6\"); blank: none"),
+    ];
+
+    /// <summary>The sweeps typed; one that is not "from, to, points" is kept as no numbers, which the budget refuses.</summary>
+    private List<ChainSweep> ParseSweeps()
+    {
+        var list = new List<ChainSweep>();
+        foreach (var p in SweepInputs.Where(p => !string.IsNullOrWhiteSpace(p.Value)))
+        {
+            var parts = p.Value.Split(',', StringSplitOptions.TrimEntries);
+            list.Add(parts.Length == 3 && ChainValue.TryParse(parts[0], out double a) && ChainValue.TryParse(parts[1], out double b)
+                     && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+                ? new ChainSweep(p.Name, a, b, n) : new ChainSweep(p.Name, double.NaN, double.NaN, 0));
+        }
+        return list;
+    }
+
+    private static string FormatSweep(ChainSweep s) => s.Of == ChainSweep.Frequency
+        ? $"{ChainSnp.Hz(s.From)}, {ChainSnp.Hz(s.To)}, {s.Points}" : $"{N(s.From)}, {N(s.To)}, {s.Points}";
 
     private string Rx(string name) => ReceiverInputs.FirstOrDefault(p => p.Name == name)?.Value ?? "";
 
@@ -530,12 +580,14 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Fill(LinkTx, ChainLink.TxParameters, "Tx.", d.Link?.Tx);
         Fill(LinkPath, ChainLink.PathParameters, "Path.", d.Link?.Path);
         Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx);
+        Fill(SweepInputs, SweepParameters, "Sw.", d.Sweeps.GroupBy(s => s.Of).ToDictionary(g => g.Key, g => FormatSweep(g.First())));
     }
 
     /// <summary>The rows' values, by row and name, as an undo step keeps them.</summary>
     private string LinkSnapshot() => System.Text.Json.JsonSerializer.Serialize(
         LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(LinkPath.Select(p => ("Path." + p.Name, p.Value)))
-              .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
+              .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value)))
+              .Concat(SweepInputs.Select(p => ("Sw." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
 
     /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
     private void Changed() => Edited(null);
@@ -728,9 +780,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RefillLevels(d, r);
         RefillCanceller(d);
         RefillLink(r);
+        var sweepNotes = new List<string>();
+        if (r.Totals is not null) RefillSweeps(d, sweepNotes);
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
-        Notes = string.Join("\n", r.Notes);
+        Notes = string.Join("\n", r.Notes.Concat(sweepNotes));
         Summary = r.Totals is not { } t ? "" :
             $"Gain {D(t.GainDb)} dB    NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K)    IIP3 {D(t.Iip3Dbm)} dBm    OIP3 {D(t.Oip3Dbm)} dBm    " +
             $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm\n" +

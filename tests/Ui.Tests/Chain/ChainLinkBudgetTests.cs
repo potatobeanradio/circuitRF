@@ -456,6 +456,113 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.True(Measure(tx, "ACPR_L_at") < -20 && Measure(tx, "ACPR_U_at") < -20);
     }
 
+    // ── the sweeps ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ASweep_IsTheWholeChainBudgetedAgainAtEachPoint()
+    {
+        Assert.Equal([20e9, 25e9, 30e9], new ChainSweep(ChainSweep.Frequency, 20e9, 30e9, 3).Values());
+        Assert.Equal([4, 8, 16, 32, 64], new ChainSweep(ChainSweep.TxElements, 4, 64, 5).Values());
+        Assert.Equal([1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64], new ChainSweep(ChainSweep.RxElements, 1, 64, 13).Values());
+
+        var d = Link();
+        d.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        d.Sweeps = [new(ChainSweep.Frequency, 20e9, 40e9, 5), new(ChainSweep.TxElements, 4, 1024, 9), new(ChainSweep.RxElements, 1, 64, 13)];
+        Assert.Empty(ChainBudget.Evaluate(d).Refusals);
+        var notes = new List<string>();
+        var f = ChainBudget.Sweep(d, d.Sweeps[0], notes);
+        Assert.Empty(notes);
+        Assert.Equal([20e9, 25e9, 30e9, 35e9, 40e9], f["SNR_dB"].Axes[0].Values);
+        for (int i = 0; i < 5; i++)
+        {
+            var at = Link();
+            at.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+            at.FrequencyHz = 20e9 + 5e9 * i;
+            var r = ChainBudget.Evaluate(at);
+            Assert.Equal(r.Totals!.SnrDb, f["SNR_dB"].RealValues[i], 12);
+            Assert.Equal(r.Totals.NfDb, f["NFtot_dB"].RealValues[i], 12);
+            Assert.Equal(ChainCapacity.Read(r)!.RateBps / 1e9, f["Rate_Gbps"].RealValues[i], 9);
+            Assert.Equal(r.Design!.Link!.Budget(at.FrequencyHz).EirpDbm, f["EIRP_dBm"].RealValues[i], 12);
+        }
+        // Over Mtx the EIRP climbs 20·log10 of the ratio; over Mrx the array gain 10·log10 of it, one element with no combiner.
+        var tx = ChainBudget.Sweep(d, d.Sweeps[1]);
+        Assert.Equal(20 * Math.Log10(1024.0 / 4), tx["EIRP_dBm"].RealValues[^1] - tx["EIRP_dBm"].RealValues[0], 9);
+        var rx = ChainBudget.Sweep(d, d.Sweeps[2]);
+        var one = Link();
+        one.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        one.Stages.RemoveAt(1);
+        Assert.Equal(ChainBudget.Evaluate(one).Totals!.SnrDb, rx["SNR_dB"].RealValues[0], 12);
+        var six = Link();
+        six.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        six.Stages[1].Parameters["N"] = "6";
+        Assert.Equal(ChainBudget.Evaluate(six).Totals!.SnrDb, rx["SNR_dB"].RealValues[4], 12);
+
+        // The groups of the DataSet the CLI writes, a sweep each.
+        var ds = ChainBudget.ToDataSet(ChainBudget.Evaluate(d));
+        ChainBudget.AddSweeps(ds, d);
+        Assert.Equal(5, ds["Frequency.Pdc_W"].RealValues.Length);
+        Assert.Equal(9, ds["TxElements.Ebit_pJ"].RealValues.Length);
+        Assert.Equal(12, ds["RxElements.NFarray_dB"].RealValues.Length);
+    }
+
+    [Fact]
+    public void ASweepPointTheBudgetRefuses_IsNoNumber_AndSaidOnce_AsIsAFilterLeftBehind()
+    {
+        Directory.CreateDirectory(_ws);
+        File.WriteAllText(Path.Combine(_ws, "atm.csv"), "freq,dB/km\n20 GHz, 0.1\n30 GHz, 0.12\n");
+        var d = Link();
+        d.BaseDirectory = _ws;
+        d.Link!.Path["Attenuation"] = "atm.csv";
+        d.Stages.Insert(2, S("BPF", "Filter", ("Response", "Butterworth"), ("F1", "25 GHz"), ("F2", "27 GHz"), ("IL", "1")));
+        var notes = new List<string>();
+        var f = ChainBudget.Sweep(d, new ChainSweep(ChainSweep.Frequency, 20e9, 40e9, 5), notes);
+        Assert.Equal([false, false, false, true, true], f["SNR_dB"].RealValues.Select(double.IsNaN));
+        Assert.Contains(notes, x => x.StartsWith("The Frequency sweep leaves out 2 of its 5 points", StringComparison.Ordinal)
+                                    && x.Contains("covers 20 GHz to 30 GHz", StringComparison.Ordinal));
+        Assert.Contains(notes, x => x.StartsWith("At 2 of the Frequency sweep's carriers a Filter's passband", StringComparison.Ordinal));
+        d.Sweeps = [new(ChainSweep.Frequency, 30e9, 20e9, 5)];
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("runs from a value above 0 to a larger one", StringComparison.Ordinal));
+        d.Sweeps = [new(ChainSweep.TxElements, 2, 8, 3)];
+        d.Link = null;
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("the chain has no link", StringComparison.Ordinal));
+    }
+
+    /// <summary>A sweep has no bench of its own; two of its points, each transferred, sit on their budgets.</summary>
+    [Fact]
+    public void TwoSweepPoints_Transferred_SimulateToTheirBudgets()
+    {
+        double nf0 = double.NaN;
+        foreach (double f in new[] { 22e9, 38e9 })
+        {
+            var d = Link();
+            d.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+            d.FrequencyHz = f;
+            string chain = $"At{f / 1e9:0}";
+            var one = Bench(d, chain, ChainBench.OneTone);
+            Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
+            Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);
+            Assert.NotEqual(nf0, Measure(one, "NF_calc"));
+            nf0 = Measure(one, "NF_calc");
+        }
+    }
+
+    [Fact]
+    public void TheWindow_ReadsASweepLikeTheBlockers_AndShowsItsTab()
+    {
+        var d = Link();
+        d.Sweeps = [new(ChainSweep.Frequency, 24.25e9, 27.5e9, 14)];
+        var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);
+        Assert.Equal("24.25 GHz, 27.5 GHz, 14", vm.SweepInputs.Single(p => p.Name == ChainSweep.Frequency).Value);
+        Assert.True(vm.HasFrequencySweep);
+        Assert.False(vm.HasTxSweep);
+        Assert.All(vm.FrequencySweepPlots, p => Assert.Contains(vm.PlotHost.Plots, c => ReferenceEquals(c.PlotVM.Plot, p)));
+        vm.SweepInputs.Single(p => p.Name == ChainSweep.TxElements).Value = "4, 256, 7";
+        Assert.True(vm.HasTxSweep);
+        Assert.Equal(new ChainSweep(ChainSweep.TxElements, 4, 256, 7), vm.ToDesign().Sweeps[1]);
+        vm.SweepInputs.Single(p => p.Name == ChainSweep.TxElements).Value = "4, 256";
+        Assert.Contains("from a value above 0", vm.Refusals, StringComparison.Ordinal);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

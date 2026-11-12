@@ -417,7 +417,7 @@
                                           ToolTip.Tip="A transmit array and a line-of-sight path in front of the chain: the power each receive element gets becomes the input power, and the receive array is the chain's Combiner">
                                     <TextBlock Text="a transmitter and a path in front of the chain" FontSize="12"/>
                                 </CheckBox>
-                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto">
+                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto">
                                     <TextBlock Classes="lbl" Text="Transmitter" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
                                     <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -430,6 +430,10 @@
                                     <ItemsControl Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ReceiverInputs}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     </ItemsControl>
+                                    <TextBlock Grid.Row="3" Classes="lbl" Text="Sweeps" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding SweepInputs}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
                                 </Grid>
                                 <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
                                                  Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
@@ -439,6 +443,55 @@
                                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
                             </StackPanel>
                         </ScrollViewer>
+                    </TabItem>
+                    <!-- The sweeps, each the whole chain budgeted again at every point, shown when the chain asks for it. -->
+                    <TabItem Header="Frequency sweep" FontSize="13" IsVisible="{Binding HasFrequencySweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepF0" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepF1" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepF2" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepF3" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Mtx sweep" FontSize="13" IsVisible="{Binding HasTxSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepT0" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepT1" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepT2" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepT3" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Mrx sweep" FontSize="13" IsVisible="{Binding HasRxSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepR0" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepR1" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepR2" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepR3" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </Grid>
                     </TabItem>
                     <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
                         <Grid ColumnDefinitions="*,4,*">

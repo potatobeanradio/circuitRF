@@ -65,6 +65,18 @@ internal static class Chain
         foreach (var n in budget.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
+        // The sweeps, a group each: every point the whole chain budgeted again there.
+        var sweepNotes = new List<string>();
+        ChainBudget.AddSweeps(JsonRun.Data, design, sweepNotes);
+        foreach (var n in sweepNotes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        foreach (var s in design.Sweeps)
+        {
+            var rate = JsonRun.Data[s.Of + ".Rate_Gbps"].RealValues.Where(double.IsFinite).DefaultIfEmpty(double.NaN).ToArray();
+            string unit = s.Of == ChainSweep.Frequency ? " GHz" : "";
+            double scale = s.Of == ChainSweep.Frequency ? 1e9 : 1;
+            Console.WriteLine($"  sweep {s.Of}: {s.From / scale:0.###} to {s.To / scale:0.###}{unit}, {s.Values().Length} points, "
+                            + $"rate {D(rate.Min())} to {D(rate.Max())} Gb/s (group '{s.Of}' of the DataSet)");
+        }
 
         if (output is not null)
         {

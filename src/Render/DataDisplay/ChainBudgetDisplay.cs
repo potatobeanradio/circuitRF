@@ -430,6 +430,32 @@ public static class ChainBudgetDisplay
         return [tx, rx];
     }
 
+    /// <summary>
+    /// A sweep's tab (<see cref="ChainBudget.Sweep"/>): the link's levels at each element and the noise there, the SNR and
+    /// margin, the rate, and the DC power, each over the sweep's own axis — the carrier, or an array's size.
+    /// </summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowSweep(string of)
+    {
+        const string src = "budget";
+        var (axis, x) = of switch
+        {
+            ChainSweep.Frequency => ("freq", "carrier frequency"),
+            ChainSweep.TxElements => ("Mtx", "transmit elements, Mtx"),
+            _ => ("Mrx", "receive elements, Mrx"),
+        };
+        return
+        [
+            Rect("Levels at each receive element", x, "dBm", 0, 0, 300, 240,
+                 [Over(src, "EIRP_dBm", axis, "EIRP", C(1), false), Over(src, "Prx_dBm", axis, "received", C(2), false),
+                  Over(src, "Pin_dBm", axis, "chain input", C(3), false), Over(src, "Ceiling_dBm", axis, "ceiling", C(4), false),
+                  Over(src, "Nir_dBm", axis, "noise", C(5), false)]),
+            Rect("SNR and margin", x, "dB", 0, 0, 300, 240,
+                 [Over(src, "SNR_dB", axis, "SNR", C(1), false), Over(src, "Margin_dB", axis, "margin", C(2), false)]),
+            Rect("Rate", x, "Gb/s", 0, 0, 300, 240, [Over(src, "Rate_Gbps", axis, "Shannon rate", C(1), false)]),
+            Rect("DC power", x, "W", 0, 0, 300, 240, [Over(src, "Pdc_W", axis, "transmit and receive", C(1), false)]),
+        ];
+    }
+
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
     {
@@ -460,7 +486,7 @@ public static class ChainBudgetDisplay
         [
             ("G_dB", "G, dB"), ("NF_dB", "NF, dB"), ("IIP3_dBm", "IIP3, dBm"), ("OIP3_dBm", "OIP3, dBm"),
             ("IP1dB_dBm", "IP1dB, dBm"), ("OP1dB_dBm", "OP1dB, dBm"), ("Pout_dBm", "Pout, dBm"), ("SNR_dB", "SNR, dB"),
-            ("NFpct", "share of F − 1, %"), ("NFallow_dB", "NF allowed after, dB"), ("IP1dBpct", "share of 1/IP1dB, %"),
+            ("NFpct", "share of F − 1, %"), ("NFallow_dB", "NF left, dB"), ("IP1dBpct", "P1dB share, %"),
         ];
         return new PlotContainerConfig
         {
