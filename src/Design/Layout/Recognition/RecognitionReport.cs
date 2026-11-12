@@ -206,6 +206,21 @@ public enum RecognitionFindingClass
     /// <summary>Segments with no solved cross-section, written as TLIN at a neighbour's Z and εeff.</summary>
     UnsolvedSegments,
 
+    /// <summary>Part terminals, ports and via ends no line reached, joined to a line end farther than a line end reaches:
+    /// copper no line models, shorted.</summary>
+    CopperJoinedWithoutLine,
+
+    // ── recognition's check on itself: the circuit against the copper (CircuitCopperCheck) ─────────────
+
+    /// <summary>Two attachments the copper joins and the circuit does not.</summary>
+    CircuitSplitsCopper,
+
+    /// <summary>Two attachments the circuit joins on islands the copper keeps apart.</summary>
+    CircuitJoinsAcrossCopper,
+
+    /// <summary>The circuit joins what the copper joins. Said once, with what was checked.</summary>
+    CircuitAgreesWithCopper,
+
     // ── AS-6: the circuit, the drawing and the target (R-as6-2 … R-as6-6) ────────────────────────
 
     /// <summary>What the circuit could not carry: a part with too few terminals measured, a via that joins nothing

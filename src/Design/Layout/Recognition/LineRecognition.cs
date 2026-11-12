@@ -268,22 +268,30 @@ public static class LineRecognition
             if (d.Anchor.Count > 0) absorbed.Add(d.Anchor[0]);
         }
 
-        // Attachments no line reached: the nearest line end on their island, else the island's first attachment.
-        var endsOnIsland = new Dictionary<int, List<(string Node, double X, double Y)>>();
+        // Attachments no line reached: the nearest line end on their island, else the island's first attachment. A line end
+        // farther than a line end reaches (step 4) is copper no line models — a trace the review did not hand over — and is
+        // said: the join is an ideal short across it.
+        var endsOnIsland = new Dictionary<int, List<(string Node, double X, double Y, double W)>>();
         foreach (var t in traces)
         {
             if (!endsOnIsland.TryGetValue(t.Island, out var list)) endsOnIsland[t.Island] = list = [];
-            list.Add((t.First.Nodes[0], t.Start.X, t.Start.Y));
-            list.Add((t.Last.Nodes[^1], t.End.X, t.End.Y));
+            list.Add((t.First.Nodes[0], t.Start.X, t.Start.Y, t.Start.Width));
+            list.Add((t.Last.Nodes[^1], t.End.X, t.End.Y, t.End.Width));
         }
         foreach (var j in junctionElements)
             if (islandOfJunction.TryGetValue(j.Source, out int ji))
-                endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y));
+                endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y, j.Widths.DefaultIfEmpty(0).Max()));
         var firstOnIsland = new Dictionary<int, string>();
+        var farJoins = new List<(Attachment A, double X, double Y, double D)>();
         foreach (var a in attachments.Where(a => !reached.Contains(a.Name)))
         {
             if (endsOnIsland.TryGetValue(a.Island, out var ends) && ends.Count > 0)
-                Union(a.Name, ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y)).Node);
+            {
+                var e = ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y));
+                Union(a.Name, e.Node);
+                double d = Math.Sqrt(Sq(e.X - a.X) + Sq(e.Y - a.Y));
+                if (d > AttachReachWidths * e.W + AttachReachMicrons * dbu) farJoins.Add((a, e.X, e.Y, d));
+            }
             else if (firstOnIsland.TryGetValue(a.Island, out var first)) Union(a.Name, first);
             else firstOnIsland[a.Island] = a.Name;
         }
@@ -367,11 +375,21 @@ public static class LineRecognition
 
         var joined = parent.Keys.Concat(nodes.Keys).Concat(attachments.Select(a => a.Name)).Distinct()
                            .ToDictionary(k => k, Find);
-        var result = new LineRecognitionResult(elements, [.. nodes.Values]) { Joined = joined };
+        var result = new LineRecognitionResult(elements, [.. nodes.Values])
+        {
+            Joined = joined, Attachments = [.. attachments.Select(Node)],
+        };
 
         // ── 7. coupled pairs, and the report ──────────────────────────────────────────────────────────
         var coupled = CoupledPairs(elements, ctx.TopFrequencyHz, dbu);
         Report(result, report, options, counts, plainJunctions, coplanarJunctions, openEnds, absorbed, coupled, fmt);
+        report.Add(RecognitionFindingClass.CopperJoinedWithoutLine, farJoins.Count,
+            $"{Plural(farJoins.Count, "part terminal, port or via end no line reaches was", "part terminals, ports and via ends no line reaches were")} " +
+            "joined to the nearest line end across copper no line models — a trace the reading did not take, shorted: " +
+            string.Join("; ", farJoins.Take(8).Select(f => $"{f.A.Name} at {fmt.Point(f.A.X, f.A.Y)}, {f.D / dbu / 1000:0.##} mm from " +
+                                                           $"{fmt.Point((long)Math.Round(f.X), (long)Math.Round(f.Y))}")) +
+            (farJoins.Count > 8 ? "; …" : "") + ".",
+            [.. farJoins.Select(f => new RecognitionAnchor(f.A.X, f.A.Y, f.A.Layer))]);
         return result;
     }
 

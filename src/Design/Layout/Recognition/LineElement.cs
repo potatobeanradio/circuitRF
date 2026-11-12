@@ -120,6 +120,10 @@ public sealed record LineRecognitionResult(IReadOnlyList<LineElement> Elements, 
     /// node it ended up as. Two names are one node when copper joins them with no line between.</summary>
     public IReadOnlyDictionary<string, string> Joined { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>Every part terminal, kept via end and port, each by its own name and where it is — what the copper says must be
+    /// joined (<see cref="CircuitCopperCheck"/>), whatever node each ended up as.</summary>
+    public IReadOnlyList<LineNode> Attachments { get; init; } = [];
+
     /// <summary>The node <paramref name="name"/> ended up as — itself when it was never joined to another.</summary>
     public string NodeOf(string name) => Joined.TryGetValue(name, out var n) ? n : name;
 

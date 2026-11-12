@@ -398,6 +398,7 @@ public static partial class ArtworkRecognition
             Board = graph, Parts = parts, Review = Review(), Technology = tech, Options = options,
             TopFrequencyHz = TopFrequency(input), Format = fmt,
         }, report);
+        CircuitCopperCheck.Check(graph.Vias, lines, report, fmt);
 
         return new RecognitionResult(graph, report, ports.Count == 0 ? PortDiscovery.NoPortRefusal : null)
         {

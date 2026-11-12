@@ -422,9 +422,19 @@ changes. The report adds: elements by type; TLIN fallbacks by reason; segments r
 reading in force (and how many MLINs had ground both sides); junctions over four arms; bends, junctions and steps outside
 microstrip (one finding); open ends; slivers and lines absorbed; coupled pairs; unsolved segments.
 
+### 6.7½ The circuit against the copper
+
+Recognition checks its own result before the emit drops stray lines (`CircuitCopperCheck`): every part terminal, port
+and kept via end on one signal island is joined to the others there by copper, so the circuit must join them too through
+its lines, junctions and VIAs — direct current only, no part crossed. An island the circuit splits is
+`CircuitSplitsCopper` and a node joining two islands `CircuitJoinsAcrossCopper`, each naming both places; agreement is
+one `CircuitAgreesWithCopper` line, said every time, with what was checked. A part terminal, port or via end no line
+reached that joins a line end farther than a line end reaches (§6.5) is `CopperJoinedWithoutLine`: copper between them
+that no line models — a trace the review did not hand over — shorted. Tests treat all three as errors.
+
 ### 6.8 Gates
 
-`LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `LineRecognitionCountersTests` (a 40 mm line solves
+`LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `CircuitCopperCheckTests`, `LineRecognitionCountersTests` (a 40 mm line solves
 one cut; the review runs once) and `LineRecognitionFieldTests` (`FixtureFact`; the field board's `expected.json` gains
 `"lines": { "MLIN": [min, max], … }`).
 

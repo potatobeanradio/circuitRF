@@ -792,3 +792,15 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   of materials, as for every rung, and the confidence is `medium`. An outline round pads another rung found makes nothing,
   so a Gerber board's silkscreen round its land patterns reads as before. A part's outline drawn as four lines or as a closed
   stroke reads as a polygon does. Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_NamedByItsLabel_AndOneOverUnbrokenCopperIsNot`.
+- **The circuit is checked against its copper, and every difference is said** (F4; R-as3-5, R-as5-6, D16). The three
+  readings below each left the circuit split where the copper is one piece, and passed with "none was dropped".
+  `CircuitCopperCheck`, after line recognition and before the emit drops stray lines, unions each line's, junction's and
+  VIA's nodes and compares that with the islands: copper joins every part terminal, port and kept via end on one island,
+  so a split is `CircuitSplitsCopper` ("copper joins C1.2 at … and C3.1 at …, the circuit does not") and a node across two
+  islands `CircuitJoinsAcrossCopper`; agreement is one permanent `CircuitAgreesWithCopper` line. A split is not the only
+  way a line goes missing: an attachment no line reached was joined to the nearest line end on its island however far,
+  and a line the review never handed over became an ideal short with the circuit still connected. That join beyond a line
+  end's reach (2·W + 1 mm) is `CopperJoinedWithoutLine`. LVS was not reused: `LvsRun` is the only caller its comparison
+  allows (`ComparisonTests.LvsRunIsTheOnlyCallerOfTheComparison`), and the check needs no schematic; it follows
+  `DeclaredPads.CrossCheck`'s pattern instead (R-as12-5). Gate: `CircuitCopperCheckTests`; the DXF board's tests hold all
+  three at zero.
