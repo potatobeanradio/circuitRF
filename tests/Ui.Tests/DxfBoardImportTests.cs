@@ -239,6 +239,36 @@ public sealed class DxfBoardImportTests : IDisposable
         Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 entity is not a circle", StringComparison.Ordinal));
     }
 
+    /// <summary>A point on a straight edge is no corner when it is within two database units of the line through its
+    /// neighbours: the midpoint of a turned edge falls between grid points, and a 45° diamond drawn with one, or as eight lines
+    /// two to an edge, was taken for an outline of five or eight corners and left as drawn. Both are vias, and no line is
+    /// left.</summary>
+    [Fact]
+    public void APointOnATurnedEdge_IsNoCorner()
+    {
+        double d = 0.2 * Math.Sqrt(2);
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)));
+        entities.AddRange(Polyline("HOLE", (2 + d, 5, 0), (2 + d / 2, 5 + d / 2, 0), (2, 5 + d, 0), (2 - d, 5, 0), (2, 5 - d, 0)));
+        (double X, double Y)[] corners = [(4 + d, 5), (4, 5 + d), (4 - d, 5), (4, 5 - d)];
+        for (int k = 0; k < 4; k++)
+        {
+            var (ax, ay) = corners[k];
+            var (bx, by) = corners[(k + 1) % 4];
+            entities.AddRange(Line("HOLE", ax, ay, (ax + bx) / 2, (ay + by) / 2));
+            entities.AddRange(Line("HOLE", (ax + bx) / 2, (ay + by) / 2, bx, by));
+        }
+
+        var tech = Tech();
+        var result = Import(Drawing("midpoints.dxf", [.. entities]), "midpoints", tech, "PATTERN=Top Copper,HOLE=Drill");
+        var view = LoadOnly(result);
+
+        var vias = view.Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
+        Assert.Equal([2_000_000, 4_000_000], vias.Select(v => (long)Math.Round(v.X / 1e6) * 1_000_000));
+        Assert.All(vias, v => Assert.InRange(v.DrillSize, 399_000, 401_000));
+        Assert.DoesNotContain(view.Shapes, s => s.Layer == LayerNamed(tech, "Drill") && s is not ViaShape);
+    }
+
     /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a
     /// square first pin), a square pad at a square drill, a round pad at a round one — and a square pad keeps its whole square
     /// as copper: the via's land is the circle inside it.</summary>

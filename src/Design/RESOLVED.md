@@ -29832,6 +29832,12 @@ octagram, every third corner of an octagon — turns one way at every corner too
 must now also sum to one full turn; the octagram's sum to three, and it is left as drawn and said. Gate:
 `DxfBoardImportTests.AnOutlineThatCrossesItself_IsNoHole`.
 
+**… and a point on an edge within two database units (third review).** A point was dropped as no corner only when exactly
+on the line through its neighbours (to a part in 10⁹), and the midpoint of a turned edge falls between grid points: a 45°
+diamond drawn with one point mid-edge, or as eight `LINE`s two to an edge, kept that point as a corner and was left as
+drawn. A point within two database units of the line through its neighbours is now on the edge. Gate:
+`DxfBoardImportTests.APointOnATurnedEdge_IsNoCorner`.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was

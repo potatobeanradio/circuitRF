@@ -287,7 +287,8 @@ public static class DxfBoardReading
     private static HoleMark? HoleOf(long[] ring, long capDbu, string four, string more)
     {
         // A point drawn twice in a row — a closing vertex repeated, a corner drawn twice — is one point; then a point on a
-        // straight edge is no corner.
+        // straight edge is no corner: one within two database units of the line through its neighbours, as the midpoint of a
+        // turned edge, which falls between grid points, is.
         var drawn = new List<(double X, double Y)>();
         for (int i = 0; i + 1 < ring.Length; i += 2)
             if (drawn.Count == 0 || drawn[^1] != (ring[i], ring[i + 1])) drawn.Add((ring[i], ring[i + 1]));
@@ -299,8 +300,8 @@ public static class DxfBoardReading
             var (px, py) = drawn[(i + m - 1) % m];
             var (x, y) = drawn[i];
             var (nx, ny) = drawn[(i + 1) % m];
-            double cross = (x - px) * (ny - y) - (y - py) * (nx - x);
-            if (Math.Abs(cross) <= 1e-9 * (Math.Abs(x - px) + Math.Abs(y - py)) * (Math.Abs(nx - x) + Math.Abs(ny - y))) continue;
+            double cross = (x - px) * (ny - y) - (y - py) * (nx - x), chord = Math.Sqrt((nx - px) * (nx - px) + (ny - py) * (ny - py));
+            if (chord > 0 && Math.Abs(cross) <= 2 * chord) continue;
             pts.Add((x, y));
             turns.Add(cross);
         }
