@@ -56,6 +56,21 @@ public sealed class ChainDesign
     /// <summary>The SNR the demodulator needs, dB: sensitivity is the MDS plus this.</summary>
     public double RequiredSnrDb { get; set; } = 10;
 
+    /// <summary>The bandwidth as a fraction of the frequency (0.1 for 10 %), which then replaces
+    /// <see cref="BandwidthHz"/>; null: the bandwidth as stated.</summary>
+    public double? FractionalBandwidth { get; set; }
+
+    /// <summary>Orthogonal streams (polarisations, layers), each with its own hardware: the rate and the DC power are
+    /// both this many times one stream's.</summary>
+    public int Streams { get; set; } = 1;
+
+    /// <summary>The NF allocation's step, dB: after each stage, the largest NF the rest may have keeps the whole chain
+    /// within this of the NF up to that stage.</summary>
+    public double NfAllowanceDb { get; set; } = 1;
+
+    /// <summary>The receiver's ceiling below its input P1dB, dB.</summary>
+    public double RxBackoffDb { get; set; } = 10;
+
     public List<ChainStage> Stages { get; set; } = [];
 
     /// <summary>Blockers at the chain's input, each a carrier at an offset from the frequency and a level, carried
@@ -96,6 +111,10 @@ public sealed class ChainDesign
         if (!(FrequencyHz > 0)) r.Add("The frequency must be above 0 Hz.");
         if (!(BandwidthHz > 0)) r.Add("The bandwidth must be above 0 Hz.");
         if (!(TemperatureK >= 0)) r.Add("The source temperature cannot be below 0 K.");
+        if (FractionalBandwidth is { } fbw && !(fbw > 0 && fbw < 2)) r.Add("The fractional bandwidth is a fraction of the frequency, above 0 and below 2.");
+        if (Streams < 1) r.Add("A link carries one stream at least.");
+        if (!(NfAllowanceDb > 0)) r.Add("The NF allowance must be above 0 dB.");
+        if (!double.IsFinite(RxBackoffDb)) r.Add("The receiver back-off must be a number of dB.");
         if (Stages.Count == 0) r.Add("The chain has no stages.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int combiners = 0;
@@ -154,6 +173,7 @@ public sealed class ChainDesign
         TemperatureK = TemperatureK, RequiredSnrDb = RequiredSnrDb,
         Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers], Demo = Demo,
         BaseDirectory = BaseDirectory,
+        FractionalBandwidth = FractionalBandwidth, Streams = Streams, NfAllowanceDb = NfAllowanceDb, RxBackoffDb = RxBackoffDb,
     };
 }
 
@@ -192,7 +212,13 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
+
+    /// <summary>A chain is written as version 2 only when it uses what version 1 did not have, so a reader of version 1
+    /// refuses it rather than dropping it on save, and every other chain stays readable there.</summary>
+    private static int VersionOf(ChainDesign d) =>
+        d.FractionalBandwidth is not null || d.Streams != 1 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
+        || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value))) ? 2 : 1;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -212,13 +238,20 @@ public static class ChainDesignIo
         public List<ChainStage>? Stages { get; set; }
         public List<ChainBlocker>? Blockers { get; set; }
         public bool? Demo { get; set; }
+        public double? FractionalBandwidth { get; set; }
+        public int? Streams { get; set; }
+        public double? NfAllowanceDb { get; set; }
+        public double? RxBackoffDb { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
     {
+        FormatVersion = VersionOf(d),
         FrequencyHz = d.FrequencyHz, BandwidthHz = d.BandwidthHz, InputPowerDbm = d.InputPowerDbm,
         TemperatureK = d.TemperatureK, RequiredSnrDb = d.RequiredSnrDb, Stages = d.Stages,
         Blockers = d.Blockers.Count > 0 ? d.Blockers : null, Demo = d.Demo ? true : null,
+        FractionalBandwidth = d.FractionalBandwidth, Streams = d.Streams != 1 ? d.Streams : null,
+        NfAllowanceDb = d.NfAllowanceDb != 1 ? d.NfAllowanceDb : null, RxBackoffDb = d.RxBackoffDb != 10 ? d.RxBackoffDb : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -240,6 +273,10 @@ public static class ChainDesignIo
         d.RequiredSnrDb = f.RequiredSnrDb ?? d.RequiredSnrDb;
         d.Blockers.AddRange(f.Blockers ?? []);
         d.Demo = f.Demo ?? false;
+        d.FractionalBandwidth = f.FractionalBandwidth;
+        d.Streams = f.Streams ?? 1;
+        d.NfAllowanceDb = f.NfAllowanceDb ?? 1;
+        d.RxBackoffDb = f.RxBackoffDb ?? 10;
         foreach (var s in f.Stages ?? [])
             d.Stages.Add(new ChainStage
             {

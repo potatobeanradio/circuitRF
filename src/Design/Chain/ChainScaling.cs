@@ -69,6 +69,7 @@ public static class ChainScaling
     {
         var r = d.Clone();
         if (!(d.FrequencyHz > 0)) return r;   // the frequency's own refusal says why
+        if (d.FractionalBandwidth is { } fbw) r.BandwidthHz = fbw * d.FrequencyHz;
         double f = d.FrequencyHz;
         foreach (var s in r.Stages)
         {

@@ -442,6 +442,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RequiredSnrDb = N(d.RequiredSnrDb);
         Blockers = FormatBlockers(d.Blockers);
         Demo = d.Demo;
+        _carried = d;
         Stages.Clear();
         foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Edited));
         _loading = false;
@@ -464,7 +465,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Stages = [.. Stages.Select(s => s.ToStage())],
         Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
         Demo = Demo,
+        // What the window does not edit, as it was opened.
+        FractionalBandwidth = _carried?.FractionalBandwidth, Streams = _carried?.Streams ?? 1,
+        NfAllowanceDb = _carried?.NfAllowanceDb ?? 1, RxBackoffDb = _carried?.RxBackoffDb ?? 10,
     };
+
+    /// <summary>The design as loaded: the source of what the window keeps without editing it.</summary>
+    private ChainDesign? _carried;
 
     /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
     private void Changed() => Edited(null);
@@ -661,7 +668,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             $"Thermal floor {D(t.ThermalFloorDbm)} dBm    Output noise {D(t.NoiseOutDbm)} dBm    MDS {D(t.MdsDbm)} dBm    " +
             $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB" +
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
-            (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "");
+            (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "") +
+            (ChainCapacity.Read(r) is { } o
+                ? $"\nNoise at the input {D(o.NirDbm)} dBm (NF of the array {D(o.NfArrayDb)} dB)    Margin {D(o.MarginDb)} dB    " +
+                  $"Rate {ChainCapacity.Rate(o.RateBps)}" + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $"    Ceiling {D(o.CeilingDbm)} dBm"
+                : "");
         if (r.Totals is null) return false;
         MarkGood();
         return true;

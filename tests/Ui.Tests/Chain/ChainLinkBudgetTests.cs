@@ -166,6 +166,122 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         }
     }
 
+    // ── the readouts ─────────────────────────────────────────────────────────
+
+    /// <summary>A front end of gain g and noise factor F_LNA per element, N elements into a combiner of loss L, then one
+    /// amplifier of noise factor F_B.</summary>
+    private static ChainDesign Array(int n, double ilDb, string topology = "Direct") => new()
+    {
+        FrequencyHz = 28e9, BandwidthHz = 400e6, InputPowerDbm = -70,
+        Stages =
+        [
+            S("LNA", "Amp", ("Gain", "18"), ("NF", "2.5"), ("IP3", "10")),
+            S("CMB", "Combiner", ("N", n.ToString(System.Globalization.CultureInfo.InvariantCulture)), ("Topology", topology), ("IL", ilDb.ToString("R", System.Globalization.CultureInfo.InvariantCulture))),
+            S("DRV", "Amp", ("Gain", "10"), ("NF", "6"), ("IP3", "25")),
+        ],
+    };
+
+    [Fact]
+    public void TheArraysNoiseFactor_IsFaOverMPlusFbMinusOneOverGa()
+    {
+        // Lossless: F_A is the front end's, G_A = g·N.
+        var r = ChainBudget.Evaluate(Array(8, 0));
+        var o = ChainCapacity.Read(r)!;
+        double fa = Lin(2.5), fb = Lin(6), g = Lin(18);
+        Assert.Equal(Db(fa / 8 + (fb - 1) / (8 * g)), o.NfArrayDb, 12);
+
+        // A combiner of loss L: F_A takes its loss after the front end, G_A = g·N/L, and the hand Friis per element agrees.
+        r = ChainBudget.Evaluate(Array(8, 1.5));
+        o = ChainCapacity.Read(r)!;
+        double l = Lin(1.5);
+        double faL = fa + (l - 1) / g, ga = g * 8 / l;
+        Assert.Equal(Db(faL / 8 + (fb - 1) / ga), o.NfArrayDb, 12);
+        Assert.Equal(Db(fa + (l - 1) / g + (fb - 1) * l / g), r.Totals!.NfDb, 12);
+        // The input-referred noise is kT0·B at that factor; the SNR is the input over it.
+        Assert.Equal(Db(1.380649e-23 * 290 * 400e6) + 30 + o.NfArrayDb, o.NirDbm, 9);
+        Assert.Equal(-70 - o.NirDbm, o.SnrDb, 9);
+    }
+
+    [Fact]
+    public void TheRate_IsShannonOverTheStatedOrFractionalBandwidth_TimesTheStreams()
+    {
+        var d = Array(8, 1);
+        d.RequiredSnrDb = 12;
+        var o = ChainCapacity.Read(ChainBudget.Evaluate(d))!;
+        Assert.Equal(400e6 * Math.Log2(1 + Lin(o.SnrDb)), o.RateBps, 3);
+        Assert.Equal(o.SnrDb - 12, o.MarginDb, 12);
+
+        d.FractionalBandwidth = 0.1;
+        d.Streams = 2;
+        var r = ChainBudget.Evaluate(d);
+        o = ChainCapacity.Read(r)!;
+        Assert.Equal(2.8e9, o.BandwidthHz, 3);
+        Assert.Equal(-70 - (Db(1.380649e-23 * 290 * 2.8e9) + 30 + o.NfArrayDb), o.SnrDb, 9);   // the noise is in 2.8 GHz too
+        Assert.Equal(2 * 2.8e9 * Math.Log2(1 + Lin(o.SnrDb)), o.RateBps, 1);
+        var ds = ChainBudget.ToDataSet(r);
+        Assert.Equal(o.RateBps, ds["Rate_bps"].RealValues[0]);
+        Assert.Equal(o.NfArrayDb, ds["NFarray_dB"].RealValues[0]);
+    }
+
+    [Fact]
+    public void TheNfAllowedAfterAStage_PutThere_TakesTheWholeChainToItsNfPlusTheAllowance()
+    {
+        var d = Scaled();
+        foreach (double x in new[] { 1.0, 0.3 })
+        {
+            d.NfAllowanceDb = x;
+            var r = ChainBudget.Evaluate(d);
+            var o = ChainCapacity.Read(r)!;
+            for (int k = 0; k < d.Stages.Count - 1; k++)
+            {
+                // The rest replaced by one stage of exactly that NF (a noise gain of 1: Friis reads only its noise factor).
+                var cut = d.Clone();
+                cut.Stages.RemoveRange(k + 1, cut.Stages.Count - k - 1);
+                cut.Stages.Add(S("REST", "Amp", ("Gain", "0"), ("NF", o.NfAllowedDb[k].ToString("R", System.Globalization.CultureInfo.InvariantCulture)), ("IP3", "200")));
+                Assert.Equal(r.Stages[k].NfDb + x, ChainBudget.Evaluate(cut).Totals!.NfDb, 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void ACompressingStageAfterTheCombiner_IsNamed_AndTheSharesAddUp()
+    {
+        var d = Array(16, 1, "Tree");
+        d.Stages.Add(S("MIX", "Mixer", ("ConvGain", "-6"), ("NF", "10"), ("IIP3", "-5"), ("Plo", "5"), ("Flo", "freq - 3GHz")));
+        var r = ChainBudget.Evaluate(d);
+        Assert.Contains(r.Notes, x => x.StartsWith("MIX sets the receiver's compression", StringComparison.Ordinal)
+                                       && x.Contains("the 16 elements' signals arrive in phase", StringComparison.Ordinal));
+        var o = ChainCapacity.Read(r)!;
+        Assert.Equal(100, o.Ip1dbSharePct.Sum(), 9);
+        Assert.True(o.Ip1dbSharePct[3] > 50);
+        // The ceiling: the cascade's input P1dB less the back-off, said when the input is above it.
+        Assert.Equal(r.Totals!.Ip1dbDbm - 10, o.CeilingDbm, 12);
+        d.InputPowerDbm = r.Totals.Ip1dbDbm - 5;
+        Assert.Contains(ChainBudget.Evaluate(d).Notes, x => x.Contains("is above the receiver's ceiling", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheNewFields_RoundTrip_AsVersion2_AndAPlainChainStaysVersion1()
+    {
+        var plain = Array(8, 1);
+        Assert.Contains("\"FormatVersion\": 1", ChainDesignIo.Serialize(plain));
+        var d = Array(8, 1);
+        d.FractionalBandwidth = 0.1; d.Streams = 2; d.NfAllowanceDb = 0.5; d.RxBackoffDb = 8;
+        string json = ChainDesignIo.Serialize(d);
+        Assert.Contains("\"FormatVersion\": 2", json);
+        var back = ChainDesignIo.Deserialize(json);
+        Assert.Equal((0.1, 2, 0.5, 8.0), (back.FractionalBandwidth!.Value, back.Streams, back.NfAllowanceDb, back.RxBackoffDb));
+        // An expression or a budget-only value is version 2 as well: version 1 would put it on a netlist line.
+        Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Scaled()));
+        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 3}"));
+
+        // The window keeps them through an edit and a save.
+        var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);
+        vm.InputPowerDbm = "-65";
+        var kept = vm.ToDesign();
+        Assert.Equal((0.1, 2, 0.5, 8.0), (kept.FractionalBandwidth!.Value, kept.Streams, kept.NfAllowanceDb, kept.RxBackoffDb));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

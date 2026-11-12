@@ -108,6 +108,7 @@ public static class ChainBudget
             mdsT + d.RequiredSnrDb, d.InputPowerDbm - mdsT,
             double.IsPositiveInfinity(last.Iip3Dbm) ? double.PositiveInfinity : 2.0 / 3.0 * (last.Iip3Dbm - mdsT),
             Db(a), f);
+        notes.AddRange(ChainCapacity.Notes(d, rows, totals));
         return new(rows, totals, [], notes) { Design = d };
     }
 
@@ -183,6 +184,7 @@ public static class ChainBudget
         One("SFDR_dB", "dB", t.SfdrDb);
         One("ArrayGain_dB", "dB", t.ArrayGainDb);
         One("Fout_Hz", "Hz", t.OutputFrequencyHz);
+        ChainCapacity.AddTo(ds, r, stage);
         return ds;
     }
 }

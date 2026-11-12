@@ -422,7 +422,7 @@ public static class ChainBudgetDisplay
         [
             ("G_dB", "G, dB"), ("NF_dB", "NF, dB"), ("IIP3_dBm", "IIP3, dBm"), ("OIP3_dBm", "OIP3, dBm"),
             ("IP1dB_dBm", "IP1dB, dBm"), ("OP1dB_dBm", "OP1dB, dBm"), ("Pout_dBm", "Pout, dBm"), ("SNR_dB", "SNR, dB"),
-            ("NFpct", "share of F − 1, %"),
+            ("NFpct", "share of F − 1, %"), ("NFallow_dB", "NF allowed after, dB"), ("IP1dBpct", "share of 1/IP1dB, %"),
         ];
         return new PlotContainerConfig
         {
