@@ -120,40 +120,87 @@ public sealed class DxfBoardImportTests : IDisposable
     private static (int, object)[] Line(string layer, double x0, double y0, double x1, double y1) =>
         [(0, "LINE"), (8, layer), (10, x0), (20, y0), (11, x1), (21, y1)];
 
-    /// <summary>R-dfr38-1-4 as revised: a drill layer's circles, squares (a closed polyline and four lines), octagons and
-    /// two-arc polylines are each a via whose drill is its box's width; a long rectangle on the layer is no hole and is said.</summary>
-    [Fact]
-    public void SquaresOctagonsAndArcOutlinesOnADrillLayer_AreVias_AndALongRectangleIsLeftAsDrawn()
+    /// <summary>A regular polygon of <paramref name="n"/> corners on HOLE centred at (<paramref name="x"/>, 5) mm, the circle inside
+    /// it 0.4 mm across, its first corner at <paramref name="startDeg"/>.</summary>
+    private static (int, object)[] Regular(string layer, double x, int n, double startDeg)
     {
-        double t = 0.2 * Math.Tan(Math.PI / 8);
+        double r = 0.2 / Math.Cos(Math.PI / n);
+        return Polyline(layer, [.. Enumerable.Range(0, n).Select(k =>
+        {
+            double a = (startDeg + 360.0 * k / n) * Math.PI / 180;
+            return (x + r * Math.Cos(a), 5 + r * Math.Sin(a), 0.0);
+        })]);
+    }
+
+    /// <summary>R-dfr38-1-4 as revised: a drill layer's circles and regular polygons — a square (a closed polyline, and four
+    /// lines), a 45° diamond, a hexagon, an octagon, a two-arc polyline — are each a via whose drill is the circle inside it,
+    /// and a circle drawn in a square at one centre is one via. A long rectangle, and a square wider than the layer's widest
+    /// circle, are no holes and are said.</summary>
+    [Fact]
+    public void RegularPolygonsOnADrillLayer_AreVias_OneSymbolIsOneVia_AndARectangleOrAnOversizeSquareIsLeftAsDrawn()
+    {
         var entities = new List<(int, object)>();
-        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)));
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (26, 0, 0), (26, 10, 0), (0, 10, 0)));
         entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 2.0), (20, 5.0), (40, 0.2)]);
-        entities.AddRange(Polyline("HOLE", (3.8, 4.8, 0), (4.2, 4.8, 0), (4.2, 5.2, 0), (3.8, 5.2, 0)));
-        entities.AddRange(Line("HOLE", 5.8, 4.8, 6.2, 4.8));
+        entities.AddRange(Regular("HOLE", 4, 4, 45));                                // a square
+        entities.AddRange(Line("HOLE", 5.8, 4.8, 6.2, 4.8));                         // a square of four lines
         entities.AddRange(Line("HOLE", 6.2, 4.8, 6.2, 5.2));
         entities.AddRange(Line("HOLE", 6.2, 5.2, 5.8, 5.2));
         entities.AddRange(Line("HOLE", 5.8, 5.2, 5.8, 4.8));
-        entities.AddRange(Polyline("HOLE", (8.2, 5 - t, 0), (8.2, 5 + t, 0), (8 + t, 5.2, 0), (8 - t, 5.2, 0),
-                                           (7.8, 5 + t, 0), (7.8, 5 - t, 0), (8 - t, 4.8, 0), (8 + t, 4.8, 0)));
-        entities.AddRange(Polyline("HOLE", (9.8, 5, 1), (10.2, 5, 1)));
-        entities.AddRange(Polyline("HOLE", (12, 4.8, 0), (14, 4.8, 0), (14, 5.2, 0), (12, 5.2, 0)));
+        entities.AddRange(Regular("HOLE", 8, 8, 22.5));                              // an octagon
+        entities.AddRange(Polyline("HOLE", (9.8, 5, 1), (10.2, 5, 1)));             // two arcs
+        entities.AddRange(Regular("HOLE", 12, 6, 0));                                // a hexagon
+        entities.AddRange(Regular("HOLE", 14, 4, 0));                                // a diamond
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 16.0), (20, 5.0), (40, 0.2)]);
+        entities.AddRange(Regular("HOLE", 16, 4, 45));                               // the same drill, its square drawn round it
+        entities.AddRange(Polyline("HOLE", (18, 4.8, 0), (20, 4.8, 0), (20, 5.2, 0), (18, 5.2, 0)));   // a long rectangle
+        entities.AddRange(Polyline("HOLE", (21.5, 4.5, 0), (22.5, 4.5, 0), (22.5, 5.5, 0), (21.5, 5.5, 0)));   // 1 mm: past the circles
 
         var tech = Tech();
         var result = Import(Drawing("drill-marks.dxf", [.. entities]), "marks", tech, "PATTERN=Top Copper,HOLE=Drill");
         var view = LoadOnly(result);
 
         var vias = view.Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
-        Assert.Equal([2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000], vias.Select(v => v.X));
-        Assert.All(vias, v => Assert.Equal(5_000_000, v.Y));
-        Assert.All(vias, v => Assert.InRange(v.DrillSize, 399_000, 401_000));
-        Assert.Contains(result.Messages, m => m.Contains("1 circle", StringComparison.Ordinal) && m.Contains("1 square,", StringComparison.Ordinal)
-                                              && m.Contains("1 square of lines", StringComparison.Ordinal) && m.Contains("1 polygon", StringComparison.Ordinal)
-                                              && m.Contains("1 arc outline", StringComparison.Ordinal));
+        Assert.Equal([2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000, 12_000_000, 14_000_000, 16_000_000], vias.Select(v => v.X));
+        Assert.All(vias, v => Assert.InRange(v.Y, 4_999_000, 5_001_000));
+        Assert.All(vias, v => Assert.InRange(v.DrillSize, 398_000, 401_000));
+        Assert.Contains(result.Messages, m => m.Contains("2 circles, 2 polygons, 2 squares, 1 arc outline, 1 square of lines read as holes",
+                                                         StringComparison.Ordinal));
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 mark was drawn at another's centre", StringComparison.Ordinal));
 
         var drill = LayerNamed(tech, "Drill");
-        Assert.Single(view.Shapes, s => s.Layer == drill && s is PolygonShape);   // the long rectangle, as drawn
-        Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 entity is not a circle or a small closed outline", StringComparison.Ordinal));
+        Assert.Equal(2, view.Shapes.Count(s => s.Layer == drill && s is PolygonShape));   // the rectangle and the 1 mm square, as drawn
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 2 entities are not a circle or a small regular polygon", StringComparison.Ordinal));
+    }
+
+    /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a
+    /// square first pin), a square pad at a square drill, a round pad at a round one — and a square pad keeps its whole square
+    /// as copper: the via's land is the circle inside it.</summary>
+    [Fact]
+    public void ASquarePadRoundADrill_IsTheViasPad_AndKeepsItsShape()
+    {
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (3.4, 4.4, 0), (4.6, 4.4, 0), (4.6, 5.6, 0), (3.4, 5.6, 0)));
+        entities.AddRange([(0, "CIRCLE"), (8, "PATTERN"), (10, 8.0), (20, 5.0), (40, 0.6)]);
+        entities.AddRange(Polyline("PATTERN", (11.4, 4.4, 0), (12.6, 4.4, 0), (12.6, 5.6, 0), (11.4, 5.6, 0)));
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 4.0), (20, 5.0), (40, 0.2)]);
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 8.0), (20, 5.0), (40, 0.2)]);
+        entities.AddRange(Regular("HOLE", 12, 4, 45));
+
+        var tech = Tech();
+        var result = Import(Drawing("pads.dxf", [.. entities]), "pads", tech, "PATTERN=Top Copper,HOLE=Drill");
+        var view = LoadOnly(result);
+
+        var vias = view.Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
+        Assert.Equal(3, vias.Count);
+        Assert.All(vias, v => Assert.InRange(v.PadSize, 1_198_000, 1_202_000));
+        var top = LayerNamed(tech, "Top Copper");
+        var squares = view.Shapes.Where(s => s.Layer == top).OfType<PolygonShape>().ToList();
+        Assert.Equal(2, squares.Count);
+        static double Area(long[] xy) => Math.Abs(Enumerable.Range(0, xy.Length / 2).Sum(i =>
+            (double)xy[2 * i] * xy[(2 * i + 3) % xy.Length] - (double)xy[(2 * i + 2) % xy.Length] * xy[2 * i + 1])) / 2;
+        Assert.All(squares, sq => Assert.InRange(Area(sq.Xy), 1.43e12, 1.45e12));
+        Assert.Empty(view.Shapes.Where(s => s.Layer == top).OfType<CircleShape>());
     }
 
     [Fact]

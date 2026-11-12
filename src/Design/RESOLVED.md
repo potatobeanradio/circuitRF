@@ -29797,6 +29797,17 @@ square blob in a picture may be a pad, while a layer the user mapped as the dril
 message counts each kind read ("11 circles, 11 squares, …, read as holes"). Gate:
 `DxfBoardImportTests.SquaresOctagonsAndArcOutlinesOnADrillLayer_AreVias_AndALongRectangleIsLeftAsDrawn`.
 
+**… revised again on review.** The box test turned a regular hexagon away (its box is 13 % wider than tall) and a 45°
+diamond (it fills half its box). A hole is now a closed outline that is a regular polygon: every corner within 5 % of
+their mean distance from their centre, and at least 0.95 of the area of the regular polygon of that many corners on that
+circle — a rectangle's corners are on one circle too, and it has 0.8 of a square's area at 2:1. Its hole is the circle
+inside it. The cap is the layer's widest circle when it has circles (a pad or frame there is wider than any of them), and
+3 mm only on a layer with none. Two marks at one centre — a drill symbol drawn as a circle in a square — are one hole, the
+circle's, and said. And a pad that pairs with a drill and is no circle keeps its own shape: replaced by the circle inside it,
+a square pad lost a fifth of its copper and a trace meeting its edge touched the via's land at one point. Gates:
+`DxfBoardImportTests.RegularPolygonsOnADrillLayer_AreVias_OneSymbolIsOneVia_AndARectangleOrAnOversizeSquareIsLeftAsDrawn`
+and `ASquarePadRoundADrill_IsTheViasPad_AndKeepsItsShape`.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was
