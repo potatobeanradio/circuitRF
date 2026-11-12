@@ -38,10 +38,19 @@ public sealed class LoadpullCostTests(ITestOutputHelper output) : IDisposable
 
     private static string N(double v) => v.ToString("G17", CultureInfo.InvariantCulture);
 
-    /// <summary>A <c># gamma mag_ang</c> grid file of <paramref name="gammas"/> in a fresh temp folder.</summary>
+    // One folder for every grid this test process writes, removed when it exits.
+    private static readonly Lazy<string> GamDir = new(() =>
+    {
+        string dir = Directory.CreateTempSubdirectory("crf-lpcost-").FullName;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { Directory.Delete(dir, recursive: true); } catch (IOException) { } };
+        return dir;
+    });
+    private static int _gams;
+
+    /// <summary>A <c># gamma mag_ang</c> grid file of <paramref name="gammas"/>, in the process's own temp folder.</summary>
     internal static string Gam(IEnumerable<Complex> gammas)
     {
-        string path = Path.Combine(Directory.CreateTempSubdirectory("crf-lpcost-").FullName, "grid.gam");
+        string path = Path.Combine(GamDir.Value, $"grid{Interlocked.Increment(ref _gams)}.gam");
         File.WriteAllLines(path, ["# gamma Z0=50 mag_ang",
             .. gammas.Select(g => $"{N(g.Magnitude)} {N(g.Phase * 180 / Math.PI)}")]);
         return path;

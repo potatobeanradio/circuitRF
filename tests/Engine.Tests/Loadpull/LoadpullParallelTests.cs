@@ -15,7 +15,7 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// cube, the warnings and notes in their order, and the <c>.spl</c>/<c>.lpcwave</c> a user exports. The serial run is
 /// <c>MaxParallelism=1</c>, which takes the loop every caller had before. See <c>LoadpullEngine.RunParallel</c> for why
 /// exact is possible: a load seeds from an EARLIER load's first rung only, and that rung is published the moment it is
-/// solved.
+/// solved. Each bench runs at 1, 2, 3 and 8 workers (the swept one at 1-4); under 4 s each, alone.
 /// </summary>
 [Collection("ExternalDeviceRegistry")]
 public sealed class LoadpullParallelTests : IDisposable
@@ -28,21 +28,36 @@ public sealed class LoadpullParallelTests : IDisposable
 
     /// <summary>One loadpull run at <paramref name="workers"/> (1 = the serial loop), on a fresh elaboration.</summary>
     internal static Outcome Run(Func<(Library Lib, TestBench Tb)> read, int workers, double inductanceRegR = 1e-6,
-                                string? dir = null)
+                                string? dir = null, Action<int>? beforeLoad = null, Action<int>? beforeSetup = null)
     {
         var (lib, tb) = read();
         using var nl = new Elaborator(lib) { BaseDirectory = dir }.Elaborate(tb);
         var settings = new AnalysisSettings { MaxParallelism = workers, InductanceRegR = inductanceRegR };
+        var engine = new LoadpullEngine(nl, tb, settings, lib, dir) { BeforeLoad = beforeLoad, BeforeWorkerSetup = beforeSetup };
         DataSet ds;
         if (tb.Analyses.OfType<LoadpullPursuitAnalysis>().FirstOrDefault() is { } lpp)
-            ds = new LoadpullPursuitEngine(new LoadpullEngine(nl, tb, settings, lib, dir))
-                     .Run(LoadpullPursuitEngine.Resolve(lpp, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit));
+            ds = new LoadpullPursuitEngine(engine).Run(LoadpullPursuitEngine.Resolve(lpp, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit));
         else
         {
             var lpa = tb.Analyses.OfType<LoadpullAnalysis>().First();
-            ds = new LoadpullEngine(nl, tb, settings, lib, dir).Run(LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit));
+            ds = engine.Run(LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit));
         }
         return new Outcome(ds, [.. nl.Warnings], [.. nl.Notes], LoadpullEngine.LastLoadpullDegree);
+    }
+
+    /// <summary>
+    /// Hero 3 driven 25 dB past compression into near-open loads with a ten-iteration cap: the solve lands on nonphysical
+    /// roots, and more than one load raises the energy warning — each with its own "first seen at" — so the run's warning
+    /// is the one the FIRST such load in grid order raised. The gate for the per-load replay of diagnostics.
+    /// </summary>
+    internal static string EnergyBench(bool withLoad1 = true)
+    {
+        double[] mag = [0, 0.995, 0.995, 0.6, 0.3, 0.995, 0.99, 0.995, 0.999], deg = [0, 0, 180, 45, 270, 90, 10, -10, 0];
+        var gammas = mag.Select((m, i) => Complex.FromPolarCoordinates(m, deg[i] * Math.PI / 180)).Where((_, i) => withLoad1 || i != 1);
+        return File.ReadAllText(Hero3("hero3.cnl"))
+            .Replace("Grid=\"hero3_load.gam\"", $"Grid=\"{LoadpullCostTests.Gam(gammas)}\"").Replace("Tickle=-50", "Tickle=off")
+            .Replace("PinStart=-20", "PinStart=20").Replace("Compression=3", "Compression=30").Replace("PinMax=10", "PinMax=45")
+            .Replace("MaxIter=100", "MaxIter=10");
     }
 
     internal static void AssertSame(Outcome serial, Outcome parallel)
@@ -113,6 +128,64 @@ public sealed class LoadpullParallelTests : IDisposable
         Assert.All(Enumerable.Range(1, stop.Length - 1), gi => Assert.Equal(1, conv[gi * nP]));
     }
 
+    /// <summary>
+    /// Two loads raise the same warning key with different messages (load 1, and a later one: drop load 1 and the warning
+    /// names another load). The run reports load 1's at any worker count, whichever load a worker finished first.
+    /// </summary>
+    [Fact]
+    public void AWarningRaisedAtSeveralLoads_NamesTheFirstInGridOrder()
+    {
+        var serial = Gate(() => new CnlReader().Read(EnergyBench()));
+        var without1 = Run(() => new CnlReader().Read(EnergyBench(withLoad1: false)), 1);
+        string Energy(Outcome o) => Assert.Single(o.Warnings, w => w.Contains("no passive termination can make up", StringComparison.Ordinal));
+        Assert.NotEqual(Energy(serial), Energy(without1));
+    }
+
+    /// <summary>
+    /// A load that throws: the run raises the LOWEST failing load's exception, as the serial loop stops on it, with the
+    /// findings of the loads before it — whatever ran beside it. Loads 4 and 6 throw; load 1 has raised a warning by then.
+    /// </summary>
+    [Fact]
+    public void AFailingLoad_RaisesTheLowestFailingLoadsError_WithTheFindingsBeforeIt()
+    {
+        static void Fail(int gi) { if (gi is 4 or 6) throw new InvalidOperationException($"load {gi} failed"); }
+        (string Message, string[] Warnings) Failing(int workers)
+        {
+            var (lib, tb) = new CnlReader().Read(EnergyBench());
+            using var nl = new Elaborator(lib).Elaborate(tb);
+            var engine = new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = workers }, lib) { BeforeLoad = Fail };
+            var lpa = tb.Analyses.OfType<LoadpullAnalysis>().Single();
+            var ex = Assert.Throws<InvalidOperationException>(() => engine.Run(LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals)));
+            return (ex.Message, [.. nl.Warnings]);
+        }
+        var serial = Failing(1);
+        Assert.Equal("load 4 failed", serial.Message);
+        Assert.NotEmpty(serial.Warnings);
+        foreach (int w in new[] { 2, 3, 8 })
+        {
+            var parallel = Failing(w);
+            Assert.Equal(serial.Message, parallel.Message);
+            Assert.Equal(serial.Warnings, parallel.Warnings);
+        }
+    }
+
+    /// <summary>A copy that cannot be set up costs only its own worker: the others take its loads and the result is the
+    /// serial loop's. Only when every copy fails is the run refused, with the first copy's reason.</summary>
+    [Fact]
+    public void ACopyThatCannotBeSetUp_CostsOnlyItsWorker()
+    {
+        Func<(Library, TestBench)> read = () => CnlReader.ReadFile(Hero3("hero3.cnl"));
+        string dir = Path.GetDirectoryName(Hero3("hero3.cnl"))!;
+        var serial = Run(read, 1, dir: dir);
+        var oneFails = Run(read, 4, dir: dir, beforeSetup: w => { if (w == 0) throw new InvalidOperationException("copy 0"); });
+        Assert.Equal(4, oneFails.Degree);
+        AssertSame(serial, oneFails);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Run(read, 4, dir: dir, beforeSetup: w => throw new InvalidOperationException($"copy {w}")));
+        Assert.StartsWith("copy ", ex.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>Tuners behind a linear network (the off-device interface path) and NF at every rung (the per-solve noise
     /// read), on the benches of <see cref="LoadpullOffDeviceTunerTests"/> and <see cref="LoadpullNoiseTests"/>.</summary>
     [Fact]
@@ -154,15 +227,17 @@ public sealed class LoadpullParallelTests : IDisposable
     public void APursuitsFollowOn_IsBitIdenticalToo()
     {
         // The recommended-terminations grid goes to a temp file, not beside the committed bench.
-        string gam = Path.Combine(Directory.CreateTempSubdirectory("crf-lp1-").FullName, "out.gam");
-        string cnl = File.ReadAllText(LoadpullCostTests.Find("testdata/Hero3B/hero3B_at_compression.cnl"))
-                         .Replace("OutputGrid=\"loadpull_pursuit_output.gam\"", $"OutputGrid=\"{gam}\"");
-        Assert.Contains(gam, cnl);
-        var serial = Run(() => new CnlReader().Read(cnl), 1);
-        var parallel = Run(() => new CnlReader().Read(cnl), 4);
-        Assert.Equal(4, parallel.Degree);
-        Assert.True(serial.Ds.Contains("GammaLoad"), "the follow-on loadpull ran");
-        AssertSame(serial, parallel);
+        string tmp = Directory.CreateTempSubdirectory("crf-lp1-").FullName;
+        try
+        {
+            string gam = Path.Combine(tmp, "out.gam");
+            string cnl = File.ReadAllText(LoadpullCostTests.Find("testdata/Hero3B/hero3B_at_compression.cnl"))
+                             .Replace("OutputGrid=\"loadpull_pursuit_output.gam\"", $"OutputGrid=\"{gam}\"");
+            Assert.Contains(gam, cnl);
+            var serial = Gate(() => new CnlReader().Read(cnl));
+            Assert.True(serial.Ds.Contains("GammaLoad"), "the follow-on loadpull ran");
+        }
+        finally { Directory.Delete(tmp, recursive: true); }
     }
 
     /// <summary>What a user exports — the <c>.spl</c> and <c>.lpcwave</c> of the enriched result — byte for byte.</summary>
@@ -186,22 +261,29 @@ public sealed class LoadpullParallelTests : IDisposable
         Assert.True(serial.Spl.Length > 1000 && serial.Wave.Length > 1000);
     }
 
-    /// <summary>A swept loadpull's points each run their grid in parallel: the sweep engine hands the engine its library.</summary>
+    /// <summary>A swept loadpull's points each run their grid in parallel — the sweep engine hands the engine its library
+    /// and its cap — with each point's warnings collected as the serial sweep collects them (<c>diagnosticsInto</c>).</summary>
     [Fact]
     public void ASweptLoadpull_RunsEachPointsGridInParallel()
     {
-        DataSet Sweep(int workers)
+        string cnl = EnergyBench();
+        Outcome Sweep(int workers)
         {
-            var (lib, tb) = CnlReader.ReadFile(Hero3("hero3.cnl"));
+            var (lib, tb) = new CnlReader().Read(cnl);
+            using var into = new Elaborator(lib).Elaborate(tb);
             var sw = new ParametricSweepAnalysis("SW1", "RFfreq", [1.9e9, 2.1e9], "LP1");
-            return ParametricSweepEngine.Run(sw, lib, tb, new AnalysisSettings { MaxParallelism = workers },
-                                             baseDirectory: Path.GetDirectoryName(Hero3("hero3.cnl")));
+            var ds = ParametricSweepEngine.Run(sw, lib, tb, new AnalysisSettings { MaxParallelism = workers }, diagnosticsInto: into);
+            return new Outcome(ds, [.. into.Warnings], [.. into.Notes], LoadpullEngine.LastLoadpullDegree);
         }
         var serial = Sweep(1);
-        Assert.Equal(1, LoadpullEngine.LastLoadpullDegree);
-        var parallel = Sweep(4);
-        Assert.Equal(4, LoadpullEngine.LastLoadpullDegree);
-        AssertSame(new Outcome(serial, [], [], 1), new Outcome(parallel, [], [], 4));
+        Assert.Equal(1, serial.Degree);
+        Assert.NotEmpty(serial.Warnings);
+        foreach (int w in new[] { 2, 3, 4 })
+        {
+            var parallel = Sweep(w);
+            Assert.Equal(w, parallel.Degree);
+            AssertSame(serial, parallel);
+        }
     }
 
     /// <summary><c>Workers=</c> on the directive caps the degree over the settings' default, and is written back only when
@@ -215,6 +297,10 @@ public sealed class LoadpullParallelTests : IDisposable
         Assert.Equal("3", tb.Analyses.OfType<LoadpullAnalysis>().Single().WorkersExpr);
         Assert.Contains(" Workers=3", CnlWriter.Write(tb), StringComparison.Ordinal);
         Assert.DoesNotContain("Workers", CnlWriter.Write(new CnlReader().Read(With("")).Item2), StringComparison.Ordinal);
+
+        var bad = Run(() => new CnlReader().Read(With(" Workers=-2")), workers: 0);
+        Assert.Contains(bad.Warnings, w => w.Contains("Workers=", StringComparison.Ordinal));
+        Assert.True(bad.Degree > 1);
 
         var three = Run(() => new CnlReader().Read(With(" Workers=3")), workers: 0);
         Assert.Equal(3, three.Degree);
@@ -232,7 +318,13 @@ public sealed class LoadpullParallelTests : IDisposable
         Assert.Equal(1, new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = 1 }, lib).PlanDegree(20));
         Assert.Equal(1, new LoadpullEngine(nl, tb, null, lib).PlanDegree(1));
         Assert.Equal(5, new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = 5 }, lib).PlanDegree(20));
-        Assert.Equal(Math.Min(Environment.ProcessorCount, 20), new LoadpullEngine(nl, tb, null, lib).PlanDegree(20));
+        Assert.Equal(Math.Min(Environment.ProcessorCount, 10), new LoadpullEngine(nl, tb, null, lib).PlanDegree(20));
+        // Both caps are caps: the smaller wins, whichever it is.
+        Assert.Equal(3, new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = 5 }, lib).PlanDegree(20, workers: 3));
+        Assert.Equal(2, new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = 2 }, lib).PlanDegree(20, workers: 8));
+        Assert.Equal(1, new LoadpullEngine(nl, tb, new AnalysisSettings { MaxParallelism = 1 }, lib).PlanDegree(20, workers: 8));
+        // Never more than one worker per MinLoadsPerWorker loads: each costs an elaboration, one at a time.
+        Assert.Equal(2, new LoadpullEngine(nl, tb, null, lib).PlanDegree(5, workers: 16));
     }
 
     /// <summary>An external device is one worker process whose channel serialises every call: its loads stay serial.</summary>

@@ -40,8 +40,8 @@ public sealed record LoadpullAnalysisParams(
     HbNoiseRequest?    Noise = null,
     /// <summary>Brief NZ-6: the output frequency the noise is read at, Hz (<c>NoiseFreq=</c>; the tone when absent).</summary>
     double             NoiseFreqHz = 0,
-    /// <summary>LP-1: <c>Workers=</c> — loads solved at once; 0 defers to <see cref="AnalysisSettings.MaxParallelism"/>
-    /// (itself 0 = one per core), 1 is the serial loop.</summary>
+    /// <summary>LP-1: <c>Workers=</c> — at most this many loads at once, 0 for no cap of its own, 1 the serial loop;
+    /// <see cref="InvalidWorkers"/> when the key is not a whole number ≥ 0 (<c>Run</c> warns and takes no cap).</summary>
     int                Workers = 0);
 
 /// <summary>
@@ -81,6 +81,14 @@ public sealed class LoadpullEngine
     /// <summary>How many workers the last <see cref="Run"/> on this thread solved its loads with. Test-facing: the claim is
     /// that the loads ran side by side, which a timing cannot hold steadily and a count can.</summary>
     [ThreadStatic] internal static int LastLoadpullDegree;
+
+    /// <summary>Test seams, inert unless a test sets them: called before each load with its index (serial and parallel), and
+    /// before each parallel worker sets up with the worker's index. A throw there is a failure at that point.</summary>
+    internal Action<int>? BeforeLoad { get; init; }
+    internal Action<int>? BeforeWorkerSetup { get; init; }
+
+    /// <summary>The fewest loads a parallel worker is started for: each costs an elaboration, one at a time.</summary>
+    internal const int MinLoadsPerWorker = 2;
 
     /// <param name="lib">The library <paramref name="netlist"/> was elaborated from, and the base directory that
     /// elaboration used — needed ONLY to elaborate the per-worker copies of a parallel grid (LP-1). Null pins
@@ -173,7 +181,7 @@ public sealed class LoadpullEngine
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
         double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
-        int    workers    = Math.Max(0, (int)Num(lpa.WorkersExpr, 0));
+        int    workers    = ParseWorkers(lpa.WorkersExpr);
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();
@@ -198,6 +206,15 @@ public sealed class LoadpullEngine
             sweepLoad, tuneHarm, grid,
             compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz, workers);
     }
+
+    /// <summary>What <see cref="LoadpullAnalysisParams.Workers"/> holds for a <c>Workers=</c> that is not a whole number ≥ 0.</summary>
+    public const int InvalidWorkers = -1;
+
+    /// <summary><c>Workers=</c>: a plain whole number, so the dialog's spinner shows what the run will use. Anything else is
+    /// <see cref="InvalidWorkers"/>, which <c>Run</c> reports once and runs with no cap of its own.</summary>
+    internal static int ParseWorkers(string expr)
+        => int.TryParse(expr.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                        out int n) ? n : InvalidWorkers;
 
     /// <summary>
     /// The loadpull noise keys (brief NZ-6) of a loadpull or a pursuit, or (null, 0) without <c>Noise=yes</c>. The frequency is
@@ -426,6 +443,9 @@ public sealed class LoadpullEngine
         var gridPoints    = new List<GridPointResult>();
         var gridPointList = p.Grid.Points;
         var firstV        = new Complex[,]?[gridPointList.Count];
+        if (p.Workers == InvalidWorkers)
+            _netlist.AddWarningOnce("loadpull.workers-invalid",
+                "Loadpull: Workers= is not a whole number of 0 or more, so it sets no cap; the loads run one per core.");
         int degree        = PlanDegree(gridPointList.Count, p.Workers);
         LastLoadpullDegree = degree;
         _collectWBondCurrents = true;
@@ -447,6 +467,7 @@ public sealed class LoadpullEngine
             else for (int gi = 0; gi < gridPointList.Count; gi++)
             {
                 control?.Tick();
+                BeforeLoad?.Invoke(gi);
 
                 var gp    = gridPointList[gi];
                 var gamma = gp.Gamma;
@@ -501,16 +522,18 @@ public sealed class LoadpullEngine
     /// <see cref="Library"/> to elaborate the copies from, at <see cref="AnalysisSettings.MaxParallelism"/> = 1, for fewer
     /// than two loads, and for a netlist that may not be elaborated twice (an external device is a slot in ONE worker
     /// process, whose channel serialises every call anyway; <see cref="SParameterEngine.CanElaborateInParallel"/>).
-    /// Otherwise the cap — <paramref name="workers"/> (the directive's <c>Workers=</c>) when it is set, else
-    /// <see cref="AnalysisSettings.MaxParallelism"/>, 0 meaning <see cref="Environment.ProcessorCount"/> — and never more
-    /// workers than loads.
+    /// Otherwise the smaller of the two caps — <paramref name="workers"/> (the directive's <c>Workers=</c>) and
+    /// <see cref="AnalysisSettings.MaxParallelism"/>, 0 being no cap — or <see cref="Environment.ProcessorCount"/> when
+    /// neither is set, and never more than one worker per <see cref="MinLoadsPerWorker"/> loads.
     /// </summary>
-    public int PlanDegree(int gridCount, int workers = 0)
+    internal int PlanDegree(int gridCount, int workers = 0)
     {
-        int requested = workers > 0 ? workers : _lpSettings.MaxParallelism;
-        if (requested == 1 || _lib is null || gridCount < 2) return 1;
+        int cap = workers > 0 ? workers : int.MaxValue;
+        if (_lpSettings.MaxParallelism > 0) cap = Math.Min(cap, _lpSettings.MaxParallelism);
+        if (cap == int.MaxValue) cap = Environment.ProcessorCount;
+        if (cap <= 1 || _lib is null || gridCount < 2) return 1;
         if (!SParameterEngine.CanElaborateInParallel(_netlist)) return 1;
-        return Math.Min(requested > 1 ? requested : Environment.ProcessorCount, gridCount);
+        return Math.Max(1, Math.Min(cap, gridCount / MinLoadsPerWorker));
     }
 
     /// <summary>
@@ -546,8 +569,9 @@ public sealed class LoadpullEngine
                              IReadOnlyList<(string Key, string Message)> Notes)?[n];
         var faults    = new Exception?[n];
         Exception? setupFault = null;
-        int next = -1, prefix = 0, flushed = 0, abort = 0;
-        object gate = new(), elaborating = new();
+        int next = -1, prefix = 0, flushed = 0, abort = 0, ready = 0;
+        bool flushStopped = false;
+        object gate = new(), elaborating = new(), printing = new();
 
         void Publish(int gi, Complex[,]? v)
         {
@@ -561,18 +585,50 @@ public sealed class LoadpullEngine
             }
         }
 
-        Parallel.For(0, degree, new ParallelOptions { MaxDegreeOfParallelism = degree }, _ =>
+        // The completed prefix's progress lines, in grid order, up to and including the first load that failed — the serial
+        // loop prints nothing after the load it stops on. Collected under the gate, written outside it; `printing` keeps the
+        // writes in order.
+        void Flush()
+        {
+            lock (printing)
+            {
+                var text = new System.Text.StringBuilder();
+                lock (gate)
+                    while (!flushStopped && flushed < n && logs[flushed] is { } t)
+                    {
+                        text.Append(t);
+                        flushStopped = faults[flushed] is not null;
+                        flushed++;
+                    }
+                if (text.Length > 0) Console.Error.Write(text.ToString());
+            }
+        }
+
+        Parallel.For(0, degree, new ParallelOptions { MaxDegreeOfParallelism = degree }, w =>
         {
             ElaboratedNetlist? copy = null;
             try
             {
-                // One elaboration at a time: the Elaborator reads the TestBench, which nothing else may be changing then.
-                lock (elaborating) copy = new Elaborator(_lib!) { BaseDirectory = _baseDir }.Elaborate(_tb);
-                var eng  = new LoadpullEngine(copy, _tb, _settings) { _collectWBondCurrents = _collectWBondCurrents, _noiseHz = _noiseHz };
-                var wctx = eng.PrepareContext(p);
-                Mirror(ctx.SrcModel, wctx.SrcModel);
-                Mirror(ctx.LoadModel, wctx.LoadModel);
-                copy.TakeRunDiagnostics();   // its elaboration's and setup's: the caller's netlist holds its own
+                LoadpullEngine eng;
+                PursuitContext wctx;
+                // One elaboration at a time: the Elaborator reads the TestBench, which nothing else may be changing then. A
+                // worker that gets here when the others have already claimed nearly every load starts no copy at all.
+                lock (elaborating)
+                {
+                    if (Volatile.Read(ref abort) != 0 ||
+                        Volatile.Read(ref ready) > 0 && n - (Volatile.Read(ref next) + 1) < MinLoadsPerWorker) return;
+                    BeforeWorkerSetup?.Invoke(w);
+                    copy = new Elaborator(_lib!) { BaseDirectory = _baseDir }.Elaborate(_tb);
+                    eng  = new LoadpullEngine(copy, _tb, _settings)
+                    {
+                        _collectWBondCurrents = _collectWBondCurrents, _noiseHz = _noiseHz, BeforeLoad = BeforeLoad,
+                    };
+                    wctx = eng.PrepareContext(p);
+                    Mirror(ctx.SrcModel, wctx.SrcModel);
+                    Mirror(ctx.LoadModel, wctx.LoadModel);
+                    copy.TakeRunDiagnostics();   // its elaboration's and setup's: the caller's netlist holds its own
+                    Interlocked.Increment(ref ready);
+                }
 
                 while (Volatile.Read(ref abort) == 0)
                 {
@@ -589,6 +645,8 @@ public sealed class LoadpullEngine
                             while (prefix < gi) Monitor.Wait(gate);
                             seed = FindNearestSeed(gi, grid[gi].Gamma, firstV, grid);
                         }
+                        control?.ThrowIfCancellationRequested();   // the wait can be long; a cancel during it stops here
+                        BeforeLoad?.Invoke(gi);
                         GridLine(log, gi, n, grid[gi]);
                         var gpr = eng.RunOneTermination(p, wctx, grid[gi].Z, gi, seed, v => Publish(gi, v));
                         StopLine(log, gpr);
@@ -603,18 +661,16 @@ public sealed class LoadpullEngine
                     {
                         Publish(gi, null);   // a load that failed, or solved nothing, must not leave a later one waiting
                         diags[gi] = copy.TakeRunDiagnostics();
-                        lock (gate)
-                        {
-                            logs[gi] = log.ToString();
-                            while (flushed < n && logs[flushed] is { } text) { Console.Error.Write(text); flushed++; }
-                        }
+                        lock (gate) logs[gi] = log.ToString();
+                        Flush();
                     }
                 }
             }
             catch (Exception ex)
             {
+                // A copy that cannot be set up costs only its own worker: the others take its loads, and the run fails on it
+                // only if loads are left unsolved — the serial loop, which needs no copy, would have succeeded.
                 lock (gate) setupFault ??= ex;
-                Volatile.Write(ref abort, 1);
             }
             finally { copy?.Dispose(); }
         });

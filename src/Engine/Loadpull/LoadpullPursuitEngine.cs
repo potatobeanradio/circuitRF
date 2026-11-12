@@ -246,7 +246,7 @@ public sealed class LoadpullPursuitEngine
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
         double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
-        int    workers    = Math.Max(0, (int)Num(lpa.WorkersExpr, 0));
+        int    workers    = LoadpullEngine.ParseWorkers(lpa.WorkersExpr);
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();

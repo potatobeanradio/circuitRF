@@ -183,7 +183,8 @@ public static class HbNewton
         /// The CONDUCTION spectrum of the evaluation at the reported iterate — the <c>iNl</c> half of what
         /// <see cref="INl"/> totals. Returned for the same reason as <see cref="G"/>: harmonicaRF reports it beside the
         /// total, and evaluating the devices again at the same <c>V</c> to get it back cost a fifth of a warm solve, and a
-        /// worker round trip on an external device (LP-0). Null from the multi-tone loops, which have no consumer for it.
+        /// worker round trip on an external device (LP-0). <see cref="Solve"/> sets it on every return; the multi-tone loops
+        /// have result types of their own.
         /// </summary>
         Complex[,]? Conduction = null);
 

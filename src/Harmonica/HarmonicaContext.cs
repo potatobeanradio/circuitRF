@@ -419,7 +419,9 @@ public sealed class HarmonicaContext
         // The solve's own last evaluation is AT v, whichever way it returned, so its conduction spectrum and its total
         // (conduction + jkω·charge + the higher-weight buckets, HbNewton.TotalInjection) are what evaluating the devices
         // again here returned, bit for bit — at one evaluation less per solve (LP-0: 13-21 % of a warm solve).
-        return new OperatingPoint(v, result.Conduction!, result.Converged, result.Iterations, pavlDbm)
+        var conduction = result.Conduction
+            ?? throw new InvalidOperationException("HbNewton.Solve returned no conduction spectrum; it sets one on every return.");
+        return new OperatingPoint(v, conduction, result.Converged, result.Iterations, pavlDbm)
         {
             YNN      = yNN,
             ISrc     = iSrc,
