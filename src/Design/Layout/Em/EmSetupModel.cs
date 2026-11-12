@@ -199,8 +199,15 @@ public sealed class EmSetup
     /// initial state all read it, and <c>EmRunService</c>, <c>circuitrf check</c> and the panel's own
     /// mesh all take <see cref="PlanarMesh"/> as it stands, so none of them can disagree about it.
     /// </summary>
+    ///
+    /// <para><b>PMS-7 — <see cref="PlanarMeshSettings.StackedRegions"/> and <see cref="PlanarMeshSettings.LocalGrid"/>
+    /// are on here too</b> (owner decisions): a via-joined region with metal on every joined level is meshed as one
+    /// conductor inside a rim, and each gridline is kept near the feature that asked for it. The engine keeps both off for
+    /// the same reason it keeps merging off. Merging is not applied on a local-grid mesh, so with these defaults it acts
+    /// only where a user turns the local grid off; a run whose port calibration needs the shared grid is solved on it
+    /// (<c>PlanarKernel.Solve</c>).</para>
     public static readonly PlanarMeshSettings DefaultPlanarMesh =
-        PlanarMeshSettings.Default with { RooftopMerging = true };
+        PlanarMeshSettings.Default with { RooftopMerging = true, StackedRegions = true, LocalGrid = true };
 
     /// <summary>Display name — the file stem by default.</summary>
     public string Name { get; set; } = "";

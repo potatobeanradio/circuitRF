@@ -253,21 +253,22 @@ public enum PlanarCurrentModel
 /// says so.</para>
 /// </param>
 /// <param name="StackedRegions">
-/// <b>PMS-3 — mesh a via-joined stacked region as one conductor with a rim.</b> Off by default (brief-pms-7 decides
-/// the default). Where one via group (or a chain of groups with one footprint) joins levels that carry metal on
-/// every cell of a region at least <see cref="StackedRegionMinCells"/> cells across, the region's interior keeps
+/// <b>PMS-3 — mesh a via-joined stacked region as one conductor with a rim.</b> Off in the ENGINE, on in the PRODUCT
+/// (<c>EmSetup.DefaultPlanarMesh</c>, PMS-7), the pattern <see cref="RooftopMerging"/> set. Where one via group (or a
+/// chain of groups with one footprint) joins levels that carry metal on every cell of a region at least
+/// <see cref="StackedRegionMinCells"/> cells and <see cref="StackedRegionMinSideM"/> across, the region's interior keeps
 /// only the LOWEST level's cells, carrying every level's sheet in parallel, and emits no vertical basis; a rim
 /// <see cref="StackedRegionRimCells"/> cells wide keeps every level and today's vertical bases. Cells are removed
 /// before any rooftop is built, so R-msh-2 / R-via-5 hold on what remains. It changes the mesh, so it is hashed
-/// (when on) and does not survive as a resolution choice: it SURVIVES <see cref="Auto"/>.
+/// (when on — which, since PMS-7 made it the product default, is the default) and does not survive as a resolution choice: it SURVIVES <see cref="Auto"/>.
 /// </param>
 /// <param name="LocalGrid">
-/// <b>PMS-4 — keep each gridline near the feature that asked for it.</b> Off by default (brief-pms-7 decides the
-/// default). The shared grid's lines are built exactly as before; a cell then becomes a BLOCK of its elementary cells
+/// <b>PMS-4 — keep each gridline near the feature that asked for it.</b> Off in the ENGINE, on in the PRODUCT
+/// (<c>EmSetup.DefaultPlanarMesh</c>, PMS-7), as <see cref="StackedRegions"/> is. The shared grid's lines are built exactly as before; a cell then becomes a BLOCK of its elementary cells
 /// wherever no line inside the block is needed — a hard line within <see cref="LocalReachCells"/> of its own feature,
 /// or a finer pitch the size field asks for there — with a 2:1 balance between neighbouring blocks and port feeds kept
 /// elementary. Every level shares the one partition, so a via's blocks still pair in z. It changes the mesh, so it is
-/// hashed (when on) and SURVIVES <see cref="Auto"/>. The fill reads a block mesh on its support mesh
+/// hashed (when on — the product default) and SURVIVES <see cref="Auto"/>. The fill reads a block mesh on its support mesh
 /// (<see cref="PlanarLocalGridFill.SupportMesh"/>, PMS-5), and since PMS-6 every other reader does too — ports and their
 /// standards (a port's feed window is elementary along the port and carries only the feed's own lines across it), the
 /// accelerated solve, the current-density map, the far field and the DC point — so it solves end to end. Rooftop
@@ -328,6 +329,17 @@ public sealed record PlanarMeshSettings(
     /// <see cref="PlanarFillSettings.PerfectConductor"/>'s pattern. Engine-only: no <c>.cem</c> key.
     /// </summary>
     public bool StackedRegionParallelSheet { get; init; } = true;
+
+    /// <summary>
+    /// <b>PMS-7 — how wide, in metres and in BOTH axes, a stacked region must be before it is merged</b>, as well as
+    /// <see cref="StackedRegionMinCells"/> cells. A cell count measures the mesh rather than the artwork, so on a fine
+    /// grid a post can reach it; this floor keeps a post whole whatever the mesh. Engine-only: no <c>.cem</c> key.
+    /// </summary>
+    public double StackedRegionMinSideM { get; init; } = DefaultStackedRegionMinSideM;
+
+    /// <summary>PMS-7 — <see cref="StackedRegionMinSideM"/>' default, 30 µm: PMS-2's estimator's own floor, under the
+    /// smallest MIM window of the fixture family (32 µm) and over every post measured (14 µm pads).</summary>
+    public const double DefaultStackedRegionMinSideM = 30e-6;
 
     /// <summary>PMS-3 — <see cref="StackedRegionMinCells"/>' default. Measured: see <c>RESOLVED.md</c> §PMS-3.</summary>
     public const int DefaultStackedRegionMinCells = 18;
@@ -550,6 +562,7 @@ public sealed record PlanarMeshSettings(
               LocalGridForceElementary = LocalGridForceElementary,
               StackedRegionMinCells = StackedRegionMinCells,
               StackedRegionRimCells = StackedRegionRimCells,
+              StackedRegionMinSideM = StackedRegionMinSideM,
               StackedRegionParallelSheet = StackedRegionParallelSheet,
           }
         : this with
@@ -560,6 +573,7 @@ public sealed record PlanarMeshSettings(
             DetailFloorDivisor      = Math.Max(0, DetailFloorDivisor),
             StackedRegionMinCells   = Math.Max(3, StackedRegionMinCells),
             StackedRegionRimCells   = Math.Max(1, StackedRegionRimCells),
+            StackedRegionMinSideM   = Math.Max(0.0, StackedRegionMinSideM),
             LocalReachCells         = Math.Max(0, LocalReachCells),
             LocalGridBalance        = Math.Max(1, LocalGridBalance),
         };

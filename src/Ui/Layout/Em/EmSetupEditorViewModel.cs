@@ -572,6 +572,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
           $"max cell {r.MaxCellEdgeM * 1e6:G4} µm (λ_g/{(r.MaxCellEdgeM > 0 ? r.GuidedWavelengthM / r.MaxCellEdgeM : 0):G3} " +
           $"at {r.FrequencyHz / 1e9:G4} GHz) · " +
           $"{r.CellsAcrossNarrowestConductor} across the narrowest conductor ({r.NarrowestConductorWidthM * 1e6:G4} µm) · " +
+          (r.LocalGrid ? $"{r.RefinementSteps:N0} refinement steps · " : "") +
           r.Verdict;
 
     /// <summary>The planar problem, when the planar extractor last succeeded.</summary>
@@ -910,6 +911,14 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// ON by default in the product (<see cref="EmSetup.DefaultPlanarMesh"/>) while the engine's own
     /// default stays off. Committed on toggle like the boundary-cell combo.</summary>
     [ObservableProperty] private bool _meshAsMergedShapes = EmSetup.DefaultPlanarMesh.RooftopMerging;
+
+    /// <summary>PMS-7 — "Stacked regions" (<see cref="PlanarMeshSettings.StackedRegions"/>), ON by default in the
+    /// product. Committed on toggle like Merged shapes.</summary>
+    [ObservableProperty] private bool _planarStackedRegions = EmSetup.DefaultPlanarMesh.StackedRegions;
+
+    /// <summary>PMS-7 — "Local grid" (<see cref="PlanarMeshSettings.LocalGrid"/>), ON by default in the product.
+    /// Committed on toggle like Merged shapes, which it greys while on.</summary>
+    [ObservableProperty] private bool _planarLocalGrid = EmSetup.DefaultPlanarMesh.LocalGrid;
 
     /// <summary>Same contract as <see cref="MeshFieldError"/>, for this group's three staged-text
     /// fields (Cells per wavelength, Edge cells, Mesh frequency) — kept separate because the two
@@ -1629,6 +1638,33 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>PMS-7 — Stacked regions, committed on toggle: one undo entry and <see cref="InvalidateMesh"/>. Auto is
+    /// not cleared — the setting survives Auto in the mesher, so it is not a resolution.</summary>
+    partial void OnPlanarStackedRegionsChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.PlanarMesh.StackedRegions) return;
+        var before = SnapshotJson();
+        Working.PlanarMesh = Working.PlanarMesh with { StackedRegions = value };
+        CommitEdit(before, "Change stacked regions");
+        InvalidateMesh();
+        Refresh();
+    }
+
+    /// <summary>PMS-7 — Local grid, committed on toggle, on <see cref="OnPlanarStackedRegionsChanged"/>'s terms.</summary>
+    partial void OnPlanarLocalGridChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.PlanarMesh.LocalGrid) return;
+        var before = SnapshotJson();
+        Working.PlanarMesh = Working.PlanarMesh with { LocalGrid = value };
+        CommitEdit(before, "Change local grid");
+        InvalidateMesh();
+        Refresh();
+        OnPropertyChanged(nameof(MeshAsMergedShapesDisabledReason));
+        OnPropertyChanged(nameof(MeshAsMergedShapesToolTip));
+    }
+
     /// <summary>
     /// <para><b>A null here is the CONTROL talking, never the user.</b> A ComboBox clears its
     /// selection when its item source changes under it, and the two-way binding writes that null
@@ -2043,6 +2079,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             : Working.AcceleratedSolve
                 ? "Merged shapes are for the dense solve. This setup uses the accelerated solve, which " +
                   "solves the elemental mesh; turn the accelerated solve off to use them."
+                : Working.PlanarMesh.LocalGrid
+                ? "The local grid is on, and it already coarsens the cells merged shapes would join. Turn " +
+                  "Local grid off to use them."
                 : PlanarProblem is { } mp && !PlanarRooftopMerge.CanApplyTo(mp)
                     ? "This layout carries more than one metal level, or a via. Merged shapes are built " +
                       "for a single conductor level with no vias, so the elemental mesh is solved here."
@@ -2060,6 +2099,21 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         "3e-5 in S11 on the patch example and 0.000 in every entry on an internal test board, for " +
         "7 and 5 percent fewer unknowns. Applies to a single conductor level solved densely; the " +
         "mesh notes say what was merged.";
+
+    /// <summary>PMS-7 — the Stacked regions checkbox's tooltip.</summary>
+    public string PlanarStackedRegionsToolTip =>
+        "Where a via joins two metal levels across a whole region (a via-joined plate, a MIM window), the region's " +
+        "interior is meshed as one sheet on the lower level, carrying both levels' metal in parallel, inside a " +
+        "one-cell rim that keeps every level. Fewer unknowns for the same answer: 3.7e-4 in S at 10 GHz on a test " +
+        "block, and about 3 % on a DC resistance through the region. Small vias and posts are left as they are.";
+
+    /// <summary>PMS-7 — the Local grid checkbox's tooltip.</summary>
+    public string PlanarLocalGridToolTip =>
+        "Each gridline is kept near the feature that asked for it, and elsewhere a cell is a block of the grid's " +
+        "own cells. On a chip or a crowded board this is several times fewer unknowns (6× on a 1.4 mm test " +
+        "chip); on a simple line it changes nothing. The answer moves by less than one step of mesh refinement. " +
+        "Where a port's calibration takes in a neighbouring conductor or a coupled port, that run is meshed on the " +
+        "shared grid instead, and its notes say so.";
 
     /// <summary>
     /// MIM-13 — what the accelerated solve does and does not buy on THIS layout, or null when there
@@ -2231,6 +2285,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarCurrentModel           = pm.CurrentModel;
         PlanarBoundaryCells          = pm.BoundaryCells;
         MeshAsMergedShapes           = pm.RooftopMerging;
+        PlanarStackedRegions         = pm.StackedRegions;
+        PlanarLocalGrid              = pm.LocalGrid;
         PlanarMeshFrequencyText      = pm.MeshFrequencyHz is { } mf
             ? (mf / ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit))
                 .ToString("G6", CultureInfo.InvariantCulture)

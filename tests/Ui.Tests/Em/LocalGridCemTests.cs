@@ -1,5 +1,6 @@
-// PMS-4 R-pms4-1 / R-pms4-4 — the local-grid setting in the .cem and in the provenance stamp, and the preflight a drawn
-// layout takes with it on: the mesh and its count are reported, and (PMS-6 R-pms6-6) nothing refuses it.
+// PMS-4 R-pms4-1 / R-pms4-4, PMS-7 — the local-grid setting in the .cem and in the provenance stamp, and the preflight a
+// drawn layout takes with it on: the mesh and its count are reported, and (PMS-6 R-pms6-6) nothing refuses it. Since
+// PMS-7 ON is the product default and is never written; off is written; a file that omits the key reads on.
 
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
@@ -16,24 +17,28 @@ public class LocalGridCemTests
     };
 
     [Fact]
-    public void Off_IsOmitted_AndOn_RoundTrips()
+    public void On_IsTheDefault_AndOmitted_AndOff_RoundTrips()
     {
-        Assert.False(EmSetup.DefaultPlanarMesh.LocalGrid);
-        Assert.DoesNotContain("LocalGrid", EmSetupPersistence.Serialize(Setup(false)), StringComparison.Ordinal);
+        Assert.True(EmSetup.DefaultPlanarMesh.LocalGrid);
+        Assert.False(PlanarMeshSettings.Default.LocalGrid);   // the engine keeps it off
+        Assert.DoesNotContain("LocalGrid", EmSetupPersistence.Serialize(Setup(true)), StringComparison.Ordinal);
 
-        string json = EmSetupPersistence.Serialize(Setup(true));
-        Assert.Contains("\"LocalGrid\": true", json, StringComparison.Ordinal);
-        Assert.True(EmSetupPersistence.Deserialize(json).PlanarMesh.LocalGrid);
-        Assert.True(Setup(true).Clone().PlanarMesh.LocalGrid);
+        string json = EmSetupPersistence.Serialize(Setup(false));
+        Assert.Contains("\"LocalGrid\": false", json, StringComparison.Ordinal);
+        Assert.False(EmSetupPersistence.Deserialize(json).PlanarMesh.LocalGrid);
+        Assert.False(Setup(false).Clone().PlanarMesh.LocalGrid);
         Assert.Equal(json, EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(json)));
+
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        Assert.True(node["PlanarMesh"]!.AsObject().Remove("LocalGrid"));
+        Assert.True(EmSetupPersistence.Deserialize(node.ToJsonString()).PlanarMesh.LocalGrid);
     }
 
     [Fact]
-    public void On_MovesTheMeshHash_AndOffDoesNot()
+    public void OnAndOff_HashApart()
     {
-        var off = EmSetup.DefaultPlanarMesh;
-        Assert.NotEqual(EmSnpProvenance.MeshHash(off), EmSnpProvenance.MeshHash(off with { LocalGrid = true }));
-        Assert.DoesNotContain("local", "|" + EmSnpProvenance.MeshHash(off), StringComparison.Ordinal);
+        var on = EmSetup.DefaultPlanarMesh;
+        Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on with { LocalGrid = false }));
     }
 
     /// <summary>A2 on the shipped MMIC technology, local grid on: the preflight (what `check`, `em --dry-run` and the

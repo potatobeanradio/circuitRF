@@ -1000,7 +1000,8 @@ public static class SurfaceMesher
         // R-via-5's horizontal-then-vertical order hold unchanged on what remains.
         control?.SetStageLabel("finding via-joined stacked regions");
         var stacked = PlanarStackedRegions.Find(problem, gx, gy, cells, cellAtPerLayer, footprints,
-                                                s.StackedRegionMinCells, s.StackedRegionRimCells, ports);
+                                                s.StackedRegionMinCells, s.StackedRegionRimCells, ports,
+                                                s.StackedRegionMinSideM);
         bool stackApplied = s.StackedRegions && stacked is { Any: true };
         if (stackApplied)
         {
@@ -1694,6 +1695,11 @@ public static class SurfaceMesher
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
         if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);
         bool pastMachine = n > ceiling && limit is not null;
+        // A sweep with no frequency above 0 Hz is solved as a CONDUCTION network on these rooftops (PlanarDcSolve,
+        // LF1): no dense matrix is formed, so neither the machine limit nor the dense ceiling describes it. Asked only
+        // with a memory limit handed down — the product's path — so an engine-direct caller's verdict is unchanged.
+        bool conductionOnly = limit is not null && !(problem.MaxFrequencyHz > 0);
+        if (conductionOnly) pastMachine = false;
 
         // EMB-4 R-emb4-2 — the accelerated solve is ON but this mesh is judged on the DENSE ceiling (more than one
         // metal level, or a via: UsesAcceleratedCeiling's open owner decision, unchanged). The sentences below quote
@@ -1703,7 +1709,8 @@ public static class SurfaceMesher
         PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && problem.Slab.HeightM > 0
             ? PlanarNearFieldEstimate.For(mesh, problem.Slab.HeightM, null, control?.Token ?? default)
             : null;
-        var verdict = pastMachine ? PlanarBudgetVerdict.Warn
+        var verdict = conductionOnly ? PlanarBudgetVerdict.Ok
+                    : pastMachine ? PlanarBudgetVerdict.Warn
                     : n > ceiling ? PlanarBudgetVerdict.Refused
                     : limit is null && n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
                     : PlanarBudgetVerdict.Ok;
@@ -1739,6 +1746,19 @@ public static class SurfaceMesher
                       $"{local.ActiveFractionY:P0}).");
         }
         notes.Insert(0, budget);
+        if (conductionOnly)
+            notes.Insert(1, "Every frequency in this sweep is 0 Hz, which is solved as a conduction network on these " +
+                            "rooftops: no dense matrix is formed, so the memory figure above does not apply to this run.");
+
+        // PMS-7 — the local grid is opt-in, so where it would bring a mesh that cannot run back down it is named as a
+        // remedy, with the count it meshes at — and only there (a remedy that does not bind is not named). Asked only
+        // of a tensor mesh that is refused or past this machine's memory: it costs a second mesh, which is small next
+        // to a run that cannot start.
+        int? localN = !s.LocalGrid && (verdict == PlanarBudgetVerdict.Refused || pastMachine)
+            ? LocalGridUnknowns(problem, settings, edgeReference, control, rimGrading, sliverAreaFraction, accelerated,
+                                lengthFormat, ports, edgeRefinementCap, leads, aimOn)
+            : null;
+        if (localN is { } ln0 && ln0 >= n) localN = null;
 
         string? refusal = null;
         if (verdict == PlanarBudgetVerdict.Refused)
@@ -1753,7 +1773,7 @@ public static class SurfaceMesher
                                    fmt: fmt,
                                    coarsestPitch: pitch is null
                                        ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY),
-                                   limit: limit, limitSource: limitSource)
+                                   limit: limit, limitSource: limitSource, localGridUnknowns: localN)
                     + GrownLeadClause(leads, fmt);
         else if (pastMachine)
             // CAP-1 follow-up — past the memory limit is a question at Simulate, not a refusal here. The
@@ -1772,7 +1792,8 @@ public static class SurfaceMesher
                                    fmt: fmt,
                                    coarsestPitch: pitch is null
                                        ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY),
-                                   limit: limit, limitSource: limitSource, remediesOnly: true)
+                                   limit: limit, limitSource: limitSource, remediesOnly: true,
+                                   localGridUnknowns: localN)
                 + GrownLeadClause(leads, fmt)));
         else if (verdict == PlanarBudgetVerdict.Warn)
             notes.Add(accel
@@ -2147,7 +2168,7 @@ public static class SurfaceMesher
         bool accelerated, bool acceleratedWouldFit, bool multiLevel,
         PlanarLengthFormat fmt, double coarsestPitch = 0, long? limit = null,
         PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit,
-        bool remediesOnly = false)
+        bool remediesOnly = false, int? localGridUnknowns = null)
     {
         double pitch     = Math.Min(hx, hy);
         double narrowest = Math.Min(narrowX, narrowY);
@@ -2222,6 +2243,9 @@ public static class SurfaceMesher
         // settings — see the class-level note on AcceleratedUnknownCeiling for the measurement.
         if (acceleratedWouldFit)
             acts.Add("turn on the accelerated solve (Solver options)");
+        // PMS-7 — present only when the local grid is off and was measured to mesh this artwork at fewer unknowns.
+        if (localGridUnknowns is not null)
+            acts.Add("turn on Local grid (Surface mesh)");
         if (waveBinds || field)
         {
             acts.Add("lower Cells per wavelength");
@@ -2240,11 +2264,15 @@ public static class SurfaceMesher
             acts.Add("turn the edge mesh off");
         acts.Add("analyse a smaller region");
 
-        string how = waveBinds || field
+        string how = (localGridUnknowns is { } ln
+                         ? $" The local grid meshes this artwork at {ln:N0} unknowns, {(double)n / ln:G3}× fewer: " +
+                           "it keeps each gridline near the feature that asked for it rather than across the whole layout."
+                         : "") +
+                     (waveBinds || field
             ? ""
             : " Splitting the structure at a uniform-width plane, analysing the pieces separately and " +
               "cascading them is the usual way through a part whose widest metal is many times its " +
-              "narrowest.";
+              "narrowest.");
 
         // ── THE TWO CEILINGS, BOTH NAMED, AND THE PATH EACH GOVERNS (MIM-13 item 1) ─────────────
         //
@@ -2327,6 +2355,27 @@ public static class SurfaceMesher
         return $"This geometry needs {n:N0} unknowns, past the {ceiling:N0}-unknown " +
                "ceiling this kernel is built for." + why +
                " What acts on the count here: " + JoinOr(acts) + "." + how + " " + costNote;
+    }
+
+    /// <summary>
+    /// <b>PMS-7 — the unknown count this artwork meshes at on the local grid</b>, for the remedy above; null when that
+    /// mesh cannot be built. Meshed with no memory limit, so it counts no cores and recurses no further.
+    /// </summary>
+    private static int? LocalGridUnknowns(
+        PlanarProblem problem, PlanarMeshSettings? settings, PlanarEdgeReference edgeReference, RunControl? control,
+        PlanarRimGrading rimGrading, double sliverAreaFraction, bool accelerated, PlanarLengthFormat? lengthFormat,
+        IReadOnlyList<PlanarPort>? ports, double edgeRefinementCap, IReadOnlyList<PlanarFeedLead>? leads, bool aimOn)
+    {
+        var local = (settings ?? PlanarMeshSettings.Default) with { LocalGrid = true, MemoryLimitBytes = null };
+        try
+        {
+            control?.SetStageLabel("measuring the local grid");
+            return Mesh(problem, local, edgeReference, control, rimGrading, sliverAreaFraction, diagnostics: null,
+                        accelerated: accelerated, lengthFormat: lengthFormat, ports: ports,
+                        edgeRefinementCap: edgeRefinementCap, leads: leads, aimOn: aimOn).UnknownCount;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
     }
 
     /// <summary>

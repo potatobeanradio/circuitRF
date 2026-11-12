@@ -116,14 +116,17 @@ public sealed class CemPlanarMesh
 
     /// <summary>
     /// PMS-3 — <see cref="PlanarMeshSettings.StackedRegions"/>: a via-joined region with metal on every joined level is
-    /// meshed as one conductor inside a rim. Omitted at its default (off), so a file written before it gains no byte.
+    /// meshed as one conductor inside a rim. Omitted at the PRODUCT default (on, PMS-7); only an explicit <c>false</c>
+    /// is ever written. A file written before PMS-7 that omitted it meant off and now reads on — the default moved, and
+    /// its mesh-hash term is present at the new default, so an <c>.snp</c> stamped before then reads as stale.
     /// </summary>
     public bool? StackedRegions { get; set; }
 
     /// <summary>
     /// PMS-4 — <see cref="PlanarMeshSettings.LocalGrid"/>: each gridline is kept near the feature that asked for it, and
-    /// a cell is a block of the shared grid elsewhere. Omitted at its default (off), so a file written before it gains
-    /// no byte.
+    /// a cell is a block of the shared grid elsewhere. Omitted at the PRODUCT default (on, PMS-7); only an explicit
+    /// <c>false</c> is written. A file written before PMS-7 that omitted it meant off and now reads on; its mesh-hash term
+    /// is present at the new default, so an <c>.snp</c> stamped before then reads as stale.
     /// </summary>
     public bool? LocalGrid { get; set; }
 }

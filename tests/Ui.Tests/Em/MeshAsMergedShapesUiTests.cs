@@ -66,7 +66,12 @@ public class MeshAsMergedShapesUiTests
     private static EmSetupEditorViewModel Editor(string dir, LayoutView view, EmSetup? seed = null)
     {
         string path  = Path.Combine(dir, "panel.cem");
-        var    setup = seed ?? new EmSetup { Name = "panel", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.Planar };
+        // On the shared grid: merged shapes act there, and PMS-7's product default (the local grid) greys them.
+        var    setup = seed ?? new EmSetup
+        {
+            Name = "panel", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.Planar,
+            PlanarMesh = EmSetup.DefaultPlanarMesh with { LocalGrid = false },
+        };
         EmSetupPersistence.SaveToFile(path, setup);
         var vm = new EmSetupEditorViewModel(path, setup)
         {
@@ -138,9 +143,10 @@ public class MeshAsMergedShapesUiTests
         var on  = EmSetup.DefaultPlanarMesh;
         var off = on with { RooftopMerging = false };
         Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(off));
-        // Off is the engine default's hash — a pre-PM-2 stamp — so a file solved elemental still
-        // reads current under an explicit off.
-        Assert.Equal(EmSnpProvenance.MeshHash(PlanarMeshSettings.Default), EmSnpProvenance.MeshHash(off));
+        // Off adds no term: it is the engine default's hash (with PMS-7's product stacked regions and local grid,
+        // whose terms the product default carries), so a file solved elemental still reads current under an explicit off.
+        Assert.Equal(EmSnpProvenance.MeshHash(PlanarMeshSettings.Default with { StackedRegions = true, LocalGrid = true }),
+                     EmSnpProvenance.MeshHash(off));
         // …and the other controls still move it, so the term displaced none.
         Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on with { CellsPerWavelength = 40 }));
         Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on with { EdgeCells = 7 }));
@@ -179,6 +185,22 @@ public class MeshAsMergedShapesUiTests
         // Same value pushes nothing.
         vm.MeshAsMergedShapes = vm.MeshAsMergedShapes;
         Assert.False(vm.UndoRedo.CanUndo);
+        Directory.Delete(dir, true);
+    }
+
+    /// <summary>PMS-7 — the local grid already coarsens what merging would join, so while it is on (the product
+    /// default) the checkbox is greyed with that reason, and turning it off restores the control.</summary>
+    [Fact]
+    public void UnderTheLocalGrid_ItIsGreyedWithTheReason()
+    {
+        string dir = TempDir();
+        var vm = Editor(dir, LineLayout());
+        Assert.Null(vm.MeshAsMergedShapesDisabledReason);
+        vm.PlanarLocalGrid = true;
+        Assert.Contains("local grid", vm.MeshAsMergedShapesDisabledReason!, StringComparison.Ordinal);
+        Assert.Equal(vm.MeshAsMergedShapesDisabledReason, vm.MeshAsMergedShapesToolTip);
+        vm.PlanarLocalGrid = false;
+        Assert.Null(vm.MeshAsMergedShapesDisabledReason);
         Directory.Delete(dir, true);
     }
 

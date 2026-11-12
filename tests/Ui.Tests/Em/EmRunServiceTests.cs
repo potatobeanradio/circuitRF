@@ -67,14 +67,16 @@ public sealed class EmRunServiceTests : IDisposable
     /// with a de-embedded run's calibration standards counted, and the run, the pre-solve report (`circuitrf
     /// check`) and the panel's mesh preview all ask the one function. Past the machine's memory nothing is
     /// refused: the report warns and the run ASKS (Simulate Anyway), and with no one to say yes it is declined
-    /// naming `--force`. A tiny machine limit keeps it cheap: the run is asked before anything is filled.
+    /// naming `--force`. A small machine limit keeps it cheap: the run is asked before anything is filled. It is
+    /// sized to hold the structure's own matrix and not its standards beside it — under the matrix alone, PMS-1 decides
+    /// the verdict without pricing the standards, and the sentence this asserts on would not be written.
     /// </summary>
     [Fact]
     public void PastAMachineLimit_TheRunAsks_AndThePreflightAndThePanelWarnAlike()
     {
         var (setup, source) = Fixture("separated-pair");
         setup.AcceleratedSolve = false;
-        const long Machine = 100_000;
+        const long Machine = 100_000_000;
 
         Em3dMemoryVerdict? asked = null;
         var run = EmRunService.Run(setup, source, _results, confirmMemory: v => { asked = v; return false; },

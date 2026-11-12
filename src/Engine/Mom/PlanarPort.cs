@@ -2554,8 +2554,12 @@ public static class PlanarPorts
     /// several columns: the profile they would build is not a cross-section of the mesh being solved. Declined by name,
     /// so the run falls back to the clearance rule exactly as a conformal feed does.
     /// </summary>
+    /// <summary>PMS-7 — the phrase every local-grid decline carries, which <c>PlanarKernel.Solve</c> reads to fall back
+    /// to the shared grid. One spelling, so the decline and the fallback cannot drift apart.</summary>
+    internal const string LocalGridDeclineMarker = "the mesh is on the local grid";
+
     internal static string LocalGridProfileDecline(string who, string what) =>
-        $"{who} was not widened to take {what}: the mesh is on the local grid, and the metal beside a port's feed " +
+        $"{who} was not widened to take {what}: {LocalGridDeclineMarker}, and the metal beside a port's feed " +
         "window is meshed in blocks that span several gridlines, so a profile read gridline by gridline would not be a " +
         "cross-section of the mesh being solved. Turn Local grid off for this run, or separate the feeds.";
 

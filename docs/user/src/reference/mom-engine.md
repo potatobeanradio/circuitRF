@@ -19,6 +19,7 @@ keywords: EM, electromagnetic, method of moments, MoM, planar solver, full wave,
 <li><a href="#adaptive">Adaptive frequency sampling</a></li>
 <li><a href="#resonance-search">The resonance search</a></li>
 <li><a href="#conformal">Conformal boundary cells</a></li>
+<li><a href="#mesh-scale">Stacked regions and the local grid</a></li>
 <li><a href="#mesh-convergence">Mesh convergence, and how to check it</a></li>
 <li><a href="#budget">What makes a run infeasible</a></li>
 <li><a href="#aim">The accelerated solve, and when to use it</a></li>
@@ -275,7 +276,9 @@ experiences, the error is **≤ 6 × 10<sup>-3</sup> across that span**; strict 
 **Basis functions and mesh.** Rectangular **rooftop** basis functions on a **tensor-product grid**.
 Diagonals and curves are staircased by default, or cut conformally — see
 [Conformal boundary cells](#conformal). The unknown count is basis functions, not cells: a rooftop spans
-a pair of adjacent cells.
+a pair of adjacent cells. Two settings change what the grid's cells are: a via-joined region can be one
+sheet, and the grid can be local rather than shared — see
+[Stacked regions and the local grid](#mesh-scale).
 
 **Edge mesh.** Current density has a 1/√d singularity at a conductor edge, and a uniform mesh
 under-resolves it badly — which shows up directly as wrong loss and wrong Z₀. So every conductor edge
@@ -1174,9 +1177,11 @@ continuous at every join by construction. The mesh overlay draws what is solved:
 drawn only where it is still the face of its own unknown, so the picture matches the unknown count
 beside it.
 
-**It is on by default.** It applies to a single conductor level solved densely; with the accelerated
+**It is ticked by default.** It applies to a single conductor level solved densely on the shared grid; with the accelerated
 solve on, or on a layout with more than one metal level or a via, the checkbox is greyed, the
-elemental mesh is solved and the mesh notes say so.
+elemental mesh is solved and the mesh notes say so. It is greyed too while the
+[local grid](#mesh-scale) is on, which is the default: the local grid already coarsens the cells it
+would join. Turn the local grid off to use merged shapes.
 
 ### What it buys, and what it costs — measured
 
@@ -1203,6 +1208,78 @@ merged basis rather than the grid. If you want the elemental solve for a compari
 off; the <code>.snp</code> provenance hash carries it, so a result solved one way reads as stale under
 the other.</p>
 </div>
+
+## Stacked regions and the local grid {#mesh-scale}
+
+On a single line or a small part the shared grid costs little. On a chip it is most of the count:
+every pad, via and trace edge runs a gridline across the whole layout, so a 1.4 mm MMIC carries about
+800 lines in each direction, and a large region where a via joins two metal levels is meshed twice
+over with a vertical unknown in every cell. Two settings in the **Surface mesh** group answer those
+two costs.
+
+### Stacked regions
+
+**Stacked regions** (on by default) meshes a region where a via joins two metal levels across its
+whole area — a via-joined plate, a MIM capacitor's window — as **one sheet on the lower level**,
+carrying both levels' metal in parallel. A rim one cell wide inside the region's edge keeps every
+level and every vertical unknown, so current reaches the region from either level as it does in the
+metal. A region qualifies only when it is at least 30 µm and 18 cells across in both directions;
+small vias and posts are meshed as drawn, and so is a region with a port beside it. Where another
+via lands inside a region, the cells it covers keep every level.
+
+| | Shared grid | Stacked regions | What moves |
+|---|---|---|---|
+| A 1.4 mm test chip with a 625 µm via-joined region | 941,867 unknowns | 524,066 | — |
+| The same chip with MIM capacitors | 1,587,760 | 655,539 | — |
+| A 250 µm test block with a 120 µm region | 11,655 | 9,382 | \|ΔS\| 3.7 × 10⁻⁴ at 10 GHz |
+
+The DC resistance of a path that crosses a region reads about 3 % high: the rim is where current
+moves between the two levels, and one cell is a short distance for it to do so. Untick it to mesh
+every level everywhere; the `.snp` provenance carries the setting, so a result solved one way reads
+as stale under the other.
+
+### The local grid
+
+**Local grid** (on by default) keeps each gridline only near the feature that asked for it. Away
+from those features a cell is a block of the shared grid's own cells, so the drawn metal is tiled
+exactly as before and an oblique edge keeps the same staircase. Where a fine cell meets a coarse
+block the rooftop spans the shared face segment; the mesh summary line reports how many such
+refinement steps the mesh has. A port's feed stays at the shared grid's pitch along the port and
+carries only the feed's own lines across it, so its calibration standards are smaller too.
+
+| | Shared grid | Local grid |
+|---|---|---|
+| A 1.4 mm test chip | 941,867 unknowns | 134,442 |
+| A 0.6 mm test chip | 236,166 | 44,355 |
+| The PDK spiral inductor example | 1,388 | 530 |
+| The patch antenna example | 1,850 | 1,473 |
+| A straight microstrip line | unchanged | unchanged |
+
+On two 250 µm test blocks, solved de-embedded at 1, 5 and 10 GHz, the local grid moved S by
+2.4 × 10⁻⁵ to 3.5 × 10⁻⁴ on one and 8.4 × 10⁻⁵ to 8.8 × 10⁻⁴ on the other. One step of mesh
+refinement on the shared grid moves the first block by 7.6 × 10⁻⁵ to 7.5 × 10⁻⁴, so the local grid
+costs about what the mesh's own resolution already does. The DC point, the current-density map and
+the far field read the local grid too.
+
+A port calibration that takes in [a neighbouring conductor](#passive-neighbour) or
+[a coupled port](#group) reads the metal beside the feed gridline by gridline, which the local grid
+does not have; such a run is meshed on the shared grid instead, and its notes say so. On a small part
+the local grid can be no faster per frequency, though it has fewer unknowns. Untick it to mesh on the
+shared grid everywhere; with it off, when a mesh is past this machine's memory, the mesh notes name
+**Local grid** and say how many unknowns it would mesh the same artwork at.
+
+### What a medium MMIC costs
+
+A 1.4 mm GaAs MMIC with two metal levels, backside vias and a large via-joined region meshes at about
+**940,000 unknowns on the shared grid, and about 101,000 with both settings on — still about 100 GB for
+each frequency point**, against about 40,000 unknowns on a 16 GB machine. What fits on 16 GB is a
+sub-block of a few hundred micrometres: on the test chips a 0.3 mm block meshes at about 6,000 unknowns
+and needs about 13 GB a frequency point with its calibration standards, and a 0.5 mm block already
+needs about 35 GB. Pressing **Mesh** or **Simulate** on the whole chip says so within seconds:
+the budget gives the unknowns on each metal level and the vertical ones, the memory a frequency point
+needs, and the remedies that act on the count. When the structure alone is past the memory limit the
+calibration standards are not priced, because nothing they add could change that, and the notes say
+so.
 
 ## Mesh convergence, and how to check it {#mesh-convergence}
 

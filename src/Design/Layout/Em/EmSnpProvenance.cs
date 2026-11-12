@@ -547,9 +547,12 @@ public static class EmSnpProvenance
              + $"|detail={m.DetailFloorDivisor}"
              // PM-2 — omitted while off, so every .snp stamped before the flag existed stays current.
              + (m.RooftopMerging ? "|merge=True" : "")
-             // PMS-3 — omitted while off, for the same reason.
+             // PMS-3 — omitted while off. PMS-7 made ON the product default, and that is what makes every .snp
+             // stamped before it read as stale: such a file carries no term, which is the spelling of OFF — the mesh it
+             // was built on — while the default now carries |stacked=True. So the term is present at the default, as
+             // DetailFloorDivisor's is, without marking an explicit off stale: off is still the mesh those files had.
              + (m.StackedRegions ? "|stacked=True" : "")
-             // PMS-4 — omitted while off, for the same reason.
+             // PMS-4, PMS-7 — omitted while off, and on is the product default: the stacked term's reasoning above.
              + (m.LocalGrid ? "|local=True" : ""));
 
     /// <summary>

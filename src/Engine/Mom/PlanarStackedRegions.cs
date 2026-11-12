@@ -54,7 +54,8 @@ internal static class PlanarStackedRegions
 
     public static PlanarStackedPlan? Find(
         PlanarProblem problem, double[] gx, double[] gy, IReadOnlyList<PlanarCell> cells, int[][] cellAtPerLayer,
-        ViaFootprintPlan footprints, int minCells, int rimCells, IReadOnlyList<PlanarPort>? ports)
+        ViaFootprintPlan footprints, int minCells, int rimCells, IReadOnlyList<PlanarPort>? ports,
+        double minSideM = PlanarMeshSettings.DefaultStackedRegionMinSideM)
     {
         var vias = problem.ViaList;
         int nx = gx.Length - 1, ny = gy.Length - 1;
@@ -198,6 +199,9 @@ internal static class PlanarStackedRegions
             int thisComp = comp++;
 
             if (ix1 - ix0 + 1 < minCells || iy1 - iy0 + 1 < minCells) continue;
+            // PMS-7 — and a physical floor beside the cell count: a cell count measures the mesh, so on a fine enough
+            // grid an ordinary post would reach it. Both must hold; the floor can only keep a region whole.
+            if (gx[ix1 + 1] - gx[ix0] < minSideM || gy[iy1 + 1] - gy[iy0] < minSideM) continue;
             bool portNear = false;
             foreach (var (pix, piy) in portCells)
                 if (pix >= ix0 - PortGuardCells && pix <= ix1 + PortGuardCells &&

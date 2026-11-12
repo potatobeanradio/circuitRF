@@ -239,6 +239,44 @@ public sealed class PlanarKernel
         RunControl?                control  = null,
         SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
+        // ── PMS-7 — THE LOCAL GRID STEPS ASIDE WHERE A PORT'S CALIBRATION NEEDS THE SHARED GRID ─────────────────
+        //
+        // A passive neighbour in a standard (PCAL3) and a coupled-port group (PCAL4) read the metal beside a feed
+        // gridline by gridline, which a block mesh does not have (PlanarPorts.LocalGridProfileDecline). With the local
+        // grid ON by default in the product, a setup that calibrated that way would otherwise be refused by the
+        // clearance rule it never met before; instead it is solved once more on the shared grid, and said so.
+        // The clearance check runs at setup, before any fill, so the first attempt costs a mesh and a port resolution.
+        try
+        {
+            return SolveOnce(problem, meshSettings, ports, freqsHz, settings, ct, control, lengthFormat);
+        }
+        catch (PlanarFeedClearanceRefusedException ex)
+            when (meshSettings.LocalGrid && ex.Message.Contains(PlanarPorts.LocalGridDeclineMarker, StringComparison.Ordinal))
+        {
+            var shared = SolveOnce(problem, meshSettings with { LocalGrid = false }, ports, freqsHz, settings, ct, control,
+                                   lengthFormat);
+            return shared with
+            {
+                Findings = [EmFinding.Note(LocalGridSteppedAsideNote), .. shared.Findings],
+            };
+        }
+    }
+
+    /// <summary>PMS-7 — the note a run carries when the local grid stepped aside for a port's calibration.</summary>
+    public const string LocalGridSteppedAsideNote =
+        "This run is meshed on the shared grid rather than the local grid: a port's calibration takes in a neighbouring " +
+        "conductor or a coupled port, which reads the metal beside the feed gridline by gridline.";
+
+    private PlanarKernelResult SolveOnce(
+        PlanarProblem              problem,
+        PlanarMeshSettings         meshSettings,
+        IReadOnlyList<PlanarPort>  ports,
+        IReadOnlyList<double>      freqsHz,
+        PlanarSolveSettings?       settings,
+        CancellationToken          ct,
+        RunControl?                control,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat)
+    {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
         ArgumentNullException.ThrowIfNull(freqsHz);
@@ -390,9 +428,13 @@ public sealed class PlanarKernel
         // Priced only when something reads the figure — a limit to judge it against, or a size check to
         // hand it to — since it meshes every standard and counts their cores, which no other caller wants.
         bool aimOn = st.Fill?.Aim is not null;
+        // A sweep of 0 Hz alone is the conduction solve (LF1): no dense matrix and no calibration standard, so there is
+        // nothing for a memory limit or a size check to judge.
+        bool conductionOnly = freqsHz.All(f => !(f > 0));
         // PMS-1 R-pms1-2 — not when the structure's matrix alone is already past the limit: the verdict is decided, and
         // on a chip-scale grid pricing was the step that never finished.
-        if (report.MatrixAlonePastLimit && !aimOn)
+        if (conductionOnly) { }
+        else if (report.MatrixAlonePastLimit && !aimOn)
             report = PlanarRunMemory.NotPriced(report);
         else if (meshSettings.MemoryLimitBytes is not null || st.Admit is not null)
             report = PlanarRunMemory.WithStandards(
@@ -418,7 +460,7 @@ public sealed class PlanarKernel
         // work repeated is the setup up to the first oversized standard — sub-second — against a
         // run the user would otherwise have had to start again by hand anyway.
         // The caller's own question about this run's size, once the mesh it will solve is final.
-        if (st.Admit is { } admit)
+        if (st.Admit is { } admit && !conductionOnly)
         {
             bool aim = aimOn;
             var size = new PlanarRunSize(report.UnknownCount, report.CellCount, aim,

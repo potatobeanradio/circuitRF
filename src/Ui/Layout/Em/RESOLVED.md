@@ -1247,3 +1247,17 @@ Gate: `tests/Ui.Tests/Em/LayoutComponentPortMarksTests.cs` (3 tests, ~0.3 s, LCP
   build is the 3D assembly's, which the panel does not run), and the panel's synchronous Refresh still runs the Planar build on
   the UI thread once per refresh, because its cache is keyed by the source object Refresh makes fresh each time. Keying it by
   the layout view and its edit count would serve stale strips to any caller that edits a view without `NotifyChanged`.
+
+## Stacked regions and Local grid in the Surface mesh group (brief PMS-7, 2026-11-11)
+
+Two checkboxes below Merged shapes, rows 9 and 10 of the planar Surface mesh grid: **Stacked regions** ("Mesh via-joined
+regions as one sheet") and **Local grid** ("Keep gridlines near their features"), both on by default
+(`EmSetup.DefaultPlanarMesh`). Merged shapes is greyed while the local grid is on, with the reason in its tooltip — the
+local grid already coarsens the cells merging would join, and the mesher does not merge a block mesh. Each commits on toggle as Merged shapes does: one undo entry, `InvalidateMesh`, Auto untouched (both
+survive Auto in the mesher, so neither is a resolution). Neither is ever greyed: both apply to every planar mesh, and the
+mesh notes say what each did. The summary line adds
+"N refinement steps" when the mesh is on the local grid (`PlanarMeshReport.RefinementSteps`).
+
+Looked at with `tools/UiSnapshot --cem <SpiralInductor.cem with LocalGrid> --button Mesh --size 900x2600`: both rows
+align with the column above, Merged shapes greyed with its multi-level reason, and the summary reads "530 unknowns ·
+351 cells · … · 4 refinement steps · Ok".

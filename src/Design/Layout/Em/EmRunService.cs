@@ -464,9 +464,12 @@ public static class EmRunService
                                          EmDiagnostics.SolveFailed(ex.Message).Render());
         }
 
-        // CAP-1 follow-up — priced with its calibration standards and judged again, as the run judges it.
-        report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve,
-                                                  control);
+        // CAP-1 follow-up — priced with its calibration standards and judged again, as the run judges it. A sweep of 0 Hz
+        // alone is the conduction solve: no standard and no dense matrix, so nothing is priced and no memory is judged.
+        bool conductionOnly = !(fMax > 0);
+        if (!conductionOnly)
+            report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve,
+                                                      control);
 
         // MIM-13 item 3 — AllFindings, not AsNotes(Notes): the mesher classes its own sentences
         // now, and flattening them here is what put a warning at the weight of the core count.
@@ -475,7 +478,7 @@ public static class EmRunService
         // The memory check a run makes before it fills anything, said here as a warning (a check
         // asks no one). The run's own mesh also carries any feed it grows, so it can be a little larger.
         // A run past the machine's own memory already carries the mesh's warning, which says it more exactly.
-        if (report.CanSolve && !setup.AcceleratedSolve && !report.PastMachineLimit &&
+        if (report.CanSolve && !setup.AcceleratedSolve && !report.PastMachineLimit && !conductionOnly &&
             PlanarMemoryCheck.Evaluate(
                 new PlanarRunSize(report.UnknownCount, report.CellCount, false, report.RunResidentBytes)
                 { StandardBytes = report.StandardResidentBytes },
@@ -500,7 +503,8 @@ public static class EmRunService
         // solve asks it (PlanarSolve.Run's `general` arm, the same fill switch), so a setup the run refuses after
         // minutes of meshing and setup is refused here, with the same remedies. Its notes are not repeated: the
         // level-separation sentences in them are already above.
-        if (report.CanSolve && meshed.RequiresGeneralKernel)
+        // Asked at a frequency the run solves full-wave: a 0 Hz-only sweep has none, and solves no ẑẑ block.
+        if (report.CanSolve && meshed.RequiresGeneralKernel && !conductionOnly)
         {
             var (vertical, _) = PlanarSolve.VerticalRangeVerdict(
                 meshed, report.Mesh, fMax,

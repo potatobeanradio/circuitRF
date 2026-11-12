@@ -14215,3 +14215,132 @@ Measured with scratch harnesses in Release on the dev machine; none is committed
   above is PMS-5's delta-gap one).
 - Gate 6 on fixture S itself (above): nothing between the clearance refusal and 30 GB.
 - Per-region accelerator sizing (R-pms6-5).
+
+## PMS-7 — the defaults (2026-11-11)
+
+Owner decisions, taken on the evidence of PMS-2…6: **stacked regions ON and the local grid ON in the product** (the
+local grid was first left opt-in, then turned on with the shared-grid fallback in §7). Both stay off in the engine
+(`PlanarMeshSettings.Default`), so every engine-side number and test is unchanged; the product's default is
+`EmSetup.DefaultPlanarMesh` (`RooftopMerging = true, StackedRegions = true, LocalGrid = true`), the split merging and
+`EdgePortReturn` already make. Merging is not applied on a block mesh, so it now acts only where a user turns the local
+grid off, and the panel greys it with that reason while the local grid is on.
+
+### 1. What changing the default moves
+
+Every planar example and starter re-meshed through `circuitrf check` (examples) and `SurfaceMesher.Mesh` (starters), off
+→ stacked → local → both:
+
+| Setup | Off | Stacked | Local | Both |
+|---|---|---|---|---|
+| Klopfenstein Taper | 805 | 805 | 790 | 790 |
+| PCB Component Ports, Filter Board | 1,086 | 1,086 | 925 | 925 |
+| PDK PCells, SpiralInductor | 1,388 | 1,388 | 530 | 530 |
+| PDK PCells, SpiralResonator | 2,723 | 2,723 | 2,455 | 2,455 |
+| PDK PCells, ThinFilmResistor | 647 | 647 | 390 | 390 |
+| Passivated Pad, Bare Line / Covered Line | 263 | 263 | 263 | 263 |
+| Passivated Pad, Probe Pad | 1,072 | 1,072 | 786 | 786 |
+| Passivated Pad, Through-Silicon Via | 239 | 239 | 239 | 239 |
+| Patch Antenna | 1,850 | 1,850 | 1,473 | 1,473 |
+| FR-4 starter line (2.9 mm × 20 mm, 10 GHz) | 552 | 552 | 552 | 552 |
+| GaAs starter line (72 µm × 2 mm, 20 GHz) | 297 | 297 | 297 | 297 |
+| MMIC coil fixture (with posts, 20 GHz) | 23,357 | 23,357 | 7,176 | 7,176 |
+
+**No shipped example or starter has a qualifying stacked region**, so the default that moved moves none of their meshes;
+each runs exactly as before and |ΔS| = 0 by construction (`Find` runs either way and applies nothing; PMS-3 gate 1 holds
+that path bit-identical). Two planar examples are not meshable by `check` at all, unrelated to this series: `3D EM/Via
+through a plane/Via planar.cem` (its named return plane is above the lowest analysis level) and `Via Contact
+Resistor/ViaResistor.cem` (a 0 Hz-only sweep). The local grid would move 7 of the 10 that mesh, by up to 2.6×.
+
+### 2. The hash
+
+`EmSnpProvenance.MeshHash` keeps PMS-3's spelling — `|stacked=True` when on, nothing when off. That already does what the
+brief's `DetailFloorDivisor` precedent asks: an `.snp` stamped before PMS-7 carries no term, which is the spelling of OFF
+(the mesh it was built on), and the new default carries `|stacked=True`, so it reads as stale once. Writing the term
+always (tried first) also marked an explicit off stale — a file whose mesh is unchanged — and broke
+`SheetMeshUiTests`' pinned pre-image, which is the evidence. `.cem`: omitted at the product default (on); an explicit
+`false` is written; a pre-PMS-7 file that omitted the key now reads on.
+
+### 3. A physical floor beside `StackedRegionMinCells`
+
+PMS-3 §4 flagged the 18-cell rule as a narrow window in the wrong unit, to be revisited if this became a default. A region
+must now also be `StackedRegionMinSideM` = 30 µm across in both axes (its gridline bounding box). It can only keep a
+region whole. On S, S with MIM capacitors (7 regions, windows ≥ 32 µm), A1 and every example it changes nothing: S
+524,066 and S+MIM 655,539 with or without it. `Pms7DefaultsTests.ARegionUnderThePhysicalFloor_IsNotMerged`.
+
+### 4. The local grid as a remedy that binds
+
+Built while it was opt-in, and kept: it still acts for a setup that turned the local grid off. Opt-in meant the budget names it only where it acts (`src/Engine/Mom/CLAUDE.md`: never name a remedy that does not bind).
+When a tensor mesh is REFUSED or PAST THE MACHINE LIMIT, `SurfaceMesher` meshes the same problem once more with
+`LocalGrid` on and no memory limit (so the second mesh counts no cores and cannot recurse), and when that is fewer
+unknowns the refusal's / warning's remedy list gains "turn on Local grid (Surface mesh)" and a sentence with the count.
+Nowhere else. On fixture S through the extractor: 349,118 → 67,081 named in the warning, `check` still under 2 s.
+`Pms7DefaultsTests.TheLocalGrid_IsNamed_OnlyWhereItBinds` (S 0.6 mm named with the exact count, the same mesh with it on
+not named, A2 under the limit not named).
+
+### 5. Numbers that moved since their briefs
+
+PMS-6's narrower port windows lowered the local-grid counts PMS-4 recorded: S 1.4 mm local 150,770 → **134,442**, both
+117,688 → **101,360** (≈ 98 GB a dense point); S 0.6 mm local 53,901 → **44,355**, both **33,165**. The user page quotes
+these.
+
+### 6. Panel and docs
+
+Stacked regions and Local grid are checkboxes in the planar Surface mesh group (`src/Ui/Layout/Em/RESOLVED.md`); the
+summary line adds "N refinement steps" when the local grid is on. `circuitrf reference em-setup` gains a bullet with
+both keys and their defaults (the field list prints `null` for both). `docs/user/src/reference/mom-engine.md` §mesh-scale.
+
+### 7. The shared-grid fallback
+
+A passive neighbour in a standard (PCAL3) and a coupled-port group (PCAL4) read the metal beside a feed gridline by
+gridline, and a block mesh declines both (`PlanarPorts.LocalGridProfileDecline`, PMS-6), after which the clearance rule
+refuses. With the local grid on by default that would refuse setups that calibrate today, so `PlanarKernel.Solve` catches
+a `PlanarFeedClearanceRefusedException` whose message carries `PlanarPorts.LocalGridDeclineMarker` and solves the run
+once more with `LocalGrid` off, leading its findings with `LocalGridSteppedAsideNote`. The clearance check runs at setup,
+before any fill, so the first attempt costs a mesh and a port resolution. Gate:
+`Pms7DefaultsTests.ACalibrationThatNeedsTheSharedGrid_IsSolvedOnIt_NotRefused` — a feed 0.27 h from a portless pour,
+whose interior the local grid coarsens: the local-grid run is the shared grid's answer bit for bit, with the note.
+
+### 7a. Every example run, local grid off against on (gate 1)
+
+Every planar example run through `circuitrf em` (Release, `--force`), today's defaults against PMS-7's, then |ΔS| over
+every entry and point. "Via planar" is excluded: its refusal is the example (its README).
+
+| Example | Off | On | max \|ΔS\| | Where |
+|---|---|---|---|---|
+| Klopfenstein Taper | 19 s | 17 s | 0 | the run mesh, leads grown, keeps every line |
+| PCB Component Ports, Filter Board (5-port) | 33 s | 35 s | 4.7e-3 | S22 at 6 GHz, −15.58 → −15.37 dB |
+| PDK PCells, SpiralInductor | 51 s | 46 s | 3.6e-3 | S11 at 0.16 GHz, −30.3 → −31.2 dB |
+| PDK PCells, SpiralResonator | 352 s | 193 s | 6.1e-4 | S22 at 3 GHz; S11 null 2.95 GHz −35.69 → −35.60 dB |
+| PDK PCells, ThinFilmResistor | 23 s | 11 s | 2.4e-4 | 20 GHz |
+| Passivated Pad, Bare / Covered Line | 24 / 27 s | 18 / 21 s | 0 | mesh unchanged |
+| Passivated Pad, Probe Pad | 283 s | 123 s | 2.0e-6 | |
+| Passivated Pad, Through-Silicon Via | 38 s | 38 s | 0 | mesh unchanged |
+| Patch Antenna | 59 s | 44 s | 1.3e-4 | 5.825 GHz |
+| Via Contact Resistor (0 Hz) | 1 s | 2 s | 3.5e-8 | R = 251.4 Ω both |
+
+Every run completes in minutes on both. The two largest against one refinement step of the shared grid (Cells per
+wavelength 20 → 28 and Cells across +50 %, local grid off): Filter Board 4.7e-3 against a step of 2.1e-2 (and local is
+1.9e-2 from the refined answer, i.e. no further from it); SpiralInductor 3.6e-3 against a step of 2.7e-3 — of the same
+order, 1.3× it, at the band's lowest point. No example took the shared-grid fallback.
+
+The PDK README's resonator figures (2,456 unknowns, null 2.77 GHz −31.6 dB, cell/separation 127) were already stale
+against today's baseline (2,723 unknowns, null 2.95 GHz −35.69 dB); the local grid does not move them materially. Left
+for the owner.
+
+### 8. A 0 Hz-only sweep is a conduction solve (the ViaResistor example)
+
+`Via Contact Resistor/ViaResistor.cem` sweeps 0 Hz alone, which `PlanarSolve.Run` answers with `PlanarDcSolve` (LF1).
+Two checks still assumed a full-wave point, so the shipped example was refused by `check` and by the run: the preflight
+asked G_A^zz's validated range at the sweep's top (0 Hz — `LayeredSpectralGreens` throws "the full-wave kernel needs
+f > 0"), and the run judged a dense matrix it never forms (22,798 unknowns, 22.2 GB, against 17.2 GB). Now: the mesher,
+given a memory limit, judges a problem whose `MaxFrequencyHz` is 0 as Ok and says why in a note; `PlanarKernel.Solve`
+neither prices standards nor asks `Admit` when every frequency is 0; the preflight skips the standards pricing, the
+memory warning and the vertical-range verdict. `check` reports 0 errors and `em` writes R = 251.4 Ω (|S21| 0.28454),
+the README's figure. Not related to PMS — it was the example the re-mesh table could not reach.
+
+### 9. `EmRunServiceTests.PastAMachineLimit…`, broken by PMS-1
+
+Its 100 kB machine limit put the structure's matrix alone past the limit, so PMS-1's `NotPriced` path skipped the
+standards and the verdict no longer said "calibration standards". The limit is 100 MB now — past the structure plus its
+standards (~190 MB), not past the matrix alone — which is the case the test describes.
+

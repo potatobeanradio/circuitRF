@@ -386,7 +386,7 @@ internal static class DocumentSchema
             circuitrf check ws
             circuitrf em    ws/thru/em/thru.cem
 
-        Seven things that are not obvious from the field list:
+        Eight things that are not obvious from the field list:
 
           * LayoutRef names the geometry document: a .clay or a .c3d. It is relative to the
             WORKSPACE folder (the one holding .cws), not to the .cem. The technology is the
@@ -419,6 +419,14 @@ internal static class DocumentSchema
             out with a warning, on either kind of setup.
             `explain --component-ports` lists what would be built, and `em --component-ports "C1,C2"`
             applies a list for one run.
+          * PlanarMesh's two mesh representations are named here because their defaults differ from
+            what the field list prints (null means the GUI's default). StackedRegions (default true): a
+            region where a via joins two metal levels across its whole area, at least 30 um and 18 cells
+            on each side, is meshed as one sheet on the lower level inside a one-cell rim; write false to
+            mesh every level. LocalGrid (default true): each gridline is kept only near the feature that
+            asked for it, so a chip or crowded board meshes at several times fewer unknowns; a run whose
+            port calibration takes in a neighbouring conductor or a coupled port is meshed on the shared
+            grid instead and says so. Write false to mesh on the shared grid everywhere.
 
         Every field the reader understands follows, with its default.
         """;

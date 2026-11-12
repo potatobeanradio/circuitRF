@@ -1,5 +1,7 @@
-// PMS-3 R-pms3-4 — the stacked-regions setting in the .cem and in the provenance stamp. Off is the default and is never
-// written (its hash term is appended only when on); on is written, round-trips, survives Clone and moves the hash.
+// PMS-3 R-pms3-4, PMS-7 — the stacked-regions setting in the .cem and in the provenance stamp. Since PMS-7 ON is the
+// product default and is never written; off is written, round-trips and survives Clone; a file that omits the key reads
+// on; and the two states hash apart (the term is present at the default, so an .snp stamped before PMS-7 — which
+// carries none, the spelling of off — reads as stale).
 
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Layout.Em;
@@ -15,22 +17,28 @@ public class StackedRegionsCemTests
     };
 
     [Fact]
-    public void Off_IsOmitted_AndOn_RoundTrips()
+    public void On_IsTheDefault_AndOmitted_AndOff_RoundTrips()
     {
-        Assert.False(EmSetup.DefaultPlanarMesh.StackedRegions);
-        Assert.DoesNotContain("StackedRegions", EmSetupPersistence.Serialize(Setup(false)), StringComparison.Ordinal);
+        Assert.True(EmSetup.DefaultPlanarMesh.StackedRegions);
+        Assert.False(PlanarMeshSettings.Default.StackedRegions);   // the engine keeps it off, as it keeps merging off
+        Assert.DoesNotContain("StackedRegions", EmSetupPersistence.Serialize(Setup(true)), StringComparison.Ordinal);
 
-        string json = EmSetupPersistence.Serialize(Setup(true));
-        Assert.Contains("\"StackedRegions\": true", json, StringComparison.Ordinal);
-        Assert.True(EmSetupPersistence.Deserialize(json).PlanarMesh.StackedRegions);
-        Assert.True(Setup(true).Clone().PlanarMesh.StackedRegions);
+        string json = EmSetupPersistence.Serialize(Setup(false));
+        Assert.Contains("\"StackedRegions\": false", json, StringComparison.Ordinal);
+        Assert.False(EmSetupPersistence.Deserialize(json).PlanarMesh.StackedRegions);
+        Assert.False(Setup(false).Clone().PlanarMesh.StackedRegions);
         Assert.Equal(json, EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(json)));
+
+        // A file written before PMS-7 omitted the key while it meant off; it now reads on.
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        Assert.True(node["PlanarMesh"]!.AsObject().Remove("StackedRegions"));
+        Assert.True(EmSetupPersistence.Deserialize(node.ToJsonString()).PlanarMesh.StackedRegions);
     }
 
     [Fact]
-    public void On_MovesTheMeshHash()
+    public void OnAndOff_HashApart()
     {
-        var off = EmSetup.DefaultPlanarMesh;
-        Assert.NotEqual(EmSnpProvenance.MeshHash(off), EmSnpProvenance.MeshHash(off with { StackedRegions = true }));
+        var on = EmSetup.DefaultPlanarMesh;
+        Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on with { StackedRegions = false }));
     }
 }

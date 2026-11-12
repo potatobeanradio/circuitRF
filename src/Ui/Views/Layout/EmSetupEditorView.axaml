@@ -1862,7 +1862,7 @@
                 <Border Classes="group" Name="SurfaceMeshGroup" IsVisible="{Binding ViewModel.ShowPlanarControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
-                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                       ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="CellsPerWavelength"
@@ -1965,6 +1965,18 @@
                                IsEnabled="{Binding ViewModel.MeshAsMergedShapesDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
                                ToolTip.Tip="{Binding ViewModel.MeshAsMergedShapesToolTip}"
                                ToolTip.ShowOnDisabled="True"/>
+                    <!-- PMS-7 — the two mesh representations the planar series added. Always shown, never greyed:
+                         both apply to every planar mesh, and the mesh notes say what each did. -->
+                    <TextBlock Grid.Row="9" Grid.Column="0" Classes="colhdr" Text="Stacked regions" VerticalAlignment="Center"/>
+                    <CheckBox  Grid.Row="9" Grid.Column="1" Name="PlanarStackedRegionsCheck" FontSize="11"
+                               Content="Mesh via-joined regions as one sheet"
+                               IsChecked="{Binding ViewModel.PlanarStackedRegions}"
+                               ToolTip.Tip="{Binding ViewModel.PlanarStackedRegionsToolTip}"/>
+                    <TextBlock Grid.Row="10" Grid.Column="0" Classes="colhdr" Text="Local grid" VerticalAlignment="Center"/>
+                    <CheckBox  Grid.Row="10" Grid.Column="1" Name="PlanarLocalGridCheck" FontSize="11"
+                               Content="Keep gridlines near their features"
+                               IsChecked="{Binding ViewModel.PlanarLocalGrid}"
+                               ToolTip.Tip="{Binding ViewModel.PlanarLocalGridToolTip}"/>
                 </Grid>
                 <SelectableTextBlock FontSize="10" TextWrapping="Wrap"
                            Foreground="{DynamicResource CrfWarningBrush}"

@@ -9192,3 +9192,28 @@ because the largest block made the near set dense (killed past 4 GB at N = 5,315
 De-embedded against the tensor references: A2 2.4e-5 to 3.5e-4 (under its refinement step), A1 8.4e-5 to 8.8e-4, σ_max
 unchanged. Fixture S has no size that runs end to end here (feed clearance refuses below ~0.6 mm on both grids; past
 30 GB above); A2 ran through EmRunService in 159 s at 3.3 GB. `RESOLVED.md` §PMS-6.
+
+
+---
+
+## PMS-7 — the defaults, and what the series leaves true (2026-11-11)
+
+Owner decisions: stacked regions and the local grid ON in the product; both off in the engine. No shipped example or
+starter carries a qualifying stacked region; the local grid moves 7 of 10 meshable planar examples (up to 2.6×) and the
+MMIC coil 3.3×. A run whose port calibration needs the shared grid (a passive neighbour, a coupled group) is solved on
+it rather than refused. A stacked region now also needs 30 µm per side; with the local grid off it is named as a remedy,
+with its count, on a refused or past-the-limit mesh. A 0 Hz-only sweep is no longer judged as a dense point (the
+ViaResistor example was refused by `check` and by the run). `RESOLVED.md` §PMS-7.
+
+The invariants the series leaves, for the owner to promote or not:
+
+- **A cell is a block.** On the local grid a `PlanarCell` may span `IX..IX1 × IY..IY1` of the shared grid's lines
+  (`IsBlock`), always a union of the tensor grid's own whole cells; a block is coarser than 1 × 1 only where it is
+  homogeneous on every level. Every reader takes a block mesh; the fill reads it through its support mesh.
+- **A rooftop may cover a segment.** Where a fine cell meets a coarse block the rooftop spans the shared face SEGMENT
+  (`SegmentLo/Hi`), its coarse half the strip of the block that segment spans; a whole-face rooftop carries none.
+- **Standards are built from the port's own lines.** A port's feed window is elementary along the port and carries
+  only the transverse lines the feed itself needs, so its calibration standard is the feed's cross-section, not the
+  chip's.
+- **A stacked region keeps a rim.** Only the interior beyond a one-cell rim is merged onto the lowest joined level;
+  the rim keeps every level and every vertical basis, so current transfers between levels as it does in the metal.
