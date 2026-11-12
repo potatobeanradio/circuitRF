@@ -20,7 +20,11 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public string Name => param.Name;
     /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
     /// ("2.35 GHz"), so none is shown for one.</summary>
-    public string Unit => param.Unit is "dB" or "dBm" or "deg" ? param.Unit : "";
+    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "W" ? param.Unit : "";
+
+    /// <summary>A budget-only value left blank is not written into the stage, so a chain that does not use one saves as
+    /// it always did.</summary>
+    public bool OmitWhenBlank => param.BudgetOnly && string.IsNullOrWhiteSpace(Value);
     public string Tip => param.Help.Length > 0 ? $"{param.Name}: {param.Help}" : param.Name;
     public IReadOnlyList<string>? Options => param.Options;
     public bool HasOptions => param.Options is { Count: > 0 };
@@ -132,7 +136,7 @@ public sealed partial class ChainStageViewModel : ObservableObject
     {
         var s = new ChainStage { Name = Name.Trim(), Part = Part.Token };
         foreach (var (k, v) in Unlisted) s.Parameters[k] = v;
-        foreach (var p in Parameters) s.Parameters[p.Name] = p.Value ?? "";
+        foreach (var p in Parameters.Where(p => !p.OmitWhenBlank)) s.Parameters[p.Name] = p.Value ?? "";
         return s;
     }
 }

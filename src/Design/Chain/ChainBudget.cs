@@ -160,6 +160,12 @@ public static class ChainBudget
         Per("StageGain_dB", "dB", s => s.Stage.GainDb);
         Per("StageNF_dB", "dB", s => s.Stage.NfDb);
         Per("StageIIP3_dBm", "dBm", s => s.Stage.Iip3Dbm);
+        if (r.Design is { } d)
+        {
+            // Each Amp's amplifier stages (NaN where it states none) and each stage's DC power.
+            ds.Add("Nstg", new DataCube([stage], [.. d.Stages.Select(s => ChainParts.StageCount(s) is { } n ? n : double.NaN)]));
+            ds.Add("Pdc_W", new DataCube([stage], [.. d.Stages.Select(ChainParts.StagePdcW)]) { Unit = "W" });
+        }
 
         One("Gain_dB", "dB", t.GainDb);
         One("NFtot_dB", "dB", t.NfDb);

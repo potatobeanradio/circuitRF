@@ -114,6 +114,14 @@ public sealed class ChainDesign
             foreach (var p in part.Parameters.Where(p => p.Numeric))
                 if (!ChainValue.TryParse(s.Get(p.Name), out _) && !(p.BlankAllowed && s.Get(p.Name).Trim().Length == 0))
                     r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number.");
+            if (r.Count == before && ChainValue.Or(s.Get("Pdc"), 0) < 0) r.Add($"Stage '{s.Name}': Pdc = '{s.Get("Pdc")}' is below 0 W.");
+            if (part.Token == ChainParts.Amp && r.Count == before && ChainValue.TryParse(s.Get("GainPerStage"), out double gps)
+                && ChainParts.StageCount(s) is null)
+                r.Add(gps > 0
+                    ? $"Stage '{s.Name}': GainPerStage is set, so the Gain is built of amplifier stages, and {s.Get("Gain")} dB needs none: " +
+                      "clear GainPerStage, or give the Gain above 0 dB."
+                    : $"Stage '{s.Name}': GainPerStage is {ChainValue.Format(gps)} dB at {ChainSnp.Hz(inputHz[si])}: no number of stages " +
+                      "reaches the gain at this frequency.");
             if (part.Token == ChainParts.Combiner)
             {
                 combiners++;
@@ -150,7 +158,8 @@ public sealed class ChainDesign
 }
 
 /// <summary>A stage parameter's text as a number: a bare number, or one with a unit (<c>2.35 GHz</c>, <c>16 dB</c>,
-/// <c>350MHz</c>, <c>0.5 ns</c>). Frequency and time prefixes scale; dB, dBm, deg and Ohm do not.</summary>
+/// <c>350MHz</c>, <c>0.5 ns</c>, <c>5 mW</c>). Frequency, time and power prefixes scale; dB, dBm, deg, Ohm, W and %
+/// do not.</summary>
 public static class ChainValue
 {
     public static bool TryParse(string? text, out double value)
@@ -164,7 +173,7 @@ public static class ChainValue
         else if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
                  && Units.TrySplitGluedNumber(t, out var n, out var u)) { num = n; unit = u; }
         if (!double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return false;
-        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K") return true;
+        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "%") return true;
         if (Units.Scale(unit) is { } s) { value *= s; return true; }
         // A time: "s", or a prefix and "s" ("0.5 ns", "50 ps").
         if (unit == "s") return true;

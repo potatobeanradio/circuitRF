@@ -129,6 +129,43 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
     }
 
+    // ── stage counts and DC power ────────────────────────────────────────────
+
+    [Fact]
+    public void AGainPerStage_CountsTheAmplifierStages_AndTheirDcPower()
+    {
+        Assert.Equal(4, ChainParts.StageCount(20, 6));      // 3.33 stages: four
+        Assert.Equal(4, ChainParts.StageCount(20, 5));      // exactly four, not five after rounding
+        Assert.Equal(4, ChainParts.StageCount(20, 20.0 / 4 * (1 + 1e-15)));
+        Assert.Null(ChainParts.StageCount(20, -0.5));
+        Assert.Null(ChainParts.StageCount(0, 6));
+
+        var d = Scaled();
+        d.Stages[0].Parameters["GainPerStage"] = "29.5 - 11*log10(f_GHz)";   // 5.894 dB at 140 GHz: four stages
+        d.Stages[0].Parameters["Pdc"] = "4 mW";
+        d.Stages[2].Parameters["Pdc"] = "0.02 W";
+        var r = ChainBudget.Evaluate(d);
+        Assert.Empty(r.Refusals);
+        Assert.Equal(20, r.Stages[0].GainDb, 12);                            // the gain stays the one stated
+        var ds = ChainBudget.ToDataSet(r);
+        Assert.Equal([4, double.NaN, double.NaN, double.NaN], ds["Nstg"].RealValues);
+        Assert.Equal([0.016, 0, 0.02, 0], ds["Pdc_W"].RealValues);
+
+        // Above the frequency where a stage still has gain, no count reaches it.
+        d.FrequencyHz = 600e9;
+        d.Stages[1].Parameters["F1"] = "100 GHz"; d.Stages[1].Parameters["F2"] = "800 GHz";
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.StartsWith("Stage 'LNA': GainPerStage is -1.0", StringComparison.Ordinal)
+                                                               && x.Contains("no number of stages reaches the gain", StringComparison.Ordinal));
+
+        // A budget-only value never reaches the netlist.
+        d.FrequencyHz = 140e9;
+        foreach (var b in ChainBenches.Build(d, ChainBudget.Evaluate(d), "Dc"))
+        {
+            Assert.DoesNotContain("Pdc", b.Netlist, StringComparison.Ordinal);
+            Assert.DoesNotContain("GainPerStage", b.Netlist, StringComparison.Ordinal);
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

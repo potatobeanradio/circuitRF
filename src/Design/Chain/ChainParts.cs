@@ -31,8 +31,11 @@ namespace CircuitRF.Design.Chain;
 /// <param name="Options">For a parameter that names a choice (<c>IP3Ref</c>, <c>Response</c>), the choices.</param>
 /// <param name="BlankAllowed">True when blank means something (an Amp's blank NF is a noiseless amplifier).</param>
 /// <param name="IsFile">The parameter names a file, which the window offers a picker for.</param>
+/// <param name="BudgetOnly">Read by the budget and never written onto the part's netlist line (a DC power, a gain per
+/// amplifier stage).</param>
 public sealed record ChainParam(string Name, string Default, string Unit, bool Numeric = true, bool BlankAllowed = false,
-                                IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false);
+                                IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false,
+                                bool BudgetOnly = false);
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
@@ -95,11 +98,33 @@ public static class ChainParts
 
     private static double P1(double iip3) => double.IsPositiveInfinity(iip3) ? iip3 : iip3 - TanhP1dbBelowIip3;
 
-    public static readonly IReadOnlyList<ChainPart> All =
+    /// <summary>Every part's DC power, which only the budget's power readout reads.</summary>
+    public static readonly ChainParam Pdc = new("Pdc", "", "W", BlankAllowed: true, BudgetOnly: true,
+        Help: "DC power, W or with its unit (5 mW); with GainPerStage, per amplifier stage; blank: none");
+
+    /// <summary>An Amp's gain per amplifier stage, which its stage count follows from.</summary>
+    public static readonly ChainParam GainPerStage = new("GainPerStage", "", "dB", BlankAllowed: true, BudgetOnly: true,
+        Help: "the gain of one amplifier stage: Gain takes ceil(Gain / GainPerStage) of them, each drawing Pdc; blank: Pdc is the whole amplifier's");
+
+    /// <summary>The stages an Amp of <paramref name="gainDb"/> takes at <paramref name="perStageDb"/> each,
+    /// ⌈G/g − 10⁻⁹⌉ (the 10⁻⁹ so that 20/5 is 4, not 5, after rounding); null when either is not above 0 dB.</summary>
+    public static int? StageCount(double gainDb, double perStageDb)
+        => gainDb > 0 && perStageDb > 0 ? (int)Math.Ceiling(gainDb / perStageDb - 1e-9) : null;
+
+    /// <summary>A resolved stage's amplifier-stage count, null when it states no GainPerStage.</summary>
+    public static int? StageCount(ChainStage s)
+        => s.Part == Amp && ChainValue.TryParse(s.Get("GainPerStage"), out double g) ? StageCount(ChainValue.Or(s.Get("Gain"), 0), g) : null;
+
+    /// <summary>A resolved stage's DC power, W: its Pdc, times its stage count when it has one.</summary>
+    public static double StagePdcW(ChainStage s) => ChainValue.Or(s.Get("Pdc"), 0) * (StageCount(s) ?? 1);
+
+    public static readonly IReadOnlyList<ChainPart> All = [.. Parts().Select(p => p with { Parameters = [.. p.Parameters, Pdc] })];
+
+    private static IReadOnlyList<ChainPart> Parts() =>
     [
         new(Amp, "Amplifier", true,
             [Reg(SymbolKind.Amp, "Gain"), Reg(SymbolKind.Amp, "NF", blank: true, help: "blank: noiseless"),
-             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"])],
+             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"]), GainPerStage],
             "An ideal gain block. P1dB follows from IP3: IIP3 − 8.96 dB. Any gain, negative included, so it is also the " +
             "stage for any other block that has a gain, a noise figure and an intercept.",
             (s, _) =>

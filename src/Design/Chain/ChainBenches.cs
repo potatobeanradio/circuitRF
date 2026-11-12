@@ -570,7 +570,7 @@ public static class ChainBenches
         {
             var part = ChainParts.Find(s.Part)!;
             var sb = new StringBuilder();
-            foreach (var p in part.Parameters.Where(p => !skip.Contains(p.Name)))
+            foreach (var p in part.Parameters.Where(p => !skip.Contains(p.Name) && !p.BudgetOnly))
                 if (s.Get(p.Name).Trim() is { Length: > 0 } v) sb.Append($"  {p.Name}={Param(p, v)}");
             foreach (var (k, v) in s.Parameters.Where(kv => part.Parameters.All(p => p.Name != kv.Key) && !skip.Contains(kv.Key)))
                 sb.Append($"  {k}={v.Trim()}");
