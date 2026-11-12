@@ -55,14 +55,15 @@ public static class AtomicFile
     /// share's client often holds a file for a moment after it is written, so the rename is tried again a few times before
     /// the error is reported. That error comes from File.Move with no path in it, so the one rethrown names the file.
     /// Elsewhere a rename needs permission on the folder only, and a refusal is not transient, so it is not retried.
+    /// Also the rename a run uses to move a file it made into a workspace folder (the Palace mesh, a result's publish).
     /// </summary>
-    private static void MoveOver(string tmp, string path)
+    internal static void MoveOver(string tmp, string path, bool overwrite = true)
     {
         for (int attempt = 1; ; attempt++)
         {
             try
             {
-                File.Move(tmp, path, overwrite: true);
+                File.Move(tmp, path, overwrite);
                 return;
             }
             catch (Exception e) when (e is UnauthorizedAccessException or IOException

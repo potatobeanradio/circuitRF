@@ -30603,3 +30603,14 @@ pad's case) warned forever. The check exists to catch a change to the LAYOUT aft
   nothing (its stub cell is again walled on the side). The pin has to be TWO steps below the row: the stub cell is the
   exemption and the next one up is clear of the margin, so the wire rises and turns once (`ChainBenches.DiagramPortDrop`).
   Only the diagram moved; a bench's sources and loads keep their places.
+
+## A Palace run in a cloud-synced Windows workspace stopped after meshing: "Access to the path is denied." (2026-11-12)
+
+Field report, 1.8.2, the 3D Connector example copied into a synced Documents folder on Windows: Gmsh meshed for 30 s, then
+"the mesh could not be staged in '…\results\Launch Palace.palace' (Access to the path is denied.)". The message names no path,
+which is `File.Move`'s signature on Windows (its exception carries none), and the only renames in that step are the mesh and
+entity table moving from the scratch folder into the run folder. Writes into that folder had already succeeded (`groups.json`,
+the script), so it is the RENAME being refused there, transiently, while a sync client or scanner holds the new file —
+`AtomicFile.MoveOver` already retried exactly this for saves. `PalaceRun` now moves through `PalaceRun.MoveIn` (that retry,
+then a copy on Windows, since the scratch folder is deleted anyway), and `EmResultStaging`'s publish renames — the next
+renames into the same folder — go through `AtomicFile.MoveOver` without overwrite. Not reproduced: no such folder here.

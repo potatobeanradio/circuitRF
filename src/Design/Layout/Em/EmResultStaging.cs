@@ -270,7 +270,7 @@ public sealed class EmResultStaging : IDisposable
     private static void Move(string from, string to)
     {
         if (Directory.Exists(from)) Directory.Move(from, to);
-        else File.Move(from, to);
+        else CircuitRF.Design.Cells.AtomicFile.MoveOver(from, to, overwrite: false);
     }
 
     private static void Delete(string path)

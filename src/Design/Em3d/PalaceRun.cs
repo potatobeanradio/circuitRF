@@ -283,7 +283,7 @@ public static class PalaceRun
                 }
                 foreach (string produced in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
                     if (File.Exists(Path.Combine(stage, produced)))
-                        File.Move(Path.Combine(stage, produced), Path.Combine(runDir, produced), overwrite: true);
+                        MoveIn(Path.Combine(stage, produced), Path.Combine(runDir, produced));
             }
             finally
             {
@@ -374,7 +374,22 @@ public static class PalaceRun
         foreach (string old in Directory.EnumerateFiles(runDir, GmshGeoWriter.BuiltPrefix + "*"))
             File.Delete(old);
         foreach (string ext in BuiltExtensions)
-            File.Move(Path.Combine(stage, built + ext), Path.Combine(runDir, built + ext), overwrite: true);
+            MoveIn(Path.Combine(stage, built + ext), Path.Combine(runDir, built + ext));
+    }
+
+    /// <summary>
+    /// Moves a file Gmsh made in the scratch folder into the run folder. On Windows a rename into a workspace folder that a
+    /// cloud-sync client or a scanner watches can be refused with "Access to the path is denied" while writing a new file there
+    /// is not (field report: the mesh was made and the run stopped, in a synced Documents folder). The rename is tried again for
+    /// under a second, then the file is copied; the scratch folder is removed afterwards, so the copy leaves nothing behind.
+    /// </summary>
+    internal static void MoveIn(string from, string to)
+    {
+        try { CircuitRF.Design.Cells.AtomicFile.MoveOver(from, to); }
+        catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
+        {
+            File.Copy(from, to, overwrite: true);
+        }
     }
 
     /// <summary>brief-emb-2 R-emb2-6 — Gmsh's command line: at verbosity 5, which names every stage as it starts, the
