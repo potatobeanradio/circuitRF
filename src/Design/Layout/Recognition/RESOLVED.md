@@ -854,3 +854,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   strokes, is near enough a box. Only a closed stroke, a closed shape or a drawing's lines of no width chain into a body,
   and each half of a body must have copper of its side under a quarter of it (`MinEndCover`): a part's end sits on its
   copper, while a letter printed over the edge of a pad does not.
+- **The long end section is recognition's alone** (F6, corrected). The first fix keyed the land limit on the review having a
+  scope, which reached every scoped impedance review too: the Impedance panel with a selector, `circuitrf impedance` with a
+  pick or a saved scope, and the MCP tool. On a 1.1 mm line ending in a 1.7 × 5.6 mm section, a pick then reported 25.6 mm at
+  34.2–45.5 Ω, 78 % in tolerance, where main reports 20 mm at 45.5 Ω, 100 %. The limit is now an internal option,
+  `TraceImpedanceOptions.KeepLongEndSections`, which only `ArtworkRecognition.ReviewOf` sets; every review, scoped or not,
+  trims as before. Gate: `TraceImpedanceAnalysisTests.AWideEndSection_IsTheLinesLand_ScopedOrNot_AndOnlyRecognitionKeepsIt`.

@@ -410,7 +410,9 @@ public static partial class ArtworkRecognition
     /// The trace review recognition reads (R-as5-1): every trace in scope, the SHORT ones too — a region
     /// round the whole of the copper selects every chain, and a chain a selector chooses is a trace from
     /// <see cref="TraceImpedanceAnalysis.SelectedMinAspect"/> widths, so a 2–4-width line between two parts is a
-    /// line and not a pad. Its target and tolerance do not matter here and its findings are not read.
+    /// line and not a pad. So is a chain's end section of 2–4 widths, wider than the line it ends
+    /// (<see cref="TraceImpedanceOptions.KeepLongEndSections"/>), which a review would trim as the line's land. Its target and
+    /// tolerance do not matter here and its findings are not read.
     /// </summary>
     private static TraceImpedanceReport ReviewOf(IReadOnlyList<LayoutShape> shapes, Technology tech, BoardCopper board,
                                                  int dbu, RunControl? control)
@@ -419,7 +421,8 @@ public static partial class ArtworkRecognition
         long m = 1000L * dbu;
         long x0 = box.MinX - m, y0 = box.MinY - m, x1 = box.MaxX + m, y1 = box.MaxY + m;
         var everything = new TraceImpedanceScope { Regions = [new TraceScopeRegion(null, [x0, y0, x1, y0, x1, y1, x0, y1])] };
-        return TraceImpedanceAnalysis.Analyze(shapes, tech, dbu, new TraceImpedanceOptions { Scope = everything }, control);
+        return TraceImpedanceAnalysis.Analyze(shapes, tech, dbu,
+                                              new TraceImpedanceOptions { Scope = everything, KeepLongEndSections = true }, control);
     }
 
     /// <summary>D15's top frequency: the option, else the EM setup's stop where it is a plain number with a

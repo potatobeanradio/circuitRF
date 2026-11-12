@@ -321,8 +321,9 @@ rows not found on the board, sides with no mask or paste layer, and a parts tabl
 **One** trace review per recognition, shared with AS-4's part reading (`RecognitionResult.ReviewRuns` holds it at one).
 It is run with a scope of one region round all the copper in scope: a chain a selector chooses is a trace from
 `SelectedMinAspect` (2) widths rather than `MinAspect` (4), so a short line between two parts is a line and not a pad.
-Under a scope the review's end trim takes an end piece off a chain as its land, when it is wider than the piece it joins,
-only below the same 2 widths: a 1.7 mm by 5.6 mm section from a pad on a 1.1 mm line is a line, not the line's land.
+For recognition only (`TraceImpedanceOptions.KeepLongEndSections`, set by `ReviewOf` and nowhere else) the review's end
+trim takes an end piece off a chain as its land, when it is wider than the piece it joins, only below the same 2 widths:
+a 1.7 mm by 5.6 mm section from a pad on a 1.1 mm line is a line, not the line's land. A review, scoped or not, trims at 4.
 Its target, tolerance and findings are not read.
 
 What recognition needed and the review did not return was **added to its output records**, computed where the review

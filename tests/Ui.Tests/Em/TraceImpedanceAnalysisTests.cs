@@ -738,6 +738,27 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal(0, report.TraceCount);
     }
 
+    /// <summary>A 1 mm line ending in a 1.6 × 5.6 mm section — 3.5 of its widths, wider than the line — is reviewed as the line
+    /// alone, the section its land, with or without a scope: the review's end trim. Only artwork recognition's own option
+    /// keeps the section on the trace.</summary>
+    [Fact]
+    public void AWideEndSection_IsTheLinesLand_ScopedOrNot_AndOnlyRecognitionKeepsIt()
+    {
+        LayoutShape[] shapes = [Rect(Top, 0, -500, 20_000, 500), Rect(Top, 20_000, -800, 25_600, 800), Rect(Gnd, -2000, -8000, 30_000, 8000)];
+        var region = new TraceImpedanceScope { Regions = [TraceScopeRegion.Rectangle(null, Um(-1000), Um(-2000), Um(27_000), Um(2000))] };
+        TraceRun Run(TraceImpedanceOptions o) =>
+            Assert.Single(Assert.Single(TraceImpedanceAnalysis.Analyze(shapes, Tech(), LayoutUnits.DefaultDbuPerMicron, o with { Layers = [Top] }).Layers).Traces);
+
+        var plain = Run(new TraceImpedanceOptions());
+        var scoped = Run(new TraceImpedanceOptions { Scope = region });
+        Assert.Equal(Um(20_000), plain.Length, (double)Um(10));
+        Assert.Equal((plain.Length, plain.WidthMax, plain.Z0Min, plain.Z0Max, plain.Stations.Count),
+                     (scoped.Length, scoped.WidthMax, scoped.Z0Min, scoped.Z0Max, scoped.Stations.Count));
+
+        var recognised = Run(new TraceImpedanceOptions { Scope = region, KeepLongEndSections = true });
+        Assert.Equal(Um(25_600), recognised.Length, (double)Um(10));
+    }
+
     /// <summary>A scope with every selector kind — a region on a layer, whole layers — round-trips
     /// through the .clay; one saved before regions had layers writes neither key, so it is read back
     /// as every-layer regions and written back unchanged (brief-impedance-6 gate 1).</summary>
