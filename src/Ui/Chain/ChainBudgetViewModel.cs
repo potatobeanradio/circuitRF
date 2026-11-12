@@ -255,12 +255,14 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var lv = ChainLevels.Evaluate(d, r);
         var data = ChainLevels.ToDataSet(lv);
         var notes = new List<string>();
-        // A chain of more than one conversion has its Levels, 1-Tone and Blockers benches per conversion, each on its
-        // own node axis and beside its own budget: their displays show them.
-        bool perConversion = d.Stages.Count(s => s.Part == ChainParts.Mixer) > 1;
+        // A chain whose Levels bench Transfer writes per conversion has its Levels, 1-Tone and Blockers benches each on a
+        // conversion's own node axis and beside its own budget: their displays show them.
+        string chain = FilePath is { } fp ? Path.GetFileNameWithoutExtension(fp) : "chain";
+        bool perConversion = lv.Count > 0 &&
+                             ChainBenches.Build(d, r, chain).Any(b => b.Kind == ChainBench.Levels && b.Chain != chain);
         if (lv.Count > 0 && FilePath is { } path && !perConversion)
         {
-            string chain = Path.GetFileNameWithoutExtension(path), results = Path.Combine(Path.GetDirectoryName(path)!, "results");
+            string results = Path.Combine(Path.GetDirectoryName(path)!, "results");
             var axis = data["Psig_dBm"].Axes[0];
             foreach (var (bench, cubes) in new (ChainBench, string[])[]
                      {

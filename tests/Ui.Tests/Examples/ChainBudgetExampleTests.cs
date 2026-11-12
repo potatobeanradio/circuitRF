@@ -58,12 +58,14 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public void TheShippedBenches_AreWhatTransferWritesToday()
     {
         CopyDirectory(Workspace, _ws);
+        var written = new HashSet<string>(StringComparer.Ordinal);
         foreach (string chain in Chains)
         {
             var d = ChainDesignIo.LoadFromFile(Path.Combine(_ws, chain + ".cchain"));
             var w = ChainBenches.Write(d, _ws, chain, replace: true);
             Assert.Empty(w.Refusals);
             ChainBudgetDisplay.WriteAll(_ws, chain, d, ChainBudget.Evaluate(d));
+            written.UnionWith(Benches(_ws, chain).Select(b => b.CellName));
             foreach (var b in Benches(_ws, chain))
             {
                 string cell = b.CellName;
@@ -71,6 +73,9 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
                 SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
             }
         }
+        // And nothing shipped that Transfer no longer writes: every bench folder and display is one of them.
+        Assert.Equal(written.Order(), Directory.GetDirectories(Workspace).Select(x => Path.GetFileName(x)).Order());
+        Assert.Equal(written.Order(), Directory.GetFiles(Workspace, "*.cdd").Select(x => Path.GetFileNameWithoutExtension(x)).Order());
     }
 
     /// <summary>
@@ -311,6 +316,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     /// second conversion's input reads the second blocker 0.002 dB high: the roofing filter there reflects a little at
     /// 308 MHz, and the input node is the one with no isolator in front of it.</summary>
     [Fact]
+    [Trait("Category", "Benchmark")]
     public void DualConversion_LevelsAndBlockers_EveryNodeOnTheBudget()
     {
         foreach (var (conv, nodes) in new[] { ("IF1", 3), ("IF2", 6) })

@@ -28,25 +28,31 @@ public static class ChainBudgetDisplay
     {
         var json = new JsonSerializerOptions(DataDisplayJson.Options) { WriteIndented = true };
         var paths = new List<string>();
-        // A bench of one of the chain's conversions is displayed against that conversion's own budget.
-        foreach (var b in ChainBenches.Build(design, budget, chain))
+        // A bench of one of the chain's conversions is displayed against that conversion's own budget, and a display
+        // reads only the benches that are written.
+        var benches = ChainBenches.Build(design, budget, chain);
+        var written = benches.Select(b => b.CellName).ToHashSet();
+        foreach (var b in benches)
         {
             string path = Path.Combine(dir, b.CellName + ".cdd");
-            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(b.Chain, b.Kind, b.Design, b.Budget), json));
+            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(b.Chain, b.Kind, b.Design, b.Budget, written), json));
             paths.Add(path);
         }
         return paths;
     }
 
-    public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget)
+    /// <param name="written">The cells the transfer writes, which a display may read beside its own; null: every bench of
+    /// the chain.</param>
+    public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget,
+                                          IReadOnlySet<string>? written = null)
     {
         string src = ChainBenches.CellName(chain, bench) + ".npy";
         switch (bench)
         {
             case ChainBench.Steering: return Display(chain, bench, src, Steering(src));
             case ChainBench.Combiners: return Display(chain, bench, src, Combiners(src, design));
-            case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false));
-            case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true));
+            case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false, written));
+            case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true, written));
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
         }
@@ -196,8 +202,10 @@ public static class ChainBudgetDisplay
     /// canceller's interference; and in dB the NF, the SNR and the margin to compression. The x axis is the node, 0 the
     /// input and k the output of stage k. <paramref name="blockersOnly"/>: the Blockers bench's own display.
     /// </summary>
-    private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly)
+    private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly,
+                                                    IReadOnlySet<string>? written)
     {
+        bool Has(ChainBench b) => written is null || written.Contains(ChainBenches.CellName(chain, b));
         var lv = ChainLevels.Evaluate(d, r);
         string lev = ChainBenches.CellName(chain, ChainBench.Levels) + ".npy";
         string one = ChainBenches.CellName(chain, ChainBench.OneTone) + ".npy";
@@ -208,12 +216,15 @@ public static class ChainBudgetDisplay
         {
             traces.Add(Over(lev, "Psig_calc", ChainBenches.NodeVar, "signal, budget", C(1), false));
             traces.Add(Over(lev, "Psig_sim", ChainBenches.NodeVar, "signal, simulated", C(1), true));
-            traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
-            traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
+            if (Has(ChainBench.OneTone))
+            {
+                traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
+                traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
+            }
             traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, "IM3, budget", C(4), false));
             traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true));
         }
-        for (int k = 0; k < d.Blockers.Count; k++)
+        for (int k = 0; k < (Has(ChainBench.Blockers) ? d.Blockers.Count : 0); k++)
         {
             string name = $"blocker {k + 1} ({d.Blockers[k].OffsetHz / 1e6:0.##} MHz, {d.Blockers[k].LevelDbm:0.#} dBm)";
             traces.Add(Over(blk, $"Blk{k + 1}_calc", ChainBenches.NodeVar, name + ", budget", C(5 + k), false));
@@ -238,6 +249,7 @@ public static class ChainBudgetDisplay
                 Over(lev, "SNR_calc", ChainBenches.NodeVar, "SNR, budget", C(3), false),
                 Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false),
             };
+            if (!Has(ChainBench.OneTone)) db.RemoveRange(0, 2);
             double top = Math.Ceiling((lv.Select(n => n.SnrDb).Max() + 10) / 10) * 10;
             plots.Add(Rect("NF, SNR and margin to compression at each node, dB", $"node: {nodes}", "dB", 0, 420 + Gap, 760, 340, db,
                            (-5, top), (-0.5, lv.Count - 0.5)));

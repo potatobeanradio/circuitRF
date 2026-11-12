@@ -416,53 +416,89 @@ public static class ChainBenches
         /// <summary>
         /// The mixing order a harmonic-balance run on <paramref name="toneHz"/> is given: <paramref name="desired"/>,
         /// what the bench's numbers converge at, or the highest below it that the run takes, down to
-        /// <paramref name="needed"/>, the least that carries what the bench reads (<paramref name="what"/>). Below that the
-        /// bench is refused, as it is when two products fall on one frequency at every order it could have. A noise run
-        /// (<paramref name="noise"/>) takes one or two tones, as the small-signal sweep it runs on does.
+        /// <paramref name="needed"/>, the least that carries what the bench reads (<paramref name="what"/>). An order is
+        /// not taken when it retains more products than a run takes, or when a product the bench reads
+        /// (<paramref name="tracked"/>) falls on the frequency of another: a run cannot tell the two apart, and reads
+        /// them wrongly rather than refusing. Two products on one frequency that the bench reads neither of are run and
+        /// said. Below <paramref name="needed"/> the bench is refused. A noise run (<paramref name="noise"/>) takes one or
+        /// two tones, as the small-signal sweep it runs on does.
         /// </summary>
-        private int Order(string analysis, double[] toneHz, int desired, int needed, string what, bool noise = false)
+        private int Order(string analysis, double[] toneHz, int desired, int needed, string what, IEnumerable<int[]> tracked,
+                          bool noise = false)
         {
             var s = AnalysisSettings.Default;
             int tones = toneHz.Length, most = noise ? 2 : s.HbMaxTones;
+            static string N0(int n) => n.ToString("N0", CultureInfo.InvariantCulture);
+            var read = tracked.ToList();
+            var passed = new List<string>();   // why each order above the one taken was not
             string? clash = null;
-            for (int o = desired; o >= needed; o--)
+            for (int o = desired; o >= needed && tones <= most; o--)
             {
-                if (tones > most || MixingLattice.CountFor(tones, o) > s.HbMaxMixProducts) continue;
-                if ((clash = Coincident(toneHz, o)) is not null) continue;
+                if (MixingLattice.CountFor(tones, o) > s.HbMaxMixProducts)
+                {
+                    passed.Add($"at {o} its {tones} tones retain {N0(MixingLattice.CountFor(tones, o))} mixing products, over the " +
+                               $"{N0(s.HbMaxMixProducts)} a run takes");
+                    continue;
+                }
+                var (onRead, other) = Coincident(toneHz, o, read);
+                if (onRead is not null) { clash = onRead; passed.Add($"at {o} the {onRead}, which it reads"); continue; }
                 if (o < desired)
                     Notes.Add($"its harmonic-balance run {analysis} runs at MaxMixOrder {o}, below the {desired} its numbers converge " +
-                              $"at: {tones} tones at {desired} retain {MixingLattice.CountFor(tones, desired).ToString("N0", CultureInfo.InvariantCulture)} " +
-                              $"mixing products, over the {s.HbMaxMixProducts.ToString("N0", CultureInfo.InvariantCulture)} a run takes, so " +
-                              "its numbers read a little off the budget's (the reference page's agreement table says how far)");
+                              $"at: {string.Join("; ", passed)}. So its numbers read a little off the budget's (the reference page's " +
+                              "agreement table says how far)");
+                if (other is not null)
+                    Notes.Add($"on its harmonic-balance run {analysis} the {other}. The bench reads neither, so it runs at MaxMixOrder " +
+                              $"{o}, but a run cannot tell the two apart, and what it reads can move by thousandths of a dB");
                 return o;
             }
-            Refusal ??= clash is not null
-                ? $"on its harmonic-balance run {analysis} the {clash}, at every MaxMixOrder from {needed} (the least that " +
-                  $"carries {what}) up, and a run cannot tell two products on one frequency apart: move a blocker or an LO off it"
-                : tones > most
+            Refusal ??= tones > most
                 ? $"its harmonic-balance {(noise ? "noise " : "")}run {analysis} has {tones} tones, and a {(noise ? "noise " : "")}run takes at most {most}"
+                : clash is not null
+                ? $"on its harmonic-balance run {analysis} the {clash}, a product it reads, at MaxMixOrder {needed}, the least that " +
+                  $"carries {what}, and at every order above it the run takes. A run cannot tell two products on one frequency " +
+                  "apart: move a blocker or an LO off it"
                 : $"its harmonic-balance run {analysis} has {tones} tones, and MaxMixOrder {needed}, the least that carries {what}, " +
-                  $"retains {MixingLattice.CountFor(tones, needed).ToString("N0", CultureInfo.InvariantCulture)} mixing products, " +
-                  $"over the {s.HbMaxMixProducts.ToString("N0", CultureInfo.InvariantCulture)} a run takes";
+                  $"retains {N0(MixingLattice.CountFor(tones, needed))} mixing products, over the {N0(s.HbMaxMixProducts)} a run takes";
             return desired;
         }
 
-        /// <summary>Two products of the lattice on one frequency, said, or null: commensurate tones (a blocker on a mixer's
-        /// image, say, whose products land where another's do).</summary>
-        private static string? Coincident(double[] toneHz, int order)
+        /// <summary>
+        /// Two products of the lattice on one frequency, said: the first such pair with a product of
+        /// <paramref name="read"/> in it (null: any pair), and the first with none. Commensurate tones put them there: a
+        /// blocker on a mixer's image, whose product lands where another's does, or blockers spaced evenly, whose
+        /// differences coincide.
+        /// </summary>
+        private static (string? OnRead, string? Other) Coincident(double[] toneHz, int order, IEnumerable<int[]>? read)
         {
             var lat = new MixingLattice(toneHz.Length, order);
+            var keep = read?.Select(v => Canonical(v)).ToHashSet(StringComparer.Ordinal);
             var f = Enumerable.Range(0, lat.MixCount).Select(m => (Hz: Math.Abs(lat.FrequencyOf(m, toneHz)), M: m)).OrderBy(x => x.Hz).ToList();
-            for (int i = 1; i < f.Count; i++)
-                if (f[i].Hz - f[i - 1].Hz < 1.0)
-                    return $"products {lat.Label(f[i - 1].M)} and {lat.Label(f[i].M)} fall on the same frequency, " +
-                           $"{(f[i].Hz / 1e6).ToString("0.######", CultureInfo.InvariantCulture)} MHz";
-            return null;
+            string? onRead = null, other = null;
+            for (int i = 1; i < f.Count && onRead is null; i++)
+            {
+                if (f[i].Hz - f[i - 1].Hz >= 1.0) continue;
+                string a = lat.Label(f[i - 1].M), b = lat.Label(f[i].M);
+                string said = $"products {a} and {b} fall on the same frequency, {(f[i].Hz / 1e6).ToString("0.######", CultureInfo.InvariantCulture)} MHz";
+                if (keep is null || keep.Contains(a) || keep.Contains(b)) onRead = said;
+                else other ??= said;
+            }
+            return (onRead, other);
         }
 
-        /// <summary>An envelope run's two fundamentals: the carriers' and one LO's, the LO more than three of a carrier's
-        /// bandwidths from it (<c>EnvelopeEngineMt.Plan</c>). <paramref name="carriers"/>: each carrier's frequency and
-        /// bandwidth, Hz.</summary>
+        /// <summary>A product's label as the lattice keeps it: k or −k, whichever has its first nonzero entry positive.</summary>
+        private static string Canonical(int[] v)
+        {
+            int sign = v.FirstOrDefault(x => x != 0) < 0 ? -1 : 1;
+            return MixingLattice.Label([.. v.Select(x => sign * x)]);
+        }
+
+        /// <summary>
+        /// An envelope run's fundamentals and lattice (<c>EnvelopeEngineMt</c>): the carriers' group and one LO, the LO more
+        /// than three of a carrier's bandwidths from it, and no two products of the two on one frequency at the run's
+        /// MaxMixOrder, max(2, 1 + 2·mixers). <paramref name="carriers"/>: each carrier's frequency and bandwidth, Hz; they
+        /// make one group (the demo's second carrier is two bandwidths off, inside three), centred midway between the
+        /// outermost.
+        /// </summary>
         private void EnvelopeFits(params (double Hz, double Bw)[] carriers)
         {
             var los = d.Stages.Where(s => s.Part == ChainParts.Mixer).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct().ToList();
@@ -475,6 +511,12 @@ public static class ChainBenches
                         Refusal ??= $"its LO at {Mhz(lo)} MHz is {Mhz(Math.Abs(lo - hz))} MHz from the {Mhz(bw)} MHz carrier at {Mhz(hz)} MHz, " +
                                     "and an envelope run takes an LO as a fundamental of its own only more than three of the carrier's " +
                                     "bandwidths from it";
+            if (los.Count != 1) return;
+            double centre = 0.5 * (carriers.Min(c => c.Hz) + carriers.Max(c => c.Hz));
+            int order = Math.Max(2, 1 + 2 * los.Count);
+            if (Coincident([.. new[] { centre, los[0] }.Order()], order, null).OnRead is { } clash)
+                Refusal ??= $"its envelope run's {clash} at MaxMixOrder {order}, and an envelope run cannot tell two products on one " +
+                            "frequency apart";
         }
 
         /// <summary>The stage each placed instance belongs to, and where each stage's first block sits on the first
@@ -1311,11 +1353,7 @@ public static class ChainBenches
         /// <summary>A product as a measurement names it. The lattice keeps one of k and −k, the one whose first nonzero
         /// entry is positive (the other is its conjugate, of the same magnitude): after a mixer whose LO is above the
         /// signal the tracked index is the other one.</summary>
-        private static string Idx(int[] v)
-        {
-            int sign = v.FirstOrDefault(x => x != 0) < 0 ? -1 : 1;
-            return "\"(" + string.Join(",", v.Select(x => sign * x)) + ")\"";
-        }
+        private static string Idx(int[] v) => "\"" + Canonical(v) + "\"";
 
         private void Measurements(string[] nets, (int[] V1, int[] V3)[] idx, List<string>[] parts, double[] freqs,
                                   int[] v1, int[] v3, double fout, int n)
@@ -1380,7 +1418,7 @@ public static class ChainBenches
                         // index instead it would be a product of the drive, which carries no signal.
                         var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
                         // Order 1 + 2·mixers keeps each mixer's image sideband, where its isolator's termination is noisy.
-                        _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBN", toneHz(false), 1 + 2 * mix, 1 + 2 * mix, "each mixer's image sideband", noise: true)} Tol=1e-12 " +
+                        _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBN", toneHz(false), 1 + 2 * mix, 1 + 2 * mix, "each mixer's image sideband", [v1], noise: true)} Tol=1e-12 " +
                                       $"SSStart=\"{G(ss)}\" SSStop=\"{G(ss)}\" SSNpts=1 Noise=yes NoiseIn=1 NoiseOut={n + 1} " +
                                       $"NoiseSideband=\"{string.Join(",", sb)}\" NoiseContrib=yes");
                         _meas.Add($"G_sim = dB(HBN.V(\"out\",{p1})) + 10 - Pss");
@@ -1404,7 +1442,7 @@ public static class ChainBenches
                     double lo = Finite(_t.Ip1dbDbm, 0);
                     // After a mixer an IF product is of order 2 on the lattice and its third-order term of order 6: the
                     // order the IF's compression converges at (measured: 0.04 dB off at 1 + 2·mixers, converged at 3 + 2·mixers).
-                    _analyses.Add($"analysis HB1 type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HB1", toneHz(false), 3 + 2 * mix, 1 + 2 * mix, "the output's compression")} Tol=1e-12");
+                    _analyses.Add($"analysis HB1 type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HB1", toneHz(false), 3 + 2 * mix, 1 + 2 * mix, "the output's compression", [v1])} Tol=1e-12");
                     _analyses.Add($"analysis SW1 type=parametric_sweep Var=Pin Values={F(lo - CompressionBackoffDb)},{F(lo - CompressionStepDb)},{F(lo + CompressionStepDb)} Inner=HB1");
                     _meas.Add($"Ghb = dB(HB1.V(\"out\",{p1})) + 10 - Pin");
                     _meas.Add("Comp = at(Ghb,\"Pin\",0) - Ghb");
@@ -1433,7 +1471,9 @@ public static class ChainBenches
                 {
                     // Each LO raises a product's order by one, so the IF's IM5 is of order 5 + mixers; below it the IF
                     // stages' IM3 reads 0.01 dB off (measured on the superhet example: 0.012 dB at 5, 1.8e-4 dB at 6).
-                    _analyses.Add($"analysis HB2 type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HB2", toneHz(true), 5 + mix, 3 + mix, "the output's IM3")} Tol=1e-12");
+                    // What it reads: the signal at every stage's output, and the IM3 where the stage has an intercept.
+                    var read2 = idx.Select(x => x.V1).Concat(idx.Where((_, j) => double.IsFinite(rows[j].Oip3Dbm)).Select(x => x.V3)).Concat([v1, v3]);
+                    _analyses.Add($"analysis HB2 type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HB2", toneHz(true), 5 + mix, 3 + mix, "the output's IM3", read2)} Tol=1e-12");
                     _meas.Add($"G_calc = {G(_t.GainDb)}");
                     _meas.Add($"IIP3_calc = {G(Finite(_t.Iip3Dbm, double.NaN))}");
                     _meas.Add($"OIP3_calc = {G(Finite(_t.Oip3Dbm, double.NaN))}");
@@ -1465,13 +1505,13 @@ public static class ChainBenches
                     // Two tones, each at the chain's input power: the signal and its IM3 at every node, on the 2-Tone
                     // bench's mixing order. The budget's levels beside them, and its noise floor, SNR, margin and a
                     // canceller's interference, for the display's node axis.
-                    _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HBL", toneHz(true), 5 + mix, 3 + mix, "the output's IM3")} Tol=1e-12");
                     var levels = ChainLevels.Evaluate(d, r);
                     var nodeNet = NodeNets(nets);
                     var nodeV1 = new List<int[]> { Seed(1, 0) };
                     var nodeV3 = new List<int[]> { Seed(2, -1) };
                     for (int j = 0; j < rows.Count; j++) { nodeV1.Add(idx[j].V1); nodeV3.Add(idx[j].V3); }
                     int[] Seed(int a0, int a1) { var v = new int[v1.Length]; v[0] = a0; v[1] = a1; return v; }
+                    _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HBL", toneHz(true), 5 + mix, 3 + mix, "the output's IM3", nodeV1.Concat(nodeV3.Skip(1)))} Tol=1e-12");
                     for (int k = 0; k < nodeNet.Count; k++)
                     {
                         _meas.Add($"P1_{k} = dB(HBL.V(\"{nodeNet[k]}\",{Idx(nodeV1[k])})) + 10");
@@ -1501,7 +1541,6 @@ public static class ChainBenches
                     // The blockers alone, every one at its own frequency and level, through every stage; each node is a
                     // stage's output into the bench's isolator after it, so its voltage is the forward wave, which is
                     // what the budget carries (a reflective filter's stopband would otherwise stand on its input).
-                    _analyses.Add($"analysis HBK type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBK", toneHz(false), 3 + mix, 1 + mix, "every blocker at the output")} Tol=1e-12");
                     var levels = ChainLevels.Evaluate(d, r);
                     var nodeNet = NodeNets(nets);
                     var blkV = new List<List<int[]>>();
@@ -1524,6 +1563,7 @@ public static class ChainBenches
                         }
                         blkV.Add(perNode);
                     }
+                    _analyses.Add($"analysis HBK type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBK", toneHz(false), 3 + mix, 1 + mix, "every blocker at the output", blkV.SelectMany(x => x))} Tol=1e-12");
                     for (int k = 0; k < nodeNet.Count; k++)
                         for (int b = 0; b < d.Blockers.Count; b++)
                             _meas.Add($"B{b + 1}_{k} = dB(HBK.V(\"{nodeNet[k]}\",{Idx(blkV[b][k])})) + 10");

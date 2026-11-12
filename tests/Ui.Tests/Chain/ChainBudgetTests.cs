@@ -393,12 +393,35 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
     {
         var d = Superhet();
         d.Stages[2].Parameters["Flo"] = "2.8 GHz";
+        d.Blockers.AddRange([new(150e6, -40), new(20e6, -50)]);
         var one = Bench(d, "Hi", ChainBench.OneTone);
         Assert.InRange(Measure(one, "G_err"), -1e-3, 1e-3);
         Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
         Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
         var two = Bench(d, "Hi", ChainBench.TwoTone);
         Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+        // The levels and the blockers node by node, every product after the mixer an inverted one. The mixer's own output,
+        // in front of the IF filter, reads the signal 2×10⁻⁴ dB and the IM3 1.3×10⁻³ dB off; every other node 10⁻⁵ dB.
+        var lev = Bench(d, "Hi", ChainBench.Levels);
+        var blk = Bench(d, "Hi", ChainBench.Blockers);
+        for (int k = 0; k <= d.Stages.Count; k++)
+        {
+            Assert.InRange(Measure(lev, $"Psig_{k}_err"), -5e-4, 5e-4);
+            if (k > 0) Assert.InRange(Measure(lev, $"IM3_{k}_err"), -2e-3, 2e-3);
+            for (int b = 1; b <= 2; b++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 1e-4);
+        }
+    }
+
+    /// <summary>A blocker below a low-side LO, on its image: after the mixer its product is an inverted one, and the
+    /// Blockers bench reads it as the lattice keeps it, node by node on the budget (the RF filter's 55 dB on it).</summary>
+    [Fact]
+    public void ABlockerOnALowSideMixersImage_IsReadAtEveryNode()
+    {
+        var d = Superhet();
+        d.Blockers.AddRange([new(-700e6, -40), new(150e6, -50)]);
+        var blk = Bench(d, "Img", ChainBench.Blockers);
+        for (int k = 0; k <= d.Stages.Count; k++)
+            for (int b = 1; b <= 2; b++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 1e-4);
     }
 
     // ── more than one mixer ──────────────────────────────────────────────────
@@ -561,11 +584,19 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(benches.Count, w.SchematicPaths.Count);
         Assert.Contains(w.Notes, x => x.StartsWith("Dual IF2 Envelope is not written", StringComparison.Ordinal));
         Assert.False(Directory.Exists(Path.Combine(_ws, "Dual IF2 Envelope")));
-        string path = Path.Combine(_ws, "Dual.cchain");
+        // check: a warning, so the chain checks clean at the error threshold and not at the warning one, where the same
+        // chain at 21.4 MHz, with nothing left out, does.
+        string path = Path.Combine(_ws, "Dual.cchain"), good = Path.Combine(_ws, "Good.cchain");
         ChainDesignIo.SaveToFile(path, d);
-        var (code, stdout) = CheckJson(path);
-        Assert.Equal(0, code);
-        Assert.Contains("chain.bench.left-out", stdout);
+        ChainDesignIo.SaveToFile(good, DualConversion());
+        Assert.Equal(0, CliEntry.Run(["check", path]));
+        Assert.Equal(1, CliEntry.Run(["check", path, "--severity", "warning"]));
+        Assert.Equal(0, CliEntry.Run(["check", good, "--severity", "warning"]));
+        // The second conversion's Levels display reads no Blockers bench of its own, there being none.
+        var written = benches.Select(b => b.CellName).ToHashSet();
+        var lev2 = benches.Single(b => b.CellName == "Dual IF2 Levels");
+        Assert.DoesNotContain(Traces(lev2.Chain, ChainBench.Levels, lev2.Design, lev2.Budget, written), t => t == "Dual IF2 Blockers.npy");
+        Assert.Contains(Traces(lev2.Chain, ChainBench.Levels, lev2.Design, lev2.Budget, written), t => t == "Dual IF2 1-Tone.npy");
 
         // One mixer and six blockers: seven tones, more than a harmonic-balance run takes, and no conversion to split into.
         var many = Superhet();
@@ -574,16 +605,50 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         var b6 = ChainBenches.Build(many, ChainBudget.Evaluate(many), "Rx", leftOut: leftOut);
         Assert.Equal(["Rx Blockers is not written: its harmonic-balance run HBK has 7 tones, and a run takes at most 6."], leftOut);
         Assert.Contains(b6, b => b.Kind == ChainBench.Levels);
+        Assert.DoesNotContain(Traces("Rx", ChainBench.Levels, many, ChainBudget.Evaluate(many), b6.Select(b => b.CellName).ToHashSet()),
+                              t => t == "Rx Blockers.npy");
+
+        // An LO two thirds of the signal: on the envelope run's lattice of (1.6, 2.4 GHz) the IF, 800 MHz, is also 2·2.4 − 1.6.
+        var lo = Superhet();
+        lo.FrequencyHz = 2.4e9;
+        lo.Stages[2].Parameters["Flo"] = "1.6 GHz";
+        leftOut.Clear();
+        ChainBenches.Build(lo, ChainBudget.Evaluate(lo), "Lo", leftOut: leftOut);
+        Assert.Contains("Lo Envelope is not written: its envelope run's products (1,-1) and (2,-1) fall on the same frequency, " +
+                        "800 MHz at MaxMixOrder 3, and an envelope run cannot tell two products on one frequency apart.", leftOut);
     }
 
-    private static (int Code, string StdOut) CheckJson(string path)
+    /// <summary>
+    /// Two products on one frequency stop an order only when the bench reads one of them. Blockers 10 and 20 MHz either
+    /// side of the signal: at MaxMixOrder 3 an IM3 of three of them lands on the fourth, which the bench reads, so the run
+    /// takes 2, and says why; there two of their differences share 10 MHz, which it reads neither of, and says so. The
+    /// bench simulates to its budget.
+    /// </summary>
+    [Fact]
+    public void ACoincidenceOnAProductTheBenchReads_LowersTheOrder_AndOneItDoesNotRead_IsSaid()
     {
-        var old = Console.Out;
-        var sw = new StringWriter();
-        Console.SetOut(sw);
-        try { JsonRun.Reset(); return (CliEntry.Run(["check", path, "--json"]), sw.ToString()); }
-        finally { Console.SetOut(old); }
+        var d = RfArray();
+        d.Stages.RemoveRange(1, 2);   // LNA, BPF, A2: no array, no mixer
+        d.Blockers.AddRange([new(10e6, -50), new(-10e6, -50), new(20e6, -50), new(-20e6, -50)]);
+        var notes = new List<string>();
+        var benches = ChainBenches.Build(d, ChainBudget.Evaluate(d), "Even", notes: notes);
+        Assert.Contains("analysis HBK type=hb NumFreqs=4 Tone[1]=\"FB1\" ToneUnit[1]=Hz Tone[2]=\"FB2\" ToneUnit[2]=Hz " +
+                        "Tone[3]=\"FB3\" ToneUnit[3]=Hz Tone[4]=\"FB4\" ToneUnit[4]=Hz MaxHarm=3 MaxMixOrder=2 Tol=1e-12",
+                        benches.Single(b => b.Kind == ChainBench.Blockers).Netlist);
+        var lowered = Assert.Single(notes, n => n.StartsWith("Even Blockers: its harmonic-balance run HBK runs at MaxMixOrder 2", StringComparison.Ordinal));
+        Assert.Contains("which it reads", lowered);
+        Assert.DoesNotContain("a run takes", lowered);
+        Assert.Single(notes, n => n.StartsWith("Even Blockers: on its harmonic-balance run HBK the products", StringComparison.Ordinal) &&
+                                  n.Contains("The bench reads neither", StringComparison.Ordinal));
+        var blk = Bench(d, "Even", ChainBench.Blockers);
+        for (int b = 1; b <= 4; b++)
+            for (int k = 0; k <= 3; k++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 0.01);
     }
+
+    /// <summary>The source paths of a display's traces.</summary>
+    private static IEnumerable<string> Traces(string chain, ChainBench bench, ChainDesign d, ChainBudgetResult r, IReadOnlySet<string> written)
+        => CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Build(chain, bench, d, r, written).Tabs[0].Plots
+               .SelectMany(p => p.Traces).Select(t => t.SourcePath ?? "");
 
     // ── the combiner's four variants ─────────────────────────────────────────
 
