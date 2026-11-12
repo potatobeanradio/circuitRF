@@ -342,6 +342,21 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
 
     private static double M0(DataSet ds, string name) => ds[name].RealValues[0];
 
+    /// <summary>The verb's report heads the cascade with the input the budget used: with a link, the power it delivers,
+    /// the same number the link line ends with, not the stated input.</summary>
+    [Fact]
+    public void TheVerbsReport_HeadsTheCascadeWithTheLinksInput()
+    {
+        var (code, stdout, stderr) = CircuitRF.Ui.Tests.Em3d.CliProcess.Run(PalaceBackendTests.RepoRoot(), [], "chain",
+            Path.Combine(Workspace, "26 GHz Link.cchain"));
+        Assert.True(code == 0, stderr);
+        string head = stdout.Split('\n').First(l => l.StartsWith("Chain budget:", StringComparison.Ordinal));
+        string link = stdout.Split('\n').First(l => l.TrimStart().StartsWith("link:", StringComparison.Ordinal));
+        Assert.Contains("-59.41 dBm in", head, StringComparison.Ordinal);
+        Assert.EndsWith("-59.41 dBm in", link.TrimEnd(), StringComparison.Ordinal);
+        Assert.DoesNotContain("-70.00 dBm in", head, StringComparison.Ordinal);
+    }
+
     /// <summary>Every shipped chain, opened and saved again, is the file as shipped, to the byte: nothing the reader
     /// keeps is lost, and nothing it derives (the link's element count) is written as a key of its own.</summary>
     [Fact]

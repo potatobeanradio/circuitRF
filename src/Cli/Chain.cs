@@ -114,6 +114,7 @@ internal static class Chain
 
     private static void Report(ChainBudgetResult r, ChainDesign d)
     {
+        d = r.Design ?? d;   // the chain as budgeted: a link's input power, a fractional bandwidth
         var t = r.Totals!;
         Console.WriteLine($"Chain budget: {r.Stages.Count} stage(s), {d.FrequencyHz / 1e6:0.###} MHz in, {t.OutputFrequencyHz / 1e6:0.###} MHz out, "
                         + $"{d.BandwidthHz / 1e6:0.###} MHz bandwidth, {D(d.InputPowerDbm)} dBm in, source {d.TemperatureK:0.#} K");
