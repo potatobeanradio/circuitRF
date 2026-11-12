@@ -66,6 +66,11 @@ public sealed record CircuitEvaluationRequest
     /// <summary>brief-sdl-6 D5 — the most uncached EM solves the run may start; more is a refusal before anything is
     /// solved, stating the count. Null: no limit (the GUI asks the user instead).</summary>
     public int? EmMaxSolves { get; init; }
+
+    /// <summary>LP-1 — at most this many loads of a loadpull grid at once (a cap beside the analysis's own <c>Workers=</c>);
+    /// 0, the default, sets none. An outer loop already running evaluations side by side (the optimizer, yield, corners, DOE)
+    /// passes 1, so its points do not each start one worker per core: that would be points × cores threads and copies.</summary>
+    public int LoadpullWorkers { get; init; }
 }
 
 /// <summary>
@@ -349,6 +354,7 @@ public static class CircuitEvaluation
         {
             Lib = lib, Tb = tb, Nl = nl, BaseDirectory = circuit.BaseDirectory, Analyses = planned,
             SweepPoints = sweepPoints,
+            LoadpullSettings = request.LoadpullWorkers > 0 ? new AnalysisSettings { MaxParallelism = request.LoadpullWorkers } : null,
         };
     }
 
@@ -440,9 +446,10 @@ public static class CircuitEvaluation
                 bool? converged = true;
                 if (pa.EmRefusal is { } emRefusal) throw new InvalidOperationException(emRefusal);
                 var ds = pa.Em is { } em && pa.Typed is not null
-                    ? RunByEm(pa, em, nl, notes, plan.BaseDirectory, inner, out converged, fieldsRun)
+                    ? RunByEm(pa, em, nl, notes, plan.BaseDirectory, inner, out converged, fieldsRun, plan.LoadpullSettings)
                     : pa.Typed is not null
-                    ? RunTypedAnalysis(pa.Typed, nl, tb, lib, notes, plan.BaseDirectory, inner, out converged, fieldsRun, pa.ResultName)
+                    ? RunTypedAnalysis(pa.Typed, nl, tb, lib, notes, plan.BaseDirectory, inner, out converged, fieldsRun, pa.ResultName,
+                                       plan.LoadpullSettings)
                     : RunRawSparam(pa.RawLine!, nl, inner);
 
                 if (ds is not null)
@@ -543,7 +550,8 @@ public static class CircuitEvaluation
     /// it (R-sdl6-3). The run's own netlist receives the diagnostics, so the Messages panel sees them as for any analysis.
     /// </summary>
     private static DataSet? RunByEm(PlannedAnalysis pa, EmSwitched em, ElaboratedNetlist nl, List<string> notes,
-                                    string? baseDirectory, RunControl? control, out bool? converged, FieldsRun fieldsRun)
+                                    string? baseDirectory, RunControl? control, out bool? converged, FieldsRun fieldsRun,
+                                    AnalysisSettings? loadpullSettings)
     {
         ParametricEmProvider.Register();
         using var scope = EmEvaluationScope.Begin(control: control);
@@ -553,7 +561,8 @@ public static class CircuitEvaluation
         using (pa.Typed is ParametricSweepAnalysis ? EmEvaluationScope.Begin(countOnly: true, control: control, estimate: false) : null)
             emNlBuilt = new Elaborator(em.Lib) { BaseDirectory = baseDirectory }.Elaborate(em.Tb);
         using var emNl = emNlBuilt;
-        var ds = RunTypedAnalysis(pa.Typed!, emNl, em.Tb, em.Lib, notes, baseDirectory, control, out converged, fieldsRun, pa.ResultName);
+        var ds = RunTypedAnalysis(pa.Typed!, emNl, em.Tb, em.Lib, notes, baseDirectory, control, out converged, fieldsRun, pa.ResultName,
+                                  loadpullSettings);
         nl.MergeDiagnosticsFrom(emNl);
         if (em.PathA is not null) notes.Add(em.Describe(pa.ResultName));
         foreach (var line in scope.Records.SelectMany(r => r.Unreached).Distinct()) nl.AddWarningOnce("em-unreached:" + line, line);
@@ -774,7 +783,8 @@ public static class CircuitEvaluation
         RunControl?       control,
         out bool?         converged,
         FieldsRun?        fields = null,
-        string?           resultName = null)
+        string?           resultName = null,
+        AnalysisSettings? loadpullSettings = null)   // the request's loadpull cap (LoadpullWorkers), else null as before
     {
         // A linear analysis has nothing to converge; a sweep and a loadpull carry convergence per point,
         // in their data. The two single solves below say for themselves.
@@ -829,12 +839,12 @@ public static class CircuitEvaluation
                 // Post-process: add the derived display metrics (Pout_dBm, Zin, IRL, AMPM) so the
                 // Data Display renders the same contours as a measured .spl (loadpull-postprocessor.md).
                 return RfCore.Loadpull.LoadpullPostProcessor.Enrich(
-                    new LoadpullEngine(nl, tb, lib: lib, baseDirectory: baseDirectory).Run(p, control));
+                    new LoadpullEngine(nl, tb, loadpullSettings, lib, baseDirectory).Run(p, control));
             }
 
             case LoadpullPursuitAnalysis lppa:
             {
-                var lpEngine      = new LoadpullEngine(nl, tb, lib: lib, baseDirectory: baseDirectory);
+                var lpEngine      = new LoadpullEngine(nl, tb, loadpullSettings, lib, baseDirectory);
                 var pursuitEngine = new LoadpullPursuitEngine(lpEngine);
                 var p             = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 return pursuitEngine.Run(p, control: control);
@@ -855,7 +865,7 @@ public static class CircuitEvaluation
                     if (fields is not null)
                         fields.Metrics[resultName ?? swept.Name] = CircuitRF.Design.Em3d.FieldCosimulation.SweptMetrics(swept, psa);
                 }
-                return ParametricSweepEngine.Run(psa, lib, tb,
+                return ParametricSweepEngine.Run(psa, lib, tb, loadpullSettings,
                     baseDirectory: baseDirectory, control: control, diagnosticsInto: nl, runOtherInner: fieldsPoint);
             }
 

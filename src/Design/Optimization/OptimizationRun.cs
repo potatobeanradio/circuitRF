@@ -1215,6 +1215,9 @@ public sealed partial class OptimizationRun
     /// its key was simulated in this batch; whether the cache answered it; whether its key was simulated
     /// in this batch.
     /// </summary>
+    // True while EvaluateKeyed runs its points side by side; read by Simulate on those points.
+    private bool _pointsInParallel;
+
     private (PointOutcome Outcome, DataSet? Data, bool Cached, bool RanHere)[] EvaluateKeyed(
         IReadOnlyList<KeyedPoint?> points, bool keepData, CancellationToken ct)
     {
@@ -1239,8 +1242,16 @@ public sealed partial class OptimizationRun
         if (serialWhy is not null || degree <= 1)
             for (int i = 0; i < toRun.Count; i++) outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, toRun[i].Draws, ct, toRun[i].WriteFieldsAs));
         else
-            Parallel.For(0, toRun.Count, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = ct },
-                         i => outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, toRun[i].Draws, ct, toRun[i].WriteFieldsAs)));
+        {
+            // Points side by side: each one's loadpull grids run serially inside it (LP-1), not one worker per core apiece.
+            _pointsInParallel = true;
+            try
+            {
+                Parallel.For(0, toRun.Count, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = ct },
+                             i => outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, toRun[i].Draws, ct, toRun[i].WriteFieldsAs)));
+            }
+            finally { _pointsInParallel = false; }
+        }
 
         var ran = new Dictionary<string, DataSet?>(StringComparer.Ordinal);
         for (int i = 0; i < toRun.Count; i++)
@@ -1412,6 +1423,7 @@ public sealed partial class OptimizationRun
             Measurements = true,
             Expressions  = [.. _goals.Select(g => g.Expression)],
             Control      = new RunControl { Token = ct },
+            LoadpullWorkers = _pointsInParallel ? 1 : 0,
         });
         if (rr.Status == RunStatus.Cancelled) throw new OperationCanceledException(ct);
         if (rr.Status != RunStatus.Success)
