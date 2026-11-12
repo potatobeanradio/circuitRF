@@ -272,7 +272,7 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
     /// out. The signal rate held an off-centre carrier's spectrum but stepped its band edge at 0.7 rad (NR, 4.5 MHz off)
     /// and 2 rad (DBPSK, 9 MHz off), and they read 1.11 % and 0.83 % against 0.38 % and 0.006 % centred. Bound: the
     /// excess √(EVM_off² − EVM_centred²) under 0.25 %, a quarter of the old error. The warp's closed form through this
-    /// filter at the step the rule now takes is 0.17 % for the NR carrier (1.02 % at the old step).
+    /// filter is 1.06 % for the NR carrier at the old step (1.05 % read) and 0.18 % at the step the rule now takes.
     /// </summary>
     [Theory]
     [InlineData("NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1", "-4.5MHz")]

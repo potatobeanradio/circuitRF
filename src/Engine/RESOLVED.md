@@ -4398,10 +4398,11 @@ DBPSK source beside it, even at −200 dBm, 1.225 %. The second carrier, 9 MHz u
 midpoint, so the NR carrier sits 4.5 MHz below it and its band reaches 6.75 MHz, which the draft step (64 MS/s) takes at
 0.66 rad. Gear-2 reads an envelope frequency f as f·(1 + θ²/3) with θ = 2πfh, plus θ⁴/(4h) of damping: through a
 filter's delay a phase error growing as f³, which no delay fit takes out. The smallest reproduction is a 60 MHz
-third-order Butterworth bandpass between 50 Ω terminations: the NR carrier 4.5 MHz off the centre reads 1.108 %, centred
-0.379 %; at h/2 0.379 % and at `standard` 0.343 %. The warp's closed form through that filter, delay and gain fitted,
-gives 1.02 %, 0.17 % and 0.03 % of excess at h, h/2 and h/4, against 1.01 %, 0.16 % and ~0 measured. DBPSK 9 MHz off the
-centre read 0.829 % (centred 0.006 %).
+third-order Butterworth bandpass between 50 Ω terminations: the NR carrier 4.5 MHz off the centre reads 1.108 % against
+0.379 % centred, an excess of 1.05 %, where the warp's closed form through that filter, delay and gain fitted, gives
+1.06 %. With the source's Fc moved 4.5 MHz up instead, so that only the envelope's centre moves, the carrier reads
+1.066 %, 0.379 % and 0.343 % at h, h/2 and h/4 (`standard`): excesses of 1.01 %, 0.16 % and ~0 over the last, against
+1.02 %, 0.17 % and 0.03 % from the closed form. DBPSK 9 MHz off the centre read 0.829 % (centred 0.006 %).
 
 The signal rate, 2(|offset| + 2.5 BW) per carrier, holds an off-centre carrier's spectrum, and the presets multiplied
 it, so an off-centre carrier's band edge got fewer steps a cycle than a centred one's. `EnvelopeEngine.Oversample`
