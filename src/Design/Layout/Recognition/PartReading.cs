@@ -681,14 +681,18 @@ public static class PartReading
     /// <summary>A body is at least this many times as long as it is wide, so its two ends are known.</summary>
     public const double MinBodyAspect = 1.2;
 
+    /// <summary>Each half of a body has copper under at least this share of it: a part's end sits on its copper.</summary>
+    public const double MinEndCover = 0.25;
+
     private const string BodyOutlineNote = "read from its body outline over a gap in the copper; it has no land of its own";
 
     /// <summary>
     /// R-as4-1 (3½): the parts whose body outline straddles a gap in the copper. A body is a closed, near-rectangular
     /// outline (<see cref="MinRectangularity"/>) on a silkscreen or assembly layer, longer than it is wide
     /// (<see cref="MinBodyAspect"/>) and no longer than a land pattern spans; drawn as one shape, a closed stroke, or lines
-    /// that chain into one loop. Its two halves along its length each meet copper of its side, and the copper with the most
-    /// of each half under it is a different piece at either end: a series part across a gap cut in a line, or a shunt part
+    /// of no width that chain into one loop. Its two halves along its length each have copper of its side under a quarter
+    /// of them at least (<see cref="MinEndCover"/>), and the copper with the most of each half under it is a different piece
+    /// at either end: a series part across a gap cut in a line, or a shunt part
     /// from a line's edge to a pour. A terminal is the middle of the copper under its half. Below land patterns: an outline
     /// round pads another rung found makes nothing. Kind and value come from the designator and the bill of materials, as
     /// for any rung; the pads are only where the drawing says the part is, so it is a medium confidence reading.
@@ -724,9 +728,12 @@ public static class PartReading
                     case RectShape r: rings.Add([r.X1, r.Y1, r.X2, r.Y1, r.X2, r.Y2, r.X1, r.Y2]); break;
                     case PolygonShape { Holes: null or { Count: 0 } } or CurveShape { Holes: null or { Count: 0 } }:
                         rings.AddRange(LayoutFlattener.Flatten(shape, tol)); break;
+                    // A closed stroke is an outline; open ones chain only when they are a drawing's lines (no width): a
+                    // board's stroked legend is letters, and a D or a 0 chained from its strokes is near enough a box.
                     case PathShape path:
                         var xy = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tol);
-                        if (xy.Length >= 8 && xy[0] == xy[^2] && xy[1] == xy[^1]) rings.Add(xy[..^2]); else open.Add(xy);
+                        if (xy.Length >= 8 && xy[0] == xy[^2] && xy[1] == xy[^1]) rings.Add(xy[..^2]);
+                        else if (path.Width <= 0) open.Add(xy);
                         break;
                 }
             }
@@ -749,6 +756,8 @@ public static class PartReading
                     : new[] { new Bbox(box.MinX, box.MinY, box.MaxX, cy), new Bbox(box.MinX, cy, box.MaxX, box.MaxY) };
                 var ends = halves.Select(half => CopperUnder(ctx.Copper, half, side)).ToArray();
                 if (ends[0] is not { } a || ends[1] is not { } b || a.Piece == b.Piece) continue;
+                double halfArea = 0.5 * (double)w * h;
+                if (a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea) continue;
 
                 var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
                 d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
@@ -761,11 +770,11 @@ public static class PartReading
     }
 
     /// <summary>The piece of copper on <paramref name="side"/> with the most area under <paramref name="half"/>, and a point
-    /// on it there: the middle of that area's box, or one of its corners where the middle is off the copper.</summary>
-    private static (int Piece, long X, long Y, LayerKey Layer)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side)
+    /// on it there: the middle of that area's box, or one of its corners where the middle is off the copper; and that area.</summary>
+    private static (int Piece, long X, long Y, LayerKey Layer, double Area)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side)
     {
         var window = new Paths64 { Clipper.MakePath(new[] { half.MinX, half.MinY, half.MaxX, half.MinY, half.MaxX, half.MaxY, half.MinX, half.MaxY }) };
-        (int Piece, long X, long Y, LayerKey Layer)? best = null;
+        (int Piece, long X, long Y, LayerKey Layer, double Area)? best = null;
         double most = 0;
         for (int p = 0; p < copper.Pieces.Count; p++)
         {
@@ -778,7 +787,7 @@ public static class PartReading
             foreach (var path in under) box = box.Union(BoundsOf(path));
             long x = (box.MinX + box.MaxX) / 2, y = (box.MinY + box.MaxY) / 2;
             if (copper.Pieces.IndexAt(x, y, layer) != p) (x, y) = (under[0][0].X, under[0][0].Y);
-            (best, most) = ((p, x, y, layer), area);
+            (best, most) = ((p, x, y, layer, area), area);
         }
         return best;
     }

@@ -138,6 +138,15 @@ public sealed class PartReadingTests : IDisposable
         Assert.Equal(3, result.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.SilkscreenRefdesNotAssociated));   // C9 names nothing
 
+        // Open strokes with a width are a legend's letters, and never chain into a body; nor is an outline a part when one
+        // end has hardly any copper under it.
+        var letters = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = tech, Shapes = [.. view.Shapes
+            .Where(s => s.Layer != silk)
+            .Concat(new[] { (9_450, 4_600, 11_050, 4_600), (11_050, 4_600, 11_050, 5_400), (11_050, 5_400, 9_450, 5_400), (9_450, 5_400, 9_450, 4_600) }
+                .Select(e => (LayoutShape)new PathShape { Layer = silk, Xy = [Um(e.Item1), Um(e.Item2), Um(e.Item3), Um(e.Item4)], Width = Um(150) }))
+            .Append(Box(29_600, 5_350, 30_400, 6_950))] });
+        Assert.Equal(0, letters.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
+
         // Round a land pattern's pads, an outline is that part's, not a second one.
         var (board, _, _) = PartsBoard();
         board.Shapes.Add(Box(10_500, 4_200, 13_500, 5_800));

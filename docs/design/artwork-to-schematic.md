@@ -241,9 +241,10 @@ case=land;value=bom;pn=bom;model=file`):
    two nets is `DeclaredNetsShorted`, a net on two nodes `DeclaredNetsOpen`, else one `DeclaredNetsAgree` line.
 3½. **Body outlines over a gap** (`PartReading.BodyOutlineParts`) — for a board drawn with no lands and no mask, where
    a series part bridges a gap cut in a line and a shunt part a line's edge and a pour. A body is a closed outline on a
-   silkscreen or assembly layer (one shape, a closed stroke, or lines that chain into one loop, as `DxfCopperLoops`
-   chains copper), at least 82 % of its box, at least 1.2 times as long as it is wide and no longer than a land pattern
-   spans. Each half along its length takes the copper piece of its side with the most area under it; two different
+   silkscreen or assembly layer (one shape, a closed stroke, or a drawing's lines of no width that chain into one loop,
+   as `DxfCopperLoops` chains copper; a stroked legend's open strokes are letters and never chain), at least 82 % of its
+   box, at least 1.2 times as long as it is wide and no longer than a land pattern spans. Each half along its length takes
+   the copper piece of its side with the most area under it, which must cover a quarter of the half; two different
    pieces make a two-terminal part, a terminal at the middle of the copper under each half. An outline whose box meets a
    part another rung found, or holds its pads, makes none. Below land patterns, so the pads it reads are only where the
    drawing says the part is: confidence `medium`, `Evidence` `refdes=silk` once named. Reported as

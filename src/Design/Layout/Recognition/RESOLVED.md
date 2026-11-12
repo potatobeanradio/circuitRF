@@ -850,3 +850,7 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   (`BoardCopper.IsWide`, 5.08 mm on a 0.508 mm laminate); a 6 mm device pad on the line made the whole island a pour and its
   output line lost its port at the board's edge. The board's pad is 5 mm, under the limit. The trace review's own pour rule
   (area against piece area, vias) would not have called it one; making the two agree is its own change.
+- **A body outline is not a letter** (F8, kept narrow). A board's stroked legend is letters, and a D, or a 0 chained from its
+  strokes, is near enough a box. Only a closed stroke, a closed shape or a drawing's lines of no width chain into a body,
+  and each half of a body must have copper of its side under a quarter of it (`MinEndCover`): a part's end sits on its
+  copper, while a letter printed over the edge of a pad does not.
