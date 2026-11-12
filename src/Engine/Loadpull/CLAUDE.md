@@ -52,6 +52,18 @@ swept harmonic — so `SetHarmonicOverride(2, …)` followed by `SetHarmonicOver
 **`AnalysisSettings.DriveStepping` is documented but has no consumer** — it is resolved and copied
 around and never ramps anything. Do not reach for it as an existing continuation mechanism.
 
+## The grid runs in parallel with the serial loop's bits (LP-1) — keep it that way
+
+`Run` solves the loads side by side on per-worker netlist copies, and the result is the serial loop's bit for bit
+(`LoadpullParallelTests`). That rests on two rules, and breaking either one breaks it silently:
+- **A load seeds only from an EARLIER load in grid order**, from its first converged rung, ties to the lower index
+  (`FindNearestSeed`). A load publishes that rung the moment it is solved (`RunOneTermination`'s `onFirstRung`).
+  Seeding from whatever has finished, or from a later rung, makes the answer depend on scheduling.
+- **Anything a caller sets on the netlist before `Run` must reach each copy.** Today that is the tuners' harmonic
+  override (a pursuit's follow-on Zsource, `Mirror`). A new piece of mutable model state set from outside needs the same.
+
+External devices stay serial by design (`PlanDegree`): one worker process per model, with one channel.
+
 ## Zin uses the source-delivered current, not INl[gate] (brief-loadpull-zin-passives, 2026-06-24)
 
 **Bug fixed:** Zin / Zsource / Pin_delivered divided by `INl[src]` (the SDD's nonlinear gate

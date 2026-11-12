@@ -1421,6 +1421,12 @@ draw as <strong>contours</strong>. Harmonic terminations can be swept too (harmo
 harmonic-balance solve runs per point (with previous-point continuation for convergence); the FOMs
 are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts
 contour lines; measured loadpull files (<code>.spl</code>/<code>.lpcwave</code>) plot identically.</p>
+<p><strong>The grid points run in parallel</strong>, one per core by default, and the result is the same, bit for bit, as one point
+after another. Each point starts from the nearest earlier point's first drive level, so the points wait only for each
+other's first solve. <code>Workers=1</code> runs them one at a time; <code>Workers=4</code> uses at most four cores, which is polite on a shared
+machine. A design with a compiled (<code>.osdi</code>) or vendor-kit device runs its points one at a time whatever <code>Workers</code> says:
+the device lives in one worker process, which answers one call at a time. A <a href="#loadpull-pursuit">pursuit</a> takes the same
+key for its follow-on loadpull.</p>
 <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>

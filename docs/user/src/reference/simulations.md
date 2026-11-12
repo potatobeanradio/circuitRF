@@ -958,6 +958,13 @@ harmonic-balance solve runs per point (with previous-point continuation for conv
 are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts
 contour lines; measured loadpull files (`.spl`/`.lpcwave`) plot identically.
 
+**The grid points run in parallel**, one per core by default, and the result is the same, bit for bit, as one point
+after another. Each point starts from the nearest earlier point's first drive level, so the points wait only for each
+other's first solve. `Workers=1` runs them one at a time; `Workers=4` uses at most four cores, which is polite on a shared
+machine. A design with a compiled (`.osdi`) or vendor-kit device runs its points one at a time whatever `Workers` says:
+the device lives in one worker process, which answers one call at a time. A [pursuit](#loadpull-pursuit) takes the same
+key for its follow-on loadpull.
+
 <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
