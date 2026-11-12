@@ -262,13 +262,14 @@ internal static class LineSegmentation
                 double reach = Math.Max(p.Width, LineRecognition.AttachReachWidths * p.Width + LineRecognition.AttachReachMicrons * dbuPerMicron);
                 if (t < 0 || t > len[i] || off > reach || s < p.Width || s > total - p.Width) continue;
                 // The atom that ends where the tap is. A tap within half a micron of an atom's end is AT that end, whichever
-                // side rounding put it: one a hair past an atom's start went to that atom's end instead, a whole atom late,
-                // and on a trace's last atom the walk never closed a line there, so the terminal floated while the line ran
-                // on to its end — and which side a hair falls on is the direction the trace is walked, which a mirror image
-                // reverses. A second tap at the point another has taken is that tap's node, not an overwrite of it: two shunt
-                // parts either side of one line left one of the two floating.
+                // side rounding put it: two terminals at one point either side of a diagonal line project a few ulps apart,
+                // and the second, a hair past the first's split, went to the end of the atom after it, a whole atom late —
+                // on a trace's last atom the walk never closes a line there, so the terminal floated while the line ran on to
+                // its end. Which side of the split the hair falls on is the direction the trace is walked. A second tap at the
+                // point another has taken is that tap's node, not an overwrite of it, which left the first floating. (The
+                // guard above keeps every tap a width short of the trace's end, so the atom found is never its last.)
                 int a = atoms.FindIndex(o => o.S1 >= s - onePoint);
-                if (a < 0 || a == atoms.Count - 1 && s >= atoms[a].S1 - onePoint) break;
+                if (a < 0) break;
                 if (s < atoms[a].S1 - onePoint) atoms.Insert(a + 1, atoms[a].SplitAt(s, stations));
                 if (atoms[a].TapAfter is { } taken) aliases.Add((name, taken));
                 else atoms[a].TapAfter = name;

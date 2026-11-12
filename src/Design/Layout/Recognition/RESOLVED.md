@@ -832,9 +832,13 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   side of the hair a projection falls on is the direction the review walked the trace, which a mirror image reverses —
   the two mirrored halves of one board read differently. A tap within half a micron of a split is now at it, either side,
   and a second tap at a taken point is aliased to that tap's node (`TraceLines.TapAliases`). `TapBetween`'s and step 4's
-  ties go to the first candidate but give isomorphic circuits under a mirror, so they are unchanged. Gate:
-  `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` (both ways up) and
-  `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich`, the first mirror-invariance test.
+  ties go to the first candidate but give isomorphic circuits under a mirror, so they are unchanged. Gates:
+  `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` holds the overwrite (it mirrors
+  across the line, so the walk keeps its direction); `LineSegmentationTests.TwoTapsAtOnePointOfADiagonalLine_AreOneNode_
+  WhicheverWayItIsWalked` holds the tolerance — two terminals 8 nm either side of a 3:1 diagonal project 1.9e-9 nm apart,
+  ahead one way and behind the other, and without the tolerance the walk that has the second ahead floats it; and
+  `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich` reads the whole board turned over top to
+  bottom as the same circuit.
 - **Six spellings of one board, one circuit.** `make_boards.py` (Python standard library; DXF is text) writes the board as
   R12 closed `POLYLINE`/`VERTEX` with `TEXT`; R2000 `LWPOLYLINE` with bulges, solid `HATCH` pours with their holes, `MTEXT`,
   a `LAYER` table and drill marks and part bodies in `INSERT`ed blocks, one block placing two others; the same in inches
