@@ -215,6 +215,24 @@
         </dict>
         <dict>
             <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.cddt</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Data Display Template</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cddt</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
             <string>com.circuitrf.ctech</string>
             <key>UTTypeDescription</key>
             <string>circuitRF Technology</string>
@@ -474,6 +492,21 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>cdd</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Data Display Template</string>
+            <!-- Editor, not Viewer: opening one makes a new, unsaved Data Display from it. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.cddt</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>cddt</string>
             </array>
         </dict>
         <dict>

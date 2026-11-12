@@ -162,6 +162,7 @@ internal static class RenderDataDisplay
             foreach (var pc in tabPlots)
             {
                 var plot = PlotConfigLoader.LoadPlot(pc, sources!);
+                plot.LabelColumnsOutside = true;   // as the window's container does: the graph area keeps its size
                 PlotConfigLoader.ResolveDerived(plot, sources!);
                 // `plot` checks every Y spec before it authors the document, but a "vs" X side only
                 // resolves here, against the Y side's slice — so an X that does not read is refused

@@ -126,6 +126,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.CellViewFolder,  _)     => MaterialIconKind.FolderOutline,
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
+        (NodeKind.DataDisplayTemplateFile, _) => MaterialIconKind.ChartLineVariant,
         (NodeKind.HarmonicaFile, _)      => MaterialIconKind.ChartBellCurve,
         (NodeKind.WBondFile, _)          => MaterialIconKind.VectorPolyline,
         // R-rail1-11 — a .crail. A power rail is what it is about, and the flash reads as one at
@@ -230,6 +231,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         || Kind is NodeKind.OtherFile
                 or NodeKind.UserFolder
                 or NodeKind.DataDisplayFile
+                or NodeKind.DataDisplayTemplateFile
                 or NodeKind.EmSetupFile
                 or NodeKind.HarmonicaFile
                 or NodeKind.WBondFile
@@ -249,6 +251,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public string RemoveHeader => Kind switch
     {
         NodeKind.DataDisplayFile => "Remove Data Display",
+        NodeKind.DataDisplayTemplateFile => "Remove Data Display Template",
         NodeKind.EmSetupFile     => "Remove EM Setup",
         NodeKind.HarmonicaFile   => "Remove harmonicaRF Document",
         NodeKind.WBondFile       => "Remove Wirebond Design",
@@ -327,7 +330,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .charm / .ctech) — drives
     /// the "Open" context item.</summary>
     public bool IsOpenableFile =>
-        Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
+        Kind is NodeKind.DataDisplayFile or NodeKind.DataDisplayTemplateFile or NodeKind.HarmonicaFile or NodeKind.TechFile
              or NodeKind.EmSetupFile or NodeKind.WBondFile or NodeKind.RailFile
              or NodeKind.SmithFile or NodeKind.ModelComposerFile or NodeKind.ChainFile
         || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
@@ -449,6 +452,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.ReferencedWorkspace
                                           or NodeKind.UserFolder
                                           or NodeKind.DataDisplayFile
+                                          or NodeKind.DataDisplayTemplateFile
                                           or NodeKind.HarmonicaFile
                                           or NodeKind.WBondFile
                                           or NodeKind.RailFile
@@ -1265,6 +1269,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.ViewFile        => f.Cells,
             NodeKind.LibrariesGroup  => f.Libraries,
             NodeKind.DataDisplayFile => f.DataDisplays,
+            NodeKind.DataDisplayTemplateFile => f.DataDisplays,
             // A .charm is a results-facing document beside a .cdd — same toggle, no seventh checkbox.
             NodeKind.HarmonicaFile   => f.DataDisplays,
             // A .wBond is a design document; it rides the Cells toggle rather than earning its own.

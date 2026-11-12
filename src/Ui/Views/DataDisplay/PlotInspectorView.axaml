@@ -536,6 +536,20 @@
                             ToolTip.Tip="Populate the standard performance set (VDD, Idq, Zsource, Zin, Zload, Power, Efficiency, Gain, AM/PM, IRL); requires a Table + loadpull source"/>
                 </StackPanel>
 
+                <!-- Use display source: every trace follows the source selected in the display's toolbar. Greyed, never
+                     hidden, so the row does not move — enabled when a trace reads a file of its own, which is what a
+                     pasted plot carries. -->
+                <Button Grid.Column="2"
+                        Content="Use display source"
+                        Command="{Binding UseDisplaySourceCommand}"
+                        IsEnabled="{Binding HasPinnedSource}"
+                        IsVisible="{Binding CanEditTraceSet}"
+                        HorizontalAlignment="Right"
+                        FontSize="11"
+                        Padding="8,3"
+                        Margin="4,0,8,0"
+                        ToolTip.Tip="Point every trace at the data source selected in this display's toolbar, so the plot shows this display's results and follows the selection. A pasted plot keeps the source it was copied with until this is pressed."/>
+
                 <TextBlock Grid.Column="3" Text="Freq"
                            Classes="label" Margin="0,0,4,0"/>
                 <ComboBox  Grid.Column="4"
@@ -2195,51 +2209,65 @@
                  run and every edit; off, it keeps the limits typed here. Fit now fits once. -->
             <StackPanel Spacing="6" IsVisible="{Binding IsAxesSection}" Margin="0,4,0,2">
                 <Grid DataContext="{Binding Limits}" x:DataType="vm:AxesLimitsViewModel"
-                      ColumnDefinitions="30,*,14,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                      ColumnDefinitions="30,*,14,*,6,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="X"
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Min"  FontSize="10" Opacity="0.7" Margin="2,0,0,2"/>
+                    <TextBlock Grid.Row="0" Grid.Column="3" Text="Max"  FontSize="10" Opacity="0.7" Margin="2,0,0,2"/>
+                    <TextBlock Grid.Row="0" Grid.Column="5" Text="Step" FontSize="10" Opacity="0.7" Margin="2,0,0,2"
+                               IsVisible="{Binding ShowStep}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="X"
                                ToolTip.Tip="{Binding XUnitLabel}"/>
-                    <TextBox   Grid.Row="0" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
-                               Text="{Binding XMinText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
-                               ToolTip.Tip="Minimum"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Classes="label" Text="–"
-                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
-                    <TextBox   Grid.Row="0" Grid.Column="3" Classes="sec" Margin="0,0,0,6"
-                               Text="{Binding XMaxText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
-                               ToolTip.Tip="Maximum"/>
-                    <CheckBox  Grid.Row="0" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
-                               IsChecked="{Binding XAutoscale, Mode=TwoWay}"
-                               ToolTip.Tip="Fit this axis to the data after every run and every edit"/>
-
-                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Y"/>
                     <TextBox   Grid.Row="1" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
-                               Text="{Binding YMinText, Mode=TwoWay}" IsEnabled="{Binding YFieldsEnabled}"
+                               Text="{Binding XMinText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
                                ToolTip.Tip="Minimum"/>
                     <TextBlock Grid.Row="1" Grid.Column="2" Classes="label" Text="–"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBox   Grid.Row="1" Grid.Column="3" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding XMaxText, Mode=TwoWay}" IsEnabled="{Binding XFieldsEnabled}"
+                               ToolTip.Tip="Maximum"/>
+                    <TextBox   Grid.Row="1" Grid.Column="5" Classes="sec" Margin="0,0,0,6" IsEnabled="{Binding XStepEnabled}" IsVisible="{Binding ShowStep}"
+                               Text="{Binding XStepText, Mode=TwoWay}" PlaceholderText="Auto"
+                               ToolTip.Tip="Spacing of the numbered grid lines along X, in the axis's units. Empty is automatic. Linear axis only."/>
+                    <CheckBox  Grid.Row="1" Grid.Column="6" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                               IsChecked="{Binding XAutoscale, Mode=TwoWay}"
+                               ToolTip.Tip="Fit this axis to the data after every run and every edit"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Y"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="sec" Margin="0,0,0,6"
+                               Text="{Binding YMinText, Mode=TwoWay}" IsEnabled="{Binding YFieldsEnabled}"
+                               ToolTip.Tip="Minimum"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Classes="label" Text="–"
+                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBox   Grid.Row="2" Grid.Column="3" Classes="sec" Margin="0,0,0,6"
                                Text="{Binding YMaxText, Mode=TwoWay}" IsEnabled="{Binding YFieldsEnabled}"
                                ToolTip.Tip="Maximum"/>
-                    <CheckBox  Grid.Row="1" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                    <TextBox   Grid.Row="2" Grid.Column="5" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowStep}"
+                               Text="{Binding YStepText, Mode=TwoWay}" PlaceholderText="Auto"
+                               ToolTip.Tip="Spacing of the numbered grid lines along Y, in the axis's units. Empty is automatic."/>
+                    <CheckBox  Grid.Row="2" Grid.Column="6" Classes="sec" Content="Auto" Margin="8,0,0,6"
                                IsChecked="{Binding YAutoscale, Mode=TwoWay}"
                                ToolTip.Tip="Fit this axis to the data after every run and every edit"/>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Y2" IsVisible="{Binding ShowY2}"/>
-                    <TextBox   Grid.Row="2" Grid.Column="1" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
+                    <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="Y2" IsVisible="{Binding ShowY2}"/>
+                    <TextBox   Grid.Row="3" Grid.Column="1" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
                                Text="{Binding Y2MinText, Mode=TwoWay}" IsEnabled="{Binding Y2FieldsEnabled}"
                                ToolTip.Tip="Minimum"/>
-                    <TextBlock Grid.Row="2" Grid.Column="2" Classes="label" Text="–" IsVisible="{Binding ShowY2}"
+                    <TextBlock Grid.Row="3" Grid.Column="2" Classes="label" Text="–" IsVisible="{Binding ShowY2}"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
-                    <TextBox   Grid.Row="2" Grid.Column="3" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
+                    <TextBox   Grid.Row="3" Grid.Column="3" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
                                Text="{Binding Y2MaxText, Mode=TwoWay}" IsEnabled="{Binding Y2FieldsEnabled}"
                                ToolTip.Tip="Maximum"/>
-                    <CheckBox  Grid.Row="2" Grid.Column="4" Classes="sec" Content="Auto" Margin="8,0,0,6"
+                    <TextBox   Grid.Row="3" Grid.Column="5" Classes="sec" Margin="0,0,0,6" IsVisible="{Binding ShowY2}"
+                               Text="{Binding Y2StepText, Mode=TwoWay}" PlaceholderText="Auto"
+                               ToolTip.Tip="Spacing of the numbered grid lines on the right-hand axis, in its units. Empty is automatic."/>
+                    <CheckBox  Grid.Row="3" Grid.Column="6" Classes="sec" Content="Auto" Margin="8,0,0,6"
                                IsVisible="{Binding ShowY2}"
                                IsChecked="{Binding Y2Autoscale, Mode=TwoWay}"
                                ToolTip.Tip="Fit the right-hand axis to its data after every run and every edit"/>
 
                     <!-- The X axis's mapping and the 1:1 scale: Rect only. -->
-                    <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="4"
+                    <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="6"
                                 Orientation="Horizontal" Spacing="10" IsVisible="{Binding ShowXScale}">
                         <RadioButton Content="Linear X" FontSize="11" MinHeight="0"
                                      IsChecked="{Binding !XLogScale}"/>

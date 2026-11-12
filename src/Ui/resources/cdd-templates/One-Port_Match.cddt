@@ -1,0 +1,96 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": null,
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Match",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 40,
+          "Top": 40,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Smith",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Input reflection",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Complex",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              }
+            }
+          ]
+        },
+        {
+          "Left": 520,
+          "Top": 40,
+          "Width": 420,
+          "Height": 260,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Input match",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

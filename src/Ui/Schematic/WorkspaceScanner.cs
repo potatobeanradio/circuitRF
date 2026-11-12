@@ -420,6 +420,7 @@ public static class WorkspaceScanner
             ".clay"   => NodeKind.ViewFile,
             ".c3d"    => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
+            ".cddt"   => NodeKind.DataDisplayTemplateFile,
             ".charm"  => NodeKind.HarmonicaFile,
             ".wbond"  => NodeKind.WBondFile,
             ".crail"  => NodeKind.RailFile,

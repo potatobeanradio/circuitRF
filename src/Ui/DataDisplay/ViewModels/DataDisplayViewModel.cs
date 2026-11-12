@@ -322,14 +322,14 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         Marker marker, Trace trace, Plot plot, PlotContainerViewModel container)
     {
         // PlotControl fills the container, so its size in screen pixels is ViewWidth x ViewHeight.
-        double cW = container.ViewWidth  > 0 ? container.ViewWidth  : container.Width;
+        double cW = container.ViewWidth  > 0 ? container.ViewWidth  : container.CanvasWidthLogical;
         double cH = container.ViewHeight > 0 ? container.ViewHeight : container.Height;
 
         // The placement rule itself is PlotCanvasGeometry's since RND-4: an export draws a
         // never-dragged info box exactly like a dragged one, so a headless render has to put it in
         // the same place or it would move a box that is on screen.
         marker.InfoBoxPos = PlotCanvasGeometry.DefaultInfoBoxPosition(
-            marker, trace, plot, cW, cH, container.Left, container.Top,
+            marker, trace, plot, cW, cH, container.CanvasLeftLogical, container.Top,
             _zoomLevel > 0 ? _zoomLevel : 1.0);
     }
 
@@ -361,8 +361,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         }
         if (double.IsNaN(plot.LegendPos.X) || double.IsNaN(plot.LegendPos.Y))
             plot.LegendPos = LegendRenderer.DefaultFloatingPosition(
-                plot, container.Width, container.ViewHeight / (_zoomLevel > 0 ? _zoomLevel : 1.0),
-                container.Left, CanvasTopLogical(container),
+                plot, container.CanvasWidthLogical, container.ViewHeight / (_zoomLevel > 0 ? _zoomLevel : 1.0),
+                container.CanvasLeftLogical, CanvasTopLogical(container),
                 _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null,
                 AppSettingsViewModel.Instance.EffectiveShowFilePrefix(_library?.HasMultipleSources ?? false));
         if (existing is not null
@@ -1805,6 +1805,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 WindowSecondaryHeight   = Finite(plot.Axes.WindowSecondary.Height),
                 XScale                  = plot.Axes.XScale,
                 EqualAspect             = plot.Axes.EqualAspect,
+                XStep                   = Finite(plot.Axes.XStep),
+                YStep                   = Finite(plot.Axes.YStep),
+                Y2Step                  = Finite(plot.Axes.Y2Step),
             },
         };
         foreach (var t in plot.Traces)

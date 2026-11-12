@@ -124,7 +124,7 @@ public class FileMenuRestructureTests
         // merged into one command: a restore point is a safety-net entry nobody else ever sees, and a
         // version is what the designer titles and sends out. §5's whole argument is that one history
         // cannot serve both, so one menu item cannot either.
-        "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Workspace _As…", "_Keep This State…", "Keep This _Version…", "---",
+        "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Data Display As Te_mplate…", "Save Workspace _As…", "_Keep This State…", "Keep This _Version…", "---",
         // Sharing a workspace with someone on another machine (owner request, 2026-08-15) — placed
         // under Save Workspace As… behind its own separator, because it is a different KIND of
         // save: it writes one portable file, not the workspace itself.
@@ -158,7 +158,7 @@ public class FileMenuRestructureTests
     [
         "New", "New Workspace…", "New Window", "---",
         "Open Workspace…", "Open Workspace in New Window…", "Open Recent", "Open", "---",
-        "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "Keep This State…", "Keep This Version…", "---",
+        "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Data Display As Template…", "Save Workspace As…", "Keep This State…", "Keep This Version…", "---",
         "Add Cell to Workspace…", "Reference Workspace…", "---",
         "Clone Workspace…", "Pull Changes", "Push Changes", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
@@ -191,10 +191,10 @@ public class FileMenuRestructureTests
     // Tools; its rows are filled in at run time from what is on disk. A separator reads as "".
     private static readonly string[] ExpectedNewSubmenuInWindow =
         ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _3D Design…", "New _Data Display",
-         "New _Technology…", "New _EM Setup…", "", "_Examples"];
+         "New Data Display from Te_mplate", "New _Technology…", "New _EM Setup…", "", "_Examples"];
     private static readonly string[] ExpectedNewSubmenuNative =
         ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New 3D Design…", "New Data Display",
-         "New Technology…", "New EM Setup…", "", "Examples"];
+         "New Data Display from Template", "New Technology…", "New EM Setup…", "", "Examples"];
 
     [Fact]
     public void InWindowNewSubmenu_ExactOrder()
@@ -505,6 +505,7 @@ public class FileMenuRestructureTests
         yield return ["New _Layout", false];
         yield return ["New _3D Design…", true];
         yield return ["New _Data Display", false];
+        yield return ["New Data Display from Te_mplate", false];   // a submenu, not a dialog
         yield return ["New _Technology…", true];
         yield return ["New _Workspace…", true];
         yield return ["Open _Workspace…", true];
@@ -518,6 +519,7 @@ public class FileMenuRestructureTests
         yield return ["Save Schematic _As…", true];
         yield return ["Save S_ymbol As…", true];
         yield return ["Save _Layout As…", true];
+        yield return ["Save Data Display As Te_mplate…", true];
         yield return ["Save Workspace _As…", true];
         yield return ["_Import", false];
         yield return ["_Export", false];

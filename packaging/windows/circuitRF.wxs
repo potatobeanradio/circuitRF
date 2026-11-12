@@ -357,6 +357,12 @@
           </Extension>
         </ProgId>
 
+        <ProgId Id="circuitRF.DataDisplayTemplate" Description="circuitRF Data Display Template" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="cddt" ContentType="application/x-circuitrf-datadisplaytemplate">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
         <ProgId Id="circuitRF.Technology" Description="circuitRF Technology" Icon="CircuitRfExe" Advertise="no">
           <Extension Id="ctech" ContentType="application/x-circuitrf-technology">
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />

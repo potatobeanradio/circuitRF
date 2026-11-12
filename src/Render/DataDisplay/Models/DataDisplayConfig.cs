@@ -234,6 +234,20 @@ public sealed class AxesConfig
     /// <c>PlotConfigLoader.RestoreAxes</c>, written in <c>DataDisplayViewModel.BuildPlotContainerConfig</c>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool EqualAspect { get; set; }
+
+    /// <summary>The major grid spacing typed in Axes Limits (<c>Axes.XStep</c>/<c>YStep</c>/<c>Y2Step</c>), in each axis's
+    /// own units. <b>Zero is automatic and is not written</b>, so a display that never set one saves the bytes it saved
+    /// before. Read in <c>PlotConfigLoader.RestoreAxes</c>, written in <c>DataDisplayViewModel.BuildPlotContainerConfig</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double XStep { get; set; }
+
+    /// <inheritdoc cref="XStep"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double YStep { get; set; }
+
+    /// <inheritdoc cref="XStep"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Y2Step { get; set; }
 }
 
 // ---- Cube-bound persistence (Phase 7.2c-a) ----------------------------------

@@ -87,7 +87,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     public (double X, double Y) CanvasToLogical(double px, double py)
     {
         double z = _parent.ZoomLevel > 0 ? _parent.ZoomLevel : 1.0;
-        return (Left + px / z, Top - TopLabelExtraLogical + py / z);
+        return (CanvasLeftLogical + px / z, Top - TopLabelExtraLogical + py / z);
     }
 
     /// <summary>A press on the docked legend selects it, on its own.</summary>
@@ -118,8 +118,19 @@ public partial class PlotContainerViewModel : ViewModelBase
     //  These are what the ItemContainerTheme actually binds to.
     //  Parent calls NotifyViewProperties() when zoom or offset changes.
 
-    public double ViewLeft   => Left   * _parent.ZoomLevel + _parent.ViewOffsetX;
-    public double ViewWidth  => Width  * _parent.ZoomLevel;
+    /// <summary>Screen X of the plot CANVAS's left edge — left of <see cref="Left"/> by the Y-label columns a
+    /// rectangular plot draws outside its own width (<see cref="LeftLabelExtraLogical"/>).</summary>
+    public double ViewLeft   => CanvasLeftLogical * _parent.ZoomLevel + _parent.ViewOffsetX;
+
+    /// <summary>Screen width of the plot canvas: the plot's own width and the label columns outside it.</summary>
+    public double ViewWidth  => CanvasWidthLogical * _parent.ZoomLevel;
+
+    /// <summary>The logical X where the plot canvas starts. <see cref="Left"/> is the plot's own box — the one the
+    /// grid snaps and a move drags — and a rectangular plot's extra Y-label columns sit to the left of it.</summary>
+    public double CanvasLeftLogical  => Left - LeftLabelExtraLogical;
+
+    /// <summary>The logical width of the plot canvas: <see cref="Width"/> plus the label columns outside it.</summary>
+    public double CanvasWidthLogical => Width + LeftLabelExtraLogical + RightLabelExtraLogical;
     public double ViewHeight =>
         (Height + TopLabelExtraLogical + BottomLabelExtraLogical) * _parent.ZoomLevel;
 
@@ -138,6 +149,8 @@ public partial class PlotContainerViewModel : ViewModelBase
     private double StripLogicalWidth        => PlotCanvasGeometry.StripLogicalWidth(Height);
     private double BottomLabelExtraLogical  => PlotCanvasGeometry.BottomLabelExtraLogical(PlotVM.Plot, Width);
     private double TopLabelExtraLogical     => PlotCanvasGeometry.TopLabelExtraLogical(PlotVM.Plot, Width);
+    internal double LeftLabelExtraLogical   => PlotCanvasGeometry.LeftLabelExtraLogical(PlotVM.Plot, Width);
+    internal double RightLabelExtraLogical  => PlotCanvasGeometry.RightLabelExtraLogical(PlotVM.Plot, Width);
 
     /// <summary>
     /// Total screen width including per-trace Y-axis label strips on both sides.
@@ -145,7 +158,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// while the graph region (Width × ZoomLevel) stays constant.
     /// </summary>
     public double ViewTotalWidth =>
-        (Width + (LeftLabelStrips.Count + RightLabelStrips.Count)
+        (CanvasWidthLogical + (LeftLabelStrips.Count + RightLabelStrips.Count)
                  * StripLogicalWidth) * _parent.ZoomLevel;
 
     /// <summary>
@@ -236,6 +249,8 @@ public partial class PlotContainerViewModel : ViewModelBase
     partial void OnTopChanged(double value)    => OnPropertyChanged(nameof(ViewTop));
     partial void OnWidthChanged(double value)
     {
+        OnPropertyChanged(nameof(ViewLeft));          // the outside label columns scale with Width
+        OnPropertyChanged(nameof(ViewContainerLeft));
         OnPropertyChanged(nameof(ViewWidth));
         OnPropertyChanged(nameof(ViewTotalWidth));
         OnPropertyChanged(nameof(ViewHeight));       // BottomLabelExtraLogical depends on Width
@@ -302,7 +317,12 @@ public partial class PlotContainerViewModel : ViewModelBase
         // A trace card's Statistics ▸ Contributions adds a Pareto plot beside this one (brief-yield-9 R-ya9-5).
         Inspector.AddPresetPlot = pc => parent.AddPresetPlotAsync(pc);
         Inspector.PushUndo         = PushUndoCommand;
+        Inspector.FollowDisplaySource = () => parent.FollowDisplaySource(this);
         Inspector.MarkerBoxesStale = RequestInfoBoxRebuild;
+
+        // The Data Display widens a rectangular plot's canvas for its extra Y-label columns, so the
+        // graph area keeps its size however many traces it carries.
+        PlotVM.Plot.LabelColumnsOutside = true;
 
         UpdateLabelStrips();
         SyncTableWidth();    // size the box correctly if this container starts as a Table plot

@@ -230,4 +230,17 @@ public static class PlotCanvasGeometry
             return Math.Max(0, titleSz * 1.3 - vpTopNat);
         }
     }
+
+    /// <summary>
+    /// Extra logical width added to the LEFT of a rectangular plot for its Y-label columns beyond the first, when
+    /// <see cref="Plot.LabelColumnsOutside"/> is on. The plot keeps its Left and Width — the box the display's grid
+    /// snaps — and its canvas starts this far to the left of it, so the graph area stays the same size and in the
+    /// same place however many traces it carries. Zero otherwise.
+    /// </summary>
+    public static double LeftLabelExtraLogical(Plot plot, double width)
+        => plot is null ? 0 : plot.LeftLabelExtraFraction * width;
+
+    /// <summary>The right-hand counterpart of <see cref="LeftLabelExtraLogical"/>, for the secondary axis's columns.</summary>
+    public static double RightLabelExtraLogical(Plot plot, double width)
+        => plot is null ? 0 : plot.RightLabelExtraFraction * width;
 }

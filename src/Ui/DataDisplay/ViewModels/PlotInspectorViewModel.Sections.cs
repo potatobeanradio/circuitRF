@@ -51,6 +51,34 @@ public partial class PlotInspectorViewModel
         OnPropertyChanged(nameof(ShowLimitAreas));
     }
 
+    // ---- Use the display's data source ----------------------------------------------------------
+
+    /// <summary>Re-points every trace of this plot at the display's selected data source. Set by the container to
+    /// <c>DataDisplayViewModel.FollowDisplaySource</c>, which records it as one undo step.</summary>
+    internal Action? FollowDisplaySource { get; set; }
+
+    /// <summary>
+    /// Some trace reads a SPECIFIC file rather than following the source selected in the display's toolbar — what
+    /// a pasted plot carries, since a paste keeps the data it showed where it was copied — and the display has a
+    /// selected source to point it at. Enables <see cref="UseDisplaySourceCommand"/>.
+    /// </summary>
+    public bool HasPinnedSource
+        => _library?.SelectedDataSourceAbs is not null
+        && _plot.Traces.Any(t => !t.IsOwnerData && !t.IsSummaryColumn
+                                 && t.SourceRef is { Length: > 0 } r && r != DataSourceRef.Selected);
+
+    /// <summary>Every trace follows the display's selected data source from now on, as a trace added from the
+    /// toolbar's selection does: the plot shows THIS display's run instead of the file it was copied with.</summary>
+    [RelayCommand]
+    private void UseDisplaySource()
+    {
+        if (!HasPinnedSource) return;
+        FollowDisplaySource?.Invoke();
+        OnPropertyChanged(nameof(HasPinnedSource));
+    }
+
+    internal void RefreshHasPinnedSource() => OnPropertyChanged(nameof(HasPinnedSource));
+
     // ---- The label and limit editors ------------------------------------------------------------
 
     private AxesLabelsViewModel? _labels;

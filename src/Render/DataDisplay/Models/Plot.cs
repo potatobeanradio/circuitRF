@@ -1090,8 +1090,35 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public bool TitleInTopBand { get; set; }
 
+        /// <summary>
+        /// On a rectangular plot, every Y-label column beyond the first on each side is drawn OUTSIDE the plot's own
+        /// width rather than taken out of its plot box, so adding a trace never shrinks the graph area. Set by the hosts
+        /// that widen the canvas to match — the Data Display's container and the headless <c>.cdd</c> render, both through
+        /// <see cref="PlotCanvasGeometry.LeftLabelExtraLogical"/>. A host that does not widen its canvas leaves it off and
+        /// keeps the margins taken from the box. Never persisted.
+        /// </summary>
+        public bool LabelColumnsOutside
+        {
+            get => _labelColumnsOutside;
+            set { if (_labelColumnsOutside == value) return; _labelColumnsOutside = value; SetAxesViewport(); }
+        }
+        private bool _labelColumnsOutside;
+
+        /// <summary>The canvas added to the left of the plot's width for its extra Y-label columns, as a fraction of that
+        /// width. Zero unless <see cref="LabelColumnsOutside"/> on a rectangular plot.</summary>
+        public double LeftLabelExtraFraction  { get; private set; }
+
+        /// <summary>The right-hand counterpart of <see cref="LeftLabelExtraFraction"/>, for the secondary axis.</summary>
+        public double RightLabelExtraFraction { get; private set; }
+
+        /// <summary>A rectangular plot's side margin for <paramref name="columns"/> Y-label columns, as a fraction of the
+        /// canvas width; the narrow edge margin when that side has no axis.</summary>
+        private static double RectSideMargin(int columns, bool hasAxis)
+            => hasAxis ? Math.Min(Math.Max(0.13, 0.10 + columns * 0.05), 0.40) : 0.05;
+
         public void SetAxesViewport()
         {
+            LeftLabelExtraFraction = RightLabelExtraFraction = 0;
             switch (PlotType)
             {
                 case PlotType.Smith:
@@ -1114,18 +1141,32 @@ namespace CircuitRF.Render.DataDisplay
                     // 2026-09-19).
                     int    nl    = string.IsNullOrEmpty(YLabel)  ? LeftAxisTraces.Count  : 1;
                     int    nr    = string.IsNullOrEmpty(Y2Label) ? RightAxisTraces.Count : 1;
-                    double left  = Math.Min(Math.Max(0.13, 0.10 + nl * 0.05), 0.40);
-                    double right = Axes.ShowSecondary
-                        ? Math.Min(Math.Max(0.13, 0.10 + nr * 0.05), 0.40)
-                        : 0.05;
+                    double left  = RectSideMargin(nl, true);
+                    double right = RectSideMargin(nr, Axes.ShowSecondary);
+                    // A title drawn in the top band (TitleInTopBand) needs no margin of its own above it.
+                    double top = TitleInTopBand && TopBandPx > 0 ? 0.0 : 0.10;
+                    double bot = 0.15;
+                    if (LabelColumnsOutside)
+                    {
+                        // The plot box keeps the size a plot with one left label column and no right axis
+                        // has; every column beyond that — the right axis's included — is added OUTSIDE it, so
+                        // the canvas is (1 + kL + kR) of the plot's width and these fractions are of that
+                        // wider canvas (PlotCanvasGeometry.LeftLabelExtraLogical).
+                        double left0  = RectSideMargin(1, true);
+                        double right0 = RectSideMargin(0, false);
+                        left = Math.Max(left, left0);
+                        LeftLabelExtraFraction  = Math.Max(0, left  - left0);
+                        RightLabelExtraFraction = Math.Max(0, right - right0);
+                        double s = 1.0 + LeftLabelExtraFraction + RightLabelExtraFraction;
+                        Axes.Viewport = new PlotRect(left / s, top, (1.0 - left0 - right0) / s, 1.0 - top - bot);
+                        break;
+                    }
+                    LeftLabelExtraFraction = RightLabelExtraFraction = 0;
                     if (left + right > 0.70)
                     {
                         double s = 0.70 / (left + right);
                         left *= s; right *= s;
                     }
-                    // A title drawn in the top band (TitleInTopBand) needs no margin of its own above it.
-                    double top = TitleInTopBand && TopBandPx > 0 ? 0.0 : 0.10;
-                    double bot = 0.15;
                     Axes.Viewport = new PlotRect(left, top, 1.0 - left - right, 1.0 - top - bot);
                     break;
                 }

@@ -32,6 +32,10 @@ public static class PlotPlacement
         double stripW = PlotCanvasGeometry.StripLogicalWidth(height);
         double topX   = PlotCanvasGeometry.TopLabelExtraLogical(plot, width);
         double botX   = PlotCanvasGeometry.BottomLabelExtraLogical(plot, width);
+        // A rectangular plot's Y-label columns beyond the first sit outside its own width
+        // (Plot.LabelColumnsOutside): the canvas starts left of `left` and is wider than `width`.
+        double leftX  = PlotCanvasGeometry.LeftLabelExtraLogical(plot, width);
+        double canvW  = width + leftX + PlotCanvasGeometry.RightLabelExtraLogical(plot, width);
 
         // Which traces get a strip is PlotLabelStrips' rule, the same one the window's own
         // container follows (RND-4 R-rnd4-7: the strips are content and come out in an export).
@@ -50,7 +54,7 @@ public static class PlotPlacement
             // through the same function, so the two agree.
             var pos = double.IsNaN(m.InfoBoxPos.X) || double.IsNaN(m.InfoBoxPos.Y)
                 ? PlotCanvasGeometry.DefaultInfoBoxPosition(
-                      m, t, plot, width, height + topX + botX, left, top, zoom: 1.0)
+                      m, t, plot, canvW, height + topX + botX, left - leftX, top, zoom: 1.0)
                 : m.InfoBoxPos;
             double bx = pos.X;
             double by = pos.Y;
@@ -65,9 +69,9 @@ public static class PlotPlacement
         if (LegendRenderer.Floats(plot))
         {
             double canvasH = height + topX + botX;
-            double lw      = LegendRenderer.LineWidthFor(width, canvasH);
+            double lw      = LegendRenderer.LineWidthFor(canvW, canvasH);
             var    pos     = double.IsNaN(plot.LegendPos.X) || double.IsNaN(plot.LegendPos.Y)
-                ? LegendRenderer.DefaultFloatingPosition(plot, width, canvasH, left, top - topX, aliasFor, hasMultipleSources)
+                ? LegendRenderer.DefaultFloatingPosition(plot, canvW, canvasH, left - leftX, top - topX, aliasFor, hasMultipleSources)
                 : plot.LegendPos;
             var (w, h) = LegendRenderer.MeasureFloating(plot, lw, aliasFor, hasMultipleSources);
             legend = new PlacedLegend(pos.X, pos.Y, w, h, lw);
@@ -76,9 +80,9 @@ public static class PlotPlacement
         return new PlacedPlot
         {
             Plot                = plot,
-            ViewLeft            = left,
+            ViewLeft            = left - leftX,
             ViewTop             = top - topX,
-            ViewWidth           = width,
+            ViewWidth           = canvW,
             ViewHeight          = height + topX + botX,
             LogicalWidth        = width,
             LabelStripViewWidth = stripW,

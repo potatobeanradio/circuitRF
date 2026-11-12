@@ -77,6 +77,20 @@
                            Padding="4,2"/>
             </Grid>
 
+            <Grid ColumnDefinitions="32,*,8,32,*" IsVisible="{Binding ShowStep}">
+                <TextBlock Grid.Column="0" Text="Step"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding XStepText, Mode=TwoWay}"
+                           IsEnabled="{Binding XStepEnabled}"
+                           PlaceholderText="Auto"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"
+                           ToolTip.Tip="Spacing of the numbered grid lines along X, in the axis's units. Empty is automatic. Linear axis only."/>
+            </Grid>
+
             <Separator/>
 
             <!-- ── Y Axis (primary left) ──────────────────── -->
@@ -110,6 +124,19 @@
                            FontSize="11"
                            Height="24"
                            Padding="4,2"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="32,*,8,32,*" IsVisible="{Binding ShowStep}">
+                <TextBlock Grid.Column="0" Text="Step"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding YStepText, Mode=TwoWay}"
+                           PlaceholderText="Auto"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"
+                           ToolTip.Tip="Spacing of the numbered grid lines along Y, in the axis's units. Empty is automatic."/>
             </Grid>
 
             <!-- ── Y2 Axis (secondary right, Rect only) ───── -->
@@ -146,6 +173,19 @@
                            FontSize="11"
                            Height="24"
                            Padding="4,2"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="32,*,8,32,*" IsVisible="{Binding ShowY2}">
+                <TextBlock Grid.Column="0" Text="Step"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding Y2StepText, Mode=TwoWay}"
+                           PlaceholderText="Auto"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"
+                           ToolTip.Tip="Spacing of the numbered grid lines on the right-hand axis, in its units. Empty is automatic."/>
             </Grid>
 
             <!-- One world unit as many pixels along X as along Y (Rect, brief NZ-8): a constellation's circle of error

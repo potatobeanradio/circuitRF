@@ -12128,6 +12128,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Deliberately not guarded against: the display opens and the traces it cannot resolve
             // simply render nothing, which is the useful outcome for "let me look at this file".
             case ".cdd":   OpenOrActivateDataDisplay(abs); return true;
+            // A template is never the document edited: opening one makes a new, unsaved display from it.
+            case ".cddt":  _ = OpenDataDisplayTemplateAsync(abs); return true;
             case ".ctech": OpenOrActivateTech(abs);        return true;
             case ".cem":   OpenOrActivateEmSetup(abs);     return true;
             // A workspace's README and anything else written beside it. Read-only, so "opened" here
@@ -12213,6 +12215,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case NodeKind.DataDisplayFile:
                 OpenOrActivateDataDisplay(node.AbsolutePath);
+                return;
+
+            // A template is never the document edited: a new, unsaved Data Display is made from it.
+            case NodeKind.DataDisplayTemplateFile:
+                _ = OpenDataDisplayTemplateAsync(node.AbsolutePath);
                 return;
 
             // Open item 6, settled: a .charm inside a workspace opens like any other document type.
@@ -17324,6 +17331,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // is the active dockable.
         SaveLooseSchematicCommand.NotifyCanExecuteChanged();
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
+        SaveDataDisplayAsTemplateCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         RefreshReadOnlyMenuState(); // SL2 R-sl2-7: the Save item's tooltip changes with it
@@ -17663,6 +17671,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ExportBomCommand.NotifyCanExecuteChanged();
         SaveLooseSchematicCommand.NotifyCanExecuteChanged();
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
+        SaveDataDisplayAsTemplateCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         RefreshReadOnlyMenuState(); // SL2 R-sl2-7: the Save item's tooltip changes with it

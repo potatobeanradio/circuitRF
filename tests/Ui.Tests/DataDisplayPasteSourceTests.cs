@@ -132,4 +132,38 @@ public sealed class DataDisplayPasteSourceTests : IDisposable
         Assert.True(trace.Points.Count > 0);
         Assert.Equal(10, trace.Points[0].Y, 6);
     }
+
+    /// <summary>
+    /// The Plot inspector's Use display source: a pasted plot that kept the file it was copied with is pointed at the
+    /// pasting display's own selected source, shows that source's data, and the change is one undo step.
+    /// </summary>
+    [Fact]
+    public async Task UseDisplaySource_PointsAPastedPlotAtThisDisplaysSelection_AndUndoes()
+    {
+        string results = Path.Combine(_root, "ws", "results");
+        WriteRun(results, "a.npy", 10);
+        WriteRun(results, "b.npy", 20);
+
+        var from = await WindowOnAsync(results, "a.npy");
+        var src  = from.DataDisplay!.Plots[0];
+        src.Inspector.PlotType = PlotType.Rect;
+        src.Inspector.AddTraceCommand.Execute(null);
+        string json = PlotExporter.BuildContainersJson(new[] { src });
+
+        var to     = await WindowOnAsync(results, "b.npy");
+        var config = JsonSerializer.Deserialize<DataDisplayConfig>(json, DataDisplayViewModel.JsonOpts)!;
+        var pasted = (await to.DataDisplay!.PasteFromConfigAsync(config)).Single();
+        Assert.True(pasted.Inspector.HasPinnedSource);
+        Assert.Equal(10, pasted.PlotVM.Plot.Traces.Single().Points[0].Y, 6);
+
+        pasted.Inspector.UseDisplaySourceCommand.Execute(null);
+
+        var trace = pasted.PlotVM.Plot.Traces.Single();
+        Assert.Equal(DataSourceRef.Selected, trace.SourceRef);
+        Assert.Equal(20, trace.Points[0].Y, 6);
+        Assert.False(pasted.Inspector.HasPinnedSource);
+
+        to.DataDisplay.UndoRedo.Undo();
+        Assert.Equal(10, pasted.PlotVM.Plot.Traces.Single().Points[0].Y, 6);
+    }
 }

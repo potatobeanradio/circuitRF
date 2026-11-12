@@ -1,5 +1,40 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-11 — constant graph area, axis Step, Use display source, `.cddt` templates
+
+**A rectangular plot's extra Y-label columns grow the CANVAS, not the margin.** `Plot.LabelColumnsOutside`
+(transient, set by `PlotContainerViewModel` and by the headless `.cdd` render in `RenderDataDisplay`/`Snp`)
+makes `SetAxesViewport` keep the plot box a one-left-column, no-right-axis plot has and express the margins
+as fractions of a canvas `(1 + kL + kR)` times the plot's `Width`. `kL`/`kR` are stored on the plot
+(`Left/RightLabelExtraFraction`) so the container and `PlotPlacement` read the SAME numbers the viewport was
+built from. The container's `Left`/`Width` stay the plot box — what grid snap, move and resize act on — and
+`ViewLeft`/`ViewWidth` are now the canvas (`CanvasLeftLogical = Left - LeftLabelExtraLogical`). Traps:
+anything that treated `container.Left` as the canvas origin (default info-box and floating-legend placement,
+`CanvasToLogical`) must use `CanvasLeftLogical`; the resize grip sits at the canvas's right edge, so the drag
+divides by `1 + kL + kR`. Fonts scale with `min(canvas W, H)`, so widening is free for a wide plot; the
+plot-versus X-label rows were NOT moved outside (growing height would scale every font up with it). Hosts
+that do not widen their canvas (railRF, Model Composer, harmonicaRF, plugin plots) leave the flag off and
+are byte-unchanged.
+
+**Axis Step** is `Axes.XStep/YStep/Y2Step` (0 = automatic), applied at the end of `SetTicks` as the MAJOR
+spacing (`XTick = step / MajorX`), linear axes only, ignored past `Axes.MaxUserSteps` lines over the window.
+Persisted in `AxesConfig`, not written when zero.
+
+**Use display source** (Plot inspector) rewrites the plot's saved form with every non-empty trace source set
+to the `Selected` sentinel and puts it back through `RestorePlot`, the undo path — so it is one undo step
+and reloads exactly the traces whose saved form moved. The "plot versus" X source is left alone.
+
+**`.cddt`** is the `.cdd` format with sources detached (`DataDisplayTemplate.MakeTemplate`: every trace
+source → `Selected`, X source → same as Y, aliases, selection and window geometry dropped). Opening one
+selects the most recent run FIRST, then `DisplayWindowViewModel.LoadTemplateAsync` loads the tabs without
+touching the selection, leaves `CurrentConfigPath` null and does not capture a baseline — so the new
+display is unsaved and dirty. Shipped templates are `src/Ui/resources/cdd-templates/*.cddt` (network
+S-parameter traces, so they read a Touchstone file and a simulated run alike); user templates live in the
+`.canl` templates folders (`TemplateManager`). `.cddt` is a registered document type on all three platforms
+(`Info.plist`, `circuitRF.wxs`, the Linux mime file and both `MimeType=` lines) and a tree kind of its own
+(`NodeKind.DataDisplayTemplateFile`): every route — the OS, the tree, `OpenDocumentByPath` — makes a new
+unsaved display, and the row has no Save or dirty mark because the file is never the open document.
+
 ## Owner report, 2026-09-11 — the polar plot offered far-field metrics it cannot draw
 
 A trace card on a polar plot listed the whole of a far-field run's `farfield` group — 22 rows on the

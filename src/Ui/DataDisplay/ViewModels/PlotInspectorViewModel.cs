@@ -1044,7 +1044,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _library.SnapshotChanged           += OnSnapshotChanged;
             _library.Entries.CollectionChanged += (_, _) => RefreshAddCommand();
             _library.SelectedDataSourceChanged += (_, _) => RefreshAddCommand();
+            _library.SelectedDataSourceChanged += (_, _) => RefreshHasPinnedSource();
         }
+        // A trace re-bound on its card, added, removed or reloaded: whether any reads a file of its own may have changed.
+        PlotNeedsRedraw      += (_, _) => RefreshHasPinnedSource();
+        PlotStructureChanged += (_, _) => RefreshHasPinnedSource();
 
         if (IsSummaryTable) RebuildSummary();
         RebuildLimitAreaRows();

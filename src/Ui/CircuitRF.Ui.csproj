@@ -244,6 +244,12 @@
     <EmbeddedResource Include="resources\data-display-templates\*.cdd"
                       LogicalName="CircuitRF.Ui.DataDisplayTemplates.%(Filename)%(Extension)" />
 
+    <!-- The Data Display templates circuitRF ships (.cddt): File ▸ New ▸ Data Display from Template. Read
+         through the same .cdd reader a user's own template goes through; ShippedDataDisplayTemplates
+         enumerates this prefix. -->
+    <EmbeddedResource Include="resources\cdd-templates\*.cddt"
+                      LogicalName="CircuitRF.Ui.CddTemplates.%(Filename)%(Extension)" />
+
     <!-- Documentation schematics. Real, authored .csch files read through the SAME reader as
          everything else, but NOT offered in the template picker: they exist so a user-doc figure can
          show a two-component circuit a reader is about to build, and a template list padded with

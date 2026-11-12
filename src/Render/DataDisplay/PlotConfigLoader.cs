@@ -114,6 +114,9 @@ public static class PlotConfigLoader
         // whose mode arrived second would have had its left edge nudged to −1e-6 on the way in.
         if (plot.PlotType.IsRect()) plot.Axes.XScale = savedAxes.XScale;
         plot.Axes.EqualAspect = savedAxes.EqualAspect;
+        plot.Axes.XStep  = savedAxes.XStep;
+        plot.Axes.YStep  = savedAxes.YStep;
+        plot.Axes.Y2Step = savedAxes.Y2Step;
         plot.RestoreAxesFromConfig(
             savedAxes.AutoscaleX, savedAxes.AutoscaleY,
             savedAxes.AutoscaleRightY, savedAxes.AutoscaleMag,

@@ -73,6 +73,7 @@ public partial class AxesLimitsViewModel : ViewModelBase
     {
         if (_suppressApply) return;
         _plot.SetXScale(value ? AxisScale.Log : AxisScale.Linear);
+        OnPropertyChanged(nameof(XStepEnabled));
         RefreshXText();
         RaiseRedraw();
     }
@@ -147,6 +148,38 @@ public partial class AxesLimitsViewModel : ViewModelBase
         RaiseRedraw();
     }
 
+    // ---- Major grid step (Rect) --------------------------------------------
+
+    /// <summary>The spacing of each axis's major grid lines, in the axis's own units; empty is automatic. Rect only
+    /// (<see cref="ShowStep"/>). Unlike the limits it stays editable with Auto on: Auto fits the window, the step only
+    /// says where the lines inside it fall.</summary>
+    [ObservableProperty] private string _xStepText  = "";
+    [ObservableProperty] private string _yStepText  = "";
+    [ObservableProperty] private string _y2StepText = "";
+
+    /// <summary>The step fields are offered on a Rect plot; a Smith or Polar grid is not a lattice of steps.</summary>
+    public bool ShowStep => IsRect;
+
+    /// <summary>The X step does nothing on a log axis, whose lines are its decades.</summary>
+    public bool XStepEnabled => !XLogScale;
+
+    partial void OnXStepTextChanged(string value)  => TryApplyStep(value, v => _plot.Axes.XStep  = v);
+    partial void OnYStepTextChanged(string value)  => TryApplyStep(value, v => _plot.Axes.YStep  = v);
+    partial void OnY2StepTextChanged(string value) => TryApplyStep(value, v => _plot.Axes.Y2Step = v);
+
+    /// <summary>Empty text is automatic; a positive number is the step; anything else (a transient while typing, a zero,
+    /// a negative) leaves the plot as it was — rejected, never coerced, as the limits are.</summary>
+    private void TryApplyStep(string text, Action<double> set)
+    {
+        if (_suppressApply) return;
+        if (string.IsNullOrWhiteSpace(text)) set(0);
+        else if (TryParse(text, out double v) && v > 0) set(v);
+        else return;
+        RaiseRedraw();
+    }
+
+    private static string FormatStep(double v) => v > 0 ? FormatValue(v) : "";
+
     // ---- Constructor -----------------------------------------------------
 
     public AxesLimitsViewModel(Plot plot, Action close)
@@ -171,6 +204,9 @@ public partial class AxesLimitsViewModel : ViewModelBase
             _yMaxText    = FormatValue(_plot.Axes.Window.Bottom);
             _y2MinText   = FormatValue(_plot.Axes.WindowSecondary.Top);
             _y2MaxText   = FormatValue(_plot.Axes.WindowSecondary.Bottom);
+            _xStepText   = FormatStep(_plot.Axes.XStep);
+            _yStepText   = FormatStep(_plot.Axes.YStep);
+            _y2StepText  = FormatStep(_plot.Axes.Y2Step);
 #pragma warning restore MVVMTK0034
         }
         finally { _suppressApply = false; }
@@ -194,6 +230,9 @@ public partial class AxesLimitsViewModel : ViewModelBase
             Y2Autoscale = _plot.AutoscaleRightY;
             XLogScale   = _plot.Axes.XScale == AxisScale.Log;
             EqualAspect = _plot.Axes.EqualAspect;
+            XStepText   = FormatStep(_plot.Axes.XStep);
+            YStepText   = FormatStep(_plot.Axes.YStep);
+            Y2StepText  = FormatStep(_plot.Axes.Y2Step);
             RefreshXText();
             RefreshYText();
             RefreshY2Text();
@@ -204,6 +243,7 @@ public partial class AxesLimitsViewModel : ViewModelBase
         OnPropertyChanged(nameof(Y2FieldsEnabled));
         OnPropertyChanged(nameof(ShowY2));
         OnPropertyChanged(nameof(XUnitLabel));
+        OnPropertyChanged(nameof(XStepEnabled));
     }
 
     // ---- Private apply logic ---------------------------------------------

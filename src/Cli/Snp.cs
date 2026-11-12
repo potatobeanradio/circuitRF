@@ -269,6 +269,7 @@ internal static class Snp
         {
             var pc   = composed.Config;
             var plot = PlotConfigLoader.LoadPlot(pc, source);
+            plot.LabelColumnsOutside = true;   // the Data Display's own layout, as the window draws it
             traces += plot.Traces.Count;
             placed.Add(RenderDataDisplay.Place(plot, pc.Left, pc.Top, pc.Width, pc.Height, pc.FreqUnit,
                                                hasMultipleSources: false, aliasFor: null));

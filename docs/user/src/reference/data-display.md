@@ -76,7 +76,9 @@ Undoing every edit since the last save leaves the `.cdd` unmodified again.
 **Copy and paste** a plot with Ctrl/Cmd+C and Ctrl/Cmd+V — between tabs, between displays, and between
 the displays of different workspaces. A pasted plot shows the same data it showed where it was copied.
 When that is also the data source the pasting display has selected, the pasted plot follows the toolbar
-selection like the plots already there.
+selection like the plots already there. To make a pasted plot show this display's results instead, press
+**Use display source** at the top of its Plot Inspector: every trace then reads the source selected in the
+toolbar and follows it from then on. It is one undo step.
 
 There are four plot types, and which one will accept which data is the single most important rule in the
 Data Display. It has its own page: [Plot Types](plot-types.html).
@@ -286,6 +288,11 @@ the limit and **Min** below it. **from** and **to** bound it along X, in the uni
 either empty to run the area to that edge of the plot. **Y2** draws it against the right-hand axis. Areas
 are saved in the `.cdd`, and `circuitrf render` draws them too.
 
+**Step**, beside each axis's limits on a rectangular plot, sets the spacing of its numbered grid lines in
+the axis's own units, such as 10 for every 10 dB. Leave it empty for automatic spacing. It applies with
+**Auto** on as well, and on a linear axis only. A step that would draw more than 200 lines across the plot
+is ignored until the limits are narrower. It is saved in the `.cdd`.
+
 **Equal X and Y scale (1:1)**, in a rectangular plot's **Axes Limits**, draws one unit as long along X as
 along Y. The plot box narrows to keep it and the limits stay as they are. A constellation needs it, so
 that a circle of error looks like a circle. It is off by default, applies to linear axes only, and is
@@ -494,6 +501,24 @@ The **snap grid** button cycles a coarse grid, a fine grid and off. While a grid
 lands with its corner on the grid and a plot you resize lands with its edge on it, so plots line up and
 come out the same size. A marker info box or floating legend you drag lands on it the same way. The grid
 is not drawn.
+
+A rectangular plot's graph area keeps its size and position as traces are added. When the Y axis names
+several traces, each further label is drawn outside the plot, to its left, and the right-hand axis is drawn
+outside it to the right. The plot's own box, which the grid snaps and a resize drags, does not move.
+
+## Templates {#templates}
+
+A **Data Display template** (`.cddt`) is a display's tabs and plots without data of its own: every trace
+reads whatever source the display made from it selects. **File ▸ New ▸ New Data Display from Template**
+lists the templates circuitRF ships, then those in the open workspace's `templates` folder, then your own,
+and ends with **Browse…** for a template anywhere else. Choosing one opens a new, unsaved display showing
+the most recent run; saving it asks where. Double-clicking a `.cddt` in the workspace tree or in your file
+manager does the same. The template file is never changed.
+
+**File ▸ Save Data Display As Template…** writes the active display as a template. It is saved to your own
+templates folder unless the workspace has a `templates` folder, which comes first; either way it is then
+listed in the menu. The display itself is unchanged. Traces keep their quantity, transform, appearance and
+markers, and the plots keep their limits and layout.
 
 <p class="small">See also: <a href="plot-types.html">Plot types</a> ·
 <a href="npy-export.html">Results &amp; data export</a> ·

@@ -378,7 +378,11 @@ public partial class PlotContainerView : UserControl
         var    pt      = e.GetPosition(this);
         double zoom    = vm.ZoomLevel > 0 ? vm.ZoomLevel : 1.0;
         double leftPx  = vm.LeftLabelStrips.Count * vm.LabelStripViewWidth;
-        double targetW = (pt.X - leftPx) / zoom;
+        // The grip is at the CANVAS's right edge; a rectangular plot's canvas carries its extra Y-label
+        // columns outside its own width, in proportion to it (Plot.LabelColumnsOutside).
+        var    plotM   = vm.PlotVM.Plot;
+        double targetW = (pt.X - leftPx) / zoom
+                       / (1.0 + plotM.LeftLabelExtraFraction + plotM.RightLabelExtraFraction);
         double targetH = pt.Y / zoom;
 
         // Aspect lock applies ONLY to Rect plots, and ONLY when Shift is NOT held (design feedback:

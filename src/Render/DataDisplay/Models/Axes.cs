@@ -91,6 +91,25 @@ namespace CircuitRF.Render.DataDisplay
 
         // ---- Major-tick multipliers -------------------------------------
 
+        /// <summary>
+        /// The spacing of the X axis's MAJOR grid lines (and so its numbered ticks), in the axis's own units — set in
+        /// Axes Limits. Zero, the default, is automatic: the interval <see cref="CalcInterval"/> picks for the window.
+        /// Linear axes only; a step that would draw more than <see cref="MaxUserSteps"/> lines over the window is
+        /// ignored rather than drawn. Persisted in the <c>.cdd</c>.
+        /// </summary>
+        public double XStep  { get => _xStep;  set { _xStep  = ValidStep(value); SetTicks(); } }
+        /// <summary>The left Y axis's <see cref="XStep"/>.</summary>
+        public double YStep  { get => _yStep;  set { _yStep  = ValidStep(value); SetTicks(); } }
+        /// <summary>The right (secondary) Y axis's <see cref="XStep"/>; it takes effect when the axes do not share a grid.</summary>
+        public double Y2Step { get => _y2Step; set { _y2Step = ValidStep(value); SetTicks(); } }
+        private double _xStep, _yStep, _y2Step;
+
+        /// <summary>The most major lines a typed step may draw over one window; past it the automatic interval is used,
+        /// so a step left over from a wider window cannot fill the plot with lines.</summary>
+        public const int MaxUserSteps = 200;
+
+        private static double ValidStep(double v) => double.IsFinite(v) && v > 0 ? v : 0;
+
         /// <summary>One major vertical grid line per MajorX minor ticks.</summary>
         public double MajorX { get; set; } = 2;
 
@@ -334,6 +353,9 @@ namespace CircuitRF.Render.DataDisplay
             Ticksize               = src.Ticksize;
             MajorX                 = src.MajorX;
             MajorY                 = src.MajorY;
+            _xStep                 = src._xStep;
+            _yStep                 = src._yStep;
+            _y2Step                = src._y2Step;
         }
 
         // ---- Panning helpers --------------------------------------------
@@ -475,6 +497,14 @@ namespace CircuitRF.Render.DataDisplay
                 5 => numXTicks < 15 ? 2 : 5,
                 _ => 2
             };
+
+            // A typed step replaces the automatic MAJOR spacing; the minor ticks split it in MajorX/MajorY.
+            if (_xStep > 0 && _xScale != AxisScale.Log && Window.Width / _xStep <= MaxUserSteps)
+                XTick = _xStep / MajorStep(MajorX);
+            if (_yStep > 0 && _yScale != AxisScale.Log && Window.Height / _yStep <= MaxUserSteps)
+                YTick = _yStep / MajorStep(MajorY);
+            if (_y2Step > 0 && WindowSecondary.Height / _y2Step <= MaxUserSteps)
+                Y2Tick = _y2Step / MajorStep(MajorY);
         }
 
         // ---- Tick position calculation ----------------------------------

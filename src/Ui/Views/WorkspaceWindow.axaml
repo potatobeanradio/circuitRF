@@ -39,6 +39,13 @@
                                     <NativeMenuItem Header="New Layout"       Command="{Binding NewLayoutCommand}"/>
                                     <NativeMenuItem Header="New 3D Design…"   Command="{Binding NewThreeDDesignCommand}"/>
                                     <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"       Gesture="Meta+Shift+D"/>
+                                    <!-- Filled by RebuildNativeDataDisplayTemplatesMenu, on NeedsUpdate, from the
+                                         same WorkspaceViewModel.DataDisplayTemplates the in-window mirror lists. -->
+                                    <NativeMenuItem Header="New Data Display from Template">
+                                        <NativeMenuItem.Menu>
+                                            <NativeMenu/>
+                                        </NativeMenuItem.Menu>
+                                    </NativeMenuItem>
                                     <NativeMenuItem Header="New Technology…"  Command="{Binding NewTechnologyCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="New EM Setup…"    Command="{Binding NewEmSetupCommand}"           CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItemSeparator/>
@@ -101,6 +108,7 @@
                         <NativeMenuItem Header="Save Schematic As…"  Command="{Binding SaveLooseSchematicCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Symbol As…"     Command="{Binding SaveLooseSymbolCommand}"    CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Layout As…"     Command="{Binding SaveLooseLayoutCommand}"     CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Save Data Display As Template…" Command="{Binding SaveDataDisplayAsTemplateCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <NativeMenuItem Header="Keep This State…"    Command="{Binding KeepThisStateCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Keep This Version…"  Command="{Binding KeepThisVersionCommand}"   CommandParameter="{Binding $parent[Window]}"/>
@@ -759,6 +767,15 @@
                               InputGesture="Ctrl+Shift+D">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
+                    <!-- Rebuilt on SubmenuOpened (WorkspaceWindow.axaml.cs), so a template saved since is listed;
+                         never empty, since Browse… is always there. Mirrors the macOS item above. -->
+                    <MenuItem x:Name="DataDisplayTemplatesMenu"
+                              SubmenuOpened="OnDataDisplayTemplatesMenuOpened"
+                              Header="New Data Display from Te_mplate"
+                              ItemsSource="{Binding DataDisplayTemplateMenuItems}"
+                              ToolTip.Tip="A new, unsaved Data Display laid out as the template is, showing the most recent run.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                     <MenuItem Header="New _Technology…"
                               Command="{Binding NewTechnologyCommand}"
                               CommandParameter="{Binding $parent[Window]}">
@@ -879,6 +896,12 @@
                           Command="{Binding SaveLooseLayoutCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save Data Display As Te_mplate…"
+                          Command="{Binding SaveDataDisplayAsTemplateCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Save the active Data Display's layout as a template (.cddt). Its traces will show whatever source a display made from it selects. Requires an active Data Display.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Save Workspace _As…"

@@ -25,7 +25,7 @@ public sealed partial class LegendBoxViewModel : CanvasBoxViewModel
 
     /// <summary>The line-width unit of the plot's own canvas, in logical units — what the docked legend was measured at,
     /// so a legend lifted out of the plot keeps the size it had.</summary>
-    public double Lw => LegendRenderer.LineWidthFor(Container.Width, Container.ViewHeight / ZoomOrOne);
+    public double Lw => LegendRenderer.LineWidthFor(Container.CanvasWidthLogical, Container.ViewHeight / ZoomOrOne);
 
     private double ZoomOrOne => _parent.ZoomLevel > 0 ? _parent.ZoomLevel : 1.0;
 

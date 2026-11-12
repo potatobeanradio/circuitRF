@@ -803,6 +803,7 @@ public partial class App : Application
                 case ".clay":
                 case ".csym":
                 case ".cdd":
+                case ".cddt":
                 case ".ctech":
                 case ".cem":
                 case ".charm":

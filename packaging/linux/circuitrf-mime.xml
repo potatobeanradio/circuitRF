@@ -61,6 +61,12 @@
         <glob pattern="*.cdd"/>
     </mime-type>
 
+    <mime-type type="application/x-circuitrf-datadisplaytemplate">
+        <comment>circuitRF Data Display Template</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.cddt"/>
+    </mime-type>
+
     <mime-type type="application/x-circuitrf-technology">
         <comment>circuitRF Technology</comment>
         <sub-class-of type="application/json"/>

@@ -400,6 +400,7 @@ public partial class WorkspaceWindow : Window
         EnsureWindowNativeItem();
         EnsureEditNativeItem();
         EnsurePluginsNativeItem();
+        EnsureDataDisplayTemplatesNativeItem();
 
         // Seed the Window menu now. SubmenuOpened alone is not enough: an empty ItemsSource makes
         // the parent a leaf with no submenu, so that event would never fire and the menu would stay
@@ -875,6 +876,58 @@ public partial class WorkspaceWindow : Window
 
     /// <summary>The in-window Edit menu opening: Paste Image as … asks the clipboard (brief-img-6 R-im6-2). Only the
     /// Edit item's own opening — a submenu inside it bubbles the same event.</summary>
+    // ---- File ▸ New ▸ New Data Display from Template ----------------------------------
+
+    // The XAML-declared native submenu, found once by header walk (a NativeMenuItem gets no x:Name field).
+    private NativeMenu? _templatesNativeMenu;
+
+    /// <summary>Finds File ▸ New ▸ New Data Display from Template on the native bar and refills it each time New is
+    /// about to show — NeedsUpdate, the macOS counterpart of the in-window item's SubmenuOpened — so a template saved
+    /// since is listed.</summary>
+    private void EnsureDataDisplayTemplatesNativeItem()
+    {
+        if (_templatesNativeMenu is not null || NativeMenu.GetMenu(this) is not { } rootMenu) return;
+        foreach (var top in rootMenu.Items)
+        {
+            if (top is not NativeMenuItem { Header: "File", Menu: { } file }) continue;
+            foreach (var sub in file.Items)
+            {
+                if (sub is not NativeMenuItem { Header: "New", Menu: { } newMenu }) continue;
+                foreach (var item in newMenu.Items)
+                    if (item is NativeMenuItem { Header: "New Data Display from Template", Menu: { } menu })
+                        _templatesNativeMenu = menu;
+                if (_templatesNativeMenu is null) return;
+                RebuildNativeDataDisplayTemplatesMenu();
+                newMenu.NeedsUpdate += (_, _) => RebuildNativeDataDisplayTemplatesMenu();
+                return;
+            }
+        }
+    }
+
+    private void RebuildNativeDataDisplayTemplatesMenu()
+    {
+        if (_vm is null || _templatesNativeMenu is not { } menu) return;
+        menu.Items.Clear();
+        foreach (var t in _vm.DataDisplayTemplates)
+            menu.Items.Add(new NativeMenuItem(t.Name)
+            {
+                Command = _vm.NewDataDisplayFromTemplateCommand, CommandParameter = t.Key,
+            });
+        menu.Items.Add(new NativeMenuItemSeparator());
+        menu.Items.Add(new NativeMenuItem("Browse…")
+        {
+            Command = _vm.NewDataDisplayFromTemplateCommand, CommandParameter = "browse",
+        });
+    }
+
+    /// <summary>The in-window item opening: its rows are re-read, so a template saved since is listed. Only its own
+    /// opening — nothing inside it has a submenu, but the guard costs nothing.</summary>
+    private void OnDataDisplayTemplatesMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, e.Source)) return;
+        _vm?.RebuildDataDisplayTemplateMenuItems();
+    }
+
     // ---- Tools ▸ Plugins (brief-plg-1) -------------------------------------------------
 
     // The XAML-declared native "Plugins" submenu, found once by header walk (a NativeMenuItem gets no x:Name field).

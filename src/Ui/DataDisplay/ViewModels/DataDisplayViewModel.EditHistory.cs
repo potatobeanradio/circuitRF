@@ -118,6 +118,35 @@ public partial class DataDisplayViewModel
     }
 
     /// <summary>
+    /// Every trace of <paramref name="c"/> that reads a specific file is pointed at the display's selected data
+    /// source instead, so it follows the toolbar's selection as an added trace does — the Plot inspector's
+    /// "Use display source", for a plot pasted from another display, which keeps the data it was copied with.
+    /// One undo step. A trace with no source of its own (owner data, a summary column) and a "plot versus"
+    /// trace's X source are left as they are: the X names a second file on purpose.
+    /// </summary>
+    internal void FollowDisplaySource(PlotContainerViewModel c)
+    {
+        if (Library?.SelectedDataSourceAbs is null) return;
+        CheckpointEdits();   // anything edited before this is its own step
+
+        var pc = JsonSerializer.Deserialize<PlotContainerConfig>(SavedFormOf(c), JsonOpts);
+        if (pc is null) return;
+        bool changed = false;
+        foreach (var tc in pc.Traces)
+        {
+            if (string.IsNullOrEmpty(tc.SourcePath) || tc.SourcePath == DataSourceRef.Selected) continue;
+            tc.SourcePath = DataSourceRef.Selected;
+            changed = true;
+        }
+        if (!changed) return;
+
+        RestorePlot(c, JsonSerializer.Serialize(pc, JsonOpts));
+        // Owner-data and summary traces keep their own data: RestorePlot reloaded only the traces whose saved form
+        // moved, and theirs did not.
+        RaiseContentChanged();   // records it as one undo step and refreshes the window's dirty state
+    }
+
+    /// <summary>
     /// Puts one plot back as <paramref name="savedForm"/> states it, on the same container and Plot.
     /// A trace whose saved form already matches is kept as it is, so markers and the commands that
     /// hold them stay attached to the live trace.

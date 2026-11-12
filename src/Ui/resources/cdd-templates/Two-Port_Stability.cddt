@@ -1,0 +1,348 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": null,
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Stability",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 40,
+          "Top": 40,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Smith",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Source stability circles",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "SourceStabilityCircle",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Complex",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ]
+        },
+        {
+          "Left": 480,
+          "Top": 40,
+          "Width": 420,
+          "Height": 420,
+          "PlotType": "Smith",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Load stability circles",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "LoadStabilityCircle",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Complex",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ]
+        },
+        {
+          "Left": 40,
+          "Top": 480,
+          "Width": 420,
+          "Height": 300,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Stability, µ (load) and µ′ (source)",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "Mu",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Mag",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            },
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "MuPrime",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Mag",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ]
+        },
+        {
+          "Left": 480,
+          "Top": 480,
+          "Width": 420,
+          "Height": 300,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Input and output match",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            },
+            {
+              "SourcePath": "run.npy",
+              "Row": 1,
+              "Col": 1,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        },
+        {
+          "Left": 40,
+          "Top": 800,
+          "Width": 420,
+          "Height": 300,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Gain and isolation",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 1,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            },
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 1,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": true,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ],
+          "CustomYLabel": "|S21| (dB)",
+          "CustomYLabelOn": true,
+          "CustomY2Label": "|S12| (dB)",
+          "CustomY2LabelOn": true
+        },
+        {
+          "Left": 480,
+          "Top": 800,
+          "Width": 420,
+          "Height": 300,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Maximum available gain",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "run.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "MaxGain",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 9,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 9,
+                "MarkerType": "Circle"
+              },
+              "XSourcePath": null
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

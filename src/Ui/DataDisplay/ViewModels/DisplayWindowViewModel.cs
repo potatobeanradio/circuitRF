@@ -910,7 +910,43 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         DataSourceLibrary.DocumentDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
 
         string configDir = Path.GetDirectoryName(path) ?? "";
+        var config = BuildConfig(configDir, windowLeft, windowTop, windowWidth, windowHeight);
+        string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
 
+        // Owner-reported, 2026-08-26 ("somehow i managed to get the data display to get corrupted …
+        // i had to make a new workspace"): the `.cdd` was the ONE document type circuitRF wrote
+        // non-atomically — every other one (`.csch`, `.csym`, `.ccell`, `.clay`, `.ctech`, `.cem`,
+        // `.wasm`, `.cws`) already goes through AtomicFile. A plain WriteAllText TRUNCATES the target
+        // first, so anything that interrupts the write — a crash, a kill, a network/removable volume
+        // going away mid-save, two saves racing — leaves a half-written file on disk in place of a
+        // display that was fine a moment ago. Serialize-to-sibling-temp-then-rename cannot: the old
+        // file survives intact until the new one is complete. Synchronous on purpose — a `.cdd` is a
+        // few kilobytes, and this is the same call every other persistence path in the app makes;
+        // Task.Run only keeps the write off the UI thread, matching what WriteAllTextAsync did here.
+        await Task.Run(() => AtomicFile.WriteAllText(path, json));
+
+        // Update baseline so HasUnsavedChanges() returns false right after saving.
+        CaptureBaseline();
+        RaiseDirtyChanged();
+        ConfigPathSaved?.Invoke(path);
+    }
+
+    /// <summary>
+    /// Writes this display as a Data Display template (<see cref="DataDisplayTemplate"/>) to <paramref name="path"/>:
+    /// its tabs and plots as they are, every trace reading whatever source the display made from it selects. The
+    /// display itself is unchanged — it keeps its own file, its sources and its dirty state.
+    /// </summary>
+    public async Task SaveAsTemplateAsync(string path)
+    {
+        var config = DataDisplayTemplate.MakeTemplate(BuildConfig(configDir: "", 0, 0, 0, 0));
+        string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
+        await Task.Run(() => AtomicFile.WriteAllText(path, json));
+    }
+
+    /// <summary>The display's saved form, with sources keyed relative to <paramref name="configDir"/>.</summary>
+    private DataDisplayConfig BuildConfig(
+        string configDir, double windowLeft, double windowTop, double windowWidth, double windowHeight)
+    {
         var config = new DataDisplayConfig
         {
             FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
@@ -946,25 +982,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             if (!IsPortableSourceKey(key)) continue;
             config.SourceAliases[key] = entry.Alias;
         }
-
-        string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
-
-        // Owner-reported, 2026-08-26 ("somehow i managed to get the data display to get corrupted …
-        // i had to make a new workspace"): the `.cdd` was the ONE document type circuitRF wrote
-        // non-atomically — every other one (`.csch`, `.csym`, `.ccell`, `.clay`, `.ctech`, `.cem`,
-        // `.wasm`, `.cws`) already goes through AtomicFile. A plain WriteAllText TRUNCATES the target
-        // first, so anything that interrupts the write — a crash, a kill, a network/removable volume
-        // going away mid-save, two saves racing — leaves a half-written file on disk in place of a
-        // display that was fine a moment ago. Serialize-to-sibling-temp-then-rename cannot: the old
-        // file survives intact until the new one is complete. Synchronous on purpose — a `.cdd` is a
-        // few kilobytes, and this is the same call every other persistence path in the app makes;
-        // Task.Run only keeps the write off the UI thread, matching what WriteAllTextAsync did here.
-        await Task.Run(() => AtomicFile.WriteAllText(path, json));
-
-        // Update baseline so HasUnsavedChanges() returns false right after saving.
-        CaptureBaseline();
-        RaiseDirtyChanged();
-        ConfigPathSaved?.Invoke(path);
+        return config;
     }
 
     /// <summary>
@@ -1008,23 +1026,71 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // DataDisplayView.DoOpenDisplayAsync → "Cannot open display: …"), which is the same treatment
         // the format_version mismatch below has always had — so the file is left untouched on disk and
         // is still recoverable. Owner-reported, 2026-08-26.
+        var config = ParseConfig(json, Path.GetFileName(path));
+        await LoadConfigAsync(config, configDir, restoreSources: true);
+
+        // Apply saved window geometry if present.
+        if (config.WindowWidth > 0)
+            WindowGeometryLoaded?.Invoke(
+                config.WindowLeft, config.WindowTop,
+                config.WindowWidth, config.WindowHeight);
+
+        // Update baseline so HasUnsavedChanges() returns false right after loading.
+        CaptureBaseline();
+        RaiseDirtyChanged();
+    }
+
+    /// <summary>
+    /// Fills this display from a Data Display template (<see cref="DataDisplayTemplate"/>): its tabs and plots, every
+    /// trace reading the source this display has selected. The display stays UNSAVED — it has no file, and it counts
+    /// as changed, so closing it asks before the work is lost; saving it asks where. The template file is not
+    /// touched. Select a source before calling, so the traces resolve as they load.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The text is not a readable Data Display.</exception>
+    public async Task LoadTemplateAsync(string json, string templateName)
+    {
+        var config = DataDisplayTemplate.MakeTemplate(ParseConfig(json, templateName));
+        await LoadConfigAsync(config, configDir: "", restoreSources: false);
+        RaiseDirtyChanged();
+    }
+
+    /// <summary>A `.cdd` (or `.cddt`) read, or an <see cref="InvalidDataException"/> naming
+    /// <paramref name="fileName"/> — never a partial or empty display in place of one that would not read.</summary>
+    private static DataDisplayConfig ParseConfig(string json, string fileName)
+    {
+        // A `.cdd` that will not parse must FAIL LOUDLY, and the reason is data loss, not tidiness.
+        // This used to be `catch { return; }`: a damaged file opened as a perfectly ordinary, CLEAN,
+        // materialized document showing one empty plot — no message, no mark, nothing to distinguish
+        // it from a display the user had simply not authored yet. The next save then wrote that blank
+        // over the file, destroying whatever the damaged copy still held. Both callers already handle
+        // InvalidDataException (WorkspaceViewModel.OpenOrActivateDataDisplay → Messages.Error;
+        // DataDisplayView.DoOpenDisplayAsync → "Cannot open display: …"), which is the same treatment
+        // the format_version mismatch below has always had — so the file is left untouched on disk and
+        // is still recoverable. Owner-reported, 2026-08-26.
         DataDisplayConfig? config;
         try { config = JsonSerializer.Deserialize<DataDisplayConfig>(json, DataDisplayViewModel.JsonOpts); }
         catch (JsonException ex)
         {
             throw new InvalidDataException(
-                $"'{Path.GetFileName(path)}' is not readable as a Data Display — {ex.Message} " +
+                $"'{fileName}' is not readable as a Data Display — {ex.Message} " +
                 "The file has been left unchanged.", ex);
         }
         if (config is null)
             throw new InvalidDataException(
-                $"'{Path.GetFileName(path)}' contains no Data Display. The file has been left unchanged.");
+                $"'{fileName}' contains no Data Display. The file has been left unchanged.");
 
         if (config.FormatVersion != DataDisplayConfig.CurrentFormatVersion)
             throw new InvalidDataException(
                 $".cdd format_version {config.FormatVersion} does not match " +
                 $"expected {DataDisplayConfig.CurrentFormatVersion}. Regenerate the file.");
+        return config;
+    }
 
+    /// <summary>Replaces every tab with <paramref name="config"/>'s. With <paramref name="restoreSources"/> the
+    /// config's own sources are loaded and its selection made first, as opening a `.cdd` does; without, the display
+    /// keeps the sources and selection it has, as a template asks.</summary>
+    private async Task LoadConfigAsync(DataDisplayConfig config, string configDir, bool restoreSources)
+    {
         // Build the list of TabConfigs to load.
         List<TabConfig> tabConfigs;
         if (config.Tabs.Count > 0)
@@ -1070,6 +1136,24 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         Tabs.Clear();
         ActiveTab = null;
 
+        if (restoreSources) await RestoreSourcesAsync(config);
+
+        foreach (var tc in tabConfigs)
+        {
+            var tab = CreateNewTab(tc.Name);
+            await tab.DataDisplay.LoadFromTabConfigAsync(tc, configDir);
+            Tabs.Add(tab);
+        }
+
+        if (Tabs.Count > 0)
+        {
+            int idx = Math.Clamp(config.ActiveTabIndex, 0, Tabs.Count - 1);
+            ActiveTab = Tabs[idx];
+        }
+    }
+
+    private async Task RestoreSourcesAsync(DataDisplayConfig config)
+    {
         // R-res-4/R-res-5 — load EVERY declared source and stamp its alias before touching tabs, so
         // (a) a dataset with no current trace still appears (loaded, or broken-and-reported by name),
         // and (b) sentinel/relative trace SourceRefs resolve against an already-loaded, correctly-
@@ -1089,29 +1173,6 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
         // Select the persisted datasource BEFORE loading tabs so sentinel traces resolve correctly.
         await DataSourceLibrary.SelectDataSourceAsync(config.SelectedDataSource);
-
-        foreach (var tc in tabConfigs)
-        {
-            var tab = CreateNewTab(tc.Name);
-            await tab.DataDisplay.LoadFromTabConfigAsync(tc, configDir);
-            Tabs.Add(tab);
-        }
-
-        if (Tabs.Count > 0)
-        {
-            int idx = Math.Clamp(config.ActiveTabIndex, 0, Tabs.Count - 1);
-            ActiveTab = Tabs[idx];
-        }
-
-        // Apply saved window geometry if present.
-        if (config.WindowWidth > 0)
-            WindowGeometryLoaded?.Invoke(
-                config.WindowLeft, config.WindowTop,
-                config.WindowWidth, config.WindowHeight);
-
-        // Update baseline so HasUnsavedChanges() returns false right after loading.
-        CaptureBaseline();
-        RaiseDirtyChanged();
     }
 }
 

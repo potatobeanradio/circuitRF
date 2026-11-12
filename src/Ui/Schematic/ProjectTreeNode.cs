@@ -69,6 +69,10 @@ public enum NodeKind
     /// reads it; it opens in the RF Chain Budget window.</summary>
     ChainFile,
 
+    /// <summary>A Data Display template (<c>.cddt</c>). Opening one makes a new, unsaved Data Display from it; the
+    /// template itself is never the document edited, so it has no dirty state and no Save.</summary>
+    DataDisplayTemplateFile,
+
     /// <summary>
     /// A part library (<c>.crlib</c>) — the models a board's part numbers resolve to
     /// (brief-railrf-24-part-library-editor.md R-rail24-1a). <c>PartLibraryIo</c> reads it.
