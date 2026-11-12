@@ -176,42 +176,58 @@ public sealed class PadsAndTapsTests
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
     }
 
-    /// <summary>
-    /// A 30 × 16 mm board: C1 across a gap into a 3 mm pad, a 1.1 mm quarter-arc trace 7.85 mm long from it into a second 3 mm
-    /// pad, and C2 across a gap out of that to a line to the right edge.
-    /// </summary>
-    private static LayoutView PadsJoinedByAnArc()
+    /// <summary>A 30 × 16 mm board: C1 across a gap into a 3 mm pad and the 7.85 mm, 1.1 mm quarter arc from it: into a <paramref name="farPad"/>
+    /// square pad and C2 across a gap out of it to a line to the right edge, or with no far pad (0) straight to C2's body, its
+    /// gap and a line up to the top edge.</summary>
+    private static LayoutView ArcBoard(double farPad)
     {
         var view = new LayoutView();
         view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 16_000));
         view.Shapes.Add(Rect(Top, 0, 4_950, 9_500, 6_050));
         view.Shapes.Add(Rect(Top, 10_000, 4_000, 13_000, 7_000));
-        view.Shapes.Add(Rect(Top, 17_000, 10_000, 20_000, 13_000));
-        view.Shapes.Add(Rect(Top, 20_500, 10_950, 30_000, 12_050));
+        double end = 5;
+        if (farPad > 0)
+        {
+            double x0 = 18_000 - farPad / 2;
+            view.Shapes.Add(Rect(Top, x0, 10_000, x0 + farPad, 10_000 + farPad));
+            double y = 10_000 + farPad / 2;
+            view.Shapes.Add(Rect(Top, x0 + farPad + 500, y - 550, 30_000, y + 550));
+            view.Shapes.AddRange(Part("C2", x0 + farPad + 250, y, alongX: true));
+        }
+        else
+        {
+            end = 0;
+            view.Shapes.Add(Rect(Top, 17_450, 10_500, 18_550, 16_000));
+            view.Shapes.AddRange(Part("C2", 18_000, 10_250, alongX: false));
+        }
         var arc = new List<long>();
+        double sweep = end + 95;
         for (int k = 0; k <= 24; k++)
         {
-            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            double a = (-95 + sweep * k / 24) * System.Math.PI / 180;
             arc.AddRange([Um(13_000 + 5_550 * System.Math.Cos(a)), Um(10_000 + 5_550 * System.Math.Sin(a))]);
         }
         for (int k = 24; k >= 0; k--)
         {
-            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            double a = (-95 + sweep * k / 24) * System.Math.PI / 180;
             arc.AddRange([Um(13_000 + 4_450 * System.Math.Cos(a)), Um(10_000 + 4_450 * System.Math.Sin(a))]);
         }
         view.Shapes.Add(new PolygonShape { Layer = Top, Xy = [.. arc] });
         view.Shapes.AddRange(Part("C1", 9_750, 5_500, alongX: true));
-        view.Shapes.AddRange(Part("C2", 20_250, 11_500, alongX: true));
         return view;
     }
 
-    /// <summary>The review reads no arc, so the arc's copper was pad copper and the two pads one ideal short, and the copper
-    /// check agreed. The two pads are cores of that copper the arc only links: the join is still made, and named as one across
-    /// copper no line models; the check does not say the circuit agrees.</summary>
-    [Fact]
-    public void TwoPadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper()
+    /// <summary>The review reads no arc, so the arc's copper was pad copper and C1's and C2's terminals one ideal short, and
+    /// the copper check agreed. Cut to what is wider than the lines, that copper is the pads alone; the join is still made,
+    /// and named as one across copper no line models, whether the arc ends in a pad as big as the first, a smaller one, or
+    /// none (C2's body straight on the arc). The check does not say the circuit agrees.</summary>
+    [Theory]
+    [InlineData(3_000.0)]
+    [InlineData(2_200.0)]
+    [InlineData(0.0)]
+    public void PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper(double farPad)
     {
-        var result = Read(PadsJoinedByAnArc());
+        var result = Read(ArcBoard(farPad));
 
         Assert.True(result.Ok, result.Refusal);
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.PadsJoinTheirMembers));   // the arc is in the pad's copper

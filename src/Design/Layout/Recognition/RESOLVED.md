@@ -865,7 +865,8 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   34.2–45.5 Ω, 78 % in tolerance, where main reports 20 mm at 45.5 Ω, 100 %. The limit is now an internal option,
   `TraceImpedanceOptions.KeepLongEndSections`, which only `ArtworkRecognition.ReviewOf` sets; every review, scoped or not,
   trims as before. Gate: `TraceImpedanceAnalysisTests.AWideEndSection_IsTheLinesLand_ScopedOrNot_AndOnlyRecognitionKeepsIt`.
-- **A pad's copper can hold a trace the review did not read** (F5, closed). Pad copper is an island less the strips of the
+- **A pad's copper can hold a trace the review did not read** (F5; the cores below were corrected, see the next note but
+  one). Pad copper is an island less the strips of the
   traces the review returned, so a trace it dropped is in it: a 7.85 mm quarter-arc trace between two 3 mm pads, which the
   review does not read as a trace, made one 9.5 × 9.5 mm "pad", joined C1.2 and C2.1 by an ideal short, and the copper check
   agreed. A distance between members cannot tell that from a real pad (a line in and a line out of a 4.5 mm device pad are
@@ -888,3 +889,12 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   from which a signal island reads as a separate pour and loses its edge ports; 4.5 mm is still a several-millimetre pad,
   and the pad join and the copper check read it as before (one node, 4 line ends and 2 terminals). The expected line
   lengths into and out of it follow: 5.25, 5.25, 5.25 and 6.25 mm.
+- **The pad cores are cut by the lines' width, not the pad's** (F5, on re-review). The first cut eroded a region by its own
+  largest inscribed radius over `PadWidthStep`, so it caught an unread trace only between two pads of nearly one size: with
+  the 7.85 mm arc running from a 3 mm pad to a 2.2 mm one, or straight to C2's body with no second pad, the smaller end went
+  with the arc, its member was given to the nearest core, and the check agreed — a silent short. The erosion is now half of
+  `PadWidthStep` times the widest line ending in the region, else the widest trace on its layer: what is no wider than the
+  lines by the review's own step goes. The cores are grown back by as much, and a member on none of them is named too, as
+  is a member on another core. The 4.5 mm device pad (widest line 2 mm, cut by 1.2 mm) and every existing board read as
+  before. Gate: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper` (far pad 3 mm,
+  2.2 mm, none).

@@ -431,10 +431,12 @@ public static class LineRecognition
     /// beyond it lands there, and every part terminal, via end and port inside it. A region with fewer than two members is
     /// no join. A junction's centre is not a pad: its arms end on it as "junction", never "pad".
     /// <para>The region is only what the review RETURNED taken away, so a trace it did not read (an arc, for one) is still in
-    /// it. So each region is also eroded to its cores — by its largest inscribed radius over <see cref="TraceImpedanceAnalysis.PadWidthStep"/>,
-    /// which takes away every part of it narrower than its widest by the review's own pad-to-trace step — and members on two
-    /// cores are still joined but named in <c>Split</c>, a join across copper no line models. A distance alone could not tell:
-    /// a line in and a line out of a 4.5 mm device pad are 4.5 mm apart, past a 1.1 mm line end's reach.</para>
+    /// it. So each region is also cut to its cores: eroded by half of <see cref="TraceImpedanceAnalysis.PadWidthStep"/> times the
+    /// widest line ending in it (else the widest trace on its layer), which takes away all copper no wider than the lines by the
+    /// review's own pad-to-trace step, and grown back by as much. A member on no core, or on another core than the first, is
+    /// still joined but named in <c>Split</c>, a join across copper no line models; a region with no core at all names a
+    /// member farther than a line end reaches from the first. A distance alone could not tell a pad: a line in and a line
+    /// out of a 4.5 mm device pad are 4.5 mm apart, past a 1.1 mm line end's reach.</para>
     /// </summary>
     private static List<(List<string> Members, int Ends, int Terminals, Bbox Box,
                          List<(string A, long Ax, long Ay, LayerKey? Layer, string B, long Bx, long By)> Split)> PadNodes(
@@ -458,17 +460,19 @@ public static class LineRecognition
                     (strips.TryGetValue(run.Layer, out var list) ? list : strips[run.Layer] = []).Add((box, path));
                 }
 
+        var widestOn = ctx.Review.Layers.Where(l => l.Traces.Count > 0).GroupBy(l => l.Layer)
+                              .ToDictionary(g => g.Key, g => g.SelectMany(l => l.Traces).Max(t => t.WidthMax));
         var pads = new List<(List<string>, int, int, Bbox, List<(string, long, long, LayerKey?, string, long, long)>)>();
         for (int piece = 0; piece < copper.Count && piece < board.IslandOfPiece.Length; piece++)
         {
             int island = board.IslandOfPiece[piece];
             if (island < 0 || board.Islands[island].Kind != IslandKind.Signal) continue;
             var layer = copper.LayerOfPiece(piece);
-            var ends = new List<(double X, double Y, string Node)>();
+            var ends = new List<(double X, double Y, string Node, double W)>();
             foreach (var t in traces.Where(t => t.Island == island && t.Run.Layer == layer))
                 foreach (var (end, node) in new[] { (t.Start, t.First.Nodes[0]), (t.End, t.Last.Nodes[^1]) })
                     if (end.Kind == "pad")
-                        ends.Add((end.X + 0.5 * end.Width * end.Dx, end.Y + 0.5 * end.Width * end.Dy, node));
+                        ends.Add((end.X + 0.5 * end.Width * end.Dx, end.Y + 0.5 * end.Width * end.Dy, node, end.Width));
             var on = attachments.Where(a => a.Island == island && (a.Layer is null || a.Layer == layer)).ToList();
             if (ends.Count + on.Count < 2) continue;
 
@@ -487,41 +491,38 @@ public static class LineRecognition
                 var points = onIt.Select(a => (Name: a.Name, X: a.X, Y: a.Y))
                                  .Concat(endsIn.Select(e => (Name: "the line end", X: (long)Math.Round(e.X), Y: (long)Math.Round(e.Y)))).ToList();
                 var split = new List<(string, long, long, LayerKey?, string, long, long)>();
-                var cores = Cores(region, box);
-                if (cores.Count > 1)
+                double wLine = endsIn.Count > 0 ? endsIn.Max(e => e.W) : widestOn.GetValueOrDefault(layer);
+                if (wLine > 0)
                 {
-                    var byCore = points.GroupBy(p => Enumerable.Range(0, cores.Count).MinBy(c => Distance(cores[c], p.X, p.Y))).ToList();
-                    var first = byCore[0].First();
-                    foreach (var other in byCore.Skip(1).Select(g => g.First()))
-                        split.Add((first.Name, first.X, first.Y, layer, other.Name, other.X, other.Y));
+                    // Cut away what is no wider than the lines by the review's pad-to-trace step: what is left are the cores,
+                    // each grown back by as much to the copper it stands for. A member on none of them, or on another core
+                    // than the first, is joined to it across copper no line models.
+                    double r = 0.5 * TraceImpedanceAnalysis.PadWidthStep * wLine;
+                    var cores = Drc.DrcRegions.Components(Clipper.InflatePaths(region, -r, JoinType.Miter, EndType.Polygon))
+                                    .Select(c => Clipper.InflatePaths(c, r + dbu, JoinType.Miter, EndType.Polygon)).ToList();
+                    if (cores.Count == 0)
+                    {
+                        // No wider anywhere than its lines: one point to another past a line end's reach is not one pad.
+                        double reach = AttachReachWidths * wLine + AttachReachMicrons * dbu;
+                        var first = points[0];
+                        foreach (var other in points.Skip(1).Where(o => Math.Sqrt(Sq(o.X - first.X) + Sq(o.Y - first.Y)) > reach))
+                            split.Add((first.Name, first.X, first.Y, layer, other.Name, other.X, other.Y));
+                    }
+                    else
+                    {
+                        var coreOf = points.Select(p => cores.FindIndex(c => Regions.Contains(c, p.X, p.Y))).ToList();
+                        int anchor = coreOf.FindIndex(c => c >= 0);
+                        var first = points[Math.Max(0, anchor)];
+                        var seen = new HashSet<int> { anchor >= 0 ? coreOf[anchor] : -2 };
+                        for (int i = 0; i < points.Count; i++)
+                            if (i != Math.Max(0, anchor) && (coreOf[i] < 0 || seen.Add(coreOf[i])))
+                                split.Add((first.Name, first.X, first.Y, layer, points[i].Name, points[i].X, points[i].Y));
+                    }
                 }
                 pads.Add((members, endsIn.Count, onIt.Count, box, split));
             }
         }
         return pads;
-    }
-
-    /// <summary>A pad region's cores: the region eroded by its largest inscribed radius (found to a percent) over the review's
-    /// pad-to-trace step, so every part of it that is narrower than its widest by that step is gone.</summary>
-    private static List<Paths64> Cores(Paths64 region, Bbox box)
-    {
-        double lo = 0, hi = 0.5 * Math.Min(box.MaxX - box.MinX, box.MaxY - box.MinY);
-        for (int i = 0; i < 7; i++)
-        {
-            double r = 0.5 * (lo + hi);
-            if (Clipper.InflatePaths(region, -r, JoinType.Miter, EndType.Polygon).Count > 0) lo = r; else hi = r;
-        }
-        if (lo <= 0) return [region];
-        return Drc.DrcRegions.Components(Clipper.InflatePaths(region, -lo / TraceImpedanceAnalysis.PadWidthStep, JoinType.Miter, EndType.Polygon));
-    }
-
-    /// <summary>How far a point is from a core: 0 inside it, else to its bounding box.</summary>
-    private static double Distance(Paths64 core, long x, long y)
-    {
-        if (Regions.Contains(core, x, y)) return 0;
-        var b = Clipper.GetBounds(core);
-        double dx = Math.Max(0, Math.Max(b.left - x, x - b.right)), dy = Math.Max(0, Math.Max(b.top - y, y - b.bottom));
-        return Math.Sqrt(dx * dx + dy * dy);
     }
 
     /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width
