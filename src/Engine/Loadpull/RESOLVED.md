@@ -432,38 +432,50 @@ depth 17; both example `load_grid.gam` files: 49, depth 16). Scheduling whole lo
 at 2.5-3.6×. But the seed is a load's FIRST rung only, and that rung is its first solve, so a load publishes it at once
 and only the first solves chain. The rest of each drive-up runs in parallel.
 
-**LP-1, measured** with `LoadpullCostTests.M1` (Release, every parallel run checked bit for bit against the serial
-one):
+**LP-1, measured** with `LoadpullCostTests.M1` (Release, 20 cores visible, a shared machine at a load average of 30-40;
+every parallel run checked bit for bit against the serial one). Two runs on different days; the cheap devices' runs
+are 0.06-0.3 s, so their ratios are noisy:
 
 | grid | serial | 4 workers | 8 workers | 16 workers |
 |---|---|---|---|---|
-| SDD, 61-point ring | 0.31 s | 2.0× | 2.8× | 3.4× |
-| native FET, 61-point ring | 0.30 s | 3.0× | 4.4× | 5.1× |
-| ComposedFET, GanLoadpull's 49 loads | 20.0 s | 2.9× | 4.0× | 4.9× |
+| SDD, 61-point ring | 0.23-0.31 s | 2.0-2.9× | 2.8-3.5× | 3.4-3.6× |
+| native FET, 61-point ring | 0.22-0.30 s | 2.3-3.0× | 3.5-4.4× | 2.4-5.1× |
+| ComposedFET, GanLoadpull's 49 loads | 18.6-20.0 s | 2.9-3.6× | 4.0-5.7× | 4.9-6.5× |
 | the same, `DOTNET_gcServer=1` | 19.5 s | 3.6× | 7.2× | 10.5× |
 | external `.osdi` (serial by design) | 0.78 s | 1× | 1× | 1× |
 
-- **On a real model the limit is the garbage collector, not the schedule.** With the workstation GC every thread stops
-  for each collection, and a ComposedFET evaluation allocates; under the server GC the same run scales to 10.5× at 16
-  workers. circuitRF ships the default GC, so that is a setting a user can make (`DOTNET_gcServer=1`), or a follow-up
-  that allocates less per evaluation.
+- **On a real model the garbage collector is a limit.** With the workstation GC every thread stops for each collection,
+  and a ComposedFET evaluation allocates; under the server GC the same run reached 10.5× at 16 workers. circuitRF ships
+  the default GC, so that is a setting a user can make (`DOTNET_gcServer=1`), or a follow-up that allocates less.
 - **The cheap devices stop at 3-5×** because a load is only ~5 ms: the serial first solves, the copies' elaboration
-  (one at a time, under a lock) and the join are then a large share.
-- **External devices stay serial.** One worker process per model and one channel (`SParameterEngine.CanElaborateInParallel`).
-- **End to end**, `circuitrf lp` with the process start included, on the two shipped 49-load examples netlisted to
-  `.cnl`: `examples/Loadpull` (SDD) 2.27 s serial, 0.77 s at `Workers=8`, 0.72 s at 16; `GanLoadpull` (ComposedFET)
-  18.0 s serial, 3.9 s at 8, 3.1 s at 16, and 7.0 s at the default (20 visible cores, on a shared machine: more workers
-  than that is not better there). The `.npy`, `.spl` and `.lpcwave` files, and the `[LP]` lines on stderr, are
-  byte-identical at every worker count.
+  (one at a time, under a lock) and the join are then a large share. Hence the floor of two loads per worker, and a
+  worker that reaches the elaboration lock after the others have claimed nearly every load starts no copy.
+- **End to end**, `circuitrf lp` with the process start included, median of three (range), on the two shipped 49-load
+  examples netlisted to `.cnl`: `GanLoadpull` (ComposedFET) 21.7 s (20.8-23.7) serial, 4.4 s (4.3-4.4) at
+  `Workers=8`, 3.6 s (3.4-4.6) at 16 and 4.3 s (3.8-5.6) at the default, 20 workers: 5.1× at the default and 6.0× at 16.
+  An independent review measured the default at 2.19 s against 18.59 s serial (8.5×) on a quieter machine.
+  `examples/Loadpull` (SDD) 1.8 s (1.4-2.4) serial and 0.8 s (0.77-0.87) at the default, most of what is left being the
+  process start. The `.npy`, `.spl` and `.lpcwave` files, and the `[LP]` lines on stderr, are byte-identical at every
+  worker count.
 
 **What had to be carried to the copies.** A pursuit's follow-on sets its Zsource as a harmonic override on the CALLER's
 source tuner before `Run`; a fresh elaboration does not have it, and every follow-on number moved until `Mirror` copied
 the override onto each worker's tuners. Diagnostics: a copy's once-per-key rule would hide a key from an earlier load
 that a later load on the same copy raised first, so `ElaboratedNetlist.TakeRunDiagnostics` takes each load's findings
-and forgets their keys, and they are replayed into the caller's netlist in grid order.
+and forgets their keys, and they are replayed into the caller's netlist in grid order
+(`LoadpullParallelTests.AWarningRaisedAtSeveralLoads_NamesTheFirstInGridOrder`: two loads raise the energy warning with
+different messages).
 
-**Found on the way, fixed:** `ParametricSweepEngine.RunInner` built its loadpull and pursuit engines without the sweep's
-`AnalysisSettings`, so a swept loadpull dropped Gmin and the regularization settings. It now passes them.
+**Nested parallelism.** The optimizer, yield, corners and DOE already run their points side by side at all cores
+(`OptimizationRun.EvaluateKeyed`). Each point reaching a parallel grid would have made points × cores threads and
+netlist copies, so while points run side by side each evaluation carries `CircuitEvaluationRequest.LoadpullWorkers = 1`,
+which every loadpull in it, bare, swept or pursued, takes as a cap of one.
+
+**Found, not fixed — solver settings reach a loadpull differently from the CLI and from the GUI.** `circuitrf lp` and
+`lpp` hand an unswept loadpull the CLI's `AnalysisSettings`; a swept one (`ParametricSweepEngine.RunInner`) and every
+GUI run (`CircuitEvaluation`) run at the defaults, so Gmin and the regularization settings the CLI takes reach only the
+first. That is as on main; LP-1 passes a sweep's parallelism cap through and nothing else, so no result moves. A separate
+issue.
 
 **Found, not fixed:** `ModelValidation.Dc`/`SParams`/`LoadSweep` run their points in `Parallel.For` without asking
 `CanElaborateInParallel`, so an external device there is elaborated once per point at once.

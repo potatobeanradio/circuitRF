@@ -62,7 +62,10 @@ around and never ramps anything. Do not reach for it as an existing continuation
 - **Anything a caller sets on the netlist before `Run` must reach each copy.** Today that is the tuners' harmonic
   override (a pursuit's follow-on Zsource, `Mirror`). A new piece of mutable model state set from outside needs the same.
 
-External devices stay serial by design (`PlanDegree`): one worker process per model, with one channel.
+External devices stay serial by design (`PlanDegree`): one worker process per model, with one channel. Thread-static
+test knobs and counters (`HbNewton.UnscaledLineSearch`, `NonlinearEvalDiagnostics`, `SddModel.GridParallelThreshold`,
+`HbNewton.Evaluations`, `BiasFreeze.FreezeCount`, `NonlinearDcEngine.Runs`) do not reach the workers: pin a test that
+reads them to `MaxParallelism = 1`.
 
 ## Zin uses the source-delivered current, not INl[gate] (brief-loadpull-zin-passives, 2026-06-24)
 
