@@ -529,6 +529,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>A sweep has no bench of its own; two of its points, each transferred, sit on their budgets.</summary>
     [Fact]
+    [Trait("Category", "Benchmark")]
     public void TwoSweepPoints_Transferred_SimulateToTheirBudgets()
     {
         double nf0 = double.NaN;

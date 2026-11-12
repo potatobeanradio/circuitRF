@@ -54,28 +54,45 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
 
     public void Dispose() { try { Directory.Delete(_ws, true); } catch (IOException) { } }
 
+    /// <summary>The 26 GHz link's eight-element benches take most of the transfer's time; their own test is a benchmark
+    /// (<see cref="TheShippedLinkBenches_AreWhatTransferWritesToday"/>), and this one still counts their folders.</summary>
+    private const string LinkChain = "26 GHz Link";
+
     [Fact]
     public void TheShippedBenches_AreWhatTransferWritesToday()
     {
         CopyDirectory(Workspace, _ws);
         var written = new HashSet<string>(StringComparer.Ordinal);
-        foreach (string chain in Chains)
-        {
-            var d = ChainDesignIo.LoadFromFile(Path.Combine(_ws, chain + ".cchain"));
-            var w = ChainBenches.Write(d, _ws, chain, replace: true);
-            Assert.Empty(w.Refusals);
-            ChainBudgetDisplay.WriteAll(_ws, chain, d, ChainBudget.Evaluate(d));
-            written.UnionWith(Benches(_ws, chain).Select(b => b.CellName));
-            foreach (var b in Benches(_ws, chain))
-            {
-                string cell = b.CellName;
-                SameUpToTheLastBit(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)), cell + ".csch");
-                SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
-            }
-        }
+        foreach (string chain in Chains.Where(c => c != LinkChain)) written.UnionWith(TransferAndCompare(chain));
+        written.UnionWith(Benches(Workspace, LinkChain).Select(b => b.CellName));
         // And nothing shipped that Transfer no longer writes: every bench folder and display is one of them.
         Assert.Equal(written.Order(), Directory.GetDirectories(Workspace).Select(x => Path.GetFileName(x)).Order());
         Assert.Equal(written.Order(), Directory.GetFiles(Workspace, "*.cdd").Select(x => Path.GetFileNameWithoutExtension(x)).Order());
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void TheShippedLinkBenches_AreWhatTransferWritesToday()
+    {
+        CopyDirectory(Workspace, _ws);
+        Assert.NotEmpty(TransferAndCompare(LinkChain));
+    }
+
+    /// <summary>Transfers a shipped chain in the copy and compares each bench and display with the shipped one; returns
+    /// the cells written.</summary>
+    private IEnumerable<string> TransferAndCompare(string chain)
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(_ws, chain + ".cchain"));
+        var w = ChainBenches.Write(d, _ws, chain, replace: true);
+        Assert.Empty(w.Refusals);
+        ChainBudgetDisplay.WriteAll(_ws, chain, d, ChainBudget.Evaluate(d));
+        var cells = Benches(_ws, chain).Select(b => b.CellName).ToList();
+        foreach (string cell in cells)
+        {
+            SameUpToTheLastBit(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)), cell + ".csch");
+            SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
+        }
+        return cells;
     }
 
     /// <summary>
@@ -282,6 +299,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     [Fact]
+    [Trait("Category", "Benchmark")]
     public void Link_1Tone_TheReceiverOnTheBudget_AtThePowerTheLinkDelivers()
     {
         var ds = Simulate("26 GHz Link 1-Tone");
