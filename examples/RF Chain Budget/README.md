@@ -151,7 +151,7 @@ to look like a 26 GHz front end; none is a fit to any device or process.
 | Stage | Part | At 26 GHz |
 |---|---|---|
 | RXSW | `Switch`, `IL = 0.012*f_GHz + 0.4` | 0.71 dB |
-| LNA | `Amp`, 20 dB, `NF = 0.06*f_GHz + 0.9`, IIP3 −10 dBm, `GainPerStage = 33 - 15*log10(f_GHz)`, 8 mW a stage | NF 2.46 dB; 11.8 dB a stage, so 2 stages (3 above 34 GHz) |
+| LNA | `Amp`, 20 dB, `NF = 0.045*f_GHz + 1.29`, IIP3 −10 dBm, `GainPerStage = 33 - 15*log10(f_GHz)`, 8 mW a stage | NF 2.46 dB; 11.8 dB a stage, so 2 stages (3 above 34 GHz) |
 | PS | `PhaseShifter`, 6 dB, IIP3 10 dBm | |
 | CMB | `Combiner`, N = 8, `Topology = Levels`, 0.8 dB a level, steer 30° | 3 levels: 2.4 dB |
 | DRV | `Amp`, 10 dB, the LNA's NF, OIP3 15 dBm, 15 mW | |
@@ -177,7 +177,7 @@ elements' signals arrive in phase, and the Notes say so. The cascade table's **N
 the LNA may have 16.7 dB of NF together before they cost the chain 1 dB.
 
 **The sweeps.** The Link tab's Sweeps row asks for three, each with its own tab:
-- the carrier from 20 to 40 GHz, beyond n258 to show the trend: the rate falls from 9.9 to 7.1 Gb/s as the PA's output
+- the carrier from 20 to 40 GHz, beyond n258 to show the trend: the rate falls from 9.9 to 7.2 Gb/s as the PA's output
   falls past its knee, the loss and the noise rise, and the path lengthens in wavelengths, and the DC power steps where
   the LNA needs a third stage;
 - the transmit array from 4 to 1024 elements: the rate climbs until the received power meets the receiver's ceiling,

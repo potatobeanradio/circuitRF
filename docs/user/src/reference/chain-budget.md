@@ -183,7 +183,7 @@ moves and a [frequency sweep](#sweeps) shows it:
 | Written as | Example | Read |
 |---|---|---|
 | A number | `8.5`, `8.5 dB`, `2.35 GHz` | as always |
-| An expression | `0.06*f_GHz + 0.9` | in `freq` (Hz) or `f_GHz` (GHz), with the [expression language](expressions.html)'s functions: `log10`, `ceil`, `min`, `max`, `a < b ? x : y`; a unit glued to its number, `freq - 3GHz` |
+| An expression | `0.045*f_GHz + 1.29` | in `freq` (Hz) or `f_GHz` (GHz), with the [expression language](expressions.html)'s functions: `log10`, `ceil`, `min`, `max`, `a < b ? x : y`; a unit glued to its number, `freq - 3GHz` |
 | A table | `lna_nf.csv` | a CSV file of `freq,value` rows (the frequency in Hz, or with its unit, `26 GHz`; a first line that is not a row is its header), linear between rows |
 
 Each is read at **its own stage's input frequency**: the chain's, and after a mixer the IF. A mixer's `Flo` is read

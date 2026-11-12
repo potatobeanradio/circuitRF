@@ -33,10 +33,10 @@ DESIGN = {
     "RequiredSnrDb": 10, "Streams": 2,
     "Stages": [
         st("RXSW", "Switch", IL="0.012*f_GHz + 0.4"),
-        st("LNA", "Amp", Gain=20, NF="0.06*f_GHz + 0.9", IP3=-10, IP3Ref="Input", GainPerStage="33 - 15*log10(f_GHz)", Pdc=0.008),
+        st("LNA", "Amp", Gain=20, NF="0.045*f_GHz + 1.29", IP3=-10, IP3Ref="Input", GainPerStage="33 - 15*log10(f_GHz)", Pdc=0.008),
         st("PS", "PhaseShifter", Phase=0, IL=6, IIP3=10),
         st("CMB", "Combiner", N=8, Topology="Levels", IL=0.8),
-        st("DRV", "Amp", Gain=10, NF="0.06*f_GHz + 0.9", IP3=15, IP3Ref="Output", Pdc=0.015),
+        st("DRV", "Amp", Gain=10, NF="0.045*f_GHz + 1.29", IP3=15, IP3Ref="Output", Pdc=0.015),
         st("MIX", "Mixer", ConvGain=-7, NF=9, NFType="ssb", IIP3=3, Plo=7, Flo="freq - 3e9", Pdc=0.025),
     ],
     "Link": {

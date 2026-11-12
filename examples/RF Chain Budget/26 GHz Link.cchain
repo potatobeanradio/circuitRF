@@ -18,7 +18,7 @@
       "Part": "Amp",
       "Parameters": {
         "Gain": "20",
-        "NF": "0.06*f_GHz + 0.9",
+        "NF": "0.045*f_GHz + 1.29",
         "IP3": "-10",
         "IP3Ref": "Input",
         "GainPerStage": "33 - 15*log10(f_GHz)",
@@ -55,7 +55,7 @@
       "Part": "Amp",
       "Parameters": {
         "Gain": "10",
-        "NF": "0.06*f_GHz + 0.9",
+        "NF": "0.045*f_GHz + 1.29",
         "IP3": "15",
         "IP3Ref": "Output",
         "Pdc": "15 mW"

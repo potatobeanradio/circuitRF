@@ -466,7 +466,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal([1, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64], new ChainSweep(ChainSweep.RxElements, 1, 64, 13).Values());
 
         var d = Link();
-        d.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        d.Stages[0].Parameters["NF"] = "0.045*f_GHz + 1.29";
         d.Sweeps = [new(ChainSweep.Frequency, 20e9, 40e9, 5), new(ChainSweep.TxElements, 4, 1024, 9), new(ChainSweep.RxElements, 1, 64, 13)];
         Assert.Empty(ChainBudget.Evaluate(d).Refusals);
         var notes = new List<string>();
@@ -476,7 +476,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         for (int i = 0; i < 5; i++)
         {
             var at = Link();
-            at.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+            at.Stages[0].Parameters["NF"] = "0.045*f_GHz + 1.29";
             at.FrequencyHz = 20e9 + 5e9 * i;
             var r = ChainBudget.Evaluate(at);
             Assert.Equal(r.Totals!.SnrDb, f["SNR_dB"].RealValues[i], 12);
@@ -489,11 +489,11 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(20 * Math.Log10(1024.0 / 4), tx["EIRP_dBm"].RealValues[^1] - tx["EIRP_dBm"].RealValues[0], 9);
         var rx = ChainBudget.Sweep(d, d.Sweeps[2]);
         var one = Link();
-        one.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        one.Stages[0].Parameters["NF"] = "0.045*f_GHz + 1.29";
         one.Stages.RemoveAt(1);
         Assert.Equal(ChainBudget.Evaluate(one).Totals!.SnrDb, rx["SNR_dB"].RealValues[0], 12);
         var six = Link();
-        six.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+        six.Stages[0].Parameters["NF"] = "0.045*f_GHz + 1.29";
         six.Stages[1].Parameters["N"] = "6";
         Assert.Equal(ChainBudget.Evaluate(six).Totals!.SnrDb, rx["SNR_dB"].RealValues[4], 12);
 
@@ -535,7 +535,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         foreach (double f in new[] { 22e9, 38e9 })
         {
             var d = Link();
-            d.Stages[0].Parameters["NF"] = "0.06*f_GHz + 0.9";
+            d.Stages[0].Parameters["NF"] = "0.045*f_GHz + 1.29";
             d.FrequencyHz = f;
             string chain = $"At{f / 1e9:0}";
             var one = Bench(d, chain, ChainBench.OneTone);
