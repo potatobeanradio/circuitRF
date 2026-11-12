@@ -235,6 +235,8 @@ public static class ChainDesignIo
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
+        // An expression is written as typed: `0.012*f_GHz + 0.4`, `freq < 30e9 ? …`, not `\u002B` and `\u003C`.
+        Encoder                     = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented               = true,
         DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true,

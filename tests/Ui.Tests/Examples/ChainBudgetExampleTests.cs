@@ -324,6 +324,18 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
 
     private static double M0(DataSet ds, string name) => ds[name].RealValues[0];
 
+    /// <summary>Every shipped chain, opened and saved again, is the file as shipped, to the byte: nothing the reader
+    /// keeps is lost, and nothing it derives (the link's element count) is written as a key of its own.</summary>
+    [Fact]
+    public void EveryShippedChain_SavesBackToItsOwnBytes()
+    {
+        foreach (string chain in Chains)
+        {
+            string path = Path.Combine(Workspace, chain + ChainDesignIo.Extension);
+            Assert.Equal(File.ReadAllText(path), ChainDesignIo.Serialize(ChainDesignIo.LoadFromFile(path)));
+        }
+    }
+
     // ── 2-Tone and Envelope ──────────────────────────────────────────────────
 
     [Theory]

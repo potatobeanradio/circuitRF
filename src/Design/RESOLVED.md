@@ -30954,6 +30954,10 @@ Findings, each now in the code and stated in `docs/design/chain-budget.md` §2.3
   the PA's 1 dB compression point is 6 dB below Psat, and the carrier's peaks reach it.
 - **A sweep point is one chain.** A receive-array sweep down to one element removes the Combiner, and the point's copy
   still carrying the sweep was refused for sizing a combiner it no longer had; each point's copy drops the sweeps.
+- **A saved chain is its file, to the byte.** The link's derived element count was serialized as a stray `Elements`
+  key (now `[JsonIgnore]`), and the default encoder wrote an expression's `+` and `<` as `\u002B` and `\u003C`; the
+  `.cchain` writer takes `UnsafeRelaxedJsonEscaping`, as the `.c3d` writer does. Every shipped chain saves back to its
+  own bytes (`ChainBudgetExampleTests.EveryShippedChain_SavesBackToItsOwnBytes`).
 - **A .cchain that uses any of this is version 2, and only then**, so 1.8.2 refuses it rather than drops the fields on
   save, and every other chain stays version 1.
 

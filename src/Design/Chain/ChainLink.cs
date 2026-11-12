@@ -22,6 +22,7 @@
 // calculation (testdata/chain/link_reference.py).
 
 using System.Globalization;
+using System.Text.Json.Serialization;
 using RfCore.Data;
 
 namespace CircuitRF.Design.Chain;
@@ -83,7 +84,9 @@ public sealed class ChainLink
         return true;
     }
 
-    /// <summary>The elements, Mtx: a whole number of them, 1 or more; null otherwise.</summary>
+    /// <summary>The elements, Mtx: a whole number of them, 1 or more; null otherwise. Read from <see cref="Tx"/>, so
+    /// not a key of its own in the file.</summary>
+    [JsonIgnore]
     public int? Elements => ChainValue.TryParse(GetTx("Elements"), out double m) && m >= 1 && m == Math.Round(m) && m < int.MaxValue ? (int)m : null;
 
     // ── in a design being budgeted ────────────────────────────────────────────
