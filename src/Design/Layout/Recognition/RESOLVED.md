@@ -898,3 +898,7 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   is a member on another core. The 4.5 mm device pad (widest line 2 mm, cut by 1.2 mm) and every existing board read as
   before. Gate: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper` (far pad 3 mm,
   2.2 mm, none).
+- **A pour beside a body is no third terminal** (F8, on re-review). The three-piece check counted any piece under a twentieth
+  of the body, so an 0603 body across a gap in a 0.5 mm coplanar line, its long edges 0.05 mm over the pours, was refused:
+  "C1 names no part", both line ends open. A third piece now counts only where it covers what an end must (a quarter of a
+  half, `MinEndCover`) under either end or the body's middle. Gate: `PartReadingTests.ABodyWiderThanItsCoplanarLine_IsStillASeriesPart`.

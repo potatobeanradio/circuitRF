@@ -155,7 +155,7 @@ public sealed class PartReadingTests : IDisposable
             .Where(s => s.Layer != silk)
             .Concat(zero.Select((p, i) => (p.Item1, p.Item2, zero[(i + 1) % zero.Length].Item1, zero[(i + 1) % zero.Length].Item2))
                 .Select(e => (LayoutShape)new PathShape { Layer = silk, Xy = [Um(e.Item1), Um(e.Item2), Um(e.Item3), Um(e.Item4)], Width = 0 }))
-            .Append(Box(9_600, 4_600, 10_900, 6_600))] });   // over both lines either side of the gap, and the pour
+            .Append(Box(9_400, 4_600, 11_100, 6_800))] });   // over both lines either side of the gap, and the pour
         Assert.Equal(0, exploded.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
         Assert.Equal(1, exploded.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
 
@@ -165,5 +165,31 @@ public sealed class PartReadingTests : IDisposable
         var lands = ArtworkRecognition.Recognize(new RecognitionInput { View = board, Technology = tech, Shapes = board.Shapes });
         Assert.Equal(3, lands.Parts.Rows.Count);
         Assert.Equal(0, lands.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
+    }
+
+    /// <summary>An 0603 body across a gap in a 0.5 mm coplanar line, wider than the line, with the pours 0.1 mm from it: the
+    /// ground under its long edges is a sliver, no third terminal, and the body is the series part across the gap.</summary>
+    [Fact]
+    public void ABodyWiderThanItsCoplanarLine_IsStillASeriesPart()
+    {
+        var silk = new LayerKey(6, 0);
+        var tech = TwoLayerWithMask();
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = silk, Name = "Silk Top", Purpose = "silkscreen" }];
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 40_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 4_750, 10_000, 5_250));
+        view.Shapes.Add(Rect(Top, 10_500, 4_750, 40_000, 5_250));
+        view.Shapes.Add(Rect(Top, 0, 5_350, 40_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 0, 40_000, 4_650));
+        for (int i = 0; i < 8; i++) { view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 15_000)); view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 2_000)); }
+        view.Shapes.Add(new PolygonShape { Layer = silk, Xy = [Um(9_450), Um(4_600), Um(11_050), Um(4_600), Um(11_050), Um(5_400), Um(9_450), Um(5_400)] });
+        view.Shapes.Add(new LabelShape { Layer = silk, Text = "C1", X = Um(9_500), Y = Um(6_000), Height = Um(800) });
+
+        var result = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = tech, Shapes = view.Shapes });
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(PartConnection.Series, Assert.Single(result.Parts.Rows, r => r.Refdes == "C1").Connection);
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.OpenEnds));
     }
 }
