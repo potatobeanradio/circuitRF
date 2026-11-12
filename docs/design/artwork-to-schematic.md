@@ -665,9 +665,10 @@ different reader.
 
 **Typed text is read as itself.** A drawing exported as DXF carries its designators as `TEXT`/`MTEXT`, which the import
 keeps as labels with the exact characters. `TypedSilkscreenEvidence` reads each label on a silkscreen layer whose text
-(MTEXT's inline codes stripped, upper-cased) passes the designator rule of §9.2 as a line with no glyphs, its box from
-the anchor, the height, 0.6 of a height per character and the rotation, and claims through `IPartEvidenceSource`, the seam
-a picture's legend uses. Its claims are given first, then the stroked reading names what they leave. A label only names a
+(MTEXT's codes and toggles and TEXT's `%%u`/`%%o`/`%%k` stripped, upper-cased) passes the designator rule of §9.2 as a
+line with no glyphs, its box from the anchor, the height, 0.6 of a height per character and the rotation, and as the same
+`PartClaim`s a picture's legend makes through `IPartEvidenceSource` — read by `PartReading` itself, not through that seam,
+because it is given first and reported whatever else is found. Then the stroked reading names what they leave. A label only names a
 part another rung found; with no glyphs, correcting it teaches nothing (`SilkscreenText.Lesson`).
 
 `StrokeGlyphs`: strokes whose centre lines touch (within 0.3 of the pen width) or cross are one **unit**. A unit is

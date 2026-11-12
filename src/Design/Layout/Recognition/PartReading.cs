@@ -217,7 +217,7 @@ public static class PartReading
         var unassociated = new List<PartClaim>();
         // Designators typed as text first: they are exact, so a stroked reading only names what they leave (R-as10-4).
         var typed = new TypedSilkscreenEvidence(input.Shapes, tech);
-        Name(typed.Claims(input, ctx.Board));
+        Name(typed.Claims());
         if (drafts.Any(d => d.Refdes is null))
         {
             silk = SilkscreenText.Read(input.Shapes, tech, GlyphTemplates.ForUser());
@@ -1102,10 +1102,11 @@ public static class PartReading
         static RecognitionAnchor At(SilkTextLine l) => new(l.X, l.Y, l.Layer);
         // Said whether or not any part was left to name: with none found, it is what says the designators were there.
         var labels = typed.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
+        int others = typed.OtherLabels.Count(l => InScope(ctx, l.X, l.Y));
         report.Add(RecognitionFindingClass.SilkscreenLabelsRead, labels.Count,
             $"{Plural(labels.Count, "designator was", "designators were")} read from text labels on the silkscreen: " +
             $"{string.Join(", ", labels.Take(16).Select(l => l.Refdes))}{(labels.Count > 16 ? ", …" : "")}" +
-            (typed.OtherLabels > 0 ? $"; {Plural(typed.OtherLabels, "other label there is", "other labels there are")} no designator." : "."),
+            (others > 0 ? $"; {Plural(others, "other label there is", "other labels there are")} no designator." : "."),
             [.. labels.Select(At)]);
         var lines = silk.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
         int designators = lines.Count(l => l.Refdes is not null);

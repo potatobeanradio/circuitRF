@@ -777,8 +777,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
 - **Typed designators are read** (R-as10-2, R-as10-4, R-as10-6, R-as4-1 (4), R-as4-9). `SilkscreenText` reads stroked shapes
   only and skipped every `LabelShape`, so a DXF's `TEXT`/`MTEXT` designators — exact characters — named nothing, and with
   no other evidence the report said nothing about the silkscreen at all. `TypedSilkscreenEvidence` makes each label whose
-  text passes the designator rule a `SilkTextLine` with no glyphs and a claim through `IPartEvidenceSource`, the seam the
-  picture reader (`RasterSilkscreenEvidence`) already used; its claims go first, then the strokes name what is left.
+  text passes the designator rule a `SilkTextLine` with no glyphs and a `PartClaim`, the claim the picture reader
+  (`RasterSilkscreenEvidence`) makes through `IPartEvidenceSource`; `PartReading` reads it itself rather than through that
+  seam, since it goes first and is reported regardless. Its claims go first, then the strokes name what is left.
   MTEXT's inline codes are stripped first (`{\fArial|b0;C2}` is C2). Typed text only NAMES parts another rung found
   (`PartReading`'s association, unchanged). The strokes are read only while some part is unnamed, so the typed count is
   reported regardless (`SilkscreenLabelsRead`): with no part found it is what says the designators were there. A typed
@@ -879,3 +880,7 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   outlines do. And `CopperUnder` took the largest piece under each half, so an outline over three pieces of copper — a
   three-terminal part's body — read as a two-terminal part; one over a third piece covering a twentieth of it is now left
   out and said (`BodyOutlinesOverManyPieces`). Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_…`.
+- **Typed text: every code stripped, and the other labels counted in scope** (F3, on review). The strip took only codes
+  ending in a semicolon, so `\LC1\l` (underlined) was an "other label"; MTEXT's toggles and breaks (`\L \l \O \o \K \k \P
+  \N \X \~`) and TEXT's `%%u`/`%%o`/`%%k` go too now. The count of labels that are no designator is the scope's, as the
+  designators' is. Gate: `TypedSilkscreenTests`.

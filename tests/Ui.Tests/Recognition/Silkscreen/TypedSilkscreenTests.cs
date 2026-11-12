@@ -33,7 +33,7 @@ public sealed class TypedSilkscreenTests
         double pitch = Ends(Land("0603", DensityLevel.Nominal, 0, 0)) is var (l, r) ? r - l : 0;
         view.Shapes.Add(Label("R1", 11_500, 6_200));
         view.Shapes.Add(Label(@"{\fArial|b0|i0;C2}", 21_500, 5_000 + pitch / 2));
-        view.Shapes.Add(Label("c3", 32_500, 6_200));
+        view.Shapes.Add(Label(@"\Lc3\l", 32_500, 6_200));
         view.Shapes.Add(Label("50R", 2_000, 8_000));
 
         var result = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = WithSilk(), Shapes = view.Shapes });
@@ -46,6 +46,23 @@ public sealed class TypedSilkscreenTests
         Assert.Equal(3, read.Count);
         Assert.Contains("1 other label there is no designator", read.Sentence);
         Assert.Null(SilkscreenTextLesson(result));
+    }
+
+    /// <summary>MTEXT's codes and toggles and TEXT's are how the text is set, not what it says.</summary>
+    [Theory]
+    [InlineData(@"{\fArial|b0|i0;C2}")]
+    [InlineData(@"\A1;\LC2\l")]
+    [InlineData(@"\OC2\o\P")]
+    [InlineData(@"\H0.8x;\KC2\k")]
+    [InlineData("%%uC2%%u")]
+    [InlineData(@"C\~2")]
+    public void FormattingCodes_AreNotTheText(string text)
+    {
+        var view = PlaneAndLine();
+        view.Shapes.Add(Label(text, 20_000, 7_000));
+        var evidence = new CircuitRF.Design.Layout.Recognition.Silkscreen.TypedSilkscreenEvidence(view.Shapes, WithSilk());
+        Assert.Equal("C2", Assert.Single(evidence.Lines).Refdes);
+        Assert.Empty(evidence.OtherLabels);
     }
 
     /// <summary>With no part found to name, the designators are still reported — what says why the board has no parts.</summary>
