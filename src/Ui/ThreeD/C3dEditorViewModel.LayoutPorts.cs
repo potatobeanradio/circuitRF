@@ -9,6 +9,7 @@
 
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Ui.Viewer3D;
 
 namespace CircuitRF.Ui.ThreeD;
 
@@ -84,8 +85,21 @@ public sealed partial class C3dEditorViewModel
                 ? $"both {Len(s.OldWidthDbu)} wide, in a different place"
                 : $"{Len(s.OldWidthDbu)} wide here and {Len(s.NewWidthDbu)} as the layout builds it now";
         return $"Port {s.Number} of '{Path.GetFileName(FilePath)}' no longer matches its layout's port label: {widths}. " +
-               "Update Ports from Layout (an instance's right-click menu) replaces it; nothing is changed until then.";
+               "Right-click the port's row in the object tree, its instance, or the view ▸ Update Ports from Layout to replace it; " +
+               "nothing is changed until then.";
     }
+
+    /// <summary>
+    /// Update Ports from Layout as a menu item — on a placed layout's instance, on a port taken from a layout, and on the view's
+    /// menu while a port is out of step. A port out of step is often refused (its sheet no longer lies on the conductors the
+    /// layout moved) and then has nothing in the view to click: the item must be reachable without selecting it.
+    /// </summary>
+    private Viewer3DMenuItem UpdatePortsFromLayoutItem()
+        => new("Update Ports from Layout", () => UpdatePortsFromLayout(),
+               Tip: (StaleLayoutPorts.Count > 0
+                        ? $"{(StaleLayoutPorts.Count == 1 ? "Port " + StaleLayoutPorts[0].Number + " no longer matches" : $"Ports {string.Join(", ", StaleLayoutPorts.Select(p => p.Number))} no longer match")} the layout. "
+                        : "") +
+                    "Replace this view's ports with what the placed layouts' port labels build now. Ports the layouts do not state are kept. Undoable.");
 
     /// <summary>
     /// R-pw1-5 — Update Ports from Layout (<see cref="C3dHierarchy.UpdatePorts"/>), as one undo entry: each record that

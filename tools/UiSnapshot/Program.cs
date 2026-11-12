@@ -427,7 +427,7 @@ for (int i = 0; i < args.Length; i++)
             sizeGiven = true;
             break;
         case "--click" or "--drag" or "--drag-hold" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
-            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick" or "--c3d-pick-add" or "--c3d-boolean-menu"
+            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick" or "--c3d-pick-add" or "--c3d-boolean-menu" or "--c3d-menu"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -1500,6 +1500,24 @@ foreach (var (kind, arg) in steps)
                 }
             }
             if (!hit) throw new InvalidOperationException($"--c3d-pick: '{arg}' is not visible from the camera");
+            break;
+        }
+        case "--c3d-menu":
+        {
+            // The selected Object Tree row's menu (--c3d-row), else the canvas's: every item printed, then the one named run
+            // as a click on it does, the scene settled again, and each port row's refusal printed.
+            var vm3 = c3dShown ?? throw new InvalidOperationException("--c3d-menu needs --c3d-setups");
+            var items = vm3.SelectedTreeItem is { } selRow ? vm3.TreeMenuItems(selRow) : vm3.Viewer.ContextMenuItems();
+            Console.WriteLine($"{kind} {arg}: menu [{string.Join(" | ", items.Where(m => !m.IsSeparator).Select(m => m.Enabled ? m.Header : m.Header + " (disabled)"))}]");
+            var item = items.FirstOrDefault(m => m.Header == arg) ?? throw new InvalidOperationException($"--c3d-menu: no item '{arg}'");
+            item.Run?.Invoke();
+            for (var w = System.Diagnostics.Stopwatch.StartNew(); w.Elapsed < TimeSpan.FromSeconds(60) && vm3.AdoptedGeneration != vm3.Viewer.Source.Requested;)
+            { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+            Pump();
+            static IEnumerable<CircuitRF.Ui.ThreeD.C3dTreeItem> WalkRows(CircuitRF.Ui.ThreeD.C3dTreeItem t) => t.Children.SelectMany(WalkRows).Prepend(t);
+            foreach (var row in vm3.Tree.SelectMany(g => g.Items).SelectMany(WalkRows).Where(r => r.Kind == "Port"))
+                Console.WriteLine($"{kind} {arg}: {row.Name} — {row.Refusal ?? "drawn"}");
+            Console.WriteLine($"{kind} {arg}: status '{vm3.StatusMessage}', dirty {vm3.IsDirty}");
             break;
         }
         case "--c3d-boolean-menu":

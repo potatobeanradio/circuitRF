@@ -270,6 +270,34 @@ public sealed class PortEdgeWidthTests : IDisposable
         Assert.Empty(C3dHierarchy.StalePorts(doc, now));
     }
 
+    /// <summary>A port out of step with its layout is usually refused and has nothing in the view to click: Update Ports from Layout
+    /// is on its row's menu and on the view's menu with nothing selected, not only on the instance's, and it clears the report.</summary>
+    [Fact]
+    public void AStalePort_IsFixedFromItsRow_OrTheViewsMenu()
+    {
+        var (cell, c3d, cws) = Board(Pour(plane: true));
+        Directory.CreateDirectory(Path.GetDirectoryName(c3d)!);
+        C3dPersistence.SaveToFile(c3d, C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!);
+        CellCreate.WriteLayoutView(cell, "Board", Layout(Pour(useEdge: false, plane: true)));
+        var vm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(c3d, C3dPersistence.LoadFromFile(c3d), () => new CircuitRF.Ui.Tests.ThreeD.PatchRecordingBackend(), () => cws, a => a());
+        try
+        {
+            vm.Viewer.Resized(400, 300);
+            vm.Viewer.Session.EnsureBackend();
+            vm.Start();
+            Assert.True(SpinWait.SpinUntil(() => vm.StaleLayoutPorts.Count > 0, TimeSpan.FromSeconds(60)), "no stale port reported");
+            static IEnumerable<CircuitRF.Ui.ThreeD.C3dTreeItem> Walk(CircuitRF.Ui.ThreeD.C3dTreeItem t) => t.Children.SelectMany(Walk).Prepend(t);
+            var row = vm.Tree.SelectMany(g => g.Items).SelectMany(Walk).First(r => r.Kind == "Port");
+            const string Update = "Update Ports from Layout";
+            Assert.Contains(Update, vm.TreeMenuItems(row).Select(i => i.Header));
+            var item = vm.Viewer.ContextMenuItems().Single(i => i.Header == Update);
+            item.Run!();
+            Assert.Empty(vm.StaleLayoutPorts);
+            Assert.DoesNotContain(Update, vm.Viewer.ContextMenuItems().Select(i => i.Header));
+        }
+        finally { vm.Dispose(); }
+    }
+
     /// <summary>A port widened in the 3D view on purpose is not reported: the link remembers the sheet the label made, and
     /// only a change to the LABEL is news. That memory is written to the file.</summary>
     [Fact]

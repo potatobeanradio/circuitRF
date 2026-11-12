@@ -579,3 +579,13 @@ child's document over the parent's `.c3d` and never wrote the child's own file â
 frame 0 through `Source` and every pushed-in frame to its own path (`WriteFrame`), for the active frame and the dirty frames
 beneath it alike; the gate also holds the parent's bytes unchanged. Anything else that reads `Source` must ask whether it
 means the tab's document or the frame being edited.
+
+## A port out of step with its layout could not be fixed from where it was (2026-11-12)
+
+The stale-port message named Update Ports from Layout "on an instance's right-click menu", and that was the only place
+it was. A port whose layout label has MOVED is refused (its sheet no longer lies on the copper), so the view draws only a
+red outline that hit-testing never reaches, and its tree row's menu had no such item: the person reading the message
+looked at the port, the one place it was not. `UpdatePortsFromLayoutItem` is now on the port row's menu (any port taken
+from a layout), the instance's, and the view's own menu while `StaleLayoutPorts` is non-empty; the message names all
+three. Checked on a real design whose two ports were refused: one click from a port's row draws both again.
+`UiSnapshot --c3d-menu <item>` runs a menu item by name and prints each port's refusal afterwards.

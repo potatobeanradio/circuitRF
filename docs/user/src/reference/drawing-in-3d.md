@@ -62,9 +62,11 @@ so a dimension written with `w50` follows the schematic's `w50` when the cell is
 [EM cells](em-cells.html#in-3d).
 
 The 3D view's ports are its own from then on, each remembering which placed layout and which of its port labels it
-came from. When a placed layout's port changes afterwards (its **Width** or **Use edge width**), opening the 3D view,
-or saving the layout while it is open, posts one message per port that no longer matches, with both widths; nothing
-is rewritten. **Update Ports from Layout**, on a placed layout's right-click menu, replaces those ports with what the
+came from. When a placed layout's port changes afterwards (its **Width** or **Use edge width**, or where its label is),
+opening the 3D view, or saving the layout while it is open, posts one message per port that no longer matches; nothing
+is rewritten. A port whose label has moved is usually refused, drawn only as a red outline that cannot be clicked.
+**Update Ports from Layout** — on the port's row in the object tree, on the placed layout's row, and on the view's own
+right-click menu while any port is out of step — replaces those ports with what the
 layouts build now and brings in any label no port stands for yet, as one step you can undo. Two placed layouts often
 both number a port 1: the later one's comes in at the next free number, and the Messages panel says which became
 which. Ports the layouts do not state are left alone.

@@ -251,7 +251,7 @@ setup's terminal Pick receives as a real click would. The pencil opens the setup
 electrostatic or magnetostatic setup's terminals, Pick state, conductor list and the view's selection are printed.
 `--c3d-pick-add <object>` is the same click with Shift, adding the object to the selection. `--c3d-boolean-menu x,y` opens the
 canvas's Boolean submenu for the selection as it stands, built by the view's own `Viewer3DContextMenu` (the canvas cannot open its
-menu headless), at that point with its first item's tooltip showing, and prints each item's state and tip.
+menu headless), at that point with its first item's tooltip showing, and prints each item's state and tip. `--c3d-menu <item>` runs one item of the selected row's menu (`--c3d-row`), else of the canvas's, by its header, printing every item first, then each port row's refusal (or `drawn`) once the scene has settled again.
 
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 

@@ -817,6 +817,9 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (ExtrudeSource() is { } src)
             yield return new Viewer3DMenuItem("Extrude", Extrude, Enabled: ExtrudeTool.CannotExtrude(src.Obj) is null,
                                               Tip: ExtrudeTool.CannotExtrude(src.Obj));
+        // A port out of step with its layout is usually refused, so nothing in the view selects it: the view's own menu offers
+        // the fix whatever is (or is not) selected.
+        if (StaleLayoutPorts.Count > 0 && IsEditable) yield return UpdatePortsFromLayoutItem();
     }
 
     // ── the typed field (R-em3d45-4) ─────────────────────────────────────────────────────────

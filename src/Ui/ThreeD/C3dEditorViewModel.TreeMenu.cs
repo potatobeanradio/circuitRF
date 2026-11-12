@@ -56,6 +56,9 @@ public sealed partial class C3dEditorViewModel
         else if (item.Kind is "Port" or TerminalKind)
         {
             var port = PortOfRow(item);
+            // A port taken from a placed layout: its label may have moved since, and the port is then refused and cannot be
+            // clicked in the view — this row is where it is fixed.
+            if (port?.FromLayout is not null) { items.Add(UpdatePortsFromLayoutItem()); items.Add(Viewer3DMenuItem.Separator); }
             if (port is not null) items.Add(PortMoveItem([port]));   // brief-dfr34-1 R-dfr34-1-1
             // A refused port has no sheet to click in the view, so this row is the only way to it, and it is the port that needs fixing.
             if (item.Kind == "Port" && port is { Kind: Em3dPortKind.Lumped, Cylinder: null })

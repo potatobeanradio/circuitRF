@@ -776,10 +776,7 @@ public sealed partial class C3dEditorViewModel
         yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Swap View to 3D" : "Swap View to Layout", () => SwapView(index),
                                           Enabled: swap is null, Tip: swap);
         // brief-port-width-planar-and-c3d R-pw1-5 — the layout's port labels, translated again, replace this view's ports.
-        if (inst.View == C3dInstanceView.Layout)
-            yield return new Viewer3DMenuItem("Update Ports from Layout", () => UpdatePortsFromLayout(),
-                                              Tip: "Replace this view's ports with what the placed layouts' port labels build now. " +
-                                                   "Ports the layouts do not state are kept. Undoable.");
+        if (inst.View == C3dInstanceView.Layout) yield return UpdatePortsFromLayoutItem();
         yield return new Viewer3DMenuItem("Flatten", () => _ = FlattenAsync(index));
         yield return new Viewer3DMenuItem("Flatten All Levels", () => _ = FlattenAllAsync());
         yield return new Viewer3DMenuItem("Rename Instance…", () => _ = RenameInstanceAsync(index));
