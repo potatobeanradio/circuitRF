@@ -563,6 +563,45 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("from a value above 0", vm.Refusals, StringComparison.Ordinal);
     }
 
+    // ── against an independent calculation ───────────────────────────────────
+
+    /// <summary>
+    /// testdata/chain/link_reference.py works the same design out with its own arithmetic (standard-library Python:
+    /// the link, the cascade by Friis and the intercept sum, the array's noise, Shannon, the DC power and the NF
+    /// allowance) at five points: three carriers, a transmitter strong enough to meet the receiver's ceiling, and a
+    /// receive array of 6. The budget agrees to 10⁻⁹, relative where a number is not in dB.
+    /// </summary>
+    [Fact]
+    public void TheLinkBudget_IsTheIndependentReference()
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(CircuitRF.Ui.Tests.Em3d.PalaceBackendTests.RepoRoot(), "testdata", "chain", "link_reference.json")))!;
+        string design = root["design"]!.ToJsonString();
+        int n = 0;
+        foreach (var c in root["cases"]!.AsArray())
+        {
+            var d = ChainDesignIo.Deserialize(design);
+            d.FrequencyHz = (double)c!["FrequencyHz"]!;
+            d.Link!.Tx["Elements"] = ((int)c["Mtx"]!).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            d.Stages[3].Parameters["N"] = ((int)c["Mrx"]!).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var r = ChainBudget.Evaluate(d);
+            Assert.Empty(r.Refusals);
+            var ds = ChainBudget.ToDataSet(r);
+            foreach (var (key, v) in c["expected"]!.AsObject())
+            {
+                double[] want = v is System.Text.Json.Nodes.JsonArray a ? [.. a.Select(x => (double)x!)] : [(double)v!];
+                double[] got = key == "Nstg_LNA" ? [ds["Nstg"].RealValues[1]] : ds[key].RealValues;
+                Assert.Equal(want.Length, got.Length);
+                for (int i = 0; i < want.Length; i++, n++)
+                {
+                    double tol = 1e-9 * (key.EndsWith("dB", StringComparison.Ordinal) || key.EndsWith("dBm", StringComparison.Ordinal) ? 1 : Math.Max(1, Math.Abs(want[i])));
+                    Assert.True(Math.Abs(got[i] - want[i]) <= tol, $"{c["FrequencyHz"]} Hz, Mtx {c["Mtx"]}, Mrx {c["Mrx"]}: {key} = {got[i]:R}, the reference {want[i]:R}");
+                }
+            }
+        }
+        output.WriteLine($"{n} numbers against the reference");
+        Assert.True(n > 100);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");
