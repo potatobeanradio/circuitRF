@@ -768,11 +768,12 @@ public static class PartReading
                 if (ends[0] is not { } a || ends[1] is not { } b || a.Piece == b.Piece) continue;
                 double halfArea = 0.5 * (double)w * h;
                 if (a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea) continue;
-                // A third piece of copper under it as an end sits on its copper — under an end or the middle: the body of a part
-                // of three terminals or more, which two ends would misread. A pour's sliver along the long edges is no terminal.
+                // A third piece of copper under it as an end sits on its copper — under an end or the middle — or an island lying
+                // mostly under its middle, whatever its size: the body of a part of three terminals or more, which two ends would
+                // misread. A pour's sliver along the long edges, or a finger of it reaching in, is no terminal unless it is that big.
                 var middle = alongX ? new Bbox(box.MinX + w / 4, box.MinY, box.MaxX - w / 4, box.MaxY)
                                     : new Bbox(box.MinX, box.MinY + h / 4, box.MaxX, box.MaxY - h / 4);
-                if (PiecesUnder(ctx.Copper, [halves[0], halves[1], middle], MinEndCover * halfArea, side) > 2) { overMany.Add(box); continue; }
+                if (PiecesUnder(ctx.Copper, halves, middle, MinEndCover * halfArea, side) > 2) { overMany.Add(box); continue; }
 
                 var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
                 d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
@@ -798,17 +799,21 @@ public static class PartReading
         return corners == 4 && Math.Abs(Clipper.Area(Clipper.MakePath(ring))) >= 0.98 * (box.MaxX - box.MinX) * (double)(box.MaxY - box.MinY);
     }
 
-    /// <summary>How many pieces of copper on <paramref name="side"/> have <paramref name="least"/> or more under one of
-    /// <paramref name="windows"/>.</summary>
-    private static int PiecesUnder(BoardCopper copper, Bbox[] windows, double least, HashSet<LayerKey> side)
+    /// <summary>How many pieces of copper on <paramref name="side"/> are a terminal under a body: <paramref name="least"/> or
+    /// more under one of its <paramref name="halves"/> or its <paramref name="middle"/>, or half or more of the piece under its
+    /// middle — an island there, whatever its size.</summary>
+    private static int PiecesUnder(BoardCopper copper, Bbox[] halves, Bbox middle, double least, HashSet<LayerKey> side)
     {
-        var paths = windows.Select(b => new Paths64 { Clipper.MakePath(new[] { b.MinX, b.MinY, b.MaxX, b.MinY, b.MaxX, b.MaxY, b.MinX, b.MaxY }) }).ToList();
-        var all = windows.Aggregate(Bbox.Empty, (u, b) => u.Union(b));
+        var paths = halves.Append(middle).Select(b => new Paths64 { Clipper.MakePath(new[] { b.MinX, b.MinY, b.MaxX, b.MinY, b.MaxX, b.MaxY, b.MinX, b.MaxY }) }).ToList();
+        var all = halves.Aggregate(middle, (u, b) => u.Union(b));
         int count = 0;
         for (int p = 0; p < copper.Pieces.Count; p++)
-            if (copper.IsConductor[p] && side.Contains(copper.Pieces.LayerOfPiece(p)) && copper.Pieces.BoundsOfPiece(p).Intersects(all)
-                && paths.Any(w => Math.Abs(Clipper.Area(Clipper.Intersect(copper.Pieces.PathsOfPiece(p), w, LayoutClipper.Rule))) >= least))
-                count++;
+        {
+            if (!copper.IsConductor[p] || !side.Contains(copper.Pieces.LayerOfPiece(p)) || !copper.Pieces.BoundsOfPiece(p).Intersects(all)) continue;
+            var own = copper.Pieces.PathsOfPiece(p);
+            double Under(Paths64 w) => Math.Abs(Clipper.Area(Clipper.Intersect(own, w, LayoutClipper.Rule)));
+            if (paths.Any(w => Under(w) >= least) || Under(paths[^1]) >= 0.5 * Math.Abs(Clipper.Area(own))) count++;
+        }
         return count;
     }
 

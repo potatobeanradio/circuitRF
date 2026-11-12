@@ -918,3 +918,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   the codes are stripped, and each line is tested on its own: a designator's box is its line's, 5/3 of a height down a line.
   Gate: `TypedSilkscreenTests.MTextBreaks_PartItsLines_EachReadOnItsOwn` (eight spellings, two designators in one label
   among them).
+- **An island under a body's middle is a terminal, whatever its size** (F8, third review). Counting a third piece only where
+  it covers a quarter of a half let a 0.3 × 0.3 mm island in the gap under an 0603's middle through: the body read as a
+  two-terminal series part, where the rule before had refused it. A separate piece with half or more of its own area under
+  the body's middle now counts whatever its size; a pour's finger reaching in keeps the quarter-of-a-half rule, so a
+  0.3 mm finger is a third terminal and a 0.2 mm one is not. Gate:
+  `PartReadingTests.CopperUnderABodysMiddle_IsAThirdTerminal_AnIslandWhateverItsSize`.

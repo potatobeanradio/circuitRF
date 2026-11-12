@@ -246,8 +246,9 @@ case=land;value=bom;pn=bom;model=file`):
    box, at least 1.2 times as long as it is wide and no longer than a land pattern spans. Each half along its length takes
    the copper piece of its side with the most area under it, which must cover a quarter of the half; two different
    pieces make a two-terminal part, a terminal at the middle of the copper under each half; an outline with a third piece
-   under an end or its middle as an end sits on copper (a quarter of a half) is a part of more terminals and is said instead
-   (`BodyOutlinesOverManyPieces`) — a pour's sliver along its long edges is not. An outline
+   under an end or its middle as an end sits on copper (a quarter of a half), or an island lying mostly under its middle
+   whatever its size, is a part of more terminals and is said instead (`BodyOutlinesOverManyPieces`) — a pour's sliver
+   along its long edges, or a narrow finger of it reaching in, is not. An outline
    whose box meets a
    part another rung found, or holds its pads, makes none. Below land patterns, so the pads it reads are only where the
    drawing says the part is: confidence `medium`, `Evidence` `refdes=silk` once named. Reported as

@@ -192,4 +192,43 @@ public sealed class PartReadingTests : IDisposable
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.OpenEnds));
     }
+
+    /// <summary>
+    /// Copper under the middle of the 0603 across the coplanar gap: a 0.3 mm island in the gap lies wholly under it, a third
+    /// pad whatever its size, and the body is said, not read as two terminals; the top pour's 0.3 mm finger reaching down into
+    /// the gap covers what an end must and is one too; its 0.2 mm finger does not, and the body is still the series part.
+    /// </summary>
+    [Theory]
+    [InlineData(10_100.0, 4_850.0, 10_400.0, 5_150.0, false)]
+    [InlineData(10_100.0, 4_850.0, 10_400.0, 5_350.0, false)]
+    [InlineData(10_150.0, 4_850.0, 10_350.0, 5_350.0, true)]
+    public void CopperUnderABodysMiddle_IsAThirdTerminal_AnIslandWhateverItsSize(double x0, double y0, double x1, double y1, bool series)
+    {
+        var result = CoplanarGap(9_450, 4_600, 11_050, 5_400, Rect(Top, x0, y0, x1, y1));
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(series, result.Parts.Rows.Any(r => r.Refdes == "C1" && r.Connection == PartConnection.Series));
+        Assert.Equal(series ? 0 : 1, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
+    }
+
+    /// <summary>The board of <see cref="ABodyWiderThanItsCoplanarLine_IsStillASeriesPart"/> — a 0.5 mm coplanar line with a
+    /// 0.5 mm gap at x = 10 mm, the pours 0.1 mm from it — with C1's body outline from (<paramref name="x0"/>,
+    /// <paramref name="y0"/>) to (<paramref name="x1"/>, <paramref name="y1"/>) µm and <paramref name="more"/> copper, read.</summary>
+    private static RecognitionResult CoplanarGap(double x0, double y0, double x1, double y1, params LayoutShape[] more)
+    {
+        var silk = new LayerKey(6, 0);
+        var tech = TwoLayerWithMask();
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = silk, Name = "Silk Top", Purpose = "silkscreen" }];
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 40_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 4_750, 10_000, 5_250));
+        view.Shapes.Add(Rect(Top, 10_500, 4_750, 40_000, 5_250));
+        view.Shapes.Add(Rect(Top, 0, 5_350, 40_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 0, 40_000, 4_650));
+        for (int i = 0; i < 8; i++) { view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 15_000)); view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 2_000)); }
+        view.Shapes.Add(new PolygonShape { Layer = silk, Xy = [Um(x0), Um(y0), Um(x1), Um(y0), Um(x1), Um(y1), Um(x0), Um(y1)] });
+        view.Shapes.Add(new LabelShape { Layer = silk, Text = "C1", X = Um(x0), Y = Um(y1 + 600), Height = Um(800) });
+        view.Shapes.AddRange(more);
+        return ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = tech, Shapes = view.Shapes });
+    }
 }
