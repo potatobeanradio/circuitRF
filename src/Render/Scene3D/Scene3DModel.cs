@@ -18,7 +18,7 @@ using CircuitRF.Engine.Em3d;
 namespace CircuitRF.Render.Scene3D;
 
 /// <summary>What an object in the tree is (R-em3d28-4c's grouping).</summary>
-public enum Scene3DKind { Conductor, Dielectric, Air, Body, Wire, Via, Sheet, Port, Boundary }
+public enum Scene3DKind { Conductor, Dielectric, Air, Body, Wire, Via, Sheet, Port, Boundary, Excitation }
 
 /// <summary>A vertex, 24 bytes: position (scene-local metres), the object's ID, its colour (RGBA8), and
 /// the face of that object it lies on (brief-em3d-43 R-em3d43-3a) — the second half of the ID pass's

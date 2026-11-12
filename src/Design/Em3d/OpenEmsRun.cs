@@ -171,7 +171,9 @@ public static class OpenEmsRun
 
         control?.BeginStage($"solving (openEMS), port {index + 1} of {n}", lowering.MaxTimeSteps, "steps");
 
-        var tails = Names(lowering).SelectMany(p => new[] { new ProbeTail(Path.Combine(dir, p.U[0])),
+        // brief-hzn-12 — a plane-wave run has no probe: openEMS's own energy criterion stops it.
+        var tails = Names(lowering).Where(p => p.U.Count > 0)
+                                   .SelectMany(p => new[] { new ProbeTail(Path.Combine(dir, p.U[0])),
                                                             new ProbeTail(Path.Combine(dir, p.I[0])) })
                                    .ToArray();
         // brief-emi-10 R-emi10-2 — the process loop every solver runs in, so openEMS is held to the same memory ceiling and
@@ -244,7 +246,7 @@ public static class OpenEmsRun
         var facts = ParseLog(logText);
 
         var probes = new List<FdtdPortProbes>();
-        foreach (var names in Names(lowering))
+        foreach (var names in Names(lowering).Where(n => n.U.Count > 0))
         {
             if (ReadPort(dir, names, out string? error) is not { } read) return Fail(error!);
             probes.Add(read);

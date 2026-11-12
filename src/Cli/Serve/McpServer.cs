@@ -270,7 +270,10 @@ internal sealed class McpServer
                 "The setup's Problem3D picks the problem: Driven (S-parameters), Electrostatic or " +
                 "Magnetostatic (a C or L matrix), Eigenmode (cavity and package resonances: f, Q, " +
                 "unloaded Q and where each mode's energy sits; set Eigenmode.Count and TargetGHz) or " +
-                "Thermal. The formats are 'reference em-setup' and '3d-view'. Eigenmode runs on Palace or " +
+                "Thermal. A .c3d's PlaneWaves records [{Name, Enabled, Direction, EField}] are incident plane waves; the one Enabled wave makes every Driven setup of the view a scattering run instead " +
+                "(EMerge or openEMS; Palace has no plane-wave source; no ports, every air box face absorbing): its result is the radar cross-section, the rcs " +
+                "group's Bistatic and Monostatic in m² and dBsm. " +
+                "The formats are 'reference em-setup' and '3d-view'. Eigenmode runs on Palace or " +
                 "EMerge (EMerge searches either side of TargetGHz: put it at the band's centre), static " +
                 "problems on Palace only; 'solver' says what is installed here and what each build can do. device=gpu runs Palace on the GPUs of a GPU build " +
                 "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +

@@ -93,6 +93,20 @@ public static partial class EmergeScriptWriter
         else
             e.Key("frequenciesHz").Numbers(Em3dRunService.FrequenciesHz(problem.Frequency));
         e.Key("sizingHz").Number(GmshGeoWriter.SizingFrequencyHz(problem));
+        // brief-hzn-12 — a scattering run: the wave in EMerge's own angles beside the vectors they must reproduce (the driver reads
+        // the field EMerge built back against them), the RCS grid, and the closed surface its far field is read on. Written only
+        // on a scattering run, so every other run's problem.json is the bytes it was.
+        if (problem.PlaneWave is { } wave && Em3dPlaneWaves.IntegrationBox(problem, out _) is { } surface)
+        {
+            var (theta, phi, psi) = Em3dPlaneWaves.SphAngles(wave);
+            e.Key("planeWave").BeginObject()
+             .Key("theta").Number(theta).Key("phi").Number(phi).Key("psi").Number(psi)
+             .Key("direction").Point(wave.Direction).Key("eField").Point(wave.EField)
+             .Key("e0").Number(wave.E0).Key("origin").Point(wave.PhaseOrigin)
+             .Key("thetaStepDeg").Number(wave.ThetaStepDeg).Key("phiStepDeg").Number(wave.PhiStepDeg)
+             .Key("surface").BeginObject().Key("min").Point(surface.Min).Key("max").Point(surface.Max).EndObject()
+             .EndObject();
+        }
 
         e.Key("settings").BeginObject()
          .Key("elementOrder").Int(settings.ElementOrder)

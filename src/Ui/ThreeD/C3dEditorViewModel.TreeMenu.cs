@@ -43,6 +43,7 @@ public sealed partial class C3dEditorViewModel
         if (item.Kind == FaceImageKind) { items.AddRange(FaceImageRowItems(item)); return items; }
         var scene = SceneObjectsOfNode(item);
 
+        if (item.Kind == PlaneWaveKind) { items.AddRange(ExcitationMenuItems(PlaneWaveOfRow(item))); return items; }   // brief-hzn-12
         if (item.IsAirBox)
         {
             const string why = "The air box is the active setup's, not the geometry's: it cannot be duplicated or deleted. " +

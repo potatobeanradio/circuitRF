@@ -1908,6 +1908,12 @@ static int RunEm(string[] args)
             ? CircuitRF.Design.ThreeD.C3dThermal.RunRefusal(setup.Name) + " --solver names an EM solver, which a thermal setup never uses."
             : CircuitRF.Design.ThreeD.C3dThermal.CemRefusal));
 
+    // brief-hzn-12 R-hzn12-4 — a scattering run writes no Touchstone file, so -o has nothing to move.
+    if (output is not null && setup.IsScattering3D)
+        return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath,
+            $"Setup '{setup.Name}' is driven by a plane wave: its result is a radar cross-section in the results' .npy, and it writes no " +
+            "Touchstone file for -o to move. Leave -o out; the .npy is named by the setup's Output name."));
+
     // brief-dfr35-1 R-dfr35-1-5 — a 3D EM or thermal setup's mesh is Gmsh's and a run's first step; a planar one meshes in --dry-run.
     if (meshOnly && !setup.Is3D && !setup.IsThermal)
         return JsonRun.Fail(CliDiagnostics.EmMeshOnlyNeeds3D(Path.GetFileName(cemPath)));

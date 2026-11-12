@@ -95,6 +95,10 @@ public sealed record CsxcadLowering(
 {
     public bool Ok => Refusal is null;
 
+    /// <summary>brief-hzn-12 — a scattering run's plane-wave box: its one run excites the wave, under the pseudo-port 0, with no
+    /// probe; null for a port-driven run.</summary>
+    public OpenEmsPlaneWaveBox? PlaneWave { get; init; }
+
     /// <summary>brief-em3d-116 — each port's probe files, in <see cref="Ports"/> order: what <see cref="OpenEmsRun"/> reads.</summary>
     public IReadOnlyList<OpenEmsProbeNames> Probes { get; init; } = [];
 
@@ -208,8 +212,10 @@ public static partial class CsxcadWriter
                 return No($"The air box's {FaceKeys[k]} face is a Symmetry face, which does not say whether the " +
                           "field's electric or magnetic wall lies there. Set it to Pec (an electric wall) or Pmc " +
                           "(a magnetic one) in the setup's AirBox.");
-        if (problem.Ports.Count == 0)
+        if (problem.Ports.Count == 0 && problem.PlaneWave is null)
             return No("The 3D problem has no ports, so there is nothing for openEMS to excite.");
+        if (problem.PlaneWave is not null && problem.Ports.Count > 0)
+            return No("The 3D problem has a plane wave and ports; a scattering run is driven by its plane wave alone.");
         foreach (var p in problem.Ports)
         {
             if (!(p.Z0.Real > 0))
@@ -235,6 +241,8 @@ public static partial class CsxcadWriter
                 return No($"Lumped element '{le.Name}''s direction is not along an axis in its own sheet, so openEMS's lumped element cannot state it.");
         }
         // brief-em3d-120 — a cylindrical grid is its own lowering (CsxcadWriter.Cylindrical.cs); nothing below changes for a Cartesian one.
+        if (grid.Cylinder is not null && problem.PlaneWave is not null)
+            return No("The setup is driven by a plane wave, which circuitRF writes on openEMS's Cartesian grid only. Set OpenEms.Grid to Cartesian.");
         if (grid.Cylinder is { } cylinder) return WriteCylindrical(problem, grid, gridSettings, run, farFieldHz, cylinder, faceKinds);
         // brief-sar-8b — a sheet or a gap on a cylinder is a box of a cylindrical grid only.
         if (problem.FirstCylindrical() is { } curved)
@@ -556,6 +564,23 @@ public static partial class CsxcadWriter
             notes.AddRange(placed.Notes);
         }
 
+        // ── brief-hzn-12 — a scattering run: the plane wave's box between the model and the surface, as the run's one excitation ──
+        OpenEmsPlaneWaveBox? waveBox = null;
+        if (problem.PlaneWave is { } wave)
+        {
+            if (surface is null) return No("The setup is driven by a plane wave, and its far-field surface was not asked for.");
+            var (box, why) = OpenEmsPlaneWave.Place(problem, grid, surface);
+            if (box is null) return No(why!);
+            waveBox = box;
+            // the frequency openEMS matches the injected wave's numerical phase velocity at: the band's centre, where the answer is
+            // read, not the pulse's (which runs from 0 Hz for one frequency), or the wave leaks out of its box at the top of the band
+            excitations.Add(OpenEmsPlaneWave.Excitation(wave, box, fitHz, Colors.Excitation));
+            probeNames.Add(new OpenEmsProbeNames(0, [], []));
+            notes.Add($"The plane wave is injected on a box {G((box.Max.X - box.Min.X) * 1e3)} × {G((box.Max.Y - box.Min.Y) * 1e3)} × " +
+                      $"{G((box.Max.Z - box.Min.Z) * 1e3)} mm around the model (openEMS's total-field/scattered-field source): inside it " +
+                      "the field is the total field, outside it the scattered field alone, which the far-field surface reads.");
+        }
+
         // ── Notes ────────────────────────────────────────────────────────────────────────────────
         notes.AddRange(plan.Notes);
         if (gridSettings.ExplicitLines is { } given) notes.Add(FdtdGrid.GivenLinesNote(given, grid));
@@ -621,9 +646,9 @@ public static partial class CsxcadWriter
             head + body + e.Replace("{ID0}", (id).ToString(CultureInfo.InvariantCulture))
                            .Replace("{ID1}", (id + 1).ToString(CultureInfo.InvariantCulture)) + tail).ToList();
 
-        return new CsxcadLowering(model, files, [.. ports.Select(p => p.Number)], fitHz, f0, fc, maxSteps,
+        return new CsxcadLowering(model, files, waveBox is null ? [.. ports.Select(p => p.Number)] : [0], fitHz, f0, fc, maxSteps,
                                   pec, thin, notes, null, surface, kernelFiles)
-               { Probes = probeNames, WaveTerminals = waveTerminals };
+               { Probes = probeNames, WaveTerminals = waveTerminals, PlaneWave = waveBox };
     }
 
     /// <summary>

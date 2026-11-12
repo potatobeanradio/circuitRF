@@ -891,6 +891,25 @@ internal static class Check
                                                    (Path.GetFullPath(path), ResultsRoot.For(Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path))))))
                     f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
 
+        // brief-hzn-12 — a scattering setup: a solver that does not run a plane wave, then what its run refuses of the problem (ports
+        // beside the wave, a box face that does not absorb, no room for the surface its far field is read on), in the run's own words.
+        foreach (var embedded in C3dSetups.Read(doc))
+            if (embedded is { Refusal: null, Setup: { IsScattering3D: true } scattering })
+            {
+                string at = $"setup '{embedded.Name}': ";
+                if (CircuitRF.Design.Em3d.Em3dRunService.SolverRefusal(scattering) is { } noSolver)
+                {
+                    f.Add(CliDiagnostics.CheckThreeDSetup(path, at + noSolver));
+                    continue;
+                }
+                RunHost.Control?.ThrowIfCancellationRequested();
+                var assembled = C3dProblemAssembly.Assemble(C3dSetups.ForRun(scattering, Path.GetFullPath(path)), doc, Path.GetFullPath(path),
+                                                            DocumentKinds.AncestorCws(Path.GetFullPath(path)));
+                if (assembled.Refusal is { } refused) f.Add(CliDiagnostics.CheckThreeDSetup(path, at + refused));
+                else if (assembled.Problem is { } problem && CircuitRF.Design.Em3d.Em3dPlaneWaves.IntegrationBox(problem, out string? noSurface) is null)
+                    f.Add(CliDiagnostics.CheckThreeDSetup(path, at + $"its radar cross-section cannot be read: {noSurface}."));
+            }
+
         // brief-em3d-120 R-em3d120-2 C1 — an openEMS setup with coaxial wave ports: on a Cartesian grid, the suggestion of a
         // cylindrical one (a note, never inferred into the run); on a cylindrical grid, what the grid would refuse.
         if (doc.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave))

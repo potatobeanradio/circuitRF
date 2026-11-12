@@ -434,6 +434,69 @@ internal sealed partial class HznPatch
         PatchAssignment(sweep, sweepBefore, sweepAfter);
     }
 
+    /// <summary>brief-hzn-12 — the keys of a plane wave an edit can change, written into the design's own Incident Plane Wave of that
+    /// name, and nothing else of it: its vectors, amplitude and phase origin (its enabled flag beside them).</summary>
+    private static readonly string[] PlaneWaveKeysWritten = ["KVector", "E0Vector", "EMagnitude", "ZeroPhasePosition"];
+
+    /// <summary>brief-hzn-12 — the 3D view's plane waves against the design's, by name: a changed one patched in place, an added one
+    /// appended as the export writes it, a removed one taken out. A renamed one (a name gone and a new one at the same place in the
+    /// list) is patched in place too: its name, and whatever else of it changed.</summary>
+    private void PlaneWaves()
+    {
+        var before = Read(_b, "PlaneWaves", x => Str(x, "Name"));
+        var after = Read(_e, "PlaneWaves", x => Str(x, "Name"));
+        var delta = Compare(before, after);
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);   // new name → old
+        foreach (string n in delta.Added)
+            if (after.Order.ToList().IndexOf(n) is var i and >= 0 && i < before.Order.Count && delta.Removed.Contains(before.Order[i]))
+                renamed[n] = before.Order[i];
+        var all = _o.GetArray("excitations");
+        foreach (string n in delta.Removed.Except(renamed.Values))
+            if (all is not null && HznJsonOps.ByName(all, n) is { } gone) { all.RemoveAt(all.Items.ToList().IndexOf(gone)); _changed = true; }
+            else Refuse($"Plane wave '{n}': the excitation it came from is no longer in the Hertzon design.");
+        foreach (string n in delta.Changed.Concat(delta.Added))
+        {
+            string who = $"Plane wave '{n}'";
+            var we = Write(Mini(_e, waves: [n]), who, opened: false);
+            var edited = we is null ? null : HznJsonOps.Objects(we.Json!.GetArray("excitations")).FirstOrDefault(x => x.GetString("name") == n);
+            if (edited is null) { Refuse($"{who} is not written as an excitation."); continue; }
+            if (delta.Added.Contains(n) && !renamed.ContainsKey(n))
+            {
+                if (all is null) _o.Set("excitations", all = new HznJsonArray());
+                all.Add(HznJsonOps.Clone(edited));
+                if (_o.GetArray("spheres") is not { Count: > 0 } && we!.Json!.GetArray("spheres") is { Count: > 0 } spheres)
+                    _o.Set("spheres", HznJsonOps.Clone(spheres));
+                _changed = true;
+                continue;
+            }
+            string was = renamed.GetValueOrDefault(n) ?? n;
+            var wb = Write(Mini(_b, waves: [was]), who, opened: true);
+            var opened = wb is null ? null : HznJsonOps.Objects(wb.Json!.GetArray("excitations")).FirstOrDefault(x => x.GetString("name") == was);
+            if (opened is null) return;
+            if (HznJsonOps.ByName(all, was) is not { } target) { Refuse($"{who}: the excitation it came from is no longer in the Hertzon design."); continue; }
+            if (was != n)
+            {
+                target.Set("name", HznJsonOps.Clone(edited["name"]!));
+                _changed = true;
+            }
+            var bp = opened.GetObject("props");
+            var ap = edited.GetObject("props");
+            var targetProps = target.GetObject("props");
+            if (targetProps is null) target.Set("props", targetProps = new HznJsonObject());
+            foreach (string key in PlaneWaveKeysWritten)
+            {
+                if (ap?[key] is null || HznJsonOps.Same(bp?[key], ap[key])) continue;
+                targetProps.Set(key, HznJsonOps.Clone(ap[key]!));
+                _changed = true;
+            }
+            if (!HznJsonOps.Same(opened["enabled"], edited["enabled"]) && edited["enabled"] is { } en)
+            {
+                target.Set("enabled", HznJsonOps.Clone(en));
+                _changed = true;
+            }
+        }
+    }
+
     // ── readback ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The design as saved is read once more, and compared with the document that was edited: every object it should hold

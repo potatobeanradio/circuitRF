@@ -46,6 +46,7 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
         Em3dProblemType.Magnetostatic => "MS",
         Em3dProblemType.Eigenmode     => "EIG",
         Em3dProblemType.Thermal       => "TH",
+        _ when setup.IsScattering3D   => "RCS",   // brief-hzn-12 — driven by a plane wave: a radar cross-section
         _                             => "SP",
     };
 
@@ -381,8 +382,9 @@ public sealed partial class C3dEditorViewModel
         if (setup is null) { SetupEditor = null; return; }
         // The same view model, the same panel: rebuilt only when the setup is not the one already shown, so an edit made
         // in the panel does not tear the panel down under the user's cursor.
+        if (!item.IsExternal) C3dPlaneWaves.Apply(setup, Document);   // brief-hzn-12 — the panel says which of the view's waves drives it
         if (SetupEditor?.ViewModel is { } shown && _editorFor == (item.Name, item.IsExternal) &&
-            EmSetupPersistence.Serialize(shown.Working) == EmSetupPersistence.Serialize(setup))
+            EmSetupPersistence.Serialize(shown.Working) == EmSetupPersistence.Serialize(setup) && shown.Working.PlaneWave == setup.PlaneWave)
         {
             shown.RefreshThermal();          // brief-em3d-75 — the page lists the document's heat sources
             return;
@@ -485,9 +487,11 @@ public sealed partial class C3dEditorViewModel
     private void CommitSetupFromPanel(string name, string afterJson, string description)
     {
         var edited = EmSetupPersistence.Deserialize(afterJson);
-        int index = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name)?.Index ?? -1;
+        var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name);
+        int index = read?.Index ?? -1;
         if (index < 0) return;
         bool renamed = edited.Name != name;
+        string? disabled = null;
         _suppressEditorReload = true;
         try
         {
@@ -495,9 +499,12 @@ public sealed partial class C3dEditorViewModel
             {
                 d.Setups[index] = EmSetupPersistence.ToEmbedded(edited);
                 if (renamed) C3dThermal.RenameSetupReferences(d, name, edited.Name);
+                // brief-hzn-12 — a switch to a solver with no plane-wave source disables the view's wave, in this same entry
+                if (read?.Setup is { } before) disabled = DisablePlaneWaveFor(before, edited, d);
             });
         }
         finally { _suppressEditorReload = false; }
+        if (disabled is not null) StatusMessage = disabled;
         if (renamed && ActiveSetupName == name) SetActiveSetup(edited.Name);
         if (name == ActiveSetupName) { Viewer.SetRunSetup(ActiveRunSetup); }
     }
@@ -655,6 +662,9 @@ public sealed partial class C3dEditorViewModel
         /// <summary>brief-em3d-75 R-em3d75-2 — the active thermal setup's conditioned faces, tinted by kind.</summary>
         public IReadOnlyList<Scene3DFaceTint> ThermalTints { get; init; } = [];
 
+        /// <summary>brief-hzn-12 — the active setup's plane wave, drawn at its phase origin; null for a port-driven setup.</summary>
+        public Em3dPlaneWave? PlaneWave { get; init; }
+
         /// <summary>brief-sar-3 — each lumped element, resolved by the port's rule against this elaboration.</summary>
         public IReadOnlyList<C3dLumpedResult> Lumped { get; init; } = [];
 
@@ -708,6 +718,7 @@ public sealed partial class C3dEditorViewModel
         EmSetup? setup = null;
         if (setupJson is not null)
             try { setup = EmSetupPersistence.Deserialize(setupJson); } catch (Exception) { setup = null; }
+        if (setup is not null) C3dPlaneWaves.Apply(setup, doc);   // brief-hzn-12 — the view's enabled wave, which the setup's JSON never holds
         // 3D editor round 3 — with no setup, the box a new setup would solve in (owner decision): drawn once there is a solid
         // or a sheet to size it (Extent is null until then), never before.
         // With no setup, the document's own box (its padding and walls, stated before any setup exists) on that default.
@@ -724,6 +735,7 @@ public sealed partial class C3dEditorViewModel
         return new RecordsView(box, ports, boundaries, ctx)
         {
             ThermalTints = ThermalTints(doc, e, setup, hiddenTints), Lumped = lumped,
+            PlaneWave = setup is { IsScattering3D: true } ? setup.PlaneWave!.Resolve(out _) : null,
             ComponentPorts = e.Ok ? ComponentPortsOf(setup, setupJson, doc, e, box) : [],
             ComponentPortSolids = e.Ok && _componentPortsBuilt is { } built ? built.Solids : new Dictionary<string, Em3dSolid>(),
         };
@@ -1822,6 +1834,7 @@ public sealed partial class C3dEditorViewModel
                   $"{t.Part.Refdes}: left out. {t.Part.Refusal ?? t.Result?.Refusal}", -1, -1, false)
               { IsReadOnly = true, DisplayName = t.Part.Refdes, Refusal = t.Part.Refusal ?? t.Result?.Refusal }).ToList();
         if (parts.Count > 0) Tree.Add(new C3dTreeGroup("Component ports", parts, C3dTreeGroupRole.ComponentPorts));
+        RebuildPlaneWaveItem();   // brief-hzn-12 — the active setup's incident wave, in its own Excitations group after the ports
         if (byType && rows.Where(t => t.Off).Select(t => t.Row).ToList() is { Count: > 0 } offPorts)
         {
             if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.NotModelled) is { } home)

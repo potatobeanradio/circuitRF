@@ -161,6 +161,46 @@ public sealed record EmEigenmode3D(int? Count = null, double? TargetGHz = null)
 }
 
 /// <summary>
+/// brief-hzn-12 R-hzn12-1 — a scattering setup's incident plane wave, as the setup states it: the direction it travels and its
+/// E-field as vectors of any length (never angles: every angle convention is a chance to read one in another's), its peak
+/// amplitude in V/m (null is 1) and the point where its phase is zero, in micrometres (null is the origin).
+/// </summary>
+public sealed record EmPlaneWave3D(CircuitRF.Engine.Em3d.Point3 Direction, CircuitRF.Engine.Em3d.Point3 EField, double? E0 = null,
+                                   CircuitRF.Engine.Em3d.Point3? PhaseOriginUm = null)
+{
+    /// <summary>brief-hzn-12 — the 3D view's name for the wave (its record's), for what the panel and the run say; null for none.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>The far-field grid's θ step, degrees; null is <see cref="CircuitRF.Engine.Em3d.Em3dPlaneWave.DefaultStepDeg"/>.</summary>
+    public double? ThetaStepDeg { get; init; }
+
+    /// <summary>The far-field grid's φ step, degrees; null is the default.</summary>
+    public double? PhiStepDeg { get; init; }
+
+    /// <summary>The amplitude when the setup states none, V/m.</summary>
+    public const double DefaultE0 = 1;
+
+    /// <summary>The wave in SI, unit vectors, or null with why when it cannot be solved.</summary>
+    public CircuitRF.Engine.Em3d.Em3dPlaneWave? Resolve(out string? why)
+    {
+        var o = PhaseOriginUm ?? default;
+        var wave = CircuitRF.Engine.Em3d.Em3dPlaneWave.From(Direction, EField, E0 ?? DefaultE0, new(o.X * 1e-6, o.Y * 1e-6, o.Z * 1e-6), out why);
+        if (wave is null) return null;
+        wave = wave with
+        {
+            ThetaStepDeg = ThetaStepDeg ?? CircuitRF.Engine.Em3d.Em3dPlaneWave.DefaultStepDeg,
+            PhiStepDeg = PhiStepDeg ?? CircuitRF.Engine.Em3d.Em3dPlaneWave.DefaultStepDeg,
+        };
+        if (wave.Problems() is { Count: > 0 } bad)
+        {
+            why = string.Join(" ", bad);
+            return null;
+        }
+        return wave;
+    }
+}
+
+/// <summary>
 /// The mutable working model behind an open <c>.cem</c>. Framework-free — the editor view model
 /// wraps this, the same split <c>TechEditorViewModel</c>/<c>Technology</c> already uses.
 /// </summary>
@@ -809,6 +849,17 @@ public sealed class EmSetup
     /// defaults: <see cref="EmEigenmode3D.DefaultCount"/> modes above the sweep's start.</summary>
     public EmEigenmode3D? Eigenmode { get; set; }
 
+    /// <summary>brief-hzn-12 — the incident plane wave that drives this setup instead of its ports, at RUN time: a 3D view's enabled wave,
+    /// put here as its setups are read (C3dPlaneWaves.Apply). Never stored: a .cem or an embedded setup states none.</summary>
+    public EmPlaneWave3D? PlaneWave { get; set; }
+
+    /// <summary>brief-hzn-12 — a driven 3D setup driven by a plane wave: a scattering run, whose result is a radar cross-section.</summary>
+    public bool IsScattering3D => Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Driven && PlaneWave is not null;
+
+    /// <summary>brief-hzn-12 — a driven 3D setup whose far field is read: one asking for a radiation pattern, or a scattering run. Its
+    /// air box keeps every face absorbing and λ/4 of air.</summary>
+    public bool Radiates3D => Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Driven && (RadiationPattern || PlaneWave is not null);
+
     /// <summary>The kind the setup states for port <paramref name="number"/>.</summary>
     public Em3dPortKind PortKind3D(int number)
         => Ports3D.LastOrDefault(p => p.Port == number)?.Kind ?? Em3dPortKind.Lumped;
@@ -970,6 +1021,7 @@ public sealed class EmSetup
         Ports3D                = [.. Ports3D],       // records, immutable
         ComponentPorts         = [.. ComponentPorts], // records, immutable
         Eigenmode              = Eigenmode,
+        PlaneWave              = PlaneWave,      // record, immutable
         Thermal                = Thermal?.Clone(),
         Sar                    = Sar?.Clone(),
     };

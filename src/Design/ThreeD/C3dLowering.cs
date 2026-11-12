@@ -115,6 +115,10 @@ public static class C3dLowering
                 };
                 return Transform(new Em3dCylinder(b0, e, M(c.Radius)), C3dCylinder.FaceNameList, w, KindCylinder);
             }
+            case C3dSphere { FacetVertices: > 0 } fs:
+                // brief-hzn-12 — a faceted sphere is the hull of its lattice: a polyhedron, every face 'surface'
+                return Transform(C3dFacetedSphere.Metres(new Point3(M(fs.Centre.X), M(fs.Centre.Y), M(fs.Centre.Z)), M(fs.Radius), fs.FacetVertices),
+                                 [], w, KindPolyhedron);
             case C3dSphere sp:
                 return Transform(new Em3dSphere(new Point3(M(sp.Centre.X), M(sp.Centre.Y), M(sp.Centre.Z)), M(sp.Radius)),
                                  C3dSphere.FaceNameList, w, KindSphere);

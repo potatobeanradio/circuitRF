@@ -56,7 +56,10 @@ public static partial class Em3dRunService
         public override void Prepare(Em3dProblem problem, RunContext run)
         {
             if (Stop is not null) return;
-            _fields = EmergeFields.Request(run.Setup, problem);
+            _fields = problem.PlaneWave is null ? EmergeFields.Request(run.Setup, problem) : null;
+            // brief-hzn-12 — a scattering run saves no field files in this version: its result is the cross-section.
+            if (problem.PlaneWave is not null && run.Setup.Emerge?.SaveFieldsGHz is { Count: > 0 })
+                run.Log.Notes.Add("A scattering run on EMerge saves no field files in this version, so EMerge.SaveFieldsGHz is not read.");
             _lowering = EmergeScriptWriter.Write(problem, _settings!, _fields);
             run.Log.Notes.AddRange(_lowering.Notes);
             if (_lowering.Refusal is { } refused)
@@ -135,7 +138,9 @@ public static partial class Em3dRunService
                 Directory.CreateDirectory(dir);
                 foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
                                                EmergeResults.GammaFile, EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile,
-                                               EmergeTerminalS.TVFile, EmergeTerminalS.WFile, EmergeTerminalS.GpFile, EmergeTerminalS.VFile })
+                                               EmergeTerminalS.TVFile, EmergeTerminalS.WFile, EmergeTerminalS.GpFile, EmergeTerminalS.VFile,
+                                               EmergeScattering.FarFile, EmergeScattering.ThetaFile, EmergeScattering.PhiFile,
+                                               EmergeScattering.MonostaticFile })
                     File.Delete(Path.Combine(dir, old));
                 EmergeFields.Clear(dir);
                 EmergeScriptWriter.WriteInto(lowering, dir);
@@ -195,6 +200,8 @@ public static partial class Em3dRunService
         log.Warnings.AddRange(facts.Warnings);
         control?.BeginStage(ReadingLabel);
         string version = facts.Version ?? emerge.Release ?? "(version unreported)";
+        if (problem.PlaneWave is not null)
+            return FinishEmergeScattered(problem, setup, run.Paths(Me).NpyPath, dir, facts, tier, version, peak, wall.Elapsed, log);
         return eigen
             ? FinishEmergeEigen(problem, setup, run.Paths(Me).NpyPath, dir, facts, tier, version, peak, wall.Elapsed, log)
             : FinishEmergeDriven(problem, setup, run, dir, settings, lowering, facts, tier, version,
@@ -427,6 +434,28 @@ public static partial class Em3dRunService
 
         string? npyPath = WriteNpy(npyTarget, data, log);
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall, eigenmode: true, EmergeFields.Bytes(dir)));
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "EMerge " + version);
+    }
+
+    /// <summary>brief-hzn-12 R-hzn12-4 — a scattering run's radar cross-section, and what EMerge built of the wave.</summary>
+    private static Leg FinishEmergeScattered(Em3dProblem problem, EmSetup setup, string npyTarget, string dir, EmergeRunFacts facts,
+                                             EmergeSpeedTier tier, string version, long? peak, TimeSpan wall, RunLog log)
+    {
+        const Em3dSolverId Me = EmergeSolver.Id;
+        var wave = problem.PlaneWave!;
+        var requested = FrequenciesHz(problem.Frequency);
+        var data = EmergeScattering.Read(dir, requested, wave, out string? error);
+        if (data is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
+        log.Notes.AddRange(EmergeScattering.Notes(problem, EmergeScattering.ReadBack(dir)));
+        void Scalar(string name, double? v)
+        {
+            if (v is { } x) data.AddToGroup(EmergeResults.Group, name, RfCore.Data.DataCube.Scalar(x));
+        }
+        Scalar("Tetrahedra", facts.Tetrahedra);
+        Scalar("DegreesOfFreedom", facts.Unknowns);
+        log.Notes.Add(EmergeScattering.Headline(data));
+        string? npyPath = WriteNpy(npyTarget, data, log);
+        log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall, eigenmode: false));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "EMerge " + version);
     }
 

@@ -1,7 +1,7 @@
 // The materials Hertzon has built in that a design may name without defining: the values it states for each.
 //
 // Read from an installed Hertzon (0.3.19) as a black box: its material listing, through its own automation interface. Only the
-// materials with a generic name are here (a substance, not a product), and only those circuitRF's material model states exactly:
+// materials with a generic name are here (a substance, not a product), apart from the products listed below by name, and only those circuitRF's material model states exactly:
 // no magnetic conductors (μr far from 1) and no conductor below the 1e6 S/m line a project material is read by. A metal's
 // permeability within 1e-4 of 1 (copper 0.999991, aluminum 1.000021, silver 0.99998) is written 1: it enters a metal only through
 // the square root in its surface impedance, a few parts per million, and a technology's metal states none, so the export would
@@ -58,9 +58,13 @@ internal static class HznLibrary
         new("PEEK", 3.2, 1, 0, 0.003),
         new("nylon", 3.0, 1, 0, 0.02),
         new("PTFE_glass", 2.5, 1, 0, 0.0015),
-        // The one trademarked name read here, by the owner's decision (2026-11-11): Hertzon's own coax examples name it, as plain PTFE.
-        // The laminate products in Hertzon's library stay unread; a design naming one is refused and can define it in the project.
+        // The trademarked names read here, each by the owner's decision: Hertzon's own examples name them, and without them those
+        // examples can never open. The PTFE entry (2026-11-11) for the coax examples; the two laminates (2026-11-12) for the
+        // differential-pair, hairpin, Rotman-lens and periodic unit-cell examples. Every other product in Hertzon's library stays
+        // unread; a design naming one is refused and can define it in the project.
         new("Teflon (tm)", 2.1, 1, 0, 0.001),
+        new("Rogers RO4350B (tm)", 3.66, 1, 0, 0.0037),
+        new("Rogers RO3003 (tm)", 3, 1, 0, 0.001),
     ];
 
     /// <summary>The library material of that exact name, or null.</summary>

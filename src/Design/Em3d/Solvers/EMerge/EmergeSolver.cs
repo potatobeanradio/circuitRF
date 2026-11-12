@@ -27,6 +27,8 @@ public static class EmergeSolver
             // brief-emi-7 — in the .vtu layout Palace's fields are read in, and a far field on an absorbing box
             Fields = true,
             RadiationPattern = true,
+            // brief-hzn-12 — a scattering run: EMerge's scattered-field boundary on the absorbing faces
+            PlaneWave = true,
         },
         Tools = [SolverTool.Emerge],
         SetupDescription =

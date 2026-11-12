@@ -786,6 +786,10 @@ public sealed record Em3dProblem(
     /// modes, Hz.</summary>
     public double EigenmodeTargetHz { get; init; }
 
+    /// <summary>brief-hzn-12 — the incident plane wave of a scattering run: a driven problem with no port, solved for the field
+    /// the wave scatters. Null — every problem before it — is a port-driven run.</summary>
+    public Em3dPlaneWave? PlaneWave { get; init; }
+
     /// <summary>The frequency a driven problem's mesh is sized at, when the setup states one; null is the sweep's top. The mesh's
     /// business alone: the sweep is <see cref="Frequency"/> either way.</summary>
     public double? MeshFrequencyHz { get; init; }
@@ -1063,6 +1067,15 @@ public sealed record Em3dProblem(
         ValidateFaceGroups(problems);
         ValidateFaceBoundaries(problems);
 
+        if (PlaneWave is { } wave)
+        {
+            if (Type != Em3dProblemType.Driven)
+                problems.Add($"A plane wave drives a driven problem, and this one is {Type}.");
+            if (Ports.Count > 0)
+                problems.Add($"The problem has a plane wave and {Ports.Count} port(s); a scattering run is driven by its plane wave alone.");
+            problems.AddRange(wave.Problems());
+        }
+
         if (IsStatic) ValidateTerminals(problems);
         else if (Type == Em3dProblemType.Eigenmode)
         {
@@ -1313,4 +1326,59 @@ public sealed record Em3dProblem(
         }
         return (x0, y0, x1, y1);
     }
+}
+
+/// <summary>
+/// brief-hzn-12 — an incident plane wave, E = E0 Ê exp(−j k k̂·(r − origin)): the direction it travels, its polarisation, its peak
+/// amplitude in V/m and the point where its phase is zero, in metres. Direction and polarisation are unit vectors at right angles.
+/// </summary>
+public sealed record Em3dPlaneWave(Point3 Direction, Point3 EField, double E0, Point3 PhaseOrigin)
+{
+    /// <summary>The far-field grid the radar cross-section is read on: θ from 0 to 180° and φ from 0 to 360° in these steps, degrees.</summary>
+    public double ThetaStepDeg { get; init; } = DefaultStepDeg;
+
+    /// <summary>See <see cref="ThetaStepDeg"/>.</summary>
+    public double PhiStepDeg { get; init; } = DefaultStepDeg;
+
+    /// <summary>The far-field step when none is stated, degrees.</summary>
+    public const double DefaultStepDeg = 2;
+
+    /// <summary>How far from a right angle Direction and EField may be, as the cosine between them.</summary>
+    public const double PerpendicularTolerance = 1e-6;
+
+    /// <summary>A plane wave from two vectors of any length (each normalised), or null with why when one is zero, they are not at right
+    /// angles, or E0 is not positive.</summary>
+    public static Em3dPlaneWave? From(Point3 direction, Point3 eField, double e0, Point3 origin, out string? why)
+    {
+        why = null;
+        double kn = Norm(direction), en = Norm(eField);
+        if (!(kn > 0) || double.IsInfinity(kn)) why = "its direction of travel is not a vector of non-zero length";
+        else if (!(en > 0) || double.IsInfinity(en)) why = "its E-field is not a vector of non-zero length";
+        else if (Math.Abs(Dot(direction, eField)) / (kn * en) > PerpendicularTolerance)
+            why = "its E-field is not at right angles to its direction of travel (a plane wave in free space has no field along the " +
+                  $"way it travels): the angle between them is {Math.Acos(Math.Clamp(Dot(direction, eField) / (kn * en), -1, 1)) * 180 / Math.PI:0.###}°";
+        else if (!(e0 > 0) || double.IsInfinity(e0)) why = $"its amplitude E0 = {e0.ToString("R", CultureInfo.InvariantCulture)} V/m is not positive";
+        if (why is not null) return null;
+        return new Em3dPlaneWave(Scale(direction, 1 / kn), Scale(eField, 1 / en), e0, origin);
+    }
+
+    /// <summary>What is wrong with this wave as stated, empty when nothing is.</summary>
+    public IReadOnlyList<string> Problems()
+    {
+        var list = new List<string>();
+        if (From(Direction, EField, E0, PhaseOrigin, out string? why) is null) list.Add($"The plane wave cannot be solved: {why}.");
+        else if (Math.Abs(Norm(Direction) - 1) > 1e-9 || Math.Abs(Norm(EField) - 1) > 1e-9)
+            list.Add("The plane wave's direction and E-field are not unit vectors.");
+        foreach (var (name, step) in new[] { ("θ", ThetaStepDeg), ("φ", PhiStepDeg) })
+            if (!(step > 0) || step > 90 || double.IsNaN(step))
+                list.Add($"The plane wave's far-field {name} step is {step.ToString("R", CultureInfo.InvariantCulture)}°; it is more than 0 and at most 90.");
+        return list;
+    }
+
+    /// <summary>The direction straight back along the incidence, the monostatic direction: −k̂.</summary>
+    public Point3 Backward => new(-Direction.X, -Direction.Y, -Direction.Z);
+
+    private static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+    private static double Norm(Point3 a) => Math.Sqrt(Dot(a, a));
+    private static Point3 Scale(Point3 a, double k) => new(a.X * k, a.Y * k, a.Z * k);
 }

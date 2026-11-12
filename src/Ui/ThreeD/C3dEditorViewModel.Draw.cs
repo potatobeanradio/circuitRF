@@ -812,6 +812,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in SectionMenuItems()) yield return item;       // brief-dfr34-3 — Section Through…, with a field present
         foreach (var item in ThermalMenuItems()) yield return item;
         foreach (var item in WireMenuItems()) yield return item;
+        foreach (var item in PlaneWaveMenuItems()) yield return item;   // brief-hzn-12
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])
             yield return new Viewer3DMenuItem("Drawing Plane from Face", () => { if (PlaneFromFace(f.Object, f.Face) is { } why) StatusMessage = why; });
         if (ExtrudeSource() is { } src)

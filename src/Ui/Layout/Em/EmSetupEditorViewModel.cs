@@ -2173,6 +2173,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 ? $"The radiation pattern needs a Driven 3D problem: this setup is " +
                   $"{(Working.Problem3D == Em3dProblemType.Eigenmode ? "an eigenmode" : "a static")} one, which drives no port at a " +
                   "frequency, so nothing radiates in the sense a pattern describes."
+                : Working.PlaneWave is not null
+                ? "A plane-wave setup's result is its radar cross-section, read from the same far field; a radiation pattern is a " +
+                  "port-driven run's."
                 : null)
             : Working.AnalysisKind == EmAnalysisKind.CrossSection
             ? "The radiation pattern is part of the planar (full-wave) analysis; a cross-section solve " +

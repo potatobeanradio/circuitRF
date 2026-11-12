@@ -670,11 +670,29 @@ internal sealed partial class HznTranslator
     private bool CreateSphere(State st, Dictionary<string, string> p, string user)
     {
         if (!NeedShape(st, user)) return false;
-        if (!Segments(p, user, "NumberOfSegments", "NumberOfVertices")) return false;
+        // brief-hzn-12 Part 2 — NumberOfSegments above 0 facets the sphere, on NumberOfVertices points (black-box: the segment count
+        // itself changes nothing of the solid); 0 is a true sphere whatever NumberOfVertices says.
+        int facets = 0;
+        if (p.TryGetValue("NumberOfSegments", out string? segText))
+        {
+            if (Plain(segText, user) is not { } seg) return false;
+            if (seg != 0)
+            {
+                if (Plain(p.GetValueOrDefault("NumberOfVertices") ?? "", user) is not { } nv || nv != Math.Floor(nv) ||
+                    nv < C3dFacetedSphere.MinVertices || nv > C3dFacetedSphere.MaxVertices)
+                {
+                    _r.Add(HznRefusalKind.CreationStep, "CreateSphere faceted",
+                           $"NumberOfVertices '{p.GetValueOrDefault("NumberOfVertices")}' is not a whole number from {C3dFacetedSphere.MinVertices} to {C3dFacetedSphere.MaxVertices}",
+                           user.Split(' ')[0]);
+                    return false;
+                }
+                facets = (int)nv;
+            }
+        }
         var centre = Triple(p.GetValueOrDefault("CenterPosition"), user);
         var radius = Len(p.GetValueOrDefault("Radius"), user);
         if (centre is null || radius is null) return false;
-        var s = new C3dSphere();
+        var s = new C3dSphere { FacetVertices = facets };
         PutAll(s, nameof(C3dSphere.Centre), centre);
         Put(s, nameof(C3dSphere.Radius), 0, radius);
         st.Root = s;

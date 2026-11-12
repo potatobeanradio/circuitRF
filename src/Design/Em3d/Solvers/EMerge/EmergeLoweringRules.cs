@@ -167,8 +167,11 @@ internal static class EmergeLoweringRules
                    "magnetic wall lies there. Set it to Pec (an electric wall) or Pmc (a magnetic one) in the setup's AirBox.";
         if (problem.Validate() is { Count: > 0 } invalid)
             return "The 3D problem cannot be lowered for EMerge: " + string.Join(" ", invalid);
-        if (problem.Ports.Count == 0 && problem.Type == Em3dProblemType.Driven)
+        if (problem.Ports.Count == 0 && problem.Type == Em3dProblemType.Driven && problem.PlaneWave is null)
             return "The 3D problem has no ports, so there is nothing for EMerge to excite.";
+        // brief-hzn-12 — a scattering run's far field is read on a closed surface in the air, inside the absorber
+        if (problem.PlaneWave is not null && Em3dPlaneWaves.IntegrationBox(problem, out string? noSurface) is null)
+            return $"The setup is driven by a plane wave, and its radar cross-section cannot be read: {noSurface}.";
         foreach (var p in problem.Ports)
             if (PortRefusal(p) is { } port) return port;
         foreach (var le in problem.LumpedElements)

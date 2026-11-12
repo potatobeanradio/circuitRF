@@ -335,6 +335,10 @@ public static class Em3dGenerator
 
         public Em3dGenerationResult Go()
         {
+            // brief-hzn-12 — a layout's ports are its port labels, always there; a plane wave runs from a 3D view's setup.
+            if (setup.IsScattering3D && !displaySlabs)
+                return No("The setup is driven by a plane wave, and a layout's setup is driven by its ports. Run a plane wave from a 3D " +
+                          "view's setup: make a 3D view of the layout and add the setup there.");
             // ── The sweep ─────────────────────────────────────────────────────────────────────
             double[] freqs;
             try { freqs = setup.ExpandFrequencies(); }
@@ -1802,14 +1806,16 @@ public static class Em3dGenerator
         // brief-em3d-22 — a static solve has no wavelength, so its default padding is the structure's
         // own largest extent: far enough that the box's faces barely touch the field, and a length a
         // package-sized problem can mesh.
-        bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
+        bool radiating = setup.Radiates3D;
         var defaults = DefaultFacePadding(setup, fMin, Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), zHigh - zLow), paddingHeightM,
                                           paddingHeightBelowM);
         double pad = defaults.CapM;
         // brief-dfr34-2 R-dfr34-2-1 — the note names the rule that set the padding, the cap included when it applied.
         if (radiating)
-            notes.Add($"The air box's default padding is {Fmt(pad * 1e3)} mm on every face — {defaults.CapBasis} — because a " +
-                      "radiation pattern was asked for: its equivalence surface sits inside the absorber with room to spare around " +
+            notes.Add($"The air box's default padding is {Fmt(pad * 1e3)} mm on every face — {defaults.CapBasis} — because " +
+                      (setup.IsScattering3D
+                          ? "the setup is a scattering run: its far field is read on a surface inside the absorber with room to spare around "
+                          : "a radiation pattern was asked for: its equivalence surface sits inside the absorber with room to spare around ") +
                       "the structure." + (setup.PatternFrequencyGHz is > 0 ? "" :
                       " The setup names no pattern frequency, so the sweep's lowest stands in for it; state one to size the box for it.") +
                       " A padding the setup's AirBox states is used as stated.");
@@ -1946,7 +1952,7 @@ public static class Em3dGenerator
     {
         if (setup.IsStatic3D)
             return (Math.Max(largestExtentM, 1e-6), "the structure's largest extent, since a static solve has no wavelength", "largest extent");
-        bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
+        bool radiating = setup.Radiates3D;
         if (radiating)
         {
             // brief-dfr34-2 R-dfr34-2-1 (D1) — λ/4 at the frequency the pattern is read at (the sweep's lowest when the setup
@@ -1963,10 +1969,12 @@ public static class Em3dGenerator
                 return (floor, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency: more than λ/4 at {at}" +
                                (cap < quarter ? " capped by the structure's largest extent" : "") +
                                ", because the absorbing faces see the whole sweep", $"λ/8 at {Hz(fMin)}");
+            // brief-hzn-12 — a scattering run reads a far field as a pattern does, so it takes the same padding, said for what it is
+            string why = setup.IsScattering3D ? "the setup is a scattering run" : "a radiation pattern is asked for";
             if (cap < quarter)
                 return (cap, $"the structure's largest extent ({Fmt(cap * 1e3)} mm), which caps λ/4 at {at} " +
-                             $"({Fmt(quarter * 1e3)} mm); a radiation pattern is asked for", "largest extent, capping λ/4");
-            return (quarter, $"λ/4 at {at}, since a radiation pattern is asked for", $"λ/4 at {Hz(fp)}");
+                             $"({Fmt(quarter * 1e3)} mm); {why}", "largest extent, capping λ/4");
+            return (quarter, $"λ/4 at {at}, since {why}", $"λ/4 at {Hz(fp)}");
         }
         // A structure that does not radiate keeps its field within about its own size, as a static solve does: λ/8 of a
         // low first frequency round a board a few millimetres across was a box of tens of gigabytes, nearly all of it air.
@@ -2153,7 +2161,7 @@ public static class Em3dGenerator
     /// not asking for a radiation pattern. A radiator keeps every face absorbing and λ/4 of air (its far field needs both);
     /// a static or eigenmode solve keeps today's rules.</summary>
     public static bool ByHeightApplies(EmSetup setup)
-        => !setup.IsStatic3D && setup.Problem3D == Em3dProblemType.Driven && !setup.RadiationPattern;
+        => !setup.IsStatic3D && setup.Problem3D == Em3dProblemType.Driven && !setup.Radiates3D;
 
     /// <summary>
     /// Designer round 33 — H: from the bottom of the top metal down to the next metal below it (a plane, or the PEC floor),

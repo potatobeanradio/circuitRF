@@ -427,6 +427,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         BooleanOperands.Clear();
         IsAirBox = false;
         IsAirBoxRow = false;
+        IsPlaneWave = false;
         AirBoxFaces.Clear();
         IsThermalPlace = false;
         IsPhantom = false;
@@ -476,6 +477,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             // names the reference — the thing to put right.
             if (SelectedInstanceRow() is { } missing) { LoadInstance(missing); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.PlaneWaveKind }) { LoadPlaneWave(); return; }   // brief-hzn-12
             // A drawn port's row with no sheet (a port that does not resolve): its page all the same — its place is what to fix.
             if (editor.SelectedTreeItem is { Kind: "Port" } portRow && editor.PortOfRow(portRow) is { } unresolved)
             {
@@ -510,6 +512,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             Heading = "Nothing selected";
             return;
         }
+        // brief-hzn-12 — the incident wave's arrows: its page
+        if (sel.All(i => viewer.Scene.Object(i.Object) is { Kind: Scene3DKind.Excitation })) { LoadPlaneWave(); return; }
         if (viewer.SelectMode == Scene3DSelectMode.Object &&
             sel.All(i => viewer.Scene.Object(i.Object) is { } b && C3dEditorViewModel.BoxFaceOf(b) is not null))
         {
@@ -1613,6 +1617,14 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// <summary>The Name field's Enter or lost focus.</summary>
     public void CommitName()
     {
+        // brief-hzn-12 — a plane wave's name
+        if (IsPlaneWave)
+        {
+            if (NameText.Trim() == _planeWaveName) return;
+            Error = editor.RenamePlaneWave(_planeWaveName, NameText) ?? "";
+            if (Error.Length > 0) NameText = _planeWaveName;
+            return;
+        }
         if (IsFieldPlot)
         {
             if (NameText.Trim() == _plotName) return;

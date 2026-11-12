@@ -213,6 +213,7 @@ public sealed partial class EmSetupEditorViewModel
         var before = SnapshotJson();
         Working.Solver3D = choice;
         CommitEdit(before, description);
+        DropPlaneWaveIfSolverCannot();   // brief-hzn-12 — comparing with Palace, which has no plane-wave source
         SyncCompareFields();
         RaiseSolverDependents();
         Refresh();

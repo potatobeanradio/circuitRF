@@ -2050,7 +2050,7 @@ namespace CircuitRF.Render.DataDisplay
 
             // Already decibels — by unit, or by this repository's own cube-naming convention, which is
             // what carries the answer for a file written before the units were published.
-            if (unit is "dB" or "dBi" or "dBm" or "dBc"
+            if (unit is "dB" or "dBi" or "dBm" or "dBc" or "dBsm"
                 || bare.EndsWith("Db",  StringComparison.Ordinal)
                 || bare.EndsWith("Dbi", StringComparison.Ordinal)
                 || bare.EndsWith("Dbm", StringComparison.Ordinal))

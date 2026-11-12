@@ -412,6 +412,36 @@
                 </Grid>
             </StackPanel>
 
+            <!-- brief-hzn-12 — the active setup's incident plane wave: what its row or its arrows select. -->
+            <StackPanel Spacing="4" IsVisible="{Binding IsPlaneWave}">
+                <TextBlock Text="Name" FontSize="11" Opacity="0.7"/>
+                <TextBox x:Name="PlaneWaveNameBox" Text="{Binding NameText}" KeyDown="OnNameKey" LostFocus="OnNameLostFocus"/>
+                <CheckBox Content="Enabled" IsChecked="{Binding PlaneWaveEnabled}"
+                          ToolTip.Tip="An enabled plane wave drives the 3D view's Driven setups instead of their ports; at most one is enabled, so enabling this one disables the others."/>
+                <Grid ColumnDefinitions="Auto,6,*" RowDefinitions="Auto,4,Auto,4,Auto,4,Auto,4,Auto,4,Auto">
+                    <TextBlock Grid.Row="0" Text="Direction" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding PlaneWaveDirection}" KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus"
+                             ToolTip.Tip="The way the wave travels, x, y, z: any length. 0, 0, -1 falls from above."/>
+                    <TextBlock Grid.Row="2" Text="E-field" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding PlaneWaveEField}" KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus"
+                             ToolTip.Tip="The wave's polarisation, x, y, z, at right angles to its direction."/>
+                    <TextBlock Grid.Row="4" Text="E0 (V/m)" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="4" Grid.Column="2" Text="{Binding PlaneWaveE0}" PlaceholderText="1" KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus"
+                             ToolTip.Tip="The wave's peak amplitude. A cross-section does not depend on it."/>
+                    <TextBlock Grid.Row="6" Text="{Binding LengthUnit, StringFormat='Phase origin ({0})'}" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="6" Grid.Column="2" Text="{Binding PlaneWaveOrigin}" PlaceholderText="0, 0, 0" KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus"
+                             ToolTip.Tip="Where the wave's phase is zero: x, y, z in the display unit (a suffix may name another)."/>
+                    <TextBlock Grid.Row="8" Text="θ step (°)" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="8" Grid.Column="2" Text="{Binding PlaneWaveThetaStep}" PlaceholderText="{x:Static t3:C3dPropertiesViewModel.PlaneWaveDefaultStep}"
+                             KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus" ToolTip.Tip="The cross-section is read from θ 0 to 180° in this step."/>
+                    <TextBlock Grid.Row="10" Text="φ step (°)" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="10" Grid.Column="2" Text="{Binding PlaneWavePhiStep}" PlaceholderText="{x:Static t3:C3dPropertiesViewModel.PlaneWaveDefaultStep}"
+                             KeyDown="OnPlaneWaveKey" LostFocus="OnPlaneWaveLostFocus" ToolTip.Tip="… and from φ 0 to 360° in this step."/>
+                </Grid>
+                <TextBlock Text="{Binding PlaneWaveSolver}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+                           IsVisible="{Binding PlaneWaveSolver, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
+
             <!-- 3D editor round 3 — what fills the air box: Air by default, Vacuum or any technology material by choice. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsAirBoxRow}">
                 <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>

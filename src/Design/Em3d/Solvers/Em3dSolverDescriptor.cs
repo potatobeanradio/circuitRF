@@ -26,6 +26,9 @@ public sealed record Em3dSolverCapabilities
     /// <summary>It produces a driven run's far field (the radiation pattern group).</summary>
     public bool RadiationPattern { get; init; }
 
+    /// <summary>brief-hzn-12 — the solver runs a scattering setup: a driven problem driven by an incident plane wave.</summary>
+    public bool PlaneWave { get; init; }
+
     /// <summary>It writes the raw dump SAR and B1 are computed on (a setup's Sar group, a band sweep).</summary>
     public bool Sar { get; init; }
 

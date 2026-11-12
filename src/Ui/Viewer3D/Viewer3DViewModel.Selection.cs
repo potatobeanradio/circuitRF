@@ -88,6 +88,9 @@ public interface IViewer3DEditHost
     /// <summary>brief-em3d-45 — the drawing's entries for the context menu (Extrude, Drawing Plane from Face).</summary>
     IEnumerable<Viewer3DMenuItem> DrawMenuItems() => [];
 
+    /// <summary>brief-hzn-12 — the menu of a scattering setup's incident wave, when its arrows are what is selected.</summary>
+    IReadOnlyList<Viewer3DMenuItem> ExcitationMenuItems() => [];
+
     /// <summary>brief-em3d-46 R-em3d46-5 — where the move gizmo sits (world metres), or null for none: it is offered
     /// in Object mode with something movable selected and no gesture in progress.</summary>
     CircuitRF.Engine.Em3d.Point3? GizmoPivot => null;
@@ -879,6 +882,12 @@ public sealed partial class Viewer3DViewModel
             items.AddRange(host.DrawMenuItems());
             if (host.HideShowSelectionItem() is { } tintHideShow) items.Add(tintHideShow);
             if (host.CopyObjectsItem() is { } tintCopy) items.Add(tintCopy);
+            return items;
+        }
+        // brief-hzn-12 — the incident wave's arrows: the wave's own menu (it is the setup's, not geometry: no Rename or Material)
+        if (host is not null && objects.Count > 0 && objects.All(o => o.Kind == Scene3DKind.Excitation))
+        {
+            items.AddRange(host.ExcitationMenuItems());
             return items;
         }
         bool any = objects.Count > 0;

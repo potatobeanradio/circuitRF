@@ -203,6 +203,17 @@ public static class C3dDiagnostics
         "Face {index} of '{name}' has no name. Faces are named, never indexed, so a boundary survives an edit.",
         ("name", name), ("index", index));
 
+    /// <summary>brief-hzn-12 — a plane wave's record is wrong: unnamed, named twice, unsolvable, or one of several enabled.</summary>
+    public static Diagnostic PlaneWave(string reason) => Diagnostic.Create("c3d.plane-wave", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    /// <summary>brief-hzn-12 — a faceted sphere's point count out of range.</summary>
+    public static Diagnostic FacetVertices(string name, int count) => Diagnostic.Create(
+        "c3d.sphere.facet-vertices", DiagnosticSeverity.Error,
+        "'{name}' is faceted on {count} points; a faceted sphere has from {min} to {max} (0 is a true sphere).",
+        ("name", name), ("count", count.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ("min", C3dFacetedSphere.MinVertices.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ("max", C3dFacetedSphere.MaxVertices.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
     public static Diagnostic FaceNameDuplicate(string name, string face) => Diagnostic.Create(
         "c3d.polyhedron.face-duplicate", DiagnosticSeverity.Error,
         "'{name}' has more than one face named '{face}'.", ("name", name), ("face", face));

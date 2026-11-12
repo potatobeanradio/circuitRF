@@ -160,8 +160,10 @@ public static partial class Em3dRunService
         else
             log.Notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
                           $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
-                          $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
-                          $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
+                          $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. " +
+                          (lowering.PlaneWave is not null
+                              ? $"openEMS runs once, driven by the plane wave, up to {lowering.MaxTimeSteps:N0} time steps."   // brief-hzn-12
+                              : $"openEMS runs once per port: {n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps."));
 
         return new OpenEmsPlan(gridSettings, runSettings, grid, lowering,
                                readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!);
@@ -232,7 +234,12 @@ public static partial class Em3dRunService
             runs.Add(r);
 
             var facts = r.Facts!;
-            if (!r.Converged)
+            if (!r.Converged && lowering.PlaneWave is not null)
+                log.Warnings.Add($"openEMS's plane-wave run stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
+                                 (facts.EnergyDb is { } pe ? $" with the field energy {Db(pe)} below its peak" : "") +
+                                 $", against an end criterion of {Db(runSettings.EndCriterionDb)}. It has NOT converged: the cross-section is " +
+                                 "written, and the energy still ringing round the model is missing from it. Raise the openEMS section's MaxTimeSteps.");
+            else if (!r.Converged)
                 log.Warnings.Add($"openEMS's run exciting port {r.Port} stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
                                  (double.IsNaN(r.DecayDb) ? ", before the excitation pulse and one pulse length after it had passed"
                                                           : $" with the port signals {Db(r.DecayDb)} below their peak") +
@@ -248,6 +255,25 @@ public static partial class Em3dRunService
                                      $"{grid.TimeStepEstimateS:G4} s — outside {TimeStepRatioLow}–{TimeStepRatioHigh}. The answer " +
                                      "is still openEMS's; the estimate circuitRF reports before a run is what disagrees.");
             }
+        }
+
+        // ── brief-hzn-12 — a scattering run: its one run's far field, divided by the wave that arrived, is the cross-section ──
+        if (lowering.PlaneWave is { } waveBox)
+        {
+            string waveDir = Path.Combine(runDir, OpenEmsRun.PortDirectory(0));
+            var rcs = OpenEmsPlaneWave.Result(problem, lowering.FarField!, waveBox, waveDir, FrequenciesHz(problem.Frequency), maxCores, control, ct,
+                                              out string? rcsError);
+            if (rcs is null)
+            {
+                if (ct.IsCancellationRequested) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+                return Failed(rcsError!);
+            }
+            log.Notes.AddRange(OpenEmsPlaneWave.Notes(problem, waveBox));
+            log.Notes.Add(EmergeScattering.Headline(rcs));
+            OpenEmsFarField.DeletePhaseSnapshots(waveDir);
+            string? rcsNpy = WriteNpy(run.Paths(Me).NpyPath, rcs, log);
+            string? waveOpen = runs[0].Converged ? null : "openEMS stopped at its step limit: not converged.";
+            return new Leg(Me, EmRunStatus.Ok, null, rcs, rcsNpy, null, "openEMS " + openEms.DescribeVersion(), NotConverged: waveOpen);
         }
 
         // ── The transform (R-em3d9-4) ────────────────────────────────────────────────────────

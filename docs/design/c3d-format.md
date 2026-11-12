@@ -60,6 +60,7 @@ the order below.
 | `Instances` | [instance] | Other cells placed here: the hierarchy (§6) |
 | `Variables` | [variable] | The view's VARs (§5) |
 | `Ports` | [port] | Excitations (§7) |
+| `PlaneWaves` | [plane wave] | Incident plane waves; the enabled one drives every `Driven` setup (§7) |
 | `FaceBoundaries` | [face boundary] | Boundaries on named faces of dielectric or air objects (§7) |
 | `LumpedElements` | [lumped element] | R, L and C across gaps (§7) |
 | `Setups` | [setup] | Embedded analysis setups, in the `.cem` schema without its `LayoutRef` (§8) |
@@ -158,7 +159,7 @@ order Z, Y, X, each omitted at 0°. Any rigid motion, a mirror in any plane incl
 | `Box` | `Min`, `Size` | `xmin xmax ymin ymax zmin zmax` (own frame) |
 | `Prism` | `Plane`, `Offset`, `Outline` [[u,v]], `Holes` [[[u,v]]], `Height` (along the normal, may be negative), `Shear` [u,v] (moves the top against the bottom) | `bottom`, `top`, `side<k>` (outline edge k→k+1), `hole<h>.side<k>` |
 | `Cylinder` | `Base`, `Axis` (X/Y/Z), `Length`, `Radius` | `bottom`, `top`, `side` |
-| `Sphere` | `Centre`, `Radius` | `surface` |
+| `Sphere` | `Centre`, `Radius`; `FacetVertices` (omitted: a true sphere) makes it faceted, the convex hull of that many points of a golden-spiral lattice on it: point j of N from the top at z = 1 − (2j + 1)/N and azimuth −(j + ½)·π(3 − √5) | `surface` (every facet of a faceted one) |
 | `Ellipsoid` | `Centre`, `SemiAxes` (own frame) | `surface` |
 | `Polyhedron` | `Vertices` [[x,y,z]], `Faces` [{`Name`, `Outer` [vertex index], `Holes`}]: closed, each edge used twice in opposite directions, each face planar within 1 DBU | each face's own `Name` |
 | `Sheet` | `Plane`, `Offset`, and either `Rect` {`Min`,`Size`} or `Outline` + `Holes`; `ThicknessUm` (the metal's thickness). A sheet always conducts. `Image`, `Locked`: a reference picture | — |
@@ -302,6 +303,26 @@ Rules a reader must apply:
 - **Numbering.** Port numbers are unique across ports and terminals. A run's result numbers the modelled ports 1…N in
   `Number` order.
 
+### Plane waves
+
+`PlaneWaves` holds incident plane waves. A wave is a record of the view, as a port is, not of a setup: **at most one is
+`Enabled`**, and that one drives every `Driven` setup of the view in place of its ports, making it a scattering run with a
+radar cross-section as its result. The others are kept, disabled, to switch between.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Name` | string | Unique among the view's waves |
+| `Enabled` | bool | Default `true`. More than one enabled is an error |
+| `Direction` | [x, y, z] | The way the wave travels, any length |
+| `EField` | [x, y, z] | Its polarisation, any length, at right angles to `Direction` |
+| `E0` | number? | Peak amplitude, V/m; default 1 |
+| `PhaseOrigin` | point | Where the phase is zero, DBU; default the origin |
+| `ThetaStepDeg`, `PhiStepDeg` | number? | The cross-section's grid, θ 0–180° and φ 0–360°; default 2° each |
+
+Vectors rather than angles, since angle conventions differ between tools and one read in another's convention is a silent
+error. EMerge and openEMS (on its Cartesian grid) run a wave; Palace has no plane-wave source and refuses a setup the
+enabled wave drives. Every air box face must absorb, and no port may be modelled beside an enabled wave.
+
 ### Face boundaries
 
 `{ "Object": "block", "Face": "zmax", "Kind": "Pec" }`, on a **named face of a dielectric or air object** (a conductor
@@ -322,7 +343,8 @@ R, L and C across a gap shaped exactly like a lumped port's gap: `Name`, `Plane`
 `Setups` holds analysis setups in the **`.cem` schema** (`circuitrf reference em-setup`), without its `LayoutRef`. Each
 has a unique `Name`, a `Problem3D` and a `Solver3D`:
 
-- `Problem3D`: `Driven`, `Electrostatic`, `Magnetostatic`, `Eigenmode` or `Thermal`.
+- `Problem3D`: `Driven`, `Electrostatic`, `Magnetostatic`, `Eigenmode` or `Thermal`. A `Driven` setup is a scattering run
+  when the view has an enabled plane wave (§7); a setup holds no wave of its own.
 - `Solver3D`: `Palace`, `OpenEms` or `Emerge`. A `Thermal` setup states none; circuitRF's own thermal solver runs it.
 
 A setup also holds the frequency plan, the air box and solver-specific settings. The setup schema is its own
@@ -391,7 +413,7 @@ instead of being folded into Euler angles.
 |---|---|
 | Multi-mode wave port | `Ports[]` gains `Modes` (int, default 1) |
 | Floquet port | `Ports[]` `Kind: "Floquet"` on an air-box face region, with `Modes` (`TE00`, `TM00`, …) |
-| Incident plane wave | Setup-level `Excitation`: { `Kind`: `PlaneWave`, `ThetaDeg`, `PhiDeg`, `Polarization`, `E0` }. It belongs to the analysis, not to the geometry |
+| Incident plane wave | **Built** (brief-hzn-12): the view's `PlaneWaves` records (§7), stated as two vectors rather than the angles proposed here, since angle conventions differ between tools and one read in another's convention is a silent error |
 | Impedance surface | `FaceBoundaries[]` `Kind: "Impedance"` with `R` and `X` (Ω/sq) as expressions |
 | Periodic (primary/secondary) pair | A setup's `AirBox` faces gain `Boundary: "Periodic"` plus `Pair` (the opposite face) and `ScanThetaDeg`/`ScanPhiDeg` |
 | PML as distinct from a first-order absorber | A setup's `AirBox` face `Boundary: "Pml"` with `Layers` and `Thickness` |

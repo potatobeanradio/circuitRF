@@ -131,6 +131,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsPortKindSetup));
         OnPropertyChanged(nameof(IsEigenmodeSetup));
         OnPropertyChanged(nameof(IsSarSetup));
+        RaisePlaneWaveVisibility();
     }
 
     private void SyncEigenFields()

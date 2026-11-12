@@ -290,10 +290,33 @@ public sealed class C3dCylinder : C3dObject
 
 /// <summary>brief-em3d-102 R-em3d102-1 — a sphere: its centre and radius. A placement's rotation only moves the centre. Its one
 /// face is <c>surface</c>, named so Face mode selects it and so what a curved face refuses is refused by name.</summary>
+/// <summary>
+/// brief-hzn-12 — an incident plane wave of the 3D view: its name, whether it drives the view's Driven setups (at most one does),
+/// the direction it travels and its E-field as vectors of any length at right angles, its peak amplitude in V/m (omitted: 1), the
+/// point its phase is zero at in DBU (omitted: the origin), and the radar cross-section grid's steps in degrees (omitted: 2).
+/// </summary>
+public sealed class C3dPlaneWave
+{
+    public string Name { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public double[] Direction { get; set; } = [0, 0, -1];
+    public double[] EField { get; set; } = [1, 0, 0];
+    public double? E0 { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public C3dPoint3 PhaseOrigin { get; set; }
+    public double? ThetaStepDeg { get; set; }
+    public double? PhiStepDeg { get; set; }
+}
+
 public sealed class C3dSphere : C3dObject
 {
     public C3dPoint3 Centre { get; set; }
     public long      Radius { get; set; }
+
+    /// <summary>brief-hzn-12 — 0 (omitted) is a true sphere. Above 0, the sphere is FACETED: the convex hull of this many points of a
+    /// golden-spiral lattice on it (<see cref="C3dFacetedSphere"/>), as Hertzon builds one. Its one face is still <c>surface</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int FacetVertices { get; set; }
 
     public static readonly string[] FaceNameList = ["surface"];
 
@@ -1265,6 +1288,10 @@ public sealed class C3dDocument
     /// <summary>brief-sar-3 R-sar3-3 — lumped R, L, C across gaps. Like the ports, they belong to the document: every setup
     /// solved by openEMS has them.</summary>
     public List<C3dLumpedElement> LumpedElements { get; set; } = [];
+
+    /// <summary>brief-hzn-12 — the incident plane waves, records of the 3D view as its ports are (owner's choice). At most one is
+    /// Enabled, and it drives every Driven setup in the view instead of the ports (C3dPlaneWaves.Apply).</summary>
+    public List<C3dPlaneWave> PlaneWaves { get; set; } = [];
 
     /// <summary>brief-em3d-73 R-em3d73-4a — where heat is put. Read by thermal setups only; no EM lowering sees one.</summary>
     public List<C3dHeatSource> HeatSources { get; set; } = [];

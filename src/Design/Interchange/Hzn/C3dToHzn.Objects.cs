@@ -94,7 +94,10 @@ internal sealed partial class C3dToHznWriter
             case C3dSphere s:
                 steps.Add(new("CreateSphere", P(("CenterPosition", Dim3(s, nameof(C3dSphere.Centre), s.Centre)),
                                                 ("Radius", Dim(s, nameof(C3dSphere.Radius), 0, s.Radius)),
-                                                ("NumberOfVertices", "0"), ("NumberOfSegments", "0"))));
+                                                // brief-hzn-12 — a faceted sphere as Hertzon's own examples write one: its point count, and
+                                                // a segment count of 100 (any count above 0 facets it; the count itself changes nothing).
+                                                ("NumberOfVertices", s.FacetVertices.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                                                ("NumberOfSegments", s.FacetVertices > 0 ? "100" : "0"))));
                 break;
             case C3dPrism p:
                 if (!PrismSteps(p, steps, label)) return null;

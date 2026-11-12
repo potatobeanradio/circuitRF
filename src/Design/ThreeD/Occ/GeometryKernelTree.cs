@@ -97,6 +97,8 @@ public sealed class GeometryKernelTree
                                                     string? documentDir = null, bool operand = false)
     {
         double U(long dbu) => Um(dbu, dbuPerMicron);
+        // brief-hzn-12 — a faceted sphere is handed to the kernel as the polyhedron it is.
+        if (obj is C3dSphere { FacetVertices: > 0 } faceted) obj = C3dFacetedSphere.Polyhedron(faceted);
         var placement = obj.Placement.ToTransform();
         var t = placement with { Tx = U((long)placement.Tx), Ty = U((long)placement.Ty), Tz = U((long)placement.Tz) };
         t = Canonical(t.Then(worldUm));

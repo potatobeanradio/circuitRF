@@ -46,7 +46,8 @@ public sealed partial class C3dEditorViewModel
                 return mode switch
                 {
                     // brief-dfr34-1 R-dfr34-1-1 — a selected port moves too (StartMove hands ports to StartPortMove)
-                    Scene3DSelectMode.Object => Targets().Count > 0 || SelectedPorts().Count > 0,
+                    Scene3DSelectMode.Object => Targets().Count > 0 || SelectedPorts().Count > 0
+                                                || SelectedPlaneWave() is { } wave && PlaneWaveMoveCannot(wave) is null,   // brief-hzn-12
                     Scene3DSelectMode.Face   => CanRunModify("FaceMove"),
                     Scene3DSelectMode.Vertex => CanRunModify("VertexMove"),
                     _                        => false,

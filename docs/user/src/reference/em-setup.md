@@ -1555,6 +1555,79 @@ the modes within 0.15 % of Palace's; the example's README compares the two.
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
 
+### A plane wave and radar cross-section {#plane-wave}
+
+A 3D view's Driven setups can be driven by an **incident plane wave** in place of their ports. The result is the model's **radar
+cross-section** (RCS) at each frequency, not S-parameters. EMerge and openEMS run it. Palace refuses the setup by name: it
+has no plane-wave source of any kind (its one plane-wave excitation is a Floquet port on a periodic cell).
+
+**In a 3D view**, right-click the canvas and choose **Add Plane Wave**: a wave falling from above is added (and a setup
+made, when there is none). In Face selection, right-click a flat face and choose **Add Plane Wave Onto Face** to aim the wave
+straight into it, its phase zero at the face's centre. A view may hold several waves, each a row of the Object Tree's
+**Excitations** group, and **at most one is enabled**: the enabled wave drives every Driven setup of the view, and their
+cards are badged **RCS**. Adding a wave, or enabling one, disables the others; a disabled wave's row is greyed and kept to
+switch back to. The view draws the enabled wave as a translucent wavefront upstream of the model, an orange arrow from it
+along the direction of travel and a red one along E.
+
+Select a wave's row, or its picture, to edit it in the Properties Inspector: its **Name**, **Enabled**, and the values below.
+The row's menu, and the picture's on the canvas, has **Rename…**, **Move…** and **Move Along** X, Y or Z, **Enable**/**Disable** and
+**Remove**, and **Delete** removes it too. Move works as it does on an object (a base point, then the target, snapped; G starts it)
+and moves the wave's phase origin, where it is drawn: the wave arrives along the line through it. Only the enabled wave is drawn,
+so a disabled one is moved by its **Phase origin** in the Inspector. The setup
+panel says which wave drives the setup. Palace cannot run one: Add Plane Wave and Enable are refused on a Palace setup, saying
+why, and changing a setup's solver to Palace disables the enabled wave in the same step (Undo puts both back).
+
+```
+"PlaneWaves": [
+  { "Name": "Plane wave 1", "Enabled": true, "Direction": [0, 0, -1], "EField": [1, 0, 0] }
+]
+```
+
+- `Direction` is the way the wave travels and `EField` its polarisation, each as three numbers of any length. They must
+  be at right angles. Vectors, not angles, so the wave cannot be read in the wrong angle convention.
+- `E0` is the peak amplitude in V/m (default 1). A cross-section does not depend on it.
+- `PhaseOrigin` is where the wave's phase is zero, in the file's DBU (default the origin); the Inspector shows it in µm.
+- `ThetaStepDeg` and `PhiStepDeg` set the bistatic grid: θ 0–180° and φ 0–360° in those steps (default 2° each).
+
+What the run needs:
+
+- **No port beside the wave.** The 3D view's ports are refused; turn each one's **Model** off for a scattering setup.
+- **Every air box face absorbing.** The wave comes in, and the scattered field goes out, through them. A face set to Pec
+  or Pmc is refused by name. The default padding is a quarter wavelength, as for a radiation pattern.
+- **Room between the model and the air box.** The far field is read on a closed box in the air halfway between the two,
+  away from the absorber's own reflection. A model that touches the air box leaves no room for it, and is refused.
+
+The result is the `rcs` group of `results/<name>.emerge_em.npy`. No Touchstone file is written, so `circuitrf em -o`
+is refused for this setup.
+
+| Cube | Axes | |
+|---|---|---|
+| `Bistatic` | f, theta, phi | σ in m² over the grid |
+| `BistaticDbsm` | f, theta, phi | the same in dBsm |
+| `Monostatic` | f | σ straight back along the incidence, computed in that direction (not read off the grid) |
+| `MonostaticDbsm` | f | the same in dBsm |
+| `Etheta`, `Ephi` | f, theta, phi | the scattered far field, for a polarised cross-section |
+
+σ = 4π r² |E<sub>s</sub>|² / |E<sub>i</sub>|² as r → ∞. The result also carries the wave it was solved for, and the panel
+shows the monostatic value after a run. A plane-wave result has no gain, directivity or efficiency: those need an input
+power, and a plane wave has none.
+
+**How close it is.** On a perfectly conducting sphere of radius 35.36 mm at 1 GHz, against the exact series solution,
+the monostatic σ came out 0.63 dB low on the Standard preset's mesh, and 0.33 dB low at 0.06 λ elements. The bistatic
+RMS error over the grid was 0.36 and 0.23 dB. An oblique incidence (θ 60°, φ 30°) matched the exact pattern as closely.
+EMerge refines its mesh only on a driven solve with ports, so a scattering run solves on its first mesh: refine it with
+**Largest element** and **At metal**.
+
+**openEMS** injects the wave on a box around the model (its total-field/scattered-field source) and reads the far field on
+the radiation pattern's surface outside it, so the air box needs a few grid cells between the model and the absorber. On the
+same sphere the monostatic σ came within 0.4 dB and the bistatic RMS error was 1.0 dB at 80 cells per wavelength
+(`OpenEms.CellsPerWavelength`), 0.6 dB at 140: FDTD staircases a curved surface, so it needs a finer grid than the
+default 20 for a small, round scatterer. The wave's leakage out of its box measured 50 to 70 dB below the sphere's
+cross-section. openEMS runs a plane wave on its Cartesian grid only.
+
+A **faceted sphere** is a sphere with `FacetVertices` above 0 in the 3D view: the convex hull of that many points spread
+evenly over it, as Hertzon builds one. A Hertzon design's faceted sphere opens as one.
+
 ### Looking at a 3D mesh before solving {#mesh-3d}
 
 **Mesh** on a 3D setup's panel, the grid button beside **Run Analysis** on a 3D view's toolbar, and *Simulate ▸ Mesh Only*

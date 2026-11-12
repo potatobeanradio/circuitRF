@@ -71,7 +71,7 @@ import os
 import re
 import sys
 
-DRIVER_VERSION = 9
+DRIVER_VERSION = 10
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -768,6 +768,18 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         names.append(s["name"])
         described.update({(3, t): solid_words(gmsh, s, problem, t) for t in v.tags})
 
+    # brief-hzn-12 — a scattering run's integration box: a box of the background's own material, just above the air box in
+    # priority and below every solid, so it only cuts the air; its faces are the closed surface the far field is read on.
+    plane_wave = problem.get("planeWave")
+    if plane_wave is not None:
+        air.prio_set(-1)
+        slo, shi = plane_wave["surface"]["min"], plane_wave["surface"]["max"]
+        shell = GeoVolume(box_of(gmsh, slo, shi), name="rcs surface")
+        shell.set_material(mats[box["material"]]).prio_set(0)
+        owners.append((shell, 0, "air", box["material"]))
+        names.append("rcs surface")
+        described.update({(3, t): "the radar cross-section's integration box" for t in shell.tags})
+
     sheets = []
     for sh in problem["sheets"]:
         g = GeoSurface(planar(gmsh, sh["rings"]), name=sh["name"])
@@ -893,14 +905,18 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         else:
             # brief-em3d-139: coth(gamma*thickness), so a slab of thickness h with current on both faces is thickness = h/2, in metres.
             sim.mw.bc.SurfaceImpedance(em.FaceSelection(tags), mats[mat], thickness=h / 2)
+    scattered = None
     for key, kind in box["faces"].items():
         if not faces[key] or kind == "pec":
             continue
         selection = em.FaceSelection(faces[key])
         if kind == "pmc":
             sim.mw.bc.PMC(selection)
-        elif kind == "absorbing":
+        elif kind == "absorbing" and plane_wave is None:
             sim.mw.bc.AbsorbingBoundary(selection)
+    if plane_wave is not None:
+        scattered = scattered_field(sim, em, plane_wave,
+                                    [t for key, kind in box["faces"].items() if kind == "absorbing" for t in faces[key]])
     numbers = emerge_numbers(problem)
     lumped = []
     for p, plate in ports:
@@ -948,6 +964,9 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                   "tags": (lambda g=g: list(g.tags)), "normal": sh["normal"]} for sh, g in sheets]
     model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing,
              "surfaces": surfaces}
+    if plane_wave is not None:
+        model["scattered"] = scattered
+        model["rcsFaces"] = integration_faces(gmsh, plane_wave["surface"])
     return sim, {"tets": int(mesh.n_tets), "edges": int(mesh.n_edges), "triangles": int(mesh.n_tris),
                  "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}, model
 
@@ -970,6 +989,9 @@ def solve(problem, folder, sim, model, heard, warnings):
         if problem.get("fields") is not None:
             out.update(mode_fields(problem, folder, sim, model, list(data.field.iter())))
         return out
+
+    if problem.get("planeWave") is not None:
+        return scattered_run(problem, folder, sim, model, warnings)
 
     if settings["adaptiveMesh"] > 0:
         # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh. Held (brief-sdl-8 D7),
@@ -1056,6 +1078,115 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     if problem.get("fields") is not None and problem["fields"]["frequenciesHz"]:
         out.update(driven_fields(problem, folder, sim, model, [] if adaptive else list(data.field.iter())))
     return out
+
+
+# -- a scattering run (brief-hzn-12) ----------------------------------------------------------------------------------------
+
+READBACK_TOL = 1e-9     # the field EMerge built against the vectors circuitRF stated: a wrong angle convention is a refusal
+
+
+def scattered_field(sim, em, pw, tags):
+    """EMerge's scattered-field condition on the absorbing faces, excited by the one plane wave: its spherical ('SPH') angles,
+    its amplitude and the point its phase is zero at."""
+    import numpy as np
+    origin = pw["origin"]
+    cs = em.GCS.displace(origin[0], origin[1], origin[2])
+    bc = sim.mw.bc.ScatteredField(em.FaceSelection(tags), definition="SPH", cs=cs)
+    bc.set_excitations(thetas=float(np.degrees(pw["theta"])), phis=float(np.degrees(pw["phi"])),
+                       polarizations=float(np.degrees(pw["psi"])))
+    bc.E0 = float(pw["e0"])
+    return bc
+
+
+def integration_faces(gmsh, surface):
+    """The faces of the integration box: every face whose centre lies on one of its six planes, within its extent."""
+    k = MODEL_SCALE
+    lo = [c * k for c in surface["min"]]
+    hi = [c * k for c in surface["max"]]
+    tol = 1e-9 * max(hi[a] - lo[a] for a in range(3))
+    found = []
+    for _, tag in gmsh.model.getEntities(2):
+        c = gmsh.model.occ.getCenterOfMass(2, tag)
+        inside = all(lo[a] - tol <= c[a] <= hi[a] + tol for a in range(3))
+        on = any(abs(c[a] - lo[a]) <= tol or abs(c[a] - hi[a]) <= tol for a in range(3))
+        if inside and on:
+            found.append(tag)
+    return found
+
+
+def readback(bc, pw, k0):
+    """The k-hat and E-hat of the wave EMerge built, at the phase origin, and its phase there in degrees: read through EMerge's
+    own background field, never recomputed from the angles that made it."""
+    import numpy as np
+    fields = list(bc._iter_fields(k0))
+    if len(fields) != 1:
+        raise Refused("EMerge built %d incident waves where circuitRF asked for one." % len(fields))
+    f = fields[0]
+    o = pw["origin"]
+    x, y, z = np.array([o[0]]), np.array([o[1]]), np.array([o[2]])
+    kv = np.real(np.asarray(f.k(x, y, z))).ravel()
+    ev = np.asarray(f.E(x, y, z)).ravel()
+    amp = float(np.linalg.norm(ev))
+    lead = ev[int(np.argmax(np.abs(ev)))]
+    phase = float(np.degrees(np.angle(lead)))
+    return (kv / np.linalg.norm(kv)).tolist(), (np.real(ev * np.exp(-1j * np.angle(lead))) / amp).tolist(), phase, amp
+
+
+def scattered_run(problem, folder, sim, model, warnings):
+    """The scattered field at every frequency, its far field on the integration box, and the radar cross-section: bistatic over
+    the theta/phi grid, and monostatic in the direction straight back along the incidence."""
+    import numpy as np
+    pw = problem["planeWave"]
+    settings = problem["settings"]
+    if settings["adaptiveMesh"] > 0:
+        warnings.append("EMerge refines its mesh on a driven solve with ports, so this scattering run used the initial mesh.")
+    freqs = np.array(problem["frequenciesHz"], dtype=np.float64)
+    sim.mw.set_frequency(list(freqs))
+    bc = model["scattered"]
+    k_top = 2 * np.pi * float(np.max(freqs)) / C0
+    k_hat, e_hat, phase, amp = readback(bc, pw, k_top)
+    dk = max(abs(a - b) for a, b in zip(k_hat, pw["direction"]))
+    de = max(abs(a - b) for a, b in zip(e_hat, pw["eField"]))
+    if dk > READBACK_TOL or de > READBACK_TOL or abs(phase) > 1e-6 or abs(amp - pw["e0"]) > READBACK_TOL * pw["e0"]:
+        raise Refused("EMerge built an incident wave other than the one circuitRF asked for: it travels along (%s) with E along "
+                      "(%s), amplitude %.9g V/m and phase %.6g deg at the phase origin, where circuitRF asked for (%s), (%s), %.9g V/m "
+                      "and 0 deg. Nothing was solved." % (
+                          ", ".join("%.9g" % v for v in k_hat), ", ".join("%.9g" % v for v in e_hat), amp, phase,
+                          ", ".join("%.9g" % v for v in pw["direction"]), ", ".join("%.9g" % v for v in pw["eField"]), pw["e0"]))
+    faces = model["rcsFaces"]
+    if not faces:
+        raise Refused("The radar cross-section's integration box has no faces in the mesh, so no far field can be read.")
+    data = sim.mw.run_scattered()
+    entries = list(data.field)
+    if len(entries) != len(freqs):
+        raise ValueError("EMerge solved %d frequencies where %d were asked for" % (len(entries), len(freqs)))
+    theta = np.arange(0, 180 + 1e-9, pw["thetaStepDeg"])
+    phi = np.arange(0, 360 - 1e-9, pw["phiStepDeg"])
+    T, P = np.meshgrid(np.radians(theta), np.radians(phi), indexing="ij")
+    back = -np.array(pw["direction"], dtype=np.float64)
+    tb = np.array([np.arccos(np.clip(back[2], -1, 1))])
+    pb = np.array([np.arctan2(back[1], back[0]) % (2 * np.pi)])
+    lo, hi = pw["surface"]["min"], pw["surface"]["max"]
+    centre = tuple((a + b) / 2 for a, b in zip(lo, hi))
+    sel = em_faces(faces)
+    far = np.zeros((len(freqs), 2, len(theta), len(phi)), dtype=np.complex128)
+    mono = np.zeros((len(freqs), 2), dtype=np.complex128)
+    for i, field in enumerate(entries):
+        ff = field.farfield(T, P, sel, origin=centre)
+        far[i, 0] = np.asarray(ff.Etheta).reshape(T.shape)
+        far[i, 1] = np.asarray(ff.Ephi).reshape(T.shape)
+        fb = field.farfield(tb, pb, sel, origin=centre)
+        mono[i, 0] = np.asarray(fb.Etheta).ravel()[0]
+        mono[i, 1] = np.asarray(fb.Ephi).ravel()[0]
+    np.save(os.path.join(folder, "freq.npy"), np.ascontiguousarray(freqs))
+    np.save(os.path.join(folder, "rcs_E.npy"), np.ascontiguousarray(far))
+    np.save(os.path.join(folder, "rcs_theta.npy"), np.ascontiguousarray(theta.astype(np.float64)))
+    np.save(os.path.join(folder, "rcs_phi.npy"), np.ascontiguousarray(phi.astype(np.float64)))
+    np.save(os.path.join(folder, "rcs_mono_E.npy"), np.ascontiguousarray(mono))
+    return {"samples": int(len(freqs)), "adaptive": False, "scattering": True,
+            "planeWaveReadback": {"direction": k_hat, "eField": e_hat, "phaseDeg": phase, "e0": amp,
+                                  "monostaticThetaDeg": float(np.degrees(tb[0])), "monostaticPhiDeg": float(np.degrees(pb[0]))},
+            "rcsFaces": len(faces)}
 
 
 # -- wave ports (brief-emw-2) ---------------------------------------------------------------------------------------------

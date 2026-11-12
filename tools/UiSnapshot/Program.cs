@@ -808,7 +808,8 @@ else if (c3dSetups is not null)
     {
         static IEnumerable<CircuitRF.Ui.ThreeD.C3dTreeItem> Walk(CircuitRF.Ui.ThreeD.C3dTreeItem t) => t.Children.SelectMany(Walk).Prepend(t);
         c3dVm.SelectedTreeItem = c3dVm.Tree.SelectMany(g => g.Items).SelectMany(Walk).FirstOrDefault(t => t.Name == c3dRow)
-                                 ?? throw new InvalidOperationException($"--c3d-row: no tree row named '{c3dRow}'");
+                                 ?? throw new InvalidOperationException($"--c3d-row: no tree row named '{c3dRow}'; the rows are " +
+                                        string.Join(", ", c3dVm.Tree.SelectMany(g => g.Items).SelectMany(Walk).Select(t => $"'{t.Name}'")));
     }
     for (int k = 0; k < 100; k++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
     // brief-port-width-planar-and-c3d R-pw1-4 — the placed layouts' ports are checked off the UI thread after adoption.

@@ -55,6 +55,10 @@ public sealed class MoveTool : C3dOperationTool
     /// are then empty): their rectangles are translated on the commit. Empty on every other Move.</summary>
     public IReadOnlyList<C3dPort> Ports { get; init; } = [];
 
+    /// <summary>brief-hzn-12 — the plane wave this Move carries instead of objects (its targets are then empty): the commit moves its
+    /// phase origin, where the view draws it. Null on every other Move.</summary>
+    public string? PlaneWave { get; init; }
+
     /// <summary>Started by a press on a gizmo handle: the release commits it (R-em3d46-5).</summary>
     public bool FromGizmo { get; init; }
 

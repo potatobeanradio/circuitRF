@@ -170,6 +170,12 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d46-2 — Move, optionally locked to an axis (the menu's Move Along X / Y / Z).</summary>
     public void StartMove(C3dMoveLock lockTo = C3dMoveLock.None)
     {
+        // brief-hzn-12 — a plane wave alone selected (its row or its picture): the same Move, on its phase origin.
+        if (Viewer.SelectMode == Scene3DSelectMode.Object && Targets().Count == 0 && SelectedPlaneWave() is { } wave)
+        {
+            StartPlaneWaveMove(wave.Name, lockTo);
+            return;
+        }
         // brief-dfr34-1 R-dfr34-1-1 — ports alone selected: the same Move, on their rectangles.
         if (Viewer.SelectMode == Scene3DSelectMode.Object && Targets().Count == 0 && SelectedPorts() is { Count: > 0 } ports)
         {
@@ -300,11 +306,15 @@ public sealed partial class C3dEditorViewModel
                 // base point is chosen it must — that is how a pad's own corner becomes the base.
                 foreach (var o in op.Targets.SelectMany(SceneObjectsOf)) _snapExcludedObjects.Add(o.Name);
                 if (op is MoveTool { Ports.Count: > 0 } px) foreach (var o in PortSceneObjects(px.Ports)) _snapExcludedObjects.Add(o.Name);
+                if (op is MoveTool { PlaneWave: not null }) _snapExcludedObjects.Add(Scene3DBuilder.PlaneWaveName);
                 ApplySnapExclusion();
                 _opExcluding = true;
             }
             if (op is MoveTool { Ports.Count: > 0 } pm)
                 ShowPreview(_portMoveTargets, [t.Transform], false, movingOf: null, extra: PortSceneObjects(pm.Ports));
+            else if (op is MoveTool { PlaneWave: not null })
+                ShowPreview(_portMoveTargets, [t.Transform], false, movingOf: null,
+                            extra: new[] { SceneObject(Scene3DBuilder.PlaneWaveName) }.OfType<Scene3DObject>());
             else ShowPreview(op.Targets, [t.Transform], op.KeepsOriginal);
         }
         OnPropertyChanged(nameof(ToolPrompt));
@@ -430,6 +440,14 @@ public sealed partial class C3dEditorViewModel
             var d = new C3dPoint3((long)Math.Round(t.Transform.Tx, MidpointRounding.AwayFromZero), (long)Math.Round(t.Transform.Ty, MidpointRounding.AwayFromZero),
                                   (long)Math.Round(t.Transform.Tz, MidpointRounding.AwayFromZero));
             if (MovePorts(pm.Ports, d, t.Exact)) HoldPreviewForCommit();
+            SetTool(null);
+            return;
+        }
+        if (op is MoveTool { PlaneWave: { } waveName })
+        {
+            var d = new C3dPoint3((long)Math.Round(t.Transform.Tx, MidpointRounding.AwayFromZero), (long)Math.Round(t.Transform.Ty, MidpointRounding.AwayFromZero),
+                                  (long)Math.Round(t.Transform.Tz, MidpointRounding.AwayFromZero));
+            if (MovePlaneWave(waveName, d, t.Exact)) HoldPreviewForCommit();
             SetTool(null);
             return;
         }

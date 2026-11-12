@@ -99,6 +99,7 @@ internal sealed partial class HznPatch
         Ports();
         FaceBoundaries();
         Setups();
+        PlaneWaves();   // brief-hzn-12
         LumpedElements();
         RemovedVariables();
         if (_refusals.Count > 0) return Finish(null);
@@ -123,7 +124,8 @@ internal sealed partial class HznPatch
     /// <summary>A document with only the items asked for, of <paramref name="src"/> (a clone), and every variable: what the writer
     /// is given to write one item on its own.</summary>
     private static C3dDocument Mini(C3dDocument src, IEnumerable<string>? objects = null, IEnumerable<int>? ports = null,
-                                    IEnumerable<C3dFaceBoundary>? faceRows = null, IEnumerable<string>? setups = null)
+                                    IEnumerable<C3dFaceBoundary>? faceRows = null, IEnumerable<string>? setups = null,
+                                    IEnumerable<string>? waves = null)
     {
         var d = Clone(src);
         var keepObjects = objects?.ToHashSet(StringComparer.Ordinal) ?? [];
@@ -133,6 +135,8 @@ internal sealed partial class HznPatch
         d.Ports = [.. d.Ports.Where(p => keepPorts.Contains(p.Number))];
         d.FaceBoundaries = [.. faceRows ?? []];
         d.Setups = [.. d.Setups.Where(s => keepSetups.Contains(Str(s, "Name")))];
+        var keepWaves = waves?.ToHashSet(StringComparer.Ordinal) ?? [];
+        d.PlaneWaves = [.. d.PlaneWaves.Where(w => keepWaves.Contains(w.Name))];   // brief-hzn-12
         d.Instances = [];
         d.LumpedElements = [];
         d.HeatSources = [];
@@ -200,7 +204,7 @@ internal sealed partial class HznPatch
     /// <summary>Document-level state. The sections a save handles are skipped; the display state is not the design's; everything
     /// else that moved is a difference this save would drop in silence, so it is a refusal.</summary>
     private static readonly HashSet<string> Handled = new(StringComparer.OrdinalIgnoreCase)
-    { "Objects", "Variables", "Ports", "FaceBoundaries", "Setups", "LumpedElements" };
+    { "Objects", "Variables", "Ports", "FaceBoundaries", "Setups", "LumpedElements", "PlaneWaves" };
 
     private static readonly HashSet<string> Display = new(StringComparer.OrdinalIgnoreCase)
     { "DisplayUnit", "SnapDbu", "FieldPlots", "AirBoxHidden", "ActiveSetup", "Look", "FormatVersion", "TechRef" };

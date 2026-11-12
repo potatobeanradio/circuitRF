@@ -744,6 +744,140 @@ is the view every open starts from, and a no-edit save is still the file's bytes
 Settings' Open in realistic view, which the workspace applies after the editor starts, as for a `.c3d`. Seen with UiSnapshot's new
 `--hzn-look` (the opened design's Look panel: all seven ticked).
 
+### HZN-12 — an incident plane wave and radar cross-section on EMerge, the faceted sphere, and the Hertzon scattering examples (2026-11-12)
+
+**Coverage** (`HznCoverageTests`, Hertzon's examples): **33 of 58**, from 22. New: `NATO-Sphere`, `SphereRCS`, the three `sphere25cm_true_*`,
+`sphere35mm_aura`/`_local` (the plane wave), the three `sphere25cm_faceted_*` (the faceted sphere), and `RotmanLens_24GHz / Patch` (the two
+laminate entries the owner allowed into `HznLibrary`, values read from Hertzon's own material listing: εr 3.66 / tanδ 0.0037 and εr 3 / tanδ
+0.001). Next items, by designs stopped: Unite (21 refusals, all on the three Meta Ex2 designs), polyline outlines built from named dimensions
+(9), CreateCylinder (8), solution type Terminal (6). `PlaneWave.hzn` (a boundary not on the outer extent) and `DroneRCS` (an imported solid)
+are the two remaining plane-wave designs.
+
+**EMerge solves it as it is.** 3.0.0 has a scattered-field boundary (`ScatteredField`, an absorbing face excited by plane waves) and
+`run_scattered`; the driver puts one `ScatteredField` over every absorbing face in place of `AbsorbingBoundary`, in EMerge's `SPH`
+convention (k̂ = (sinθ cosφ, sinθ sinφ, cosθ), Ê = cosψ θ̂ + sinψ φ̂), with a coordinate system displaced to the phase origin. Before
+solving, the driver reads back k̂, Ê, the amplitude and the phase at the origin through EMerge's own background field and **refuses the
+run** if they differ from the setup's vectors by more than 1e-9 — the one place a wrong angle convention would otherwise give a
+plausible answer. `EmergesOwnBackgroundField_IsTheWaveAskedFor` (an `EmergeFact`, no solve) checks the angle conversion through
+EMerge's formula for five waves, ±z and oblique among them.
+
+**The far field is read on a box in the air, not on the absorbing faces.** Measured on a 35 mm PEC sphere at 1 GHz (ka 0.74), same mesh:
+the absorbing faces as the surface put the monostatic value up to **1.8 dB** off; a closed box halfway between the model and the air box,
+**0.1–0.2 dB**; the sphere's own surface 0.2–0.3 dB. The driver adds the box as a volume of the background's material just above the air
+box in priority (the air box goes to −1, so it cuts only air), finds its faces by plane, and integrates over them with the box's centre as
+the orientation origin. A model that reaches the air box has no such surface and is refused (`Em3dPlaneWaves.IntegrationBox`).
+σ = 4π |E_far|² / E0² with EMerge's far field r·E: no constant factor was off (the oracle below).
+
+**The oracle** (by hand; exact series for a plane wave on a perfectly conducting sphere, evaluated in Python with no circuitRF path),
+`Sphere35` of radius 35.3553 mm at 1 GHz, run through `circuitrf em`, all 1–4 s and ≤ 2 GB:
+
+| Mesh (largest element λ / at metal) | Tetrahedra | Monostatic: got / exact | Bistatic RMS (within 20 dB of the peak) | max |Δ| |
+|---|---|---|---|---|
+| Standard (0.15 / 0.2) | 2,611 | −21.45 / −20.82 dBsm (−0.63) | 0.36 dB | 1.4 dB |
+| 0.08 / 0.1 | 11,116 | −21.27 (−0.45) | 0.31 dB | 1.6 dB |
+| 0.06 / 0.06 | 24,100 | −21.15 (−0.33) | 0.23 dB | 1.2 dB |
+| 0.08 / 0.1, incidence θ 60° φ 30° ψ 40° | 11,116 | −21.02 (−0.20) | 0.38 dB | 2.0 dB |
+
+The oblique run read as if it were normal incidence is 4.6 dB RMS off: a wrong direction or polarisation is visible. The error falls with the
+mesh and is always low: **EMerge refines a mesh only on a driven solve with ports**, so a scattering run solves on its first mesh (a warning
+says so when the setup asks for passes).
+
+**Gate 4** (`sphere35mm_aura`, circuitRF's EMerge against Hertzon's own run through its MCP server: 2 passes, 64,643 tetrahedra, 101 s):
+Hertzon's monostatic −20.83 dBsm is within 0.01 dB of the exact value, its cuts within 0.28 dB. circuitRF's Standard run is 0.40/0.35 dB
+RMS below Hertzon's φ = 0°/90° cuts (max 0.74 dB), the 0.06 λ run 0.32/0.20 dB. A finding, not tuned: Hertzon's curved second-order elements
+and adaptive passes against circuitRF's straight elements on one mesh.
+
+**Black box:** the excitation's `objects` list (`["Sphere1"]` on the 25 cm projects) and the design's `FieldType: Total` change Hertzon's
+RCS by 0.02 dB (a 4-tetrahedron mesh difference): both are translated as a note and an unused setting. **Hertzon's MCP server opens a window
+when it is running live**: `open_project` takes `open_in_gui: false`, and a scripted session should pass it.
+
+**Format, as built and where it differs from the brief.** The excitation is a setup's `Excitation` {`Kind: PlaneWave`, `Direction`,
+`EField`, `E0`, `PhaseOriginUm`, `ThetaStepDeg`, `PhiStepDeg`}: the origin in **µm**, not DBU, because a setup has no DBU (it is the
+`.cem` schema), and the vectors are **numbers**, since a setup holds no expressions; a Hertzon vector built from a variable is refused
+by name. **No `.cemr` is written** for a scattering run: the publisher is built round a Touchstone file. The result carries the wave
+itself instead (`IncidentDirection`, `IncidentEField`, `IncidentE0`, `PhaseOrigin` in the `rcs` group), as an eigenmode result stands
+alone. Hertzon writes one excitation set per design, so export refuses two different waves, or a wave beside ports; a save writes only
+`KVector`, `E0Vector`, `EMagnitude` and `ZeroPhasePosition`.
+
+**The faceted sphere.** Established from Hertzon's geometry listing (`get_geometry`) at N = 51, 200 and 800 points: the solid is the
+convex hull of a golden-spiral lattice, point j from the top at z = 1 − (2j + 1)/N and azimuth −(j + ½)·π(3 − √5), every point on the
+sphere. Every Hertzon vertex lies within 0.007 mm of the formula (its listing's rounding), and the hull's volume matches Hertzon's to five
+figures (64,977,000 mm³ at 25 cm, 800 points, 0.72 % under the true sphere). **`NumberOfVertices` sets the count; `NumberOfSegments`
+only switches faceting on** (1, 37, 50, 100 and 1000 segments gave the same 1,596 faces). So the `.c3d` field is `Sphere.FacetVertices`
+(the brief's `Segments` would have named the key that does nothing). It lowers to an `Em3dPolyhedron` whose every triangle is `surface`,
+and the geometry kernel is handed the same polyhedron; export writes `NumberOfSegments: 100` beside the count, as Hertzon's examples do.
+The 25 cm projects were dry-run only (no solve, per the brief).
+
+### HZN-12 follow-up — the plane wave on openEMS, Palace's refusal, and the 3D editor's controls (2026-11-12)
+
+**openEMS runs it.** The wave is openEMS's type-10 excitation on a total-field/scattered-field box (`OpenEmsPlaneWave`): the
+box takes the grid line halfway between the model (every solid and sheet, dielectrics included) and the radiation pattern's
+surface on each side, with a line to spare on both; with no room it is refused naming the face to pad. The run is ONE run under
+the pseudo-port 0 with no probe, so openEMS's own energy criterion stops it. The far field is the pattern's surface transform,
+divided by the excitation's spectrum (openEMS's `et` file, the ports' DFT) and moved from openEMS's phase origin to the setup's.
+openEMS refers the wave's phase to the grid line one cell outside the box's low face on each axis the wave travels along
+positively (its high face's otherwise) — read from openEMS's TF/SF extension, which circuitRF drives as a separate program.
+`Frequency` on the excitation (the frequency its numerical phase velocity is matched at) is the band's centre, not the pulse's.
+
+| openEMS grid (cells/λ) | Cells | Monostatic: got − exact | Bistatic RMS | max |Δ| |
+|---|---|---|---|---|
+| 20 (default) | 46,656 | +0.00 dB (luck) | 2.05 dB | 9.8 dB |
+| 40 | 166,375 | +1.39 | 2.73 | 6.1 |
+| 80 | 729,000 | +0.40 | 0.99 | 2.3 |
+| 140 | 3,048,625 | +0.23 | 0.59 | 1.4 |
+| 80, incidence θ 60° φ 30° ψ 40° | 729,000 | +0.38 | 0.90 | 2.3 |
+
+The error is FDTD's staircased sphere (σ goes roughly as a⁶ in this size range), converging with the grid: the TF/SF box's
+LEAKAGE, measured with the sphere made of air, is −73 dBsm at 20 cells/λ and −94 at 80, 50 to 70 dB under the sphere's −21.
+The far field's PHASE agrees with EMerge's to within 5° (one cell of the 80-cells/λ grid is 4.4°), so the origin move is right to
+openEMS's own discretisation. A cylindrical openEMS grid is refused for a plane wave.
+
+**Palace cannot.** 0.18.1 has no incident-field source: its one plane-wave excitation is a Floquet port on a periodic unit cell,
+and its surface-current source is a uniform unit current, which cannot carry a wave's phase across a model. The refusal says so
+and names the solvers that run one (`Em3dPlaneWaves.SolverRefusal`, from the `PlaneWave` capability).
+
+**The 3D editor (owner's choice: a tree row and the canvas menu).** The active setup's wave is a row, *plane wave*, beside the
+air box's (`C3dEditorViewModel.RebuildPlaneWaveItem`); selecting it, or its arrows, shows its Properties page (direction,
+E-field, E0, phase origin in the display unit, the two steps), each box one undo entry. The canvas's menu has **Add Plane Wave**
+(on the active driven setup, or a new setup on a solver that runs one) and, on one flat face in Face selection, **Add Plane
+Wave Onto Face** (along the face's inward normal; a curved face is refused). The arrows are a new scene kind, `Excitation`,
+drawn as thin ribbons so the ID pass picks them; they share the Look panel's Ports row. Delete, or **Remove Plane Wave** on
+the row's or arrows' menu, drives the setup by its ports again. **Revised after the owner tried it:** the first picture (two line
+arrows from the PHASE ORIGIN, sized to the air box) stood far from a model away from the origin and read as an upside-down L
+with whiskers. It is now a translucent wavefront square upstream of the model, a solid orange arrow along the direction of travel
+and a red one along E in the wavefront, sized to the model and aimed at the phase origin when that lies on the model, else at
+the model's centre (`Scene3DBuilder.PlaneWaveGlyph`); Onto Face puts the phase origin on the face's centre, so it lands there.
+The row is in its own **Excitations** group after the ports (owner: an excitation, as a port is, not part of the air box).
+Choosing Palace — alone or in a comparison — on a scattering setup removes the wave in the same undo entry and says so under the
+Excitation picker; Plane wave is refused while the solver is Palace, and Add Plane Wave is greyed on a Palace setup. The setup card's badge is **RCS**. `check` on a `.c3d` now
+reports a scattering setup's solver refusal and what its assembly refuses (it asked no embedded setup for solver refusals
+before). Seen with UiSnapshot: the tree row, the card, the Properties page, Add Plane Wave from the canvas menu and Remove
+Plane Wave from the row's menu.
+
+**Revised again: plane waves are records of the 3D view, several of them, at most one enabled** (owner's choice, after asking
+for named waves and more than one per view). A setup held the wave until now, so a view had one per setup and no name for it.
+Now `C3dDocument.PlaneWaves` holds `{Name, Enabled, Direction, EField, E0, PhaseOrigin (DBU), ThetaStepDeg, PhiStepDeg}`, as
+`Ports` holds ports, and the `.cem` setup's `Excitation` key is gone (it had shipped in no release). The enabled wave drives
+every Driven setup of the view: `C3dPlaneWaves.Apply` puts it on the setup in `C3dSetups.Read` and again in `Assemble`, so the
+run, `check`, `explain`, the cards and the panel all see a scattering setup without a second code path, and `EmSetup.PlaneWave`
+is run-time only. Validation refuses an unnamed wave, a repeated name, one that cannot be solved and more than one enabled.
+Hertzon's waves map one to one (name and `enabled` kept; a switched-off wave is now translated, disabled, where every other
+switched-off excitation is still left out with a note). The save patches by name, and a RENAME is paired by position (a name
+gone and a new one at the same index) so it writes the `name` key alone; without that it was a removal and an append that
+rewrote the whole excitation. The editor: one row per wave under Excitations (disabled ones greyed), the Inspector's Name box
+and Enabled box, the row menu's Rename…/Enable/Disable/Remove; adding or enabling one disables the rest. The setup panel's
+Excitation picker went: it now only names the wave that drives it. A switch to Palace in the panel disables the view's
+enabled wave in the same undo entry (`DisablePlaneWaveFor` inside `CommitSetupFromPanel`). **Trap:** the 3D editor's undo
+snapshot of the records (`C3dRecordsEdit.Of`) lists every record field by hand, so a new document record changes nothing on
+Undo until it is added there; every plane-wave edit was silently a no-op entry until it was.
+
+**Move.** The wave moves as a port does (`MoveTool.PlaneWave`, beside `MoveTool.Ports`): Move… and Move Along X/Y/Z on its row's
+and picture's menu, G, and the toolbar's Move, all moving its phase origin as one entry. The picture had to change for it: it
+aimed at the model's centre whenever the origin was off the model, so a moved wave drew where it had been. It now aims at the
+phase origin unless that is the unstated (0, 0, 0) off the model. It still stands upstream of the whole model, so a move along
+the direction of travel inside the model changes nothing drawn (nor anything solved but the phase). The tree's menu is built
+from its own row now, not the selected one, so a disabled wave's Move is greyed saying why.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

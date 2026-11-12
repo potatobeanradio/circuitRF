@@ -120,6 +120,19 @@ public static class C3dValidation
             Unread(le.Unread, $"The lumped element '{le.Name}'", found);
         }
 
+        // brief-hzn-12 — the plane waves: named, uniquely, at most one enabled, each one a wave that can be solved
+        var waveNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var w in doc.PlaneWaves)
+        {
+            if (string.IsNullOrWhiteSpace(w.Name)) found.Add(C3dDiagnostics.PlaneWave("A plane wave has no name; each is named, as a port is."));
+            else if (!waveNames.Add(w.Name)) found.Add(C3dDiagnostics.PlaneWave($"Two plane waves are named '{w.Name}'; a plane wave's name is unique in its 3D view."));
+            if (C3dPlaneWaves.ToSetup(w, doc.DbuPerMicron) is null || C3dPlaneWaves.ToSetup(w, doc.DbuPerMicron)!.Resolve(out _) is null)
+                found.Add(C3dDiagnostics.PlaneWave($"Plane wave '{w.Name}' cannot be solved: {C3dPlaneWaves.Why(w, doc.DbuPerMicron)}"));
+        }
+        if (doc.PlaneWaves.Count(w => w.Enabled) > 1)
+            found.Add(C3dDiagnostics.PlaneWave($"{doc.PlaneWaves.Count(w => w.Enabled)} plane waves are enabled; at most one drives the 3D view's setups. " +
+                                               "Disable all but one."));
+
         Look(doc.Look, documentPath, found);
         Unread(doc.Unread, "The document", found);
         return found;
@@ -438,6 +451,8 @@ public static class C3dValidation
     {
         if (s.Radius <= 0)
             found.Add(C3dDiagnostics.ZeroVolume(s.Name, "sphere", "its radius is not positive"));
+        if (s.FacetVertices != 0 && s.FacetVertices is < C3dFacetedSphere.MinVertices or > C3dFacetedSphere.MaxVertices)
+            found.Add(C3dDiagnostics.FacetVertices(s.Name, s.FacetVertices));
     }
 
     private static void Ellipsoid(C3dEllipsoid e, List<Diagnostic> found)

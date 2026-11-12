@@ -66,6 +66,7 @@ black-box runs of an installed Hertzon (0.3.19):
 | `brief-hzn-9-instance.md` | A `.hzn` design placed as an instance in a `.c3d` | 2 |
 | `brief-hzn-10-sheet-booleans.md` | A `.c3d` boolean of coplanar sheets, expressions kept; Hertzon's patch and stub-filter examples open | 2, review |
 | `brief-hzn-11-hollow-wave-ports.md` | A hollow waveguide wave port normalised to its mode; Hertzon's WR90 post examples open | 2, 7, 10 |
+| `brief-hzn-12-plane-wave-rcs.md` | An incident plane wave and radar cross-section on EMerge, then the faceted sphere; Hertzon's sphere scattering examples open | 2, 7, 11 |
 
 Brief 6 can run beside 3–5. Brief 7 and brief 8 are independent of each other, and so is brief 9 once brief 2 is in.
 

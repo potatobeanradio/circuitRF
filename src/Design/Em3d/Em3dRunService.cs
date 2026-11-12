@@ -92,7 +92,9 @@ public static partial class Em3dRunService
     /// the problem (FdtdWavePorts.HollowRefusal, in the lowering — still before any process starts).
     /// </summary>
     public static string? SolverRefusal(EmSetup setup)
-        => Em3dSolvers.Of(setup.Solver3D).Select(d => d.Refusal(setup)).FirstOrDefault(r => r is not null);
+        => Em3dSolvers.Of(setup.Solver3D)
+            .Select(d => setup.IsScattering3D && !d.Capabilities.PlaneWave ? Em3dPlaneWaves.SolverRefusal(d.DisplayName) : d.Refusal(setup))
+            .FirstOrDefault(r => r is not null);
 
     /// <summary>
     /// brief-em3d-114 R-em3d114-2e — what the one solver <paramref name="solver"/> names refuses of a problem's
@@ -138,7 +140,8 @@ public static partial class Em3dRunService
     /// <summary>brief-em3d-31 — the frequencies a driven 3D run's pattern is produced at (every sweep point, as
     /// the planar path does), or null when no pattern was asked for or the problem is not driven.</summary>
     internal static double[]? FarFieldFrequencies(EmSetup setup, Em3dProblem problem)
-        => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? FrequenciesHz(problem.Frequency) : null;
+        => (setup.RadiationPattern || problem.PlaneWave is not null) && problem.Type == Em3dProblemType.Driven
+            ? FrequenciesHz(problem.Frequency) : null;   // brief-hzn-12 — a scattering run's far field is its result
 
     /// <summary>The result's name as a path: the setup's Output name when it has one, the solver-named stem otherwise. The
     /// Touchstone lands here unless the run was given a separate destination (<see cref="EmRunTarget.TouchstoneDestination"/>).</summary>

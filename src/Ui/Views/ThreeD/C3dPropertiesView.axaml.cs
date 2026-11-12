@@ -46,7 +46,12 @@ public partial class C3dPropertiesView : UserControl
     }
 
     private void OnRenameRequested()
-        => Dispatcher.UIThread.Post(() => { NameBox.Focus(); NameBox.SelectAll(); }, DispatcherPriority.Loaded);
+        => Dispatcher.UIThread.Post(() =>
+        {
+            var box = _vm?.IsPlaneWave == true ? PlaneWaveNameBox : NameBox;   // brief-hzn-12 — a plane wave's name is on its own page
+            box.Focus();
+            box.SelectAll();
+        }, DispatcherPriority.Loaded);
 
     private void OnNameKey(object? sender, KeyEventArgs e)
     {
@@ -234,6 +239,15 @@ public partial class C3dPropertiesView : UserControl
     }
 
     private void OnPadLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitAirBoxPercent(FaceOf(sender));
+
+    // brief-hzn-12 — the plane wave's boxes commit on Enter and on leaving the box; Escape puts back what was there.
+    private void OnPlaneWaveKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitPlaneWave(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnPlaneWaveLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPlaneWave();
 
     // brief-em3d-101 — the Image section's width and height commit on Enter and on leaving the box.
     private void OnImageWidthKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (e.Key == Avalonia.Input.Key.Enter) (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageWidth(); }

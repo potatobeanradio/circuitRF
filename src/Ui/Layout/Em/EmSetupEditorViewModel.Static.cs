@@ -347,6 +347,9 @@ public sealed partial class EmSetupEditorViewModel
         Em3dProblemType.Eigenmode =>
             "The structure's resonant frequencies and Q: the number of modes asked for, above the target. Palace only; " +
             "a lumped port is its resistance, a load, so Q is loaded (the table also takes the ports' share out).",
+        _ when Working.PlaneWave is not null =>
+            "The radar cross-section of the model under the incident plane wave, at each frequency: bistatic over the whole sphere and " +
+            "monostatic straight back along the incidence. EMerge or openEMS; the model's ports are left out of the problem.",
         _ => "S-parameters over the sweep, with a port at each port label — lumped unless the table below makes it a wave port.",
     };
 
@@ -413,6 +416,7 @@ public sealed partial class EmSetupEditorViewModel
         RefreshPicks();
         UnassignedChoice = UnassignedChoices.FirstOrDefault(c => c.Value == Working.UnassignedConductors3D) ?? UnassignedChoices[0];
         SyncEigenFields();
+        SyncPlaneWaveFields();
         RaiseStaticVisibility();
     }
 

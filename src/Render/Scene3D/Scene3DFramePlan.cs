@@ -735,7 +735,7 @@ public sealed class Scene3DFramePlan
     {
         if (o.Underlay || HasImageSurface(scene, o.Id)) return Scene3DChrome.Images;
         if (o.Kind == Scene3DKind.Air) return Scene3DChrome.AirBox;
-        if (o.Kind == Scene3DKind.Port) return Scene3DChrome.Ports;
+        if (o.Kind is Scene3DKind.Port or Scene3DKind.Excitation) return Scene3DChrome.Ports;   // brief-hzn-12 — a plane wave with the ports
         if (o.Kind == Scene3DKind.Boundary)
             return o.Boundary is not null || o.Name == Scene3DBuilder.AirBoxEdgesName ? Scene3DChrome.AirBox : Scene3DChrome.Boundaries;
         return null;

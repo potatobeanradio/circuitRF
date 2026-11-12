@@ -32,7 +32,7 @@ public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
 public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans, Groups, HeatSources, Probes, MeshRegions, ThermalBoundaries,
-                              EffectiveBlocks, SymmetryPlanes, FieldPlots, NotModelled, LumpedElements, ComponentPorts }
+                              EffectiveBlocks, SymmetryPlanes, FieldPlots, NotModelled, LumpedElements, ComponentPorts, Excitations }
 
 public sealed partial class C3dEditorViewModel
 {

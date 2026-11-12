@@ -277,16 +277,20 @@ internal sealed partial class HznTranslator
         foreach (var x in _design.Excitations)
         {
             string name = x.Name ?? "";
-            if (x.Enabled == false) { _notes.Add($"Excitation '{name}' is switched off and was not translated."); continue; }
+            // brief-hzn-12 — a switched-off plane wave is kept, disabled, as the 3D view keeps one
+            if (x.Enabled == false && x.Kind != "Incident Plane Wave") { _notes.Add($"Excitation '{name}' is switched off and was not translated."); continue; }
             if (x.Objects.Any(_failed.Contains) || x.Faces.Any(f => _failed.Contains(f.Object ?? ""))) continue;
             switch (x.Kind)
             {
                 case "Lumped Port" or "Wave Port": Port(x, name); break;
+                case "Incident Plane Wave": PlaneWave(x, name); break;
                 default:
                     _r.Add(HznRefusalKind.Excitation, x.Kind ?? "(no kind)", "no equivalent in circuitRF", name);
                     break;
             }
         }
+        if (_doc.PlaneWaves.Any(w => w.Enabled) && _doc.Ports.Any(p => p.Model))
+            _r.Add(HznRefusalKind.Excitation, "Incident Plane Wave beside a port", "a plane wave is translated only with no port beside it", DesignName);
         var dup = _doc.Ports.GroupBy(p => p.Number).FirstOrDefault(g => g.Count() > 1);
         if (dup is not null) _r.Add(HznRefusalKind.Excitation, $"port number {dup.Key}", "two excitations have it", DesignName);
     }

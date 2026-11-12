@@ -65,7 +65,7 @@ public static class C3dSetups
             else if (!setup.Is3D)
                 read.Add(new C3dEmbeddedSetup(i, name, null, $"Embedded setup '{name}' is a planar analysis: {PlanarRefusal}."));
             else
-                read.Add(new C3dEmbeddedSetup(i, name, setup, null));
+                read.Add(new C3dEmbeddedSetup(i, name, C3dPlaneWaves.Apply(setup, doc), null));   // brief-hzn-12 — the view's wave
             names.TryAdd(name, i);
         }
         return read;
@@ -429,6 +429,8 @@ public static class C3dProblemAssembly
 
         if (setup.IsThermal) return No(fromCem ? C3dThermal.CemRefusal : C3dThermal.RunRefusal(setup.Name));
         if (!setup.Is3D) return No($"This setup is a planar analysis, and {C3dSetups.PlanarRefusal}.");
+        // brief-hzn-12 — the view's enabled plane wave drives a Driven setup, a .cem's pointing at the view included
+        setup = C3dPlaneWaves.Apply(setup.Clone(), document);
 
         // ── The sweep and the temperature, as the generator reads them ──────────────────────────
         double[] freqs;
@@ -461,6 +463,10 @@ public static class C3dProblemAssembly
         var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);
         if (!e.Ok) return No(string.Join(" ", e.Refusals), e.Warnings);
+        // brief-hzn-12 R-hzn12-1 — a scattering setup is driven by its plane wave alone: its ports (those modelled) refuse it.
+        if (CircuitRF.Design.Em3d.Em3dPlaneWaves.SetupRefusal(setup, document.Ports.Count(p => p.Model) + setup.ComponentPorts.Count)
+            is { } waveRefusal)
+            return No(waveRefusal, e.Warnings);
         // brief-emb-1 R-emb1-3/4 — the component ports, built on the parts' own pads and verified before anything is meshed: their
         // landing rectangles and connector shells join the lowered problem (and only it), and the ports follow the document's own.
         var portDocument = document;
@@ -518,6 +524,8 @@ public static class C3dProblemAssembly
             materialSources.TryAdd(fill.Material.Name, fill.Source);
         }
         box = box with { Material = fill.Material.Name };
+        // brief-hzn-12 — a plane wave enters through absorbing faces and its scattered field leaves through them.
+        if (setup.IsScattering3D && CircuitRF.Design.Em3d.Em3dPlaneWaves.BoxRefusal(box) is { } closedBox) return No(closedBox, e.Warnings);
 
         // ── Ports (R-em3d49-2): the document's, polarity by contact ─────────────────────────────
         // The generator's rule by problem (R-em3d22-1c): an electrostatic solve has none, and a magnetostatic one only
@@ -533,7 +541,7 @@ public static class C3dProblemAssembly
             ? $"An electrostatic solve has no ports: the 3D view's {document.Ports.Count} port(s) are not in the problem." : null;
         if (setup.Problem3D == Em3dProblemType.Electrostatic && setup.ComponentPorts.Count > 0)
             noPortsNote = (noPortsNote is null ? "" : noPortsNote + " ") + "Its component ports are not built either.";
-        if (setup.Problem3D != Em3dProblemType.Electrostatic)
+        if (setup.Problem3D != Em3dProblemType.Electrostatic && !setup.IsScattering3D)
         {
             var sources = setup.Problem3D == Em3dProblemType.Magnetostatic
                 ? setup.Terminals3D.Select(t => t.Source?.Trim()).OfType<string>()
@@ -623,6 +631,7 @@ public static class C3dProblemAssembly
             EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
             EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
             MeshFrequencyHz = setup.Problem3D == Em3dProblemType.Driven ? setup.MeshFrequencyGHz * 1e9 : null,
+            PlaneWave = setup.IsScattering3D ? setup.PlaneWave!.Resolve(out _) : null,
             LumpedElements = lumped,
             CylinderSheets = e.CylinderSheets,
             SolidDensities = sar is null ? new Dictionary<string, double>() : SolidDensities(e, solids),

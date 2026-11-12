@@ -340,7 +340,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials,
                                                      [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>(),
                                                       .. records.ComponentPorts.Select(c => c.Result?.Resolved).OfType<Em3dPort>()], box,
-                                                     e.CylinderSheets);
+                                                     e.CylinderSheets) with { PlaneWave = records.PlaneWave };
         var notes = new List<string>(e.Refusals);
         notes.AddRange(e.Warnings);
         notes.AddRange(e.Notes);
@@ -681,6 +681,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public bool DeleteSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Object) return false;
+        if (DeletePlaneWaveIfSelected()) return true;   // brief-hzn-12 — the wave is the setup's: Delete returns it to its ports
         // brief-em3d-49 — a selected port is a document record: deleted as one.
         if (SelectedPorts() is { Count: > 0 } ports) { DeletePorts(ports); return true; }
         // brief-em3d-90 — so is a selected boundary's tint: the boundary goes, the face stays
@@ -1466,7 +1467,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// on — a click on its tick selects the row too, and turned a box the user had just hidden straight back on), an
     /// instance's parts, a document object's — a feature row's too, since it rounds that object — or the named object.</summary>
     private IEnumerable<Scene3DObject> SceneObjectsOfRow(C3dTreeItem row)
-        => row.Kind is FieldPlotKind or SymmetryPlaneKind ? []            // brief-em3d-83/90 — records, in no scene (a plane is overlay)
+        => row.Kind is FieldPlotKind or SymmetryPlaneKind ? []
+            : row.Kind == PlaneWaveKind ? PlaneWaveSceneObjects(row)        // brief-hzn-12 — the enabled wave's picture; a disabled one has none            // brief-em3d-83/90 — records, in no scene (a plane is overlay)
             // brief-em3d-90 R-em3d90-3 — a thermal boundary's row selects its tint (none while it is hidden: the row still selects)
             : row.Kind == ThermalBoundaryKindName ? new[] { SceneObject(Scene3DBuilder.FaceTintPrefix + row.Name) }.OfType<Scene3DObject>()
             : row.IsAirBox ? AirBoxFaceObjects()
@@ -1520,7 +1522,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     /// <summary>The tree row a scene object is listed under, or null.</summary>
     private C3dTreeItem? RowOf(Scene3DObject o)
-        => BoxFaceOf(o) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
+        => o.Kind == Scene3DKind.Excitation ? PlaneWaveRowOf(o)      // brief-hzn-12 — the drawn plane wave is the enabled wave's row
+         : BoxFaceOf(o) is not null ? AllTreeItems().FirstOrDefault(t => t.IsAirBox)
            // brief-em3d-90 R-em3d90-3 — a tint is its boundary's row: a thermal one's is named without the scene's prefix
            : o.Tint ? AllTreeItems().FirstOrDefault(t => t.Kind == ThermalBoundaryKindName && Scene3DBuilder.FaceTintPrefix + t.Name == o.Name)
                       ?? AllTreeItems().FirstOrDefault(t => t.Kind is EmBoundaryKind or FaceImageKind && t.Name == o.Name)

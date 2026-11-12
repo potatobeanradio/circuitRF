@@ -772,6 +772,12 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
+                    <!-- brief-hzn-12: the 3D view's enabled plane wave drives a Driven setup; it is edited there, so this only says so. -->
+                    <StackPanel IsVisible="{Binding ViewModel.IsPlaneWaveSetup}" Spacing="2" Margin="0,6,0,0">
+                        <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding ViewModel.ExcitationNote}"/>
+                        <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding ViewModel.RcsSummary}"
+                                             IsVisible="{Binding ViewModel.RcsSummary, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </StackPanel>
                     <StackPanel IsVisible="{Binding ViewModel.IsEigenmodeSetup}" Spacing="2" Margin="0,6,0,0">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Classes="colhdr" Text="Modes" VerticalAlignment="Center"/>

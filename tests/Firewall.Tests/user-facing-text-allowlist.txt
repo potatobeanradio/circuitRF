@@ -1621,3 +1621,9 @@ src/Engine/Mom/PlanarLocalGridFill.cs|Cell {s.Cell} is a cut cell and a rooftop 
 src/Engine/Mom/PlanarPairClasses.cs|{sorted.Length:N0} distinct support-pair geometries on one axis exceed the class key's {IdBits} bits.
 # brief-pms-6: an engine caller's port that was not in the mesher's port list, whose cut lands on a refinement step.
 src/Engine/Mom/PlanarPort.cs|Port {r.Number}'s cut crosses a refinement step of the local grid, where its rooftops 
+# brief-hzn-12: a .cem's Excitation read errors, as the file's other read errors; and three internal invariants (a hull's input, a
+# scattering result's array shapes) no user reads.
+src/Design/ThreeD/C3dFacetedSphere.cs|A hull needs at least four points.
+src/Design/ThreeD/C3dFacetedSphere.cs|The points are coplanar.
+src/Engine/Em3d/Em3dScatteringResult.cs|The far field holds {far.Length} values, not {nf}×2×{nt}×{np}.
+src/Engine/Em3d/Em3dScatteringResult.cs|The monostatic field holds {monostatic.Length} values, not {nf}×2.

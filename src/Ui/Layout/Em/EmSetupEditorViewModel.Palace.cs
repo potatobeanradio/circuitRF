@@ -205,6 +205,7 @@ public sealed partial class EmSetupEditorViewModel
         if (value.IsThermal) { Working.Problem3D = Em3dProblemType.Thermal; Working.Thermal ??= new CircuitRF.Design.Layout.Em.CemThermal(); }
         else if (wasThermal) Working.Problem3D = Em3dProblemType.Driven;
         CommitEdit(before, "Change EM solver");
+        DropPlaneWaveIfSolverCannot();   // brief-hzn-12 — Palace has no plane-wave source; the 3D view disables its wave
         if (value.IsThermal != wasThermal)
         {
             _suppressCommit = true;

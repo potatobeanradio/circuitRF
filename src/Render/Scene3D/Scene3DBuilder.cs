@@ -679,6 +679,14 @@ public static class Scene3DBuilder
             uint edge = Scene3DVertex.Pack(ink.R, ink.G, ink.B, 255);
             b.Object(new Scene3DObject { Id = 0, Name = AirBoxEdgesName, Kind = Scene3DKind.Boundary, Rgba = edge },
                      null, BoxEdges(box).Select(q => (q, edge)));
+            // brief-hzn-12 — a scattering setup's incident wave: an arrow along its direction arriving at its phase origin, and one
+            // along its E-field at the first arrow's tail, in the port colour, with the air box's chrome.
+            if (problem.PlaneWave is { } wave && PlaneWaveGlyph(problem, wave) is { } glyph)
+            {
+                // brief-hzn-12 — its own kind, so the glyph is picked (it is in the ID pass) and its row selected
+                b.Object(new Scene3DObject { Id = 0, Name = PlaneWaveName, Kind = Scene3DKind.Excitation, Rgba = WaveInk, Translucent = true },
+                         glyph.Mesh, glyph.Lines, vertexRgba: glyph.Rgba);
+            }
         }
 
         cache?.EndBuild();
@@ -687,6 +695,91 @@ public static class Scene3DBuilder
 
     /// <summary>The object holding the air box's twelve edges.</summary>
     public const string AirBoxEdgesName = "airbox";
+
+    /// <summary>brief-hzn-12 — the object holding a scattering setup's incident-wave arrows.</summary>
+    public const string PlaneWaveName = "plane wave";
+
+    /// <summary>brief-hzn-12 — the plane wave's colours: the wavefront and its direction, and its E-field.</summary>
+    private static readonly uint WaveInk = Scene3DVertex.Pack(230, 120, 30, 255), WaveFill = Scene3DVertex.Pack(230, 120, 30, 60),
+                                 EInk = Scene3DVertex.Pack(215, 40, 40, 255);
+
+    /// <summary>
+    /// brief-hzn-12 — the incident wave as a picture: a translucent WAVEFRONT square across the direction of travel, upstream of the
+    /// model; a solid arrow from its centre along the direction of travel to just short of the model; and a red E-field arrow lying in
+    /// the wavefront. It aims at the wave's phase origin (Add Plane Wave Onto Face puts it on the face, and Move moves it) — except the
+    /// unstated origin, (0, 0, 0) off the model, when it aims at the model's centre — and is sized to the model, not the air box. It
+    /// stands upstream of the whole model, so moving the origin along the direction of travel within the model moves nothing drawn
+    /// (nor anything solved but the phase). Null when the problem holds nothing to aim at.
+    /// </summary>
+    internal static (Em3dTriangleMesh Mesh, uint[] Rgba, List<(Point3, uint)> Lines)? PlaneWaveGlyph(Em3dProblem problem, Em3dPlaneWave wave)
+    {
+        double[] lo = [double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity];
+        double[] hi = [double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity];
+        void Take(double x0, double y0, double z0, double x1, double y1, double z1)
+        {
+            lo[0] = Math.Min(lo[0], x0); lo[1] = Math.Min(lo[1], y0); lo[2] = Math.Min(lo[2], z0);
+            hi[0] = Math.Max(hi[0], x1); hi[1] = Math.Max(hi[1], y1); hi[2] = Math.Max(hi[2], z1);
+        }
+        foreach (var sv in problem.Solids) { var bb = Em3dProblem.Bounds(sv.Primitive); Take(bb.X0, bb.Y0, bb.Z0, bb.X1, bb.Y1, bb.Z1); }
+        foreach (var sh in problem.Sheets) { var bb = sh.WorldBounds(); Take(bb.X0, bb.Y0, bb.Z0, bb.X1, bb.Y1, bb.Z1); }
+        if (double.IsInfinity(lo[0])) return null;
+        double size = Math.Max(hi[0] - lo[0], Math.Max(hi[1] - lo[1], hi[2] - lo[2]));
+        if (!(size > 0)) size = 1e-3;
+        var k = V(wave.Direction);
+        var e = V(wave.EField);
+        var h = Vector3.Normalize(Vector3.Cross(k, e));
+        double tol = 1e-6 * size;
+        var o = wave.PhaseOrigin;
+        bool onModel = o.X >= lo[0] - tol && o.X <= hi[0] + tol && o.Y >= lo[1] - tol && o.Y <= hi[1] + tol && o.Z >= lo[2] - tol && o.Z <= hi[2] + tol;
+        bool unstated = o.X == 0 && o.Y == 0 && o.Z == 0;
+        var target = onModel || !unstated ? o : new Point3((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2);
+        // how far upstream the model reaches from the target, so the arrow stops just outside it
+        double reach = 0;
+        foreach (double x in new[] { lo[0], hi[0] })
+            foreach (double y in new[] { lo[1], hi[1] })
+                foreach (double z in new[] { lo[2], hi[2] })
+                    reach = Math.Max(reach, -((x - target.X) * k.X + (y - target.Y) * k.Y + (z - target.Z) * k.Z));
+        Point3 At(Point3 p, Vector3 d, double t) => new(p.X + d.X * t, p.Y + d.Y * t, p.Z + d.Z * t);
+        var tip = At(target, k, -(reach + 0.06 * size));
+        double arrow = 0.45 * size, half = 0.4 * size;
+        var centre = At(tip, k, -arrow);
+
+        var v = new List<Point3>();
+        var c = new List<uint>();
+        var t = new List<Em3dTriangle>();
+        var lines = new List<(Point3, uint)>();
+        void Tri(Point3 a, Point3 b2, Point3 c2, uint ink)
+        {
+            int n = v.Count;
+            v.Add(a); v.Add(b2); v.Add(c2);
+            c.Add(ink); c.Add(ink); c.Add(ink);
+            t.Add(new Em3dTriangle(n, n + 1, n + 2, "")); t.Add(new Em3dTriangle(n, n + 2, n + 1, ""));   // both sides
+        }
+        // the wavefront: a square across the direction of travel, edges along E and H, its outline in the wave's ink
+        var q = new[] { At(At(centre, e, -half), h, -half), At(At(centre, e, half), h, -half), At(At(centre, e, half), h, half), At(At(centre, e, -half), h, half) };
+        Tri(q[0], q[1], q[2], WaveFill);
+        Tri(q[0], q[2], q[3], WaveFill);
+        for (int i = 0; i < 4; i++) { lines.Add((q[i], WaveInk)); lines.Add((q[(i + 1) % 4], WaveInk)); }
+        // a solid arrow: two crossed ribbons for the shaft, two crossed triangles for the head
+        void Solid(Point3 from, Vector3 d, double length, double width, Vector3 across, uint ink)
+        {
+            var side2 = Vector3.Normalize(Vector3.Cross(d, across));
+            double headLen = 0.3 * length, shaft = length - headLen;
+            var neck = At(from, d, shaft);
+            var end = At(from, d, length);
+            foreach (var w in new[] { across, side2 })
+            {
+                Tri(At(from, w, -width / 2), At(from, w, width / 2), At(neck, w, width / 2), ink);
+                Tri(At(from, w, -width / 2), At(neck, w, width / 2), At(neck, w, -width / 2), ink);
+                Tri(At(neck, w, -width * 1.8), At(neck, w, width * 1.8), end, ink);
+            }
+        }
+        Solid(centre, k, arrow, 0.05 * size, e, WaveInk);
+        Solid(centre, e, 0.35 * size, 0.045 * size, h, EInk);
+        return (new Em3dTriangleMesh(v, t), [.. c], lines);
+
+        static Vector3 V(Point3 p) => Vector3.Normalize(new Vector3((float)p.X, (float)p.Y, (float)p.Z));
+    }
 
     /// <summary>A sheet is one surface, face 0.</summary>
     public static readonly IReadOnlyList<string> SheetFaceNames = ["surface"];

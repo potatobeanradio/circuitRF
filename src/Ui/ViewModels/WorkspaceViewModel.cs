@@ -9662,6 +9662,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // brief-em3d-23 — an eigenmode run's modes, in the panel's table.
         if (setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode && setup.Is3D && result.Data is { } modes)
             vm.AdoptEigenmodes(modes);
+        // brief-hzn-12 — a scattering run's monostatic cross-section, in the panel.
+        if (setup.IsScattering3D && result.Data is { } rcs) vm.AdoptScattering(rcs);
         // brief-sar-6 R-sar6-6 — the SAR readouts, from the records the openEMS run left beside its dumps.
         if (setup.RequestsSar && CircuitRF.Design.Em3d.Em3dSolvers.FirstWith(setup.Solver3D, c => c.Sar) is { } sarSolver)
             vm.AdoptSar(CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(resultsRoot, setup, sarSolver.Id));

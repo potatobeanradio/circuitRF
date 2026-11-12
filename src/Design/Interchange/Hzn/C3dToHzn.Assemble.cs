@@ -58,6 +58,7 @@ internal sealed partial class C3dToHznWriter
             }
             if (SetupJson(setup) is { } json) list.Add(json);
         }
+        PlaneWaveExcitation();
         var dup = list.GroupBy(j => j.GetString("name")).FirstOrDefault(g => g.Count() > 1);
         if (dup is not null) _r.Add(HznRefusalKind.Setting, $"setup name '{dup.Key}'", "two setups have it", DesignName);
         return list;
@@ -224,7 +225,7 @@ internal sealed partial class C3dToHznWriter
         d.Set("excitations", Array(_excitations.Select(x => (HznJsonValue)AssignJson(x))));
         d.Set("mesh_ops", new HznJsonArray());
         d.Set("setups", Array(setups));
-        d.Set("spheres", new HznJsonArray());
+        d.Set("spheres", Spheres());
         d.Set("reports", new HznJsonArray());
         d.Set("field_plots", new HznJsonArray());
         d.Set("coord_systems", new HznJsonArray());

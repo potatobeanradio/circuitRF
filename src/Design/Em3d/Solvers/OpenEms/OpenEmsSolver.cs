@@ -23,6 +23,8 @@ public static class OpenEmsSolver
             Problems = new HashSet<Em3dProblemType> { Em3dProblemType.Driven },
             RadiationPattern = true,
             Sar = true,
+            // brief-hzn-12 — a plane wave on a total-field/scattered-field box, its far field on the pattern's surface
+            PlaneWave = true,
         },
         // openEMS takes circuitRF's own grid and needs nothing else.
         Tools = [SolverTool.OpenEms],
