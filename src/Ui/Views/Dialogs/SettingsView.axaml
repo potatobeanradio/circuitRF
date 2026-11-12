@@ -152,36 +152,52 @@
                         </Border>
 
                         <!-- Appearance: the light/dark VARIANT (not the Color Theme tab's palette — every palette
-                             carries both variants and the two compose), and whether a .c3d opens in the realistic
-                             view, which is a property of this machine's GPU rather than of the design
-                             (Realistic3DPreference), and likewise whether a 3D view with no usable GPU interop draws
-                             in software (View3DSoftwarePresent; Linux only, the one renderer that can, so the
-                             macOS-generated settings figure is unchanged). The theme buttons are radio buttons in the Layout Editor's
-                             toolbar-button clothes; SyncThemeButtons sets the active one's Button.ToolActive. -->
+                             carries both variants and the two compose), and how the Messages panel stamps its lines.
+                             The theme buttons are radio buttons in the Layout Editor's toolbar-button clothes;
+                             SyncThemeButtons sets the active one's Button.ToolActive. -->
                         <Border Grid.Row="0" Grid.Column="2" Classes="group">
-                            <StackPanel Spacing="6">
+                            <StackPanel>
                                 <TextBlock Classes="groupTitle" Text="Appearance"/>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="Theme:" FontSize="12" VerticalAlignment="Center" Width="110"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <Button Name="ThemeSystemBtn" Click="OnThemeModeClick" Tag="System"
-                                    ToolTip.Tip="System" Padding="6,3">
-                                    <mi:MaterialIcon Kind="ThemeLightDark" Width="16" Height="16"/>
-                                    </Button>
-                                    <Button Name="ThemeLightBtn" Click="OnThemeModeClick" Tag="Light"
-                                    ToolTip.Tip="Light" Padding="6,3">
-                                    <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="16" Height="16"/>
-                                    </Button>
-                                    <Button Name="ThemeDarkBtn" Click="OnThemeModeClick" Tag="Dark"
-                                    ToolTip.Tip="Dark" Padding="6,3">
-                                    <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
-                                    </Button>
+                                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" RowSpacing="6">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Theme:" FontSize="12" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                        <Button Name="ThemeSystemBtn" Click="OnThemeModeClick" Tag="System"
+                                                ToolTip.Tip="System" Padding="6,3">
+                                            <mi:MaterialIcon Kind="ThemeLightDark" Width="16" Height="16"/>
+                                        </Button>
+                                        <Button Name="ThemeLightBtn" Click="OnThemeModeClick" Tag="Light"
+                                                ToolTip.Tip="Light" Padding="6,3">
+                                            <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="16" Height="16"/>
+                                        </Button>
+                                        <Button Name="ThemeDarkBtn" Click="OnThemeModeClick" Tag="Dark"
+                                                ToolTip.Tip="Dark" Padding="6,3">
+                                            <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
+                                        </Button>
                                     </StackPanel>
-                                </StackPanel>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Message times:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" Name="MsgTimestampCombo"
+                                          FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnMsgTimestampChanged"
+                                          ToolTip.Tip="How each line in the Messages panel is stamped with the time it was written."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 3D View: whether a .c3d opens in the realistic view, which is a property of this machine's
+                             GPU rather than of the design (Realistic3DPreference); which mouse and keys steer the 3D views
+                             (Interaction3DPreference); and whether a 3D view with no usable GPU interop draws in software
+                             (View3DSoftwarePresent; Linux only, the one renderer that can). -->
+                        <Border Grid.Row="4" Grid.Column="0" Classes="group">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="groupTitle" Text="3D View"/>
                                 <CheckBox  Name="RealisticOnOpenCheck" FontSize="12"
                                           Content="Open 3D designs in realistic view"
                                           IsCheckedChanged="OnRealisticOnOpenChanged"
                                           ToolTip.Tip="Opens every 3D design with the realistic view already on, as if you had pressed its toolbar button. The look itself — environment, exposure, edges, grid — is saved in each design. Leave this off on a machine whose graphics card makes the realistic view slow; the toolbar button still turns it on for one design."/>
+                                <CheckBox  Name="HertzonInteractivityCheck" FontSize="12"
+                                          Content="Use Hertzon interactivity"
+                                          IsCheckedChanged="OnHertzonInteractivityChanged"
+                                          ToolTip.Tip="Steer the 3D views as Hertzon does. Left drag: select everything wholly inside the rectangle (Ctrl/Cmd adds to the selection). Middle drag: orbit; with Ctrl, pan; with Shift, zoom. Shift + left drag: pan. Alt + left drag: orbit; with Shift too, zoom. Right drag: zoom; a right click still opens the menu. Ctrl/Cmd+click adds or removes one object. On by default. Off: a left drag orbits and the middle and right buttons pan, circuitRF's own scheme. Takes effect at once."/>
                                 <CheckBox  Name="SoftwarePresentCheck" FontSize="12" IsVisible="{OnPlatform False, Linux=True}"
                                           Content="Software 3D without GPU interop"
                                           IsCheckedChanged="OnSoftwarePresentChanged"
@@ -205,23 +221,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Messages -->
-                        <Border Grid.Row="2" Grid.Column="2" Classes="group">
-                            <StackPanel>
-                                <TextBlock Classes="groupTitle" Text="Messages"/>
-                                <Grid ColumnDefinitions="110,*">
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Timestamps:" FontSize="12" VerticalAlignment="Center"/>
-                                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" Name="MsgTimestampCombo"
-                                          FontSize="12" MinWidth="180"
-                                          SelectionChanged="OnMsgTimestampChanged"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
                         <!-- Design Rules — R16d's own "not mandatory, not silent"; also reachable from the
                              pre-export prompt itself. brief-lvs-12-gui.md R-lvs12-1e: the LVS offer is DEFAULT OFF —
                              LVS needs a schematic, and exporting artwork alone is a legitimate thing to do. -->
-                        <Border Grid.Row="4" Grid.Column="0" Classes="group">
+                        <Border Grid.Row="4" Grid.Column="2" Classes="group">
                             <StackPanel Spacing="4">
                                 <TextBlock Classes="groupTitle" Text="Design Rules"/>
                                 <CheckBox  Name="CheckDrcOnExportCheck"
@@ -238,7 +241,7 @@
                         <!-- Layout. Link orientation — designer report (round 15): the schematic and the layout
                              may be drawn independently. The ruler combo's index == RulerSizeMode ordinal, which is
                              serialized as a number in preferences.json. -->
-                        <Border Grid.Row="4" Grid.Column="2" Classes="group">
+                        <Border Grid.Row="6" Grid.Column="0" Classes="group">
                             <StackPanel Spacing="6">
                                 <TextBlock Classes="groupTitle" Text="Layout"/>
                                 <CheckBox  Name="LinkOrientationCheck"
@@ -265,7 +268,7 @@
                         <!-- Units — brief-dfr22-1. The unit circuitRF chooses for something NEW; index 0 is
                              Automatic (null in preferences.json), the rest are PreferredUnits' choices in order,
                              stored by NAME. Length also sets the unit the Gerber arc tolerance is shown in. -->
-                        <Border Grid.Row="6" Grid.Column="0" Classes="group">
+                        <Border Grid.Row="2" Grid.Column="2" Classes="group">
                             <StackPanel>
                                 <TextBlock Classes="groupTitle" Text="Units"/>
                                 <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" RowSpacing="6"

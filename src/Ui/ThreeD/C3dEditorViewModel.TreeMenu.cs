@@ -1,7 +1,7 @@
 // 3D editor round 1 — the object tree's context menu. Right-clicking a node selects it (the scene and the Properties
 // Inspector follow), then offers what the canvas offers for it, through the SAME functions the canvas menu, the keys and
-// the 3D menu call — Duplicate, Delete, Rename, Material, Hide, Isolate, Show All, Properties, and a group's Ungroup — never a
-// second copy.
+// the 3D menu call — Move, Rotate, Mirror, Duplicate, Array…, Align, Order, Delete, Rename, Material, Hide, Isolate, Show All,
+// Properties, and a group's Ungroup — never a second copy.
 // What a node cannot do is shown disabled with the reason, so the answer is readable (the air box, an instance's part).
 
 using Avalonia.Input;
@@ -132,9 +132,10 @@ public sealed partial class C3dEditorViewModel
         else
         {
             bool drawn = scene.Count > 0;
-            items.Add(new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
+            // The canvas's operations for the row (Move, Rotate, Mirror, Array…, Align, Order), its own Duplicate among them.
+            items.AddRange(RowOperationItems(new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
                 Tip: drawn ? "A copy in place, then a Move: click where it goes, or Esc to leave it where it is."
-                           : "Not drawn (elaboration refused it — see Properties): there is nothing to place yet."));
+                           : "Not drawn (elaboration refused it — see Properties): there is nothing to place yet.")));
             // 3D editor groups — disabled for this row alone (a group holds two things or more), with the reason.
             items.Add(GroupObjectsItem());
             if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && Document.Objects[item.ObjectIndex] is C3dSheet drawnSheet)

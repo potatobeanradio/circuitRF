@@ -450,13 +450,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             _fitOnAdopt = false;
             Viewer.FitCommand.Execute(null);
         }
-        // 3D editor round 1 — a node selected while the scene did not hold its object (a box given its first material)
-        // becomes the scene's selection the moment the scene does.
-        if (Viewer.Selection.Count == 0 && SelectedTreeItem is { ObjectIndex: >= 0 and var pi } && pi < Document.Objects.Count &&
-            SceneObjectsFor(Document.Objects[pi]).FirstOrDefault() is { } now)
+        // 3D editor round 1 — rows selected while the scene did not hold their objects (a box given its first material; a paste,
+        // whose rows are selected before its scene is built) become the scene's selection the moment the scene does. Every
+        // selected row — an instance's, a group's, several — not only one object's: the pasted instance's row had no scene
+        // selection behind it, so its menu offered no Move until the row was clicked again.
+        if (Viewer.Selection.Count == 0 && _selectedTreeItems.Count > 0 &&
+            _selectedTreeItems.SelectMany(SceneObjectsOfSelectedRow).Select(o => Scene3DItem.OfObject(o.Id)).ToList() is { Count: > 0 } now)
         {
             _syncingTree = true;
-            try { Viewer.SetSelection([Scene3DItem.OfObject(now.Id)]); }
+            try { Viewer.SetSelection(now); }
             finally { _syncingTree = false; }
         }
         Properties.Reload();
@@ -1100,15 +1102,19 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? Save()
     {
         if (IsScratch) return "This 3D design has not been saved yet: Save As chooses where it goes.";
-        if (Source.Save(Document) is { } refused) return refused;
-        _savedStamp = Source.Stamp();
+        // Pushed in, the active document is the CHILD's, written to its own file: Source is the tab's top document. Writing it
+        // through Source put the child's content over the parent's .c3d and left the child's file as it was.
+        bool top = _frames.Count <= 1;
+        if (WriteFrame(top, FilePath, Document) is { } refused) return refused;
+        _savedStamp = top ? Source.Stamp() : Stamp(FilePath);
         UndoRedo.MarkSaved();
         _preferenceDirty = false;
-        foreach (var f in _frames.Take(Math.Max(0, _frames.Count - 1)).Where(f => f.UndoRedo.IsModified || f.PreferenceDirty))
+        for (int i = 0; i < _frames.Count - 1; i++)
         {
-            try { C3dPersistence.SaveToFile(f.FilePath, f.Document); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return $"{Path.GetFileName(f.FilePath)}: {ex.Message}"; }
-            f.SavedStamp = Stamp(f.FilePath);
+            var f = _frames[i];
+            if (!f.UndoRedo.IsModified && !f.PreferenceDirty) continue;
+            if (WriteFrame(i == 0, f.FilePath, f.Document) is { } why) return $"{Path.GetFileName(f.FilePath)}: {why}";
+            f.SavedStamp = i == 0 ? Source.Stamp() : Stamp(f.FilePath);
             f.UndoRedo.MarkSaved();
             f.PreferenceDirty = false;
         }
@@ -1116,6 +1122,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RemoveUnnamedStepCopies();
         OnPropertyChanged(nameof(IsDirty));
         return null;
+    }
+
+    /// <summary>One frame's document: the top one through <see cref="Source"/> (a .c3d, or a design held in a Hertzon project), a
+    /// pushed-in child to its own .c3d. Null, or why it was not written.</summary>
+    private string? WriteFrame(bool top, string path, C3dDocument doc)
+    {
+        if (top) return Source.Save(doc);
+        try { C3dPersistence.SaveToFile(path, doc); return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ex.Message; }
     }
 
     /// <summary>Writes the document to <paramref name="path"/> and follows it there; null on success.</summary>

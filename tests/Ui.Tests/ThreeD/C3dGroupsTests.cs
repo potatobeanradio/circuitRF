@@ -271,6 +271,68 @@ public sealed class C3dGroupsTests : IDisposable
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
+    // Hertzon interactivity's selection rectangle: an object is taken only when wholly inside, a group only when every shown
+    // member is, and Ctrl/Cmd adds. Ctrl/Cmd+E then frames what was taken, or everything shown when nothing is selected.
+    [Fact]
+    public void TheSelectionRectangle_TakesWhatIsWhollyInside_AGroupOnlyWhole_AndCtrlAdds()
+    {
+        var vm = Open(new C3dDocument { Objects = [Box("a", 0), Box("b", 1, "pa"), Box("c", 2, "pa"), Box("d", 3)] }, out _);
+        var viewer = vm.Viewer;
+        viewer.StandardViewCommand.Execute(StandardView3D.Top);
+        viewer.FitCommand.Execute(null);
+        // The rectangle round the named objects' screen extents, 2 DIPs to spare.
+        (float, float, float, float) Around(params string[] names)
+        {
+            float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+            foreach (var o in names.Select(n => vm.SceneObject(n)!))
+                for (int k = 0; k < 8; k++)
+                {
+                    var p = new Vector3((k & 1) == 0 ? o.Min.X : o.Max.X, (k & 2) == 0 ? o.Min.Y : o.Max.Y, (k & 4) == 0 ? o.Min.Z : o.Max.Z);
+                    var (x, y, _) = viewer.View.Camera.Project(p, 400, 300);
+                    (x0, y0, x1, y1) = (MathF.Min(x0, x), MathF.Min(y0, y), MathF.Max(x1, x), MathF.Max(y1, y));
+                }
+            return (x0 - 2, y0 - 2, x1 + 2, y1 + 2);
+        }
+        string[] Selected() => [.. viewer.View.Selection.Select(s => viewer.Scene.Object(s.Object)!.Name).Order()];
+
+        var (ax0, ay0, ax1, ay1) = Around("a", "b");                      // b's group has c outside: a alone
+        Assert.Equal(1, viewer.BoxSelect(ax0, ay0, ax1, ay1, add: false));
+        Assert.Equal(["a"], Selected());
+        var (bx0, by0, bx1, by1) = Around("b", "c");                      // the whole group, added
+        viewer.BoxSelect(bx1, by1, bx0, by0, add: true);                  // dragged from either corner
+        Assert.Equal(["a", "b", "c"], Selected());
+        var (dx0, dy0, dx1, dy1) = Around("d");
+        viewer.BoxSelect(dx0, dy0, (dx0 + dx1) / 2, dy1, add: false);     // half of d: nothing, and the selection clears
+        Assert.Empty(Selected());
+
+        float zoomed = viewer.View.Camera.Distance *= 3;                  // nothing selected: Ctrl/Cmd+E fits everything shown
+        Assert.True(viewer.HandleKey(Avalonia.Input.Key.E, Avalonia.Input.KeyModifiers.Control, gestureInProgress: false));
+        Assert.True(viewer.View.Camera.Distance < zoomed);
+        viewer.BoxSelect(dx0, dy0, dx1, dy1, add: false);
+        Assert.True(viewer.HandleKey(Avalonia.Input.Key.E, Avalonia.Input.KeyModifiers.Meta, gestureInProgress: false));
+        var (fx0, fy0, fx1, fy1) = Around("d");                           // d, square, now fills the view's height
+        Assert.True(fy1 - fy0 > 0.8f * 300 && fx1 - fx0 > 2 * (dx1 - dx0), $"{fx0},{fy0}..{fx1},{fy1}");
+        // The depth range still brackets the whole scene, not d alone, or zoomed out the rest is clipped away.
+        Assert.Equal((viewer.Scene.BoundsMax - viewer.Scene.BoundsMin).Length() * 0.5f, viewer.View.Camera.SceneRadius, 5);
+    }
+
+    // A pasted instance's row is selected before its scene is built: once it is, the scene's selection is the instance's, so the
+    // row's menu offers Move at once — not only after the row is clicked again.
+    [Fact]
+    public void APastedInstance_IsSelectedInTheScene_AndItsRowOffersMove()
+    {
+        var vm = Open(Doc(withInstance: true), out _);
+        static IEnumerable<C3dTreeItem> Walk(C3dTreeItem i) => i.Children.SelectMany(Walk).Prepend(i);
+        C3dTreeItem Row(string name) => vm.Tree.SelectMany(g => g.Items).SelectMany(Walk).First(r => r.Name == name && !r.IsGroup);
+        Assert.Null(vm.CopyRows([Row("U1")]));
+        Assert.Null(vm.Paste(vm.ClipboardText));
+        Settle(vm);
+        var pasted = Assert.Single(vm.SelectedTreeItems);
+        Assert.NotEqual("U1", pasted.Name);
+        Assert.NotEmpty(vm.Viewer.SelectedObjects());
+        Assert.Contains("Move", vm.TreeMenuItems(pasted).Select(i => i.Header));
+    }
+
     private static C3dBox Box(string name, long x, string? group = null, string material = "Copper")
         => new() { Name = name, Material = material, Group = group, Min = new C3dPoint3(x * 200 * Um, 0, 0), Size = new C3dPoint3(100 * Um, 100 * Um, 100 * Um) };
 

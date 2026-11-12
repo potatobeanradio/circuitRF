@@ -87,6 +87,11 @@ This is the light/dark *variant*. Which colour each thing is drawn in is the
 {{anchor: settings#color-theme|Color Theme}} tab, and every colour theme carries both variants — the two
 settings compose rather than competing.
 
+**Message times** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
+is live; the panel re-renders as you change it.
+
+### 3D View {#view-3d}
+
 **Open 3D designs in realistic view** opens every 3D design with the realistic view already on, as if you had
 pressed its toolbar button. It is off by default, and it takes effect the next time a design opens — one
 already open keeps whatever its toolbar button says.
@@ -95,6 +100,24 @@ It is a setting rather than something a design remembers because whether the rea
 enough to leave on depends on **your** graphics card, not on the design. A design someone with a faster
 machine sends you opens the way you have chosen here. The look itself — environment, exposure, edges,
 grid — *is* saved in each design, so turning the view on shows it the way it was set up.
+
+**Use Hertzon interactivity** steers every 3D view with Hertzon's mouse buttons instead of circuitRF's own. It is
+on by default and takes effect at once, in views already open too. With it on:
+
+| Gesture | Does |
+|---|---|
+| Left drag | Selects everything that lies wholly inside the rectangle, in the selection mode in force (objects, faces, edges or vertices). A group is taken only when all of its shown members are inside. **Ctrl/Cmd** + drag adds to the selection |
+| Left click | Selects what is under the cursor; **Ctrl/Cmd**-click adds it or takes it out, as **Shift**-click does |
+| Middle drag | Orbits; with **Ctrl**, pans; with **Shift**, zooms |
+| Shift + left drag | Pans |
+| Alt + left drag | Orbits; with **Shift** too, zooms |
+| Right drag | Zooms (up is in); a right click without a drag still opens the menu |
+| Scroll, pinch | Zoom, as always |
+
+Turned off, a left drag orbits and the right, middle, Alt and Shift drags pan. While a drawing tool or Measure waits for a click, a plain left click is still that click, and **Ctrl/Cmd** + left
+drag still orbits. The keys are the same in both schemes; Hertzon's own **Ctrl/Cmd+E** (fit the selection, or everything shown when nothing is selected) works
+in either. Hertzon's **Ctrl+D** (fit all) is not taken: **Ctrl/Cmd+D** is Duplicate here, and **Home** or
+**Ctrl/Cmd+0** fit.
 
 **Software 3D without GPU interop** (Linux only) decides what a 3D view does where the window cannot show
 the graphics card's frames directly — a remote desktop, a virtual machine, a session without GPU acceleration.
@@ -109,11 +132,6 @@ shown there.
 |---|---|
 | **Copy color** | The light/dark variant a schematic is rendered in when you copy it to the clipboard: *Follow System* (the variant the application is currently showing), *Force Light*, or *Force Dark*. Pasting a dark schematic into a white document is the case this exists for. |
 | **Transparent background** | Whether the copied picture carries its background or leaves it clear. On by default, so a pasted schematic takes the colour of whatever it lands on. |
-
-### Messages
-
-**Timestamps** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
-is live; the panel re-renders as you change it.
 
 ### Design Rules
 

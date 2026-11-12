@@ -241,7 +241,7 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d-setups <file.c3d> -o o
 (never the system Trash), and prints its sentence. `--c3d-row` selects an Object Tree row (a field plot) for the
 Properties panel, and prints why the plot draws nothing. `--rclick` on a card opens its menu. `--editor` hosts the whole
 3D editor view instead (toolbar, Object Tree and canvas; the canvas itself cannot draw headless), so `--rclick` on a tree
-row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`. `--untick <row>` (repeatable)
+row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`. With `--editor`, each `--click` and `--key` step prints the editor's status line, its object count, the selected tree rows and the focused control's type — what a Ctrl/Cmd+C or V did, and whether the keys are still heard after it. `--untick <row>` (repeatable)
 clears an Object Tree row's visibility tick first, as a click on it does — what a section header's mixed state needs.
 
 `--c3d-pick <object>` (a step) is the 3D view's click on that object: the canvas cannot draw headless, but picking runs

@@ -16,6 +16,12 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // Edit ▸ Copy / Paste (and the toolbar's): the workspace has no view to call; the view runs what Ctrl/Cmd+C and V run there.
+    public event Action? CopyRequested;
+    public event Action? PasteRequested;
+    public void RequestCopy()  => CopyRequested?.Invoke();
+    public void RequestPaste() => PasteRequested?.Invoke();
+
     private string _baseTitle;
     private bool _isDirty;
 

@@ -470,6 +470,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? View3DSoftwarePresent { get; set; }
 
+    // Whether the 3D views take Hertzon's mouse and keys (Settings ▸ General ▸ 3D View): a plain left drag draws a selection
+    // rectangle, the middle button orbits, Shift + left pans and a right drag zooms. Per USER, a working habit, never in the
+    // .c3d. Null means the shipped default (on); false is circuitRF's own scheme. See Interaction3DPreference.
+    [JsonPropertyName("view3d_hertzon_interactivity")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? View3DHertzonInteractivity { get; set; }
+
     [JsonPropertyName("snap3d_kinds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Snap3DKinds { get; set; }

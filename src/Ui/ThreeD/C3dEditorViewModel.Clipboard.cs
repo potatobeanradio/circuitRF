@@ -77,7 +77,7 @@ public sealed partial class C3dEditorViewModel
             FaceBoundaries = [.. faces.Distinct()], Places = [.. places.Distinct()], SymmetryPlanes = [.. planes.Distinct()],
             ThermalBoundaries = [.. thermal.Distinct()],
         };
-        return selection.IsEmpty ? (null, refusal ?? "Select something in the tree to copy.") : (selection, null);
+        return selection.IsEmpty ? (null, refusal ?? "Select something to copy.") : (selection, null);
     }
 
     /// <summary>Why a row does not copy, or null when it does (brief-em3d-95 §1's "not copyable yet").</summary>

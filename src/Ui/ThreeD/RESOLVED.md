@@ -569,3 +569,13 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
   `C3dEditorGateTests.OneWriteOnDisk_IsAskedAboutOnce_HoweverManyWatcherEventsReportIt` and
   `AnUnreadableFile_UnderACleanDocument_IsReportedOnce_AndTheDocumentIsKept`. `Ui.Tests` has no Avalonia host, so the real
   key press was checked through a scratch `tools/UiSnapshot` probe, against the real shell.
+
+## Saving while pushed into a child wrote the child over the parent (2026-11-12)
+
+HZN-2…9 routed `C3dEditorViewModel.Save()` through `Source` (so a design held in a Hertzon project saves into its project),
+but `Source` is the TAB's top document and Push Into does not change it. Pushed in, Pop Out ▸ Save and Ctrl/Cmd+S wrote the
+child's document over the parent's `.c3d` and never wrote the child's own file — silent data loss in both files.
+`HierarchyGateTests.PushIn_EditsTheChildAloneInItsOwnFrame…` had been failing on it since that commit. `Save()` now writes
+frame 0 through `Source` and every pushed-in frame to its own path (`WriteFrame`), for the active frame and the dirty frames
+beneath it alike; the gate also holds the parent's bytes unchanged. Anything else that reads `Source` must ask whether it
+means the tab's document or the frame being edited.

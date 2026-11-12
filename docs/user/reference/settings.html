@@ -287,6 +287,9 @@ applies to every open window and everything drawn in them.</p>
 <p>This is the light/dark <em>variant</em>. Which colour each thing is drawn in is the
 <a href="settings.html#color-theme">Color Theme</a> tab, and every colour theme carries both variants — the two
 settings compose rather than competing.</p>
+<p><strong>Message times</strong> — how the Messages panel stamps each line: <em>Time</em>, <em>Date + Time</em>, or <em>Hidden</em>. This one
+is live; the panel re-renders as you change it.</p>
+<h3 id="view-3d">3D View</h3>
 <p><strong>Open 3D designs in realistic view</strong> opens every 3D design with the realistic view already on, as if you had
 pressed its toolbar button. It is off by default, and it takes effect the next time a design opens — one
 already open keeps whatever its toolbar button says.</p>
@@ -294,6 +297,50 @@ already open keeps whatever its toolbar button says.</p>
 enough to leave on depends on <strong>your</strong> graphics card, not on the design. A design someone with a faster
 machine sends you opens the way you have chosen here. The look itself — environment, exposure, edges,
 grid — <em>is</em> saved in each design, so turning the view on shows it the way it was set up.</p>
+<p><strong>Use Hertzon interactivity</strong> steers every 3D view with Hertzon's mouse buttons instead of circuitRF's own. It is
+on by default and takes effect at once, in views already open too. With it on:</p>
+<table>
+<thead>
+<tr>
+<th>Gesture</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Left drag</td>
+<td>Selects everything that lies wholly inside the rectangle, in the selection mode in force (objects, faces, edges or vertices). A group is taken only when all of its shown members are inside. <strong>Ctrl/Cmd</strong> + drag adds to the selection</td>
+</tr>
+<tr>
+<td>Left click</td>
+<td>Selects what is under the cursor; <strong>Ctrl/Cmd</strong>-click adds it or takes it out, as <strong>Shift</strong>-click does</td>
+</tr>
+<tr>
+<td>Middle drag</td>
+<td>Orbits; with <strong>Ctrl</strong>, pans; with <strong>Shift</strong>, zooms</td>
+</tr>
+<tr>
+<td>Shift + left drag</td>
+<td>Pans</td>
+</tr>
+<tr>
+<td>Alt + left drag</td>
+<td>Orbits; with <strong>Shift</strong> too, zooms</td>
+</tr>
+<tr>
+<td>Right drag</td>
+<td>Zooms (up is in); a right click without a drag still opens the menu</td>
+</tr>
+<tr>
+<td>Scroll, pinch</td>
+<td>Zoom, as always</td>
+</tr>
+</tbody>
+</table>
+<p>Turned off, a left drag orbits and the right, middle, Alt and Shift drags pan. While a drawing tool or Measure waits for a click, a plain left click is still that click, and <strong>Ctrl/Cmd</strong> + left
+drag still orbits. The keys are the same in both schemes; Hertzon's own <strong>Ctrl/Cmd+E</strong> (fit the selection, or everything shown when nothing is selected) works
+in either. Hertzon's <strong>Ctrl+D</strong> (fit all) is not taken: <strong>Ctrl/Cmd+D</strong> is Duplicate here, and <strong>Home</strong> or
+<strong>Ctrl/Cmd+0</strong> fit.</p>
 <p><strong>Software 3D without GPU interop</strong> (Linux only) decides what a 3D view does where the window cannot show
 the graphics card's frames directly — a remote desktop, a virtual machine, a session without GPU acceleration.
 On, the default, the view copies each frame back and draws it in software: slower, but it draws, and a line in
@@ -319,9 +366,6 @@ shown there.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="messages">Messages</h3>
-<p><strong>Timestamps</strong> — how the Messages panel stamps each line: <em>Time</em>, <em>Date + Time</em>, or <em>Hidden</em>. This one
-is live; the panel re-renders as you change it.</p>
 <h3 id="design-rules">Design Rules</h3>
 <p><strong>Check design rules before exporting</strong> runs a design-rule check before writing GDSII, DXF or Gerber.
 It is on by default and it is <strong>not</strong> a gate: a clean design exports with no interruption, and when

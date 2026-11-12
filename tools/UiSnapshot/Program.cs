@@ -1667,6 +1667,12 @@ foreach (var (kind, arg) in steps)
         Console.WriteLine($"{kind} {arg}: terminals [{string.Join(" | ", esVm.TerminalRows.Select(r => $"{r.Name}={r.Net}{(r.IsPicking ? " (Pick armed)" : "")}"))}], "
                         + $"ground '{esVm.Ground3DText}', bodies '{esVm.BodiesStatus}', view selection [{string.Join(",", c3dShown.Viewer.SelectedObjects().Select(o => o.Name))}], "
                         + $"status '{c3dShown.StatusMessage}', dialog {(TopDialog() is { } td ? "open" : "closed")}");
+    // --editor: what a key or click did to the 3D editor (a copy, a paste), and where the keys go now.
+    if (c3dShown is not null && c3dEditor && kind is "--key" or "--click")
+        Console.WriteLine($"{kind} {arg}: status '{c3dShown.StatusMessage}', objects {c3dShown.Document.Objects.Count}, "
+                        + $"selected [{string.Join(",", c3dShown.SelectedTreeItems.Select(t => t.Name))}], "
+                        + $"focus {host?.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}, "
+                        + $"camera distance {c3dShown.Viewer.View.Camera.Distance * 1e3:0.###} mm");
     if (parameterEditor is { IsVendorPart: true } pev)
         Console.WriteLine($"{kind} {arg}: vendor part tuned {pev.IsVendorPartTuned}, optimized {pev.IsVendorPartOptimized}");
     if (techVm is not null) PrintTech($"{kind} {arg}");

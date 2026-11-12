@@ -141,8 +141,9 @@ shows k, and ρ and c when the setup computes a Z_th or a pulse.</li>
 and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
 <a href="em-3d.html#view">3D EM ▸ The 3D view</a>. The editor adds the drawing.</li>
 </ul>
-<p>The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom, or
-<strong>Ctrl/Cmd+=</strong> and <strong>Ctrl/Cmd+−</strong>; the arrow keys pan and <strong>Shift+arrow</strong> orbits; <strong>Home</strong> or <strong>Ctrl/Cmd+0</strong> fits; <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> the six orthographic views, <strong>P</strong> toggles perspective, <strong>L</strong> the <a href="#realistic">realistic view</a>; <strong>C</strong>
+<p>The camera is the viewer's: middle- or Alt-drag to orbit; Shift-drag to pan; right-drag or scroll to zoom (with
+<a href="settings.html#view-3d">Use Hertzon interactivity</a> off: drag to orbit; right-, middle-, Alt- or Shift-drag to pan), or
+<strong>Ctrl/Cmd+=</strong> and <strong>Ctrl/Cmd+−</strong>; the arrow keys pan and <strong>Shift+arrow</strong> orbits; <strong>Home</strong> or <strong>Ctrl/Cmd+0</strong> fits, <strong>Ctrl/Cmd+E</strong> fits the selection; <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> the six orthographic views, <strong>P</strong> toggles perspective, <strong>L</strong> the <a href="#realistic">realistic view</a>; <strong>C</strong>
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 <strong>status line</strong>: what the armed tool wants next, or what the last edit did, or why it was refused.</p>
 <h2 id="example">The example: an MMIC in a package</h2>
@@ -917,19 +918,20 @@ or moving an object while it is not modelled does not, since no run has it.</li>
 </ul>
 <h3 id="copy-paste">Copy and Paste between 3D views</h3>
 <p>Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
-circuitRF — or back into the same one. It is the object tree's gesture:</p>
+circuitRF — or back into the same one:</p>
 <ul>
-<li><strong>Copy</strong>: right-click a row, a group or several selected rows in the object tree, or press <strong>Ctrl/Cmd+C</strong> there. In
-the view, right-click ▸ <strong>Copy Objects</strong> copies the selection's rows; the view's own <strong>Copy</strong> stays the picture.</li>
-<li><strong>Paste</strong>: right-click any row, or the tree's empty area, or press <strong>Ctrl/Cmd+V</strong> in the tree. It is greyed, with
-<em>Nothing copied from a 3D view</em>, until a 3D copy is on the clipboard.</li>
+<li><strong>Copy</strong>: right-click a row, a group or several selected rows in the object tree, or press <strong>Ctrl/Cmd+C</strong> there or
+in the view, or use <em>Edit ▸ Copy</em>. In the view, right-click ▸ <strong>Copy Objects</strong> copies the selection's rows; the
+menu's own <strong>Copy</strong> is the picture.</li>
+<li><strong>Paste</strong>: right-click any row, or the tree's empty area, or press <strong>Ctrl/Cmd+V</strong> in the tree or the view, or use
+<em>Edit ▸ Paste</em>. The tree's item is greyed, with <em>Nothing copied from a 3D view</em>, until a 3D copy is on the clipboard.</li>
 <li><strong>What copies</strong>: objects whole (material, role, group, placement, visibility, transparency, <strong>Model</strong>, every expression,
 a boolean's operands and a fillet's edges); a group with all its members; placed cells; ports; EM face boundaries,
 thermal boundaries (from the active setup) and symmetry planes; heat sources, probes, mesh regions and effective blocks
 when their rows are selected. <strong>Field plots</strong> and the <strong>air box</strong> do not copy: a plot is a reading of a run, and the
 air box is the setup's.</li>
 <li><strong>Where it lands</strong>: exactly where it was copied from, at the target's resolution — nothing is offset, so a paste into
-the same view sits on its original. The pasted rows are selected, ready to move (<strong>G</strong>). The whole paste is <strong>one undo
+the same view sits on its original. The pasted rows are selected, ready to move (<strong>G</strong>, or right-click the row ▸ <strong>Move</strong> — a row's menu has the view's Move, Move Along, Rotate, Mirror, Array…, Align and Order). The whole paste is <strong>one undo
 step</strong>.</li>
 <li><strong>Names</strong>: a name the target already uses takes the first free <code>_2</code>, <code>_3</code>…, and every reference inside the paste
 follows — a boolean's tools, a heat source's solid, a probe's face, a port's conductors, a boundary's face, and group
@@ -2193,8 +2195,12 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <td>Group the selection; ungroup the outermost selected group</td>
 </tr>
 <tr>
-<td><strong>Ctrl/Cmd+C</strong>, <strong>Ctrl/Cmd+V</strong> in the object tree</td>
-<td>Copy the selected rows; paste a 3D copy (<a href="#copy-paste">Copy and Paste</a>). In the view, Ctrl/Cmd+C copies the picture</td>
+<td><strong>Ctrl/Cmd+C</strong>, <strong>Ctrl/Cmd+V</strong></td>
+<td>Copy the selected objects; paste a 3D copy (<a href="#copy-paste">Copy and Paste</a>). In the view or the object tree</td>
+</tr>
+<tr>
+<td><strong>Ctrl/Cmd+E</strong></td>
+<td>Fit the selection; with nothing selected, everything shown</td>
 </tr>
 <tr>
 <td><strong>N</strong>, <strong>Shift+E</strong>, <strong>T</strong></td>

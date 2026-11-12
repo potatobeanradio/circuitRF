@@ -71,8 +71,12 @@ public partial class C3dEditorView : UserControl
         // brief-em3d-91 — H on the tree's rows, where a multi-selection is usually made; never while a text field (the rename
         // box) has the key.
         ObjectTree.AddHandler(KeyDownEvent, OnTreeHideKey, RoutingStrategies.Tunnel);
-        // brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V on the tree's rows copy and paste objects; the pane's keys are unchanged.
-        ObjectTree.AddHandler(KeyDownEvent, OnTreeClipboardKey, RoutingStrategies.Tunnel);
+        // brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste objects, with focus on the tree's rows or on the canvas (the
+        // canvas had no key for either: its picture copy was only ever on its context menu).
+        AddHandler(KeyDownEvent, OnClipboardKey, RoutingStrategies.Tunnel);
+        // A Move, Rotate or Duplicate chosen from a row's menu is a gesture in the view: the canvas takes the keys for it (a typed
+        // distance, X/Y/Z, Esc), as it does after a toolbar click.
+        _treeMenu.Closed += (_, _) => Dispatcher.UIThread.Post(() => { if (_vm?.DrawArmed == true) Pane.Focus(); }, DispatcherPriority.Background);
         Pane.ContextMenuRequested += () =>
         {
             if (_vm is null) return;
@@ -104,10 +108,20 @@ public partial class C3dEditorView : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_doc is not null) _doc.ActivationFocusRequested -= OnActivationFocusRequested;
+        if (_doc is not null)
+        {
+            _doc.ActivationFocusRequested -= OnActivationFocusRequested;
+            _doc.CopyRequested -= OnCopyRequested;
+            _doc.PasteRequested -= OnPasteRequested;
+        }
         _doc = DataContext as C3dEditorDocument;
         // The tab activated again (the view was already attached): the pane takes the keys, as the layout editor's canvas does.
-        if (_doc is not null) _doc.ActivationFocusRequested += OnActivationFocusRequested;
+        if (_doc is not null)
+        {
+            _doc.ActivationFocusRequested += OnActivationFocusRequested;
+            _doc.CopyRequested += OnCopyRequested;
+            _doc.PasteRequested += OnPasteRequested;
+        }
         if (_vm is not null)
         {
             _vm.DrawMenuRequested -= OnDrawMenuRequested;
@@ -246,17 +260,46 @@ public partial class C3dEditorView : UserControl
         if (_treeMenu.Items.Count > 0) _treeMenu.Open(ObjectTree);
     }
 
-    /// <summary>brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V with focus in the object tree (the pane's Ctrl/Cmd+C is the picture,
-    /// D3). Never while a text field (the rename box) has the key.</summary>
-    private async void OnTreeClipboardKey(object? sender, KeyEventArgs e)
+    /// <summary>brief-em3d-95 — Ctrl/Cmd+C and Ctrl/Cmd+V with focus in the object tree or on the canvas: the selection's objects
+    /// (the tree's rows, else the canvas's objects' rows) as a 3D copy, and a paste of one. Never while a text field (the rename
+    /// box) has the key, and nowhere else in the view — a setup card's list keeps its own keys.</summary>
+    private void OnClipboardKey(object? sender, KeyEventArgs e)
     {
-        if (_vm is null || e.Source is TextBox || e.Key is not (Key.C or Key.V)) return;
-        var command = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
-        if ((e.KeyModifiers & ~KeyModifiers.Shift) != command || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
+        if (_vm is null || e.Key is not (Key.C or Key.V) || !IsClipboardGesture(e.KeyModifiers)) return;
+        if (e.Source is not Visual source || IsTextEntry(source)) return;
+        if (!ReferenceEquals(source, Pane) && !ReferenceEquals(source, ObjectTree) && !ObjectTree.IsVisualAncestorOf(source)) return;
         e.Handled = true;
-        if (e.Key == Key.C) { _vm.CopySelection(); return; }
-        string? text = await C3dClipboard.ReadAsync(TopLevel.GetTopLevel(this)?.Clipboard) ?? _vm.ClipboardText;
+        if (e.Key == Key.C)
+        {
+            // Nothing copyable selected says why on the status line, as the menu's disabled Copy does in its tip.
+            if (_vm.CopySelection() is { } why) _vm.StatusMessage = why;
+            return;
+        }
+        _ = PasteFromClipboardAsync();
+    }
+
+    private void OnCopyRequested()
+    {
+        if (_vm?.CopySelection() is { } why) _vm.StatusMessage = why;
+    }
+
+    private void OnPasteRequested() => _ = PasteFromClipboardAsync();
+
+    /// <summary>The platform's command key alone: Cmd on macOS, Ctrl elsewhere.</summary>
+    internal static bool IsClipboardGesture(KeyModifiers modifiers)
+        => modifiers == (OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control);
+
+    /// <summary>Edit ▸ Paste and Ctrl/Cmd+V: the system clipboard's text (a 3D copy from any window), else the last copy here.
+    /// The pasted rows rebuild the tree, which drops the focused row and with it the keys: the canvas takes them, as it does
+    /// after a toolbar click, so a second Ctrl/Cmd+V, or G to move what was pasted, is heard.</summary>
+    private async Task PasteFromClipboardAsync()
+    {
+        string? text = await C3dClipboard.ReadAsync(TopLevel.GetTopLevel(this)?.Clipboard) ?? _vm?.ClipboardText;
         _vm?.Paste(text);
+        // Not while the Paste dialog (a paste that must ask) has the keys.
+        if (TopLevel.GetTopLevel(this) is not { } top || top is Window { OwnedWindows.Count: > 0 }) return;
+        var focused = top.FocusManager?.GetFocusedElement() as Visual;
+        if (focused is null || this.IsVisualAncestorOf(focused)) Pane.Focus();
     }
 
     /// <summary>brief-em3d-95 — a copy made in the view model goes to the system clipboard.</summary>

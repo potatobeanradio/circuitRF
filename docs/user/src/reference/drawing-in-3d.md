@@ -116,8 +116,9 @@ renumbered port still knows its layout label.
   and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
   [3D EM ▸ The 3D view](em-3d.html#view). The editor adds the drawing.
 
-The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom, or
-**Ctrl/Cmd+=** and **Ctrl/Cmd+−**; the arrow keys pan and **Shift+arrow** orbits; **Home** or **Ctrl/Cmd+0** fits; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective, **L** the [realistic view](#realistic); **C**
+The camera is the viewer's: middle- or Alt-drag to orbit; Shift-drag to pan; right-drag or scroll to zoom (with
+[Use Hertzon interactivity](settings.html#view-3d) off: drag to orbit; right-, middle-, Alt- or Shift-drag to pan), or
+**Ctrl/Cmd+=** and **Ctrl/Cmd+−**; the arrow keys pan and **Shift+arrow** orbits; **Home** or **Ctrl/Cmd+0** fits, **Ctrl/Cmd+E** fits the selection; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective, **L** the [realistic view](#realistic); **C**
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 **status line**: what the armed tool wants next, or what the last edit did, or why it was refused.
 
@@ -497,19 +498,20 @@ you tick it again. Hiding an object is not the same thing: a hidden object is st
 ### Copy and Paste between 3D views {#copy-paste}
 
 Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
-circuitRF — or back into the same one. It is the object tree's gesture:
+circuitRF — or back into the same one:
 
-- **Copy**: right-click a row, a group or several selected rows in the object tree, or press **Ctrl/Cmd+C** there. In
-  the view, right-click ▸ **Copy Objects** copies the selection's rows; the view's own **Copy** stays the picture.
-- **Paste**: right-click any row, or the tree's empty area, or press **Ctrl/Cmd+V** in the tree. It is greyed, with
-  *Nothing copied from a 3D view*, until a 3D copy is on the clipboard.
+- **Copy**: right-click a row, a group or several selected rows in the object tree, or press **Ctrl/Cmd+C** there or
+  in the view, or use *Edit ▸ Copy*. In the view, right-click ▸ **Copy Objects** copies the selection's rows; the
+  menu's own **Copy** is the picture.
+- **Paste**: right-click any row, or the tree's empty area, or press **Ctrl/Cmd+V** in the tree or the view, or use
+  *Edit ▸ Paste*. The tree's item is greyed, with *Nothing copied from a 3D view*, until a 3D copy is on the clipboard.
 - **What copies**: objects whole (material, role, group, placement, visibility, transparency, **Model**, every expression,
   a boolean's operands and a fillet's edges); a group with all its members; placed cells; ports; EM face boundaries,
   thermal boundaries (from the active setup) and symmetry planes; heat sources, probes, mesh regions and effective blocks
   when their rows are selected. **Field plots** and the **air box** do not copy: a plot is a reading of a run, and the
   air box is the setup's.
 - **Where it lands**: exactly where it was copied from, at the target's resolution — nothing is offset, so a paste into
-  the same view sits on its original. The pasted rows are selected, ready to move (**G**). The whole paste is **one undo
+  the same view sits on its original. The pasted rows are selected, ready to move (**G**, or right-click the row ▸ **Move** — a row's menu has the view's Move, Move Along, Rotate, Mirror, Array…, Align and Order). The whole paste is **one undo
   step**.
 - **Names**: a name the target already uses takes the first free `_2`, `_3`…, and every reference inside the paste
   follows — a boolean's tools, a heat source's solid, a probe's face, a port's conductors, a boundary's face, and group
@@ -1608,7 +1610,8 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |
 | **Ctrl/Cmd+D** | Duplicate and move |
 | **Ctrl/Cmd+G**, **Ctrl/Cmd+Shift+G** | Group the selection; ungroup the outermost selected group |
-| **Ctrl/Cmd+C**, **Ctrl/Cmd+V** in the object tree | Copy the selected rows; paste a 3D copy ([Copy and Paste](#copy-paste)). In the view, Ctrl/Cmd+C copies the picture |
+| **Ctrl/Cmd+C**, **Ctrl/Cmd+V** | Copy the selected objects; paste a 3D copy ([Copy and Paste](#copy-paste)). In the view or the object tree |
+| **Ctrl/Cmd+E** | Fit the selection; with nothing selected, everything shown |
 | **N**, **Shift+E**, **T** | Push/pull a face; extrude a face into a new solid; Touching/Flush while aligning |
 | double-click an edge | Its tangent chain (**Shift** adds it) |
 | double-click a row in the object tree | Bring **Properties** forward for that row, when nothing is listed beneath it; a row that opens just opens or closes |

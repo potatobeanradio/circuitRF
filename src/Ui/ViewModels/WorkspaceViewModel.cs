@@ -3801,6 +3801,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             else if (cut) wbDoc.RequestCut();
             else          wbDoc.RequestCopy();
         }
+        // A 3D editor: its objects as a 3D copy, and a paste of one (no Cut — a copy then Delete, as the tree's menu has it).
+        else if (active is ThreeD.C3dEditorDocument c3dDoc)
+        {
+            if (paste)     c3dDoc.RequestPaste();
+            else if (!cut) c3dDoc.RequestCopy();
+        }
         // The Smith Chart routes BY FOCUS inside its own view (R-smith7-9) — Copy means the chart
         // when the chart has it and the network when the network does — so what is raised here is
         // the request and not the answer. No Cut: see SmithChartDocument.CopyRequested.

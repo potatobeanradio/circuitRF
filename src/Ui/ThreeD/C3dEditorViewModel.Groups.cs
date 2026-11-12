@@ -413,8 +413,9 @@ public sealed partial class C3dEditorViewModel
             Tip: "This group only: the groups inside it stay groups.");
         yield return GroupObjectsItem();
         yield return Viewer3DMenuItem.Separator;
-        yield return new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
-            Tip: drawn ? "A copy of the group — a new group — in place, then a Move." : "None of it is drawn.");
+        foreach (var op in RowOperationItems(new Viewer3DMenuItem("Duplicate", StartDuplicate, Enabled: drawn, Gesture: Viewer3DMenuItem.Command(Key.D),
+                     Tip: drawn ? "A copy of the group — a new group — in place, then a Move." : "None of it is drawn.")))
+            yield return op;
         yield return new Viewer3DMenuItem("Delete", () => DeleteMembers(C3dGroups.MembersOf(Document, path), $"Delete {item.Name}"),
             Tip: "The group and everything in it.");
         yield return Viewer3DMenuItem.Separator;

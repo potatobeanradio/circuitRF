@@ -381,3 +381,29 @@ labels covered one another in the Front and Side views.
   GPU and software would hide that it could have one. A replaced or torn-down `WriteableBitmap` is disposed rather than
   left to the collector. Gate for the choice: `SoftwarePresentChoiceTests`; the rest was checked by driving the app on a
   virtual display, since the Viewer3D tests never reach `Host`.
+
+## 3D copy and paste from the keyboard; Hertzon interactivity (2026-11-12)
+
+- **The canvas had no Ctrl/Cmd+C or V at all.** brief-em3d-95 kept the canvas's Ctrl/Cmd+C "the picture copy" (its D3),
+  but no key was ever bound to the picture copy — it was only on the context menu — so both keys did nothing on the canvas.
+  Edit ▸ Copy / Paste also skipped a 3D editor (`InvokeClipboardAsync` had no branch for it). Both keys are now one
+  view-level tunnel handler in `C3dEditorView` (source the pane or the object tree, never a text field), and the Edit menu
+  reaches the same code through `C3dEditorDocument.CopyRequested`/`PasteRequested`.
+- **A paste dropped the keyboard focus.** The pasted rows rebuild the object tree once the scene settles, which removes the
+  focused row; focus became null and every later key (a second paste, G, Delete) went nowhere until a click. Moving focus to
+  the tree control itself did not survive the rebuild either; the pane takes it after a paste (as after a toolbar click),
+  unless the Paste dialog is open. Seen with `UiSnapshot --c3d-setups … --editor`, which now prints focus per key step.
+- **Hertzon interactivity** (`Interaction3DPreference`, Settings ▸ General ▸ 3D View) is read on every press in
+  `Viewer3DPane.HertzonPress`, so it takes effect in open views. Its gestures all reuse a button circuitRF's own scheme
+  already gives a meaning, so they stay behind the setting; the one key that takes nothing — Ctrl/Cmd+E, Fit Selection —
+  works in both. Hertzon's Ctrl+D (Fit All) is not taken: Ctrl/Cmd+D is Duplicate, and on macOS the native menu's key
+  equivalent would win anyway. The selection rectangle (`Viewer3DViewModel.Marquee.cs`) takes what is WHOLLY inside, a
+  group only whole; an object with no triangles of its own (a wire, an array element) is tested by its bounds' corners.
+- **Fit Selection clipped the rest of the scene.** `Camera3D.FrameBounds` (through `FitBounds`) takes the box it frames as
+  `SceneCentre`/`SceneRadius`, and `DepthRange` brackets that sphere: framing one object left near/far planes round it,
+  so zooming out showed only part of the scene. Fit has always restored the whole scene's sphere after framing; Fit
+  Selection now does the same. Anything else that calls `FrameBounds` on a sub-box must do likewise.
+- **A pasted instance's row had no scene selection behind it.** A paste selects its rows before its scene is built; the
+  catch-up in `C3dEditorViewModel.OnSceneAdopted` handled only one selected OBJECT row, so an instance, a group or several
+  rows stayed unselected in the scene and the row's menu (which reads `Targets()`) offered no Move until the row was
+  clicked again. It now maps every selected row through `SceneObjectsOfSelectedRow`, as the paste itself does.

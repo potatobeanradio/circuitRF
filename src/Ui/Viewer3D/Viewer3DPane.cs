@@ -706,6 +706,11 @@ public sealed class Viewer3DPane : Control
             e.Handled = true;
             return;
         }
+        if (Interaction3DPreference.Hertzon)
+        {
+            HertzonPress(e, p);
+            return;
+        }
         // 3D round 1 — while a tool, an operation or Measure waits for a click, a plain left drag does NOT orbit: the press
         // is that gesture's click however far it wobbles, and only Ctrl/Cmd + drag orbits. macOS reports Control + left
         // as a RIGHT press carrying Control (AppKit's one-button convention), so that is read as the left press it is.
@@ -738,8 +743,63 @@ public sealed class Viewer3DPane : Control
     /// <summary>brief-em3d-46 — a gizmo handle is being dragged.</summary>
     private bool _gizmoDrag;
 
+    /// <summary>Hertzon interactivity — a zoom drag (right drag, Shift + middle, Alt + Shift + left) and a selection rectangle
+    /// (plain left drag; Ctrl/Cmd adds) are under way.</summary>
+    private bool _zooming, _marquee, _marqueeAdd;
+
+    /// <summary>
+    /// Settings ▸ General ▸ 3D View ▸ Use Hertzon interactivity: the buttons as Hertzon's 3D view has them. Middle drag orbits,
+    /// Ctrl + middle pans, Shift + middle zooms; Shift + left pans, Alt + left orbits, Alt + Shift + left zooms; a right drag
+    /// zooms and a right click is still the menu; a plain left drag draws the selection rectangle and a plain click selects
+    /// (Ctrl/Cmd toggles it, Shift adds as everywhere here). While a tool waits for a click, a plain left press is its click as
+    /// in circuitRF's own scheme, and Ctrl/Cmd + left still orbits there.
+    /// </summary>
+    private void HertzonPress(PointerPressedEventArgs e, PointerPoint p)
+    {
+        var m = e.KeyModifiers;
+        bool drawing = _vm?.OrbitNeedsCommand == true;
+        bool command = (m & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        bool shift = m.HasFlag(KeyModifiers.Shift), alt = m.HasFlag(KeyModifiers.Alt);
+        // macOS reports Control + left as a RIGHT press carrying Control (AppKit's one-button convention): while drawing it is
+        // the left press it is, as in circuitRF's own scheme.
+        bool controlLeft = drawing && p.Properties.IsRightButtonPressed && m.HasFlag(KeyModifiers.Control);
+        bool left = p.Properties.IsLeftButtonPressed || controlLeft;
+        _orbiting = _panning = _zooming = _marquee = _marqueeAdd = _rightPressed = _shiftPress = _drawPress = false;
+        if (p.Properties.IsMiddleButtonPressed)
+        {
+            if (command) _panning = true;
+            else if (shift) _zooming = true;
+            else _orbiting = true;
+        }
+        else if (p.Properties.IsRightButtonPressed && !controlLeft)
+        {
+            _zooming = true;
+            _rightPressed = true;
+        }
+        else if (left)
+        {
+            if (alt && shift) _zooming = true;
+            else if (alt) _orbiting = true;
+            else if (shift) { _panning = true; _shiftPress = true; }
+            else if (drawing && !command) _drawPress = true;
+            else if (drawing) _orbiting = true;
+            else { _marquee = true; _marqueeAdd = command; }
+        }
+        // A left-button orbit released where it was pressed is a click (Hertzon's own rule for Alt; while drawing, Ctrl/Cmd's
+        // plane gesture), except Alt while drawing, which only turns the view. A middle press never clicks.
+        _hertzonOrbitClicks = _orbiting && left && !(drawing && alt);
+        _pressModifiers = m;
+        _pressClicks = e.ClickCount;
+        _moved = false;
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    /// <summary>Hertzon interactivity — an Alt + left orbit that did not move is a click.</summary>
+    private bool _hertzonOrbitClicks;
+
     /// <summary>A drag (orbit, pan or a gizmo handle) is under way — the mode keys wait for it (R-em3d43-2a).</summary>
-    public bool GestureInProgress => ((_orbiting || _panning) && _moved) || _gizmoDrag;
+    public bool GestureInProgress => ((_orbiting || _panning || _zooming || _marquee) && _moved) || _gizmoDrag;
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -748,10 +808,21 @@ public sealed class Viewer3DPane : Control
         // A key pressed while the button is still down and has not moved (G on the vertex just pressed) armed a tool: the
         // press becomes that tool's click, as if it had started armed — its drag moves what the tool moves and its
         // release places it. Orbiting it instead turned the camera under the cursor the tool was following.
-        if (_orbiting && !_moved && _vm?.OrbitNeedsCommand == true && (_pressModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+        // (Hertzon interactivity: its orbits are the middle button and Alt, which stay orbits; its rectangle becomes the click.)
+        bool noCommand = (_pressModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0;
+        if (!Interaction3DPreference.Hertzon && _orbiting && !_moved && _vm?.OrbitNeedsCommand == true && noCommand)
             (_orbiting, _drawPress) = (false, true);
+        if (_marquee && !_moved && _vm?.OrbitNeedsCommand == true && noCommand)
+            (_marquee, _drawPress) = (false, true);
         // A gizmo or point drag: whether it went past the click slop — a point pressed and released in place was a click.
         if (_gizmoDrag && _pressedAt is { } from && Math.Abs(pos.X - from.X) + Math.Abs(pos.Y - from.Y) > ClickSlopDips) _moved = true;
+        if (_last is { } zl && (_zooming || _marquee) && _pressedAt is { } zat)
+        {
+            if (Math.Abs(pos.X - zat.X) + Math.Abs(pos.Y - zat.Y) > ClickSlopDips) _moved = true;
+            if (_zooming) { _vm?.ZoomDrag((float)(pos.Y - zl.Y)); if (_moved) _vm?.SetCameraGesture(true); }
+            else if (_moved) _vm?.SetMarquee((float)zat.X, (float)zat.Y, (float)pos.X, (float)pos.Y);
+            _last = pos;
+        }
         if (_last is { } last && (_orbiting || _panning))
         {
             var d = pos - last;
@@ -780,11 +851,21 @@ public sealed class Viewer3DPane : Control
             _last = _pressedAt = null;
             return;
         }
-        if (_onTriad && !_moved) { }
-        else if (_drawPress || (_orbiting && !_moved)) _vm?.Click(shift: false, _pressModifiers, _pressClicks);
+        if (_marquee)
+        {
+            if (!_moved) _vm?.Click(shift: _marqueeAdd, _pressModifiers, _pressClicks);
+            else if (_pressedAt is { } m0)
+            {
+                var m1 = e.GetPosition(this);
+                _vm?.BoxSelect((float)m0.X, (float)m0.Y, (float)m1.X, (float)m1.Y, _marqueeAdd);
+            }
+        }
+        else if (_onTriad && !_moved) { }
+        else if (_drawPress || (_orbiting && !_moved && (!Interaction3DPreference.Hertzon || _hertzonOrbitClicks)))
+            _vm?.Click(shift: false, _pressModifiers, _pressClicks);
         else if (_shiftPress && !_moved) _vm?.Click(shift: true, _pressModifiers, _pressClicks);
         bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
-        _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = false;
+        _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = _zooming = _marquee = _marqueeAdd = _hertzonOrbitClicks = false;
         _last = _pressedAt = null;
         e.Pointer.Capture(null);
         if (_vm?.CameraGesture == true)
@@ -801,8 +882,9 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        _orbiting = _panning = _rightPressed = _drawPress = false;
+        _orbiting = _panning = _rightPressed = _drawPress = _zooming = _marquee = _marqueeAdd = _hertzonOrbitClicks = false;
         _last = _pressedAt = null;
+        _vm?.ClearMarquee();
         _vm?.SetCameraGesture(false);
         if (_gizmoDrag) { _gizmoDrag = false; _vm?.CancelGizmo(); }
     }
@@ -810,7 +892,7 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
-        if (!_orbiting && !_panning) _vm?.Leave();
+        if (!_orbiting && !_panning && !_zooming && !_marquee) _vm?.Leave();
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -940,8 +1022,10 @@ public sealed class Viewer3DPane : Control
         }
         if (GestureInProgress)
         {
-            _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = false;
+            _orbiting = _panning = _rightPressed = _shiftPress = _drawPress = _zooming = _marquee = _marqueeAdd = _hertzonOrbitClicks = false;
             _last = _pressedAt = null;
+            _vm.ClearMarquee();
+            _vm.SetCameraGesture(false);
             return true;
         }
         return _vm.HandleKey(Key.Escape, KeyModifiers.None, gestureInProgress: false);

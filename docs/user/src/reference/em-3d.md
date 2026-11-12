@@ -442,10 +442,13 @@ setup's refusals and notes, the mesh, the field) are always shown.
   Properties panel (**Vacuum** for free space, or any material of the technology). Its tick hides it — faces
   and outline — and it stays hidden until you show it again. The filter at the header's right hides tree rows by type or by
   material, and its icon changes while it hides anything; it never hides an object in the view.
-- **Camera.** Drag to orbit; right-drag, middle-drag, Alt-drag or Shift-drag to pan; scroll or pinch to zoom. With no
+- **Camera.** Middle-drag or Alt-drag to orbit; Shift-drag or Ctrl+middle-drag to pan; right-drag, Shift+middle-drag,
+  scroll or pinch to zoom; a left drag selects with a rectangle. With Settings ▸ General ▸
+  {{anchor: settings.html#view-3d|Use Hertzon interactivity}} turned off, a left drag orbits and right-, middle-, Alt- or
+  Shift-drag pans. With no
   wheel and no middle button, the keyboard does all three: **Ctrl/Cmd+=** and **Ctrl/Cmd+−** zoom, the **arrow keys**
   pan and **Shift+arrow** orbits 15°. **Home**, **Ctrl/Cmd+0** and *View ▸ Zoom to Fit* fit what is shown, keeping the
-  direction you are looking from. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
+  direction you are looking from; **Ctrl/Cmd+E** fits the selection, or everything shown when nothing is selected. **1** is isometric, **2**–**7** are the six orthographic views, and **P** switches between
   perspective and orthographic. Double-click the axis indicator for the same views: an axis looks straight
   down it — **Z** the top view, **Y** the front, **X** the right — and again turns to the opposite side; anywhere
   else inside its ring is isometric. While you orbit or pan nothing is highlighted and nothing snaps.

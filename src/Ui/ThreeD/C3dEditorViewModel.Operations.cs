@@ -984,8 +984,10 @@ public sealed partial class C3dEditorViewModel
 
     // ── the menus ────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The context menu's operations (Object mode, with something movable selected).</summary>
-    private IEnumerable<Viewer3DMenuItem> OperationMenuItems()
+    /// <summary>The context menu's operations (Object mode, with something movable selected). The object tree's row menus
+    /// offer the same list for the row just selected, with the row's own <paramref name="duplicate"/> (its tip says why a row
+    /// that is not drawn has nothing to copy) and without Model, which the row menu offers already.</summary>
+    private IEnumerable<Viewer3DMenuItem> OperationMenuItems(Viewer3DMenuItem? duplicate = null, bool model = true)
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Object || Targets() is not { Count: > 0 } targets) yield break;
         bool objects = targets.Any(t => !t.Instance);
@@ -1006,7 +1008,7 @@ public sealed partial class C3dEditorViewModel
             new("Across XY", () => MirrorAcross(C3dPlane.XY)), new("Across YZ", () => MirrorAcross(C3dPlane.YZ)),
             new("Across XZ", () => MirrorAcross(C3dPlane.XZ)),
         ]);
-        yield return new Viewer3DMenuItem("Duplicate", StartDuplicate, Gesture: Viewer3DMenuItem.Command(Key.D));
+        yield return duplicate ?? new Viewer3DMenuItem("Duplicate", StartDuplicate, Gesture: Viewer3DMenuItem.Command(Key.D));
         yield return new Viewer3DMenuItem("Array…", OpenArray);
         yield return new Viewer3DMenuItem("Align", Enabled: targets.Count >= 2,
             Tip: targets.Count >= 2 ? "To the last one selected." : "Select two or more: the others line up with the last one selected.",
@@ -1019,7 +1021,16 @@ public sealed partial class C3dEditorViewModel
                 new("Send Backward", () => Order(OrderMove.Backward)), new("Send to Back", () => Order(OrderMove.ToBack)),
             ]);
         // brief-em3d-93 — every selected member (a group's at every depth), the function the Inspector's row calls
-        if (ModelItem(SelectedMembers(), DescribeUnits(SelectedUnits())) is { } model) yield return model;
+        if (model && ModelItem(SelectedMembers(), DescribeUnits(SelectedUnits())) is { } modelItem) yield return modelItem;
+    }
+
+    /// <summary>A tree row's Move, Move Along, Rotate, Rotate 90°, Mirror, <paramref name="duplicate"/>, Array…, Align and Order — the
+    /// canvas's — when the row's selection can move; else <paramref name="duplicate"/> alone. A paste lands on its original, so
+    /// the row is often the only place to pick the copy from.</summary>
+    private IEnumerable<Viewer3DMenuItem> RowOperationItems(Viewer3DMenuItem duplicate)
+    {
+        var ops = OperationMenuItems(duplicate, model: false).ToList();
+        return ops.Count > 0 ? ops : [duplicate];
     }
 
     private IEnumerable<Viewer3DMenuItem> AlignItems()

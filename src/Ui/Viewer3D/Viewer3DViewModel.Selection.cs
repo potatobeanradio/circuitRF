@@ -671,6 +671,10 @@ public sealed partial class Viewer3DViewModel
             SelectAllObjects();
             return true;
         }
+        // Ctrl/Cmd+E fits the selection, Hertzon's key, in either interaction scheme since it takes nothing from circuitRF's.
+        // (Hertzon's Ctrl+D Fit All is not taken: Ctrl/Cmd+D is Duplicate here, and Home and Ctrl/Cmd+0 already fit.)
+        if (key == Key.E && (modifiers == KeyModifiers.Control || modifiers == KeyModifiers.Meta) && !gestureInProgress)
+            return FitSelection();
         if (CameraKey(key, modifiers)) return true;
         if (!plain) return false;
         StandardView3D? standard = key switch

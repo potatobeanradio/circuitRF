@@ -602,6 +602,7 @@ public sealed class HierarchyGateTests : IDisposable
         }));
         string pkg = vm.FilePath;
         string dieBytes = File.ReadAllText(die);
+        string pkgBytes = File.ReadAllText(pkg);
 
         vm.Viewer.SelectMode = Scene3DSelectMode.Object;
         // The toolbar's pair: Push Into Cell enables on one selected instance, Pop Out once pushed in.
@@ -640,6 +641,9 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.True(vm.PopOut(C3dPopOutChoice.Save));
         Settle(vm);
         Assert.Equal(30 * Um, ((C3dBox)C3dPersistence.LoadFromFile(die).Objects[0]).Size.X);
+        // The child is saved to ITS file: the parent's is untouched (a save through the top document's source wrote the
+        // child's content over the parent's .c3d).
+        Assert.Equal(pkgBytes, File.ReadAllText(pkg));
         var grown = (Em3dBox)vm.Elaboration!.Solids.Single(s => s.Name == "U1/pad").Primitive;
         Assert.Equal(30e-6, grown.Max.X - grown.Min.X, 1e-12);
     }

@@ -214,6 +214,13 @@ public sealed class Viewer3DOverlay : Control
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
+
+        // Hertzon interactivity — the selection rectangle being dragged: a faint fill and an outline in the selection colour.
+        if (vm.Marquee is { } mq)
+        {
+            var rect = new Rect(new Point(Math.Min(mq.X0, mq.X1), Math.Min(mq.Y0, mq.Y1)), new Point(Math.Max(mq.X0, mq.X1), Math.Max(mq.Y0, mq.Y1)));
+            ctx.DrawRectangle(new SolidColorBrush(accent.Color, 0.12), new Pen(accent, 1.5), rect);
+        }
     }
 
     /// <summary>fs_edge's colour: what the GPU outlines a selection in.</summary>
