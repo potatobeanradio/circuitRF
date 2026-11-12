@@ -169,8 +169,10 @@ public static class ChainBenches
     }
 
     /// <summary>The chain's benches (<see cref="BenchesFor"/>), or none when the budget is refused.</summary>
-    public static IReadOnlyList<ChainBenchText> Build(ChainDesign d, ChainBudgetResult r, string chain)
-        => r.Totals is null ? [] : [.. BenchesFor(d).Select(b => new Emitter(d, r, chain, b).Emit())];
+    /// <param name="benchBase">The directory the benches' own relative references resolve from once written (the
+    /// workspace they land in); an SnP stage's file is written relative to it when under it, as a full path otherwise.</param>
+    public static IReadOnlyList<ChainBenchText> Build(ChainDesign d, ChainBudgetResult r, string chain, string? benchBase = null)
+        => r.Totals is null ? [] : [.. BenchesFor(d).Select(b => new Emitter(d, r, chain, b, benchBase: benchBase).Emit())];
 
     /// <summary>
     /// Draws the chain's benches and writes each as a cell under <paramref name="workspaceDir"/>, the way a cell from any
@@ -186,7 +188,7 @@ public static class ChainBenches
         if (r.Totals is null) return new([], r.Refusals, []);
         if (NameValidator.Validate(chain) is { } bad) return new([], [$"'{chain}' cannot name a cell: {bad}"], []);
 
-        var benches = Build(d, r, chain);
+        var benches = Build(d, r, chain, Workspace.OwningRoot.Of(Path.GetFullPath(workspaceDir)));
         var refusals = new List<string>();
         var notes = new List<string>();
         var drawn = new List<(string Cell, SchematicEditModel Model)>();
@@ -280,7 +282,8 @@ public static class ChainBenches
 
     // ── the netlist ──────────────────────────────────────────────────────────
 
-    private sealed class Emitter(ChainDesign d, ChainBudgetResult r, string chain, ChainBench bench, bool diagram = false)
+    private sealed class Emitter(ChainDesign d, ChainBudgetResult r, string chain, ChainBench bench, bool diagram = false,
+                                 string? benchBase = null)
     {
         /// <summary>The stage each placed instance belongs to, and where each stage's first block sits on the first
         /// element's row — what the diagram's selection and annotations are read from.</summary>
@@ -867,6 +870,40 @@ public static class ChainBenches
                     {
                         for (int i = 0; i < v1.Length; i++) { v1[i] = -v1[i]; v3[i] = -v3[i]; }
                         v1[t] += 1; v3[t] += 1; f = flo - f;
+                    }
+                    break;
+                }
+                case ChainParts.Snp:
+                {
+                    // The library's SnP block on the file, the chain through In → Out and every other port terminated
+                    // in 50 Ω; a stated NF above the file's own, or a stated intercept, an ideal Amp of 0 dB after it.
+                    var snp = ChainSnp.Read(s, new ChainStageContext(f, d.BaseDirectory), [])!;
+                    string mid = snp.NeedsAmp ? $"{b}_sp" : b;
+                    var nets = Enumerable.Range(1, snp.Ports)
+                        .Select(p => p == snp.In ? a : p == snp.Out ? mid : $"{name}_p{p}").ToList();
+                    string file = ChainSnp.Reference(snp.FullPath, benchBase);
+                    // A file with gain and no noise data is noiseless in a simulation; saying so on the line makes it the
+                    // bench's statement rather than a gap the noise run warns about. The NF stated is the Amp's.
+                    Line($"SnP:{name}  {string.Join("  ", nets)}  NumPorts={snp.Ports}  File=\"{file}\"" +
+                         (snp.NoiseFrom == SnpNoiseFrom.None ? "  Noise=no" : ""));
+                    Inline(name, 300);
+                    if (snp.FileNoiseFactor > 1 + 1e-12) placed.Add(name);
+                    int t = 0;
+                    for (int p = 1; p <= snp.Ports; p++)
+                    {
+                        if (p == snp.In || p == snp.Out) continue;
+                        Line($"R:{name}_T{p}  {name}_p{p}  0  R=50 Ohm");
+                        Place($"{name}_T{p}", _x - Lead - 300 + 300 * t++, _y + 900);
+                        placed.Add($"{name}_T{p}");
+                    }
+                    if (snp.NeedsAmp)
+                    {
+                        double nfAmp = 10 * Math.Log10(snp.AmpNoiseFactor);
+                        string ip = double.IsFinite(snp.Iip3Dbm) ? G(snp.Iip3Dbm + snp.GainDb) : "200";
+                        Line($"Amp:{name}_NL  {mid}  0  {b}  0  Gain=0 dB" + (nfAmp > 1e-12 ? $"  NF={G(nfAmp)} dB" : "") +
+                             $"  IP3={ip} dBm  IP3Ref=Input");
+                        Inline($"{name}_NL", 300);
+                        if (nfAmp > 1e-12) placed.Add($"{name}_NL");
                     }
                     break;
                 }

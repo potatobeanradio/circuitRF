@@ -1124,7 +1124,8 @@ what it writes.</p>
 <p>A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
 blocks — the splitter and the array combiner are the library's <a href="system-components.html#combiner">Combiner</a>, an
 active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter or canceller,
-so three more are <strong>composed</strong> of parts it does have. Transfer places exactly that composition.</p>
+so three more are <strong>composed</strong> of parts it does have. Transfer places exactly that composition. One more is <strong>data</strong>:
+an <a href="#snp">S-parameter data</a> stage is a Touchstone file.</p>
 <table>
 <thead>
 <tr>
@@ -1190,6 +1191,11 @@ so three more are <strong>composed</strong> of parts it does have. Transfer plac
 <td>G = −(10·log10 N + <code>IL</code>), NF = −G</td>
 </tr>
 <tr>
+<td>S-parameter data (<code>SnP</code>)</td>
+<td>A Touchstone file on the <a href="components.html#snp">SnP</a> block, read from port <code>In</code> to port <code>Out</code>. See <a href="#snp">S-parameter data</a>.</td>
+<td>G = |S(<code>Out</code>,<code>In</code>)|² at the stage's frequency; NF from the file's noise data, or its own loss when passive; <code>NF</code> and <code>IIP3</code> when stated</td>
+</tr>
+<tr>
 <td>N-way array combiner</td>
 <td>The <a href="system-components.html#combiner">Combiner</a>, every input an element's branch: one N:1, or a tree of 2:1s, passive or active. See <a href="#array">Arrays</a> and <a href="#variants">the variants</a>.</td>
 <td>Direct, passive: signal +10·log10 N − <code>IL</code>, noise −<code>IL</code>, NF = <code>IL</code></td>
@@ -1199,6 +1205,57 @@ so three more are <strong>composed</strong> of parts it does have. Transfer plac
 <p><strong>P1dB follows from the intercept</strong> for every part that compresses, because an ideal Amplifier and Mixer have one
 nonlinearity, a tanh limiter, whose 1 dB compression point is IIP3 − 8.9625 dB. The budget uses the part's own law, so
 the simulation it is checked against compresses where the budget says.</p>
+<h3 id="snp">S-parameter data</h3>
+<p>An <strong>S-parameter data</strong> stage puts a measured or simulated part into the chain as its Touchstone file: a filter, an
+LNA, a cable, a board. Pick the file with <strong>…</strong> beside <strong>File</strong>; a file inside the workspace is written relative to it,
+so the chain and its benches move with the workspace. Choosing the part asks for the file at once.</p>
+<p>The file is interpolated to the frequency the stage sees — the chain's, or after a mixer the IF — exactly as the SnP
+block interpolates it in a simulation, and renormalised to 50 Ω if it is referenced to another impedance. A file with
+more than two ports is read from <code>In</code> to <code>Out</code>, every other port terminated in 50 Ω.</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>From the file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gain</td>
+<td>|S(<code>Out</code>,<code>In</code>)|², between 50 Ω terminations</td>
+</tr>
+<tr>
+<td>NF, from noise data</td>
+<td>A two-port read 1 → 2 with a noise block: its Fmin, Γopt and Rn at the stage's frequency (linear between rows, as the block takes them), at a 50 Ω source</td>
+</tr>
+<tr>
+<td>NF, passive, no noise data</td>
+<td>Its own thermal noise: F = (1 − |S(<code>Out</code>,<code>Out</code>)|²) / |S(<code>Out</code>,<code>In</code>)|², its loss when matched</td>
+</tr>
+<tr>
+<td>NF, with gain and no noise data</td>
+<td>Unknown: give <code>NF</code></td>
+</tr>
+<tr>
+<td>IIP3</td>
+<td><code>IIP3</code>; blank, linear</td>
+</tr>
+</tbody>
+</table>
+<p><code>NF</code> stated replaces the file's figure and may not be below it. On the benches a stated <code>NF</code> above the file's own, or a
+stated <code>IIP3</code>, is an ideal Amplifier of 0 dB after the block that carries the extra noise and the intercept, so the
+simulation still checks the stage.</p>
+<p>The budget does not extrapolate. It refuses the chain, naming the stage, when:</p>
+<ul>
+<li>no file is named, there is no file at the path, or the file is not Touchstone;</li>
+<li><code>In</code> or <code>Out</code> is not one of the file's ports, or both are the same port;</li>
+<li>the stage's frequency is outside the file's frequencies, or outside its noise rows when the noise comes from them
+(state <code>NF</code> to use the file there);</li>
+<li>the file has gain and no noise data, and <code>NF</code> is blank;</li>
+<li>a relative path is given in a chain that has not been saved.</li>
+</ul>
+<p>A blocker that reaches the stage outside the file's frequencies is carried at the file's nearest frequency, as the block
+holds it in a simulation, and the Notes say so.</p>
 <h2 id="cascade">What the cascade computes</h2>
 <p>Each row of the cascade is the chain up to and including that stage, referred to the chain's input. With G the
 available-power gains, T the noise temperatures and T0 = 290 K:</p>
@@ -1577,7 +1634,7 @@ stage k. At every node:</p>
 </tr>
 <tr>
 <td>Each blocker</td>
-<td>its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), a mixer moving it to |f − Flo|</td>
+<td>its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), an S-parameter data stage's file there, a mixer moving it to |f − Flo|</td>
 </tr>
 <tr>
 <td>A canceller's interference</td>
@@ -1798,7 +1855,7 @@ as the part's netlist line carries them.</p>
 </tr>
 <tr>
 <td><code>Part</code></td>
-<td><code>Amp</code>, <code>Mixer</code>, <code>Atten</code>, <code>Filter</code>, <code>Switch</code>, <code>Circulator</code>, <code>Coupler</code>, <code>PhaseShifter</code>, <code>Limiter</code>, <code>Splitter</code> or <code>Combiner</code>.</td>
+<td><code>Amp</code>, <code>Mixer</code>, <code>Atten</code>, <code>Filter</code>, <code>Switch</code>, <code>Circulator</code>, <code>Coupler</code>, <code>PhaseShifter</code>, <code>Limiter</code>, <code>Canceller</code>, <code>Splitter</code>, <code>SnP</code> or <code>Combiner</code>.</td>
 </tr>
 <tr>
 <td><code>Parameters</code></td>
@@ -1814,7 +1871,8 @@ as the part's netlist line carries them.</p>
 </tr>
 </tbody>
 </table>
-<p>A chain has at most one Combiner.</p>
+<p>A chain has at most one Combiner. An <code>SnP</code> stage's <code>File</code> is a path; a relative one resolves from the workspace the
+<code>.cchain</code> belongs to, or its own folder when it belongs to none.</p>
 <h2 id="cli">From the command line</h2>
 <pre><code class="language-text">circuitrf chain Superhet.cchain                      the cascade, as the window shows it
 circuitrf chain Superhet.cchain -o budget.npy        the budget as a DataSet: per-stage cubes over a stage axis

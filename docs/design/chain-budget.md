@@ -102,6 +102,7 @@ has no phase shifter or limiter; those two are composed of parts it does have, a
 | Combiner, Direct | one `Combiner` of N ways, `IL`, each path's `PathIL` as its `IL[k]` |
 | Combiner, Tree | log2 N levels of 2:1 `Combiner`s, level l's part j fed by parts 2j−1 and 2j of level l−1 |
 | Combiner, Active | either topology, an `Amp` (`Gain`, `NF`, `IIP3`, `IP3Ref=Input`) after each combiner |
+| SnP | `SnP` on the file, other ports terminated in Z0; a stated NF or IIP3 an `Amp` of 0 dB after it (§2.1) |
 
 An active combiner is a composition rather than a block of its own because the composition gives the same answers
 with no new model: its noise, gain and intercept are an Amp's, after a passive combiner's.
@@ -114,7 +115,32 @@ noise gain, noise figure and intercept, and the chain's array gain becomes the p
 noise gain, (Σa_k)²/Σa_k² for the combiner. A tree with N not a power of 2 is refused, Direct named as the remedy,
 rather than given uneven levels: an uneven tree's paths have unequal losses, which is what `PathIL` already states.
 
-### 2.1 The levels, the canceller and the demo
+### 2.1 S-parameter data
+
+An `SnP` stage is a Touchstone file on the library's SnP block (`ChainSnp`). The budget reads the file through
+`TouchstoneCache` with the block's own interpolation (cubic spline in magnitude and phase, in S), at the stage's INPUT
+frequency (`ChainDesign.StageInputFrequencies`: the chain's, moved by each mixer), renormalised to 50 Ω, the ports
+other than `In` and `Out` terminated. Gain is |S(Out,In)|². Noise is what the S-parameter noise analysis gives the
+placed block, so the bench checks it exactly: a two-port's noise rows (1 → 2) at a 50 Ω source, linear between rows
+as `SnpModel.NoiseAt`; with none and σ_max(S) ≤ 1 + 10⁻⁶, Bosma on the network and its terminations at T0,
+F = (1 − |S_oo|²)/|S_oi|²; with gain and none, nothing — the budget refuses rather than guess, until `NF` is stated.
+A stated `NF` (not below the file's own F_file) or `IIP3` is placed as an ideal Amp of 0 dB after the block, its NF
+1 + (F − F_file)·G and its input intercept IIP3 + G; a file with gain and no noise data is written `Noise=no`, so the
+noise run lists it as stated rather than warning that it has no model.
+
+Nothing is extrapolated: a stage frequency outside the file's range, or outside its noise rows when they set the NF,
+is a refusal naming the stage; a blocker outside the range is carried at the edge value, as the block clamps it, with
+a note. A relative `File` resolves against `ChainDesign.BaseDirectory` — the `.cchain`'s owning workspace by
+`SchematicCircuit.ReferenceBaseOf`, which `LoadFromFile` sets — and the benches write it relative to the workspace they
+land in when the file is under it, a full path otherwise. The window keeps an SnP stage that names no file yet instead
+of undoing the pick, flags its File box and asks for a file (`ChainFileWanted`).
+
+Measured on a matched three-stage chain (an LNA with noise data, a passive 3-port read 1 → 3, a gain block with NF and
+IIP3 stated): 1-Tone gain and NF 4×10⁻¹⁵ dB from the budget, 2-Tone IIP3 1.6×10⁻⁴ dB
+(`ChainBudgetTests.AnSnpStage_SimulatesToItsBudget`). The budget, like every stage's, ignores mismatch between stages:
+a file whose S11 or S22 is not small reads differently in the simulation, which is the bench's point.
+
+### 2.2 The levels, the canceller and the demo
 
 **`ChainLevels`** walks the budget's own cascade node by node — the signal, the noise floor in the bandwidth, the NF,
 the IM3 of two tones at the input power, every blocker, a canceller's interference, the margin to compression and the

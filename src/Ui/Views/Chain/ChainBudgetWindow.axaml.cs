@@ -135,6 +135,13 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         vm.PickOpenPathAsync = w.PickOpenAsync;
         vm.PickSavePathAsync = w.PickSaveAsync;
         vm.Report = text => Messages(owner)?.Warning(text);
+        // An unsaved chain's relative file references resolve from the workspace the window was opened from.
+        if (WorkspaceLocator.For(owner)?.CurrentWorkspacePath is { } ws && Path.GetDirectoryName(ws) is { } root)
+        {
+            vm.HostWorkspaceRoot = root;
+            vm.Recompute();
+        }
+        vm.FileWanted = p => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = w.PickTouchstoneAsync(p));
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ChainBudgetViewModel.FilePath) && vm.FilePath is { } p) OpenByPath[p] = w;
@@ -166,6 +173,31 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
             Title = "Open RF Chain Budget", AllowMultiple = false, FileTypeFilter = [ChainFiles, FilePickerFileTypes.All],
         });
         return files.FirstOrDefault()?.TryGetLocalPath();
+    }
+
+    private static readonly FilePickerFileType TouchstoneFiles =
+        new("Touchstone") { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp", "*.ts"] };
+
+    /// <summary>The "…" beside an SnP stage's File: pick the Touchstone file.</summary>
+    private void OnPickFileClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ChainParamViewModel p) _ = PickTouchstoneAsync(p);
+    }
+
+    /// <summary>Asks for a Touchstone file and writes it into <paramref name="param"/>, relative to the chain's workspace
+    /// when it is under it. Cancelled, the field is left as it was.</summary>
+    private async Task PickTouchstoneAsync(ChainParamViewModel param)
+    {
+        if (Vm is not { } vm) return;
+        string? start = vm.ReferenceBase;
+        if (ChainSnp.Resolve(param.Value.Trim().Trim('"'), vm.ReferenceBase) is { } current
+            && Path.GetDirectoryName(current) is { } folder && Directory.Exists(folder)) start = folder;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Touchstone File", AllowMultiple = false, FileTypeFilter = [TouchstoneFiles, FilePickerFileTypes.All],
+            SuggestedStartLocation = start is not null ? await StorageProvider.TryGetFolderFromPathAsync(start) : null,
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) param.Value = vm.FileReference(path);
     }
 
     private async Task<string?> PickSaveAsync(string? current)

@@ -10,7 +10,8 @@
 //    - every plot the window shows has a container in its host, which is what a plot's Copy renders;
 //    - every edit undoes, back to the clean document; a typed value is one step; Save moves the clean point;
 //    - a value the budget refuses never reaches the views: a typed one is flagged and put back on leaving the box, a
-//      pick is undone at once.
+//      pick is undone at once — except the S-parameter data part, which needs a file before it can evaluate: it is kept,
+//      its File box flagged and a file asked for, and a file picked is written relative to the chain's workspace.
 // ================================================================
 
 using System;
@@ -243,6 +244,33 @@ public sealed class ChainBudgetWindowTests
         Assert.Equal("Direct", vm.Stages.First(st => st.Part.Token == ChainParts.Combiner).Parameters.First(p => p.Name == "Topology").Value);
         Assert.StartsWith("Not applied:", vm.Refusals, StringComparison.Ordinal);
         Assert.NotNull(vm.Budget?.Totals);
+    }
+
+    [Fact]
+    public void PickingTheSnpPart_KeepsIt_FlagsItsFile_AndAsksForOne()
+    {
+        string ws = Path.Combine(Path.GetTempPath(), "crf-chainsnp-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(Path.Combine(ws, "data"));
+        try
+        {
+            File.WriteAllText(Path.Combine(ws, "data", "lna.s2p"), "# GHz S MA R 50\n1 0 0 0.9 0 0.9 0 0 0\n4 0 0 0.9 0 0.9 0 0 0\n");
+            var vm = new ChainBudgetViewModel(Chain(("A", ChainParts.Amp, []))) { HostWorkspaceRoot = ws };
+            ChainParamViewModel? asked = null;
+            vm.FileWanted = p => asked = p;
+
+            vm.Stages[0].Part = ChainParts.Find(ChainParts.Snp)!;
+
+            Assert.Equal(ChainParts.Snp, vm.Stages[0].Part.Token);
+            Assert.NotNull(asked);
+            Assert.True(asked!.Invalid);
+            Assert.Contains("no Touchstone file is named", vm.Refusals);
+
+            asked.Value = vm.FileReference(Path.Combine(ws, "data", "lna.s2p"));
+            Assert.Equal("data/lna.s2p", asked.Value);
+            Assert.True(vm.Recompute(), vm.Refusals);
+            Assert.False(asked.Invalid);
+        }
+        finally { try { Directory.Delete(ws, true); } catch (IOException) { } }
     }
 
     [Fact]

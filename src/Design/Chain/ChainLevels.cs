@@ -7,7 +7,8 @@
 //   signal      Pin + G                                  (per tone of the two; per element before a combiner)
 //   noise       10·log10(k·(Ts + Te)·B·Gn) + 30          (integrated over the bandwidth)
 //   IM3         3·P − 2·OIP3                              (the two tones' third-order products, each)
-//   blocker     L + Σ gᵢ(f_b)                             (a filter's |S21| at f_b, a mixer moving f_b to |f_b − Flo|)
+//   blocker     L + Σ gᵢ(f_b)                             (a filter's |S21| at f_b, an SnP file's |S(Out,In)|, a mixer
+//                                                          moving f_b to |f_b − Flo|)
 //   margin      OP1dB − max(signal, blockers)            (before anything compresses, the whole chain's IP1dB − Pin)
 //   SNR         signal − noise
 
@@ -43,7 +44,7 @@ public static class ChainLevels
         {
             var st = d.Stages[i];
             var row = r.Stages[i];
-            for (int k = 0; k < nb; k++) blk[k] += GainAt(st, row.Stage, ref fb[k]);
+            for (int k = 0; k < nb; k++) blk[k] += GainAt(st, row.Stage, ref fb[k], d.BaseDirectory);
             if (st.Part == ChainParts.Canceller)
             {
                 // The interference is stated at the canceller's input; after it, only its residual goes on.
@@ -66,9 +67,11 @@ public static class ChainLevels
     /// <summary>
     /// A stage's gain at a frequency other than the chain's, dB, and the frequency after it. A filter's is its own
     /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included; a mixer
-    /// moves the frequency to |f − Flo|; every other part is flat, so its gain is the budget's signal gain.
+    /// moves the frequency to |f − Flo|; an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency
+    /// outside its range (as the block clamps it); every other part is flat, so its gain is the budget's signal gain.
     /// </summary>
-    public static double GainAt(ChainStage s, StageBudget b, ref double fHz)
+    /// <param name="baseDirectory">Where an SnP stage's relative <c>File</c> resolves from.</param>
+    public static double GainAt(ChainStage s, StageBudget b, ref double fHz, string? baseDirectory = null)
     {
         double V(string key, double fallback) => ChainValue.Or(s.Get(key), fallback);
         switch (s.Part)
@@ -83,6 +86,8 @@ public static class ChainLevels
             case ChainParts.Mixer:
                 fHz = Math.Abs(fHz - V("Flo", 0));
                 return b.GainDb;
+            case ChainParts.Snp:
+                return ChainSnp.GainDbAt(s, baseDirectory, fHz, out _) is { } g ? g : b.GainDb;
             default:
                 return b.GainDb;
         }

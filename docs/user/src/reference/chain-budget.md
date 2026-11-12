@@ -109,7 +109,8 @@ what it writes.
 A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
 blocks — the splitter and the array combiner are the library's [Combiner](system-components.html#combiner), an
 active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter or canceller,
-so three more are **composed** of parts it does have. Transfer places exactly that composition.
+so three more are **composed** of parts it does have. Transfer places exactly that composition. One more is **data**:
+an [S-parameter data](#snp) stage is a Touchstone file.
 
 | Part | What it is | Budget |
 |---|---|---|
@@ -124,11 +125,46 @@ so three more are **composed** of parts it does have. Transfer places exactly th
 | Limiter (composed) | An Amplifier of gain −`IL`, NF = `IL`, whose intercept puts its input 1 dB compression point at `P1dB`. | G = −`IL`, NF = `IL`, IP1dB = `P1dB` |
 | Canceller (composed) | A Directional Coupler whose isolated port takes a reference path that subtracts a copy of an interference from the main path. See [The canceller](#canceller). | G = −(`IL` − 10·log10(1 − c)), NF from the reference path's noise |
 | N-way splitter | The [Combiner](system-components.html#combiner) from its common port, one output followed and the others terminated. | G = −(10·log10 N + `IL`), NF = −G |
+| S-parameter data (`SnP`) | A Touchstone file on the [SnP](components.html#snp) block, read from port `In` to port `Out`. See [S-parameter data](#snp). | G = \|S(`Out`,`In`)\|² at the stage's frequency; NF from the file's noise data, or its own loss when passive; `NF` and `IIP3` when stated |
 | N-way array combiner | The [Combiner](system-components.html#combiner), every input an element's branch: one N:1, or a tree of 2:1s, passive or active. See [Arrays](#array) and [the variants](#variants). | Direct, passive: signal +10·log10 N − `IL`, noise −`IL`, NF = `IL` |
 
 **P1dB follows from the intercept** for every part that compresses, because an ideal Amplifier and Mixer have one
 nonlinearity, a tanh limiter, whose 1 dB compression point is IIP3 − 8.9625 dB. The budget uses the part's own law, so
 the simulation it is checked against compresses where the budget says.
+
+### S-parameter data {#snp}
+
+An **S-parameter data** stage puts a measured or simulated part into the chain as its Touchstone file: a filter, an
+LNA, a cable, a board. Pick the file with **…** beside **File**; a file inside the workspace is written relative to it,
+so the chain and its benches move with the workspace. Choosing the part asks for the file at once.
+
+The file is interpolated to the frequency the stage sees — the chain's, or after a mixer the IF — exactly as the SnP
+block interpolates it in a simulation, and renormalised to 50 Ω if it is referenced to another impedance. A file with
+more than two ports is read from `In` to `Out`, every other port terminated in 50 Ω.
+
+| Quantity | From the file |
+|---|---|
+| Gain | \|S(`Out`,`In`)\|², between 50 Ω terminations |
+| NF, from noise data | A two-port read 1 → 2 with a noise block: its Fmin, Γopt and Rn at the stage's frequency (linear between rows, as the block takes them), at a 50 Ω source |
+| NF, passive, no noise data | Its own thermal noise: F = (1 − \|S(`Out`,`Out`)\|²) / \|S(`Out`,`In`)\|², its loss when matched |
+| NF, with gain and no noise data | Unknown: give `NF` |
+| IIP3 | `IIP3`; blank, linear |
+
+`NF` stated replaces the file's figure and may not be below it. On the benches a stated `NF` above the file's own, or a
+stated `IIP3`, is an ideal Amplifier of 0 dB after the block that carries the extra noise and the intercept, so the
+simulation still checks the stage.
+
+The budget does not extrapolate. It refuses the chain, naming the stage, when:
+
+- no file is named, there is no file at the path, or the file is not Touchstone;
+- `In` or `Out` is not one of the file's ports, or both are the same port;
+- the stage's frequency is outside the file's frequencies, or outside its noise rows when the noise comes from them
+  (state `NF` to use the file there);
+- the file has gain and no noise data, and `NF` is blank;
+- a relative path is given in a chain that has not been saved.
+
+A blocker that reaches the stage outside the file's frequencies is carried at the file's nearest frequency, as the block
+holds it in a simulation, and the Notes say so.
 
 ## What the cascade computes {#cascade}
 
@@ -310,7 +346,7 @@ stage k. At every node:
 | Noise floor | 10·log10(k·(Ts + Te)·B·Gn) + 30 dBm, the noise in the bandwidth |
 | NF | the cumulative noise figure |
 | IM3 | 3·P − 2·OIP3, each third-order product of the two tones, absolute |
-| Each blocker | its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), a mixer moving it to \|f − Flo\| |
+| Each blocker | its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), an S-parameter data stage's file there, a mixer moving it to \|f − Flo\| |
 | A canceller's interference | from the canceller's input, where it is stated, and its residual after it |
 | Margin to compression | OP1dB − the larger of the signal and the blockers; before anything compresses, the whole chain's IP1dB less the input's |
 | SNR | the signal over the noise floor |
@@ -461,12 +497,13 @@ as the part's netlist line carries them.
 | `FormatVersion` | 1. A file from a newer circuitRF is refused, not read in part. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
 | `Stages` | In signal order. `Name` follows the instance-name rule (a letter, then letters, digits and `_`). |
-| `Part` | `Amp`, `Mixer`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Splitter` or `Combiner`. |
+| `Part` | `Amp`, `Mixer`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
 | `Parameters` | The part's parameters by their own names. An absent one takes the part's default (a System block's own placement default); one the part does not list is carried onto the schematic unchanged and not read by the budget. |
 | `Blockers` | Optional: `[{"OffsetHz": 150000000, "LevelDbm": -40}, …]`, each an offset from `FrequencyHz` and a level at the input. |
 | `Demo` | Optional: `true` to write the [demo bench](#demo) too. |
 
-A chain has at most one Combiner.
+A chain has at most one Combiner. An `SnP` stage's `File` is a path; a relative one resolves from the workspace the
+`.cchain` belongs to, or its own folder when it belongs to none.
 
 ## From the command line {#cli}
 

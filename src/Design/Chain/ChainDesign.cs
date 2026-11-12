@@ -66,6 +66,25 @@ public sealed class ChainDesign
     /// its constellation, and its EVM against the input power.</summary>
     public bool Demo { get; set; }
 
+    /// <summary>The directory a stage's relative file reference (an SnP stage's <c>File</c>) resolves against: the
+    /// workspace the <c>.cchain</c> belongs to, or its own folder when it belongs to none, by the rule a schematic's
+    /// references resolve by. Not stored in the file; set by <see cref="ChainDesignIo.LoadFromFile"/> and by whoever
+    /// holds an unsaved chain. Null: only a full path resolves.</summary>
+    public string? BaseDirectory { get; set; }
+
+    /// <summary>The frequency at each stage's INPUT, Hz: the chain's, moved to |f − Flo| by every mixer passed.</summary>
+    public IReadOnlyList<double> StageInputFrequencies()
+    {
+        var f = new double[Stages.Count];
+        double hz = FrequencyHz;
+        for (int i = 0; i < Stages.Count; i++)
+        {
+            f[i] = hz;
+            if (Stages[i].Part == ChainParts.Mixer) hz = Math.Abs(hz - ChainValue.Or(Stages[i].Get("Flo"), 0));
+        }
+        return f;
+    }
+
     /// <summary>Why this design cannot be budgeted, or null. Every cause, one sentence each.</summary>
     public IReadOnlyList<string> Refusals()
     {
@@ -76,8 +95,10 @@ public sealed class ChainDesign
         if (Stages.Count == 0) r.Add("The chain has no stages.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int combiners = 0;
-        foreach (var s in Stages)
+        var inputHz = StageInputFrequencies();
+        for (int si = 0; si < Stages.Count; si++)
         {
+            var s = Stages[si];
             if (NameValidatorOk(s.Name) is { } why) r.Add($"Stage '{s.Name}': {why}");
             else if (!names.Add(s.Name)) r.Add($"Two stages are named '{s.Name}'.");
             if (ChainParts.Find(s.Part) is not { } part)
@@ -85,6 +106,7 @@ public sealed class ChainDesign
                 r.Add($"Stage '{s.Name}': '{s.Part}' is not a chain part. The parts are {string.Join(", ", ChainParts.All.Select(p => p.Token))}.");
                 continue;
             }
+            int before = r.Count;
             foreach (var p in part.Parameters.Where(p => p.Numeric))
                 if (!ChainValue.TryParse(s.Get(p.Name), out _) && !(p.BlankAllowed && s.Get(p.Name).Trim().Length == 0))
                     r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number.");
@@ -93,6 +115,8 @@ public sealed class ChainDesign
                 combiners++;
                 ChainParts.ReadCombiner(s, r);
             }
+            if (part.Token == ChainParts.Snp && r.Count == before && FrequencyHz > 0 && double.IsFinite(inputHz[si]))
+                ChainSnp.Read(s, new ChainStageContext(inputHz[si], BaseDirectory), r);
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
         foreach (var b in Blockers)
@@ -117,6 +141,7 @@ public sealed class ChainDesign
         FrequencyHz = FrequencyHz, BandwidthHz = BandwidthHz, InputPowerDbm = InputPowerDbm,
         TemperatureK = TemperatureK, RequiredSnrDb = RequiredSnrDb,
         Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers], Demo = Demo,
+        BaseDirectory = BaseDirectory,
     };
 }
 
@@ -214,7 +239,19 @@ public static class ChainDesignIo
     private const string Empty = "The .cchain file is empty.";
     private const string Newer = ".cchain FormatVersion {0} is newer than this circuitRF reads ({1}). Update the application.";
 
-    public static ChainDesign LoadFromFile(string path) => Deserialize(File.ReadAllText(path));
+    /// <summary>The design in <paramref name="path"/>, its <see cref="ChainDesign.BaseDirectory"/> the workspace the file
+    /// belongs to (its own folder when none).</summary>
+    public static ChainDesign LoadFromFile(string path)
+    {
+        var d = Deserialize(File.ReadAllText(path));
+        d.BaseDirectory = ReferenceBaseOf(path);
+        return d;
+    }
+
+    /// <summary>Where a <c>.cchain</c> at <paramref name="path"/> resolves its relative references from: the workspace it
+    /// belongs to, else <paramref name="hostWorkspaceRoot"/>, else its own folder (<see cref="Schematic.SchematicCircuit.ReferenceBaseOf"/>).</summary>
+    public static string? ReferenceBaseOf(string path, string? hostWorkspaceRoot = null)
+        => Schematic.SchematicCircuit.ReferenceBaseOf(path, hostWorkspaceRoot);
 
     public static void SaveToFile(string path, ChainDesign design) => AtomicFile.WriteAllText(path, Serialize(design));
 }

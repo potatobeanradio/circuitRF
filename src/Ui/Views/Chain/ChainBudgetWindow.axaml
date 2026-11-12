@@ -355,6 +355,8 @@
                                                         <TextBlock Classes="lbl" Text="{Binding Name}"/>
                                                         <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
                                                         <ComboBox Classes="p" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
+                                                        <Button Content="…" IsVisible="{Binding IsFile}" Click="OnPickFileClick" Padding="6,0" Margin="3,0,0,0"
+                                                                VerticalAlignment="Stretch" ToolTip.Tip="Pick the Touchstone file"/>
                                                         <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
                                                     </StackPanel>
                                                 </DataTemplate>

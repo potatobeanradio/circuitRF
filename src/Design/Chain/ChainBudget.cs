@@ -49,8 +49,10 @@ public static class ChainBudget
 
         var notes = new List<string>();
         var rows = new List<ChainStageResult>();
-        var budgets = d.Stages.Select(s => ChainParts.Find(s.Part)!.Budget(s)).ToList();
+        var inputHz = d.StageInputFrequencies();
+        var budgets = d.Stages.Select((s, i) => ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(inputHz[i], d.BaseDirectory))).ToList();
         foreach (var b in budgets) notes.AddRange(b.Notes);
+        notes.AddRange(BlockersOutsideFiles(d));
 
         double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0, f = d.FrequencyHz;
         double a = 1;
@@ -98,6 +100,24 @@ public static class ChainBudget
             double.IsPositiveInfinity(last.Iip3Dbm) ? double.PositiveInfinity : 2.0 / 3.0 * (last.Iip3Dbm - mdsT),
             Db(a), f);
         return new(rows, totals, [], notes);
+    }
+
+    /// <summary>Each blocker that reaches an SnP stage outside its file's range: carried at the file's edge value, as the
+    /// block clamps it in a simulation.</summary>
+    private static IEnumerable<string> BlockersOutsideFiles(ChainDesign d)
+    {
+        if (!d.Stages.Any(s => s.Part == ChainParts.Snp)) yield break;
+        for (int k = 0; k < d.Blockers.Count; k++)
+        {
+            double f = d.FrequencyHz + d.Blockers[k].OffsetHz;
+            foreach (var s in d.Stages)
+            {
+                if (s.Part == ChainParts.Snp && ChainSnp.GainDbAt(s, d.BaseDirectory, f, out bool outside) is not null && outside)
+                    yield return $"{s.Name}: blocker {k + 1} reaches it at {ChainSnp.Hz(f)}, outside its file's range; its gain " +
+                                 "there is taken at the file's nearest frequency, as the SnP block takes it in a simulation.";
+                if (s.Part == ChainParts.Mixer) f = Math.Abs(f - ChainValue.Or(s.Get("Flo"), 0));
+            }
+        }
     }
 
     /// <summary>

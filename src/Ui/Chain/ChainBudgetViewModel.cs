@@ -25,6 +25,8 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public IReadOnlyList<string>? Options => param.Options;
     public bool HasOptions => param.Options is { Count: > 0 };
     public bool IsText => !HasOptions;
+    /// <summary>The value names a file: the row offers a picker beside the box.</summary>
+    public bool IsFile => param.IsFile;
     public string Watermark => param.Default.Length > 0 ? param.Default : param.BlankAllowed ? "blank" : "";
 
     [ObservableProperty] private string _value = value;
@@ -47,6 +49,10 @@ public sealed record ChainBlockGlyph(SymbolKind Kind, string Caption, IReadOnlyL
 {
     public bool HasCaption => Caption.Length > 0;
 }
+
+/// <summary>An edit that leaves an SnP stage with no file yet: kept, with its File box drawn invalid as a value being
+/// typed is, and the window asked to pick one — rather than refused and undone, which would make the part unpickable.</summary>
+public sealed record ChainFileWanted(ChainParamViewModel Param);
 
 /// <summary>One stage row: its name, its part, the part's parameters, and the stage's own budget.</summary>
 public sealed partial class ChainStageViewModel : ObservableObject
@@ -108,8 +114,12 @@ public sealed partial class ChainStageViewModel : ObservableObject
     partial void OnPartChanged(ChainPart value)
     {
         Fill(ToStage());
-        _changed(null);
+        _changed(FileWanted());
     }
+
+    /// <summary>The File box of a stage that names no file yet, as the edit's key; null otherwise.</summary>
+    internal ChainFileWanted? FileWanted()
+        => Parameters.FirstOrDefault(p => p.IsFile) is { } p && string.IsNullOrWhiteSpace(p.Value) ? new ChainFileWanted(p) : null;
 
     private void Fill(ChainStage stage)
     {
@@ -403,8 +413,28 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     private static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
 
+    /// <summary>The workspace the window was opened from (its folder), where an unsaved chain's relative file references
+    /// resolve. Set by the window.</summary>
+    public string? HostWorkspaceRoot { get; set; }
+
+    /// <summary>The base a document handed in with no file of its own came with.</summary>
+    private string? _loadedBase;
+
+    /// <summary>Where the chain's relative file references resolve: the workspace its <c>.cchain</c> belongs to (its own
+    /// folder when none); unsaved, the base it was loaded with or the workspace the window was opened from.</summary>
+    public string? ReferenceBase => FilePath is { } p ? ChainDesignIo.ReferenceBaseOf(p, HostWorkspaceRoot)
+                                  : _loadedBase ?? HostWorkspaceRoot;
+
+    /// <summary>A file picked for a stage, as the reference written into it: relative to <see cref="ReferenceBase"/> when
+    /// under it, the full path otherwise.</summary>
+    public string FileReference(string path) => ChainSnp.Reference(path, ReferenceBase);
+
+    /// <summary>A stage now names no file and wants one picked: an SnP part chosen or inserted. Set by the window.</summary>
+    public Action<ChainParamViewModel>? FileWanted { get; set; }
+
     public void Load(ChainDesign d)
     {
+        _loadedBase = d.BaseDirectory;
         // Another document: the last good chain was the previous one's, and nothing of it may stand in for this one.
         _hasGood = false;
         SetErrorKey(null);
@@ -429,6 +459,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     public ChainDesign ToDesign() => new()
     {
+        BaseDirectory = ReferenceBase,
         FrequencyHz = Parse(Frequency, FrequencyScale, double.NaN),
         BandwidthHz = Parse(BandwidthMHz, 1e6, double.NaN),
         InputPowerDbm = Parse(InputPowerDbm, 1, double.NaN),
@@ -504,6 +535,12 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     private void Edited(object? key)
     {
         if (_loading || _restoring) return;
+        if (key is ChainFileWanted wanted)
+        {
+            Edited(wanted.Param);
+            FileWanted?.Invoke(wanted.Param);
+            return;
+        }
         var now = Capture();
         if (_current is { } before && !now.Content.Equals(before.Content))
         {
@@ -729,6 +766,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 ChainParts.Combiner => ChainParts.ReadCombiner(st).Describe()
                                        + (ChainValue.Or(st.Get("Steer"), 0) != 0 ? $", steer {st.Get("Steer")}°" : ""),
                 ChainParts.Splitter => $"1:{st.Get("N")}",
+                ChainParts.Snp => Path.GetFileName(ChainSnp.FileText(st)),
                 ChainParts.Canceller => CancellerSpec.Read(st) is var cs
                     ? $"depth {cs.DepthDb:0.#} dB, residual {cs.ResidualDbm:0.#} dBm" : "",
                 _ => "",
@@ -773,7 +811,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
             ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
             ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner,
-            ChainParts.Canceller => SymbolKind.Coupler, _ => SymbolKind.Amp,
+            ChainParts.Canceller => SymbolKind.Coupler, ChainParts.Snp => SymbolKind.Snp, _ => SymbolKind.Amp,
         };
         return [new ChainBlockGlyph(kind, st.Part == ChainParts.Splitter ? $"1:{st.Get("N")}" : "")];
     }
@@ -797,13 +835,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
             ChainParts.Switch => "SW", ChainParts.Circulator => "ISO", ChainParts.Coupler => "CPL",
             ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL",
-            ChainParts.Canceller => "CANC", _ => "CMB",
+            ChainParts.Canceller => "CANC", ChainParts.Snp => "SNP", _ => "CMB",
         };
         int n = 1;
         while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;
         var row = new ChainStageViewModel(new ChainStage { Name = $"{stem}{n}", Part = part.Token }, Edited);
         // The edit is reported BEFORE the selection moves, so the undo step keeps the selection the edit was made from.
-        Structural(() => { Stages.Insert(Math.Clamp(insertBefore, 0, Stages.Count), row); Changed(); });
+        Structural(() => { Stages.Insert(Math.Clamp(insertBefore, 0, Stages.Count), row); Edited(row.FileWanted()); });
         SelectedStage = row;
         return row;
     }

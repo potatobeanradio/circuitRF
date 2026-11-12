@@ -138,7 +138,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
     [Fact]
     public void TheComposedAndPassiveParts_HaveTheirClosedForms()
     {
-        StageBudget B(ChainStage s) => ChainParts.Find(s.Part)!.Budget(s);
+        StageBudget B(ChainStage s) => ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(2.45e9, null));
         var cpl = B(S("C", "Coupler", ("Coupling", "10"), ("IL", "0.2")));
         Assert.Equal(-(-Db(1 - 0.1) + 0.2), cpl.GainDb, 12);
         Assert.Equal(-cpl.GainDb, cpl.NfDb, 12);
@@ -731,6 +731,136 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");
 
     /// <summary>Transfers <paramref name="d"/> and runs one of its benches as Simulate runs it.</summary>
+    // ── S-parameter data (SnP) stages ────────────────────────────────────────
+
+    /// <summary>A Touchstone 1.x file of magnitude/angle rows, one matrix per frequency (rows of the matrix in order),
+    /// and noise rows (f GHz, NFmin dB, |Γopt|, ∠Γopt deg, rn) after them.</summary>
+    private string Touchstone(string name, int ports, IEnumerable<(double Ghz, double[,] Mag)> points,
+                              IEnumerable<(double Ghz, double NfMin, double GMag, double GDeg, double Rn)>? noise = null)
+    {
+        Directory.CreateDirectory(_ws);
+        var sb = new System.Text.StringBuilder("# GHz S MA R 50\n");
+        foreach (var (ghz, m) in points)
+        {
+            if (ports == 2) sb.AppendLine(FormattableString.Invariant($"{ghz} {m[0, 0]} 0 {m[1, 0]} 0 {m[0, 1]} 0 {m[1, 1]} 0"));
+            else
+                for (int r = 0; r < ports; r++)
+                    sb.AppendLine((r == 0 ? FormattableString.Invariant($"{ghz} ") : "  ") + string.Join(" ",
+                        Enumerable.Range(0, ports).Select(c => FormattableString.Invariant($"{m[r, c]} 0"))));
+        }
+        foreach (var n in noise ?? []) sb.AppendLine(FormattableString.Invariant($"{n.Ghz} {n.NfMin} {n.GMag} {n.GDeg} {n.Rn}"));
+        File.WriteAllText(Path.Combine(_ws, name), sb.ToString());
+        return name;
+    }
+
+    private static double[,] Two(double s21, double s12 = -1) => new[,] { { 0, s12 < 0 ? s21 : s12 }, { s21, 0 } };
+
+    /// <summary>The 50 Ω noise factor of noise parameters: Fmin + 4·rn·|Γopt|²/|1 + Γopt|².</summary>
+    private static double F50(double nfMinDb, double gMag, double gDeg, double rn)
+    {
+        var g = System.Numerics.Complex.FromPolarCoordinates(gMag, gDeg * Math.PI / 180);
+        return Lin(nfMinDb) + 4 * rn * gMag * gMag / Math.Pow((1 + g).Magnitude, 2);
+    }
+
+    /// <summary>Three SnP stages: a passive matched 3-port read from port 1 to port 3 (port 2 terminated), an amplifier
+    /// with noise data, and a gain block with no noise data whose NF and IIP3 are stated.</summary>
+    private ChainDesign SnpChain()
+    {
+        var p3 = new[,] { { 0, 0.5, 0.5 }, { 0.5, 0, 0.2 }, { 0.5, 0.2, 0 } };
+        Touchstone("split.s3p", 3, [(1, p3), (4, p3)]);
+        Touchstone("lna.s2p", 2, [(1, Two(3.0, 0.01)), (2, Two(3.2, 0.01)), (3, Two(3.4, 0.01))],
+                   [(1, 0.8, 0.3, 30, 0.2), (3, 1.2, 0.4, 50, 0.3)]);
+        Touchstone("gain.s2p", 2, [(1, Two(2, 0.02)), (4, Two(2, 0.02))]);
+        return new ChainDesign
+        {
+            FrequencyHz = 2.45e9, BandwidthHz = 1e6, InputPowerDbm = -60, BaseDirectory = _ws,
+            Stages =
+            [
+                S("LNA", "SnP", ("File", "lna.s2p")),
+                S("SPL", "SnP", ("File", "split.s3p"), ("In", "1"), ("Out", "3")),
+                S("GB", "SnP", ("File", Path.Combine(_ws, "gain.s2p")), ("NF", "4"), ("IIP3", "5")),
+                S("ATT", "Atten", ("Loss", "2")),
+            ],
+        };
+    }
+
+    [Fact]
+    public void AnSnpStage_IsItsFileInterpolatedToTheStageFrequency_WithItsOwnNoise()
+    {
+        var r = ChainBudget.Evaluate(SnpChain());
+        Assert.Empty(r.Refusals);
+        // |S21| is linear in f, which a cubic spline reproduces: 3.0 + 0.2·1.45 at 2.45 GHz. Its noise rows are linear
+        // between 1 and 3 GHz in Fmin (a factor), Γopt and rn, read at a 50 Ω source.
+        var lna = r.Stages[0].Stage;
+        Assert.Equal(20 * Math.Log10(3.29), lna.GainDb, 9);
+        double t = 0.725;
+        var gopt = System.Numerics.Complex.FromPolarCoordinates(0.3, 30 * Math.PI / 180) * (1 - t)
+                 + System.Numerics.Complex.FromPolarCoordinates(0.4, 50 * Math.PI / 180) * t;
+        double rn = 0.2 * (1 - t) + 0.3 * t, fmin = Lin(0.8) * (1 - t) + Lin(1.2) * t;
+        Assert.Equal(Db(fmin + 4 * rn * gopt.Magnitude * gopt.Magnitude / Math.Pow((1 + gopt).Magnitude, 2)), lna.NfDb, 9);
+        // The passive 3-port, port 2 terminated: |S31|² of gain, its own loss of noise.
+        Assert.Equal(-Db(4), r.Stages[1].Stage.GainDb, 9);
+        Assert.Equal(Db(4), r.Stages[1].Stage.NfDb, 9);
+        // The gain block: the file's gain, the NF and intercept stated.
+        Assert.Equal(Db(4), r.Stages[2].Stage.GainDb, 9);
+        Assert.Equal(4, r.Stages[2].Stage.NfDb, 9);
+        Assert.Equal(5, r.Stages[2].Stage.Iip3Dbm, 9);
+        // After a mixer the stage is read at the IF, 350 MHz, which the 1 GHz files do not cover.
+        var d = SnpChain();
+        d.Stages.Insert(0, S("MIX", "Mixer", ("Flo", "2.1 GHz")));
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("'LNA': the stage is at 350 MHz, outside 'lna.s2p'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnSnpStage_ThatCannotBeRead_IsRefusedWithItsReason()
+    {
+        var good = SnpChain();
+        File.WriteAllText(Path.Combine(_ws, "junk.s2p"), "# GHz S MA R 50\nnot a number at all\n");
+        string Why(params (string K, string V)[] p)
+        {
+            var d = good.Clone();
+            d.Stages[0] = S("X", "SnP", p);
+            var r = ChainBudget.Evaluate(d);
+            Assert.Null(r.Totals);
+            return string.Join("\n", r.Refusals);
+        }
+        Assert.Contains("no Touchstone file is named", Why());
+        Assert.Contains("there is no file at", Why(("File", "missing.s2p")));
+        Assert.Contains("could not be read as Touchstone", Why(("File", "junk.s2p")));
+        Assert.Contains("Out = '3' is not a port of 'lna.s2p', which has 2 ports", Why(("File", "lna.s2p"), ("Out", "3")));
+        Assert.Contains("has gain at 2.45 GHz and holds no noise data, so its noise figure is unknown. Give NF",
+                        Why(("File", "gain.s2p")));
+        Assert.Contains("below the", Why(("File", "split.s3p"), ("Out", "3"), ("NF", "1")));
+        // A frequency outside the S-parameters, and outside the noise rows when the noise comes from them.
+        var hi = good.Clone(); hi.FrequencyHz = 5e9;
+        Assert.Contains(ChainBudget.Evaluate(hi).Refusals, x => x.Contains("holds 1 GHz to 3 GHz. The budget does not extrapolate", StringComparison.Ordinal));
+        Touchstone("lna-narrow.s2p", 2, [(1, Two(3.0)), (4, Two(3.0))], [(1, 0.8, 0.3, 30, 0.2), (2, 1.0, 0.3, 30, 0.2)]);
+        Assert.Contains("outside the noise data in 'lna-narrow.s2p', which covers 1 GHz to 2 GHz. Give NF",
+                        Why(("File", "lna-narrow.s2p")));
+        var stated = good.Clone();
+        stated.Stages[0] = S("X", "SnP", ("File", "lna-narrow.s2p"), ("NF", "2"));
+        Assert.Empty(ChainBudget.Evaluate(stated).Refusals);
+        // A relative path with nowhere to resolve it from.
+        var unsaved = good.Clone(); unsaved.BaseDirectory = null;
+        Assert.Contains(ChainBudget.Evaluate(unsaved).Refusals, x => x.Contains("is a relative path, and the chain is not saved", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnSnpStage_SimulatesToItsBudget()
+    {
+        var d = SnpChain();
+        var one = Bench(d, "Snp", ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
+        Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);
+        foreach (var s in d.Stages) Assert.InRange(Measure(one, $"NF_{s.Name}_sim") - Measure(one, $"NF_{s.Name}_calc"), -1e-6, 1e-6);
+        var two = Bench(d, "Snp", ChainBench.TwoTone);
+        Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+        // A file in the workspace is named relative to it on the benches, even one the chain gave as a full path.
+        string text = File.ReadAllText(Csch(ChainBenches.CellName("Snp", ChainBench.OneTone)));
+        Assert.Contains("gain.s2p", text);
+        Assert.DoesNotContain(Path.Combine(_ws, "gain.s2p"), text);
+    }
+
     private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null)
     {
         Directory.CreateDirectory(_ws);

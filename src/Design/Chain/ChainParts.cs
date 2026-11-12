@@ -13,6 +13,9 @@
 //   Canceller     a Coupler whose isolated port takes a reference path (an Amp for the amplitude, a Combiner path for
 //                 a flat phase, a TLIN for the delay) that subtracts a copy of the interference from the main path
 //
+// And ONE IS DATA: an SnP stage is a Touchstone file on the library's SnP block, its budget read from the file at the
+// stage's frequency (ChainSnp).
+//
 // The budget of each is closed form. A matched passive part at T0 has NF = its loss. An ideal Amp's and Mixer's
 // 1 dB compression point is its tanh limiter's own, IIP3 − 8.9625 dB (src/Core/Devices/ThirdOrderLimiter.cs), which is
 // what the transfer's simulation then measures. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
@@ -27,8 +30,13 @@ namespace CircuitRF.Design.Chain;
 /// <summary>One parameter of a chain part: its name, its default text, the unit a bare number is in, and how it reads.</summary>
 /// <param name="Options">For a parameter that names a choice (<c>IP3Ref</c>, <c>Response</c>), the choices.</param>
 /// <param name="BlankAllowed">True when blank means something (an Amp's blank NF is a noiseless amplifier).</param>
+/// <param name="IsFile">The parameter names a file, which the window offers a picker for.</param>
 public sealed record ChainParam(string Name, string Default, string Unit, bool Numeric = true, bool BlankAllowed = false,
-                                IReadOnlyList<string>? Options = null, string Help = "");
+                                IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false);
+
+/// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
+/// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
+public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory);
 
 /// <summary>What one stage does to a budget, on its own.</summary>
 /// <param name="GainDb">Signal (available-power) gain, dB. A Combiner's includes its coherent 10·log10(N).</param>
@@ -43,7 +51,7 @@ public sealed record StageBudget(double GainDb, double NoiseGainDb, double NfDb,
 /// <summary>A chain part: its token in a <c>.cchain</c>, what it is called, whether the library has it as one block, and
 /// its budget.</summary>
 public sealed record ChainPart(string Token, string Title, bool BuiltIn, IReadOnlyList<ChainParam> Parameters,
-                               string Summary, Func<ChainStage, StageBudget> Budget)
+                               string Summary, Func<ChainStage, ChainStageContext, StageBudget> Budget)
 {
     public string Default(string key) => Parameters.FirstOrDefault(p => p.Name == key)?.Default ?? "";
 }
@@ -52,7 +60,8 @@ public static class ChainParts
 {
     public const string Amp = "Amp", Mixer = "Mixer", Atten = "Atten", Filter = "Filter", Switch = "Switch",
                         Circulator = "Circulator", Coupler = "Coupler", PhaseShifter = "PhaseShifter",
-                        Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner", Canceller = "Canceller";
+                        Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner", Canceller = "Canceller",
+                        Snp = "SnP";
 
     /// <summary>tanh's 1 dB compression point below its input intercept, dB — the ideal Amp's and Mixer's own
     /// (<c>ThirdOrderLimiter</c>; system-components.md, Amplifier).</summary>
@@ -93,7 +102,7 @@ public static class ChainParts
              Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"])],
             "An ideal gain block. P1dB follows from IP3: IIP3 − 8.96 dB. Any gain, negative included, so it is also the " +
             "stage for any other block that has a gain, a noise figure and an intercept.",
-            s =>
+            (s, _) =>
             {
                 double g = Num(s, "Gain"), ip = Num(s, "IP3", 40);
                 bool blankNf = s.Get("NF").Trim().Length == 0;
@@ -109,7 +118,7 @@ public static class ChainParts
              new("Flo", "2.1 GHz", "Hz", Help: "the LO frequency; the output is the difference |f − Flo|")],
             "An ideal multiplier, down-converting to |f − Flo|. Its noise is its single-sideband figure: the image is " +
             "taken as terminated at T0 and filtered of every earlier stage's noise.",
-            s =>
+            (s, _) =>
             {
                 double g = Num(s, "ConvGain"), ip = Num(s, "IIP3", 100);
                 var notes = new List<string>();
@@ -129,7 +138,7 @@ public static class ChainParts
                 return new(g, g, nf, iip3, P1(iip3), 1, notes);
             }),
         new(Atten, "Attenuator", true, [Reg(SymbolKind.Atten, "Loss")],
-            "A matched pad. Its noise figure is its loss.", s => Passive(Num(s, "Loss"))),
+            "A matched pad. Its noise figure is its loss.", (s, _) => Passive(Num(s, "Loss"))),
         new(Filter, "Filter", true,
             [Reg(SymbolKind.Filter, "Response", numeric: false, options: ["Butterworth", "Chebyshev", "InvChebyshev", "Bessel", "Elliptic"]),
              Reg(SymbolKind.Filter, "Form", numeric: false, options: ["Bandpass", "Lowpass", "Highpass"]),
@@ -138,23 +147,23 @@ public static class ChainParts
              Reg(SymbolKind.Filter, "IL")],
             "A synthesised filter. In its passband the budget is its IL, and its noise figure is that loss; " +
             "a Chebyshev's ripple is not in the budget.",
-            s => Passive(Num(s, "IL"))),
+            (s, _) => Passive(Num(s, "IL"))),
         new(Switch, "Switch", true, [Reg(SymbolKind.Switch, "IL")],
-            "A closed SPST switch. Its noise figure is its insertion loss.", s => Passive(Num(s, "IL"))),
+            "A closed SPST switch. Its noise figure is its insertion loss.", (s, _) => Passive(Num(s, "IL"))),
         new(Circulator, "Isolator (Circulator)", true, [Reg(SymbolKind.Circulator, "IL")],
             "A circulator with its third port terminated: an isolator. Its noise figure is its insertion loss.",
-            s => Passive(Num(s, "IL"))),
+            (s, _) => Passive(Num(s, "IL"))),
         new(Coupler, "Directional coupler (through arm)", true, [Reg(SymbolKind.Coupler, "Coupling"), Reg(SymbolKind.Coupler, "IL")],
             "The through arm of a directional coupler, coupled and isolated ports terminated: the coupled power and IL " +
             "are both loss.",
-            s => Passive(-10 * Math.Log10(1 - Math.Pow(10, -Num(s, "Coupling", 20) / 10)) + Num(s, "IL"))),
+            (s, _) => Passive(-10 * Math.Log10(1 - Math.Pow(10, -Num(s, "Coupling", 20) / 10)) + Num(s, "IL"))),
         new(PhaseShifter, "Phase shifter (composed)", false,
             [new("Phase", "0", "deg", Help: "insertion phase; an array adds each element's steering to it"),
              new("IL", "5", "dB", Help: "insertion loss"),
              new("NF", "", "dB", BlankAllowed: true, Help: "blank: equal to IL, a passive shifter"),
              new("IIP3", "", "dBm", BlankAllowed: true, Help: "blank: linear")],
             "An Amp of gain −IL with this NF and IIP3, and a TLIN whose electrical length is the phase.",
-            s =>
+            (s, _) =>
             {
                 double il = Num(s, "IL");
                 double nf = s.Get("NF").Trim().Length == 0 ? il : Num(s, "NF");
@@ -164,7 +173,7 @@ public static class ChainParts
         new(Limiter, "Limiter (composed)", false,
             [new("IL", "0.5", "dB", Help: "insertion loss"), new("P1dB", "10", "dBm", Help: "input 1 dB compression point")],
             "An Amp of gain −IL and NF = IL whose intercept puts its input 1 dB compression point at P1dB.",
-            s =>
+            (s, _) =>
             {
                 double il = Num(s, "IL"), p1 = Num(s, "P1dB", 10);
                 return new(-il, -il, il, p1 + TanhP1dbBelowIip3, p1, 1, []);
@@ -173,7 +182,7 @@ public static class ChainParts
             [new("N", "2", "", Help: "number of ways"), new("IL", "0.3", "dB", Help: "excess loss above the split")],
             "The library's N-way Combiner used from its common port, one output followed and the others terminated: a " +
             "loss of 10·log10(N) + IL, and that loss is its noise figure.",
-            s =>
+            (s, _) =>
             {
                 int n = Math.Max(2, (int)Math.Round(Num(s, "N", 2)));
                 return Passive(10 * Math.Log10(n) + Num(s, "IL"));
@@ -191,7 +200,17 @@ public static class ChainParts
             "A reference path — amplitude, phase and delay — subtracted from the main path through a directional " +
             "coupler. Its depth is set by the amplitude and phase error and, over the interference's bandwidth, the delay " +
             "mismatch; on the wanted signal it is the coupler's through loss and the noise the reference path injects.",
-            s => CancellerSpec.Read(s).Budget()),
+            (s, _) => CancellerSpec.Read(s).Budget()),
+        new(Snp, "S-parameter data (SnP)", true,
+            [new("File", "", "", Numeric: false, Help: "a Touchstone file (.s2p, .snp); a relative path is from the workspace", IsFile: true),
+             new("In", "1", "", Help: "the file's port the chain enters at"),
+             new("Out", "2", "", Help: "the file's port the chain leaves from; every other port is terminated in 50 Ω"),
+             new("NF", "", "dB", BlankAllowed: true, Help: "blank: from the file, its noise data or a passive network's own loss"),
+             new("IIP3", "", "dBm", BlankAllowed: true, Help: "blank: linear")],
+            "Measured or simulated S-parameters from a Touchstone file, interpolated to the stage's frequency (after a " +
+            "mixer, the IF) as the SnP block interpolates them. Its gain is |S(Out,In)|² between 50 Ω ports; its noise " +
+            "figure is the file's noise data at a 50 Ω source, or a passive network's own loss when the file has none.",
+            (s, c) => ChainSnp.Budget(s, c)),
         new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
              new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree"],
@@ -209,7 +228,7 @@ public static class ChainParts
             "N identical branches combined in phase: signal +10·log10(N), uncorrelated noise not, so the SNR improves by " +
             "10·log10(N). Direct is one N:1 combiner, Tree log2(N) levels of 2:1 ones; a passive combiner's noise figure " +
             "is its loss, an active one cascades its amplifiers level by level.",
-            s => ReadCombiner(s).Budget()),
+            (s, _) => ReadCombiner(s).Budget()),
     ];
 
     // ── the combiner's variants ──────────────────────────────────────────────
