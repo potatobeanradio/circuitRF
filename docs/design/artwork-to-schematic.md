@@ -410,11 +410,14 @@ one node**: an island's copper that no trace piece covers (each piece's strip ta
 copper, and in each connected region of it every line end the review names a `"pad"` end (half a width past it) and every
 part terminal, via end and port is joined by an ideal short, reported as `PadsJoinTheirMembers` with the pad's size. A
 junction's centre is no pad: its arms end on it as `"junction"`. Pad copper is the island less what the review
-returned, so a trace it did not read (an arc) is in it too: each region is cut to its cores — eroded by half of
+returned, so a trace it did not read (an arc) is in it too: each region is cut to its cores twice, and a member either
+cut parts from the first is still joined but reported as `CopperJoinedWithoutLine`. By the lines: eroded by half of
 `PadWidthStep` times the widest line ending in it (else the widest trace on the layer), so that all copper no wider than
-the lines by the review's pad-to-trace step goes, and grown back by as much — and a member on no core, or on another
-core than the first, is still joined but reported as `CopperJoinedWithoutLine` (with no core left at all, a member
-farther than a line end reaches from the first is). Modelling
+the lines by the review's pad-to-trace step goes, and grown back by as much; a member on no core, or on another core than
+the first, is named (with no core left at all, a member farther than a line end reaches from the first is). By the region
+itself: eroded by its largest inscribed radius over `PadWidthStep`, so every part narrower than its widest goes; a member
+nearest another core than the first's is named. The first catches an unread trace into a smaller pad or straight to a
+part, the second one on a layer with no trace or one wider than the lines. Modelling
 a pad as a wide line or a junction is a later step. A part terminal, via or port no line reaches joins the nearest line end on its island, or the island's other
 attachments.
 `LineRecognitionResult.NodeOf(name)` gives the node any of those names ended up as.

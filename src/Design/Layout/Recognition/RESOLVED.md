@@ -904,3 +904,11 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   of the body, so an 0603 body across a gap in a 0.5 mm coplanar line, its long edges 0.05 mm over the pours, was refused:
   "C1 names no part", both line ends open. A third piece now counts only where it covers what an end must (a quarter of a
   half, `MinEndCover`) under either end or the body's middle. Gate: `PartReadingTests.ABodyWiderThanItsCoplanarLine_IsStillASeriesPart`.
+- **Both cuts, not one** (F5, third review). The lines' cut alone left two silent shorts the region's own cut had named.
+  On a layer with no trace there is no line width to cut by: two 3 mm via pads on an inner layer joined only by the
+  unread 8.85 mm, 1.1 mm arc were one pad, and the check said the circuit agreed. And an unread arc wider than the lines
+  (1.5 mm, the lines 1.1 mm) outlasts a cut of 0.66 mm. Each region is now cut both ways — by the lines, and by its own
+  largest inscribed radius over `PadWidthStep` — and a member either cut parts from the first is named. Neither cut alone
+  flags the 4.5 mm device pad, the 5 mm `DevicePad` board, or a shunt part on a 1.5 mm stub of a 3 mm pad, and their union
+  flags none of them either. Gates: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`
+  (the 1.5 mm arc row) and `PadsAndTapsTests.ViaPadsJoinedByAnUnreadTrace_OnALayerWithNoTrace_AreNamedAsJoinedAcrossCopper`.

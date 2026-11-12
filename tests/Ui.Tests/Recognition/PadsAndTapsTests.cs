@@ -176,10 +176,10 @@ public sealed class PadsAndTapsTests
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
     }
 
-    /// <summary>A 30 × 16 mm board: C1 across a gap into a 3 mm pad and the 7.85 mm, 1.1 mm quarter arc from it: into a <paramref name="farPad"/>
-    /// square pad and C2 across a gap out of it to a line to the right edge, or with no far pad (0) straight to C2's body, its
-    /// gap and a line up to the top edge.</summary>
-    private static LayoutView ArcBoard(double farPad)
+    /// <summary>A 30 × 16 mm board: C1 across a gap into a 3 mm pad and the 7.85 mm quarter arc from it, 1.1 mm wide as the lines
+    /// or <paramref name="arcWidth"/>: into a <paramref name="farPad"/> square pad and C2 across a gap out of it to a line to the
+    /// right edge, or with no far pad (0) straight to C2's body, its gap and a line up to the top edge.</summary>
+    private static LayoutView ArcBoard(double farPad, double arcWidth = 1_100)
     {
         var view = new LayoutView();
         view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 16_000));
@@ -205,12 +205,12 @@ public sealed class PadsAndTapsTests
         for (int k = 0; k <= 24; k++)
         {
             double a = (-95 + sweep * k / 24) * System.Math.PI / 180;
-            arc.AddRange([Um(13_000 + 5_550 * System.Math.Cos(a)), Um(10_000 + 5_550 * System.Math.Sin(a))]);
+            arc.AddRange([Um(13_000 + (5_000 + arcWidth / 2) * System.Math.Cos(a)), Um(10_000 + (5_000 + arcWidth / 2) * System.Math.Sin(a))]);
         }
         for (int k = 24; k >= 0; k--)
         {
             double a = (-95 + sweep * k / 24) * System.Math.PI / 180;
-            arc.AddRange([Um(13_000 + 4_450 * System.Math.Cos(a)), Um(10_000 + 4_450 * System.Math.Sin(a))]);
+            arc.AddRange([Um(13_000 + (5_000 - arcWidth / 2) * System.Math.Cos(a)), Um(10_000 + (5_000 - arcWidth / 2) * System.Math.Sin(a))]);
         }
         view.Shapes.Add(new PolygonShape { Layer = Top, Xy = [.. arc] });
         view.Shapes.AddRange(Part("C1", 9_750, 5_500, alongX: true));
@@ -220,14 +220,16 @@ public sealed class PadsAndTapsTests
     /// <summary>The review reads no arc, so the arc's copper was pad copper and C1's and C2's terminals one ideal short, and
     /// the copper check agreed. Cut to what is wider than the lines, that copper is the pads alone; the join is still made,
     /// and named as one across copper no line models, whether the arc ends in a pad as big as the first, a smaller one, or
-    /// none (C2's body straight on the arc). The check does not say the circuit agrees.</summary>
+    /// none (C2's body straight on the arc); and when the arc is wider than the lines, which the lines' cut keeps, the region's
+    /// own cut parts it from the pads. The check does not say the circuit agrees.</summary>
     [Theory]
-    [InlineData(3_000.0)]
-    [InlineData(2_200.0)]
-    [InlineData(0.0)]
-    public void PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper(double farPad)
+    [InlineData(3_000.0, 1_100.0)]
+    [InlineData(2_200.0, 1_100.0)]
+    [InlineData(0.0, 1_100.0)]
+    [InlineData(3_000.0, 1_500.0)]
+    public void PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper(double farPad, double arcWidth)
     {
-        var result = Read(ArcBoard(farPad));
+        var result = Read(ArcBoard(farPad, arcWidth));
 
         Assert.True(result.Ok, result.Refusal);
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.PadsJoinTheirMembers));   // the arc is in the pad's copper
@@ -236,5 +238,79 @@ public sealed class PadsAndTapsTests
         Assert.True(joined is not null, string.Join("\n", result.Report.Lines()));
         Assert.Matches(@"C1\.\d at .* and C2\.\d at ", joined!.Sentence);
         Assert.Null(result.Report.Of(RecognitionFindingClass.CircuitAgreesWithCopper));
+    }
+
+    /// <summary>
+    /// Four layers: a 1.1 mm line in from the left edge to V1 on the top and one from V2 out to the right edge; on the inner
+    /// layer, which has no trace at all, V1 and V2 each in a 3 mm pad and the pads joined by the 8.85 mm, 1.1 mm quarter arc;
+    /// the plane cleared round both vias. With no line on the layer to cut by, the region's own cut still parts the arc from
+    /// the pads, and the join is named; the check does not say the circuit agrees.
+    /// </summary>
+    [Fact]
+    public void ViaPadsJoinedByAnUnreadTrace_OnALayerWithNoTrace_AreNamedAsJoinedAcrossCopper()
+    {
+        long[] Square(double x, double y, double h) => [Um(x - h), Um(y - h), Um(x + h), Um(y - h), Um(x + h), Um(y + h), Um(x - h), Um(y + h)];
+        var view = new LayoutView();
+        view.Shapes.Add(new PolygonShape
+        {
+            Layer = Plane, Xy = [Um(0), Um(0), Um(30_000), Um(0), Um(30_000), Um(16_000), Um(0), Um(16_000)],
+            Holes = [Square(11_500, 5_500, 800), Square(18_000, 11_500, 800)],
+        });
+        view.Shapes.Add(Rect(Top, 0, 4_950, 11_500, 6_050));
+        view.Shapes.Add(Rect(Top, 18_000, 10_950, 30_000, 12_050));
+        view.Shapes.Add(ViaAt(11_500, 5_500));
+        view.Shapes.Add(ViaAt(18_000, 11_500));
+        view.Shapes.Add(new LabelShape { Layer = Top, Text = "P1", IsPort = true, X = Um(100), Y = Um(5_500), Height = Um(500) });
+        view.Shapes.Add(new LabelShape { Layer = Top, Text = "P2", IsPort = true, X = Um(29_900), Y = Um(11_500), Height = Um(500) });
+        view.Shapes.Add(Rect(Inner, 10_000, 4_000, 13_000, 7_000));
+        view.Shapes.Add(Rect(Inner, 16_500, 10_000, 19_500, 13_000));
+        var arc = new List<long>();
+        for (int k = 0; k <= 24; k++)
+        {
+            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            arc.AddRange([Um(13_000 + 5_550 * System.Math.Cos(a)), Um(10_000 + 5_550 * System.Math.Sin(a))]);
+        }
+        for (int k = 24; k >= 0; k--)
+        {
+            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            arc.AddRange([Um(13_000 + 4_450 * System.Math.Cos(a)), Um(10_000 + 4_450 * System.Math.Sin(a))]);
+        }
+        view.Shapes.Add(new PolygonShape { Layer = Inner, Xy = [.. arc] });
+
+        var result = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = FourLayer(), Shapes = view.Shapes });
+
+        Assert.True(result.Ok, result.Refusal);
+        var joined = result.Report.Of(RecognitionFindingClass.CopperJoinedWithoutLine);
+        Assert.True(joined is not null, string.Join("\n", result.Report.Lines()));
+        Assert.Matches(@"V1\.\d at .* and V2\.\d at ", joined!.Sentence);
+        Assert.Null(result.Report.Of(RecognitionFindingClass.CircuitAgreesWithCopper));
+    }
+
+    /// <summary>A 1.1 mm line through a 3 mm pad, edge to edge, and C3 from the end of a 1.5 mm stub of the pad's width across
+    /// a gap to the top pour: the stub is the pad's, no trace, and neither cut names it.</summary>
+    [Fact]
+    public void AShuntPartOnAShortStubOfAPad_IsNoJoinAcrossCopper()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 9_450, 10_000, 10_550));
+        view.Shapes.Add(Rect(Top, 10_000, 8_500, 13_000, 11_500));
+        view.Shapes.Add(Rect(Top, 13_000, 9_450, 30_000, 10_550));
+        view.Shapes.Add(Rect(Top, 10_950, 11_500, 12_050, 13_000));
+        view.Shapes.Add(Rect(Top, 0, 13_500, 30_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 0, 30_000, 8_000));
+        foreach (double x in new double[] { 2_000, 8_000, 16_000, 24_000 })
+        {
+            view.Shapes.Add(ViaAt(x, 17_000));
+            view.Shapes.Add(ViaAt(x, 3_000));
+        }
+        view.Shapes.AddRange(Part("C3", 11_500, 13_250, alongX: false));
+
+        var result = Read(view);
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(PartConnection.Shunt, Assert.Single(result.Parts.Rows).Connection);
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CopperJoinedWithoutLine));
+        Assert.NotNull(result.Report.Of(RecognitionFindingClass.CircuitAgreesWithCopper));
     }
 }
