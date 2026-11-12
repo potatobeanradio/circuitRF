@@ -500,6 +500,42 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// Three mixers, 2.45 GHz to 350, 70 and 21.4 MHz: three conversions, each from the IF the one before ends at. The
+    /// 2-Tone bench goes per conversion too, five tones being over the cap at every order that carries the output's IM3;
+    /// the third conversion's 1-Tone bench simulates to its budget.
+    /// </summary>
+    [Fact]
+    public void ATripleConversionChain_IsWrittenAsThreeConversions_AndTheThirdSimulates()
+    {
+        var d = DualConversion();
+        d.Stages[d.Stages.FindIndex(s => s.Name == "MIX2")].Parameters["Flo"] = "280 MHz";
+        int f2 = d.Stages.FindIndex(s => s.Name == "IF2BPF");
+        d.Stages[f2] = S("IF2BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "50 MHz"), ("F2", "98 MHz"), ("IL", "1"));
+        d.Stages.InsertRange(f2 + 1,
+        [
+            S("MIX3", "Mixer", ("ConvGain", "-6"), ("NF", "8"), ("NFType", "ssb"), ("IIP3", "15"), ("Plo", "7"), ("Flo", "48.6 MHz")),
+            S("IF3BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "13.6 MHz"), ("F2", "33.6 MHz"), ("IL", "1")),
+        ]);
+        d.Blockers.Clear();
+        var r = ChainBudget.Evaluate(d);
+        Assert.Equal(21.4e6, r.Totals!.OutputFrequencyHz, 3);
+        var c = ChainBenches.Conversions(d, r, "Tri")!;
+        Assert.Equal([2.45e9, 350e6, 70e6], c.Select(x => Math.Round(x.Design.FrequencyHz)));
+        Assert.Equal(r.Totals.SnrDb, c[2].Budget.Totals!.SnrDb, 9);
+        var notes = new List<string>();
+        var leftOut = new List<string>();
+        var benches = ChainBenches.Build(d, r, "Tri", notes: notes, leftOut: leftOut);
+        Assert.Empty(leftOut);
+        foreach (var kind in new[] { "1-Tone", "2-Tone", "Envelope", "Levels", "Demo" })
+            Assert.Equal([$"Tri IF1 {kind}", $"Tri IF2 {kind}", $"Tri IF3 {kind}"], benches.Select(b => b.CellName).Where(n => n.EndsWith(" " + kind, StringComparison.Ordinal)));
+        Assert.Contains(notes, n => n.StartsWith("Tri 2-Tone is written once per conversion", StringComparison.Ordinal) &&
+                                    n.Contains("retains 1,827 mixing products", StringComparison.Ordinal));
+        var one = Bench(d, "Tri IF3", ChainBench.OneTone, write: () => ChainBenches.Write(d, _ws, "Tri"));
+        Assert.InRange(Measure(one, "G_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
+    }
+
+    /// <summary>
     /// A bench no run can hold is not written, and Transfer and <c>check</c> say why: the second LO 10.7 MHz from the 5 MHz
     /// carrier an envelope run sends (within three bandwidths), a blocker on the second mixer's image whose product
     /// lands on the other's, and a harmonic-balance run of more tones than a run takes.
@@ -1048,15 +1084,19 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(Path.Combine(_ws, "gain.s2p"), text);
     }
 
-    private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null)
+    /// <param name="write">How the benches are written, when not as <paramref name="chain"/>'s own: a conversion's bench
+    /// is written by its whole chain's transfer.</param>
+    private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null,
+                          Func<ChainTransferResult>? write = null)
     {
         Directory.CreateDirectory(_ws);
         if (!File.Exists(Path.Combine(_ws, ".cws")))
             File.WriteAllText(Path.Combine(_ws, ".cws"), "{\"FormatVersion\": 2, \"LibraryRefs\": [], \"KnownFiles\": []}");
         if (!Directory.Exists(Path.Combine(_ws, ChainBenches.CellName(chain, which))))
         {
-            var w = ChainBenches.Write(d, _ws, chain);
-            Assert.True(w.SchematicPaths.Count == ChainBenches.BenchesFor(d).Count, string.Join("\n", w.Refusals));
+            var w = write?.Invoke() ?? ChainBenches.Write(d, _ws, chain);
+            Assert.True(write is not null ? w.SchematicPaths.Count > 0 : w.SchematicPaths.Count == ChainBenches.BenchesFor(d).Count,
+                        string.Join("\n", w.Refusals));
         }
         string cell = ChainBenches.CellName(chain, which);
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell));
