@@ -30881,7 +30881,7 @@ benches the analyses refuse, with nothing to say so. Measured on a 2.45 GHz → 
 - **HB noise takes one or two tones.** The 1-Tone bench's noise run on (RF, LO1, LO2) is refused ("HB noise supports
   one and two tones"). Its compression sweep on the same three tones at MaxMixOrder 7 does run (288 products), in 193 s.
 - **The 600-product cap.** The 2-Tone and Levels runs, four tones at 5 + mixers = 7, retain 1,121 products. At 5 they
-  run (341), in about 100 s, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
+  run (341), in 1.5 to 3 minutes by the machine's load, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
   mixer). The first such run read 0.038 dB, which was not the order: a narrow second IF filter's skirt took 0.08 dB off
   the output's IM3.
 - **Two envelope fundamentals.** A second LO is a third fundamental (with one carrier group, a tone counts as reached
@@ -30889,7 +30889,10 @@ benches the analyses refuse, with nothing to say so. Measured on a 2.45 GHz → 
   bandwidths of it is refused even with one mixer: a 10.7 MHz second IF and a 5 MHz NR carrier.
 - **Coinciding products are not refused by harmonic balance; they are read wrongly.** With blockers exactly on both
   mixers' images, (1,0,−1,2) and (0,1,−1,0) both sit on 328.6 MHz and the run read that blocker 9.53 dB high; 1 MHz
-  off the image, 0.0025 dB.
+  off the image, 0.0025 dB. A coincidence that touches no product the bench reads is milder: blockers at ±10 and
+  ±20 MHz put their differences on 10 MHz and read 0.008 to 0.009 dB under the budget, against 0.002 dB just off.
+- **Envelope coincidences.** An envelope run refuses two products on one frequency at its MaxMixOrder: a superhet at
+  2.4 GHz with its LO at 1.6 GHz has its IF, 800 MHz, on 2·2.4 − 1.6 GHz too.
 - **An LO above the signal** (also with one mixer): the IF's tracked index was the conjugate of the half-space product
   the lattice keeps, so its rows did not resolve, and the HB noise sideband went through the RF tone, (2, −1), instead of
   through the LO, (0, −1), reading NF 103 dB.
@@ -30898,9 +30901,13 @@ What `ChainBenches` does now: every analysis is checked before a bench is writte
 `Emitter.EnvelopeFits`); a bench refused as the whole chain is written per conversion (`ChainBenches.Conversions`),
 each conversion from the stage after one mixer to the next mixer, driven at the budget's level and frequency there and
 from a source at the noise delivered there, (Ts + Te)·Gn; the 1-Tone, Levels and Blockers benches split together; a
-bench no run holds even so is left out and named, in Transfer's notes and as `check`'s `chain.bench.left-out`. Indices
-are written in their half-space form and the noise sideband is −v₁ over the LOs; a low-side single-mixer bench is
-unchanged to the byte.
+bench no run holds even so is left out and named, in Transfer's notes and as `check`'s `chain.bench.left-out`; and a
+display draws no trace of a bench that is not written. Only a coincidence on a product the bench reads lowers an order
+or refuses a bench (one on products it does not read is run and said), and the envelope check refuses any. Indices are
+written in their half-space form and the noise sideband is −v₁ over the LOs. A single-mixer chain's benches change in
+two cases only: a product after an inverted mixer (an LO above the signal, or a blocker below a low-side LO) is named
+as the lattice keeps it, (1,0,−1) where (−1,0,1) did not resolve; and a bench whose runs needed a lower order, or could
+not be held, gets the order a run takes, or is left out. The shipped benches are unchanged to the byte.
 
 Three things the budget does not have, met building the example, each now in its README and the design note: an
 amplifier between the image filter and the second mixer puts its own noise at the image (the second conversion's NF
@@ -30910,5 +30917,10 @@ dB); and a narrow 3rd-order 21.4 MHz filter reflected 14 % at the IM3 frequencie
 IM3 1.1 dB low. The second is what only a whole-chain run shows, and why the 2-Tone bench stays whole where it fits.
 
 Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `ADualConversionChain_IsCutIntoItsConversions_EachTheWholeChainsBudgetFromThere`,
-`WhatNoRunCanHold_IsNotWritten_AndTransferAndCheckSayWhy`, `AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget`;
-`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `DualConversion_*`.
+`ATripleConversionChain_IsWrittenAsThreeConversions_AndTheThirdSimulates`,
+`WhatNoRunCanHold_IsNotWritten_AndTransferAndCheckSayWhy`,
+`ACoincidenceOnAProductTheBenchReads_LowersTheOrder_AndOneItDoesNotRead_IsSaid`,
+`AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget`, `ABlockerOnALowSideMixersImage_IsReadAtEveryNode`;
+`ChainBudgetWindowTests.TheLevelsNote_SaysWhereAChainOfTwoConversionsHasItsPoints`;
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `DualConversion_*` and `TheShippedBenches_AreWhatTransferWritesToday`
+(every shipped bench folder and display is one Transfer writes).

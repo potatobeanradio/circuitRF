@@ -79,8 +79,8 @@ The dual-conversion receiver, stage by stage:
 
 **The two conversions make the whole chain by the same sums.** F = F₁ + (F₂ − 1)/G₁ = 1.4116 + 2.6190/5.6234 = 1.8774,
 2.74 dB; 1/IIP3 = 1/IIP3₁ + G₁/IIP3₂ = 4.0773 + 5.6234 × 0.8968 = 9.1207 mW⁻¹, −9.60 dBm. The second conversion starts
-at MIX1's output, −62.5 dBm at 350 MHz, from a source at 2302 K, the noise the first delivers, so its SNR at every node
-is the whole chain's.
+at MIX1's output, −62.5 dBm at 350 MHz. Its Envelope and Demo sources are at 2302 K, the noise the first delivers, so
+the SNR they measure is the whole chain's at every node; its 1-Tone source is at 290 K, where a noise figure is stated.
 
 **Each mixer's image filter is right in front of it**, as the budget takes it: the RF filter before MIX1, IMGBPF before
 MIX2, with the IF amplifier ahead of it. With the amplifier between the image filter and MIX2 instead, its own noise at
@@ -155,9 +155,10 @@ Demo bench, and each display sets the simulation beside that conversion's own bu
 takes two tones and one envelope run two fundamentals, and every LO is one, so no single run of these holds both mixers.
 The 2-Tone bench is one run of the whole chain: four tones at MaxMixOrder 5, the most the 600-product cap allows.
 
-The second conversion's bench starts at MIX1's output: its source is at 350 MHz and −62.5 dBm, the level MIX1 delivers,
-and at 2302 K, the noise MIX1 delivers (its VAR block and the MOD_Source's `Temp` say so). Its SNR is then the whole
-chain's, node by node.
+The second conversion's benches start at MIX1's output: their sources are at 350 MHz and −62.5 dBm, the level MIX1
+delivers. The Envelope and Demo sources are also at 2302 K, the noise MIX1 delivers (the MOD_Source's `Temp`,
+2028.93 °C), so the SNR they measure is the whole chain's, node by node; the 1-Tone bench's source is at 290 K, the
+temperature its NF is stated at.
 
 **Images.** The budget takes each image as filtered; a blocker at an image's offset shows how well. Blocker 1, at
 −40 dBm, sits on MIX1's image, 700 MHz below the signal at 1.75 GHz. The RF filter takes 55.4 dB off it beyond its IL,
@@ -203,8 +204,8 @@ The dual-conversion receiver, each conversion against its own budget:
 | Signal and IM3, every node | 0.00001 and 0.00003 dB | 0.00001 and 0.0003 dB |
 | SNR | −0.45 dB | +0.02 dB |
 
-Cascaded by Friis, the two conversions' simulated gain and NF land on the whole chain's budget to 0.0002 dB and
-0.0001 dB. The whole chain's 2-Tone bench reads its IIP3 0.003 dB high: four tones on the order the cap allows. The
+The two conversions' simulated gains added, and their noise factors cascaded by Friis, land on the whole chain's budget
+to −0.0002 dB and +0.0001 dB. The whole chain's 2-Tone bench reads its IIP3 0.003 dB high: four tones on the order the cap allows. The
 first conversion's SNR is 0.45 dB under its budget because its output is MIX1's: with 7.5 dB of gain over a noise
 factor of 1.41, the load's own noise, which the budget leaves out, is an eighth of what reaches it (0.52 dB).
 
@@ -213,7 +214,7 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 | Bench | Superhet | Array | Dual Conversion, each conversion |
 |---|---|---|---|
 | 1-Tone | 3 s | 6 s | 4 s |
-| 2-Tone | 7 s | 50 s | 1 min 30 s, the whole chain |
+| 2-Tone | 7 s | 50 s | 1.5 to 3 min, the whole chain |
 | Envelope | 9 s | 25 s | 12 s, 18 s |
 | Steering | | 2 s | |
 | Combiners | | 1 s | |

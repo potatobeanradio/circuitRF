@@ -1595,9 +1595,11 @@ a <code>chain.bench.left-out</code> warning). Two causes besides too many tones 
 <li><strong>An LO within three bandwidths of the envelope's carrier.</strong> The Envelope and Demo benches send an NR carrier near the
 chain's bandwidth, 5 MHz for 4.5 MHz. A second IF of 10.7 MHz puts the second LO 10.7 MHz from that carrier at the first
 IF, and the second conversion's Envelope and Demo benches are left out; a second IF of 21.4 MHz runs.</li>
-<li><strong>Two products on one frequency.</strong> A blocker exactly on a mixer's image converts to exactly where another tone's
-product lands, and a harmonic-balance run cannot tell the two apart. Move the blocker a little off the image, as the
-example's second blocker is.</li>
+<li><strong>Two products on one frequency, one of them read.</strong> A blocker exactly on a mixer's image converts to exactly where
+another tone's product lands, and a harmonic-balance run cannot tell the two apart. Move the blocker a little off the
+image, as the example's second blocker is. Two products the bench reads neither of do not stop it: blockers spaced
+evenly put their differences on one frequency, and the bench runs, a few thousandths of a dB off, and says so. An
+envelope run takes no coincidence at all: an LO at two thirds of the signal puts the IF on a second product too.</li>
 </ul>
 <h2 id="steering">Steering the beam in simulation</h2>
 <p>The Steering bench is the array at the combiner, fed by a plane wave and steered from its own VAR block:</p>
@@ -1904,7 +1906,8 @@ well. At 5 dB past the input P1dB the distortion part is 15.5 %.</p>
 </tr>
 </tbody>
 </table>
-<p>Cascaded by Friis, the two conversions' simulated gain and NF are the whole chain's budget to 2×10⁻⁴ dB and 8×10⁻⁵ dB.
+<p>The two conversions' simulated gains added, and their noise factors cascaded by Friis, are the whole chain's budget to
+−2.2×10⁻⁴ dB and +8×10⁻⁵ dB.
 The whole chain's 2-Tone bench, four tones at MaxMixOrder 5, reads IIP3 and OIP3 3×10⁻³ dB high and every stage's OIP3
 within 5×10⁻³ dB. Each conversion's Demo reads its SNR at the lowest power on its budget, once the load's noise is
 counted (−0.48 dB to MIX1's output, +0.08 dB to the end).</p>

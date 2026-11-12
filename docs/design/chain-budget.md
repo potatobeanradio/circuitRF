@@ -223,27 +223,36 @@ dual-conversion chain's benches as one run each, measured on a 2.45 GHz → 350 
 the 1-Tone bench's harmonic-balance noise run takes one or two tones (three refused); the 2-Tone and Levels runs on
 four tones at 5 + mixers = 7 retain 1,121 mixing products, over the 600 cap; the Envelope and Demo runs would need a
 third fundamental. `ChainBenches.Build` now checks every analysis before a bench is written (`Emitter.Order`,
-`Emitter.EnvelopeFits`): the highest mixing order at or below the converged one that the cap takes and on which no two
-products share a frequency, down to the least that carries what the bench reads, else a refusal. A bench refused as the
+`Emitter.EnvelopeFits`): the highest mixing order at or below the converged one that the cap takes and on which no
+product the bench reads shares a frequency with another, down to the least that carries what the bench reads, else a
+refusal. Two products on one frequency that the bench reads neither of are run, and said. A bench refused as the
 whole chain is written per conversion (`ChainBenches.Conversions`): conversion k from the stage after mixer k − 1 to
 mixer k, so the filter in front of each mixer is in its conversion; driven at the budget's level and frequency there,
 the blockers as they arrive there, and a source temperature of the noise delivered there, (Ts + Te)·Gn, which makes
 its SNR and noise floor the whole chain's at every node. The 1-Tone, Levels and Blockers benches split together, since
-the Levels display reads all three. The 2-Tone bench stays whole at MaxMixOrder 5 (341 products), about 90 s, and reads
-its intercepts 3×10⁻³ dB high, against 2×10⁻⁴ dB at the order a single mixer's converge at.
+the Levels display reads all three, and a display draws no trace of a bench that is not written. The 2-Tone bench stays
+whole at MaxMixOrder 5 (341 products), 1.5 to 3 minutes by the machine's load, and reads its intercepts 3×10⁻³ dB high,
+against 2×10⁻⁴ dB at the order a single mixer's converge at.
 
 **The second envelope LO, and blockers on images.** An envelope run takes a tone as a fundamental of its own only more
 than three of a carrier's bandwidths from it: a 10.7 MHz second IF puts the second LO 10.7 MHz from the 5 MHz NR
 carrier at the first IF, so that conversion's Envelope and Demo are left out; the example uses 21.4 MHz. Blockers
 exactly on both mixers' images put two products on 10.7 MHz (in one run, (1,0,−1,2) and (0,1,−1,0) on 328.6 MHz as
 well): the harmonic-balance run does not refuse that, it reads the blocker 9.53 dB high at the first IF. With the second
-blocker 1 MHz off the image the same run reads 0.0025 dB. Coinciding products are now a refusal.
+blocker 1 MHz off the image the same run reads 0.0025 dB. A coincidence on a product the bench reads now lowers the
+order or refuses the bench. One on products it does not read is milder and common: blockers spaced evenly (±10 and
+±20 MHz) put their differences on one frequency and read 0.008 to 0.009 dB under the budget, against 0.002 dB just off
+it, so such a bench runs and Transfer says so; there an IM3 of three blockers on the fourth, which the bench reads,
+takes the order from 3 to 2. An envelope run refuses any coincidence at its MaxMixOrder: a superhet at 2.4 GHz with its
+LO at 1.6 GHz puts the IF, 800 MHz, on 2·2.4 − 1.6 GHz too, and `EnvelopeFits` now leaves that Envelope bench out.
 
 **An LO above the signal.** Two defects that a single high-side mixer already had, found here: the IF's tracked product
 index is then the conjugate of the half-space one the lattice keeps, so every row naming it failed to resolve; and the
 noise run's input sideband went through the RF tone's index, (2, −1), where the signal reaches the IF through the LO,
-(0, −1): NF 103 dB. The bench now names the kept product, and the sideband is −v₁ over the LOs alone; a low-side
-mixer's bench is unchanged.
+(0, −1): NF 103 dB. The bench now names the kept product, and the sideband is −v₁ over the LOs alone. A blocker below a
+low-side LO, on its image, is inverted the same way after the mixer: its rows now name (1,0,−1) where they named
+(−1,0,1), which did not resolve. Apart from those, and a bench whose runs needed the order lowered or could not be held
+at all, a single-mixer chain's benches are unchanged; the shipped ones to the byte.
 
 **Three things the budget assumes, met in the example's design.** With the IF amplifier between the image filter and
 MIX2, the amplifier's own noise at MIX2's image reached the mixer: the second conversion's NF read 1.4 dB over its

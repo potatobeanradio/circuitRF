@@ -342,9 +342,11 @@ a `chain.bench.left-out` warning). Two causes besides too many tones or products
 - **An LO within three bandwidths of the envelope's carrier.** The Envelope and Demo benches send an NR carrier near the
   chain's bandwidth, 5 MHz for 4.5 MHz. A second IF of 10.7 MHz puts the second LO 10.7 MHz from that carrier at the first
   IF, and the second conversion's Envelope and Demo benches are left out; a second IF of 21.4 MHz runs.
-- **Two products on one frequency.** A blocker exactly on a mixer's image converts to exactly where another tone's
-  product lands, and a harmonic-balance run cannot tell the two apart. Move the blocker a little off the image, as the
-  example's second blocker is.
+- **Two products on one frequency, one of them read.** A blocker exactly on a mixer's image converts to exactly where
+  another tone's product lands, and a harmonic-balance run cannot tell the two apart. Move the blocker a little off the
+  image, as the example's second blocker is. Two products the bench reads neither of do not stop it: blockers spaced
+  evenly put their differences on one frequency, and the bench runs, a few thousandths of a dB off, and says so. An
+  envelope run takes no coincidence at all: an LO at two thirds of the signal puts the IF on a second product too.
 
 ## Steering the beam in simulation {#steering}
 
@@ -523,7 +525,8 @@ The dual-conversion receiver's benches, each conversion's against its own budget
 | Each blocker at every node | 0.0013 to 0.0025 dB under | 8×10⁻⁵ dB; the input +0.0018 dB | the blockers' compression; the second conversion's input has no isolator in front of its roofing filter |
 | SNR, envelope | −0.45 dB | +0.016 dB | the first conversion ends at MIX1's output, 7.5 dB over a noise factor of 1.41, so the load's own noise, which the budget leaves out, is 1/7.9 of what reaches it: 0.52 dB |
 
-Cascaded by Friis, the two conversions' simulated gain and NF are the whole chain's budget to 2×10⁻⁴ dB and 8×10⁻⁵ dB.
+The two conversions' simulated gains added, and their noise factors cascaded by Friis, are the whole chain's budget to
+−2.2×10⁻⁴ dB and +8×10⁻⁵ dB.
 The whole chain's 2-Tone bench, four tones at MaxMixOrder 5, reads IIP3 and OIP3 3×10⁻³ dB high and every stage's OIP3
 within 5×10⁻³ dB. Each conversion's Demo reads its SNR at the lowest power on its budget, once the load's noise is
 counted (−0.48 dB to MIX1's output, +0.08 dB to the end).
