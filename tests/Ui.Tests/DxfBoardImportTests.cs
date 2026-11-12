@@ -191,6 +191,31 @@ public sealed class DxfBoardImportTests : IDisposable
         Assert.Contains(result.Messages, m => m.Contains("HOLE: 3 entities are not a circle or a small square or regular outline", StringComparison.Ordinal));
     }
 
+    /// <summary>A mark's hole is the circle inside it about its centre, whichever rule takes it: an octagon with a corner on the
+    /// axis, or turned 10°, is 0.4 mm across its flats, not the 0.433 or 0.426 mm of its box; a trapezoid of 0.4 and 0.2 mm sides
+    /// 0.4 mm high and a square with a corner cut by half its side are square to their boxes and fill them, and hold only
+    /// 0.291 and 0.283 mm about their boxes' centres, not 0.4.</summary>
+    [Fact]
+    public void AMarksHole_IsTheCircleInsideIt()
+    {
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)));
+        entities.AddRange(Regular("HOLE", 2, 8, 0));
+        entities.AddRange(Regular("HOLE", 4, 8, 10));
+        entities.AddRange(Polyline("HOLE", (5.8, 4.8, 0), (6.2, 4.8, 0), (6.1, 5.2, 0), (5.9, 5.2, 0)));
+        entities.AddRange(Polyline("HOLE", (7.8, 4.8, 0), (8.2, 4.8, 0), (8.2, 5.0, 0), (8.0, 5.2, 0), (7.8, 5.2, 0)));
+
+        var result = Import(Drawing("inside.dxf", [.. entities]), "inside", Tech(), "PATTERN=Top Copper,HOLE=Drill");
+        var vias = LoadOnly(result).Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
+
+        Assert.Equal(4, vias.Count);
+        Assert.InRange(vias[0].DrillSize, 399_000, 401_000);
+        Assert.InRange(vias[1].DrillSize, 399_000, 401_000);
+        Assert.InRange(vias[2].DrillSize, 290_000, 292_000);   // 2 × 0.06 / √0.17 mm
+        Assert.InRange(vias[3].DrillSize, 282_000, 284_000);   // 0.2 √2 mm
+        Assert.All(vias, v => Assert.InRange(v.Y, 4_999_000, 5_001_000));
+    }
+
     /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a
     /// square first pin), a square pad at a square drill, a round pad at a round one — and a square pad keeps its whole square
     /// as copper: the via's land is the circle inside it.</summary>

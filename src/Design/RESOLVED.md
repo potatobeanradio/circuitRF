@@ -29820,6 +29820,13 @@ the conservative reading. Four `LINE`s of a turned square are consumed by their 
 not left as drawn beside its via. The cap stays the widest circle when the layer has circles; the trade-off is that on a
 layer mixing drill sizes, a polygon mark wider than every circle is left as drawn.
 
+**… and its hole the circle inside it (third review).** The square branch took the box's width as the hole, which is the
+circle inside only for a square: an octagon with a corner on the axis was read as 432.956 µm across where 400 fits, a
+trapezoid of 0.4 and 0.2 mm sides 0.4 mm high as 400 where about 291 fits, and a square with one corner cut by half its side
+as 400 where about 283 fits. In both branches the hole is now twice the least distance from its centre — the regular
+polygon's own, else the box's — to an edge, so the message and the reference ("the circle inside it") are true again. Gate:
+`DxfBoardImportTests.AMarksHole_IsTheCircleInsideIt` (those three and an octagon turned 10°).
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was
