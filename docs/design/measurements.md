@@ -379,7 +379,11 @@ curve. The cube's axis has the same name and values as the `Pin` axis in the swe
 it broadcast-aligns with swept analysis data (e.g. `Gain = dB(HB1.V("out",1,All)) - Pin` resolves
 element-wise without a shape error). A non-swept global stays a scalar. If a sweep is disabled/collapsed
 and its axis is absent from the results, the variable falls back to its scalar global value. This
-override applies for the duration of measurement evaluation only.
+override applies for the duration of measurement evaluation only. A global **derived** from a swept one
+(`y = 2*x`, through other globals and user-function bodies) is resolved again the way the elaborator
+resolves it: every global bound with its expression and unit, the swept ones bound to their axis cubes with
+the base unit each point was injected with. So it is a cube over the sweeps it depends on, with var-unit-wins
+as at each point. One that does not evaluate over a cube is an error naming why, never its nominal value.
 
 ## Authoring — the MEAS Library component (completed)
 

@@ -169,6 +169,10 @@ its sub-cells. A name resolves to the local cell variable/parameter first, then 
 cell never sees a parent's locals or a sibling's, which is what keeps a cell's meaning independent
 of where it's placed.
 
+A variable defined from a swept one follows the sweep. With `x` swept and `y = 2*x`, every point of the
+sweep evaluates `y` with that point's `x`. That holds wherever `y` is used, in a component's value and in a
+[measurement](measurements.html#swept), where `y` reads as one value per point.
+
 <div class="callout note">
     <span class="label"><code>freq</code> is reserved</span>
     <p>Lowercase <code>freq</code> is the simulator's current stamping frequency (Hz), injected when the engine

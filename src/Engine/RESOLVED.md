@@ -4381,3 +4381,26 @@ gate 5 lists only diode/BJT shot and series-R thermal.
 - `OscEngine.Startup` linearises every device at its DC point (`StampLinearized`) and never called `BiasFreeze`, so an
   oscillator built on a composed FET with `LinearC=true` would have met the unfrozen core's refusal. It freezes at the DC
   solution it has just solved, as `SParameterEngine` does. Gate: `BiasFreezeTests.EveryEngineEntryPointThatReadsCharge_Freezes`.
+
+## A global derived from a swept one, read by a measurement (2026-11-12)
+
+- **Root cause.** `MeasurementEvaluator` bound every global to its value in `ElaboratedNetlist.ResolvedGlobals`. Those
+  values come from the one elaboration the run started with. Only the swept variables were then overridden with their
+  axis cubes. Each sweep point re-elaborates with its own value (`ParametricSweepEngine` swaps the `Variable` in
+  `TestBench.GlobalVariables`), so the circuit always followed the sweep: a source set to `y = 2*x` was at `2*x` at
+  every point, nested sweeps included. Only the measurement read the nominal `y`.
+- **Fix.** `ResolveDerived` finds the globals that depend on a swept one, through other globals and through user
+  functions' bodies (`UserFunctionInliner`). It resolves them again as the elaborator does:
+  - every global is bound with its own expression and unit, and the underived ones are pinned to their resolved values;
+  - each swept variable is bound to its axis cube, with the axis's unit, which is the base unit each point was injected
+    with.
+
+  The unit matters. Bound bare, a derived `L2 = 2*L mil` with `L` swept in mil would be scaled by the mil a second time
+  (var-unit-wins). The resolution has its own evaluator, with the user functions and the trial's draws, so the
+  measurements' evaluator gains nothing. A derived global that does not evaluate over a cube (`min(x, 2)`) is left
+  unbound. A measurement reading it fails and says why, through the `unavailable` map that the `freq` hint now shares;
+  it never reads the nominal value.
+- **Not covered.** A loadpull swept over its tone frequency stacks a `freq` axis instead of the variable's. That variable,
+  and anything derived from it, stays a nominal scalar in a measurement, as before.
+
+Gates: `tests/Engine.Tests/Measurements/DerivedVariableMeasurementTests.cs`.
