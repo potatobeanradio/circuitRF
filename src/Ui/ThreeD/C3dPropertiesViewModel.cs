@@ -962,7 +962,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     {
         IsBoolean = true;
         IsMaterialEditable = false;
-        BooleanTip = editor.KernelMissing("Boolean");
+        BooleanTip = editor.KernelMissingFor("Boolean", b);
         BooleanEditable = BooleanTip is null;
         BooleanOperation = b.Op;
         BooleanEnabled = b.Enabled;

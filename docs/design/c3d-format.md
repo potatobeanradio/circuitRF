@@ -171,12 +171,13 @@ order Z, Y, X, each omitted at 0°. Any rigid motion, a mirror in any plane incl
 
 An operation wraps other objects **inline**. **The wrapper takes the name**: the object inside a `Boolean`'s `Blank`
 or a `Fillet`'s/`Chamfer`'s `Target` has no `Name`, and its `Material` and `Role` are the result's. Tools keep their
-own names. Operands are solids only: `Box`, `Prism`, `Cylinder`, `Sphere`, `Polyhedron`, `Step`, or another
-operation.
+own names. Operands are solids — `Box`, `Prism`, `Cylinder`, `Sphere`, `Polyhedron`, `Step`, or another
+operation — or, for a `Boolean`, coplanar sheets (the second row below). Solids and sheets are never mixed.
 
 | `$type` | Fields |
 |---|---|
 | `Boolean` | `Op` (`Subtract`/`Unite`/`Intersect`), `Blank`, `Tools` [object], `KeepTools` (with `Subtract`: each tool also stays as its own solid, e.g. a dielectric fill in a bore), `Enabled` |
+| `Boolean` of sheets | The same fields, with a `Blank` and every `Tool` a `Sheet` (or another `Boolean` of sheets), all **coplanar**: the same `Plane`, and the same `Offset` once resolved. An operand's `Placement` may only move it within that plane (no rotation, no mirror, nothing along the normal); the boolean's own placement is unrestricted. Each operand keeps its own `Rect` or `Outline`/`Holes` and its expressions; nothing is computed into the file. The result is a **sheet**: it conducts, takes the Blank's `Material`, `Role` and `ThicknessUm`, and is built by circuitRF from the operands' polygons (exact, integer DBU), so it needs no OpenCASCADE. A result in several disjoint pieces is one object. `KeepTools` with `Subtract` keeps each tool as its own sheet. |
 | `Fillet` | `Target`, `Edges` [edge name], `Radius`, `Enabled` |
 | `Chamfer` | `Target`, `Edges`, `Distance`, optional `Distance2` (along the edge's second face), `Enabled` |
 | `Step` | One solid part of a STEP file copied beside the `.c3d`: `File`, `Part` (occurrence path in the assembly, `1/2`), optional `Solid` (1-based, when a part holds several), `Hash` (`sha256:<hex>` of the file), `Unit` (informational), `SourcePath` (where it came from) |
@@ -184,7 +185,7 @@ operation.
 - **`Enabled: false`** makes an operation as if absent: the Blank elaborates under the operation's name and each
   Tool under its own; a Target elaborates unrounded.
 - **Without OpenCASCADE** (installation-dependent), a document holding any operation, at any depth, enabled or not,
-  is refused.
+  is refused — except a `Boolean` of sheets, which circuitRF builds itself.
 
 ### 4.5 Naming faces and edges: never by index
 
@@ -200,6 +201,8 @@ operation's result names its faces by rule:
   share more than one edge, a third field numbers them (`trench:side|zmax|1`). A seam has no name.
 - **New faces.** A fillet's new faces are `fillet(<edge>)`, a chamfer's `chamfer(<edge>)`.
 - **STEP parts.** A STEP part's faces are `face<n>` in the part's own order, meaningful only for its `Hash`.
+- **Sheets.** A sheet has no faces to name, and neither does a `Boolean` of sheets: a port, a lumped element or a
+  boundary finds its edges from the result's outline.
 
 So a port or boundary attached to `lid` before a hole was cut is still on `lid` afterwards.
 

@@ -51,7 +51,8 @@ internal sealed partial class C3dToHznWriter
         var finite = new List<(double Sigma, string Thickness, List<string> Names)>();
         foreach (var h in _objects.ToList())
         {
-            if (h.Source is not C3dSheet sh || h.ConsumedBy is not null) continue;
+            // brief-hzn-10 — a boolean of sheets is metal by its Blank's material and thickness, and the boundary names the result.
+            if (h.Source is null || C3dSheetBooleans.Carrier(h.Source) is not { } sh || h.ConsumedBy is not null) continue;
             _user = h.Name;
             if (string.IsNullOrEmpty(h.Material)) continue;   // MaterialsUsed() writes it out of the solve
             if (_o.Technology?.FindMaterial(h.Material) is not { } tm)

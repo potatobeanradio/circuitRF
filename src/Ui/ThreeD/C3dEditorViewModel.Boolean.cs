@@ -79,13 +79,24 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? BooleanRefusal()
     {
-        if (KernelMissing("Boolean") is { } k) return k;
+        bool sheets = false;
+        if (Viewer.SelectMode == Scene3DSelectMode.Object && Targets() is { Count: > 0 } picked && picked.All(t => !t.Instance && !IsOperandIndex(t.Index)))
+            sheets = C3dBooleans.AllSheets([.. picked.Select(t => Document.Objects[t.Index])]);
+        // brief-hzn-10 — sheets are combined here, in circuitRF: no kernel is needed for them.
+        if (!sheets && KernelMissing("Boolean") is { } k) return k;
         if (Viewer.SelectMode != Scene3DSelectMode.Object) return C3dBooleans.ObjectModeOnly;
         var targets = Targets();
         if (targets.Any(t => !t.Instance && IsOperandIndex(t.Index)))
             return "Operands are combined inside their boolean: leave it (Esc) to combine top-level objects.";
         return C3dBooleans.SelectionRefusal([.. targets.Select(t => t.Instance ? null : Document.Objects[t.Index])]);
     }
+
+    /// <summary>brief-hzn-10 — <see cref="KernelMissing"/> for an item that acts on a boolean: never for a Boolean of sheets.</summary>
+    internal string? KernelMissingFor(string what, int boolean)
+        => KernelMissingFor(what, boolean >= 0 && boolean < Document.Objects.Count ? Document.Objects[boolean] : null);
+
+    internal string? KernelMissingFor(string what, C3dObject? boolean)
+        => boolean is not null && C3dSheetBooleans.IsSheetBoolean(boolean) ? null : KernelMissing(what);
 
     /// <summary>The one selected top-level boolean, or −1.</summary>
     public int SelectedBoolean()
@@ -134,7 +145,9 @@ public sealed partial class C3dEditorViewModel
     public int BooleanCommits { get; private set; }
 
     private long _booleanSeq;
-    private (C3dDocument Doc, int At, C3dBoolean Boolean, C3dShapePreview Reply)? _booleanShown;
+    /// <summary>The preview drawn: the document OK would write, and the kernel's reply (none for a Boolean of sheets, which
+    /// circuitRF builds itself, brief-hzn-10).</summary>
+    private (C3dDocument Doc, int At, C3dBoolean Boolean, C3dShapePreview? Reply)? _booleanShown;
     private IReadOnlyList<string> _booleanSelection = [];
     private bool _booleanRowsLoading;
 
@@ -244,6 +257,7 @@ public sealed partial class C3dEditorViewModel
         BooleanNote = null;
         long seq = ++_booleanSeq;
         BooleanPreviewsRequested++;
+        if (C3dSheetBooleans.IsSheetBoolean(b)) { SheetBooleanPreview(doc, at, b); return; }
         GeometryKernelTree tree;
         try { tree = C3dElaborator.KernelTreeOf(doc, at, FilePath, Cell); }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException)
@@ -256,6 +270,28 @@ public sealed partial class C3dEditorViewModel
         NotifyBoolean();
         C3dElaborator.PreviewShape(Kernel, tree, b.Name)
                      .ContinueWith(t => _post(() => BooleanReplied(seq, t, doc, at, b)), TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// brief-hzn-10 R-hzn10-3 — a Boolean of sheets previews at once, built here as the elaboration builds it: its operands'
+    /// polygons combined (<see cref="C3dSheetBooleans.Result"/>). An empty result is said in the operation's own words, and the
+    /// scene draws the result, never the operands overlapped.
+    /// </summary>
+    private void SheetBooleanPreview(C3dDocument doc, int at, C3dBoolean b)
+    {
+        bool wasShown = _booleanShown is not null;
+        _booleanShown = null;
+        var result = C3dSheetBooleans.Result(b);
+        if (result.Pieces.Count == 0) BooleanError = C3dBooleans.EmptyResult(b, b.Name);
+        else
+        {
+            BooleanNote = C3dBooleans.Pieces(result.Pieces.Count);
+            _booleanShown = (doc, at, b, null);
+            BooleanPreviewsDrawn++;
+        }
+        if (wasShown || _booleanShown is not null) Viewer.Regenerate();
+        BooleanBusy = false;
+        NotifyBoolean();
     }
 
     /// <summary>A reply: drawn when it is the latest, discarded (and counted) when a newer request superseded it. The scene
@@ -526,7 +562,7 @@ public sealed partial class C3dEditorViewModel
     /// Null when entered, else why not.</summary>
     public string? EnterBoolean(int top, string path = "")
     {
-        if (KernelMissing("Edit Operands") is { } k) return StatusMessage = k;
+        if (KernelMissingFor("Edit Operands", top) is { } k) return StatusMessage = k;
         if (top < 0 || top >= Document.Objects.Count || C3dBooleans.At(Document.Objects[top], path) is not C3dBoolean)
             return StatusMessage = "Select one boolean to edit its operands.";
         CancelBoolean();
@@ -859,7 +895,7 @@ public sealed partial class C3dEditorViewModel
     /// object — enabled or not — is edited through its operands or the operation.</summary>
     private static string? ResultEditRefusal(C3dObject obj)
         => C3dFillets.IsFeature(obj) ? C3dFillets.RoundedNotEditable(obj.Name, obj)          // brief-em3d-67 R-em3d67-6e
-         : C3dOperands.IsKernel(obj) ? C3dBooleans.ResultNotEditable(obj.Name, obj) : null;
+         : C3dOperands.IsKernel(obj) || C3dSheetBooleans.IsSheetBoolean(obj) ? C3dBooleans.ResultNotEditable(obj.Name, obj) : null;
 
     // ── the menus (R-em3d66-3d, -7) ───────────────────────────────────────────────────────────
 
@@ -881,10 +917,10 @@ public sealed partial class C3dEditorViewModel
                 Tip: why ?? $"{C3dBooleans.RowsTip} The result previews before OK.");
         }
         yield return Viewer3DMenuItem.Separator;
-        string? one = KernelMissing("Dissolve Boolean") ?? (boolean < 0 ? "Select one boolean." : null);
+        string? one = KernelMissingFor("Dissolve Boolean", boolean) ?? (boolean < 0 ? "Select one boolean." : null);
         yield return new Viewer3DMenuItem("Dissolve Boolean", () => DissolveBoolean(boolean), Enabled: one is null,
             Tip: one ?? "Its operands become top-level objects again: the Blank under the boolean's name, then the Tools.");
-        string? enter = KernelMissing("Edit Operands") ?? (boolean < 0 ? "Select one boolean." : null);
+        string? enter = KernelMissingFor("Edit Operands", boolean) ?? (boolean < 0 ? "Select one boolean." : null);
         yield return new Viewer3DMenuItem("Edit Operands", () => EnterBoolean(boolean), Enabled: enter is null,
             Tip: enter ?? "Ctrl/Cmd+], or double-click it. Esc or Ctrl/Cmd+[ leaves.");
     }
@@ -898,7 +934,7 @@ public sealed partial class C3dEditorViewModel
             case "BooleanUnite": OpenBoolean(C3dBooleanOp.Unite); return true;
             case "BooleanIntersect": OpenBoolean(C3dBooleanOp.Intersect); return true;
             case "BooleanDissolve":
-                if (KernelMissing("Dissolve Boolean") is { } k1) StatusMessage = k1; else DissolveBoolean(SelectedBoolean());
+                if (KernelMissingFor("Dissolve Boolean", SelectedBoolean()) is { } k1) StatusMessage = k1; else DissolveBoolean(SelectedBoolean());
                 return true;
             case "BooleanEnter":
                 if (SelectedBoolean() is >= 0 and var b) EnterBoolean(b);
@@ -912,7 +948,7 @@ public sealed partial class C3dEditorViewModel
     private IEnumerable<Viewer3DMenuItem> BooleanTreeItems(C3dTreeItem item)
     {
         var obj = item.OperandPath is { Length: > 0 } ? C3dBooleans.At(Document.Objects[item.ObjectIndex], item.OperandPath) : Document.Objects[item.ObjectIndex];
-        string? kernel = KernelMissing("Edit Operands");
+        string? kernel = KernelMissingFor("Edit Operands", obj);
         if (obj is C3dBoolean b)
         {
             yield return new Viewer3DMenuItem("Edit Operands", () => EnterBoolean(item.ObjectIndex, item.OperandPath ?? ""), Enabled: kernel is null, Tip: kernel);

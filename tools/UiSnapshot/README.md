@@ -249,6 +249,9 @@ on the CPU, so it hovers a pixel that shows the object and sends the viewer's ow
 setup's terminal Pick receives as a real click would. The pencil opens the setup window (`--click` on it), and
 `--button Pick#2` presses the second row's Pick (`Label#n` picks the n-th button with that label). After every step an
 electrostatic or magnetostatic setup's terminals, Pick state, conductor list and the view's selection are printed.
+`--c3d-pick-add <object>` is the same click with Shift, adding the object to the selection. `--c3d-boolean-menu x,y` opens the
+canvas's Boolean submenu for the selection as it stands, built by the view's own `Viewer3DContextMenu` (the canvas cannot open its
+menu headless), at that point with its first item's tooltip showing, and prints each item's state and tip.
 
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 

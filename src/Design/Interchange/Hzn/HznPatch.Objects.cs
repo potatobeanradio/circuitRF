@@ -24,6 +24,16 @@ internal sealed partial class HznPatch
 
     private void ChangeObject(string name)
     {
+        // brief-hzn-10 R-hzn10-4 — a Boolean of sheets is written one step per tool, so an operand added or removed is a step inside
+        // the history rather than one more at its end; the save does not write that.
+        if (_b.Objects.FirstOrDefault(o => o.Name == name) is { } ob && _e.Objects.FirstOrDefault(o => o.Name == name) is { } oe
+            && (C3dSheetBooleans.IsSheetBoolean(ob) || C3dSheetBooleans.IsSheetBoolean(oe)) && !OperandNames(ob).SequenceEqual(OperandNames(oe)))
+        {
+            Refuse($"Object '{name}': an operand added to or removed from a boolean of sheets is not saved. Hertzon writes such a boolean " +
+                   "one step per tool, so the change is a step inside the history, which a save does not write yet. Save As a .c3d, or make the " +
+                   "change in Hertzon.");
+            return;
+        }
         var wb = Write(Mini(_b, [name]), $"Object '{name}'", opened: true);
         var we = Write(Mini(_e, [name]), $"Object '{name}'", opened: false);
         if (wb is null || we is null) return;
@@ -36,6 +46,9 @@ internal sealed partial class HznPatch
         }
         PatchGroup(wb.Json!, we.Json!, name);
     }
+
+    /// <summary>The names of every operand under <paramref name="o"/>, depth first.</summary>
+    private static IEnumerable<string> OperandNames(C3dObject o) => C3dOperands.SelfAndDescendants(o).Skip(1).Select(d => d.Name);
 
     /// <summary>One changed top-level object, written before and after: the objects both writings hold are edited in place, an object
     /// only the edited one holds (a new tool) is appended, one only the baseline holds (a removed tool) is removed.</summary>

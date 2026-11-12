@@ -74,9 +74,9 @@ public sealed partial class C3dEditorViewModel
             case "BooleanSubtract" or "BooleanUnite" or "BooleanIntersect":
                 return BooleanRefusal() is null;
             case "BooleanDissolve":
-                return KernelMissing("Dissolve Boolean") is null && SelectedBoolean() >= 0;
+                return SelectedBoolean() is >= 0 and var dissolve && KernelMissingFor("Dissolve Boolean", dissolve) is null;
             case "BooleanEnter":
-                return KernelMissing("Edit Operands") is null && SelectedBoolean() >= 0;
+                return SelectedBoolean() is >= 0 and var enter && KernelMissingFor("Edit Operands", enter) is null;
             case "Fillet":
                 return EdgeOpRefusal(C3dEdgeOp.Fillet) is null;
             case "Chamfer":

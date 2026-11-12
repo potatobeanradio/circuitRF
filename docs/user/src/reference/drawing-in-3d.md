@@ -703,7 +703,7 @@ A boolean owns its operands. This one subtracts a bore from a lid:
 
 ### Making a boolean {#booleans}
 
-Select two or more solids in **Object** mode — **the first one you select is a Tool, the last is the Blank** —
+Select two or more solids (or sheets, below) in **Object** mode — **the first one you select is a Tool, the last is the Blank** —
 then right-click ▸ **Boolean ▸ Subtract…**, **Unite…** or **Intersect…** (also under **3D ▸ Boolean**). A panel
 opens at the view's top right, as *Array…*'s does, and the camera stays free:
 
@@ -721,7 +721,13 @@ opens at the view's top right, as *Array…*'s does, and the camera stays free:
 - **OK** (or **Enter**) is one undo entry — *Subtract bore from lid* — and costs nothing more: the preview already
   built exactly what is committed. **Cancel** (or **Esc**) changes nothing.
 
-Sheets, polylines, bond wires and placed cells are not operands, and the disabled menu item says why for each
+**Sheets combine with sheets.** Two or more sheets in one plane (the same plane, at the same offset) make a boolean
+the same way, with no geometry kernel needed: a patch with a notch cut out and its feed joined on, a ground plane
+with a cut-out. Each sheet keeps its own rectangle and its expressions, so the result follows its variables; the
+result is a sheet of the Blank's metal and thickness. A sheet selected with a solid, or sheets in different planes,
+leave the commands disabled with the reason.
+
+Polylines, bond wires and placed cells are not operands, and the disabled menu item says why for each
 (a placed cell's solids belong to its own cell: push into it, or flatten it).
 
 **In the object tree** a boolean is a node with its operation's icon; its **Blank** and then its **Tools** are

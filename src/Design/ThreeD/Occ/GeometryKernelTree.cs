@@ -66,9 +66,10 @@ public sealed class GeometryKernelTree
     /// <summary>The root's face names, in the order the tree lists them.</summary>
     public IReadOnlyList<string> FaceNames { get; }
 
-    /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds.</summary>
-    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dSphere or C3dEllipsoid or C3dPrism or C3dPolyhedron
-                                                 or C3dBoolean or C3dFillet or C3dChamfer or C3dStep;
+    /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds, and neither is a Boolean of
+    /// sheets (brief-hzn-10), which circuitRF combines itself: the worker is never asked for one.</summary>
+    public static bool CanHold(C3dObject obj) => (obj is C3dBox or C3dCylinder or C3dSphere or C3dEllipsoid or C3dPrism or C3dPolyhedron
+                                                  or C3dBoolean or C3dFillet or C3dChamfer or C3dStep) && !C3dSheetBooleans.IsSheetBoolean(obj);
 
     /// <summary>
     /// <paramref name="obj"/> — RESOLVED, its placement applied first and then <paramref name="worldUm"/> (the

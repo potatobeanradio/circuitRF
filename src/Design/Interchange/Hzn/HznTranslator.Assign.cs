@@ -443,9 +443,9 @@ internal sealed partial class HznTranslator
         // A sheet circuitRF would conduct that Hertzon does not: a sheet is always metal here.
         // A sheet an assignment names is that assignment's business: when it was refused it has its own item.
         var named = _design.Boundaries.Concat(_design.Excitations).SelectMany(a => a.Objects).ToHashSet(StringComparer.Ordinal);
-        foreach (var o in _doc.Objects.OfType<C3dSheet>())
+        foreach (var o in _doc.Objects.Where(C3dSheetBooleans.IsSheet))
             if (o.Model && !named.Contains(_prov.Objects.TryGetValue(o.Name, out var origin) ? origin.HznObject : o.Name)
-                && !IsConductorMaterial(o.Material))
+                && !IsConductorMaterial(C3dSheetBooleans.Carrier(o)!.Material))
                 _r.Add(HznRefusalKind.Setting, "sheet that is not a conductor, port or element",
                        "a .c3d sheet always conducts; this one has a non-conducting material and no boundary or excitation turns it into metal", o.Name);
     }
@@ -510,10 +510,11 @@ internal sealed partial class HznTranslator
             }
             if (!_top.TryGetValue(c3d, out var obj))
             {
-                _r.Add(HznRefusalKind.Boundary, $"{b.Kind} on '{hz}'", "the object was folded into another or is not translated", name);
+                _r.Add(HznRefusalKind.Boundary, $"{b.Kind} on '{hz}'", ConsumedReason(hz) ?? "the object was folded into another or is not translated", name);
                 continue;
             }
-            if (obj is C3dSheet sheet)
+            // brief-hzn-10 — a boundary on a boolean of sheets dresses the result: its Blank carries the metal.
+            if (C3dSheetBooleans.Carrier(obj) is { } sheet)
             {
                 if (finite && !twoSided)
                 {
@@ -550,6 +551,13 @@ internal sealed partial class HznTranslator
             FaceBoundary(c3d, face, finite, faceMaterial, name, (int?)f.Face);
         }
     }
+
+    /// <summary>brief-hzn-10 R-hzn10-4 — why an assignment on <paramref name="hz"/> has nothing to sit on when a boolean consumed it,
+    /// or null when it was not consumed.</summary>
+    private string? ConsumedReason(string hz)
+        => _byName.TryGetValue(hz, out var o) && !string.IsNullOrEmpty(o.ConsumedBy)
+            ? $"'{hz}' is a tool consumed by '{o.ConsumedBy}', so it has no object left to sit on"
+            : null;
 
     private double? MaterialSigma(string? material, string user)
     {

@@ -425,7 +425,8 @@ public static class C3dHierarchy
 
         // The child's materials resolve in ITS technology; each must mean the same here.
         var (childTech, _) = TechnologyResolver.ResolveForDocument(child.TechRef, file, workspaceCws, cache ?? new TechnologyCache());
-        var materials = child.Objects.Select(o => o.Material).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        // An operation's material is its Blank's (brief-hzn-10 audit: a sheet boolean's is its innermost Blank's).
+        var materials = child.Objects.Select(C3dValidation.EffectiveMaterial).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
         if (MaterialMismatch(materials.Select(m => (m, C3dProblemAssembly.ObjectMaterial(childTech.Tech, m))), tech, tempC, inst.Name) is { } refused)
             return refused;
 
@@ -790,6 +791,8 @@ public static class C3dHierarchy
                 if (w.Array is { } wa) wa.Pitch = Mul(wa.Pitch, k);
                 break;
         }
+        // brief-hzn-10 audit — an operation's operands are in its frame, so they scale with it (a sheet boolean's Rects too).
+        foreach (var (_, operand) in C3dOperands.Of(o)) Scale(operand, k);
     }
 
     /// <summary>

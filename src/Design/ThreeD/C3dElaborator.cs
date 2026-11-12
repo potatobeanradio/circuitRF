@@ -1045,6 +1045,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 }
                 return;
             }
+            // brief-hzn-10 — a Boolean of coplanar sheets is built here, from its operands' polygons, with no worker.
+            if (C3dSheetBooleans.IsSheetBoolean(obj)) { SheetBooleanObject(obj, name, world, doc, tech, prefix, path, exact); return; }
             if (C3dOperands.IsKernel(obj)) { KernelObject(obj, name, world, doc, tech, prefix, path, exact); return; }
             // brief-sar-3 R-sar3-2 — a phantom is its layers, outermost first, so the innermost wins (C3dPhantoms).
             if (obj is C3dPhantom phantom)
@@ -1170,6 +1172,47 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             Add(obj, name, lowered, material, role, world, tech, prefix, path, exact);
         }
 
+        /// <summary>
+        /// brief-hzn-10 R-hzn10-2 — a Boolean of coplanar sheets: validation's refusal when it has one, otherwise the Blank's
+        /// material and role on the result, every piece a sheet of its own carrying the object's provenance; then its kept Tools
+        /// and the Tools of any disabled Boolean inside it, as a solid Boolean's are. The geometry kernel is never asked.
+        /// </summary>
+        private void SheetBooleanObject(C3dObject obj, string name, C3dTransform world, C3dDocument doc, TechResolution tech, string prefix,
+                                        string path, bool exact)
+        {
+            if (C3dValidation.OperationFindings(obj, name) is [var first, ..])
+            {
+                _refusals.Add(first.Render());
+                return;
+            }
+            // An empty result is the operation's own refusal, whatever the material.
+            if (owner.LowerCached(obj, world, doc.DbuPerMicron) is { Refusal: { } empty })
+            {
+                _refusals.Add(empty);
+                KeptTools(obj, world, doc, tech, prefix, path, exact);
+                return;
+            }
+            string techName = TechName(tech);
+            Know(tech, techName);
+            string? matName = C3dValidation.EffectiveMaterial(obj);
+            if (matName is not { Length: > 0 })
+            {
+                if (!_off) _warnings.Add(NoMaterialWarning(name));
+                Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
+            }
+            else if (C3dProblemAssembly.ObjectMaterial(tech.Tech, matName) is not { } material)
+            {
+                _refusals.Add($"'{name}' is made of '{matName}', which its technology ({techName}) does not define.");
+                Unassigned(obj, name, world, doc.DbuPerMicron, prefix, path, exact);
+            }
+            else if (Role(C3dValidation.EffectiveRole(obj), material, name) is { } role && owner.LowerCached(obj, world, doc.DbuPerMicron) is { } lowered)
+            {
+                Add(obj, name, lowered, material, role, world, tech, prefix, path, exact);
+                if (lowered.SheetPieces.Count > 1) _notes.Add($"'{name}' is {C3dBooleans.Pieces(lowered.SheetPieces.Count)}");
+            }
+            KeptTools(obj, world, doc, tech, prefix, path, exact);
+        }
+
         /// <summary>A lowered object into the problem: its solid or sheet, material, provenance, origin and net.</summary>
         private void Add(C3dObject obj, string name, C3dLowered lowered, TechMaterial material, Em3dRole role, C3dTransform world,
                          TechResolution tech, string prefix, string path, bool exact)
@@ -1205,17 +1248,22 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                                   "solid, or give it a conducting material.");
                     return;
                 }
-                double t = (obj as C3dSheet)?.ThicknessUm is { } um ? um * 1e-6 : 0;
-                _uses.Add((_sheets.Count, true, techName, material.Name));
-                _sheets.Add(new Em3dSheet(name, key, g.Outline, g.Holes, g.Z, t, ++_order) { Frame = g.Frame });
+                double t = C3dSheetBooleans.Carrier(obj)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                // brief-hzn-10 — a sheet boolean in several pieces is a sheet per piece; each names the object (below).
+                IReadOnlyList<C3dSheetGeometry> pieces = lowered.SheetPieces.Count > 0 ? lowered.SheetPieces : [g];
+                for (int k = 0; k < pieces.Count; k++)
+                {
+                    var piece = pieces[k];
+                    _uses.Add((_sheets.Count, true, techName, material.Name));
+                    _sheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), key, piece.Outline, piece.Holes, piece.Z, t, ++_order) { Frame = piece.Frame });
+                }
             }
             else
             {
                 _uses.Add((_solids.Count, false, techName, material.Name));
                 _solids.Add(new Em3dSolid(name, key, role, lowered.Solid!, ++_order));
             }
-            MarkOff(name);
-            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
+            var provenance = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
                 TopObject = _topObject,
                 Transparency = _transparency,
@@ -1225,12 +1273,20 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };
-            _walkLowering.Add(new C3dWalkStep(name, lowered.Kind));
-            _origins[name] = new Em3dObjectOrigin(role switch
+            var origin = new Em3dObjectOrigin(role switch
             {
                 Em3dRole.Conductor => Em3dObjectKind.Conductor, Em3dRole.Air => Em3dObjectKind.Air, _ => Em3dObjectKind.Body,
             }, null, obj.DrawingLayer, null);         // the layer only colours it; no stackup entry, so nothing treats it as board
-            if (role == Em3dRole.Conductor) Net(name, name);
+            _walkLowering.Add(new C3dWalkStep(name, lowered.Kind));
+            // A sheet boolean's later pieces carry the object's provenance, origin and net: whatever names a piece names the object.
+            for (int k = 0; k < Math.Max(1, lowered.SheetPieces.Count); k++)
+            {
+                string piece = C3dSheetBooleans.PieceName(name, k);
+                MarkOff(piece);
+                _provenance[piece] = provenance;
+                _origins[piece] = origin;
+                if (role == Em3dRole.Conductor) Net(piece, name);
+            }
         }
 
         /// <summary>
@@ -1417,11 +1473,14 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             if (lowered.CylinderSheet is not null || lowered.Refusal is not null) { }
             else if (lowered.Sheet is { } g)
             {
-                double t = (obj as C3dSheet)?.ThicknessUm is { } um ? um * 1e-6 : 0;
-                _unassignedSheets.Add(new Em3dSheet(name, "", g.Outline, g.Holes, g.Z, t, 0) { Frame = g.Frame });
+                double t = C3dSheetBooleans.Carrier(obj)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                IReadOnlyList<C3dSheetGeometry> pieces = lowered.SheetPieces.Count > 0 ? lowered.SheetPieces : [g];
+                for (int k = 0; k < pieces.Count; k++)
+                    _unassignedSheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), "", pieces[k].Outline, pieces[k].Holes, pieces[k].Z, t, 0)
+                                          { Frame = pieces[k].Frame });
             }
             else _unassignedSolids.Add(new Em3dSolid(name, "", Em3dRole.Dielectric, lowered.Solid!, 0));
-            _provenance[name] = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
+            var provenance = new C3dProvenance(prefix.TrimEnd('/'), path, name[prefix.Length..], lowered.FaceNames)
             {
                 TopObject = _topObject,
                 Transparency = _transparency,
@@ -1431,6 +1490,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Exact = exact && obj.Placement.ToTransform().IsIntegral,
                 Element = prefix.Length > 0 ? world : null,
             };
+            for (int k = 0; k < Math.Max(1, lowered.SheetPieces.Count); k++) _provenance[C3dSheetBooleans.PieceName(name, k)] = provenance;
         }
 
         /// <summary>brief-em3d-50 — the document's drawn wires, landed on the conductors of this document and everything

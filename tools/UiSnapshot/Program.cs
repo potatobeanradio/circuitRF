@@ -425,7 +425,7 @@ for (int i = 0; i < args.Length; i++)
             sizeGiven = true;
             break;
         case "--click" or "--drag" or "--drag-hold" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
-            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick"
+            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick" or "--c3d-pick-add" or "--c3d-boolean-menu"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -1454,8 +1454,10 @@ foreach (var (kind, arg) in steps)
         case "--shot":
             Capture(arg);
             break;
-        case "--c3d-pick":
+        case "--c3d-pick" or "--c3d-pick-add":
         {
+            // --c3d-pick-add (brief-hzn-10): the same click with Shift, which adds the object to the selection.
+            bool add = kind == "--c3d-pick-add";
             // The canvas cannot draw headless, but picking is on the CPU: hover a pixel that shows the object, then the
             // viewer's own Click — the path a real click takes, an armed draw tool and an armed terminal Pick included.
             var v = (c3dShown ?? throw new InvalidOperationException("--c3d-pick needs --c3d-setups")).Viewer;
@@ -1473,7 +1475,7 @@ foreach (var (kind, arg) in steps)
                     typeof(CircuitRF.Ui.Viewer3D.Viewer3DViewModel).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                         .Single(m => m.Name == "OnPicked" && m.GetParameters().Length == 5)
                         .Invoke(v, [id, face, System.Numerics.Vector3.Zero, true, null]);
-                    v.Click(false);
+                    v.Click(add);
                     hit = true;
                 }
             // brief-dfr34-1 — a port inside the board is never the front pixel: hover its projected centre and let the viewer's
@@ -1496,6 +1498,25 @@ foreach (var (kind, arg) in steps)
                 }
             }
             if (!hit) throw new InvalidOperationException($"--c3d-pick: '{arg}' is not visible from the camera");
+            break;
+        }
+        case "--c3d-boolean-menu":
+        {
+            // brief-hzn-10 — the canvas's Boolean submenu for the selection as it is, built by the view's own Viewer3DContextMenu
+            // (the canvas cannot open its menu headless), opened at x,y with the first item's tooltip showing; every item's
+            // state and tip printed.
+            var items = (c3dShown ?? throw new InvalidOperationException("--c3d-boolean-menu needs --c3d-setups")).DrawMenuItems()
+                .Single(m => m.Header == "Boolean").Children!;
+            var menu = new ContextMenu();
+            CircuitRF.Ui.Viewer3D.Viewer3DContextMenu.Fill(menu, [.. items], []);
+            host.MouseMove(PointOf(arg), RawInputModifiers.None);
+            menu.Placement = PlacementMode.Pointer;
+            Pump();
+            menu.Open(host);
+            Pump();
+            foreach (var mi in menu.Items.OfType<MenuItem>())
+                Console.WriteLine($"{mi.Header}: {(mi.IsEnabled ? "enabled" : "disabled")} — {ToolTip.GetTip(mi)}");
+            if (menu.Items.OfType<MenuItem>().FirstOrDefault() is { } first) { ToolTip.SetIsOpen(first, true); Pump(); }
             break;
         }
         case "--hover":

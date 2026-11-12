@@ -381,8 +381,21 @@ public static class C3dDiagnostics
     public static Diagnostic OperandKind(string name, string operand, string kind) => Diagnostic.Create(
         "c3d.operation.operand-kind", DiagnosticSeverity.Error,
         "'{operand}' in '{name}' is a {kind}, which cannot be an operand: a Box, Prism, Cylinder, Sphere, Polyhedron, Boolean, Fillet, " +
-        "Chamfer or Step part can. A sheet boolean is a later build's, and a wire is not a solid the kernel builds.",
+        "Chamfer or Step part can, and a Sheet can with other sheets in its plane. A wire is not a solid the kernel builds.",
         ("name", name), ("operand", operand), ("kind", kind));
+
+    /// <summary>brief-hzn-10 R-hzn10-1 — a boolean of sheets and solids together.</summary>
+    public static Diagnostic SheetBooleanMixed(string name, string sheet, string other, string otherKind) => Diagnostic.Create(
+        "c3d.operation.sheet-mixed", DiagnosticSeverity.Error,
+        "'{name}' mixes sheets and solids: '{sheet}' is a sheet and '{other}' is a {otherKind}. A boolean's operands are all solids, " +
+        "or all sheets in one plane.",
+        ("name", name), ("sheet", sheet), ("other", other), ("otherKind", otherKind));
+
+    /// <summary>brief-hzn-10 R-hzn10-1 — an operand of a sheet boolean out of the Blank's plane, or placed out of it.</summary>
+    public static Diagnostic SheetBooleanPlane(string name, string operand, string why) => Diagnostic.Create(
+        "c3d.operation.sheet-plane", DiagnosticSeverity.Error,
+        "'{operand}' in '{name}' {why}. A boolean of sheets needs every operand in one plane, at one offset.",
+        ("name", name), ("operand", operand), ("why", why));
 
     public static Diagnostic StepShape(string name, string why) => Diagnostic.Create(
         "c3d.step.shape", DiagnosticSeverity.Error,

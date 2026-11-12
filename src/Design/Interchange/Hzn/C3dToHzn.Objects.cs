@@ -60,7 +60,7 @@ internal sealed partial class C3dToHznWriter
         h.Group = string.IsNullOrEmpty(top.Group) ? null : top.Group;
         h.Visible = !top.Hidden;
         h.Model = top.Model;
-        h.IsSheet = top is C3dSheet;
+        h.IsSheet = C3dSheetBooleans.IsSheet(top);
         h.Material = C3dValidation.EffectiveMaterial(top);
         h.Role = C3dValidation.EffectiveRole(top);
         if (top.Transparency is not null || top.Appearance is not null)
@@ -212,9 +212,13 @@ internal sealed partial class C3dToHznWriter
             _r.Add(HznRefusalKind.Operation, "Boolean without a blank", "there is nothing for the tools to act on", owner.Name);
             return false;
         }
-        if (blank is C3dSheet or C3dPolyline)
+        // brief-hzn-10 R-hzn10-4 — a boolean of coplanar sheets is written as Hertzon writes one: the Blank's rectangle or polyline,
+        // then a Unite or Subtract naming each Tool, every Tool an object consumed by it.
+        bool sheets = C3dSheetBooleans.IsSheetBoolean(bo);
+        if (blank is C3dPolyline || (!sheets && C3dSheetBooleans.IsSheet(blank)) || (sheets && C3dSheetBooleans.PlaneFaults(bo, owner.Name).Count > 0))
         {
-            _r.Add(HznRefusalKind.Operation, "Boolean on a sheet", "a Boolean has solids as operands", owner.Name);
+            _r.Add(HznRefusalKind.Operation, "Boolean on a sheet",
+                   sheets ? "its sheets are not all in one plane" : "a Boolean has solids with solids, or sheets with sheets in one plane", owner.Name);
             return false;
         }
         if (bo.KeepTools && bo.Op != C3dBooleanOp.Subtract)
@@ -230,13 +234,13 @@ internal sealed partial class C3dToHznWriter
         var toolNames = new List<string>();
         foreach (var tool in bo.Tools)
         {
-            if (tool is C3dSheet or C3dPolyline)
+            if (tool is C3dPolyline || C3dSheetBooleans.IsSheet(tool) != sheets)
             {
-                _r.Add(HznRefusalKind.Operation, $"{bo.Op} with a sheet tool", "a Boolean has solids as operands", owner.Name);
+                _r.Add(HznRefusalKind.Operation, $"{bo.Op} with a sheet tool", "a Boolean has solids with solids, or sheets with sheets in one plane", owner.Name);
                 ok = false;
                 continue;
             }
-            var th = new HObj { Name = ObjectName(tool.Name), Source = tool };
+            var th = new HObj { Name = ObjectName(tool.Name), Source = tool, IsSheet = sheets };
             var tsteps = Steps(tool, th);
             if (tsteps is null) { ok = false; continue; }
             th.History = tsteps;
@@ -255,7 +259,9 @@ internal sealed partial class C3dToHznWriter
             return false;
         }
         string kind = bo.Op switch { C3dBooleanOp.Subtract => "Subtract", C3dBooleanOp.Unite => "Unite", _ => "Intersect" };
-        steps.Add(new(kind, P(("Tools", string.Join(",", toolNames)), ("KeepOriginals", bo.KeepTools ? "True" : "False")), Suppressed: !bo.Enabled));
+        // brief-hzn-10 — Hertzon writes a sheet's boolean one step per tool; a solid's names its tools in one step, as before.
+        foreach (var names in sheets ? toolNames.Select(n => (IEnumerable<string>)[n]) : [toolNames])
+            steps.Add(new(kind, P(("Tools", string.Join(",", names)), ("KeepOriginals", bo.KeepTools ? "True" : "False")), Suppressed: !bo.Enabled));
         steps.AddRange(Placement(bo.Placement));
         return true;
     }

@@ -568,6 +568,85 @@ time⁻¹), and every other unit is only "has a unit", as before.
 - Polyline outlines built from variables (9).
 - Plane waves (11), circles as ports (Coax), Terminal solution type (6).
 
+### HZN-10 — booleans of coplanar sheets, and the Hertzon examples they open (2026-11-11)
+
+The code is `ThreeD/C3dSheetBooleans.cs` (what a sheet boolean is, the one-plane rules, the result), a row in `C3dLowering`, a branch in
+`C3dElaborator.Object` (`SheetBooleanObject`), and the readers listed below. Gates: `tests/Ui.Tests/ThreeD/C3dSheetBooleanTests.cs`,
+`tests/Ui.Tests/Hzn/HznSheetBooleanTests.cs` (fixture `sheet-boolean.hzn`, a notched patch written for it), and one editor test in
+`BooleansInTheEditorTests`.
+
+**What it is.** A `Boolean` whose Blank and every Tool are a `Sheet` or another sheet `Boolean`, all with one `Plane` and one resolved `Offset`, each
+operand's placement a move within the plane. Nesting is what Hertzon's histories need: the patch is `Unite(Subtract(rect, notch), feed)` and the stub
+filter six Unites deep. A disabled boolean below the top is its Blank in its place (its Tools are objects of their own), as a solid one is.
+- **It is not a kernel object and not a solid.** `C3dOperands.IsKernel` and `IsSolid` answer false for it, `C3dKernelUse` does not list it and
+  `GeometryKernelTree.CanHold` is false, so a document whose only operations are sheet booleans opens and runs with no worker (the test gives the
+  elaborator a kernel that is absent and counts zero requests).
+- **The result** is computed in DBU through `LayoutClipper.ToClipperPaths` (which orients outlines and holes) and Clipper2's own operations, each
+  operand's region resolved first and the operations applied in order, then split by the poly tree into pieces with their holes. Integer, so exact.
+- **Several pieces are several `Em3dSheet`s named `name`, `name#2`, ...** (sheet names share the problem's one namespace with solids and ports, so they
+  cannot repeat). Every piece carries the object's provenance, origin and net, so picking, a field plot and `explain` name the object. A port that
+  names the object as `Positive` reaches the first piece only; inference finds whichever piece it touches.
+
+**The readers asked "is it a sheet?" (the audit), and what each does now:**
+- `C3dValidation`: a sheet boolean's operands must be sheets (`c3d.operation.sheet-plane` for another plane, another offset, or a placement that
+  rotates, mirrors or moves along the normal); sheets beside solids are `c3d.operation.sheet-mixed`, said once naming both; the operand-kind sentence
+  no longer calls a sheet boolean a later build's. The sheet-material rule is the elaborator's ("a sheet is a conductor thin enough to be a surface"),
+  and the result reaches it because it lowers to a sheet; the translator's "sheet that is not a conductor" rule reads the result's carrier.
+- `GeometryKernelTree.CanHold`: false, as above.
+- Port and lumped-element landing (`C3dPortContext`) reads the problem's `Em3dSheet`s, so it finds the RESULT's edges, never an operand's. The
+  stub filter, converted and dry-run (`em --dry-run`, nothing solved), lands port 2 on `MS1` at the far end of `MS3`, one of its tools: "touches
+  bottom 'Ground', top 'MS1'", 0 errors.
+- Bounds and extents are the elaborated sheets'. `C3dToHzn`'s analytic extent already took a boolean's Blank (and a Unite's tools).
+- The hierarchy flattener: an operation's operands now scale with it when two documents' DBU differ (they did not, for a solid boolean either), and
+  a child's materials are read through `EffectiveMaterial` (an operation's top level has none of its own).
+- `C3dProblemAssembly.FaceBoundaries` refuses a face boundary on a sheet boolean as on a sheet; so do the editor's face-boundary command and menu.
+- `C3dFillets.TargetRefusal`: a sheet boolean has no edge to round.
+- `C3dToHzn`: a sheet boolean's metal is its carrier's material and thickness, its boundary names the result, and its tools are written as sheets (vacuum).
+- `HznPatch`: an operand added or removed is refused (below); an edited operand is the writer's diff, one property.
+- The editor: the Boolean commands need no kernel for sheets (Dissolve and Edit Operands neither, on a sheet boolean); a face or vertex edit on
+  the result is refused as on any boolean's.
+
+**Hertzon.** `Unite`, `Subtract` and `Intersect` on a sheet translate into the boolean; a solid tool on a sheet, or operands out of one plane, keep
+the item `<op> on a sheet` with the reason. The plane check resolves a copy first, because an operand's offset is usually an expression (`h`).
+A boundary on the object dresses its innermost Blank. An assignment on a consumed tool is refused saying which object consumed it.
+- **One step per tool.** Hertzon's own files write a sheet boolean as one `Unite`/`Subtract` per tool (the stub filter has six), so the writer does
+  too for a sheet boolean; a solid boolean still names its tools in one step, as before. A single step naming two tools reads back as one boolean with
+  two tools, the same result.
+- **Adding or removing an operand is refused** on save, as the brief asked. HZN-5's history writer CAN append and cut steps at the END of a history;
+  with one step per tool a new operand of an inner boolean is a step in the MIDDLE (`CreateRectangle, Subtract, Subtract, Unite`), which only a
+  rewrite of the whole history would write. That rewrite would replace the file's spelling of every step of the object, so it is refused instead.
+- **Coverage** (`HznCoverageTests`, Hertzon 0.3.19): **12 of 58** designs translate, from 4. New: `PatchAntenna` and the six patch mesher projects
+  (`patch_aura`, `patch_local`, `patch_reference_fine`, `patch_remesh`, `patch_stable`, `large_patch`) and `StubFilter_Layout`. `Meta_Ex1` stays
+  refused for its one-sided Finite Conductivity. Gate 1 (each opened design saves with no edit byte for byte) passes on all 12; gate 2 (an edited patch
+  and an exported native notched patch read by `hertzon-cli describe`) passes.
+- **What stops the rest, by designs it alone stops:** Wave Port without renormalisation is the only item on 9 (`WaveguidePost` and 8 WR90 post
+  variants), and a 10th needs a Finite Conductivity on a solid besides; Incident Plane Wave alone stops 7 (sphere RCS designs), faceted spheres 3. The
+  21 Unite items left are the three `Meta_Ex2` designs, each stopped by other items too (a polyline off an axis plane, cylinders, Terminal).
+
+**Gate 4, the patch's input match (measured 2026-11-11, Hertzon 0.3.19, EMerge 3.0.0, by hand).** Hertzon's `PatchAntenna` on a scratch copy with its
+sweep narrowed to 2.40-2.60 GHz in 9 discrete points, each side's air box a third of a wavelength at 2.40 GHz (Auto Open), second order.
+- circuitRF: the design converted to a cell and run at its translated setup (Standard preset, adaptive passes allowed to 20): 60,178 tetrahedra, 32 s,
+  6.8 GB. The same at 6 points from 2.2 GHz (air box 45.4 mm) was 52,323 tetrahedra and moved |S11| by up to 0.03. The Accurate preset was stopped by
+  circuitRF's memory limit (17.2 GB) on this 16 GB machine, so 60,178 is the finest reached in minutes.
+- Hertzon: 10,557 tetrahedra at its own 0.01 delta S (12 s), 31,539 at 0.003 (40 s); the two differ by at most 0.043, and the resonance did not move.
+- **Resonance (minimum |S11|, parabolic in dB):** circuitRF **2.4647 GHz** (-19.0 dB sampled), Hertzon **2.4744 GHz** (-24.5 dB): 9.7 MHz apart, 0.39 %.
+- **|dS11|, circuitRF 60,178 against Hertzon 31,539:** 0.044 / 0.068 / 0.093 / 0.110 / 0.113 / 0.103 / 0.089 / 0.074 / 0.062 at 2.400 ... 2.600 GHz. Past
+  HZN-7's 0.035 everywhere; near resonance almost all of it is the 9.7 MHz shift of a sharp dip, and at the band edges it is 0.044-0.062. Recorded, not
+  tuned. Not investigated here: whether circuitRF's Standard mesh is converged for this design (the next refinement does not fit this machine), and
+  whether it is the same extra-length effect HZN-7 found on Hertzon's lumped line (a pure delay, about 0.3 mm of line), which on a resonator would
+  appear as a frequency shift of about this size.
+- The stub filter was not solved, only dry-run (above).
+
+**Snapshots** (UiSnapshot, looked at): `--c3d` of a notched patch with an inset feed (the result drawn with its two gaps, never the operands overlapped);
+`--c3d-setups --editor --c3d-row notch` with the boolean expanded (`patch` ▸ Boolean (Blank) ▸ Sheet, `notch` Tool selected, `feed` Tool) and its
+Properties (the notch's rectangle as `wf + 2 mm` and `inset mm`); and the Boolean submenu for a patch and a sheet at another height, its three
+operations greyed with "'slot' and 'patch' lie at different offsets along z: sheets are combined only in one plane." UiSnapshot gained two steps for
+it: `--c3d-pick-add` (a pick with Shift) and `--c3d-boolean-menu x,y` (the canvas's Boolean submenu built by `Viewer3DContextMenu`, opened, first tooltip
+shown, every item's state printed), since the canvas cannot open its own menu headless.
+
+**Open.** An entered sheet boolean's operand with no material says "has no material, so the solver ignores it", as a solid boolean's tool does: true of
+the operand drawn alone, misleading inside an operation. `C3dToHzn.Extent` of a ROTATED sheet boolean is not stated (no analytic box and no kernel).
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

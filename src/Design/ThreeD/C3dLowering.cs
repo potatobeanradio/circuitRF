@@ -12,6 +12,7 @@
 //
 // A sheet lies flat (Em3dSheet at Z) under the same condition a prism stays an extrusion, and otherwise
 // carries a frame (Em3dPlaneFrame). A polyline is construction geometry and lowers to nothing.
+// A Boolean of coplanar sheets (brief-hzn-10) lowers here too, to one sheet geometry per piece of its result.
 //
 // brief-em3d-47 R-em3d47-1c: a Polyhedron that is exactly an axis-aligned box or a z-prism is recognised and
 // lowers by the Box or the XY-prism row (C3dRecognition) — the document keeps the polyhedron.
@@ -42,6 +43,10 @@ public sealed record C3dLowered(Em3dPrimitive? Solid, C3dSheetGeometry? Sheet, I
 
     /// <summary>brief-sar-8b — why the object could not be lowered (a cylindrical sheet whose axis a placement tipped off x, y or z).</summary>
     public string? Refusal { get; init; }
+
+    /// <summary>brief-hzn-10 R-hzn10-2 — every piece of a sheet boolean's result, <see cref="Sheet"/> the first; empty for anything
+    /// else. Each piece is a sheet of its own in the problem, carrying the object's provenance.</summary>
+    public IReadOnlyList<C3dSheetGeometry> SheetPieces { get; init; } = [];
 }
 
 /// <summary>A sheet's geometry, metres: its outline and holes at <see cref="Z"/>, flat or in <see cref="Frame"/>.</summary>
@@ -154,6 +159,8 @@ public static class C3dLowering
                 var placed = TransformSheet(sheet, w);
                 return new C3dLowered(null, placed, [], placed.Frame is null ? KindSheet : KindFramedSheet);
             }
+            case C3dBoolean sb when C3dSheetBooleans.IsSheetBoolean(sb):
+                return SheetBoolean(sb, w, dbuPerMicron);
             case C3dCylinderSheet cs:
             {
                 var (patch, why) = CylinderPatch(cs.Rect, w, dbuPerMicron);
@@ -163,6 +170,37 @@ public static class C3dLowering
             default:
                 return null;
         }
+    }
+
+    /// <summary>The row a sheet boolean's result takes: a sheet, built in circuitRF from its operands' polygons.</summary>
+    public const string KindSheetBoolean = "sheet (boolean of sheets)";
+
+    /// <summary>
+    /// brief-hzn-10 R-hzn10-2 — a Boolean of coplanar sheets: its operands' polygons combined exactly in DBU
+    /// (<see cref="C3dSheetBooleans.Result"/>), each piece a sheet in its plane carried by <paramref name="w"/> (the boolean's own
+    /// placement, then the world). Operands out of one plane, and an empty result, are its refusal.
+    /// </summary>
+    private static C3dLowered SheetBoolean(C3dBoolean b, C3dTransform w, int dbuPerMicron)
+    {
+        string name = b.Name;
+        if (C3dSheetBooleans.PlaneFaults(b, name) is [var (operand, why), ..])
+            return new C3dLowered(null, null, [], KindSheetBoolean) { Refusal = C3dDiagnostics.SheetBooleanPlane(name, operand, why).Render() };
+        var result = C3dSheetBooleans.Result(b);
+        if (result.Pieces.Count == 0)
+            return new C3dLowered(null, null, [], KindSheetBoolean) { Refusal = C3dBooleans.EmptyResult(b, name) };
+        double M(long v) => Metres(v, dbuPerMicron);
+        double h = M(result.Offset);
+        var pieces = new List<C3dSheetGeometry>(result.Pieces.Count);
+        foreach (var piece in result.Pieces)
+        {
+            List<Point2> outline = [.. piece.Outline.Select(q => new Point2(M(q.U), M(q.V)))];
+            List<IReadOnlyList<Point2>> holes = [.. piece.Holes.Select(r => (IReadOnlyList<Point2>)[.. r.Select(q => new Point2(M(q.U), M(q.V)))])];
+            var sheet = result.Plane == C3dPlane.XY
+                ? new C3dSheetGeometry(outline, holes, h, null)
+                : new C3dSheetGeometry(outline, holes, 0, PlaneFrame(result.Plane, h));
+            pieces.Add(TransformSheet(sheet, w));
+        }
+        return new C3dLowered(null, pieces[0], [], KindSheetBoolean) { SheetPieces = pieces };
     }
 
     /// <summary>

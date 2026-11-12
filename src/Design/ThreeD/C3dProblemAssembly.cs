@@ -361,8 +361,9 @@ public static class C3dProblemAssembly
                        "of the setup's air box. A solid's face may be Pec or Conductive.";
             var obj = document.Objects.FirstOrDefault(o => o.Name == b.Object);
             if (obj is null) return $"{where} names no object of this 3D view.";
-            if (obj is C3dSheet or C3dCylinderSheet or C3dPolyline)
-                return $"{where} is on a {(obj is C3dSheet or C3dCylinderSheet ? "sheet, which is already a conductor's surface" : "polyline, which is construction geometry")}: " +
+            bool sheet = C3dSheetBooleans.IsSheet(obj) || obj is C3dCylinderSheet;
+            if (sheet || obj is C3dPolyline)
+                return $"{where} is on a {(sheet ? "sheet, which is already a conductor's surface" : "polyline, which is construction geometry")}: " +
                        "a boundary goes on a face of a dielectric or air solid.";
             // brief-em3d-64 R-em3d64-2f — through a disabled operation (lid, bore:side) is the standalone bore's side;
             // nothing in the file is rewritten.

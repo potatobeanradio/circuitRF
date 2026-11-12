@@ -1135,7 +1135,7 @@ leaves nothing — is refused by name, and the rest of the document still elabor
 undo it.</li>
 </ul>
 <h3 id="booleans">Making a boolean</h3>
-<p>Select two or more solids in <strong>Object</strong> mode — <strong>the first one you select is a Tool, the last is the Blank</strong> —
+<p>Select two or more solids (or sheets, below) in <strong>Object</strong> mode — <strong>the first one you select is a Tool, the last is the Blank</strong> —
 then right-click ▸ <strong>Boolean ▸ Subtract…</strong>, <strong>Unite…</strong> or <strong>Intersect…</strong> (also under <strong>3D ▸ Boolean</strong>). A panel
 opens at the view's top right, as <em>Array…</em>'s does, and the camera stays free:</p>
 <ul>
@@ -1153,7 +1153,12 @@ that leaves nothing, or that the kernel cannot build, is said in red and OK stay
 <li><strong>OK</strong> (or <strong>Enter</strong>) is one undo entry — <em>Subtract bore from lid</em> — and costs nothing more: the preview already
 built exactly what is committed. <strong>Cancel</strong> (or <strong>Esc</strong>) changes nothing.</li>
 </ul>
-<p>Sheets, polylines, bond wires and placed cells are not operands, and the disabled menu item says why for each
+<p><strong>Sheets combine with sheets.</strong> Two or more sheets in one plane (the same plane, at the same offset) make a boolean
+the same way, with no geometry kernel needed: a patch with a notch cut out and its feed joined on, a ground plane
+with a cut-out. Each sheet keeps its own rectangle and its expressions, so the result follows its variables; the
+result is a sheet of the Blank's metal and thickness. A sheet selected with a solid, or sheets in different planes,
+leave the commands disabled with the reason.</p>
+<p>Polylines, bond wires and placed cells are not operands, and the disabled menu item says why for each
 (a placed cell's solids belong to its own cell: push into it, or flatten it).</p>
 <p><strong>In the object tree</strong> a boolean is a node with its operation's icon; its <strong>Blank</strong> and then its <strong>Tools</strong> are
 beneath it, and a boolean inside a boolean is a node inside a node. By material, a boolean is listed under its

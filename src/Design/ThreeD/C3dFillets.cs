@@ -51,6 +51,7 @@ public static class C3dFillets
     public static string? TargetRefusal(C3dObject o) => o switch
     {
         C3dSheet or C3dCylinderSheet => SheetRefused,
+        _ when C3dSheetBooleans.IsSheetBoolean(o) => SheetRefused,
         C3dSphere => $"'{o.Name}' is a sphere: its surface is one closed face, with no edge to round or bevel.",
         C3dEllipsoid => $"'{o.Name}' is an ellipsoid: its surface is one closed face, with no edge to round or bevel.",
         C3dPolyline => $"'{o.Name}' is a polyline — construction geometry, never in the problem: Extrude it first.",

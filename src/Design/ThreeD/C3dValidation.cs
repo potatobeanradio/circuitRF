@@ -97,7 +97,7 @@ public static class C3dValidation
 
             if (unresolved?.Contains(o.Name) == true) { Unread(o.Unread, $"'{o.Name}'", found); continue; }
             Geometry(o, o.Name, found);
-            if (C3dOperands.IsKernel(o)) Operation(o, o.Name, isKnownMaterial, documentPath, found);
+            if (C3dOperands.IsKernel(o) || C3dSheetBooleans.IsSheetBoolean(o)) Operation(o, o.Name, isKnownMaterial, documentPath, found);
 
             Unread(o.Unread, $"'{o.Name}'", found);
         }
@@ -294,19 +294,33 @@ public static class C3dValidation
         if (o is C3dOperation && (o.Material is not null || o.Role is not null))
             found.Add(C3dDiagnostics.OperationMaterial(label, C3dObject.KindOf(o), o is C3dBoolean ? "Blank" : "Target"));
 
+        // brief-hzn-10 R-hzn10-1 — a Boolean of sheets: every operand a sheet, all in one plane, each placed within it.
+        bool sheets = C3dSheetBooleans.IsSheetBoolean(o);
+        if (sheets)
+            foreach (var (operand, why) in C3dSheetBooleans.PlaneFaults((C3dBoolean)o, label, deep: false))
+                found.Add(C3dDiagnostics.SheetBooleanPlane(label, operand, why));
+        // A sheet beside a solid is refused once, naming both, rather than once per sheet as an operand of the wrong kind.
+        var mixed = o is C3dBoolean mb ? C3dSheetBooleans.Mixed(mb, label) : null;
+        if (mixed is { } mix) found.Add(C3dDiagnostics.SheetBooleanMixed(label, mix.Sheet, mix.Other, mix.OtherKind));
+
         foreach (var (prefix, child) in C3dOperands.Of(o))
         {
             string where = child.Name.Length > 0 ? child.Name : label + "." + prefix.TrimEnd('.');
             bool inner = ReferenceEquals(child, C3dOperands.Inner(o));
             // R-em3d64-1d — the wrapper carries the name; the object inside it has none.
             if (inner && child.Name.Length > 0) found.Add(C3dDiagnostics.OperandNamed(label, child.Name, prefix.TrimEnd('.')));
-            // R-em3d64-1e — solids only.
-            if (!C3dOperands.IsSolid(child)) { found.Add(C3dDiagnostics.OperandKind(label, where, C3dObject.KindOf(child))); continue; }
+            // R-em3d64-1e — solids only, or (brief-hzn-10) sheets only.
+            bool sheet = C3dSheetBooleans.IsSheet(child);
+            if (!(sheets ? sheet : C3dOperands.IsSolid(child)))
+            {
+                if (!(mixed is not null && sheet)) found.Add(C3dDiagnostics.OperandKind(label, where, C3dObject.KindOf(child)));
+                continue;
+            }
             // A Tool's material matters when it is kept or the boolean is disabled; an unknown one is worth a warning.
             if (!inner && child.Material is { Length: > 0 } m && isKnownMaterial is not null && !isKnownMaterial(m))
                 found.Add(C3dDiagnostics.UnknownMaterial(where, m));
             Geometry(child, where, found);
-            if (C3dOperands.IsKernel(child)) Operation(child, where, isKnownMaterial, documentPath, found);
+            if (C3dOperands.IsKernel(child) || C3dSheetBooleans.IsSheetBoolean(child)) Operation(child, where, isKnownMaterial, documentPath, found);
             Unread(child.Unread, $"'{where}'", found);
         }
     }

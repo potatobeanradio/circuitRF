@@ -24,7 +24,11 @@ public static partial class C3dBooleans
     // ── what may be an operand (R-em3d66-1) ─────────────────────────────────────────────────────
 
     /// <summary>Fewer than two legal solids are selected.</summary>
-    public const string SelectTwo = "Select two or more solids: the first one you select is a Tool.";
+    public const string SelectTwo = "Select two or more solids, or two or more sheets in one plane: the first one you select is a Tool.";
+
+    /// <summary>brief-hzn-10 — sheets and solids selected together.</summary>
+    public static string MixedRefused(string sheet, string solid)
+        => $"'{sheet}' is a sheet and '{solid}' is a solid: a boolean combines solids with solids, or sheets with sheets in one plane.";
 
     /// <summary>The rule, as the panel's rows say it.</summary>
     public const string RowsTip = "The first object you select is a Tool; the last is the Blank. Choose another Blank here.";
@@ -37,10 +41,12 @@ public static partial class C3dBooleans
         "An instance's solids belong to its own cell and resolve through its own technology: cutting them here would edit " +
         "another cell. Push into the cell, or Flatten it.";
 
-    /// <summary>Why <paramref name="o"/> cannot be an operand, or null when it can (R-em3d66-1a/-1b).</summary>
+    /// <summary>Why <paramref name="o"/> cannot be an operand, or null when it can (R-em3d66-1a/-1b). brief-hzn-10 — a flat sheet
+    /// can, with other sheets in its plane (<see cref="SelectionRefusal"/> says when it is among solids).</summary>
     public static string? OperandRefusal(C3dObject o) => o switch
     {
-        C3dSheet or C3dCylinderSheet => $"'{o.Name}' is a sheet: a boolean on a sheet is an imprint or a split, which is a different operation.",
+        _ when C3dSheetBooleans.IsSheet(o) => null,
+        C3dCylinderSheet => $"'{o.Name}' is a sheet on a cylinder: only flat sheets in one plane are combined.",
         C3dPolyline => $"'{o.Name}' is a polyline — construction geometry, never in the problem: Extrude it first.",
         C3dWire => $"'{o.Name}' is a bond wire: its shape is made again from its points and its pads, so a cut wire would stop being a wire.",
         _ when C3dOperands.IsSolid(o) => null,
@@ -57,8 +63,17 @@ public static partial class C3dBooleans
         if (selected.Any(o => o is null)) return InstanceRefused;
         foreach (var o in selected)
             if (OperandRefusal(o!) is { } why) return why;
-        return selected.Count < 2 ? SelectTwo : null;
+        // brief-hzn-10 — all sheets, or all solids; sheets in one plane, each placed within it.
+        var sheet = selected.FirstOrDefault(o => C3dSheetBooleans.IsSheet(o!));
+        var solid = selected.FirstOrDefault(o => !C3dSheetBooleans.IsSheet(o!));
+        if (sheet is not null && solid is not null) return MixedRefused(sheet.Name, solid.Name);
+        if (selected.Count < 2) return SelectTwo;
+        return sheet is not null ? C3dSheetBooleans.SelectionRefusal([.. selected.Select(o => o!)]) : null;
     }
+
+    /// <summary>brief-hzn-10 — whether <paramref name="selected"/> would make a Boolean of sheets, which the kernel is never asked
+    /// to build.</summary>
+    public static bool AllSheets(IReadOnlyList<C3dObject?> selected) => selected.Count > 0 && selected.All(o => o is not null && C3dSheetBooleans.IsSheet(o));
 
     // ── Tool and Blank (D4, R-em3d66-2a) ──────────────────────────────────────────────────────────
 
@@ -115,6 +130,7 @@ public static partial class C3dBooleans
     {
         C3dBoolean { Op: C3dBooleanOp.Intersect } b => $"{Quoted([name, .. b.Tools.Select(t => t.Name)])} share nothing: the intersection is empty.",
         C3dBoolean { Op: C3dBooleanOp.Subtract } b => $"Subtracting {Quoted(b.Tools.Select(t => t.Name).ToList())} from '{name}' removes all of it.",
+        C3dBoolean when C3dSheetBooleans.IsSheetBoolean(obj) => $"'{name}' is empty: the operation leaves no sheet.",
         _ => $"'{name}' is empty: the operation leaves no solid.",
     };
 

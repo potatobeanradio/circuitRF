@@ -1439,7 +1439,8 @@ public sealed partial class C3dEditorViewModel
     {
         if (Elaboration?.Solids.FirstOrDefault(s => s.Name == obj) is { Role: Em3dRole.Conductor })
             return $"'{obj}' is a conductor: it is already a void bounded by its own metal, so a boundary on its face has nothing to add.";
-        if (kind is not null && Document.Objects.FirstOrDefault(o => o.Name == obj) is C3dSheet or C3dPolyline or null)
+        if (kind is not null && Document.Objects.FirstOrDefault(o => o.Name == obj) is var target
+            && (target is null or C3dPolyline || C3dSheetBooleans.IsSheet(target)))
             return $"'{obj}' has no solid face for a boundary: put boundaries on dielectric and air objects.";
         string what = kind switch { null => "None", Em3dFaceBoundaryKind.Pec => "Perfect Conductor", _ => $"Conductive ({material})" };
         ChangeRecords($"Boundary on {obj} {face}: {what}", d =>
@@ -1551,7 +1552,7 @@ public sealed partial class C3dEditorViewModel
         if (InstanceOf(o) is not null || o.Kind == Scene3DKind.Port) yield break;
         string faceName = o.FaceName(item.Face);
         bool conductor = Elaboration?.Solids.FirstOrDefault(s => s.Name == o.Name) is { Role: Em3dRole.Conductor };
-        bool solid = Document.Objects.FirstOrDefault(d => d.Name == o.Name) is not (C3dSheet or C3dPolyline or null);
+        bool solid = Document.Objects.FirstOrDefault(d => d.Name == o.Name) is { } drawnObj and not C3dPolyline && !C3dSheetBooleans.IsSheet(drawnObj);
         var existing = Document.FaceBoundaries.FirstOrDefault(b => b.Object == o.Name && b.Face == faceName);
         if (solid)
         {

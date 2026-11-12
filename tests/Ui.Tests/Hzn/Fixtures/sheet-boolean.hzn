@@ -1,0 +1,284 @@
+{
+ "name": "SheetBoolean",
+ "designs": [
+  {
+   "name": "Notched",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "h": "1.6mm",
+    "Wp": "30mm",
+    "Lp": "24mm",
+    "Ws": "50mm",
+    "wf": "3mm",
+    "inset": "7mm",
+    "gap": "1mm"
+   },
+   "objects": [
+    {
+     "name": "Substrate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-Ws/2,-Ws/2,0",
+        "XSize": "Ws",
+        "YSize": "Ws",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "sub",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ground",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-Ws/2,-Ws/2,0",
+        "Axis": "Z",
+        "XSize": "Ws",
+        "YSize": "Ws"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Patch",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-Wp/2,-Lp/2,h",
+        "Axis": "Z",
+        "XSize": "Wp",
+        "YSize": "Lp"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Notch",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Unite",
+       "props": {
+        "Tools": "Feed",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Notch",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-wf/2-gap,-Lp/2,h",
+        "Axis": "Z",
+        "XSize": "wf+2*gap",
+        "YSize": "inset"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Patch",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Feed",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-wf/2,-Ws/2,h",
+        "Axis": "Z",
+        "XSize": "wf",
+        "YSize": "Ws/2-Lp/2+inset"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Patch",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortSheet",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-wf/2,-Ws/2,0",
+        "Axis": "Y",
+        "XSize": "wf",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "PerfE_Ground",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Ground"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "PerfE_Patch",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Patch"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm",
+      "IntegrationLine": "0,-Ws/2,0;0,-Ws/2,h"
+     },
+     "faces": [],
+     "objects": [
+      "PortSheet"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "3GHz",
+      "MaximumPasses": "6",
+      "BasisOrder": "Second Order",
+      "MaximumDeltaS": "0.02"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Interpolating",
+        "Distribution": "Linear Count",
+        "Start": "2GHz",
+        "Stop": "4GHz",
+        "Count": "21"
+       }
+      }
+     ]
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": [],
+   "parametrics": []
+  }
+ ],
+ "variables": {},
+ "materials": [
+  {
+   "name": "sub",
+   "permittivity": "4.4",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.02",
+   "magnetic_loss_tangent": "0",
+   "pec": false,
+   "dispersion": "None",
+   "anisotropic": false
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

@@ -64,7 +64,7 @@ public sealed class BooleansInTheEditorTests : IDisposable
         var vm = Open(path, available);
 
         SelectInOrder(vm, "s", "a");
-        Assert.All(Operations(vm), i => Assert.Equal((false, C3dBooleans.OperandRefusal(vm.Document.Objects[2])), (i.Enabled, i.Tip)));
+        Assert.All(Operations(vm), i => Assert.Equal((false, C3dBooleans.MixedRefused("s", "a")), (i.Enabled, i.Tip)));
         vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.SceneObject("a")!.Id),
                                 .. vm.Viewer.Scene.Objects.Where(o => vm.InstanceOf(o) == "U1").Select(o => Scene3DItem.OfObject(o.Id))]);
         Assert.All(Operations(vm), i => Assert.Equal((false, C3dBooleans.InstanceRefused), (i.Enabled, i.Tip)));
@@ -167,6 +167,36 @@ public sealed class BooleansInTheEditorTests : IDisposable
         Settle(vm);
         Assert.IsType<C3dBoolean>(Assert.Single(vm.Document.Objects));
         Assert.Equal(sent, kernel.RequestsSent);                      // undo and redo: zero
+    }
+
+    // ── brief-hzn-10: sheets in one plane ─────────────────────────────────────────────────────────
+
+    /// <summary>R-hzn10-3 — two coplanar sheets are offered Unite with no geometry kernel at all; it previews at once, built here,
+    /// and OK writes a Boolean of sheets.</summary>
+    [Fact]
+    public void TwoCoplanarSheets_UniteWithNoKernel_AndOkWritesABooleanOfSheets()
+    {
+        C3dSheet Sheet(string name, long u, long v) => new()
+        {
+            Name = name, Material = "Gold", Plane = C3dPlane.XY, Offset = 30 * Um,
+            Rect = new C3dRect { Min = new C3dPoint2(u * Um, v * Um), Size = new C3dPoint2(40 * Um, 20 * Um) },
+        };
+        var absent = Kernel(Absent());
+        var vm = Open(Write([Box("base", "Alumina", 0, 0, 0, 100, 60, 30), Sheet("a", 0, 0), Sheet("b", 30, 10)]), absent);
+        SelectInOrder(vm, "b", "a");
+        Assert.All(Operations(vm), i => Assert.True(i.Enabled, i.Tip));
+
+        vm.OpenBoolean(C3dBooleanOp.Unite);
+        Assert.Null(vm.BooleanError);
+        Assert.True(vm.CanAcceptBoolean);
+        vm.AcceptBoolean();
+        Settle(vm);
+
+        var b = Assert.IsType<C3dBoolean>(vm.Document.Objects.Single(o => o.Name == "a"));
+        Assert.True(C3dSheetBooleans.IsSheetBoolean(b));
+        Assert.Equal(["b"], b.Tools.Select(t => t.Name));
+        Assert.Equal(["a"], vm.Elaboration!.Sheets.Select(s => s.Name));
+        Assert.Equal(0, absent.RequestsSent);
     }
 
     // ── 5. disabled means dissolved ────────────────────────────────────────────────────────────────

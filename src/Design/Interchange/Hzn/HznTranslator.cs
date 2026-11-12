@@ -852,11 +852,13 @@ internal sealed partial class HznTranslator
     {
         string name = o.Name!;
         if (!NeedRoot(st, kind, name)) return false;
-        if (st.Root is C3dSheet or C3dPolyline)
+        if (st.Root is C3dPolyline)
         {
-            _r.Add(HznRefusalKind.Operation, $"{kind} on a sheet", "a .c3d boolean has solids as operands; a sheet is not one", name);
+            _r.Add(HznRefusalKind.Operation, $"{kind} on a polyline", "an open polyline is construction geometry, not a shape", name);
             return false;
         }
+        // brief-hzn-10 R-hzn10-4 — on a sheet, the operands are coplanar sheets and the result is a .c3d boolean of sheets.
+        bool onSheet = C3dSheetBooleans.IsSheet(st.Root!);
         bool keep = IsTrue(p.GetValueOrDefault("KeepOriginals"));
         if (keep && kind != "Subtract")
         {
@@ -875,6 +877,14 @@ internal sealed partial class HznTranslator
                 ok = false;
                 continue;
             }
+            // On a sheet, a solid tool is the item that stops it, whatever else is wrong with the tool.
+            if (onSheet && FoldObject(t) is { } solidTool && !C3dSheetBooleans.IsSheet(solidTool.Tree))
+            {
+                _r.Add(HznRefusalKind.Operation, $"{kind} on a sheet",
+                       $"the tool '{t}' is a {C3dObject.KindOf(solidTool.Tree).ToLowerInvariant()}; a .c3d boolean has sheets with sheets or solids with solids", name);
+                ok = false;
+                continue;
+            }
             if (!keep && toolObj.ConsumedBy != name)
             {
                 _r.Add(HznRefusalKind.Operation, kind, $"the tool '{t}' is not recorded as consumed by '{name}'", name);
@@ -883,9 +893,13 @@ internal sealed partial class HznTranslator
             }
             var f = FoldObject(t);
             if (f is null) { ok = false; continue; }
-            if (f.Tree is C3dSheet)
+            if (C3dSheetBooleans.IsSheet(f.Tree) != onSheet)
             {
-                _r.Add(HznRefusalKind.Operation, $"{kind} with a sheet tool", $"the tool '{t}' is a sheet; a .c3d boolean has solids as operands", name);
+                if (onSheet)
+                    _r.Add(HznRefusalKind.Operation, $"{kind} on a sheet",
+                           $"the tool '{t}' is a {C3dObject.KindOf(f.Tree).ToLowerInvariant()}; a .c3d boolean has sheets with sheets or solids with solids", name);
+                else
+                    _r.Add(HznRefusalKind.Operation, $"{kind} with a sheet tool", $"the tool '{t}' is a sheet; a .c3d boolean has sheets with sheets or solids with solids", name);
                 ok = false;
                 continue;
             }
@@ -906,7 +920,17 @@ internal sealed partial class HznTranslator
         FlushPlacement(st, name);
         var blank = st.Root!;
         blank.Name = "";
-        st.Root = new C3dBoolean { Op = op, Blank = blank, Tools = tools, KeepTools = keep };
+        var made = new C3dBoolean { Op = op, Blank = blank, Tools = tools, KeepTools = keep };
+        // brief-hzn-10 — a boolean of sheets needs them in one plane, each placed within it; otherwise the item stays, with the reason.
+        // The offsets are compared resolved (a copy, in the variables' scope), since an operand's offset is often an expression.
+        var probe = new C3dDocument { DbuPerMicron = HznToC3d.DbuPerMicron, Variables = _scratch.Variables, Objects = [C3dBooleans.Copy(made)] };
+        bool resolved = C3dResolver.Resolve(probe, C3dCell.None).Ok;
+        if (onSheet && resolved && C3dSheetBooleans.PlaneFaults((C3dBoolean)probe.Objects[0], name) is [var (operand, why), ..])
+        {
+            _r.Add(HznRefusalKind.Operation, $"{kind} on a sheet", $"'{(operand.StartsWith(name + ".", StringComparison.Ordinal) ? name : operand)}' {why}", name);
+            return false;
+        }
+        st.Root = made;
         st.Sheet = null;
         return true;
     }

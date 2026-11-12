@@ -50,11 +50,13 @@ public static class C3dOperands
         _ => null,
     };
 
-    /// <summary>A kind the geometry kernel builds and nothing else can.</summary>
-    public static bool IsKernel(C3dObject o) => o is C3dOperation or C3dStep;
+    /// <summary>A kind the geometry kernel builds and nothing else can. brief-hzn-10 — a Boolean of sheets is not one: circuitRF
+    /// combines its polygons itself (<see cref="C3dSheetBooleans"/>).</summary>
+    public static bool IsKernel(C3dObject o) => (o is C3dOperation && !C3dSheetBooleans.IsSheetBoolean(o)) || o is C3dStep;
 
-    /// <summary>A solid: what may be an operand (R-em3d64-1e). A sheet, polyline or wire is not.</summary>
-    public static bool IsSolid(C3dObject o) => o is C3dBox or C3dPrism or C3dCylinder or C3dSphere or C3dEllipsoid or C3dPolyhedron or C3dOperation or C3dStep;
+    /// <summary>A solid: what may be an operand (R-em3d64-1e). A sheet, a Boolean of sheets, a polyline or a wire is not.</summary>
+    public static bool IsSolid(C3dObject o) => o is C3dBox or C3dPrism or C3dCylinder or C3dSphere or C3dEllipsoid or C3dPolyhedron or C3dStep
+                                               || (o is C3dOperation && !C3dSheetBooleans.IsSheetBoolean(o));
 
     /// <summary>How an object is named in a sentence: <c>a Boolean</c>, <c>a Step part</c>.</summary>
     public static string Article(C3dObject o) => o is C3dStep ? "a Step part" : "a " + C3dObject.KindOf(o);
