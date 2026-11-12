@@ -734,7 +734,14 @@ share the cores with their segments.</p>
 </li>
 <li><p><strong>The step follows an accuracy preset.</strong> <em>standard</em> (default) steps at 4× the signal's sample rate,
 where ACPR2 and the bias-node memory are converged on every measured case. <em>draft</em> (1×) is about
-0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. <em>fine</em> (8×) is for reference runs.</p>
+0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. <em>fine</em> (8×) is for reference runs.
+Whatever the preset, the step reaches every carrier's band edge, the highest frequency in its
+envelope, at least ten times a cycle, as the signal rate does for a carrier at the envelope's
+centre. A carrier off the centre, one of several in a signal or in a group, is stepped more finely
+when it needs it, so where it sits does not change what it reads. Gear-2 reads a frequency f in the
+envelope as f·(1 + (2πfh)²/3), a phase error that a filter's delay turns into EVM: at <em>draft</em>, a
+5 MHz NR carrier 4.5 MHz off the centre was stepped at 0.7 rad at its band edge and read 1.1 % EVM
+through a 60 MHz bandpass, where the same carrier centred reads 0.38 %. It now reads 0.39 %.</p>
 </li>
 </ul>
 <p><strong>Frequency-dependent blocks.</strong> Resistors, capacitors and inductors enter every step exactly. Other
@@ -785,7 +792,7 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <tr>
 <td>Accuracy</td>
 <td>standard</td>
-<td>draft / standard / fine = 1× / 4× / 8× the signal rate.</td>
+<td>draft / standard / fine = 1× / 4× / 8× the signal rate, and never fewer than ten steps a cycle at a carrier's band edge.</td>
 </tr>
 <tr>
 <td>MaxHarm</td>
@@ -1350,6 +1357,10 @@ so the measurement bandwidth is the channel's. There is no per-subcarrier equali
 ripple of a filter counts as error, as it does in NMSE.</li>
 <li><strong>Through a matched pad</strong> the error is the source signal's own: the Signal Designer's EVM for LTE
 and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.</li>
+<li><strong>The step.</strong> EVM reads the circuit as the run steps it, and through a filter <em>draft</em> reads a
+little more than <em>standard</em>: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at <em>draft</em>
+and 0.34 % at <em>standard</em>. A carrier off the envelope's centre reads what it reads at the centre
+(<a href="#envelope">the step</a>).</li>
 <li><strong>The record.</strong> A run of whole records (<code>Stop</code> a multiple of the source's record, with a warm-up)
 measures every symbol. A shorter run measures the symbols, bits or chirps it holds whole, apart
 from a few samples at each end. A run shorter than one has no result, and the run says so.</li>
@@ -1387,6 +1398,9 @@ distortion and its noise, and the in-channel SNR is measured:</p>
 </tr>
 </tbody>
 </table>
+<p>A source's <code>PhaseNoise</code> mask is off in the second run too, so phase noise is in the noise part and
+lowers <code>SNR_dB</code> as thermal noise does. An LO whose mask integrates to −38.5 dBc over the channel holds
+the noise part near 1 % however strong the signal; the distortion part is the error without it.</p>
 <p>For LTE, NR, DBPSK and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
 frequency more than the amplitude, so its error is larger than that. The split is what decides
 whether to fix linearity or noise. Over a short record the noisy run can read slightly less than
