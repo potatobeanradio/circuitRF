@@ -563,6 +563,40 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("from a value above 0", vm.Refusals, StringComparison.Ordinal);
     }
 
+    // ── with more than one conversion ────────────────────────────────────────
+
+    /// <summary>A link in front of a chain of two conversions: each conversion is a receive chain of its own at the
+    /// level, frequency and bandwidth the budget has there, the link and the fractional bandwidth already read; and the
+    /// TX bench, an envelope run of one fundamental, passes the envelope check and is written.</summary>
+    [Fact]
+    public void ALinkInFrontOfTwoConversions_DrivesEachAtItsBudget_AndTheTxBenchIsWritten()
+    {
+        var d = Link();
+        d.FractionalBandwidth = 0.004;   // 104 MHz at 26 GHz
+        d.Stages.Add(S("BPF1", "Filter", ("Response", "Butterworth"), ("F1", "freq - 1GHz"), ("F2", "freq + 1GHz"), ("IL", "1")));
+        d.Stages.Add(S("MIX1", "Mixer", ("ConvGain", "-6"), ("NF", "8"), ("IIP3", "10"), ("Plo", "7"), ("Flo", "freq - 3GHz")));
+        d.Stages.Add(S("IFBPF", "Filter", ("Response", "Butterworth"), ("F1", "2.7 GHz"), ("F2", "3.3 GHz"), ("IL", "1")));
+        d.Stages.Add(S("MIX2", "Mixer", ("ConvGain", "-6"), ("NF", "8"), ("IIP3", "10"), ("Plo", "7"), ("Flo", "freq - 400MHz")));
+        var r = ChainBudget.Evaluate(d);
+        Assert.Empty(r.Refusals);
+        var conv = ChainBenches.Conversions(d, r, "Two")!;
+        Assert.Equal(2, conv.Count);
+        int first = d.Stages.FindIndex(s => s.Name == "IFBPF");
+        Assert.Equal(r.Design!.InputPowerDbm, conv[0].Design.InputPowerDbm, 12);       // the link's power, as budgeted
+        Assert.Equal(r.Stages[first - 1].PoutDbm, conv[1].Design.InputPowerDbm, 12);
+        Assert.Equal(3e9, conv[1].Design.FrequencyHz, 3);
+        foreach (var c in conv)
+        {
+            Assert.Null(c.Design.Link);
+            Assert.Equal(104e6, c.Budget.Design!.BandwidthHz, 3);                      // the chain's, not 0.4 % of an IF
+            Assert.Equal(c.Design.InputPowerDbm, c.Budget.Design.InputPowerDbm, 12);   // not the link's again
+            Assert.Empty(c.Budget.Refusals);
+        }
+        var written = ChainBenches.Build(d, r, "Two");
+        Assert.Contains(written, b => b.CellName == "Two TX");
+        Assert.DoesNotContain(written, b => b.Netlist.Contains("f_GHz", StringComparison.Ordinal));
+    }
+
     // ── against an independent calculation ───────────────────────────────────
 
     /// <summary>

@@ -275,6 +275,7 @@ public static class ChainBenches
     public static IReadOnlyList<Conversion>? Conversions(ChainDesign d, ChainBudgetResult r, string chain)
     {
         if (r.Totals is null) return null;
+        d = r.Design ?? d;   // every expression and table read, the link's power the input
         var mixers = d.Stages.Select((s, i) => (s, i)).Where(x => x.s.Part == ChainParts.Mixer).Select(x => x.i).ToList();
         if (mixers.Count < 2) return null;
         var starts = mixers.SkipLast(1).Select(i => i + 1).Prepend(0).ToList();
@@ -289,6 +290,9 @@ public static class ChainBenches
                 int end = k + 1 < starts.Count ? starts[k + 1] : d.Stages.Count;
                 var c = d.Clone();
                 c.Stages = c.Stages.GetRange(i, end - i);
+                // A conversion is a receive chain of its own, already read: its input is set below (the first's is the
+                // link's, as budgeted), its bandwidth is the chain's, and it sweeps nothing.
+                c.Link = null; c.FractionalBandwidth = null; c.Sweeps = [];
                 if (i > 0)
                 {
                     var at = r.Stages[i - 1];
@@ -512,8 +516,11 @@ public static class ChainBenches
         /// outermost.
         /// </summary>
         private void EnvelopeFits(params (double Hz, double Bw)[] carriers)
+            => EnvelopeFits([.. d.Stages.Where(s => s.Part == ChainParts.Mixer).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct()], carriers);
+
+        /// <summary>The same check for a bench whose LOs are <paramref name="los"/>: the TX bench's, none.</summary>
+        private void EnvelopeFits(List<double> los, (double Hz, double Bw)[] carriers)
         {
-            var los = d.Stages.Where(s => s.Part == ChainParts.Mixer).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct().ToList();
             if (los.Count > 1)
                 Refusal ??= $"an envelope run has two fundamentals, the carrier's and one LO's, and {los.Count} LOs would make {los.Count + 1}";
             static string Mhz(double hz) => (hz / 1e6).ToString("0.###", CultureInfo.InvariantCulture);
@@ -1007,6 +1014,7 @@ public static class ChainBenches
             double g = ChainValue.Or(link.GetTx("PaGain"), 0), loss = ChainValue.Or(link.GetTx("Loss"), 0);
             var bos = TxBackoffsDb.Append(bo).Distinct().Order().ToArray();
             var (mhz, _) = Carrier(d.BandwidthHz);
+            EnvelopeFits([], [(d.FrequencyHz, mhz * 1e6)]);   // one fundamental, the carrier: no LO on this bench
             _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {F(psat)}", $"PaGain = {F(g)}", $"Loss = {F(loss)}",
                             $"BO = {F(bo)}", "Pin = Psat - BO - PaGain"]);
             Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
