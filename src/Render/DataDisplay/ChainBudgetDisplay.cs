@@ -28,10 +28,11 @@ public static class ChainBudgetDisplay
     {
         var json = new JsonSerializerOptions(DataDisplayJson.Options) { WriteIndented = true };
         var paths = new List<string>();
-        foreach (var b in ChainBenches.BenchesFor(design))
+        // A bench of one of the chain's conversions is displayed against that conversion's own budget.
+        foreach (var b in ChainBenches.Build(design, budget, chain))
         {
-            string path = Path.Combine(dir, ChainBenches.CellName(chain, b) + ".cdd");
-            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(chain, b, design, budget), json));
+            string path = Path.Combine(dir, b.CellName + ".cdd");
+            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(b.Chain, b.Kind, b.Design, b.Budget), json));
             paths.Add(path);
         }
         return paths;

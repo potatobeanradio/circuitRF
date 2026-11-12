@@ -255,7 +255,10 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var lv = ChainLevels.Evaluate(d, r);
         var data = ChainLevels.ToDataSet(lv);
         var notes = new List<string>();
-        if (lv.Count > 0 && FilePath is { } path)
+        // A chain of more than one conversion has its Levels, 1-Tone and Blockers benches per conversion, each on its
+        // own node axis and beside its own budget: their displays show them.
+        bool perConversion = d.Stages.Count(s => s.Part == ChainParts.Mixer) > 1;
+        if (lv.Count > 0 && FilePath is { } path && !perConversion)
         {
             string chain = Path.GetFileNameWithoutExtension(path), results = Path.Combine(Path.GetDirectoryName(path)!, "results");
             var axis = data["Psig_dBm"].Axes[0];
@@ -275,7 +278,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                         data.Add(c, new RfCore.Data.DataCube([axis], [.. cube.RealValues.Select(v => v <= -299 ? double.NaN : v)]) { Unit = cube.Unit });
             }
         }
-        LevelsNote = lv.Count == 0 ? "" : notes.Count == 0 && FilePath is not null
+        LevelsNote = lv.Count == 0 ? "" : perConversion
+            ? "Lines: the budget. This chain converts more than once, so its Levels, 1-Tone and Blockers benches are written " +
+              "once per conversion, and each conversion's display puts its simulated points beside its own budget. Add a marker " +
+              "to a trace to select that node's stage."
+            : notes.Count == 0 && FilePath is not null
             ? "Points: the simulated levels from the chain's Levels, Blockers and 1-Tone benches. Lines: the budget. " +
               "Add a marker to a trace to select that node's stage."
             : "Lines: the budget. " + (FilePath is null ? "Save and transfer the chain, then simulate its benches, for the simulated points."

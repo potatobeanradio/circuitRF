@@ -429,7 +429,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         var design = vm.ToDesign();
 
         bool replace = false;
-        var existing = ChainBenches.BenchesFor(design).Select(b => ChainBenches.CellName(name, b))
+        var existing = ChainBenches.Build(design, ChainBudget.Evaluate(design), name).Select(b => b.CellName)
                            .Where(c => Directory.Exists(Path.Combine(dir, c))).ToList();
         if (existing.Count > 0)
         {

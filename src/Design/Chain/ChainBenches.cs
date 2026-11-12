@@ -35,6 +35,13 @@
 //
 // Every measurement row reads ONE analysis, so a CLI run of one analysis (`circuitrf hb … -a SW1`) still evaluates its
 // own rows. `temp = 16.85` puts every part at 290 K, the temperature a noise figure is stated at.
+//
+// Every bench is checked against what its runs take before it is written (Build): a harmonic-balance run at most six
+// tones, 600 mixing products and no two of them on one frequency, its noise run two tones; an envelope run two
+// fundamentals, the carrier's and one LO's. A chain with more than one mixer outgrows that: each LO is a tone. So each
+// bench one run can hold is written for the whole chain, at a lower mixing order when the cap needs it and said; the
+// others once per CONVERSION (Conversions), each from the IF the one before it ends at, beside its own budget; and one
+// no run can hold even so is not written, and Build says why.
 
 using System.Globalization;
 using System.Text;
@@ -42,13 +49,18 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
+using CircuitRF.Engine;
+using CircuitRF.Engine.HarmonicBalance;
 
 namespace CircuitRF.Design.Chain;
 
 public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo }
 
-/// <summary>One bench: its cell name, its netlist and where each of its instances is drawn.</summary>
-public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout);
+/// <summary>One bench: its cell name, its netlist, where each of its instances is drawn, and what it verifies: the chain
+/// named <paramref name="Chain"/>, the whole chain or one of its conversions (<see cref="ChainBenches.Conversions"/>),
+/// with that chain's design and budget, which its display is built from.</summary>
+public sealed record ChainBenchText(ChainBench Kind, string CellName, string Netlist, ExactPlacement Layout,
+                                    string Chain, ChainDesign Design, ChainBudgetResult Budget);
 
 /// <summary>What a transfer wrote, or why it wrote nothing.</summary>
 /// <summary>The chain drawn as a schematic, and the stage each drawn component (by its id) belongs to.</summary>
@@ -168,11 +180,120 @@ public static class ChainBenches
         return (best.Mhz, best.Rb * 180e3);
     }
 
-    /// <summary>The chain's benches (<see cref="BenchesFor"/>), or none when the budget is refused.</summary>
+    /// <summary>
+    /// The chain's benches (<see cref="BenchesFor"/>), each one that a single run can hold as the whole chain, and the
+    /// others once per conversion (<see cref="Conversions"/>); none when the budget is refused. A bench no run can hold
+    /// even per conversion is not written. Every bench run is checked against what its analysis takes: a
+    /// harmonic-balance run at most <see cref="AnalysisSettings.HbMaxTones"/> tones and
+    /// <see cref="AnalysisSettings.HbMaxMixProducts"/> mixing products, each at the order its numbers need or above
+    /// (below what the bench would ask for, when that is too many); an envelope run two fundamentals, the carrier's and
+    /// one LO's, the LO more than three of the carrier's bandwidths from it.
+    /// </summary>
     /// <param name="benchBase">The directory the benches' own relative references resolve from once written (the
     /// workspace they land in); an SnP stage's file is written relative to it when under it, as a full path otherwise.</param>
-    public static IReadOnlyList<ChainBenchText> Build(ChainDesign d, ChainBudgetResult r, string chain, string? benchBase = null)
-        => r.Totals is null ? [] : [.. BenchesFor(d).Select(b => new Emitter(d, r, chain, b, benchBase: benchBase).Emit())];
+    /// <param name="notes">Each bench written per conversion, and why.</param>
+    /// <param name="leftOut">Each bench not written, and why.</param>
+    public static IReadOnlyList<ChainBenchText> Build(ChainDesign d, ChainBudgetResult r, string chain, string? benchBase = null,
+                                                      List<string>? notes = null, List<string>? leftOut = null)
+    {
+        if (r.Totals is null) return [];
+        var kinds = BenchesFor(d);
+        var whole = kinds.ToDictionary(b => b, b => Emit(d, r, chain, b, benchBase));
+        var conv = Conversions(d, r, chain);
+        // The Levels display reads the 1-Tone and Blockers benches node by node, on its own node axis: the three are
+        // written for the whole chain or per conversion together.
+        ChainBench[] nodes = [ChainBench.OneTone, ChainBench.Levels, ChainBench.Blockers];
+        string? nodeRefused = nodes.Where(x => whole.TryGetValue(x, out var w) && w.Refusal is not null)
+                                   .Select(x => CellName(chain, x)).FirstOrDefault();
+        string? Why(ChainBench b) => whole[b].Refusal
+            ?? (conv is not null && nodes.Contains(b) && nodeRefused is not null
+                ? $"{nodeRefused} cannot be, and the Levels display reads the 1-Tone, Levels and Blockers benches node by node, so the three go together"
+                : null);
+        var list = new List<ChainBenchText>();
+        foreach (var b in kinds)
+        {
+            if (Why(b) is not { } why)
+            {
+                list.Add(whole[b].Text);
+                notes?.AddRange(whole[b].Notes.Select(n => $"{whole[b].Text.CellName}: {n}."));
+                continue;
+            }
+            if (conv is null) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
+            var made = new List<string>();
+            foreach (var c in conv)
+            {
+                if (c.Budget.Totals is null)
+                {
+                    leftOut?.Add($"{CellName(c.Chain, b)} is not written: {string.Join(" ", c.Budget.Refusals)}");
+                    continue;
+                }
+                var (text, refusal, said) = Emit(c.Design, c.Budget, c.Chain, b, benchBase);
+                if (refusal is not null) { leftOut?.Add($"{text.CellName} is not written: {refusal}."); continue; }
+                list.Add(text);
+                notes?.AddRange(said.Select(n => $"{text.CellName}: {n}."));
+                made.Add(text.CellName);
+            }
+            if (made.Count > 0)
+                notes?.Add($"{CellName(chain, b)} is written once per conversion, as {string.Join(", ", made)}, each beside its own " +
+                           $"conversion's budget: as the whole chain, {why}.");
+        }
+        return list;
+    }
+
+    private static (ChainBenchText Text, string? Refusal, List<string> Notes) Emit(ChainDesign d, ChainBudgetResult r, string chain,
+                                                                                 ChainBench b, string? benchBase)
+    {
+        var e = new Emitter(d, r, chain, b, benchBase: benchBase);
+        var text = e.Emit();
+        return (text, e.Refusal, e.Notes);
+    }
+
+    /// <summary>One conversion of a chain: the name its benches are prefixed with, the conversion as a chain of its own,
+    /// and its budget.</summary>
+    public sealed record Conversion(string Chain, ChainDesign Design, ChainBudgetResult Budget);
+
+    /// <summary>
+    /// A chain with two or more mixers, cut into its conversions; null for one with fewer. Conversion k runs from the
+    /// stage after mixer k − 1 (the chain's input for the first) to mixer k (to the chain's output for the last), so
+    /// each holds one mixer and the filtering in front of it, and each is the next one's input: named
+    /// "&lt;chain&gt; IFk", it is a chain of its own at the IF the one before it ends at, driven at the budget's level
+    /// there, with every blocker as it arrives there, from a source whose temperature is the noise the stages before it
+    /// deliver, (Ts + Te)·Gn. Its budget then is the whole chain's from that point on: the same signal, noise floor and
+    /// SNR at every node, its gain, NF and intercepts those of its own stages, which the whole chain's follow from by the
+    /// same Friis and intercept sums.
+    /// </summary>
+    public static IReadOnlyList<Conversion>? Conversions(ChainDesign d, ChainBudgetResult r, string chain)
+    {
+        if (r.Totals is null) return null;
+        var mixers = d.Stages.Select((s, i) => (s, i)).Where(x => x.s.Part == ChainParts.Mixer).Select(x => x.i).ToList();
+        if (mixers.Count < 2) return null;
+        var starts = mixers.SkipLast(1).Select(i => i + 1).Prepend(0).ToList();
+        var fin = d.StageInputFrequencies();
+        var fb = d.Blockers.Select(b => d.FrequencyHz + b.OffsetHz).ToArray();
+        var pb = d.Blockers.Select(b => b.LevelDbm).ToArray();
+        var list = new List<Conversion>();
+        for (int i = 0, k = 0; k < starts.Count; i++)
+        {
+            if (i == starts[k])
+            {
+                int end = k + 1 < starts.Count ? starts[k + 1] : d.Stages.Count;
+                var c = d.Clone();
+                c.Stages = c.Stages.GetRange(i, end - i);
+                if (i > 0)
+                {
+                    var at = r.Stages[i - 1];
+                    c.FrequencyHz = fin[i];
+                    c.InputPowerDbm = at.PoutDbm;
+                    c.TemperatureK = Math.Pow(10, (at.NoiseOutDbm - 30) / 10) / (ChainBudget.K * d.BandwidthHz);
+                    c.Blockers = [.. pb.Select((p, j) => new ChainBlocker(fb[j] - fin[i], p))];
+                }
+                list.Add(new Conversion($"{chain} IF{k + 1}", c, ChainBudget.Evaluate(c)));
+                k++;
+            }
+            for (int j = 0; j < fb.Length; j++) pb[j] += ChainLevels.GainAt(d.Stages[i], r.Stages[i].Stage, ref fb[j], d.BaseDirectory);
+        }
+        return list;
+    }
 
     /// <summary>
     /// Draws the chain's benches and writes each as a cell under <paramref name="workspaceDir"/>, the way a cell from any
@@ -188,7 +309,8 @@ public static class ChainBenches
         if (r.Totals is null) return new([], r.Refusals, []);
         if (NameValidator.Validate(chain) is { } bad) return new([], [$"'{chain}' cannot name a cell: {bad}"], []);
 
-        var benches = Build(d, r, chain, Workspace.OwningRoot.Of(Path.GetFullPath(workspaceDir)));
+        var planned = new List<string>();
+        var benches = Build(d, r, chain, Workspace.OwningRoot.Of(Path.GetFullPath(workspaceDir)), planned, planned);
         var refusals = new List<string>();
         var notes = new List<string>();
         var drawn = new List<(string Cell, SchematicEditModel Model)>();
@@ -232,7 +354,7 @@ public static class ChainBenches
             paths.Add(CellCreate.Create(workspaceDir, cell, CellViews.Schematic, model).SchematicPath!);
         var left = new List<string>();
         BenchesFor(d, left);
-        return new(paths, [], [.. r.Notes, .. notes, .. left]);
+        return new(paths, [], [.. r.Notes, .. notes, .. left, .. planned]);
     }
 
     /// <summary>
@@ -285,6 +407,76 @@ public static class ChainBenches
     private sealed class Emitter(ChainDesign d, ChainBudgetResult r, string chain, ChainBench bench, bool diagram = false,
                                  string? benchBase = null)
     {
+        /// <summary>Why no run can hold this bench as emitted, or null: the first analysis that cannot be run.</summary>
+        public string? Refusal { get; private set; }
+
+        /// <summary>What the bench gave up to be run: an analysis below the mixing order its numbers converge at.</summary>
+        public List<string> Notes { get; } = [];
+
+        /// <summary>
+        /// The mixing order a harmonic-balance run on <paramref name="toneHz"/> is given: <paramref name="desired"/>,
+        /// what the bench's numbers converge at, or the highest below it that the run takes, down to
+        /// <paramref name="needed"/>, the least that carries what the bench reads (<paramref name="what"/>). Below that the
+        /// bench is refused, as it is when two products fall on one frequency at every order it could have. A noise run
+        /// (<paramref name="noise"/>) takes one or two tones, as the small-signal sweep it runs on does.
+        /// </summary>
+        private int Order(string analysis, double[] toneHz, int desired, int needed, string what, bool noise = false)
+        {
+            var s = AnalysisSettings.Default;
+            int tones = toneHz.Length, most = noise ? 2 : s.HbMaxTones;
+            string? clash = null;
+            for (int o = desired; o >= needed; o--)
+            {
+                if (tones > most || MixingLattice.CountFor(tones, o) > s.HbMaxMixProducts) continue;
+                if ((clash = Coincident(toneHz, o)) is not null) continue;
+                if (o < desired)
+                    Notes.Add($"its harmonic-balance run {analysis} runs at MaxMixOrder {o}, below the {desired} its numbers converge " +
+                              $"at: {tones} tones at {desired} retain {MixingLattice.CountFor(tones, desired).ToString("N0", CultureInfo.InvariantCulture)} " +
+                              $"mixing products, over the {s.HbMaxMixProducts.ToString("N0", CultureInfo.InvariantCulture)} a run takes, so " +
+                              "its numbers read a little off the budget's (the reference page's agreement table says how far)");
+                return o;
+            }
+            Refusal ??= clash is not null
+                ? $"on its harmonic-balance run {analysis} the {clash}, at every MaxMixOrder from {needed} (the least that " +
+                  $"carries {what}) up, and a run cannot tell two products on one frequency apart: move a blocker or an LO off it"
+                : tones > most
+                ? $"its harmonic-balance {(noise ? "noise " : "")}run {analysis} has {tones} tones, and a {(noise ? "noise " : "")}run takes at most {most}"
+                : $"its harmonic-balance run {analysis} has {tones} tones, and MaxMixOrder {needed}, the least that carries {what}, " +
+                  $"retains {MixingLattice.CountFor(tones, needed).ToString("N0", CultureInfo.InvariantCulture)} mixing products, " +
+                  $"over the {s.HbMaxMixProducts.ToString("N0", CultureInfo.InvariantCulture)} a run takes";
+            return desired;
+        }
+
+        /// <summary>Two products of the lattice on one frequency, said, or null: commensurate tones (a blocker on a mixer's
+        /// image, say, whose products land where another's do).</summary>
+        private static string? Coincident(double[] toneHz, int order)
+        {
+            var lat = new MixingLattice(toneHz.Length, order);
+            var f = Enumerable.Range(0, lat.MixCount).Select(m => (Hz: Math.Abs(lat.FrequencyOf(m, toneHz)), M: m)).OrderBy(x => x.Hz).ToList();
+            for (int i = 1; i < f.Count; i++)
+                if (f[i].Hz - f[i - 1].Hz < 1.0)
+                    return $"products {lat.Label(f[i - 1].M)} and {lat.Label(f[i].M)} fall on the same frequency, " +
+                           $"{(f[i].Hz / 1e6).ToString("0.######", CultureInfo.InvariantCulture)} MHz";
+            return null;
+        }
+
+        /// <summary>An envelope run's two fundamentals: the carriers' and one LO's, the LO more than three of a carrier's
+        /// bandwidths from it (<c>EnvelopeEngineMt.Plan</c>). <paramref name="carriers"/>: each carrier's frequency and
+        /// bandwidth, Hz.</summary>
+        private void EnvelopeFits(params (double Hz, double Bw)[] carriers)
+        {
+            var los = d.Stages.Where(s => s.Part == ChainParts.Mixer).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct().ToList();
+            if (los.Count > 1)
+                Refusal ??= $"an envelope run has two fundamentals, the carrier's and one LO's, and {los.Count} LOs would make {los.Count + 1}";
+            static string Mhz(double hz) => (hz / 1e6).ToString("0.###", CultureInfo.InvariantCulture);
+            foreach (double lo in los)
+                foreach (var (hz, bw) in carriers)
+                    if (Math.Abs(lo - hz) <= 3 * Math.Max(bw, 1e6))
+                        Refusal ??= $"its LO at {Mhz(lo)} MHz is {Mhz(Math.Abs(lo - hz))} MHz from the {Mhz(bw)} MHz carrier at {Mhz(hz)} MHz, " +
+                                    "and an envelope run takes an LO as a fundamental of its own only more than three of the carrier's " +
+                                    "bandwidths from it";
+        }
+
         /// <summary>The stage each placed instance belongs to, and where each stage's first block sits on the first
         /// element's row — what the diagram's selection and annotations are read from.</summary>
         public readonly Dictionary<string, int> StageOf = new(StringComparer.Ordinal);
@@ -460,7 +652,7 @@ public static class ChainBenches
             foreach (var a in _analyses) sb.AppendLine(a);
             foreach (var m in _meas) sb.AppendLine("measure " + m);
             return new ChainBenchText(bench, CellName(chain, bench), sb.ToString(),
-                                      new ExactPlacement { Instances = _at, AutoRoute = true });
+                                      new ExactPlacement { Instances = _at, AutoRoute = true }, chain, d, r);
         }
 
         // ── the array benches ────────────────────────────────────────────────
@@ -1141,6 +1333,15 @@ public static class ChainBenches
             var mixerStages = d.Stages.Where(s => s.Part == ChainParts.Mixer).ToList();
             for (int i = 0; i < mixerStages.Count; i++) _vars.Add($"Flo{i + 1} = {G(ChainValue.Or(mixerStages[i].Get("Flo"), 0))}");
             int mix = mixerStages.Count;
+            // The tones' frequencies, in the directive's order.
+            double[] toneHz(bool two)
+            {
+                double frf = d.FrequencyHz, df = Math.Min(1e6, d.BandwidthHz);
+                List<double> hz = bench == ChainBench.Blockers ? [.. d.Blockers.Select(b => frf + b.OffsetHz)]
+                                : two ? [frf - df / 2, frf + df / 2] : [frf];
+                hz.AddRange(mixerStages.Select(s => ChainValue.Or(s.Get("Flo"), 0)));
+                return [.. hz];
+            }
             string p1 = mix == 0 ? "1" : Idx(v1);
             // An array's NF from one element's: F = 1 + (F1 − 1)·|S(out,1)|²/Σ|S(out,k)|², the other elements' terminations
             // noiseless in the run — 1 + (F1 − 1)/N for equal paths, the paths' own weights otherwise.
@@ -1179,7 +1380,7 @@ public static class ChainBenches
                         // index instead it would be a product of the drive, which carries no signal.
                         var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
                         // Order 1 + 2·mixers keeps each mixer's image sideband, where its isolator's termination is noisy.
-                        _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={1 + 2 * mix} Tol=1e-12 " +
+                        _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBN", toneHz(false), 1 + 2 * mix, 1 + 2 * mix, "each mixer's image sideband", noise: true)} Tol=1e-12 " +
                                       $"SSStart=\"{G(ss)}\" SSStop=\"{G(ss)}\" SSNpts=1 Noise=yes NoiseIn=1 NoiseOut={n + 1} " +
                                       $"NoiseSideband=\"{string.Join(",", sb)}\" NoiseContrib=yes");
                         _meas.Add($"G_sim = dB(HBN.V(\"out\",{p1})) + 10 - Pss");
@@ -1203,7 +1404,7 @@ public static class ChainBenches
                     double lo = Finite(_t.Ip1dbDbm, 0);
                     // After a mixer an IF product is of order 2 on the lattice and its third-order term of order 6: the
                     // order the IF's compression converges at (measured: 0.04 dB off at 1 + 2·mixers, converged at 3 + 2·mixers).
-                    _analyses.Add($"analysis HB1 type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={3 + 2 * mix} Tol=1e-12");
+                    _analyses.Add($"analysis HB1 type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HB1", toneHz(false), 3 + 2 * mix, 1 + 2 * mix, "the output's compression")} Tol=1e-12");
                     _analyses.Add($"analysis SW1 type=parametric_sweep Var=Pin Values={F(lo - CompressionBackoffDb)},{F(lo - CompressionStepDb)},{F(lo + CompressionStepDb)} Inner=HB1");
                     _meas.Add($"Ghb = dB(HB1.V(\"out\",{p1})) + 10 - Pin");
                     _meas.Add("Comp = at(Ghb,\"Pin\",0) - Ghb");
@@ -1232,7 +1433,7 @@ public static class ChainBenches
                 {
                     // Each LO raises a product's order by one, so the IF's IM5 is of order 5 + mixers; below it the IF
                     // stages' IM3 reads 0.01 dB off (measured on the superhet example: 0.012 dB at 5, 1.8e-4 dB at 6).
-                    _analyses.Add($"analysis HB2 type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={5 + mix} Tol=1e-12");
+                    _analyses.Add($"analysis HB2 type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HB2", toneHz(true), 5 + mix, 3 + mix, "the output's IM3")} Tol=1e-12");
                     _meas.Add($"G_calc = {G(_t.GainDb)}");
                     _meas.Add($"IIP3_calc = {G(Finite(_t.Iip3Dbm, double.NaN))}");
                     _meas.Add($"OIP3_calc = {G(Finite(_t.Oip3Dbm, double.NaN))}");
@@ -1264,7 +1465,7 @@ public static class ChainBenches
                     // Two tones, each at the chain's input power: the signal and its IM3 at every node, on the 2-Tone
                     // bench's mixing order. The budget's levels beside them, and its noise floor, SNR, margin and a
                     // canceller's interference, for the display's node axis.
-                    _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={5 + mix} Tol=1e-12");
+                    _analyses.Add($"analysis HBL type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HBL", toneHz(true), 5 + mix, 3 + mix, "the output's IM3")} Tol=1e-12");
                     var levels = ChainLevels.Evaluate(d, r);
                     var nodeNet = NodeNets(nets);
                     var nodeV1 = new List<int[]> { Seed(1, 0) };
@@ -1300,7 +1501,7 @@ public static class ChainBenches
                     // The blockers alone, every one at its own frequency and level, through every stage; each node is a
                     // stage's output into the bench's isolator after it, so its voltage is the forward wave, which is
                     // what the budget carries (a reflective filter's stopband would otherwise stand on its input).
-                    _analyses.Add($"analysis HBK type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={3 + mix} Tol=1e-12");
+                    _analyses.Add($"analysis HBK type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBK", toneHz(false), 3 + mix, 1 + mix, "every blocker at the output")} Tol=1e-12");
                     var levels = ChainLevels.Evaluate(d, r);
                     var nodeNet = NodeNets(nets);
                     var blkV = new List<List<int[]>>();
@@ -1341,7 +1542,8 @@ public static class ChainBenches
                     // The chain demodulated end to end at the output probe, the input power swept from noise-limited to
                     // compression-limited; the LO's phase noise on. Beside the simulated EVM, the budget's from its SNR,
                     // EVM ≈ 1/√SNR, which holds where noise dominates.
-                    var (_, bocc) = Carrier(d.BandwidthHz);
+                    var (mhz, bocc) = Carrier(d.BandwidthHz);
+                    EnvelopeFits((d.FrequencyHz, mhz * 1e6), (d.FrequencyHz + 2 * d.BandwidthHz, 2 * DemoDbpskRateBps));
                     _analyses.Add($"analysis ENVD type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
                                   "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no Noise=yes EvmSplit=yes");
                     _analyses.Add($"analysis SWPIN type=parametric_sweep Var=Pin Values={string.Join(",", DemoPowers(_t).Select(F))} Inner=ENVD");
@@ -1359,7 +1561,8 @@ public static class ChainBenches
                 }
                 default:
                 {
-                    var (_, bocc) = Carrier(d.BandwidthHz);
+                    var (mhz, bocc) = Carrier(d.BandwidthHz);
+                    EnvelopeFits((d.FrequencyHz, mhz * 1e6));
                     double te = _t.TeK, a = _t.ArrayGainDb;
                     double snr = d.InputPowerDbm + a - (10 * Math.Log10(ChainBudget.K * (d.TemperatureK + te) * bocc) + 30);
                     double nout = 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + te) * bocc) + 30 + _t.GainDb - a;

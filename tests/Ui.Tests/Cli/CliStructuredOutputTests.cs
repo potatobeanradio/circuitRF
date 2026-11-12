@@ -420,6 +420,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "batch.rule",
         "batch.state",
         "batch.was-not-open",
+        "chain.bench.left-out",
         "chain.document.refused",
         "chain.document.unreadable",
         "chain.note",
