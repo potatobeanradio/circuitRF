@@ -15,7 +15,7 @@ published ones. Run it from anywhere with  python3 -I make_boards.py ; it rewrit
 
 The board, 40 x 30 mm, layers COPPER_TOP, COPPER_BOTTOM (a solid plane), DRILL, SILK_TOP and BOARD (the edge):
 
-  P1 -- 1.1 mm line -- C1 across a gap -- line -- the device pad (5 x 5 mm, rounded corners), with C2 and C3 from its
+  P1 -- 1.1 mm line -- C1 across a gap -- line -- the device pad (4.5 x 4.5 mm, rounded corners), with C2 and C3 from its
   corners to the pour, a 2 mm bias strip up (R1 across a gap, C4 3.1 mm further, on to the top edge, P2) and its
   mirror image down (R2, C5, P3) -- a 1.1 mm line -- C8 across a gap -- a second pad (3 x 3 mm) -- 1.7 x 5.6 mm with
   the pour 0.80 mm above and 0.51 mm below, C6 and C7 across those gaps -- a 1.1 mm line to the right edge, P4.
@@ -41,13 +41,13 @@ def r(x0, y0, x1, y1):
 # ── the signal copper ───────────────────────────────────────────────────────────────────────────────
 SIGNAL = {
     "IN1": r(0, 14.45, 6, 15.55),       # P1 to C1's gap
-    "IN2": r(6.5, 14.45, 11.5, 15.55),  # C1's gap to the device pad
-    "PADA": r(11.5, 12.5, 16.5, 17.5),  # the device pad
-    "BT1": r(13, 17.5, 15, 22.5),       # bias strip up, to R1's gap
+    "IN2": r(6.5, 14.45, 11.75, 15.55), # C1's gap to the device pad
+    "PADA": r(11.75, 12.75, 16.25, 17.25),  # the device pad, 4.5 mm: clear of reading as a pour (5.08 mm here)
+    "BT1": r(13, 17.25, 15, 22.5),      # bias strip up, to R1's gap
     "BT2": r(13, 23, 15, 30),           # R1's gap to the top edge
-    "BB1": r(13, 7.5, 15, 12.5),        # bias strip down, its mirror image
+    "BB1": r(13, 7.5, 15, 12.75),       # bias strip down, its mirror image
     "BB2": r(13, 0, 15, 7),
-    "TL3": r(16.5, 14.45, 22.5, 15.55), # device pad to C8's gap
+    "TL3": r(16.25, 14.45, 22.5, 15.55),  # device pad to C8's gap
     "PADB": r(23, 13.5, 26, 16.5),      # the second pad
     "F6": r(26, 14.15, 31.6, 15.85),    # 1.7 x 5.6 mm
     "OUT": r(31.6, 14.45, 40, 15.55),   # to P4
@@ -64,8 +64,8 @@ ROUNDED = (SIGNAL["PADA"], 0.25 * UM)   # the device pad's corners are rounded, 
 BODY_LONG, BODY_SHORT = 1.6, 0.8   # an 0603's body
 PARTS = [
     ("C1", 6.25, 15.0, True, (5.6, 16.2)),
-    ("C2", 12.0, 17.75, False, (10.2, 18.0)),
-    ("C3", 12.0, 12.25, False, (10.2, 11.2)),
+    ("C2", 12.0, 17.5, False, (10.2, 18.0)),
+    ("C3", 12.0, 12.5, False, (10.2, 11.2)),
     ("R1", 14.0, 22.75, False, (15.8, 22.5)),
     ("R2", 14.0, 7.25, False, (15.8, 6.7)),
     ("C4", 15.25, 25.85, True, (16.4, 26.6)),

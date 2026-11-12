@@ -57,14 +57,14 @@ public sealed class DxfBoardRecognitionTests : IDisposable
     private static readonly (string Type, double W, double L, string A, string B)[] Lines =
     [
         ("CPWG", 1.1, 6.0, "P1", "C1"),
-        ("CPWG", 1.1, 5.0, "C1", "C2+C3"),
-        ("CPWG", 2.0, 5.0, "C2+C3", "R1"),
+        ("CPWG", 1.1, 5.25, "C1", "C2+C3"),
+        ("CPWG", 2.0, 5.25, "C2+C3", "R1"),
         ("CPWG", 2.0, 2.85, "R1", "C4"),                     // to C4, 3.1 mm on from R1's middle
         ("CPWG", 2.0, 4.15, "C4", "P2"),
-        ("CPWG", 2.0, 5.0, "C2+C3", "R2"),
+        ("CPWG", 2.0, 5.25, "C2+C3", "R2"),
         ("CPWG", 2.0, 2.85, "R2", "C5"),
         ("CPWG", 2.0, 4.15, "C5", "P3"),
-        ("CPWG", 1.1, 6.0, "C2+C3", "C8"),
+        ("CPWG", 1.1, 6.25, "C2+C3", "C8"),
         ("TLIN", 1.7, 5.2, "C8", "C6+C7"),                   // the 1.7 mm run: its gaps differ by more than 1.5×
         ("CPWG", 1.1, 8.8, "C6+C7", "P4"),                   // with the 0.4 mm of 1.7 mm past the taps
     ];
@@ -152,7 +152,7 @@ public sealed class DxfBoardRecognitionTests : IDisposable
             left.Remove(match!);
         }
         Assert.Empty(left);
-        Assert.Empty(tb.Instances.Where(i => i.Reference is not ("Port" or "C" or "R" or "L" or "MLIN" or "CPWG" or "TLIN" or "SLIN")));
+        Assert.DoesNotContain(tb.Instances, i => i.Reference is not ("Port" or "C" or "R" or "L" or "MLIN" or "CPWG" or "TLIN" or "SLIN"));
     }
 
     // ── the gates ────────────────────────────────────────────────────────────────────────────────

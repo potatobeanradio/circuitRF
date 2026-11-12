@@ -215,7 +215,7 @@ public sealed class PadsAndTapsTests
 
         Assert.True(result.Ok, result.Refusal);
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.PadsJoinTheirMembers));   // the arc is in the pad's copper
-        Assert.Empty(Lines(result).Where(l => l.Source != "" && l.Anchor.Count > 0 && l.Anchor.Any(a => a.Y > Um(7_500) && a.Y < Um(9_500))));
+        Assert.DoesNotContain(Lines(result), l => l.Anchor.Any(a => a.Y > Um(7_500) && a.Y < Um(9_500)));   // no line on the arc
         var joined = result.Report.Of(RecognitionFindingClass.CopperJoinedWithoutLine);
         Assert.True(joined is not null, string.Join("\n", result.Report.Lines()));
         Assert.Matches(@"C1\.\d at .* and C2\.\d at ", joined!.Sentence);

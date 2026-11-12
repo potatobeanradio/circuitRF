@@ -884,3 +884,7 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   ending in a semicolon, so `\LC1\l` (underlined) was an "other label"; MTEXT's toggles and breaks (`\L \l \O \o \K \k \P
   \N \X \~`) and TEXT's `%%u`/`%%o`/`%%k` go too now. The count of labels that are no designator is the scope's, as the
   designators' is. Gate: `TypedSilkscreenTests`.
+- **The board's device pad is 4.5 mm** (on review). At 5 mm it stood 80 µm under `BoardCopper.IsWide`'s 5.08 mm, the size
+  from which a signal island reads as a separate pour and loses its edge ports; 4.5 mm is still a several-millimetre pad,
+  and the pad join and the copper check read it as before (one node, 4 line ends and 2 terminals). The expected line
+  lengths into and out of it follow: 5.25, 5.25, 5.25 and 6.25 mm.
