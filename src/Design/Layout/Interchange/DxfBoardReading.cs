@@ -277,7 +277,7 @@ public static class DxfBoardReading
 
     /// <summary>
     /// <paramref name="ring"/> read as a hole, or null (R-dfr38-1-4, revised: see <see cref="ViasOf"/>). It must be closed and
-    /// convex, and either a regular polygon (<see cref="HoleRoundness"/>, <see cref="HoleRegularity"/>: a triangle, a square at
+    /// convex — every turn one way, once round — and either a regular polygon (<see cref="HoleRoundness"/>, <see cref="HoleRegularity"/>: a triangle, a square at
     /// any angle, a hexagon), about its centre, or square to its box and filling it (<see cref="HoleSquareness"/>,
     /// <see cref="HoleFill"/>: a circle, a rounded square, a square, an octagon), about its box's centre. Its hole is the circle
     /// inside it about that centre: twice the least distance from it to an edge. That is the conservative reading — a drill
@@ -305,7 +305,18 @@ public static class DxfBoardReading
             turns.Add(cross);
         }
         int n = pts.Count;
-        if (n < 3 || !(turns.All(t => t > 0) || turns.All(t => t < 0))) return null;   // closed, and convex
+        if (n < 3 || !(turns.All(t => t > 0) || turns.All(t => t < 0))) return null;   // closed, every turn one way ...
+        // ... and once round: a star drawn as one polyline (an octagram, every third corner of an octagon) turns one way at
+        // every corner too, but three times round, crossing itself.
+        double turning = 0;
+        for (int i = 0; i < n; i++)
+        {
+            var (px, py) = pts[(i + n - 1) % n];
+            var (x, y) = pts[i];
+            var (nx, ny) = pts[(i + 1) % n];
+            turning += Math.Atan2((x - px) * (ny - y) - (y - py) * (nx - x), (x - px) * (nx - x) + (y - py) * (ny - y));
+        }
+        if (Math.Abs(Math.Abs(turning) - 2 * Math.PI) > Math.PI) return null;
 
         double area = 0;
         double cx = pts.Average(p => p.X), cy = pts.Average(p => p.Y);

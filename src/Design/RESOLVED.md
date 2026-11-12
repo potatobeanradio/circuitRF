@@ -29827,6 +29827,11 @@ as 400 where about 283 fits. In both branches the hole is now twice the least di
 polygon's own, else the box's — to an edge, so the message and the reference ("the circle inside it") are true again. Gate:
 `DxfBoardImportTests.AMarksHole_IsTheCircleInsideIt` (those three and an octagon turned 10°).
 
+**… and once round (third review).** Every turn one way was taken for convex, and a star drawn as one closed polyline — an
+octagram, every third corner of an octagon — turns one way at every corner too: it was read as a 600 µm hole. The turns
+must now also sum to one full turn; the octagram's sum to three, and it is left as drawn and said. Gate:
+`DxfBoardImportTests.AnOutlineThatCrossesItself_IsNoHole`.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was

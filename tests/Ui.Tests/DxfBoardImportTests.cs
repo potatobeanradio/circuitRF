@@ -216,6 +216,29 @@ public sealed class DxfBoardImportTests : IDisposable
         Assert.All(vias, v => Assert.InRange(v.Y, 4_999_000, 5_001_000));
     }
 
+    /// <summary>A star drawn as one closed polyline — an octagram, every third corner of an octagon — turns one way at every
+    /// corner, as a convex outline does, but three times round: it crosses itself, and is no hole.</summary>
+    [Fact]
+    public void AnOutlineThatCrossesItself_IsNoHole()
+    {
+        var star = Enumerable.Range(0, 8).Select(k =>
+        {
+            double a = (90 + 45.0 * (3 * k % 8)) * Math.PI / 180;
+            return (5 + 0.3 * Math.Cos(a), 5 + 0.3 * Math.Sin(a), 0.0);
+        }).ToArray();
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)));
+        entities.AddRange(Polyline("HOLE", star));
+
+        var tech = Tech();
+        var result = Import(Drawing("star.dxf", [.. entities]), "star", tech, "PATTERN=Top Copper,HOLE=Drill");
+        var view = LoadOnly(result);
+
+        Assert.Empty(view.Shapes.OfType<ViaShape>());
+        Assert.Single(view.Shapes, s => s.Layer == LayerNamed(tech, "Drill") && s is PolygonShape);
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 entity is not a circle", StringComparison.Ordinal));
+    }
+
     /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a
     /// square first pin), a square pad at a square drill, a round pad at a round one — and a square pad keeps its whole square
     /// as copper: the via's land is the circle inside it.</summary>
