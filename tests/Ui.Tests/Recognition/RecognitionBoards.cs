@@ -9,6 +9,7 @@ using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Layout.Recognition;
+using Xunit;
 
 namespace CircuitRF.Ui.Tests.Recognition;
 
@@ -219,17 +220,27 @@ internal static class RecognitionBoards
     }
 
     public static RecognitionResult RecognizeParts(LayoutView view, PlacementTable? placement, BomTable? bom) =>
-        ArtworkRecognition.Recognize(new RecognitionInput
+        CopperAgrees(ArtworkRecognition.Recognize(new RecognitionInput
         {
             View = view, Technology = TwoLayerWithMask(), Shapes = view.Shapes, Placement = placement, Bom = bom,
-        });
+        }));
 
     public static RecognitionResult Recognize(
         LayoutView view, Technology tech, RecognitionOptions? options = null, RecognitionScope? scope = null,
         CircuitRF.Design.Layout.Em.EmSetup? setup = null) =>
-        ArtworkRecognition.Recognize(new RecognitionInput
+        CopperAgrees(ArtworkRecognition.Recognize(new RecognitionInput
         {
             View = view, Technology = tech, Shapes = view.Shapes, EmSetup = setup,
             Options = options ?? new RecognitionOptions(), Scope = scope ?? RecognitionScope.Whole,
-        });
+        }));
+
+    /// <summary>The recognition's check of its circuit against its copper is an error in a test: nothing split, nothing joined
+    /// across islands, nothing joined across copper no line models (docs/design/artwork-to-schematic.md §6.7½).</summary>
+    public static RecognitionResult CopperAgrees(RecognitionResult result, string? what = null)
+    {
+        foreach (var cls in new[] { RecognitionFindingClass.CircuitSplitsCopper, RecognitionFindingClass.CircuitJoinsAcrossCopper,
+                                    RecognitionFindingClass.CopperJoinedWithoutLine })
+            Assert.True(result.Report.Count(cls) == 0, $"{what}{(what is null ? "" : ": ")}{result.Report.Of(cls)?.Sentence}");
+        return result;
+    }
 }
