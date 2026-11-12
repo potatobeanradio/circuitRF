@@ -208,6 +208,9 @@ public static class PartReading
         // ── 4. the silkscreen, then any further source: each one's designators given to the unnamed parts ──
         var silk = SilkscreenReading.Empty;
         var unassociated = new List<PartClaim>();
+        // Designators typed as text first: they are exact, so a stroked reading only names what they leave (R-as10-4).
+        var typed = new TypedSilkscreenEvidence(input.Shapes, tech);
+        Name(typed.Claims(input, ctx.Board));
         if (drafts.Any(d => d.Refdes is null))
         {
             silk = SilkscreenText.Read(input.Shapes, tech, GlyphTemplates.ForUser());
@@ -277,7 +280,7 @@ public static class PartReading
             $"{Plural(placementRenamed.Count, "placement row names", "placement rows name")} pads the artwork declares as another part, and " +
             $"the placement file's designator was taken: {string.Join(", ", placementRenamed.Take(12).Select(r => $"{r.Row.Refdes} (declared {r.Declared})"))}" +
             $"{(placementRenamed.Count > 12 ? ", …" : "")}.", [.. placementRenamed.Select(r => new RecognitionAnchor(r.Row.X, r.Row.Y))]);
-        ReportSilkscreen(ctx, silk, unassociated, report);
+        ReportSilkscreen(ctx, silk, typed, unassociated, report);
         return new PartsTable(rows, fmt, baseDir);
     }
 
@@ -922,10 +925,18 @@ public static class PartReading
     }
 
     /// <summary>R-as10-6: what the silkscreen read, what it named, what it could not place, what it left out.</summary>
-    private static void ReportSilkscreen(PartReadingContext ctx, SilkscreenReading silk, List<PartClaim> unassociated, RecognitionReport report)
+    private static void ReportSilkscreen(PartReadingContext ctx, SilkscreenReading silk, TypedSilkscreenEvidence typed,
+                                         List<PartClaim> unassociated, RecognitionReport report)
     {
         var fmt = ctx.Format;
         static RecognitionAnchor At(SilkTextLine l) => new(l.X, l.Y, l.Layer);
+        // Said whether or not any part was left to name: with none found, it is what says the designators were there.
+        var labels = typed.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
+        report.Add(RecognitionFindingClass.SilkscreenLabelsRead, labels.Count,
+            $"{Plural(labels.Count, "designator was", "designators were")} read from text labels on the silkscreen: " +
+            $"{string.Join(", ", labels.Take(16).Select(l => l.Refdes))}{(labels.Count > 16 ? ", …" : "")}" +
+            (typed.OtherLabels > 0 ? $"; {Plural(typed.OtherLabels, "other label there is", "other labels there are")} no designator." : "."),
+            [.. labels.Select(At)]);
         var lines = silk.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
         int designators = lines.Count(l => l.Refdes is not null);
         report.Add(RecognitionFindingClass.SilkscreenTextRead, lines.Count,

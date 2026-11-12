@@ -201,6 +201,9 @@ public static class StrokeGlyphs
 
     private static readonly Regex RefdesShape = new("^[A-Z]{1,3}[0-9]{1,4}$", RegexOptions.CultureInvariant);
 
+    /// <summary>The designator rule (R-as10-3): one to three capitals, then one to four digits.</summary>
+    internal static bool IsDesignator(string text) => RefdesShape.IsMatch(text);
+
     /// <summary>The lines of text among <paramref name="strokes"/>, and how many strokes no line took.</summary>
     /// <param name="bottomSide">The strokes are on the bottom side, where text is mirrored: a mirrored reading
     /// is preferred there, and an unmirrored one on the top, when both fit equally.</param>

@@ -627,6 +627,13 @@ legend or overlay); each layer is read on its own and a bottom layer prefers a m
 silkscreen layer is not read and is counted (`SilkscreenFilledNotRead`) — text drawn as filled outlines needs a
 different reader.
 
+**Typed text is read as itself.** A drawing exported as DXF carries its designators as `TEXT`/`MTEXT`, which the import
+keeps as labels with the exact characters. `TypedSilkscreenEvidence` reads each label on a silkscreen layer whose text
+(MTEXT's inline codes stripped, upper-cased) passes the designator rule of §9.2 as a line with no glyphs, its box from
+the anchor, the height, 0.6 of a height per character and the rotation, and claims through `IPartEvidenceSource`, the seam
+a picture's legend uses. Its claims are given first, then the stroked reading names what they leave. A label only names a
+part another rung found; with no glyphs, correcting it teaches nothing (`SilkscreenText.Lesson`).
+
 `StrokeGlyphs`: strokes whose centre lines touch (within 0.3 of the pen width) or cross are one **unit**. A unit is
 TALL in a family — reading along x (0°/180°) or along y (90°/270°) — when its extent across the line is at least
 1/1.6 of its extent along it. Tall units of one height (±35 %) overlapping 70 % across the line, at most 0.6 cap heights
@@ -687,12 +694,14 @@ as 9s, because a glyph resembles its own font's other characters more than anoth
 
 `SilkscreenTextRead` (lines read, how many designators), `PartsFromSilkscreen` (named), `SilkscreenRefdesNotAssociated`,
 `SilkscreenGlyphsUncertain` (glyphs of designator-shaped lines under a known prefix that failed only the margin),
-`SilkscreenStrokesExcluded`, `SilkscreenFilledNotRead`. Silkscreen is read only when some part is still unnamed after
-placed footprints and the placement file.
+`SilkscreenStrokesExcluded`, `SilkscreenFilledNotRead`, and `SilkscreenLabelsRead` (designators typed as labels, and how
+many other labels there are). The strokes are read only when some part is still unnamed after placed footprints, the
+placement file and the typed labels; the typed labels are reported whatever was found, so a board with no part says that
+its designators were there.
 
 ### 9.6 Gates
 
-`StrokeGlyphTests`, `RefdesAssociationTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
+`StrokeGlyphTests`, `RefdesAssociationTests`, `TypedSilkscreenTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
 `"silkscreen": [{refdes, x, y}]` in mm and `"silkscreenFraction"`) in `tests/Ui.Tests/Recognition/Silkscreen/`, and
 `PartsTableCsvTests.ARowAtAGuessedPartsPlaceRenamesItButNeverABoardDesignator`.
 

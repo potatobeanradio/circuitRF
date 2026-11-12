@@ -766,3 +766,20 @@ next attempt used the same 4.26 µm-a-pixel Line impedance scale and showed two 
   the drill. At the true scale, 0.35–0.45 mm drills keep the 0.6 mm pad.
 - The board's size is now also the canvas prompt whenever a scale is set and no tool is armed, with Two points…, Board
   corners… and Line impedance… beside it (`SizeCheckPrompt`). The same size in the side pane alone was not seen.
+
+## A board drawn as DXF outlines, recognised (2026-11-12)
+
+A two-layer RF board drawn as a DXF of outlines — copper, drill marks, a silkscreen body rectangle and a typed designator
+for every part, no lands and no mask — imported with a `--layer-map` and recognised. Each finding below left the circuit
+wrong with no hand correction possible from the report alone. The fixture is synthetic
+(`testdata/interchange/dxf-board/make_boards.py`, six spellings of one board).
+
+- **Typed designators are read** (R-as10-2, R-as10-4, R-as10-6, R-as4-1 (4), R-as4-9). `SilkscreenText` reads stroked shapes
+  only and skipped every `LabelShape`, so a DXF's `TEXT`/`MTEXT` designators — exact characters — named nothing, and with
+  no other evidence the report said nothing about the silkscreen at all. `TypedSilkscreenEvidence` makes each label whose
+  text passes the designator rule a `SilkTextLine` with no glyphs and a claim through `IPartEvidenceSource`, the seam the
+  picture reader (`RasterSilkscreenEvidence`) already used; its claims go first, then the strokes name what is left.
+  MTEXT's inline codes are stripped first (`{\fArial|b0;C2}` is C2). Typed text only NAMES parts another rung found
+  (`PartReading`'s association, unchanged). The strokes are read only while some part is unnamed, so the typed count is
+  reported regardless (`SilkscreenLabelsRead`): with no part found it is what says the designators were there. A typed
+  line has no glyphs, which `Lesson` already answers with nothing to learn. Gate: `TypedSilkscreenTests`.

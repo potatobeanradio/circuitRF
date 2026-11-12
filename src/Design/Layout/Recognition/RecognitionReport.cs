@@ -164,6 +164,9 @@ public enum RecognitionFindingClass
     /// <summary>Filled silkscreen shapes, which are not read.</summary>
     SilkscreenFilledNotRead,
 
+    /// <summary>Designators typed as text labels on the silkscreen (a drawing's TEXT and MTEXT), read exactly.</summary>
+    SilkscreenLabelsRead,
+
     // ── AS-5: lines (R-as5-9) ───────────────────────────────────────────────────────────────────
 
     /// <summary>The line elements read from the traces, by type.</summary>
