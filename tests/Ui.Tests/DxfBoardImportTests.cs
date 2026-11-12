@@ -93,6 +93,69 @@ public sealed class DxfBoardImportTests : IDisposable
         Assert.Contains(result.Messages, m => m.Contains("1 block(s) model space does not reach", StringComparison.Ordinal));
     }
 
+    /// <summary>DXF text of one ENTITIES section, millimetres: <paramref name="entities"/> are group-code, value pairs.</summary>
+    private string Drawing(string name, params (int Code, object Value)[] entities)
+    {
+        var text = new System.Text.StringBuilder("0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+        foreach (var (code, value) in entities)
+            text.Append(code).Append('\n').Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+        text.Append("0\nENDSEC\n0\nEOF\n");
+        string path = Path.Combine(_root, name);
+        File.WriteAllText(path, text.ToString());
+        return path;
+    }
+
+    private static (int, object)[] Polyline(string layer, params (double X, double Y, double Bulge)[] points)
+    {
+        var groups = new List<(int, object)> { (0, "LWPOLYLINE"), (8, layer), (90, points.Length), (70, 1) };
+        foreach (var (x, y, b) in points)
+        {
+            groups.Add((10, x));
+            groups.Add((20, y));
+            if (b != 0) groups.Add((42, b));
+        }
+        return [.. groups];
+    }
+
+    private static (int, object)[] Line(string layer, double x0, double y0, double x1, double y1) =>
+        [(0, "LINE"), (8, layer), (10, x0), (20, y0), (11, x1), (21, y1)];
+
+    /// <summary>R-dfr38-1-4 as revised: a drill layer's circles, squares (a closed polyline and four lines), octagons and
+    /// two-arc polylines are each a via whose drill is its box's width; a long rectangle on the layer is no hole and is said.</summary>
+    [Fact]
+    public void SquaresOctagonsAndArcOutlinesOnADrillLayer_AreVias_AndALongRectangleIsLeftAsDrawn()
+    {
+        double t = 0.2 * Math.Tan(Math.PI / 8);
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)));
+        entities.AddRange([(0, "CIRCLE"), (8, "HOLE"), (10, 2.0), (20, 5.0), (40, 0.2)]);
+        entities.AddRange(Polyline("HOLE", (3.8, 4.8, 0), (4.2, 4.8, 0), (4.2, 5.2, 0), (3.8, 5.2, 0)));
+        entities.AddRange(Line("HOLE", 5.8, 4.8, 6.2, 4.8));
+        entities.AddRange(Line("HOLE", 6.2, 4.8, 6.2, 5.2));
+        entities.AddRange(Line("HOLE", 6.2, 5.2, 5.8, 5.2));
+        entities.AddRange(Line("HOLE", 5.8, 5.2, 5.8, 4.8));
+        entities.AddRange(Polyline("HOLE", (8.2, 5 - t, 0), (8.2, 5 + t, 0), (8 + t, 5.2, 0), (8 - t, 5.2, 0),
+                                           (7.8, 5 + t, 0), (7.8, 5 - t, 0), (8 - t, 4.8, 0), (8 + t, 4.8, 0)));
+        entities.AddRange(Polyline("HOLE", (9.8, 5, 1), (10.2, 5, 1)));
+        entities.AddRange(Polyline("HOLE", (12, 4.8, 0), (14, 4.8, 0), (14, 5.2, 0), (12, 5.2, 0)));
+
+        var tech = Tech();
+        var result = Import(Drawing("drill-marks.dxf", [.. entities]), "marks", tech, "PATTERN=Top Copper,HOLE=Drill");
+        var view = LoadOnly(result);
+
+        var vias = view.Shapes.OfType<ViaShape>().OrderBy(v => v.X).ToList();
+        Assert.Equal([2_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000], vias.Select(v => v.X));
+        Assert.All(vias, v => Assert.Equal(5_000_000, v.Y));
+        Assert.All(vias, v => Assert.InRange(v.DrillSize, 399_000, 401_000));
+        Assert.Contains(result.Messages, m => m.Contains("1 circle", StringComparison.Ordinal) && m.Contains("1 square,", StringComparison.Ordinal)
+                                              && m.Contains("1 square of lines", StringComparison.Ordinal) && m.Contains("1 polygon", StringComparison.Ordinal)
+                                              && m.Contains("1 arc outline", StringComparison.Ordinal));
+
+        var drill = LayerNamed(tech, "Drill");
+        Assert.Single(view.Shapes, s => s.Layer == drill && s is PolygonShape);   // the long rectangle, as drawn
+        Assert.Contains(result.Messages, m => m.Contains("HOLE: 1 entity is not a circle or a small closed outline", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void AGapWithinTheTolerance_Closes_AndALargerOneDoesNot()
     {

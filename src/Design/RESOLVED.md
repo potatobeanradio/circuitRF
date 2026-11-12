@@ -29783,6 +29783,20 @@ counted only what model space reaches; 16 copper polygons with 2 holes, 2 overla
 blocks skipped. Its part-number digits read as copper. `check` then reports 6 design-rule errors on that board against the
 technology's own rules, which are the board's and not the import's. Nothing was solved.
 
+**R-dfr38-1-4 revised: a small closed outline on a drill layer is a hole, whatever its corners** (2026-11-12). The requirement said a
+non-circular entity is reported, not guessed at. Drawings mark drills as squares, octagons, two-bulge polylines or four `LINE`s as
+often as circles, and on a stitched board each one left as drawing cut a pour from its plane. `DxfBoardReading.ViasOf` now reads a
+closed outline as a hole when its box is square within 5 %, it fills at least 0.7 of the box (a circle π/4, an octagon 0.83; a
+triangle or an L half or less), and it is no wider than the layer's widest circle or 3 mm, whichever is more. Lines and arcs chain
+into loops as copper outlines do (`DxfCopperLoops`). The hole is the box's centre and its width across, which for a square is the
+inscribed circle: the smaller reading, so a via is never larger than the mark. The cap is what keeps a pad, a frame or a part
+outline drawn on the layer out, and a long rectangle fails the square test anyway; whatever is not a hole is still left as drawn and
+said. A pad candidate on the filled copper gets the same test, so a square pad round a square drill is taken as that via's pad, as a
+circle was. This is not `ImageTrace.RoundHole`'s rule (R-dfr30-3-2), which keeps a square out of a picture's holes on purpose: a
+square blob in a picture may be a pad, while a layer the user mapped as the drill layer declares that what is on it is holes. The
+message counts each kind read ("11 circles, 11 squares, …, read as holes"). Gate:
+`DxfBoardImportTests.SquaresOctagonsAndArcOutlinesOnADrillLayer_AreVias_AndALongRectangleIsLeftAsDrawn`.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was
