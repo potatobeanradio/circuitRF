@@ -56,6 +56,7 @@ public sealed class TypedSilkscreenTests
     [InlineData(@"\H0.8x;\KC2\k")]
     [InlineData("%%uC2%%u")]
     [InlineData(@"C\~2")]
+    [InlineData(@"\c16711680;C2")]
     public void FormattingCodes_AreNotTheText(string text)
     {
         var view = PlaneAndLine();

@@ -20,9 +20,10 @@ public sealed class TypedSilkscreenEvidence
     /// text is, not how a font sets it.</summary>
     public const double CharWidth = 0.6;
 
-    // How the text is set, not what it is: MTEXT's codes with a value up to a semicolon (\A1; \fArial|b0; \H2.5x; \pxqc;
-    // \S1/2;), its toggles and breaks (\L \l \O \o \K \k \P \N \X \~), the braces round a run, and TEXT's toggles (%%u %%o %%k).
-    private static readonly Regex Codes = new(@"\\[ACFfHpQTWS][^;]*;|\\[LlOoKkPNX~]|[{}]|%%[uUoOkK]", RegexOptions.CultureInvariant);
+    // How the text is set, not what it is: MTEXT's codes with a value up to a semicolon (\A1; \C1; \c16711680; \fArial|b0;
+    // \H2.5x; \pxqc; \S1/2;), its toggles and breaks (\L \l \O \o \K \k \P \N \X \~), the braces round a run, and TEXT's
+    // toggles (%%u %%o %%k). A \U+ escape is left: it is a character, and no designator has one.
+    private static readonly Regex Codes = new(@"\\[ACcFfHpQTWS][^;]*;|\\[LlOoKkPNX~]|[{}]|%%[uUoOkK]", RegexOptions.CultureInvariant);
 
     public TypedSilkscreenEvidence(IReadOnlyList<LayoutShape> shapes, Technology tech)
     {

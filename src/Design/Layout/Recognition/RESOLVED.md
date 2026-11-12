@@ -837,7 +837,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` holds the overwrite (it mirrors
   across the line, so the walk keeps its direction); `LineSegmentationTests.TwoTapsAtOnePointOfADiagonalLine_AreOneNode_
   WhicheverWayItIsWalked` holds the tolerance — two terminals 8 nm either side of a 3:1 diagonal project 1.9e-9 nm apart,
-  ahead one way and behind the other, and without the tolerance the walk that has the second ahead floats it; and
+  ahead one way and behind the other. Without the tolerance it fails: with main's atom lookup and split test the walk that
+  has the second tap ahead floats it, and with only the lookup restored both walks fail on a near-zero line between the
+  two taps (three line drafts, not two); and
   `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich` reads the whole board turned over top to
   bottom as the same circuit.
 - **Six spellings of one board, one circuit.** `make_boards.py` (Python standard library; DXF is text) writes the board as
@@ -883,7 +885,7 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   out and said (`BodyOutlinesOverManyPieces`). Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_…`.
 - **Typed text: every code stripped, and the other labels counted in scope** (F3, on review). The strip took only codes
   ending in a semicolon, so `\LC1\l` (underlined) was an "other label"; MTEXT's toggles and breaks (`\L \l \O \o \K \k \P
-  \N \X \~`) and TEXT's `%%u`/`%%o`/`%%k` go too now. The count of labels that are no designator is the scope's, as the
+  \N \X \~`), the true-colour `\c…;` and TEXT's `%%u`/`%%o`/`%%k` go too now (a `\U+` escape is a character and is left). The count of labels that are no designator is the scope's, as the
   designators' is. Gate: `TypedSilkscreenTests`.
 - **The board's device pad is 4.5 mm** (on review). At 5 mm it stood 80 µm under `BoardCopper.IsWide`'s 5.08 mm, the size
   from which a signal island reads as a separate pour and loses its edge ports; 4.5 mm is still a several-millimetre pad,
