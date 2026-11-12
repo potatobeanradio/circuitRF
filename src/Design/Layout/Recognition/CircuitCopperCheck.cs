@@ -63,7 +63,8 @@ internal static class CircuitCopperCheck
             $"{Plural(joins.Count, "place where", "places where")} the circuit joins what the copper keeps apart: " +
             $"{string.Join("; ", joins.Take(8).Select(s => s.Sentence))}{(joins.Count > 8 ? "; …" : "")}.",
             [.. joins.SelectMany(s => s.At)]);
-        if (splits.Count == 0 && joins.Count == 0 && attached.Count > 0)
+        // Not while a join across copper no line models stands in the report: the nodes then agree only because of it.
+        if (splits.Count == 0 && joins.Count == 0 && attached.Count > 0 && report.Count(RecognitionFindingClass.CopperJoinedWithoutLine) == 0)
             report.Add(RecognitionFindingClass.CircuitAgreesWithCopper, attached.Count,
                 $"The circuit joins what the copper joins: {Plural(attached.Count, "part terminal, port or via end", "part terminals, ports and via ends")} " +
                 $"on {Plural(attached.Select(a => a.Island).Distinct().Count(), "island", "islands")} checked.");

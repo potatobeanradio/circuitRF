@@ -175,4 +175,50 @@ public sealed class PadsAndTapsTests
         Assert.Equal([15_000.0, 15_000.0], lines.Select(l => System.Math.Round(l.Micro("L"))));
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
     }
+
+    /// <summary>
+    /// A 30 × 16 mm board: C1 across a gap into a 3 mm pad, a 1.1 mm quarter-arc trace 7.85 mm long from it into a second 3 mm
+    /// pad, and C2 across a gap out of that to a line to the right edge.
+    /// </summary>
+    private static LayoutView PadsJoinedByAnArc()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 16_000));
+        view.Shapes.Add(Rect(Top, 0, 4_950, 9_500, 6_050));
+        view.Shapes.Add(Rect(Top, 10_000, 4_000, 13_000, 7_000));
+        view.Shapes.Add(Rect(Top, 17_000, 10_000, 20_000, 13_000));
+        view.Shapes.Add(Rect(Top, 20_500, 10_950, 30_000, 12_050));
+        var arc = new List<long>();
+        for (int k = 0; k <= 24; k++)
+        {
+            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            arc.AddRange([Um(13_000 + 5_550 * System.Math.Cos(a)), Um(10_000 + 5_550 * System.Math.Sin(a))]);
+        }
+        for (int k = 24; k >= 0; k--)
+        {
+            double a = (-95 + 100.0 * k / 24) * System.Math.PI / 180;
+            arc.AddRange([Um(13_000 + 4_450 * System.Math.Cos(a)), Um(10_000 + 4_450 * System.Math.Sin(a))]);
+        }
+        view.Shapes.Add(new PolygonShape { Layer = Top, Xy = [.. arc] });
+        view.Shapes.AddRange(Part("C1", 9_750, 5_500, alongX: true));
+        view.Shapes.AddRange(Part("C2", 20_250, 11_500, alongX: true));
+        return view;
+    }
+
+    /// <summary>The review reads no arc, so the arc's copper was pad copper and the two pads one ideal short, and the copper
+    /// check agreed. The two pads are cores of that copper the arc only links: the join is still made, and named as one across
+    /// copper no line models; the check does not say the circuit agrees.</summary>
+    [Fact]
+    public void TwoPadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper()
+    {
+        var result = Read(PadsJoinedByAnArc());
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(1, result.Report.Count(RecognitionFindingClass.PadsJoinTheirMembers));   // the arc is in the pad's copper
+        Assert.Empty(Lines(result).Where(l => l.Source != "" && l.Anchor.Count > 0 && l.Anchor.Any(a => a.Y > Um(7_500) && a.Y < Um(9_500))));
+        var joined = result.Report.Of(RecognitionFindingClass.CopperJoinedWithoutLine);
+        Assert.True(joined is not null, string.Join("\n", result.Report.Lines()));
+        Assert.Matches(@"C1\.\d at .* and C2\.\d at ", joined!.Sentence);
+        Assert.Null(result.Report.Of(RecognitionFindingClass.CircuitAgreesWithCopper));
+    }
 }

@@ -406,8 +406,10 @@ T5), `O1` (an open end). A trace's end attaches to the nearest part terminal, po
 one node**: an island's copper that no trace piece covers (each piece's strip taken away, a micron wider each side) is pad
 copper, and in each connected region of it every line end the review names a `"pad"` end (half a width past it) and every
 part terminal, via end and port is joined by an ideal short, reported as `PadsJoinTheirMembers` with the pad's size. A
-junction's centre is no pad: its arms end on it as `"junction"`. Modelling a pad as a wide line or a junction is a later
-step. A part terminal, via or port no line reaches joins the nearest line end on its island, or the island's other
+junction's centre is no pad: its arms end on it as `"junction"`. Pad copper is the island less what the review
+returned, so a trace it did not read (an arc) is in it too: each region is eroded to its cores, by its largest inscribed
+radius over `PadWidthStep`, and members on two cores are still joined but reported as `CopperJoinedWithoutLine`. Modelling
+a pad as a wide line or a junction is a later step. A part terminal, via or port no line reaches joins the nearest line end on its island, or the island's other
 attachments.
 `LineRecognitionResult.NodeOf(name)` gives the node any of those names ended up as.
 
@@ -440,7 +442,8 @@ Recognition checks its own result before the emit drops stray lines (`CircuitCop
 and kept via end on one signal island is joined to the others there by copper, so the circuit must join them too through
 its lines, junctions and VIAs — direct current only, no part crossed. An island the circuit splits is
 `CircuitSplitsCopper` and a node joining two islands `CircuitJoinsAcrossCopper`, each naming both places; agreement is
-one `CircuitAgreesWithCopper` line, said every time, with what was checked. A part terminal, port or via end no line
+one `CircuitAgreesWithCopper` line, said every time with what was checked, unless a join across copper no line models
+stands in the report. A part terminal, port or via end no line
 reached that joins a line end farther than a line end reaches (§6.5) is `CopperJoinedWithoutLine`: copper between them
 that no line models — a trace the review did not hand over — shorted. Tests treat all three as errors.
 

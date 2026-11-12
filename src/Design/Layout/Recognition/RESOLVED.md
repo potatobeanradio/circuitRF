@@ -860,3 +860,12 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   34.2–45.5 Ω, 78 % in tolerance, where main reports 20 mm at 45.5 Ω, 100 %. The limit is now an internal option,
   `TraceImpedanceOptions.KeepLongEndSections`, which only `ArtworkRecognition.ReviewOf` sets; every review, scoped or not,
   trims as before. Gate: `TraceImpedanceAnalysisTests.AWideEndSection_IsTheLinesLand_ScopedOrNot_AndOnlyRecognitionKeepsIt`.
+- **A pad's copper can hold a trace the review did not read** (F5, closed). Pad copper is an island less the strips of the
+  traces the review returned, so a trace it dropped is in it: a 7.85 mm quarter-arc trace between two 3 mm pads, which the
+  review does not read as a trace, made one 9.5 × 9.5 mm "pad", joined C1.2 and C2.1 by an ideal short, and the copper check
+  agreed. A distance between members cannot tell that from a real pad (a line in and a line out of a 4.5 mm device pad are
+  4.5 mm apart, past a 1.1 mm line end's 3.2 mm reach), so each pad region is eroded to its cores, by its largest inscribed
+  radius over `PadWidthStep` — every part narrower than its widest by the review's own pad-to-trace step goes — and members
+  on two cores are still joined but reported as `CopperJoinedWithoutLine`, naming both. The agreement line is no longer said
+  while such a join is in the report. Reading the arc as a line is not done. Gate:
+  `PadsAndTapsTests.TwoPadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`.

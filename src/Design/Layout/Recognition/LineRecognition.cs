@@ -302,7 +302,10 @@ public static class LineRecognition
             if (islandOfJunction.TryGetValue(j.Source, out int ji))
                 endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y, j.Widths.DefaultIfEmpty(0).Max()));
         var firstOnIsland = new Dictionary<int, string>();
-        var farJoins = new List<(Attachment A, double X, double Y, double D)>();
+        // Each: what was joined, where, what to, where — an attachment to a line end out of reach, or two members of a pad
+        // its own copper does not make one pad (PadNodes).
+        var farJoins = new List<(string A, long Ax, long Ay, LayerKey? Layer, string B, long Bx, long By)>();
+        foreach (var pad in pads) farJoins.AddRange(pad.Split);
         foreach (var a in attachments.Where(a => !reached.Contains(a.Name)))
         {
             if (endsOnIsland.TryGetValue(a.Island, out var ends) && ends.Count > 0)
@@ -310,7 +313,8 @@ public static class LineRecognition
                 var e = ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y));
                 Union(a.Name, e.Node);
                 double d = Math.Sqrt(Sq(e.X - a.X) + Sq(e.Y - a.Y));
-                if (d > AttachReachWidths * e.W + AttachReachMicrons * dbu) farJoins.Add((a, e.X, e.Y, d));
+                if (d > AttachReachWidths * e.W + AttachReachMicrons * dbu)
+                    farJoins.Add((a.Name, a.X, a.Y, a.Layer, "the line end", (long)Math.Round(e.X), (long)Math.Round(e.Y)));
             }
             else if (firstOnIsland.TryGetValue(a.Island, out var first)) Union(a.Name, first);
             else firstOnIsland[a.Island] = a.Name;
@@ -412,12 +416,12 @@ public static class LineRecognition
             (pads.Count > 8 ? "; …" : "") + ".",
             [.. pads.Select(p => new RecognitionAnchor((p.Box.MinX + p.Box.MaxX) / 2, (p.Box.MinY + p.Box.MaxY) / 2))]);
         report.Add(RecognitionFindingClass.CopperJoinedWithoutLine, farJoins.Count,
-            $"{Plural(farJoins.Count, "part terminal, port or via end no line reaches was", "part terminals, ports and via ends no line reaches were")} " +
-            "joined to the nearest line end across copper no line models — a trace the reading did not take, shorted: " +
-            string.Join("; ", farJoins.Take(8).Select(f => $"{f.A.Name} at {fmt.Point(f.A.X, f.A.Y)}, {f.D / dbu / 1000:0.##} mm from " +
-                                                           $"{fmt.Point((long)Math.Round(f.X), (long)Math.Round(f.Y))}")) +
+            $"{Plural(farJoins.Count, "join was", "joins were")} made across copper no line models — a trace the reading did not " +
+            "take, shorted: " +
+            string.Join("; ", farJoins.Take(8).Select(f => $"{f.A} at {fmt.Point(f.Ax, f.Ay)} and {f.B} at {fmt.Point(f.Bx, f.By)}, " +
+                                                           $"{Math.Sqrt(Sq(f.Bx - f.Ax) + Sq(f.By - f.Ay)) / dbu / 1000:0.##} mm apart")) +
             (farJoins.Count > 8 ? "; …" : "") + ".",
-            [.. farJoins.Select(f => new RecognitionAnchor(f.A.X, f.A.Y, f.A.Layer))]);
+            [.. farJoins.SelectMany(f => new[] { new RecognitionAnchor(f.Ax, f.Ay, f.Layer), new RecognitionAnchor(f.Bx, f.By, f.Layer) })]);
         return result;
     }
 
@@ -426,8 +430,14 @@ public static class LineRecognition
     /// into its connected regions, and in each the node of every line end the trace review names a "pad" end whose step
     /// beyond it lands there, and every part terminal, via end and port inside it. A region with fewer than two members is
     /// no join. A junction's centre is not a pad: its arms end on it as "junction", never "pad".
+    /// <para>The region is only what the review RETURNED taken away, so a trace it did not read (an arc, for one) is still in
+    /// it. So each region is also eroded to its cores — by its largest inscribed radius over <see cref="TraceImpedanceAnalysis.PadWidthStep"/>,
+    /// which takes away every part of it narrower than its widest by the review's own pad-to-trace step — and members on two
+    /// cores are still joined but named in <c>Split</c>, a join across copper no line models. A distance alone could not tell:
+    /// a line in and a line out of a 4.5 mm device pad are 4.5 mm apart, past a 1.1 mm line end's reach.</para>
     /// </summary>
-    private static List<(List<string> Members, int Ends, int Terminals, Bbox Box)> PadNodes(
+    private static List<(List<string> Members, int Ends, int Terminals, Bbox Box,
+                         List<(string A, long Ax, long Ay, LayerKey? Layer, string B, long Bx, long By)> Split)> PadNodes(
         LineRecognitionContext ctx, List<TraceLines> traces, List<Attachment> attachments, int dbu)
     {
         var board = ctx.Board;
@@ -448,7 +458,7 @@ public static class LineRecognition
                     (strips.TryGetValue(run.Layer, out var list) ? list : strips[run.Layer] = []).Add((box, path));
                 }
 
-        var pads = new List<(List<string>, int, int, Bbox)>();
+        var pads = new List<(List<string>, int, int, Bbox, List<(string, long, long, LayerKey?, string, long, long)>)>();
         for (int piece = 0; piece < copper.Count && piece < board.IslandOfPiece.Length; piece++)
         {
             int island = board.IslandOfPiece[piece];
@@ -467,16 +477,51 @@ public static class LineRecognition
             var rest = cut.Count == 0 ? copper.PathsOfPiece(piece) : Clipper.Difference(copper.PathsOfPiece(piece), cut, LayoutClipper.Rule);
             foreach (var region in Drc.DrcRegions.Components(rest))
             {
-                var endsIn = ends.Where(e => Regions.Contains(region, (long)Math.Round(e.X), (long)Math.Round(e.Y))).Select(e => e.Node).ToList();
-                var onIt = on.Where(a => Regions.Contains(region, a.X, a.Y)).Select(a => a.Name).ToList();
-                var members = endsIn.Concat(onIt).Distinct().ToList();
+                var endsIn = ends.Where(e => Regions.Contains(region, (long)Math.Round(e.X), (long)Math.Round(e.Y))).ToList();
+                var onIt = on.Where(a => Regions.Contains(region, a.X, a.Y)).ToList();
+                var members = endsIn.Select(e => e.Node).Concat(onIt.Select(a => a.Name)).Distinct().ToList();
                 if (members.Count < 2) continue;
                 var box = Bbox.Empty;
                 foreach (var path in region) foreach (var pt in path) box = box.Union(new Bbox(pt.X, pt.Y, pt.X, pt.Y));
-                pads.Add((members, endsIn.Count, onIt.Count, box));
+
+                var points = onIt.Select(a => (Name: a.Name, X: a.X, Y: a.Y))
+                                 .Concat(endsIn.Select(e => (Name: "the line end", X: (long)Math.Round(e.X), Y: (long)Math.Round(e.Y)))).ToList();
+                var split = new List<(string, long, long, LayerKey?, string, long, long)>();
+                var cores = Cores(region, box);
+                if (cores.Count > 1)
+                {
+                    var byCore = points.GroupBy(p => Enumerable.Range(0, cores.Count).MinBy(c => Distance(cores[c], p.X, p.Y))).ToList();
+                    var first = byCore[0].First();
+                    foreach (var other in byCore.Skip(1).Select(g => g.First()))
+                        split.Add((first.Name, first.X, first.Y, layer, other.Name, other.X, other.Y));
+                }
+                pads.Add((members, endsIn.Count, onIt.Count, box, split));
             }
         }
         return pads;
+    }
+
+    /// <summary>A pad region's cores: the region eroded by its largest inscribed radius (found to a percent) over the review's
+    /// pad-to-trace step, so every part of it that is narrower than its widest by that step is gone.</summary>
+    private static List<Paths64> Cores(Paths64 region, Bbox box)
+    {
+        double lo = 0, hi = 0.5 * Math.Min(box.MaxX - box.MinX, box.MaxY - box.MinY);
+        for (int i = 0; i < 7; i++)
+        {
+            double r = 0.5 * (lo + hi);
+            if (Clipper.InflatePaths(region, -r, JoinType.Miter, EndType.Polygon).Count > 0) lo = r; else hi = r;
+        }
+        if (lo <= 0) return [region];
+        return Drc.DrcRegions.Components(Clipper.InflatePaths(region, -lo / TraceImpedanceAnalysis.PadWidthStep, JoinType.Miter, EndType.Polygon));
+    }
+
+    /// <summary>How far a point is from a core: 0 inside it, else to its bounding box.</summary>
+    private static double Distance(Paths64 core, long x, long y)
+    {
+        if (Regions.Contains(core, x, y)) return 0;
+        var b = Clipper.GetBounds(core);
+        double dx = Math.Max(0, Math.Max(b.left - x, x - b.right)), dy = Math.Max(0, Math.Max(b.top - y, y - b.bottom));
+        return Math.Sqrt(dx * dx + dy * dy);
     }
 
     /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width
