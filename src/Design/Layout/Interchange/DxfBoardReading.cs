@@ -262,7 +262,7 @@ public static class DxfBoardReading
     public const double HoleFill = 0.7;
 
     /// <summary>... or when it is a regular polygon — a triangle, a square at any angle, a hexagon: every corner within this share
-    /// of their mean distance from their centre, and every edge within it of their mean length ...</summary>
+    /// of their mean distance from their centre, and its longest edge within it of its shortest ...</summary>
     public const double HoleRoundness = 0.05;
 
     /// <summary>... with at least this share of the area of the regular polygon of that many corners on that circle.</summary>
@@ -333,10 +333,10 @@ public static class DxfBoardReading
         double bx0 = pts.Min(p => p.X), bx1 = pts.Max(p => p.X), by0 = pts.Min(p => p.Y), by1 = pts.Max(p => p.Y);
         double w = bx1 - bx0, h = by1 - by0;
         var radii = pts.Select(p => Math.Sqrt((p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy))).ToList();
-        double r = radii.Average(), e = edges.Average();
+        double r = radii.Average();
 
         bool square = w > 0 && h > 0 && Math.Abs(w - h) <= HoleSquareness * Math.Max(w, h) && area >= HoleFill * w * h;
-        bool regular = r > 0 && radii.All(q => Math.Abs(q - r) <= HoleRoundness * r) && edges.All(q => Math.Abs(q - e) <= HoleRoundness * e)
+        bool regular = r > 0 && radii.All(q => Math.Abs(q - r) <= HoleRoundness * r) && edges.Max() <= (1 + HoleRoundness) * edges.Min()
                        && area >= HoleRegularity * 0.5 * n * r * r * Math.Sin(2 * Math.PI / n);
         if (!square && !regular) return null;
         // The circle inside it: a drill fits inside its mark. A trapezoid or a square with a corner cut is square to its box

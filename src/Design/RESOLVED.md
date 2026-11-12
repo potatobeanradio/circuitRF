@@ -29838,6 +29838,11 @@ diamond drawn with one point mid-edge, or as eight `LINE`s two to an edge, kept 
 drawn. A point within two database units of the line through its neighbours is now on the edge. Gate:
 `DxfBoardImportTests.APointOnATurnedEdge_IsNoCorner`.
 
+**… and a rectangle no regular polygon (third review).** "Edges within 5 % of their mean length" let a rectangle's two
+lengths differ by up to 10 %: its corners lie on one circle and its area is within the 0.95, so 1.06:1 and 1.10:1
+rectangles were holes, past the 5 % the square branch allows. The longest edge must now be within 5 % of the shortest; a
+1.03:1 rectangle is still a hole, square to its box. Gate: `DxfBoardImportTests.ARectangle_IsNoRegularPolygon`.
+
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 
 - **What it was.** An 8-port driven run on Windows reported `wsl.exe ended with exit code 0`, and its `.s8p` appeared 23 minutes later. Nothing was

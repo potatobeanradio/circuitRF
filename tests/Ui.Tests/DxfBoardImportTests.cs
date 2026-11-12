@@ -269,6 +269,30 @@ public sealed class DxfBoardImportTests : IDisposable
         Assert.DoesNotContain(view.Shapes, s => s.Layer == LayerNamed(tech, "Drill") && s is not ViaShape);
     }
 
+    /// <summary>A rectangle is no regular polygon: its corners lie on one circle, and its two edge lengths were each within 5 % of
+    /// their mean up to 1.10:1, so 1.06:1 and 1.10:1 rectangles were holes. Its longest edge must now be within 5 % of its
+    /// shortest; a 1.03:1 one is still a hole, square to its box.</summary>
+    [Fact]
+    public void ARectangle_IsNoRegularPolygon()
+    {
+        var entities = new List<(int, object)>();
+        entities.AddRange(Polyline("PATTERN", (0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)));
+        foreach (var (x, ratio) in new[] { (2.0, 1.03), (4.0, 1.06), (6.0, 1.10) })
+        {
+            double half = 0.2 * ratio;
+            entities.AddRange(Polyline("HOLE", (x - half, 4.8, 0), (x + half, 4.8, 0), (x + half, 5.2, 0), (x - half, 5.2, 0)));
+        }
+
+        var tech = Tech();
+        var result = Import(Drawing("rectangles.dxf", [.. entities]), "rectangles", tech, "PATTERN=Top Copper,HOLE=Drill");
+        var view = LoadOnly(result);
+
+        var via = Assert.Single(view.Shapes.OfType<ViaShape>());
+        Assert.InRange(via.X, 1_999_000, 2_001_000);
+        Assert.InRange(via.DrillSize, 399_000, 401_000);
+        Assert.Equal(2, view.Shapes.Count(s => s.Layer == LayerNamed(tech, "Drill") && s is PolygonShape));
+    }
+
     /// <summary>A pad round a drill is the via's pad whatever its shape — a square pad at a round drill (a via in the pad, a
     /// square first pin), a square pad at a square drill, a round pad at a round one — and a square pad keeps its whole square
     /// as copper: the via's land is the circle inside it.</summary>
