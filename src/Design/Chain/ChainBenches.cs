@@ -1116,7 +1116,14 @@ public static class ChainBenches
             return Enumerable.Range(1, c.N).Sum(k => c.Weight(k) * c.Weight(k)) / (c.Weight(1) * c.Weight(1));
         }
 
-        private static string Idx(int[] v) => "\"(" + string.Join(",", v) + ")\"";
+        /// <summary>A product as a measurement names it. The lattice keeps one of k and −k, the one whose first nonzero
+        /// entry is positive (the other is its conjugate, of the same magnitude): after a mixer whose LO is above the
+        /// signal the tracked index is the other one.</summary>
+        private static string Idx(int[] v)
+        {
+            int sign = v.FirstOrDefault(x => x != 0) < 0 ? -1 : 1;
+            return "\"(" + string.Join(",", v.Select(x => sign * x)) + ")\"";
+        }
 
         private void Measurements(string[] nets, (int[] V1, int[] V3)[] idx, List<string>[] parts, double[] freqs,
                                   int[] v1, int[] v3, double fout, int n)
@@ -1167,7 +1174,10 @@ public static class ChainBenches
                     else
                     {
                         double ss = fout + 1e3;   // off the tone lattice, where the noise at the IF is defined
-                        var sb = Enumerable.Range(0, v1.Length).Select(i => (i == 0 ? 1 : 0) - v1[i]);
+                        // The input sideband reaches the IF through the LOs alone: f_out − Σ v1·f_LO, which is +f_RF, or −f_RF
+                        // (its conjugate) when an LO above the signal has inverted the spectrum. Through the RF tone's own
+                        // index instead it would be a product of the drive, which carries no signal.
+                        var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
                         // Order 1 + 2·mixers keeps each mixer's image sideband, where its isolator's termination is noisy.
                         _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={1 + 2 * mix} Tol=1e-12 " +
                                       $"SSStart=\"{G(ss)}\" SSStop=\"{G(ss)}\" SSNpts=1 Noise=yes NoiseIn=1 NoiseOut={n + 1} " +

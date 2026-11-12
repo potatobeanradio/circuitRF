@@ -385,6 +385,22 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
     }
 
+    /// <summary>The superhet with its LO above the signal, 2.8 GHz: the IF the same 350 MHz, its spectrum inverted. The IF's
+    /// product is then the conjugate of the one the lattice keeps, and the bench names the one it keeps; the noise run's
+    /// input sideband is the RF's conjugate, reached through the LO.</summary>
+    [Fact]
+    public void AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget()
+    {
+        var d = Superhet();
+        d.Stages[2].Parameters["Flo"] = "2.8 GHz";
+        var one = Bench(d, "Hi", ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
+        var two = Bench(d, "Hi", ChainBench.TwoTone);
+        Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+    }
+
     // ── the combiner's four variants ─────────────────────────────────────────
 
     /// <summary>The RF array with the combiner as given; a tree's two levels set level by level.</summary>
