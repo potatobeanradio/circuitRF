@@ -73,12 +73,10 @@ internal sealed partial class C3dToHznWriter
 {
     /// <summary>The materials Hertzon has built in, as the values circuitRF reads them back with.</summary>
     internal static readonly IReadOnlyList<HznMaterialValues> BuiltIn =
-    [
-        new("pec", 1, 1, 0, 0, true),
-        new("vacuum", 1, 1, 0, 0, false),
-        new("air", 1, 1, 0, 0, false),
-        new("copper", 1, 1, 5.8e7, 0, false),
-    ];
+        [.. HznLibrary.Reserved.Select(n => HznLibrary.Find(n)!).Select(m => new HznMaterialValues(m.Name, m.Epsr, m.Mur, m.SigmaSm, m.TanD, m.Pec))];
+
+    /// <summary>Hertzon's name for free space: its <c>air</c> is 1.0006, so circuitRF's free space (εr 1) is its <c>vacuum</c>.</summary>
+    internal const string FreeSpace = "vacuum";
 
     private const double ConductorSigmaSm = HznTranslator.ConductorSigmaSm;
 
@@ -96,9 +94,9 @@ internal sealed partial class C3dToHznWriter
             _r.Add(HznRefusalKind.Material, $"material '{techName}'", "the export was given no technology to take it from", user);
             return null;
         }
-        // The built-in Air is in no technology: it is free space, which Hertzon has built in as `air`.
+        // The built-in Air is in no technology: it is free space, which Hertzon has built in as `vacuum` (its `air` is 1.0006).
         if (tech.FindMaterial(techName) is null && string.Equals(techName, Em3dGenerator.AirMaterial, StringComparison.OrdinalIgnoreCase) && role is null or Em3dRole.Dielectric)
-            return "air";
+            return FreeSpace;
         if (tech.FindMaterial(techName) is not { } m)
         {
             _r.Add(HznRefusalKind.Material, $"material '{techName}'", "it is not in the document's technology", user);
@@ -121,6 +119,10 @@ internal sealed partial class C3dToHznWriter
         if (builtIn is not null)
         {
             var diff = builtIn.DifferencesFrom(want with { Name = builtIn.Name }, "in Hertzon's built-in", "here");
+            // A technology's Air at εr 1 is free space: Hertzon's vacuum, not its 1.0006 air.
+            if (diff.Count > 0 && builtIn.Name == "air" &&
+                BuiltIn.First(b => b.Name == FreeSpace).DifferencesFrom(want with { Name = FreeSpace }, "", "").Count == 0)
+                return _hznNameOf[m.Name] = FreeSpace;
             if (diff.Count > 0)
             {
                 _r.Add(HznRefusalKind.Material, $"material '{m.Name}'",

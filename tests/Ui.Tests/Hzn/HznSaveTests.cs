@@ -62,6 +62,32 @@ public sealed class HznSaveTests : IDisposable
         Assert.True(File.ReadAllBytes(o.Path).AsSpan().SequenceEqual(o.Original));
     }
 
+    /// <summary>Gate 1 on Hertzon's own files: every design under <c>CIRCUITRF_HERTZON_HOME</c> that opens, opened through the editor's
+    /// document source and saved with no edit, leaves the file's bytes as they were.</summary>
+    [HertzonHomeFact]
+    public void EveryDesignUnderHertzonHomeThatOpens_SavesWithNoEditByteForByte()
+    {
+        int opened = 0;
+        foreach (string file in Directory.EnumerateFiles(HertzonHomeFactAttribute.Home!, "*.hzn", SearchOption.AllDirectories)
+                     .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}.venv{Path.DirectorySeparatorChar}")).Order(StringComparer.Ordinal))
+        {
+            var read = HznFile.Read(file);
+            if (!read.Ok) continue;
+            foreach (string design in HznToC3d.ThreeDDesigns(read.File!.Project))
+            {
+                if (!HznToC3d.Translate(read.File.Project, design).Ok) continue;
+                string copy = Path.Combine(_root, $"{opened}-{Path.GetFileName(file)}");
+                File.Copy(file, copy, overwrite: true);
+                byte[] before = File.ReadAllBytes(copy);
+                var source = new HznDesignSource(copy, design, new TechnologyCache());
+                Assert.Null(source.Save(source.Load()));
+                Assert.True(File.ReadAllBytes(copy).AsSpan().SequenceEqual(before), $"{Path.GetFileName(file)} / {design}");
+                opened++;
+            }
+        }
+        Assert.True(opened > 0, "no design under CIRCUITRF_HERTZON_HOME opens");
+    }
+
     [Fact]
     public void AnEditedBoxSize_ChangesExactlyOnePropertyString()
     {

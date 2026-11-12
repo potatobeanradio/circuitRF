@@ -41,7 +41,8 @@ internal sealed partial class HznTranslator
         }
         (_regionName, _regionPadding, _regionMaterial) = (name, pad, o.Material);
         _prov.RegionObject = name;
-        if (o.Material is { Length: > 0 } mat && Material(mat, name) is { } m) _doc.AirBoxMaterial = m.Material.Name;
+        // Hertzon's vacuum is circuitRF's own free space (εr 1, the air box's default), so it states nothing.
+        if (o.Material is { Length: > 0 } mat && mat != C3dToHznWriter.FreeSpace && Material(mat, name) is { } m) _doc.AirBoxMaterial = m.Material.Name;
     }
 
     // ── numbers for geometry questions ────────────────────────────────────────────────────────────
@@ -404,9 +405,7 @@ internal sealed partial class HznTranslator
 
     private void Boundaries()
     {
-        string auto = _design.Json.GetObject("settings")?.GetString("AutoOpen") ?? "Off";
-        if (auto != "Off")
-            _r.Add(HznRefusalKind.Setting, $"Auto open region '{auto}'", "Hertzon adds its own open boundary; circuitRF states the air box per face", DesignName);
+        AutoOpen();
         string solution = _design.Json.GetObject("settings")?.GetString("SolutionType") ?? "Modal";
         if (solution != "Modal")
             _r.Add(HznRefusalKind.Setting, $"solution type '{solution}'", "driven modal S-parameters are translated", DesignName);
@@ -432,6 +431,14 @@ internal sealed partial class HznTranslator
                     break;
             }
         }
+        if (_autoOpen is not null)
+            for (int slot = 0; slot < 6; slot++)
+                if (_air[slot] is not null)
+                {
+                    _r.Add(HznRefusalKind.Boundary, "boundary on the outer faces of an Auto Open design",
+                           $"{BoxFaces[slot]} carries '{_airBy[slot]}' where Auto Open puts its own air box and boundary", _airBy[slot] ?? DesignName);
+                    break;
+                }
         BuildAirBox();
         // A sheet circuitRF would conduct that Hertzon does not: a sheet is always metal here.
         // A sheet an assignment names is that assignment's business: when it was refused it has its own item.
@@ -449,13 +456,12 @@ internal sealed partial class HznTranslator
         string? sheetMaterial = null;
         double? thicknessUm = null;
         string faceMaterial = "pec";
+        // A lossy .c3d sheet is a thin conductor solved separately on its two sides, which is Hertzon's two-sided Finite
+        // Conductivity; one-sided is a single surface impedance through the sheet, which circuitRF has no sheet for. On a solid's
+        // faces the flag says nothing: a face has one side in the solve.
+        bool twoSided = finite && IsTrue(p["TwoSided"]);
         if (finite)
         {
-            if (IsTrue(p["TwoSided"]))
-            {
-                _r.Add(HznRefusalKind.Boundary, "Finite Conductivity on both sides", "a .c3d sheet is one thin metal, not a surface lossy on each side", name);
-                return;
-            }
             if (Plain(p["Roughness"] ?? "0um", name) is not 0)
             {
                 _r.Add(HznRefusalKind.Boundary, "Finite Conductivity with roughness", "a conductive face has no roughness", name);
@@ -509,6 +515,12 @@ internal sealed partial class HznTranslator
             }
             if (obj is C3dSheet sheet)
             {
+                if (finite && !twoSided)
+                {
+                    _r.Add(HznRefusalKind.Boundary, "Finite Conductivity on one side of a sheet",
+                           "a lossy .c3d sheet is a thin conductor carrying current on both sides (Hertzon's TwoSided)", name);
+                    continue;
+                }
                 var m = Material(sheetMaterial!, name);
                 sheet.Material = m?.Material.Name;
                 sheet.Role = m?.Role ?? Em3dRole.Conductor;
@@ -559,13 +571,13 @@ internal sealed partial class HznTranslator
         _prov.FaceBoundaries.Add(new HznBoundaryOrigin(boundary, c3d, face, index));
     }
 
+    /// <summary>An open boundary on the air box. circuitRF's absorbing face is EMerge's second-order absorbing boundary on the run a
+    /// held design takes (EMerge's default, which circuitRF's driver keeps), so Hertzon's second order is that face exactly and its
+    /// first order is said in a note. (A converted .c3d run on Palace has Palace's first-order face; on openEMS, a PML.)</summary>
     private void Open(HznAssignment b, string name, Em3dBoundaryKind kind, bool secondOrder)
     {
-        if (secondOrder)
-        {
-            _r.Add(HznRefusalKind.Boundary, "Radiation of second order", "circuitRF's absorbing face is first order", name);
-            return;
-        }
+        if (b.Kind == "Radiation" && !secondOrder)
+            _notes.Add($"Boundary '{name}' is a first-order radiation boundary in Hertzon; circuitRF's EMerge run uses EMerge's second-order absorbing face there.");
         Air(b, name, kind);
         foreach (string k in b.Props.Names)
             if (b.Kind == "Radiation") _prov.Unused.Add(new HznUnusedSetting($"boundary {name}", k, b.Props[k] ?? ""));
@@ -648,12 +660,118 @@ internal sealed partial class HznTranslator
         _prov.AirBoxFaces.Add((by, BoxFaces[slot]));
     }
 
+    // ── Auto Open: the air box Hertzon adds itself ──────────────────────────────────────────────────
+
+    /// <summary>The padding (µm) on every face of an Auto Open design's air box, whose faces are all absorbing; null when Auto Open is off.</summary>
+    private double? _autoOpen;
+
+    /// <summary>
+    /// The design setting <c>AutoOpen</c>, as Hertzon's documentation states it: <c>Auto Open - Filter</c> is an air box with a fixed margin
+    /// (<c>FilterAirMargin</c>) and a radiation boundary on every outer face; <c>Auto Open</c> is an air box at least a third of a free-space
+    /// wavelength from the model at the lowest frequency solved (unless <c>AutoOpenPadding</c> states the distance) with an absorbing boundary
+    /// on its surface, Radiation or a PML (<c>AutoOpenBoundary</c>; Auto picks a PML for a radiating design). circuitRF has no PML, so a PML is
+    /// translated as an absorbing face (EMerge's second-order one on the run), exactly as a PML boundary is, and the note says so.
+    /// </summary>
+    private void AutoOpen()
+    {
+        var settings = _design.Json.GetObject("settings");
+        string auto = settings?.GetString("AutoOpen") ?? "Off";
+        if (auto == "Off") return;
+        if (auto is not ("Auto Open" or "Auto Open - Filter"))
+        {
+            _r.Add(HznRefusalKind.Setting, $"Auto open region '{auto}'", "only Auto Open and Auto Open - Filter are translated", DesignName);
+            return;
+        }
+        if (_regionName is not null)
+        {
+            _r.Add(HznRefusalKind.Setting, $"Auto open region '{auto}' with a drawn region", $"the design also draws '{_regionName}'; a design has one air box", DesignName);
+            return;
+        }
+        if (auto == "Auto Open - Filter")
+        {
+            string margin = settings?.GetString("FilterAirMargin") ?? "";
+            if (Len(margin.Length == 0 ? null : margin, $"{DesignName} (FilterAirMargin)") is not { } d) return;
+            double um = Metres(d) * 1e6;
+            if (!(um > 0)) { _r.Add(HznRefusalKind.Setting, "Auto Open - Filter margin", $"'{margin}' is not a positive distance", DesignName); return; }
+            _autoOpen = um;
+            _notes.Add($"Auto Open - Filter: the air box is {Num(um / 1000)} mm from the model on every side (FilterAirMargin), every face absorbing.");
+            return;
+        }
+        string boundary = settings?.GetString("AutoOpenBoundary") ?? "Auto";
+        if (boundary is not ("Auto" or "Radiation" or "PML"))
+        {
+            _r.Add(HznRefusalKind.Setting, $"Auto Open boundary '{boundary}'", "Auto, Radiation or PML is translated", DesignName);
+            return;
+        }
+        bool radiating = IsTrue(settings?.GetString("RadiatingStructure")) || _design.Json.GetArray("spheres")?.Items.Any() == true
+                         || _design.Excitations.Any(x => x.Kind == "Incident Plane Wave");
+        bool pml = boundary == "PML" || (boundary == "Auto" && radiating);
+        string stated = settings?.GetString("AutoOpenPadding") ?? "";
+        double padUm;
+        string why;
+        if (stated.Trim().Length > 0)
+        {
+            if (Len(stated, $"{DesignName} (AutoOpenPadding)") is not { } d) return;
+            padUm = Metres(d) * 1e6;
+            why = "AutoOpenPadding";
+        }
+        else
+        {
+            if (LowestHz() is not { } fmin)
+            {
+                _r.Add(HznRefusalKind.Setting, $"Auto open region '{auto}' without a frequency",
+                       "its distance is a third of the wavelength at the lowest frequency solved, and no enabled setup states one above 0 Hz", DesignName);
+                return;
+            }
+            padUm = 299792458.0 / fmin / 3 * 1e6;
+            why = $"a third of the free-space wavelength at {Num(fmin / 1e9)} GHz, the lowest frequency solved";
+        }
+        if (!(padUm > 0)) { _r.Add(HznRefusalKind.Setting, "Auto Open padding", $"'{stated}' is not a positive distance", DesignName); return; }
+        _autoOpen = padUm;
+        _notes.Add($"Auto Open: the air box is {Num(Math.Round(padUm) / 1000)} mm from the model on every side ({why}), every face absorbing." +
+                   (pml ? " Hertzon would put a PML there; circuitRF's EMerge run uses EMerge's second-order absorbing face." : ""));
+    }
+
+    /// <summary>The lowest frequency any enabled driven setup solves (its sweeps' starts and points, or its solution frequency when it has
+    /// no sweep); null when none states one above 0 Hz. Read quietly: the setups' own translation reports what does not evaluate.</summary>
+    private double? LowestHz()
+    {
+        var quiet = new HznExpressionTranslator(_names, new HznRefusalBuilder());
+        double? Q(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || quiet.Translate(text, "") is not { } e) return null;
+            try { return _res!.Evaluate(e.Text, null).AsReal(); }
+            catch (Exception ex) when (ex is ExpressionException or InvalidCastException) { return null; }
+        }
+        var all = new List<double>();
+        foreach (var s in _design.Setups)
+        {
+            if (s.Json.GetBool("eigen") == true || (s.Props["Enabled"] is { } en && !IsTrue(en))) continue;
+            var sweeps = s.Json.GetArray("sweeps")?.Items.OfType<HznJsonObject>().Select(o => new HznSweep(o)).Where(w => w.Enabled).ToList() ?? [];
+            if (sweeps.Count == 0)
+            {
+                string mode = s.Props["SolutionFrequencyMode"] ?? "Single";
+                if (Q(mode == "Broadband" ? s.Props["LowFrequency"] : s.Props["Frequency"]) is { } f) all.Add(f);
+                continue;
+            }
+            foreach (var w in sweeps)
+            {
+                if (w.Get("Distribution") == "Single Points")
+                    all.AddRange(HznExpressionTranslator.SplitTopLevel(w.Get("Points") ?? "", ',').Select(x => Q(x)).OfType<double>());
+                else if (Q(w.Get("Start")) is { } f) all.Add(f);
+            }
+        }
+        var positive = all.Where(f => f > 0).ToList();
+        return positive.Count == 0 ? null : positive.Min();
+    }
+
     private Layout.Em.CemAirBox? _airBox;
 
     private void BuildAirBox()
     {
         Layout.Em.CemAirBoxFace Face(int slot)
         {
+            if (_autoOpen is { } auto) return new Layout.Em.CemAirBoxFace { PaddingUm = auto, Boundary = Em3dBoundaryKind.Absorbing };
             double pad = _regionPadding is { } p ? Metres(p[slot]) * 1e6 : 0;
             return new Layout.Em.CemAirBoxFace { PaddingUm = pad, Boundary = _air[slot] ?? Em3dBoundaryKind.Pec };
         }
@@ -661,7 +779,7 @@ internal sealed partial class HznTranslator
         {
             XMin = Face(0), XMax = Face(1), YMin = Face(2), YMax = Face(3), ZMin = Face(4), ZMax = Face(5),
         };
-        if (_air.All(a => a is null) && _regionName is null)
+        if (_air.All(a => a is null) && _regionName is null && _autoOpen is null)
             _notes.Add("No boundary sits on the model's outer faces: the air box is flush with the model and every face is a perfect conductor, as a closed Hertzon design's outer faces are.");
         if (_regionPadding is { } pd && pd.Any(d => !d.IsLiteral))
             _notes.Add("The air box padding is a number in the setup (a setup holds no expression there); the region's expressions stay in the project.");

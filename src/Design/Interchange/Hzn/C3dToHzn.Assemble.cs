@@ -212,7 +212,7 @@ internal sealed partial class C3dToHznWriter
         var objects = new List<HznJsonValue>();
         foreach (var h in _objects) objects.Add(ObjectJson(h, _materialOf.GetValueOrDefault(h, SheetMaterial), "#808080", 0.0));
         if (_region is not null)
-            objects.Add(ObjectJson(_region, _regionMaterialName ?? "air", "#e6f2ff", 0.85));
+            objects.Add(ObjectJson(_region, _regionMaterialName ?? FreeSpace, "#e6f2ff", 0.85));
 
         var d = new HznJsonObject();
         d.SetString("name", DesignName);

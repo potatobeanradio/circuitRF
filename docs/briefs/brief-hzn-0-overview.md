@@ -64,6 +64,7 @@ black-box runs of an installed Hertzon (0.3.19):
 | `brief-hzn-7-run-on-emerge.md` | Run an opened `.hzn` design on circuitRF's EMerge driver, its setups translated | 2, 3 |
 | `brief-hzn-8-run-in-hertzon.md` | Run in Hertzon: find `hertzon-cli`, `describe`, `solve`, progress, results | 3 |
 | `brief-hzn-9-instance.md` | A `.hzn` design placed as an instance in a `.c3d` | 2 |
+| `brief-hzn-10-sheet-booleans.md` | A `.c3d` boolean of coplanar sheets, expressions kept; Hertzon's patch and stub-filter examples open | 2, review |
 
 Brief 6 can run beside 3–5. Brief 7 and brief 8 are independent of each other, and so is brief 9 once brief 2 is in.
 

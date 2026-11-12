@@ -59,14 +59,14 @@ public sealed class HznExpressionTranslator
     private readonly HznNames _names;
     private readonly bool _projectScope;
     private readonly HznRefusalBuilder _refusals;
-    private readonly Dictionary<(bool, string), bool?> _bearingMemo;
+    private readonly Dictionary<(bool, string), Dims?> _bearingMemo;
     private readonly HashSet<(bool, string)> _inProgress;
 
     public HznExpressionTranslator(HznNames names, HznRefusalBuilder refusals, bool projectScope = false)
         : this(names, refusals, projectScope, [], []) { }
 
     private HznExpressionTranslator(HznNames names, HznRefusalBuilder refusals, bool projectScope,
-                                    Dictionary<(bool, string), bool?> memo, HashSet<(bool, string)> inProgress)
+                                    Dictionary<(bool, string), Dims?> memo, HashSet<(bool, string)> inProgress)
     {
         _names = names;
         _refusals = refusals;
@@ -88,14 +88,25 @@ public sealed class HznExpressionTranslator
         ["F"] = "F", ["mF"] = "mF", ["uF"] = "uF", ["nF"] = "nF", ["pF"] = "pF",
     };
 
-    /// <summary>Constants, as the digits `hertzon-cli describe` reports them with; bearing is whether Hertzon gives them a unit.</summary>
-    private static readonly Dictionary<string, (string Out, bool Bearing)> Constants = new(StringComparer.Ordinal)
+    /// <summary>Constants, as the digits `hertzon-cli describe` reports them with, and the unit Hertzon gives them: c0 is a speed, so
+    /// <c>c0/f0</c> is a length (a wavelength) and adds to one exactly.</summary>
+    private static readonly Dictionary<string, (string Out, Dims D)> Constants = new(StringComparer.Ordinal)
     {
-        ["c0"] = ("299792458", true),
-        ["e0"] = ("8.8541878128e-12", false),
-        ["u0"] = ("1.2566370614359173e-06", false),
-        ["PI"] = ("pi", false),
-        ["pi"] = ("pi", false),
+        ["c0"] = ("299792458", new Dims(1, -1, false)),
+        ["e0"] = ("8.8541878128e-12", Dims.None),
+        ["u0"] = ("1.2566370614359173e-06", Dims.None),
+        ["PI"] = ("pi", Dims.None),
+        ["pi"] = ("pi", Dims.None),
+    };
+
+    /// <summary>What a unit literal is a power of: a length, a time (a frequency is time to the -1), or another kind (an angle, an
+    /// impedance, an inductance, a capacitance), which is only known to carry a unit.</summary>
+    private static Dims UnitDims(string hznUnit) => hznUnit switch
+    {
+        "m" or "mm" or "um" or "cm" or "nm" or "mil" or "in" => new Dims(1, 0, false),
+        "Hz" or "kHz" or "MHz" or "GHz" or "THz" => new Dims(0, -1, false),
+        "s" or "ns" or "ps" => new Dims(0, 1, false),
+        _ => new Dims(0, 0, true),
     };
 
     private enum FunctionShape { Pass, Trig, Min, If }
@@ -220,7 +231,20 @@ public sealed class HznExpressionTranslator
 
     // ── the tree walk ─────────────────────────────────────────────────────────────────────────────
 
-    private readonly record struct Node(bool Bearing, bool Zero);
+    /// <summary>A value's unit, as far as the translation needs it: its powers of length and time, and whether another unit (an
+    /// angle, an impedance, ...) is in it. A quotient of two lengths is a plain number; a speed over a frequency is a length.</summary>
+    private readonly record struct Dims(int L, int T, bool Other)
+    {
+        public bool Any => L != 0 || T != 0 || Other;
+        public static Dims None => default;
+        public Dims Times(Dims o) => new(L + o.L, T + o.T, Other || o.Other);
+        public Dims Over(Dims o) => new(L - o.L, T - o.T, Other != o.Other);
+    }
+
+    private readonly record struct Node(Dims D, bool Zero)
+    {
+        public bool Bearing => D.Any;
+    }
 
     private sealed class Reader(List<Tok> toks, HznExpressionTranslator owner)
     {
@@ -249,14 +273,14 @@ public sealed class HznExpressionTranslator
         private Node OrExpr()
         {
             var l = AndExpr();
-            while (IsWord("or")) { Take().Out = "||"; AndExpr(); l = new Node(false, false); }
+            while (IsWord("or")) { Take().Out = "||"; AndExpr(); l = new Node(Dims.None, false); }
             return l;
         }
 
         private Node AndExpr()
         {
             var l = Compare();
-            while (IsWord("and")) { Take().Out = "&&"; Compare(); l = new Node(false, false); }
+            while (IsWord("and")) { Take().Out = "&&"; Compare(); l = new Node(Dims.None, false); }
             return l;
         }
 
@@ -268,7 +292,7 @@ public sealed class HznExpressionTranslator
                 Take();
                 var r = Add();
                 Agree(l, r, "compares");
-                return new Node(false, false);
+                return new Node(Dims.None, false);
             }
             return l;
         }
@@ -289,7 +313,7 @@ public sealed class HznExpressionTranslator
                 Take();
                 var r = Mul();
                 Agree(l, r, t.Raw == "+" ? "adds" : "subtracts");
-                l = new Node(l.Bearing || r.Bearing, false);
+                l = new Node(l.Bearing ? l.D : r.D, false);
             }
             return l;
         }
@@ -303,9 +327,9 @@ public sealed class HznExpressionTranslator
                     throw new Failure($"operator {t.Raw}", $"'{t.Raw}' has no equivalent in circuitRF's expression language");
                 Take();
                 var r = Unary();
-                // A quotient of two quantities is a plain number (w/h is 0 in the engine's own power count, and `w/h + 1` adds exactly 1).
-                bool bearing = t.Raw == "/" ? l.Bearing != r.Bearing : l.Bearing || r.Bearing;
-                l = new Node(bearing, false);
+                // A quotient of two lengths is a plain number (w/h is 0 in the engine's own power count, and `w/h + 1` adds exactly 1);
+                // a speed over a frequency (c0/f0) is a length.
+                l = new Node(t.Raw == "/" ? l.D.Over(r.D) : l.D.Times(r.D), false);
             }
             return l;
         }
@@ -316,7 +340,7 @@ public sealed class HznExpressionTranslator
             {
                 Take();
                 var o = Unary();
-                return new Node(o.Bearing, o.Zero);
+                return new Node(o.D, o.Zero);
             }
             if (Peek() is { Kind: T.Op } n && n.Raw is "!")
                 throw new Failure("operator !", "Hertzon does not accept '!' in an expression, so it has no meaning to carry across");
@@ -331,7 +355,7 @@ public sealed class HznExpressionTranslator
                 Take();
                 if (t.Raw == "**") t.Out = "^";
                 var e = Unary();
-                return new Node(b.Bearing, false);
+                return new Node(b.D, false);
             }
             return b;
         }
@@ -361,11 +385,11 @@ public sealed class HznExpressionTranslator
 
         private Node Number(Tok t)
         {
-            if (t.Unit is null) return new Node(false, t.Value == 0);
+            if (t.Unit is null) return new Node(Dims.None, t.Value == 0);
             if (HznUnits.TryGetValue(t.Unit, out string? mapped))
             {
                 t.Out = NumberText(t) + mapped;
-                return new Node(true, t.Value == 0);
+                return new Node(UnitDims(t.Unit), t.Value == 0);
             }
             throw new Failure($"unit {t.Unit}", $"the unit '{t.Unit}' is not one circuitRF translates exactly");
         }
@@ -388,15 +412,15 @@ public sealed class HznExpressionTranslator
         private Node Identifier(Tok t)
         {
             string name = t.Raw;
-            switch (owner.Resolve(name, out string outName, out bool bearing))
+            switch (owner.Resolve(name, out string outName, out Dims dims))
             {
                 case Resolution.Variable:
                     Refs.Add(name);
                     t.Out = outName;
-                    return new Node(bearing, false);
+                    return new Node(dims, false);
                 case Resolution.Constant:
                     t.Out = outName;
-                    return new Node(bearing, false);
+                    return new Node(dims, false);
                 default:
                     throw new Failure($"identifier {name}", $"'{name}' is neither a variable of the design or project nor a constant circuitRF has");
             }
@@ -426,15 +450,15 @@ public sealed class HznExpressionTranslator
             switch (f.Shape)
             {
                 case FunctionShape.Trig:
-                    return new Node(false, false);
+                    return new Node(Dims.None, false);
                 case FunctionShape.Pass:
-                    return new Node(args.Count > 0 && args[0].Bearing, false);
+                    return new Node(args.Count > 0 ? args[0].D : Dims.None, false);
                 case FunctionShape.Min:
                     for (int i = 1; i < args.Count; i++) Agree(args[0], args[i], $"compares in {name.Raw}()");
-                    return new Node(args.Any(a => a.Bearing), false);
+                    return new Node(args.FirstOrDefault(a => a.Bearing).D, false);
                 default:   // if(cond, then, else)
                     if (args.Count == 3) Agree(args[1], args[2], "chooses between");
-                    return new Node(args.Skip(1).Any(a => a.Bearing), false);
+                    return new Node(args.Skip(1).FirstOrDefault(a => a.Bearing).D, false);
             }
         }
     }
@@ -443,10 +467,10 @@ public sealed class HznExpressionTranslator
 
     private enum Resolution { None, Variable, Constant }
 
-    private Resolution Resolve(string name, out string outName, out bool bearing)
+    private Resolution Resolve(string name, out string outName, out Dims bearing)
     {
         outName = name;
-        bearing = false;
+        bearing = Dims.None;
         if (!_projectScope && _names.Design.ContainsKey(name))
         {
             bearing = Bearing(false, name);
@@ -461,26 +485,26 @@ public sealed class HznExpressionTranslator
         if (Constants.TryGetValue(name, out var c))
         {
             outName = c.Out;
-            bearing = c.Bearing;
+            bearing = c.D;
             return Resolution.Constant;
         }
         return Resolution.None;
     }
 
-    /// <summary>Whether a variable's value carries a unit — by translating its own expression, quietly.</summary>
-    private bool Bearing(bool project, string name)
+    /// <summary>The unit a variable's value carries — by translating its own expression, quietly.</summary>
+    private Dims Bearing(bool project, string name)
     {
         var key = (project, name);
-        if (_bearingMemo.TryGetValue(key, out var known)) return known ?? false;
-        if (!_inProgress.Add(key)) return false;
-        bool result = false;
+        if (_bearingMemo.TryGetValue(key, out var known)) return known ?? Dims.None;
+        if (!_inProgress.Add(key)) return Dims.None;
+        Dims result = Dims.None;
         try
         {
             string? expr = project ? _names.Project.GetValueOrDefault(name) : _names.Design.GetValueOrDefault(name);
             if (expr is not null)
             {
                 var quiet = new HznExpressionTranslator(_names, new HznRefusalBuilder(), project, _bearingMemo, _inProgress);
-                result = quiet.Translate(expr, "")?.Bearing ?? false;
+                result = quiet.TranslateNode(expr) ?? Dims.None;
             }
         }
         finally { _inProgress.Remove(key); }
@@ -492,7 +516,11 @@ public sealed class HznExpressionTranslator
 
     /// <summary>Translates <paramref name="source"/>; null when it holds anything circuitRF cannot carry exactly, in which
     /// case every such item has been added to the refusals, naming <paramref name="user"/>.</summary>
-    public HznExpr? Translate(string source, string user)
+    public HznExpr? Translate(string source, string user) => TranslateFull(source, user)?.Expr;
+
+    private Dims? TranslateNode(string source) => TranslateFull(source, "")?.D;
+
+    private (HznExpr Expr, Dims D)? TranslateFull(string source, string user)
     {
         List<Tok> toks;
         try { toks = Tokenise(source); }
@@ -528,7 +556,7 @@ public sealed class HznExpressionTranslator
             return null;
         }
         double? literal = LiteralOf(toks);
-        return new HznExpr(text, node.Bearing, node.Zero, literal, [.. reader.Refs]);
+        return (new HznExpr(text, node.Bearing, node.Zero, literal, [.. reader.Refs]), node.D);
     }
 
     private static double? LiteralOf(List<Tok> toks)

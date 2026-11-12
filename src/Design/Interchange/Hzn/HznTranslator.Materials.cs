@@ -19,16 +19,21 @@ internal sealed partial class HznTranslator
 
     private readonly Dictionary<string, Mat?> _mats = new(StringComparer.Ordinal);
 
-    /// <summary>The materials Hertzon has built in that circuitRF can state exactly (brief-hzn-0 Q3). Conductivity of
-    /// copper: 5.8e7 S/m, the value a Finite Conductivity boundary in Hertzon's own examples states for it.</summary>
-    private static Mat? BuiltIn(string name) => name switch
+    /// <summary>The materials Hertzon has built in that circuitRF can state exactly (brief-hzn-0 Q3): <see cref="HznLibrary"/>, read
+    /// by the rule a project material is read by.</summary>
+    private static Mat? BuiltIn(string name)
     {
-        "pec" => new Mat(new TechMaterial { Name = "pec", Epsr = 1, TanD = 0, Mur = 1 }, Em3dRole.Conductor, true),
-        "vacuum" => new Mat(new TechMaterial { Name = "vacuum", Epsr = 1, TanD = 0, Mur = 1 }, null, false),
-        "air" => new Mat(new TechMaterial { Name = "air", Epsr = 1, TanD = 0, Mur = 1 }, null, false),
-        "copper" => new Mat(new TechMaterial { Name = "copper", Sigma20 = 5.8e7 }, null, true),
-        _ => null,
-    };
+        if (HznLibrary.Find(name) is not { } m) return null;
+        if (m.Pec) return new Mat(new TechMaterial { Name = m.Name, Epsr = 1, TanD = 0, Mur = m.Mur }, Em3dRole.Conductor, true);
+        if (m.Conductor) return new Mat(new TechMaterial { Name = m.Name, Sigma20 = m.SigmaSm, Mur = m.Mur }, null, true);
+        var tm = new TechMaterial { Name = m.Name, Epsr = m.Epsr, TanD = m.TanD, Mur = m.Mur };
+        if (m.SigmaSm > 0)
+        {
+            tm.Sigma20 = m.SigmaSm;
+            return new Mat(tm, Em3dRole.Dielectric, false);
+        }
+        return new Mat(tm, null, false);
+    }
 
     private Mat? Material(string name, string user)
     {

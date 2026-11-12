@@ -112,7 +112,7 @@ The code is `Interchange/Hzn/HznToC3d.cs` and its partials; `Hzn/HznExpressions.
 is the one whose centroid (within 0.1 µm), normal (1e-6) and area (1e-6 relative) agree. A plain box is stated analytically; any other shape goes through the geometry worker,
 and without it the refusal names the worker. A box face found by `sig` for a `Subtract`ed plate (`zmax`, with a hole) was checked against the worker.
 
-**Materials.** `pec`, `vacuum`, `air` and `copper` are the built-ins stated here. `copper` is **5.8e7 S/m**, the conductivity a Finite Conductivity boundary in
+**Materials.** `pec`, `vacuum`, `air` and `copper` are the built-ins stated here (widened to Hertzon's generic library, and `air` corrected, in "HZN review" below). `copper` is **5.8e7 S/m**, the conductivity a Finite Conductivity boundary in
 Hertzon's own examples states for it. `pec` is a conductor with no conductivity (circuitRF reads a conductor with σ 0 as perfect) with the object's role set
 explicitly. A project material with `conductivity` at or above **1e6 S/m** is a conductor and below it a lossy dielectric (a decision made here: Hertzon states
 no role, circuitRF needs one when both σ and εr are present). Refused: Debye and Djordjevic-Sarkar dispersion, anisotropic tensors, a magnetic loss tangent,
@@ -124,7 +124,7 @@ and every other name not defined in the project (laminates and ceramics from Her
   of S21 on an asymmetric structure is an open item. A Wave Port is translated only with one mode, `Renormalize` on, and no de-embedding; without renormalisation
   Hertzon normalises to the mode's own impedance and circuitRF's port has a stated reference.
 - Perfect E / Finite Conductivity on a sheet make the sheet's material; on a solid they are a `C3dFaceBoundary` per face. Radiation and PML are an Absorbing air-box face
-  (first order only; PML's parameters are listed as unused); Symmetry of type Perfect H is Pmc and Perfect E is Pec (read from the `Type` name, not measured).
+  (PML's parameters are listed as unused; the order and the two-sided rule are corrected in "HZN review" below); Symmetry of type Perfect H is Pmc and Perfect E is Pec (read from the `Type` name, not measured).
   The air box is the `CreateRegion` object (Absolute Offset padding); without one it is flush with the model. An outer face with no boundary is Pec, as Hertzon's tutorial
   says of a closed problem. A Region with Percentage Offset is refused: whether that percentage is of the content's extent along the axis, as an air box's is, is not established.
 - Refused kinds: Impedance, Primary, Secondary, Floquet Port, Incident Plane Wave, an Auto Open region, a solution type other than Modal, eigenmode setups.
@@ -515,6 +515,58 @@ first (Save, Run Anyway / Convert Anyway, Cancel; `SettleUnsavedHznDesignAsync`)
 - The setup panel's EMerge-only picker is tested, not photographed (a one-row combo box).
 - Menus never start a process, so "Run in Hertzon" reads its availability from the last check; the first menu of a session can show it enabled when Hertzon is missing, and the click says why.
 - `check`'s `--design` is carried to the checker in a thread-static set just before the call; it is correct for a synchronous call and would need a parameter if `check` ever ran paths in parallel.
+
+### HZN review — Hertzon's own examples open: Auto Open, the library, two-sided sheets (2026-11-11)
+
+The series ended with 0 of Hertzon's 58 example 3D designs translating. Measured against Hertzon 0.3.19's `examples/` (`HznCoverageTests`),
+the review brings it to **4**: `Microstrip50`, `Microstrip50_DCBlock`, the mesher project `small_microstrip`, and the full `Dipole`. Each
+`check`s clean, converts to a cell and dry-runs on EMerge. Opened through the document source and saved with no edit, each writes back the
+same bytes (`HznSaveTests.EveryDesignUnderHertzonHomeThatOpens_SavesWithNoEditByteForByte`). A converted design exported back to `.hzn`
+passes `hertzon-cli describe`.
+
+**Auto Open** (stopped 33 designs) is translated from Hertzon's documentation (its feature matrix and tutorial), not refused:
+- `Auto Open - Filter`: an air box `FilterAirMargin` from the model on all six faces, every face a radiation boundary.
+- `Auto Open`: an air box a third of the free-space wavelength from the model at the lowest frequency solved (enabled sweeps' starts and
+  points, or the solution frequency of a setup with no sweep), unless `AutoOpenPadding` states the distance. The tutorial's half-dipole states
+  the distance Auto Open used for the full dipole: 143 mm at 0.7 GHz. The translation gives 142.758 mm.
+- Its boundary is Radiation or a PML (`AutoOpenBoundary`; Auto picks a PML for a radiating design: a far-field sphere, a plane wave, or
+  `RadiatingStructure`). circuitRF has no PML, so a PML becomes an absorbing face, as an explicit PML boundary already did, and the note says so.
+- Auto Open beside a drawn region, or with a boundary on the model's outer faces, is refused.
+
+**Library materials.** `hertzon-mcp`'s material listing (black box) gave the values of Hertzon's built-in library; `HznLibrary` holds the
+ones with a generic name. Vendor laminate names stay out (a design naming one is refused and can define it in the project). There is one
+owner-approved exception: Hertzon's PTFE entry, which its coax examples use.
+- **`air` was wrong**: the translator stated it at εr 1; Hertzon's is 1.0006 (μr 1.0000004).
+- circuitRF's free space (its built-in Air, or a technology Air at εr 1) is therefore written as Hertzon's `vacuum`, and a region of
+  `vacuum` reads back as the air box's default (no material).
+- A metal's μr within 1e-4 of 1 is written 1, so a technology's copper still matches Hertzon's.
+- Driving `hertzon-mcp` starts a Hertzon window when none is linked; it is not a headless probe.
+
+**Two-sided Finite Conductivity was inverted.** circuitRF's lossy sheet is EMerge's thin conductor, its degrees of freedom split so the two
+sides are solved separately (`install_thin_conductor_split`). Hertzon's documentation describes its two-sided thin conductor the same way.
+So `TwoSided: True` on a sheet is circuitRF's sheet exactly (it was refused), and `False` is a single surface impedance through the sheet,
+which circuitRF has no sheet for (it was translated). Both are now the right way round, and the export writes a sheet two-sided (it wrote
+`False`). On a solid's faces the flag says nothing.
+
+**The absorbing face is second order on EMerge.** circuitRF's driver calls EMerge's `AbsorbingBoundary` with its default order, 2. The
+refusal "Radiation of second order: circuitRF's absorbing face is first order" was wrong for the EMerge run a held design takes, so second
+order now translates. First order translates with a note. The export still writes `First order`, the order Hertzon's feature matrix marks
+fully supported, so a round trip carries the note.
+
+**`c0/f0` is a length.** The expression walk tracked "has a unit" as one flag, with quantity ÷ quantity a plain number, so `0.8*c0/f0`
+(Showcase A) was bare, and adding it to a length was refused as a bare number beside a quantity. Worse, a bare length added to another
+would have been multiplied by 1 of the design unit. The walk now carries powers of length and time (`c0` is length/time, a frequency
+time⁻¹), and every other unit is only "has a unit", as before.
+
+**What still stops the rest**, in designs unlocked:
+- **Booleans on sheets** (Unite 15, Subtract 10): the whole patch family (7 files), StubFilter and Meta_Ex1 are now stopped by nothing
+  else. Every one is built from rectangles sized by variables, so freezing the result to numbers would break D5. It needs the `.c3d` to
+  hold a boolean of coplanar sheets: `docs/briefs/brief-hzn-10-sheet-booleans.md`.
+- Wave Port without renormalisation (13: WR90 posts, WaveguidePost). EMerge's S is already normalised to the mode, so this needs a port
+  reference mode carried to the Touchstone, not new physics.
+- Vendor laminates (hairpin, Rotman, differential pair).
+- Polyline outlines built from variables (9).
+- Plane waves (11), circles as ports (Coax), Terminal solution type (6).
 
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 

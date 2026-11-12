@@ -87,13 +87,15 @@ internal sealed partial class C3dToHznWriter
             _boundaries.Add(new HAssign
             {
                 Name = UniqueBoundaryName("FiniteConductivity"), Kind = "Finite Conductivity", Objects = g.Names,
-                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null),
+                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null, twoSided: true),
             });
     }
 
-    private static List<(string, string)> FiniteConductivityProps(double sigma, string? thickness) =>
+    /// <summary>A Finite Conductivity boundary's props. A sheet is two-sided: a lossy .c3d sheet is a thin conductor solved separately
+    /// on both sides, as Hertzon's two-sided one is. A solid's faces have one side, so the flag is off there.</summary>
+    private static List<(string, string)> FiniteConductivityProps(double sigma, string? thickness, bool twoSided = false) =>
         P(("UseMaterial", "False"), ("Material", ""), ("Conductivity", Num(sigma)), ("Permeability", "1"), ("Roughness", "0um"),
-          ("UseThickness", thickness is null ? "False" : "True"), ("Thickness", thickness ?? "0um"), ("TwoSided", "False"));
+          ("UseThickness", thickness is null ? "False" : "True"), ("Thickness", thickness ?? "0um"), ("TwoSided", twoSided ? "True" : "False"));
 
     // ── ports ─────────────────────────────────────────────────────────────────────────────────────
 

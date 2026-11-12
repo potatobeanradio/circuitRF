@@ -219,7 +219,8 @@ public sealed class HznToC3dTests
         Assert.True(Has(HznRefusalKind.Expression, "round", "Odd"));
         Assert.True(Has(HznRefusalKind.Expression, "bare number", "Mixed"));
         Assert.True(Has(HznRefusalKind.Boundary, "Impedance", "Imp"));
-        Assert.True(Has(HznRefusalKind.Boundary, "second order", "Rad2"));
+        // Rad2's second-order radiation is circuitRF's own absorbing face on the EMerge run (EMerge's default), so it is not an item.
+        Assert.False(Has(HznRefusalKind.Boundary, "second order", "Rad2"));
         Assert.True(Has(HznRefusalKind.Excitation, "Incident Plane Wave", "Wave"));
 
         string text = t.Refusal!.Render();
