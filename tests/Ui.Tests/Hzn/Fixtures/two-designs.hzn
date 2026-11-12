@@ -1,0 +1,82 @@
+{
+ "name": "TwoDesigns",
+ "designs": [
+  {
+   "name": "First",
+   "units": "mm",
+   "variables": {
+    "a": "10mm"
+   },
+   "objects": [
+    {
+     "name": "Cube",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "a",
+        "YSize": "a",
+        "ZSize": "a"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "consumed_by": null,
+     "group": "",
+     "visible": true
+    }
+   ],
+   "boundaries": [],
+   "excitations": [],
+   "setups": [],
+   "coord_systems": []
+  },
+  {
+   "name": "Second",
+   "units": "um",
+   "variables": {
+    "r": "250um"
+   },
+   "objects": [
+    {
+     "name": "Post",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "Center": "0,0,0",
+        "Axis": "Z",
+        "Radius": "r",
+        "Height": "4*r"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Move",
+       "props": {
+        "Vector": "r,0,0"
+       },
+       "suppressed": true
+      }
+     ],
+     "material": "copper",
+     "consumed_by": null,
+     "group": "",
+     "visible": false
+    }
+   ],
+   "boundaries": [],
+   "excitations": [],
+   "setups": [],
+   "coord_systems": []
+  }
+ ],
+ "variables": {
+  "f0": "2.45GHz"
+ },
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}

@@ -1,0 +1,71 @@
+{
+  "name": "UnknownKeys",
+  "x_project_extra": {"anything": [1, 2, {"deep": true}]},
+  "designs": [
+    {
+      "name": "D1",
+      "units": "mm",
+      "x_design_extra": "kept",
+      "variables": {
+        "w": "2mm"
+      },
+      "objects": [
+        {
+          "name": "Strip",
+          "history": [
+            {
+              "kind": "CreateRectangle",
+              "props": {
+                "Position": "0,0,0",
+                "Axis": "Z",
+                "XSize": "w",
+                "YSize": "10mm",
+                "x_prop_extra": "kept"
+              },
+              "suppressed": false,
+              "x_step_extra": 7
+            }
+          ],
+          "material": "pec",
+          "consumed_by": null,
+          "x_object_extra": null
+        }
+      ],
+      "boundaries": [
+        {
+          "name": "B1",
+          "kind": "Perfect E",
+          "props": {},
+          "faces": [
+            {
+              "obj": "Strip",
+              "face": 0,
+              "sig": [0.001, 0.005, 0.0, 0.0, 0.0, 1.0, 2e-05],
+              "x_face_extra": "kept"
+            }
+          ],
+          "objects": [],
+          "edges": [],
+          "enabled": true,
+          "x_boundary_extra": {}
+        }
+      ],
+      "excitations": [],
+      "setups": [
+        {
+          "name": "S1",
+          "props": {"Frequency": "3GHz"},
+          "sweeps": [{"name": "Sw1", "x_sweep_extra": [ ]}],
+          "x_setup_extra": "kept"
+        }
+      ],
+      "coord_systems": [],
+      "optimetrics": [{"x_unknown": "opaque"}],
+      "parametrics": []
+    }
+  ],
+  "variables": {},
+  "materials": [],
+  "format": "hertzon-project",
+  "version": 2
+}

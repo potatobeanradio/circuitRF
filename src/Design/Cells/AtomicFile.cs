@@ -29,6 +29,23 @@ public static class AtomicFile
 
     /// <summary>How many times a refused rename over an existing file is tried on Windows, and the first wait between tries
     /// (doubled each time: 50 + 100 + 200 + 400 ms, under a second in all).</summary>
+    /// <summary>The same write for bytes that must land exactly as given — a file written back after a
+    /// partial edit, where a text round trip could re-encode what was not changed (HZN-1).</summary>
+    public static void WriteAllBytes(string path, byte[] contents)
+    {
+        var tmp = path + ".tmp";
+        try
+        {
+            File.WriteAllBytes(tmp, contents);
+            MoveOver(tmp, path);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore cleanup failure */ }
+            throw;
+        }
+    }
+
     internal const int MoveAttempts = 5;
     private const int FirstRetryMs = 50;
 

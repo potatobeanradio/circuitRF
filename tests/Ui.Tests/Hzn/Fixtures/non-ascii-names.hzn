@@ -1,0 +1,42 @@
+{
+ "name": "Résonateur",
+ "designs": [
+  {
+   "name": "Antenne_Ω",
+   "units": "mm",
+   "variables": {
+    "λ_quart": "c0/f0/4",
+    "größe": "12mm"
+   },
+   "objects": [
+    {
+     "name": "Fläche_天线",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,0,0",
+        "Axis": "Z",
+        "XSize": "größe",
+        "YSize": "λ_quart"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "consumed_by": null,
+     "group": "Strahler — \u00e9t\u00e9",
+     "visible": true
+    }
+   ],
+   "boundaries": [],
+   "excitations": [],
+   "setups": [],
+   "coord_systems": []
+  }
+ ],
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}

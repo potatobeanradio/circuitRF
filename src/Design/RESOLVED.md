@@ -1,5 +1,73 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## HZN — Hertzon `.hzn` projects
+
+Everything the HZN series (`docs/briefs/brief-hzn-*.md`) relies on about the format, and the experiment that
+established it. Clean room (brief-hzn-0 D1): the meanings below come from the files themselves, Hertzon's
+documentation and black-box runs, never from its source.
+
+### HZN-1 — the file model: which JSON strategy keeps the bytes (2026-11-11)
+
+**A concrete syntax tree of our own** (`Interchange/Hzn/HznJson.cs`). Every scalar keeps its token text, and every
+object and array keeps the whitespace before each key, around each colon, after each value and inside an empty
+container. Writing concatenates those pieces again, so an untouched file comes back byte for byte by construction.
+No formatter has to agree with whoever wrote it. A byte-order mark is kept as a flag. The text is decoded as strict
+UTF-8, so invalid bytes are refused rather than replaced, and valid UTF-8 re-encodes to the same bytes.
+
+**Why not `System.Text.Json`, measured on .NET 10 rather than assumed.** A `JsonNode` parsed from text and written
+back with nothing changed:
+- **keeps number text** (`0.50`, `-0`, `1E+2` survive), contrary to the brief's expectation;
+- **loses all whitespace.** It writes either compact or its own two-space indent, and Hertzon writes one space with
+  no final newline;
+- **re-escapes strings through its default encoder.** `Résonateur a+b<c` comes back as
+  `Résonateur a+b<c`, so every expression holding `+` changes even when nothing was edited;
+- **refuses `NaN`.** A Python writer emits `NaN`/`Infinity` for a non-finite float unless it is told not to.
+
+`JsonDocument` plus raw-span splicing keeps the untouched subtrees but has no whitespace model either. An edit
+inside a subtree would still need a writer that knows the file's layout, so it is this tree with more steps.
+
+**What is written new takes the file's style** (`HznJsonStyle`, read once from the file):
+- a new key copies its siblings' whitespace, and the closing whitespace stays with whichever member is last;
+- a new container is indented by the file's own unit at its depth;
+- a new key, or a new object placed in an array beside others, follows the key order of those sibling objects;
+- a non-ASCII character is escaped as `\uXXXX` (lower-case hex) if the file escapes any, or if it holds no
+  non-ASCII text at all. It is written raw only when the file already writes it raw;
+- a double is spelled the way a Python writer spells it (`1.0`, `1e-05`).
+
+An assignment that changes no value keeps the original spelling (`0.50` stays `0.50`, an escaped string stays
+escaped). A repeated key is kept, and reads see the last one, as a Python reader does.
+
+**Gate, measured.** All 6 hand-written fixtures round-trip byte for byte, and so do a BOM + CRLF + tab layout and a
+one-line layout built in the test. A local Hertzon 0.3.19 checkout holds 52 `.hzn` files (examples, tests and
+mesher projects). The 46 at version 2 round-trip byte for byte; the 6 at version 1 are refused with the version-1
+sentence.
+
+**Change on disk.** `Save` compares length and modification time, then the SHA-256 of the bytes on disk, against the
+stamp taken at `Read`. The hash is what catches a same-length rewrite with its time set back (the gate test does
+exactly that). After a successful save the stamp moves to the bytes just written. A save whose bytes equal the disk's
+writes nothing, so Hertzon sees no new modification time. The write goes through `AtomicFile.WriteAllBytes`: a
+`.tmp` beside the file, then a replace.
+
+**The backup (Q1) is built and off.** `HznFile.BackupOnFirstSave` defaults to false until the owner answers. When it
+is on, the first save of an instance copies the bytes on disk (verified equal to those read) to `<name>.hzn.bak`. It
+replaces any earlier backup, and a refused backup refuses the save.
+
+**What the views read, from the example files (format version 2).**
+
+| Where | Key | Meaning relied on |
+|---|---|---|
+| root | `format`, `version` | `"hertzon-project"` and `2`. Hertzon writes them last |
+| root | `name`, `variables`, `materials`, `designs` | variables are an object of name → string expression; materials and designs are arrays of objects, each with `name` |
+| design | `kind` | absent in 28 of 30 example designs, `"3d"` in one, `"circuit"` in one. Only `"circuit"` is a circuit |
+| design | `units`, `variables`, `objects`, `boundaries`, `excitations`, `setups`, `coord_systems` | as brief-hzn-0 lists them; every other key is kept untouched |
+| object | `name`, `material`, `consumed_by` (`null` when not consumed), `group`, `visible`, `model`, `solve_inside`, `history` | `history` is an array of `{kind, props, suppressed}` |
+| boundary / excitation | `name`, `kind`, `props`, `objects` (names), `faces` (`{obj, face, sig}`), `edges`, `enabled` | `sig` holds 7 numbers in 15 example faces and 8 in 20; what the eighth means is not established yet |
+| setup | `name`, `props`, `sweeps` | an eigenmode setup also carries `"eigen": true` |
+| coordinate system | `name`, `kind`, `reference`, `props` | |
+
+Every history step's prop value in the examples is a string. A key that is absent, or that holds another JSON kind, reads as null
+and is never defaulted.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

@@ -1,0 +1,56 @@
+{
+ "name": "NumberSpellings",
+ "designs": [
+  {
+   "name": "Numbers",
+   "units": "mm",
+   "variables": {
+    "t": "0.50mm"
+   },
+   "objects": [
+    {
+     "name": "Plate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,-0",
+        "XSize": "1e-3",
+        "YSize": "0.50",
+        "ZSize": "t"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "transparency": 0.50,
+     "consumed_by": null
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Sym",
+     "kind": "Symmetry",
+     "props": {},
+     "faces": [
+      {
+       "obj": "Plate",
+       "face": 3,
+       "sig": [1e-3, -0, -0.0, 0.50, 1E+2, 2.5E-07, 12.0, 0, 100, -1.5e-19]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [],
+   "setups": [],
+   "coord_systems": []
+  }
+ ],
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}

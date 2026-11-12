@@ -1,0 +1,115 @@
+{
+ "name": "BoxAndPort",
+ "designs": [
+  {
+   "name": "Block",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal"
+   },
+   "variables": {
+    "h": "1.5mm",
+    "w": "3mm",
+    "L": "20mm"
+   },
+   "objects": [
+    {
+     "name": "Substrate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-w,0,0",
+        "XSize": "2*w",
+        "YSize": "L",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "laminate_35",
+     "solve_inside": true,
+     "model": true,
+     "color": "#5fb3a6",
+     "transparency": 0.5,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortSheet",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-w/2,0,0",
+        "Axis": "Y",
+        "XSize": "w",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#8080ff",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "Ports",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [],
+   "excitations": [
+    {
+     "name": "P1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm"
+     },
+     "faces": [],
+     "objects": [
+      "PortSheet"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Frequency": "5GHz",
+      "MaximumPasses": "6"
+     },
+     "sweeps": []
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": []
+  }
+ ],
+ "variables": {},
+ "materials": [
+  {
+   "name": "laminate_35",
+   "permittivity": "3.5",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.002",
+   "pec": false
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

@@ -1,0 +1,47 @@
+{
+ "name": "CircuitBeside3D",
+ "designs": [
+  {
+   "name": "Matching",
+   "kind": "circuit",
+   "components": [
+    {
+     "name": "C1",
+     "type": "Capacitor",
+     "value": "1.2pF",
+     "x": 40,
+     "y": -20
+    }
+   ],
+   "wires": [
+    {
+     "points": [
+      [
+       0,
+       0
+      ],
+      [
+       40,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Stub",
+   "kind": "3d",
+   "units": "mm",
+   "variables": {},
+   "objects": [],
+   "boundaries": [],
+   "excitations": [],
+   "setups": [],
+   "coord_systems": []
+  }
+ ],
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}
