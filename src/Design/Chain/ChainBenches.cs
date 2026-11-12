@@ -54,7 +54,7 @@ using CircuitRF.Engine.HarmonicBalance;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo, Transmitter }
 
 /// <summary>One bench: its cell name, its netlist, where each of its instances is drawn, and what it verifies: the chain
 /// named <paramref name="Chain"/>, the whole chain or one of its conversions (<see cref="ChainBenches.Conversions"/>),
@@ -81,6 +81,7 @@ public static class ChainBenches
         ChainBench.Levels  => chain + " Levels",
         ChainBench.Blockers => chain + " Blockers",
         ChainBench.Demo    => chain + " Demo",
+        ChainBench.Transmitter => chain + " TX",
         _                  => chain + " Canceller",
     };
 
@@ -108,6 +109,13 @@ public static class ChainBenches
     /// output of stage k.</summary>
     public const string NodeVar = "nodeix";
 
+    /// <summary>The TX bench's back-offs from Psat, dB, the link's own added: from 10 dB of overdrive to 16 dB back.</summary>
+    public static readonly double[] TxBackoffsDb = [-10, -6, -3, 0, 2, 4, 6, 8, 10, 12, 16];
+
+    /// <summary>How far an ideal Amp's saturated output sits below its output intercept, dB: 10·log10(π²/4). The tanh
+    /// limiter saturates its fundamental at (4/π)·Vsat in amplitude, and its intercept is 2·Vsat.</summary>
+    public static readonly double TanhPsatBelowOip3Db = 10 * Math.Log10(Math.PI * Math.PI / 4);
+
     /// <summary>The steer angles the Steering bench sweeps, degrees from broadside.</summary>
     public static readonly double[] SteerAnglesDeg = [-30, 0, 30];
 
@@ -127,6 +135,7 @@ public static class ChainBenches
         if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
         if (d.Demo) b.Add(ChainBench.Demo);
         if (d.Stages.Any(s => s.Part == ChainParts.Canceller)) b.Add(ChainBench.Canceller);
+        if (d.Link is not null) b.Add(ChainBench.Transmitter);
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
         if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.Mixer))
@@ -584,6 +593,7 @@ public static class ChainBenches
             if (bench == ChainBench.Steering) return EmitSteering();
             if (bench == ChainBench.Combiners) return EmitCombiners();
             if (bench == ChainBench.Canceller) return EmitCanceller();
+            if (bench == ChainBench.Transmitter) return EmitTransmitter();
             int n = N, nb = Branch;
             bool array = n > 1;
             double frf = d.FrequencyHz;
@@ -979,6 +989,55 @@ public static class ChainBenches
                     _meas.Add($"SNR_{tag}_{w} = ENVO.SNR_dB[{on}, \"Iout\", {k}]");
                 }
             }
+            return Text();
+        }
+
+        /// <summary>
+        /// The TX bench: one transmit element's PA driven by an NR 64-QAM carrier, through its Loss to a 50 Ω load, over
+        /// a sweep of the back-off from Psat (<see cref="TxBackoffsDb"/> and the link's own). The PA is an Amp whose output
+        /// intercept is Psat + 10·log10(π²/4): the tanh limiter saturates its fundamental at that much below its OIP3. Beside
+        /// the budget's Pout − Loss, the simulated output and their difference (the compression the back-off leaves), and
+        /// the EVM and the adjacent-channel ratios that choose the back-off. A memoryless PA's EVM and ACPR do not depend
+        /// on the carrier's bandwidth, so the NR channel nearest the chain's bandwidth up to 50 MHz stands for it.
+        /// </summary>
+        private ChainBenchText EmitTransmitter()
+        {
+            var link = d.Link!;
+            double psat = ChainValue.Or(link.GetTx("Psat"), 0), bo = ChainValue.Or(link.GetTx("Backoff"), 0);
+            double g = ChainValue.Or(link.GetTx("PaGain"), 0), loss = ChainValue.Or(link.GetTx("Loss"), 0);
+            var bos = TxBackoffsDb.Append(bo).Distinct().Order().ToArray();
+            var (mhz, _) = Carrier(d.BandwidthHz);
+            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {F(psat)}", $"PaGain = {F(g)}", $"Loss = {F(loss)}",
+                            $"BO = {F(bo)}", "Pin = Psat - BO - PaGain"]);
+            Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
+                 $"Carrier[1]=\"NR;BW={mhz}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=no");
+            Place("SRC", 0, 200);
+            Line($"Amp:PA  in  0  pa  0  Gain=PaGain dB  IP3=Psat+{G(TanhPsatBelowOip3Db)} dBm  IP3Ref=Output");
+            Place("PA", 800, 0);
+            Line("Atten:LOSS  pa  0  ant  0  Loss=Loss dB  Z0=50 Ohm");
+            Place("LOSS", 1600, 0);
+            Line("IProbe:Iout  ant  load");
+            Line("R:RL  load  0  R=50 Ohm");
+            Place("Iout", 2300, -100); Place("RL", 2900, 200);
+            _analyses.Add("analysis ENVT type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 Segments=auto Warmup=auto Start=0 " +
+                          "Tol=1e-6 SaveWaveforms=no");
+            _analyses.Add($"analysis SWBO type=parametric_sweep Var=BO Values={string.Join(",", bos.Select(F))} Inner=ENVT");
+            _meas.Add("Pant_calc = Psat - BO - Loss");
+            _meas.Add("Pant_sim = ENVT.Pavg_dBm[:, \"Iout\"]");
+            _meas.Add("Comp = Pant_calc - Pant_sim");
+            _meas.Add("EVM_sim = ENVT.EVM_pct[:, \"Iout\", 0]");
+            _meas.Add("ACPR_L = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1L\"]");
+            _meas.Add("ACPR_U = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1U\"]");
+            // The deepest overdrive is near saturation: its output against Psat, the PA's own limit.
+            _meas.Add($"Psat_err = ENVT.Pavg_dBm[0, \"Iout\"] + Loss - Psat");
+            // The link's own back-off, as scalars for the display's table.
+            int k = System.Array.IndexOf(bos, bo);
+            _meas.Add($"Pant_at_calc = {G(psat - bo - loss)}");
+            _meas.Add($"Pant_at_sim = ENVT.Pavg_dBm[{k}, \"Iout\"]");
+            _meas.Add("Pant_at_err = Pant_at_sim - Pant_at_calc");
+            _meas.Add($"EVM_at = ENVT.EVM_pct[{k}, \"Iout\", 0]");
+            _meas.Add($"ACPR_L_at = ENVT.ACLR[{k}, \"Iout\", 0, \"ACPR1L\"]");
+            _meas.Add($"ACPR_U_at = ENVT.ACLR[{k}, \"Iout\", 0, \"ACPR1U\"]");
             return Text();
         }
 

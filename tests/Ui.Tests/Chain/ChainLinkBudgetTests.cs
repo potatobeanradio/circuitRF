@@ -413,6 +413,49 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(vm.PlotHost.Plots, c => ReferenceEquals(c.PlotVM.Plot, vm.LinkPlot));
     }
 
+    // ── the transmitter bench ────────────────────────────────────────────────
+
+    /// <summary>The TX bench's PA is an ideal Amp of output intercept Psat + 10·log10(π²/4): driven 30 dB past it, its
+    /// fundamental is Psat, less the describing function's 0.0022 dB that far up.</summary>
+    [Fact]
+    public void TheTxBenchsPa_SaturatesAtPsat()
+    {
+        Directory.CreateDirectory(_ws);
+        File.WriteAllText(Path.Combine(_ws, ".cws"), "{\"FormatVersion\": 2, \"LibraryRefs\": [], \"KnownFiles\": []}");
+        string cnl = Path.Combine(_ws, "psat.cnl");
+        File.WriteAllText(cnl, string.Join("\n",
+            "temp = 16.85", "Frf = 26e9",
+            "P1Tone:SRC  in  0  Num=1  Freq=Frf  Pavl=34 dBm  Z=50 Ohm",
+            $"Amp:PA  in  0  out  0  Gain=20 dB  IP3={(24 + ChainBenches.TanhPsatBelowOip3Db).ToString("R", System.Globalization.CultureInfo.InvariantCulture)} dBm  IP3Ref=Output",
+            "R:RL  out  0  R=50 Ohm",
+            "analysis HB1 type=hb Tone=\"Frf\" ToneUnit=Hz MaxHarm=31 Tol=1e-12",
+            "measure Psat_sim = dB(HB1.V(\"out\",1)) + 10", ""));
+        var run = SchematicRunService.RunNetlist(cnl, _ws);
+        Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        Assert.InRange(Measure(run.GroupedResults!, "Psat_sim") - 24, -0.0022 - 1e-3, -0.0022 + 1e-3);
+    }
+
+    /// <summary>The TX bench, run: saturation near Psat at 10 dB of overdrive, the EVM falling as the back-off grows,
+    /// and what the budget's Pout = Psat − Backoff leaves out at the link's 8 dB: an OFDM carrier through the tanh PA
+    /// comes out 0.92 dB lower, at 6.3 % EVM (measured; 0.41 dB and 2.9 % at 12 dB).</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void TheTxBench_ShowsWhatTheBackoffBuys()
+    {
+        var d = Link();
+        Assert.Contains(ChainBench.Transmitter, ChainBenches.BenchesFor(d));
+        var tx = Bench(d, "Ln", ChainBench.Transmitter);
+        double[] evm = tx["measurements.EVM_sim"].RealValues;
+        double[] bo = tx["measurements.EVM_sim"].Axes[0].Values;
+        foreach (var (b, e) in bo.Zip(evm)) output.WriteLine($"BO {b,5:0.#} dB: EVM {e:0.###} %, comp {tx["measurements.Comp"].RealValues[System.Array.IndexOf(bo, b)]:0.###} dB");
+        for (int i = 1; i < evm.Length; i++) Assert.True(evm[i] < evm[i - 1], $"the EVM rose from {evm[i - 1]} % to {evm[i]} % at {bo[i]} dB of back-off");
+        Assert.InRange(Measure(tx, "Psat_err"), -1, 0);
+        Assert.InRange(Measure(tx, "Pant_at_err"), -1.0, -0.8);
+        Assert.InRange(Measure(tx, "EVM_at"), 5.5, 7);
+        output.WriteLine($"ACPR at the link's back-off: {Measure(tx, "ACPR_L_at"):0.##} / {Measure(tx, "ACPR_U_at"):0.##} dBc");
+        Assert.True(Measure(tx, "ACPR_L_at") < -20 && Measure(tx, "ACPR_U_at") < -20);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private string Csch(string cell) => Path.Combine(_ws, cell, "schematic", cell + ".csch");

@@ -56,6 +56,7 @@ public static class ChainBudgetDisplay
             case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true, written));
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
+            case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
         }
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
@@ -311,6 +312,28 @@ public static class ChainBudgetDisplay
         plots.Add(Constellation("64-QAM at the output, mid power", src, "ENVD", "[3, 0, 0, :]", "[3, 0, :]", 560 + Gap, 380 + Gap, 320));
         plots.Add(Constellation("64-QAM at the output, highest power", src, "ENVD", "[6, 0, 0, :]", "[6, 0, :]", 900 + 2 * Gap, 380 + Gap, 320));
         return plots;
+    }
+
+    /// <summary>The TX bench: the output, the EVM and the adjacent-channel ratios against the back-off from Psat, and a
+    /// table at the link's own back-off.</summary>
+    private static List<PlotContainerConfig> Transmitter(string src)
+    {
+        const string bo = "BO", x = "back-off from Psat, dB";
+        var t = Table("At the link's back-off", src,
+                      [("Pant_at_calc", "At the link's back-off: Pout − Loss budget, dBm"), ("Pant_at_sim", "simulated"), ("Pant_at_err", "difference"),
+                       ("EVM_at", "EVM, %"), ("ACPR_L_at", "ACPR lower, dBc"), ("ACPR_U_at", "ACPR upper, dBc"), ("Psat_err", "saturation − Psat, dB")],
+                      first: 280);
+        t.Top = 2 * (300 + Gap);
+        return
+        [
+            Rect("Output power at the antenna against the back-off", x, "dBm", 0, 0, 560, 300,
+                 [Over(src, "Pant_calc", bo, "budget, Psat − back-off − Loss", C(1), false), Over(src, "Pant_sim", bo, "simulated", C(1), true)]),
+            Rect("Compression the back-off leaves", x, "dB", 560 + Gap, 0, 560, 300, [Over(src, "Comp", bo, "budget − simulated", C(4), true)]),
+            Rect("EVM against the back-off", x, "EVM, %", 0, 300 + Gap, 560, 300, [Over(src, "EVM_sim", bo, "64-QAM, simulated", C(2), true)]),
+            Rect("Adjacent-channel ratio against the back-off", x, "dBc", 560 + Gap, 300 + Gap, 560, 300,
+                 [Over(src, "ACPR_L", bo, "lower", C(3), true), Over(src, "ACPR_U", bo, "upper", C(5), true)]),
+            t,
+        ];
     }
 
     /// <summary>A constellation as the signal-quality preset draws it: the received points over the ideal ones, Im
