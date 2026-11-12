@@ -146,8 +146,10 @@ may not shadow them.</p>
     <code>theta</code> is one phasor per point, the same as <code>e^(j*theta)</code>. Three of them differ from their
     number form: <code>sqrt</code> of a real cube with a negative element makes the whole cube complex, and
     <code>log</code> and <code>log10</code> of a cube take its magnitude, <code>log10(|z|)</code>, so a negative or
-    complex element is not refused. <code>atan2</code>, <code>min</code>, <code>max</code>, <code>polar</code>,
-    <code>complex</code> and <code>if</code> take numbers only.</p>
+    complex element is not refused. <code>imag</code>, <code>phase</code> and <code>phase_rad</code> need a complex
+    cube. <code>atan2</code>, <code>min</code>, <code>max</code>, <code>polar</code> and <code>complex</code> take
+    numbers only. The condition of <code>if(cond, a, b)</code> and of <code>cond ? a : b</code> must be a Bool, while
+    <code>a</code> and <code>b</code> may be cubes.</p>
   </div>
 <h2 id="units">Units</h2>
 <p>A unit attaches in two places. At the <strong>assignment</strong> level (after the expression, or in the row's unit

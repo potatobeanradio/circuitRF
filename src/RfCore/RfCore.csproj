@@ -7,9 +7,11 @@
     <AssemblyName>RfCore</AssemblyName>
   </PropertyGroup>
 
-  <!-- splotRF and circuitRF need access to internal SNP helpers (CreateBroken, RefreshFrom) -->
+  <!-- splotRF and circuitRF need access to internal SNP helpers (CreateBroken, RefreshFrom); the expression engine
+       maps a cube element by element through DataCube.MapElements -->
   <ItemGroup>
     <InternalsVisibleTo Include="splotRF" />
+    <InternalsVisibleTo Include="CircuitRF.Core" />
     <InternalsVisibleTo Include="CircuitRF.Ui" />
     <InternalsVisibleTo Include="RfCore.Tests" />
   </ItemGroup>

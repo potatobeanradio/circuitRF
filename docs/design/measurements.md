@@ -310,19 +310,20 @@ What remains:
 
 The expression surface (the evaluator is the source of truth) includes qualified cube accessors such
 as `HB1.V("n_drain", 1, All)`, `HB1.I("M1:d", 1, All)`, element-wise cube arithmetic that broadcasts
-over `DataCube`s, and the element-wise helpers `conj`, `real`, `imag`, `mag`, `phase`, `dB`, `dB10`,
-`dBm`, `log10`, `ln`, `sqrt`. Cubes are referenced by either the name-keyed accessor or the positional
-bracket index — see **Referencing analysis cubes (two notations)** above for both forms and when to
-use each.
+over `DataCube`s, the element-wise helpers `conj`, `real`, `imag`, `mag`, `phase`, `dB`, `dB10`,
+`dBm`, `log10`, `ln`, `sqrt`, and the one-argument maths functions. Cubes are referenced by either the
+name-keyed accessor or the positional bracket index — see **Referencing analysis cubes (two notations)**
+above for both forms and when to use each.
 
-**The rest of the scalar maths library is scalar only**, and that is a real boundary rather than an
-oversight waiting to be tidied: `sin`, `exp`, `pow`, `^` and the rounding family all take a scalar and
-raise *"Value is Cube, not Complex"* on a swept quantity. `sqrt` joined the cube-aware list on
-2026-09-15 (`src/Core/RESOLVED.md`) because it was the one with **no workaround at all** — `x^0.5`,
-`pow(x, 0.5)` and `exp(0.5*log(x))` each fail on the same rule — and a per-frequency square root is an
-ordinary thing to want: a coupling factor k = M/√(L₁L₂), an RMS, a |Z| taken from Z². On a Real cube
-it stays Real unless an element is negative, which promotes the cube to Complex, matching `Value.Pow`'s
-own rule for a negative base so the two spellings cannot disagree.
+**The one-argument maths functions take a cube element by element** (2026-11-12, `src/Core/RESOLVED.md`):
+`sin cos tan asin acos atan sinh cosh tanh exp floor ceil round int`, as `^` and `pow` broadcast. The axes
+are kept, a Real cube stays Real and a Complex one Complex, and NaN stays NaN. Each element is its number
+form's result. `conj` and `sign` take a Real cube too. `imag`, `phase` and `phase_rad` still refuse one: a
+Real cube is often a complex quantity already reduced (`log` of a cube is ln|z|), and reading 0 or 180 there
+would be a wrong answer with no error. `sqrt` has its own rule (2026-09-15): on a Real cube it stays Real
+unless an element is negative, which promotes the cube to Complex, matching `Value.Pow`'s own rule for a
+negative base so the two spellings cannot disagree. `atan2`, `min`, `max`, `polar` and `complex` take
+scalars only, and so does the condition of `if` and `?:`.
 
 **`freq` is the run's own frequency axis**, injected into measurement scope as a 1-D cube (2026-09-22,
 `src/Engine/RESOLVED.md`) — so a measurement that needs ω can be written directly: an earlier

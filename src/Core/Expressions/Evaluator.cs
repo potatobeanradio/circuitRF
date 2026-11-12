@@ -751,6 +751,13 @@ public sealed partial class Evaluator
 
     // ── Math helpers ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A one-argument function. A cube takes it element by element, its axes kept, as the operators broadcast — so
+    /// <c>exp(j*x)</c> over a sweep's cube is one value per point exactly as <c>e^(j*x)</c> is. A real cube takes
+    /// <paramref name="realFn"/> and stays real, a complex one <paramref name="complexFn"/>: the scalar rule, element by
+    /// element. A NaN element (a point with no value) goes through the function, which keeps it NaN for every function given
+    /// here.
+    /// </summary>
     private Value UnaryMath(CallExpr cl, Scope scope,
         Func<double, double> realFn, Func<Complex, Complex> complexFn)
     {
@@ -759,21 +766,10 @@ public sealed partial class Evaluator
         return v.Kind switch
         {
             ValueKind.Real => new Value(realFn(v.AsReal())),
-            ValueKind.Cube => new Value(MapCube(v.AsCube(), realFn, complexFn)),
+            ValueKind.Cube => new Value(DataCube.MapElements(v.AsCube(), realFn, complexFn)),
             _              => new Value(complexFn(v.AsComplex())),
         };
     }
-
-    /// <summary>
-    /// A cube with the scalar function applied to each element, its axes kept — what arithmetic already does, so
-    /// <c>exp(j*x)</c> over a sweep's cube is one value per point exactly as <c>e^(j*x)</c> is. A real cube takes
-    /// <paramref name="realFn"/> and stays real, a complex one <paramref name="complexFn"/>: the scalar rule, element by
-    /// element. A NaN element (a point with no value) goes through the function, and every function given here keeps it NaN.
-    /// </summary>
-    private static DataCube MapCube(DataCube c, Func<double, double> realFn, Func<Complex, Complex> complexFn)
-        => c.DataKind == DataKind.Real
-            ? new DataCube([.. c.Axes], Array.ConvertAll(c.RealValues, x => realFn(x)))
-            : new DataCube([.. c.Axes], Array.ConvertAll(c.ComplexValues, z => complexFn(z)));
 
     private static bool IsRealCube(Value v) => v.Kind == ValueKind.Cube && v.AsCube().DataKind == DataKind.Real;
 
@@ -862,8 +858,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("imag", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        if (v.Kind == ValueKind.Cube)   // a real cube's is 0, as a real number's is
-            return new Value(IsRealCube(v) ? MapCube(v.AsCube(), x => double.IsNaN(x) ? x : 0.0, z => z) : v.AsCube().Imag());
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Imag());
         return v.Kind == ValueKind.Real ? new Value(0.0) : new Value(v.AsComplex().Imaginary);
     }
 
@@ -925,9 +920,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("phase", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        if (v.Kind == ValueKind.Cube)   // a real cube's is 0 or 180, as a real number's is
-            return new Value(IsRealCube(v) ? MapCube(v.AsCube(), x => double.IsNaN(x) ? x : x >= 0 ? 0.0 : 180.0, z => z)
-                                           : v.AsCube().Phase(degrees: true));
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Phase(degrees: true));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() >= 0 ? 0.0 : 180.0)
             : new Value(v.AsComplex().Phase * (180.0 / Math.PI));
@@ -937,9 +930,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("phase_rad", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        if (v.Kind == ValueKind.Cube)
-            return new Value(IsRealCube(v) ? MapCube(v.AsCube(), x => double.IsNaN(x) ? x : x >= 0 ? 0.0 : Math.PI, z => z)
-                                           : v.AsCube().Phase(degrees: false));
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Phase(degrees: false));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() >= 0 ? 0.0 : Math.PI)
             : new Value(v.AsComplex().Phase);
@@ -974,7 +965,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("sign", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        if (IsRealCube(v)) return new Value(MapCube(v.AsCube(), x => double.IsNaN(x) ? x : Math.Sign(x), z => z));
+        if (IsRealCube(v)) return new Value(DataCube.MapElements(v.AsCube(), x => double.IsNaN(x) ? x : Math.Sign(x), z => z));
         if (v.Kind != ValueKind.Real)
             throw new TypeErrorException("sign() requires a real argument");
         return new Value((double)Math.Sign(v.AsReal()));

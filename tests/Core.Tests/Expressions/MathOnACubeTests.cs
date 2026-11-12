@@ -6,8 +6,8 @@
 //  Complex", while + - * / ^ already broadcast. A measurement wanting e^(jx) had to write it as a
 //  power of e. They now map over a cube the way arithmetic does: axes kept in order and length, a
 //  real cube staying real, a complex one complex, and a NaN element (a point with no value) staying
-//  NaN. imag, phase, phase_rad, conj and sign also take a REAL cube now, giving what they give a
-//  real number. A number's result is unchanged, which the last section pins.
+//  NaN. conj and sign also take a REAL cube now, giving what they give a real number; imag, phase and
+//  phase_rad still refuse one. A number's result is unchanged, which the last section pins.
 // ================================================================
 
 using System;
@@ -124,13 +124,13 @@ public class MathOnACubeTests
     [InlineData("exp")]
     [InlineData("round")]
     [InlineData("sign")]
-    [InlineData("imag")]
-    [InlineData("phase")]
+    [InlineData("conj")]
+    [InlineData("asin")]
     [InlineData("sqrt")]
     [InlineData("log10")]
     public void ANaNElement_StaysNaN_AndTheOthersAreComputed(string fn)
     {
-        var got = Eval($"{fn}(SP1.c)", RealCube(1.0, double.NaN, 2.0, 0.5, 4.0, 3.0)).AsCube();
+        var got = Eval($"{fn}(SP1.c)", RealCube(0.1, double.NaN, 0.2, 0.5, 0.4, 0.3)).AsCube();
 
         Assert.Equal(DataKind.Real, got.DataKind);
         var v = got.RealValues;
@@ -146,17 +146,64 @@ public class MathOnACubeTests
         Assert.Equal(Complex.Exp(2), got[2]);
     }
 
-    /// <summary>imag, phase, phase_rad, conj and sign over a REAL cube give what they give a real number.</summary>
+    /// <summary>conj and sign over a REAL cube give what they give a real number.</summary>
     [Fact]
-    public void TheComplexHelpers_TakeARealCube_AsTheyTakeARealNumber()
+    public void ConjAndSign_TakeARealCube_AsTheyTakeARealNumber()
     {
         var cube = RealCube(RealData);
-        Assert.All(Eval("imag(SP1.c)", cube).AsCube().RealValues, x => Assert.Equal(0.0, x));
-        Assert.Equal(RealData.Select(x => x >= 0 ? 0.0 : 180.0), Eval("phase(SP1.c)", cube).AsCube().RealValues);
-        Assert.Equal(RealData.Select(x => x >= 0 ? 0.0 : Math.PI), Eval("phase_rad(SP1.c)", cube).AsCube().RealValues);
         Assert.Equal(RealData, Eval("conj(SP1.c)", cube).AsCube().RealValues);
         Assert.Equal(RealData.Select(x => (double)Math.Sign(x)), Eval("sign(SP1.c)", cube).AsCube().RealValues);
         AssertSameAxes(Eval("sign(SP1.c)", cube).AsCube());
+    }
+
+    /// <summary>
+    /// imag, phase and phase_rad refuse a REAL cube, as they always have. A real cube is often a complex quantity already
+    /// reduced — log of a complex cube is ln|z| — so imag(log(S21)) reading 0, or phase(log(S21)) 180, would be a wrong
+    /// answer with no error.
+    /// </summary>
+    [Theory]
+    [InlineData("imag(SP1.c)")]
+    [InlineData("phase(SP1.c)")]
+    [InlineData("phase_rad(SP1.c)")]
+    [InlineData("imag(log(SP1.z))")]
+    [InlineData("phase(log(SP1.z))")]
+    public void ImagAndPhase_RefuseARealCube(string expr)
+    {
+        var ds = new DataSet();
+        ds.Add("c", RealCube(RealData));
+        ds.Add("z", ComplexCube(new(0.3, 0.4), new(0.6, 0.5), new(0.8, 0.4), 1, 2, 3));
+        var ev = new Evaluator(new MeasurementContext(new Dictionary<string, DataSet> { ["SP1"] = ds }));
+        var ex = Assert.Throws<InvalidOperationException>(() => ev.Eval(expr, new Scope("t")));
+        Assert.Contains("requires a Complex cube", ex.Message);
+    }
+
+    /// <summary>
+    /// Every function of the family over a cube is its number form element by element — the rounding family componentwise
+    /// on a complex cube, asin and acos with their scalar rules (NaN outside ±1 on a real cube; the real part's on a
+    /// complex one).
+    /// </summary>
+    [Theory]
+    [InlineData("floor", true)] [InlineData("ceil", true)] [InlineData("round", true)] [InlineData("int", true)]
+    [InlineData("asin", true)]  [InlineData("acos", true)] [InlineData("atan", true)]
+    [InlineData("asin", false)] [InlineData("acos", false)] [InlineData("floor", false)]
+    public void OverACube_EachElementIsTheNumberForm(string fn, bool complex)
+    {
+        double[] re = [-1.5, -0.4, 0.0, 0.6, 1.0, 2.5];
+        var cube = complex ? ComplexCube([.. re.Select((x, i) => new Complex(x, 0.7 * i - 1.75))]) : RealCube(re);
+        var got  = Eval($"{fn}(SP1.c)", cube).AsCube();
+        Assert.Equal(complex ? DataKind.Complex : DataKind.Real, got.DataKind);
+        AssertSameAxes(got);
+
+        for (int i = 0; i < re.Length; i++)
+        {
+            var scope = new Scope("t");
+            scope.Bind("z", "0");
+            var ev = new Evaluator();
+            ev.InjectResolved("t", "z", complex ? new Value(cube.ComplexValues[i]) : new Value(re[i]));
+            var one = ev.Eval($"{fn}(z)", scope);
+            if (complex) Assert.Equal(one.ToComplex(), got.ComplexValues[i]);
+            else Assert.Equal(one.AsReal(), got.RealValues[i]);
+        }
     }
 
     [Fact]

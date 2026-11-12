@@ -471,7 +471,7 @@ namespace RfCore.Data
                         $"Axis {d} length mismatch: {a.Axes[d].Length} vs {b.Axes[d].Length}.");
         }
 
-        private static DataCube MapElements(DataCube a,
+        internal static DataCube MapElements(DataCube a,
             Func<double, double> realOp, Func<Complex, Complex> complexOp)
         {
             int n = a.ElementCount();
