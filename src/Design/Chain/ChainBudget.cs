@@ -28,7 +28,12 @@ public sealed record ChainTotals(
     double SfdrDb, double ArrayGainDb, double OutputFrequencyHz);
 
 public sealed record ChainBudgetResult(
-    IReadOnlyList<ChainStageResult> Stages, ChainTotals? Totals, IReadOnlyList<string> Refusals, IReadOnlyList<string> Notes);
+    IReadOnlyList<ChainStageResult> Stages, ChainTotals? Totals, IReadOnlyList<string> Refusals, IReadOnlyList<string> Notes)
+{
+    /// <summary>The design as it was budgeted (<see cref="ChainDesign.Resolve"/>): every expression and table its number
+    /// at its stage's frequency. The levels, the diagram and the benches read this one. Null when refused.</summary>
+    public ChainDesign? Design { get; init; }
+}
 
 public static class ChainBudget
 {
@@ -44,6 +49,10 @@ public static class ChainBudget
     /// <summary>The budget, or the refusals that stop it. Never throws.</summary>
     public static ChainBudgetResult Evaluate(ChainDesign d)
     {
+        // Expressions and tables first, each read at its stage's frequency; then the resolved design's own refusals.
+        var unread = new List<string>();
+        d = d.Resolve(unread);
+        if (unread.Count > 0) return new([], null, unread, []);
         var refusals = d.Refusals();
         if (refusals.Count > 0) return new([], null, refusals, []);
 
@@ -99,7 +108,7 @@ public static class ChainBudget
             mdsT + d.RequiredSnrDb, d.InputPowerDbm - mdsT,
             double.IsPositiveInfinity(last.Iip3Dbm) ? double.PositiveInfinity : 2.0 / 3.0 * (last.Iip3Dbm - mdsT),
             Db(a), f);
-        return new(rows, totals, [], notes);
+        return new(rows, totals, [], notes) { Design = d };
     }
 
     /// <summary>Each blocker that reaches an SnP stage outside its file's range: carried at the file's edge value, as the

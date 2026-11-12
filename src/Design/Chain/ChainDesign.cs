@@ -85,6 +85,10 @@ public sealed class ChainDesign
         return f;
     }
 
+    /// <summary>A copy with every parameter written as an expression in <c>freq</c> or as a table its number at its
+    /// stage's input frequency (<see cref="ChainScaling"/>); what cannot be read is added to <paramref name="refusals"/>.</summary>
+    public ChainDesign Resolve(List<string> refusals) => ChainScaling.Resolve(this, refusals);
+
     /// <summary>Why this design cannot be budgeted, or null. Every cause, one sentence each.</summary>
     public IReadOnlyList<string> Refusals()
     {

@@ -46,6 +46,7 @@ public static class ChainBudgetDisplay
     public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget,
                                           IReadOnlySet<string>? written = null)
     {
+        design = budget.Design ?? design;
         string src = ChainBenches.CellName(chain, bench) + ".npy";
         switch (bench)
         {

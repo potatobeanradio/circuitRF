@@ -197,6 +197,7 @@ public static class ChainBenches
                                                       List<string>? notes = null, List<string>? leftOut = null)
     {
         if (r.Totals is null) return [];
+        d = r.Design ?? d;
         var kinds = BenchesFor(d);
         var whole = kinds.ToDictionary(b => b, b => Emit(d, r, chain, b, benchBase));
         var conv = Conversions(d, r, chain);
@@ -307,6 +308,7 @@ public static class ChainBenches
     {
         var r = ChainBudget.Evaluate(d);
         if (r.Totals is null) return new([], r.Refusals, []);
+        d = r.Design ?? d;
         if (NameValidator.Validate(chain) is { } bad) return new([], [$"'{chain}' cannot name a cell: {bad}"], []);
 
         var planned = new List<string>();
@@ -366,6 +368,7 @@ public static class ChainBenches
     public static ChainDiagram? Diagram(ChainDesign d, ChainBudgetResult r)
     {
         if (r.Totals is null) return null;
+        d = r.Design ?? d;
         var e = new Emitter(d, r, "chain", ChainBench.OneTone, diagram: true);
         var text = e.Emit();
         var (lib, tb) = new CnlReader().Read(text.Netlist, "tb", null);

@@ -644,7 +644,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         foreach (var (row, s) in Stages.Zip(r.Stages))
             row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
         Diagram = ChainBenches.Diagram(d, r);
-        Blocks(d, r);
+        Blocks(r.Design ?? d, r);
         RefillCascade(r);
         RefillLevels(d, r);
         RefillCanceller(d);
