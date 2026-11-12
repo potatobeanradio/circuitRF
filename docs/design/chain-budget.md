@@ -218,6 +218,46 @@ from its own antenna. The NF from that Port at the beam's peak is then one eleme
 paths it is the budget's plus the taper's loss, 10·log10 N − (Σa_k)²/Σa_k², because the splitter shares the wave equally
 where the combiner weighs it unequally.
 
+**More than one mixer: what one run holds, and the conversions.** Each LO is a tone, and three limits stop a
+dual-conversion chain's benches as one run each, measured on a 2.45 GHz → 350 MHz → 10.7 MHz receiver before the fix:
+the 1-Tone bench's harmonic-balance noise run takes one or two tones (three refused); the 2-Tone and Levels runs on
+four tones at 5 + mixers = 7 retain 1,121 mixing products, over the 600 cap; the Envelope and Demo runs would need a
+third fundamental. `ChainBenches.Build` now checks every analysis before a bench is written (`Emitter.Order`,
+`Emitter.EnvelopeFits`): the highest mixing order at or below the converged one that the cap takes and on which no two
+products share a frequency, down to the least that carries what the bench reads, else a refusal. A bench refused as the
+whole chain is written per conversion (`ChainBenches.Conversions`): conversion k from the stage after mixer k − 1 to
+mixer k, so the filter in front of each mixer is in its conversion; driven at the budget's level and frequency there,
+the blockers as they arrive there, and a source temperature of the noise delivered there, (Ts + Te)·Gn, which makes
+its SNR and noise floor the whole chain's at every node. The 1-Tone, Levels and Blockers benches split together, since
+the Levels display reads all three. The 2-Tone bench stays whole at MaxMixOrder 5 (341 products), about 90 s, and reads
+its intercepts 3×10⁻³ dB high, against 2×10⁻⁴ dB at the order a single mixer's converge at.
+
+**The second envelope LO, and blockers on images.** An envelope run takes a tone as a fundamental of its own only more
+than three of a carrier's bandwidths from it: a 10.7 MHz second IF puts the second LO 10.7 MHz from the 5 MHz NR
+carrier at the first IF, so that conversion's Envelope and Demo are left out; the example uses 21.4 MHz. Blockers
+exactly on both mixers' images put two products on 10.7 MHz (in one run, (1,0,−1,2) and (0,1,−1,0) on 328.6 MHz as
+well): the harmonic-balance run does not refuse that, it reads the blocker 9.53 dB high at the first IF. With the second
+blocker 1 MHz off the image the same run reads 0.0025 dB. Coinciding products are now a refusal.
+
+**An LO above the signal.** Two defects that a single high-side mixer already had, found here: the IF's tracked product
+index is then the conjugate of the half-space one the lattice keeps, so every row naming it failed to resolve; and the
+noise run's input sideband went through the RF tone's index, (2, −1), where the signal reaches the IF through the LO,
+(0, −1): NF 103 dB. The bench now names the kept product, and the sideband is −v₁ over the LOs alone; a low-side
+mixer's bench is unchanged.
+
+**Three things the budget assumes, met in the example's design.** With the IF amplifier between the image filter and
+MIX2, the amplifier's own noise at MIX2's image reached the mixer: the second conversion's NF read 1.4 dB over its
+budget. The example puts the amplifier ahead of the image filter. With nothing between MIX1 and that amplifier, the
+amplifier saw MIX1's sum product at 4.55 GHz, and its third-order term mixed it with the IF onto the IF's own IM3,
+(f₁ + f_LO) + (f₁ − f_LO) − (f₂ + f_LO) = 2f₁ − f₂ − f_LO: the whole chain's IIP3 read 0.44 dB under the budget, which
+takes each stage's IM3 from the wanted signal alone. A roofing filter in front of the amplifier brings it to 1.6×10⁻³ dB
+(3rd order, 300 to 400 MHz) or 3.1×10⁻³ dB (the example's, 5th order, 200 to 600 MHz), the four-tone run's own truncation
+at MaxMixOrder 5; a per-conversion
+2-Tone bench would not have shown it, its source being the clean IF. And a narrow 3rd-order second IF filter (18.6 to
+24.6 MHz) reflected 14 % at the IM3 frequencies, so the node before it read the IM3 1.1 dB low, and its skirt took
+0.08 dB off the output's IM3 (the first whole-chain 2-Tone's +0.038 dB); a 5th-order filter of 13.6 to 33.6 MHz keeps
+the Levels on the budget to 4×10⁻⁴ dB.
+
 ## 4. Verification
 
 `testdata/chain/plot_chain_compare.py` runs the example's superhet and array, and an RF-only array, through the CLI

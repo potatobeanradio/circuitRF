@@ -4,7 +4,7 @@ slug: reference/chain-budget.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > RF Chain Budget
 lede: A receive chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
-keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, .cchain
+keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, .cchain
 ---
 
 <nav class="toc">
@@ -18,6 +18,7 @@ keywords: chain budget, link budget, cascade, receiver, Friis, noise figure, cas
 <li><a href="#array">Arrays: N elements into a combiner</a></li>
 <li><a href="#variants">The combiner's four variants</a></li>
 <li><a href="#transfer">Transfer to Schematic</a></li>
+<li><a href="#conversions">More than one conversion</a></li>
 <li><a href="#steering">Steering the beam in simulation</a></li>
 <li><a href="#levels">Levels at every node</a></li>
 <li><a href="#canceller">The canceller</a></li>
@@ -46,8 +47,8 @@ differences that matter here:
 
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
-- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array and a front end
-  with a canceller, each already transferred.
+- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
+  with a canceller and a dual-conversion receiver, each already transferred.
 
 {{ui: chain-budget}}
 
@@ -187,12 +188,19 @@ available-power gains, T the noise temperatures and T0 = 290 K:
 | SFDR | (2/3)·(IIP3 − MDS) |
 
 The intercept sum takes every stage's third-order products in phase, the worst case. For ideal blocks with real gains
-that is exactly what happens, and the two-tone simulation agrees to 2×10⁻⁴ dB. The compression sum is an approximation of
+that is exactly what happens, and the two-tone simulation agrees to 2×10⁻⁴ dB. It takes each stage's products from the
+wanted signal alone: an amplifier right after a mixer, with no filter between them, also sees the mixer's sum product,
+and its third-order term mixes that with the IF onto the IF's own IM3, which the budget does not have (0.44 dB of IIP3 in
+the dual-conversion example without its roofing filter). The compression sum is an approximation of
 the same form: when two stages compress at similar levels the cascade compresses a little later than it predicts (see
 [agreement](#agreement)).
 
 **A mixer's noise figure is its single-sideband one**, and an SSB figure is stated with the image sideband terminated at
-T0. The budget also takes the image as filtered of every earlier stage's noise, which is what a preselector is for.
+T0. The budget also takes the image as filtered of every earlier stage's noise, which is what a preselector is for. That
+holds when the image filter is right in front of the mixer: a stage between them, an amplifier say, puts its own noise
+at the image, which the budget does not have. **To see how much of an image a chain rejects**, give it a blocker at the
+image's offset: the [levels](#levels) carry it through each filter's own response and each mixer, and its level at the
+output, against the signal's, is the chain's rejection of that image.
 
 ## Arrays: N elements into a combiner {#array}
 
@@ -267,7 +275,8 @@ IIP3 10 dBm), at the combiner's output and per element:
 **Transfer to Schematic** saves the chain and writes its test-bench cells beside the `.cchain`, named after it, each
 with a Data Display of the same name that Simulate opens on the bench's own result. Every chain gets 1-Tone, 2-Tone,
 Envelope and Levels; a chain with blockers a Blockers bench; a chain with a canceller a Canceller bench; an array whose
-branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo:
+branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo. A chain
+with more than one mixer gets most of them once per [conversion](#conversions):
 
 | Bench | Source | Analyses | Measures |
 |---|---|---|---|
@@ -299,6 +308,43 @@ its prediction beside it is computed in that bandwidth.
 An array's 1-Tone bench has N + 1 ports. Its gain is |Σₖ S(N+1, k)|², which is the budget's only if every phase shifter
 removes its element's steering, and its NF is one element's: F = 1 + (F₁ − 1)·|S(N+1, 1)|²/Σₖ|S(N+1, k)|², where F₁ is
 the noise factor from port 1 with the other elements' terminations noiseless — F = 1 + (F₁ − 1)/N for equal paths.
+
+## More than one conversion {#conversions}
+
+Every bench Transfer writes is checked against what its runs take: a harmonic-balance run at most six tones and 600
+mixing products, its noise run one or two tones, and an envelope run two fundamentals, the carrier's and one LO's, with
+the LO more than three of the carrier's bandwidths from it. Each LO is a tone of its own, so a chain with two mixers
+outgrows them: its 1-Tone bench's noise run would have three tones, and its envelope runs three fundamentals.
+
+Such a chain is checked **once per conversion**. Conversion k runs from the stage after mixer k − 1 (from the input, for
+the first) to mixer k (to the output, for the last), so each holds one mixer and the filtering in front of it. Its
+benches are named after the IF it ends at, `<chain> IF1 1-Tone`, `<chain> IF2 1-Tone` and so on, and each is the chain
+from that point on:
+
+- driven at the IF the conversion before it ends at, at the budget's level there, with every blocker as it arrives
+  there;
+- from a source whose temperature is the noise the stages before it deliver, (Ts + Te)·Gn, so that its SNR and its
+  noise floor at every node are the whole chain's;
+- beside its own budget: its gain, NF and intercepts are those of its own stages, and the whole chain's follow from them
+  by the same sums, F = F₁ + (F₂ − 1)/G₁ and 1/IIP3 = 1/IIP3₁ + G₁/IIP3₂.
+
+A bench one run can hold is still written for the whole chain, at a lower mixing order when the cap needs it. A
+dual-conversion chain's 2-Tone bench is one: four tones (the two, and both LOs) at MaxMixOrder 5, the least that carries
+the output's IM3, retain 341 mixing products, where the 7 its IF stages converge at would retain 1,121. Transfer says
+so, and the intercepts read 3×10⁻³ dB high ([agreement](#agreement)). A run of the whole chain also sees what a
+conversion's bench, fed a clean IF, cannot: the cross-products of the [cascade](#cascade)'s note. The 1-Tone, Levels and Blockers benches go per
+conversion together, since the Levels display reads all three node by node. In the window the Levels tab then shows
+the budget's lines, and each conversion's display its simulated points.
+
+A bench no run can hold even per conversion is not written, and both Transfer and `circuitrf check` say why (in `check`,
+a `chain.bench.left-out` warning). Two causes besides too many tones or products:
+
+- **An LO within three bandwidths of the envelope's carrier.** The Envelope and Demo benches send an NR carrier near the
+  chain's bandwidth, 5 MHz for 4.5 MHz. A second IF of 10.7 MHz puts the second LO 10.7 MHz from that carrier at the first
+  IF, and the second conversion's Envelope and Demo benches are left out; a second IF of 21.4 MHz runs.
+- **Two products on one frequency.** A blocker exactly on a mixer's image converts to exactly where another tone's
+  product lands, and a harmonic-balance run cannot tell the two apart. Move the blocker a little off the image, as the
+  example's second blocker is.
 
 ## Steering the beam in simulation {#steering}
 
@@ -465,6 +511,22 @@ EVM's noise part 57.0 % against the budget's 1/√SNR of 56.2 %. Higher up, two 
 over: the LO's phase noise, 1.23 % of EVM in the distortion part, which is the mask integrated over the channel
 (−38.2 dBc), and a noise part that stops at about 1 % (40 dB of SNR), which the Canceller bench's NR carriers show as
 well. At 5 dB past the input P1dB the distortion part is 15.5 %.
+
+The dual-conversion receiver's benches, each conversion's against its own budget:
+
+| Quantity | To IF1 | From IF1 | Why it differs at all |
+|---|---|---|---|
+| Gain | −1.1×10⁻⁴ dB | −1.1×10⁻⁴ dB | the small-signal drive, as above |
+| NF, and each stage's | +3.1×10⁻⁵ dB | +9.9×10⁻⁵ dB | as above |
+| IP1dB | +0.033 dB | +0.044 dB | the cascaded-P1dB formula |
+| Signal and IM3 at every node | 1.1×10⁻⁵ and 2.5×10⁻⁵ dB | 1.3×10⁻⁵ and 3.4×10⁻⁴ dB | |
+| Each blocker at every node | 0.0013 to 0.0025 dB under | 8×10⁻⁵ dB; the input +0.0018 dB | the blockers' compression; the second conversion's input has no isolator in front of its roofing filter |
+| SNR, envelope | −0.45 dB | +0.016 dB | the first conversion ends at MIX1's output, 7.5 dB over a noise factor of 1.41, so the load's own noise, which the budget leaves out, is 1/7.9 of what reaches it: 0.52 dB |
+
+Cascaded by Friis, the two conversions' simulated gain and NF are the whole chain's budget to 2×10⁻⁴ dB and 8×10⁻⁵ dB.
+The whole chain's 2-Tone bench, four tones at MaxMixOrder 5, reads IIP3 and OIP3 3×10⁻³ dB high and every stage's OIP3
+within 5×10⁻³ dB. Each conversion's Demo reads its SNR at the lowest power on its budget, once the load's noise is
+counted (−0.48 dB to MIX1's output, +0.08 dB to the end).
 
 The array's Steering bench puts its pattern on the closed-form array factor to 3×10⁻⁹ dB within 3 dB of each peak and
 to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on the budget to 10⁻¹⁴ dB. The Combiners bench

@@ -271,11 +271,20 @@ the chain drawn by the schematic renderer, the cascade on the Data Display model
 checkpointed); the CLI verb is `chain`; the benches are ordinary schematics of System blocks run by the existing
 S-parameter, harmonic-balance and envelope analyses. Nothing new in the engine.
 
+A chain with more than one mixer (added 2026-11-12) outgrows what one run holds, since each LO is a tone: Transfer
+checks every bench against the harmonic-balance and envelope limits before writing it, writes the ones a run can hold
+for the whole chain (a lower mixing order when the 600-product cap needs it, said), the others once per conversion,
+each from the IF the one before it ends at and beside its own budget, and leaves out, with the reason, what no run can
+hold. The example has a 2.45 GHz → 350 MHz → 21.4 MHz receiver.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
   benches terminate the image at T0 with an isolator. A chain whose filter passes the image would need the budget to
-  carry each stage's gain at the image frequency.
+  carry each stage's gain at the image frequency. A blocker at the image's offset shows a chain's rejection of it.
+- **A multi-conversion chain end to end.** Its 1-Tone, Levels, Blockers, Envelope and Demo benches are per conversion
+  (a harmonic-balance noise run takes two tones, an envelope run two fundamentals); the window's Levels tab shows its
+  budget alone, and its 2-Tone bench, whole at MaxMixOrder 5 under the 600-product cap, reads 3×10⁻³ dB high.
 - **Up-conversion and transmit chains.** A mixer stage down-converts to |f − Flo|; there is no sum-frequency or
   transmit (output-power-referred) budget.
 - **A frequency sweep of the budget.** The budget is at one frequency; a filter's ripple and roll-off are not in it.

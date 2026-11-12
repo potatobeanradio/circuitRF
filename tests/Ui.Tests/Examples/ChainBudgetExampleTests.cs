@@ -1,8 +1,9 @@
 // ================================================================
 //  ChainBudgetExampleTests.cs — the "RF Chain Budget" example workspace
 //
-//  The two chains (a 2.45 GHz superhet and a four-element steered array) and their transferred benches, run as Simulate
-//  runs them (SchematicRunService.RunNetlist on the schematic's own netlist), in a temporary copy of the workspace:
+//  The four chains (a 2.45 GHz superhet, a four-element steered array, a front end with a canceller and a dual-conversion
+//  receiver) and their transferred benches, run as Simulate runs them (SchematicRunService.RunNetlist on the schematic's
+//  own netlist), in a temporary copy of the workspace:
 //
 //    - the shipped benches and displays are what Transfer to Schematic writes from the shipped .cchain today, to the
 //      last bit of a computed number (which the platform's maths library decides);
@@ -10,9 +11,11 @@
 //    - each bench's simulated gain, NF, intercepts, compression and SNR sit on the budget within the tolerances the
 //      README quotes, stage by stage;
 //    - the array's Steering bench draws the closed-form array factor at every steer angle, its NF and array gain staying
-//      put at each beam's peak, and its Combiners bench sets the four combiners each on its own budget.
+//      put at each beam's peak, and its Combiners bench sets the four combiners each on its own budget;
+//    - the dual-conversion receiver's benches, each conversion's on its own budget, and the two conversions' simulated
+//      gain and NF cascading to the whole chain's budget.
 //
-//  The 2-Tone and Envelope runs take 7 to 50 s each, so those are Category=Benchmark.
+//  The 2-Tone and Envelope runs take 7 to 110 s each, so those are Category=Benchmark.
 // ================================================================
 
 using System;
@@ -38,7 +41,14 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion"];
+
+    /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
+    private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(root, chain + ".cchain"));
+        return ChainBenches.Build(d, ChainBudget.Evaluate(d), chain);
+    }
 
     private readonly string _ws = Path.Combine(Path.GetTempPath(), "crf-chainex-" + Guid.NewGuid().ToString("N")[..8]);
 
@@ -54,9 +64,9 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
             var w = ChainBenches.Write(d, _ws, chain, replace: true);
             Assert.Empty(w.Refusals);
             ChainBudgetDisplay.WriteAll(_ws, chain, d, ChainBudget.Evaluate(d));
-            foreach (var b in ChainBenches.BenchesFor(d))
+            foreach (var b in Benches(_ws, chain))
             {
-                string cell = ChainBenches.CellName(chain, b);
+                string cell = b.CellName;
                 SameUpToTheLastBit(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)), cell + ".csch");
                 SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
             }
@@ -94,24 +104,26 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.Equal(0, CliEntry.Run(["check", Workspace]));
         foreach (string chain in Chains)
         {
-            var benches = ChainBenches.BenchesFor(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, chain + ".cchain")));
+            var benches = Benches(Workspace, chain);
             // Each bench's MEAS rows, by the result file a display trace names: a display reads its own bench, and the
-            // Levels display also the 1-Tone and Blockers benches of its chain.
-            var rowsOf = benches.ToDictionary(b => ChainBenches.CellName(chain, b) + ".npy", b =>
+            // Levels display also the 1-Tone and Blockers benches of its chain, or of its conversion.
+            var rowsOf = benches.ToDictionary(b => b.CellName + ".npy", b =>
             {
-                var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(ChainBenches.CellName(chain, b), Workspace));
+                var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(b.CellName, Workspace));
                 return model.Components.Where(c => c.Symbol == SymbolKind.Meas)
                             .SelectMany(c => c.Parameters.Select(p => p.Name)).ToHashSet(StringComparer.Ordinal);
             });
-            foreach (var b in benches)
+            foreach (var bench in benches)
             {
-                string cell = ChainBenches.CellName(chain, b);
+                var b = bench.Kind;
+                string cell = bench.CellName;
                 var cdd = JsonNode.Parse(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")))!;
                 foreach (var trace in cdd["Tabs"]![0]!["Plots"]!.AsArray().SelectMany(p => p!["Traces"]!.AsArray()))
                 {
                     string src = (string?)trace!["SourcePath"] ?? "";
                     Assert.True(rowsOf.ContainsKey(src), $"{cell}.cdd reads '{src}', which is not a bench of {chain}");
                     if (b != ChainBench.Levels) Assert.Equal(cell + ".npy", src);
+                    else Assert.StartsWith(bench.Chain + " ", src);
                     if ((string?)trace["CubeName"] is { Length: > 0 } cube)
                         Assert.True(rowsOf[src].Contains(cube), $"{cell}.cdd shows '{cube}', which {src}'s MEAS block does not compute");
                 }
@@ -267,6 +279,114 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.InRange(M(ds, "SNR_err"), -0.5, 0.5);
         Assert.InRange(M(ds, "Pout_err"), -0.1, 0.1);
         Assert.InRange(M(ds, "EVM_sim") / M(ds, "EVM_calc"), 0.9, 1.1);
+    }
+
+    // ── the dual-conversion receiver: per conversion, and the conversions cascaded ──
+
+    /// <summary>Each conversion's 1-Tone bench on its own budget, stage by stage; and the two together, their simulated
+    /// gains added and their simulated noise factors cascaded by Friis, on the whole chain's budget.</summary>
+    [Fact]
+    public void DualConversion_1Tone_EachConversionOnItsBudget_AndTogetherTheWholeChains()
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Dual Conversion.cchain"));
+        var t = ChainBudget.Evaluate(d).Totals!;
+        var one = Simulate("Dual Conversion IF1 1-Tone");
+        var two = Simulate("Dual Conversion IF2 1-Tone");
+        foreach (var (ds, stages) in new[] { (one, new[] { "LNA", "RFBPF", "MIX1" }), (two, new[] { "IF1BPF", "IF1A", "IMGBPF", "MIX2", "IF2BPF", "IF2A" }) })
+        {
+            Assert.InRange(M(ds, "G_err"), -5e-4, 5e-4);
+            Assert.InRange(M(ds, "NF_err"), -2e-4, 2e-4);
+            foreach (string s in stages) Assert.InRange(M(ds, $"NF_{s}_sim") - M(ds, $"NF_{s}_calc"), -2e-4, 2e-4);
+            Assert.InRange(M(ds, "IP1dB_err"), 0, 0.1);
+        }
+        static double Lin(double db) => Math.Pow(10, db / 10);
+        double g = M(one, "G_sim") + M(two, "G_sim");
+        double nf = 10 * Math.Log10(Lin(M(one, "NF_sim")) + (Lin(M(two, "NF_sim")) - 1) / Lin(M(one, "G_sim")));
+        output.WriteLine($"Dual Conversion: the conversions cascaded, gain {g:F5} dB against {t.GainDb:F5}, NF {nf:F5} dB against {t.NfDb:F5}");
+        Assert.InRange(g - t.GainDb, -1e-3, 1e-3);
+        Assert.InRange(nf - t.NfDb, -2e-4, 2e-4);
+    }
+
+    /// <summary>Each conversion's levels and blockers on the budget node by node, the two image blockers among them. The
+    /// second conversion's input reads the second blocker 0.002 dB high: the roofing filter there reflects a little at
+    /// 308 MHz, and the input node is the one with no isolator in front of it.</summary>
+    [Fact]
+    public void DualConversion_LevelsAndBlockers_EveryNodeOnTheBudget()
+    {
+        foreach (var (conv, nodes) in new[] { ("IF1", 3), ("IF2", 6) })
+        {
+            var lev = Simulate($"Dual Conversion {conv} Levels");
+            var blk = Simulate($"Dual Conversion {conv} Blockers");
+            for (int k = 0; k <= nodes; k++)
+            {
+                Assert.InRange(M(lev, $"Psig_{k}_err"), -1e-4, 1e-4);
+                // A node before anything nonlinear has no IM3 to read.
+                if (lev.CubesIn("measurements").ContainsKey($"IM3_{k}_err")) Assert.InRange(M(lev, $"IM3_{k}_err"), -1e-3, 1e-3);
+                Assert.InRange(M(blk, $"Blk1_{k}_err"), -0.01, 5e-3);
+                Assert.InRange(M(blk, $"Blk2_{k}_err"), -0.01, 5e-3);
+            }
+        }
+    }
+
+    /// <summary>The whole chain's two tones, on four tones (the two, and both LOs): the 600-product cap allows MaxMixOrder 5,
+    /// the least that carries the output's IM3, and there the intercepts read 3×10⁻³ dB high, against 2×10⁻⁴ dB at the
+    /// order a single mixer's converge at.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void DualConversion_2Tone_TheWholeChainsIntercept_AtTheOrderTheCapAllows()
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Dual Conversion.cchain"));
+        var ds = Simulate("Dual Conversion 2-Tone");
+        Assert.InRange(M(ds, "G_err"), -1e-3, 1e-3);
+        Assert.InRange(M(ds, "IIP3_err"), -5e-3, 5e-3);
+        Assert.InRange(M(ds, "OIP3_err"), -5e-3, 5e-3);
+        foreach (var s in d.Stages)
+        {
+            Assert.InRange(M(ds, $"G_{s.Name}_sim") - M(ds, $"G_{s.Name}_calc"), -1e-3, 1e-3);
+            if (ds.CubesIn("measurements").ContainsKey($"OIP3_{s.Name}_calc"))
+                Assert.InRange(M(ds, $"OIP3_{s.Name}_sim") - M(ds, $"OIP3_{s.Name}_calc"), -5e-3, 5e-3);
+        }
+    }
+
+    /// <summary>
+    /// Each conversion's envelope SNR on the budget; the second's is the whole chain's, its source carrying the noise the
+    /// first delivers. The load's own noise is in the simulated SNR and not in the budget's: kT0 against the (Ts + Te)·G
+    /// a conversion delivers into it, 0.52 dB at the first conversion's output (MIX1's, 7.5 dB of gain) and nothing to
+    /// speak of after 32.5 dB.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Benchmark")]
+    [InlineData("IF1")]
+    [InlineData("IF2")]
+    public void DualConversion_Envelope_EachConversionsSnrOnTheBudget(string conv)
+    {
+        double load = LoadNoiseDb(conv);
+        var ds = Simulate($"Dual Conversion {conv} Envelope");
+        output.WriteLine($"Dual Conversion {conv} Envelope: the load's own noise {load:G3} dB of SNR");
+        Assert.InRange(M(ds, "SNR_err") + load, -0.35, 0.35);
+        Assert.InRange(M(ds, "Pout_err"), -0.1, 0.1);
+    }
+
+    [Theory]
+    [Trait("Category", "Benchmark")]
+    [InlineData("IF1")]
+    [InlineData("IF2")]
+    public void DualConversion_Demo_EachConversionsEvmIsItsBudgetsWhereNoiseDominates(string conv)
+    {
+        double load = LoadNoiseDb(conv);
+        var ds = Simulate($"Dual Conversion {conv} Demo");
+        var err = ds["measurements.SNR_QAM_err"].RealValues;
+        output.WriteLine($"Dual Conversion {conv} Demo: SNR err at the lowest power {err[0]:G3} dB, the load's own noise {load:G3} dB");
+        Assert.InRange(err[0] + load, -0.35, 0.35);
+    }
+
+    /// <summary>The SNR a conversion's load costs at its output, dB: 10·log10(1 + T0 / ((Ts + Te)·G)).</summary>
+    private static double LoadNoiseDb(string conv)
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Dual Conversion.cchain"));
+        var c = ChainBenches.Conversions(d, ChainBudget.Evaluate(d), "Dual Conversion")!.Single(x => x.Chain == $"Dual Conversion {conv}");
+        var t = c.Budget.Totals!;
+        return 10 * Math.Log10(1 + ChainBudget.T0 / ((c.Design.TemperatureK + t.TeK) * Math.Pow(10, t.GainDb / 10)));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

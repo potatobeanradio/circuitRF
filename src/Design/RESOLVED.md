@@ -30872,3 +30872,43 @@ drawn; a port across the cut is drawn as before.
 
 **A single-port field plot naming `Port: 1` found nothing.** Palace writes a single-excitation run's fields with no
 excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plots do.
+
+## The chain's benches with more than one mixer: what one run holds, and the conversions (CH-1, 2026-11-12)
+
+A two-mixer chain's budget was right (`StageInputFrequencies` moves the frequency at every mixer) but Transfer wrote
+benches the analyses refuse, with nothing to say so. Measured on a 2.45 GHz → 350 MHz → 10.7 MHz receiver:
+
+- **HB noise takes one or two tones.** The 1-Tone bench's noise run on (RF, LO1, LO2) is refused ("HB noise supports
+  one and two tones"). Its compression sweep on the same three tones at MaxMixOrder 7 does run (288 products), in 193 s.
+- **The 600-product cap.** The 2-Tone and Levels runs, four tones at 5 + mixers = 7, retain 1,121 products. At 5 they
+  run (341), in about 100 s, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
+  mixer). The first such run read 0.038 dB, which was not the order: a narrow second IF filter's skirt took 0.08 dB off
+  the output's IM3.
+- **Two envelope fundamentals.** A second LO is a third fundamental (with one carrier group, a tone counts as reached
+  only on a harmonic of the carrier, so no ordinary frequency plan avoids it). And an LO within three of a carrier's
+  bandwidths of it is refused even with one mixer: a 10.7 MHz second IF and a 5 MHz NR carrier.
+- **Coinciding products are not refused by harmonic balance; they are read wrongly.** With blockers exactly on both
+  mixers' images, (1,0,−1,2) and (0,1,−1,0) both sit on 328.6 MHz and the run read that blocker 9.53 dB high; 1 MHz
+  off the image, 0.0025 dB.
+- **An LO above the signal** (also with one mixer): the IF's tracked index was the conjugate of the half-space product
+  the lattice keeps, so its rows did not resolve, and the HB noise sideband went through the RF tone, (2, −1), instead of
+  through the LO, (0, −1), reading NF 103 dB.
+
+What `ChainBenches` does now: every analysis is checked before a bench is written (`Emitter.Order`,
+`Emitter.EnvelopeFits`); a bench refused as the whole chain is written per conversion (`ChainBenches.Conversions`),
+each conversion from the stage after one mixer to the next mixer, driven at the budget's level and frequency there and
+from a source at the noise delivered there, (Ts + Te)·Gn; the 1-Tone, Levels and Blockers benches split together; a
+bench no run holds even so is left out and named, in Transfer's notes and as `check`'s `chain.bench.left-out`. Indices
+are written in their half-space form and the noise sideband is −v₁ over the LOs; a low-side single-mixer bench is
+unchanged to the byte.
+
+Three things the budget does not have, met building the example, each now in its README and the design note: an
+amplifier between the image filter and the second mixer puts its own noise at the image (the second conversion's NF
+1.4 dB over its budget); an amplifier right after a mixer sees its sum product, and its third-order term mixes it with
+the IF onto the IF's own IM3 (the whole chain's IIP3 0.44 dB under the budget; a roofing filter in front of it, 3×10⁻³
+dB); and a narrow 3rd-order 21.4 MHz filter reflected 14 % at the IM3 frequencies, so the node in front of it read the
+IM3 1.1 dB low. The second is what only a whole-chain run shows, and why the 2-Tone bench stays whole where it fits.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `ADualConversionChain_IsCutIntoItsConversions_EachTheWholeChainsBudgetFromThere`,
+`WhatNoRunCanHold_IsNotWritten_AndTransferAndCheckSayWhy`, `AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget`;
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `DualConversion_*`.

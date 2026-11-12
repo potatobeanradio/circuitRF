@@ -19,7 +19,7 @@
     {
       "Folder": "RF Chain Budget",
       "Title": "RF Chain Budget",
-      "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet and a four-element steered array into a combiner, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them."
+      "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion."
     },
     {
       "Folder": "TRL and De-embedding",
