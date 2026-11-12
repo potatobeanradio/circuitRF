@@ -91,4 +91,58 @@ public sealed class PartReadingTests : IDisposable
         Assert.False(byX[2].IsModelled);
         Assert.True(byX[1].Terminals[1].OnGround);
     }
+
+    /// <summary>
+    /// R-as4-1 (3½): with no land and no mask, a body outline on the silkscreen over a gap is the part — a series one across a
+    /// gap cut in a line, a shunt one from the line's edge to the pour — named by the label beside it. Drawn as a polygon, as
+    /// four lines and as one closed stroke, they read alike; an outline over unbroken copper, and one round a land pattern's
+    /// pads, make no part.
+    /// </summary>
+    [Fact]
+    public void ABodyOutlineOverAGap_IsAPart_NamedByItsLabel_AndOneOverUnbrokenCopperIsNot()
+    {
+        var silk = new LayerKey(6, 0);
+        var tech = TwoLayerWithMask();
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = silk, Name = "Silk Top", Purpose = "silkscreen" }];
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 40_000, 20_000));
+        view.Shapes.Add(Line(Top, 0, 10_000, 5_000));                    // a gap from x = 10 to 10.5 mm
+        view.Shapes.Add(Line(Top, 10_500, 40_000, 5_000));
+        view.Shapes.Add(Rect(Top, 0, 6_000, 40_000, 20_000));            // the pour, 0.525 mm above the line
+        for (int i = 0; i < 8; i++) view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 15_000));
+        PolygonShape Box(double x0, double y0, double x1, double y1) => new()
+            { Layer = silk, Xy = [Um(x0), Um(y0), Um(x1), Um(y0), Um(x1), Um(y1), Um(x0), Um(y1)] };
+        LabelShape Label(string text, double x, double y) => new() { Layer = silk, Text = text, X = Um(x), Y = Um(y), Height = Um(800) };
+
+        view.Shapes.Add(Box(9_450, 4_600, 11_050, 5_400));               // C1 across the gap
+        view.Shapes.Add(Label("C1", 9_500, 3_200));
+        foreach (var (x0, y0, x1, y1) in new[] { (19_600, 4_950, 20_400, 4_950), (20_400, 4_950, 20_400, 6_550),
+                                                 (20_400, 6_550, 19_600, 6_550), (19_600, 6_550, 19_600, 4_950) })
+            view.Shapes.Add(new PathShape { Layer = silk, Xy = [Um(x0), Um(y0), Um(x1), Um(y1)], Width = 0 });   // L1, as four lines
+        view.Shapes.Add(Label("L1", 21_000, 5_500));
+        view.Shapes.Add(new PathShape { Layer = silk, Width = Um(150),                                        // R1, one closed stroke
+                                        Xy = [Um(29_600), Um(4_950), Um(30_400), Um(4_950), Um(30_400), Um(6_550), Um(29_600), Um(6_550), Um(29_600), Um(4_950)] });
+        view.Shapes.Add(Label("R1", 31_000, 5_500));
+        view.Shapes.Add(Box(34_200, 4_600, 35_800, 5_400));             // over unbroken line: no part
+        view.Shapes.Add(Label("C9", 34_500, 3_200));
+
+        var result = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = tech, Shapes = view.Shapes });
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(["C1", "L1", "R1"], result.Parts.Rows.Select(r => r.Refdes).Order());
+        Assert.Equal(PartConnection.Series, result.Parts.Row("C1")!.Connection);
+        Assert.Equal((PartConnection.Shunt, PartKind.L), (result.Parts.Row("L1")!.Connection, result.Parts.Row("L1")!.Kind));
+        Assert.Equal((PartConnection.Shunt, PartKind.R), (result.Parts.Row("R1")!.Connection, result.Parts.Row("R1")!.Kind));
+        Assert.All(result.Parts.Rows, r => Assert.Equal((PartEvidenceSource.Silkscreen, PartConfidence.Medium),
+                                                        (r.Evidence[PartField.Refdes], r.Confidence)));
+        Assert.Equal(3, result.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
+        Assert.Equal(1, result.Report.Count(RecognitionFindingClass.SilkscreenRefdesNotAssociated));   // C9 names nothing
+
+        // Round a land pattern's pads, an outline is that part's, not a second one.
+        var (board, _, _) = PartsBoard();
+        board.Shapes.Add(Box(10_500, 4_200, 13_500, 5_800));
+        var lands = ArtworkRecognition.Recognize(new RecognitionInput { View = board, Technology = tech, Shapes = board.Shapes });
+        Assert.Equal(3, lands.Parts.Rows.Count);
+        Assert.Equal(0, lands.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
+    }
 }

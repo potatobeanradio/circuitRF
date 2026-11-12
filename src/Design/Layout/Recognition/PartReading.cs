@@ -8,6 +8,9 @@
 //      designator, ahead of everything else, because the file says which pads form a part;
 //   3. land patterns — two pads matching a case's generated lands, from the mask or paste openings where
 //      the technology has those layers, else from pad-shaped copper and the trace review's "pad" ends;
+//   3½. a body outline over a gap in the copper — a silkscreen or assembly rectangle whose two short ends lie on two
+//      different pieces of copper, for a part bridging a gap cut in a line or a line's edge and a pour with no land of
+//      its own (BodyOutlineParts); below land patterns, so it names no pads a land pattern already took;
 //   4. silkscreen designators (AS-10, Silkscreen/), and any IPartEvidenceSource — each source's designators given
 //      to the unnamed parts one to one (RefdesAssociation);
 //   5. nothing — the pads matched, and kind and value are unknown.
@@ -162,6 +165,10 @@ public static class PartReading
             drafts.Add(d);
         }
 
+        // ── 3½. body outlines over gaps in the copper: parts with no land of their own ─────────────
+        var bodies = BodyOutlineParts(ctx, drafts);
+        drafts.AddRange(bodies);
+
         // ── 2a. the placement file, landed where RailPartMarks puts the part's body ────────────────
         var byRefdes = new Dictionary<string, Draft>(StringComparer.OrdinalIgnoreCase);
         foreach (var d in drafts) if (d.Refdes is { } r) byRefdes[r] = d;
@@ -261,6 +268,12 @@ public static class PartReading
             d.Refdes = $"C_A{++generated}";
             d.RefdesSource = PartEvidenceSource.Generated;
         }
+
+        report.Add(RecognitionFindingClass.PartsFromBodyOutlines, bodies.Count,
+            $"{Plural(bodies.Count, "part was", "parts were")} read from {(bodies.Count == 1 ? "its body outline" : "their body outlines")} " +
+            $"on the silkscreen, over a gap in the copper with no land of {(bodies.Count == 1 ? "its" : "their")} own: " +
+            $"{string.Join(", ", bodies.Take(12).Select(d => d.Refdes))}{(bodies.Count > 12 ? ", …" : "")}.",
+            [.. bodies.Select(d => new RecognitionAnchor(d.X, d.Y, d.Pads[0].Layer))]);
 
         // ── 2b. the bill of materials, by designator ─────────────────────────────────────────────
         var bom = input.Bom is { Refusal: null } table ? table : null;
@@ -663,6 +676,111 @@ public static class PartReading
     private static SmtCase? CaseOfToken(string? token) =>
         FootprintTokens.Match(token) is { Outcome: FootprintTokenOutcome.Matched, Case: { } c } ? c : null;
 
+    // ── body outlines over a gap (3½) ─────────────────────────────────────────────────────────────
+
+    /// <summary>A body is at least this many times as long as it is wide, so its two ends are known.</summary>
+    public const double MinBodyAspect = 1.2;
+
+    /// <summary>
+    /// R-as4-1 (3½): the parts whose body outline straddles a gap in the copper. A body is a closed, near-rectangular
+    /// outline (<see cref="MinRectangularity"/>) on a silkscreen or assembly layer, longer than it is wide
+    /// (<see cref="MinBodyAspect"/>) and no longer than a land pattern spans; drawn as one shape, a closed stroke, or lines
+    /// that chain into one loop. Its two halves along its length each meet copper of its side, and the copper with the most
+    /// of each half under it is a different piece at either end: a series part across a gap cut in a line, or a shunt part
+    /// from a line's edge to a pour. A terminal is the middle of the copper under its half. Below land patterns: an outline
+    /// round pads another rung found makes nothing. Kind and value come from the designator and the bill of materials, as
+    /// for any rung; the pads are only where the drawing says the part is, so it is a medium confidence reading.
+    /// </summary>
+    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found)
+    {
+        var tech = ctx.Input.Technology!;
+        var conductors = Conductors.Of(tech);
+        var parts = new List<Draft>();
+        if (conductors.Count == 0) return parts;
+        int dbu = ctx.Input.View.DbuPerMicron;
+        long maxLong = (long)(LandPatternMatch.References.MaxSpanUm * dbu), minShort = 100L * dbu;
+
+        var layers = SilkscreenText.Layers(tech).ToList();
+        foreach (var l in tech.Layers)
+        {
+            string alias = l.Interchange?.PcbLayerName ?? "", name = (l.Name ?? "").ToLowerInvariant();
+            if ((alias.EndsWith(".Fab", StringComparison.OrdinalIgnoreCase) || name.Contains("assembly")) && layers.All(x => x.Layer != l.Key))
+                layers.Add((l.Key, alias.StartsWith("B.", StringComparison.OrdinalIgnoreCase) || name.Contains("bottom") || name.Contains("bot")));
+        }
+
+        foreach (var (layer, bottom) in layers)
+        {
+            var side = (bottom ? conductors[^1] : conductors[0]).DrawingLayers.ToHashSet();
+            var rings = new List<long[]>();
+            var open = new List<long[]>();
+            foreach (var shape in ctx.Input.Shapes)
+            {
+                if (shape.Layer != layer) continue;
+                long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
+                switch (shape)
+                {
+                    case RectShape r: rings.Add([r.X1, r.Y1, r.X2, r.Y1, r.X2, r.Y2, r.X1, r.Y2]); break;
+                    case PolygonShape { Holes: null or { Count: 0 } } or CurveShape { Holes: null or { Count: 0 } }:
+                        rings.AddRange(LayoutFlattener.Flatten(shape, tol)); break;
+                    case PathShape path:
+                        var xy = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tol);
+                        if (xy.Length >= 8 && xy[0] == xy[^2] && xy[1] == xy[^1]) rings.Add(xy[..^2]); else open.Add(xy);
+                        break;
+                }
+            }
+            if (open.Count > 0) rings.AddRange(DxfCopperLoops.Chain(open, [], Math.Max(1, dbu)).Loops);
+
+            foreach (var ring in rings)
+            {
+                var box = BoundsOf(Clipper.MakePath(ring));
+                long w = box.MaxX - box.MinX, h = box.MaxY - box.MinY, lo = Math.Min(w, h), hi = Math.Max(w, h);
+                if (lo < minShort || hi > maxLong || hi < MinBodyAspect * lo) continue;
+                if (Math.Abs(Clipper.Area(Clipper.MakePath(ring))) < MinRectangularity * w * h) continue;
+                long cx = (box.MinX + box.MaxX) / 2, cy = (box.MinY + box.MaxY) / 2;
+                if (!InScope(ctx, cx, cy)) continue;
+                // An outline round a part another rung found — its pads under it, or its pads' box meeting it.
+                if (found.Concat(parts).Any(d => d.Body.Intersects(box) || d.Pads.Any(p => box.Contains(p.X, p.Y)))) continue;
+
+                bool alongX = w >= h;
+                var halves = alongX
+                    ? new[] { new Bbox(box.MinX, box.MinY, cx, box.MaxY), new Bbox(cx, box.MinY, box.MaxX, box.MaxY) }
+                    : new[] { new Bbox(box.MinX, box.MinY, box.MaxX, cy), new Bbox(box.MinX, cy, box.MaxX, box.MaxY) };
+                var ends = halves.Select(half => CopperUnder(ctx.Copper, half, side)).ToArray();
+                if (ends[0] is not { } a || ends[1] is not { } b || a.Piece == b.Piece) continue;
+
+                var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
+                d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
+                d.Pads.Add(new PlacedPin(null, "2", null, b.X, b.Y, PinSource.Artwork) { Layer = b.Layer });
+                d.Notes.Add("read from its body outline over a gap in the copper; it has no land of its own");
+                parts.Add(d);
+            }
+        }
+        return parts;
+    }
+
+    /// <summary>The piece of copper on <paramref name="side"/> with the most area under <paramref name="half"/>, and a point
+    /// on it there: the middle of that area's box, or one of its corners where the middle is off the copper.</summary>
+    private static (int Piece, long X, long Y, LayerKey Layer)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side)
+    {
+        var window = new Paths64 { Clipper.MakePath(new[] { half.MinX, half.MinY, half.MaxX, half.MinY, half.MaxX, half.MaxY, half.MinX, half.MaxY }) };
+        (int Piece, long X, long Y, LayerKey Layer)? best = null;
+        double most = 0;
+        for (int p = 0; p < copper.Pieces.Count; p++)
+        {
+            var layer = copper.Pieces.LayerOfPiece(p);
+            if (!copper.IsConductor[p] || !side.Contains(layer) || !copper.Pieces.BoundsOfPiece(p).Intersects(half)) continue;
+            var under = Clipper.Intersect(copper.Pieces.PathsOfPiece(p), window, LayoutClipper.Rule);
+            double area = Math.Abs(Clipper.Area(under));
+            if (area <= most || under.Count == 0) continue;
+            var box = Bbox.Empty;
+            foreach (var path in under) box = box.Union(BoundsOf(path));
+            long x = (box.MinX + box.MaxX) / 2, y = (box.MinY + box.MaxY) / 2;
+            if (copper.Pieces.IndexAt(x, y, layer) != p) (x, y) = (under[0][0].X, under[0][0].Y);
+            (best, most) = ((p, x, y, layer), area);
+        }
+        return best;
+    }
+
     // ── pad outlines: mask or paste openings where the technology has them, else copper ────────────
 
     private static List<PadOutline> Outlines(PartReadingContext ctx, RecognitionReport report)
@@ -865,7 +983,7 @@ public static class PartReading
             $"{Plural(silk.Count, "part was", "parts were")} named by the silkscreen: {Names(silk)}.");
         var land = bySource.GetValueOrDefault(PartEvidenceSource.Generated) ?? [];
         Add(RecognitionFindingClass.PartsFromLandPatternOnly, land,
-            $"{Plural(land.Count, "part was", "parts were")} found from land patterns alone and given generated designators: {Names(land)}.");
+            $"{Plural(land.Count, "part was", "parts were")} found from land patterns or body outlines alone and given generated designators: {Names(land)}.");
 
         var unknown = rows.Where(r => r.Kind == PartKind.Unknown && r.IsModelled).ToList();
         Add(RecognitionFindingClass.PartKindsUnknown, unknown,

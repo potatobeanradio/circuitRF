@@ -239,6 +239,15 @@ case=land;value=bom;pn=bom;model=file`):
    parts the reading already found, and declared pads form them. The declared NETS are a check only
    (`DeclaredPads.CrossCheck`): ground copper and every island a via joins straight to ground is one node; a node with
    two nets is `DeclaredNetsShorted`, a net on two nodes `DeclaredNetsOpen`, else one `DeclaredNetsAgree` line.
+3½. **Body outlines over a gap** (`PartReading.BodyOutlineParts`) — for a board drawn with no lands and no mask, where
+   a series part bridges a gap cut in a line and a shunt part a line's edge and a pour. A body is a closed outline on a
+   silkscreen or assembly layer (one shape, a closed stroke, or lines that chain into one loop, as `DxfCopperLoops`
+   chains copper), at least 82 % of its box, at least 1.2 times as long as it is wide and no longer than a land pattern
+   spans. Each half along its length takes the copper piece of its side with the most area under it; two different
+   pieces make a two-terminal part, a terminal at the middle of the copper under each half. An outline whose box meets a
+   part another rung found, or holds its pads, makes none. Below land patterns, so the pads it reads are only where the
+   drawing says the part is: confidence `medium`, `Evidence` `refdes=silk` once named. Reported as
+   `PartsFromBodyOutlines`.
 4. **The silkscreen** (AS-10, §9), then any further `IPartEvidenceSource`: each source's `PartClaim`s are given to the
    unnamed parts one to one by `RefdesAssociation` — never to a part a stronger source named, never a designator a
    stronger source already gave.
@@ -286,7 +295,7 @@ is the identity.
 
 ### 5.4 The report (R-as4-9)
 
-Parts by source (instances, placement, silkscreen, land pattern alone), unknown kinds, unknown values (the variables),
+Parts by source (instances, placement, silkscreen, land pattern alone, body outlines over a gap), unknown kinds, unknown values (the variables),
 values in the wrong dimension, SnP models, land-pattern ambiguities, shorted / bridged / off-copper parts left out,
 multi-pin parts and connectors cut out (with their part numbers, for Import Component), BOM designators and placement
 rows not found on the board, sides with no mask or paste layer, and a parts table's notes and unknown designators.

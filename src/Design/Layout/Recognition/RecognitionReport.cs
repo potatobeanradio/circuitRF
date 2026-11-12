@@ -105,6 +105,9 @@ public enum RecognitionFindingClass
     /// <summary>Parts found from land patterns alone, given generated designators.</summary>
     PartsFromLandPatternOnly,
 
+    /// <summary>Parts read from a body outline over a gap in the copper — no land of their own.</summary>
+    PartsFromBodyOutlines,
+
     /// <summary>Parts whose kind is unknown — generated as a capacitor.</summary>
     PartKindsUnknown,
 

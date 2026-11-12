@@ -783,3 +783,12 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   (`PartReading`'s association, unchanged). The strokes are read only while some part is unnamed, so the typed count is
   reported regardless (`SilkscreenLabelsRead`): with no part found it is what says the designators were there. A typed
   line has no glyphs, which `Lesson` already answers with nothing to learn. Gate: `TypedSilkscreenTests`.
+- **Parts with no land, from their body outline over a gap** (F8 of the DXF board; R-as4-1, R-as4-7). RF boards put a series
+  chip across a gap cut in a line and a shunt chip from the line's edge to a pour; drawn with no mask and no pad-shaped
+  copper, land-pattern matching has nothing to match, and `PartReading` found 0 parts on the board. Its body rectangle on
+  the silkscreen is still there, so a new rung (3½, below land patterns) reads a closed, near-rectangular outline no longer
+  than a land pattern spans as a two-terminal part when its two halves along its length lie over two different pieces of
+  copper; each terminal is the middle of the copper under its half. Kind and value come from the designator and the bill
+  of materials, as for every rung, and the confidence is `medium`. An outline round pads another rung found makes nothing,
+  so a Gerber board's silkscreen round its land patterns reads as before. A part's outline drawn as four lines or as a closed
+  stroke reads as a polygon does. Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_NamedByItsLabel_AndOneOverUnbrokenCopperIsNot`.
