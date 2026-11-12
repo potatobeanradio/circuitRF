@@ -372,6 +372,9 @@ One walk along each trace's pieces and joins:
   absorbed: its two nodes become one, and it is counted.
 - **Taps.** A part's terminal, a via or a port the trace runs *through* — within a width of its centre line, more than a
   width from either end — splits the line there: a shunt part's pad standing on a line is a node in it, not at its end.
+  A tap within half a micron of an existing split is at that split, whichever side of it rounding put it, so the walk's
+  direction (which a mirror image reverses) never moves it; and a second tap at a point another has taken is that tap's
+  node — two shunt parts either side of a line at one point are one node.
 
 ### 6.4 Junctions (R-as5-4, R-as5-5)
 

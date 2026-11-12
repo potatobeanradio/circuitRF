@@ -111,6 +111,9 @@ internal sealed record TraceLines(
     /// <summary>The attachments the trace runs through, each a node between two of its lines.</summary>
     public IReadOnlyList<string> Taps { get; init; } = [];
 
+    /// <summary>Taps at a point another tap took: each is that tap's node.</summary>
+    public IReadOnlyList<(string Tap, string SameAs)> TapAliases { get; init; } = [];
+
     public LineDraft First => Drafts.First(d => d.IsLine);
     public LineDraft Last => Drafts.Last(d => d.IsLine);
 }
@@ -241,7 +244,9 @@ internal static class LineSegmentation
 
         // ── taps: what the trace runs through rather than ends on ───────────────────────────────────
         var taps = new List<string>();
+        var aliases = new List<(string Tap, string SameAs)>();
         double total = at;
+        double onePoint = Math.Max(1, 0.5 * dbuPerMicron);   // two taps half a micron apart are at one point
         foreach (var (name, x, y) in onIsland ?? [])
         {
             for (int i = 0; i < n; i++)
@@ -256,10 +261,17 @@ internal static class LineSegmentation
                 // attaches within (LineRecognition.AttachReach*), and not one width.
                 double reach = Math.Max(p.Width, LineRecognition.AttachReachWidths * p.Width + LineRecognition.AttachReachMicrons * dbuPerMicron);
                 if (t < 0 || t > len[i] || off > reach || s < p.Width || s > total - p.Width) continue;
-                int a = atoms.FindIndex(o => o.S1 >= s);
-                if (a < 0) break;
-                if (s > atoms[a].S0 + 1e-6 && s < atoms[a].S1 - 1e-6) atoms.Insert(a + 1, atoms[a].SplitAt(s, stations));
-                atoms[a].TapAfter = name;
+                // The atom that ends where the tap is. A tap within half a micron of an atom's end is AT that end, whichever
+                // side rounding put it: one a hair past an atom's start went to that atom's end instead, a whole atom late,
+                // and on a trace's last atom the walk never closed a line there, so the terminal floated while the line ran
+                // on to its end — and which side a hair falls on is the direction the trace is walked, which a mirror image
+                // reverses. A second tap at the point another has taken is that tap's node, not an overwrite of it: two shunt
+                // parts either side of one line left one of the two floating.
+                int a = atoms.FindIndex(o => o.S1 >= s - onePoint);
+                if (a < 0 || a == atoms.Count - 1 && s >= atoms[a].S1 - onePoint) break;
+                if (s < atoms[a].S1 - onePoint) atoms.Insert(a + 1, atoms[a].SplitAt(s, stations));
+                if (atoms[a].TapAfter is { } taken) aliases.Add((name, taken));
+                else atoms[a].TapAfter = name;
                 taps.Add(name);
                 break;
             }
@@ -430,7 +442,7 @@ internal static class LineSegmentation
         var l = pieces[^1];
         var start = new ChainEnd(f.X0, f.Y0, -dir[0].X, -dir[0].Y, run.StartsAt, run.StartJunction, f.Width);
         var end = new ChainEnd(l.X1, l.Y1, dir[n - 1].X, dir[n - 1].Y, run.EndsAt, run.EndJunction, l.Width);
-        return new TraceLines(run, island, drafts, startNode, endNode, start, end) { Taps = taps };
+        return new TraceLines(run, island, drafts, startNode, endNode, start, end) { Taps = taps, TapAliases = aliases };
     }
 
     /// <summary>The model's miter option nearest the measured chamfer (R-as5-4): none, half a width, or the

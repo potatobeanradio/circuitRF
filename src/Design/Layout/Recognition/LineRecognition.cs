@@ -161,6 +161,7 @@ public static class LineRecognition
                                : name.StartsWith('O') ? (int)LineNodeKind.Open : (int)LineNodeKind.Between;
 
         var reached = traces.SelectMany(t => t.Taps).ToHashSet();
+        foreach (var (tap, same) in traces.SelectMany(t => t.TapAliases)) Union(tap, same);
         var loose = new List<(TraceLines T, bool AtStart, ChainEnd End, string Placeholder)>();
         (Attachment? Best, double D) Nearest(TraceLines t, ChainEnd end, Attachment? except)
         {

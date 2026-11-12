@@ -133,4 +133,46 @@ public sealed class PadsAndTapsTests
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
         Assert.Equal(0, result.Report.Count(RecognitionFindingClass.OpenEnds));
     }
+
+    /// <summary>
+    /// A 30 × 20 mm board: a 1.7 mm line edge to edge at y = 10 mm with the pour 0.6 mm clear above and below, and C6 and C7
+    /// from its two edges to the pour at x = 15 mm — or the same board turned over top to bottom.
+    /// </summary>
+    private static LayoutView TwoShuntPartsAtOnePoint(bool mirrored)
+    {
+        double Y(double y) => mirrored ? 20_000 - y : y;
+        RectShape R(double x0, double y0, double x1, double y1) => Rect(Top, x0, System.Math.Min(Y(y0), Y(y1)), x1, System.Math.Max(Y(y0), Y(y1)));
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 20_000));
+        view.Shapes.Add(R(0, 9_150, 30_000, 10_850));
+        view.Shapes.Add(R(0, 11_450, 30_000, 20_000));
+        view.Shapes.Add(R(0, 0, 30_000, 8_550));
+        foreach (double x in new double[] { 3_000, 12_000, 21_000, 28_000 })
+        {
+            view.Shapes.Add(ViaAt(x, Y(17_000)));
+            view.Shapes.Add(ViaAt(x, Y(3_000)));
+        }
+        view.Shapes.AddRange(Part("C6", 15_000, Y(11_150), alongX: false));
+        view.Shapes.AddRange(Part("C7", 15_000, Y(8_850), alongX: false));
+        return view;
+    }
+
+    /// <summary>Two shunt parts whose terminals land on one point of a line are one node that splits the line there, read
+    /// alike when the board is turned over: the second tap overwrote the first, and one part floated.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp(bool mirrored)
+    {
+        var result = Read(TwoShuntPartsAtOnePoint(mirrored));
+
+        Assert.True(result.Ok, result.Refusal);
+        string node = result.Lines.NodeOf("C6.1");
+        Assert.Equal(node, result.Lines.NodeOf("C7.1"));
+        var lines = Lines(result).ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.All(lines, line => Assert.Contains(node, line.Nodes));
+        Assert.Equal([15_000.0, 15_000.0], lines.Select(l => System.Math.Round(l.Micro("L"))));
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.CircuitSplitsCopper));
+    }
 }

@@ -822,3 +822,16 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   region joins the nodes of the `"pad"` ends running into it and of the attachments inside it, the pad an ideal short
   (`PadsJoinTheirMembers`). Junction centres are untouched: their arms end as `"junction"`. Modelling the pad as a wide
   line or a junction is left for later. Gate: `PadsAndTapsTests.EverythingOnAWidePad_IsOneNode`.
+- **A shunt part partway along a line floated; the reading depended on which way the line was walked** (F7; R-as5-3,
+  R-as5-6). The taps loop (`LineSegmentation`) splits a trace where a part terminal, via or port it runs past lands, and
+  marks the attachment reached. Two faults made a terminal a node that nothing touches while the line ran on past it. A
+  second tap at the point a first had split (two shunt capacitors either side of one line, C6 and C7 on the DXF board)
+  OVERWROTE the first's `TapAfter`, so whichever came first in the part order floated. And a tap's atom was the first
+  ending at or after it, with no tolerance, while the split test allowed one of 1e-6: a tap a hair past an atom's start
+  took that atom's END, a whole atom late, and on a trace's last atom the walk never closed a line there at all. Which
+  side of the hair a projection falls on is the direction the review walked the trace, which a mirror image reverses —
+  the two mirrored halves of one board read differently. A tap within half a micron of a split is now at it, either side,
+  and a second tap at a taken point is aliased to that tap's node (`TraceLines.TapAliases`). `TapBetween`'s and step 4's
+  ties go to the first candidate but give isomorphic circuits under a mirror, so they are unchanged. Gate:
+  `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` (both ways up) and
+  `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich`, the first mirror-invariance test.
