@@ -147,6 +147,18 @@ public sealed class PartReadingTests : IDisposable
             .Append(Box(29_600, 5_350, 30_400, 6_950))] });
         Assert.Equal(0, letters.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
 
+        // A loop chained from lines is a body only as a rectangle: a 0 of a legend exploded into lines — a box with its corners
+        // cut, 98 % of its box — makes none. And an outline over three pieces of copper — a three-terminal part's — is said, not
+        // read as two terminals.
+        (int, int)[] zero = [(9_550, 4_600), (10_950, 4_600), (11_050, 4_700), (11_050, 5_300), (10_950, 5_400), (9_550, 5_400), (9_450, 5_300), (9_450, 4_700)];
+        var exploded = ArtworkRecognition.Recognize(new RecognitionInput { View = view, Technology = tech, Shapes = [.. view.Shapes
+            .Where(s => s.Layer != silk)
+            .Concat(zero.Select((p, i) => (p.Item1, p.Item2, zero[(i + 1) % zero.Length].Item1, zero[(i + 1) % zero.Length].Item2))
+                .Select(e => (LayoutShape)new PathShape { Layer = silk, Xy = [Um(e.Item1), Um(e.Item2), Um(e.Item3), Um(e.Item4)], Width = 0 }))
+            .Append(Box(9_600, 4_600, 10_900, 6_600))] });   // over both lines either side of the gap, and the pour
+        Assert.Equal(0, exploded.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
+        Assert.Equal(1, exploded.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
+
         // Round a land pattern's pads, an outline is that part's, not a second one.
         var (board, _, _) = PartsBoard();
         board.Shapes.Add(Box(10_500, 4_200, 13_500, 5_800));

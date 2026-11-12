@@ -873,3 +873,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   on two cores are still joined but reported as `CopperJoinedWithoutLine`, naming both. The agreement line is no longer said
   while such a join is in the report. Reading the arc as a line is not done. Gate:
   `PadsAndTapsTests.TwoPadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`.
+- **Body outlines, narrowed again on review** (F8). A legend exploded into zero-width lines still chained into loops, and a
+  0 drawn as a box with cut corners is 98 % of its box: a chained loop is a body now only as a rectangle, four corners
+  filling their box. Requiring a closed shape outright would have dropped part bodies drawn as four lines, which drawings of
+  outlines do. And `CopperUnder` took the largest piece under each half, so an outline over three pieces of copper — a
+  three-terminal part's body — read as a two-terminal part; one over a third piece covering a twentieth of it is now left
+  out and said (`BodyOutlinesOverManyPieces`). Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_…`.

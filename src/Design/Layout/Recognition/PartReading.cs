@@ -166,7 +166,7 @@ public static class PartReading
         }
 
         // ── 3½. body outlines over gaps in the copper: parts with no land of their own ─────────────
-        var bodies = BodyOutlineParts(ctx, drafts);
+        var bodies = BodyOutlineParts(ctx, drafts, out var overMany);
         drafts.AddRange(bodies);
 
         // ── 2a. the placement file, landed where RailPartMarks puts the part's body ────────────────
@@ -274,6 +274,12 @@ public static class PartReading
             $"on the silkscreen, over a gap in the copper with no land of {(bodies.Count == 1 ? "its" : "their")} own: " +
             $"{string.Join(", ", bodies.Take(12).Select(d => d.Refdes))}{(bodies.Count > 12 ? ", …" : "")}.",
             [.. bodies.Select(d => new RecognitionAnchor(d.X, d.Y, d.Pads[0].Layer))]);
+        report.Add(RecognitionFindingClass.BodyOutlinesOverManyPieces, overMany.Count,
+            $"{Plural(overMany.Count, "body outline lies", "body outlines lie")} over more than two pieces of copper — a part of more " +
+            $"than two terminals, or an outline that is not a part's body — and {(overMany.Count == 1 ? "was" : "were")} not read as " +
+            $"{(overMany.Count == 1 ? "a part" : "parts")}: {string.Join(", ", overMany.Take(8).Select(b => fmt.Point((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)))}" +
+            $"{(overMany.Count > 8 ? ", …" : "")}.",
+            [.. overMany.Select(b => new RecognitionAnchor((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2))]);
 
         // ── 2b. the bill of materials, by designator ─────────────────────────────────────────────
         var bom = input.Bom is { Refusal: null } table ? table : null;
@@ -694,14 +700,16 @@ public static class PartReading
     /// of them at least (<see cref="MinEndCover"/>), and the copper with the most of each half under it is a different piece
     /// at either end: a series part across a gap cut in a line, or a shunt part
     /// from a line's edge to a pour. A terminal is the middle of the copper under its half. Below land patterns: an outline
-    /// round pads another rung found makes nothing. Kind and value come from the designator and the bill of materials, as
+    /// round pads another rung found makes nothing, and one over a third piece of copper is a part of more terminals and is said
+    /// instead. Kind and value come from the designator and the bill of materials, as
     /// for any rung; the pads are only where the drawing says the part is, so it is a medium confidence reading.
     /// </summary>
-    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found)
+    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found, out List<Bbox> overMany)
     {
         var tech = ctx.Input.Technology!;
         var conductors = Conductors.Of(tech);
         var parts = new List<Draft>();
+        overMany = [];
         if (conductors.Count == 0) return parts;
         int dbu = ctx.Input.View.DbuPerMicron;
         long maxLong = (long)(LandPatternMatch.References.MaxSpanUm * dbu), minShort = 100L * dbu;
@@ -737,7 +745,9 @@ public static class PartReading
                         break;
                 }
             }
-            if (open.Count > 0) rings.AddRange(DxfCopperLoops.Chain(open, [], Math.Max(1, dbu)).Loops);
+            // Lines a loop is chained from make a body only as a rectangle — four corners filling their box — so a legend
+            // exploded into lines, whose 0s and Ds chain into loops too, makes none.
+            if (open.Count > 0) rings.AddRange(DxfCopperLoops.Chain(open, [], Math.Max(1, dbu)).Loops.Where(IsRectangle));
 
             foreach (var ring in rings)
             {
@@ -758,6 +768,8 @@ public static class PartReading
                 if (ends[0] is not { } a || ends[1] is not { } b || a.Piece == b.Piece) continue;
                 double halfArea = 0.5 * (double)w * h;
                 if (a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea) continue;
+                // A third piece of copper under it: the body of a part of three terminals or more, which two ends would misread.
+                if (PiecesUnder(ctx.Copper, box, side) > 2) { overMany.Add(box); continue; }
 
                 var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
                 d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
@@ -767,6 +779,33 @@ public static class PartReading
             }
         }
         return parts;
+    }
+
+    /// <summary>Four corners, filling their axis-aligned box: a rectangle drawn as lines.</summary>
+    private static bool IsRectangle(long[] ring)
+    {
+        int n = ring.Length / 2, corners = 0;
+        for (int i = 0; i < n; i++)
+        {
+            long ax = ring[2 * ((i + n - 1) % n)], ay = ring[2 * ((i + n - 1) % n) + 1], bx = ring[2 * i], by = ring[2 * i + 1];
+            long cx = ring[2 * ((i + 1) % n)], cy = ring[2 * ((i + 1) % n) + 1];
+            if ((double)(bx - ax) * (cy - by) - (double)(by - ay) * (cx - bx) != 0) corners++;
+        }
+        var box = BoundsOf(Clipper.MakePath(ring));
+        return corners == 4 && Math.Abs(Clipper.Area(Clipper.MakePath(ring))) >= 0.98 * (box.MaxX - box.MinX) * (double)(box.MaxY - box.MinY);
+    }
+
+    /// <summary>How many pieces of copper on <paramref name="side"/> have a twentieth of <paramref name="box"/> or more under it.</summary>
+    private static int PiecesUnder(BoardCopper copper, Bbox box, HashSet<LayerKey> side)
+    {
+        var window = new Paths64 { Clipper.MakePath(new[] { box.MinX, box.MinY, box.MaxX, box.MinY, box.MaxX, box.MaxY, box.MinX, box.MaxY }) };
+        double least = 0.05 * (box.MaxX - box.MinX) * (double)(box.MaxY - box.MinY);
+        int count = 0;
+        for (int p = 0; p < copper.Pieces.Count; p++)
+            if (copper.IsConductor[p] && side.Contains(copper.Pieces.LayerOfPiece(p)) && copper.Pieces.BoundsOfPiece(p).Intersects(box)
+                && Math.Abs(Clipper.Area(Clipper.Intersect(copper.Pieces.PathsOfPiece(p), window, LayoutClipper.Rule))) >= least)
+                count++;
+        return count;
     }
 
     /// <summary>The piece of copper on <paramref name="side"/> with the most area under <paramref name="half"/>, and a point

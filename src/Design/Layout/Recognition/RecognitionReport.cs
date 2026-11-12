@@ -108,6 +108,9 @@ public enum RecognitionFindingClass
     /// <summary>Parts read from a body outline over a gap in the copper — no land of their own.</summary>
     PartsFromBodyOutlines,
 
+    /// <summary>Body outlines over more than two pieces of copper, not read as two-terminal parts.</summary>
+    BodyOutlinesOverManyPieces,
+
     /// <summary>Parts whose kind is unknown — generated as a capacitor.</summary>
     PartKindsUnknown,
 
