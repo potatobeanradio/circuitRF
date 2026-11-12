@@ -166,7 +166,7 @@ public static class PartReading
         }
 
         // ── 3½. body outlines over gaps in the copper: parts with no land of their own ─────────────
-        var bodies = BodyOutlineParts(ctx, drafts, out var overMany);
+        var bodies = BodyOutlineParts(ctx, drafts, out var overMany, out var onOne);
         drafts.AddRange(bodies);
 
         // ── 2a. the placement file, landed where RailPartMarks puts the part's body ────────────────
@@ -280,6 +280,12 @@ public static class PartReading
             $"{(overMany.Count == 1 ? "a part" : "parts")}: {string.Join(", ", overMany.Take(8).Select(b => fmt.Point((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)))}" +
             $"{(overMany.Count > 8 ? ", …" : "")}.",
             [.. overMany.Select(b => new RecognitionAnchor((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2))]);
+        report.Add(RecognitionFindingClass.BodyOutlinesOverOnePiece, onOne.Count,
+            $"{Plural(onOne.Count, "body outline has", "body outlines have")} one piece of copper the most under both ends — copper " +
+            $"running on under {(onOne.Count == 1 ? "it" : "them")}, no gap — and no other piece under each end as a part's end sits " +
+            $"on its copper, and {(onOne.Count == 1 ? "was" : "were")} not read as {(onOne.Count == 1 ? "a part" : "parts")}: " +
+            $"{string.Join(", ", onOne.Take(8).Select(b => fmt.Point((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)))}{(onOne.Count > 8 ? ", …" : "")}.",
+            [.. onOne.Select(b => new RecognitionAnchor((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2))]);
 
         // ── 2b. the bill of materials, by designator ─────────────────────────────────────────────
         var bom = input.Bom is { Refusal: null } table ? table : null;
@@ -699,17 +705,20 @@ public static class PartReading
     /// of no width that chain into one loop. Its two halves along its length each have copper of its side under a quarter
     /// of them at least (<see cref="MinEndCover"/>), and the copper with the most of each half under it is a different piece
     /// at either end: a series part across a gap cut in a line, or a shunt part
-    /// from a line's edge to a pour. A terminal is the middle of the copper under its half. Below land patterns: an outline
+    /// from a line's edge to a pour. A piece that has the most under both halves — a pour along a body wider than its line,
+    /// or the line itself running on unbroken — is beside the part, not an end: it is set aside and each half's copper taken
+    /// again, and an outline left with no two ends is said, never skipped silently. A terminal is the middle of the copper under its half. Below land patterns: an outline
     /// round pads another rung found makes nothing, and one over a third piece of copper is a part of more terminals and is said
     /// instead. Kind and value come from the designator and the bill of materials, as
     /// for any rung; the pads are only where the drawing says the part is, so it is a medium confidence reading.
     /// </summary>
-    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found, out List<Bbox> overMany)
+    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found, out List<Bbox> overMany, out List<Bbox> onOne)
     {
         var tech = ctx.Input.Technology!;
         var conductors = Conductors.Of(tech);
         var parts = new List<Draft>();
         overMany = [];
+        onOne = [];
         if (conductors.Count == 0) return parts;
         int dbu = ctx.Input.View.DbuPerMicron;
         long maxLong = (long)(LandPatternMatch.References.MaxSpanUm * dbu), minShort = 100L * dbu;
@@ -764,16 +773,27 @@ public static class PartReading
                 var halves = alongX
                     ? new[] { new Bbox(box.MinX, box.MinY, cx, box.MaxY), new Bbox(cx, box.MinY, box.MaxX, box.MaxY) }
                     : new[] { new Bbox(box.MinX, box.MinY, box.MaxX, cy), new Bbox(box.MinX, cy, box.MaxX, box.MaxY) };
-                var ends = halves.Select(half => CopperUnder(ctx.Copper, half, side)).ToArray();
-                if (ends[0] is not { } a || ends[1] is not { } b || a.Piece == b.Piece) continue;
+                // One piece the most under both halves is beside the part — a pour along a body wider than its line, both ends
+                // over it — or runs on under it unbroken: set aside, and each half's copper taken again.
+                var beside = new HashSet<int>();
+                var ends = halves.Select(half => CopperUnder(ctx.Copper, half, side, beside)).ToArray();
+                while (ends[0] is { } same && ends[1]?.Piece == same.Piece)
+                {
+                    beside.Add(same.Piece);
+                    ends = halves.Select(half => CopperUnder(ctx.Copper, half, side, beside)).ToArray();
+                }
                 double halfArea = 0.5 * (double)w * h;
-                if (a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea) continue;
+                if (ends[0] is not { } a || ends[1] is not { } b || a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea)
+                {
+                    if (beside.Count > 0) onOne.Add(box);
+                    continue;
+                }
                 // A third piece of copper under it as an end sits on its copper — under an end or the middle — or an island lying
                 // mostly under its middle, whatever its size: the body of a part of three terminals or more, which two ends would
                 // misread. A pour's sliver along the long edges, or a finger of it reaching in, is no terminal unless it is that big.
                 var middle = alongX ? new Bbox(box.MinX + w / 4, box.MinY, box.MaxX - w / 4, box.MaxY)
                                     : new Bbox(box.MinX, box.MinY + h / 4, box.MaxX, box.MaxY - h / 4);
-                if (PiecesUnder(ctx.Copper, halves, middle, MinEndCover * halfArea, side) > 2) { overMany.Add(box); continue; }
+                if (PiecesUnder(ctx.Copper, halves, middle, MinEndCover * halfArea, side, beside) > 2) { overMany.Add(box); continue; }
 
                 var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
                 d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
@@ -800,9 +820,9 @@ public static class PartReading
     }
 
     /// <summary>How many pieces of copper on <paramref name="side"/> are a terminal under a body: <paramref name="least"/> or
-    /// more under one of its <paramref name="halves"/> or its <paramref name="middle"/>, or half or more of the piece under its
-    /// middle — an island there, whatever its size.</summary>
-    private static int PiecesUnder(BoardCopper copper, Bbox[] halves, Bbox middle, double least, HashSet<LayerKey> side)
+    /// more under one of its <paramref name="halves"/> or its <paramref name="middle"/>, unless it is copper
+    /// <paramref name="beside"/> the body, or half or more of the piece under its middle — an island there, whatever its size.</summary>
+    private static int PiecesUnder(BoardCopper copper, Bbox[] halves, Bbox middle, double least, HashSet<LayerKey> side, HashSet<int> beside)
     {
         var paths = halves.Append(middle).Select(b => new Paths64 { Clipper.MakePath(new[] { b.MinX, b.MinY, b.MaxX, b.MinY, b.MaxX, b.MaxY, b.MinX, b.MaxY }) }).ToList();
         var all = halves.Aggregate(middle, (u, b) => u.Union(b));
@@ -812,14 +832,16 @@ public static class PartReading
             if (!copper.IsConductor[p] || !side.Contains(copper.Pieces.LayerOfPiece(p)) || !copper.Pieces.BoundsOfPiece(p).Intersects(all)) continue;
             var own = copper.Pieces.PathsOfPiece(p);
             double Under(Paths64 w) => Math.Abs(Clipper.Area(Clipper.Intersect(own, w, LayoutClipper.Rule)));
-            if (paths.Any(w => Under(w) >= least) || Under(paths[^1]) >= 0.5 * Math.Abs(Clipper.Area(own))) count++;
+            if ((!beside.Contains(p) && paths.Any(w => Under(w) >= least)) || Under(paths[^1]) >= 0.5 * Math.Abs(Clipper.Area(own))) count++;
         }
         return count;
     }
 
-    /// <summary>The piece of copper on <paramref name="side"/> with the most area under <paramref name="half"/>, and a point
-    /// on it there: the middle of that area's box, or one of its corners where the middle is off the copper; and that area.</summary>
-    private static (int Piece, long X, long Y, LayerKey Layer, double Area)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side)
+    /// <summary>The piece of copper on <paramref name="side"/>, not one set <paramref name="beside"/>, with the most area under
+    /// <paramref name="half"/>, and a point on it there: the middle of that area's box, or one of its corners where the middle
+    /// is off the copper; and that area.</summary>
+    private static (int Piece, long X, long Y, LayerKey Layer, double Area)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side,
+                                                                                       HashSet<int> beside)
     {
         var window = new Paths64 { Clipper.MakePath(new[] { half.MinX, half.MinY, half.MaxX, half.MinY, half.MaxX, half.MaxY, half.MinX, half.MaxY }) };
         (int Piece, long X, long Y, LayerKey Layer, double Area)? best = null;
@@ -827,7 +849,7 @@ public static class PartReading
         for (int p = 0; p < copper.Pieces.Count; p++)
         {
             var layer = copper.Pieces.LayerOfPiece(p);
-            if (!copper.IsConductor[p] || !side.Contains(layer) || !copper.Pieces.BoundsOfPiece(p).Intersects(half)) continue;
+            if (!copper.IsConductor[p] || beside.Contains(p) || !side.Contains(layer) || !copper.Pieces.BoundsOfPiece(p).Intersects(half)) continue;
             var under = Clipper.Intersect(copper.Pieces.PathsOfPiece(p), window, LayoutClipper.Rule);
             double area = Math.Abs(Clipper.Area(under));
             if (area <= most || under.Count == 0) continue;

@@ -137,6 +137,7 @@ public sealed class PartReadingTests : IDisposable
                                                         (r.Evidence[PartField.Refdes], r.Confidence)));
         Assert.Equal(3, result.Report.Count(RecognitionFindingClass.PartsFromBodyOutlines));
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.SilkscreenRefdesNotAssociated));   // C9 names nothing
+        Assert.Equal(1, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverOnePiece));        // and is said
 
         // Open strokes with a width are a legend's letters, and never chain into a body; nor is an outline a part when one
         // end has hardly any copper under it.
@@ -209,6 +210,23 @@ public sealed class PartReadingTests : IDisposable
         Assert.True(result.Ok, result.Refusal);
         Assert.Equal(series, result.Parts.Rows.Any(r => r.Refdes == "C1" && r.Connection == PartConnection.Series));
         Assert.Equal(series ? 0 : 1, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
+    }
+
+    /// <summary>An 0805 and a 1206 body across the same gap: the 1206's halves each have more of a pour under them than of the
+    /// line, the same pour for both, and the body was skipped with no word. A piece the most under both halves is beside the
+    /// part; set aside, with the other pour, the halves take the line either side of the gap, and both are the series part.</summary>
+    [Theory]
+    [InlineData(9_250.0, 4_375.0, 11_250.0, 5_625.0)]
+    [InlineData(8_650.0, 4_200.0, 11_850.0, 5_800.0)]
+    public void ABodyWiderThanItsCoplanarLineAndGaps_IsStillASeriesPart(double x0, double y0, double x1, double y1)
+    {
+        var result = CoplanarGap(x0, y0, x1, y1);
+
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(PartConnection.Series, Assert.Single(result.Parts.Rows, r => r.Refdes == "C1").Connection);
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverManyPieces));
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.BodyOutlinesOverOnePiece));
+        Assert.Equal(0, result.Report.Count(RecognitionFindingClass.OpenEnds));
     }
 
     /// <summary>The board of <see cref="ABodyWiderThanItsCoplanarLine_IsStillASeriesPart"/> — a 0.5 mm coplanar line with a

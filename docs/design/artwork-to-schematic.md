@@ -244,8 +244,10 @@ case=land;value=bom;pn=bom;model=file`):
    silkscreen or assembly layer (one shape, a closed stroke, or a drawing's lines of no width that chain into a rectangle,
    as `DxfCopperLoops` chains copper; a stroked legend's open strokes are letters and never chain), at least 82 % of its
    box, at least 1.2 times as long as it is wide and no longer than a land pattern spans. Each half along its length takes
-   the copper piece of its side with the most area under it, which must cover a quarter of the half; two different
-   pieces make a two-terminal part, a terminal at the middle of the copper under each half; an outline with a third piece
+   the copper piece of its side with the most area under it, which must cover a quarter of the half. One piece the most
+   under both halves is beside the part (a pour along a body wider than its line and gaps) or runs on under it unbroken:
+   it is set aside, and each half takes its copper again; an outline left with no two ends is said
+   (`BodyOutlinesOverOnePiece`), never skipped silently. Two different pieces make a two-terminal part, a terminal at the middle of the copper under each half; an outline with a third piece
    under an end or its middle as an end sits on copper (a quarter of a half), or an island lying mostly under its middle
    whatever its size, is a part of more terminals and is said instead (`BodyOutlinesOverManyPieces`) — a pour's sliver
    along its long edges, or a narrow finger of it reaching in, is not. An outline

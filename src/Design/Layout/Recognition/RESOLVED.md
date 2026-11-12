@@ -924,3 +924,11 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   the body's middle now counts whatever its size; a pour's finger reaching in keeps the quarter-of-a-half rule, so a
   0.3 mm finger is a third terminal and a 0.2 mm one is not. Gate:
   `PartReadingTests.CopperUnderABodysMiddle_IsAThirdTerminal_AnIslandWhateverItsSize`.
+- **A body over one pour at both ends is set aside, not skipped** (F8, third review). A 1206 body across the 0.5 mm coplanar
+  gap has more of a pour than of the line under each half — the same pour for both — and `a.Piece == b.Piece` skipped it
+  with no word: no part, two open line ends, and nothing in the report. A piece the most under both halves is now beside
+  the part: it is set aside, each half takes its copper again (here the other pour is set aside next, then the line either
+  side of the gap is each end), and the three-terminal check does not count what was set aside. An outline left with no
+  two ends — over a line running on unbroken, say — is said (`BodyOutlinesOverOnePiece`). Gates:
+  `PartReadingTests.ABodyWiderThanItsCoplanarLineAndGaps_IsStillASeriesPart` (the 0805 and the 1206) and the outline over an
+  unbroken line in `ABodyOutlineOverAGap_IsAPart_…`.
