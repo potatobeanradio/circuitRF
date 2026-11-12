@@ -437,6 +437,20 @@ public static class RooftopSpectrum
         if (a.IsCut || b.IsCut)
             throw new ArgumentException(PlanarFarField.CutCellRefusal, nameof(basis));
 
+        // PMS-6 R-pms6-3 — a rooftop across a refinement step is a triangle times a rectangle over its two STRIPS: each
+        // spans its block's full depth along the current and the segment across it, so the closed form below takes the
+        // strips' own widths and areas. A whole-face rooftop — every tensor-grid one, and every one between two blocks
+        // of one span — reads its cells exactly as it always did.
+        if (basis.IsSegment)
+        {
+            var (sa, sb) = PlanarLocalGrid.Supports(mesh, basis);
+            if (basis.Direction == PlanarBasisDirection.X)
+                return Pulse(ky, sa.YMin, sa.YMax) * (Cis(kx * sa.XMin) * Ramp(kx, sa.XMax - sa.XMin) / sa.Area
+                                                    + Cis(kx * sb.XMax) * Ramp(-kx, sb.XMax - sb.XMin) / sb.Area);
+            return Pulse(kx, sa.XMin, sa.XMax) * (Cis(ky * sa.YMin) * Ramp(ky, sa.YMax - sa.YMin) / sa.Area
+                                                + Cis(ky * sb.YMax) * Ramp(-ky, sb.YMax - sb.YMin) / sb.Area);
+        }
+
         if (basis.Direction == PlanarBasisDirection.X)
         {
             // The pair shares the edge x = a.XMax = b.XMin and spans one row of the tensor grid, so
@@ -788,7 +802,7 @@ public static class PlanarFarField
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
-        mesh.EnsureNoBlocks("the far field");   // PMS-4 — refused by name until it reads blocks
+        // PMS-6 R-pms6-3 — a block mesh needs nothing here: RooftopSpectrum.Of reads a step rooftop's strips.
 
         var g  = grid ?? PlanarFarFieldGrid.Hemisphere();
         var ok = CanCompute(problem, mesh, fHz, g);

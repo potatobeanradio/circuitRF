@@ -182,7 +182,7 @@ public sealed record PlanarNearFieldEstimate(
                                               CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        mesh.EnsureNoBlocks("the accelerated solve's estimate");   // PMS-4 — refused by name until it reads blocks
+        mesh = PlanarLocalGridFill.ForFill(mesh);   // PMS-6 — counted on the supports the accelerator projects
         var st = aim ?? PlanarAimSettings.Default;
         var bases = mesh.Bases;
         int nh = 0;
@@ -204,8 +204,8 @@ public sealed record PlanarNearFieldEstimate(
             double ya = Math.Min(ca.YMin, cb.YMin), yb = Math.Max(ca.YMax, cb.YMax);
             centres[i] = (0.5 * (xa + xb), 0.5 * (ya + yb));
             spans[i] = Math.Max(xb - xa, yb - ya);
-            maxSpan = Math.Max(maxSpan, spans[i]);
         }
+        maxSpan = PlanarAimGeometry.SizingSpan(spans, mesh.BlockSource is not null);   // PMS-6 — the geometry's own rule
         if (!(maxSpan > 0)) maxSpan = 1.0;
         int m = st.ProjectionOrder;
         double h = st.GridSpacingFactor * maxSpan;

@@ -1619,4 +1619,5 @@ src/Engine/Mom/PlanarLocalGrid.cs|A cut cell's support is not a rectangle; use P
 # engine caller's port that was not in the mesher's port list (the product run refuses a block mesh before resolving).
 src/Engine/Mom/PlanarLocalGridFill.cs|Cell {s.Cell} is a cut cell and a rooftop across a refinement step asks for a strip of it. The local 
 src/Engine/Mom/PlanarPairClasses.cs|{sorted.Length:N0} distinct support-pair geometries on one axis exceed the class key's {IdBits} bits.
-src/Engine/Mom/PlanarPort.cs|Port {r.Number}'s gap crosses a coarse block of the local grid, where its cut is not one 
+# brief-pms-6: an engine caller's port that was not in the mesher's port list, whose cut lands on a refinement step.
+src/Engine/Mom/PlanarPort.cs|Port {r.Number}'s cut crosses a refinement step of the local grid, where its rooftops 

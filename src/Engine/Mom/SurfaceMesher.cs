@@ -1700,7 +1700,7 @@ public static class SurfaceMesher
         // the dense bytes, so they also say what the accelerated operator this run actually builds holds — its own
         // estimate, from the near set it will factor (PlanarNearFieldEstimate) — or a run the accelerator holds in
         // well under a gigabyte reads as needing tens.
-        PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && !hasBlocks && problem.Slab.HeightM > 0
+        PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && problem.Slab.HeightM > 0
             ? PlanarNearFieldEstimate.For(mesh, problem.Slab.HeightM, null, control?.Token ?? default)
             : null;
         var verdict = pastMachine ? PlanarBudgetVerdict.Warn
@@ -1736,8 +1736,7 @@ public static class SurfaceMesher
                       $"grid. Where they cross metal, on average {local.ActiveFractionX * (gx.Length - 2):N0} of the " +
                       $"{Math.Max(gx.Length - 2, 0):N0} candidate x-lines and {local.ActiveFractionY * (gy.Length - 2):N0} " +
                       $"of the {Math.Max(gy.Length - 2, 0):N0} y-lines are active ({local.ActiveFractionX:P0} / " +
-                      $"{local.ActiveFractionY:P0})." +
-                      (hasBlocks ? " The solve cannot read a block mesh yet; it is shown so the grid can be seen." : ""));
+                      $"{local.ActiveFractionY:P0}).");
         }
         notes.Insert(0, budget);
 

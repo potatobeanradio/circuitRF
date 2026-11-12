@@ -1382,9 +1382,9 @@ public static partial class PlanarFill
     /// </summary>
     public static PlanarFillCores BuildGeometryOnlyCores(PlanarMesh mesh, PlanarFillSettings? settings = null)
     {
-        mesh.EnsureNoBlocks("the accelerated solve");   // PMS-4/5 — AIM's geometry is brief 6's
-        (settings ?? PlanarFillSettings.Default).Validate();
         ArgumentNullException.ThrowIfNull(mesh);
+        mesh = PlanarLocalGridFill.ForFill(mesh);   // PMS-6 — a block mesh's accelerator projects its supports
+        (settings ?? PlanarFillSettings.Default).Validate();
         var st = settings ?? PlanarFillSettings.Default;
 
         int n = mesh.Bases.Count;

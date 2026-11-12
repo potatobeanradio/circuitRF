@@ -14069,3 +14069,149 @@ brief 6. Measured with a scratch harness in Release on the dev machine; the harn
 - A1's refinement reference (gate 2, above).
 - The routine tests' three fills run 30–55 s each in Debug under a loaded machine (the multi-level via and shallow-image
   arms dominate even at N ≈ 300–550); they are not tagged.
+
+## PMS-6 — a locally refined grid: everything that reads the mesh (2026-11-11)
+
+Every product reader of the mesh reads a local-grid (block) mesh, and the local grid solves end to end — ports and their
+calibration standards, the de-embedded run, the accelerated solve, the current-density map, the far field and the DC
+point — through `PlanarKernel.Solve`, `EmRunService` and the preflight. `LocalGrid` stays off by default (brief 7).
+Measured with scratch harnesses in Release on the dev machine; none is committed.
+
+### 1. What changed, reader by reader
+
+- **R-pms6-1 — the port window and the standards.** A port's feed window (PMS-4) used to be all-elementary, so it carried
+  every gridline the chip put across the feed, and the standard cut from it inherited them. It is now elementary ALONG
+  the port only — so the reference plane, the end run and the outermost cell are exactly the tensor grid's — and ACROSS
+  it carries one transverse partition for the whole window, decided once (`PlanarLocalGrid.KeptLines`): the base cuts,
+  then a 1-D bisection that keeps a line while `NeedSplit`, asked of the window's whole longitudinal extent, says the
+  interval must be split. A block straddling a window is cut at the window's boundary (never at a line inside it), and
+  the 2:1 balance does not split a block inside a window (a neighbour outside is still split against it, so a step there
+  can exceed 2:1 on the window's own side).
+  Port resolution walks transverse SLOTS — runs of positions under one (low, high) cell pair, i.e. one rooftop — so a
+  1 × k block of the window is one basis and the lines inside it are not in `TransverseLines`; on a tensor grid every
+  slot is one position and the arithmetic is the old one. The feed run stops at the first cell that is a block along
+  the port (past the window the cells are the circuit's, and a block there would set the standard's bulk cell).
+  `PlanarPorts.PositionMap` fills a block's every position for every position walk in the file (cross-section, same
+  conductor, via ports, feed bands, profile probe). A two-cut (coplanar) cross-section collapses its intervals by the same
+  slot rule. A passive-neighbour widening (PCAL3) and a calibration group (PCAL4) are DECLINED by name on a block mesh
+  (`LocalGridProfileDecline`): both read the metal beside a feed column by column, and beside a window the cells are
+  blocks spanning several columns. The run then falls back to the clearance rule, as for a conformal feed.
+- **Why a standard with fewer transverse lines than the tensor-grid standard is still the DUT's own cross-section:** the
+  lines it drops are not lines of the DUT's mesh at the port. The DUT's port cells ARE the window's blocks; the standard is
+  built from `TransverseLines`, which are the boundaries of exactly those blocks, and `SameCrossSection` compares the
+  DUT's resolution against the standard's own port and finds them equal (gated). A line some other feature put across the
+  chip is kept in the window only where the size field or a hard line's reach needs it there — and then it is in both.
+- **Where the dropped lines WERE active, they are kept, and fixture S says which:** port 2 at 0.6 mm (21 across, against
+  9 for a lone line) — a Metal1 trace runs under its feed, its rim 0.08 µm and 7.8 µm inside the feed's edge, and that
+  trace's own edge fan crosses the window. Those lines are active at the port and the standard carries them.
+- **R-pms6-2 — current density per support piece.** On a block mesh `PlanarCurrentDensityMap.Pieces` cuts each cell at
+  every edge of every rooftop half on it — the coarsest partition on which each support is a union of pieces — and J on a
+  piece sums ½·I_b over the strip's own transverse width for every half covering it. The per-cell `Jx`/`Jy`/`Magnitude`
+  are the pieces' area-weighted means; `MaxMagnitude` is the largest piece. The identity Σ J·w = mean of the two adjacent
+  edge currents holds per cell exactly (gated). The overlay draws the pieces, then the block outlines over them.
+- **R-pms6-3 — far field.** `RooftopSpectrum.Of` reads a step rooftop's two strips (`PlanarLocalGrid.Supports`): a
+  triangle × rectangle over each, the closed form unchanged, the strips' widths and areas in place of the cells'. Every
+  whole-face rooftop reads its cells as before; beamwidth and the surface-wave launch go through the same function. The
+  cut-cell and vertical-basis refusals are unchanged.
+- **The DC point is the tensor grid's network, rebuilt from the blocks.** One resistor per basis on the blocks themselves
+  is a two-point flux, exact on a conforming rectangle grid and INCONSISTENT across a refinement step: a fine cell's centre
+  sits off the block's centre across the current, and the flux between them is still taken as purely along it. Measured on
+  A1 at 2 / 3 / 4 cells across: local 1.32 / 1.47 / 1.67 % BELOW tensor, the gap not closing while the tensor grid
+  converged (63.05 → 62.67 → 62.64 mΩ) — and below, which a coarser conforming subspace could never be. A plain line
+  through a pad or a via-joined region alone moved only +0.03–0.05 %, so the gate fixture was needed to see it. Since a
+  block is a union of the tensor grid's own uncut cells, `PlanarDcSolve.Network.Expansion` gives a block one node per
+  position, the elementary resistors inside it, one resistor per position across each face, and one elementary via per
+  position of a vertical basis. A1 and A2 now agree with the tensor grid to 5e-13 and 3e-14. AC keeps the coarse basis.
+- **R-pms6-4 — rooftop merging stays declined on a block mesh, by measurement.** PM-2 on the tensor grid of single-level
+  A2 (all of A2's metal on one level, no vias) merges NOTHING at 2 or 4 cells across: the 250 µm block lies wholly inside
+  the ports' 300 µm protected end runs. On single-level fixture S at 0.6 mm it merges 45 runs (70,958 → 70,862 unknowns),
+  and all 282 elemental rooftops in them sit in coarse blocks of the local mesh (100 %), which is 13,238 unknowns on its
+  own. The mesher's existing note ("the local grid already coarsens where the size field allows") stands.
+- **R-pms6-5 — the accelerator reads the support mesh, and sizes its grid from max(99th percentile, ½ largest) there.**
+  `BuildGeometryOnlyCores`, `PlanarSolveContext` and `PlanarNearFieldEstimate` take the support mesh. Sized from the
+  LARGEST support, as on a tensor grid, a coarse block (96 µm on single-level S at 0.6 mm, against a 5.3 µm median) put
+  the near radius past the chip — 508 / 576 / 1,269 µm at 0.4 / 0.6 / 1.4 mm — and the near set at 96–100 % density:
+  the accelerator then held a dense matrix and a sparse LU of it. Measured: past 4 GB and killed at N = 5,315 (S 0.4 mm,
+  where the dense solve holds 0.23 GB); at 0.6 mm it reached a 23 GB footprint. A bare percentile is not safe: on a 3 mm
+  GaAs line through two 400 µm pads (local N = 1,728, dense against accelerated, 10 GHz):
+
+  | Sized from | Largest / sizing span | GMRES | \|ΔI\| / max | near/row |
+  |---|---|---|---|---|
+  | largest | 1.0 | 1 | 3.7e-7 | 1,699 |
+  | 99th percentile | 1.3 | 2 | 1.4e-7 | 1,514 |
+  | 90th percentile | 2.0 | 2 | 1.5e-6 | 1,125 |
+  | median | 5.3 | 8 | **9.6e-2** | 587 |
+
+  (The tensor mesh of the same structure, N = 3,369: 2 iterations, 3.8e-7.) A support much larger than its stencil is
+  projected badly. So on a block mesh the sizing span is max(99th percentile, ½ largest): no support is ever more than
+  twice it, the regime measured clean. `PlanarAimGeometry.SizingSpan`; a tensor mesh keeps the largest, bit for bit. It
+  takes the near set from 96–100 % to 50–71 % density on S (estimate: 0.80 / 1.14 / 1.59 GB resident at 0.4 / 0.6 /
+  1.4 mm). **It does not make the accelerator a win on a sub-millimetre GaAs chip, and nothing about the local grid
+  can:** P8's floor puts the near radius at 2h = 200 µm on 100 µm GaAs, and on these chips that alone keeps the near set
+  35–65 % dense on the TENSOR grid as well. Per-region sizing would need a grid per region — a multilevel accelerator — and
+  was not built. The accelerated ceiling's single-level restriction is untouched (P12).
+- **R-pms6-6 — the refusals are lifted.** `PlanarKernel.Solve`, `CurrentDensityAt`, the preflight, the standards pricing
+  and the mesher's notes no longer refuse or skip a block mesh. What still asks `HasBlocks` and refuses is
+  `PlanarRooftopMerge.Build` (unreachable through the mesher, which declines first) and `BuildCoresByHalves`, which stays a
+  tensor-grid oracle. `PlanarSurfaceImpedance.BarrelAt` takes a block foot's own area and perimeter — one via of the
+  block's footprint, where the tensor grid summed one per elementary cell (same area, internal perimeters not counted).
+
+### 2. Gates
+
+1. **1 × 1 is bit-identical** (`OneByOneBlocks_AreTheTensorGrid_ForEveryReader`): ports (basis indices, transverse
+   lines, run), the current-density map, every rooftop's transform and the DC admittance, on A1. The existing port,
+   two-cut, internal, feed-clearance, neighbour, group, grounded-edge, DC, current-density, far-field and conformal
+   downstream classes (181 tests) pass unchanged.
+2. **De-embedded accuracy on A1 and A2** (`PlanarKernel.Solve`, 2 cells across, product edge port `Ground`, 1/5/10 GHz,
+   against the committed tensor references `testdata/pms2/A1.s3p`, `A2.s3p`; Release, harness):
+
+   | Block | f | max \|S_local − S_tensor\| | σ_max local / tensor | refinement step (PMS-5, A2) |
+   |---|---|---|---|---|
+   | A2 (N 6,685 local; 6.0 min, peak 5.0 GB) | 1 GHz | 2.4e-5 | 1.000008 / 1.000008 | 7.6e-5 |
+   | | 5 GHz | 1.75e-4 | 1.000014 / 1.000014 | 3.8e-4 |
+   | | 10 GHz | 3.5e-4 | 1.000005 / 1.000005 | 7.5e-4 |
+   | A1 (N 8,836 local; 20.9 min, peak 6.1 GB) | 1 GHz | 8.4e-5 | 0.999982 / 0.999982 | not run |
+   | | 5 GHz | 4.3e-4 | 0.999878 / 0.999878 | not run |
+   | | 10 GHz | 8.8e-4 | 0.999685 / 0.999684 | not run |
+
+   Under 1e-2 everywhere, and on A2 under the tensor grid's own refinement step (PMS-5's, taken with internal delta-gap
+   ports — an edge-port refinement reference was not run). A1 has no refinement reference of its own; its differences sit
+   just above A2's step. σ_max moves by at most 1e-6. (A2's 1.000014 is the tensor reference's own, inside R-prt-15's 1e-3.)
+3. **The standards shrink** (fixture S, 0.6 mm, 300 µm standards; `ThePortWindow_CarriesOnlyTheFeedsOwnLines`):
+
+   | Port | Across, tensor | Across, local | Lone 70 µm line | Standard N, tensor → local |
+   |---|---|---|---|---|
+   | 1 | 25 | 12 | 9 | 3,601 → 1,690 |
+   | 2 | 35 | 21 | 9 | 5,278 → 3,136 |
+   | 3 | 22 | 13 | 9 | 3,160 → 1,837 |
+
+   Ports 1 and 3 are the lone line plus 3–4: the window's partition bisects the feed's edge fan where the lone line's
+   marcher grades it (a fan halved toward each rim takes a cell or two more per side). Port 2 carries the Metal1 trace
+   under its feed (§1). The whole chip at 0.6 mm meshes at 35,490 local against 108,643 tensor (leads grown).
+4. **DC** (`TheDcPoint_OnBlocks_IsTheTensorNetwork`): A1 R₁₂ 63.0476 mΩ both ways, 5e-13 relative (gate 1 %).
+5. **Far field.** A2 has posts and a backside via, whose vertical bases the far field refuses on both grids, so the gate
+   was taken on A2's Metal2 line, single level, opened into a 600 × 900 µm patch-like stub, 10 GHz, 2 cells across:
+   peak directivity 5.2053 dBi tensor (N = 17,057) against 5.2052 dBi local (N = 891, 81 step rooftops), under 1e-4 dB
+   (gate 0.015 dB). The 4-across rung's tensor mesh was stopped by the memory watchdog.
+6. **End to end through `EmRunService` — fixture S has no size that runs here.** Through the extractor, local grid, the
+   preflight prices S at 0.3 / 0.4 / 0.5 / 0.6 / 1.0 mm at 13 / 33 / 35 / 38 / 63 GB per frequency point (6,154 /
+   16,027 / 18,707 / 22,856 / 32,214 unknowns): the calibration standards are 11–24 GB of it, and on a block mesh the core
+   store dedupes poorly (PMS-5), so N alone no longer predicts memory. S at 0.3 mm was run and REFUSED in 3 s by the feed
+   clearance rule — port 2's feed has other metal within the 300 µm the standard reproduces, which on a 0.3 mm chip is the
+   whole chip — and the TENSOR run is refused identically (forced past its own memory question, 42,023 unknowns, 122 GB):
+   the geometry, not the local grid. Below ~0.6 mm the clearance rule refuses; from 0.6 mm the run is past 30 GB. In its
+   place, **A2 on the shipped MMIC technology through `EmRunService`** (local grid, de-embedded, 10 GHz, 2 cells across, via
+   `UiSnapshot --planar-run`): 6,513 unknowns, 159 s wall, 3.26 GB peak RSS (the preflight priced it at 7.3 GB). The
+   preflight's estimate runs about 1.5× high on these meshes.
+7. **The mesh view** on S at 1.0 mm (`UiSnapshot --clay … --planar-mesh`), local and tensor, looked at: each feed window
+   is elementary along its port with only the feed's own lines across, the region via is coarse blocks, the octagonal
+   rims keep today's staircase. **The current-density overlay** on A2 from that real run (`UiSnapshot --planar-run`, new),
+   looked at: 3,380 pieces over the blocks, the driven Metal2 line carrying the colour, the Metal1 line and the via pad
+   faint, the grown feed leads uncoloured (off the drawn metal), the block outlines drawn over the pieces.
+
+### 3. Not done
+
+- An edge-port refinement reference for A1/A2 (the "tensor grid's own refinement difference" half of gate 2; A2's bound
+  above is PMS-5's delta-gap one).
+- Gate 6 on fixture S itself (above): nothing between the clearance refusal and 30 GB.
+- Per-region accelerator sizing (R-pms6-5).

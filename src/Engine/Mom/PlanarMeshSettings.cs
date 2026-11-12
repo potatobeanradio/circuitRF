@@ -267,10 +267,11 @@ public enum PlanarCurrentModel
 /// wherever no line inside the block is needed — a hard line within <see cref="LocalReachCells"/> of its own feature,
 /// or a finer pitch the size field asks for there — with a 2:1 balance between neighbouring blocks and port feeds kept
 /// elementary. Every level shares the one partition, so a via's blocks still pair in z. It changes the mesh, so it is
-/// hashed (when on) and SURVIVES <see cref="Auto"/>. Since PMS-5 the fill and the dense solve read a block mesh (on its
-/// support mesh, <see cref="PlanarLocalGridFill.SupportMesh"/>) with internal delta-gap ports; edge ports, the
-/// accelerated solve, the field results and the product's run still refuse it by name
-/// (<see cref="PlanarMesh.LocalGridRefusal"/>) until brief 6. The mesh view and the unknown count work.
+/// hashed (when on) and SURVIVES <see cref="Auto"/>. The fill reads a block mesh on its support mesh
+/// (<see cref="PlanarLocalGridFill.SupportMesh"/>, PMS-5), and since PMS-6 every other reader does too — ports and their
+/// standards (a port's feed window is elementary along the port and carries only the feed's own lines across it), the
+/// accelerated solve, the current-density map, the far field and the DC point — so it solves end to end. Rooftop
+/// merging is not applied on one (the local grid already coarsened those runs).
 /// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,

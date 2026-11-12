@@ -179,39 +179,34 @@ public class Pms4LocalGridTests(ITestOutputHelper output)
 
     /// <summary>Gate 3 — on Manhattan artwork the built count IS brief 2's estimate for the same rules: the same cells and
     /// the same unknowns. (With octagonal vias the built mesh keeps their staircased rims at today's pitch where the
-    /// estimator re-staircases them coarser; RESOLVED.md §PMS-4 measures that difference.)</summary>
+    /// estimator re-staircases them coarser; RESOLVED.md §PMS-4 measures that difference.) Meshed without ports: since
+    /// PMS-6 a port's window carries only the feed's own lines across it, which the estimator's all-elementary port rule
+    /// does not model.</summary>
     [Fact]
     public void OnManhattanArtwork_TheCountIsTheEstimate()
     {
         var f = Fixture("S0.6 square");
         var diag = new PlanarGridDiagnostics();
         SurfaceMesher.Mesh(f.Problem, PlanarMeshSettings.Default, PlanarEdgeReference.LocalConductorWidth,
-                           ports: f.Ports, gridDiagnostics: diag);
-        var est = new LocalGridEstimate(f.Problem, diag, f.Ports, PlanarMeshSettings.Default.MinCellsAcrossConductor).Count();
-        var on = Mesh(f, PlanarMeshSettings.Default with { LocalGrid = true });
+                           gridDiagnostics: diag);
+        var est = new LocalGridEstimate(f.Problem, diag, [], PlanarMeshSettings.Default.MinCellsAcrossConductor).Count();
+        var on = Mesh((f.Problem, []), PlanarMeshSettings.Default with { LocalGrid = true });
         output.WriteLine($"built {on.UnknownCount:N0} / {on.CellCount:N0} cells; estimate {est.Unknowns:N0} / {est.Cells:N0}");
         Assert.Equal(est.Cells, on.CellCount);
         Assert.Equal(est.Unknowns, on.UnknownCount);
     }
 
-    /// <summary>R-pms4-4 — a mesh with blocks is meshed and reported (its count and its note), and every unconverted
-    /// consumer refuses it by name with the one sentence. Since PMS-5 the fill and the dense solve read blocks
-    /// (Pms5LocalGridFillTests); an edge port and the product's run are still refused.</summary>
+    /// <summary>R-pms4-4 / PMS-6 R-pms6-6 — a mesh with blocks is meshed and reported (its count and its note), and its
+    /// edge ports resolve (Pms6LocalGridConsumersTests solves one end to end).</summary>
     [Fact]
-    public void ABlockMesh_IsReported_AndRefusedByTheSolve()
+    public void ABlockMesh_IsReported_AndItsEdgePortsResolve()
     {
         var f = Fixture("A2");
         var report = Mesh(f, PlanarMeshSettings.Default with { LocalGrid = true });
         Assert.True(report.UnknownCount > 0);
+        Assert.True(report.Mesh.HasBlocks);
         Assert.Contains(report.Notes, n => n.StartsWith("The grid is local", StringComparison.Ordinal));
-
-        var ports = Assert.Throws<PlanarLocalGridRefusedException>(() => PlanarPorts.ResolveAll(report.Mesh, f.Ports));
-        Assert.Equal(PlanarMesh.LocalGridRefusal("an edge port"), ports.Message);
-
-        var kernel = Assert.Throws<PlanarLocalGridRefusedException>(() => new PlanarKernel().Solve(
-            f.Problem, PlanarMeshSettings.Default with { LocalGrid = true, MemoryLimitBytes = 16_000_000_000L }, f.Ports,
-            [10e9]));
-        Assert.Equal("the solve", kernel.Consumer);
+        Assert.Equal(f.Ports.Count, PlanarPorts.ResolveAll(report.Mesh, f.Ports).Count);
     }
 
     /// <summary>R-pms4-1 — the setting survives Auto, as every setting that changes what is meshed does.</summary>

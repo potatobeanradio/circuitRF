@@ -9174,3 +9174,21 @@ edge positions; the Gram is taken on the source over each pair's overlap. Forced
 and the existing fill tests pass unchanged. Against the tensor grid, with internal delta-gap ports, the local grid moves S
 three decades less than one refinement step (A2: 3e-8 to 9e-7 against 8e-5 to 7e-4; A1: 2e-6 to 2e-5, its own refinement reference not run). Edge ports, AIM,
 the field results and the product's run stay refused for brief 6. `RESOLVED.md` §PMS-5.
+
+
+---
+
+## PMS-6 — a locally refined grid: everything that reads the mesh (2026-11-11)
+
+Every product reader of the mesh reads a block mesh and the local grid solves end to end. A port's feed window is now
+elementary along the port and carries one transverse partition of only the feed's own needed lines, so its calibration
+standard shrinks (fixture S 0.6 mm: 25/35/22 → 12/21/13 across, standards roughly halved); port resolution walks
+transverse slots, so a window block is one rooftop. The current-density map is published per support piece; the far
+field transforms a step rooftop over its strips. The DC point was found INCONSISTENT on blocks (a two-point flux across a
+non-conforming step: 1.3–1.7 % low on A1, not converging) and now rebuilds the tensor grid's network from the blocks,
+exact to 5e-13. The accelerator reads the support mesh and sizes its grid from max(99th percentile, ½ largest) there,
+because the largest block made the near set dense (killed past 4 GB at N = 5,315) while a median sizing broke accuracy
+(9.6e-2). Rooftop merging stays declined (on single-level S everything it merges the local grid already coarsened).
+De-embedded against the tensor references: A2 2.4e-5 to 3.5e-4 (under its refinement step), A1 8.4e-5 to 8.8e-4, σ_max
+unchanged. Fixture S has no size that runs end to end here (feed clearance refuses below ~0.6 mm on both grids; past
+30 GB above); A2 ran through EmRunService in 159 s at 3.3 GB. `RESOLVED.md` §PMS-6.

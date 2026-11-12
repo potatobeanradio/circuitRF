@@ -564,8 +564,7 @@ public sealed class PlanarAimGeometry
 
         // ── the auxiliary grid ────────────────────────────────────────────────────────────────
         var (centres, spans) = SupportBoxes(mesh, N);
-        double maxSpan = 0;
-        foreach (var s in spans) maxSpan = Math.Max(maxSpan, s);
+        double maxSpan = SizingSpan(spans, mesh.BlockSource is not null);
         if (!(maxSpan > 0)) maxSpan = cores.MinCellEdgeM > 0 ? cores.MinCellEdgeM : 1.0;
 
         H = st.GridSpacingFactor * maxSpan;
@@ -633,6 +632,27 @@ public sealed class PlanarAimGeometry
     }
 
     internal static int NextPow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
+
+    /// <summary>
+    /// <b>The support span the pitch and the near radius are sized from</b>: the largest on a tensor grid, as P5–P8
+    /// measured it. <b>PMS-6 R-pms6-5 — on a local-grid (support) mesh, max(99th percentile, half the largest).</b> A
+    /// coarse block is many times the median support, and sizing from it put the near radius past the chip itself
+    /// (576 µm on fixture S at 0.6 mm, 1,269 µm at 1.4 mm): a 96–100 % dense near set, so the accelerator held a dense
+    /// matrix and a sparse LU of it (killed past 4 GB at N = 5,315, where the dense solve holds 0.23 GB). A bare percentile
+    /// is not safe either: a basis much larger than its stencil is projected badly, and from the median (the largest 5.3×
+    /// it) |ΔI| was 9.6e-2 against the dense solve. With no support more than twice the sizing span it was 1.4e-7
+    /// (99th percentile) and 1.5e-6 (90th, the largest 2.0× it). RESOLVED.md §PMS-6.
+    /// </summary>
+    internal static double SizingSpan(IReadOnlyList<double> spans, bool blockMesh)
+    {
+        double max = 0;
+        foreach (double s in spans) max = Math.Max(max, s);
+        if (!blockMesh || spans.Count == 0) return max;
+        var sorted = spans.ToArray();
+        Array.Sort(sorted);
+        double p99 = sorted[Math.Min(sorted.Length - 1, (int)(0.99 * sorted.Length))];
+        return Math.Max(p99, 0.5 * max);
+    }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The projection

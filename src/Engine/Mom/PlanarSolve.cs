@@ -188,9 +188,8 @@ public sealed class PlanarSolveContext
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
         // PMS-5 — a block mesh is solved on its support mesh: the same bases in the same order, so the ports' basis
-        // indices are unchanged, and every cell index this context hands the fill is a support's. The accelerator does
-        // not read one yet (brief 6).
-        if (mesh.HasBlocks && settings?.Aim is not null) mesh.EnsureNoBlocks("the accelerated solve");
+        // indices are unchanged, and every cell index this context hands the fill is a support's. PMS-6 — the
+        // accelerator reads it too: its projection, near set and near-pair cores are all taken on the supports.
         mesh     = PlanarLocalGridFill.ForFill(mesh);
         Mesh     = mesh;
         Ports    = ports;

@@ -174,6 +174,7 @@ public static class PlanarLocalGrid
         private readonly int[][] _hasSum;        // [level] prefix sums of "a cell here"
         private readonly bool[][] _cover;        // [via][pos]
         private readonly int[] _forcedSum;
+        private readonly List<PortWindow> _windows = [];
         private readonly double[] _runX, _runY;  // narrowest metal run through a position, over every level (∞ off metal)
         private readonly List<(int Lo, int Hi)>[] _needX, _needY;
         private readonly List<(double Coord, double C0, double G, int Lo, int Hi)> _fanX = [], _fanY = [];
@@ -236,17 +237,23 @@ public static class PlanarLocalGrid
                 _cover[v] = cov;
             }
 
-            // Port feeds stay elementary (D-pms4-3): a window around each port — across it, the chord of its own metal
-            // through the port; along it, max(3 substrate heights, that chord) either side, which covers the end run, the
-            // cells a calibration standard is built from and any feed lead the solver grows outward. Not the whole
-            // polygon the port sits on: an extracted layout's polygon is a whole NET, and forcing a net elementary
-            // forced the whole of a small block (A2 through the extractor: every metal cell).
+            // Port feeds (D-pms4-3): a window around each port — across it, the chord of its own metal through the port;
+            // along it, max(3 substrate heights, that chord) either side, which covers the end run, the cells a
+            // calibration standard is built from and any feed lead the solver grows outward. Not the whole polygon the
+            // port sits on: an extracted layout's polygon is a whole NET, and forcing a net elementary forced the whole of
+            // a small block (A2 through the extractor: every metal cell).
+            //
+            // PMS-6 R-pms6-1 — INSIDE a window the cells are elementary ALONG the port (so the reference plane, the end
+            // run and the outermost cell are exactly the tensor grid's) and, ACROSS it, carry only the feed's own lines:
+            // one transverse partition for the whole window, decided once from the same size field and hard-line needs a
+            // block is split by (KeptLines). A gridline some other feature put across the chip is not active at the port,
+            // so it is not in the port's cross-section and not in its calibration standard.
             var forced = new bool[n];
             if (inp.ForceElementary) Array.Fill(forced, true);
             else if (inp.Ports is not null)
                 foreach (var port in inp.Ports)
                     foreach (var loc in port.NegativeLocation is { } neg ? new[] { port.Location, neg } : new[] { port.Location })
-                        ForcePortWindow(inp.Problem, port, loc, forced);
+                        ForcePortWindow(inp.Problem, port, loc);
             _forcedSum = Prefix(forced);
 
             // The narrowest metal run through each position, per axis, over every level — measured on the cells.
@@ -291,7 +298,58 @@ public static class PlanarLocalGrid
             }
         }
 
-        private void ForcePortWindow(PlanarProblem problem, PlanarPort port, EmPoint loc, bool[] forced)
+        /// <summary>PMS-6 — one port's feed window, in positions [X0, X1) × [Y0, Y1): elementary along
+        /// <see cref="AlongX"/>, and across it split only at <see cref="Keep"/>'s lines (indexed by transverse gridline;
+        /// filled by <see cref="KeptLines"/> once the size field exists).</summary>
+        private sealed record PortWindow(int X0, int X1, int Y0, int Y1, bool AlongX)
+        {
+            public bool[] Keep { get; set; } = [];
+        }
+
+        private static bool Inside(PortWindow w, int x0, int x1, int y0, int y1)
+            => x0 >= w.X0 && x1 <= w.X1 && y0 >= w.Y0 && y1 <= w.Y1;
+
+        private static bool Meets(PortWindow w, int x0, int x1, int y0, int y1)
+            => x0 < w.X1 && w.X0 < x1 && y0 < w.Y1 && w.Y0 < y1;
+
+        private bool InAnyWindow(int x0, int x1, int y0, int y1)
+        {
+            foreach (var w in _windows) if (Inside(w, x0, x1, y0, y1)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// <b>R-pms6-1 — the window's transverse lines</b>: the base cuts across it, then, inside each base interval, the
+        /// lines a 1-D bisection keeps while <see cref="NeedSplit"/> — asked of the WHOLE window's longitudinal extent —
+        /// says the interval must be split. One answer for every column of the window, so the port's cells, its end run
+        /// and the standard cut from them share one cross-section; and the union over the window's length, so no column
+        /// is coarser than the size field asks for at it.
+        /// </summary>
+        private void KeptLines(PortWindow w, List<int> baseCuts)
+        {
+            var g = w.AlongX ? _gy : _gx;
+            var keep = new bool[g.Length];
+            int lo = w.AlongX ? w.Y0 : w.X0, hi = w.AlongX ? w.Y1 : w.X1;
+            var cuts = new List<int> { lo };
+            foreach (int c in baseCuts) if (c > lo && c < hi) { cuts.Add(c); keep[c] = true; }
+            cuts.Add(hi);
+            for (int k = 0; k + 1 < cuts.Count; k++) Bisect(cuts[k], cuts[k + 1]);
+            w.Keep = keep;
+
+            void Bisect(int a, int b)
+            {
+                if (b - a <= 1) return;
+                bool split = w.AlongX ? NeedSplit(w.X0, w.X1, a, b, alongX: false)
+                                      : NeedSplit(a, b, w.Y0, w.Y1, alongX: true);
+                if (!split) return;
+                int m = Mid(g, a, b);
+                keep[m] = true;
+                Bisect(a, m);
+                Bisect(m, b);
+            }
+        }
+
+        private void ForcePortWindow(PlanarProblem problem, PlanarPort port, EmPoint loc)
         {
             bool alongX = port.Side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
             double h = problem.Slab.HeightM > 0 ? problem.Slab.HeightM : 0;
@@ -321,8 +379,7 @@ public static class PlanarLocalGrid
                         : (c0, c1, a - reach, a + reach);
                     var (i0, i1) = Range(_gx, Math.Max(w0, bx0), Math.Min(w1, bx1));
                     var (j0, j1) = Range(_gy, Math.Max(v0, by0), Math.Min(v1, by1));
-                    for (int iy = j0; iy <= j1; iy++)
-                        for (int ix = i0; ix <= i1; ix++) forced[iy * _nx + ix] = true;
+                    if (i1 >= i0 && j1 >= j0) _windows.Add(new PortWindow(i0, i1 + 1, j0, j1 + 1, alongX));
                 }
             }
         }
@@ -356,6 +413,7 @@ public static class PlanarLocalGrid
         {
             var bx = BaseCuts(_gx, _in.BaseStepX);
             var by = BaseCuts(_gy, _in.BaseStepY);
+            foreach (var w in _windows) KeptLines(w, w.AlongX ? by : bx);
             for (int j = 0; j + 1 < by.Count; j++)
             {
                 control?.Token.ThrowIfCancellationRequested();
@@ -414,20 +472,81 @@ public static class PlanarLocalGrid
             for (int li = 0; li < _levels && !anyCell; li++) anyCell = Sum(_hasSum[li], x0, x1, y0, y1) > 0;
             if (!anyCell) { Leaves.Add((x0, x1, y0, y1)); return; }
 
-            bool forced = Sum(_forcedSum, x0, x1, y0, y1) > 0;
-            bool sx = x1 - x0 > 1 && (forced || NeedSplit(x0, x1, y0, y1, alongX: true));
-            bool sy = y1 - y0 > 1 && (forced || NeedSplit(x0, x1, y0, y1, alongX: false));
+            int mx = -1, my = -1;
+            bool sx, sy;
+            if (_windows.Count > 0 && WindowSplit(x0, x1, y0, y1, out sx, out sy, out mx, out my))
+            {
+                // R-pms6-1 — decided by the port windows: a block straddling one is cut at its boundary, a block inside
+                // one is cut along the port and at the window's own transverse lines, and nothing else.
+            }
+            else
+            {
+                bool forced = Sum(_forcedSum, x0, x1, y0, y1) > 0;
+                sx = x1 - x0 > 1 && (forced || NeedSplit(x0, x1, y0, y1, alongX: true));
+                sy = y1 - y0 > 1 && (forced || NeedSplit(x0, x1, y0, y1, alongX: false));
+            }
             if (!sx && !sy && (x1 - x0 > 1 || y1 - y0 > 1) && !Homogeneous(x0, x1, y0, y1))
             {
                 sx = x1 - x0 > 1;
                 sy = y1 - y0 > 1;
+                mx = my = -1;
             }
             if (!sx && !sy) { Leaves.Add((x0, x1, y0, y1)); return; }
 
-            int mx = sx ? Mid(_gx, x0, x1) : -1, my = sy ? Mid(_gy, y0, y1) : -1;
+            if (sx && mx < 0) mx = Mid(_gx, x0, x1);
+            if (sy && my < 0) my = Mid(_gy, y0, y1);
             foreach (var (a0, a1) in sy ? new[] { (y0, my), (my, y1) } : new[] { (y0, y1) })
                 foreach (var (b0, b1) in sx ? new[] { (x0, mx), (mx, x1) } : new[] { (x0, x1) })
                     Refine(b0, b1, a0, a1);
+        }
+
+        /// <summary>
+        /// PMS-6 — how the port windows split a block, or false when no window meets it. A block straddling a window is
+        /// cut at the window's boundary nearest its middle, per axis, so no block is partly in and partly out and no
+        /// line is added inside a window that the window did not ask for. A block inside a window is cut along the port
+        /// (to elementary) and across it at the kept line nearest its middle; two windows of different axes over one
+        /// block make it elementary both ways.
+        /// </summary>
+        private bool WindowSplit(int x0, int x1, int y0, int y1, out bool sx, out bool sy, out int mx, out int my)
+        {
+            sx = sy = false; mx = my = -1;
+            double cx = 0.5 * (_gx[x0] + _gx[x1]), cy = 0.5 * (_gy[y0] + _gy[y1]);
+            bool straddles = false;
+            foreach (var w in _windows)
+            {
+                if (!Meets(w, x0, x1, y0, y1) || Inside(w, x0, x1, y0, y1)) continue;
+                straddles = true;
+                foreach (int l in new[] { w.X0, w.X1 })
+                    if (l > x0 && l < x1 && (mx < 0 || Math.Abs(_gx[l] - cx) < Math.Abs(_gx[mx] - cx))) mx = l;
+                foreach (int l in new[] { w.Y0, w.Y1 })
+                    if (l > y0 && l < y1 && (my < 0 || Math.Abs(_gy[l] - cy) < Math.Abs(_gy[my] - cy))) my = l;
+            }
+            if (straddles) { sx = mx >= 0; sy = my >= 0; return true; }
+
+            bool inside = false, alongX = false, alongY = false;
+            foreach (var w in _windows)
+            {
+                if (!Inside(w, x0, x1, y0, y1)) continue;
+                inside = true;
+                if (w.AlongX)
+                {
+                    alongX = true;
+                    for (int l = y0 + 1; l < y1; l++)
+                        if (w.Keep[l] && (my < 0 || Math.Abs(_gy[l] - cy) < Math.Abs(_gy[my] - cy))) my = l;
+                }
+                else
+                {
+                    alongY = true;
+                    for (int l = x0 + 1; l < x1; l++)
+                        if (w.Keep[l] && (mx < 0 || Math.Abs(_gx[l] - cx) < Math.Abs(_gx[mx] - cx))) mx = l;
+                }
+            }
+            if (!inside) return false;
+            if (alongX) mx = -1;   // elementary along x: the middle gridline, as every other split
+            if (alongY) my = -1;
+            sx = x1 - x0 > 1 && (alongX || mx >= 0);
+            sy = y1 - y0 > 1 && (alongY || my >= 0);
+            return true;
         }
 
         /// <summary>Whether the size field, or a needed hard line, asks for the block to be split across
@@ -501,6 +620,10 @@ public static class PlanarLocalGrid
                 if ((++popped & 0xFFF) == 0) control?.Token.ThrowIfCancellationRequested();
                 int id = queue.Dequeue();
                 if (Leaves[id] is not { } b) continue;
+                // PMS-6 — a block inside a port window keeps the window's one transverse partition: balancing it would put
+                // a line across the port that the port's own cross-section does not have. A neighbour outside is still
+                // split against it, so the step can exceed k:1 only on the window's own side.
+                if (_windows.Count > 0 && InAnyWindow(b.X0, b.X1, b.Y0, b.Y1)) continue;
                 bool splitY = b.Y1 - b.Y0 > 1 && (FaceCount(b, xFace: true, low: true) > k ||
                                                   FaceCount(b, xFace: true, low: false) > k);
                 bool splitX = b.X1 - b.X0 > 1 && (FaceCount(b, xFace: false, low: true) > k ||

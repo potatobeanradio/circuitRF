@@ -235,8 +235,9 @@ public sealed record PlanarMesh(
 
     /// <summary>
     /// <b>PMS-4 — whether this mesh carries a local-grid block or a rooftop across a refinement step</b>, i.e. anything a
-    /// tensor-grid consumer would read wrongly. Every consumer not yet converted asks this and refuses with
-    /// <see cref="LocalGridRefusal"/>, by name, rather than reading a block as one elementary cell.
+    /// tensor-grid consumer would read wrongly. Since PMS-6 every product reader handles one; what is left asking this and
+    /// refusing with <see cref="LocalGridRefusal"/> is rooftop merging (not applied on one) and L8c's reference core
+    /// build, which stays a tensor-grid oracle.
     /// </summary>
     public bool HasBlocks
     {

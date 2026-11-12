@@ -63,9 +63,6 @@ public static class PlanarMemoryCheck
         if (accelerated || ports.Count == 0) return report;
         // PMS-1 R-pms1-2 — the verdict is already decided; pricing could only refine a figure past the limit.
         if (report.MatrixAlonePastLimit) return PlanarRunMemory.NotPriced(report);
-        // PMS-4 — a local-grid mesh with blocks cannot build its standards yet (port resolution refuses it); its own
-        // note says the solve cannot read it, so there is nothing a price would decide.
-        if (report.LocalGrid && report.Mesh.HasBlocks) return report;
         long std;
         try
         {

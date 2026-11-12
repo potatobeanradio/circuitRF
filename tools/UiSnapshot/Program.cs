@@ -166,6 +166,7 @@ bool settingsSolvers = false;
 bool reviewRun = false;
 string? componentPortsCem = null;   // brief-lcp-4: --clay with a .cem's component ports drawn as the open .cem pushes them
 string? planarMeshCem = null;       // brief-pms-4: --clay with a .cem's planar mesh drawn on the canvas, as Mesh draws it
+string? planarRunCem = null;        // brief-pms-6: --clay with a .cem RUN, its mesh and current-density map on the canvas
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? chainFile = null, chainBlocksPng = null;
@@ -329,6 +330,7 @@ for (int i = 0; i < args.Length; i++)
         case "--review": reviewRun = true; break;
         case "--component-ports" when i + 1 < args.Length: componentPortsCem = Path.GetFullPath(args[++i]); break;
         case "--planar-mesh" when i + 1 < args.Length: planarMeshCem = Path.GetFullPath(args[++i]); break;
+        case "--planar-run" when i + 1 < args.Length: planarRunCem = Path.GetFullPath(args[++i]); break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--layer-list": layerList = true; break;
@@ -853,6 +855,24 @@ else if (clay is not null)
         Console.WriteLine($"planar mesh: {meshReport.CellCount:N0} cells, {meshReport.UnknownCount:N0} unknowns" +
                           (meshReport.LocalGrid ? $", local grid, {meshReport.RefinementSteps:N0} refinement steps" : "") +
                           (pre.Refusal is { } refused ? $"; refused: {refused}" : ""));
+        Pump();
+    }
+    if (planarRunCem is not null)
+    {
+        // brief-pms-6: the .cem RUN on this editor's model, through EmRunService as Simulate runs it (into a scratch results
+        // folder), and its mesh and current-density map drawn by the canvas's own overlay.
+        var runSetup = CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(planarRunCem);
+        string runRoot = Path.Combine(Path.GetTempPath(), "uisnapshot-run-" + Guid.NewGuid().ToString("N"));
+        var run = CircuitRF.Design.Layout.Em.EmRunService.Run(runSetup,
+            new CircuitRF.Design.Layout.Em.EmLayoutSource(clay, layoutVm.Model, layoutVm.Technology, layoutVm.Model.DbuPerMicron),
+            runRoot);
+        if (run.PlanarMesh is not { } runMesh || run.CurrentDensity is not { } density)
+        { Console.Error.WriteLine($"--planar-run: {run.Status}: {run.Error}"); return 2; }
+        layoutVm.PlanarMeshReport = runMesh;
+        layoutVm.PlanarCurrentDensity = density;
+        layoutVm.ShowPlanarMesh = true;
+        Console.WriteLine($"planar run: {runMesh.UnknownCount:N0} unknowns{(runMesh.LocalGrid ? ", local grid" : "")}; " +
+                          $"{density.Pieces?.Count ?? density.Magnitude.Count:N0} map pieces; {density.ScaleCaption}");
         Pump();
     }
     if (componentPortsCem is not null)

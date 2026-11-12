@@ -64,7 +64,9 @@ public static partial class LayoutRenderer
         SKCanvas canvas, PlanarMeshReport report, LayoutRenderTheme theme,
         PathSpace ps, double dbuPerMicron, double scaleUm,
         Func<int, double>? cellScalar = null,
-        Func<int, bool>? cellShown = null)
+        Func<int, bool>? cellShown = null,
+        IReadOnlyList<PlanarCurrentPiece>? pieces = null,
+        double piecesMax = 0)
     {
         var cells = report.Mesh.Cells;
         if (cells.Count == 0) return;
@@ -138,6 +140,25 @@ public static partial class LayoutRenderer
 
         // L8e's path: one colour per cell. Not reached in L8b.
         using var fill = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+
+        // PMS-6 R-pms6-2 — a local-grid map is drawn per support PIECE (a block cut at its strips' edges), because one
+        // colour per block would average across the strips a refinement step exists to resolve. Then the block outlines
+        // over them, so the mesh the colours sit on is still visible.
+        if (pieces is not null)
+        {
+            foreach (var pc in pieces)
+            {
+                if (cellShown is not null && !cellShown(pc.Cell)) continue;
+                fill.Color = HeatColor(piecesMax > 0 ? pc.Magnitude / piecesMax : 0, theme);
+                float x0 = ps.X(pc.XMin * toDbu), x1 = ps.X(pc.XMax * toDbu);
+                float y0 = ps.Y(pc.YMax * toDbu), y1 = ps.Y(pc.YMin * toDbu);
+                canvas.DrawRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), fill);
+            }
+            using var outline = new SKPath();
+            foreach (var c in cells) AddCell(outline, c, ps, toDbu);
+            canvas.DrawPath(outline, cellPaint);
+            return;
+        }
         for (int i = 0; i < cells.Count; i++)
         {
             if (cellShown is not null && !cellShown(i)) continue;

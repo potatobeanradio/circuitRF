@@ -144,7 +144,7 @@ public static class PlanarDcSolve
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
-        mesh.EnsureNoBlocks("the DC solve");   // PMS-4 — refused by name until it reads blocks
+        if (mesh.BlockSource is { } source) mesh = source;   // PMS-6 — the network is the mesh the ports index
         if (ports.Count == 0)
             throw new ArgumentException("A DC solve needs at least one port.", nameof(ports));
 
@@ -284,10 +284,13 @@ public static class PlanarDcSolve
             if (a != b) _parent[b] = a;
         }
 
+        private Expansion? _x;
+
         public static Network Build(PlanarProblem problem, PlanarMesh mesh,
                                     IReadOnlyList<PlanarPortResolution> ports, List<string> notes)
         {
             var net = new Network();
+            if (mesh.HasBlocks) net._x = new Expansion(mesh);
 
             // ── Nodes: one per cell that carries current, plus the plane ────────────────────────
             var nodeOf = new int[mesh.Cells.Count];
@@ -298,7 +301,10 @@ public static class PlanarDcSolve
                 if ((uint)b.CellB < (uint)nodeOf.Length && nodeOf[b.CellB] == NoNode) nodeOf[b.CellB] = 0;
             }
             int next = 0;
-            for (int c = 0; c < nodeOf.Length; c++) if (nodeOf[c] == 0) nodeOf[c] = next++;
+            // PMS-6 — on a block mesh a block is ONE NODE PER POSITION of the shared grid it spans (Expansion); every
+            // other cell is one node, as on a tensor grid.
+            for (int c = 0; c < nodeOf.Length; c++)
+                if (nodeOf[c] == 0) { nodeOf[c] = next; next += net._x?.NodesOf(c) ?? 1; }
             net._groundNode = next++;              // always present: it is every edge port's reference
             net._nodeCount  = next;
             net._parent = new int[net._nodeCount];
@@ -317,10 +323,17 @@ public static class PlanarDcSolve
             // ── Branches: one resistor per surviving basis ──────────────────────────────────────
             var levels  = PlanarLevels.From(problem);
             bool anyPec = false;
+            if (net._x is { } x)
+                x.AddInternal(problem, mesh, nodeOf, net._branches, ref anyPec);
             for (int bi = 0; bi < mesh.Bases.Count; bi++)
             {
                 if (cut[bi]) continue;
                 var b = mesh.Bases[bi];
+                if (net._x is { } xb && xb.Touches(b))
+                {
+                    xb.AddBasis(problem, mesh, levels, b, nodeOf, net._groundNode, net._branches, ref anyPec);
+                    continue;
+                }
                 double r = Resistance(problem, mesh, levels, b, ref anyPec);
                 if (!(r > 0)) r = PecSheetResistance;
 
@@ -393,6 +406,13 @@ public static class PlanarDcSolve
                 var b = mesh.Bases[bi];
                 int cell = b.AttachesToGround ? b.CellA : (wantLow ? b.CellA : b.CellB);
                 if ((uint)cell >= (uint)nodeOf.Length || nodeOf[cell] == NoNode) continue;
+                if (_x is { } x && x.Touches(b))
+                {
+                    // PMS-6 — a block terminal is every position of it the basis's face (or foot) touches.
+                    foreach (int node in x.FaceNodes(mesh, b, cell, nodeOf))
+                        if (first == NoNode) first = node; else Union(first, node);
+                    continue;
+                }
                 if (first == NoNode) first = nodeOf[cell]; else Union(first, nodeOf[cell]);
             }
             return first == NoNode ? _groundNode : Find(first);
@@ -404,6 +424,134 @@ public static class PlanarDcSolve
             int x = Tie(mesh, nodeOf, a, aLow), y = Tie(mesh, nodeOf, b, bLow);
             Union(x, y);
             return Find(x);
+        }
+
+        /// <summary>
+        /// <b>PMS-6 — the DC network of a local-grid mesh is the TENSOR grid's network, rebuilt from the blocks.</b> The
+        /// resistor-per-basis model is a two-point flux: exact on a conforming rectangle grid, and inconsistent across a
+        /// refinement step, where a fine cell's centre is offset ACROSS the current from the block's and the flux between
+        /// them is still taken as purely along it. Measured on A1: local 1.3–1.7 % below tensor at every density, the gap
+        /// not closing with refinement. A block is a union of the tensor grid's own uncut cells (PMS-4's homogeneity
+        /// rule), so each is given one node per position it spans, the elementary resistors between them, and one
+        /// resistor per position across each face it shares with a neighbour; a vertical basis on a block is one
+        /// elementary via per position. That is the tensor grid's network resistor for resistor, built at DC only —
+        /// the AC solve keeps the coarse basis.
+        /// </summary>
+        private sealed class Expansion(PlanarMesh mesh)
+        {
+            private readonly IReadOnlyList<double> _gx = mesh.GridX, _gy = mesh.GridY;
+
+            public int NodesOf(int c)
+            {
+                var cell = mesh.Cells[c];
+                return cell.IsBlock ? (cell.IX1 - cell.IX) * (cell.IY1 - cell.IY) : 1;
+            }
+
+            public bool Touches(PlanarBasis b) => b.IsSegment || mesh.Cells[b.CellA].IsBlock || mesh.Cells[b.CellB].IsBlock;
+
+            private static int At(PlanarCell cell, int baseNode, int ix, int iy)
+                => cell.IsBlock ? baseNode + (iy - cell.IY) * (cell.IX1 - cell.IX) + (ix - cell.IX) : baseNode;
+
+            private double Half(PlanarProblem problem, PlanarMesh m, PlanarCell cell, int ix, int iy, bool alongX,
+                                ref bool anyPec)
+            {
+                double rs = CellSheetResistance(problem, m, cell, ref anyPec);
+                if (!cell.IsBlock) return rs * HalfSquares(cell, alongX ? PlanarBasisDirection.X : PlanarBasisDirection.Y);
+                double dx = _gx[ix + 1] - _gx[ix], dy = _gy[iy + 1] - _gy[iy];
+                return rs * 0.5 * (alongX ? dx / dy : dy / dx);
+            }
+
+            /// <summary>The elementary resistors inside every block.</summary>
+            public void AddInternal(PlanarProblem problem, PlanarMesh m, int[] nodeOf,
+                                    List<(int A, int B, double G)> branches, ref bool anyPec)
+            {
+                for (int c = 0; c < m.Cells.Count; c++)
+                {
+                    var cell = m.Cells[c];
+                    if (!cell.IsBlock || nodeOf[c] == NoNode) continue;
+                    int b0 = nodeOf[c];
+                    for (int iy = cell.IY; iy < cell.IY1; iy++)
+                        for (int ix = cell.IX; ix < cell.IX1; ix++)
+                        {
+                            if (ix + 1 < cell.IX1)
+                            {
+                                double r = Half(problem, m, cell, ix, iy, true, ref anyPec)
+                                         + Half(problem, m, cell, ix + 1, iy, true, ref anyPec);
+                                if (!(r > 0)) r = PecSheetResistance;
+                                branches.Add((At(cell, b0, ix, iy), At(cell, b0, ix + 1, iy), 1.0 / r));
+                            }
+                            if (iy + 1 < cell.IY1)
+                            {
+                                double r = Half(problem, m, cell, ix, iy, false, ref anyPec)
+                                         + Half(problem, m, cell, ix, iy + 1, false, ref anyPec);
+                                if (!(r > 0)) r = PecSheetResistance;
+                                branches.Add((At(cell, b0, ix, iy), At(cell, b0, ix, iy + 1), 1.0 / r));
+                            }
+                        }
+                }
+            }
+
+            /// <summary>The positions of a basis's face: rows (x basis) or columns (y basis) it spans, or the foot's
+            /// positions for a vertical one.</summary>
+            private IEnumerable<(int IX, int IY)> Face(PlanarBasis b, bool sideA)
+            {
+                var a = mesh.Cells[b.CellA]; var c = mesh.Cells[b.CellB];
+                var cell = sideA ? a : c;
+                if (b.Direction == PlanarBasisDirection.Z)
+                {
+                    for (int iy = cell.IY; iy < cell.IY1; iy++)
+                        for (int ix = cell.IX; ix < cell.IX1; ix++) yield return (ix, iy);
+                    yield break;
+                }
+                bool x = b.Direction == PlanarBasisDirection.X;
+                int lo = b.IsSegment ? b.SegmentLo : Math.Max(x ? a.IY : a.IX, x ? c.IY : c.IX);
+                int hi = b.IsSegment ? b.SegmentHi : Math.Min(x ? a.IY1 : a.IX1, x ? c.IY1 : c.IX1);
+                int along = x ? (sideA ? a.IX1 - 1 : c.IX) : (sideA ? a.IY1 - 1 : c.IY);
+                for (int t = lo; t < hi; t++) yield return x ? (along, t) : (t, along);
+            }
+
+            public IEnumerable<int> FaceNodes(PlanarMesh m, PlanarBasis b, int cell, int[] nodeOf)
+            {
+                var ce = m.Cells[cell];
+                foreach (var (ix, iy) in Face(b, sideA: cell == b.CellA))
+                    yield return At(ce, nodeOf[cell], ix, iy);
+            }
+
+            /// <summary>One basis that touches a block: a resistor per position along its face, or an elementary via
+            /// per position of its foot.</summary>
+            public void AddBasis(PlanarProblem problem, PlanarMesh m, PlanarLevels levels, PlanarBasis b, int[] nodeOf,
+                                 int ground, List<(int A, int B, double G)> branches, ref bool anyPec)
+            {
+                var a = m.Cells[b.CellA]; var c = m.Cells[b.CellB];
+                int na = nodeOf[b.CellA], nc = nodeOf[b.CellB];
+                if (na == NoNode || nc == NoNode) return;
+                if (b.Direction == PlanarBasisDirection.Z || b.AttachesToGround)
+                {
+                    double length = b.AttachesToGround ? levels.AttachmentLengthOf(b.LayerIndex) : levels.LengthOf(b.LayerIndex);
+                    double sigma = ViaSigma(problem, b, a);
+                    foreach (var (ix, iy) in Face(b, sideA: true))
+                    {
+                        double area = (_gx[ix + 1] - _gx[ix]) * (_gy[iy + 1] - _gy[iy]);
+                        double r = sigma > 0 && area > 0 && length > 0 ? length / (sigma * area) : 0;
+                        if (!(sigma > 0)) anyPec = true;
+                        if (!(r > 0)) r = PecSheetResistance;
+                        int u = At(a, na, ix, iy);
+                        int v = b.AttachesToGround ? ground : At(c, nc, ix, iy);
+                        if (u != v) branches.Add((u, v, 1.0 / r));
+                    }
+                    return;
+                }
+                bool x = b.Direction == PlanarBasisDirection.X;
+                using var fa = Face(b, true).GetEnumerator();
+                using var fc = Face(b, false).GetEnumerator();
+                while (fa.MoveNext() && fc.MoveNext())
+                {
+                    var (ax, ay) = fa.Current; var (cx, cy) = fc.Current;
+                    double r = Half(problem, m, a, ax, ay, x, ref anyPec) + Half(problem, m, c, cx, cy, x, ref anyPec);
+                    if (!(r > 0)) r = PecSheetResistance;
+                    branches.Add((At(a, na, ax, ay), At(c, nc, cx, cy), 1.0 / r));
+                }
+            }
         }
 
         // ── The resistance of one basis ────────────────────────────────────────────────────────
@@ -420,6 +568,7 @@ public static class PlanarDcSolve
 
             var ca = mesh.Cells[b.CellA];
             var cb = mesh.Cells[b.CellB];
+
             // EM-TFR — each half takes its own sheet resistance. Two halves of one material keep the
             // single expression they always had, so a mesh with no film gives today's bits.
             if (ca.Film == cb.Film)

@@ -88,6 +88,18 @@ public sealed record PlanarCurrentDensityMap(
     public bool HasVerticalCurrent => MaxViaCurrent > 0;
 
     /// <summary>
+    /// <b>PMS-6 R-pms6-2 — the map on a local-grid mesh, per SUPPORT PIECE</b>, or null on a mesh with no block (every
+    /// tensor-grid map). A coarse block carries several rooftop halves whose supports are strips of it, and the current
+    /// at its centre plane is different on each strip, so one number per block would average the very structure a
+    /// refinement step exists to resolve. A piece is a rectangle of one cell cut at every edge of every support on it:
+    /// the coarsest partition on which each support is a union of pieces, so <c>J</c> is exact per piece and the pieces
+    /// tile the cell. The per-cell <see cref="Jx"/>/<see cref="Jy"/>/<see cref="Magnitude"/> are the pieces'
+    /// AREA-WEIGHTED means (equal to the piece on a cell that is one piece), and <see cref="MaxMagnitude"/> is the
+    /// largest piece, which is what the overlay draws and normalises.
+    /// </summary>
+    public IReadOnlyList<PlanarCurrentPiece>? Pieces { get; init; }
+
+    /// <summary>
     /// Per cell, in L8b's cell order: whether the cell lies on metal the user DREW. Null means every
     /// cell does, which is the case whenever the solver grew nothing.
     ///
@@ -136,6 +148,15 @@ public sealed record PlanarCurrentDensityMap(
         "superposed every excitation would be a map of nothing.";
 }
 
+/// <summary>PMS-6 — one piece of a local-grid map: a rectangle of cell <paramref name="Cell"/>, metres, with its density.
+/// See <see cref="PlanarCurrentDensityMap.Pieces"/>.</summary>
+public sealed record PlanarCurrentPiece(
+    int Cell, int LayerIndex, double XMin, double YMin, double XMax, double YMax,
+    Complex Jx, Complex Jy, double Magnitude)
+{
+    public double Area => (XMax - XMin) * (YMax - YMin);
+}
+
 public static class PlanarCurrentDensity
 {
     /// <summary>
@@ -147,7 +168,7 @@ public static class PlanarCurrentDensity
         PlanarMesh mesh, Vec<Complex> basisCurrents, int drivenPortNumber, double fHz)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        mesh.EnsureNoBlocks("the current-density map");   // PMS-4 — refused by name until it reads blocks
+        if (mesh.BlockSource is { } source) mesh = source;   // a support mesh maps as the mesh it supports
         if (basisCurrents.Count != mesh.Bases.Count)
             throw new ArgumentException(
                 $"The solution has {basisCurrents.Count} unknowns and the mesh has " +
@@ -198,7 +219,11 @@ public static class PlanarCurrentDensity
         var mag = new double[n];
         double max = 0;
 
-        for (int c = 0; c < n; c++)
+        // PMS-6 — a mesh with a block or a step rooftop is mapped per support piece; every tensor-grid mesh takes the loop
+        // below, unchanged.
+        List<PlanarCurrentPiece>? pieces = mesh.HasBlocks ? Pieces(mesh, basisCurrents, jx, jy, mag, out max) : null;
+
+        for (int c = 0; c < n && pieces is null; c++)
         {
             var cell = mesh.Cells[c];
             // A current flowing in x spreads across the cell's y extent, and vice versa.
@@ -230,7 +255,90 @@ public static class PlanarCurrentDensity
         }
 
         return new PlanarCurrentDensityMap(mag, jx, jy, max, drivenPortNumber, fHz,
-                                           anyVia ? iz : null, maxVia);
+                                           anyVia ? iz : null, maxVia) { Pieces = pieces };
+    }
+
+    /// <summary>
+    /// <b>R-pms6-2 — the pieces of a block mesh.</b> Each rooftop half (<see cref="PlanarLocalGrid.SupportsAnyCell"/>)
+    /// is a rectangle spanning its cell's full depth along its current, so at the cell's centre plane it carries
+    /// ½·I_b spread over its own transverse width — the tensor rule with the SUPPORT's width in place of the cell's. A
+    /// cell is cut at every transverse edge of its x-halves (in y) and of its y-halves (in x); on each piece J_x sums
+    /// the x-halves covering it and J_y the y-halves. A cell all of whose halves are whole (every cut cell among them —
+    /// the local grid keeps those elementary) is one piece with exactly the tensor formula.
+    /// </summary>
+    private static List<PlanarCurrentPiece> Pieces(
+        PlanarMesh mesh, Vec<Complex> currents, Complex[] jx, Complex[] jy, double[] mag, out double max)
+    {
+        int n = mesh.Cells.Count;
+        var halves = new List<(PlanarStepSupport S, Complex I, bool X)>[n];
+        for (int b = 0; b < mesh.Bases.Count; b++)
+        {
+            var bs = mesh.Bases[b];
+            if (bs.Direction == PlanarBasisDirection.Z) continue;
+            var (ha, hb) = PlanarLocalGrid.SupportsAnyCell(mesh, bs);
+            bool x = bs.Direction == PlanarBasisDirection.X;
+            (halves[ha.CellIndex] ??= []).Add((ha, currents[b], x));
+            (halves[hb.CellIndex] ??= []).Add((hb, currents[b], x));
+        }
+
+        var list = new List<PlanarCurrentPiece>(n);
+        max = 0;
+        for (int c = 0; c < n; c++)
+        {
+            var cell = mesh.Cells[c];
+            var hs = halves[c];
+            bool whole = true;
+            if (hs is not null)
+                foreach (var h in hs)
+                    if (h.S.XMin != cell.XMin || h.S.XMax != cell.XMax || h.S.YMin != cell.YMin || h.S.YMax != cell.YMax)
+                    { whole = false; break; }
+
+            if (whole)
+            {
+                Complex ix = 0, iy = 0;
+                if (hs is not null) foreach (var h in hs) { if (h.X) ix += 0.5 * h.I; else iy += 0.5 * h.I; }
+                double tranY = cell.Width  > 0 ? cell.Area / cell.Width  : 0.0;
+                double tranX = cell.Height > 0 ? cell.Area / cell.Height : 0.0;
+                jx[c] = tranY > 0 ? ix / tranY : Complex.Zero;
+                jy[c] = tranX > 0 ? iy / tranX : Complex.Zero;
+                mag[c] = Math.Sqrt(jx[c].Magnitude * jx[c].Magnitude + jy[c].Magnitude * jy[c].Magnitude);
+                list.Add(new PlanarCurrentPiece(c, cell.LayerIndex, cell.XMin, cell.YMin, cell.XMax, cell.YMax,
+                                                jx[c], jy[c], mag[c]));
+                max = Math.Max(max, mag[c]);
+                continue;
+            }
+
+            var xs = new SortedSet<double> { cell.XMin, cell.XMax };
+            var ys = new SortedSet<double> { cell.YMin, cell.YMax };
+            foreach (var h in hs!)
+            {
+                if (h.X) { ys.Add(h.S.YMin); ys.Add(h.S.YMax); }
+                else     { xs.Add(h.S.XMin); xs.Add(h.S.XMax); }
+            }
+            var xa = xs.ToArray(); var ya = ys.ToArray();
+            Complex sx = 0, sy = 0; double sm = 0, area = 0;
+            for (int j = 0; j + 1 < ya.Length; j++)
+                for (int i = 0; i + 1 < xa.Length; i++)
+                {
+                    double px = 0.5 * (xa[i] + xa[i + 1]), py = 0.5 * (ya[j] + ya[j + 1]);
+                    Complex px_ = 0, py_ = 0;
+                    foreach (var h in hs)
+                    {
+                        if (px < h.S.XMin || px > h.S.XMax || py < h.S.YMin || py > h.S.YMax) continue;
+                        if (h.X) px_ += 0.5 * h.I / (h.S.YMax - h.S.YMin);
+                        else     py_ += 0.5 * h.I / (h.S.XMax - h.S.XMin);
+                    }
+                    double m = Math.Sqrt(px_.Magnitude * px_.Magnitude + py_.Magnitude * py_.Magnitude);
+                    double a = (xa[i + 1] - xa[i]) * (ya[j + 1] - ya[j]);
+                    list.Add(new PlanarCurrentPiece(c, cell.LayerIndex, xa[i], ya[j], xa[i + 1], ya[j + 1], px_, py_, m));
+                    sx += a * px_; sy += a * py_; sm += a * m; area += a;
+                    max = Math.Max(max, m);
+                }
+            jx[c] = area > 0 ? sx / area : 0;
+            jy[c] = area > 0 ? sy / area : 0;
+            mag[c] = area > 0 ? sm / area : 0;
+        }
+        return list;
     }
 
     /// <summary>

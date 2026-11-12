@@ -325,9 +325,9 @@ public class Pms5LocalGridFillTests(ITestOutputHelper output)
     }
 
     /// <summary>R-pms5-6 — the dense solve takes a block mesh with internal delta-gap ports, and lands on the tensor
-    /// grid's answer; an edge port and the accelerated solve are still refused by name (brief 6).</summary>
+    /// grid's answer. (Edge ports and the accelerated solve read blocks since PMS-6: Pms6LocalGridConsumersTests.)</summary>
     [Fact]
-    public void ABlockMesh_Solves_AndEdgePortsAndAimStayRefused()
+    public void ABlockMesh_Solves_WithInternalGapPorts()
     {
         var p = StepBlock();
         var local = Mesh(Coarse with { LocalGrid = true });
@@ -342,11 +342,5 @@ public class Pms5LocalGridFillTests(ITestOutputHelper output)
                 d = Math.Max(d, (run.Points[0].S[i, j] - reference.Points[0].S[i, j]).Magnitude);
         output.WriteLine($"N {local.Bases.Count} local against {tensor.Bases.Count} tensor: max |ΔS| {d:E2}");
         Assert.True(d < 1e-3);
-
-        var edge = new PlanarPort(3, new EmPoint(70e-6, 15e-6), PlanarPortSide.MaxX, 50, 1);
-        var refused = Assert.Throws<PlanarLocalGridRefusedException>(() => PlanarPorts.ResolveAll(local, [edge]));
-        Assert.Equal("an edge port", refused.Consumer);
-        Assert.Throws<PlanarLocalGridRefusedException>(() => new PlanarSolveContext(
-            local, [], PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default }, slabHeightM: 100e-6));
     }
 }

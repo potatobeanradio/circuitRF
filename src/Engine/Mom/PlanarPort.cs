@@ -1008,28 +1008,21 @@ public static class PlanarPorts
         PlanarMesh mesh, IReadOnlyList<PlanarPort> ports)
     {
         ArgumentNullException.ThrowIfNull(ports);
-        // PMS-5 — an INTERNAL DELTA GAP resolves on a block mesh: the mesher keeps a window around every port elementary,
-        // so its cut is today's cut on today's cells. An edge port (its calibration standards are cut from the mesh) and
-        // a via port are brief 6's, and are refused by name until then.
-        bool blocks = mesh.HasBlocks;
-        if (blocks)
-            foreach (var p in ports)
-                if (p.Kind != PlanarPortKind.InternalDeltaGap)
-                    throw new PlanarLocalGridRefusedException(
-                        p.Kind == PlanarPortKind.Internal ? "a via (internal) port" : "an edge port");
+        // PMS-5/6 — every port kind resolves on a block mesh. The mesher keeps each port it was given in a window that is
+        // elementary along the port and carries only the feed's own lines across it (PMS-6 R-pms6-1), so the port's cut
+        // is a run of whole-face rooftops and its standard is cut from that cross-section. What cannot be driven is a
+        // rooftop across a refinement step: refused by name rather than read as a whole face.
         var list = new List<PlanarPortResolution>(ports.Count);
         foreach (var p in ports) list.Add(Resolve(mesh, p));
-        if (blocks)
+        if (mesh.HasBlocks)
             foreach (var r in list)
                 foreach (int bi in r.BasisIndices)
-                {
-                    var b = mesh.Bases[bi];
-                    if (b.IsSegment || mesh.Cells[b.CellA].IsBlock || mesh.Cells[b.CellB].IsBlock)
+                    if (mesh.Bases[bi].IsSegment)
                         throw new InvalidOperationException(
-                            $"Port {r.Number}'s gap crosses a coarse block of the local grid, where its cut is not one " +
-                            "line of today's cells. The local grid keeps a window around each port it was given at " +
-                            "meshing elementary; mesh with this port in the port list, or turn Local grid off.");
-                }
+                            $"Port {r.Number}'s cut crosses a refinement step of the local grid, where its rooftops " +
+                            "span part of a block's face rather than the whole of it. The local grid keeps a window " +
+                            "around each port it was given at meshing; mesh with this port in the port list, or turn " +
+                            "Local grid off.");
         RefuseCoincidentCuts(list);
         return list;
     }
@@ -1434,14 +1427,8 @@ public static class PlanarPorts
         }
         int lowCol = highCol - 1;
 
-        int nx = mesh.GridX.Count - 1, ny = mesh.GridY.Count - 1;
-        var at = new int[nx * ny];
-        Array.Fill(at, -1);
-        for (int c = 0; c < mesh.Cells.Count; c++)
-        {
-            var cell = mesh.Cells[c];
-            if (cell.LayerIndex == pos.LayerIndex) at[cell.IY * nx + cell.IX] = c;
-        }
+        int nx = mesh.GridX.Count - 1;
+        var at = PositionMap(mesh, pos.LayerIndex);
 
         int CellAt(int iLong, int iTran) => alongX ? at[iTran * nx + iLong] : at[iLong * nx + iTran];
 
@@ -1461,11 +1448,23 @@ public static class PlanarPorts
             return false;
         }
 
-        int n = last - first + 1;
-        var lines   = new double[n + 1];
-        var isMetal = new bool[n];
-        for (int k = 0; k <= n; k++) lines[k]   = gTran[first + k];
-        for (int k = 0; k < n; k++)  isMetal[k] = metal[first + k];
+        // PMS-6 — one interval per transverse SLOT: a run of positions under one (low, high) cell pair is one interval,
+        // because the lines inside a local-grid block are not active at the plane (the port resolution reads the same
+        // slots). On a tensor grid every position is its own interval, exactly as before.
+        var lineList  = new List<double>();
+        var metalList = new List<bool>();
+        for (int t = first; t <= last; t++)
+        {
+            bool merge = t > first && metal[t] && metal[t - 1] &&
+                         CellAt(lowCol, t) == CellAt(lowCol, t - 1) && CellAt(highCol, t) == CellAt(highCol, t - 1);
+            if (merge) continue;
+            lineList.Add(gTran[t]);
+            metalList.Add(metal[t]);
+        }
+        lineList.Add(gTran[last + 1]);
+        int n = metalList.Count;
+        var lines   = lineList.ToArray();
+        var isMetal = metalList.ToArray();
 
         int conductors = 0;
         for (int k = 0; k < n; k++)
@@ -1514,13 +1513,7 @@ public static class PlanarPorts
         int nx = mesh.GridX.Count - 1, ny = mesh.GridY.Count - 1;
         if (nx < 1 || ny < 1) return false;
 
-        var at = new int[nx * ny];
-        Array.Fill(at, -1);
-        for (int c = 0; c < mesh.Cells.Count; c++)
-        {
-            var cell = mesh.Cells[c];
-            if (cell.LayerIndex == layerIndex) at[cell.IY * nx + cell.IX] = c;
-        }
+        var at = PositionMap(mesh, layerIndex);
 
         var target = new HashSet<int>();
         foreach (int b in toBases)
@@ -1627,7 +1620,9 @@ public static class PlanarPorts
             var bs = mesh.Bases[b];
             if (!bs.AttachesToGround || bs.LayerIndex != layerIndex) continue;
             var cell = mesh.Cells[bs.CellB];
-            attachAt[cell.IY * nx + cell.IX] = b;
+            // PMS-6 — a block foot fills every position it spans (one position on a tensor grid).
+            for (int fy = cell.IY; fy < cell.IY1; fy++)
+                for (int fx = cell.IX; fx < cell.IX1; fx++) attachAt[fy * nx + fx] = b;
             attachments++;
         }
 
@@ -1672,13 +1667,17 @@ public static class PlanarPorts
         claimed[iy * nx + ix] = true;
 
         var indices = new List<int>();
+        var taken   = new HashSet<int>();   // PMS-6 — a block foot is reached at each position it spans; counted once
         double area = 0;
         while (stack.Count > 0)
         {
             var (cx, cy) = stack.Pop();
             int bi = attachAt[cy * nx + cx];
-            indices.Add(bi);
-            area += mesh.Cells[mesh.Bases[bi].CellB].Area;
+            if (taken.Add(bi))
+            {
+                indices.Add(bi);
+                area += mesh.Cells[mesh.Bases[bi].CellB].Area;
+            }
 
             foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
             {
@@ -1739,18 +1738,8 @@ public static class PlanarPorts
         }
 
         // ── (ix, iy) → cell index, for this layer only. A plain int[], as R-msh-2 requires. ──────
-        int nx = mesh.GridX.Count - 1, ny = mesh.GridY.Count - 1;
-        var at = new int[nx * ny];
-        Array.Fill(at, -1);
-        for (int c = 0; c < mesh.Cells.Count; c++)
-        {
-            var cell = mesh.Cells[c];
-            if (cell.LayerIndex != layerIndex) continue;
-            // PMS-5 — a block covers every position it spans, so "is there metal here" reads true across it; on a tensor
-            // grid IX1 = IX + 1 and IY1 = IY + 1, and this is the one store it always was.
-            for (int iy = cell.IY; iy < cell.IY1; iy++)
-                for (int ix = cell.IX; ix < cell.IX1; ix++) at[iy * nx + ix] = c;
-        }
+        int nx = mesh.GridX.Count - 1;
+        var at = PositionMap(mesh, layerIndex);
 
         int CellAt(int iLong, int iTran) =>
             alongX ? at[iTran * nx + iLong] : at[iLong * nx + iTran];
@@ -1846,6 +1835,16 @@ public static class PlanarPorts
             }
 
             int inner = fromLow ? outer + 1 : outer - 1;
+            if (inner >= 0 && inner < nLong && CellAt(inner, seedT) >= 0 && CellAt(inner, seedT) == CellAt(outer, seedT))
+            {
+                // PMS-6 — the local grid coarsened the feed's end along the port, which it does only to a port it was
+                // not handed at meshing (it keeps every given port's feed elementary along the port).
+                refusal = $"Port {port.Number}'s feed end is one block of the local grid along the direction current " +
+                          "would flow, so there is no rooftop at its outermost cell to drive. The local grid keeps the " +
+                          "feed of every port it is given at meshing elementary along the port; mesh with this port in " +
+                          "the port list, or turn Local grid off.";
+                return false;
+            }
             if (inner < 0 || inner >= nLong || CellAt(inner, seedT) < 0)
             {
                 refusal = $"Port {port.Number}'s conductor is only one cell long in the direction current " +
@@ -1977,33 +1976,62 @@ public static class PlanarPorts
         // declined to pair", and it carries that explanation in words. Metal that never ended here is
         // not undriven — it is not this port's cross-section at all.
         int outside = fromLow ? outer - 1 : outer + 1;
+
+        // ── PMS-6 — THE CUT'S TRANSVERSE SLOTS ───────────────────────────────────────────────────
+        //
+        // A slot is a maximal run of positions across the port that carry ONE (low, high) cell pair, i.e. one rooftop.
+        // On a tensor grid every position is its own slot and every expression below reads exactly the gridlines it
+        // always read; on the local grid a block of the feed window spans several positions across the port, and the
+        // lines inside it are not active there — they are not in the port's cross-section and not in its standard.
+        var slotLo = new List<int>(nTran);
+        var slotHi = new List<int>(nTran);
+        var slotOf = new int[nTran];
+        for (int t = 0; t < nTran; t++)
+        {
+            int ca = CellAt(lowCol, t), cb = CellAt(highCol, t);
+            bool same = t > 0 && ca >= 0 && cb >= 0 && ca == CellAt(lowCol, t - 1) && cb == CellAt(highCol, t - 1);
+            if (same) slotHi[^1] = t;
+            else { slotLo.Add(t); slotHi.Add(t); }
+            slotOf[t] = slotLo.Count - 1;
+        }
+        int nSlot = slotLo.Count;
+        double SlotLine(int k) => k < nSlot ? gTran[slotLo[k]] : gTran[slotHi[nSlot - 1] + 1];
+        int CellLow(int k)  => CellAt(lowCol,  slotLo[k]);
+        int CellHigh(int k) => CellAt(highCol, slotLo[k]);
+
         // R-pw1-1 — a port narrower than its edge drives only the rows whose centres lie in its span. Asked of the metal
         // walk too: metal outside the span is not this port's cross-section, so it is not "undriven" either.
         var span = port.EdgeSpan;
-        bool EndsHere(int t) =>
-            (span is not { } sp || sp.Contains(0.5 * (gTran[t] + gTran[t + 1]))) &&
-            (internalGap || outside < 0 || outside >= nLong || CellAt(outside, t) < 0);
-
-        bool HasBasis(int t)
+        bool OutsideEmpty(int k)
         {
-            int a = CellAt(lowCol, t), b = CellAt(highCol, t);
-            return a >= 0 && b >= 0 && byPair.ContainsKey((a, b, port.Direction)) && EndsHere(t);
+            if (internalGap || outside < 0 || outside >= nLong) return true;
+            for (int t = slotLo[k]; t <= slotHi[k]; t++) if (CellAt(outside, t) >= 0) return false;
+            return true;
+        }
+        bool EndsHere(int k) =>
+            (span is not { } sp || sp.Contains(0.5 * (gTran[slotLo[k]] + gTran[slotHi[k] + 1]))) && OutsideEmpty(k);
+
+        bool HasBasis(int k)
+        {
+            int a = CellLow(k), b = CellHigh(k);
+            return a >= 0 && b >= 0 && byPair.ContainsKey((a, b, port.Direction)) && EndsHere(k);
         }
 
-        if (span is { } sp0 && !EndsHere(seedT))
+        int seedS = slotOf[seedT];
+        if (span is { } sp0 && !EndsHere(seedS))
         {
             // The port's own point is outside its own span only when the span came from somewhere other than the
             // port; take the row nearest the span's centre instead of refusing.
             double mid = 0.5 * (sp0.LoM + sp0.HiM);
             int best = -1;
-            for (int t = 0; t < nTran; t++)
-                if (HasBasis(t) && (best < 0 || Math.Abs(0.5 * (gTran[t] + gTran[t + 1]) - mid) <
-                                                Math.Abs(0.5 * (gTran[best] + gTran[best + 1]) - mid)))
-                    best = t;
-            if (best >= 0) seedT = best;
+            double Centre(int k) => 0.5 * (gTran[slotLo[k]] + gTran[slotHi[k] + 1]);
+            for (int k = 0; k < nSlot; k++)
+                if (HasBasis(k) && (best < 0 || Math.Abs(Centre(k) - mid) < Math.Abs(Centre(best) - mid)))
+                    best = k;
+            if (best >= 0) seedS = best;
         }
 
-        if (!HasBasis(seedT))
+        if (!HasBasis(seedS))
         {
             refusal =
                 $"Port {port.Number} sits on a cell pair the mesher did not pair into a rooftop, so " +
@@ -2016,19 +2044,19 @@ public static class PlanarPorts
         }
 
         // The contiguous transverse run of ROOFTOPS at that column…
-        int lo = seedT, hi = seedT;
+        int lo = seedS, hi = seedS;
         while (lo - 1 >= 0    && HasBasis(lo - 1)) lo--;
-        while (hi + 1 < nTran && HasBasis(hi + 1)) hi++;
+        while (hi + 1 < nSlot && HasBasis(hi + 1)) hi++;
 
         // …and, separately, how far the METAL runs, so the note can say what was left out.
         int mLo = lo, mHi = hi;
-        while (mLo - 1 >= 0    && CellAt(lowCol, mLo - 1) >= 0 && CellAt(highCol, mLo - 1) >= 0 && EndsHere(mLo - 1)) mLo--;
-        while (mHi + 1 < nTran && CellAt(lowCol, mHi + 1) >= 0 && CellAt(highCol, mHi + 1) >= 0 && EndsHere(mHi + 1)) mHi++;
+        while (mLo - 1 >= 0    && CellLow(mLo - 1) >= 0 && CellHigh(mLo - 1) >= 0 && EndsHere(mLo - 1)) mLo--;
+        while (mHi + 1 < nSlot && CellLow(mHi + 1) >= 0 && CellHigh(mHi + 1) >= 0 && EndsHere(mHi + 1)) mHi++;
 
-        double PlaneMetal(int t)
+        double PlaneMetal(int k)
         {
-            var ca = mesh.Cells[CellAt(lowCol, t)];
-            var cb = mesh.Cells[CellAt(highCol, t)];
+            var ca = mesh.Cells[CellLow(k)];
+            var cb = mesh.Cells[CellHigh(k)];
             // Both cells share that face, so the two lengths agree for a sound pair; the smaller is
             // what a pair only one side reaches would report.
             return Math.Min(
@@ -2038,20 +2066,20 @@ public static class PlanarPorts
 
         int cutCells = 0;
         var metal    = new double[hi - lo + 1];
-        for (int t = lo; t <= hi; t++)
+        for (int k = lo; k <= hi; k++)
         {
-            if (mesh.Cells[CellAt(lowCol, t)].IsCut)  cutCells++;
-            if (mesh.Cells[CellAt(highCol, t)].IsCut) cutCells++;
-            metal[t - lo] = PlaneMetal(t);
+            if (mesh.Cells[CellLow(k)].IsCut)  cutCells++;
+            if (mesh.Cells[CellHigh(k)].IsCut) cutCells++;
+            metal[k - lo] = PlaneMetal(k);
         }
 
         double undriven = 0;
-        for (int t = mLo; t < lo; t++) undriven += PlaneMetal(t);
-        for (int t = hi + 1; t <= mHi; t++) undriven += PlaneMetal(t);
+        for (int k = mLo; k < lo; k++) undriven += PlaneMetal(k);
+        for (int k = hi + 1; k <= mHi; k++) undriven += PlaneMetal(k);
 
         var indices = new List<int>(hi - lo + 1);
-        for (int t = lo; t <= hi; t++)
-            indices.Add(byPair[(CellAt(lowCol, t), CellAt(highCol, t), port.Direction)]);
+        for (int k = lo; k <= hi; k++)
+            indices.Add(byPair[(CellLow(k), CellHigh(k), port.Direction)]);
 
         // ── The geometry the report and the calibration both need ────────────────────────────────
         //
@@ -2061,7 +2089,7 @@ public static class PlanarPorts
         // — the feed-clearance scan, the automatic lead, the peel — is an edge-port path and asks
         // only about edge ports (PlanarSolve gates on IsDeembeddable), so reporting the honest number
         // here cannot be mistaken for a feed of length zero.
-        double gridWidth = gTran[hi + 1] - gTran[lo];
+        double gridWidth = SlotLine(hi + 1) - SlotLine(lo);
         double plane     = internalGap ? sharedCoord : fromLow ? gLong[outer + 1] : gLong[outer];
         double edge      = internalGap ? sharedCoord : fromLow ? gLong[outer]     : gLong[outer + 1];
 
@@ -2089,7 +2117,7 @@ public static class PlanarPorts
         if (Math.Abs(metalWidth - gridWidth) <= 1e-12 * gridWidth)
         {
             width = gridWidth;
-            for (int t = lo; t <= hi + 1; t++) tLines[t - lo] = gTran[t];
+            for (int k = lo; k <= hi + 1; k++) tLines[k - lo] = SlotLine(k);
         }
         else
         {
@@ -2098,7 +2126,7 @@ public static class PlanarPorts
             // cross-section and the error box stays the same object. Centred on the grid run, because
             // these lines are also what the mesh overlay draws the reference plane from.
             width     = metalWidth;
-            tLines[0] = 0.5 * (gTran[lo] + gTran[hi + 1]) - 0.5 * width;
+            tLines[0] = 0.5 * (SlotLine(lo) + SlotLine(hi + 1)) - 0.5 * width;
             for (int k = 0; k < metal.Length; k++) tLines[k + 1] = tLines[k] + metal[k];
         }
 
@@ -2115,10 +2143,17 @@ public static class PlanarPorts
         }
         else
         {
+            // PMS-6 — the run stops where the local grid starts coarsening ALONG the port, which it does only past the
+            // feed window the mesher kept for this port: beyond it the cells are the circuit's, not the feed's, and a
+            // block there would set the standard's bulk cell to a size the feed is never meshed at. On a tensor grid
+            // every cell is one position along the port and this is the march it always was.
+            int runT = slotLo[seedS];
             for (int k = 0; ; k++)
             {
                 int i = fromLow ? outer + k : outer - k;
-                if (i < 0 || i >= nLong || CellAt(i, seedT) < 0) break;
+                if (i < 0 || i >= nLong || CellAt(i, runT) < 0) break;
+                var cell = mesh.Cells[CellAt(i, runT)];
+                if ((alongX ? cell.IX1 - cell.IX : cell.IY1 - cell.IY) > 1) break;
                 run.Add(gLong[i + 1] - gLong[i]);
             }
         }
@@ -2314,7 +2349,8 @@ public static class PlanarPorts
             // metal, and metal on another level is not continuous with this one whatever it looks
             // like from above.
             if (c.LayerIndex == port.LayerIndex && bands is not null &&
-                bands.TryGetValue(alongX ? c.IX : c.IY, out var band))
+                BandOf(bands, alongX ? c.IX : c.IY, alongX ? c.IX1 : c.IY1, alongX ? c.IY : c.IX,
+                       alongX ? c.IY1 : c.IX1) is { } band)
             {
                 // ── BY GRID INDEX, NOT BY COORDINATE, AND THAT IS NOT A TIDY-UP ──────────────────
                 //
@@ -2326,8 +2362,7 @@ public static class PlanarPorts
                 // ending at 611.8, and the port's own flare came back as a neighbour 203.9 µm away.
                 // The index says which column of the cross-section this is, and a merge does not
                 // move it.
-                int iTran = alongX ? c.IY : c.IX;
-                if (iTran >= band.Lo && iTran <= band.Hi) continue;
+                continue;
             }
 
             // A cell no rooftop pairs with carries no current and is not in the solve at all, so it
@@ -2392,6 +2427,20 @@ public static class PlanarPorts
 
 
     /// <summary>
+    /// The band a cell lies in: the first column of the cell's longitudinal span [<paramref name="l0"/>,
+    /// <paramref name="l1"/>) that has a band and whose band holds the cell's transverse start <paramref name="t0"/>.
+    /// PMS-6 — a local-grid block spans several columns and positions; on a tensor grid this is the one lookup at the
+    /// cell's own column, asked of its own transverse index, exactly as before.
+    /// </summary>
+    private static (int Lo, int Hi)? BandOf(Dictionary<int, (int Lo, int Hi)> bands, int l0, int l1, int t0, int t1)
+    {
+        for (int l = l0; l < l1; l++)
+            if (bands.TryGetValue(l, out var band) && t0 >= band.Lo && t0 <= band.Hi && t1 - 1 <= band.Hi)
+                return band;
+        return null;
+    }
+
+    /// <summary>
     /// <b>R-pcal7-1 — the feed's own unbroken cross-section at every column of the end run</b>, keyed
     /// by that column's grid index, or null when the port's own level cannot be walked.
     ///
@@ -2416,13 +2465,7 @@ public static class PlanarPorts
         if (nLong < 1 || nTran < 1) return null;
 
         int nx = mesh.GridX.Count - 1;
-        var at = new int[nx * (mesh.GridY.Count - 1)];
-        Array.Fill(at, -1);
-        for (int i = 0; i < mesh.Cells.Count; i++)
-        {
-            var cell = mesh.Cells[i];
-            if (cell.LayerIndex == port.LayerIndex) at[cell.IY * nx + cell.IX] = i;
-        }
+        var at = PositionMap(mesh, port.LayerIndex);
 
         int CellAt(int iLong, int iTran)
         {
@@ -2506,6 +2549,17 @@ public static class PlanarPorts
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
+    /// <b>PMS-6 — why a widened or grouped profile is not attempted on a local-grid mesh.</b> Both read the metal beside
+    /// a feed column by column of the shared grid, and beside a port window the local grid's cells are blocks that span
+    /// several columns: the profile they would build is not a cross-section of the mesh being solved. Declined by name,
+    /// so the run falls back to the clearance rule exactly as a conformal feed does.
+    /// </summary>
+    internal static string LocalGridProfileDecline(string who, string what) =>
+        $"{who} was not widened to take {what}: the mesh is on the local grid, and the metal beside a port's feed " +
+        "window is meshed in blocks that span several gridlines, so a profile read gridline by gridline would not be a " +
+        "cross-section of the mesh being solved. Turn Local grid off for this run, or separate the feeds.";
+
+    /// <summary>
     /// <b>R-pcal3-1 — a conductor within the clearance distance of a calibrated feed, carrying no
     /// port, joins that port's PROFILE and therefore its calibration standard.</b> Returns the port
     /// with a <see cref="PlanarPortNeighbourhood"/> on it, or null with <paramref name="declined"/>
@@ -2572,6 +2626,12 @@ public static class PlanarPorts
                 "own cells are cut), so its profile is the METAL's extents rather than the grid's and " +
                 "a neighbour's gridlines would not line up with it. Set Boundary cells to " +
                 "\"Staircase\" for this run, or separate the feeds.";
+            return null;
+        }
+
+        if (mesh.HasBlocks)
+        {
+            declined = LocalGridProfileDecline(Who(), "a passive neighbour into its calibration standard");
             return null;
         }
 
@@ -2747,13 +2807,7 @@ public static class PlanarPorts
             bool fromLow = port.Side is PlanarPortSide.MinX or PlanarPortSide.MinY;
 
             int nx = mesh.GridX.Count - 1;
-            var at = new int[nx * (mesh.GridY.Count - 1)];
-            Array.Fill(at, -1);
-            for (int c = 0; c < mesh.Cells.Count; c++)
-            {
-                var cell = mesh.Cells[c];
-                if (cell.LayerIndex == port.LayerIndex) at[cell.IY * nx + cell.IX] = c;
-            }
+            var at = PositionMap(mesh, port.LayerIndex);
 
             // ── The end run's columns, marching INWARD from the port, exactly as D4 copies them ──
             int planeIdx = 0;
@@ -2865,6 +2919,12 @@ public static class PlanarPorts
                 "own cells are cut), so its profile is the METAL's extents rather than the grid's and " +
                 "a neighbour's gridlines would not line up with it. Set Boundary cells to " +
                 "\"Staircase\" for this run, or separate the feeds.";
+            return null;
+        }
+
+        if (mesh.HasBlocks)
+        {
+            declined = LocalGridProfileDecline(Who(), "its driven neighbours into one calibration group");
             return null;
         }
 
@@ -3045,6 +3105,26 @@ public static class PlanarPorts
         => layerIndex >= 0 && layerIndex < mesh.LayerNames.Count
             ? $" ('{mesh.LayerNames[layerIndex]}')"
             : "";
+
+    /// <summary>
+    /// <b>PMS-6 — position → cell on one level</b>, with a local-grid block filling every position of the shared grid it
+    /// spans. On a tensor grid every cell spans one position (IX1 = IX + 1), so this is the one store every resolution
+    /// here always built. −1 where there is no cell.
+    /// </summary>
+    internal static int[] PositionMap(PlanarMesh mesh, int layerIndex)
+    {
+        int nx = Math.Max(0, mesh.GridX.Count - 1), ny = Math.Max(0, mesh.GridY.Count - 1);
+        var at = new int[nx * ny];
+        Array.Fill(at, -1);
+        for (int c = 0; c < mesh.Cells.Count; c++)
+        {
+            var cell = mesh.Cells[c];
+            if (cell.LayerIndex != layerIndex) continue;
+            for (int iy = cell.IY; iy < cell.IY1; iy++)
+                for (int ix = cell.IX; ix < cell.IX1; ix++) at[iy * nx + ix] = c;
+        }
+        return at;
+    }
 
     private static int IndexOf(IReadOnlyList<double> grid, double v)
     {

@@ -970,7 +970,8 @@ public static partial class LayoutRenderer
                     DrawPlanarMeshOverlay(canvas, planarMesh, theme, ps, view.DbuPerMicron, scaleUm,
                                           density is null ? null : density.Normalised,
                                           density is null || ShowCurrentDensityOutsideDrawnMetal
-                                              ? null : density.IsOnDrawnMetal);
+                                              ? null : density.IsOnDrawnMetal,
+                                          density?.Pieces, density?.MaxMagnitude ?? 0);
 
                     // §10.6 — the de-embedding reference planes, over the engine's own coordinates.
                     if (opts.PlanarPorts is { Count: > 0 } refPlanes)

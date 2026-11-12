@@ -1,5 +1,5 @@
 // PMS-4 R-pms4-1 / R-pms4-4 — the local-grid setting in the .cem and in the provenance stamp, and the preflight a drawn
-// layout takes with it on: the mesh and its count are reported, and the run's own refusal is said beside them.
+// layout takes with it on: the mesh and its count are reported, and (PMS-6 R-pms6-6) nothing refuses it.
 
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
@@ -37,9 +37,9 @@ public class LocalGridCemTests
     }
 
     /// <summary>A2 on the shipped MMIC technology, local grid on: the preflight (what `check`, `em --dry-run` and the
-    /// panel run) hands back the mesh with its count, and refuses with the solve's own sentence.</summary>
+    /// panel run) hands back the block mesh with its count and, since PMS-6, no refusal.</summary>
     [Fact]
-    public void ThePreflight_ReportsTheMesh_AndTheSolvesRefusal()
+    public void ThePreflight_ReportsTheMesh_AndDoesNotRefuseIt()
     {
         string dir = Path.Combine(Path.GetTempPath(), "pms4-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -60,7 +60,7 @@ public class LocalGridCemTests
             Assert.True(pre.PlanarMesh!.LocalGrid, string.Join("\n", pre.Findings.Select(f => f.Text)));
             Assert.True(pre.PlanarMesh.Mesh.HasBlocks, string.Join("\n", pre.PlanarMesh.Notes));
             Assert.True(pre.PlanarMesh.UnknownCount > 0);
-            Assert.Equal(PlanarMesh.LocalGridRefusal("the solve"), pre.Refusal);
+            Assert.Null(pre.Refusal);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
