@@ -188,8 +188,9 @@ the only place the input power enters), so every bench runs unchanged at the pow
 its own reader: to `ChainValue` (and to `Units`) a lone `m` is the milli prefix.
 
 **The readouts** (`ChainCapacity`, `ChainLink.Power`) are functions of the result alone. The array's noise factor is
-not a new calculation: the cascade's per-element F over its array gain is F_A/M + (F_B − 1)/G_A exactly, with F_A taken
-to the combiner's output. The combiner is the matched convention (N in-phase signals out at N times one element's
+not a new calculation: the cascade's per-element noise factor F over its array gain A is, in linear terms,
+F/A = F_A/M + (F_B − 1)/G_A for equal paths (A = M) and F_A/A + (F_B − 1)/G_A with a `PathIL` taper, exactly, with F_A
+taken to the combiner's output and G_A the gain to there with the array gain in; the readout is 10·log10(F/A). The combiner is the matched convention (N in-phase signals out at N times one element's
 power, noise once); a voltage-summing convention reads 10·log10 N higher after the combiner and the same SNR.
 
 **`Topology = Levels`** is one N:1 combiner with ⌈log2 N⌉·IL of loss: a tree's budget for any N, which a receive-array

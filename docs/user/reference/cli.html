@@ -2333,10 +2333,18 @@ writes nothing but <code>-o</code>'s PDF.</p>
 the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
 floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so <code>--json</code> carries it and <code>-o</code> writes it: per-stage
 cubes over a <code>stage</code> axis labelled with the stage names (<code>G_dB</code>, <code>NF_dB</code>, <code>IIP3_dBm</code>, …) and the totals as scalars.</p>
+<p>Every chain's report adds the array's NF, the margin to the required SNR, the Shannon rate and the receiver's ceiling;
+a chain with a <a href="chain-budget.html#link">link</a> a line for it, each PA's output, the EIRP, the free-space and extra path
+loss, the power at each receive element and the input the budget took; and a chain with DC powers a line for the
+transmit, receive and total power and the energy per bit. The header's input is the one budgeted, the link's when
+there is one. Each <a href="chain-budget.html#sweeps">sweep</a> the <code>.cchain</code> asks for is a line of its range and its rate, and a
+group of the DataSet named after it (<code>Frequency.SNR_dB</code>, <code>TxElements.Rate_Gbps</code>, <code>RxElements.Pdc_W</code>), each cube over the
+sweep's own axis.</p>
 <p><code>--to-schematic</code> is the window's <strong>Transfer to Schematic</strong>: the chain's <code>1-Tone</code>, <code>2-Tone</code>, <code>Envelope</code> and <code>Levels</code>
 test benches; <code>Blockers</code> for a chain with blockers, <code>Canceller</code> for one with a canceller; an array's <code>Steering</code> and
 <code>Combiners</code> benches; and with <code>--demo</code> (or <code>&quot;Demo&quot;: true</code> in the <code>.cchain</code>) the <code>Demo</code> bench, the chain demodulated end
-to end. Each comes with its Data Display, beside the <code>.cchain</code> or in <code>dir</code>. A bench that already exists is a refusal naming it; <code>--replace</code> writes it again. Nothing is written when any
+to end; a chain with a link also its <code>TX</code> bench, the PA against its back-off. Each comes with its Data Display, beside
+the <code>.cchain</code> or in <code>dir</code>. A bench that already exists is a refusal naming it; <code>--replace</code> writes it again. Nothing is written when any
 bench is refused. Exit <strong>0</strong> when it budgeted (and
 transferred), <strong>1</strong> on a refusal.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>

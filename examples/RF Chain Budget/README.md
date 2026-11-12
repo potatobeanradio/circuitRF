@@ -178,8 +178,8 @@ the LNA may have 16.7 dB of NF together before they cost the chain 1 dB.
 
 **The sweeps.** The Link tab's Sweeps row asks for three, each with its own tab:
 - the carrier from 20 to 40 GHz, beyond n258 to show the trend: the rate falls from 9.9 to 7.2 Gb/s as the PA's output
-  falls past its knee, the loss and the noise rise, and the path lengthens in wavelengths, and the DC power steps where
-  the LNA needs a third stage;
+  falls past its knee, the loss and the noise rise, and the free-space loss rises, since a fixed-gain element's aperture
+  shrinks with the wavelength; and the DC power steps where the LNA needs a third stage;
 - the transmit array from 4 to 1024 elements: the rate climbs until the received power meets the receiver's ceiling,
   then stops;
 - the receive array from 1 (no combiner) to 64 elements, sizes that are not powers of 2 among them, which the Levels
@@ -194,7 +194,9 @@ drives two tones each at the link's −59.41 dBm, 24 dB under the receiver's inp
 0.0015 dB of the budget up to the filter and 0.013 dB under it at the mixer's output, the IM3 0.030 dB under: the tones'
 own slight compression, at the power the link really delivers.
 Its Envelope bench, eight NR carriers of 50 MHz each noisy at 290 K, reads the SNR in the carrier's 48.6 MHz 0.02 dB
-under the budget's 43.15 dB, and the output power 0.006 dB under.
+under the budget's 43.15 dB, and the output power 0.006 dB under. The benches' NR carriers use 15 kHz subcarriers, where
+an n258 channel would use 60 or 120 kHz; the spacing changes neither the budget nor what these memoryless blocks do to
+a carrier's SNR and EVM.
 
 ## Levels, blockers, the canceller and the demo
 

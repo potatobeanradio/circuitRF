@@ -1579,10 +1579,19 @@ the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts
 floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so `--json` carries it and `-o` writes it: per-stage
 cubes over a `stage` axis labelled with the stage names (`G_dB`, `NF_dB`, `IIP3_dBm`, …) and the totals as scalars.
 
+Every chain's report adds the array's NF, the margin to the required SNR, the Shannon rate and the receiver's ceiling;
+a chain with a [link](chain-budget.html#link) a line for it, each PA's output, the EIRP, the free-space and extra path
+loss, the power at each receive element and the input the budget took; and a chain with DC powers a line for the
+transmit, receive and total power and the energy per bit. The header's input is the one budgeted, the link's when
+there is one. Each [sweep](chain-budget.html#sweeps) the `.cchain` asks for is a line of its range and its rate, and a
+group of the DataSet named after it (`Frequency.SNR_dB`, `TxElements.Rate_Gbps`, `RxElements.Pdc_W`), each cube over the
+sweep's own axis.
+
 `--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone`, `Envelope` and `Levels`
 test benches; `Blockers` for a chain with blockers, `Canceller` for one with a canceller; an array's `Steering` and
 `Combiners` benches; and with `--demo` (or `"Demo": true` in the `.cchain`) the `Demo` bench, the chain demodulated end
-to end. Each comes with its Data Display, beside the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
+to end; a chain with a link also its `TX` bench, the PA against its back-off. Each comes with its Data Display, beside
+the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
 bench is refused. Exit **0** when it budgeted (and
 transferred), **1** on a refusal.
 

@@ -368,9 +368,9 @@ Every chain, with a link or without, reads as a receiver of data. The **Receiver
 
 | Readout | Formula |
 |---|---|
-| Noise at the input | Nir = 10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A): kTB and the array's NF, the MDS |
-| NF of the array | 10·log10(F/A) = F_A/M + (F_B − 1)/G_A: F_A the front end's to the combiner's output, F_B the stages after it, G_A the gain to that output with the array gain; below 0 dB for a large array |
-| SNR, margin | Pin − Nir; SNR − required SNR |
+| Noise at the input | the MDS, 10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A): kTB and the array's NF |
+| NF of the array | 10·log10(F/A), F the per-element noise factor and A the array gain; in linear terms F/A = F_A/M + (F_B − 1)/G_A for equal paths and F_A/A + (F_B − 1)/G_A with a `PathIL` taper: F_A the front end's to the combiner's output, F_B the stages after it, G_A the gain to that output with the array gain; below 0 dB for a large array |
+| SNR, margin | Pin − MDS; SNR − required SNR |
 | Rate | S · B · log2(1 + 10^(SNR/10)), Shannon's capacity over S streams |
 | PA DC power | (Pout − Pout/G) / PAE, at the back-off, unless the transmitter's `Pdc` is stated |
 | DC power | S · (Mtx · P_PA + Mrx · Σ P_branch + Σ P_after): the branch's stages once per receive element, the combiner and every stage after it once |
@@ -391,8 +391,8 @@ The **Sweeps** row of the Link tab takes up to three sweeps, each one line, as t
 | `RxElements` | `1, 64, 13` | the receive Combiner's N, the same way; 1 is one element with no combiner |
 
 Each point is the whole chain budgeted again there, every expression and table read at that point's carrier. Each sweep
-has its own tab: the levels at each receive element (EIRP, the received power, the chain's input, the ceiling and the
-noise), the SNR and margin, the rate and the DC power, over its own axis. A point the budget refuses (a table read
+has its own tab: the link levels (EIRP, the received power at each element, the chain's input, the ceiling and the
+noise, the MDS), the SNR and margin, the rate and the DC power, over its own axis, a log one for an array's sizes. A point the budget refuses (a table read
 outside its range) is left out, and one note gives how many and why; a carrier where a Filter's passband no longer holds
 the stage's frequency is noted, since the budget takes its loss there and not its roll-off.
 
@@ -454,7 +454,8 @@ The budget takes the PA's output as `Psat − Backoff`; the bench shows what tha
 1 dB compression point 6 dB below `Psat`, and an NR carrier's peaks reach it: in the example at 8 dB of back-off the
 output is 0.92 dB below `Psat` − 8 dB and the EVM 6.3 %, at 12 dB 0.41 dB and 2.9 %. Choose the back-off for the EVM and
 ACPR the link needs, from this table. A memoryless PA's EVM and ACPR do not depend on the bandwidth, so the bench's NR
-carrier is the 15 kHz-spacing channel nearest the chain's bandwidth, 50 MHz at most.
+carrier is the 15 kHz-spacing channel nearest the chain's bandwidth, 50 MHz at most; the subcarrier spacing changes
+neither the budget nor what a memoryless block does to a carrier's EVM.
 
 ## More than one conversion {#conversions}
 
@@ -715,7 +716,7 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1, or 2 for a chain that uses a value of the frequency, a budget-only parameter, a link, a sweep or a readout input. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1, or 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input. A file from a newer circuitRF is refused, not read in part. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
 | `Stages` | In signal order. `Name` follows the instance-name rule (a letter, then letters, digits and `_`). |
 | `Part` | `Amp`, `Mixer`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
