@@ -671,9 +671,10 @@ silkscreen layer is not read and is counted (`SilkscreenFilledNotRead`) — text
 different reader.
 
 **Typed text is read as itself.** A drawing exported as DXF carries its designators as `TEXT`/`MTEXT`, which the import
-keeps as labels with the exact characters. `TypedSilkscreenEvidence` reads each label on a silkscreen layer whose text
-(MTEXT's codes and toggles and TEXT's `%%u`/`%%o`/`%%k` stripped, upper-cased) passes the designator rule of §9.2 as a
-line with no glyphs, its box from the anchor, the height, 0.6 of a height per character and the rotation, and as the same
+keeps as labels with the exact characters. `TypedSilkscreenEvidence` parts each label on a silkscreen layer into its lines
+at MTEXT's breaks (`\P`, `\N`, `\X`) and line breaks, and reads each line whose text (MTEXT's codes and toggles and
+TEXT's `%%u`/`%%o`/`%%k` stripped, upper-cased) passes the designator rule of §9.2 as a line with no glyphs, its box from
+the anchor, the height, 0.6 of a height per character, 5/3 of a height a line down, and the rotation, and as the same
 `PartClaim`s a picture's legend makes through `IPartEvidenceSource` — read by `PartReading` itself, not through that seam,
 because it is given first and reported whatever else is found. Then the stroked reading names what they leave. A label only names a
 part another rung found; with no glyphs, correcting it teaches nothing (`SilkscreenText.Lesson`).

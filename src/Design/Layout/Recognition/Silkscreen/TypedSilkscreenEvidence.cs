@@ -21,9 +21,16 @@ public sealed class TypedSilkscreenEvidence
     public const double CharWidth = 0.6;
 
     // How the text is set, not what it is: MTEXT's codes with a value up to a semicolon (\A1; \C1; \c16711680; \fArial|b0;
-    // \H2.5x; \pxqc; \S1/2;), its toggles and breaks (\L \l \O \o \K \k \P \N \X \~), the braces round a run, and TEXT's
-    // toggles (%%u %%o %%k). A \U+ escape is left: it is a character, and no designator has one.
-    private static readonly Regex Codes = new(@"\\[ACcFfHpQTWS][^;]*;|\\[LlOoKkPNX~]|[{}]|%%[uUoOkK]", RegexOptions.CultureInvariant);
+    // \H2.5x; \pxqc; \S1/2;), its toggles (\L \l \O \o \K \k \~), the braces round a run, and TEXT's toggles (%%u %%o %%k).
+    // A \U+ escape is left: it is a character, and no designator has one.
+    private static readonly Regex Codes = new(@"\\[ACcFfHpQTWS][^;]*;|\\[LlOoKk~]|[{}]|%%[uUoOkK]", RegexOptions.CultureInvariant);
+
+    // MTEXT's breaks — a paragraph (\P), a column (\N), the line under a dimension's (\X) — and a line break: each line is a
+    // text of its own, a designator over its value two, where stripped as codes they ran together into one ("C210").
+    private static readonly Regex Breaks = new(@"\\[PNX]|\r?\n", RegexOptions.CultureInvariant);
+
+    /// <summary>A line of an MTEXT is this many of its heights below the one above it, at its default spacing.</summary>
+    public const double LineSpacing = 5.0 / 3;
 
     public TypedSilkscreenEvidence(IReadOnlyList<LayoutShape> shapes, Technology tech)
     {
@@ -35,10 +42,14 @@ public sealed class TypedSilkscreenEvidence
             foreach (var shape in shapes)
             {
                 if (shape is not LabelShape { IsPort: false } label || label.Layer != layer) continue;
-                string text = Codes.Replace(label.Text, "").Trim().ToUpperInvariant();
-                if (!StrokeGlyphs.IsDesignator(text)) { if (text.Length > 0) other.Add((label.X, label.Y)); continue; }
-                lines.Add(new SilkTextLine(text, text, [], BoxOf(label, text.Length), label.Height,
-                                           new TextOrientation((int)Math.Round(label.RotationDegrees), bottom), [], layer));
+                var parts = Breaks.Split(label.Text);
+                for (int line = 0; line < parts.Length; line++)
+                {
+                    string text = Codes.Replace(parts[line], "").Trim().ToUpperInvariant();
+                    if (!StrokeGlyphs.IsDesignator(text)) { if (text.Length > 0) other.Add((label.X, label.Y)); continue; }
+                    lines.Add(new SilkTextLine(text, text, [], BoxOf(label, text.Length, line), label.Height,
+                                               new TextOrientation((int)Math.Round(label.RotationDegrees), bottom), [], layer));
+                }
             }
         Lines = lines;
         OtherLabels = other;
@@ -55,12 +66,13 @@ public sealed class TypedSilkscreenEvidence
         Lines.Select(l => new PartClaim(PartEvidenceSource.Silkscreen, l.X, l.Y, l.Refdes!, 0) { Line = l });
 
     /// <summary>The box a label's text covers: its anchor (baseline left unless it says otherwise), its height, and a
-    /// width of <see cref="CharWidth"/> heights a character, turned with the label.</summary>
-    internal static Bbox BoxOf(LabelShape label, int characters)
+    /// width of <see cref="CharWidth"/> heights a character, turned with the label; its <paramref name="line"/>th line
+    /// <see cref="LineSpacing"/> heights a line below the first.</summary>
+    internal static Bbox BoxOf(LabelShape label, int characters, int line = 0)
     {
         double h = label.Height, w = CharWidth * h * Math.Max(1, characters);
         double x0 = label.HAlign switch { LabelHAlign.Center => -w / 2, LabelHAlign.Right => -w, _ => 0 };
-        double y0 = label.VAlign switch { LabelVAlign.Top => -h, LabelVAlign.Middle => -h / 2, _ => 0 };
+        double y0 = label.VAlign switch { LabelVAlign.Top => -h, LabelVAlign.Middle => -h / 2, _ => 0 } - line * LineSpacing * h;
         double a = label.RotationDegrees * Math.PI / 180, c = Math.Cos(a), s = Math.Sin(a);
         double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
         foreach (var (u, v) in new[] { (x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h) })

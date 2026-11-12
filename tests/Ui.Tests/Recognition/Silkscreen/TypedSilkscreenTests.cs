@@ -66,6 +66,27 @@ public sealed class TypedSilkscreenTests
         Assert.Empty(evidence.OtherLabels);
     }
 
+    /// <summary>MTEXT's breaks part its lines, and each is read on its own: a designator over its value is the designator, and
+    /// the value another label, where the two ran together into C210 or C247, or hid C2 in C210PF; two designators are two.</summary>
+    [Theory]
+    [InlineData(@"\c255;\PC2", "C2", 0)]
+    [InlineData(@"\c255;C2\P10", "C2", 1)]
+    [InlineData(@"{\c255;C2}\P47", "C2", 1)]
+    [InlineData(@"\c255;C2\P10pF", "C2", 1)]
+    [InlineData(@"C2\P\c255;10", "C2", 1)]
+    [InlineData(@"C2\N10pF", "C2", 1)]
+    [InlineData(@"C2\X10pF", "C2", 1)]
+    [InlineData(@"\c255;R1\PR2", "R1 R2", 0)]
+    public void MTextBreaks_PartItsLines_EachReadOnItsOwn(string text, string designators, int others)
+    {
+        var view = PlaneAndLine();
+        view.Shapes.Add(Label(text, 20_000, 7_000));
+        var evidence = new CircuitRF.Design.Layout.Recognition.Silkscreen.TypedSilkscreenEvidence(view.Shapes, WithSilk());
+        Assert.Equal(designators, string.Join(" ", evidence.Lines.Select(l => l.Refdes)));
+        Assert.Equal(others, evidence.OtherLabels.Count);
+        if (evidence.Lines.Count == 2) Assert.True(evidence.Lines[1].Box.MaxY < evidence.Lines[0].Box.MaxY);   // the second line lower
+    }
+
     /// <summary>With no part found to name, the designators are still reported — what says why the board has no parts.</summary>
     [Fact]
     public void LabelsWithNoPartToName_AreStillReported_AndListedAsNamingNone()

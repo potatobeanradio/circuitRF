@@ -196,7 +196,7 @@ places; when they all agree, the report says that in one line.
 
 When nothing else names a part &mdash; no placed footprint, no placement file &mdash; the designator printed
 beside it on the silkscreen does. Text typed on the silkscreen, as a DXF drawing's `TEXT` and `MTEXT` arrive, is read
-as it is. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
+as it is, each line of it on its own: a designator over its value is the designator. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
 side; each designator goes to the part it stands beside, even where it is printed a little nearer a
 neighbour. Its prefix gives the part's kind (`C`, `L`, `R`, `FB`, &hellip;). Values are never read from the
 silkscreen. Text drawn as filled outlines is not read.

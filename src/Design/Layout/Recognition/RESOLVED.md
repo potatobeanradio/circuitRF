@@ -912,3 +912,9 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   flags the 4.5 mm device pad, the 5 mm `DevicePad` board, or a shunt part on a 1.5 mm stub of a 3 mm pad, and their union
   flags none of them either. Gates: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`
   (the 1.5 mm arc row) and `PadsAndTapsTests.ViaPadsJoinedByAnUnreadTrace_OnALayerWithNoTrace_AreNamedAsJoinedAcrossCopper`.
+- **Typed text: each line on its own** (F3, third review). MTEXT's breaks were stripped as codes, so a designator over its
+  value ran together with it: `\c255;C2\P10` read as C210, `{\c255;C2}\P47` as C247, and `\c255;C2\P10pF` as C210PF, no
+  designator at all, so C2 was lost. The breaks (`\P`, `\N`, `\X`, and a line break) now part the label into lines before
+  the codes are stripped, and each line is tested on its own: a designator's box is its line's, 5/3 of a height down a line.
+  Gate: `TypedSilkscreenTests.MTextBreaks_PartItsLines_EachReadOnItsOwn` (eight spellings, two designators in one label
+  among them).
