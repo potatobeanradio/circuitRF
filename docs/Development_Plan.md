@@ -277,6 +277,13 @@ for the whole chain (a lower mixing order when the 600-product cap needs it, sai
 each from the IF the one before it ends at and beside its own budget, and leaves out, with the reason, what no run can
 hold. The example has a 2.45 GHz → 350 MHz → 21.4 MHz receiver.
 
+**Link budgets and frequency-scalable stages (2026-11).** A stage parameter may be an expression in the frequency or a
+table of it, read at each stage's own frequency; an Amplifier's stage count follows from its gain per stage; a link in
+front of the chain (a transmit array and a line-of-sight path) sets its input power, held at the receiver's ceiling;
+every chain reads its input-referred noise, the array's NF, SNR, margin, Shannon rate, DC power, energy per bit and
+the NF each stage leaves the rest; a sweep over the carrier or either array size budgets the whole chain at every
+point; and a TX bench shows the PA's EVM and ACPR against its back-off. A modelling tool, with no optimiser.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
@@ -285,11 +292,16 @@ hold. The example has a 2.45 GHz → 350 MHz → 21.4 MHz receiver.
 - **A multi-conversion chain end to end.** Its 1-Tone, Levels, Blockers, Envelope and Demo benches are per conversion
   (a harmonic-balance noise run takes two tones, an envelope run two fundamentals); the window's Levels tab shows its
   budget alone, and its 2-Tone bench, whole at MaxMixOrder 5 under the 600-product cap, reads 3×10⁻³ dB high.
-- **Up-conversion and transmit chains.** A mixer stage down-converts to |f − Flo|; there is no sum-frequency or
-  transmit (output-power-referred) budget.
-- **A frequency sweep of the budget.** The budget is at one frequency; a filter's ripple and roll-off are not in it.
+- **Up-conversion and a transmit chain as a cascade.** A mixer stage down-converts to |f − Flo|; there is no
+  sum-frequency stage. The link's transmitter is closed form, one PA and a loss per element: no transmit cascade, no
+  up-conversion, sideband or LO leakage, and no transmit noise.
+- **A filter's roll-off in a frequency sweep.** The sweep exists, and every expression and table moves with it, but a
+  Filter stage is still its passband IL at every point; a carrier outside its passband is noted, not attenuated.
+- **The PA's compression in the link budget.** The budget takes Pout = Psat − Backoff; the TX bench measures how far an
+  NR carrier comes out below it (0.92 dB at 8 dB on the example), and that is not fed back.
+- **Optimising array sizes or the carrier.** The sweeps show the trade; choosing a point is the user's.
 - **More than one combiner stage** (sub-arrays of their own), and a tree whose N is not a power of 2 (refused; Direct,
-  with `PathIL` for its unequal paths, is the remedy).
+  with `PathIL` for its unequal paths, or Levels for a tree's loss on one combiner, is the remedy).
 - **Unequal paths in an active combiner.** `PathIL` is a passive combiner's; an active one's level amplifiers would see
   unequal powers, which the per-element budget does not follow.
 - **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep

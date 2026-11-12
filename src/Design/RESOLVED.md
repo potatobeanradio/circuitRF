@@ -30924,3 +30924,38 @@ Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `ADualConversionChain_IsCutInt
 `ChainBudgetWindowTests.TheLevelsNote_SaysWhereAChainOfTwoConversionsHasItsPoints`;
 `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `DualConversion_*` and `TheShippedBenches_AreWhatTransferWritesToday`
 (every shipped bench folder and display is one Transfer writes).
+
+## The chain budget's link and frequency-scalable stages: what reading a value of the frequency took (2026-11-12)
+
+A stage parameter may be an expression in `freq` or a `.csv` table of it, and a link may sit in front of the chain.
+Findings, each now in the code and stated in `docs/design/chain-budget.md` §2.3 and §3:
+
+- **The expression cannot reach the netlist.** An ideal Amp, Mixer or Filter does not bind `freq` (only the few models
+  `FreqDeferral` lets do), and `Emitter.Params` copies a stage's text onto its line verbatim. So the design is resolved
+  first (`ChainDesign.Resolve`), stage by stage at each stage's own input frequency, a mixer's `Flo` before the
+  frequency moves, and the budget, the levels, the diagram and the benches all read the resolved design the result
+  keeps. Numbers are written round-trip: `ChainValue.Format`'s six decimals would turn a 1e-9 into 0.
+- **A budget-only value must not reach it either.** `Pdc` and `GainPerStage` are `ChainParam.BudgetOnly`, skipped by
+  `Params`; the window leaves a blank one out of the stage, so existing chains save unchanged.
+- **A lone `m` is milli.** `ChainValue` (through `Units`) reads "30 m" as 0.03; the link's distance has its own reader
+  (bare, `m` or `km`).
+- **A unit literal is glued.** The expression language lexes `12GHz` as a quantity; `12 GHz` is a number and a name
+  and does not parse. `Flo = freq - 3GHz`.
+- **`W` and `%` were not units to `ChainValue`.** `W` is an identity unit with no scale, so "0.15 W" was refused;
+  `ChainValue` now takes `W`, `%` and `dBi` as it takes `dB`.
+- **A stage count needs a guard.** ⌈G/g⌉ with g a resolved expression can read 4.000000000000001 for 20/5; the count is
+  ⌈G/g − 10⁻⁹⌉.
+- **A mixer straight after an LNA reads 3 dB of image noise.** With no preselector, the isolator in front of the mixer
+  passes the LNA's amplified noise at the image sideband, which the budget (and an SSB noise figure) takes as filtered:
+  2.96 dB at 140 GHz, 2.77 dB at 2.45 GHz. A preselector that follows the carrier brings it to 3×10⁻⁴ dB.
+- **An ideal PA saturates 10·log10(π²/4) = 3.92 dB below its output intercept**, the tanh fundamental's (4/π)·Vsat
+  against an intercept of 2·Vsat; harmonic balance 30 dB past it reads 0.0022 dB short, the describing function's own
+  shortfall. On the TX bench an NR 64-QAM carrier at 8 dB of back-off comes out 0.92 dB below Psat − 8 dB at 6.3 % EVM:
+  the PA's 1 dB compression point is 6 dB below Psat, and the carrier's peaks reach it.
+- **A sweep point is one chain.** A receive-array sweep down to one element removes the Combiner, and the point's copy
+  still carrying the sweep was refused for sizing a combiner it no longer had; each point's copy drops the sweeps.
+- **A .cchain that uses any of this is version 2, and only then**, so 1.8.2 refuses it rather than drops the fields on
+  save, and every other chain stays version 1.
+
+Gates: `tests/Ui.Tests/Chain/ChainLinkBudgetTests.cs`, against `testdata/chain/link_reference.json` (an independent
+standard-library calculation, `link_reference.py`), and `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.

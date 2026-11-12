@@ -794,6 +794,12 @@ public static class FigureCatalog
           + "combiner selected here and in the stage list (the Schematic tab draws the same chain as it transfers); "
           + "each stage's parameters; and the cascade as a Data Display table, one row per stage."),
 
+        new("chain-budget-link", DocChainFixtures.Link, 1300, 960,
+            WindowFrame.Titled("RF Chain Budget — 26 GHz Link.cchain"),
+            "The example's 26 GHz link: a 16-element transmitter, 200 m and an 8-element receiver whose stages scale with "
+          + "the frequency, on its Frequency sweep tab — the levels at each receive element, the SNR and margin, the rate "
+          + "over two streams and the DC power from 20 to 40 GHz, every point the whole chain budgeted again there."),
+
         // ── Signal Designer (MOD_Source) ──────────────────────────────────────────
 
         new("signal-designer", DocSignalFixtures.DesignerNr20, 1199, 800,

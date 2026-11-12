@@ -1,0 +1,15 @@
+# Extra attenuation along a clear-air path, dB/km against the carrier: illustrative smooth values with a gentle
+# water-vapour bump near 22 GHz and a slow rise toward the oxygen band above 50 GHz. Not a propagation model.
+freq,dB/km
+18 GHz,0.05
+20 GHz,0.09
+21 GHz,0.13
+22 GHz,0.16
+23 GHz,0.14
+24 GHz,0.11
+26 GHz,0.09
+28 GHz,0.09
+30 GHz,0.10
+34 GHz,0.12
+38 GHz,0.15
+42 GHz,0.20

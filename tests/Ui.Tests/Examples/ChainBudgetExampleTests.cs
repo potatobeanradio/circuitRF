@@ -41,7 +41,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link"];
 
     /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
     private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
@@ -254,6 +254,76 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.InRange(noise[0] / calc[0], 0.9, 1.1);
     }
 
+    // ── the 26 GHz link ──────────────────────────────────────────────────────
+
+    /// <summary>The README's numbers for the link, worked out by hand there from its coefficients at 26 GHz.</summary>
+    [Fact]
+    public void Link_TheBudget_IsWhatTheReadmeWorksOut()
+    {
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "26 GHz Link.cchain"));
+        var r = ChainBudget.Evaluate(d);
+        Assert.Empty(r.Refusals);
+        var ds = ChainBudget.ToDataSet(r);
+        Assert.Equal(44.3806, M0(ds, "EIRP_dBm"), 4);
+        Assert.Equal(106.7679, M0(ds, "Lfs_dB"), 4);
+        Assert.Equal(-59.4053, M0(ds, "Pin_dBm"), 4);
+        Assert.Equal(-93.4041, M0(ds, "Nir_dBm"), 4);
+        Assert.Equal(34.00, M0(ds, "SNRtot_dB"), 2);
+        Assert.Equal(9.0358, M0(ds, "Rate_Gbps"), 4);
+        Assert.Equal(8.7523, M0(ds, "Pdctot_W"), 4);
+        Assert.Equal(2, ds["Nstg"].RealValues[1]);
+        Assert.Contains(r.Notes, x => x.StartsWith("MIX sets the receiver's compression", StringComparison.Ordinal));
+        // Its three sweeps, each the whole chain again at every point, none refused.
+        var notes = new List<string>();
+        ChainBudget.AddSweeps(ds, d, notes);
+        Assert.Empty(notes);
+        Assert.All(ds["Frequency.Rate_Gbps"].RealValues, v => Assert.True(double.IsFinite(v)));
+        Assert.Equal(12, ds["RxElements.SNR_dB"].RealValues.Length);
+    }
+
+    [Fact]
+    public void Link_1Tone_TheReceiverOnTheBudget_AtThePowerTheLinkDelivers()
+    {
+        var ds = Simulate("26 GHz Link 1-Tone");
+        Assert.InRange(M(ds, "G_err"), -5e-4, 5e-4);
+        Assert.InRange(M(ds, "NF_err"), -5e-4, 5e-4);
+        foreach (string s in new[] { "RXSW", "LNA", "PS", "CMB", "DRV", "BPF", "MIX" })
+            Assert.InRange(M(ds, $"NF_{s}_sim") - M(ds, $"NF_{s}_calc"), -5e-4, 5e-4);
+        Assert.Equal(3.5814, M(ds, "NF_calc"), 4);
+    }
+
+    [Fact]
+    public void Link_SteeringAndCombiners_EightElementsOnTheirBudgets()
+    {
+        var st = Simulate("26 GHz Link Steering");
+        foreach (string a in new[] { "m30", "0", "p30" })
+        {
+            Assert.InRange(M(st, $"G_{a}_err"), -1e-9, 1e-9);
+            Assert.InRange(M(st, $"NF_{a}_err"), -1e-9, 1e-9);
+        }
+        Assert.Equal(9.0309, M(st, "A_calc"), 4);
+        var cmb = Simulate("26 GHz Link Combiners");
+        foreach (var (_, _, code) in ChainBenches.CombinerVariants)
+        {
+            Assert.InRange(M(cmb, $"G_{code}_err"), -1e-9, 1e-9);
+            Assert.InRange(M(cmb, $"NF_{code}_err"), -1e-9, 1e-9);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void Link_TX_WhatTheBackoffBuys()
+    {
+        var ds = Simulate("26 GHz Link TX");
+        output.WriteLine($"26 GHz Link TX: at 8 dB, Pout {M(ds, "Pant_at_err"):0.###} dB from the budget, EVM {M(ds, "EVM_at"):0.##} %, " +
+                         $"ACPR {M(ds, "ACPR_L_at"):0.#} / {M(ds, "ACPR_U_at"):0.#} dBc");
+        Assert.InRange(M(ds, "Pant_at_err"), -1.0, -0.8);
+        Assert.InRange(M(ds, "EVM_at"), 5.5, 7);
+        Assert.InRange(M(ds, "Psat_err"), -1, 0);
+    }
+
+    private static double M0(DataSet ds, string name) => ds[name].RealValues[0];
+
     // ── 2-Tone and Envelope ──────────────────────────────────────────────────
 
     [Theory]
@@ -278,6 +348,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     [Trait("Category", "Benchmark")]
     [InlineData("Superhet")]
     [InlineData("Array")]
+    [InlineData("26 GHz Link")]
     public void Envelope_TheSnrOnTheBudget_WithinOneRecordsStatistics(string chain)
     {
         var ds = Simulate(chain + " Envelope");

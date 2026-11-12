@@ -9,7 +9,10 @@ how it is built and how it was verified.
 ```mermaid
 flowchart LR
     doc[".cchain<br/>stages + system inputs"] --> io["ChainDesignIo"]
-    io --> calc["ChainBudget.Evaluate<br/>(closed form, pure)"]
+    io --> resolve["ChainDesign.Resolve<br/>expressions and tables at each<br/>stage's frequency; the link's Prx"]
+    resolve --> calc["ChainBudget.Evaluate<br/>(closed form, pure)"]
+    calc --> readouts["ChainCapacity, ChainLink<br/>noise, SNR, rate, DC power,<br/>NF allowance, ceiling"] --> ds
+    io --> sweep["ChainBudget.Sweep<br/>the whole chain at every point"] --> ds
     parts["ChainParts<br/>each part's budget;<br/>System-block defaults from<br/>ComponentTypeRegistry"] --> calc
     calc --> ds["ChainBudget.ToDataSet<br/>per-stage cubes over a stage axis"]
     ds --> verb["circuitrf chain / MCP run analysis=chain<br/>-o budget.npy"]
@@ -30,6 +33,7 @@ flowchart LR
     write --> lev["Levels, Blockers benches<br/>every node, two tones and blockers"]
     write --> canc["Canceller bench<br/>envelope, real signals"]
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
+    write --> tx["TX bench (a link)<br/>the PA against its back-off"]
     calc --> levels["ChainLevels<br/>every node"] --> table
     one --> cdd["one .cdd per bench<br/>(ChainBudgetDisplay):<br/>budget | simulated | difference"]
     two --> cdd
@@ -158,6 +162,48 @@ drives it with the interference itself.
 **The demo** uses what the envelope run already measures at every IProbe — EVM, the constellation, EvmSplit's noise and
 distortion parts and the in-channel SNR — over a sweep of the input power. Nothing demodulates but the envelope run.
 
+### 2.3 Values of the frequency, the link and the readouts
+
+**Resolution before everything.** `ChainBudget.Evaluate` first resolves the design (`ChainDesign.Resolve`,
+`ChainScaling`): every stage parameter that names a `.csv` or is an expression reading only `freq` and `f_GHz` is
+replaced by its number at its stage's input frequency, walking the chain from the input so that a mixer's `Flo` is
+resolved before the frequency moves; then the link's inputs at the carrier, a fractional bandwidth into the bandwidth,
+and the link's received power into the input power. A value that cannot be read refuses the chain; the resolved design's
+own `Refusals()` run after. The result keeps that design (`ChainBudgetResult.Design`), and the levels, the diagram, the
+block view, the displays and the emitter all read it, so a bench carries exactly the number its budget used. The
+expression could not go onto the netlist instead: an ideal block does not bind `freq` (`FreqDeferral` lets only a few
+models do so), and the budget's own reading of a table must be the bench's. A number is written round-trip (`"R"`), not
+with `ChainValue.Format`'s six decimals.
+
+**Budget-only parameters.** `ChainParam.BudgetOnly` marks what the budget reads and no part's netlist line carries: every
+part's `Pdc` and an Amplifier's `GainPerStage`. `Emitter.Params` skips them; the window leaves a blank one out of the
+stage, so a chain that uses neither saves byte for byte as before. The stage count is ⌈G/g − 10⁻⁹⌉: without the 10⁻⁹,
+20/5 can read 4.000000000000001 and count five.
+
+**The link** (`ChainLink`) is two parameter sets, `Tx` and `Path`, as a stage's are, so the window edits them with the
+stage rows' own editor. They are not stages: a stage before the combiner is one element's branch, and the input-referred
+noise is per element. The receive array is the chain's Combiner. The link's received power is the chain's input power,
+held at the ceiling `IP1dB − RxBackoffDb` (the ceiling computed from the stages' budgets before the cascade, which is
+the only place the input power enters), so every bench runs unchanged at the power the link delivers. The distance has
+its own reader: to `ChainValue` (and to `Units`) a lone `m` is the milli prefix.
+
+**The readouts** (`ChainCapacity`, `ChainLink.Power`) are functions of the result alone. The array's noise factor is
+not a new calculation: the cascade's per-element F over its array gain is F_A/M + (F_B − 1)/G_A exactly, with F_A taken
+to the combiner's output. The combiner is the matched convention (N in-phase signals out at N times one element's
+power, noise once); a voltage-summing convention reads 10·log10 N higher after the combiner and the same SNR.
+
+**`Topology = Levels`** is one N:1 combiner with ⌈log2 N⌉·IL of loss: a tree's budget for any N, which a receive-array
+sweep through 6 or 11 elements needs, verified by the same Direct bench. The tree keeps its refusal for N not a power
+of 2, since a real uneven tree has unequal paths.
+
+**The sweeps** (`ChainBudget.Sweep`) evaluate the whole design again at every point, from the unresolved design, so the
+expressions and tables move. A point is one chain: its own copy drops the sweeps, or an Mrx of 1 (no combiner left)
+would be refused for sweeping a combiner it no longer has.
+
+**Format version 2** is written only when a chain uses what version 1 does not have (a new field, an expression, a table
+or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a
+plain chain stays readable there.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -207,6 +253,20 @@ bench the blockers alone (3 s).
 
 **A DBPSK carrier is its source's only one,** so the demo's DBPSK has its own source, joined to the NR one by a 2-way
 Combiner.
+
+**A preselector is what keeps the mixer's image quiet.** A first frequency-scaled test chain, an LNA straight into a
+mixer, read its HB noise figure 2.96 dB above the budget at 140 GHz and 2.77 dB at 2.45 GHz: the isolator in front of
+the mixer passes the LNA's amplified noise at the image sideband, which the budget (and an SSB figure) assumes filtered.
+A preselector between them (`F1 = freq - 4GHz`, `F2 = freq + 4GHz`, following the carrier) brings it to 3×10⁻⁴ dB. The
+26 GHz example has one for the same reason.
+
+**A single-tone harmonic-balance index is a harmonic, not a mix index.** `HB1.V("out", 1)`, not `"(1)"`: a lattice of one
+tone has a harmonic axis, and the measurement written for a mix index evaluates to nothing.
+
+**An ideal PA saturates 3.92 dB below its output intercept.** The tanh limiter's fundamental saturates at (4/π)·Vsat in
+amplitude and its intercept is 2·Vsat, so Psat = OIP3 − 10·log10(π²/4). Harmonic balance 30 dB past it reads Psat less
+0.0022 dB, the describing function's own shortfall there (0.022 dB at 20 dB, 0.24 dB at 10 dB). The TX bench's PA is
+an Amplifier of `IP3 = Psat + 3.9224 dBm`.
 
 **A flat phase needs a behavioural part.** A TLIN's phase is a delay as well, so the Canceller bench's phase setting is
 one path of a 2-way Combiner, whose `Phase[k]` is flat, and its delay a line.
@@ -319,5 +379,7 @@ and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±
 
 Friis 1944 (doi:10.1109/JRPROC.1944.232049); Pozar, *Microwave Engineering*, 4th ed., §10.1 and §10.3; Razavi,
 *RF Microelectronics*, 2nd ed., §2.2–2.3; Wilkinson 1960 (doi:10.1109/TMTT.1960.1124668); Van Trees, *Optimum Array
-Processing*, §2.2. The feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
+Processing*, §2.2. The link: Friis 1946 (doi:10.1109/JRPROC.1946.234568), the free-space transmission formula;
+Shannon 1948 (doi:10.1002/j.1538-7305.1948.tb01338.x), the capacity of a band-limited channel in Gaussian noise. The
+feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
 README was read, and no code is taken from it.

@@ -20,6 +20,9 @@ Four receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already tra
 The superhet also has two blockers at its input, 150 MHz and 20 MHz above the signal, and asks for the demo bench. The
 dual-conversion receiver has one blocker on each mixer's image, and asks for the demo bench too.
 
+And a link: **`26 GHz Link.cchain`**, a 16-element transmitter 200 m from an 8-element receiver at 26 GHz, in NR band
+n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See [The 26 GHz link](#the-26-ghz-link).
+
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
 ## The chains
@@ -130,6 +133,63 @@ Each element's phase shifter is set to take it out again, so the four arrive at 
 A tree's loss accumulates level by level (two 2:1 levels of 0.5 dB against one 4:1 of 0.5 dB); an active combiner's
 noise figure is set by its first amplifier and its intercept by its last, which sees the most power. All four keep the
 6.02 dB array gain.
+
+## The 26 GHz link
+
+A transmit array, a line-of-sight path and a receive array, on the window's **Link** tab, in front of a receiver whose
+stages are written as values of the frequency. Every coefficient is an illustrative one of this example's own, picked
+to look like a 26 GHz front end; none is a fit to any device or process.
+
+| Transmitter | | Path | |
+|---|---|---|---|
+| `Psat` | `freq < 30e9 ? 32.5 - 6*log10(f_GHz) : 45.79 - 15*log10(f_GHz)` dBm: 24.01 dBm at 26 GHz, a knee at 30 GHz | `Distance` | 200 m |
+| `Backoff` | 8 dB | `Attenuation` | `Atmospheric attenuation.csv`: illustrative dB/km, a gentle water-vapour bump at 22 GHz |
+| `Loss` | `0.012*f_GHz + 0.4` dB (a switch): 0.71 dB | `RxAntennaGain` | 3 dBi |
+| `AntennaGain`, `Elements` | 5 dBi, 16 | | |
+| `PaGain`, `PAE` | 20 dB, `max(32 - 12*log10(f_GHz), 5)` %: 15.0 % | | |
+
+| Stage | Part | At 26 GHz |
+|---|---|---|
+| RXSW | `Switch`, `IL = 0.012*f_GHz + 0.4` | 0.71 dB |
+| LNA | `Amp`, 20 dB, `NF = 0.06*f_GHz + 0.9`, IIP3 −10 dBm, `GainPerStage = 33 - 15*log10(f_GHz)`, 8 mW a stage | NF 2.46 dB; 11.8 dB a stage, so 2 stages (3 above 34 GHz) |
+| PS | `PhaseShifter`, 6 dB, IIP3 10 dBm | |
+| CMB | `Combiner`, N = 8, `Topology = Levels`, 0.8 dB a level, steer 30° | 3 levels: 2.4 dB |
+| DRV | `Amp`, 10 dB, the LNA's NF, OIP3 15 dBm, 15 mW | |
+| BPF | `Filter`, a preselector that follows the carrier: `F1 = freq - 1.5GHz`, `F2 = freq + 1.5GHz`, 1 dB | |
+| MIX | `Mixer`, −7 dB, NF 9 dB, IIP3 3 dBm, `Flo = freq - 3GHz`, 25 mW | a 3 GHz IF at every carrier |
+
+400 MHz of bandwidth (an FR2 channel), two streams (two polarisations), a required SNR of 10 dB. Worked out by hand:
+
+| | |
+|---|---|
+| PA output | 24.01 − 8 = 16.01 dBm |
+| EIRP | 16.01 − 0.71 + 5 + 20·log10 16 = 44.38 dBm |
+| Free space | 20·log10(4π · 200 m · 26 GHz / c) = 106.77 dB, and 0.09 dB/km × 0.2 km = 0.02 dB more |
+| At each receive element | 44.38 − 106.77 − 0.02 + 3 = −59.41 dBm, below the receiver's ceiling of −45.38 dBm |
+| Noise at the input | kT0B in 400 MHz is −87.96 dBm; the element's NF 3.58 dB, less the array gain 9.03 dB: −93.40 dBm |
+| SNR, margin | 34.00 dB, 24.00 dB |
+| Rate | 2 · 400 MHz · log2(1 + 10^3.4) = 9.04 Gb/s |
+| DC power | 16 PAs of (39.9 − 0.4) mW / 15.0 % = 263 mW, 4.21 W; 8 elements of 16 mW, and 40 mW after the combiner, 0.17 W; ×2 streams: 8.75 W |
+| Energy per bit | 8.75 W / 9.04 Gb/s = 969 pJ/bit |
+
+The mixer sets the receiver's compression (89 % of its 1/IP1dB): it comes after the combiner, where the eight
+elements' signals arrive in phase, and the Notes say so. The cascade table's **NF left** column says the stages after
+the LNA may have 16.7 dB of NF together before they cost the chain 1 dB.
+
+**The sweeps.** The Link tab's Sweeps row asks for three, each with its own tab:
+- the carrier from 20 to 40 GHz, beyond n258 to show the trend: the rate falls from 9.9 to 7.1 Gb/s as the PA's output
+  falls past its knee, the loss and the noise rise, and the path lengthens in wavelengths, and the DC power steps where
+  the LNA needs a third stage;
+- the transmit array from 4 to 1024 elements: the rate climbs until the received power meets the receiver's ceiling,
+  then stops;
+- the receive array from 1 (no combiner) to 64 elements, sizes that are not powers of 2 among them, which the Levels
+  topology takes.
+
+**The benches.** The link adds a **`26 GHz Link TX`** bench: one transmit element's PA under an NR 64-QAM carrier,
+swept over its back-off. At the link's 8 dB the output is 0.92 dB below the budget's Psat − 8 dB, the EVM 6.3 % and the
+adjacent-channel ratio −30.3 dBc; at 12 dB, 0.41 dB, 2.9 % and −36.9 dBc. The receiver's own benches run at the
+−59.41 dBm the link delivers to each element: its 1-Tone bench reads −0.0001 dB in gain and +0.0003 dB in NF, its
+Steering and Combiners benches 10⁻¹⁴ dB. Release build: 1-Tone 1 s, Steering 2 s, Combiners 1 s, TX 35 s.
 
 ## Levels, blockers, the canceller and the demo
 
