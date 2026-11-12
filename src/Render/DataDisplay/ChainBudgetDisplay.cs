@@ -392,6 +392,21 @@ public static class ChainBudgetDisplay
     private static double Depth(double ampErrDb, double phaseErrDeg, double delayErrS, double bwHz)
         => -10 * System.Math.Log10(System.Math.Max(CancellerSpec.Residual(ampErrDb, phaseErrDeg, delayErrS, bwHz), 1e-12));
 
+    /// <summary>The window's Link tab: the link's numbers, when the chain has one, and the receiver's readouts, each a
+    /// table of the budget's own scalars.</summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowLink(bool link)
+    {
+        const string src = "budget";
+        var rx = Table("Receiver", src,
+            [("Nir_dBm", "Receiver: noise in, dBm"), ("NFarray_dB", "NF of the array, dB"), ("SNRtot_dB", "SNR, dB"),
+             ("Margin_dB", "margin, dB"), ("Rate_Gbps", "rate, Gb/s"), ("Pdctot_W", "DC power, W"), ("Ebit_pJ", "energy, pJ/bit")], first: 190);
+        if (!link) return [rx];
+        var tx = Table("Link", src,
+            [("Pout_PA_dBm", "Link: PA out, dBm"), ("EIRP_dBm", "EIRP, dBm"), ("Lfs_dB", "free space, dB"), ("Atm_dB", "more on the path, dB"),
+             ("Prx_dBm", "received, dBm"), ("Ceiling_dBm", "ceiling, dBm"), ("Pin_dBm", "chain input, dBm")], first: 190);
+        return [tx, rx];
+    }
+
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
     {

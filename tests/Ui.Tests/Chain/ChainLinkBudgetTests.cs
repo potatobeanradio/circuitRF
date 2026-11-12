@@ -275,11 +275,142 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Scaled()));
         Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 3}"));
 
-        // The window keeps them through an edit and a save.
+        // The window keeps them through an edit.
         var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);
         vm.InputPowerDbm = "-65";
         var kept = vm.ToDesign();
         Assert.Equal((0.1, 2, 0.5, 8.0), (kept.FractionalBandwidth!.Value, kept.Streams, kept.NfAllowanceDb, kept.RxBackoffDb));
+    }
+
+    // ── the link ─────────────────────────────────────────────────────────────
+
+    /// <summary>A 26 GHz link: 64 transmit elements, 150 m, and the 8-element receiver of <see cref="Array"/>.</summary>
+    private static ChainDesign Link(string distance = "150 m")
+    {
+        var d = Array(8, 1, "Levels");
+        d.FrequencyHz = 26e9;
+        d.Stages[0].Parameters["Pdc"] = "10 mW";
+        d.Stages[2].Parameters["Pdc"] = "20 mW";
+        d.Link = new ChainLink
+        {
+            Tx = new() { ["Psat"] = "24", ["Backoff"] = "8", ["Loss"] = "0.8", ["AntennaGain"] = "5", ["Elements"] = "64", ["PaGain"] = "20", ["PAE"] = "15" },
+            Path = new() { ["Distance"] = distance, ["Attenuation"] = "0.2", ["RxAntennaGain"] = "5" },
+        };
+        return d;
+    }
+
+    [Fact]
+    public void TheLink_IsEirpLessThePath_AtEachElement_ByHand()
+    {
+        var r = ChainBudget.Evaluate(Link());
+        Assert.Empty(r.Refusals);
+        var l = r.Design!.Link!.Budget(26e9);
+        double eirp = 24 - 8 - 0.8 + 5 + 20 * Math.Log10(64);
+        double lfs = 20 * Math.Log10(4 * Math.PI * 150 * 26e9 / 299792458.0);
+        double prx = eirp - lfs - 0.2 * 0.15 + 5;
+        Assert.Equal(eirp, l.EirpDbm, 12);
+        Assert.Equal(lfs, l.LfsDb, 12);
+        Assert.Equal(prx, l.PrxDbm, 12);
+        Assert.Equal(prx, r.Design.InputPowerDbm, 12);        // the chain's input is what each element receives
+        Assert.Equal(prx + r.Totals!.GainDb, r.Totals.PoutDbm, 9);
+        var ds = ChainBudget.ToDataSet(r);
+        Assert.Equal(eirp, ds["EIRP_dBm"].RealValues[0], 12);
+        Assert.Equal(prx, ds["Prx_dBm"].RealValues[0], 12);
+
+        // A path written in kilometres is the same path.
+        Assert.True(ChainLink.TryMetres("30 m", out double m1));
+        Assert.True(ChainLink.TryMetres("0.03 km", out double m2));
+        Assert.True(ChainLink.TryMetres("30", out double m3));
+        Assert.Equal((30.0, 30.0, 30.0), (m1, m2, m3));
+        Assert.Equal(prx, ChainBudget.Evaluate(Link("0.15 km")).Design!.InputPowerDbm, 12);
+    }
+
+    [Fact]
+    public void ALinkThatCannotBeBudgeted_IsRefused_AndOneTooStrongIsHeldAtTheCeiling()
+    {
+        Assert.Contains(ChainBudget.Evaluate(Link("0 m")).Refusals, x => x.StartsWith("Path: Distance = '0 m' is not a distance above 0 m", StringComparison.Ordinal));
+        Assert.Contains(ChainBudget.Evaluate(Link("far")).Refusals, x => x.StartsWith("Path: Distance = 'far'", StringComparison.Ordinal));
+        var d = Link();
+        d.Link!.Tx["Elements"] = "0";
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.StartsWith("Transmitter: Elements = '0' is not a whole number", StringComparison.Ordinal));
+        d.Link.Tx["Elements"] = "2.5";
+        Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.StartsWith("Transmitter: Elements = '2.5'", StringComparison.Ordinal));
+
+        // A metre away the link would deliver far more than the receiver takes: the input is its ceiling.
+        var r = ChainBudget.Evaluate(Link("1 m"));
+        Assert.Equal(r.Totals!.Ip1dbDbm - 10, r.Design!.InputPowerDbm, 12);
+        Assert.Contains(r.Notes, x => x.StartsWith("The link delivers", StringComparison.Ordinal) && x.Contains("the budget takes", StringComparison.Ordinal));
+        Assert.True(r.Design.Link!.Budget(26e9).PrxDbm > r.Design.InputPowerDbm);
+    }
+
+    [Fact]
+    public void TheDcPower_IsEachPaAtItsBackoff_AndTheBranchOncePerElement()
+    {
+        var r = ChainBudget.Evaluate(Link());
+        var p = ChainLink.Power(r)!;
+        double pout = Math.Pow(10, (16 - 30) / 10.0);
+        double pa = (pout - pout / 100) / 0.15;
+        Assert.Equal(pa, p.PaW, 12);
+        Assert.Equal(64 * pa, p.TxW, 12);
+        Assert.Equal(8 * 0.010 + 0.020, p.RxW, 12);                  // the LNA per element; the driver once
+        Assert.Equal(64 * pa + 0.1, p.TotalW, 12);
+        Assert.Equal(1, p.EnergyPerBitJ * ChainCapacity.Read(r)!.RateBps / p.TotalW, 12);
+
+        // Streams each have their hardware: twice the power and twice the rate, the same energy per bit.
+        var d = Link();
+        d.Streams = 2;
+        var p2 = ChainLink.Power(ChainBudget.Evaluate(d))!;
+        Assert.Equal(2 * p.TotalW, p2.TotalW, 12);
+        Assert.Equal(1, p2.EnergyPerBitJ / p.EnergyPerBitJ, 12);
+
+        // A stated Pdc is the PA's; a rate of nothing makes the energy per bit no number at all.
+        d = Link("1e15 km");
+        d.RxBackoffDb = 10;
+        d.Link!.Tx["Pdc"] = "0.5";
+        var far = ChainBudget.Evaluate(d);
+        Assert.Equal(0.5, ChainLink.Power(far)!.PaW, 12);
+        Assert.Equal(0, ChainCapacity.Read(far)!.RateBps);
+        Assert.True(double.IsNaN(ChainLink.Power(far)!.EnergyPerBitJ));
+        Assert.True(double.IsNaN(ChainBudget.ToDataSet(far)["Ebit_J"].RealValues[0]));
+    }
+
+    [Fact]
+    public void ACombinerOfLevels_TakesThatTreesLossOnOneCombiner_AndSimulatesToIt()
+    {
+        var d = Array(6, 1, "Levels");      // ceil(log2 6) = 3 levels of 1 dB
+        var r = ChainBudget.Evaluate(d);
+        Assert.Empty(r.Refusals);
+        Assert.Equal(10 * Math.Log10(6) - 3, r.Stages[1].Stage.GainDb, 12);
+        Assert.Equal(-3, r.Stages[1].Stage.NoiseGainDb, 12);
+        Assert.Equal(Db(6), r.Totals!.ArrayGainDb, 12);
+        // At a power of 2 it is the tree's own budget.
+        Assert.Equal(ChainBudget.Evaluate(Array(8, 1, "Tree")).Stages[1].Stage.GainDb, ChainBudget.Evaluate(Array(8, 1, "Levels")).Stages[1].Stage.GainDb, 12);
+        Assert.Contains(ChainBudget.Evaluate(Array(6, 1, "Tree")).Refusals, x => x.Contains("or to Levels", StringComparison.Ordinal));
+        var one = Bench(d, "Lv", ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
+        Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);
+    }
+
+    [Fact]
+    public void TheWindow_KeepsTheLinkAndItsRows_ThroughAnEdit_AndUndoesIt()
+    {
+        var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(Link());
+        Assert.True(vm.HasLink);
+        Assert.Equal("150 m", vm.LinkPath.Single(p => p.Name == "Distance").Value);
+        vm.LinkPath.Single(p => p.Name == "Distance").Value = "200 m";
+        var d = vm.ToDesign();
+        Assert.Equal("200 m", d.Link!.Path["Distance"]);
+        Assert.Equal("64", d.Link.Tx["Elements"]);
+        Assert.DoesNotContain("Pdc", d.Link.Tx.Keys);                 // blank: not written
+        Assert.Contains("Link: EIRP", vm.Summary, StringComparison.Ordinal);
+        vm.HasLink = false;
+        Assert.Null(vm.ToDesign().Link);
+        vm.UndoCommand.Execute(null);
+        Assert.True(vm.HasLink);
+        vm.UndoCommand.Execute(null);
+        Assert.Equal("150 m", vm.LinkPath.Single(p => p.Name == "Distance").Value);
+        Assert.NotNull(vm.ReceiverPlot);
+        Assert.Contains(vm.PlotHost.Plots, c => ReferenceEquals(c.PlotVM.Plot, vm.LinkPlot));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

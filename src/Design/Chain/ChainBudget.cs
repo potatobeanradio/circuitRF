@@ -62,6 +62,7 @@ public static class ChainBudget
         var budgets = d.Stages.Select((s, i) => ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(inputHz[i], d.BaseDirectory))).ToList();
         foreach (var b in budgets) notes.AddRange(b.Notes);
         notes.AddRange(BlockersOutsideFiles(d));
+        d = ChainLink.Cap(d, budgets, notes);
 
         double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0, f = d.FrequencyHz;
         double a = 1;
@@ -185,6 +186,7 @@ public static class ChainBudget
         One("ArrayGain_dB", "dB", t.ArrayGainDb);
         One("Fout_Hz", "Hz", t.OutputFrequencyHz);
         ChainCapacity.AddTo(ds, r, stage);
+        ChainLink.AddTo(ds, r);
         return ds;
     }
 }

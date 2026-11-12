@@ -93,7 +93,8 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
 
     private IEnumerable<CircuitRF.Ui.DataDisplay.Controls.PlotControl> Plots()
     {
-        foreach (var name in new[] { "CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl" })
+        foreach (var name in new[] { "CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl",
+                                     "LinkPlotControl", "ReceiverPlotControl" })
             if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } p) yield return p;
     }
 

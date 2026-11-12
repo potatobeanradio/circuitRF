@@ -215,6 +215,10 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
 
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _linkTable, _receiverTable;
+    public CircuitRF.Render.DataDisplay.Plot? LinkPlot => _linkTable?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? ReceiverPlot => _receiverTable?.PlotVM.Plot;
+
     /// <summary>True when the chain has a canceller: its tab shows the depth its errors leave.</summary>
     [ObservableProperty] private bool _hasCanceller;
 
@@ -309,6 +313,16 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c);
         Refill(ref _depthPhase, nameof(DepthPhasePlot), cfg[0], BudgetSource, data);
         Refill(ref _depthBand, nameof(DepthBandPlot), cfg[1], BudgetSource, data);
+    }
+
+    /// <summary>The link's numbers and the receiver's readouts, as tables over the budget's scalars.</summary>
+    private void RefillLink(ChainBudgetResult r)
+    {
+        var data = ChainBudget.ToDataSet(r);
+        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLink(link: true);
+        if (r.Design?.Link is not null) Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, data);
+        else Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, new RfCore.Data.DataSet());
+        Refill(ref _receiverTable, nameof(ReceiverPlot), cfg[1], BudgetSource, data);
     }
 
     private void RefillCascade(ChainBudgetResult r)
@@ -442,7 +456,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RequiredSnrDb = N(d.RequiredSnrDb);
         Blockers = FormatBlockers(d.Blockers);
         Demo = d.Demo;
-        _carried = d;
+        HasLink = d.Link is not null;
+        FillLink(d);
         Stages.Clear();
         foreach (var s in d.Stages) Stages.Add(new ChainStageViewModel(s, Edited));
         _loading = false;
@@ -465,13 +480,62 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Stages = [.. Stages.Select(s => s.ToStage())],
         Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
         Demo = Demo,
-        // What the window does not edit, as it was opened.
-        FractionalBandwidth = _carried?.FractionalBandwidth, Streams = _carried?.Streams ?? 1,
-        NfAllowanceDb = _carried?.NfAllowanceDb ?? 1, RxBackoffDb = _carried?.RxBackoffDb ?? 10,
+        Link = HasLink ? new ChainLink { Tx = Values(LinkTx), Path = Values(LinkPath) } : null,
+        FractionalBandwidth = Rx("FBW").Trim().Length == 0 ? null : Parse(Rx("FBW"), 1, double.NaN),
+        Streams = Parse(Rx("Streams"), 1, double.NaN) is var st && st >= 1 && st == Math.Round(st) && st < int.MaxValue ? (int)st : 0,
+        NfAllowanceDb = Parse(Rx("NfAllowance"), 1, double.NaN),
+        RxBackoffDb = Parse(Rx("RxBackoff"), 1, double.NaN),
     };
 
-    /// <summary>The design as loaded: the source of what the window keeps without editing it.</summary>
-    private ChainDesign? _carried;
+    // ── the link, and the receiver's readout inputs: rows of parameters as a stage's are ──
+
+    /// <summary>The receiver readouts' inputs, the design's FractionalBandwidth, Streams, NfAllowanceDb and RxBackoffDb.</summary>
+    public static readonly IReadOnlyList<ChainParam> ReceiverParameters =
+    [
+        new("FBW", "", "", BlankAllowed: true, Help: "fractional bandwidth: B = FBW · frequency (0.1 for 10 %); blank: the Bandwidth above"),
+        new("Streams", "1", "", Help: "orthogonal streams, each with its own hardware: the rate and the DC power both multiply by it"),
+        new("NfAllowance", "1", "dB", Help: "after each stage, the largest NF the rest may have keeps the whole within this of the NF up to it"),
+        new("RxBackoff", "10", "dB", Help: "the receiver's ceiling below its input P1dB; a link's received power is held at it"),
+    ];
+
+    /// <summary>A transmitter and a path in front of the chain; their rows below are kept while it is off.</summary>
+    [ObservableProperty] private bool _hasLink;
+    partial void OnHasLinkChanged(bool value) => Edited(null);
+
+    public ObservableCollection<ChainParamViewModel> LinkTx { get; } = [];
+    public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
+    public ObservableCollection<ChainParamViewModel> ReceiverInputs { get; } = [];
+    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs);
+
+    private string Rx(string name) => ReceiverInputs.FirstOrDefault(p => p.Name == name)?.Value ?? "";
+
+    private static Dictionary<string, string> Values(IEnumerable<ChainParamViewModel> row)
+        => row.Where(p => !string.IsNullOrWhiteSpace(p.Value)).ToDictionary(p => p.Name, p => p.Value.Trim(), StringComparer.Ordinal);
+
+    /// <summary>The link's and the readouts' rows from a design, or from the values an undo step kept.</summary>
+    private void FillLink(ChainDesign d, IReadOnlyDictionary<string, string>? kept = null)
+    {
+        static string N2(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        var rx = new Dictionary<string, string>
+        {
+            ["FBW"] = d.FractionalBandwidth is { } f ? N2(f) : "", ["Streams"] = d.Streams.ToString(CultureInfo.InvariantCulture),
+            ["NfAllowance"] = N2(d.NfAllowanceDb), ["RxBackoff"] = N2(d.RxBackoffDb),
+        };
+        void Fill(ObservableCollection<ChainParamViewModel> row, IReadOnlyList<ChainParam> ps, string prefix, IReadOnlyDictionary<string, string>? from)
+        {
+            row.Clear();
+            foreach (var p in ps)
+                row.Add(new ChainParamViewModel(p, kept?.GetValueOrDefault(prefix + p.Name) ?? from?.GetValueOrDefault(p.Name) ?? p.Default, Edited));
+        }
+        Fill(LinkTx, ChainLink.TxParameters, "Tx.", d.Link?.Tx);
+        Fill(LinkPath, ChainLink.PathParameters, "Path.", d.Link?.Path);
+        Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx);
+    }
+
+    /// <summary>The rows' values, by row and name, as an undo step keeps them.</summary>
+    private string LinkSnapshot() => System.Text.Json.JsonSerializer.Serialize(
+        LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(LinkPath.Select(p => ("Path." + p.Name, p.Value)))
+              .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
 
     /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
     private void Changed() => Edited(null);
@@ -492,7 +556,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     /// <summary>The document's content, compared to decide dirtiness; the selection rides beside it.</summary>
     private sealed record UndoContent(string Frequency, string Bandwidth, string InputPower, string Temperature,
-                                      string RequiredSnr, string Blockers, bool Demo, string Stages);
+                                      string RequiredSnr, string Blockers, bool Demo, string Stages, bool HasLink = false,
+                                      string Link = "");
 
     private sealed record UndoState(UndoContent Content, int Selected);
 
@@ -517,7 +582,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     private UndoState Capture() => new(new UndoContent(
         Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo,
-        System.Text.Json.JsonSerializer.Serialize(Stages.Select(st => st.ToStage()).Select(st => new { st.Name, st.Part, st.Parameters }))),
+        System.Text.Json.JsonSerializer.Serialize(Stages.Select(st => st.ToStage()).Select(st => new { st.Name, st.Part, st.Parameters })),
+        HasLink, LinkSnapshot()),
         SelectedStageIndex);
 
     /// <summary>A document just opened, made or loaded: nothing to undo, and this content is the clean state.</summary>
@@ -607,6 +673,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             var c = state.Content;
             (Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo) =
                 (c.Frequency, c.Bandwidth, c.InputPower, c.Temperature, c.RequiredSnr, c.Blockers, c.Demo);
+            HasLink = c.HasLink;
+            FillLink(new ChainDesign(), System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(c.Link));
             Stages.Clear();
             foreach (var st in System.Text.Json.JsonSerializer.Deserialize<List<ChainStage>>(c.Stages) ?? [])
                 Stages.Add(new ChainStageViewModel(st, Edited));
@@ -659,6 +727,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RefillCascade(r);
         RefillLevels(d, r);
         RefillCanceller(d);
+        RefillLink(r);
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes);
@@ -672,6 +741,14 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (ChainCapacity.Read(r) is { } o
                 ? $"\nNoise at the input {D(o.NirDbm)} dBm (NF of the array {D(o.NfArrayDb)} dB)    Margin {D(o.MarginDb)} dB    " +
                   $"Rate {ChainCapacity.Rate(o.RateBps)}" + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $"    Ceiling {D(o.CeilingDbm)} dBm"
+                : "") +
+            (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l
+                ? $"\nLink: EIRP {D(l.EirpDbm)} dBm from {l.Mtx} elements    Free space {D(l.LfsDb)} dB, {D(l.AtmDb)} dB more    " +
+                  $"Received {D(l.PrxDbm)} dBm per element    Input {D(rd.InputPowerDbm)} dBm"
+                : "") +
+            (ChainLink.Power(r) is { TotalW: > 0 } pw
+                ? $"\nDC power: transmit {ChainLink.Watts(pw.TxW)}, receive {ChainLink.Watts(pw.RxW)}, total {ChainLink.Watts(pw.TotalW)}    " +
+                  $"{D(pw.EnergyPerBitJ * 1e12)} pJ/bit"
                 : "");
         if (r.Totals is null) return false;
         MarkGood();
@@ -705,6 +782,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         _hasGood = true;
         _goodInputs = (Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers);
+        foreach (var p in LinkParams) p.LastGood = p.Value;
         foreach (var st in Stages)
         {
             st.NameLastGood = st.Name;
@@ -738,7 +816,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         switch (_errorKey)
         {
-            case ChainParamViewModel p when Stages.Any(st => st.Parameters.Contains(p)): p.Value = p.LastGood; break;
+            case ChainParamViewModel p when Stages.Any(st => st.Parameters.Contains(p)) || LinkParams.Contains(p): p.Value = p.LastGood; break;
             case ValueTuple<ChainStageViewModel, string> (var st, _) when Stages.Contains(st): st.Name = st.NameLastGood; break;
             case nameof(Frequency): Frequency = _goodInputs.Frequency; break;
             case nameof(BandwidthMHz): BandwidthMHz = _goodInputs.Bandwidth; break;

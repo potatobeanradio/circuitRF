@@ -238,8 +238,9 @@ public static class ChainParts
             (s, c) => ChainSnp.Budget(s, c)),
         new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
-             new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree"],
-                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2"),
+             new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree", "Levels"],
+                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2. Levels: one N:1 " +
+                       "combiner, any N, with the loss of ceil(log2 N) levels of IL each"),
              new("Kind", "Passive", "", Numeric: false, Options: ["Passive", "Active"],
                  Help: "Active: an amplifier after each combiner"),
              new("IL", "0.5", "dB", Numeric: false,
@@ -278,14 +279,17 @@ public static class ChainParts
         string topo = s.Get("Topology").Trim(), kind = s.Get("Kind").Trim();
         bool tree = topo.Equals("Tree", StringComparison.OrdinalIgnoreCase);
         bool active = kind.Equals("Active", StringComparison.OrdinalIgnoreCase);
-        if (topo.Length > 0 && !tree && !topo.Equals("Direct", StringComparison.OrdinalIgnoreCase))
-            No($"Topology = '{topo}' is neither Direct nor Tree.");
+        // Levels: the loss of the ceil(log2 N) levels a tree of any N would take, on one N:1 combiner.
+        int lossLevels = 0;
+        if (topo.Equals("Levels", StringComparison.OrdinalIgnoreCase)) while ((1 << lossLevels) < n) lossLevels++;
+        else if (topo.Length > 0 && !tree && !topo.Equals("Direct", StringComparison.OrdinalIgnoreCase))
+            No($"Topology = '{topo}' is neither Direct nor Tree, nor Levels.");
         if (kind.Length > 0 && !active && !kind.Equals("Passive", StringComparison.OrdinalIgnoreCase))
             No($"Kind = '{kind}' is neither Passive nor Active.");
         if (tree && (n & (n - 1)) != 0)
         {
             No($"a tree combines in pairs, so its N is a power of 2 (2, 4, 8, …), and {n} is not. Set Topology to Direct " +
-               $"for {n} elements.");
+               $"for {n} elements, or to Levels for one combiner with the loss of a tree's levels.");
             tree = false;
         }
         int levels = tree ? (int)Math.Round(Math.Log2(n)) : 1;
@@ -303,6 +307,7 @@ public static class ChainParts
             return v.Count == 1 ? [.. Enumerable.Repeat(v[0], levels)] : v;
         }
         var il = PerLevel("IL", "0");
+        if (lossLevels > 0) il = [il[0] * lossLevels];
         var gain = active ? PerLevel("Gain", "10") : [];
         var nf = active ? PerLevel("NF", "2") : [];
         var ip3 = active ? PerLevel("IIP3", "10") : [];
@@ -320,7 +325,7 @@ public static class ChainParts
         for (int l = 0; l < levels; l++)
             lv.Add(new CombinerLevel(tree ? 2 : n, tree ? n >> (l + 1) : 1, il[l],
                                      active ? gain[l] : 0, active ? nf[l] : 0, active ? ip3[l] : double.PositiveInfinity));
-        return new CombinerSpec(n, tree, active, lv, path);
+        return new CombinerSpec(n, tree, active, lv, path, lossLevels);
     }
 }
 
@@ -342,8 +347,9 @@ public sealed record CombinerLevel(int Ways, int Parts, double IlDb, double Gain
 /// signal gain, noise gain, noise figure and intercept, all referred to ONE element's input. The array gain
 /// is the signal gain over the noise gain, (Σa_k)²/Σa_k², N for equal paths.</para>
 /// </summary>
+/// <param name="LossLevels">Levels only: the ceil(log2 N) levels whose loss its one combiner takes; 0 otherwise.</param>
 public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<CombinerLevel> Levels,
-                                  IReadOnlyList<double> PathIlDb)
+                                  IReadOnlyList<double> PathIlDb, int LossLevels = 0)
 {
     /// <summary>Path k's amplitude weight (1-based), 1 with no PathIL.</summary>
     public double Weight(int k) => PathIlDb.Count == N ? Math.Pow(10, -PathIlDb[k - 1] / 20) : 1;
@@ -378,7 +384,8 @@ public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<C
     }
 
     /// <summary>"Direct, passive", "Tree of 3 levels, active", as the block view and the variants bench say it.</summary>
-    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1" : $"Direct {N}:1")
+    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1"
+                                 : LossLevels > 0 ? $"{N}:1, {LossLevels} levels' loss" : $"Direct {N}:1")
                                 + (Active ? ", active" : ", passive");
 }
 

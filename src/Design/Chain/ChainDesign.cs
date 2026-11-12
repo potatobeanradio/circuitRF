@@ -71,6 +71,10 @@ public sealed class ChainDesign
     /// <summary>The receiver's ceiling below its input P1dB, dB.</summary>
     public double RxBackoffDb { get; set; } = 10;
 
+    /// <summary>A transmitter and a path in front of the chain (<see cref="ChainLink"/>): the power it delivers to each
+    /// element becomes the input power. Null: the chain alone, at <see cref="InputPowerDbm"/>.</summary>
+    public ChainLink? Link { get; set; }
+
     public List<ChainStage> Stages { get; set; } = [];
 
     /// <summary>Blockers at the chain's input, each a carrier at an offset from the frequency and a level, carried
@@ -150,6 +154,7 @@ public sealed class ChainDesign
                 ChainSnp.Read(s, new ChainStageContext(inputHz[si], BaseDirectory), r);
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
+        Link?.Refusals(r);
         foreach (var b in Blockers)
             if (!double.IsFinite(b.OffsetHz) || !double.IsFinite(b.LevelDbm))
                 r.Add("A blocker is an offset and a level, \"150 MHz, -40\"; one of them is not a number.");
@@ -174,6 +179,7 @@ public sealed class ChainDesign
         Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers], Demo = Demo,
         BaseDirectory = BaseDirectory,
         FractionalBandwidth = FractionalBandwidth, Streams = Streams, NfAllowanceDb = NfAllowanceDb, RxBackoffDb = RxBackoffDb,
+        Link = Link?.Clone(),
     };
 }
 
@@ -193,7 +199,7 @@ public static class ChainValue
         else if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
                  && Units.TrySplitGluedNumber(t, out var n, out var u)) { num = n; unit = u; }
         if (!double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return false;
-        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "%") return true;
+        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "%" or "dBi") return true;
         if (Units.Scale(unit) is { } s) { value *= s; return true; }
         // A time: "s", or a prefix and "s" ("0.5 ns", "50 ps").
         if (unit == "s") return true;
@@ -217,7 +223,7 @@ public static class ChainDesignIo
     /// <summary>A chain is written as version 2 only when it uses what version 1 did not have, so a reader of version 1
     /// refuses it rather than dropping it on save, and every other chain stays readable there.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.FractionalBandwidth is not null || d.Streams != 1 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
+        d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value))) ? 2 : 1;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -242,6 +248,7 @@ public static class ChainDesignIo
         public int? Streams { get; set; }
         public double? NfAllowanceDb { get; set; }
         public double? RxBackoffDb { get; set; }
+        public ChainLink? Link { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
@@ -252,6 +259,7 @@ public static class ChainDesignIo
         Blockers = d.Blockers.Count > 0 ? d.Blockers : null, Demo = d.Demo ? true : null,
         FractionalBandwidth = d.FractionalBandwidth, Streams = d.Streams != 1 ? d.Streams : null,
         NfAllowanceDb = d.NfAllowanceDb != 1 ? d.NfAllowanceDb : null, RxBackoffDb = d.RxBackoffDb != 10 ? d.RxBackoffDb : null,
+        Link = d.Link,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -277,6 +285,8 @@ public static class ChainDesignIo
         d.Streams = f.Streams ?? 1;
         d.NfAllowanceDb = f.NfAllowanceDb ?? 1;
         d.RxBackoffDb = f.RxBackoffDb ?? 10;
+        if (f.Link is { } l)
+            d.Link = new ChainLink { Tx = new(l.Tx ?? [], StringComparer.Ordinal), Path = new(l.Path ?? [], StringComparer.Ordinal) };
         foreach (var s in f.Stages ?? [])
             d.Stages.Add(new ChainStage
             {

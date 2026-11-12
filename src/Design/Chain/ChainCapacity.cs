@@ -95,6 +95,7 @@ public static class ChainCapacity
         One("Margin_dB", "dB", o.MarginDb);
         One("Streams", "", o.Streams);
         One("Rate_bps", "bit/s", o.RateBps);
+        One("Rate_Gbps", "Gbit/s", o.RateBps / 1e9);
         One("Ceiling_dBm", "dBm", o.CeilingDbm);
     }
 

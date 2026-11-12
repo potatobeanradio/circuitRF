@@ -118,5 +118,11 @@ internal static class Chain
             Console.WriteLine($"  noise at the input {D(o.NirDbm)} dBm (NF of the array {D(o.NfArrayDb)} dB) in {o.BandwidthHz / 1e6:0.###} MHz, "
                             + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
                             + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $", ceiling {D(o.CeilingDbm)} dBm");
+        if (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l)
+            Console.WriteLine($"  link: {D(l.PoutDbm)} dBm from each of {l.Mtx} PAs, EIRP {D(l.EirpDbm)} dBm, free space {D(l.LfsDb)} dB "
+                            + $"and {D(l.AtmDb)} dB more over the path, {D(l.PrxDbm)} dBm at each element, {D(rd.InputPowerDbm)} dBm in");
+        if (ChainLink.Power(r) is { TotalW: > 0 } p)
+            Console.WriteLine($"  DC power: transmit {ChainLink.Watts(p.TxW)}, receive {ChainLink.Watts(p.RxW)} ({p.Mrx} element(s)), "
+                            + $"total {ChainLink.Watts(p.TotalW)}, {D(p.EnergyPerBitJ * 1e12)} pJ/bit");
     }
 }

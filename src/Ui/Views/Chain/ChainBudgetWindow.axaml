@@ -95,6 +95,17 @@
         </Style>
     </Window.Styles>
 
+    <!-- A parameter row's field, for the rows that are not stages (the Link tab's): the stage list's own template. -->
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:ChainParamViewModel">
+            <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
+                <TextBlock Classes="lbl" Text="{Binding Name}"/>
+                <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}"/>
+                <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.DataTemplates>
+
     <DockPanel>
         <!-- Toolbar: the file, the stage list, the transfer, help. The editors' and the other tools' shape (the Layout
              Editor's, the railRF window's): a full-bleed bottom-ruled Border padded 4,2, icon-only 16 px buttons at
@@ -191,7 +202,7 @@
                 <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
                 <TextBlock Classes="unit" Text="MHz"/>
                 <TextBlock Classes="lbl" Text="Input power"/>
-                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" ToolTip.Tip="The signal at the input; in an array, at each element"/>
+                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" IsEnabled="{Binding !HasLink}" ToolTip.Tip="The signal at the input; in an array, at each element. With a link, the power it delivers"/>
                 <TextBlock Classes="unit" Text="dBm"/>
                 <TextBlock Classes="lbl" Text="Source temperature"/>
                 <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
@@ -396,6 +407,38 @@
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             </Grid>
                         </DockPanel>
+                    </TabItem>
+                    <!-- The link in front of the chain, and the readouts every chain has: their inputs as rows of
+                         parameters, as a stage's, and their numbers as Data Display tables over the budget. -->
+                    <TabItem Header="Link" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="4">
+                                <CheckBox IsChecked="{Binding HasLink}"
+                                          ToolTip.Tip="A transmit array and a line-of-sight path in front of the chain: the power each receive element gets becomes the input power, and the receive array is the chain's Combiner">
+                                    <TextBlock Text="a transmitter and a path in front of the chain" FontSize="12"/>
+                                </CheckBox>
+                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto">
+                                    <TextBlock Classes="lbl" Text="Transmitter" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Path" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
+                                    <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding LinkPath}" IsVisible="{Binding HasLink}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="2" Classes="lbl" Text="Receiver" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                    <ItemsControl Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ReceiverInputs}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </Grid>
+                                <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
+                                                 Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
+                                                 Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
                     <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
                         <Grid ColumnDefinitions="*,4,*">
