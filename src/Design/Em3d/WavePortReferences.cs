@@ -22,10 +22,11 @@ internal static class WavePortReferences
     public static Complex[][,] Renormalise(Complex[][,] s, IReadOnlyList<Em3dPort> ports, IReadOnlyList<Complex[]> from)
     {
         int n = ports.Count;
-        var target = ports.Select(p => p.Z0).ToArray();
         var mats = new Complex[s.Length][,];
         for (int k = 0; k < s.Length; k++)
         {
+            // brief-hzn-11 R-hzn11-4 — a port normalised to its mode stays at its mode: its target is where it already is
+            var target = ports.Select((p, i) => p.ModeNormalised ? from[k][i] : p.Z0).ToArray();
             var m = new Mat<Complex>(n, n);
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = s[k][i, j];
             var r = RFNetwork.SToS(m, from[k], target);
@@ -190,8 +191,15 @@ internal static class WavePortReferences
         {
             var re = modeZ.Select(z => z[w].Real).ToList();
             string range = Fmt(re.Min()) == Fmt(re.Max()) ? $"{Fmt(re[0])} Ω" : $"{Fmt(re.Min())} to {Fmt(re.Max())} Ω";
-            return $"port {p.Number}'s mode impedance is {range} over the sweep, renormalised to {Fmt(p.Z0.Real)} Ω";
+            return p.ModeNormalised
+                ? $"port {p.Number}'s mode impedance is {range} over the sweep, and its S is kept normalised to the mode (Z0 'mode')"
+                : $"port {p.Number}'s mode impedance is {range} over the sweep, renormalised to {Fmt(p.Z0.Real)} Ω";
         });
+        // brief-hzn-11 R-hzn11-4 — every wave port normalised to its mode: nothing was renormalised
+        if (wave.All(p => p.ModeNormalised))
+            return $"{solver} refers a wave port's S-parameters to the port's own mode, normalised to unit power, and every wave port " +
+                   $"here states Z0 'mode', so none was renormalised: {string.Join("; ", parts)}. The .sNp states R 1, which is not an " +
+                   "impedance (its header says so).";
         return $"{solver} refers a wave port's S-parameters to the port's own mode, normalised to unit power — that is, to the " +
                $"mode's impedance Z_PV ({source}), which varies with frequency. The .sNp states one real reference per port, " +
                $"so the wave ports were renormalised: {string.Join("; ", parts)}.";

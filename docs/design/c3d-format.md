@@ -271,6 +271,15 @@ Rules a reader must apply:
 
 - **A port is a rectangle on a drawing plane.** It is not an object and not a face.
 - `Z0` is `"50"` or a complex `"25+j10"`.
+- **`Z0: "mode"`** (a wave port only) normalises the port's S-parameters to its mode's own power wave: unit power in the
+  mode, with no impedance stated and nothing renormalised. It is what another tool calls a wave port without
+  renormalisation.
+  - EMerge and Palace honour it. openEMS refers every port to a stated impedance, so a setup run on openEMS refuses it,
+    naming the port.
+  - A result's ports are either all `"mode"` or all given an impedance, because a Touchstone file states one reference.
+  - Such a result's Touchstone states `R 1`, and a header line says the ports are normalised to their modes and that `R 1`
+    is not an impedance. Its `.cemr` marks each port `ModeNormalised`.
+  - `"mode"` on a lumped port, or on a terminal, is an error that names it.
 - **A lumped port's two conductors are inferred** from what its rectangle's opposite edges touch. `Positive` and
   `Negative` (elaborated object names, `U1/pad` allowed, or `airbox/zmin`) state them instead, and `Flip` swaps them.
 - `Angle` turns a lumped port in the XY plane about its centre.
@@ -278,6 +287,18 @@ Rules a reader must apply:
   - `VoltagePath` {`From`, `To`} states its voltage line.
   - `Reference` plus `Terminals` [{`Number`, `Name`, `Conductor`, `Z0`}] make a multi-conductor wave port with
     terminal S-parameters.
+  - **A hollow guide.** The port is read as a hollow-guide port when one closed metal boundary surrounds its region and
+    nothing else meets it. That boundary is either the four air-box faces beside the region, all PEC and the rectangle
+    spanning the face, or the walls of one conductor whose opening is a rectangle.
+    - It has no positive or negative conductor. Its mode is the guide's lowest, of any type.
+    - Its polarity line crosses the narrow side at the broad side's centre, from the lower wall to the higher, so the
+      sign of a straight guide's S21 does not depend on the mesh. A stated `VoltagePath` replaces that line, and `Flip`
+      reverses it.
+    - A square opening is refused, because its two lowest modes share one cutoff. So is an opening that is not a
+      rectangle.
+    - A sweep point below the lowest mode's cutoff, c/(2a·√(εr·μr)) in the face's material, is refused before
+      meshing.
+    - EMerge and Palace run it. openEMS refuses it, naming the port.
 - **Numbering.** Port numbers are unique across ports and terminals. A run's result numbers the modelled ports 1…N in
   `Number` order.
 

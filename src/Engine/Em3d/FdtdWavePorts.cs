@@ -187,8 +187,8 @@ public static class FdtdWavePorts
     /// <summary>R-em3d116-3 — the hollow waveguide's refusal: a wave port met by one conductor.</summary>
     public static string HollowRefusal(Em3dPort p)
         => $"Port {(p.FaceGroupLabel is { } g ? $"'{g}'" : (p.SourceNumber ?? p.Number).ToString(CultureInfo.InvariantCulture))} is a wave port met by one conductor (a hollow waveguide). openEMS needs a mode-matching port for " +
-           "that, which circuitRF does not build yet; run it on Palace. Set the setup's Solver3D to Palace, or run it with " +
-           "`circuitrf em --solver palace`.";
+           "that, which circuitRF does not build yet; EMerge and Palace run it. Set the setup's Solver3D to EMerge or Palace, or " +
+           "run it with `circuitrf em --solver emerge`.";
 
     /// <summary>
     /// R-em3d116-1 — the feeds of <paramref name="problem"/>'s wave ports: one per face carrying any, with its lattice and
@@ -657,7 +657,7 @@ public static class FdtdWavePorts
     /// <summary>A wave port met by one conductor: both its objects one (or both PEC faces of the box, which are one ground).
     /// Public for brief-emw-2: EMerge's lowering refuses a hollow waveguide by this same test.</summary>
     public static bool IsHollow(Em3dProblem problem, Em3dPort p)
-        => p.PositiveObject == p.NegativeObject ||
+        => p.Hollow || p.PositiveObject == p.NegativeObject ||
            (problem.Boundary.FaceKind(p.PositiveObject) is not null && problem.Boundary.FaceKind(p.NegativeObject) is not null);
 
     /// <summary>

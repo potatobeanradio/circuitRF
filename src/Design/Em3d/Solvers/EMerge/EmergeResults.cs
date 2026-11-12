@@ -228,7 +228,9 @@ public static class EmergeResults
         var s = sweep.S;
         if (ports.Any(p => p.Kind == Em3dPortKind.Wave && p.ReferencePlane.ShiftM != 0))
             s = WavePortReferences.Shift(s, ports, sweep.Gamma);
-        renormalised = sweep.Z0.Any(row => row.Where((z, i) => (z - target[i]).Magnitude > 1e-9 * Math.Max(1, target[i].Magnitude)).Any());
+        // brief-hzn-11 R-hzn11-4 — a port normalised to its mode keeps EMerge's S as it is; only the others are renormalised
+        renormalised = sweep.Z0.Any(row => row.Where((z, i) => !ports[i].ModeNormalised &&
+                                                               (z - target[i]).Magnitude > 1e-9 * Math.Max(1, target[i].Magnitude)).Any());
         if (renormalised) s = WavePortReferences.Renormalise(s, ports, sweep.Z0);
         return sweep with { S = s, Z0 = [.. sweep.Z0.Select(_ => (Complex[])target.Clone())] };
     }
@@ -289,8 +291,11 @@ public static class EmergeResults
         // Which numbered port is which named port, first and in the spelling other tools read (Port[N] = name).
         var lines = new List<string>(Em3dPortMap.NameLines(problem.Ports));
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
-            lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                      $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+            lines.Add(p.Hollow || p.ModeNormalised
+                ? $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' {Em3dModePorts.PortWords(p, Ascii)}"
+                : $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
+                  $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+        if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));
         lines.Add($"circuitRF-EM 3D mesh: {N(facts.Tetrahedra)} tetrahedra, element order {settings.ElementOrder}" +
                   (problem.MeshFrequencyHz is { } meshedAt ? $", sized at {(meshedAt / 1e9).ToString("R", System.Globalization.CultureInfo.InvariantCulture)} GHz" : ""));

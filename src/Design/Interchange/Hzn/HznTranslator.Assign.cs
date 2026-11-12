@@ -305,10 +305,10 @@ internal sealed partial class HznTranslator
                 _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes", "one mode is translated", name);
                 return;
             }
-            if (!IsTrue(props["Renormalize"]))
+            if (props["ModeType"] is { } modeType && !modeType.Trim().Equals("Auto", StringComparison.OrdinalIgnoreCase))
             {
-                _r.Add(HznRefusalKind.Excitation, "Wave Port without renormalisation",
-                       "its S-parameters are normalised to the mode's own impedance; circuitRF's port has a stated reference", name);
+                _r.Add(HznRefusalKind.Excitation, $"Wave Port with mode type {modeType.Trim()}",
+                       "circuitRF's wave port takes the face's own lowest mode, which is Hertzon's Auto", name);
                 return;
             }
             if ((props["Deembed"] is { } de && IsTrue(de)) && Plain(props["DeembedDistance"], name) is not 0)
@@ -316,7 +316,9 @@ internal sealed partial class HznTranslator
                 _r.Add(HznRefusalKind.Excitation, "Wave Port with de-embedding", "a reference-plane shift is not translated", name);
                 return;
             }
-            z0 = ImpedanceOhms(props["RenormImpedance"], name) is { } rz ? Num(rz) : "";
+            // brief-hzn-11 R-hzn11-5 — without renormalisation Hertzon's S is normalised to the mode: circuitRF's Z0 "mode"
+            z0 = !IsTrue(props["Renormalize"]) ? C3dPorts.ModeZ0
+               : ImpedanceOhms(props["RenormImpedance"], name) is { } rz ? Num(rz) : "";
         }
         else z0 = ImpedanceOhms(props["Impedance"], name) is { } lz ? Num(lz) : "";
         if (z0.Length == 0) return;
@@ -373,7 +375,9 @@ internal sealed partial class HznTranslator
         _doc.Ports.Add(port);
         _prov.Ports.Add(new HznPortOrigin(port.Number, name, sheetObject));
         foreach (var (k, v) in props.Names.Select(k => (k, props[k]!)))
-            if (k is not ("PortNumber" or "Impedance" or "RenormImpedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance"))
+            // a port normalised to its mode reads no RenormImpedance (the save keeps it as written)
+            if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance" or "ModeType")
+                && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0))
                 _prov.Unused.Add(new HznUnusedSetting($"port {name}", k, v));
     }
 
@@ -506,6 +510,19 @@ internal sealed partial class HznTranslator
             if (c3d == _regionName)
             {
                 for (int s = 0; s < 6; s++) SetAir(s, Em3dBoundaryKind.Pec, name);
+                continue;
+            }
+            // brief-hzn-11 — a hole in a closed design is a perfect-conductor solid: Perfect E says so already, Finite Conductivity
+            // makes its walls that metal
+            if (_voidTools.TryGetValue(hz, out var hole))
+            {
+                if (finite)
+                {
+                    var m = Material(faceMaterial, name);
+                    hole.Material = m?.Material.Name;
+                    hole.Role = m?.Role ?? Em3dRole.Conductor;
+                }
+                _prov.FaceBoundaries.Add(new HznBoundaryOrigin(name, hz, "(hole)", null));
                 continue;
             }
             if (!_top.TryGetValue(c3d, out var obj))

@@ -12,6 +12,7 @@
 using System.Collections.ObjectModel;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Ui.ThreeD.Tools;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -30,6 +31,15 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private string _portName = "";
     [ObservableProperty] private string _portNumber = "";
     [ObservableProperty] private string _portZ0 = "";
+
+    /// <summary>brief-hzn-11 R-hzn11-1 — what a wave port's S is referred to: a stated impedance, or its own mode.</summary>
+    public static IReadOnlyList<string> PortReferences { get; } = [ImpedanceReference, ModeReference];
+    public const string ImpedanceReference = "Impedance", ModeReference = "Mode";
+    [ObservableProperty] private string _portReference = ImpedanceReference;
+    /// <summary>True for a wave port of one terminal: the only port the Mode choice is offered for.</summary>
+    [ObservableProperty] private bool _portCanBeModeNormalised;
+    /// <summary>False while the port is normalised to its mode: the impedance box then has nothing to say.</summary>
+    [ObservableProperty] private bool _portZ0Editable = true;
     [ObservableProperty] private string _portPlane = "XY";
     [ObservableProperty] private string _portAt = "";
     [ObservableProperty] private string _portCentreU = "";
@@ -68,8 +78,33 @@ public sealed partial class C3dPropertiesViewModel
         PortPlaceEditable = port.Cylinder is null && !C3dPorts.HasTerminals(port);
         PortName = port.Name;
         PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        PortZ0 = port.Z0;
+        ShowPortReference(port);
         ShowPortPlace(port);
+    }
+
+    /// <summary>The port's Z0 box and its Reference picker, from what the port states.</summary>
+    private void ShowPortReference(C3dPort port)
+    {
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            bool mode = C3dPorts.IsModeZ0(port.Z0);
+            PortCanBeModeNormalised = port.Kind == Em3dPortKind.Wave && !C3dPorts.HasTerminals(port);
+            PortReference = mode ? ModeReference : ImpedanceReference;
+            PortZ0Editable = !mode;
+            PortZ0 = mode ? "" : port.Z0;
+        }
+        finally { _loading = was; }
+    }
+
+    /// <summary>Mode writes Z0 "mode"; Impedance writes the box's impedance, or 50 Ω when it is empty.</summary>
+    partial void OnPortReferenceChanged(string value)
+    {
+        if (_loading || _shownPort is not { } port) return;
+        string z0 = value == ModeReference ? C3dPorts.ModeZ0 : PortZ0.Trim() is { Length: > 0 } typed ? typed : "50";
+        Error = editor.SetPortZ0(port.Number, z0) ?? "";
+        ShowPortReference(port);
     }
 
     private void ShowPortPlace(C3dPort port)
@@ -106,7 +141,7 @@ public sealed partial class C3dPropertiesViewModel
         string? why = null;
         if (PortName.Trim() != port.Name) why ??= editor.SetPortName(port, PortName);
         if (PortNumber.Trim() != port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture)) why ??= editor.SetPortNumber(port, PortNumber);
-        if (PortZ0.Trim() != port.Z0) why ??= editor.SetPortZ0(port.Number, PortZ0);
+        if (PortZ0Editable && PortZ0.Trim() != port.Z0) why ??= editor.SetPortZ0(port.Number, PortZ0);
         if (PortPlaceEditable)
         {
             long L(string text, long fallback) => LayoutUnits.TryParse(text, doc.DisplayUnit, doc.DbuPerMicron, out long v) ? v : fallback;
@@ -127,7 +162,7 @@ public sealed partial class C3dPropertiesViewModel
                     : "A port's angle is a number of degrees.";
         }
         Error = why ?? "";
-        if (why is not null) { PortName = port.Name; PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture); PortZ0 = port.Z0; ShowPortPlace(port); }
+        if (why is not null) { PortName = port.Name; PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture); ShowPortReference(port); ShowPortPlace(port); }
     }
 
     // ── a component port ─────────────────────────────────────────────────────────────────────

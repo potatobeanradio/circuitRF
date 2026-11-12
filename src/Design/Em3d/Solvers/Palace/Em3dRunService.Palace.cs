@@ -982,7 +982,10 @@ public static partial class Em3dRunService
         // Which numbered port is which named port, first and in the spelling other tools read (Port[N] = name).
         var lines = new List<string>(Em3dPortMap.NameLines(problem.Ports));
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
-            lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
+            lines.Add(p.Hollow || p.ModeNormalised
+                ? $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' {Em3dModePorts.PortWords(p, Ascii)}; Palace's mode " +
+                  $"phase is taken out with the mode's voltage along the port's path taken as real"
+                : $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', " + (p.Kind == Em3dPortKind.Wave
                           // R-em3d23-2d — the file states the one reference its numbers are in, and where they came from.
                           // brief-em3d-141 R-em3d141-5 — and to the mode's own phase, which is taken out here too.
@@ -991,6 +994,7 @@ public static partial class Em3dRunService
                             $"taken as real; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
                             "into the structure from the port face"
                           : $"lumped, {R(p.Z0.Real)} Ohm"));
+        if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
                   $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}" +

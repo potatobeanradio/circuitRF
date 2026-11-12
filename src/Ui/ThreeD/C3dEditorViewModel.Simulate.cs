@@ -938,6 +938,15 @@ public sealed partial class C3dEditorViewModel
     /// success, else why not.</summary>
     public string? SetPortZ0(int number, string z0)
     {
+        // brief-hzn-11 R-hzn11-1 — "mode": a wave port of one terminal normalised to its mode
+        if (C3dPorts.IsModeZ0(z0))
+        {
+            var owner = Document.Ports.FirstOrDefault(p => p.Number == number && !C3dPorts.HasTerminals(p));
+            if (owner is not { Kind: Em3dPortKind.Wave })
+                return "Only a wave port is normalised to its mode: a lumped port or a terminal is referred to a number of ohms.";
+            ChangeRecords($"Z0 of port {number}", d => { foreach (var p in d.Ports.Where(p => p.Number == number && !C3dPorts.HasTerminals(p))) p.Z0 = C3dPorts.ModeZ0; });
+            return null;
+        }
         if (!C3dPorts.TryParseZ0(z0, out var z) || !(z.Real > 0))
             return $"'{z0}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10.";
         ChangeRecords($"Z0 of port {number}", d =>
@@ -1463,8 +1472,9 @@ public sealed partial class C3dEditorViewModel
     {
         if (!C3dPorts.HasTerminals(p))
         {
-            yield return new Viewer3DMenuItem($"Z0… ({p.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.Label(p)}",
-                "Reference impedance, Ω (a complex one as 25+j10):", p.Z0, text => SetPortZ0(p.Number, text)));
+            yield return new Viewer3DMenuItem(C3dPorts.IsModeZ0(p.Z0) ? "Z0… (normalised to its mode)" : $"Z0… ({p.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.Label(p)}",
+                p.Kind == Em3dPortKind.Wave ? "Reference impedance, Ω (a complex one as 25+j10), or mode to normalise to the port's mode:"
+                                            : "Reference impedance, Ω (a complex one as 25+j10):", p.Z0, text => SetPortZ0(p.Number, text)));
             string number = p.Number.ToString(CultureInfo.InvariantCulture);
             yield return new Viewer3DMenuItem($"Number… ({number})", () => TextRequested?.Invoke($"Number of {C3dPorts.Label(p)}",
                 "Port number (a whole number from 1, not used by another port):", number, text => SetPortNumber(p, text)));

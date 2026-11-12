@@ -99,7 +99,7 @@ public sealed class HznSheetBooleanTests : IDisposable
 
         string[] after = File.ReadAllText(path).Split('\n');
         Assert.Equal(before.Length, after.Length);
-        var changed = Assert.Single(before.Zip(after).Where(p => p.First != p.Second));
+        var changed = Assert.Single(before.Zip(after), p => p.First != p.Second);
         Assert.Equal(("\"XSize\": \"wf\",", "\"XSize\": \"2*wf\","), (changed.First.Trim(), changed.Second.Trim()));
     }
 
@@ -202,7 +202,7 @@ public sealed class HznSheetBooleanTests : IDisposable
         return (written, path);
     }
 
-    private static System.Text.Json.JsonElement Describe(string path)
+    internal static System.Text.Json.JsonElement Describe(string path)
     {
         string cli = new[] { ".venv/bin/hertzon-cli", ".venv/Scripts/hertzon-cli.exe", "bin/hertzon-cli" }
             .Select(r => Path.Combine(HertzonHomeFactAttribute.Home!, r)).FirstOrDefault(File.Exists)

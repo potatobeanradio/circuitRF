@@ -44,6 +44,11 @@ gamma.npy and Z0.npy carry each entry's own mode (Z0 = |TV_kk|^2 / 2: modes carr
 point sweep) V.npy is each entry's path integral of the TOTAL E for each excitation [f, n, ports]: the run's check, never the
 conversion's input. A terminal group's own excitations are modal, so no field step is saved for one.
 
+(brief-hzn-11) A wave-port entry with "hollow" is a hollow guide: a WavePort of any mode type (its lowest), whose path is
+its polarity line. EMerge sets a mode's sign by that line only for a TEM mode, so the driver negates a hollow port's S row and
+column when its mode integrates negative along the line; its Z0 is Z_PV = |V|^2 / 2 on the line. "modeNormalised" changes
+nothing here: circuitRF keeps such a port's S as it is.
+
 (brief-emi-7) When problem.json has a "fields" block, the solve also writes FIELDS, in the .vtu layout circuitRF reads for
 Palace (an UnstructuredGrid of Lagrange tetrahedra, every cell with its own nodes, inline-base64 geometry, appended-raw
 arrays, no compression, complex quantities as <name>_real/<name>_imag):
@@ -66,7 +71,7 @@ import os
 import re
 import sys
 
-DRIVER_VERSION = 8
+DRIVER_VERSION = 9
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -911,7 +916,15 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         # EMerge 3.0 has WavePort, with modetype="TEM" what its deprecated WavePortIH is; before it there is only WavePortIH.
         conditions = sim.mw.bc
         wave = getattr(conditions, "WavePort", None)
-        bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
+        if w.get("hollow"):
+            # brief-hzn-11 R-hzn11-3 — a hollow guide carries no TEM mode: its lowest, of any type (TE10 in an empty rectangle;
+            # a loaded face's lowest is a hybrid one). EMerge's WavePort fixes the mode with the largest beta at the sweep's top.
+            if wave is None:
+                raise Refused("Port '%s' is a hollow guide, and this EMerge has no WavePort to solve one; circuitRF's EMerge "
+                              "3.0.0 has it." % w["name"])
+            bc = wave(region, numbers[w["number"]], modetype=None)
+        else:
+            bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
         # is positive, and circuitRF's path runs from the negative object to the positive one, the sense a lumped port's
         # direction has. Proved on a thru with a wave port at one end and a lumped port at the other (RESOLVED, EMW-2).
@@ -1001,6 +1014,13 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     gamma = np.zeros((len(freqs), len(every)), dtype=np.complex128)
     waves = model["waves"]
     if waves:
+        # brief-hzn-11 R-hzn11-2 — a hollow guide's mode sign, set by its polarity line (EMerge sets it so only for a TEM mode)
+        for w, bc in waves:
+            if w.get("hollow"):
+                k = every.index(w["number"])
+                if hollow_sign(bc, float(np.max(freqs))) < 0:
+                    S[:, k, :] *= -1
+                    S[:, :, k] *= -1
         wz, wg = wave_modes(sim, [(w, bc) for w, bc in waves if "terminals" not in w], freqs, adaptive)
         for j, (w, _) in enumerate([(w, bc) for w, bc in waves if "terminals" not in w]):
             z0[:, every.index(w["number"])] = wz[:, j]
@@ -1053,12 +1073,35 @@ def wave_modes(sim, waves, freqs, adaptive):
     for j, (w, bc) in enumerate(waves):
         for i, f in enumerate(freqs):
             k0 = 2 * np.pi * f / C0
+            if w.get("hollow"):
+                # brief-hzn-11 — the mode at f, scaled or tracked from the sweep's top as EMerge's own solve took it; EMerge computes
+                # Z0 for a TEM mode only, so Z_PV is |V|^2 / 2 on the polarity line (the mode carries 1 W)
+                sim.mw._wave_port_modes(bc, float(f))
+                mode = bc.get_modes(k0)[0]
+                v = bc.voltage_integration_line[0].line_integral(mode.E_function)
+                z[i, j] = abs(complex(v)) ** 2 / 2
+                g[i, j] = 1j * complex(bc.get_beta(k0))
+                continue
             if w["mixed"] and adaptive:
                 sim.mw.modal_analysis(bc, 1, direct=False, TEM=True, freq=float(f))
             z[i, j] = complex(bc.get_modes(k0)[0].Z0)
             # fields go as exp(-j beta z), so a lossy mode's beta is beta' - j alpha and j beta = alpha + j beta'
             g[i, j] = 1j * complex(bc.get_beta(k0))
     return z, g
+
+
+def hollow_sign(bc, top):
+    """brief-hzn-11 R-hzn11-2 — +1 or -1: the sign of a hollow port's mode integrated along its polarity line, at the mode set the
+    port fixed at the sweep's top. EMerge turns a mode so its line integral is positive only for a TEM mode, and the alignment it
+    offers for others fails in 3.0.0 (src/Design/RESOLVED.md, HZN-11), so the S rows and columns of a port whose mode came out
+    the other way are negated instead. Every other frequency's mode is scaled from that one or tracked from it with its phase
+    kept, so one sign holds for the sweep."""
+    import numpy as np
+    k_ref = getattr(bc, "_k0_ref", None)
+    modes = bc.available_modes.get(k_ref) if k_ref is not None else None
+    mode = modes[0] if modes else bc.get_modes(2 * np.pi * top / C0)[0]
+    v = complex(bc.voltage_integration_line[0].line_integral(mode.E_function))
+    return -1.0 if v.real < 0 else 1.0
 
 
 def second_modes(sim, waves, top):

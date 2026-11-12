@@ -392,7 +392,8 @@ dotnet run --project tools/UiSnapshot --no-build -- --hzn-open <file.hzn> --hzn-
 ```
 
 The design as the workspace opens it: the 3D editor on a `HznDesignSource` (the canvas cannot draw headless; the toolbar and the
-Object Tree do), or, when the design is refused, the dialog over every unsupported item.
+Object Tree do), or, when the design is refused, the dialog over every unsupported item. `--hzn-look` shows the design's Look panel
+instead: the realistic view's Show rows a `.hzn` design opens with.
 
 ## How it is faithful
 

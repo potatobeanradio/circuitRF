@@ -189,6 +189,10 @@ public static partial class EmergeScriptWriter
              .Key("path").BeginObject().Key("from").Point(path.From).Key("to").Point(path.To).EndObject()
              .Key("z0").Number(p.Z0.Real).Key("shiftM").Number(p.ReferencePlane.ShiftM)
              .Key("mixed").Bool(faceMaterials.Count > 1);
+            // brief-hzn-11 R-hzn11-3 — a hollow guide's mode is of any type (its path is its polarity line), and a port normalised
+            // to its mode keeps EMerge's S as it is
+            if (p.Hollow) e.Key("hollow").Bool(true);
+            if (p.ModeNormalised) e.Key("modeNormalised").Bool(true);
             if (group is not null)
             {
                 // A face of one material: its modes are solved once, before the sweep, around this effective index

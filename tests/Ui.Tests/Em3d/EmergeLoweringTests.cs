@@ -202,7 +202,7 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     [InlineData("static", "electrostatic problem cannot be lowered for EMerge")]
     [InlineData("settings", "EMerge.ElementOrder is 3")]
     [InlineData("terminal-group-moved", "Port 'Left' has its reference plane moved 1 mm off its face; EMerge runs terminal ports with the reference plane on the port face")]
-    [InlineData("hollow-waveguide", "is a hollow waveguide: one conductor meets its region")]
+    [InlineData("hollow-waveguide", "names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow guide")]
     [InlineData("coaxial-port", "is a coaxial lumped port")]
     [InlineData("complex-z0", "terminated in a real resistance")]
     [InlineData("voxel", "is a voxelized phantom")]

@@ -846,10 +846,14 @@ public static class C3dPortReports
             return $"{r.Label} (wave, {ts.Count} terminals) on the {Em3dProblemFace(p)} face: the reference is '{p.NegativeObject}' — " +
                    $"{r.Reason}; " + string.Join("; ", ts.Select(t => $"terminal {t.Number}{(t.SourceLabel is { } n ? $" '{n}'" : "")} runs to " +
                                                                     $"'{t.PositiveObject}' along {Along(Vec(t))}")) + ".";
+        string normalised = p.ModeNormalised ? "; its S-parameters are normalised to its mode" : "";
+        // brief-hzn-11 R-hzn11-2 — a hollow guide has no ends: its walls, its broad side and its polarity line
+        if (p.Hollow)
+            return $"{r.Label} (wave, hollow guide) on the {Em3dProblemFace(p)} face: {r.Reason}{normalised}.";
         var d = p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } v
             ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : p.Direction;
         return $"{r.Label} ({(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}) runs from '{p.NegativeObject}' to '{p.PositiveObject}' " +
-               $"along {Along(d)}: {r.Reason}." + (r.Note is { } note ? " " + note : "");
+               $"along {Along(d)}: {r.Reason}{normalised}." + (r.Note is { } note ? " " + note : "");
     }
 
     private static Point3 Vec(Em3dPort t) => t.VoltagePath is { } v ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : t.Direction;

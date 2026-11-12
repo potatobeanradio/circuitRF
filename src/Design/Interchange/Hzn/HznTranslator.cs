@@ -67,6 +67,7 @@ internal sealed partial class HznTranslator
         Objects();
         Resolve();
         Ports();
+        Holes();
         Boundaries();
         Setups();
         MaterialsToTechnology();
@@ -348,6 +349,10 @@ internal sealed partial class HznTranslator
             if (!_byName.TryAdd(name, o))
                 _r.Add(HznRefusalKind.Setting, $"object name '{name}'", "two objects have the same name", DesignName);
         }
+        // brief-hzn-11 — a design with no drawn region and no Auto Open is closed: what no object fills is outside Hertzon's solved
+        // space, and that space's walls are perfect conductors.
+        string autoOpen = _design.Json.GetObject("settings")?.GetString("AutoOpen") ?? "Off";
+        _closedDomain = !objects.Any(IsRegion) && autoOpen.Equals("Off", StringComparison.OrdinalIgnoreCase);
         // Tools a Subtract keeps are solids of their own AND the Subtract's operands: they are emitted once, inside it.
         foreach (var o in objects)
             foreach (var s in o.History)
@@ -366,6 +371,46 @@ internal sealed partial class HznTranslator
             {
                 _failed.Add(name);
                 if (o.Material is { Length: > 0 } m) Material(m, name);
+            }
+        }
+    }
+
+    /// <summary>brief-hzn-11 — true when the design draws no region and has no Auto Open (<see cref="Objects"/>).</summary>
+    private bool _closedDomain;
+
+    /// <summary>brief-hzn-11 — the tools a Subtract consumed from a non-conductor in a closed design, kept as perfect-conductor
+    /// solids, by Hertzon name: a boundary on one dresses its walls (<see cref="Conductor"/>).</summary>
+    private readonly Dictionary<string, C3dObject> _voidTools = new(StringComparer.Ordinal);
+
+    /// <summary>brief-hzn-11 — each Subtract of solids in a closed design, with its Hertzon object name and its tools' names: a hole
+    /// in the object that bounds the whole model (<see cref="Holes"/>).</summary>
+    private readonly List<(C3dBoolean Made, string Name, IReadOnlyList<string> Tools)> _holeCandidates = [];
+
+    /// <summary>
+    /// brief-hzn-11 — in a closed design, a hole a Subtract cuts from a non-conductor that bounds the whole model is outside Hertzon's
+    /// solved space, and its walls are perfect conductors (Hertzon's WR90 post designs: the post is a hole in the vacuum guide, and
+    /// Hertzon's own solve reflects 98 % from it at 8 GHz). circuitRF's air box fills whatever no object fills, so the hole is kept as
+    /// a perfect-conductor solid in its place. Only a blank whose bounds are the model's: a hole in a smaller object may lie inside
+    /// another, which then fills it.
+    /// </summary>
+    private void Holes()
+    {
+        if (_holeCandidates.Count == 0 || Content() is not { } all) return;
+        foreach (var (made, name, toolNames) in _holeCandidates)
+        {
+            if (made.Blank is not { } blank || IsConductorMaterial(C3dValidation.EffectiveMaterial(blank))) continue;
+            if (Bounds(blank) is not { } own || !own.Min.SequenceEqual(all.Min) || !own.Max.SequenceEqual(all.Max)) continue;
+            made.KeepTools = true;
+            var (pec, pecRole) = UseMaterial("pec", name, sheet: false);
+            foreach (var (tool, t) in made.Tools.Zip(toolNames))
+            {
+                var carrier = tool;
+                while (carrier is C3dOperation && C3dOperands.Inner(carrier) is { } inner) carrier = inner;
+                carrier.Material = pec;
+                carrier.Role = pecRole;
+                _voidTools[t] = carrier;
+                _notes.Add($"'{t}' is subtracted from '{name}', which bounds this closed design, so its volume is outside Hertzon's solved " +
+                           "space, whose walls are perfect conductors: it is kept as a perfect-conductor solid in its place.");
             }
         }
     }
@@ -921,6 +966,8 @@ internal sealed partial class HznTranslator
         var blank = st.Root!;
         blank.Name = "";
         var made = new C3dBoolean { Op = op, Blank = blank, Tools = tools, KeepTools = keep };
+        if (op == C3dBooleanOp.Subtract && !keep && !onSheet && _closedDomain)
+            _holeCandidates.Add((made, name, [.. HznExpressionTranslator.SplitTopLevel(p.GetValueOrDefault("Tools") ?? "", ',').Where(x => x.Length > 0)]));
         // brief-hzn-10 — a boolean of sheets needs them in one plane, each placed within it; otherwise the item stays, with the reason.
         // The offsets are compared resolved (a copy, in the variables' scope), since an operand's offset is often an expression.
         var probe = new C3dDocument { DbuPerMicron = HznToC3d.DbuPerMicron, Variables = _scratch.Variables, Objects = [C3dBooleans.Copy(made)] };

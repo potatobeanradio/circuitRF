@@ -59,7 +59,7 @@ public sealed class HertzonCliTests : IDisposable
         string src = FixturePaths.Require("tests/Ui.Tests/Hzn/Stub");
         foreach (string f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)), true);
         string exe = Path.Combine(dir, "hertzon-cli");
-        File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         if (schema != 1) File.WriteAllText(Path.Combine(dir, "schema"), schema.ToString());
         return exe;
     }
@@ -121,7 +121,7 @@ public sealed class HertzonCliTests : IDisposable
         string broken = Path.Combine(_root, "broken", "hertzon-cli");
         Directory.CreateDirectory(Path.GetDirectoryName(broken)!);
         File.WriteAllText(broken, "#!/bin/sh\nexit 7\n");
-        File.SetUnixFileMode(broken, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(broken, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
         var ready = Discovery(() => broken, k => k == "PATH" ? Path.GetDirectoryName(working) : null).Check();
         Assert.False(ready.Ready);
@@ -310,7 +310,7 @@ public sealed class HertzonCliTests : IDisposable
         var cli = ready.Installation!;
         var described = HertzonRun.Describe(cli, project);
         Assert.True(described.Ok, described.Error);
-        var design = Assert.Single(described.Designs.Where(d => d.IsThreeD));
+        var design = Assert.Single(described.Designs, d => d.IsThreeD);
 
         var request = new HertzonRunRequest(project, design.Name, null, "LastAdaptive", [], Path.Combine(_root, "real.s" + design.Rows + "p"));
         var events = new List<HertzonEvent>();

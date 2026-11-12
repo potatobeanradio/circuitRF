@@ -18,7 +18,7 @@
         </StackPanel>
 
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
-            <TextBox Grid.Column="0" Text="{Binding TargetPath}" Watermark="Project file (.hzn)" IsEnabled="{Binding !Writing}"/>
+            <TextBox Grid.Column="0" Text="{Binding TargetPath}" PlaceholderText="Project file (.hzn)" IsEnabled="{Binding !Writing}"/>
             <Button Grid.Column="1" Content="…" Width="32" HorizontalContentAlignment="Center" Command="{Binding BrowseCommand}"
                     IsEnabled="{Binding !Writing}" ToolTip.Tip="Choose the project file."/>
         </Grid>

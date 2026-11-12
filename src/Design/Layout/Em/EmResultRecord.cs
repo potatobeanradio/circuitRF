@@ -152,6 +152,11 @@ public sealed class EmResultPort
     /// <summary>A component port's pins: the signal pin, then its reference pin when it has one.</summary>
     public List<string>? Pins { get; set; }
 
+    /// <summary>brief-hzn-11 R-hzn11-4 — a wave port whose S is normalised to its mode (its <see cref="Z0Re"/> of 1 is then not an
+    /// impedance). Absent from the record when false.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ModeNormalised { get; set; }
+
     [JsonIgnore] public Complex Z0 => new(Z0Re, Z0Im);
 }
 

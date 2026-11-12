@@ -224,6 +224,7 @@ string? projectTree = null, revealPath = null;
 bool filterOpen = false, filterAllOff = false;
 // HZN-3: --tree-expand <row> (repeatable) and --tree-menu <row> on --project-tree; --hzn-open <file.hzn> --hzn-design <name>.
 var treeExpand = new List<string>();
+bool hznLook = false;   // --hzn-look: the opened design's Look panel instead of the editor (what a .hzn design opens showing)
 string? treeMenu = null, hznOpen = null, hznDesign = null, hznSaveDialog = null;   // HZN-5: --hzn-save-dialog changed|refused
 CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool? projectTreeTool = null;
 string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null, gdsfactoryWorkspace = null;
@@ -384,6 +385,7 @@ for (int i = 0; i < args.Length; i++)
         case "--tree-menu" when i + 1 < args.Length: treeMenu = args[++i]; break;
         case "--hzn-open" when i + 1 < args.Length: hznOpen = Path.GetFullPath(args[++i]); break;
         case "--hzn-design" when i + 1 < args.Length: hznDesign = args[++i]; break;
+        case "--hzn-look": hznLook = true; break;
         case "--hzn-save-dialog" when i + 1 < args.Length: hznSaveDialog = args[++i]; break;
         case "--filter-all-off": filterAllOff = true; break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
@@ -760,7 +762,7 @@ if (vendorMode)
 else if (hznOpen is not null)
 {
     host = SnapshotHzn.Open(hznOpen, hznDesign ?? throw new InvalidOperationException("--hzn-open needs --hzn-design"),
-                            sizeGiven ? width : 1100, sizeGiven ? height : 700);
+                            sizeGiven ? width : 1100, sizeGiven ? height : 700, hznLook);
     host.Show();
     Pump();
 }

@@ -1,0 +1,217 @@
+{
+ "name": "GuidePost",
+ "variables": {},
+ "materials": [],
+ "designs": [
+  {
+   "name": "Guide",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "wa": "22.86mm",
+    "wb": "10.16mm",
+    "glen": "30mm",
+    "rp": "1mm",
+    "xp": "6mm"
+   },
+   "objects": [
+    {
+     "name": "Tube",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "wa",
+        "YSize": "glen",
+        "ZSize": "wb"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Rod",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Rod",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "xp,glen/2,0",
+        "Axis": "Z",
+        "Radius": "rp",
+        "Height": "wb",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Tube",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "EndA",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,0,0",
+        "Axis": "Y",
+        "ZSize": "wb",
+        "XSize": "wa"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "EndB",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,glen,0",
+        "Axis": "Y",
+        "ZSize": "wb",
+        "XSize": "wa"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [],
+   "excitations": [
+    {
+     "name": "1",
+     "kind": "Wave Port",
+     "props": {
+      "PortNumber": "1",
+      "NumberOfModes": "1",
+      "ModeType": "Auto",
+      "ImpedanceDefinition": "Zpv",
+      "Renormalize": "False",
+      "RenormImpedance": "50ohm",
+      "Deembed": "False",
+      "DeembedDistance": "0"
+     },
+     "faces": [],
+     "objects": [
+      "EndA"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "2",
+     "kind": "Wave Port",
+     "props": {
+      "PortNumber": "2",
+      "NumberOfModes": "1",
+      "ModeType": "Auto",
+      "ImpedanceDefinition": "Zpv",
+      "Renormalize": "False",
+      "RenormImpedance": "50ohm",
+      "Deembed": "False",
+      "DeembedDistance": "0"
+     },
+     "faces": [],
+     "objects": [
+      "EndB"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "12GHz",
+      "MaximumPasses": "3",
+      "MaximumDeltaS": "0.02",
+      "BasisOrder": "First Order",
+      "RefinementMethod": "Local (Delaunay)",
+      "ErrorInclusion": "50"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Discrete",
+        "Distribution": "Linear Count",
+        "Start": "8GHz",
+        "Stop": "12GHz",
+        "Count": "3",
+        "SaveFields": "False"
+       }
+      }
+     ],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

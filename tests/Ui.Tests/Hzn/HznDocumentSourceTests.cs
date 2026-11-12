@@ -44,9 +44,14 @@ public sealed class HznDocumentSourceTests : IDisposable
 
         var expected = HznToC3d.Translate(HznFile.Read(path).File!.Project, "Block");
         Assert.True(expected.Ok);
-        // The one difference: the document names the held materials as its technology.
+        // The two differences: the document names the held materials as its technology, and it opens with every chrome row of the
+        // realistic view shown (Edges, Grid, Overlays, Air box, Ports, Boundaries, Images), which a .hzn has no Look to say.
         Assert.NotNull(document.TechRef);
         document.TechRef = null;
+        var look = document.Look!;
+        Assert.All(new[] { look.ShowEdges, look.ShowGrid, look.ShowOverlays, look.ShowAirBox, look.ShowPorts, look.ShowBoundaries, look.ShowImages },
+                   shown => Assert.True(shown));
+        document.Look = expected.Document!.Look;
         Assert.Equal(C3dPersistence.Serialize(expected.Document!), C3dPersistence.Serialize(document));
         Assert.Contains("laminate_35", cache.Get(source.TechnologyPath)!.ResolvedMaterials.Select(m => m.Name));
 

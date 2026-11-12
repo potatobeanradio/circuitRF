@@ -18,6 +18,7 @@ using CircuitRF.Ui.Views.Dialogs;
 //   --hzn-open <file.hzn> --hzn-design <name> -o out.png [--size WxH]
 //       the design as the workspace opens it: the 3D editor on a HznDesignSource — or, when the design is refused,
 //       the dialog over the refusal. The 3D canvas itself cannot draw headless; the toolbar and the Object Tree do.
+//       --hzn-look shows the design's Look panel instead: the realistic view's Show rows it opens with.
 
 internal static class SnapshotHzn
 {
@@ -42,7 +43,7 @@ internal static class SnapshotHzn
     }
 
     /// <summary>The window for <c>--hzn-open</c>.</summary>
-    public static Window Open(string hznPath, string design, double width, double height)
+    public static Window Open(string hznPath, string design, double width, double height, bool look = false)
     {
         var cache = new TechnologyCache();
         var source = new HznDesignSource(hznPath, design, cache);
@@ -67,7 +68,8 @@ internal static class SnapshotHzn
         return new Window
         {
             Width = width, Height = height,
-            Content = new CircuitRF.Ui.Views.ThreeD.C3dEditorView { DataContext = new C3dEditorDocument(vm) },
+            Content = look ? new CircuitRF.Ui.Views.ThreeD.LookPanel { DataContext = vm.LookPanel }
+                           : new CircuitRF.Ui.Views.ThreeD.C3dEditorView { DataContext = new C3dEditorDocument(vm) },
         };
     }
 }

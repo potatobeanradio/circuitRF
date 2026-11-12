@@ -2,6 +2,7 @@
 // the air box (a region object and the boundaries on its faces).
 
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
@@ -127,7 +128,10 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Excitation, "wave port with a stated voltage path", "a wave port's polarity is not written", name);
                 continue;
             }
-            if (!C3dPorts.TryParseZ0(port.Z0, out var z) || z.Real <= 0 || z.Imaginary != 0)
+            // brief-hzn-11 R-hzn11-5 — a wave port normalised to its mode is Hertzon's Renormalize False
+            bool mode = wave && C3dPorts.IsModeZ0(port.Z0);
+            var z = Complex.Zero;
+            if (!mode && (!C3dPorts.TryParseZ0(port.Z0, out z) || z.Real <= 0 || z.Imaginary != 0))
             {
                 _r.Add(HznRefusalKind.Excitation, "reference impedance", $"'{port.Z0}' is not a real positive number of ohms; Hertzon's port has a real impedance", name);
                 continue;
@@ -153,8 +157,9 @@ internal sealed partial class C3dToHznWriter
                 x.Props.Add(("NumberOfModes", "1"));
                 x.Props.Add(("ModeType", "Auto"));
                 x.Props.Add(("ImpedanceDefinition", "Zpv"));
-                x.Props.Add(("Renormalize", "True"));
-                x.Props.Add(("RenormImpedance", Num(z.Real) + "ohm"));
+                // Hertzon keeps RenormImpedance with Renormalize False, at its own 50 ohm
+                x.Props.Add(("Renormalize", mode ? "False" : "True"));
+                x.Props.Add(("RenormImpedance", mode ? "50ohm" : Num(z.Real) + "ohm"));
                 x.Props.Add(("Deembed", "False"));
                 x.Props.Add(("DeembedDistance", "0"));
             }

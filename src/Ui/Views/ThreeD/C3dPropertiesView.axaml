@@ -331,19 +331,41 @@
             <!-- A port drawn in the 3D view: its name, number and Z0, and its place on its plane. Lengths are in the .c3d's display
                  unit, shown to the right of each box (a suffix typed in the box may name another). Enter or leaving a box writes
                  it, one undo entry. -->
-            <StackPanel Name="PortPage" Spacing="4" IsVisible="{Binding IsPortPage}">
-                <Grid ColumnDefinitions="Auto,8,*,4,28" RowDefinitions="Auto,4,Auto,4,Auto">
+            <StackPanel Name="PortPage" Spacing="4" IsVisible="{Binding IsPortPage}" Grid.IsSharedSizeScope="True">
+                <!-- The label column is shared with the Plane row's grid, so the boxes and the Plane picker start at one edge. -->
+                <Grid RowDefinitions="Auto,4,Auto,4,Auto,4,Auto">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="PortLabel"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="28"/>
+                    </Grid.ColumnDefinitions>
                     <TextBlock Grid.Row="0" Text="Name" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <TextBox Name="PortNameBox" Grid.Row="0" Grid.Column="2" Text="{Binding PortName}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
                     <TextBlock Grid.Row="2" Text="Number" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding PortNumber}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
-                    <TextBlock Grid.Row="4" Text="Z0" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="4" Grid.Column="2" Text="{Binding PortZ0}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
+                    <!-- brief-hzn-11 R-hzn11-1 — a wave port's S referred to an impedance or to its own mode: a picker, never typed text.
+                         Shown disabled on a port that cannot be normalised to its mode, so the rows below never move. -->
+                    <TextBlock Grid.Row="4" Text="Reference" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="4" Grid.Column="2" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PortReferences}"
+                              SelectedItem="{Binding PortReference}" IsEnabled="{Binding PortCanBeModeNormalised}" HorizontalAlignment="Stretch"
+                              ToolTip.Tip="Impedance: the S-parameters are referred to the Z0 below. Mode: a wave port's S-parameters are normalised to its own mode's power wave, with nothing renormalised; the result file then states R 1, which is not an impedance. EMerge and Palace report it; a lumped port always has an impedance."/>
+                    <TextBlock Grid.Row="6" Text="Z0" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="6" Grid.Column="2" Text="{Binding PortZ0}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
+                             IsEnabled="{Binding PortZ0Editable}" PlaceholderText="the port's mode"
                              ToolTip.Tip="Reference impedance: a number of ohms, or a complex one such as 25+j10."/>
-                    <TextBlock Grid.Row="4" Grid.Column="4" Text="Ω" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="6" Grid.Column="4" Text="Ω" FontSize="11" VerticalAlignment="Center"/>
                 </Grid>
                 <StackPanel Spacing="4" IsVisible="{Binding PortPlaceEditable}">
-                    <Grid ColumnDefinitions="Auto,8,*,4,28">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="PortLabel"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="4"/>
+                            <ColumnDefinition Width="28"/>
+                        </Grid.ColumnDefinitions>
                         <TextBlock Text="Plane" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="2" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PortPlanes}" SelectedItem="{Binding PortPlane}"
                                   HorizontalAlignment="Stretch"

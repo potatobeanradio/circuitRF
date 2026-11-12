@@ -1,0 +1,179 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "guide",
+			"Material": "Air",
+			"Min": [
+				0,
+				0,
+				0
+			],
+			"Size": [
+				{
+					"Expr": "a",
+					"Unit": "Mm"
+				},
+				{
+					"Expr": "len",
+					"Unit": "Mm"
+				},
+				{
+					"Expr": "b",
+					"Unit": "Mm"
+				}
+			]
+		}
+	],
+	"Variables": [
+		{
+			"Name": "a",
+			"Expression": "22.86",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "b",
+			"Expression": "10.16",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "len",
+			"Expression": "40",
+			"Unit": "Mm"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Wave",
+			"Plane": "XZ",
+			"Offset": 0,
+			"Rect": {
+				"Min": [
+					0,
+					0
+				],
+				"Size": [
+					22860000,
+					10160000
+				]
+			},
+			"Z0": "mode"
+		},
+		{
+			"Number": 2,
+			"Name": "P2",
+			"Kind": "Wave",
+			"Plane": "XZ",
+			"Offset": 40000000,
+			"Rect": {
+				"Min": [
+					0,
+					0
+				],
+				"Size": [
+					22860000,
+					10160000
+				]
+			},
+			"Z0": "mode"
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "EMerge",
+			"Frequency": {
+				"StartExpr": "8",
+				"StopExpr": "12",
+				"StepExpr": "",
+				"NumPoints": 3,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Solver3D": "Emerge",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Emerge": {
+				"Quality": "Draft"
+			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Palace",
+			"Frequency": {
+				"StartExpr": "8",
+				"StopExpr": "12",
+				"StepExpr": "",
+				"NumPoints": 3,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft"
+			}
+		}
+	]
+}

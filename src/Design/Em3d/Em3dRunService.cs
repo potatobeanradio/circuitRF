@@ -324,6 +324,23 @@ public static partial class Em3dRunService
         run.Generated = generated;
         if (problem.Validate() is { Count: > 0 } invalid)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
+        // brief-hzn-11 R-hzn11-2 — a hollow guide below its cutoff, refused before anything is meshed
+        if (Em3dModePorts.BelowCutoffRefusal(problem, generated.WantsDc) is { } belowCutoff)
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", belowCutoff));
+        // brief-hzn-11 R-hzn11-3 — a solver that cannot run a hollow guide or report S normalised to the mode: refused alone,
+        // left out of a comparison with a note
+        foreach (var leg in legs.ToList())
+        {
+            if (Em3dModePorts.SolverRefusal(problem, leg.Solver.Id) is not { } modeRefusal) continue;
+            if (!compare) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", modeRefusal));
+            log.Notes.Add(modeRefusal + $" This comparison ran without {leg.Solver.DisplayName}.");
+            legs.Remove(leg);
+        }
+        if (compare && legs.Count == 1)
+        {
+            compare = false;
+            if (legs[0].Stop is { } remaining) return log.Result(remaining.Status, remaining.Diagnostic);
+        }
         // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery.
         // brief-em3d-116 R-em3d116-3 / brief-em3d-115 R-em3d115-2d — in a comparison, a solver refusing the terminal ports is
         // skipped and the run says so. A two-terminal face runs on both.
@@ -890,6 +907,7 @@ public static partial class Em3dRunService
                         : part is { Connector: false } ? EmResultPort.Gap : EmResultPort.Plane,
                    Part = part?.Refdes,
                    Pins = part is null ? null : [.. new[] { part.Pin, part.ReferencePin }.OfType<string>()],
+                   ModeNormalised = p.ModeNormalised,
                };
            })];
 

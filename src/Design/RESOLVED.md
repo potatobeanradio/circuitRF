@@ -647,6 +647,103 @@ shown, every item's state printed), since the canvas cannot open its own menu he
 **Open.** An entered sheet boolean's operand with no material says "has no material, so the solver ignores it", as a solid boolean's tool does: true of
 the operand drawn alone, misleading inside an operation. `C3dToHzn.Extent` of a ROTATED sheet boolean is not stated (no analytic box and no kernel).
 
+### HZN-11 — hollow waveguide wave ports normalised to their mode, and the Hertzon waveguide examples they open (2026-11-11)
+
+The code is `ThreeD/C3dPorts.cs` (`HollowGuide`, `IsModeZ0`), `Em3d/Em3dModePorts.cs` (the cutoff, the solver rules, the `.sNp` line),
+`Em3dPort.HollowBroadM`/`ModeNormalised` (`src/Engine`), `WavePortReferences.Renormalise` (a mode port's target is where it already is),
+the EMerge driver (version 9), and the HZN translator, patch and writer. Gates: `tests/Ui.Tests/ThreeD/C3dHollowWavePortTests.cs` (fixture
+`wr90-empty.c3d`) and `tests/Ui.Tests/Hzn/HznHollowWavePortTests.cs` (fixture `guide-post.hzn`, a guide with an off-centre post written for it).
+
+**The EMerge risk came first, and it solves.** EMerge 3.0.0's `WavePort(face, n, modetype=None)` on an empty WR90 face (a probe script, 1,061
+tetrahedra) gave |S21| 1.00000 and phase −βL to 0.01° at 8, 10 and 12 GHz. It needed nothing the driver did not already pass. But
+**EMerge sets a mode's sign by the integration line only for a TEM mode** (`microwave_3d.py`'s TEM branch). A TE mode's sign is whatever the
+eigensolver gave, so S21 between two ports is ±. Its other remedy, `align_modes`, **fails in 3.0.0 on a `WavePort`**:
+`_fix_mode_set` passes `ax.np` (an array) to `_inner_product`, which reads `.x`, and then compares port modes with `in`, which calls
+the dataclass's array `__eq__`. The driver therefore leaves EMerge's modes alone. It reads the sign of each hollow port's mode
+integrated along its polarity line, at the mode set fixed at the sweep's top, and negates that port's S row and column when it is
+negative (`hollow_sign`). EMerge scales or tracks every other frequency's mode from that one with its phase kept, so one sign holds
+for the sweep. Reversing port 2's line in the probe turned S21 by exactly 180°. **EMerge computes no Z0 for a TE mode** (it stays at
+its 50 Ω default), so the driver measures Z_PV = |V|²/2 on the polarity line (the mode carries 1 W). It matched 2(b/a)·Z_TE to 0.01 Ω.
+
+**The reader (R-hzn11-2).** A wave port with no stated ends is a hollow guide when 3 or more of the air box's PEC faces and nothing else
+meet its region (closed when the four side faces bound all four of its edges), or when one drawn conductor's section surrounds its centre.
+Two PEC faces alone keep the two-conductor reading: a parallel-plate line between the floor and the lid is TEM, and the test holds it.
+Three faces that do not close round the region are refused without the Terminals advice (there is no signal conductor). A tube's opening is
+found by rays from the rectangle's centre and must be a rectangle: an opening whose interior any wall segment crosses (a circle, a
+cross) is refused by name, because the polarity rule is stated for a rectangle and Palace's and EMerge's mode solves would need nothing new
+but the line would. **Open:** a circular or ridged guide.
+
+**The below-cutoff refusal** takes the face's material: the one that meets the region, or of several the highest εr·μr, whose cutoff is the
+lowest the guide can have, so a refused point is below cutoff whatever the fill. A 0 Hz row (a conduction solve) is refused too.
+
+**Palace runs it.** `PalaceConfigWriter` already writes a wave port's `VoltagePath`, and the run's phase step (brief-em3d-141) takes the
+mode's voltage on it as real, which is the polarity rule. Measured on the empty WR90 by hand: 28,240 elements, |S21| 1.00000 and
+|ΔS21| from the closed form at most 1.7e-4. Palace's second-mode check exited 134 on this face (its log says nothing past the face's own
+mode). The run notes it and goes on; not investigated.
+
+**The oracle, recorded (by hand, EMerge 3.0.0, Palace 0.18.1).** Empty WR90, 22.86 × 10.16 × 40 mm, at 8 / 10 / 12 GHz, against
+exp(−jβL) with β = √(k0² − (π/a)²) (−βL = 139.86° / −2.66° / −122.74°):
+- EMerge Draft, 740 tetrahedra: |S21| 1.00000, |ΔS21| 6.4e-4 / 1.5e-3 / 3.3e-3.
+- EMerge Standard, 1,103 tetrahedra: |S21| 1.00000, |ΔS21| 1.2e-4 / 2.0e-4 / 3.3e-4, |S11| at most 6.3e-4.
+- Palace Standard, 28,240 elements: |ΔS21| 4e-5 / 8e-5 / 1.7e-4.
+- **The asymmetric case**, a 1 mm copper post at x = a/4: EMerge (2,966 tetrahedra) against Palace (34,994). The two solvers set the sign
+  by different means, and S21 agrees in sign and to max |ΔS| 0.0097 (S21 −177.1° / 23.6° / −108.0° on EMerge, −176.7° / 23.8° /
+  −107.5° on Palace).
+
+**The Touchstone reference (R-hzn11-4): `R 1` with a header line.** The other choice, `R 50` with S renormalised to the mode's impedance,
+would be a renormalisation the user did not ask for. The `R` line is then a fact about the numbers, and every tool that reads the file
+renormalises to it. With `R 1` and S as solved, the only renormalisation is one the reader asks for, and the header line
+(`circuitRF-EM ports normalised to their modes: …`) and each port line say that `R 1` is not an impedance. The Data Display renormalises
+only with a trace's Z0 override on (`TraceResolve.ResolveNetworkParamCube`), so it shows S as solved. **Hertzon itself writes `R 50` for a
+`Renormalize: False` result** (`hertzon-cli solve` on WaveguidePost: `# HZ S RI R 50`, and its JSON says `reference_impedance_ohm: 50`).
+A tool reading that file would renormalise the mode's S from 50 Ω. That is one reason circuitRF does not copy it.
+- A problem mixing mode ports with stated ones is refused by `Em3dProblem.Validate`. The exporter renormalises a non-uniform Z0 cube to the
+  file's one `R`, so a 1 Ω port beside a 50 Ω one would have been renormalised from 1 Ω, silently.
+- The `.cemr` port carries `ModeNormalised: true` (omitted when false). **No comparison of two results exists to refuse.** The only one
+  circuitRF makes is a solver comparison inside one run, whose legs share one problem's ports, and that problem is all-mode or none. A solver
+  that cannot report mode S (openEMS) is left out of a comparison with a note, or refuses alone.
+
+**Hertzon (R-hzn11-5).** `Renormalize: False` with one mode is `Z0: "mode"`. The `RenormImpedance` it then does not read is listed as
+unused, and a `ModeType` other than `Auto` is now an item. The writer spells a mode port as Hertzon's files do: `Renormalize: False`,
+`RenormImpedance: 50ohm` (Hertzon keeps it at 50 ohm), `ImpedanceDefinition: Zpv`. A port changed between `"mode"` and 50 Ω saves as
+the one `Renormalize` line, and changed back it is the original bytes.
+- **A hole in the object that bounds a closed design is a perfect conductor.** Gate 4's first run gave |S21| 1 and S11 0 against
+  Hertzon's 98 % reflection: WaveguidePost's post is a `Subtract` tool consumed from the vacuum guide. In a design with no region and no
+  Auto Open, that hole is outside Hertzon's solved space, and its walls are perfect conductors (Hertzon's own tutorial says the same of a
+  closed problem's outer faces). circuitRF's air box fills whatever no object fills, so the post vanished. `Holes()` now keeps such a tool
+  as a perfect-conductor solid (`KeepTools`), but only when the Subtract's blank is a non-conductor whose bounds are the whole model's: a
+  hole in a smaller object may lie inside another object, which would fill it.
+  - A Finite Conductivity boundary on that consumed tool makes it that metal. This is the 10th design, `post_copper_boundary_remesh`, so it
+    opens too.
+  - **Still open:** any OTHER unfilled space in a closed design with no region, a gap between objects inside the box, is PEC in Hertzon and
+    air in circuitRF.
+- **Coverage** (`HznCoverageTests`, Hertzon 0.3.19): **22 of 58**, from 12. New: `WaveguidePost` and the 9 `post_*` mesher projects. What
+  stops the rest, by designs: Unite 21 (the three `Meta_Ex2` designs among them), Incident Plane Wave 11, polyline outlines from named
+  dimensions 9, faceted cylinders 8, a vendor laminate 7, Terminal solution type 6. Two waveguide designs remain: the showcase iris filter
+  (a TE mode type, `Split`, cylinders) and the two-mode guide (several modes).
+- **Gate 1** (every opened design saves with no edit byte for byte) passes on all 22. **Gate 2** passes: WaveguidePost with its post moved to
+  `a/3` and saved, and the exported native WR90, are both read by `hertzon-cli describe`. Moving the post respells the untouched z of
+  `CenterPosition` from `0` to `0mm`. HZN-5's writer rewrites the whole position string, so the value is unchanged and the spelling is not.
+- **Gate 4** (by hand, WaveguidePost with its sweep narrowed to 8 / 10 / 12 GHz discrete, second order). Hertzon refined to 5,596
+  tetrahedra at ΔS 0.002 (its own last pass moved 0.0006). Its default 0.02 stopped at 1,397, which differed from that by up to 0.029.
+  circuitRF ran the converted design at Standard (3,912 tetrahedra) and Accurate (8,992); the two differ by at most 0.0016.
+  - **circuitRF Accurate against Hertzon converged: max |ΔS| 0.0156** (S11 0.0077 / 0.0122 / 0.0156, S21 0.0041 / 0.0071 / 0.0102). That is
+    inside HZN-7's 0.035.
+  - |S21| 0.1753 / 0.3097 / 0.4477 against 0.1714 / 0.3037 / 0.4408, and S21's phase 170.75° / −11.56° / −167.16° against 171.20° /
+    −10.83° / −166.19°. The same sign, within 1°.
+
+**The UI.** A `.c3d` port's Properties has a Reference picker (Impedance, Mode), enabled for a wave port of one terminal. Mode disables the Z0
+box ("the port's mode"). The right-click Z0… prompt takes `mode` on a wave port. Rendered with UiSnapshot (`--c3d-setups --c3d-row port/1`)
+in both states and looked at; the Plane row's label column now shares its width with the rows above. **The setup panel offers no Mode**:
+in a `.c3d` its port table is hidden (a `.c3d` port carries its own Z0), and a `.cem`'s 3D ports are layout lines whose Z0 is a complex
+number in the `.cem` format. Adding `"mode"` there is a `.cem` format change, not made here.
+
+**A Hertzon design opens with the realistic view's chrome shown** (owner request, after HZN-11). `HznDesignSource.Load` sets the Look's
+Edges, Grid, Overlays, Air box, Ports, Boundaries and Images rows on (`HznLook`). A `.hzn` holds no Look and a save writes none back, so it
+is the view every open starts from, and a no-edit save is still the file's bytes. Whether the design opens IN the realistic view is still
+Settings' Open in realistic view, which the workspace applies after the editor starts, as for a `.c3d`. Seen with UiSnapshot's new
+`--hzn-look` (the opened design's Look panel: all seven ticked).
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

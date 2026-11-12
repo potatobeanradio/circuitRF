@@ -82,9 +82,22 @@ public sealed class HznDesignSource : IC3dDocumentSource
         _technologies.Hold(TechnologyPath, t.Technology!);
         _technologies.Hold(RunTechnologyPath, t.Technology!);
         t.Document!.TechRef = Path.GetFileName(TechnologyPath);
+        // A Hertzon design opens with every chrome row of the realistic view shown (owner request): a .hzn holds no Look, so this is
+        // the view it opens in each time, and Look is not one of the parts a save writes back. Whether it opens IN the realistic
+        // view is still the per-user Settings choice (Realistic3DPreference), applied by the workspace after the editor starts.
+        t.Document.Look = HznLook(t.Document.Look);
         _file = read.File;
         _baseline = new HznSaveBaseline(C3dPersistence.Deserialize(C3dPersistence.Serialize(t.Document)), t.Provenance, t.Technology!);
         return t.Document;
+    }
+
+    /// <summary>The Look a Hertzon design opens with: Edges, Grid, Overlays, Air box, Ports, Boundaries and Images shown, the rest as
+    /// <paramref name="look"/> has it.</summary>
+    public static C3dLook HznLook(C3dLook? look)
+    {
+        var l = look?.Clone() ?? new C3dLook();
+        l.ShowEdges = l.ShowGrid = l.ShowOverlays = l.ShowAirBox = l.ShowPorts = l.ShowBoundaries = l.ShowImages = true;
+        return l;
     }
 
     /// <summary>The edits <paramref name="document"/> holds against what was opened, by name: what is lost if the file is reloaded.</summary>

@@ -513,6 +513,25 @@ public sealed record Em3dPort(
     /// outline, so the two meet exactly.
     /// </summary>
     public Em3dPortQuad? Quad { get; init; }
+
+    /// <summary>
+    /// brief-hzn-11 R-hzn11-2 — a HOLLOW-GUIDE wave port: every conductor meeting its region is one closed metal boundary round
+    /// it (the air box's PEC faces, or one conductor's walls), so it has no positive or negative conductor
+    /// (<see cref="PositiveObject"/> and <see cref="NegativeObject"/> are empty). The value is the guide's broad inside dimension,
+    /// metres, which sets its lowest mode's cutoff; <see cref="VoltagePath"/> is the polarity line across the narrow dimension at
+    /// the broad one's centre, from the lower wall to the higher. Null on every other port.
+    /// </summary>
+    public double? HollowBroadM { get; init; }
+
+    /// <summary>brief-hzn-11 — true for a hollow-guide wave port (<see cref="HollowBroadM"/> set).</summary>
+    public bool Hollow => HollowBroadM is not null;
+
+    /// <summary>
+    /// brief-hzn-11 R-hzn11-1 — a wave port whose S-parameters are normalised to its mode's own power wave (a <c>.c3d</c>'s
+    /// <c>Z0: "mode"</c>): no renormalisation is made, and <see cref="Z0"/> is 1 Ω, the reference a Touchstone file states for it.
+    /// False on every other port.
+    /// </summary>
+    public bool ModeNormalised { get; init; }
 }
 
 /// <summary>
@@ -934,7 +953,11 @@ public sealed record Em3dProblem(
         foreach (var p in Ports)
         {
             Name("port", p.Name);
-            foreach (string end in new[] { p.PositiveObject, p.NegativeObject })
+            if (p.Hollow && p.Kind != Em3dPortKind.Wave) problems.Add($"Port {p.Number} is a hollow guide and not a wave port.");
+            if (p.ModeNormalised && p.Kind != Em3dPortKind.Wave)
+                problems.Add($"Port {p.Number} is normalised to its mode, and only a wave port has a mode to be normalised to.");
+            // brief-hzn-11 — a hollow guide's walls are one boundary: it names no conductor at either end
+            foreach (string end in p.Hollow ? [] : new[] { p.PositiveObject, p.NegativeObject })
             {
                 if (objects.Contains(end)) continue;
                 if (box.FaceKind(end) is { } face)
@@ -1007,6 +1030,13 @@ public sealed record Em3dProblem(
                        q.Z >= p.Min.Z - tol && q.Z <= p.Max.Z + tol;
             }
         }
+
+        // brief-hzn-11 R-hzn11-4 — a result states one reference: every port normalised to its mode, or none
+        if (Ports.Any(p => p.ModeNormalised) && Ports.FirstOrDefault(p => !p.ModeNormalised) is { } stated)
+            problems.Add($"Port {Ports.First(p => p.ModeNormalised).Number} is normalised to its mode and port {stated.Number} is " +
+                         $"referred to {stated.Z0.Real.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} Ω. A " +
+                         "Touchstone file states one reference for every port, so a result's ports are all normalised to their " +
+                         "modes or all given an impedance: give every port Z0 'mode', or give each a number of ohms.");
 
         // brief-sar-3 R-sar3-3 — a lumped element is a port's sheet that carries R, L, C instead of a source.
         foreach (var le in LumpedElements)

@@ -368,7 +368,7 @@ public sealed class C3dToHznTests : IDisposable
         var project = HznFile.Read(path).File!.Project;
         Assert.Equal("Added", project.Designs[^1].Name);
         Assert.Equal(3, project.Designs.Count);
-        Assert.Empty(project.Variables.Names.Where(n => n == "w"));   // our variables are the design's, never the project's
+        Assert.DoesNotContain("w", project.Variables.Names);   // our variables are the design's, never the project's
     }
 
     [Fact]

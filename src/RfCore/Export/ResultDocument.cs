@@ -3546,6 +3546,16 @@ namespace RfCore.Export
         /// states it) or <c>setup</c> (the setup's legacy return plane names it).</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ReturnDecidedBy { get; init; }
+
+        /// <summary>brief-hzn-11 — a hollow-guide wave port's broad inside dimension, metres (it has no Positive or Negative);
+        /// null (omitted) on every other port.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? HollowBroadM { get; init; }
+
+        /// <summary>brief-hzn-11 — true for a wave port normalised to its mode (its Z0Re of 1 is not an impedance); omitted
+        /// when false.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ModeNormalised { get; init; }
     }
 
     /// <param name="Enlargements">What a backend asks to add outside a face, as sentences — openEMS's

@@ -219,15 +219,15 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
     // ── 5. refusals, before any process ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Gate5_AHollowWaveguide_IsRefusedByTheLowering_NamingPalace()
+    public void Gate5_AHollowWaveguide_IsRefusedByTheLowering_NamingTheSolversThatRunIt()
     {
         var problem = PalaceEigenTests.Wr90(50);
         var gs = OpenEmsGridSettings.Default;
         var grid = FdtdGrid.Build(problem, gs, long.MaxValue);
         var low = CsxcadWriter.Write(problem, grid, gs, CemOpenEms.ResolveRun(null));
         Assert.Equal("Port 1 is a wave port met by one conductor (a hollow waveguide). openEMS needs a mode-matching port for that, " +
-                     "which circuitRF does not build yet; run it on Palace. Set the setup's Solver3D to Palace, or run it with " +
-                     "`circuitrf em --solver palace`.", low.Refusal);
+                     "which circuitRF does not build yet; EMerge and Palace run it. Set the setup's Solver3D to EMerge or Palace, or run " +
+                     "it with `circuitrf em --solver emerge`.", low.Refusal);
     }
 
     [Fact]

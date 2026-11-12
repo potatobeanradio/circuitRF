@@ -186,14 +186,14 @@ internal static class EmergeLoweringRules
     private static string? KindRefusal(Em3dProblem problem, Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
-        // brief-emw-2 R-emw2-6 — a hollow waveguide does not run yet; brief-emw-3 lifted the terminal group's refusal (what
-        // EMerge still refuses of one is TerminalReason's)
+        // brief-emw-3 lifted the terminal group's refusal (what EMerge still refuses of one is TerminalReason's), and brief-hzn-11
+        // the hollow guide's: the reader resolves one as a hollow-guide port, which the driver builds as a wave port of any mode
         if (p.Kind == Em3dPortKind.Wave && problem.Type == Em3dProblemType.Eigenmode)
             return $"Port {n} is a wave port, and circuitRF runs EMerge's eigenmode solve with lumped ports only: a wave port's " +
                    "condition is a driven problem's. Make the port lumped, or solve a driven problem.";
-        if (p.Kind == Em3dPortKind.Wave && FdtdWavePorts.IsHollow(problem, p))
-            return $"Port {n} is a hollow waveguide: one conductor meets its region. EMerge's wave port keeps TEM modes only in " +
-                   "this version, and a hollow waveguide carries none. Palace runs it: set the setup's Solver3D to Palace.";
+        if (p.Kind == Em3dPortKind.Wave && !p.Hollow && FdtdWavePorts.IsHollow(problem, p))
+            return $"Port {n} names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow " +
+                   "guide there: a hollow guide's port states neither end. Remove its Positive and Negative and let the reader decide.";
         if (p.Annulus is not null)
             return $"Port {n} is a coaxial lumped port. EMerge's lumped port drives one uniform field direction across its sheet, " +
                    "and a coaxial annulus is fed radially, which it cannot state. Run the setup on Palace or openEMS, or draw a " +
@@ -470,14 +470,19 @@ internal static class EmergeLoweringRules
         var r = Region(p.Min, p.Max);
         bool mixed = RegionMaterials(problem, p).Count > 1;
         string path = p.VoltagePath is { } vp
-            ? $"voltage path from ({Mm3(vp.From)}) to ({Mm3(vp.To)}), negative object to positive"
+            ? p.Hollow ? $"polarity line from ({Mm3(vp.From)}) to ({Mm3(vp.To)}), the mode's sign set so its integral along it is positive"
+                       : $"voltage path from ({Mm3(vp.From)}) to ({Mm3(vp.To)}), negative object to positive"
             : "no voltage path";
         double shift = p.ReferencePlane.ShiftM;
+        // brief-hzn-11 — a hollow guide's mode is of any type and its impedance always varies; one normalised to its mode is kept so
+        string mode = p.Hollow
+            ? "its lowest mode, of any type (a hollow guide has no TEM mode), fixed at the sweep's top and followed to every frequency, " +
+              "so its impedance varies with frequency"
+            : "its mode solved at every frequency (the condition is built from it) " +
+              (mixed ? "on a face of several materials, so its impedance varies with frequency" : "on a face of one material, so its impedance is constant");
         return $"a wave port, number {p.Number}: EMerge's full wave-port condition on the {problem.FaceOf(p.Min, p.Max)} face's " +
-               $"{G(r.Width * 1e3)} × {G(r.Height * 1e3)} mm region, its mode solved at every frequency (the condition is built " +
-               "from it) " + (mixed ? "on a face of several materials, so its impedance varies with frequency"
-                                    : "on a face of one material, so its impedance is constant") +
-               $"; {path}; renormalised from the mode's impedance to {G(p.Z0.Real)} Ω" +
+               $"{G(r.Width * 1e3)} × {G(r.Height * 1e3)} mm region, {mode}" +
+               $"; {path}; " + (p.ModeNormalised ? "its S kept normalised to the mode (Z0 'mode')" : $"renormalised from the mode's impedance to {G(p.Z0.Real)} Ω") +
                (shift != 0 ? $"; reference plane {Mm(Math.Abs(shift))} {(shift > 0 ? "into the structure" : "out of it")}" : "");
     }
 

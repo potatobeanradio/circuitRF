@@ -152,6 +152,8 @@ internal static class ExplainEm3d
         {
             // brief-em3d-23 R-em3d23-2c — a wave port says where its reference plane is.
             Kind = q.Kind == Em3dPortKind.Wave ? "wave" : null,
+            HollowBroadM = q.HollowBroadM,
+            ModeNormalised = q.ModeNormalised,
             // brief-dfr28-4 R-dfr28-4-5 — the layer it returns through, and whether that was walked or stated.
             Return = g.PortReturns.TryGetValue(q.Number, out var ret)
                 ? ret.Coplanar ? $"{ret.Layer}, beside the line on its own layer"     // brief-dfr34-1 — Return = Same layer
@@ -705,8 +707,10 @@ internal static class ExplainEm3d
 
         Console.WriteLine("  ports");
         foreach (var q in r.Ports)
-            Console.WriteLine($"    {q.Number,3} {q.Name,-10} {q.Positive} → {q.Negative}, Z0 {G(q.Z0Re)}" +
-                              (q.Z0Im != 0 ? $"{(q.Z0Im < 0 ? "-" : "+")}j{G(Math.Abs(q.Z0Im))}" : "") + " Ω, " +
+            Console.WriteLine($"    {q.Number,3} {q.Name,-10} " +
+                              (q.HollowBroadM is { } broad ? $"hollow guide {L(broad)} across" : $"{q.Positive} → {q.Negative}") +
+                              (q.ModeNormalised ? ", Z0 mode (normalised to its mode)"
+                                                : $", Z0 {G(q.Z0Re)}" + (q.Z0Im != 0 ? $"{(q.Z0Im < 0 ? "-" : "+")}j{G(Math.Abs(q.Z0Im))}" : "") + " Ω") + ", " +
                               $"reference plane at ({L(q.ReferenceOrigin[0])}, {L(q.ReferenceOrigin[1])}, {L(q.ReferenceOrigin[2])}), " +
                               $"normal ({G(q.ReferenceNormal[0])}, {G(q.ReferenceNormal[1])}, {G(q.ReferenceNormal[2])}), " +
                               $"shift {L(q.ReferenceShiftM)}" +

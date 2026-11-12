@@ -356,6 +356,14 @@ public static class C3dPorts
         {
             if (TerminalShapeRefusal(port, label, terminals) is { } shape) return Refuse(port, shape);
         }
+        else if (IsModeZ0(port.Z0))
+        {
+            // brief-hzn-11 R-hzn11-1 — normalised to the mode: only a wave port has one
+            if (port.Kind != Em3dPortKind.Wave)
+                return Refuse(port, $"{label}'s Z0 is 'mode', and {label} is a lumped port: a gap has no mode to normalise to, so its " +
+                                    "S-parameters are referred to a stated impedance. Give it a number of ohms, or make it a wave port.");
+            z0 = Complex.One;
+        }
         else
         {
             if (!TryParseZ0(port.Z0, out z0))
@@ -426,6 +434,9 @@ public static class C3dPorts
             string who = TerminalLabel(port, t);
             if (t.Conductor is not { Length: > 0 })
                 return $"{char.ToUpperInvariant(who[0])}{who[1..]} names no conductor: a terminal is the signal conductor it is the port of.";
+            if (IsModeZ0(t.Z0))
+                return $"{char.ToUpperInvariant(who[0])}{who[1..]}'s Z0 is 'mode'. A terminal's S-parameters are turned from the face's " +
+                       "modes into terminal voltages, so they are stated against an impedance: give the terminal a number of ohms.";
             if (!TryParseZ0(t.Z0, out var z) || !(z.Real > 0))
                 return $"{char.ToUpperInvariant(who[0])}{who[1..]}'s Z0 '{t.Z0}' is not a reference impedance: a number of ohms with a " +
                        "positive real part, or a complex one such as 25+j10.";
@@ -875,6 +886,9 @@ public static class C3dPorts
             ctx.InferenceRuns++;
             var found = feet.Keys.ToList();
             contacts = [("region", (IReadOnlyList<string>)found)];
+            // brief-hzn-11 R-hzn11-2 — one closed metal boundary round the region: a hollow guide, read before any two-conductor reading
+            if (HollowGuide(port, label, z0, face, found, feet, contacts, ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1, min, max, P) is { } hollow)
+                return hollow;
             if (found.Count > 2 && found.Count(n => !n.StartsWith("airbox/", StringComparison.Ordinal)) == 2)
             {
                 // brief-em3d-121 D1 — the stored reading stands (the reader never invents terminals); the gesture's is named
@@ -939,8 +953,127 @@ public static class C3dPorts
         {
             Kind = Em3dPortKind.Wave,
             VoltagePath = new Em3dSegment(from, to),
+            ModeNormalised = IsModeZ0(port.Z0),
         };
         return new C3dPortResult(port, resolved, null, contacts, reason) { Note = note };
+    }
+
+    /// <summary>
+    /// brief-hzn-11 R-hzn11-2 — a wave port whose region is closed round by ONE metal boundary: three or more of the air box's PEC
+    /// faces and nothing else (closed when the four side faces bound all four of the rectangle's edges), or one drawn conductor
+    /// whose section encloses the rectangle's centre. Null when the region is neither, and the two-conductor reading goes on
+    /// unchanged. A closed boundary whose opening is a rectangle (not a square) resolves with no positive or negative conductor;
+    /// its polarity line crosses the narrow side at the broad side's centre, from the lower wall to the higher, so the sign of a
+    /// straight guide's S21 does not depend on the mesh. Anything else that is closed is refused by name.
+    /// </summary>
+    private static C3dPortResult? HollowGuide(C3dPort port, string label, Complex z0, string face, List<string> found,
+                                              Dictionary<string, (double U0, double V0, double U1, double V1)> feet,
+                                              IReadOnlyList<(string, IReadOnlyList<string>)> contacts, C3dPortContext ctx, int axis,
+                                              double h, Point3 uDir, Point3 vDir, double u0, double v0, double u1, double v1, Point3 min,
+                                              Point3 max, Func<double, double, Point3> P)
+    {
+        double tol = ctx.Dbu;
+        (double U0, double V0, double U1, double V1) opening;
+        string walls;
+        if (found.Count >= 3 && found.All(IsBoxFace))
+        {
+            bool Bounds(Func<(double U0, double V0, double U1, double V1), bool> edge) => found.Any(f => edge(feet[f]));
+            bool closed = Bounds(f => Math.Abs(f.U0 - u0) <= tol && Math.Abs(f.U1 - u0) <= tol && f.V0 <= v0 + tol && f.V1 >= v1 - tol)
+                       && Bounds(f => Math.Abs(f.U0 - u1) <= tol && Math.Abs(f.U1 - u1) <= tol && f.V0 <= v0 + tol && f.V1 >= v1 - tol)
+                       && Bounds(f => Math.Abs(f.V0 - v0) <= tol && Math.Abs(f.V1 - v0) <= tol && f.U0 <= u0 + tol && f.U1 >= u1 - tol)
+                       && Bounds(f => Math.Abs(f.V0 - v1) <= tol && Math.Abs(f.V1 - v1) <= tol && f.U0 <= u0 + tol && f.U1 >= u1 - tol);
+            string names = Names(found);
+            if (!closed)
+                return Refuse(port, $"{label} is a wave port on the air box's {face} face, and only the air box's PEC faces {names} meet " +
+                                    "its region, without closing round it. A hollow guide's port has metal on all four sides: draw its " +
+                                    "rectangle over the whole face with the four faces beside it PEC. A line's port needs a conductor of " +
+                                    "its own crossing the face.", contacts);
+            opening = (u0, v0, u1, v1);
+            walls = $"the air box's PEC faces {names} close round its region";
+        }
+        else if (found.Count == 1 && !IsBoxFace(found[0]))
+        {
+            var c = ctx.Conductors.First(x => x.Name == found[0]);
+            if (c.Axis >= 0) return null;
+            var segs = Section(c, ctx, axis, h, uDir, vDir);
+            double cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+            double? below = null, above = null, left = null, right = null;
+            foreach (var (s, e) in segs)
+            {
+                foreach (double v in Crossings(s.U, s.V, e.U, e.V, cu, tol))
+                {
+                    if (v < cv - tol && (below is null || v > below)) below = v;
+                    if (v > cv + tol && (above is null || v < above)) above = v;
+                }
+                foreach (double u in Crossings(s.V, s.U, e.V, e.U, cv, tol))
+                {
+                    if (u < cu - tol && (left is null || u > left)) left = u;
+                    if (u > cu + tol && (right is null || u < right)) right = u;
+                }
+            }
+            // a conductor beside the region, not round it: the two-conductor reading says what is missing
+            if (below is null || above is null || left is null || right is null) return null;
+            opening = (left.Value, below.Value, right.Value, above.Value);
+            var inner = (opening.U0 + 2 * tol, opening.V0 + 2 * tol, opening.U1 - 2 * tol, opening.V1 - 2 * tol);
+            if (segs.Any(x => SegmentMeetsBox(x.A, x.B, inner)))
+                return Refuse(port, $"{label} is a wave port on the air box's {face} face inside '{c.Name}', a hollow guide whose opening " +
+                                    "is not a rectangle. circuitRF reads a hollow guide's polarity across a rectangular opening only, " +
+                                    "so this guide is not run.", contacts);
+            if (opening.U0 < u0 - tol || opening.V0 < v0 - tol || opening.U1 > u1 + tol || opening.V1 > v1 + tol)
+                return Refuse(port, $"{label} is a wave port inside '{c.Name}', and its rectangle does not cover the guide's opening on the " +
+                                    $"{face} face ({Fmt(opening.U0)} to {Fmt(opening.U1)} by {Fmt(opening.V0)} to {Fmt(opening.V1)} µm): " +
+                                    "draw the port over the whole opening.", contacts);
+            walls = $"'{c.Name}' closes round its region";
+        }
+        else return null;
+
+        double wu = opening.U1 - opening.U0, wv = opening.V1 - opening.V0;
+        if (Math.Abs(wu - wv) <= tol)
+            return Refuse(port, $"{label} is a hollow guide whose opening is square ({Fmt(wu)} µm a side): its two lowest modes have one " +
+                                "cutoff, so a port of one mode cannot say which it carries. Make one side longer than the other.", contacts);
+        bool broadU = wu > wv;
+        double broad = Math.Max(wu, wv);
+        (double U, double V) a, b;
+        if (broadU) { double uc = (opening.U0 + opening.U1) / 2; (a, b) = ((uc, opening.V0), (uc, opening.V1)); }
+        else { double vc = (opening.V0 + opening.V1) / 2; (a, b) = ((opening.U0, vc), (opening.U1, vc)); }
+        Point3 from = P(a.U, a.V), to = P(b.U, b.V);
+        string reason;
+        if (port.VoltagePath is { } vp)
+        {
+            double M(long v) => C3dLowering.Metres(v, ctx.DbuPerMicron);
+            (from, to) = (P(M(vp.From.U), M(vp.From.V)), P(M(vp.To.U), M(vp.To.V)));
+            reason = $"{walls}: a hollow guide, {Fmt(broad)} µm across its broad side; its polarity line is its stated VoltagePath";
+        }
+        else
+        {
+            char across = "xyz"[AxisOf(broadU ? vDir : uDir)];
+            reason = $"{walls}: a hollow guide, {Fmt(broad)} µm across its broad side; its polarity line crosses the narrow side at the " +
+                     $"broad side's centre, from {across} = {Fmt(broadU ? a.V : a.U)} to {across} = {Fmt(broadU ? b.V : b.U)} µm";
+        }
+        if (port.Flip)
+        {
+            (from, to) = (to, from);
+            reason += "; Flip reverses it";
+        }
+        var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
+        double sign = face.EndsWith("min", StringComparison.Ordinal) ? 1 : -1;
+        var inward = new Point3(axis == 0 ? sign : 0, axis == 1 ? sign : 0, axis == 2 ? sign : 0);
+        var d = Geometry3.Sub(to, from);
+        double len = Math.Sqrt(Geometry3.Dot(d, d));
+        var resolved = new Em3dPort(port.Number, ProblemName(port.Number), "", "", min, max,
+                                    len > 0 ? new Point3(d.X / len, d.Y / len, d.Z / len) : uDir, z0,
+                                    new Em3dReferencePlane(centre, inward, 0))
+        {
+            Kind = Em3dPortKind.Wave,
+            VoltagePath = new Em3dSegment(from, to),
+            HollowBroadM = broad,
+            ModeNormalised = IsModeZ0(port.Z0),
+        };
+        return new C3dPortResult(port, resolved, null, contacts, reason);
+
+        static string Names(IReadOnlyList<string> n)
+            => string.Join(", ", n.Take(n.Count - 1).Select(x => x["airbox/".Length..])) + " and " + n[^1]["airbox/".Length..];
+        static int AxisOf(Point3 dir) => Math.Abs(dir.X) > 0.5 ? 0 : Math.Abs(dir.Y) > 0.5 ? 1 : 2;
     }
 
     /// <summary>
@@ -1400,6 +1533,12 @@ public static class C3dPorts
     }
 
     private static string Fmt(double m) => (m * 1e6).ToString("G6", CultureInfo.InvariantCulture);
+
+    /// <summary>brief-hzn-11 R-hzn11-1 — the Z0 of a wave port normalised to its mode's own power wave.</summary>
+    public const string ModeZ0 = "mode";
+
+    /// <summary>True when <paramref name="text"/> is <see cref="ModeZ0"/> (any case, any surrounding space).</summary>
+    public static bool IsModeZ0(string? text) => string.Equals(text?.Trim(), ModeZ0, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A port's Z0 as the <c>.cem</c> spells a complex impedance: <c>50</c>, <c>25+j10</c>, <c>25-10j</c>, <c>j5</c>.</summary>
     public static bool TryParseZ0(string? text, out Complex z)
