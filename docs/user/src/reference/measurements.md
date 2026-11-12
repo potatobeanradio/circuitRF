@@ -273,10 +273,11 @@ per sweep point) rather than a scalar — so `Pin_avail = Pin` over a 10-point `
 Pout_dBm - Pin` resolves element-wise, one gain per drive level. A non-swept global stays a scalar.
 
 A global **derived** from a swept one is a cube too. With `x` swept and `y = 2*x` in the VAR block, `y` reads
-as one value per sweep point, the value the circuit had at that point. This holds through other variables
-and user-defined functions, and over nested sweeps `y` has an axis for each sweep it depends on. If the
-expression of `y` does not take a cube (for example `min(x, 2)`), a measurement that reads `y` fails and
-says why. It never gets the nominal value of `y`.
+as one value per sweep point. Each point's value is evaluated exactly as that point's circuit evaluated it,
+in plain numbers, so a conditional, `max(x, 0)` or `polar(1, x)` work as they do in the circuit. This holds
+through other variables and user-defined functions. Over nested sweeps `y` has an axis for each sweep it
+depends on, outermost first. If `y` has no value at some point (`log(x)` at `x = 0`), a measurement that
+reads it fails and names the point. It never gets the nominal value of `y`.
 
 ## Gain against output power, at each frequency {#gain-vs-pout}
 

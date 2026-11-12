@@ -149,7 +149,8 @@ may not shadow them.</p>
     complex element is not refused. <code>imag</code>, <code>phase</code> and <code>phase_rad</code> need a complex
     cube. <code>atan2</code>, <code>min</code>, <code>max</code>, <code>polar</code> and <code>complex</code> take
     numbers only. The condition of <code>if(cond, a, b)</code> and of <code>cond ? a : b</code> must be a Bool, while
-    <code>a</code> and <code>b</code> may be cubes.</p>
+    <code>a</code> and <code>b</code> may be cubes. In a VAR variable derived from a swept one, all of these work,
+    because it is evaluated one sweep point at a time (below).</p>
   </div>
 <h2 id="units">Units</h2>
 <p>A unit attaches in two places. At the <strong>assignment</strong> level (after the expression, or in the row's unit
@@ -185,8 +186,12 @@ its sub-cells. A name resolves to the local cell variable/parameter first, then 
 cell never sees a parent's locals or a sibling's, which is what keeps a cell's meaning independent
 of where it's placed.</p>
 <p>A variable defined from a swept one follows the sweep. With <code>x</code> swept and <code>y = 2*x</code>, every point of the
-sweep evaluates <code>y</code> with that point's <code>x</code>. That holds wherever <code>y</code> is used, in a component's value and in a
-<a href="measurements.html#swept">measurement</a>, where <code>y</code> reads as one value per point.</p>
+sweep evaluates <code>y</code> with that point's <code>x</code>, in plain numbers. That holds wherever <code>y</code> is used: in a
+component's value, and in a <a href="measurements.html#swept">measurement</a>, where <code>y</code> reads as one value per point,
+the value the circuit had. If <code>y</code> cannot be evaluated at some point (<code>log(x)</code> at <code>x = 0</code>), a measurement
+that reads it fails and names the point. It never falls back to the nominal value. There is one exception:
+a loadpull swept over its tone frequency gives its results a <code>freq</code> axis instead of the variable's, so in
+a measurement that variable, and anything derived from it, keeps its nominal value.</p>
 <div class="callout note">
     <span class="label"><code>freq</code> is reserved</span>
     <p>Lowercase <code>freq</code> is the simulator's current stamping frequency (Hz), injected when the engine

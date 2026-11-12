@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
@@ -94,13 +95,14 @@ public sealed class MeasurementEvaluator
             if (a is ParametricSweepAnalysis ps && !string.IsNullOrEmpty(ps.SweepVarName))
                 sweptVarNames.Add(ps.SweepVarName);
 
-        var sweepAxes = new Dictionary<string, Axis>(StringComparer.Ordinal);
+        // In the results' own order: a sweep prepends its axis to every cube, so a swept cube carries them outermost first.
+        var sweepAxes = new List<Axis>();
         if (sweptVarNames.Count > 0)
             foreach (var ds in _analysisResults.Values)
                 foreach (var (_, cube) in ds.Cubes)
                     foreach (var ax in cube.Axes)
-                        if (sweptVarNames.Contains(ax.Name) && !sweepAxes.ContainsKey(ax.Name))
-                            sweepAxes[ax.Name] = ax;
+                        if (sweptVarNames.Contains(ax.Name) && !sweepAxes.Exists(a => a.Name == ax.Name))
+                            sweepAxes.Add(ax);
 
         // A variable DERIVED from a swept one (y = 2*x) follows the sweep too: one value per point, not the nominal one.
         var derived = ResolveDerived(sweepAxes);
@@ -114,10 +116,10 @@ public sealed class MeasurementEvaluator
             eval.InjectResolved("globals", name, value);   // pre-memoize actual value
         }
 
-        foreach (var (name, ax) in sweepAxes)
+        foreach (var ax in sweepAxes)
         {
-            globalScope.Bind(name, "0");                                      // ensure Lookup succeeds
-            eval.InjectResolved("globals", name, new Value(SweepCube(ax)));   // override the scalar global
+            globalScope.Bind(ax.Name, "0");                                      // ensure Lookup succeeds
+            eval.InjectResolved("globals", ax.Name, new Value(SweepCube(ax)));   // override the scalar global
         }
 
         foreach (var (name, (value, why)) in derived)
@@ -127,7 +129,7 @@ public sealed class MeasurementEvaluator
                 globalScope.Bind(name, "0");
                 eval.InjectResolved("globals", name, v);
             }
-            else unavailable[name] = $"'{name}' depends on a swept variable and does not evaluate over its sweep: {why}";
+            else unavailable[name] = $"'{name}' depends on a swept variable and has no value at {why}";
         }
 
         // `freq` — the run's own frequency axis, as a 1-D cube. A measurement over an S-parameter
@@ -216,59 +218,109 @@ public sealed class MeasurementEvaluator
     private static string Why(Exception ex, Dictionary<string, string> unavailable)
         => ex is UnresolvedNameException u && unavailable.TryGetValue(u.Name, out var hint) ? $"{ex.Message} — {hint}" : ex.Message;
 
-    private static DataCube SweepCube(Axis ax) => new([new Axis(ax.Name, ax.Values)], (double[])ax.Values.Clone());
+    private static DataCube SweepCube(Axis ax) => new([SweepAxis(ax)], (double[])ax.Values.Clone());
+
+    /// <summary>A sweep's axis as a measurement's cubes carry it: its name and values, which is what broadcasting aligns.</summary>
+    private static Axis SweepAxis(Axis ax) => new(ax.Name, ax.Values);
 
     /// <summary>
     /// Every global derived from a swept one (<c>y = 2*x</c> with <c>x</c> swept), through other globals and through user
-    /// functions' bodies, each as a cube over the sweeps it depends on — or, where it does not evaluate over them, why not.
+    /// functions' bodies, as a cube over the sweeps it depends on, in the results' axis order. Where a point fails, the
+    /// value is null and the reason names the point.
     ///
     /// <para><see cref="ElaboratedNetlist.ResolvedGlobals"/> holds the values of the ONE elaboration the run started with.
     /// Each sweep point re-elaborates with its own <c>x</c>, so the circuit followed the sweep all along (a source set to
     /// <c>y</c> is at <c>2*x</c> at every point); a measurement reading <c>y</c> read that first elaboration's nominal number.</para>
     ///
-    /// <para>They are resolved again here as the elaborator resolves them — every global bound with its own expression and
-    /// unit, the underived ones pinned to the values the run used — with each swept variable bound to its axis cube and to
-    /// the unit its points were injected with (the axis's, <see cref="ParametricSweepEngine"/>'s base unit), so var-unit-wins
-    /// applies exactly as it did at each point. With an evaluator of its own, which the user functions are registered on: the
-    /// measurements' evaluator gains none it did not have.</para>
+    /// <para>So each derived global is evaluated at each point of its sweeps exactly as that point's elaboration evaluated
+    /// it: the elaborator's global scope (every global with its own expression and unit, and the ambient <c>temp</c> where
+    /// the design states none), the point's values bound as <see cref="ParametricSweepEngine.PointVariable"/> binds them,
+    /// plain numbers throughout, and an evaluator with the design's user functions and the trial's draws. What a measurement
+    /// reads is then the number the circuit was built with, whatever the expression — a conditional, <c>max</c>,
+    /// <c>polar</c>, <c>imag(log(z))</c> — and in that point's units. Its own evaluator: the measurements' gains nothing.</para>
     /// </summary>
-    private Dictionary<string, (Value? Value, string? Why)> ResolveDerived(Dictionary<string, Axis> sweepAxes)
+    private Dictionary<string, (Value? Value, string? Why)> ResolveDerived(List<Axis> sweepAxes)
     {
         var result = new Dictionary<string, (Value?, string?)>(StringComparer.Ordinal);
         if (sweepAxes.Count == 0) return result;
 
-        var dependent = new HashSet<string>(sweepAxes.Keys, StringComparer.Ordinal);
-        var derived   = new List<Variable>();
-        for (bool grew = true; grew;)
+        // Who reads each name, from each global's references taken once; then outward from each swept name over them.
+        var readers = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var v in _tb.GlobalVariables)
+            foreach (var r in Refs(v.Expression))
+            {
+                if (!readers.TryGetValue(r, out var list)) readers[r] = list = [];
+                list.Add(v.Name);
+            }
+        var swept = sweepAxes.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        var dependsOn = new Dictionary<string, List<int>>(StringComparer.Ordinal);   // derived global → its sweeps
+        for (int a = 0; a < sweepAxes.Count; a++)
         {
-            grew = false;
-            foreach (var v in _tb.GlobalVariables)
-                if (!dependent.Contains(v.Name) && Refs(v.Expression).Overlaps(dependent))
-                {
-                    dependent.Add(v.Name);
-                    derived.Add(v);
-                    grew = true;
-                }
+            var queue = new Queue<string>([sweepAxes[a].Name]);
+            var seen  = new HashSet<string>(StringComparer.Ordinal) { sweepAxes[a].Name };
+            while (queue.TryDequeue(out var name))
+                foreach (var reader in readers.GetValueOrDefault(name) ?? [])
+                    if (!swept.Contains(reader) && seen.Add(reader))   // a swept variable is set at each point, not derived
+                    {
+                        if (!dependsOn.TryGetValue(reader, out var axes)) dependsOn[reader] = axes = [];
+                        axes.Add(a);
+                        queue.Enqueue(reader);
+                    }
         }
+        if (dependsOn.Count == 0) return result;
 
-        if (derived.Count == 0) return result;
-
-        var ev    = new Evaluator { Statistics = _tb.StatisticalDraws };
         var scope = new Scope("global");
-        foreach (var fn in _tb.Functions) ev.RegisterFunction(fn);
         foreach (var v in _tb.GlobalVariables) scope.Bind(v.Name, v.Expression, v.Unit);
-        foreach (var (name, value) in _netlist.ResolvedGlobals)
-            if (!dependent.Contains(name)) ev.InjectResolved(scope.DebugName, name, value);
-        foreach (var (name, ax) in sweepAxes)
-        {
-            scope.Bind(name, "0", string.IsNullOrEmpty(ax.Unit) ? null : ax.Unit);
-            ev.InjectResolved(scope.DebugName, name, new Value(SweepCube(ax)));
-        }
+        if (scope.Lookup(CircuitRF.Core.Devices.Temperature.AmbientGlobalName) is null)   // as the elaborator binds it
+            scope.Bind(CircuitRF.Core.Devices.Temperature.AmbientGlobalName, _netlist.AmbientC.ToString(CultureInfo.InvariantCulture));
+        var sweeps = _tb.Analyses.OfType<ParametricSweepAnalysis>().ToList();
 
-        foreach (var v in derived)
+        // One pass over the points of each set of sweeps, every global depending on exactly that set resolved at each point.
+        foreach (var group in dependsOn.GroupBy(kv => string.Join(",", kv.Value)))
         {
-            try { result[v.Name] = (ev.Resolve(v.Name, scope), null); }
-            catch (Exception ex) { result[v.Name] = (null, ex.Message); }
+            int[] axes = [.. group.First().Value];
+            string[] names = [.. group.Select(kv => kv.Key)];
+            int[] lengths = [.. axes.Select(a => sweepAxes[a].Length)];
+            int count = lengths.Aggregate(1, (p, n) => p * n);
+            var values = names.ToDictionary(n => n, _ => new Value[count], StringComparer.Ordinal);
+            var why    = new Dictionary<string, string>(StringComparer.Ordinal);
+            var at     = new int[axes.Length];
+
+            for (int flat = 0; flat < count; flat++)
+            {
+                for (int d = axes.Length - 1, rest = flat; d >= 0; d--) { at[d] = rest % lengths[d]; rest /= lengths[d]; }
+                for (int d = 0; d < axes.Length; d++)
+                {
+                    var ax = sweepAxes[axes[d]];
+                    var pv = ParametricSweepEngine.PointVariable(sweeps.First(s => s.SweepVarName == ax.Name), ax.Values[at[d]], ax.Unit);
+                    scope.Bind(pv.Name, pv.Expression, pv.Unit);
+                }
+                var ev = new Evaluator { Statistics = _tb.StatisticalDraws };
+                foreach (var fn in _tb.Functions) ev.RegisterFunction(fn);
+                string Point() => string.Join(", ", axes.Select((a, d) => $"{sweepAxes[a].Name} = " +
+                                        sweepAxes[a].Values[at[d]].ToString("G6", CultureInfo.InvariantCulture)));
+                foreach (var name in names)
+                {
+                    if (why.ContainsKey(name)) continue;
+                    try
+                    {
+                        var val = ev.Resolve(name, scope);
+                        if (val.Kind is ValueKind.Real or ValueKind.Complex) values[name][flat] = val;
+                        else why[name] = $"{Point()}: {val.Kind}, not a number";
+                    }
+                    catch (Exception ex) { why[name] = $"{Point()}: {ex.Message}"; }
+                }
+            }
+
+            Axis[] cubeAxes = [.. axes.Select(a => SweepAxis(sweepAxes[a]))];
+            foreach (var name in names)
+            {
+                var v = values[name];
+                result[name] = why.TryGetValue(name, out var reason) ? (null, reason)
+                    : (new Value(v.All(x => x.Kind == ValueKind.Real)
+                        ? new DataCube(cubeAxes, [.. v.Select(x => x.AsReal())])
+                        : new DataCube(cubeAxes, [.. v.Select(x => x.ToComplex())])), null);
+            }
         }
         return result;
     }

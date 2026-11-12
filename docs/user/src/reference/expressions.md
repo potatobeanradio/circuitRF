@@ -128,7 +128,8 @@ may not shadow them.
     complex element is not refused. <code>imag</code>, <code>phase</code> and <code>phase_rad</code> need a complex
     cube. <code>atan2</code>, <code>min</code>, <code>max</code>, <code>polar</code> and <code>complex</code> take
     numbers only. The condition of <code>if(cond, a, b)</code> and of <code>cond ? a : b</code> must be a Bool, while
-    <code>a</code> and <code>b</code> may be cubes.</p>
+    <code>a</code> and <code>b</code> may be cubes. In a VAR variable derived from a swept one, all of these work,
+    because it is evaluated one sweep point at a time (below).</p>
   </div>
 
 ## Units {#units}
@@ -172,8 +173,12 @@ cell never sees a parent's locals or a sibling's, which is what keeps a cell's m
 of where it's placed.
 
 A variable defined from a swept one follows the sweep. With `x` swept and `y = 2*x`, every point of the
-sweep evaluates `y` with that point's `x`. That holds wherever `y` is used, in a component's value and in a
-[measurement](measurements.html#swept), where `y` reads as one value per point.
+sweep evaluates `y` with that point's `x`, in plain numbers. That holds wherever `y` is used: in a
+component's value, and in a [measurement](measurements.html#swept), where `y` reads as one value per point,
+the value the circuit had. If `y` cannot be evaluated at some point (`log(x)` at `x = 0`), a measurement
+that reads it fails and names the point. It never falls back to the nominal value. There is one exception:
+a loadpull swept over its tone frequency gives its results a `freq` axis instead of the variable's, so in
+a measurement that variable, and anything derived from it, keeps its nominal value.
 
 <div class="callout note">
     <span class="label"><code>freq</code> is reserved</span>

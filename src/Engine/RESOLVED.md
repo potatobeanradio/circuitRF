@@ -4390,16 +4390,24 @@ gate 5 lists only diode/BJT shot and series-R thermal.
   `TestBench.GlobalVariables`), so the circuit always followed the sweep: a source set to `y = 2*x` was at `2*x` at
   every point, nested sweeps included. Only the measurement read the nominal `y`.
 - **Fix.** `ResolveDerived` finds the globals that depend on a swept one, through other globals and through user
-  functions' bodies (`UserFunctionInliner`). It resolves them again as the elaborator does:
-  - every global is bound with its own expression and unit, and the underived ones are pinned to their resolved values;
-  - each swept variable is bound to its axis cube, with the axis's unit, which is the base unit each point was injected
-    with.
+  functions' bodies (`UserFunctionInliner`). It takes each global's references once and walks outward from the swept
+  names over who reads them. Each derived global is then **evaluated at each point of the sweeps it depends on,
+  exactly as that point's elaboration evaluated it**:
+  - the elaborator's global scope: every global with its own expression and unit, and the ambient `temp` when the
+    design declares none;
+  - the point's values bound by `ParametricSweepEngine.PointVariable`, so units and var-unit-wins are that point's;
+  - plain numbers, with an evaluator of its own that has the user functions and the trial's draws.
 
-  The unit matters. Bound bare, a derived `L2 = 2*L mil` with `L` swept in mil would be scaled by the mil a second time
-  (var-unit-wins). The resolution has its own evaluator, with the user functions and the trial's draws, so the
-  measurements' evaluator gains nothing. A derived global that does not evaluate over a cube (`min(x, 2)`) is left
-  unbound. A measurement reading it fails and says why, through the `unavailable` map that the `freq` hint now shares;
-  it never reads the nominal value.
+  The values are stacked into a cube over those sweeps, in the results' axis order. A point that fails leaves the global
+  unbound. A measurement reading it fails and names the point, through the `unavailable` map that the `freq` hint now
+  shares; it never reads the nominal value.
+- **Why per point, not cube arithmetic.** The first version bound the swept variables to their axis cubes and resolved
+  the derived globals once, as cubes. That is not what the circuit computes:
+  - a conditional, `max`, `limit(x, lo, hi)` and `polar` refuse a cube;
+  - `imag(log(50 + j*x))` read 0, because `log` of a cube is ln|z|, while the circuit had atan(x/50);
+  - the axis order followed the expression (`z*x` gave `{z, x}`).
+
+  Evaluated per point, the measurement and the circuit agree by construction.
 - **Not covered.** A loadpull swept over its tone frequency stacks a `freq` axis instead of the variable's. That variable,
   and anything derived from it, stays a nominal scalar in a measurement, as before.
 

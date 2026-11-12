@@ -301,7 +301,9 @@ What remains:
 1. Build a `MeasurementContext` over the run's analysis results (a name → `DataSet` map) plus optional
    back-solvers.
 2. Create a `globals` scope and inject every resolved global (the VAR variables, from
-   `ElaboratedNetlist.ResolvedGlobals`) so measurements can reference them by name.
+   `ElaboratedNetlist.ResolvedGlobals`) so measurements can reference them by name. Each swept variable
+   overrides its scalar with its axis cube. Each global derived from a swept one is evaluated at every point
+   of its sweeps and overrides its scalar with that cube (see **Swept variables** below).
 3. Create a child `measurements` scope. For each measurement in declaration order: evaluate its
    expression against the context and scope, inject the result back into the scope under its name (so
    later measurements compose), and add the result cube to `ds` (scalars are wrapped as scalar cubes).
@@ -381,10 +383,13 @@ it broadcast-aligns with swept analysis data (e.g. `Gain = dB(HB1.V("out",1,All)
 element-wise without a shape error). A non-swept global stays a scalar. If a sweep is disabled/collapsed
 and its axis is absent from the results, the variable falls back to its scalar global value. This
 override applies for the duration of measurement evaluation only. A global **derived** from a swept one
-(`y = 2*x`, through other globals and user-function bodies) is resolved again the way the elaborator
-resolves it: every global bound with its expression and unit, the swept ones bound to their axis cubes with
-the base unit each point was injected with. So it is a cube over the sweeps it depends on, with var-unit-wins
-as at each point. One that does not evaluate over a cube is an error naming why, never its nominal value.
+(`y = 2*x`, through other globals and user-function bodies) is evaluated at each sweep point exactly as the
+elaborator evaluates it there: in the elaborator's global scope (every global with its expression and unit,
+and the ambient `temp` where the design declares none), with the point's values bound as
+`ParametricSweepEngine.PointVariable` binds them, in plain numbers, with the user functions and the trial's
+draws. The values are stacked over the sweeps it depends on, in the results' axis order. So the measurement
+and the circuit agree by construction, units included. A point that fails is an error naming the point, never
+the nominal value.
 
 ## Authoring — the MEAS Library component (completed)
 

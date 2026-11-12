@@ -1,5 +1,7 @@
+using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using RfCore.Data;
 using Xunit;
@@ -10,15 +12,16 @@ namespace CircuitRF.Engine.Tests.Measurements;
 /// A global DERIVED from a swept one (<c>y = 2*x</c>, <c>x</c> swept) read by a measurement: one value per sweep point,
 /// as the swept variable itself is (<see cref="SweptVariableMeasurementTests"/>), not the nominal value of the run's first
 /// elaboration. The circuit always followed the sweep — every point re-elaborates — so each test also reads a source set
-/// to the derived variable, and the measurement must agree with it.
+/// to the derived variable, and the measurement must agree with it: it is evaluated at each point as the elaborator did.
 /// </summary>
 public class DerivedVariableMeasurementTests
 {
     /// <summary>Runs the outermost sweep of <paramref name="cnl"/> and evaluates its measurements as a run does: against the
     /// netlist the run elaborated first, the sweep's results under the name of the DC analysis it wraps.</summary>
-    private static (DataSet Meas, IReadOnlyList<string> Errors) Run(string cnl)
+    private static (DataSet Meas, IReadOnlyList<string> Errors) Run(string cnl, IStatisticalDraws? draws = null)
     {
         var (lib, tb) = new CnlReader().Read(cnl);
+        tb.StatisticalDraws = draws;
         var sweeps = tb.Analyses.OfType<ParametricSweepAnalysis>().ToList();
         var top = sweeps.Single(s => !sweeps.Any(o => o.InnerAnalysisName == s.Name));
         var nl = new Elaborator(lib).Elaborate(tb);
@@ -57,14 +60,15 @@ public class DerivedVariableMeasurementTests
         for (int i = 0; i < 3; i++) Assert.Equal(y.RealValues[i], v[i], 9);   // the source the circuit was given
     }
 
-    /// <summary>Two sweeps, nested: a variable of both is a cube over both, and still the circuit's value at every point.</summary>
+    /// <summary>Two sweeps, nested: a variable of both is a cube over both, in the sweeps' order (outer first) whatever
+    /// order the expression names them in, and still the circuit's value at every point.</summary>
     [Fact]
-    public void AVariableOfTwoNestedSweeps_IsACubeOverBoth()
+    public void AVariableOfTwoNestedSweeps_IsACubeOverBoth_InTheSweepsOrder()
     {
         var (meas, errors) = Run("""
             x = 1
             z = 10
-            w = x*z + 1
+            w = z*x + 1
             Vdc:V1  in 0  Vdc=w
             R:R1    in 0  R=1 kOhm
             analysis DC1 type=dc
@@ -76,7 +80,7 @@ public class DerivedVariableMeasurementTests
 
         Assert.Empty(errors);
         var w = meas["w_read"];
-        Assert.Equal(["x", "z"], w.Axes.Select(a => a.Name).Order());
+        Assert.Equal(["x", "z"], w.Axes.Select(a => a.Name));
         double[] xs = [1, 2, 3], zs = [10, 20];
         for (int i = 0; i < xs.Length; i++)
             for (int k = 0; k < zs.Length; k++)
@@ -165,22 +169,140 @@ public class DerivedVariableMeasurementTests
         Assert.Equal([2.0, 4.0], meas["y2_read"].RealValues);
     }
 
-    /// <summary>A derived variable whose expression does not take a cube is an error naming why — never its nominal value.</summary>
+    /// <summary>
+    /// Expressions that hold only at a point, as the elaborator evaluates them: a conditional, max, a clamp, a polar
+    /// phasor in degrees. Over a cube each of them is refused; at each point each is a number.
+    /// </summary>
     [Fact]
-    public void ADerivedVariableThatDoesNotTakeTheSweep_IsAnError_NotItsNominalValue()
+    public void ConditionalsAndTwoArgumentFunctions_ReadTheirValueAtEachPoint()
     {
         var (meas, errors) = Run("""
             x = 1
-            y = min(x, 2)
-            Vdc:V1  in 0  Vdc=y
+            y1 = x > 1 ? 1 : 2
+            y2 = max(x, 0)
+            y3 = limit(x, 0, 2)
+            y4 = polar(1, x)
+            Vdc:V1  in 0  Vdc=1
             R:R1    in 0  R=1 kOhm
             analysis DC1 type=dc
             analysis SW1 type=parametric_sweep Var=x Values=1,3 Inner=DC1
+            measure a = y1
+            measure b = y2
+            measure c = y3
+            measure d = y4
+            """);
+
+        Assert.Empty(errors);
+        Assert.Equal([2.0, 1.0], meas["a"].RealValues);
+        Assert.Equal([1.0, 3.0], meas["b"].RealValues);
+        Assert.Equal([1.0, 2.0], meas["c"].RealValues);
+        var d = meas["d"].ComplexValues;
+        Assert.Equal(Complex.FromPolarCoordinates(1, Math.PI / 180), d[0]);
+        Assert.Equal(Complex.FromPolarCoordinates(1, 3 * Math.PI / 180), d[1]);
+    }
+
+    /// <summary>A complex variable's own arithmetic: imag(log(Zl)) is its phase, which the circuit is given; a cube's
+    /// log would have read |Zl| and that phase as 0.</summary>
+    [Fact]
+    public void AComplexDerivedVariable_IsTheCircuitsValue()
+    {
+        var (meas, errors) = Run("""
+            x = 10
+            Zl = 50 + j*x
+            th = imag(log(Zl))
+            Vdc:V1  in 0  Vdc=1000*th
+            R:R1    in 0  R=1 kOhm
+            analysis DC1 type=dc
+            analysis SW1 type=parametric_sweep Var=x Values=10,20 Inner=DC1
+            measure th_read = 1000*th
+            measure v_in    = DC1.V("in")
+            """);
+
+        Assert.Empty(errors);
+        Assert.Equal(1000 * Math.Atan(10.0 / 50), meas["th_read"].RealValues[0], 12);   // 197.4
+        Assert.Equal(1000 * Math.Atan(20.0 / 50), meas["th_read"].RealValues[1], 12);   // 380.5
+        for (int i = 0; i < 2; i++) Assert.Equal(meas["th_read"].RealValues[i], meas["v_in"].RealValues[i], 9);
+    }
+
+    /// <summary>The ambient <c>temp</c>, which the elaborator binds when the design does not declare it.</summary>
+    [Fact]
+    public void TheAmbientTemperature_IsBoundAsTheElaboratorBindsIt()
+    {
+        var (meas, errors) = Run("""
+            R0 = 100
+            RT = R0*(1 + 0.01*(temp - 27))
+            Vdc:V1  in 0  Vdc=RT
+            R:R1    in 0  R=1 kOhm
+            analysis DC1 type=dc
+            analysis SW1 type=parametric_sweep Var=R0 Values=100,200 Inner=DC1
+            measure RT_read = RT
+            measure v_in    = DC1.V("in")
+            """);
+
+        Assert.Empty(errors);
+        Assert.Equal(99.85, meas["RT_read"].RealValues[0], 12);    // the ambient is 26.85 °C
+        Assert.Equal(199.7, meas["RT_read"].RealValues[1], 12);
+        for (int i = 0; i < 2; i++) Assert.Equal(meas["RT_read"].RealValues[i], meas["v_in"].RealValues[i], 9);
+    }
+
+    /// <summary>
+    /// A Monte Carlo trial: a draw in a global the swept one does not touch (<c>k</c>) and draws inside the derived one
+    /// (<c>y</c>) are the trial's own, so in every trial the measurement is the circuit's value at every point.
+    /// </summary>
+    [Fact]
+    public void InEachMonteCarloTrial_TheDerivedVariableIsTheCircuitsValue()
+    {
+        const string Cnl = """
+            x = 1
+            k = gauss(1, 0.1)
+            y = x*k + agauss(0, 0.3)
+            Vdc:V1  in 0  Vdc=y
+            R:R1    in 0  R=1 kOhm
+            analysis DC1 type=dc
+            analysis SW1 type=parametric_sweep Var=x Values=1,2,3 Inner=DC1
+            measure y_read = y
+            measure v_in   = DC1.V("in")
+            """;
+        var nominal = Run(Cnl).Meas["y_read"].RealValues;
+        for (int trial = 1; trial <= 5; trial++)
+        {
+            var (meas, errors) = Run(Cnl, new Draws(trial));
+            Assert.Empty(errors);
+            var y = meas["y_read"].RealValues;
+            Assert.NotEqual(nominal, y);                                            // the trial's draws, not the nominal
+            for (int i = 0; i < 3; i++) Assert.Equal(y[i], meas["v_in"].RealValues[i], 9);
+        }
+    }
+
+    /// <summary>A trial's draws: a pure function of the trial and the stream, as the real draws are.</summary>
+    private sealed class Draws(int trial) : IStatisticalDraws
+    {
+        public StatisticalDraw? Draw(StatisticalKind kind, string stream)
+        {
+            int h = trial * 7919;
+            foreach (char c in stream) h = unchecked(h * 31 + c);
+            double u = (h & 0xFFFF) / 65536.0 * 0.98 + 0.01;
+            return new StatisticalDraw(Z: 3 * (u - 0.5), U: u, SigmaScale: 1);
+        }
+    }
+
+    /// <summary>A derived variable with no value at some point is an error naming the point — never its nominal value.</summary>
+    [Fact]
+    public void ADerivedVariableThatFailsAtAPoint_IsAnError_NotItsNominalValue()
+    {
+        var (meas, errors) = Run("""
+            x = 1
+            y = log(x)
+            Vdc:V1  in 0  Vdc=1
+            R:R1    in 0  R=1 kOhm
+            analysis DC1 type=dc
+            analysis SW1 type=parametric_sweep Var=x Values=1,0 Inner=DC1
             measure y_read = y
             """);
 
         Assert.False(meas.Contains("y_read"));
-        Assert.Contains("depends on a swept variable", Assert.Single(errors));
+        var error = Assert.Single(errors);
+        Assert.Contains("depends on a swept variable and has no value at x = 0", error);
     }
 
     // ── Unchanged: no sweep, or a sweep whose axis the results do not carry ──────────────────────────
