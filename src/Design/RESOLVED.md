@@ -172,6 +172,12 @@ version gate): see `HznCoverageTests`. **None of the 58 translates, and that is 
   `WorkspaceViewModel.ConvertHznDesignAsync(hznPath, design)`; it asks the dialog and posts the result to Messages.
 - The converted view's `TechRef` stays null, so it resolves the workspace's default like any new view. A cell that already holds other 3D views gets a note that
   more than one now exists.
+- **A `convert` source is a Hertzon project by its extension only** (2026-11-12). `HznConvertVerb.IsSource` also asked `HznCli.IsHertzon`, which
+  says yes to a read refused as `hzn.file.not-json` or `hzn.file.not-utf8` so that `check` reports a damaged project as one. In a dispatch that
+  same yes took every source that is not JSON: a DXF got the "not valid JSON" refusal, a GDSII or OASIS file the UTF-8 one, and STEP, `.kicad_pcb`,
+  IPC-2581, a single Gerber or drill file and `--list-cells` all went the same way, ahead of their own readers. A `.hzn`, damaged or not, still reaches
+  `HznConvert` and its refusal; `DocumentKinds` asks `IsHertzon` only of a `.hzn`, so `check` is unchanged. Gate: the `ConvertCliVerbTests` matrix
+  and `ADamagedHzn_IsStillRefusedAsAHertzonProject`.
 
 ### HZN-3 — the Project Tree node and the editor's document source (2026-11-11)
 

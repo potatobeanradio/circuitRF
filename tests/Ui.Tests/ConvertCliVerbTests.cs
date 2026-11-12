@@ -326,6 +326,19 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("--step and --list-steps apply to an IPC-2581 source", step);
     }
 
+    /// <summary>A Hertzon project is a source by its extension alone: a .hzn cut short still gets the Hertzon refusal. (Not by
+    /// content: every DXF, GDSII and OASIS source is "not JSON" too, and the matrix's rows for them convert with no --from.)</summary>
+    [Fact]
+    public void ADamagedHzn_IsStillRefusedAsAHertzonProject()
+    {
+        Directory.CreateDirectory(_root);
+        string hzn = Path.Combine(_root, "broken.hzn");
+        File.WriteAllText(hzn, "{ \"format\": \"hertzon-proj");
+        var (code, _, stderr) = RunCli("convert", hzn, "-o", Path.Combine(_root, "cell"));
+        Assert.Equal(1, code);
+        Assert.Contains("is not a Hertzon project: it is not valid JSON", stderr);
+    }
+
     /// <summary>Known by the root element under any name, and .cvg by the extension as well.</summary>
     [Fact]
     public void Ipc2581_IsDetectedByContent_AndCheckNamesIt()

@@ -22,10 +22,11 @@ internal static class HznConvertVerb
         public bool Any => Design is not null || AddMaterials || ReplaceView;
     }
 
-    /// <summary>True when <paramref name="path"/> is a Hertzon project, by extension or by content.</summary>
+    /// <summary>True when <paramref name="path"/> is a <c>.hzn</c> file, damaged or not, so a broken project still gets its
+    /// Hertzon refusal. Never by content: <see cref="HznCli.IsHertzon"/> also says yes to a file that is not JSON or not UTF-8
+    /// text — a damaged project to <c>check</c>, but every DXF, GDSII, OASIS, STEP or Gerber file to a dispatch.</summary>
     internal static bool IsSource(string path) =>
-        File.Exists(path) && (string.Equals(Path.GetExtension(path), HznCli.Extension, StringComparison.OrdinalIgnoreCase)
-                              || HznCli.IsHertzon(path));
+        File.Exists(path) && string.Equals(Path.GetExtension(path), HznCli.Extension, StringComparison.OrdinalIgnoreCase);
 
     internal static Diagnostic FlagsWithoutHertzon() => Diagnostic.Create(
         "convert.hzn.flags-without-hzn", DiagnosticSeverity.Error,
