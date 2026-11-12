@@ -602,7 +602,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         var doc = JsonNode.Parse(server.Call("solver", new JsonObject()))!;
         Assert.Equal(0, doc["exitCode"]!.GetValue<int>());
         var solvers = doc["result"]!["solvers"]!.AsArray();
-        Assert.Equal(["palace", "gmsh", "openems", "emerge"], solvers.Select(s => s!["tool"]!.GetValue<string>()));
+        // Hertzon's command line (HZN-8) is listed after the four programs circuitRF assembles a run around.
+        Assert.Equal(["palace", "gmsh", "openems", "emerge", "hertzon"], solvers.Select(s => s!["tool"]!.GetValue<string>()));
 
         // What this machine has installed is not this test's business; what a FOUND Palace reports is.
         var palace = solvers[0]!;

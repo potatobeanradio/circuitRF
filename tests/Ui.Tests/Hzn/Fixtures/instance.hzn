@@ -1,0 +1,97 @@
+{
+ "name": "Instance",
+ "designs": [
+  {
+   "name": "Pad",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "h": "1.5mm",
+    "w": "3mm",
+    "L": "10mm"
+   },
+   "objects": [
+    {
+     "name": "Sub",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "w",
+        "YSize": "L",
+        "ZSize": "-h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Trace",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "w/4,0,0",
+        "XSize": "w/2",
+        "YSize": "L",
+        "ZSize": "tt"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [],
+   "excitations": [],
+   "mesh_ops": [],
+   "setups": [],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": []
+  }
+ ],
+ "variables": {
+  "tt": "0.035mm"
+ },
+ "materials": [
+  {
+   "name": "lam",
+   "permittivity": "3.55",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.002",
+   "magnetic_loss_tangent": "0",
+   "pec": false,
+   "dispersion": "None",
+   "anisotropic": false
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

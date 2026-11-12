@@ -47,6 +47,9 @@ public sealed class TechnologyCache
         if (_live.TryGetValue(absPath, out var live))
             return live;
 
+        if (_held.TryGetValue(absPath, out var held))
+            return held;
+
         if (_cache.TryGetValue(absPath, out var cached))
             return cached;
 
@@ -57,6 +60,32 @@ public sealed class TechnologyCache
         _cache[absPath] = tech;
         return tech;
     }
+
+    // ── Technologies held in memory (HZN-3) ────────────────────────────────────────────────────
+    //
+    // A technology that belongs to a document with no file of its own: a design held in a `.hzn` carries its project's
+    // materials, and the 3D editor reaches them the way it reaches any technology, through a path. The path names no
+    // file. It is kept apart from the live overrides because those are an editor's unsaved edits and are dropped by
+    // Invalidate and InvalidateAll; a held technology has no file to fall back to, so dropping it would silently put
+    // the design on the workspace's materials instead.
+
+    private readonly Dictionary<string, Technology> _held = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Installs <paramref name="tech"/> as what <see cref="Get"/> answers for <paramref name="absPath"/>, until
+    /// <see cref="Release"/>. Raises <see cref="TechnologyChanged"/> when it replaces a different technology.</summary>
+    public void Hold(string absPath, Technology tech)
+    {
+        absPath = Path.GetFullPath(absPath);
+        bool replaced = _held.TryGetValue(absPath, out var was) && !ReferenceEquals(was, tech);
+        _held[absPath] = tech;
+        if (replaced) TechnologyChanged?.Invoke(absPath);
+    }
+
+    /// <summary>True when <paramref name="absPath"/> names a technology held in memory rather than a file.</summary>
+    public bool IsHeld(string absPath) => _held.ContainsKey(Path.GetFullPath(absPath));
+
+    /// <summary>Drops a held technology; no event, because nothing is left naming it.</summary>
+    public void Release(string absPath) => _held.Remove(Path.GetFullPath(absPath));
 
     // ── Material libraries (brief-em3d-53 R-em3d53-1f) ────────────────────────────────────────
     //

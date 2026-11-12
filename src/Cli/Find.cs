@@ -111,6 +111,8 @@ internal static class Find
         foreach (string ws in workspaces)
         {
             var one = Describe(ws, analyses);
+            // HZN-2 — a Hertzon project inside the workspace, with its designs.
+            if (HznCli.Projects(ws, depth) is { Count: > 0 } inside) one = one with { HertzonProjects = inside };
             cells += one.Cells.Count;
             found.Add(one);
         }
@@ -120,14 +122,16 @@ internal static class Find
         // read as "there is nothing here". They are not invented into a workspace, because a
         // workspace decides the default technology and attributing a cell to one it is not in is
         // worse than not listing it.
+        // HZN-2 — Hertzon projects outside any workspace: a project is a document of its own, anywhere.
+        var loose = HznCli.Projects(full, depth, skip: dir => workspaces.Contains(dir));
         if (found.Count == 0 && DocumentKinds.LooksLikeCellFolder(full))
             JsonRun.Note(CliDiagnostics.FindRootIsACell(full));
-        else if (found.Count == 0)
+        else if (found.Count == 0 && loose.Count == 0)
             JsonRun.Note(CliDiagnostics.FindNothingHere(full, depth));
 
         if (truncated) JsonRun.Note(CliDiagnostics.FindTruncated(depth));
 
-        JsonRun.Find = new FindReportJson(full, depth, truncated, found);
+        JsonRun.Find = new FindReportJson(full, depth, truncated, found, HertzonProjects: loose.Count > 0 ? loose : null);
 
         Console.WriteLine($"{full}  ({found.Count} workspace(s), {cells} cell(s), depth {depth})");
         foreach (var ws in found)
@@ -144,6 +148,8 @@ internal static class Find
                 foreach (var v in c.Views.Where(v => v.Solved is not null))
                     Console.WriteLine($"    {"",-24} solved: {string.Join(", ", v.Solved!.Select(x => $"{x.Setup} {x.Solver} {x.State}{(x.Partial ? " (partial)" : "")}"))}");
             }
+            foreach (var hz in ws.HertzonProjects ?? [])
+                Console.WriteLine($"    Hertzon project {hz.Path}: {Designs(hz)}");
             foreach (var pic in ws.Pictures ?? [])
                 Console.WriteLine($"    picture {pic.Path}" + (pic.Kind is { } k
                     ? $"  {k}{(pic.Reason is { } r ? $" ({r})" : "")}, confidence {pic.Confidence!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"
@@ -155,8 +161,13 @@ internal static class Find
                     ? "  (named by no technology)"
                     : $"  named by {string.Join(", ", lib.NamedBy.Select(Path.GetFileName))}"));
         }
+        foreach (var hz in loose)
+            Console.WriteLine($"  Hertzon project {hz.Path}: {Designs(hz)}");
         return 0;
     }
+
+    private static string Designs(RfCore.Export.FoundHertzonProjectJson p) =>
+        p.Problem is { } why ? $"unreadable ({why})" : string.Join(", ", p.Designs.Select(d => $"{d.Name} [{d.Kind}]"));
 
     private static int Usage()
     {

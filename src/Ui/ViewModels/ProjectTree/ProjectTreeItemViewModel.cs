@@ -24,7 +24,7 @@ namespace CircuitRF.Ui.ViewModels.ProjectTree;
 /// <see cref="ITreeActions"/> — provided by WorkspaceViewModel.  Null actions = no-op
 /// (occurs before a workspace is set).
 /// </summary>
-public sealed class ProjectTreeNodeViewModel : ObservableObject
+public sealed partial class ProjectTreeNodeViewModel : ObservableObject
 {
     private readonly ProjectTreeNode        _node;
     private readonly ProjectTreeFilterState _filter;
@@ -78,6 +78,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     {
         NodeKind.KnownFilesGroup                  => "External files that are known to this workspace are listed here.",
         NodeKind.KnownFile when _node.IsDirectory => _node.AbsolutePath,
+        // HZN-3 — a Hertzon project is named by the project inside it.
+        _ when IsHznProject                       => HznProjectName is { Length: > 0 } hzn ? hzn : _node.RelativePath,
+        NodeKind.HznDesign3D                      => "3D design",
+        NodeKind.HznDesignCircuit                 => HznMenuText.CircuitNotOpened,
         // A referenced cell's relative path is relative to the OTHER workspace, which says nothing
         // about where the cell actually is — and two projects routinely hold a cell of the same name.
         // The full path is the only thing that tells the two rows apart. (An unresolvable reference
@@ -147,6 +151,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
         (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.EmSetupFile,     _)     => MaterialIconKind.SineWave,
+        // HZN-3 — a project, its 3D designs (the cube the 3D view menu uses) and its circuits (the schematic's glyph).
+        (NodeKind.HznFile,         _)     => MaterialIconKind.FileTreeOutline,
+        (NodeKind.HznDesign3D,     _)     => MaterialIconKind.CubeOutline,
+        (NodeKind.HznDesignCircuit, _)    => MaterialIconKind.FileDocumentOutline,
+        (NodeKind.HznRefusal,      _)     => MaterialIconKind.AlertCircleOutline,
+        (NodeKind.KnownFile,       _) when IsHznProject => MaterialIconKind.FileTreeOutline,
         (NodeKind.KnownFile,       _)     => _node.IsDirectory
                                                 ? MaterialIconKind.FolderOutline
                                                 : MaterialIconKind.FileOutline,
@@ -350,7 +360,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         Kind == NodeKind.KnownFile
         && !IsDirectory
         && !IsWarning
-        && WorkspaceScanner.ClassifyFile(AbsolutePath) is not NodeKind.OtherFile and not NodeKind.ColorThemeFile;
+        && WorkspaceScanner.ClassifyFile(AbsolutePath) is not NodeKind.OtherFile and not NodeKind.ColorThemeFile and not NodeKind.HznFile;
 
     /// <summary>
     /// True for a Known File that could become a cell — a <c>.csch</c>, <c>.csym</c> or <c>.clay</c>,
@@ -459,6 +469,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.SmithFile
                                           or NodeKind.ModelComposerFile
                                           or NodeKind.ChainFile
+                                          or NodeKind.HznFile
                                           or NodeKind.ColorThemeFile
                                           or NodeKind.TechFile
                                           or NodeKind.EmSetupFile
@@ -736,6 +747,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             // sees this node expanded and the freshly-walked contents come back already open —
             // otherwise the user's click would appear to do nothing.
             if (value && HoldsUnreadReference) _onExpandUnreadReference?.Invoke(this);
+            if (value && IsHznProject) RefreshHznChildren();      // HZN-3 — the first expansion reads the project
         }
     }
 
@@ -842,9 +854,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         // Build child VMs recursively; each child applies the same filter state.
         Children = new ObservableCollection<ProjectTreeNodeViewModel>(
-            node.Children.Select(c => new ProjectTreeNodeViewModel(
-                c, filter, expandedPaths, actions, parent: this,
-                onExpandUnreadReference: onExpandUnreadReference)));
+            IsHznProject
+                ? HznInitialChildren(open: _isExpanded)
+                : node.Children.Select(c => new ProjectTreeNodeViewModel(
+                    c, filter, expandedPaths, actions, parent: this,
+                    onExpandUnreadReference: onExpandUnreadReference)));
 
         // React to filter-state changes — ONLY at the root. ApplyFilter is already a full recursive
         // pass, and it has to be: the text filter (§3.3a) hands each node whether an ANCESTOR matched,
@@ -872,6 +886,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         ApplyFilter();
 
         // ── Wire commands ──────────────────────────────────────────────────────
+
+        InitHznCommands();
 
         ActivateCommand = new RelayCommand(() => _actions?.OpenNode(this));
 
@@ -1282,6 +1298,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.SmithFile       => f.Cells,
             NodeKind.ModelComposerFile => f.Cells,
             NodeKind.ChainFile       => f.Cells,
+            // A .hzn is a 3D design document: Cells, as a .wBond. Its rows answer with it (or with Known Files when it is one).
+            NodeKind.HznFile         => f.Cells,
+            NodeKind.NotReadYet or NodeKind.HznDesign3D or NodeKind.HznDesignCircuit or NodeKind.HznRefusal
+                when _parent is { IsHznProject: true } => HznRowVisibleUnder(f),
             // A .crlib is the model half of a design document — it rides the Cells toggle for the
             // .wBond's, .crail's and .csmith's reason rather than earning a checkbox of its own.
             NodeKind.PartLibraryFile => f.Cells,

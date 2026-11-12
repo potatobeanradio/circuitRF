@@ -171,6 +171,28 @@ public sealed class C3dResolution
         return _evaluator.Eval(expression, _scope, engine);
     }
 
+    /// <summary>
+    /// HZN-4 — <paramref name="expression"/> typed at the site unit <paramref name="unit"/> (a stored spelling), as a tree whose
+    /// every unit is spelled out: the value the field or VAR would have, with no site unit left to apply. A unit-bearing
+    /// expression keeps its form and its bare additive operands take the unit (<c>w + 5</c> in mil is <c>w + 5mil</c>); any other
+    /// is multiplied by one of the unit. This is the evaluator's own rule (Evaluator.SiteUnit.cs), applied to the tree and not
+    /// carried out, so a writer for a language that has no site unit reads the same quantity. <c>Bearing</c> says the result is a
+    /// quantity and not a plain number.
+    /// </summary>
+    /// <exception cref="ExpressionException">The text does not parse, or the unit is not one this build knows.</exception>
+    public (Expr Ast, bool Bearing) AtSite(string expression, string? unit)
+    {
+        var ast = Parser.Parse(expression);
+        string? engine = C3dUnits.Engine(unit, out string? bad);
+        if (bad is not null) throw new ExpressionException(bad);
+        bool bearing = Evaluator.IsUnitBearing(ast, _scope);
+        if (string.IsNullOrEmpty(engine)) return (ast, bearing);
+        if (bearing) return (Evaluator.ScaleBareOperands(ast, _scope, engine), true);
+        double scale = Units.Scale(engine) ?? 1.0;
+        return (ast is NumberExpr { Unit: null } n ? new NumberExpr(n.Value * scale, engine)
+                                                   : new BinaryExpr("*", ast, new NumberExpr(scale, engine)), true);
+    }
+
     /// <summary>brief-em3d-74 R-em3d74-5d — evaluates an already-parsed expression in this document's scope: a thermal
     /// measure whose probe calls have been replaced by the probe's values (the AST is rewritten, never the text).</summary>
     /// <exception cref="ExpressionException">It does not resolve; the message is the engine's.</exception>

@@ -62,7 +62,7 @@ public partial class InstanceCellPickerDialog : Window
     /// </param>
     public InstanceCellPickerDialog(
         string? workspaceRootDir, string baseDir, string? parentCellDir = null,
-        ViewType view = ViewType.Layout, bool canReferenceExternal = false) : this()
+        ViewType view = ViewType.Layout, bool canReferenceExternal = false, IEnumerable<string>? knownHznFiles = null) : this()
     {
         _baseDir = baseDir;
         _canReferenceExternal = canReferenceExternal;
@@ -70,7 +70,7 @@ public partial class InstanceCellPickerDialog : Window
 
         PromptText.Text = view == ViewType.Symbol
             ? "Choose a cell to place in this schematic."
-            : _threeD ? "Choose a cell, and which of its views, to place in this 3D view."
+            : _threeD ? "Choose a cell and its view, or a Hertzon design, to place in this 3D view."
             : "Choose a cell to place as an instance.";
         ViewChoice.IsVisible = TechNote.IsVisible = _threeD;
         // A 3D view may hold its own cell's LAYOUT (the views differ), so its own cell is listed; placing its own 3D
@@ -83,6 +83,8 @@ public partial class InstanceCellPickerDialog : Window
             ? InstanceCellChoices.CollectWithReferences(root, parentCellDir, view)
             : new List<InstanceCellChoice>();
         items.Sort(static (a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
+        // HZN-9 — a 3D view also places a design of a Hertzon project, listed after the cells.
+        if (_threeD && workspaceRootDir is { Length: > 0 } hznRoot) items.AddRange(InstanceCellChoices.CollectHertzon(hznRoot, knownHznFiles));
         ChoiceList.ItemsSource = items;
         // Prefer the first PLACEABLE (enabled) item so a routine placement doesn't land on a
         // disabled-with-reason row by accident — but a workspace of nothing but no-layout-view cells
@@ -110,6 +112,11 @@ public partial class InstanceCellPickerDialog : Window
 
     private void TryAccept()
     {
+        if (ChoiceList.SelectedItem is InstanceCellChoice { IsEnabled: true, IsHertzon: true } hzn)
+        {
+            Close(new CellPickResult(RelativeCellRef(hzn.AbsoluteCellDir), hzn.AbsoluteCellDir, HznDesign: hzn.HznDesign));
+            return;
+        }
         if (ChoiceList.SelectedItem is InstanceCellChoice { IsEnabled: true } chosen)
             Close(new CellPickResult(RelativeCellRef(chosen.AbsoluteCellDir), chosen.AbsoluteCellDir,
                                      View: _threeD ? (ViewLayoutRadio.IsChecked == true ? ViewType.Layout : ViewType.ThreeD) : null));
@@ -119,6 +126,7 @@ public partial class InstanceCellPickerDialog : Window
     private void SyncViewChoice()
     {
         if (!_threeD || ChoiceList.SelectedItem is not InstanceCellChoice c) return;
+        if (c.IsHertzon) { View3DRadio.IsEnabled = ViewLayoutRadio.IsEnabled = false; return; }
         View3DRadio.IsEnabled = c.Has3D;
         ViewLayoutRadio.IsEnabled = c.HasLayout;
         if (!c.Has3D && c.HasLayout) ViewLayoutRadio.IsChecked = true;

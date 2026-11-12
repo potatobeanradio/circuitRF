@@ -132,6 +132,7 @@ internal static class Solver
             else if (s.Recipe is null && !SolverInstallPlan.HasRoute(tool) && s.Found is not { Validated: true })
                 Console.WriteLine($"  no install recipe for this machine; recipes exist for {SolverRecipes.PlatformsFor(tool)}");
         }
+        HznSolverRow.Append(report);   // HZN-8: Hertzon's command line beside the solvers circuitRF assembles runs around
         JsonRun.Solvers = report;
         var cores = CircuitRF.Engine.Em3d.PhysicalCores.Current;
         double memoryGB = Math.Round(CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes / 1e9, 1);

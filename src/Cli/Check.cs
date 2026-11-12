@@ -132,11 +132,16 @@ internal static class Check
         string? path = null;
         bool recursive = false;
         var threshold = Threshold.Error;
+        string? design = null;
 
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
+                // HZN-2: which design of a Hertzon project; every 3D design when omitted.
+                case "--design" when i + 1 < args.Length:
+                    design = args[++i];
+                    continue;
                 case "--recursive" or "-r":
                     recursive = true;
                     continue;
@@ -176,6 +181,7 @@ internal static class Check
         var findings = new Findings();
         var cache    = new TechnologyCache();
 
+        _hznDesign = design;
         CheckPath(path, DocumentKinds.Classify(path), findings, cache, recursive);
         findings.End();
 
@@ -198,9 +204,11 @@ internal static class Check
         return exit;
     }
 
+    [ThreadStatic] private static string? _hznDesign;
+
     private static int Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf check <path> [--recursive] [--severity warning|error]");
+        Console.Error.WriteLine("Usage: circuitrf check <path> [--recursive] [--severity warning|error] [--design <name>]");
         return 1;
     }
 
@@ -243,6 +251,10 @@ internal static class Check
                                           Scoped(path, kind, f, () => CheckComposerDocument(path, f)); break;
             case DocumentKind.ComposedModel:
                                           Scoped(path, kind, f, () => CheckComposedModel(path, f)); break;
+
+            case DocumentKind.Hertzon:
+                Scoped(path, kind, f, () => { foreach (var d in HznCli.Check(path, _hznDesign)) f.Add(d); });
+                break;
 
             case DocumentKind.Foreign:
                 f.Begin(path, kind);

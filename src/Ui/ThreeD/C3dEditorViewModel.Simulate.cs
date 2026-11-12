@@ -341,7 +341,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The active setup as its run is named ("&lt;stem&gt; &lt;name&gt;", or the .cem itself) — what the fields are read from.</summary>
     public EmSetup? ActiveRunSetup => IsExternalActive ? ExternalSetup!.Value.Setup
-                                    : ActiveSetup is { } s ? C3dSetups.ForRun(s, TopFilePath) : null;
+                                    : ActiveSetup is { } s ? C3dSetups.ForRun(s, RunPath) : null;
 
     [RelayCommand]
     public void SetActiveSetup(string? name)
@@ -390,6 +390,7 @@ public sealed partial class C3dEditorViewModel
         var vm = new EmSetupEditorViewModel(item.IsExternal ? item.ExternalPath! : FilePath, setup, embedded: true)
         {
             IsReadOnly = item.IsExternal,
+            EmergeOnly = Source is CircuitRF.Ui.ThreeD.Hzn.HznDesignSource,     // HZN-7
         };
         // brief-em3d-75 R-em3d75-3 — the thermal page reads this document's heat sources, probes and variables.
         // brief-em3d-79: and its path and results folder, which a circuit link resolves against
@@ -638,7 +639,7 @@ public sealed partial class C3dEditorViewModel
         if (read.Refusal is { } why) return (null, false, why);
         if (EmSetupEditorViewModel.CompareBlockingReasonFor(read.Setup!, Em3dSolverInstallState.Known) is { } blocked)
             return (null, false, blocked);
-        return (C3dSetups.ForRun(read.Setup!, TopFilePath), false, null);
+        return (C3dSetups.ForRun(read.Setup!, RunPath), false, null);
     }
 
     /// <summary>The document as a run reads it: a copy, so an edit during the run changes nothing it solves.</summary>
@@ -1997,7 +1998,7 @@ public sealed partial class C3dEditorViewModel
     {
         foreach (string dir in RunDirectoriesOf(setup))
         {
-            if (C3dRunDocument.Check(dir, Document, TopFilePath, embeddedName) is not { } check) continue;
+            if (C3dRunDocument.Check(dir, Document, RunPath, embeddedName) is not { } check) continue;
             // brief-em3d-83 R-em3d83-2 — the plots are display: SerializeForRun leaves them out on both sides.
             return check.What is { } what
                 ? $"Fields are from the run at {check.Written:HH:mm}; {what} {check.Has} changed since. They are drawn on the " +

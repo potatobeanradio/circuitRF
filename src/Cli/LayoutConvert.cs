@@ -115,12 +115,18 @@ public static class LayoutConvert
         // --region: a glTF target's region name, or a picture source's pixel rectangle (brief-img-11 R-im11-1).
         public string? Region;
 
+        // HZN-4 R-hzn4-4 — a Hertzon project target: --into adds a design to an existing project, --design-name names it.
+        public string? HznInto, HznDesignName;
+
         // --crop: the layout editor's Crop to Rectangle (brief-dfr26-2), applied to what an import produced —
         // x0,y0,x1,y1, every coordinate with its unit, as render --window takes them.
         public string? Crop;
 
         // brief-img-11 R-im11-1 — a picture source: the Create Layout from Image dialog's fields, one flag each.
         public readonly PictureFlags Picture = new();
+
+        // HZN-6 — a Hertzon project source: which design, the materials choice and the replace choice.
+        public readonly HznConvertVerb.Flags Hzn = new();
     }
 
     public static int Run(string[] args)
@@ -255,6 +261,11 @@ public static class LayoutConvert
                 case "--gltf-assembly": o.GltfAssembly = o.GltfFlags = true; break;
                 case "--gltf-field" when i + 1 < args.Length: o.GltfField = args[++i]; o.GltfFlags = true; break;
                 case "--region" when i + 1 < args.Length: o.Region = args[++i]; break;
+                case "--design" when i + 1 < args.Length: o.Hzn.Design = args[++i]; break;
+                case "--add-materials": o.Hzn.AddMaterials = true; break;
+                case "--replace": o.Hzn.ReplaceView = true; break;
+                case "--into" when i + 1 < args.Length: o.HznInto = args[++i]; break;
+                case "--design-name" when i + 1 < args.Length: o.HznDesignName = args[++i]; break;
                 case "--crop" when i + 1 < args.Length: o.Crop = args[++i]; break;
                 case "--schema" when i + 1 < args.Length:
                     o.StepExportFlags = true;
@@ -350,6 +361,12 @@ public static class LayoutConvert
         bool gltfTarget = o.To == Fmt.Gltf || (o.To is null && o.Output is not null && IsGltf(o.Output));
         if (gltfTarget) return ExportGltf(o);
 
+        // HZN-4 R-hzn4-4 — a Hertzon project target: a new .hzn by extension, or a design added to an existing one by --into.
+        bool hznTarget = o.HznInto is not null || (o.To is null && o.Output is not null
+                                                   && string.Equals(Path.GetExtension(o.Output), ".hzn", StringComparison.OrdinalIgnoreCase));
+        if (hznTarget) return HznExportVerb.Export(o.Input!, o.Output, o.HznInto, o.HznDesignName, o.Cws);
+        if (o.HznDesignName is not null) return JsonRun.Fail(HznExportVerbDiagnostics.DesignNameWithoutHzn());
+
         // brief-img-11 R-im11-1 — a picture: traced by ImageTrace onto a cell folder plus a technology, like every reader.
         bool pictureSource = o.From == Fmt.Image || (o.From is null && DocumentKinds.Classify(o.Input) == DocumentKind.Picture);
         if (pictureSource) return ConvertPicture(o);
@@ -357,6 +374,10 @@ public static class LayoutConvert
             return JsonRun.Fail(CliDiagnostics.PictureFlagWrongKind("convert", pictureFlag, "a picture source",
                                                                    "a " + Name(o.From ?? DetectSource(o.Input) ?? Fmt.Clay) + " source"));
         if (o.GltfFlags || o.Region is not null) return JsonRun.Fail(CliDiagnostics.ConvertGltfFlagsWithoutGltf());
+
+        // HZN-6 — a Hertzon project: one of its 3D designs into a cell's 3D view (HznConvert, the Convert to .c3d dialog's call).
+        if (HznConvertVerb.IsSource(o.Input) && o.From is null) return HznConvertVerb.Run(o.Input, o.Output, o.To is not null, o.Hzn);
+        if (o.Hzn.Any) return JsonRun.Fail(HznConvertVerb.FlagsWithoutHertzon());
 
         bool stepSource = o.From == Fmt.Step || (o.From is null && DetectSource(o.Input) == Fmt.Step);
         if (stepSource)
@@ -1552,8 +1573,10 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --group <name> (\"\" for none)  --list-parts  every row and what it would import as, writing nothing");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
+        Console.Error.WriteLine("       hertzon project (.hzn; -o <cell folder>):  --design <name> (when it holds several 3D designs)  --add-materials  --replace");
         Console.Error.WriteLine("       an import:  --crop x0,y0,x1,y1 (each with its unit: Crop to Rectangle on what was imported)");
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
+        Console.Error.WriteLine("       hertzon target (-o <new>.hzn, or --into <project>.hzn; from a .c3d or a cell):  --design-name <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");
         Console.Error.WriteLine("       --layer-map <map>  a dxf source: LAYER=target,... where target is ignore, add or a layer of --tech,");

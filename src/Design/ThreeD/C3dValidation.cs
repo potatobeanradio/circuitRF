@@ -105,6 +105,7 @@ public static class C3dValidation
         foreach (var i in doc.Instances)
         {
             if (string.IsNullOrWhiteSpace(i.CellRef)) found.Add(C3dDiagnostics.InstanceNoCell(i.Name));
+            if (i.View == C3dInstanceView.Hertzon && string.IsNullOrWhiteSpace(i.Design)) found.Add(C3dDiagnostics.InstanceNoDesign(i.Name));
             if (i.Array is { } a && unresolved?.Contains(i.Name) != true && (a.Counts.Count != 3 || a.Counts.Any(n => n < 1)))
                 found.Add(C3dDiagnostics.ArrayCounts(i.Name));
             if (i.Transparency is { } t && !C3dTransparency.InRange(t)) found.Add(C3dDiagnostics.TransparencyRange($"The instance '{i.Name}'", t));

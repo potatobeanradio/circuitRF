@@ -19,8 +19,9 @@ The inverse of brief 2's tables:
 - Variables are written as design variables (overview D9), and expressions as expressions, in Hertzon's spelling
   (inline units).
 - A DBU literal is written in the design's units, with enough digits to read back to the same DBU.
-- Ports become rectangle sheets plus a Lumped or Wave Port on the sheet object, with an `IntegrationLine` from
-  `Positive` to `Negative` when they are stated.
+- Ports become rectangle sheets plus a Lumped or Wave Port on the sheet object, with an `IntegrationLine` between
+  `Negative` and `Positive` when they are stated. (Built from the negative conductor to the positive one, because every
+  line in Hertzon's examples runs ground to signal; `src/Design/RESOLVED.md` §HZN-4.)
 - Face boundaries are written by object where they cover the whole object. Otherwise they are written by `{obj, face,
   sig}`, with the index and `sig` taken from the kernel's build of the written object, so Hertzon finds the face (gate
   2 proves it).

@@ -1,0 +1,459 @@
+{
+ "name": "Mapping",
+ "designs": [
+  {
+   "name": "Save",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "h": "1.5mm",
+    "w": "3mm",
+    "L": "20mm",
+    "r": "0.5mm",
+    "fl": "f0/2"
+   },
+   "objects": [
+    {
+     "name": "Sub",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-w,0,0",
+        "XSize": "2*w",
+        "YSize": "L",
+        "ZSize": "-h"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Pin",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Pin",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,5mm,0",
+        "Axis": "Z",
+        "Radius": "r",
+        "Height": "-h",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Sub",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ball",
+     "history": [
+      {
+       "kind": "CreateSphere",
+       "props": {
+        "CenterPosition": "0,0,10mm",
+        "Radius": "2mm",
+        "NumberOfVertices": "0",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Wedge",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,0,0;4mm,0,0;0,3mm,0",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "SweepAlongVector",
+       "props": {
+        "Vector": "0,0,1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Pad",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-w/2,0,h",
+        "Axis": "Z",
+        "XSize": "w",
+        "YSize": "L"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Slab",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "2mm",
+        "ZSize": "3mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Rotate",
+       "props": {
+        "Axis": "Z",
+        "Angle": "90deg",
+        "Center": "0,0,0",
+        "CoordinateSystem": "Global"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Move",
+       "props": {
+        "Vector": "1mm,0,0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Blocked",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Move",
+       "props": {
+        "Vector": "9mm,9mm,9mm"
+       },
+       "suppressed": true
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Port1",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-w/2,0,0",
+        "Axis": "Y",
+        "XSize": "w",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Cube",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "20mm,0,0",
+        "XSize": "10mm",
+        "YSize": "10mm",
+        "ZSize": "10mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "lam",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "GND",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Pad"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "PerfE_Face",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [
+      {
+       "obj": "Cube",
+       "face": 0,
+       "sig": [
+        0.02,
+        0.005,
+        0.005,
+        -1,
+        0,
+        0,
+        0.0001,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "P1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm",
+      "IntegrationLine": "0,0,0;0,0,h"
+     },
+     "faces": [],
+     "objects": [
+      "Port1"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "f0",
+      "MaximumPasses": "6",
+      "BasisOrder": "Second Order",
+      "MaximumDeltaS": "0.02"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Interpolating",
+        "Distribution": "Linear Count",
+        "Start": "1GHz",
+        "Stop": "3GHz",
+        "Count": "21"
+       }
+      }
+     ]
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [
+    {
+     "name": "Return loss",
+     "kind": "Rectangular",
+     "solution": "Setup1 : Sweep",
+     "traces": [
+      "dB(S(1,1))"
+     ],
+     "props": {
+      "ymin": "-40",
+      "ymax": "0"
+     }
+    }
+   ],
+   "field_plots": [
+    {
+     "name": "Jsurf_Pad",
+     "quantity": "Mag_Jsurf",
+     "solution": "Setup1 : LastAdaptive",
+     "faces": [],
+     "objects": [
+      "Pad"
+     ],
+     "plane": "",
+     "props": {
+      "Log": "True"
+     }
+    },
+    {
+     "name": "Jsurf_Sub",
+     "quantity": "Mag_Jsurf",
+     "solution": "Setup1 : LastAdaptive",
+     "faces": [],
+     "objects": [
+      "Sub"
+     ],
+     "plane": "",
+     "props": {
+      "Log": "True"
+     }
+    }
+   ],
+   "notes": [],
+   "parametrics": [
+    {
+     "name": "Sweep r",
+     "sweeps": [
+      {
+       "variable": "r",
+       "type": "Linear step",
+       "start": "0.4mm",
+       "stop": "0.6mm",
+       "step": "0.1mm",
+       "sync": ""
+      }
+     ],
+     "setups": [
+      "Setup1"
+     ],
+     "calcs": [],
+     "props": {
+      "SaveFields": "False"
+     }
+    }
+   ]
+  }
+ ],
+ "variables": {
+  "eps_r": "3.55",
+  "f0": "2.4GHz"
+ },
+ "materials": [
+  {
+   "name": "lam",
+   "permittivity": "eps_r",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.002",
+   "magnetic_loss_tangent": "0",
+   "pec": false,
+   "dispersion": "None",
+   "anisotropic": false
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

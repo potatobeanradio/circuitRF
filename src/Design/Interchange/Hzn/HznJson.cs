@@ -624,8 +624,13 @@ internal sealed class HznJsonParser(string text)
 
     public HznJsonValue Value() => Value(0);
 
+    /// <summary>A real project nests about ten levels. The parser is recursive, and a file of opening brackets would otherwise end the process
+    /// with a stack overflow, which no catch can stop.</summary>
+    private const int MaxDepth = 128;
+
     private HznJsonValue Value(int depth)
     {
+        if (depth > MaxDepth) Fail($"it is nested more than {MaxDepth} levels deep");
         if (_i >= _s.Length) Fail("unexpected end of file");
         char c = _s[_i];
         switch (c)

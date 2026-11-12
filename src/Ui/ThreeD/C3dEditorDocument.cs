@@ -24,6 +24,16 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
     /// <summary>The TOP document's file — the tab's, whatever frame is pushed in (brief-em3d-48).</summary>
     public string FilePath => ViewModel.TopFilePath;
 
+    /// <summary>The key this document is registered under among the open ones: its full path, or for a design held in a
+    /// Hertzon project the project's path and the design's name.</summary>
+    public string Key => ViewModel.Source.Key;
+
+    /// <summary>HZN-3 — false for a design held in a project, which has no file of its own to write a copy to.</summary>
+    public bool CanSaveAs => ViewModel.Source.ReadOnlyReason is null;
+
+    /// <summary>HZN-3 — false for a design held in a project: it is not a file the workspace reopens by path.</summary>
+    public bool IsPersistedFile => !IsScratch && ViewModel.Source is C3dFileSource;
+
     /// <summary>Nothing written yet: saving it is a Save As (<see cref="C3dEditorViewModel.IsScratch"/>).</summary>
     public bool IsScratch => ViewModel.IsScratch;
 
@@ -62,8 +72,8 @@ public sealed class C3dEditorDocument : Document, IUndoableDocument, IActivatabl
     public C3dEditorDocument(C3dEditorViewModel viewModel)
     {
         ViewModel = viewModel;
-        _baseTitle = Path.GetFileName(viewModel.FilePath);
-        Id = KeyFor(viewModel.FilePath);
+        _baseTitle = viewModel.Source.Title;
+        Id = viewModel.Source.Key;
         Title = _baseTitle;
         ViewModel.PropertyChanged += (_, e) =>
         {

@@ -96,6 +96,19 @@ public enum NodeKind
     /// scratch, exactly like <see cref="TechFile"/>.</summary>
     EmSetupFile,
 
+    /// <summary>A Hertzon project (<c>.hzn</c>) found inside the workspace. It expands to its designs
+    /// (<c>HznDesignList</c>); a project outside the workspace is a Known File that behaves the same.</summary>
+    HznFile,
+
+    /// <summary>A 3D design of a Hertzon project: double-click opens it in the 3D editor. Its path is the project's.</summary>
+    HznDesign3D,
+
+    /// <summary>A circuit design of a Hertzon project: listed, never opened by circuitRF.</summary>
+    HznDesignCircuit,
+
+    /// <summary>The one row under a project that cannot be read or fails the version gate; it carries the sentence.</summary>
+    HznRefusal,
+
     /// <summary>Any other file not covered by the above kinds.</summary>
     OtherFile,
 

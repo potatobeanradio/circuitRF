@@ -345,8 +345,17 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     public static string NoMaterialWarning(string name) => $"'{name}' has no material, so the solver ignores it.";
 
     private readonly TechnologyCache _tech = technologies ?? new TechnologyCache();
+
+    /// <summary>HZN-7 (AttachedTechnology) — a technology that travels with the document instead of being a file it names: a
+    /// translated Hertzon design carries its project's materials in memory. Used for the TOP document when it states no
+    /// <see cref="C3dDocument.TechRef"/> of its own; a child still resolves through its file. Null for every other caller.</summary>
+    public Technology? AttachedTechnology { get; set; }
+
     private readonly Dictionary<string, C3dLowered?> _objects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, object> _children = new(StringComparer.Ordinal);
+
+    /// <summary>HZN-9 — the placed Hertzon designs' translations, kept while their files are unchanged.</summary>
+    public Interchange.Hzn.HznInstanceCache Hertzon { get; } = new();
 
     // brief-em3d-48 R-em3d48-3a — a layout instance's solids LOWERED under each element's transform, kept from one
     // elaboration to the next: an unchanged element hands back the very primitives it did last time, so the scene's
@@ -849,7 +858,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
         public C3dElaboration Go(C3dDocument doc, string path)
         {
-            var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
+            var tech = owner.AttachedTechnology is { } attached && string.IsNullOrEmpty(doc.TechRef)
+                ? new TechResolution(attached, null, TechResolutionSource.LayoutRef, [])
+                : TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech).Resolution;
             foreach (string d in tech.Diagnostics) _notes.Add(d);
             _topDbu = doc.DbuPerMicron;
             var cell = options.Cell ?? owner.TopCell ?? C3dCell.Of(path);
@@ -1010,7 +1021,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             string baseDir = Path.GetDirectoryName(path)!;
             foreach (var inst in doc.Instances)
                 if (prefix.Length > 0 || !_broken.Contains(inst.Name))
-                    Modelled(inst.Model, () => Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact));
+                    Modelled(inst.Model, () => Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact, tech));
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
         }
 
@@ -1542,9 +1553,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
         /// <summary>One instance: resolved, then elaborated once per array element.</summary>
         private void Instance(C3dDocument doc, C3dResolution resolution, C3dInstance inst, string baseDir, C3dTransform world, string prefix,
-                              List<(string Cell, string Instance, string Path)> stack, bool exact)
+                              List<(string Cell, string Instance, string Path)> stack, bool exact, TechResolution parentTech)
         {
             string instPath = prefix + inst.Name;
+            if (inst.View == C3dInstanceView.Hertzon) { HertzonInstance(doc, resolution, inst, baseDir, world, prefix, stack, exact, parentTech); return; }
             var viewType = inst.View == C3dInstanceView.Layout ? ViewType.Layout : ViewType.ThreeD;
             string noun = CellFolder.ViewNoun(viewType);
             string? cellDir = ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir, out _, out bool exists);
@@ -1677,6 +1689,90 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                        exact && integral && layout.DbuPerMicron == _topDbu);
             }
             (_opacity, _instanceAppearances) = (outerOpacity, outerAppearances);
+        }
+
+        /// <summary>
+        /// HZN-9 R-hzn9-1 — a design of a Hertzon project placed: its translation (cached against the file's time and hash),
+        /// the overrides evaluated in THIS scope, the placed materials matched against <paramref name="parentTech"/>, then
+        /// elaborated once per array element exactly as a 3D cell's view is. A refusal names the instance and lists what stopped it.
+        /// </summary>
+        private void HertzonInstance(C3dDocument doc, C3dResolution resolution, C3dInstance inst, string baseDir, C3dTransform world, string prefix,
+                                     List<(string Cell, string Instance, string Path)> stack, bool exact, TechResolution parentTech)
+        {
+            string instPath = prefix + inst.Name;
+            void Unresolved(string why, string label)
+            {
+                _unresolved.Add((instPath, inst.CellRef));
+                _unresolvedWhy[instPath] = label;
+                _refusals.Add(why);
+            }
+            if (string.IsNullOrWhiteSpace(inst.Design))
+            {
+                Unresolved($"Instance '{instPath}' places '{inst.CellRef}' as a Hertzon design but names no design.", "names no design");
+                return;
+            }
+            string? file = Interchange.Hzn.HznInstances.ResolveFile(inst.CellRef, baseDir);
+            if (file is null || !File.Exists(file))
+            {
+                Unresolved($"Instance '{instPath}' places design '{inst.Design}' of '{inst.CellRef}', which resolves to nothing" +
+                           (file is null ? " (the reference cannot be worked out from here)." : $" (tried {file})."), "file not found");
+                return;
+            }
+            var counts = inst.Array?.Counts ?? [1, 1, 1];
+            if (counts.Count != 3 || counts.Any(n => n < 1))
+            {
+                _refusals.Add($"Instance '{instPath}' is an array of [{string.Join(", ", counts)}]; an array states three counts, each at least 1.");
+                return;
+            }
+            var pitch = inst.Array?.Pitch ?? default;
+            bool isArray = inst.Array is not null && counts.Any(n => n > 1);
+            options.Cancellation.ThrowIfCancellationRequested();
+
+            var child = owner.Hertzon.Load(file, inst.Design, owner.Kernel);
+            Read(file);
+            _walkInstances.Add(new C3dWalkStep(instPath,
+                $"Hertzon project {file} (from '{inst.CellRef}'), design '{inst.Design}' (stamp {child.Stamp}); translated in memory, " +
+                $"materials matched against technology '{TechName(parentTech)}'" + (isArray ? $"; array {counts[0]}×{counts[1]}×{counts[2]}" : "")));
+            if (!child.Ok) { Unresolved(Interchange.Hzn.HznInstances.Refused(instPath, child), "cannot be placed"); return; }
+            if (Interchange.Hzn.HznInstances.MaterialConflicts(child.Tech.Tech!, parentTech.Tech, options.TempC) is { Count: > 0 } conflicts)
+            {
+                Unresolved(Interchange.Hzn.HznInstances.MaterialsRefused(instPath, child, TechName(parentTech), conflicts), "materials differ");
+                return;
+            }
+
+            foreach (string d in Interchange.Hzn.HznInstances.ConductorDifferences(child.Tech.Tech!, parentTech.Tech, options.TempC))
+                _notes.Add($"{instPath}: {d}");
+
+            var overrideErrors = new List<string>();
+            var proxy = Interchange.Hzn.HznInstances.MapOverrides(inst, instPath, child, resolution.SkipsSiteUnit, overrideErrors);
+            var overrides = proxy is null ? [] : resolution.OverridesFor(proxy, instPath, child.Cell, child.Document.Variables, overrideErrors);
+            if (overrideErrors.Count > 0) { _refusals.AddRange(overrideErrors); return; }
+            var (resolvedDoc, childRes) = owner.Hertzon.Resolved(child, overrides);
+            if (!childRes.Ok)
+            {
+                foreach (string e in childRes.Errors) _refusals.Add($"Instance '{instPath}' ({file}): {e}");
+                return;
+            }
+            foreach (string w in childRes.Warnings) _warnings.Add($"{instPath}: {w}");
+            foreach (string n in childRes.Notes) _notes.Add($"{instPath}: {n}");
+            foreach (string n in child.Notes) _notes.Add($"{instPath}: {n}");
+
+            var next = new List<(string, string, string)>(stack) { (Path.GetFileNameWithoutExtension(file), inst.Name, file) };
+            double outer = _opacity;
+            if (inst.Transparency is { } it) _opacity *= C3dTransparency.Opacity(Math.Clamp(it, 0, C3dTransparency.Max));
+            var outerLooks = _instanceAppearances;
+            try
+            {
+                foreach (var (ijk, w, integral) in Elements(doc, inst, counts, pitch, world))
+                {
+                    string elementPath = prefix + inst.Name + (isArray ? ijk : "");
+                    if (inst.Appearance is { } look) _instanceAppearances = [new Appearance.AppearanceInstanceStatement(prefix + inst.Name, look), .. outerLooks];
+                    _instances.Add(new C3dInstanceFrame(elementPath, w, file, inst.Design, Layout: false));
+                    Document(resolvedDoc, childRes, file, child.Tech, w, elementPath + "/", next,
+                             exact && integral && resolvedDoc.DbuPerMicron == _topDbu);
+                }
+            }
+            finally { (_opacity, _instanceAppearances) = (outer, outerLooks); }
         }
 
         /// <summary>Each array element's transform: the placement's rotation and mirror, and its origin moved

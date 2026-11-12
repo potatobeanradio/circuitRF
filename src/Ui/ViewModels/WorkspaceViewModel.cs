@@ -475,6 +475,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public WorkspaceViewModel()
     {
         KernelRefusalDialog = ShowKernelRefusalAsync;
+        HznRefusalDialog = ShowHznRefusalAsync;
         _factory = new CircuitRfDockFactory();
         // Before anything can be floated: every CrfHostWindow the factory creates is stamped with
         // this view model, which is how a float is attributed to its own workspace window under
@@ -2293,7 +2294,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     LayoutDocument alad                     => alad.FilePath,
                     TechDocument atech                      => atech.FilePath,
                     EmSetupDocument aem                  => aem.FilePath,
-                    ThreeD.C3dEditorDocument { IsScratch: false } ac3d => ac3d.FilePath,
+                    ThreeD.C3dEditorDocument { IsPersistedFile: true } ac3d => ac3d.FilePath,
                     PartLibraryDocument alib                => alib.FilePath,
                     MaterialsDocument amat                  => amat.FilePath,
                     _                                       => null,
@@ -2888,7 +2889,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         LayoutDocument       { FilePath: { } p }                      => (p, "layout"),
         TechDocument         techDoc                                  => (techDoc.FilePath, "tech"),
         EmSetupDocument      emDoc                                    => (emDoc.FilePath, "emsetup"),
-        ThreeD.C3dEditorDocument { IsScratch: false } c3dDoc          => (c3dDoc.FilePath, "c3d"),
+        ThreeD.C3dEditorDocument { IsPersistedFile: true } c3dDoc    => (c3dDoc.FilePath, "c3d"),
         PartLibraryDocument  libDoc                                   => (libDoc.FilePath, "partlibrary"),
         MaterialsDocument    matDoc                                   => (matDoc.FilePath, "materials"),
         MarkdownDocument     mdDoc                                    => (mdDoc.FilePath, "markdown"),
@@ -3138,6 +3139,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 new FilePickerFileType("NumPy Array")     { Patterns = ["*.npy"] },
                 new FilePickerFileType("Binary dataset (*.ds)") { Patterns = ["*.ds"] },
                 new FilePickerFileType("Touchstone")      { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                new FilePickerFileType("Hertzon project") { Patterns = ["*.hzn"] },
                 new FilePickerFileType("All Files")       { Patterns = ["*.*"] },
             ],
         });
@@ -3376,7 +3378,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 SmithChartDocument smd           => smd.FilePath,
                 TechDocument td                  => td.FilePath,
                 EmSetupDocument emd           => emd.FilePath,
-                ThreeD.C3dEditorDocument c3dd    => ThreeD.C3dEditorDocument.KeyFor(c3dd.FilePath),
+                ThreeD.C3dEditorDocument c3dd    => c3dd.Key,
                 PartLibraryDocument plibd        => plibd.FilePath,
                 MaterialsDocument matd           => matd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
@@ -9315,12 +9317,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <param name="meshOnly">brief-dfr36-1 — the run's path as far as its mesh: <see cref="RunControl.MeshOnly"/>, and the outcome is the
     /// mesh's size and what a solve of it would need.</param>
     private async Task<bool> RunEmSetupAsync(EmSetupEditorViewModel vm, EmSetup? runSetup,
-                                             Func<EmSetup, RunControl, string, EmRunResult>? run, bool meshOnly = false)
+                                             Func<EmSetup, RunControl, string, EmRunResult>? run, bool meshOnly = false,
+                                             string? resultsRootOverride = null)
     {
         var baseDir = CurrentWorkspacePath is { } cws
             ? Path.GetDirectoryName(cws)!
             : _recovery.SessionDir;
-        var resultsRoot = Path.Combine(baseDir, "results");
+        // HZN-7 — a design held in a project writes beside the .hzn; every other run writes into the workspace's results.
+        var resultsRoot = resultsRootOverride ?? Path.Combine(baseDir, "results");
 
         // Which workspace this run BELONGS to, as opposed to whichever one the window is showing when
         // it finishes. The two can differ: a workspace switch mid-run is warned about, not refused
@@ -12278,6 +12282,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // that circuitRF can SHOW it, not that it is part of the design.
             case NodeKind.OtherFile when MarkdownDocument.IsMarkdown(node.AbsolutePath):
                 OpenOrActivateMarkdown(node.AbsolutePath);
+                return;
+
+            // HZN-3 — a Hertzon project opens up to its designs; a 3D design opens in the 3D editor; a circuit says it does not.
+            case NodeKind.HznFile:
+                node.IsExpanded = !node.IsExpanded;
+                return;
+            case NodeKind.HznDesign3D:
+            case NodeKind.HznDesignCircuit:
+                OpenHznDesign(node);
                 return;
 
             default:
@@ -17858,7 +17871,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>The name a close prompt shows for this dockable.</summary>
     private static string CloseLabelOf(IDockable dockable) => dockable switch
     {
-        ThreeD.C3dEditorDocument d => Path.GetFileName(d.FilePath),
+        ThreeD.C3dEditorDocument d => d.ViewModel.Source.Title,
         WBond.WBondDocument d      => d.Title?.TrimEnd(' ', '•') ?? d.Id,
         SmithChartDocument d       => d.Title?.TrimStart('•', ' ') ?? d.Id,
         _                          => dockable.Id,

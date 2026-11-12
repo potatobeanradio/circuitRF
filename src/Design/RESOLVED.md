@@ -68,6 +68,454 @@ replaces any earlier backup, and a refused backup refuses the save.
 Every history step's prop value in the examples is a string. A key that is absent, or that holds another JSON kind, reads as null
 and is never defaulted.
 
+### HZN-2 — a 3D design as a `C3dDocument`: what each spelling means, and the experiment (2026-11-11)
+
+Everything below was established from the example files and from `hertzon-cli describe` 0.3.19 run on small projects written
+for the purpose (a design whose variables are the expressions under test; `describe` reports each variable's value in base SI).
+The code is `Interchange/Hzn/HznToC3d.cs` and its partials; `Hzn/HznExpressions.cs` is the expression translation.
+
+**Expressions (token by token, never substitution).**
+- **`1m` is a metre in Hertzon, a milli in circuitRF.** It is translated `1metre`. The unit literals `describe` accepted: `m mm um cm nm mil in km ft deg rad Hz kHz MHz GHz THz ohm s ns ps H uF`. It refused `inch`, `µm`, `°`, `%`, `kohm`, `Mohm`, `mV`, `A`, `S`, `dB`.
+  circuitRF translates the ones in its own table (`km` and `ft` are not in it, so they are refused by name).
+- **A bare number inside an expression is a plain number**: `2+3mm` is `2.003`. Whether a bare number beside a quantity means the design's units in a
+  *field* is not established, so a non-zero bare operand beside a quantity is a refusal item (`bare number with a unit`); a bare whole field takes the design's units.
+  A quotient of two quantities is a plain number (`1 - dmin/w` is exact), matching the engine's own power count.
+- **`log` is base 10 in Hertzon** (`log(100)` = 2); circuitRF's is natural, so it is translated `log10`. `ln` is natural in both. `round` is round-half-even
+  (`round(2.5)` = 2) where circuitRF's is half-away, so it is refused. `mod`, `hypot`, `clamp`, `step`, `cbrt`, `sq`, `log2` are not Hertzon functions at all.
+- **Operators**: `and`/`or` and `**` work (translated `&&`, `||`, `^`); `&&`, `||` and `!` do not evaluate in Hertzon; `%` and `//` exist there and have no
+  circuitRF equivalent (refused). `-2^2` is `-4` and `2^-1` is `0.5`, as in circuitRF.
+- **Constants**: `pi`, `PI`, `c0` (299792458, with a unit), `e0` (8.8541878128e-12), `u0` (1.2566370614359173e-06). `Pi`, `e`, `mu0`, `eps0`, `kb` are not constants. They are
+  translated to their digits, and a variable of the same name shadows a constant.
+- **`if(c, a, b)` could not be checked**: `describe` never returned a value for any `if` (it is named in Hertzon's tutorial). It is passed through unverified.
+- **Project variables are referenced by their bare name** in a design expression (`$name` does not evaluate; it is only the command-line spelling). A design
+  variable of the same name shadows the project's. A `.c3d` holds a project variable as `hznp_<name>`, reversibly; a design variable starting `hznp_` is refused.
+- **A literal opens as a number, an expression as an expression.** A `.c3d` outline (`Outline`, `Holes`) holds numbers only, so a polyline that names a variable
+  is refused (`polyline outline built from named dimensions`) rather than frozen at the variable's value. A port's plane offset also holds a number: it is
+  frozen and the translation says so in a note (its rectangle keeps its expressions). Material numbers and port impedances are evaluated, with a note.
+
+**Shapes.**
+- `CreateRectangle`: `Axis` is the rectangle's normal; the sizes of the other two axes are its extents and the third size is ignored (the examples carry arbitrary
+  values there). `CreateCylinder`'s `CenterPosition` is the centre of the base and `Height` is signed. A negative size or height moves the corner/base by it.
+- A rectangle swept along its normal is exactly a box, and a circle swept along its axis exactly a cylinder; both are translated although the brief's table lists only the prism.
+- **Fillet and Chamfer are refused.** Their `Edges` and `Vertices` are bare index lists and the step records no signature, so there is nothing to find them by without
+  trusting the index. (`edges` of boundaries and excitations were empty in every example.)
+- Refused, with the reason in the item: `Import` (needs the worker and a scratch folder), `CreateBondwire` (no correspondence between its profile families and a
+  `.c3d` wire's points), circles on their own, cone, torus, helix, spiral, ellipse, regular polygon/polyhedron, `Split`, sweeps around an axis or along a path, thicken, cover.
+- A boolean whose blank or tool is a sheet is refused: a `.c3d` boolean has solids as operands. Subtract-with-`KeepOriginals` keeps its tools (inlined once, `KeepTools`);
+  Unite and Intersect with `KeepOriginals` are refused.
+- Placement: `Move` adds to the origin, `Rotate` appends a rotation (about a centre it also sets the origin to `c - R c`, written as an expression in `cos`/`sin`), `Mirror`
+  across an axis plane is `MirrorX` plus a half turn. A rotation after a move is refused (it needs the move rotated), as is a mirror after any placement.
+
+**`sig`.** A face reference is `{obj, face, sig}`. `sig` is **centroid x y z (metres), outward unit normal x y z, area (m²)** (checked against the AirBox of `Dipole` and
+`Box1` of `PlaneWave`: the 0.144 m box's -x face is `[0, 0, 0, -1, 0, 0, 0.1233, 1]`). Fifteen faces carry 7 numbers and twenty carry 8; the eighth was 1.0 in all twenty
+(not used). Box faces are indexed -x, +x, -y, +y, -z, +z in both examples, which is circuitRF's `xmin xmax ymin ymax zmin zmax`, **and the index is still never used**: a face
+is the one whose centroid (within 0.1 µm), normal (1e-6) and area (1e-6 relative) agree. A plain box is stated analytically; any other shape goes through the geometry worker,
+and without it the refusal names the worker. A box face found by `sig` for a `Subtract`ed plate (`zmax`, with a hole) was checked against the worker.
+
+**Materials.** `pec`, `vacuum`, `air` and `copper` are the built-ins stated here. `copper` is **5.8e7 S/m**, the conductivity a Finite Conductivity boundary in
+Hertzon's own examples states for it. `pec` is a conductor with no conductivity (circuitRF reads a conductor with σ 0 as perfect) with the object's role set
+explicitly. A project material with `conductivity` at or above **1e6 S/m** is a conductor and below it a lossy dielectric (a decision made here: Hertzon states
+no role, circuitRF needs one when both σ and εr are present). Refused: Debye and Djordjevic-Sarkar dispersion, anisotropic tensors, a magnetic loss tangent,
+and every other name not defined in the project (laminates and ceramics from Hertzon's own library need their values from Hertzon; brief-hzn-0 Q3).
+
+**Ports, boundaries, the air box.**
+- A Lumped or Wave Port on a drawn rectangle sheet is a `C3dPort` with the sheet's plane and rectangle (expressions kept), and the sheet leaves `Objects`. The
+  `IntegrationLine` is **not** mapped: which conductor it makes positive is not established, so `Positive`/`Negative` are left to the port's own inference and the polarity
+  of S21 on an asymmetric structure is an open item. A Wave Port is translated only with one mode, `Renormalize` on, and no de-embedding; without renormalisation
+  Hertzon normalises to the mode's own impedance and circuitRF's port has a stated reference.
+- Perfect E / Finite Conductivity on a sheet make the sheet's material; on a solid they are a `C3dFaceBoundary` per face. Radiation and PML are an Absorbing air-box face
+  (first order only; PML's parameters are listed as unused); Symmetry of type Perfect H is Pmc and Perfect E is Pec (read from the `Type` name, not measured).
+  The air box is the `CreateRegion` object (Absolute Offset padding); without one it is flush with the model. An outer face with no boundary is Pec, as Hertzon's tutorial
+  says of a closed problem. A Region with Percentage Offset is refused: whether that percentage is of the content's extent along the axis, as an air box's is, is not established.
+- Refused kinds: Impedance, Primary, Secondary, Floquet Port, Incident Plane Wave, an Auto Open region, a solution type other than Modal, eigenmode setups.
+- A setup becomes one `.c3d` Emerge setup per enabled sweep (`MaximumPasses` -> `AdaptiveMesh`, `BasisOrder` -> `ElementOrder`, an Interpolating or Fast sweep -> `AdaptiveSweep`). Every
+  setting that has no equivalent is listed in `HznProvenance.Unused` for brief 7 to report.
+
+**Coverage, measured** against Hertzon 0.3.19's `examples/` and its mesher test projects (46 version-2 files, 58 3D designs; the 6 version-1 files are refused by the
+version gate): see `HznCoverageTests`. **None of the 58 translates, and that is the finding.** The measurement counts designs, not items; a design lists every item that stops it.
+- **9 designs are one item from opening**: 6 WR90 waveguide-post designs and `WaveguidePost` (Wave Port without renormalisation: Hertzon normalises to the mode's own impedance),
+  `Dipole` full model (an Auto Open region), the half dipole (`Split`), and one showcase design (a bare number beside a quantity).
+- **By item, designs stopped** (a design may have several): Auto Open region 27 (+6 for the Filter spelling), Unite on a sheet 15, Wave Port without renormalisation 13,
+  library laminate FR-4 12, Incident Plane Wave 11, Subtract on a sheet 10, polyline outline built from variables 9 (this one is a `.c3d` limit: `Outline` holds numbers),
+  faceted/other cylinders 8, a second library laminate 7, Finite Conductivity on both sides 6, solution type Terminal 6, a library ceramic 5, spheres with segments 4,
+  Split 3, circles 3, polylines off an axis plane 3, a bare number beside a quantity 3. Every other item is one or two designs (cone, torus, helix, spiral, ellipse, regular
+  polygon, bondwire, import, fillet, chamfer, sweeps around an axis or along a path, imprint, connect, scale, section, Floquet and periodic boundaries, Debye/anisotropic materials).
+- **What decides the next additions**, in order of designs unlocked: (1) a sheet as a boolean operand (a PCB ground plane with cut-outs is the commonest PCB shape); (2) Hertzon's
+  library materials, which needs Hertzon to state them (Q3); (3) what an Auto Open region adds; (4) expressions in a sheet's or prism's outline; (5) Wave Port renormalisation.
+
+### HZN-6 — a design converted into a cell's native 3D view (2026-11-11)
+
+`Interchange/Hzn/HznConvert.cs` is the one function behind Convert to .c3d… (`HznConvertDialog` and `WorkspaceViewModel.ConvertHznDesignAsync`) and
+`convert <file.hzn> --design D -o <cell folder>` (`src/Cli/HznConvertVerb.cs`). It adds placement, the material rule and STEP copying to
+`HznToC3d.Translate`; it decides nothing about what a property means.
+
+- **The target is a cell folder** (`-o`), created through `CellCreate.Create(.., CellViews.None)` when absent and then given `3d/<cell>.c3d` by
+  `CellCreate.WriteThreeDView`. An existing folder must hold a `.ccell`. An existing `3d/<cell>.c3d` is a refusal unless replacing is chosen. A
+  `-o` ending in `.c3d`/`.hzn`/`.clay`/... is refused naming the folder spelling; any other leaf, dots included, is a cell name.
+- **Every refusal is decided before anything is written** (the design, the translation, the name, the target, the materials, the STEP files), so a
+  refused conversion leaves no cell. A failure while writing reports the folder it may have left.
+- **Materials** are looked up with `Technology.FindMaterial` on the technology the NEW view would resolve (the ancestor-workspace walk from
+  `3d/<cell>.c3d`; `.cmat` libraries count). A name the technology lacks is reported (a warning, exit 0) and added only by `--add-materials` / the dialog's
+  checkbox, by cloning the technology file and saving it whole, as `import part --add-layers` does. A cell outside any workspace, or one whose workspace has no
+  technology, cannot be added to: that is a refusal when adding was asked, and a plain report otherwise.
+- **A name that matches with other properties is a refusal listing both sets.** Only relative permittivity, loss tangent, relative permeability and
+  conductivity are compared (an unstated permeability is 1, an unstated loss tangent or conductivity 0, an unstated permittivity matches only another
+  unstated one, to 1e-9 relative): a technology material also carries thermal and display properties a Hertzon material cannot state, and those are the
+  workspace's to keep. A technology that defines `copper` with another conductivity than Hertzon's built-in `copper` (5.8e7 S/m) is therefore a
+  refusal, not a silent substitution.
+- **The materials a design uses are exactly the translation's technology** (HZN-2 keeps only what the finished document reaches), so a conversion adds
+  `pec`, a project material, and nothing else. The translated variable `hznp_<name>` of a project variable no dimension uses is reported by `check` as a note.
+- **STEP files:** each `C3dStep` in the document names a file looked up beside the `.hzn` (or by absolute path) and copied to `3d/<file name>`, which is
+  where `C3dStep.File` is read from; a file already there with other bytes is a refusal. **HZN-2 refuses an `Import` step, so no translated document
+  holds one yet and this copy is inert on real input**; `HznConvert.CopyStepFiles` is held by a hand-built document.
+- **The dialog's flow has no menu item here.** The tree's design menu (HZN-3) and an open design's Save As… (HZN-5) call
+  `WorkspaceViewModel.ConvertHznDesignAsync(hznPath, design)`; it asks the dialog and posts the result to Messages.
+- The converted view's `TechRef` stays null, so it resolves the workspace's default like any new view. A cell that already holds other 3D views gets a note that
+  more than one now exists.
+
+### HZN-3 — the Project Tree node and the editor's document source (2026-11-11)
+
+**What was built.** A `.hzn` is `NodeKind.HznFile` (`WorkspaceScanner.ClassifyFile`), so a project inside the workspace is found by the ordinary scan and
+a Known File that is one classifies the same way. Its row expands to the project's designs: `HznDesignList` (`src/Design/Interchange/Hzn`) reads the file once
+and answers again from memory until the modification time or length changes. A project row starts with one `NotReadYet` placeholder and is read on its first
+expansion (a rescan that finds it already open reads it at once, from the cache). A design is `HznDesign3D` or `HznDesignCircuit`; a file that fails the
+version gate shows one `HznRefusal` row carrying the sentence (the file named, not its folder). The tooltip of a project is its own name.
+
+**The document source** (`src/Ui/ThreeD/C3dDocumentSource.cs`): `IC3dDocumentSource` is the one seam in the 3D editor's load/save path (key, anchor path, tab
+title, read-only reason, `Load`, `Save`, `Stamp`). `C3dFileSource` is a `.c3d`; `HznDesignSource` is a design held in a project. `C3dEditorViewModel.Save`,
+`SaveAs`, `Reload` and the own-file stamp go through it; `C3dEditorDocument` takes its tab title and its key from it. The read-only state is the existing one
+(`WorkspaceViewModel.ReadOnlyDocumentReason`): Save is disabled with the reason as its tooltip, and Save As is not offered for a held design, because the
+only `.c3d` it could write is `Convert to .c3d…`'s to make.
+
+**Materials are the document's own (D6), through a held technology.** The translation's technology has no file, and the elaborator reaches a technology only
+through `TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspace, cache)`. So `HznDesignSource.Load` holds it in the cache under a path that names no
+file (`TechnologyCache.Hold`, beside the file the project lives in, `hzn-materials-<hash>.ctech`) and sets the document's `TechRef` to its name. **That is the one
+difference between the opened document and `HznToC3d.Translate`'s** (`HznDocumentSourceTests` states it). It is a SEPARATE table from the live overrides on
+purpose: `Invalidate`/`InvalidateAll` drop an override, and a held technology has no file to fall back to, so dropping it would put the design on the
+workspace's materials with nothing said. It is released when the tab closes. Materials Picker and Edit Material refuse a held technology (they would otherwise
+open it as a `.ctech` and could write a file beside the project).
+**Anything that resolves the document's technology through a NEW `TechnologyCache` will not see it** (`EmEvaluation*`, `EmApply`, the run path): brief 7
+must pass the editor's cache, or hold the technology in the one it uses.
+
+**What a held design does not keep.** Its camera, drawing plane and active setup are not written to the `.cwsuser` (those are keyed by file path, and two designs
+of one project share the path), and it is not in the `.cws`'s reopen list (a `.hzn` path is not a `.c3d` the workspace can reopen).
+
+**Refusal.** Nothing opens. It shows as a document the geometry kernel cannot open does: a Messages line and a dialog titled with the tab's name over the
+whole grouped list, every item (`HznOpenException` carries `HznToC3d`'s refusal). A circuit design says `Circuit designs in .hzn files are not opened by circuitRF.`
+
+**Menu.** `IHznTreeActions` (implemented by `WorkspaceViewModel` in `WorkspaceViewModel.Hzn.cs`) is where the later briefs attach: `Open in Hertzon` (8),
+`Convert to .c3d…` (6), `Run in Hertzon` (8), `Simulate` (7). Each reports why it is unavailable (`…Unavailable`, null to enable) and its item is disabled with that
+sentence as its tooltip. A Known File's remove item reads `Remove from Known Files`. `Open` on a project row is not offered (double-click expands it).
+
+**Measured.** The opened fixture design (`box-and-lumped-port.hzn`, a project-defined material) elaborates with `laminate_35` from the project, with no workspace
+and a workspace technology that does not hold it.
+
+### HZN-9 — a `.hzn` design placed as an instance in a `.c3d` (2026-11-11)
+
+The code is `Interchange/Hzn/HznInstances.cs` (cache, override rules, material rule, discovery) and `HertzonInstance` in `C3dElaborator`.
+
+- **The reference.** `View: "Hertzon"`, `CellRef` the file (relative to the `.c3d`, or `ws://alias/…`: both resolve through `ExternalCellRef.ResolveCellDir`, which hands back the path
+  even when it is a file), `Design` the design. A missing file, a missing design and a design that cannot be represented are each a refusal naming the instance, and the instance is
+  recorded as unresolved so the tree row says so. Nothing is placed from a refused design: the refusal is brief 2's whole list.
+- **The cache** keeps one translation per (file, design) against the file's modification time and length, and, when those move, its SHA-256: a touched file with the same content is not
+  translated again, an edited one is. The resolved child (overrides applied) is shared by every instance whose override VALUES are equal, as a cell child is.
+- **Overrides** are written with the names the `.hzn` gives its variables. The design's own variables are all overridable; a project variable is overridable when the design reaches it
+  (the translation holds it as `hznp_<name>`; the override is still written `<name>`). Anything else is refused listing the names that exist. The placed document's variables are
+  presented to the resolver as the parameters of a synthetic cell, so an override takes the same path as a cell parameter's.
+  **A quantity takes a unit.** A variable that carries one (`3mm`) is bound as a quantity, so an override must state its unit (`4mm`, or a name that carries one) and a plain-number variable
+  takes none: a bare `4` for `w = 3mm` would be four metres, silently, which the resolver cannot tell from a plain number. Both directions are refusals.
+- **Materials.** The placed design's in-memory technology (only the materials the design uses) is compared, by name, with the technology of the document that places it, at the run's
+  temperature: εr, tanδ, μr, σ and the tensor equal to 1e-12 relative. Identical (Air and Vacuum count as stated by every technology) is shared; missing, or stated differently, is a refusal that
+  lists each one with both sets of values. **Placing never writes a technology.** **A conductor is exempt** (`pec`, `copper`, or any material at 1e6 S/m or more, the translation's own
+  rule): the placed design is elaborated against its own materials, so a conductor the parent lacks or states differently changes nothing about the placement, and it is reported as a
+  note ("keeps its own") instead of refusing. Dielectrics are still matched strictly. The elaborator's own cross-technology merge (`name@technology`) is deliberately not used for this,
+  because it would place a design silently against values the parent never stated.
+- **Ports, setups and face boundaries** of a placed design are ignored and said to be, as for a placed cell (geometry only; only the parent says where a signal enters).
+- **Walkers that follow a `CellRef`**, as audited:
+  - the elaborator, `check` (through the elaboration; `C3dValidation` also refuses a Hertzon instance with no design), the 3D editor's tree row and Properties ("Design" row);
+  - `explain --ref` resolves a `.hzn` reference (either spelling) and says whether it leaves the workspace; `find` follows no reference, and lists `.hzn` files since HZN-2;
+  - Flatten, Flatten All Levels and Swap View refuse a Hertzon instance by name (`C3dHierarchy.HertzonRefusal`); Push Into Cell is "Open Design", raising `OpenHertzonDesignRequested`
+    for the shell (brief 3 subscribes; unsubscribed, the status line says so); cycle checks follow `View == ThreeD` instances only, so a `.hzn` is never part of a cycle;
+  - moving or renaming the `.c3d` rewrites the reference like any other (`MoveRefRegistry` `c3d/CellRef` resolves and stores a path, a file as well as a folder), and so do Group into Cell
+    and the cross-workspace Add Cell copy (`CrossWorkspaceCellCopy`): the copy keeps pointing at the original `.hzn`, which is not carried into the other workspace, because
+    only cell folders are copied. A cell moved out of reach of the file therefore keeps a reference that leaves the workspace, as any library reference can;
+  - revision-control pins are by workspace alias, so a `ws://alias/…` Hertzon reference follows the pin the way a cell's does; `pins` enumerates aliases, not instances.
+- **Placing it.** A `HznDesignDragPayload` dropped on an open `.c3d` (brief 3's tree node must produce it with `Serialize()`), and Place Cell Instance… in a 3D view, whose picker lists every
+  3D design of every `.hzn` under the workspace folder (bounded: depth 6, 100 files) after the cells. Known Files that are projects are listed too (HZN integration).
+- **Not decided here.** The picker's note about technology ("a 3D view places any cell, whatever its technology") is not true of a Hertzon row, whose materials ARE matched; it is left as
+  it was. A bare-number override of an angle variable is refused like any quantity written without its unit.
+
+### HZN-7 — a `.hzn` design run on circuitRF's EMerge driver (2026-11-12)
+
+**What runs, and through what.** `HznEmergeRun` (`Interchange/Hzn/HznEmergeRun.cs`) plans and runs; `em design.hzn --design D [--setup S]` is `src/Cli/HznEm.cs`
+on top of it and owns nothing. The run is `EmRunService.RunThreeDView` — the door a native `.c3d` goes through — handed the translated document, the chosen setup
+(named "`<design> <setup>`" as an embedded setup is) and a virtual document path `<project>.circuitrf/<design>.c3d` that names the run and is never created.
+- **The technology travels with the document.** `C3dElaborator.AttachedTechnology` is used for the top document when it states no `TechRef`; one hunk in
+  `Go`. A translated design's materials are the project's, so without it every material is unresolved (the test shows the bare elaborator refusing).
+- **Results land in `<project>.circuitrf/results/`** beside the `.hzn` (the leaf is `results`, as every results root's is, so the readers that derive a
+  folder from it work). Hertzon's `<project>.hznresults` is never written. The record names the `.hzn` as its setup source, so editing the project marks the
+  result stale.
+- **Which setup.** A Hertzon setup with several enabled sweeps is several `.c3d` setups ("Setup - Sweep"); `--setup` takes that name, or a Hertzon setup name that
+  has one sweep. Several designs or setups with none named is a refusal listing them. `explain` lists the setups a design became, with their Hertzon origin, and
+  the one `em` would run with where it writes.
+- **Not offered:** another solver (`--solver` other than `emerge` is a refusal saying the setups are written for EMerge), `--dry-run`, `--bands`,
+  `--component-ports`, `--reference` (each a refusal naming the option).
+- **The unused-settings note** is one run note: "Hertzon settings not used by circuitRF's run (N): owner: key = value; ..." — the ports' and boundaries' own, and the
+  chosen setup's and sweep's (the translation now also lists a sweep's keys it does not read, owner `sweep Setup/Sweep`). Also in `--json` through the run's notes.
+- **Findings about the translation that only a run shows.**
+  - A **closed rectangular waveguide's wave ports** (the commonest Hertzon waveguide design: the guide is the air box's perfect-conductor faces) translate, and
+    `check` passes them, but circuitRF's port reader refuses the run: a wave port is a mode between two conductors, and four air-box faces meet the region. The
+    run path has no hollow-waveguide port. This is a limit of the `.c3d` run path, not of the translation. A `check` that said so would need the port reader's
+    own sentence; not done here.
+  - A wave port on a shielded line (two conductors, closed box) runs. A design whose port sheet is a circle is refused by the translation (circles on their own).
+  - A lumped port on a face of a perfect-conductor air box is refused by the port reader (its edge touches the ground and the wall); an absorbing box works.
+  - The elaborator notes "VAR 'pad' is used by no dimension" for a project variable used only by the region; true of the document, misleading for the project.
+
+**Agreement with Hertzon (overview D7), measured 2026-11-12** with Hertzon 0.3.19 (`hertzon-cli solve`, black box) and EMerge 3.0.0 on this machine. Not a routine test:
+it needs both installed. Fixtures `tests/Ui.Tests/Hzn/Fixtures/microstrip-line.hzn` (8 mm line, 50 ohm, two lumped ports, absorbing air box) and
+`microstrip-wave-ports.hzn` (the same line shielded, two wave ports with 50 ohm renormalisation). The brief's waveguide section could not be the second fixture
+(see above). Frequencies 4, 5 and 6 GHz. Measure: |S_circuitRF - S_Hertzon| per entry, complex, at the finest mesh each tool reached in minutes.
+- **Meshes.** circuitRF Standard preset with the resolution refined, second order: lumped 3,372 / 7,243 / 17,067 / 37,714 / 79,634 tetrahedra
+  (max |S| change from one step to the next 0.027, 0.034, 0.018, 0.0086); wave 4,889 / 12,068 / 27,395 (0.023, 0.013). Hertzon second order, adaptive: lumped 6,171
+  (stopping early at its own tolerance) and 52,209 tetrahedra (the two differ by 0.026, all of it in S11; |S21| by 0.001); wave 31,502 (delta S 0.0007). Neither tool's
+  default (one adaptive stop) is converged for S11: the lumped line's |S11| moves by 0.03-0.07 across the first-order and second-order defaults.
+- **Lumped line, finest vs finest (circuitRF 79,634, Hertzon 52,209):** |dS11| 0.024 / 0.026 / 0.030, |dS21| = |dS12| 0.020 / 0.024 / 0.027, |dS22| 0.025 / 0.027 / 0.030
+  at 4 / 5 / 6 GHz; max 0.030. Against circuitRF's 37,714: 0.039.
+- **Wave-port line, finest vs finest (27,395 vs 31,502):** |dS11| 0.021 / 0.013 / 0.005, |dS21| = |dS12| 0.017 / 0.018 / 0.018, |dS22| 0.021 / 0.013 / 0.005; max 0.021.
+- **Investigated, not explained by the mesh:** (1) on the lumped line Hertzon's S21 lags by 1.5 / 2.0 / 2.5 degrees at 4 / 5 / 6 GHz — a pure delay, unchanged
+  by the substrate's permittivity (1.0001, 3.55, 8), its height, the loss tangent, the air-box distance, or either tool's mesh; it grows with line length (8 -> 16 mm
+  doubles it). About 0.3 mm of extra line in air. (2) On the shielded wave-port line Hertzon's |S11|^2 + |S21|^2 is 0.965 against circuitRF's 1.0000 (loss tangent 0) —
+  a closed lossless line; it does not change with Hertzon's mesh (6k to 31k), the loss tangent, an explicit perfect-conductor boundary on the region, or renormalisation
+  (its own mode impedance is 47.5 ohm). Phases agree to 0.5 degrees. Neither is a mesh effect; both stay open. They are what the per-entry numbers above are made of.
+- **Tolerance to state until the owner decides otherwise:** |dS| <= 0.035 per entry at converged meshes for these two lines (the larger of the two measured maxima, 0.030,
+  plus the 0.0086 circuitRF still moved on its last refinement). It is a measurement of two tools that differ by the effects named, not a claim that either is wrong.
+
+### HZN-4 — a `.c3d` as a Hertzon design: the inverse tables, and what the examples settled (2026-11-11)
+
+The code is `Interchange/Hzn/C3dToHzn*.cs` (the design), `HznExpressionWriter.cs` (expressions), `HznExport.cs` (flatten, the two targets, the
+diagnostics); `src/Cli/HznConvert.cs` and the Export dialog are argument handling and reporting around `HznExport`.
+
+**Equal means the same model, not the same text.** Writing a design and reading it back (HZN-2) gives a document whose resolved numbers, bound
+components, variable values, setups (their frequencies, element order, mesh passes and air box) and material VALUES are those of the original; the
+spelling of an expression is not (`w + 5` typed in mil is `w+5mil` in Hertzon and a mm-site expression back), nor a material's name where Hertzon
+makes the sheet metal by a boundary (`hzn_fc_<sigma>`). The differences the reader introduces by design: a sheet's role is stated, `AirBoxMaterial`
+is `air` for a region, the first setup is active, and the integration line is not read (HZN-2), so a port's `Positive`/`Negative` come back inferred.
+
+**Expressions.** `C3dResolution.AtSite` (the one shared-file addition) applies a field's or VAR's site unit to the TREE, by the evaluator's own rule
+(`Evaluator.ScaleBareOperands`): a unit-bearing expression keeps its form and its bare additive operands take the unit, any other is multiplied by one
+of the unit. The tree is printed with every unit spelled: `**` for a power, `and`/`or`, `ln` for the natural logarithm and `log` for base 10, `m` for
+a metre. A unit, constant or function Hertzon was not seen to accept is a refusal item (`!`, `round`, `mod`, `j`, a bare SI prefix, `kohm`, ...). A DBU
+literal is `LayoutUnits.Spell` in the document's display unit, which reads back to the same DBU. A prism's or an outline sheet's offset is written as a
+number (a polyline's points are read back as numbers) and a note says when that froze an expression. A project variable's reserved prefix comes off:
+our variables are the design's (D9), and a variable that would then clash with another is refused.
+
+**Steps.** A placement is `Mirror` (base 0, normal x), each `Rotate` about the origin, then `Move`, in the order HZN-2 folds them. A Boolean is its
+blank's steps, then `Subtract`/`Unite`/`Intersect` naming its tools, then its own placement; each tool is an object with `consumed_by` set (null for a
+kept tool, and for the tools of a disabled operation, whose step is written suppressed). A rectangle sheet carries all three size keys as the examples
+do, the third (along its normal) 0. A prism is a closed covered polyline swept along its normal. Refused because HZN-2 would refuse the step back:
+fillet, chamfer, a prism or sheet with holes, a sheared prism, ellipsoid, polyhedron, phantom, voxel body, mesh, wire, STEP part; construction
+polylines are not part of any solve and are dropped with a note.
+
+**Materials.** Role decides the Hertzon material: a perfect conductor is `pec: true`, a metal at or above 1e6 S/m states its conductivity, a dielectric
+states permittivity, loss tangent, permeability and conductivity. A conductor below 1e6 S/m is refused (it would read back as a lossy dielectric), as
+is a dielectric at or above it, a tensor, a dispersive material, and a technology material that states both sigma and epsilon with no role on the
+object. A name that is one of Hertzon's built-ins (`pec`, `vacuum`, `air`, `copper`) with other values is a conflict; the built-ins are not written.
+Into an existing project a material of the same name with the same numbers is reused, any other is refused listing each property.
+
+**The integration line runs from the negative conductor to the positive one.** Every lumped port that states a line in Hertzon's own examples runs from the
+ground side to the signal conductor, so a port with `Positive` and `Negative` stated writes its line from the centre of the negative contact to the
+centre of the positive one, on the axis where they touch opposite edges of the rectangle; the brief's wording was the other way round. With no pair
+stated, or a pair that touches no opposite edges, the key is left out (Hertzon places it) and a note says the polarity is then Hertzon's. Whether
+the line's direction is what fixes the sign of S21 on an unlike pair is still not established.
+
+**Faces.** A face boundary covering every face of an object, of one kind and material, is written by object; otherwise by `{obj, face, sig}`, with
+`sig` = centroid, outward unit normal, area (metres, 7 numbers) taken analytically for a box and from the worker's build of the written object
+otherwise (a rotated bored plate's face came back by its signature). The index is the face's place in that list; Hertzon was not run to prove it finds
+the face by index, and circuitRF never trusts the index on the way back. Only perfect-E and conductive walls are written on an object's face: an
+absorbing, magnetic or symmetry wall is an air-box face.
+
+**The air box** is one region object (`CreateRegion`, absolute offsets) with a radiation boundary on absorbing faces, perfect E on PEC ones (one
+boundary on the object when all six are) and a perfect H symmetry wall on PMC ones. Hertzon pads around every object it has, port and element sheets
+too, so each padding is the distance from THAT box to the circuitRF air box's face (a wave port drawn on the air box's face then costs no extra
+padding). A face's padding or boundary not stated in the setup, a percentage padding, a symmetry wall, setups whose air boxes differ, and a sheet
+outside the box are refused. A wall that is not perfect E is named on the region by signature, which circuitRF finds again only around plain shapes,
+so around a rotated or built model it is refused rather than written unreadable.
+
+**Setups.** One Hertzon setup per `.c3d` setup, solved at its highest frequency, with a linear-count, linear-step or single-points sweep
+(Interpolating when the setup's sweep is adaptive). Refused: a logarithmic sweep, a band beside further points, thermal, electrostatic,
+magnetostatic and eigenmode setups, an element order other than 1 or 2.
+
+**Flattening (D8).** `HznExport.Flatten` runs `C3dHierarchy.FlattenOne` level by level, renames each flattened part `<instance>_<name>` to
+`<instance>/<name>`, and adds a material the technology lacks to a COPY of it from the cell flattened (the export writes the project's own).
+The note is exactly `flattened: N instance(s), M object(s)[; built from layout: U1]`. A layout's flattened names have had their slashes made
+underscores by the flatten, so a port naming `U1/pad/inner` finds only the first level; its integration line is then left to Hertzon with a note.
+
+**On circuitRF's own examples** (convert, measured): `3D Connector/Flange` writes and `hertzon-cli describe` lists it; `3D Connector/Launch` is refused
+for a STEP part and a fillet; `3D Package/Package` for a bond wire and an eigenmode setup; `Test Pad Capacitance/Fixed` for prisms with holes (the
+commonest thing a layout flatten produces) and a static setup. The built-in Air is in no technology, so an object of it is Hertzon's `air`.
+
+**Not done / open.** Prisms with holes (written as a prism minus hole prisms HZN-2 would read back, they would unlock most flattened layouts).
+`hertzon-cli solve --validate` (the geometry check) was not run: it goes on to solve. `FarFieldReference` is written `True` as in
+the examples; what it means is not established and circuitRF does not read it. A prism with holes could be a prism minus hole prisms, which HZN-2
+would read back; it is refused for now.
+
+### HZN-8 — running a `.hzn` design in Hertzon (2026-11-11)
+
+Code: `Interchange/Hzn/HertzonDiscovery.cs` (finding the program, the schema gate, the Hertzon application), `HertzonRun.cs` (describe, the solve process, its event stream,
+exit-code sentences, cancel), `HertzonResults.cs` (the Touchstone as S/Z0 plus a `hertzon` group, the `.npy`); `src/Cli/HznRunVerb.cs` (`em x.hzn --solver hertzon`) and
+`HznSolverRow.cs` (the `solver list` line); `WorkspaceViewModel.HertzonRun.cs`, `HertzonRunDialog`, `HertzonSettingsRow`, `HertzonPathInstaller` in `src/Ui`. Gate:
+`tests/Ui.Tests/Hzn/HertzonCliTests.cs` (a stub `hertzon-cli` in `Hzn/Stub`, and one real solve skipped without `CIRCUITRF_HERTZON_HOME`).
+
+**What `hertzon-cli` does, measured against the installed 0.3.19 (`cli_schema` 1)** - black-box, as a person runs it:
+- `version --json` answers in 0.2 s. A bad `--set` name, an unknown design and a missing project file each exit 3 with an `error` event naming what exists; no solve starts.
+- `--validate` costs well under a second on a small design, so it is always passed; `--require-convergence` is what makes exit 5 happen (a not-converged run otherwise exits 0
+  with `converged: false` in the summary). Both are deviations from the command line the brief quotes, and both are what give its exit-code table a meaning.
+- A solve of the shipped coax example at its adaptive frequency (`--sweep LastAdaptive`) takes about 4 s and 8.7k tetrahedra; the full 37-point sweep about 5-20 s. The
+  routine real-run test uses the first.
+- **A second call with the same model and setup is answered from the kept solution** (`cached: true`, 0.01 s). The summary line says so.
+- The Touchstone carries ONE reference (`# HZ S RI R <z0>`). When the ports' impedances differ Hertzon says so in a `log` warning (one value; in the runs measured it was the first
+  port's, "as the export of the window does") and the file is not renormalised per port, so a design with unlike wave ports is read here at that single reference. circuitRF forwards the warning
+  to Messages and does not change the numbers.
+- **Ctrl+C (SIGINT) ends a real run in under a second with exit 130 and an `error` event `interrupted`**, no process left behind (measured with a 300-point discrete sweep).
+  circuitRF sends SIGINT with `kill -INT` (no native call) and kills the process tree if it has not stopped within 8 s; on Windows it kills the tree at once. Note that a shell
+  background job started by a non-interactive shell ignores SIGINT: measure it from a program, not from `cmd &`.
+
+**Decisions.**
+- **Hertzon is its own small discovery class, not a fifth `SolverTool`.** It is a command line that solves a project file, not a program circuitRF assembles a run around, so none
+  of the registry's switches (capabilities, install recipes, validated lists) apply. The walk is `SolverDiscovery`'s: Settings (a program or an install folder), then
+  `CIRCUITRF_HERTZON` (the program), `CIRCUITRF_HERTZON_HOME` (the install folder, the tests' variable), `PATH`, then `~/.local/share/hertzon/.venv/bin`, `~/.local/bin`,
+  `/opt/homebrew/bin`, `/usr/local/bin` (Windows: `%LOCALAPPDATA%\Programs\Hertzon\.venv\Scripts`). A named program that does not work is reported and never replaced. The
+  version answer is kept per program against the file's size and time, so it is asked once per session.
+- **The schema gate.** `cli_schema` other than 1 is found and said to be unusable: `solver list` shows it with the sentence, Settings shows it, and Run in Hertzon refuses with
+  "Hertzon 0.4.0 speaks command-line schema 2, and this circuitRF is written for schema 1, so Run in Hertzon is off."
+- **Menus never start a process.** The tree's "unavailable" sentences read `HertzonDiscovery.Last`; the first read starts the check in the background and returns "available",
+  and the click re-checks and posts the refusal to Messages. `Open in Hertzon` starts the `hertzon` script beside `hertzon-cli` (Windows: the install folder's `Hertzon.exe`),
+  detached; it is disabled with the reason when that application is not there.
+- **The unsaved-design rule** is `SettleUnsavedHznDesignAsync` (HZN integration): an open design with edits asks Save, Run Anyway (the file as it is) or Cancel before Hertzon
+  reads the file. The CLI always runs the file.
+- **A run that did not converge is a result with a warning in the window, and exit 1 on the CLI** (its Touchstone is written and read, `converged` is false in the `hertzon`
+  object). A script treating exit 0 as "usable S-parameters" must not be given a mesh that never settled.
+- **Results.** The Touchstone and the grouped `.npy` land in the current workspace's `results/` (`<design>_hertzon.s<rows>p`, `<design>_hertzon_em.npy`; rows = ports plus extra wave-port
+  modes, from `describe`), and the Data Display opens on the `.npy` as an EM run's does. The result is labelled in Messages ("Hertzon 0.3.19: ..."); the `.npy` carries no version
+  (a cube is numeric). Nothing is written to `<project>.hznresults/`, and the test asserts it for the real run.
+- **Quiet runs say so.** No `progress` event for two minutes posts "Hertzon has printed nothing for N min. It may still be solving." once per interval, in Messages and on the
+  live row; it never kills the run.
+- **Variables.** The run dialog lists `describe`'s variables (a project variable keeps its `$`); only boxes the person filled are handed to `--set`, and Hertzon parses them
+  (a bad one is exit 3, quoted). The dialog catches only `name=value`, typed into a value box.
+
+**Shared-file edits.** `ProjectTreeItemViewModel.Hzn.cs`: the four tips read `Hzn?.XUnavailable ?? HznMenuText.X`, which turned a null (enabled) into the "not available yet"
+sentence and left every item disabled once a brief returned null; they now read `Hzn is null ? text : Hzn.XUnavailable`. `JsonRun`/`ResultPayload`: a `hertzon` JSON object.
+`SolverJson.CliSchema`. `ToolCatalog`: `em`'s `design` and `sweep`, the `solver` sentence. `ServeProtocolAdapterTests` expects `hertzon` last in the `solver` tool.
+
+### HZN-5 — editing a `.hzn` design and saving it back: the difference is what is written (2026-11-12)
+
+The code is `Interchange/Hzn/HznPatch*.cs` (`HznPatcher.Apply`, the one function), `HznDesignSource.Save` (the editor's source), and
+`WorkspaceViewModel.HznSave.cs` (messages, the two dialogs). `HznFile.Save(HznJsonDocument)` is the one change to HZN-1: it writes a tree edited on
+a COPY, through the same change-on-disk check, and adopts it only after the write.
+
+**How a save finds what changed, and why it is not the provenance map alone.** The document as opened (a copy, `HznSaveBaseline`) and the document
+as edited are each written through HZN-4's writer, ONE ITEM AT A TIME (a document holding that object, port, face boundary or setup and every variable),
+and the difference between the two writings is applied to the original JSON:
+- an item whose File-spelling JSON is the same before and after is never touched (its bytes are the file's own);
+- a property whose written text is the same before and after keeps the file's text, so an expression stays an expression and an untouched literal
+  keeps its spelling; a key neither writing names (colour, transparency, anything circuitRF does not model) is not touched;
+- a history is aligned to the file's by step kind (every step, or the unsuppressed ones, whichever matches the opened writing). Same kinds: each step's
+  changed properties are set. The opened kinds a prefix of the edited: the new steps are appended (a boolean added). The edited a prefix of the opened:
+  the trailing steps are cut (a tool removed). Neither: the history is rewritten as the writer spells it, only when the file's history has no suppressed
+  step to lose. A suppressed step is never touched, and stays where it was;
+- the provenance map (HZN-2) gives the origin of what the writer cannot name the same way: a port's excitation and sheet by port number, a face
+  boundary's boundary and index, a setup's setup and sweep. Object names are the same on both sides except `AirBox_hzn`.
+Adding a tool and removing it again returned the file to its original bytes in the test, which is the evidence the edits are minimal.
+
+**Diffing the writer's output rather than hand-mapping fields** was chosen because the writer already states each .c3d field's Hertzon spelling (units,
+placement order, negative sizes, integration lines). A second mapping in the patcher would be a third copy of those tables.
+**A document-level comparison uses `Serialize` (the File spelling), never `SerializeObject`:** the item spelling carries each bound field's last resolved
+number, which moves whenever a variable does, so every object that mentions the variable would read as edited.
+**The readback guard compares the document as given, not a clone:** a clone through the File spelling loses the resolved numbers of bound fields until
+the resolver runs, and its normalised text is all zeros.
+
+**What is saved:** object geometry, placement, material, group, visibility, solve flags and boolean enable; objects, tools and sheets added or deleted;
+a deleted object takes the tools it consumed with it; ports (rectangle, plane, offset, impedance, number, polarity-derived line) added, changed, deleted;
+face boundaries added and removed, and a face named by index and signature found again on an edited object (signature rewritten from the geometry as it
+now is, the index only if it no longer names that face); design variables, and project variables (`hznp_x` goes back to project level as `x`); a setup's
+passes, element order and sweep. **A boundary or excitation left naming nothing is removed with the object and listed in the save note. Hertzon-only content
+that names a deleted object or variable (reports, field plots, optimization goals, sweeps, notes, mesh operations, coordinate systems) is never edited and
+is listed one by one.** A deleted `hznp_` variable is left in the project and said so, since another design may use it.
+
+**What refuses, with the reason, writing nothing:**
+- any change outside the sections above that has no key to go to (`AirBoxMaterial`, instances, heat sources, ...). Display state (display unit, camera
+  state, field plots, active setup) is not the design's and is ignored;
+- an object, port, boundary or setup the writer cannot write, before or after the edit (the writer's own refusal list is quoted);
+- a sheet's metal (material or thickness) changed: a Hertzon sheet is metal because a boundary says so, and editing that is not done;
+- an edit that cannot be traced to the file (its origin is gone from the design); a port made from a face moved or resized; a boundary stated on a whole
+  object with some of its faces removed; a setup added or removed, or its air box changed;
+- a history rewrite that would lose a suppressed step;
+- the saved design failing to read back (HZN-2's refusal is quoted), or reading back without an object or port it should have, or with an object that does
+  not read back as edited (resolved numbers, name, material, placement; transparency and appearance are not compared, they are not saved).
+Transparency and appearance edits are display state and are not written; the existing colour and transparency in the file are left as they are.
+
+**Concurrent change.** A changed file is refused by HZN-1's length, time and SHA-256 check (the write goes to a copy first, so a refusal costs nothing).
+The dialog names the unsaved edits first (`HznPatcher.Summarise`), then offers Reload (discards them), Save As .c3d and Cancel; there is no merge. Q1's backup is
+still off: nothing in this brief sets `BackupOnFirstSave`.
+
+**Save As** on a held design writes a native `.c3d` through `HznConvert.ConvertDocument` (the split-out second half of `HznConvert.Convert`): the in-memory
+document, edits included, with `TechRef` cleared, into a cell chosen in the Convert to .c3d dialog. The tab stays on the project. The editor's own `SaveAs`
+refuses for a held design, because following the tab to a `.c3d` would keep a `TechRef` naming materials that exist in no file.
+
+**After a save** the baseline is the edited document and its provenance is that of the design read back from what was just written, so the next save
+measures only the next edits.
+
+**Not done / open.**
+- Air box edits, adding or removing a setup, a changed sheet metal and a boundary kind changed on a face are refusals, not saves.
+- A port's integration line is never rewritten when only the rectangle moves (HZN-2 does not read it); the save note says to check it in Hertzon.
+- A project variable's bare numbers are written in the design's units, as the writer spells them.
+- 0 of 58 of Hertzon's own examples translate (HZN-2), so the evidence is a hand-written fixture (`save-design.hzn`) and the writer's own output; the
+  edited fixture passes `hertzon-cli describe` (Hertzon 0.3.19), skipped without an install.
+
+### HZN integration — the pieces joined, and what the join found (2026-11-11)
+
+The ten pieces were built apart; this is what connecting them needed. Gate: `tests/Ui.Tests/Hzn/HznIntegrationTests.cs`.
+
+**Simulate on a held design is the `.c3d` Simulate, not a second path.** `RunC3dSetupAsync` handles a `HznDesignSource` with four differences: the run is filed by
+`C3dEditorViewModel.RunPath` (the virtual `<project>.circuitrf/<design>.c3d` that `em design.hzn` uses, so the setup's name, the run folder and the record agree between
+the window and the command line, and two designs of one project never share a folder); the elaborator is `NewRunElaborator()` on the window's technology cache; results land
+in `<project>.circuitrf/results` (`RunEmSetupAsync` takes a results-root override, and the editor's `ResultsRootProvider` says the same for status and fields); the record names
+the `.hzn` as its setup source. The tree's Simulate on a design row opens (or focuses) the design and calls the same function with the active setup, so it runs what the tab shows,
+edits included, and the editor's own gate says what is missing (no setup, no solver). The setup panel lists EMerge alone for a held design (`EmSetupEditorViewModel.EmergeOnly`):
+no Palace, openEMS, comparison or thermal row. The unused-settings note goes to Messages at the start of the run. A thermal setup is not offered because its run
+builds its own elaborator and would not find the project's materials.
+
+**Two technology mechanisms, one rule.** The held technology (`TechnologyCache.Hold`, resolved through the document's relative `TechRef`) serves the scene and every editor
+read; `C3dElaborator.AttachedTechnology` serves the headless run, whose document has no `TechRef`. A relative `TechRef` resolves from the document path's folder, and a run is
+filed under a path in another folder, so the source holds the materials under **both** folders (`TechnologyPath`, `RunTechnologyPath`) and releases both when the tab closes.
+Without the second hold the run and the mesh-currency check resolve the workspace's materials, or none, with a diagnostic.
+
+**Exporting an opened held design** (File > Export > Hertzon Project...) takes the project's materials and the design's own name and is a copy: before, it resolved the held
+`TechRef` against files, found none, and refused every material (`material 'sub' - the export was given no technology to take it from`). Save is what writes a design back
+into its own project, and a name the target project already has is the dialog's existing problem line.
+
+**The tree and the instance.** A 3D design row is a drag source (`HznDesignDragPayload`), so dropping it into a 3D view places an instance; `Open Design` on a Hertzon instance
+(`OpenHertzonDesignRequested`) opens the design's tab; double-click already did. Place Cell Instance... also lists the designs of Known Files that are projects.
+Convert to .c3d... and Simulate are offered (their disabled sentences return null). **Run in Hertzon and Convert read the file**, so an open tab with unsaved edits is asked about
+first (Save, Run Anyway / Convert Anyway, Cancel; `SettleUnsavedHznDesignAsync`); Simulate runs the tab and is not asked.
+
+**Found by reading and by fuzzing.**
+- **A deeply nested file ended the process.** The `.hzn` JSON parser recurses per level, and 3,400 opening brackets overflowed a pool thread's stack (a stack overflow is not catchable).
+  It now refuses beyond 128 levels. Truncated, empty, non-UTF-8 and shape-mutated files (a null or numeric `designs`, `objects`, `setups`, `excitations`, variables, materials;
+  a version of `1e30`; sizes of `1e999`) were put through `check`, `explain`, `em` and `convert` as processes, and through the tree listing, open, plan, picker and conversion in
+  process: each is a refusal.
+- **`check` on a truncated `.hzn` said it had the `.c3d` extension and was a motion-capture file, with exit 0.** A file that is not JSON or not UTF-8 is a damaged project
+  and is classified as one (an error naming the line); valid JSON of another `format` stays foreign, with a sentence about `.hzn`.
+- **The `_hzn` suffix rule** (an object named `airbox` in Hertzon is `AirBox_hzn` in a `.c3d`) was written three times (translator, writer, patcher); it is `HznNames.C3dObjectName` /
+  `HznObjectName` now. `hznp_` and `Setup - Sweep` were each already one definition (`HznNames.ProjectPrefix`; the translator names a setup, the writer and the patcher read the provenance).
+- **Polarity:** HZN-4 writes the integration line from the negative conductor to the positive one, the opposite of its brief's first wording; the brief now says so and points at HZN-4's note.
+
+**Open.**
+- A held design's result is outside the workspace's `results/`, so Simulate posts "outside this workspace's results folder... Add from file" instead of opening a Data Display on it.
+- The setup panel's EMerge-only picker is tested, not photographed (a one-row combo box).
+- Menus never start a process, so "Run in Hertzon" reads its availability from the last check; the first menu of a session can show it enabled when Hertzon is missing, and the click says why.
+- `check`'s `--design` is carried to the checker in a thread-static set just before the call; it is correct for a synchronous call and would need a parameter if `check` ever ran paths in parallel.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

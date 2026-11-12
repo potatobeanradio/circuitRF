@@ -651,6 +651,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Em3dEmergePath { get; set; }
 
+    /// <summary>HZN-8 — Hertzon's <c>hertzon-cli</c>: the program, or the folder Hertzon is installed in. Null means search
+    /// (CIRCUITRF_HERTZON, CIRCUITRF_HERTZON_HOME, PATH, then the installer's own folders).</summary>
+    [JsonPropertyName("hertzon_cli")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HertzonCliPath { get; set; }
+
     /// <summary>The MPI launcher Palace runs under (<c>mpirun</c>). Null means search — which finds the
     /// MPI a Spack-built Palace was linked against with no setup (PalaceRun.FindMpiLauncher).</summary>
     [JsonPropertyName("em3d_mpirun")]

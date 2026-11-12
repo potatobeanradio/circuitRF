@@ -42,6 +42,7 @@ public sealed partial class C3dEditorViewModel
     {
         IsViewOnly = true;
         FilePath = Path.GetFullPath(viewer.CemPath);
+        Source = new C3dFileSource(FilePath);
         Document = new C3dDocument();
         _workspaceCws = () => null;
         _post = a => a();

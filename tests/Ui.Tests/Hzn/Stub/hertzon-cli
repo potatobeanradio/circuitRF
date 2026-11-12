@@ -1,0 +1,64 @@
+#!/bin/sh
+# A stand-in for hertzon-cli that prints recorded outputs and exit codes (HertzonCliTests). It decides what to do from --design:
+#   Ok       a full event stream, a Touchstone at -o, the summary on stdout, exit 0
+#   Fail1    the solver failed: an error event, exit 1
+#   Bad3     bad input: an error event, exit 3
+#   Check4   the model check failed: an error event, exit 4
+#   NoConv5  adaptive meshing did not converge: the Touchstone is still written, exit 5
+#   Slow     prints one event, then waits for an interrupt and exits 130
+# The version it reports is 9.9.9 with the schema in the file `schema` beside it (default 1). Every call's arguments are appended
+# to `calls.txt` beside it. Recorded data is in the files `describe.json` and `touchstone.s2p` beside it.
+here=$(dirname "$0")
+echo "$*" >> "$here/calls.txt"
+schema=1
+[ -f "$here/schema" ] && schema=$(cat "$here/schema")
+case "$1" in
+  version)
+    echo "{\"cli_schema\": $schema, \"hertzon\": \"9.9.9\", \"python\": \"3.13.1\"}"
+    exit 0 ;;
+  describe)
+    cat "$here/describe.json"
+    exit 0 ;;
+  solve)
+    shift
+    design=""; out=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --design) design="$2"; shift ;;
+        -o) out="$2"; shift ;;
+      esac
+      shift
+    done
+    ev() { echo "$1" >&2; }
+    ev '{"event": "progress", "percent": 0.0, "message": "Solving design"}'
+    case "$design" in
+      Slow)
+        trap 'echo "{\"event\": \"error\", \"code\": 130, \"message\": \"interrupted\"}" >&2; exit 130' INT TERM
+        ev '{"event": "progress", "percent": 5.0, "message": "Building geometry"}'
+        i=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done
+        exit 0 ;;
+      Fail1)
+        ev '{"event": "error", "code": 1, "message": "meshing failed: degenerate tetrahedron"}'
+        exit 1 ;;
+      Bad3)
+        ev '{"event": "error", "code": 3, "message": "No variable '"'"'zz'"'"' in design '"'"'Bad3'"'"'; variables: [a]"}'
+        exit 3 ;;
+      Check4)
+        ev '{"event": "error", "code": 4, "message": "Port 2 touches no face"}'
+        exit 4 ;;
+    esac
+    ev '{"event": "log", "level": "info", "message": "Using 4 core(s)"}'
+    ev '{"event": "progress", "percent": 12.0, "message": "Adaptive pass 1 of max 6"}'
+    ev '{"event": "pass", "pass": 1, "tets": 6697, "delta_s": null}'
+    ev '{"event": "log", "level": "warning", "message": "The ports have different reference impedances"}'
+    ev '{"event": "progress", "percent": 18.0, "message": "Adaptive pass 2 of max 6"}'
+    ev '{"event": "pass", "pass": 2, "tets": 8676, "delta_s": 0.0031}'
+    mkdir -p "$(dirname "$out")"
+    cp "$here/touchstone.s2p" "$out"
+    conv=true; code=0
+    [ "$design" = "NoConv5" ] && { conv=false; code=5; }
+    ev "{\"event\": \"done\", \"touchstone\": \"$out\", \"seconds\": 4.5, \"cached\": false}"
+    echo "{\"cli_schema\": 1, \"hertzon\": \"9.9.9\", \"design\": \"$design\", \"setup\": \"Setup1\", \"solution\": \"Sweep\", \"cached\": false, \"results\": \"/results/$design\", \"converged\": $conv, \"passes\": 2, \"tetrahedra\": 8676, \"touchstone\": \"$out\", \"seconds\": 4.5}"
+    exit $code ;;
+esac
+exit 2

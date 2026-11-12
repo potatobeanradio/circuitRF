@@ -209,7 +209,10 @@ namespace RfCore.Export
         // brief-plg-5: `plugin list | describe | run | allow`. A JSON object rather than a record of its own, because
         // describe's half is the plugin's manifest normalised — the plugin contract's shape, not this document's.
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        System.Text.Json.Nodes.JsonObject? Plugin = null);
+        System.Text.Json.Nodes.JsonObject? Plugin = null,
+        // HZN-8: `em --solver hertzon` — Hertzon's version and schema and its own summary fields (converged, passes, tetrahedra, seconds).
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        System.Text.Json.Nodes.JsonObject? Hertzon = null);
 
     /// <summary>
     /// Where an <c>em</c> run put its temporary files — so a caller can tell which disk a run filled, or why it was refused.
@@ -410,6 +413,10 @@ namespace RfCore.Export
         /// command that enables it; absent for every other tool and when nothing was found.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public SolverGpuJson? GpuSolving { get; init; }
+
+        /// <summary>HZN-8 — for Hertzon, the command-line schema (<c>cli_schema</c>) it reports; absent for every other tool.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? CliSchema { get; init; }
     }
 
     /// <param name="Enabled">The GPU sparse solver is installed, and a run uses it as its device says.</param>
@@ -653,7 +660,22 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<FoundPictureJson>? Pictures = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? EmResults = null);
+        IReadOnlyList<string>? EmResults = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundHertzonProjectJson>? HertzonProjects = null);
+
+    /// <summary>HZN-2 — one design of a Hertzon project: its name, and <c>3d</c> or <c>circuit</c>.</summary>
+    public sealed record FoundHertzonDesignJson(string Name, string Kind);
+
+    /// <summary>HZN-2 — a Hertzon project (<c>.hzn</c>) and its designs; <see cref="Problem"/> says why a file with that
+    /// extension could not be read as one.</summary>
+    public sealed record FoundHertzonProjectJson(
+        string Path,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Name,
+        IReadOnlyList<FoundHertzonDesignJson> Designs,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Problem = null);
 
     /// <summary>brief-img-2 R-im2-6 — one picture, as <c>find</c> lists it.</summary>
     /// <param name="Kind"><c>schematic</c>, <c>layout</c> or <c>none</c>; absent when it was not read
@@ -691,7 +713,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<FoundPartJson>?       Parts = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?                             PlacedBy = null);
+        string?                             PlacedBy = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundHertzonProjectJson>? HertzonProjects = null);
 
     /// <summary>
     /// brief vendorlib-1 R-vl1-5b — one vendor-library part <c>find --parts</c> matched, with the

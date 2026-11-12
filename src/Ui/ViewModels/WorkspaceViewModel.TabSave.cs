@@ -145,7 +145,7 @@ public partial class WorkspaceViewModel
     internal static bool HasSaveAsRoute(IDockable? dockable) => dockable is
         SchematicDocument or SymbolEditorDocument or LayoutDocument or TechDocument or
         EmSetupDocument or DataDisplayDocument or WBondDocument or HarmonicaDocument or
-        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument or MaterialsDocument;
+        SmithChartDocument or PartLibraryDocument or ThreeD.C3dEditorDocument { CanSaveAs: true } or MaterialsDocument;
 
     /// <summary>Unsaved work in THIS document — the same per-kind test <c>CanSaveAllDocuments</c>
     /// applies to the active one. A never-saved wBond or harmonicaRF document counts even when clean:

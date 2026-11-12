@@ -216,6 +216,10 @@
                           Command="{Binding ExportGltfCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="{Binding ThreeDExportGltfTip}"/>
+                <MenuItem Header="_Hertzon Project…"
+                          Command="{Binding ExportHertzonCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ThreeDExportHertzonTip}"/>
                 <MenuItem Header="Dra_wing…"
                           Command="{Binding ExportDrawingCommand}"
                           CommandParameter="{Binding $parent[Window]}"

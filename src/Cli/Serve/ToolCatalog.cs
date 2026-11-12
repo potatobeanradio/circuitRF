@@ -756,7 +756,15 @@ internal static class ToolCatalog
                        + "(default: the nearest one above the .cem). For a loose .csch kept outside any "
                        + "workspace folder, where a cell reference that names nothing is looked for."),
                      new("solver", "--solver", OptKind.Str,
-                         "A 3D setup's solver for this run only: " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ". Default: the .cem's Solver3D."),
+                         "A 3D setup's solver for this run only: " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ". Default: the .cem's Solver3D. "
+                       + "hertzon runs a Hertzon project (.hzn) in Hertzon itself through its command line (design required when the project holds "
+                       + "several 3D designs; setup, sweep and set pick what Hertzon solves; 'solver' says whether it is installed)."),
+                     // HZN-8 R-hzn8-3 — a Hertzon project's design, setup and sweep (`em x.hzn --solver hertzon`).
+                     new("design", "--design", OptKind.Str,
+                         "With solver=hertzon: the design of the .hzn project to solve; required when it holds several 3D designs."),
+                     new("sweep", "--sweep", OptKind.Str,
+                         "With solver=hertzon: the setup's frequency sweep, by name, or LastAdaptive for the S-parameters at the adaptive frequency. "
+                       + "Default: the setup's first enabled sweep."),
                      // brief-emi-6 R-emi6-5 — a comparison's reference, as `em --reference`.
                      new("reference", "--reference", OptKind.Str,
                          "With a solver list or compare: the solver every other one is compared against. Default: Palace when "
@@ -1174,6 +1182,12 @@ internal static class ToolCatalog
                         new("crop",       "--crop",        OptKind.Str,
                             "An import (gerber, gdsii, oasis, dxf, board, ipc2581): Crop to Rectangle on what was imported, x0,y0,x1,y1, " +
                             "every coordinate with its unit (124mm,114.5mm,129.3mm,119.5mm). A .clay source is refused."),
+                        new("design",     "--design",      OptKind.Str,
+                            "A Hertzon project (.hzn) source: the 3D design to convert; required when the project holds several. The output is a cell folder."),
+                        new("addMaterials", "--add-materials", OptKind.Flag,
+                            "A Hertzon project source: add the materials the workspace technology lacks to it. Unset, they are reported and the technology is not written."),
+                        new("replace",    "--replace",     OptKind.Flag,
+                            "A Hertzon project source: overwrite the cell's 3D view of that name when it exists. Unset, that is a refusal."),
                         PictureUnderlay,
                         PictureOverlayPath,
                         Summary,
@@ -1952,7 +1966,7 @@ internal static class ToolCatalog
         // stay off this surface — both download or delete on the user's machine behind a consent that
         // is the PERSON's to give, and a tool call is not that person.
         new("solver",
-            "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge) are installed here and what each build can do: "
+            "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge, and Hertzon's command line) are installed here and what each build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
           + "how many it finds; for EMerge, its sparse-solver tier and whether GPU solving is enabled, with the command "
           + "that enables it. result.machine is this machine's physical and logical cores and its memory, which is what "

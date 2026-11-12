@@ -52,8 +52,10 @@ public enum C3dPlane { XY, YZ, XZ }
 /// <summary>A world axis.</summary>
 public enum C3dAxis { X, Y, Z }
 
-/// <summary>Which view of the placed cell an instance shows (brief 48 swaps it).</summary>
-public enum C3dInstanceView { ThreeD, Layout }
+/// <summary>Which view of the placed cell an instance shows (brief 48 swaps it). <see cref="Hertzon"/> (HZN-9) is not a view
+/// of a cell: the instance names a design inside a Hertzon project file (<see cref="C3dInstance.CellRef"/> the file,
+/// <see cref="C3dInstance.Design"/> the design).</summary>
+public enum C3dInstanceView { ThreeD, Layout, Hertzon }
 
 // ── Placement ─────────────────────────────────────────────────────────────────────────────────
 
@@ -929,6 +931,11 @@ public sealed class C3dInstance
 {
     public string Name    { get; set; } = "";
     public string CellRef { get; set; } = "";
+
+    /// <summary>HZN-9 — with <see cref="View"/> <see cref="C3dInstanceView.Hertzon"/>, the name of the design placed from the
+    /// <c>.hzn</c> file <see cref="CellRef"/> names (spelled as any cell reference is). Omitted for every other view.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Design { get; set; }
 
     /// <summary>The group the instance is in, as an object's <see cref="C3dObject.Group"/> is. Omitted: in none.</summary>
     public string? Group { get; set; }

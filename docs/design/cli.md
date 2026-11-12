@@ -118,6 +118,12 @@ face a process could load: the "platform default typeface" note is said **only w
 converted** in a process without the embedded faces. stderr counts the two separately, and counts any
 character the stroke font lacks (drawn as a hollow box) — none is lost without a word.
 
+**`convert <file.hzn> [--design D] -o <cell folder>` writes one 3D design of a Hertzon project as a cell's native 3D view** (HZN-6). The verb is argument parsing and
+reporting around `HznConvert.Convert`, the function the Convert to .c3d dialog calls (a source scan holds it). The target is a cell folder, created when absent;
+`--design` is required when the project holds several 3D designs (the refusal lists them); an existing `3d/<cell>.c3d` is a refusal unless `--replace`; a material
+the workspace technology lacks is reported and written to it only with `--add-materials`, and one of the same name with other properties is a refusal listing both.
+The source `.hzn` is never written. Detail: `src/Design/RESOLVED.md` §HZN-6; gate `tests/Ui.Tests/Hzn/HznConvertTests.cs`.
+
 **`convert part.step -o <cell>/3d/<name>.c3d` makes a NEW 3D view from a STEP file** (brief-em3d-68 R-em3d68-7).
 `step` is a SOURCE with exactly one legal target, a `.c3d` that does not exist yet; importing into an existing one
 is writing its `Step` objects (the format is the contract — `reference topic=c3d` describes every field), so an
@@ -169,6 +175,14 @@ saves one (framed at `render`'s default 4:3), and none otherwise. **glTF is neve
 `convert.gltf.source`. The file matches the dialog's byte for byte with no camera (`GltfExportTests` gate 7); stdout is
 the written path, `--json` records it as an output of kind `glb`, and the write goes through a temporary file renamed
 into place.
+
+**`convert x.c3d -o x.hzn` writes a 3D view as a Hertzon design, and `--into project.hzn` adds one to an existing project** (HZN-4).
+The verb is `HznConvert`: argument checks, the cell-folder lookup (a cell folder means its 3D view) and the report around
+`HznExport.FromFile` and `ToNewFile`/`IntoExisting` in `src/Design/Interchange/Hzn`, the functions File ▸ Export ▸ Hertzon Project…
+calls (a source scan holds it). `-o` and `--into` are one or the other; `--design-name` names the design (the cell's name by
+default) and is the flag a taken name is refused with, since nothing in a project is ever overwritten. Instances are flattened
+first as objects named `<instance>/<object>`, a layout instance as built, and the notes say how many; what Hertzon has no word for
+is refused as one list, and the file is written through a temporary file renamed into place.
 
 **`oasis` is a sixth stream-and-artwork format, and `--engine native|gdstk` picks a GDSII end's reader or writer**
 (brief-oasis-gdstk.md §7d, §10a). Both go through `StreamInterchange.Import`/`Write` in `src/Design`, the two calls the
@@ -5115,3 +5129,38 @@ read, so a duplicate parameter and a layout naming an undeclared one come back t
 when the plugin cannot run on this machine. `reference plugins` is `docs/design/plugins.md` §3–§8, embedded from the note
 itself (`PluginReference`). Gate: `tests/Ui.Tests/Plugins/PluginCliVerbTests.cs`, which drives the built CLI with a state
 directory and plugin path of its own.
+
+## 43. `em <file.hzn> --solver hertzon` — a project solved by Hertzon itself (HZN-8)
+
+`em` on a Hertzon project runs `hertzon-cli solve` and reads its Touchstone back; `HznRunVerb` is argument parsing, refusals and reporting, and the call is
+`HertzonRun.Solve` (`src/Design/Interchange/Hzn`), the one the window's Run in Hertzon makes. `--solver hertzon` is what claims the arguments (any other `em` of a
+`.hzn` is brief 7's); `--design` is required when the project holds several 3D designs (the refusal lists them), `--setup`/`--sweep` pass through (a sweep
+may be `LastAdaptive`), `--set var=value` is repeatable and a project variable keeps its `$`, `-o` names the Touchstone. Hertzon solves the FILE: nothing is run
+from a window's memory. The solve is started with `--validate` and `--require-convergence`, which is what give exit codes 4 and 5 their meaning.
+
+- **Finding it** is `HertzonDiscovery`: Settings > Solvers, then `CIRCUITRF_HERTZON` (the program), `CIRCUITRF_HERTZON_HOME` (the install folder), `PATH`,
+  the installer's own folders. A named program that does not work is reported, never replaced. `version --json` is asked once per program per process; a
+  `cli_schema` other than 1 is a refusal naming both versions. `solver list` (and the MCP `solver` tool) lists Hertzon last, with `cliSchema`.
+- **Results.** The Touchstone defaults to `<results>/<design>_hertzon.s<rows>p` (the nearest workspace's `results/`, else beside the project), with the grouped
+  `.npy` beside it (`<design>_hertzon_em.npy`; `-o` moves the Touchstone only). The `.npy` holds S, Z0 and a `hertzon` group (Passes, Tetrahedra, Seconds, Converged,
+  Cached). Hertzon's own summary fields are the result document's `hertzon` object (version, cliSchema, setup, solution, variables, converged, passes, tetrahedra,
+  seconds, cached, touchstone). Nothing is written to `<project>.hznresults/`.
+- **Exit codes.** 0 done; 1 a refusal or any failed run, **including one that did not converge** (its Touchstone is still written and read, and `converged` is
+  false); 130 cancelled (the process is interrupted, then killed if it has not stopped in 8 s). Hertzon's message is quoted for exits 1, 3 and 4.
+- Options that belong to circuitRF's own solvers (`--device`, `--cores`, `--memory-limit`, `--force`, ...) are refused rather than ignored.
+
+Gate: `tests/Ui.Tests/Hzn/HertzonCliTests.cs` (a stub `hertzon-cli`, and a real solve when `CIRCUITRF_HERTZON_HOME` names an installation). Detail: `src/Design/RESOLVED.md` §HZN-8.
+
+## 44. A `.hzn` as a document: `check`, `explain`, `find` and `em` on EMerge (HZN-2, HZN-7, HZN-9)
+
+A Hertzon project is a document kind (`DocumentKind.Hertzon`, recognised by its `format` key, not its extension), and every verb that reads one is argument
+parsing around `HznCli` and `HznEmergeRun` in `src/Design/Interchange/Hzn`; none holds a rule of its own.
+- `check x.hzn [--design D]` reports the translation's refusal as one list (every unsupported item, grouped), for every 3D design or the named one. `explain x.hzn
+  [--design D] [--setup S]` names what each design became and, per setup, the Hertzon setting that made it and what `em` would run with and where it writes.
+  `explain --ref` resolves a `.hzn` reference of a `.c3d` instance (either spelling) and says whether it leaves the workspace. `find` lists Hertzon projects, with
+  their designs, inside workspaces and loose.
+- `em x.hzn --design D [--setup S]` is the default for a project: the translated design runs on EMerge through `EmRunService.RunThreeDView`, the door a native
+  `.c3d` runs through, with the project's own materials attached to the elaborator and the results in `<project>.circuitrf/results/` (never Hertzon's
+  `<project>.hznresults`). The run note lists every Hertzon setting circuitRF does not use. Another `--solver` is a refusal (`hertzon` is section 43), and
+  `--dry-run`, `--bands`, `--component-ports` and `--reference` are refusals naming the option. The window's Simulate on an opened design is the same run.
+- Gates: `tests/Ui.Tests/Hzn/HznCliTests.cs`, `HznEmergeRunTests.cs`, `HznIntegrationTests.cs`.

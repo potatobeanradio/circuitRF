@@ -71,6 +71,10 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Push In on a LAYOUT child: the shell opens its .clay in the layout editor.</summary>
     public event Action<string>? OpenLayoutRequested;
 
+    /// <summary>HZN-9 — Push Into (and a double-click) on an instance that places a design of a Hertzon project: the shell
+    /// opens that design in the 3D editor (the project and the design name). Unset, the status line says it cannot.</summary>
+    public event Action<string, string>? OpenHertzonDesignRequested;
+
     /// <summary>A cell folder was created (Group into Cell): the shell refreshes the Project Tree.</summary>
     public event Action<string>? CellCreated;
 
@@ -145,7 +149,7 @@ public sealed partial class C3dEditorViewModel
         Push(new C3dEdit($"Place {inst.Name}", [new C3dEditSlot(true, Document.Instances.Count, null, C3dPersistence.SerializeInstance(inst))],
                          ApplySlots));
         ToolCommits++;
-        StatusMessage = $"Placed {inst.Name} ({tool.CellName}, {(inst.View == C3dInstanceView.Layout ? "layout" : "3D view")}) with its " +
+        StatusMessage = $"Placed {inst.Name} ({tool.CellName}, {PlaceInstanceTool.ViewNoun(inst.View)}) with its " +
                         (tool.BottomCentre ? "bottom-centre" : "origin") + $" at ({Length3(inst.Placement.Origin)}).";
         SetTool(null);
     }
@@ -530,6 +534,16 @@ public sealed partial class C3dEditorViewModel
     {
         var inst = Document.Instances[index];
         string baseDir = Path.GetDirectoryName(FilePath)!;
+        if (inst.View == C3dInstanceView.Hertzon)
+        {
+            string? hzn = CircuitRF.Design.Interchange.Hzn.HznInstances.ResolveFile(inst.CellRef, baseDir);
+            if (hzn is null || !File.Exists(hzn))
+                return StatusMessage = $"'{inst.Name}' places '{inst.CellRef}', which resolves to nothing: there is nothing to open.";
+            if (OpenHertzonDesignRequested is null)
+                return StatusMessage = $"'{inst.Name}' places design '{inst.Design}' of '{Path.GetFileName(hzn)}'; open it from the Project Tree.";
+            OpenHertzonDesignRequested(hzn, inst.Design ?? "");
+            return StatusMessage = $"{inst.Name} is a Hertzon design: it opened in its own tab.";
+        }
         if (ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir) is not { } cellDir || !Directory.Exists(cellDir))
             return StatusMessage = $"'{inst.Name}' places '{inst.CellRef}', which resolves to nothing: there is nothing to push into.";
         if (C3dHierarchy.ViewFile(cellDir, inst.View) is not { } file) return StatusMessage = C3dHierarchy.MissingView(cellDir, inst.View)!;
@@ -755,7 +769,8 @@ public sealed partial class C3dEditorViewModel
     private IEnumerable<Viewer3DMenuItem> InstanceMenuItems(int index, Func<string?> pushInto)
     {
         var inst = Document.Instances[index];
-        yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Push Into Cell (opens the layout)" : "Push Into Cell",
+        yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Push Into Cell (opens the layout)"
+                                          : inst.View == C3dInstanceView.Hertzon ? "Open Design" : "Push Into Cell",
                                           () => pushInto(), Tip: "Ctrl/Cmd+]. Ctrl/Cmd+[ pops back out.");
         string? swap = C3dHierarchy.SwapRefusal(FilePath, inst);
         yield return new Viewer3DMenuItem(inst.View == C3dInstanceView.Layout ? "Swap View to 3D" : "Swap View to Layout", () => SwapView(index),

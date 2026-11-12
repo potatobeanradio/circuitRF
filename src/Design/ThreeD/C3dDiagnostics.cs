@@ -228,6 +228,10 @@ public static class C3dDiagnostics
         "c3d.instance.no-cell", DiagnosticSeverity.Error,
         "The instance '{name}' names no cell.", ("name", name));
 
+    public static Diagnostic InstanceNoDesign(string name) => Diagnostic.Create(
+        "c3d.instance.no-design", DiagnosticSeverity.Error,
+        "The instance '{name}' places a Hertzon project but names no design.", ("name", name));
+
     // ── The Look (brief-em3d-106) ────────────────────────────────────────────────────────────
 
     /// <summary>R-em3d106-5 — an Exposure or Intensity outside its range (a Rotation that is not a number).</summary>

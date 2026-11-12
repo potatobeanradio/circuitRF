@@ -35,8 +35,16 @@ public sealed class PlaceInstanceTool(IC3dDrawHost host, C3dInstance template, s
     public override string Name => "Place Instance";
 
     public override string Prompt =>
-        $"Click to place {Template.Name} ({CellName}, {(Template.View == C3dInstanceView.Layout ? "layout" : "3D view")}) — handle: " +
+        $"Click to place {Template.Name} ({CellName}, {ViewNoun(Template.View)}) — handle: " +
         (BottomCentre ? "bottom-centre (release Ctrl/Cmd for the origin)" : "origin (hold Ctrl/Cmd for the bottom-centre)") + ". Esc cancels.";
+
+    /// <summary>What the placed thing is called in the prompt and the status line.</summary>
+    public static string ViewNoun(C3dInstanceView view) => view switch
+    {
+        C3dInstanceView.Layout => "layout",
+        C3dInstanceView.Hertzon => "Hertzon design",
+        _ => "3D view",
+    };
 
     public override IReadOnlyList<string> Dimensions => [];
     public override long?[] Current(in C3dDrawInput input) => [];

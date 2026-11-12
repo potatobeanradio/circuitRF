@@ -432,6 +432,7 @@ public static class WorkspaceScanner
             ".ccolor" => NodeKind.ColorThemeFile,
             ".ctech"  => NodeKind.TechFile,
             ".cem"    => NodeKind.EmSetupFile,
+            ".hzn"    => NodeKind.HznFile,
             _         => NodeKind.OtherFile,
         };
 

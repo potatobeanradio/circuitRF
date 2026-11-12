@@ -1,0 +1,331 @@
+{
+ "name": "Unsupported",
+ "designs": [
+  {
+   "name": "Bad",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {},
+   "objects": [
+    {
+     "name": "Torus1",
+     "history": [
+      {
+       "kind": "CreateTorus",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Axis": "Z",
+        "MajorRadius": "5mm",
+        "MinorRadius": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Rounded",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Fillet",
+       "props": {
+        "Radius": "0.1mm",
+        "Edges": "0,2",
+        "Vertices": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Cutter",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Plane",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,0,0",
+        "Axis": "Z",
+        "XSize": "9mm",
+        "YSize": "9mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Cutter",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Facet",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Axis": "Z",
+        "Radius": "1mm",
+        "Height": "1mm",
+        "NumberOfSegments": "12"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Odd",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "round(1.5)*1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "mystery_ceramic",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Mixed",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "2mm+1",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Late",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Move",
+       "props": {
+        "Vector": "1mm,0,0"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Rotate",
+       "props": {
+        "Axis": "Z",
+        "Angle": "90deg",
+        "Center": "0,0,0",
+        "CoordinateSystem": "Global"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Good",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,0,0",
+        "XSize": "1mm",
+        "YSize": "1mm",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Imp",
+     "kind": "Impedance",
+     "props": {
+      "Resistance": "1",
+      "Reactance": "0"
+     },
+     "faces": [],
+     "objects": [
+      "Good"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Rad2",
+     "kind": "Radiation",
+     "props": {
+      "Order": "Second order"
+     },
+     "faces": [],
+     "objects": [
+      "Good"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "Wave",
+     "kind": "Incident Plane Wave",
+     "props": {
+      "E0Vector": "0,0,1"
+     },
+     "faces": [],
+     "objects": [
+      "Good"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": []
+  }
+ ],
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}

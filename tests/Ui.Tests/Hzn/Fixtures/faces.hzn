@@ -1,0 +1,225 @@
+{
+ "name": "Faces",
+ "designs": [
+  {
+   "name": "Faces",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {},
+   "objects": [
+    {
+     "name": "Air",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-5mm,-5mm,-5mm",
+        "XSize": "10mm",
+        "YSize": "10mm",
+        "ZSize": "10mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "RadA",
+     "kind": "Radiation",
+     "props": {
+      "Order": "First order"
+     },
+     "faces": [
+      {
+       "obj": "Air",
+       "face": 1,
+       "sig": [
+        -0.005,
+        0,
+        0,
+        -1,
+        0,
+        0,
+        0.0001,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "RadB",
+     "kind": "Radiation",
+     "props": {
+      "Order": "First order"
+     },
+     "faces": [
+      {
+       "obj": "Air",
+       "face": 0,
+       "sig": [
+        0.005,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0.0001,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "S",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "3GHz",
+      "MaximumPasses": "4",
+      "BasisOrder": "First Order"
+     },
+     "sweeps": []
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": []
+  },
+  {
+   "name": "Kernel",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {},
+   "objects": [
+    {
+     "name": "Plate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-5mm,-5mm,-1mm",
+        "XSize": "10mm",
+        "YSize": "10mm",
+        "ZSize": "2mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Hole",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Hole",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,-2mm",
+        "Axis": "Z",
+        "Radius": "1mm",
+        "Height": "4mm",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Plate",
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Top",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [
+      {
+       "obj": "Plate",
+       "face": 5,
+       "sig": [
+        0,
+        0,
+        0.001,
+        0,
+        0,
+        1,
+        9.685840734641021e-05,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [],
+   "mesh_ops": [],
+   "setups": [],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": []
+  }
+ ],
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2
+}

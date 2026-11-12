@@ -13,6 +13,7 @@ using CircuitRF.Design.Schematic.Import;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 
@@ -329,7 +330,8 @@ public partial class ProjectTreeView : UserControl
          && GetNpyFileNodeFromSource(source) is null
          && GetLooseFileNodeFromSource(source) is null
          && GetFolderNodeFromSource(source) is null
-         && GetPlaceableViewFileNodeFromSource(source) is null) return;
+         && GetPlaceableViewFileNodeFromSource(source) is null
+         && GetHznDesignNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -358,9 +360,12 @@ public partial class ProjectTreeView : UserControl
         // 3D round 3 — a cell's .c3d / .clay, draggable into a 3D view as an instance of exactly that view.
         var viewVm    = cellVm is null && npyVm is null && fileVm is null && folderVm is null
                       ? GetPlaceableViewFileNodeFromSource(source) : null;
+        // HZN-9 — a 3D design of a Hertzon project, draggable into a 3D view as an instance.
+        var hznVm     = cellVm is null && npyVm is null && fileVm is null && folderVm is null && viewVm is null
+                      ? GetHznDesignNodeFromSource(source) : null;
         var savedArgs = _cellPressArgs;
         _cellPressArgs = null; // clear before await to prevent re-entry
-        if (cellVm is null && npyVm is null && fileVm is null && folderVm is null && viewVm is null) return;
+        if (cellVm is null && npyVm is null && fileVm is null && folderVm is null && viewVm is null && hznVm is null) return;
 
         // The .npy payload stays what it was: the Data Display reads that format, and giving a data
         // file a second spelling for the sake of MW3 would break the drop it already serves. The
@@ -370,6 +375,7 @@ public partial class ProjectTreeView : UserControl
           : npyVm    is not null ? new NpyFileDragPayload(npyVm.AbsolutePath).Serialize()
           : fileVm   is not null ? new WorkspaceFileDragPayload(fileVm.AbsolutePath).Serialize()
           : folderVm is not null ? new FolderDragPayload(folderVm.AbsolutePath).Serialize()
+          : hznVm    is not null ? new HznDesignDragPayload(hznVm.AbsolutePath, hznVm.Name).Serialize()
           :                        new CellViewDragPayload(viewVm!.AbsolutePath).Serialize();
 
         var transferItem = new DataTransferItem();
@@ -471,6 +477,18 @@ public partial class ProjectTreeView : UserControl
                 && Path.GetExtension(vm.AbsolutePath) is var ext
                 && (string.Equals(ext, ".c3d", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".clay", StringComparison.OrdinalIgnoreCase))
                 && File.Exists(vm.AbsolutePath))
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
+    private static ProjectTreeNodeViewModel? GetHznDesignNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem { DataContext: ProjectTreeNodeViewModel { Kind: NodeKind.HznDesign3D } vm } && File.Exists(vm.AbsolutePath))
                 return vm;
             v = v.GetVisualParent();
         }

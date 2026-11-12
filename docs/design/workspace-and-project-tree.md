@@ -405,6 +405,11 @@ the focus call silently does nothing.
 - **Layout file** → deferred (v2).
 - **`.cdd` / `.ccolor` / unknown types** → attempts to open; **deferred (no-op) for file types we have no
   viewer for yet** (e.g. `.cdd` until Phase 7's data display). No crash, no error — just nothing yet.
+- **`.hzn` (a Hertzon project)** → expands to its designs, in file order (read on the first expansion, cached against the
+  file's modification time). Double-clicking a **3D design** opens it in the 3D editor as a read-only `.c3d` document held in
+  memory (tab title `<design> — <file>.hzn`); one that circuitRF cannot represent opens nothing and lists every unsupported item.
+  A **circuit design** is listed and says circuitRF does not open it. A project outside the workspace is a Known File and
+  behaves the same. Detail: `src/Design/RESOLVED.md` §HZN-3.
 
 ---
 

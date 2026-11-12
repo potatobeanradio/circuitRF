@@ -359,6 +359,7 @@ public partial class WorkspaceViewModel
     /// </summary>
     internal void EditMaterial(string material, string? technologyPath)
     {
+        if (technologyPath is not null && HeldMaterialsRefusal(technologyPath) is { } held) { Messages.Info(held); return; }
         if (technologyPath is null)
         {
             Messages.Warning(C3dEditorViewModel.EditMaterialNoTechnology);
@@ -404,6 +405,13 @@ public partial class WorkspaceViewModel
 
     // ── the 3D editor (R-em3d53-5) ────────────────────────────────────────────────────────────
 
+    /// <summary>HZN-3 — the materials of a design held in a Hertzon project are the project's, held in memory; they have no
+    /// technology file to edit, and saving them back into the project is not available yet.</summary>
+    private string? HeldMaterialsRefusal(string technologyPath)
+        => _techCache.IsHeld(technologyPath)
+            ? "The materials of a design in a Hertzon project are the project's own. Editing them here arrives with saving the design back."
+            : null;
+
     /// <summary>Connects a 3D editor's material picker requests to the picker dialog.</summary>
     private void HookC3dMaterials(C3dEditorDocument doc)
         => doc.ViewModel.MaterialPickerRequested += (indices, startNew, part) => _ = ShowMaterialPickerAsync(doc, indices, startNew, part);
@@ -416,6 +424,7 @@ public partial class WorkspaceViewModel
         var vm = doc.ViewModel;
         if (HostWindowOf(doc) is not { } window) return;
         string? techPath = vm.Elaboration?.TechnologyPath;
+        if (techPath is not null && HeldMaterialsRefusal(techPath) is { } held) { vm.StatusMessage = held; Messages.Info(held); return; }
         if (vm.Elaboration?.Technology is not { } tech || techPath is null)
         {
             if (techPath is not null && File.Exists(techPath))
@@ -482,7 +491,7 @@ public partial class WorkspaceViewModel
                 Messages.Error(refused);
                 return;
             }
-        if (changed.Count > 0 || tissue) ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
+        if (changed.Count > 0 || tissue) ActivateIfOpen(doc.Key);
         if (part is not null) vm.ApplyPickedMaterial(part, picker.ChosenName);
         else vm.ApplyPickedMaterial(indices, picker.ChosenName);
     }
@@ -582,7 +591,7 @@ public partial class WorkspaceViewModel
                     Messages.Error(refused + " Nothing was pasted.");
                     return;
                 }
-                ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
+                ActivateIfOpen(doc.Key);
             }
             if (vm.CommitPaste(request.Payload, result.Choices) is { } why) Messages.Error(why);
             return;
@@ -602,7 +611,7 @@ public partial class WorkspaceViewModel
         if (MaterialSeeds(tech, techPath).FirstOrDefault(s => s.ReadOnlyReason is null) is not { } seed)
             return $"'{Path.GetFileName(techPath)}' cannot take a new material: {ReadOnlyPathReason(techPath) ?? "it and its libraries are read-only"}.";
         if (CommitMaterialList(techPath, seed, [.. seed.Materials, .. materials]) is { } refused) return refused;
-        ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
+        ActivateIfOpen(doc.Key);
         return null;
     }
 

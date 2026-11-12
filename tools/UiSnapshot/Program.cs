@@ -114,6 +114,7 @@ using CircuitRF.Design.Layout;
 //                                                              --type Name=VendorPartBox types into the Part field
 //                                                              --dialog opens the Component Parameters dialog instead
 //   --archive <workspace>                                     the Archive Workspace dialog
+//   --place-instance-3d <workspace>                           Place Cell Instance's picker as a 3D view opens it (HZN-9: Hertzon designs listed)
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
@@ -160,6 +161,7 @@ bool planarMemoryDialog = false;
 string? readme = null;            // --readme <file.md>: a README as the workspace opens it, pictures included
 string? dxfMappingDialog = null;     // brief DFR38-1: the Layer Mapping dialog and its preview on a DXF
 string? dxfMappingTech = null, dxfMappingMap = null;
+string? hznExportDialog = null, hznInto = null, hznName = null;   // HZN-4: File > Export > Hertzon Project
 bool unsavedSetupDialog = false;     // the question New 3D View from Layout asks of an EM setup with unsaved edits
 bool settingsGeneral = false;
 bool settingsSolvers = false;
@@ -195,6 +197,9 @@ string? palette = null, paletteCategory = null, paletteSearch = null, schematic 
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? cellExistsDialog = null;                       // brief-isc-1
+string? hznConvertDialog = null, hznConvertFolder = null, hznConvertName = null;   // HZN-6
+string? hznUnsavedDialog = null;   // HZN integration
+string? hertzonMode = null, hertzonProject = null, hertzonDesign = null;   // HZN-8
 string? pluginsMenu = null, pluginTrust = null, pluginDialog = null, pluginWorkspace = null;   // brief-plg-1
 double? pluginDialogWidth = null;
 string? pluginPanel = null, pluginState = null;   // brief-plg-2
@@ -206,7 +211,7 @@ string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallP
 string? pluginImage = null; (double, double)? pluginClick = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
-string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
+string? placeInstance3d = null, archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
 string? exportProtect = null;
 string? exportEncapsulate = null;   // brief vendorlib-19
@@ -217,6 +222,9 @@ string? repointQuestion = null;
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
 string? projectTree = null, revealPath = null;
 bool filterOpen = false, filterAllOff = false;
+// HZN-3: --tree-expand <row> (repeatable) and --tree-menu <row> on --project-tree; --hzn-open <file.hzn> --hzn-design <name>.
+var treeExpand = new List<string>();
+string? treeMenu = null, hznOpen = null, hznDesign = null, hznSaveDialog = null;   // HZN-5: --hzn-save-dialog changed|refused
 CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool? projectTreeTool = null;
 string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null, gdsfactoryWorkspace = null;
 string? csym = null, csymPick = null;
@@ -300,11 +308,21 @@ for (int i = 0; i < args.Length; i++)
         case "--dxf-mapping-tech" when i + 1 < args.Length: dxfMappingTech = args[++i]; break;
         case "--dxf-mapping-map" when i + 1 < args.Length: dxfMappingMap = args[++i]; break;
         case "--unsaved-setup-dialog": unsavedSetupDialog = true; break;
+        case "--hzn-export-dialog" when i + 1 < args.Length: hznExportDialog = Path.GetFullPath(args[++i]); break;
+        case "--hzn-into" when i + 1 < args.Length: hznInto = Path.GetFullPath(args[++i]); break;
+        case "--hzn-name" when i + 1 < args.Length: hznName = args[++i]; break;
         case "--settings-general": settingsGeneral = true; break;
         case "--settings-solvers": settingsSolvers = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
         case "--cell-exists-dialog" when i + 1 < args.Length: cellExistsDialog = args[++i]; break;
+        case "--hzn-convert-dialog" when i + 1 < args.Length: hznConvertDialog = args[++i]; break;
+        case "--hzn-unsaved-dialog" when i + 1 < args.Length: hznUnsavedDialog = args[++i]; break;
+        case "--hertzon" when i + 1 < args.Length: hertzonMode = args[++i]; break;
+        case "--hertzon-project" when i + 1 < args.Length: hertzonProject = Path.GetFullPath(args[++i]); break;
+        case "--hertzon-design" when i + 1 < args.Length: hertzonDesign = args[++i]; break;
+        case "--hzn-convert-folder" when i + 1 < args.Length: hznConvertFolder = Path.GetFullPath(args[++i]); break;
+        case "--hzn-convert-name" when i + 1 < args.Length: hznConvertName = args[++i]; break;
         case "--plugins-menu" when i + 1 < args.Length: pluginsMenu = args[++i]; break;
         case "--plugin-trust" when i + 1 < args.Length: pluginTrust = Path.GetFullPath(args[++i]); break;
         case "--settings-plugins" when i + 1 < args.Length: settingsPlugins = args[++i]; break;
@@ -357,10 +375,16 @@ for (int i = 0; i < args.Length; i++)
         case "--select" when i + 1 < args.Length: select = args[++i]; break;
         case "--dialog": parameterDialog = true; break;
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
+        case "--place-instance-3d" when i + 1 < args.Length: placeInstance3d = Path.GetFullPath(args[++i]); break;
         case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
         case "--project-tree" when i + 1 < args.Length: projectTree = Path.GetFullPath(args[++i]); break;
         case "--reveal" when i + 1 < args.Length: revealPath = Path.GetFullPath(args[++i]); break;
         case "--filter-open": filterOpen = true; break;
+        case "--tree-expand" when i + 1 < args.Length: treeExpand.Add(args[++i]); break;
+        case "--tree-menu" when i + 1 < args.Length: treeMenu = args[++i]; break;
+        case "--hzn-open" when i + 1 < args.Length: hznOpen = Path.GetFullPath(args[++i]); break;
+        case "--hzn-design" when i + 1 < args.Length: hznDesign = args[++i]; break;
+        case "--hzn-save-dialog" when i + 1 < args.Length: hznSaveDialog = args[++i]; break;
         case "--filter-all-off": filterAllOff = true; break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
         // brief vendorlib-10: Export to Library's dialog on a cell folder, its Library field set to --export-library.
@@ -459,6 +483,12 @@ if (planarMemoryDialog && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowPlanarMemoryDialog(output);
 }
+if (hznExportDialog is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return HznExportSnapshot.Show(hznExportDialog, hznInto, hznName, output);
+}
 if (unsavedSetupDialog && output is not null)
 {
     AppBuilder.Configure<SnapshotApp>().UseSkia()
@@ -501,6 +531,48 @@ if (cellExistsDialog is not null && output is not null)
     dialog.CaptureRenderedFrame()!.Save(output);
     Console.WriteLine($"wrote {output}");
     return 0;
+}
+// --hertzon <run-dialog|progress|mismatch> [--hertzon-project <file.hzn>] [--hertzon-design <name>]: HZN-8 — Run in Hertzon (SnapshotHertzon.cs).
+if (hertzonMode is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } hertzonApp) hertzonApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return SnapshotHertzon.Run(hertzonMode, hertzonProject, hertzonDesign, output, sizeGiven ? width : 0, sizeGiven ? height : 0);
+}
+// --hzn-convert-dialog <design> [--hzn-convert-folder <dir>] [--hzn-convert-name <cell>]: HZN-6 — Convert to .c3d….
+if (hznConvertDialog is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } hznApp) hznApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    var dialog = CircuitRF.Ui.Views.Dialogs.HznConvertDialog.Build(hznConvertDialog, hznConvertFolder ?? Directory.GetCurrentDirectory(), _ => { }, hznConvertName);
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
+}
+// --hzn-unsaved-dialog <Run Anyway|Convert Anyway> [--hzn-design <name>] [--hzn-open <file.hzn>]: the question before Run in Hertzon or Convert reads a file whose open design has unsaved edits.
+if (hznUnsavedDialog is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } unsavedApp) unsavedApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    var unsaved = CircuitRF.Ui.ViewModels.WorkspaceViewModel.HznUnsavedDialog(hznDesign ?? "Line", hznOpen ?? "microstrip-line.hzn", hznUnsavedDialog);
+    unsaved.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); unsaved.UpdateLayout(); }
+    unsaved.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
+}
+// --hzn-save-dialog changed|refused --hzn-open <project.hzn> --hzn-design <name>: HZN-5 — a save that was refused.
+if (hznSaveDialog is not null && hznOpen is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } saveApp) saveApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return HznSaveSnapshot.Show(hznSaveDialog, hznOpen, hznDesign ?? throw new InvalidOperationException("--hzn-save-dialog needs --hzn-design"), output);
 }
 // brief-plg-2 — a panel plugin's window, with the plugin running (PluginPanelSnapshot).
 if (pluginPanel is not null && output is not null)
@@ -612,8 +684,8 @@ if (netsPanel is not null && output is not null)
     if (dark && Application.Current is { } netsApp) netsApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return ShowSeededNetsPanel(netsPanel, output, sizeGiven ? width : 320, sizeGiven ? height : 460);
 }
-bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
-if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+bool vendorMode = placeInstance3d is not null || projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
+if ((cdd is null && c3dSetups is null && hznOpen is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -676,6 +748,7 @@ if (vendorMode)
             for (int k = 0; k < 6; k++) { Pump(); Thread.Sleep(10); }
             Console.WriteLine($"focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}");
         }
+        if (treeExpand.Count > 0 || treeMenu is not null) SnapshotHzn.PrepareTree(treeTool, host, treeExpand, treeMenu, Pump);
         if (filterOpen && host.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Flyout is not null
                 && ToolTip.GetTip(b) as string == "Filter categories") is { } filterButton)
         {
@@ -683,6 +756,13 @@ if (vendorMode)
             Pump();
         }
     }
+}
+else if (hznOpen is not null)
+{
+    host = SnapshotHzn.Open(hznOpen, hznDesign ?? throw new InvalidOperationException("--hzn-open needs --hzn-design"),
+                            sizeGiven ? width : 1100, sizeGiven ? height : 700);
+    host.Show();
+    Pump();
 }
 else if (c3dSetups is not null)
 {
@@ -1748,6 +1828,7 @@ Window VendorView()
     if (projectTree is not null)
     {
         var tree = projectTreeTool = new CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool();
+        if (treeMenu is not null) tree.SetActions(new WorkspaceViewModel());   // HZN-3: a menu's items answer as the workspace's actions do
         tree.SetWorkspace(projectTree);
         return new Window { Width = sizeGiven ? width : 320, Height = sizeGiven ? height : 360,
                             Content = new CircuitRF.Ui.Views.ProjectTree.ProjectTreeView { DataContext = tree } };
@@ -1844,6 +1925,13 @@ Window VendorView()
         window.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
             window.GetVisualDescendants().OfType<CircuitRF.Ui.Controls.SymbolEditorCanvas>().FirstOrDefault()?.ZoomToFit());
         return window;
+    }
+    if (placeInstance3d is not null)
+    {
+        var picker = new CircuitRF.Ui.Views.Dialogs.InstanceCellPickerDialog(
+            placeInstance3d, Path.Combine(placeInstance3d, "Top", "3d"), null, CircuitRF.Design.Cells.ViewType.ThreeD, true);
+        if (sizeGiven) { picker.Width = width; picker.Height = height; }
+        return picker;
     }
     if (archive is not null)
     {

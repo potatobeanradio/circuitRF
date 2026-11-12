@@ -1217,8 +1217,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>The solver choices this panel offers: a 3D view is never solved by the planar kernels, and may be solved by
     /// circuitRF's own thermal solver (R-em3d75-3 D1: a .cem may not).</summary>
     public IReadOnlyList<Em3dSolverPickerRow> Solver3DChoiceList => IsEmbedded
-        ? [.. _solverRows.Where(c => !c.Value.IsNone), ThermalSolverChoice]
+        ? EmergeOnly ? [.. _solverRows.Where(c => !c.IsCompare && c.Value.Runs(CircuitRF.Design.Em3d.EmergeSolver.Id))]
+                     : [.. _solverRows.Where(c => !c.Value.IsNone), ThermalSolverChoice]
         : _solverRows;
+
+    /// <summary>HZN-7 — a setup of a design held in a Hertzon project is written for EMerge, and translating it to another solver's
+    /// settings is not offered: the picker lists EMerge alone.</summary>
+    public bool EmergeOnly { get; init; }
 
     /// <summary>brief-em3d-49 — set by the 3D editor for an embedded setup: an edit's before and after (the full <c>.cem</c>
     /// spelling) and its description. The editor pushes the undo entry; this panel's own stack stays empty.</summary>

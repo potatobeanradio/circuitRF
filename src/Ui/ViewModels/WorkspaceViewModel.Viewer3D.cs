@@ -271,7 +271,7 @@ public partial class WorkspaceViewModel
             if (CameraKey(doc.CemPath) is { } k && doc.ViewModel.CameraToPersist() is { } cam) _viewer3DCameras[k] = cam;
         // 3D editor round 5 — a .c3d editor's camera too, keyed by its top document (a path distinct from any .cem's).
         foreach (var doc in _openDocsByPath.Values.OfType<CircuitRF.Ui.ThreeD.C3dEditorDocument>())
-            if (!doc.IsScratch && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam) _viewer3DCameras[k] = cam;
+            if (doc.IsPersistedFile && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam) _viewer3DCameras[k] = cam;
         return _viewer3DCameras.Count > 0 ? _viewer3DCameras : null;
     }
 }

@@ -90,6 +90,7 @@ internal static class JsonRun
         public ModelReportJson? Model;
         public VendorLibraryJson? Library;
         public System.Text.Json.Nodes.JsonObject? Plugin;
+        public System.Text.Json.Nodes.JsonObject? Hertzon;
         public TextWriter? Sink;
         public List<ResultOutput> Outputs = [];
         public List<DiagnosticJson> Diagnostics = [];
@@ -314,6 +315,8 @@ internal static class JsonRun
     public static VendorLibraryJson? Library { get => S.Library; set => S.Library = value; }
     /// <summary>brief-plg-5 — what <c>plugin</c> listed, described, ran or recorded.</summary>
     public static System.Text.Json.Nodes.JsonObject? Plugin { get => S.Plugin; set => S.Plugin = value; }
+    /// <summary>HZN-8 — what a run in Hertzon reports (<c>em --solver hertzon</c>): the version, the schema and Hertzon's own summary fields.</summary>
+    public static System.Text.Json.Nodes.JsonObject? Hertzon { get => S.Hertzon; set => S.Hertzon = value; }
 
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
@@ -381,6 +384,7 @@ internal static class JsonRun
         Model               = null;
         Library             = null;
         Plugin              = null;
+        Hertzon             = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -618,7 +622,8 @@ internal static class JsonRun
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
-         || Model is not null || Library is not null || Review is not null || ReviewChecks is not null || Plugin is not null)
+         || Model is not null || Library is not null || Review is not null || ReviewChecks is not null || Plugin is not null
+         || (Hertzon is not null && Data is null))
         {
             // EMB-5 R-emb5-8: `--result summary` on a report with no DataSet — the answer without its
             // per-trial, per-corner and per-iteration records, and a sentence saying what was left out.
@@ -640,7 +645,7 @@ internal static class JsonRun
                                      Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
-                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized, Plugin: Plugin);
+                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized, Plugin: Plugin, Hertzon: Hertzon);
         }
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
@@ -700,7 +705,7 @@ internal static class JsonRun
         // either schema to say which — so a caller now always learns what the run produced and can
         // then decide what to ask for.
         return new ResultPayload(summary, groups, Shape: ResultDocumentWriter.Shape(ds),
-                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf, Rail: Rail, Scratch: Scratch);
+                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf, Rail: Rail, Scratch: Scratch, Hertzon: Hertzon);
     }
 
     /// <summary>

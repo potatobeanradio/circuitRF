@@ -250,10 +250,19 @@ public static class C3dHierarchy
     /// <summary>The other view of an instance's cell.</summary>
     public static C3dInstanceView Other(C3dInstanceView v) => v == C3dInstanceView.Layout ? C3dInstanceView.ThreeD : C3dInstanceView.Layout;
 
+    /// <summary>HZN-9 — the refusal for a command that follows an instance into a CELL (Flatten, Swap View, Push Into Cell)
+    /// when the instance places a design of a Hertzon project instead: there is no cell folder and no second view. Null for
+    /// every other instance.</summary>
+    public static string? HertzonRefusal(C3dInstance inst, string command) =>
+        inst.View != C3dInstanceView.Hertzon ? null
+        : $"{command} does not apply to '{inst.Name}': it places design '{inst.Design}' of the Hertzon project '{Path.GetFileName(inst.CellRef)}', " +
+          "which is not a cell. Keep the instance, or convert the design to a .c3d and place that.";
+
     /// <summary>Why <paramref name="inst"/> of the document at <paramref name="docPath"/> cannot swap to its other view, or
     /// null: its cell does not resolve, the other view is missing, or the swap would make a cycle.</summary>
     public static string? SwapRefusal(string docPath, C3dInstance inst)
     {
+        if (HertzonRefusal(inst, "Swap View") is { } hertzon) return hertzon;
         var to = Other(inst.View);
         if (ExternalCellRef.ResolveCellDir(inst.CellRef, Path.GetDirectoryName(Path.GetFullPath(docPath))) is not { } cellDir || !Directory.Exists(cellDir))
             return $"'{inst.Name}' places '{inst.CellRef}', which resolves to nothing.";
@@ -315,6 +324,7 @@ public static class C3dHierarchy
                                               double tempC = EmSetup.DefaultOperatingTempC, IEnumerable<string>? takenGroups = null)
     {
         var inst = doc.Instances[index];
+        if (HertzonRefusal(inst, "Flatten") is { } hertzon) return C3dFlattenResult.Refuse(hertzon);
         string baseDir = Path.GetDirectoryName(Path.GetFullPath(docPath))!;
         if (ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir) is not { } cellDir || !Directory.Exists(cellDir))
             return C3dFlattenResult.Refuse($"'{inst.Name}' places '{inst.CellRef}', which resolves to nothing: there is nothing to flatten.");

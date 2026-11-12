@@ -100,6 +100,7 @@ public partial class WorkspaceViewModel
     /// </remarks>
     internal bool IsDocumentReadOnly(IDockable? dockable)
     {
+        if (HeldDocumentReadOnlyReason(dockable) is not null) return true;
         string? path = DocumentFilePath(dockable);
         return WorkspaceWritability.IsDocumentReadOnly(path)
             || ReadOnlyReferenceOwnerOf(path) is not null;
@@ -113,7 +114,13 @@ public partial class WorkspaceViewModel
     /// earlier.
     /// </summary>
     internal string? ReadOnlyDocumentReason(IDockable? dockable)
-        => DocumentFilePath(dockable) is { Length: > 0 } path ? ReadOnlyPathReason(path) : null;
+        => HeldDocumentReadOnlyReason(dockable)
+           ?? (DocumentFilePath(dockable) is { Length: > 0 } path ? ReadOnlyPathReason(path) : null);
+
+    /// <summary>HZN-3 — why a document held inside another file (a design of a Hertzon project) cannot be saved, or null.
+    /// It is the editor's document source that knows, so this asks it rather than the filesystem.</summary>
+    private static string? HeldDocumentReadOnlyReason(IDockable? dockable)
+        => (dockable as ThreeD.C3dEditorDocument)?.ViewModel.Source.ReadOnlyReason;
 
     /// <summary><see cref="ReadOnlyDocumentReason"/> for a file that is not open — the 3D view's Materials dialog asks it
     /// of each library a technology names, open or not.</summary>

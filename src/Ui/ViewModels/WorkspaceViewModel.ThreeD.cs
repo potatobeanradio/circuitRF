@@ -143,23 +143,24 @@ public partial class WorkspaceViewModel
         }
     }
 
-    private void OpenC3dEditor(string full, string key, C3dDocument document, bool scratch)
+    private void OpenC3dEditor(string full, string key, C3dDocument document, bool scratch, IC3dDocumentSource? source = null)
     {
         try
         {
             var vm = new C3dEditorViewModel(full, document, Viewer3DBackends.Create, () => CurrentWorkspacePath,
-                                            a => Dispatcher.UIThread.Post(a), _techCache, scratch);
+                                            a => Dispatcher.UIThread.Post(a), _techCache, scratch, source: source);
+            bool held = source is not null and not C3dFileSource;     // HZN-3 — a design held in a project: no per-file window state
             var doc = new C3dEditorDocument(vm);
             vm.Viewer.IsPerspective = false;
             // 3D editor round 5 — the camera (projection included) is window state, as a .cem's 3D view's always was: put
             // back as it was left, from the .cwsuser — never the .c3d, which stays the design.
-            if (StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);
+            if (!held && StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);
             // brief-em3d-45 R-em3d45-1a — the drawing plane is window state: put back where it was left.
-            if (StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
+            if (!held && StoredDrawingPlane(full) is { } plane) vm.SetPlane(plane);
             vm.DrawingPlaneChanged += () => RememberDrawingPlane(vm);
             // brief-em3d-49 — the active setup is per-user editor state; runs land in this workspace's results.
-            vm.ResultsRootProvider = () => EmResultsRoot();
-            vm.RestoreActiveSetup(StoredActiveSetup(full));
+            vm.ResultsRootProvider = held ? () => CircuitRF.Design.Interchange.Hzn.HznEmergeRun.ResultsRoot(full) : () => EmResultsRoot();     // HZN-7 — beside the .hzn
+            vm.RestoreActiveSetup(held ? null : StoredActiveSetup(full));
             vm.ActiveSetupChanged += () => RememberActiveSetup(vm);
             vm.SolveStatusesChecked += () => OnC3dSolveStatusesChecked(vm);     // brief-em3d-98 — the tree row and a float's title
             vm.ActiveSetupChanged += () => OnC3dSolveStatusesChecked(vm);
@@ -288,6 +289,7 @@ public partial class WorkspaceViewModel
     /// <summary>Writes a 3D view; reports either way. True when it was written.</summary>
     private bool SaveC3d(C3dEditorDocument doc)
     {
+        if (doc.ViewModel.Source is CircuitRF.Ui.ThreeD.Hzn.HznDesignSource held) return SaveHznDesign(doc, held);     // HZN-5
         if (doc.ViewModel.Save() is { } why)
         {
             Messages.Error($"Failed to save '{doc.FilePath}': {why}");
@@ -310,6 +312,7 @@ public partial class WorkspaceViewModel
     /// design starts in the open workspace (its own folder is a temporary one), else wherever the picker opens.</summary>
     internal async Task SaveC3dAs(C3dEditorDocument doc, Window owner)
     {
+        if (doc.ViewModel.Source is CircuitRF.Ui.ThreeD.Hzn.HznDesignSource held) { await SaveHznDesignAsC3dAsync(doc, held, owner); return; }     // HZN-5
         string? startDir = doc.IsScratch ? WorkspaceRootDir : Path.GetDirectoryName(doc.FilePath);
         var start = startDir is null ? null : await owner.StorageProvider.TryGetFolderFromPathAsync(new Uri(startDir));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
@@ -342,6 +345,7 @@ public partial class WorkspaceViewModel
     {
         var vm = doc.ViewModel;
         vm.OpenLayoutRequested += path => _ = OpenOrActivateLayoutAsync(path);
+        vm.OpenHertzonDesignRequested += (hzn, design) => OpenHznDesign(hzn, design);     // HZN-9 — Open Design on a Hertzon instance
         vm.CellCreated += _ => _factory.ProjectTreeTool?.Refresh();
         vm.OpenElsewhere = path => _openDocsByPath.TryGetValue(C3dEditorDocument.KeyFor(path), out var other) && !ReferenceEquals(other, doc);
         vm.Confirm = async question =>
@@ -373,7 +377,7 @@ public partial class WorkspaceViewModel
         while (true)
         {
             var dialog = new InstanceCellPickerDialog(WorkspaceRootDir, baseDir, C3dHierarchy.CellDirOf(vm.FilePath),
-                                                      CircuitRF.Design.Cells.ViewType.ThreeD, CanReferenceExternalCell);
+                                                      CircuitRF.Design.Cells.ViewType.ThreeD, CanReferenceExternalCell, KnownHznFiles());
             var pick = await dialog.ShowDialog<CircuitRF.Ui.Layout.CellPickResult?>(owner);
             if (pick is null) return;
             if (pick.ReferenceRequested)
@@ -383,6 +387,11 @@ public partial class WorkspaceViewModel
                 pick = new CircuitRF.Ui.Layout.CellPickResult(ExternalCellRef.MakeCellRef(baseDir, broughtIn), broughtIn);
             }
             if (pick.CellRef.Length == 0) return;
+            if (pick.HznDesign is not null)
+            {
+                if (vm.BeginHertzonPlacement(pick.CellRef, pick.HznDesign, pick.AbsoluteCellDir) is { } refused) Messages.Warning(refused);
+                return;
+            }
             var view = pick.View switch
             {
                 CircuitRF.Design.Cells.ViewType.Layout => C3dInstanceView.Layout,
@@ -556,6 +565,7 @@ public partial class WorkspaceViewModel
     /// <summary>The plane as it is now; the default plane is no row at all.</summary>
     private void RememberDrawingPlane(C3dEditorViewModel vm)
     {
+        if (vm.Source is not C3dFileSource) return;
         if (CameraKey(vm.TopFilePath) is not { } k) return;
         _drawingPlanes ??= LoadStoredDrawingPlanes();
         if (vm.Plane == DrawingPlane.Default) _drawingPlanes.Remove(k);
@@ -576,6 +586,7 @@ public partial class WorkspaceViewModel
 
     private void RememberActiveSetup(C3dEditorViewModel vm)
     {
+        if (vm.Source is not C3dFileSource) return;
         if (CameraKey(vm.TopFilePath) is not { } k) return;
         _activeSetups ??= new Dictionary<string, string>(StringComparer.Ordinal);
         if (vm.ActiveSetupName is { } name) _activeSetups[k] = name; else _activeSetups.Remove(k);
@@ -615,8 +626,16 @@ public partial class WorkspaceViewModel
         // brief-em3d-98 R-em3d98-7 — one line before replacing a complete, current result (the setup run, active or not).
         if (!meshOnly && !fromCem && (setupName ?? c3d.ActiveSetupName) is { } embedded && !await ConfirmRerunAsync(c3d, embedded)) return;
         var document = c3d.RunDocument();
-        string path = c3d.TopFilePath;
+        string path = c3d.RunPath;
         string? cws = CurrentWorkspacePath;
+        // HZN-7 — a design held in a project runs through this same path: filed by its virtual path, on an elaborator that finds the
+        // project's materials in this window's technology cache, its results beside the .hzn, its record naming the .hzn.
+        var held = c3d.Source as CircuitRF.Ui.ThreeD.Hzn.HznDesignSource;
+        string? resultsRootOverride = held is null ? null : CircuitRF.Design.Interchange.Hzn.HznEmergeRun.ResultsRoot(held.FilePath);
+        var elaborator = held is null ? null : c3d.NewRunElaborator();
+        if (held?.Translation is { } translation && !fromCem && (setupName ?? c3d.ActiveSetupName) is { } chosen
+            && CircuitRF.Design.Interchange.Hzn.HznEmergeRun.UnusedNote(translation, translation.Provenance.Setups.GetValueOrDefault(chosen, chosen)) is { } unused)
+            Messages.Info(unused, held.FilePath);
         // The panel whose Simulate/Cancel reflect the run: the setup editor when it shows this setup, else a transient one.
         var panel = c3d.SetupEditor?.ViewModel is { IsEmbedded: true } shown && !fromCem &&
                     C3dSetups.ForRun(shown.Working, path).Name == setup.Name
@@ -626,7 +645,9 @@ public partial class WorkspaceViewModel
             device: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred,
             memoryCeilingBytes: CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.CeilingBytes,
             emergeDevice: CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred,
-            target: fromCem ? null : new EmRunTarget { SetupPath = path, EmbeddedSetup = setupName ?? c3d.ActiveSetupName }), meshOnly);
+            elaborator: elaborator,
+            target: fromCem ? null : new EmRunTarget { SetupPath = held?.FilePath ?? path, EmbeddedSetup = setupName ?? c3d.ActiveSetupName }),
+            meshOnly, resultsRootOverride);
         if (ok && meshOnly && (setupName is null || setupName == c3d.ActiveSetupName)) c3d.Viewer.ShowMeshWhenAvailable = true;
         // brief-em3d-98 R-em3d98-6 — whichever setup ran, and however it ended (a cancelled run's status changed too).
         if (ok) c3d.RunFinished();
@@ -664,11 +685,12 @@ public partial class WorkspaceViewModel
         // 3D editor round 5 — the Analyses panel lets go of a closed .c3d's setups (and falls back to the schematic's list).
         if (_factory.AnalysesTool is { } tool && ReferenceEquals(tool.C3dEditor, doc.ViewModel)) tool.C3dEditor = null;
         // Not after a workspace switch has dropped the table: the outgoing session was persisted with this camera in it.
-        if (_viewer3DCameras is not null && !doc.IsScratch && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam)
+        if (_viewer3DCameras is not null && doc.IsPersistedFile && CameraKey(doc.FilePath) is { } k && doc.ViewModel.Viewer.CameraToPersist() is { } cam)
             _viewer3DCameras[k] = cam;
         if (_c3dWatchers.Remove(doc, out var w)) w.Dispose();
         _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, false);
-        if (!doc.IsScratch) InvalidateTreeSolve(doc.FilePath);     // brief-em3d-98 — the row goes back to the file's answer
+        if (doc.IsPersistedFile) InvalidateTreeSolve(doc.FilePath);     // brief-em3d-98 — the row goes back to the file's answer
+        (doc.ViewModel.Source as CircuitRF.Ui.ThreeD.Hzn.HznDesignSource)?.Release();     // HZN-3 — the project's materials held for it
         NotifyHierarchyCanExecuteChanged();
         doc.ViewModel.Dispose();
         RaiseThreeDMenuChanged();
@@ -980,6 +1002,7 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(ThreeDExportStepTip));
         ExportStepCommand.NotifyCanExecuteChanged();
         ExportGltfCommand.NotifyCanExecuteChanged();
+        ExportHertzonCommand.NotifyCanExecuteChanged();
         ExportDrawingCommand.NotifyCanExecuteChanged();
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();
@@ -1006,6 +1029,7 @@ public partial class WorkspaceViewModel
         ThreeDMaterialsCommand.NotifyCanExecuteChanged();
         RunAnalysisCommand.NotifyCanExecuteChanged();
         MeshOnlyCommand.NotifyCanExecuteChanged();
+        RunInHertzonFromEditorCommand.NotifyCanExecuteChanged();
         RaiseThreeDSelectionChanged();
     }
 

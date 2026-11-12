@@ -65,7 +65,7 @@ public sealed partial class C3dEditorViewModel
                 var taken = new TaskCompletionSource<(string Text, string Path)?>();
                 _post(() =>
                 {
-                    try { taken.TrySetResult(ct.IsCancellationRequested ? null : (C3dPersistence.Serialize(TopDocument), TopFilePath)); }
+                    try { taken.TrySetResult(ct.IsCancellationRequested ? null : (C3dPersistence.Serialize(TopDocument), RunPath)); }
                     catch (Exception e) { taken.TrySetException(e); }
                 });
                 if (await taken.Task.ConfigureAwait(false) is not { } snapshot) return;
@@ -92,7 +92,7 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public IReadOnlyList<SetupSolveStatus> SolveStatusOf(string setupName)
         => ResultsRootProvider?.Invoke() is { } root
-            ? C3dSolveStatus.OfSetup(TopDocument, TopFilePath, root, setupName) : [];
+            ? C3dSolveStatus.OfSetup(TopDocument, RunPath, root, setupName) : [];
 
     /// <summary>
     /// R-em3d98-3 — the active setup is part of the document: written only when it is not the first setup (so no existing file

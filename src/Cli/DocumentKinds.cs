@@ -51,6 +51,8 @@ internal enum DocumentKind
     /// <summary>A file with one of circuitRF's extensions whose CONTENT is another program's — the
     /// motion-capture format that also uses <c>.c3d</c> (overview §1c). Named, never reported as a
     /// broken circuitRF document.</summary>
+    /// <summary>A Hertzon project, a <c>.hzn</c> (HZN-2): recognised by its content, <c>format: hertzon-project</c>.</summary>
+    Hertzon,
     Foreign,
     Unknown,
 }
@@ -96,6 +98,7 @@ internal static class DocumentKinds
         DocumentKind.ModelPart     => "model-part",
         DocumentKind.ModelLibraryManifest => "model-library",
         DocumentKind.Plugin        => "plugin",
+        DocumentKind.Hertzon       => "hertzon",
         DocumentKind.Foreign       => "foreign",
         _                          => "unknown",
     };
@@ -175,6 +178,9 @@ internal static class DocumentKinds
             // A data display. `render` draws one (RND-4); `check`/`explain` do not read it yet, and
             // classify it rather than calling it unknown so the refusal names what it IS.
             ".cdd"   => DocumentKind.DataDisplay,
+            // BY CONTENT (HZN-2): a project says what it is in its `format` key, which Hertzon writes last. A file that is not JSON at all
+            // is a damaged project (a truncated save), and is read as one so that it is reported, not called somebody else's.
+            ".hzn"   => HznCli.IsHertzon(path) ? DocumentKind.Hertzon : DocumentKind.Foreign,
             _        => DocumentKind.Unknown,
         };
 

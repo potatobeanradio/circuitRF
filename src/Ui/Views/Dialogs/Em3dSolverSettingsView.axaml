@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
              x:Class="CircuitRF.Ui.Views.Dialogs.Em3dSolverSettingsView">
 
   <!--
@@ -336,6 +337,9 @@
         </Grid>
       </StackPanel>
     </Border>
+
+    <!-- ── HZN-8 R-hzn8-1: Hertzon's command line (code-built: HertzonSettingsRow) ── -->
+    <dlg:HertzonSettingsRow/>
 
     <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
     <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,4,0,0"

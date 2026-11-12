@@ -1624,6 +1624,8 @@ static string FormatOhms(double re, double im)
 /// </summary>
 static int RunEm(string[] args)
 {
+    // HZN-8 — `--solver hertzon` runs the project in Hertzon's own command line; nothing else here applies to it.
+    if (HznRunVerb.Claims(args)) return HznRunVerb.Run(args);
     string? input = null, output = null, workspace = null, solverName = null, setupName = null;
     // brief-sar-12 R-sar12-3 — `em x.c3d --bands <sweep>`: every band's setup, made from the sweep's template, run in turn.
     string? bandsName = null;
@@ -1653,11 +1655,21 @@ static int RunEm(string[] args)
     string? componentPorts = null;
     // brief-cosim-pattern-1 R-cp1-6 — `em --adopt x.sNp`: a record for a result from before records existed. Solves nothing.
     string? adopt = null;
+    // HZN-7 — `em x.hzn --design D`: which 3D design of a Hertzon project to run.
+    string? hznDesign = null;
+    // HZN-8 — `--sweep` names a Hertzon sweep; it is read here only to refuse it off the Hertzon path.
+    string? hertzonSweepOffPath = null;
 
     for (int i = 0; i < args.Length; i++)
     {
         switch (args[i])
         {
+            case "--design" when i + 1 < args.Length:
+                hznDesign = args[++i];
+                break;
+            case "--sweep" when i + 1 < args.Length:
+                hertzonSweepOffPath = args[++i];
+                break;
             case "--adopt" when i + 1 < args.Length:
                 adopt = args[++i];
                 break;
@@ -1779,6 +1791,8 @@ static int RunEm(string[] args)
         if (solverName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--solver"));
         if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
         if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
+        if (DocumentKinds.Classify(input) == DocumentKind.Hertzon)
+            return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(input, "--dry-run is not offered for a Hertzon design; explain names the setup that would run."));
         return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores, componentPorts);
     }
 
@@ -1807,7 +1821,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--design <hzn design>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em --adopt <file.sNp>");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
@@ -1817,6 +1831,17 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.FileNotFound(input));
 
     string cemPath = Path.GetFullPath(input);
+
+    if (hertzonSweepOffPath is not null)
+        return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath, "--sweep names a sweep of a Hertzon project and applies only with --solver hertzon."));
+    // HZN-7 R-hzn7-2 — a Hertzon project: the design is translated in memory and run through the same door a .c3d is.
+    if (DocumentKinds.Classify(cemPath) == DocumentKind.Hertzon)
+        return HznEm.Run(cemPath, hznDesign, setupName, output, solverName,
+                         bandsName is not null ? "--bands" : componentPorts is not null ? "--component-ports" : referenceName is not null ? "--reference" : null,
+                         maxCores, force, memoryLimit, emergeDevice, EmProgressToStderr(meshOnly), RunHost.Cancellation,
+                         (r, setup, path) => ReportEmRun(r, setup, path));
+    if (hznDesign is not null)
+        return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(cemPath, "--design names a design of a Hertzon project (.hzn)."));
 
     // brief-em3d-42 R-em3d42-6 — a .c3d runs one of its own embedded setups: the one there is, or --setup's.
     CircuitRF.Design.ThreeD.C3dDocument? threeD = null;

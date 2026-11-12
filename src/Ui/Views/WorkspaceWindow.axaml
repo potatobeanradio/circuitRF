@@ -171,6 +171,7 @@
                                     <NativeMenuItem Header="Board…" Command="{Binding ExportBoardCommand}"/>
                                     <NativeMenuItem Header="STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="glTF…" ToolTip="{Binding ThreeDExportGltfTip}" Command="{Binding ExportGltfCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Hertzon Project…" ToolTip="{Binding ThreeDExportHertzonTip}" Command="{Binding ExportHertzonCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <!-- 3D vector copy and drawing export (2026-09-27) — the 3D pane's own Export Drawing…; mirrored below and in the torn-off File menu. -->
                                     <NativeMenuItem Header="Drawing…" ToolTip="A drawing of the active 3D document: isometric, top, front and other views, and sections, at one scale, as SVG or PDF. Requires an active 3D document." Command="{Binding ExportDrawingCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board netlist (IPC-D-356)…" Command="{Binding ExportBoardNetlistCommand}"/>
@@ -539,6 +540,7 @@
                         <NativeMenuItem Header="Run"  Command="{Binding RunAnalysisCommand}"  Gesture="Meta+R"/>
                         <NativeMenuItem Header="Stop" Command="{Binding StopAnalysisCommand}" Gesture="Meta+OemPeriod"/>
                         <NativeMenuItem Header="Mesh Only" Command="{Binding MeshOnlyCommand}"/>
+                        <NativeMenuItem Header="Run in Hertzon" Command="{Binding RunInHertzonFromEditorCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -1114,6 +1116,10 @@
                               Command="{Binding ExportGltfCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="{Binding ThreeDExportGltfTip}"/>
+                    <MenuItem Header="_Hertzon Project…"
+                              Command="{Binding ExportHertzonCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="{Binding ThreeDExportHertzonTip}"/>
                     <MenuItem Header="Dra_wing…"
                               Command="{Binding ExportDrawingCommand}"
                               CommandParameter="{Binding $parent[Window]}"
@@ -1658,6 +1664,11 @@
                           Command="{Binding MeshOnlyCommand}"
                           ToolTip.Tip="The mesh a run of the 3D view's active setup would solve on, with no solve.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Run in _Hertzon"
+                          Command="{Binding RunInHertzonFromEditorCommand}"
+                          ToolTip.Tip="Solve the opened Hertzon design in Hertzon itself, from its file.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

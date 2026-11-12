@@ -379,6 +379,18 @@ The Workspace Tree panel on a workspace folder. `--reveal` runs a document tab's
 and prints the row it selected and what has focus; a short `--size` shows it scrolling. `--filter-open` opens the
 category filter's flyout, and `--filter-all-off` turns its All switch off first.
 
+`--tree-expand <row name>` (repeatable) expands every row of that name — a `.hzn` row expands to its designs — and
+`--tree-menu <row name>` opens that row's context menu, its items answering as the workspace's own actions do.
+
+**A Hertzon design in the 3D editor** (`SnapshotHzn.cs`):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --hzn-open <file.hzn> --hzn-design <name> -o out.png [--size WxH]
+```
+
+The design as the workspace opens it: the 3D editor on a `HznDesignSource` (the canvas cannot draw headless; the toolbar and the
+Object Tree do), or, when the design is refused, the dialog over every unsupported item.
+
 ## How it is faithful
 
 - **The display is opened by `DisplayWindowViewModel.LoadAllAsync`** — the GUI's own File ▸ Open — so the plots,
@@ -403,6 +415,18 @@ category filter's flyout, and `--filter-all-off` turns its All switch off first.
 - **A key binding fires only while focus is inside the view that declares it.** Deleting the box that had focus
   leaves it nowhere, so a following `--key Meta+Z` does nothing here; in the application the shell's Edit menu
   serves that key. Click the toolbar's undo button instead.
+
+**The unsaved-design question** before Run in Hertzon or Convert to .c3d… reads a project whose open design has edits (HZN integration):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --hzn-unsaved-dialog "Run Anyway" [--hzn-design <name>] [--hzn-open <file.hzn>] [--dark] -o out.png
+```
+
+**The Convert to .c3d dialog** (HZN-6) for one Hertzon design, over a folder and a cell name (a name that clashes shows the dialog's problem line):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --hzn-convert-dialog <design> [--hzn-convert-folder <dir>] [--hzn-convert-name <cell>] [--dark] -o out.png
+```
 
 **The Layer Mapping dialog on a DXF** (brief DFR38-1), with its preview: the real import up to its question, then Cancel. A map fills in the rows as `convert --layer-map` would.
 
@@ -485,3 +509,7 @@ Build the view model the way the application does (its own load or factory, neve
 put the real view in the `Window`, pump, capture. To drive an edit, raise the real event on the real control —
 `new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter, Source = box }` commits a text box
 through its own handler — and capture again.
+
+HZN-5: `--hzn-save-dialog changed|refused --hzn-open <project.hzn> --hzn-design <name> -o out.png` renders the two answers a save of
+an edited design gives besides success: the project changed on disk (Reload / Save As .c3d / Cancel, the unsaved edits named), and a
+save refused with its reasons. Edits are made to a scratch copy; the given file is never written.

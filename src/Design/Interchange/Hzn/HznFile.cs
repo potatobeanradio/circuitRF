@@ -57,10 +57,10 @@ public sealed class HznFile
     public string Path { get; }
 
     /// <summary>The whole file, every byte of it accounted for.</summary>
-    public HznJsonDocument Document { get; }
+    public HznJsonDocument Document { get; private set; }
 
     /// <summary>The typed view over <see cref="Document"/>; reads and writes the same tree.</summary>
-    public HznProject Project { get; }
+    public HznProject Project { get; private set; }
 
     /// <summary>
     /// R-hzn1-4: when on, the first <see cref="Save"/> of this instance copies the file as it was to
@@ -131,7 +131,14 @@ public sealed class HznFile
     /// not the one that was read (R-hzn1-3); a reload is the caller's decision. The write is atomic: a
     /// temp file in the same folder, then a replace.
     /// </summary>
-    public HznSaveResult Save()
+    public HznSaveResult Save() => Save(null);
+
+    /// <summary>
+    /// HZN-5 — <see cref="Save()"/> for a tree edited on a COPY of this file's: <paramref name="replacement"/> is written, with
+    /// the same change-on-disk check, and after a successful write it becomes this file's tree. A refused save leaves both this
+    /// file's tree and the disk as they were, so a failed attempt costs nothing.
+    /// </summary>
+    public HznSaveResult Save(HznJsonDocument? replacement)
     {
         byte[] onDisk;
         try
@@ -152,13 +159,17 @@ public sealed class HznFile
         byte[] bytes;
         try
         {
-            bytes = ToBytes();
+            bytes = (replacement ?? Document).ToBytes();
         }
         catch (EncoderFallbackException e)
         {
             return Refused(HznDiagnostics.SaveFailed(Path, e.Message));
         }
-        if (bytes.AsSpan().SequenceEqual(onDisk)) return new(true, false, null, null);
+        if (bytes.AsSpan().SequenceEqual(onDisk))
+        {
+            if (replacement is not null) Adopt(replacement);
+            return new(true, false, null, null);
+        }
 
         string? backup = null;
         if (BackupOnFirstSave && !_backedUp)
@@ -186,7 +197,14 @@ public sealed class HznFile
         }
         _length = bytes.Length;
         _sha256 = SHA256.HashData(bytes);
+        if (replacement is not null) Adopt(replacement);
         return new(true, true, backup, null);
+    }
+
+    private void Adopt(HznJsonDocument replacement)
+    {
+        Document = replacement;
+        Project = new HznProject((HznJsonObject)replacement.Root);
     }
 
     private static HznSaveResult Refused(Diagnostic why) => new(false, false, null, why);

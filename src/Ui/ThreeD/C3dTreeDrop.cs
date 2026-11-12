@@ -18,6 +18,9 @@ namespace CircuitRF.Ui.ThreeD;
 /// <summary>A drop's decision: the cell and view to place (and the reference to write), or the refusal.</summary>
 public sealed record C3dTreeDropPlan(string? CellDir, string? CellRef, C3dInstanceView View, string? Refusal, string? Note = null)
 {
+    /// <summary>HZN-9 — for a Hertzon design, its name; <see cref="CellDir"/> then holds the <c>.hzn</c> file.</summary>
+    public string? Design { get; init; }
+
     public bool Ok => Refusal is null;
     public static C3dTreeDropPlan Refuse(string why) => new(null, null, C3dInstanceView.ThreeD, why);
 }
@@ -30,12 +33,22 @@ public static class C3dTreeDrop
     /// </summary>
     public static C3dTreeDropPlan? Resolve(string? text, string c3dPath)
     {
+        if (HznDesignDragPayload.TryParse(text, out var design)) return ForHertzon(design.HznAbsPath, design.Design, c3dPath);
         if (CellDragPayload.TryParse(text, out var cell)) return ForCell(cell.CellAbsPath, c3dPath);
         if (CellViewDragPayload.TryParse(text, out var view)) return ForFile(view.ViewFileAbsPath, c3dPath);
         // A .c3d / .clay that is a LOOSE file in the tree travels as a workspace file; anything else is not ours.
         if (WorkspaceFileDragPayload.TryParse(text, out var file) && ViewOf(file.FileAbsPath) is not null)
             return ForFile(file.FileAbsPath, c3dPath);
         return null;
+    }
+
+    private static C3dTreeDropPlan ForHertzon(string hznPath, string design, string c3dPath)
+    {
+        hznPath = Path.GetFullPath(hznPath);
+        if (!File.Exists(hznPath))
+            return C3dTreeDropPlan.Refuse($"'{Path.GetFileName(hznPath)}' does not exist: there is nothing to place.");
+        return new(hznPath, ExternalCellRef.MakeCellRef(Path.GetDirectoryName(Path.GetFullPath(c3dPath))!, hznPath),
+                   C3dInstanceView.Hertzon, null) { Design = design };
     }
 
     private static C3dTreeDropPlan ForCell(string cellDir, string c3dPath)

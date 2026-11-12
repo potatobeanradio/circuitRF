@@ -1,0 +1,138 @@
+{
+ "cli_schema": 1,
+ "hertzon": "9.9.9",
+ "project": "stub.hzn",
+ "file_format": {
+  "format": "hertzon-project",
+  "version": 2
+ },
+ "designs": [
+  {
+   "name": "Ok",
+   "kind": "3d",
+   "units": "mm",
+   "ports": [
+    {
+     "number": 1,
+     "name": "1",
+     "kind": "Wave Port",
+     "modes": 1,
+     "z0_ohm": null
+    },
+    {
+     "number": 2,
+     "name": "2",
+     "kind": "Lumped Port",
+     "modes": 1,
+     "z0_ohm": 50.0
+    }
+   ],
+   "variables": [
+    {
+     "name": "w",
+     "expression": "3mm",
+     "scope": "design",
+     "value": 0.003,
+     "unit": "m"
+    },
+    {
+     "name": "$eps",
+     "expression": "4.4",
+     "scope": "project",
+     "value": 4.4,
+     "unit": ""
+    }
+   ],
+   "setups": [
+    {
+     "name": "Setup1",
+     "enabled": true,
+     "adaptive": {
+      "mode": "Single",
+      "frequency_hz": 4000000000.0
+     },
+     "max_delta_s": 0.02,
+     "max_passes": 20,
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "enabled": true,
+       "type": "Interpolating",
+       "distribution": "Linear Count",
+       "start_hz": 1000000000.0,
+       "stop_hz": 6000000000.0,
+       "points": 101
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "NoConv5",
+   "kind": "3d",
+   "units": "mm",
+   "ports": [
+    {
+     "number": 1,
+     "name": "1",
+     "kind": "Wave Port",
+     "modes": 1,
+     "z0_ohm": null
+    },
+    {
+     "number": 2,
+     "name": "2",
+     "kind": "Lumped Port",
+     "modes": 1,
+     "z0_ohm": 50.0
+    }
+   ],
+   "variables": [
+    {
+     "name": "w",
+     "expression": "3mm",
+     "scope": "design",
+     "value": 0.003,
+     "unit": "m"
+    },
+    {
+     "name": "$eps",
+     "expression": "4.4",
+     "scope": "project",
+     "value": 4.4,
+     "unit": ""
+    }
+   ],
+   "setups": [
+    {
+     "name": "Setup1",
+     "enabled": true,
+     "adaptive": {
+      "mode": "Single",
+      "frequency_hz": 4000000000.0
+     },
+     "max_delta_s": 0.02,
+     "max_passes": 20,
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "enabled": true,
+       "type": "Interpolating",
+       "distribution": "Linear Count",
+       "start_hz": 1000000000.0,
+       "stop_hz": 6000000000.0,
+       "points": 101
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Sch",
+   "kind": "circuit",
+   "ports": [],
+   "variables": [],
+   "setups": []
+  }
+ ]
+}

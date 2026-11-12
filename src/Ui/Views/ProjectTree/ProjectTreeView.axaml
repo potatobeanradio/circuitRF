@@ -502,6 +502,38 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- HZN-3: a Hertzon project and its designs. The items whose piece has not landed are
+                                             disabled and their tooltips say what is missing. -->
+                                        <MenuItem Header="Open"
+                                                  Command="{Binding OpenHznDesignCommand}"
+                                                  IsVisible="{Binding IsHznDesign}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Open in Hertzon"
+                                                  Command="{Binding OpenInHertzonCommand}"
+                                                  IsVisible="{Binding IsHznProject}"
+                                                  ToolTip.Tip="{Binding OpenInHertzonTip}" ToolTip.ShowOnDisabled="True">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Convert to .c3d…"
+                                                  Command="{Binding ConvertToC3dCommand}"
+                                                  IsVisible="{Binding IsHznDesign3D}"
+                                                  ToolTip.Tip="{Binding ConvertToC3dTip}" ToolTip.ShowOnDisabled="True">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Run in Hertzon"
+                                                  Command="{Binding RunInHertzonCommand}"
+                                                  IsVisible="{Binding IsHznDesign3D}"
+                                                  ToolTip.Tip="{Binding RunInHertzonTip}" ToolTip.ShowOnDisabled="True">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="PlayOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Simulate"
+                                                  Command="{Binding SimulateHznCommand}"
+                                                  IsVisible="{Binding IsHznDesign3D}"
+                                                  ToolTip.Tip="{Binding SimulateHznTip}" ToolTip.ShowOnDisabled="True">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Play" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- Technology (.ctech) node actions — no editor yet (L0d) -->
                                         <MenuItem Header="Set as Workspace Default"
                                                   Command="{Binding SetAsWorkspaceDefaultCommand}"
@@ -621,7 +653,7 @@
                                                   ToolTip.Tip="Digitise this picture of an S-parameter plot — rectangular or Smith — into a Touchstone file, every missing phase and entry stated in the matrix grid.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <MenuItem Header="Remove Reference"
+                                        <MenuItem Header="{Binding RemoveKnownFileHeader}"
                                                   Command="{Binding RemoveKnownFileCommand}"
                                                   IsVisible="{Binding IsKnownFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>

@@ -29,7 +29,7 @@ public sealed partial class C3dEditorViewModel
     {
         if (ResultsRootProvider?.Invoke() is not { } root) return null;
         if (C3dSetups.Read(Document).FirstOrDefault(s => s.Name == setupName)?.Setup is not { IsThermal: false } setup) return null;
-        return FieldPlotResolver.RunDirectories(C3dSetups.ForRun(setup, TopFilePath), root).Palace;
+        return FieldPlotResolver.RunDirectories(C3dSetups.ForRun(setup, RunPath), root).Palace;
     }
 
     /// <summary>Whether embedded setup <paramref name="setupName"/>'s run folder holds saved fields now.</summary>

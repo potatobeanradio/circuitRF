@@ -74,7 +74,7 @@ internal static class Explain
         // A question about a gdsfactory kit's interpreter, not about a document (brief-gdf-2 R-gdf2-5c).
         if (Array.IndexOf(args, "--pdk") >= 0) return ExplainPdk.Run(args);
 
-        string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
+        string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null, designName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
         bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false, wantNets = false;
         IReadOnlyList<string>? snpEntries = null;
@@ -107,6 +107,8 @@ internal static class Explain
                     snpEntries = [.. args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
                     continue;
                 case "--all":     all         = true; continue;
+                // HZN-2 — which design of a Hertzon project.
+                case "--design" when i + 1 < args.Length: designName = args[++i]; continue;
                 case "--view" when i + 1 < args.Length:
                 {
                     // Only ever a disambiguator for a cell folder, and spelled exactly as `render`
@@ -260,6 +262,7 @@ internal static class Explain
                 exit |= ExplainThreeD(path, walks, out em3d, sets, setupName, objectName, device, memoryLimit, maxCores);
                 solved = Solved.Of(Path.GetFullPath(path));          // brief-em3d-98 R-em3d98-8
                 break;
+            case DocumentKind.Hertzon:         exit |= HznCli.Explain(path, designName, setupName, walks); break;
             case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
             case DocumentKind.MaterialLibrary: ExplainMaterialLibrary(path, walks); break;
             // A circuit reports its workspace walk here; its analyses are --analysis's. (Brief 53 had put the technology case
@@ -1338,6 +1341,18 @@ internal static class Explain
             int code = exists ? 0 : JsonRun.Fail(CliDiagnostics.ExplainRefFileNotFound(reference, model));
             return (new ExplainReferenceJson(reference, from, model, exists ? "resolved" : "not-found",
                 root is null ? null : WorkspaceRootFinder.IsOutside(model, root), null, null, bas, walk), code);
+        }
+
+        // HZN-9 — a reference to a Hertzon project (a .c3d instance's CellRef with View Hertzon) names a FILE, spelled as a cell
+        // reference is (relative, or ws://alias/…), so the cell walk would answer a question the elaborator never asks.
+        if (CircuitRF.Design.Interchange.Hzn.HznInstances.IsHertzonFile(reference))
+        {
+            string? hzn = CircuitRF.Design.Interchange.Hzn.HznInstances.ResolveFile(reference, from);
+            bool there = hzn is not null && File.Exists(hzn);
+            string? hostRoot = WorkspaceRootFinder.FindAncestorCws(from) is { } hostCws ? Path.GetDirectoryName(hostCws) : null;
+            int status = there ? 0 : JsonRun.Fail(CliDiagnostics.ExplainRefFileNotFound(reference, hzn ?? reference));
+            return (new ExplainReferenceJson(reference, from, hzn, there ? "resolved" : "not-found",
+                there && hostRoot is not null ? WorkspaceRootFinder.IsOutside(hzn!, hostRoot) : null, null), status);
         }
 
         var res = CellSymbolResolver.Resolve(reference, from);

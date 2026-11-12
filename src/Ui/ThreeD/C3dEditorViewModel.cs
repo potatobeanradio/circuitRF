@@ -64,6 +64,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public string FilePath { get; private set; }
 
+    /// <summary>HZN-3 — where the document is loaded from and saved to: a <c>.c3d</c> on disk, or a design held in a Hertzon
+    /// project. The editor reads, writes and stamps through it and nothing else.</summary>
+    public IC3dDocumentSource Source { get; private set; }
+
     /// <summary>3D editor bugs round 2 — a SCRATCH design (Settings ▸ On Launch ▸ New 3D Design): <see cref="FilePath"/> is
     /// where it WOULD be — its relative references and its technology resolve from there — but nothing has been written.
     /// Its first save is a Save As, and Simulate asks for that Save As before it runs.</summary>
@@ -125,18 +129,19 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     public C3dEditorViewModel(string path, C3dDocument document, Func<Viewer3DBackend> backend, Func<string?> workspaceCws,
                               Action<Action> post, TechnologyCache? technologies = null, bool scratch = false,
-                              CircuitRF.Design.ThreeD.Occ.GeometryKernel? kernel = null)
+                              CircuitRF.Design.ThreeD.Occ.GeometryKernel? kernel = null, IC3dDocumentSource? source = null)
     {
         _kernel = kernel;
         FilePath = Path.GetFullPath(path);
+        Source = source ?? new C3dFileSource(FilePath);
         IsScratch = scratch;
         Document = document;
         _workspaceCws = workspaceCws;
         _post = post;
         _elaborator = new C3dElaborator(technologies, kernel);
         _technologies = technologies;
-        _savedStamp = Stamp(FilePath);
-        Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
+        _savedStamp = Source.Stamp();
+        Viewer = new Viewer3DViewModel(FilePath, Source.Title, Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
         {
             EditHost = this,
             KeepEmptyView = () => Document.Objects.Count == 0 && Document.Instances.Count == 0,
@@ -295,7 +300,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         if (ActiveRunSetup is not { } setup || ResultsRootProvider?.Invoke() is not { } root) return null;
         var document = RunDocument();
-        string path = TopFilePath;
+        string path = RunPath;
         string? workspace = _workspaceCws();
         bool fromCem = IsExternalActive;
         return () =>
@@ -612,7 +617,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var (file, problem) = InstanceSource(inst);
         if (file is not null)
         {
-            row.Detail = Path.GetFileName(file);
+            row.Detail = inst.View == C3dInstanceView.Hertzon ? $"{Path.GetFileName(file)} · {inst.Design}" : Path.GetFileName(file);
             row.SourceTip = $"Places {inst.CellRef}\n{file}";
             row.Refusal = null;
         }
@@ -1095,9 +1100,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? Save()
     {
         if (IsScratch) return "This 3D design has not been saved yet: Save As chooses where it goes.";
-        try { C3dPersistence.SaveToFile(FilePath, Document); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ex.Message; }
-        _savedStamp = Stamp(FilePath);
+        if (Source.Save(Document) is { } refused) return refused;
+        _savedStamp = Source.Stamp();
         UndoRedo.MarkSaved();
         _preferenceDirty = false;
         foreach (var f in _frames.Take(Math.Max(0, _frames.Count - 1)).Where(f => f.UndoRedo.IsModified || f.PreferenceDirty))
@@ -1118,6 +1122,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? SaveAs(string path)
     {
         if (CanPopOut) return "Pop out to the top document first: Save As writes the tab's own file.";
+        if (Source.ReadOnlyReason is { } held) return held;
+        if (Source is CircuitRF.Ui.ThreeD.Hzn.HznDesignSource) return "A design held in a Hertzon project is written as a .c3d by Convert to .c3d, which Save As calls.";
         string was = FilePath;
         bool wasScratch = IsScratch;
         // brief-em3d-101 R-em3d101-1b — an image's path is stored for THIS file's folder: written again for the new one, so it
@@ -1125,11 +1131,13 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var images = C3dImages.AllImages(Document.Objects).Select(img => (Image: img, Old: img.Path)).ToList();
         foreach (var (img, old) in images)
             if (C3dImages.Resolve(was, old) is { } abs) img.Path = C3dImages.Store(path, abs);
+        var wasSource = Source;
         FilePath = Path.GetFullPath(path);
+        Source = new C3dFileSource(FilePath);
         IsScratch = false;
         if (Save() is { } why)
         {
-            FilePath = was; IsScratch = wasScratch;
+            FilePath = was; IsScratch = wasScratch; Source = wasSource;
             foreach (var (img, old) in images) img.Path = old;
             return why;
         }
@@ -1171,7 +1179,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public void OnFileChangedOnDisk()
     {
         if (CanPopOut) { Viewer.Invalidate(); return; }       // pushed in: the top file is context, redrawn
-        string? stamp = Stamp(FilePath);
+        string? stamp = Source.Stamp();
         if (stamp is null || stamp == _savedStamp || stamp == _askedStamp) return;
         _askedStamp = stamp;
         if (IsDirty) { ExternalChangeWhileDirty?.Invoke(); return; }
@@ -1209,10 +1217,10 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? Reload()
     {
         C3dDocument doc;
-        try { doc = C3dPersistence.LoadFromFile(FilePath); }
+        try { doc = Source.Load(); }
         catch (Exception ex) { return ex.Message; }
         Document = doc;
-        _savedStamp = Stamp(FilePath);
+        _savedStamp = Source.Stamp();
         UndoRedo.Reset();
         InitFrames();
         _preferenceDirty = false;

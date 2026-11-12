@@ -239,7 +239,8 @@ An instance places another cell's 3D view (or its layout) here:
 | Key | Meaning |
 |---|---|
 | `CellRef` | The placed **cell**: a path relative to this `.c3d`'s folder, or `ws://<path>` from the workspace root |
-| `View` | `ThreeD` (the cell's 3D view; the default) or `Layout` (its layout made 3D through its own technology's stackup) |
+| `View` | `ThreeD` (the cell's 3D view; the default), `Layout` (its layout made 3D through its own technology's stackup) or `Hertzon` (a design of a Hertzon project: `CellRef` names the `.hzn` file and `Design` the design; §10.6) |
+| `Design` | With `View` `Hertzon`, the name of the placed design. Omitted otherwise |
 | `Placement` | As an object's (§4.2) |
 | `Array` | `Counts` [i, j, k] and a `Pitch` vector, in this document's frame |
 | `Params` | Overrides of the placed cell's **parameters**, each an expression evaluated in **this** document's scope. A name that is only a variable of the child is refused. A `Layout` instance takes none |
@@ -390,4 +391,4 @@ instead of being folded into Euler angles.
 
 | Construct | Where |
 |---|---|
-| A 3D design inside a Hertzon project (`.hzn`) placed as an instance | `Instances[]` with `"View": "Hertzon"`, `CellRef` naming the `.hzn` file (spelled as any `CellRef`), and a new `Design` key naming the design. `Params` override that design's variables. circuitRF translates the design to geometry when it elaborates, and refuses it, listing what it cannot represent, exactly as opening it would (`docs/briefs/brief-hzn-9-instance.md`) |
+| A 3D design inside a Hertzon project (`.hzn`) placed as an instance (built, HZN-9) | `Instances[]` with `"View": "Hertzon"`, `CellRef` naming the `.hzn` file (spelled as any `CellRef`), and a `Design` key naming the design. `Params` override that design's variables, by the names the `.hzn` gives them (a quantity takes a unit; a plain number takes none). circuitRF translates the design to geometry when it elaborates, and refuses it, listing what it cannot represent, exactly as opening it would. Its materials must be stated identically by the technology of the document placing it, or the instance is refused listing them (`docs/briefs/brief-hzn-9-instance.md`, `src/Design/RESOLVED.md` §HZN-9) |

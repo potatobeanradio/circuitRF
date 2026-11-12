@@ -273,7 +273,7 @@ public sealed partial class C3dEditorViewModel
             if (run is null) problem = FieldPlotResolver.NoActiveSetup;
         }
         else if (ExternalSetup is { } x && p.Setup == ExternalItemName) run = x.Setup;
-        else (run, problem) = FieldPlotResolver.ResolveSetup(Document, TopFilePath, p.Setup);
+        else (run, problem) = FieldPlotResolver.ResolveSetup(Document, RunPath, p.Setup);
         var request = FieldPlotResolver.Request(p, setupName, run, problem, IsViewOnly ? null : run);
         if (!resolveScene) return request;
         return request with { Plane = ScenePlane(p), Faces = FieldPlotResolver.SceneFaces(p, SceneObject) };

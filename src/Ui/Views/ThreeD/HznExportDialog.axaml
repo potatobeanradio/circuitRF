@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        x:Class="CircuitRF.Ui.Views.ThreeD.HznExportDialog"
+        x:DataType="t3:HznExportDialogViewModel"
+        Title="{Binding Title}"
+        Width="560" Height="372" MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False">
+
+    <!-- HZN-4 R-hzn4-4: new project or existing, the file, the design's name, then what will be written. Nothing here moves:
+         the report area and the problem line are always there. -->
+    <Grid Margin="16,12,16,12" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="8">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="16">
+            <RadioButton GroupName="target" Content="New project" IsChecked="{Binding NewProject}" IsEnabled="{Binding !Writing}"/>
+            <RadioButton GroupName="target" Content="Add to existing project" IsChecked="{Binding ExistingProject}" IsEnabled="{Binding !Writing}"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+            <TextBox Grid.Column="0" Text="{Binding TargetPath}" Watermark="Project file (.hzn)" IsEnabled="{Binding !Writing}"/>
+            <Button Grid.Column="1" Content="…" Width="32" HorizontalContentAlignment="Center" Command="{Binding BrowseCommand}"
+                    IsEnabled="{Binding !Writing}" ToolTip.Tip="Choose the project file."/>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="Design name" VerticalAlignment="Center" FontSize="12"/>
+            <TextBox Grid.Column="1" Text="{Binding DesignName}" IsEnabled="{Binding !Writing}"/>
+        </Grid>
+
+        <TextBlock Grid.Row="3" Text="{Binding Problem}" Height="34" TextWrapping="Wrap" FontSize="12"
+                   Foreground="{DynamicResource SystemErrorTextColor}"/>
+
+        <Border Grid.Row="4" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}" Padding="6">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding !Planning}">
+                    <SelectableTextBlock Text="{Binding Report}" TextWrapping="Wrap" FontSize="11"/>
+                </ScrollViewer>
+                <ProgressBar IsIndeterminate="True" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top" IsVisible="{Binding Planning}"/>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" Width="90" HorizontalContentAlignment="Center" Command="{Binding CancelCommand}"/>
+            <Button Content="Export" Width="90" HorizontalContentAlignment="Center" IsDefault="True" Command="{Binding ExportCommand}"
+                    ToolTip.Tip="Write the design to the project."/>
+        </StackPanel>
+    </Grid>
+</Window>

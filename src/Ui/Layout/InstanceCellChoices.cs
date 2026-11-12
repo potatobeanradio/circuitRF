@@ -19,8 +19,12 @@ namespace CircuitRF.Ui.Layout;
 /// the row must say what will happen rather than pretend the cell is unusable.</param>
 /// <para>brief-em3d-48 R-em3d48-1a — for a 3D view, which of the two placeable views the cell has.</para>
 public sealed record InstanceCellChoice(
-    string DisplayName, string AbsoluteCellDir, string? DisabledReason, string? Note = null, bool Has3D = false, bool HasLayout = false)
+    string DisplayName, string AbsoluteCellDir, string? DisabledReason, string? Note = null, bool Has3D = false, bool HasLayout = false,
+    string? HznDesign = null)
 {
+    /// <summary>HZN-9 — a design of a Hertzon project: <see cref="AbsoluteCellDir"/> then holds the <c>.hzn</c> file.</summary>
+    public bool IsHertzon => HznDesign is not null;
+
     public bool IsEnabled => DisabledReason is null;
 
     /// <summary>What the row shows beside its name — the refusal when there is one, the remark
@@ -128,6 +132,30 @@ public static class InstanceCellChoices
         }
     }
 
+    /// <summary>HZN-9 — one row per 3D design of every Hertzon project under the workspace, for a 3D view's picker.</summary>
+    public static List<InstanceCellChoice> CollectHertzon(string workspaceRootDir, IEnumerable<string>? knownFiles = null)
+    {
+        var rows = new List<InstanceCellChoice>();
+        if (workspaceRootDir is not { Length: > 0 } root) return rows;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (file, designs) in CircuitRF.Design.Interchange.Hzn.HznInstances.Discover(root))
+        {
+            seen.Add(file);
+            foreach (string design in designs)
+                rows.Add(new InstanceCellChoice($"{Path.GetRelativePath(root, file)} · {design}", file, null, "Hertzon design", HznDesign: design));
+        }
+        // A Known File is a project outside the workspace folder (or one inside it the scan did not reach).
+        foreach (string known in knownFiles ?? [])
+        {
+            string file = Path.GetFullPath(known);
+            if (!CircuitRF.Design.Interchange.Hzn.HznInstances.IsHertzonFile(file) || !File.Exists(file) || !seen.Add(file)) continue;
+            if (CircuitRF.Design.Interchange.Hzn.HznFile.Read(file).File is not { } read) continue;
+            foreach (string design in CircuitRF.Design.Interchange.Hzn.HznToC3d.ThreeDDesigns(read.Project))
+                rows.Add(new InstanceCellChoice($"{Path.GetFileName(file)} · {design}", file, null, "Hertzon design (Known File)", HznDesign: design));
+        }
+        return rows;
+    }
+
     private static void CollectInto(
         string root, string dir, string? parentCellDirNormalized, ViewType view, List<InstanceCellChoice> items)
     {
@@ -207,7 +235,7 @@ public static class InstanceCellChoices
 /// note.</param>
 /// <param name="View">brief-em3d-48 — for a 3D view, the view chosen (3D or layout); null elsewhere.</param>
 public sealed record CellPickResult(
-    string CellRef, string AbsoluteCellDir, bool ReferenceRequested = false, ViewType? View = null)
+    string CellRef, string AbsoluteCellDir, bool ReferenceRequested = false, ViewType? View = null, string? HznDesign = null)
 {
     public static CellPickResult Reference { get; } = new("", "", true);
 }

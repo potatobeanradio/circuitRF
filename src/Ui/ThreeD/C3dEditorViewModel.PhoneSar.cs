@@ -139,5 +139,5 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>The band table of <paramref name="sweep"/>, from the runs in this workspace's results.</summary>
     public IReadOnlyList<C3dBandSarRow> BandTable(C3dBandSweep sweep)
-        => ResultsRootProvider?.Invoke() is { } root ? C3dBandSweeps.Table(Document, sweep, TopFilePath, root) : [];
+        => ResultsRootProvider?.Invoke() is { } root ? C3dBandSweeps.Table(Document, sweep, RunPath, root) : [];
 }

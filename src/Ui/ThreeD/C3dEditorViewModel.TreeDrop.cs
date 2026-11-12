@@ -31,7 +31,9 @@ public sealed partial class C3dEditorViewModel
                 return false;
             }
             if (!plan.Ok) { StatusMessage = plan.Refusal!; return false; }
-            if (BeginInstancePlacement(plan.CellRef!, plan.CellDir!, plan.View) is not null) return false;
+            if ((plan.View == CircuitRF.Design.ThreeD.C3dInstanceView.Hertzon
+                    ? BeginHertzonPlacement(plan.CellRef!, plan.Design!, plan.CellDir!)
+                    : BeginInstancePlacement(plan.CellRef!, plan.CellDir!, plan.View)) is not null) return false;
             _dropTool = _tool as PlaceInstanceTool;
             if (plan.Note is { } note) StatusMessage = note;
         }

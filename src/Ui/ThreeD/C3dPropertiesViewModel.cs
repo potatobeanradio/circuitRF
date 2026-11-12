@@ -637,6 +637,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Heading = inst.Name;
         var (file, problem) = editor.InstanceSource(inst);
         Rows.Add(new C3dPropertyRow("Places", inst.CellRef));
+        if (inst.View == C3dInstanceView.Hertzon) Rows.Add(new C3dPropertyRow("Design", inst.Design ?? ""));
         Rows.Add(new C3dPropertyRow("From", file
             ?? (problem is null ? "Not resolved yet"
                 : problem == "not found" ? "Not found" : $"Not drawn: {problem}")));
