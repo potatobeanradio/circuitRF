@@ -255,6 +255,37 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         if (cube != "FSKerr_pct") Assert.InRange(e * e * snr, 0.8, 1.2);
     }
 
+    // A 60 MHz bandpass (third-order Butterworth, ~10 ns of group delay) between a 50 Ω source and a 50 Ω load, at draft,
+    // over 0.5 ms (the NR record; half the DBPSK one, read in its whole bits). Its own distortion across a carrier within
+    // ±10 MHz of its centre is under 1e-4, so a carrier reads the same EVM anywhere in that range.
+    private static string Bandpass(string carrier) => $"""
+        MOD_Source:S1 s 0 Fc=2.45e9 Pavg=-30 Z=50 Record=0.5e-3 Carrier[1]="{carrier}"
+        Filter:BPF s 0 b 0 Response=Butterworth Form=Bandpass Order=3 F1=2.42 GHz F2=2.48 GHz IL=0 dB
+        IProbe:Iout b c
+        R:RL c 0 R=50 Ohm
+        analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop=0.5e-3
+        """;
+
+    /// <summary>
+    /// A carrier off the envelope's centre reads the EVM it reads at the centre (EnvelopeEngine.Oversample). Gear-2 reads
+    /// an envelope frequency f as f·(1 + (2π f h)²/3), a phase error through the filter's delay that no delay fit takes
+    /// out. The signal rate held an off-centre carrier's spectrum but stepped its band edge at 0.7 rad (NR, 4.5 MHz off)
+    /// and 2 rad (DBPSK, 9 MHz off), and they read 1.11 % and 0.83 % against 0.38 % and 0.006 % centred. Bound: the
+    /// excess √(EVM_off² − EVM_centred²) under 0.25 %, a quarter of the old error. The warp's closed form through this
+    /// filter at the step the rule now takes is 0.17 % for the NR carrier (1.02 % at the old step).
+    /// </summary>
+    [Theory]
+    [InlineData("NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1", "-4.5MHz")]
+    [InlineData("DBPSK;Rb=1Mbps;Data=PN9;P=0", "9MHz")]
+    public void ACarrierOffTheEnvelopesCentre_ReadsTheEvmItReadsAtTheCentre(string carrier, string off)
+    {
+        double Evm(string o) => At(Run(Bandpass($"{carrier};Off={o}")).ds, "EVM_pct");
+        double centred = Evm("0"), offCentre = Evm(off);
+        double excess = Math.Sqrt(Math.Max(0, offCentre * offCentre - centred * centred));
+        output.WriteLine($"EVM centred {centred:F4} %, {off} off {offCentre:F4} %, excess {excess:F4} %");
+        Assert.InRange(excess, 0, 0.25);
+    }
+
     // An amplifier far below compression (output -37 dBm, IP3 20 dBm) behind a 50 Ω source resistor, noiseless.
     private static string SmallAmp(string source, string stop) => $"""
         temp = 16.85

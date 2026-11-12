@@ -130,21 +130,28 @@ public static class EnvelopeRunner
                "labeled nets and power at its IProbes; to measure the power into a load, place an IProbe in series with it.";
     }
 
-    /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, or explicit).</summary>
+    /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, raised to resolve every
+    /// carrier's band edge (EnvelopeEngine.Oversample), or explicit).</summary>
     public static double StepSeconds(Core.Devices.ModSourceModel[] sources, EnvelopeParams p, int fundamentals, bool spanIntermod = false)
     {
         if (p.StepS > 0) return p.StepS;
-        double need;
-        if (fundamentals == 2) need = EnvelopeEngineMt.Plan(sources).Max(g => g.needRate);
+        double need, edge;
+        if (fundamentals == 2)
+        {
+            var groups = EnvelopeEngineMt.Plan(sources);
+            need = groups.Max(g => g.needRate);
+            edge = groups.Max(g => g.edgeHz);
+        }
         else
         {
-            need = 0;
+            need = edge = 0;
             double f0 = sources[0].FcHz;
             foreach (var s in sources)
                 foreach (var c in s.Signal.Carriers)
                 {
                     need = Math.Max(need, 2 * (Math.Abs(s.FcHz + c.OffsetHz - f0) + 2.5 * c.Spec.BandwidthHz));
                     need = Math.Max(need, c.NativeRateHz);
+                    edge = Math.Max(edge, Math.Abs(s.FcHz + c.OffsetHz - f0) + 0.5 * c.Spec.BandwidthHz);
                 }
             // One envelope over carriers that are far apart (Envelope=single): the band must also hold their
             // third-order products 2fi - fj, or IM3 would fold back across the envelope's Nyquist edge.
@@ -158,7 +165,7 @@ public static class EnvelopeRunner
             }
         }
         double rate = SignalRate.AtLeast(need, sources.Select(s => s.Signal).ToArray());
-        return 1.0 / (rate * Math.Max(1, p.Oversample));
+        return 1.0 / (rate * EnvelopeEngine.Oversample(p.Oversample, rate, edge));
     }
 
     /// <summary>Runs the plan; <paramref name="elaborate"/> must return a fresh netlist on every call. The FIRST one

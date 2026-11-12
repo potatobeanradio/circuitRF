@@ -4381,3 +4381,44 @@ gate 5 lists only diode/BJT shot and series-R thermal.
 - `OscEngine.Startup` linearises every device at its DC point (`StampLinearized`) and never called `BiasFreeze`, so an
   oscillator built on a composed FET with `LinearC=true` would have met the unfrozen core's refusal. It freezes at the DC
   solution it has just solved, as `SParameterEngine` does. Gate: `BiasFreezeTests.EveryEngineEntryPointThatReadsCharge_Freezes`.
+
+## An envelope EVM floor near 1 %: the draft step against a carrier off the envelope's centre (2026-11-12)
+
+The RF Chain Budget's Superhet Demo read 1.55 % EVM from −56 to −41 dBm, where the budget's SNR predicts 0.34 % to
+0.06 %, split into two floors near 1 %: a distortion part of 1.23 %, put down to the LO's phase noise, and a noise part
+stopping at 40 dB of SNR, put down to the envelope measurement. Neither was what it was said to be.
+
+**The measurement is exact.** Source → matched pad → load reads the source's own EVM: NR 64-QAM 0.353 % (its spectral
+shaping; 0.017 % with `Shaping=off`), DBPSK 0.002 %, the same with the carrier 4.5 MHz off the envelope's centre, and
+with `Noise=yes` and EvmSplit 1/√SNR up to 98 dB of SNR.
+
+**The distortion part was the step.** EvmSplit's noiseless run has no noise and no phase-noise mask, so its 1.23 % could
+not be the LO. Bisected on the demo at −40.87 dBm, noiseless: the NR source alone through the chain 0.406 %; with the
+DBPSK source beside it, even at −200 dBm, 1.225 %. The second carrier, 9 MHz up, makes the group's envelope centre their
+midpoint, so the NR carrier sits 4.5 MHz below it and its band reaches 6.75 MHz, which the draft step (64 MS/s) takes at
+0.66 rad. Gear-2 reads an envelope frequency f as f·(1 + θ²/3) with θ = 2πfh, plus θ⁴/(4h) of damping: through a
+filter's delay a phase error growing as f³, which no delay fit takes out. The smallest reproduction is a 60 MHz
+third-order Butterworth bandpass between 50 Ω terminations: the NR carrier 4.5 MHz off the centre reads 1.108 %, centred
+0.379 %; at h/2 0.379 % and at `standard` 0.343 %. The warp's closed form through that filter, delay and gain fitted,
+gives 1.02 %, 0.17 % and 0.03 % of excess at h, h/2 and h/4, against 1.01 %, 0.16 % and ~0 measured. DBPSK 9 MHz off the
+centre read 0.829 % (centred 0.006 %).
+
+The signal rate, 2(|offset| + 2.5 BW) per carrier, holds an off-centre carrier's spectrum, and the presets multiplied
+it, so an off-centre carrier's band edge got fewer steps a cycle than a centred one's. `EnvelopeEngine.Oversample`
+raises the preset until every carrier's band edge, |offset| + BW/2, gets 10 steps a cycle, what a centred carrier gets
+at draft (the rate is at least five bandwidths). A run whose carriers are all centred keeps its step bit for bit, `fine`
+never changes, and `standard` changes only for a carrier more than 7.5 bandwidths off the centre. The runner's
+`StepSeconds` and both engines call it, the lattice plan carrying each group's band edge. The demo's step halves (a
+point 19 s → 38 s); its distortion part reads 0.39 %, nearly all the source's own; the filter bench's off-centre NR
+carrier 0.390 % and DBPSK 0.036 %. The Canceller bench, whose 20 MHz interference carrier sits 20 MHz off its centre,
+now reads its closed-form depth to 0.64 % (0.09 dB at 49.7 dB deep) instead of 1.34 % (0.67 dB there). Gate:
+`EnvelopeSignalQualityTests.ACarrierOffTheEnvelopesCentre_ReadsTheEvmItReadsAtTheCentre`.
+
+**The noise part is the LO's phase noise.** The noisy run carries the LO's mask, the noiseless one does not. The mask's
+closed form, EVM² = Σ 2·10^(L(f)/10)/T·(1 − f/B) over the record's bins, is −38.5 dBc, 1.18 %; one seed reads 0.96 %.
+Without the mask the demo's SNR at −40.87 dBm is 63.8 dB against the budget's 64.0 dB. The Canceller bench's 41 dB,
+taken for the same floor, is its own thermal SNR at −60 dBm: it reads 61 dB at −40 dBm.
+
+**Found, not changed.** At draft a centred carrier still reads the warp through a narrow filter (0.379 % against 0.343 %
+at `standard` on the bandpass above); the presets keep their meaning for it. A single envelope's IMD products far from
+Fc, which move with the centre (above), are the same warp on the products; the rule resolves the carriers, not them.
