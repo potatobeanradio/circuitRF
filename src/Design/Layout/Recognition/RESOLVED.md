@@ -804,3 +804,13 @@ wrong with no hand correction possible from the report alone. The fixture is syn
   allows (`ComparisonTests.LvsRunIsTheOnlyCallerOfTheComparison`), and the check needs no schematic; it follows
   `DeclaredPads.CrossCheck`'s pattern instead (R-as12-5). Gate: `CircuitCopperCheckTests`; the DXF board's tests hold all
   three at zero.
+- **A line from a pad to a pair of shunt parts was trimmed as the next line's land** (F6; R-as5-1, R-as5-5). The trace
+  review's end trim (`TraceImpedanceAnalysis.Chain`, `Land`) takes an end piece off a chain when it is more than
+  `PadWidthStep` (1.2×) wider than the piece it joins and shorter than `MinAspect` (4) of its widths. A 1.7 × 5.6 mm section
+  from a pad to two shunt capacitors, on a 1.1 mm line, is 3.3 widths: after the pad itself was trimmed, the section was
+  the chain's end piece and went too, so the circuit had no element for it and the capacitor's node joined the pad's
+  8.33 mm away. The asymmetric-gap TLIN rewrite was not the cause (it replaces in place). Under a scope — recognition reads
+  every trace through one — the land's length limit is now `SelectedMinAspect` (2), the length from which a chosen chain
+  is a trace; every land the earlier cases name (0201 and 0402 lands, a square pad) is a width or so long and still
+  trimmed, and a review with no scope is unchanged. The same geometry with equal gaps (CPWG) and with no coplanar ground
+  (MLIN) is in the gate: `PadsAndTapsTests.ALineFromAPad_IsKept_WhateverItsCoplanarGround`.

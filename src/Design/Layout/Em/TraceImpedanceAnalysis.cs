@@ -1576,7 +1576,10 @@ public static partial class TraceImpedanceAnalysis
         foreach (var b in barrels.GetValueOrDefault(band.Index) ?? [])
             if (cu.Contains(b.X, b.Y)) transitionVias.Add(b);
 
-        var chains = Chain(pieces, cu, islandOfRing, out var junctionCentres, out var junctionArms, out var tooShort);
+        // A run with a scope reviews what its selectors CHOOSE, and a chosen chain is a trace from SelectedMinAspect widths;
+        // so is a chosen chain's end piece (Chain's land rule).
+        double landAspect = options.Scope is null ? MinAspect : SelectedMinAspect;
+        var chains = Chain(pieces, cu, islandOfRing, landAspect, out var junctionCentres, out var junctionArms, out var tooShort);
         return new LayerWork(key, name, band, cu, chains, pours, maxW)
         {
             Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing, JunctionCentres = junctionCentres,
@@ -1861,7 +1864,7 @@ public static partial class TraceImpedanceAnalysis
         public List<ChainWork> TooShort { get; init; } = [];
     }
 
-    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing,
+    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing, double landAspect,
                                          out Dictionary<int, (double X, double Y)> junctionCentres,
                                          out Dictionary<int, List<(ChainWork Chain, bool AtStart)>> junctionArms,
                                          out List<ChainWork> tooShort)
@@ -1978,9 +1981,14 @@ public static partial class TraceImpedanceAnalysis
         // a pad only a little wider than itself (a fine-pitch land, a 0402 pad on a 0.3 mm line) kept
         // the pad as its last stretch and read its Z0 there, while the same trace into a wider pad did
         // not — "through the pad, but not always" (round-10 field report).
-        static bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
+        // In a run with a scope the second test's length is SelectedMinAspect widths (landAspect), the length from which a
+        // chosen chain is a trace: artwork recognition reads every trace through such a scope, and at MinAspect a 1.7 mm
+        // wide, 5.6 mm long section from a pad to two shunt parts on a 1.1 mm line — 3.3 of its widths — was trimmed as the
+        // line's land, so its length vanished from the circuit with no word (a board drawn as DXF outlines, 2026-11-12).
+        // Every land the cases above name is a width or so long, and is still trimmed.
+        bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
             end.Piece.Length < end.Piece.Width
-            || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
+            || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < landAspect * end.Piece.Width);
         foreach (var c in chains)
         {
             while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; c.StartKey = -1; }
