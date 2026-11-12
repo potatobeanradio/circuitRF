@@ -220,8 +220,8 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(Db(faL / 8 + (fb - 1) / ga), o.NfArrayDb, 12);
         Assert.Equal(Db(fa + (l - 1) / g + (fb - 1) * l / g), r.Totals!.NfDb, 12);
         // The input-referred noise is kT0·B at that factor; the SNR is the input over it.
-        Assert.Equal(Db(1.380649e-23 * 290 * 400e6) + 30 + o.NfArrayDb, o.NirDbm, 9);
-        Assert.Equal(-70 - o.NirDbm, o.SnrDb, 9);
+        Assert.Equal(Db(1.380649e-23 * 290 * 400e6) + 30 + o.NfArrayDb, r.Totals!.MdsDbm, 9);
+        Assert.Equal(-70 - r.Totals.MdsDbm, o.SnrDb, 9);
     }
 
     [Fact]
@@ -287,6 +287,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
     {
         var plain = Array(8, 1);
         Assert.Contains("\"FormatVersion\": 1", ChainDesignIo.Serialize(plain));
+        Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Array(8, 1, "Levels")));   // a topology version 1 lacks
         var d = Array(8, 1);
         d.FractionalBandwidth = 0.1; d.Streams = 2; d.NfAllowanceDb = 0.5; d.RxBackoffDb = 8;
         string json = ChainDesignIo.Serialize(d);
@@ -361,6 +362,9 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         // A metre away the link would deliver far more than the receiver takes: the input is its ceiling.
         var r = ChainBudget.Evaluate(Link("1 m"));
         Assert.Equal(r.Totals!.Ip1dbDbm - 10, r.Design!.InputPowerDbm, 12);
+        Assert.Equal(r.Design.InputPowerDbm + r.Totals.GainDb, r.Totals.PoutDbm, 9);    // every level moved with it
+        Assert.Equal(r.Design.InputPowerDbm - r.Totals.MdsDbm, r.Totals.SnrDb, 9);
+        Assert.Equal(r.Design.InputPowerDbm + r.Stages[0].GainDb, r.Stages[0].PoutDbm, 9);
         Assert.Contains(r.Notes, x => x.StartsWith("The link delivers", StringComparison.Ordinal) && x.Contains("the budget takes", StringComparison.Ordinal));
         Assert.True(r.Design.Link!.Budget(26e9).PrxDbm > r.Design.InputPowerDbm);
     }

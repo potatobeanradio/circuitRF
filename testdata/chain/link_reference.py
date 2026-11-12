@@ -9,7 +9,7 @@ back through circuitRF); this script reads the same design with its own arithmet
     Pout = Psat - Backoff;  EIRP = Pout - Loss + G_tx + 20 log10(Mtx);  Lfs = 20 log10(4 pi d f / c)
     Prx = EIRP - Lfs - alpha(f) d / 1000 + G_rx;  Pin = min(Prx, IP1dB - RxBackoff)
     Friis on the noise gains; 1/IP1dB = sum of G_(i-1)/IP1dB_i on the signal gains; A = array gain
-    Nir = 10 log10(k (T + Te) B) + 30 - 10 log10(A);  SNR = Pin - Nir;  rate = S B log2(1 + SNR)
+    MDS = 10 log10(k (T + Te) B) + 30 - 10 log10(A);  SNR = Pin - MDS;  rate = S B log2(1 + SNR)
     P_PA = (pout - pout/g)/PAE;  P = S (Mtx P_PA + Mrx P_branch + P_after);  E_b = P / rate
     NF allowed after stage k = 10 log10(1 + F_k (10^(X/10) - 1) Gn_k)
 
@@ -138,7 +138,7 @@ def case(f, mtx, mrx):
         "expected": {
             "Pout_PA_dBm": pout, "EIRP_dBm": eirp, "Lfs_dB": lfs, "Atm_dB": atm, "Prx_dBm": prx, "Ceiling_dBm": ceiling,
             "Pin_dBm": pin, "Gain_dB": db(gs), "NFtot_dB": nf_tot, "IP1dBtot_dBm": ip1_tot, "ArrayGain_dB": db(a),
-            "NFarray_dB": nf_tot - db(a), "Nir_dBm": nir, "SNRtot_dB": snr, "Margin_dB": snr - d["RequiredSnrDb"],
+            "NFarray_dB": nf_tot - db(a), "MDS_dBm": nir, "SNRtot_dB": snr, "Margin_dB": snr - d["RequiredSnrDb"],
             "Rate_bps": rate, "PdcPA_W": pa, "PdcTx_W": mtx * pa, "PdcRx_W": mrx * branch + after, "Pdctot_W": total,
             "Ebit_J": total / rate, "Nstg_LNA": nstg, "NFallow_dB": allow,
         },

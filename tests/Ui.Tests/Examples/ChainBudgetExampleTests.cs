@@ -284,7 +284,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.Equal(44.3806, M0(ds, "EIRP_dBm"), 4);
         Assert.Equal(106.7679, M0(ds, "Lfs_dB"), 4);
         Assert.Equal(-59.4053, M0(ds, "Pin_dBm"), 4);
-        Assert.Equal(-93.4041, M0(ds, "Nir_dBm"), 4);
+        Assert.Equal(-93.4041, M0(ds, "MDS_dBm"), 4);
         Assert.Equal(34.00, M0(ds, "SNRtot_dB"), 2);
         Assert.Equal(9.0358, M0(ds, "Rate_Gbps"), 4);
         Assert.Equal(8.7523, M0(ds, "Pdctot_W"), 4);

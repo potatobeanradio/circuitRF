@@ -1,11 +1,12 @@
 // What a budget reads as a receiver of data: its input-referred noise, SNR and margin, its Shannon capacity, the NF each
 // stage leaves the rest of the chain, and which stage sets its compression.
 //
-//   Nir       10·log10(k·(Ts + Te)·B) + 30 − 10·log10(A)   the noise at one element's input, array gain included: the MDS
-//   NF array  10·log10(F/A) = F_A/M + (F_B − 1)/G_A        the cascade's per-element noise factor over its array gain; with
-//                                                          F_A the front end's to the combiner's output, F_B the stages
-//                                                          after it and G_A the gain to that output, array gain included
-//   SNR       Pin − Nir ;   margin = SNR − required SNR
+//   NF array  10·log10(F/A), the per-element noise factor F over the array gain A, in linear terms
+//               F/A = F_A/M + (F_B − 1)/G_A                equal paths (A = M)
+//               F/A = F_A/A + (F_B − 1)/G_A                with a PathIL taper
+//             F_A the front end's to the combiner's output, F_B the stages after it, G_A the gain to that output with
+//             the array gain included
+//   SNR       Pin − MDS ;   margin = SNR − required SNR    the MDS is the noise at one element's input, array gain in
 //   rate      S · B · log2(1 + 10^(SNR/10))                Shannon, over S streams; B stated, or FBW · f
 //   NFallow   10·log10(1 + F_k·(10^(X/10) − 1)·Gn_k)       after stage k: the largest NF the rest may have for the whole
 //                                                          chain's NF to stay within X dB of the NF up to k (F_k and Gn_k
@@ -26,7 +27,7 @@ namespace CircuitRF.Design.Chain;
 /// <summary>The receiver readouts of one budget.</summary>
 /// <param name="NfAllowedDb">After each stage, the largest NF the stages after it may have together, dB.</param>
 /// <param name="Ip1dbSharePct">Each stage's share of the cascade's 1/IP1dB, %; 0 for a linear stage.</param>
-public sealed record ChainReadout(double BandwidthHz, double NirDbm, double NfArrayDb, double SnrDb, double MarginDb,
+public sealed record ChainReadout(double BandwidthHz, double NfArrayDb, double SnrDb, double MarginDb,
                                   int Streams, double RateBps, double CeilingDbm,
                                   IReadOnlyList<double> NfAllowedDb, IReadOnlyList<double> Ip1dbSharePct);
 
@@ -48,7 +49,7 @@ public static class ChainCapacity
             gn *= Lin(r.Stages[i].Stage.NoiseGainDb);
             allow[i] = Db(1 + Lin(r.Stages[i].NfDb) * x * gn);
         }
-        return new ChainReadout(d.BandwidthHz, t.MdsDbm, t.NfDb - t.ArrayGainDb, t.SnrDb, t.SnrDb - d.RequiredSnrDb, d.Streams,
+        return new ChainReadout(d.BandwidthHz, t.NfDb - t.ArrayGainDb, t.SnrDb, t.SnrDb - d.RequiredSnrDb, d.Streams,
                                 rate, t.Ip1dbDbm - d.RxBackoffDb, allow, Shares(r.Stages));
     }
 
@@ -90,7 +91,6 @@ public static class ChainCapacity
         ds.Add("IP1dBpct", new DataCube([stage], [.. o.Ip1dbSharePct]) { Unit = "%" });
         void One(string name, string unit, double v) => ds.Add(name, new DataCube([], [Fin(v)]) { Unit = unit });
         One("BW_Hz", "Hz", o.BandwidthHz);
-        One("Nir_dBm", "dBm", o.NirDbm);
         One("NFarray_dB", "dB", o.NfArrayDb);
         One("Margin_dB", "dB", o.MarginDb);
         One("Streams", "", o.Streams);

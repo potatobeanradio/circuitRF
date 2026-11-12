@@ -62,7 +62,6 @@ public static class ChainBudget
         var budgets = d.Stages.Select((s, i) => ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(inputHz[i], d.BaseDirectory))).ToList();
         foreach (var b in budgets) notes.AddRange(b.Notes);
         notes.AddRange(BlockersOutsideFiles(d));
-        d = ChainLink.Cap(d, budgets, notes);
 
         double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0, f = d.FrequencyHz;
         double a = 1;
@@ -94,6 +93,8 @@ public static class ChainBudget
         // Each stage's share of F − 1 (which is what an S-parameter or harmonic-balance noise run's NFpct reports).
         for (int i = 0; i < rows.Count; i++)
             rows[i] = rows[i] with { NoiseSharePct = te > 0 ? 100 * shares[i] / te : 0 };
+        // A link delivering more than the receiver takes is held at its ceiling, on the cascade's own input P1dB.
+        d = ChainLink.Cap(d, rows, notes);
 
         if (budgets.Any(b => b.ArrayN > 1)
             && d.Stages.Any(s => s.Part == ChainParts.Combiner && ChainValue.Or(s.Get("Steer"), 0) != 0)
@@ -197,7 +198,7 @@ public static class ChainBudget
         ("Prx_dBm", "dBm", r => r.Design!.Link?.Budget(r.Design.FrequencyHz).PrxDbm ?? r.Design.InputPowerDbm),
         ("Pin_dBm", "dBm", r => r.Design!.InputPowerDbm),
         ("Ceiling_dBm", "dBm", r => ChainCapacity.Read(r)!.CeilingDbm),
-        ("Nir_dBm", "dBm", r => r.Totals!.MdsDbm),
+        ("MDS_dBm", "dBm", r => r.Totals!.MdsDbm),
         ("SNR_dB", "dB", r => r.Totals!.SnrDb),
         ("Margin_dB", "dB", r => ChainCapacity.Read(r)!.MarginDb),
         ("Rate_Gbps", "Gbit/s", r => ChainCapacity.Read(r)!.RateBps / 1e9),

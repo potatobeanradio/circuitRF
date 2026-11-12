@@ -231,7 +231,8 @@ public static class ChainDesignIo
     /// refuses it rather than dropping it on save, and every other chain stays readable there.</summary>
     private static int VersionOf(ChainDesign d) =>
         d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
-        || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value))) ? 2 : 1;
+        || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
+        || d.Stages.Any(s => s.Part == ChainParts.Combiner && s.Get("Topology").Trim().Equals("Levels", StringComparison.OrdinalIgnoreCase)) ? 2 : 1;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

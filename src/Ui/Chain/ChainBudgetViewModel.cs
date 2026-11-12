@@ -342,7 +342,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     private void RefillLink(ChainBudgetResult r)
     {
         var data = ChainBudget.ToDataSet(r);
-        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLink(link: true);
+        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLink();
         if (r.Design?.Link is not null) Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, data);
         else Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, new RfCore.Data.DataSet());
         Refill(ref _receiverTable, nameof(ReceiverPlot), cfg[1], BudgetSource, data);
@@ -778,13 +778,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Blocks(r.Design ?? d, r);
         RefillCascade(r);
         RefillLevels(d, r);
-        RefillCanceller(d);
+        RefillCanceller(r.Design ?? d);
         RefillLink(r);
         var sweepNotes = new List<string>();
         if (r.Totals is not null) RefillSweeps(d, sweepNotes);
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
-        Notes = string.Join("\n", r.Notes.Concat(sweepNotes));
+        Notes = string.Join("\n", r.Notes.Concat(ChainLink.Power(r)?.Note is { } dc ? [dc] : []).Concat(sweepNotes));
         Summary = r.Totals is not { } t ? "" :
             $"Gain {D(t.GainDb)} dB    NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K)    IIP3 {D(t.Iip3Dbm)} dBm    OIP3 {D(t.Oip3Dbm)} dBm    " +
             $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm\n" +
@@ -793,7 +793,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
             (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "") +
             (ChainCapacity.Read(r) is { } o
-                ? $"\nNoise at the input {D(o.NirDbm)} dBm (NF of the array {D(o.NfArrayDb)} dB)    Margin {D(o.MarginDb)} dB    " +
+                ? $"\nNF of the array {D(o.NfArrayDb)} dB    Margin {D(o.MarginDb)} dB    " +
                   $"Rate {ChainCapacity.Rate(o.RateBps)}" + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $"    Ceiling {D(o.CeilingDbm)} dBm"
                 : "") +
             (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l

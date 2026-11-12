@@ -30,8 +30,9 @@ namespace CircuitRF.Design.Chain;
 /// <summary>The link's numbers at the carrier, dBm and dB.</summary>
 public sealed record ChainLinkBudget(double PoutDbm, double EirpDbm, double LfsDb, double AtmDb, double PrxDbm, int Mtx);
 
-/// <summary>The DC power of a chain and its link, W, and the energy per bit, J.</summary>
-public sealed record ChainPower(double PaW, double TxW, double RxW, double TotalW, double EnergyPerBitJ, int Mrx);
+/// <summary>The DC power of a chain and its link, W, and the energy per bit, J; <paramref name="Note"/> says what it
+/// could not count.</summary>
+public sealed record ChainPower(double PaW, double TxW, double RxW, double TotalW, double EnergyPerBitJ, int Mrx, string? Note = null);
 
 /// <summary>A transmitter and a path in front of the chain, each a set of inputs by name, as a stage's are.</summary>
 public sealed class ChainLink
@@ -145,23 +146,17 @@ public sealed class ChainLink
     }
 
     /// <summary>
-    /// In a link, the received power held at the receiver's ceiling, its input P1dB (from the stages' own budgets) less
-    /// RxBackoffDb: a copy at the ceiling, with a note, when the link delivers more; the design itself otherwise. And a
-    /// note when the transmitter's DC power is neither stated nor follows from a PAE.
+    /// In a link, the received power held at the receiver's ceiling, the cascade's input P1dB (its last row's) less
+    /// RxBackoffDb: when the link delivers more, a copy at the ceiling, with a note, and every row's input-referred level
+    /// (its output power and SNR) moved by as much; the design itself otherwise. Nothing else in a row reads the input.
     /// </summary>
-    internal static ChainDesign Cap(ChainDesign d, IReadOnlyList<StageBudget> budgets, List<string> notes)
+    internal static ChainDesign Cap(ChainDesign d, List<ChainStageResult> rows, List<string> notes)
     {
-        if (d.Link is not { } link) return d;
-        if (link.GetTx("PAE").Trim().Length == 0 && link.GetTx("Pdc").Trim().Length == 0)
-            notes.Add("The transmitter states neither a PAE nor a Pdc, so its DC power is taken as none.");
-        double g = 1, inv = 0;
-        foreach (var b in budgets)
-        {
-            if (double.IsFinite(b.Ip1dbDbm)) inv += g / Math.Pow(10, b.Ip1dbDbm / 10);
-            g *= Math.Pow(10, b.GainDb / 10);
-        }
-        double cap = inv > 0 ? -10 * Math.Log10(inv) - d.RxBackoffDb : double.PositiveInfinity;
+        if (d.Link is null || rows.Count == 0) return d;
+        double cap = rows[^1].Ip1dbDbm - d.RxBackoffDb;
         if (!(d.InputPowerDbm > cap)) return d;
+        double by = cap - d.InputPowerDbm;
+        for (int i = 0; i < rows.Count; i++) rows[i] = rows[i] with { PoutDbm = rows[i].PoutDbm + by, SnrDb = rows[i].SnrDb + by };
         static string D(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
         notes.Add($"The link delivers {D(d.InputPowerDbm)} dBm to each element, above the receiver's ceiling of {D(cap)} dBm (its " +
                   $"input P1dB less {D(d.RxBackoffDb)} dB): the budget takes {D(cap)} dBm, as power control or a variable gain would hold it.");
@@ -183,8 +178,11 @@ public sealed class ChainLink
             if (i < cmb) branch += ChainParts.StagePdcW(d.Stages[i]); else after += ChainParts.StagePdcW(d.Stages[i]);
         double pa = 0;
         int mtx = 0;
+        string? note = null;
         if (d.Link is { } link)
         {
+            if (link.GetTx("PAE").Trim().Length == 0 && link.GetTx("Pdc").Trim().Length == 0)
+                note = "The transmitter states neither a PAE nor a Pdc, so its DC power is taken as none.";
             var l = link.Budget(d.FrequencyHz);
             mtx = l.Mtx;
             if (ChainValue.TryParse(link.GetTx("Pdc"), out double stated)) pa = stated;
@@ -195,7 +193,7 @@ public sealed class ChainLink
             }
         }
         double tx = mtx * pa, rx = mrx * branch + after, total = d.Streams * (tx + rx);
-        return new ChainPower(pa, tx, rx, total, o.RateBps > 0 && double.IsFinite(total / o.RateBps) ? total / o.RateBps : double.NaN, mrx);
+        return new ChainPower(pa, tx, rx, total, o.RateBps > 0 && double.IsFinite(total / o.RateBps) ? total / o.RateBps : double.NaN, mrx, note);
     }
 
     /// <summary>The link's numbers and the DC power added to a budget's DataSet, as scalars.</summary>

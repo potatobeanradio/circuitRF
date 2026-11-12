@@ -417,13 +417,12 @@ public static class ChainBudgetDisplay
 
     /// <summary>The window's Link tab: the link's numbers, when the chain has one, and the receiver's readouts, each a
     /// table of the budget's own scalars.</summary>
-    public static IReadOnlyList<PlotContainerConfig> WindowLink(bool link)
+    public static IReadOnlyList<PlotContainerConfig> WindowLink()
     {
         const string src = "budget";
         var rx = Table("Receiver", src,
-            [("Nir_dBm", "Receiver: noise in, dBm"), ("NFarray_dB", "NF of the array, dB"), ("SNRtot_dB", "SNR, dB"),
+            [("MDS_dBm", "Receiver: MDS, dBm"), ("NFarray_dB", "NF of the array, dB"), ("SNRtot_dB", "SNR, dB"),
              ("Margin_dB", "margin, dB"), ("Rate_Gbps", "rate, Gb/s"), ("Pdctot_W", "DC power, W"), ("Ebit_pJ", "energy, pJ/bit")], first: 190);
-        if (!link) return [rx];
         var tx = Table("Link", src,
             [("Pout_PA_dBm", "Link: PA out, dBm"), ("EIRP_dBm", "EIRP, dBm"), ("Lfs_dB", "free space, dB"), ("Atm_dB", "more on the path, dB"),
              ("Prx_dBm", "received, dBm"), ("Ceiling_dBm", "ceiling, dBm"), ("Pin_dBm", "chain input, dBm")], first: 190);
@@ -448,7 +447,7 @@ public static class ChainBudgetDisplay
             Rect("Levels at each receive element", x, "dBm", 0, 0, 300, 240,
                  [Over(src, "EIRP_dBm", axis, "EIRP", C(1), false), Over(src, "Prx_dBm", axis, "received", C(2), false),
                   Over(src, "Pin_dBm", axis, "chain input", C(3), false), Over(src, "Ceiling_dBm", axis, "ceiling", C(4), false),
-                  Over(src, "Nir_dBm", axis, "noise", C(5), false)]),
+                  Over(src, "MDS_dBm", axis, "noise (MDS)", C(5), false)]),
             Rect("SNR and margin", x, "dB", 0, 0, 300, 240,
                  [Over(src, "SNR_dB", axis, "SNR", C(1), false), Over(src, "Margin_dB", axis, "margin", C(2), false)]),
             Rect("Rate", x, "Gb/s", 0, 0, 300, 240, [Over(src, "Rate_Gbps", axis, "Shannon rate", C(1), false)]),

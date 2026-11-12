@@ -228,7 +228,8 @@ public static class ChainBenches
                 notes?.AddRange(whole[b].Notes.Select(n => $"{whole[b].Text.CellName}: {n}."));
                 continue;
             }
-            if (conv is null) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
+            // The TX bench is the transmitter's, not a conversion's: there is no per-conversion one to fall back on.
+            if (conv is null || b == ChainBench.Transmitter) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
             var made = new List<string>();
             foreach (var c in conv)
             {

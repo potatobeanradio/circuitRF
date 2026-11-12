@@ -63,6 +63,7 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainRefused(path, budget.Refusals[^1]));
         }
         foreach (var n in budget.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        if (ChainLink.Power(budget)?.Note is { } dcNote) JsonRun.Note(CliDiagnostics.ChainNote(dcNote));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
         // The sweeps, a group each: every point the whole chain budgeted again there.
@@ -128,7 +129,7 @@ internal static class Chain
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));
         if (ChainCapacity.Read(r) is { } o)
-            Console.WriteLine($"  noise at the input {D(o.NirDbm)} dBm (NF of the array {D(o.NfArrayDb)} dB) in {o.BandwidthHz / 1e6:0.###} MHz, "
+            Console.WriteLine($"  NF of the array {D(o.NfArrayDb)} dB, "
                             + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
                             + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $", ceiling {D(o.CeilingDbm)} dBm");
         if (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l)
