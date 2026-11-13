@@ -63,8 +63,9 @@ public static class EmGeometry
         ArgumentNullException.ThrowIfNull(source);
 
         // brief-icp-2 R-icp2-1: a setup that cuts cell instances out sees the cut geometry (EmCellCutout.Apply, reached through the
-        // build every caller shares and cached with it), in place of the plain flatten.
-        var components = EmPlanarComponentPorts.Build(setup, source);
+        // build every caller shares and cached with it), in place of the plain flatten. brief-icp-3 R-icp3-1: a 3D setup's too — the
+        // layout a 3D view lowers is cut by this one door.
+        var components = EmPlanarComponentPorts.Of(setup, source);
         var flat = components?.Cut is { } cut
             ? new Result(cut.Shapes, cut.Notes, cut.GeneratorIds)
             : Flatten(source.View, source.AbsolutePath, source.Technology);

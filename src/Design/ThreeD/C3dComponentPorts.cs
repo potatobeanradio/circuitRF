@@ -94,6 +94,14 @@ public sealed record C3dComponentPort(
     /// <summary>The nets of its two conductors, positive first, where the board states them.</summary>
     public (string? Positive, string? Negative) Nets { get; init; }
 
+    /// <summary>brief-icp-3 — a cut instance's pin port: a sheet at the cut face (<see cref="C3dCellCuts"/>), its
+    /// <see cref="Refdes"/> the instance's path, its <see cref="Pin"/> the pin, its port's name <c>path.pin</c>; no reference pin, no
+    /// landing, and <see cref="GapM"/> the sheet's height.</summary>
+    public bool Cutout { get; init; }
+
+    /// <summary>brief-icp-3 — a cut instance's cell, as a sentence names it; null otherwise.</summary>
+    public string? Cell { get; init; }
+
     public bool Ok => Port is not null && Refusal is null;
 }
 
@@ -114,6 +122,10 @@ public sealed record C3dComponentPortBuild(
     /// <summary>Every part built: no port is left out. A run proceeds with the ones that were (<see cref="Warnings"/> names the
     /// rest) unless <see cref="Refusal"/> is set.</summary>
     public bool Ok => FirstRefusal is null;
+
+    /// <summary>brief-icp-3 — every port the build holds is a cut instance's pin: a run with no part across a port, whose
+    /// co-simulation netlist is not written (a Planar run's rule, <see cref="EmPlanarComponentPortBuild.AnyGapPort"/>).</summary>
+    public bool CutOnly => Ports.Count > 0 && Ports.All(p => p.Cutout);
 
     /// <summary>The built ports as document ports, for <see cref="C3dPorts.Resolve(C3dDocument, C3dPortContext)"/>.</summary>
     public IReadOnlyList<C3dPort> DocumentPorts => [.. Ports.Where(p => p.Port is not null).Select(p => p.Port!)];
@@ -150,7 +162,8 @@ public static class C3dComponentPorts
     public static C3dComponentPortBuild? Build(EmSetup setup, C3dDocument document, C3dElaboration drawn, int firstNumber,
                                                TechnologyCache? cache = null,
                                                IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null,
-                                               IReadOnlyDictionary<string, EmSolveRegion>? layoutRegions = null)
+                                               IReadOnlyDictionary<string, EmSolveRegion>? layoutRegions = null,
+                                               C3dCellCutPlan? cuts = null)
     {
         if (setup.ComponentPorts.Count == 0) return null;
         cache ??= new TechnologyCache();
@@ -181,10 +194,22 @@ public static class C3dComponentPorts
 
         // ── Which parts ───────────────────────────────────────────────────────────────────────
         // R-lcp1-1: the rule a layout's .cem follows too (EmPartPads.Select).
-        var selection = EmPartPads.Select(setup, parts.ToDictionary(kv => kv.Key, kv => kv.Value.Placed, StringComparer.OrdinalIgnoreCase),
-                                          "this 3D view's layout");
-        if (selection.Refusal is { } selectWhy) return Refuse(selectWhy);
-        var wanted = selection.Wanted;
+        // brief-icp-3 R-icp3-4 — the entries the cut read (a cell instance, a path, a cell) are the cut's (C3dCellCuts); "*" takes the
+        // footprint parts here and the devices there.
+        var footprintEntries = cuts is { Claimed.Count: > 0 } ? [.. setup.ComponentPorts.Where(c => !cuts.Claimed.Contains(c))] : setup.ComponentPorts;
+        bool anyCut = cuts is { Layouts.Count: > 0 };
+        IReadOnlyList<EmComponentPort> wanted = [];
+        if (footprintEntries.Count > 0)
+        {
+            var footprintSetup = setup;
+            if (!ReferenceEquals(footprintEntries, setup.ComponentPorts)) { footprintSetup = setup.Clone(); footprintSetup.ComponentPorts = [.. footprintEntries]; }
+            var selection = EmPartPads.Select(footprintSetup, parts.ToDictionary(kv => kv.Key, kv => kv.Value.Placed, StringComparer.OrdinalIgnoreCase),
+                                              "this 3D view's layout");
+            // "*" finding no two-pad part is no refusal when the cut took its devices.
+            if (selection.Refusal is { } selectWhy && !(anyCut && footprintEntries.All(c => c.Cell is null && c.Refdes.Trim() == EmSetup.AllComponents)))
+                return Refuse(selectWhy);
+            wanted = selection.Refusal is null ? selection.Wanted : [];
+        }
 
         // ── Build each part's ports ─────────────────────────────────────────────────────────────
         double dbu = C3dLowering.Metres(1, document.DbuPerMicron);
@@ -321,6 +346,14 @@ public static class C3dComponentPorts
         }
         foreach (var r in final.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
+        // brief-icp-3 R-icp3-2 — the cut instances' pin ports follow the parts', numbered on from them (ICP-2's order on Planar).
+        if (cuts is not null)
+        {
+            var (cutPorts, cutNotes, cutWarnings) = C3dCellCuts.Ports(cuts, applied, document, next);
+            final.AddRange(cutPorts);
+            notes.AddRange(cutNotes);
+            warnings.AddRange(cutWarnings);
+        }
         if (noModel.Count > 0)
             warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
                          $"co-simulation netlist will carry a placeholder for {(noModel.Count == 1 ? "it" : "each")}.");
@@ -919,6 +952,11 @@ public static class C3dComponentPorts
     /// <summary>R-emb1-8 — one port's line for <c>explain --component-ports</c> and the setup panel's list.</summary>
     public static string Describe(C3dComponentPort p)
     {
+        if (p.Cutout)
+            return p.Port is { } sheet
+                ? $"{sheet.Name}: port {sheet.Number}, a sheet at the cut face of {p.Refdes}{(p.Cell is { } c ? $" ({c})" : "")} to its return, " +
+                  $"{Um(p.WidthM)} µm wide and {Um(p.GapM)} µm tall; {p.Verdict}."
+                : $"{p.Refdes}{(p.Pin is { } pin ? "." + pin : "")}: refused — {p.Refusal}";
         if (p.Port is not { } port) return $"{p.Refdes}: refused — {p.Refusal}";
         string landings = p.Landings.Count == 0
             ? "no landing"

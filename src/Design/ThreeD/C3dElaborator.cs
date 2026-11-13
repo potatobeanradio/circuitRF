@@ -93,6 +93,12 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// conductor, is drawn (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>) with what a solve would refuse on as a
     /// warning. Without it a wBond pushed from a schematic to a layout made its whole instance "not found".</summary>
     public bool PadsOptional { get; init; }
+
+    /// <summary>brief-icp-3 R-icp3-1 — a setup's cut for a placed layout, by full path: the setup (in the layout's own frame, its
+    /// component-port entries those that name the layout's cell instances) whose cut <see cref="EmGeometry.ForSetup"/> applies when
+    /// the layout is lowered, so the metal and vias a cut instance leaves are left out of the 3D problem. Null, or a layout not
+    /// named, is lowered whole, as before.</summary>
+    public IReadOnlyDictionary<string, EmSetup>? LayoutCuts { get; init; }
 }
 
 /// <summary>Where one object of the elaborated problem came from (R-em3d42-3a).</summary>
@@ -400,6 +406,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     /// </summary>
     public IReadOnlyDictionary<string, EmSolveRegion>? LayoutRegions { get; init; }
 
+    /// <summary>brief-icp-3 — the technologies this elaborator resolves placed layouts against: a cut built for a layout resolves
+    /// against the same instance its lowering does, so the two share one build.</summary>
+    public TechnologyCache Technologies => _tech;
+
     /// <summary>brief-sdl-8 D3 — the top document's cell as an EM evaluation states it (its parameters, and each schematic
     /// VAR a 3D VAR is linked to by name), with <see cref="TopOverrides"/> their values at this point. Null reads the cell
     /// from disk and binds no override, as the editor and a plain run do.</summary>
@@ -679,8 +689,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         LayoutView? inMemory = LayoutsInMemory?.GetValueOrDefault(Path.GetFullPath(path));
         string stamp = inMemory is null ? Stamp(path) : "memory:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(inMemory);
         EmSolveRegion? region = LayoutRegions?.GetValueOrDefault(Path.GetFullPath(path));
+        EmSetup? cut = options.LayoutCuts?.GetValueOrDefault(Path.GetFullPath(path));
         string key = string.Create(CultureInfo.InvariantCulture,
             $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}|{options.Conductors}|{region?.Describe()}");
+        if (cut is not null) key += "|cut:" + EmPlanarComponentPorts.SetupKey(cut);
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
@@ -704,7 +716,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
                                                { RobustMeshing = options.RobustMeshing, Conductors = options.Conductors, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional,
-                                                 RegionSetup = region is null ? null : new EmSetup { SolveRegion = region } });
+                                                 RegionSetup = cut ?? (region is null ? null : new EmSetup { SolveRegion = region }) });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         made = made with { FilesStamp = FilesStamp(made.Files) };

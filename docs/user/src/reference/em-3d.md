@@ -214,6 +214,18 @@ full description.
   that, the two are separate: changing the parts in one leaves the other alone. Each part is checked again in 3D and
   may be left out there.
 
+  <a id="cell-instance-ports"></a>**A cell instance cut out.** An entry naming a placed cell instance by its path
+  (`X1`, `X1/Q3`), a `Cell`, or a device taken by `"*"` is cut out in 3D as it is on Planar: the instance's metal and
+  vias (or everything inside its box, `PortAt: Cell`) leave the solved problem, and each connected pin gets a port at
+  the face where the interconnect meets it, named `X1/Q3.G`, with the same pin verdicts and numbers a Planar run of
+  that `.cem` gives. In 3D that port is the sheet a drawn edge port gets: from the face down (or up) to its return, as
+  wide as the face. In a 3D view that places several layouts, a path starts with the layout instance's name
+  (`U1/X1/Q3`); with one, it starts inside the layout. **The sheet is as tall as the substrate, and its own inductance
+  is in the result**: a 200 µm line segment on 100 µm GaAs, cut out and put back as an ideal line, matched the whole
+  line to |ΔS| 2.0e-2 at 5 GHz, 8.0e-2 at 20 GHz and 1.1e-1 at 30 GHz (EMerge). All of it is a phase lag growing with frequency,
+  about the delay of 30 µm of that line at each face (the sheet is 100 µm tall, 1/28 of a wavelength in GaAs at
+  30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs.
+
   **Why a gap port, and not a pad-to-plane port at each pad.** A part between two pad-to-plane ports carries its
   current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is
   not on the board. A gap port puts the part where it is, across its own pads, and the co-simulation connects it from

@@ -61,10 +61,11 @@ public static class EmComponentPorts
     public static Result Collect(EmLayoutSource source, EmSetup setup)
     {
         ArgumentNullException.ThrowIfNull(setup);
-        var build = EmPlanarComponentPorts.Build(setup, source);
+        // brief-icp-3 — a 3D setup's cut labels too (EmPlanarComponentPorts.Of): the generator builds a sheet at each.
+        var build = EmPlanarComponentPorts.Of(setup, source);
         // brief-icp-2 — a cut instance's own declared ports leave the problem with it.
         var found = Collect(source, build?.Cut?.Excluded);
-        if (found.Refusal is not null || build is null) return found;
+        if (found.Refusal is not null || build is null || setup.Is3D && build.Cut is null && build.Refusal is null) return found;
         var notes = new List<string>(found.Notes);
         notes.AddRange(build.Notes);
         if (build.Refusal is { } refusal)

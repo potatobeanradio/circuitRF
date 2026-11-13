@@ -95,6 +95,14 @@ public sealed record EmPlanarComponentPortBuild(
     /// what <see cref="EmGeometry.ForSetup"/> hands every extractor in place of the plain flatten.</summary>
     public EmCellCutoutResult? Cut { get; init; }
 
+    /// <summary>brief-icp-3 — the layout's cell instances the build projected (<see cref="EmCellInstanceSet.Empty"/> when it
+    /// placed none, or for a refusal reached before the projection).</summary>
+    public EmCellInstanceSet Instances { get; init; } = EmCellInstanceSet.Empty;
+
+    /// <summary>brief-icp-3 R-icp3-4 — the setup's entries the cut read (<see cref="EmPartPads.Selection.InstanceEntries"/>), as
+    /// written: what a 3D view's footprint build leaves out of its own list.</summary>
+    public IReadOnlyList<EmComponentPort> InstanceEntries { get; init; } = [];
+
     /// <summary>brief-icp-2 — the gap ports alone: what the co-simulation netlist puts a part across (a cut instance's model goes
     /// back on its pins in ICP-5).</summary>
     public bool AnyGapPort => Ports.Any(p => p.Ok && !p.Cutout);
@@ -148,6 +156,36 @@ public static class EmPlanarComponentPorts
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         if (setup.ComponentPorts.Count == 0 || setup.Is3D) return null;
+        return Cached(setup, source);
+    }
+
+    /// <summary>
+    /// brief-icp-3 R-icp3-1 — what <paramref name="setup"/> makes of <paramref name="source"/>'s layout for the geometry and the
+    /// port labels, on either solver: a Planar setup's <see cref="Build"/>; a 3D setup's cut alone — the cell instances it names cut
+    /// out of the layout and an edge label at each routed pin face, with ICP-2's verdicts, names and numbers — since a 3D view
+    /// builds its footprint parts' ports itself (<see cref="C3dComponentPorts"/>). Null for a 3D setup that names no cell instance
+    /// (or whose list is refused on a layout of footprint parts only, which the footprint build then refuses in its own words).
+    /// What <see cref="EmGeometry.ForSetup"/> and <see cref="EmComponentPorts.Collect(EmLayoutSource, EmSetup)"/> read.
+    /// </summary>
+    public static EmPlanarComponentPortBuild? Of(EmSetup setup, EmLayoutSource source)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(source);
+        if (!setup.Is3D) return Build(setup, source);
+        if (setup.ComponentPorts.Count == 0) return null;
+        return Cached(setup, source);
+    }
+
+    /// <summary>brief-icp-3 — the setup terms a build reads, for a cache keyed by them (the elaborator's per-layout cut).</summary>
+    public static string SetupKey(EmSetup setup)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        string key = KeyOf(setup, null);
+        return key[..key.LastIndexOf('#')];
+    }
+
+    private static EmPlanarComponentPortBuild? Cached(EmSetup setup, EmLayoutSource source)
+    {
         string key = KeyOf(setup, source);
         lock (CacheGate)
             if (Cache.TryGetValue(source, out var hit) && hit.Key == key) return hit.Build;
@@ -170,13 +208,14 @@ public static class EmPlanarComponentPorts
         return built;
     }
 
-    /// <summary>brief-icp-2 R-icp2-8 — whether <see cref="Build"/> on this setup and layout would return at once (built already, by
+    /// <summary>brief-icp-2 R-icp2-8 — whether <see cref="Build"/> (<see cref="Of"/> for a 3D setup) on this setup and layout would return at once (built already, by
     /// any caller holding a copy of the same layout): what the panel asks before deciding to build off its thread.</summary>
     public static bool IsBuilt(EmSetup setup, EmLayoutSource source)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
-        if (setup.ComponentPorts.Count == 0 || setup.Is3D) return true;
+        // brief-icp-3 — a 3D setup's build is the cut alone (Of), cached on the same terms.
+        if (setup.ComponentPorts.Count == 0) return true;
         string key = KeyOf(setup, source);
         lock (CacheGate)
             if (Cache.TryGetValue(source, out var hit) && hit.Key == key) return true;
@@ -204,15 +243,15 @@ public static class EmPlanarComponentPorts
 
     /// <summary>What the build depends on beyond the source: the list, the levels and the region — and enough of the view to
     /// notice an edit made to the same object.</summary>
-    private static string KeyOf(EmSetup setup, EmLayoutSource source)
+    private static string KeyOf(EmSetup setup, EmLayoutSource? source)
         => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}" +
                                                              $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}"))
-           + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe()
-           + "#" + source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron;
+           + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe() + (setup.Is3D ? "#3d" : "")
+           + "#" + (source is null ? "" : source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron);
 
     private sealed record Region(int Index, LayerKey Layer, Em3dExtrudedPolygon Poly, Paths64 Dbu);
 
-    private static EmPlanarComponentPortBuild BuildCore(EmSetup setup, EmLayoutSource source)
+    private static EmPlanarComponentPortBuild? BuildCore(EmSetup setup, EmLayoutSource source)
     {
         var notes = new List<string>();
         var warnings = new List<string>();
@@ -237,7 +276,14 @@ public static class EmPlanarComponentPorts
             ? EmCellInstances.Project(view, source.AbsolutePath, source.Technology, C3dTransform.Identity, levelLayers)
             : EmCellInstanceSet.Empty;
         var selection = EmPartPads.Select(setup, parts, "this layout", instances);
-        if (selection.Refusal is { } selectWhy) return Refuse(selectWhy);
+        // brief-icp-3 — a 3D setup's footprint parts are the 3D view's to build (C3dComponentPorts), so here it takes the cut alone. A
+        // list refused on a layout of footprint parts only is refused there in its own words; one refused over cell instances is this
+        // build's, and the 3D view refuses with it.
+        bool threeD = setup.Is3D;
+        bool cellInstances = instances.Instances.Any(i => i.Kind != EmInstanceKind.Footprint);
+        if (threeD && (selection.Refusal is not null ? !cellInstances : selection.InstanceEntries.Count == 0 && selection.Instances.Count == 0))
+            return null;
+        if (selection.Refusal is { } selectWhy) return Refuse(selectWhy) with { Instances = instances, InstanceEntries = selection.InstanceEntries };
         foreach (var (entry, why) in selection.Unplaced)
             warnings.Add($"{why} That entry is left out of this run; the other component ports are built.");
 
@@ -269,7 +315,7 @@ public static class EmPlanarComponentPorts
 
         var results = new List<EmPlanarComponentPort>();
         var noModel = new List<string>();
-        foreach (var entry in selection.Wanted)
+        foreach (var entry in threeD ? Array.Empty<EmComponentPort>() : selection.Wanted)
         {
             string rd = entry.Refdes;
             if (ambiguous.Contains(rd)) { results.Add(Refused(rd, EmPartPads.PlacedMoreThanOnce(rd))); continue; }
@@ -390,13 +436,18 @@ public static class EmPlanarComponentPorts
 
         foreach (var r in results.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {(r.Cutout && r.Pin is not null ? r.Name : r.Refdes)} is left out of this run; the other component ports are built.");
-        foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
+        // A 3D run's cut ports are sheets, described by the 3D view that builds them; the notes here are the cut's own.
+        if (!threeD) foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
         // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.
         if (noModel.Count > 0)
             warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
                          $"co-simulation netlist will carry a placeholder for {(noModel.Count == 1 ? "it" : "each")}.");
 
         // A part that cannot be built is left out and the others run; the list refuses only when nothing at all is left to drive.
+        // A 3D view decides that over its footprint parts and drawn ports too (C3dProblemAssembly).
+        if (threeD)
+            return new EmPlanarComponentPortBuild(results, notes, warnings, null)
+                { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
         if (!results.Any(p => p.Ok) && !EmComponentPorts.Collect(source, cut?.Excluded).Shapes.Any(s => s is LabelShape { IsPort: true }))
             return new EmPlanarComponentPortBuild(results, notes, [],
                 "None of the component ports this setup names could be built, and the layout has no other port to drive: " +

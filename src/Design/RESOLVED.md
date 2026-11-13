@@ -31309,3 +31309,60 @@ thread. Gates: `tests/Ui.Tests/Em/PlanarCellCutoutTests.cs` (11).
   or setup terms moved on is not applied (a moved layout starts a fresh Refresh). The workspace's mesh button awaits it.
 - **Not done here:** the 3D builders still pass no instances (ICP-3), and `MigrateLegacyPortKinds` runs right after an
   open's Refresh — on a legacy `.cem` that also names component ports it can run before the off-thread build lands.
+
+## brief-icp-3 — the cut on a 3D `.cem` and in a `.c3d` setup (2026-11-13)
+
+`C3dCellCuts` (the plan per placed layout, and the sheets), `EmPlanarComponentPorts.Of` (a 3D setup's cut alone),
+`C3dElaborationOptions.LayoutCuts`, `Em3dGenerator.GenerateCutPorts`. Gate: `tests/Ui.Tests/Em3d/CellCutout3DTests.cs` (5).
+
+- **One door for the cut, both solvers.** `EmGeometry.ForSetup` and `EmComponentPorts.Collect(source, setup)` now call
+  `EmPlanarComponentPorts.Of`, which is `Build` for a Planar setup and, for a 3D one, the same build with the gap-port loop
+  skipped: the projection, the selection, `EmCellCutout.Apply` and the per-pin records are ICP-2's, so the verdicts, names and
+  numbers are too. `Build` itself still returns null for a 3D setup, so the panel, `check` and `explain` callers that read it
+  directly are unchanged. The cache key gained `#3d`, so a Planar and a 3D setup with the same entries never share a build.
+- **The cut is known only after one elaboration.** Which layouts a view places, and where, comes out of the elaboration, so
+  `Assemble` elaborates, plans the cut per layout frame (`C3dCellCuts.Plan`), and when anything is cut elaborates again with
+  `LayoutCuts`: the elaborator lowers that layout through `EmGeometry.ForSetup` with the cut setup (it already did so for a
+  `.cem`'s solve region), and the cut setup's terms are in the child's cache key. Gate 4 holds the elaborator's cache to it: a
+  plain setup assembled after a cut one on the same elaborator writes the same mesh script as on a fresh one.
+- **The sheet is the generator's, not a second construction.** A cut face is an edge label driving its whole face; the
+  layout is run through the generator with `CutPorts` (port by port, so one face that cannot have a sheet is left out alone)
+  and each cut port's sheet is carried into the view by its layout instance's element transform, the one its solids were
+  lowered with (`C3dProvenance.Element`). The return walk, the width rule and every refusal are a drawn edge port's; a generator
+  refusal reaches the user as `X1.A: <the edge port's sentence>`. The generator's own drawn ports are built again in that run
+  and dropped; its `Ports3D` keeps only entries below the first cut number, so a stated wave kind or return never lands on a
+  cut port by number.
+- **Which entries are the cut's.** `EmPartPads.Selection.InstanceEntries` lists the entries the instance side read (named
+  instances and paths, `Cell`, `X/*`, unplaced paths). A 3D view's footprint build drops those from its own list, and `"*"`
+  stays on both sides; `"*"` finding no two-pad part is not refused when the cut took devices. With several layout instances
+  an entry must start with the instance's name (`U1/X1`) and anything so prefixed is the cut's; a plain refdes stays a
+  footprint entry, as before. A layout placed twice and cut two ways is refused (it is lowered once per cut).
+- **A 3D build of a layout of footprints only stays null**, so a selection refusal there is still the footprint build's, in
+  its words; only a list refused over real cell instances is the cut's refusal. No 3D result moves without a cell-instance entry.
+- **The panel's Refresh builds a 3D setup's cut off its thread too.** Its `Collect(source, setup)` and `ForSetup` now reach the
+  cut for a 3D setup, so R-icp2-8's off-thread build (`PrepareComponentBuild`) no longer skips 3D: it builds with `Of`, and
+  `IsBuilt` answers for a 3D setup from the same cache.
+- **Names, numbers, records.** Cut ports are numbered after the footprint ports' final numbers, in the cut's order — the
+  Planar order. The problem's ports keep the solver's `port/N` names; the Touchstone and the `.cemr` take the component port's
+  name (`X1.A`), path, pin and cell from the build, as for gap ports. A build of cut ports alone sets no `CoSimPorts`, so no
+  `_cosim` netlist is written for it (ICP-5 puts models back), matching a Planar run's `AnyGapPort`.
+
+**The measurement (ICP-0 § Risks 3), by hand on EMerge, never a gate.** ICP-2's fixture: a 72 µm line on 100 µm GaAs, 1200 µm
+long, the 200 µm two-pin segment X1 in the middle; a ground plane drawn under it (a scratch copy of the MMIC technology with a
+drawing layer on Backside Metal, which the shipped one does not draw). Whole line (2 ports) against the cut (4 ports) closed
+with an ideal line of 200/1200 of the whole line's own γ and Z_c; adaptive sweep off; 3-6 s per run at Standard (5.6 k-9 k
+tetrahedra), 18-25 s at Accurate (20 k-29 k tetrahedra, peak 4.5 GB):
+
+| GHz | 5 | 10 | 15 | 20 | 25 | 30 |
+|---|---|---|---|---|---|---|
+| max \|ΔS\|, Standard | 2.1e-2 | 4.2e-2 | 6.4e-2 | 8.5e-2 | 1.03e-1 | 1.17e-1 |
+| max \|ΔS\|, Accurate | 2.0e-2 | 4.0e-2 | 6.1e-2 | 8.0e-2 | 9.7e-2 | 1.11e-1 |
+| S21 phase lag of the closed line | 1.2° | 2.3° | 3.5° | 4.6° | 5.6° | 6.5° |
+
+The error is mesh-converged and is almost all a phase lag linear in f: about 0.6 ps over the two faces, the delay of ~30 µm of
+this line per face. That is the sheets' own inductance: a sheet 100 µm tall is 1/167 of a wavelength in GaAs at 5 GHz and 1/28
+at 30 GHz. Planar's uncalibrated face read 6.1e-2 at 20 GHz on the same cut (ICP-2); 3D reads 8.0e-2. Said in
+`docs/user/src/reference/em-3d.md` §cell-instance-ports. **A trap in the closure, not the port:** `acosh` through
+`Log(a + Sqrt(a² − 1))` picks the conjugate root once βℓ passes 90° (the principal square root's sign follows Im(a²), which
+flips with Re(a)), and the first run read 0.5-0.6 at 25-30 GHz from that alone; take the root with |e^{γℓ}| ≥ 1.
+`PlanarCellCutoutTests.CloseWithLine` has the same expression; its one point (20 GHz, βℓ just under 90°) is on the safe side.

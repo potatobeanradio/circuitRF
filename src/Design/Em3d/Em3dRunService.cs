@@ -907,9 +907,11 @@ public static partial class Em3dRunService
                    Z0Re = p.Z0.Real,
                    Z0Im = p.Z0.Imaginary,
                    Kind = p.Kind == Em3dPortKind.Wave ? EmResultPort.Wave
-                        : part is { Connector: false } ? EmResultPort.Gap : EmResultPort.Plane,
+                        : part is { Connector: false, Cutout: false } ? EmResultPort.Gap : EmResultPort.Plane,
                    Part = part?.Refdes,
                    Pins = part is null ? null : [.. new[] { part.Pin, part.ReferencePin }.OfType<string>()],
+                   // brief-icp-3 R-icp3-5 — a cut instance's pin port: its path, its pin and its cell, as a Planar run records them.
+                   Cell = part?.Cell,
                    ModeNormalised = p.ModeNormalised,
                };
            })];

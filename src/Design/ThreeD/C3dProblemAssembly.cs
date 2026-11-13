@@ -455,13 +455,24 @@ public static class C3dProblemAssembly
         var sar = setup.RequestsSar ? SarSettings.Resolve(setup.Sar!) : null;
         if (sar is not null && SarFrequencyRefusal(sar, fMin, fMax) is { } outside) return No(outside);
         double materialHz = sar is { FrequenciesHz: [var sarHz, ..] } ? sarHz : MaterialFrequency(frequency);
-        var drawn = (elaborator ?? new C3dElaborator()).Elaborate(document, path, workspaceCws, new C3dElaborationOptions(fMax, tempC)
+        var elab = elaborator ?? new C3dElaborator();
+        var options = new C3dElaborationOptions(fMax, tempC)
         {
             MaterialFrequencyHz = materialHz, MaterialFrequencyBasis = sar is null ? "the sweep's centre" : "the SAR frequency",
             RobustMeshing = setup.RobustMeshing,
             Conductors = setup.Conductors,
             SolidVias = setup.Problem3D != Em3dProblemType.Thermal,
-        });
+        };
+        var drawn = elab.Elaborate(document, path, workspaceCws, options);
+        // brief-icp-3 R-icp3-1 — the cell instances the setup cuts out, per placed layout (ICP-2's cut, in each layout's own frame), and
+        // the layouts lowered again without them: the cut is known only once the elaboration has said which layouts are placed where.
+        C3dCellCutPlan? cuts = null;
+        if (setup.ComponentPorts.Count > 0 && setup.Problem3D != Em3dProblemType.Electrostatic && drawn.Ok)
+        {
+            cuts = C3dCellCuts.Plan(setup, drawn, elab.Technologies, workspaceCws, elab.LayoutsInMemory, elab.LayoutRegions);
+            if (cuts is { Refusal: { } cutWhy }) return No(cutWhy);
+            if (cuts is { Cuts: true }) drawn = elab.Elaborate(document, path, workspaceCws, options with { LayoutCuts = cuts.LayoutCuts });
+        }
         var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);
         if (!e.Ok) return No(string.Join(" ", e.Refusals), e.Warnings);
@@ -477,7 +488,7 @@ public static class C3dProblemAssembly
         {
             // The pads come from the layout the copper came from: an open editor's, when the elaborator was handed one.
             components = C3dComponentPorts.Build(setup, document, drawn, FirstComponentPortNumber(document),
-                                                 layoutsInMemory: elaborator?.LayoutsInMemory, layoutRegions: elaborator?.LayoutRegions);
+                                                 layoutsInMemory: elaborator?.LayoutsInMemory, layoutRegions: elaborator?.LayoutRegions, cuts: cuts);
             // A part whose port cannot be built is left out with a warning; the run refuses only when the build itself cannot be
             // made, or when nothing is left to drive.
             if (components is { Refusal: { } whole }) return No(whole, e.Warnings) with { ComponentPorts = components };
@@ -648,7 +659,9 @@ public static class C3dProblemAssembly
             ViaNetFixes = viaNetFixes,
             WantsDc = wantsDc,
             ComponentPorts = components,
-            CoSimPorts = components is null ? null : EmCoSimNetlist.PortsOf(problem.Ports, document, components),
+            // brief-icp-3 — a cut instance's pin port carries no part until ICP-5 puts its model back: a build of those alone writes
+            // no co-simulation netlist, as a Planar run's does not.
+            CoSimPorts = components is null || components.CutOnly ? null : EmCoSimNetlist.PortsOf(problem.Ports, document, components),
             ResultPorts = EmCoSimNetlist.PortsOf(problem.Ports, document, components),
             GeometryFindings = geometry,
             Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry), .. Em3dThinMetalLoss.ForRun(problem, setup)],

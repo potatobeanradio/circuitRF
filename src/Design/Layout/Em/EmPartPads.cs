@@ -129,6 +129,11 @@ public static class EmPartPads
         /// <summary>brief-icp-1 R-icp1-4 — entries naming a path or a cell that matches no placed instance, each with its sentence:
         /// left out, the others run.</summary>
         public IReadOnlyList<(EmComponentPort Entry, string Why)> Unplaced { get; init; } = [];
+
+        /// <summary>brief-icp-3 R-icp3-4 — the setup's own entries the instance side read (a named instance or path, a <c>Cell</c>,
+        /// an <c>X/*</c>), as written; <c>"*"</c> is not among them, since it takes footprint parts too. What a 3D view's footprint
+        /// build leaves to the cut.</summary>
+        public IReadOnlyList<EmComponentPort> InstanceEntries { get; init; } = [];
     }
 
     /// <summary>
@@ -275,7 +280,11 @@ public static class EmPartPads
 
         if (wanted.Count == 0 && list.Count == 0 && unplaced.Count == 0)
             return new([], NothingToTake(where, instances));
-        return new(wanted, null) { Instances = list, Unplaced = unplaced };
+        return new(wanted, null)
+        {
+            Instances = list, Unplaced = unplaced,
+            InstanceEntries = [.. setup.ComponentPorts.Where(c => !footprintEntries.Contains(c))],
+        };
     }
 
     /// <summary>The refusal when <c>"*"</c> finds nothing: what is placed, and how to cut out a copper instance.</summary>

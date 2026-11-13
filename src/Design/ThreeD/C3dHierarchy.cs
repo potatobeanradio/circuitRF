@@ -1037,7 +1037,11 @@ public static class C3dHierarchy
         try { build = EmPlanarComponentPorts.Build(planar, new EmLayoutSource(clay, view, tech, view.DbuPerMicron)); }
         catch (Exception e) when (e is IOException or InvalidOperationException or ArgumentException) { return list; }
         if (build is null) return list;
-        foreach (var port in build.Ports.Where(p => p.Ok && p.Z0 is null))
+        // brief-icp-3 — a cut instance's pins are one entry with one Z0 between them: resolved only when every pin agrees.
+        foreach (var port in build.Ports.Where(p => p.Ok && p.Z0 is null)
+                                        .GroupBy(p => p.Cutout ? p.Refdes : p.Refdes + "\u001f" + p.Number)
+                                        .Where(g => g.Select(p => planar.ResolvePortZ0(p.Number - 1)).Distinct().Count() == 1)
+                                        .Select(g => g.First()))
         {
             var z = planar.ResolvePortZ0(port.Number - 1);
             if (z == new System.Numerics.Complex(50, 0)) continue;

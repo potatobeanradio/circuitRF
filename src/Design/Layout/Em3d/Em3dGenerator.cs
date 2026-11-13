@@ -314,6 +314,20 @@ public static class Em3dGenerator
         return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
     }
 
+    /// <summary>
+    /// brief-icp-3 R-icp3-2 — the layout's problem with <paramref name="setup"/>'s cell instances cut out
+    /// (<see cref="EmPlanarComponentPorts.Of"/>) and a sheet at each cut face, built exactly as a drawn edge port's is: the same
+    /// return walk, the same width rule (the face's whole edge), the same refusals. Built port by port (<c>portsEach</c>), so a face
+    /// that cannot have a sheet is left out alone. What a 3D view reads its cut ports off; never a solve of its own.
+    /// </summary>
+    public static Em3dGenerationResult GenerateCutPorts(EmSetup setup, EmLayoutSource source, Technology tech)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(tech);
+        return new Run(setup, source, tech, null, false, false, false, portsEach: true) { CutPorts = true }.Go();
+    }
+
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
     private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs,
@@ -323,6 +337,9 @@ public static class Em3dGenerator
         // the ports, the air box, the air above the stack and the terminals around its stages. The notes
         // and materials lists are the builder's, appended to between its stages, so their ORDER is the one
         // the generator always wrote (the pre-split dumps hold it).
+        /// <summary>brief-icp-3 — the setup's cut labels are ports too (<see cref="GenerateCutPorts"/>).</summary>
+        public bool CutPorts { get; init; }
+
         private Em3dLayoutSolids.Builder _g = null!;
         private List<string> _notes = [];
         private double _tempC;
@@ -530,7 +547,7 @@ public static class Em3dGenerator
         // ── Ports ────────────────────────────────────────────────────────────────────────────
 
         /// <summary>The port labels this problem's ports come from — <see cref="EmComponentPorts.Collect"/>, once.</summary>
-        private EmComponentPorts.Result PortLabels => _portLabels ??= EmComponentPorts.Collect(source);
+        private EmComponentPorts.Result PortLabels => _portLabels ??= CutPorts ? EmComponentPorts.Collect(source, setup) : EmComponentPorts.Collect(source);
         private EmComponentPorts.Result? _portLabels;
 
         /// <summary>

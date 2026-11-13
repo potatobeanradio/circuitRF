@@ -335,7 +335,8 @@ public static class EmCoSimNetlist
             var own = C3dPorts.OwnerOf(document, source);
             string name = cp?.Port?.Name ?? (own is not null ? C3dPorts.Label(own) : $"port {source}");
             string z0 = cp?.Port?.Z0 ?? own?.Z0 ?? "50";
-            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp), source));
+            // brief-icp-3 — a cut instance's pin port is an ordinary port of the netlist until ICP-5 puts its model back on it.
+            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null || cp.Cutout ? null : EmCoSimPart.Of(cp), source));
         }
         return list;
     }

@@ -52,3 +52,15 @@ No solve. One test per claim:
 ## Not here
 
 Pin references (ICP-4), `_cosim` (ICP-5, which reads `PortsOf` for both), UI.
+
+## Completion note (2026-11-13)
+
+Built: `src/Design/ThreeD/C3dCellCuts.cs` (the cut planned per placed layout and the sheet at each face),
+`EmPlanarComponentPorts.Of` (a 3D setup's cut through ICP-2's own build), `C3dElaborationOptions.LayoutCuts` (the layout lowered
+through `EmGeometry.ForSetup` with its cut), `Em3dGenerator.GenerateCutPorts` (a drawn edge port's sheet at each cut face),
+`EmPartPads.Selection.InstanceEntries` (which entries the footprint build leaves to the cut), and the cut ports in
+`C3dComponentPorts`, the record, the co-simulation ports and New 3D View's Z0 copy. Gate `tests/Ui.Tests/Em3d/CellCutout3DTests.cs`,
+five tests, no solve, 0.4 s. The measurement: 2.0e-2 at 5 GHz to 1.1e-1 at 30 GHz on EMerge, a phase lag linear in f from the
+sheets' own inductance — `src/Design/RESOLVED.md` §brief-icp-3, and `docs/user/src/reference/em-3d.md`. Where the build
+differs from the requirements: the problem's ports keep the solver's `port/N` names (the Touchstone and `.cemr` take `X1.A`
+from the build, as for gap ports), and a layout placed twice must be cut the same way in each placement.

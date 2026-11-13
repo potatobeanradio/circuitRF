@@ -2354,12 +2354,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// built already.</summary>
     private ComponentBuildJob? PrepareComponentBuild()
     {
-        if (IsEmbedded || Working.Is3D || Working.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(Working) is not null) return null;
+        // brief-icp-3 — a 3D setup's cut (EmPlanarComponentPorts.Of) is read by this refresh's geometry and labels too, on the same terms.
+        if (IsEmbedded || Working.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(Working) is not null) return null;
         if (Working.LayoutRef is not { Length: > 0 } r || ResolveLayout?.Invoke(r) is not { Technology: not null } source) return null;
         if (EmPlanarComponentPorts.IsBuilt(Working, source)) return null;
         string text = LayoutPersistence.Serialize(source.View);
         var copy = Working.Clone();
-        var builder = ComponentBuilder;
+        var builder = Working.Is3D ? EmPlanarComponentPorts.Of : ComponentBuilder;
         string path = source.AbsolutePath;
         var tech = source.Technology;
         int dpm = source.DbuPerMicron;
