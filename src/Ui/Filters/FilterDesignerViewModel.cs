@@ -492,20 +492,19 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         MagnitudePlot.FreqUnits = FreqUnitOf(Unit);
         PhasePlot.FreqUnits = MagnitudePlot.FreqUnits;
 
-        var idealTrace = new Trace(ideal, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(0))
-        { CubeName = "ideal S21" };
+        // CubeName must stay null. A non-null name marks the trace cube-bound, and BuildPath
+        // then ignores the SNP (Trace.IsCubeBound). These are matrix traces.
+        var idealTrace = new Trace(ideal, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(0));
         idealTrace.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
         MagnitudePlot.Traces.Add(idealTrace);
 
         if (ladder is not null)
         {
-            var ladderTrace = new Trace(ladder, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(1))
-            { CubeName = "ladder S21" };
+            var ladderTrace = new Trace(ladder, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(1));
             ladderTrace.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
             MagnitudePlot.Traces.Add(ladderTrace);
 
-            var s11 = new Trace(ladder, MatrixType.S, 0, 0, DependentVarFormat.Db, true, Style(2))
-            { CubeName = "ladder S11" };
+            var s11 = new Trace(ladder, MatrixType.S, 0, 0, DependentVarFormat.Db, true, Style(2));
             s11.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
             MagnitudePlot.Traces.Add(s11);
 
@@ -518,8 +517,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
         MagnitudePlot.CustomTitleOn = true;
         MagnitudePlot.CustomTitle = "Insertion loss";
-        MagnitudePlot.Axes.YTick = dbPerDiv;
         MagnitudePlot.Autoscale(force: true);
+        // After autoscale, keep the grid at the requested dB spacing. SetTicks overwrites YTick
+        // when the window is assigned, so this assignment has to come last.
         MagnitudePlot.Axes.YTick = dbPerDiv;
         PhasePlot.CustomTitleOn = true;
         PhasePlot.CustomTitle = "Phase and group delay";
