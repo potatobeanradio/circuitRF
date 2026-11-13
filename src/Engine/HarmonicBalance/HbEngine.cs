@@ -146,7 +146,7 @@ public sealed class HbResult
 ///
 /// See CLAUDE.md for FFT convention, sign convention, and DC-exclusion rationale.
 /// </summary>
-public sealed class HbEngine
+public sealed partial class HbEngine
 {
     private readonly ElaboratedNetlist  _netlist;
     private readonly TestBench          _tb;
@@ -467,6 +467,10 @@ public sealed class HbEngine
     {
         // Before any evaluation reads charge, warm-started or not (brief-modelcomposer-21 R-mc21-3).
         BiasFreeze.Ensure(_netlist, _settings);
+        // Tones whose retained products coincide in frequency run as single-tone HB on their common fundamental, on
+        // either multi-tone path, and say so (issue 65; HbEngine.Commensurate.cs).
+        if (p.ToneFreqsHz.Length >= 2 && Commensurate(p, _settings.HbMaxMixProducts) is { } commensurate)
+            return RunCommensurate(p, commensurate);
         // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
         // rectangular-FFT path instead; AnalysisSettings.HbTwoToneOnLattice (default TRUE since
         // 2026-08-30) is the switch back, and that setting carries the measurements the default
@@ -1016,12 +1020,19 @@ public sealed class HbEngine
             var (yp, sp) = extractor.Extract(-omega);
             return (ConjugateMatrix(yp), ConjugateVector(sp));
         }
+        // A source drives only the lowest-order product at its frequency (issue 65; SourceDrivenProducts).
+        var drives = SourceDrivenProducts(M, m => grid.OmegaOf(m, w1, w2) / (2 * Math.PI));
+        (Complex[,] y, Complex[] s) ExtractMixAt(int m)
+        {
+            var (y, src) = ExtractMix(grid.OmegaOf(m, w1, w2));
+            return (y, drives[m] ? src : new Complex[src.Length]);
+        }
 
         var yNN  = new Complex[M][,];
         var iSrc = new Complex[M][];
         (yNN[0], iSrc[0]) = extractor.ExtractDC();
         for (int m = 1; m < M; m++)
-            (yNN[m], iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+            (yNN[m], iSrc[m]) = ExtractMixAt(m);
 
         var trace = new HbConvergenceTrace();
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
@@ -1034,7 +1045,7 @@ public sealed class HbEngine
 
         // Re-extract source excitation (drive amplitude baked into I_src).
         for (int m = 1; m < M; m++)
-            (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+            (_, iSrc[m]) = ExtractMixAt(m);
 
         HbNewton2D.SolveResult? solveResult = null;
         if (p.DriveStepping != DcBiasSteppingMode.Always)
@@ -1059,7 +1070,7 @@ public sealed class HbEngine
                         sources,
                         (offsetDb, warm) =>
                         {
-                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMixAt(m);
                             var v  = SeedLattice(warm, N, M, ifNodes, effectiveSettings);
                             var sr = HbNewton2D.Solve(v, yNN, iSrc, grid, f1, f2, N, N1, N2,
                                 _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
@@ -1079,7 +1090,7 @@ public sealed class HbEngine
                 finally
                 {
                     HbDriveRamp.Restore(sources);
-                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMixAt(m);
                 }
             }
         }
@@ -1135,11 +1146,12 @@ public sealed class HbEngine
             var iNlM = new Complex[N];
             for (int n = 0; n < N; n++) iNlM[n] = solveResult.INl[n, m];
             double omega = grid.OmegaOf(m, w1, w2);
+            Complex[] Rhs(double w) { var r = extractor.BuildSourceRhs(w); if (!drives[m]) Array.Clear(r); return r; }
             if (omega >= 0)
-                return extractor.SolveFullNetwork(omega, iNlM, extractor.BuildSourceRhs(omega));
+                return extractor.SolveFullNetwork(omega, iNlM, Rhs(omega));
 
             for (int n = 0; n < N; n++) iNlM[n] = Complex.Conjugate(iNlM[n]);
-            var bsrc = extractor.BuildSourceRhs(-omega);
+            var bsrc = Rhs(-omega);
             for (int i = 0; i < bsrc.Length; i++) bsrc[i] = Complex.Conjugate(bsrc[i]);
             var xn = extractor.SolveFullNetwork(-omega, iNlM, bsrc);
             for (int i = 0; i < xn.Length; i++) xn[i] = Complex.Conjugate(xn[i]);
@@ -1319,11 +1331,19 @@ public sealed class HbEngine
             return (ConjugateMatrix(yp), ConjugateVector(sp));
         }
 
+        // A source drives only the lowest-order product at its frequency (issue 65; SourceDrivenProducts).
+        var drives = SourceDrivenProducts(M, m => lattice.FrequencyOf(m, f));
+        (Complex[,] y, Complex[] s) ExtractMixAt(int m)
+        {
+            var (y, src) = ExtractMix(lattice.OmegaOf(m, omegas));
+            return (y, drives[m] ? src : new Complex[src.Length]);
+        }
+
         var yNN  = new Complex[M][,];
         var iSrc = new Complex[M][];
         (yNN[0], iSrc[0]) = extractor.ExtractDC();
         for (int m = 1; m < M; m++)
-            (yNN[m], iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+            (yNN[m], iSrc[m]) = ExtractMixAt(m);
 
         var trace = new HbConvergenceTrace();
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
@@ -1334,7 +1354,7 @@ public sealed class HbEngine
 
         // Re-extract source excitation (drive amplitude baked into I_src).
         for (int m = 1; m < M; m++)
-            (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+            (_, iSrc[m]) = ExtractMixAt(m);
 
         HbNewtonNd.SolveResult? solveResult = null;
         if (p.DriveStepping != DcBiasSteppingMode.Always)
@@ -1359,7 +1379,7 @@ public sealed class HbEngine
                         sources,
                         (offsetDb, warm) =>
                         {
-                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMixAt(m);
                             var v  = SeedLattice(warm, N, M, ifNodes, effectiveSettings);
                             var sr = HbNewtonNd.Solve(v, yNN, iSrc, apft, f, N,
                                 _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
@@ -1379,7 +1399,7 @@ public sealed class HbEngine
                 finally
                 {
                     HbDriveRamp.Restore(sources);
-                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMixAt(m);
                 }
             }
         }
@@ -1431,11 +1451,12 @@ public sealed class HbEngine
             var iNlM = new Complex[N];
             for (int n = 0; n < N; n++) iNlM[n] = solveResult.INl[n, m];
             double omega = lattice.OmegaOf(m, omegas);
+            Complex[] Rhs(double w) { var r = extractor.BuildSourceRhs(w); if (!drives[m]) Array.Clear(r); return r; }
             if (omega >= 0)
-                return extractor.SolveFullNetwork(omega, iNlM, extractor.BuildSourceRhs(omega));
+                return extractor.SolveFullNetwork(omega, iNlM, Rhs(omega));
 
             for (int n = 0; n < N; n++) iNlM[n] = Complex.Conjugate(iNlM[n]);
-            var bsrc = extractor.BuildSourceRhs(-omega);
+            var bsrc = Rhs(-omega);
             for (int i = 0; i < bsrc.Length; i++) bsrc[i] = Complex.Conjugate(bsrc[i]);
             var xn = extractor.SolveFullNetwork(-omega, iNlM, bsrc);
             for (int i = 0; i < xn.Length; i++) xn[i] = Complex.Conjugate(xn[i]);

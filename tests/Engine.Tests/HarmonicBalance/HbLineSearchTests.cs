@@ -210,11 +210,15 @@ public sealed class HbLineSearchTests(ITestOutputHelper output)
     /// 32 dBm with and without the line search. The lattice route refuses one step at 28 dBm; the
     /// rectangular route refuses none anywhere in that span. So this test pins the level that exists
     /// and records the absence of the other rather than inventing a fixture to manufacture it.</para>
+    ///
+    /// <para><b>The levels moved with issue 65.</b> The fixture's tones are equally spaced, so (0,2,−1) and (−1,2,0) sit on
+    /// the outer tones, and each outer source was driven on them as well as on its own product: more drive than the
+    /// circuit has. With each source on its own product only, every level from 17 to 34 dBm converges, and the line
+    /// search refuses a step at 24 and 26 dBm, which is what this now pins.</para>
     /// </summary>
     [Fact]
     public void AThreeToneColdSolve_AtTheLevelTheUndampedLoopFailed_Converges()
     {
-        const double FirstFailingDbm = 17.0;
 
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(TestDataDir("Hero5"), "hero5_3tone.cnl"));
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
@@ -222,7 +226,7 @@ public sealed class HbLineSearchTests(ITestOutputHelper output)
         Assert.True(idx >= 0);
         var orig = tb.GlobalVariables[idx];
 
-        foreach (double dbm in new[] { FirstFailingDbm, 18.0, 20.0 })
+        foreach (double dbm in new[] { 24.0, 26.0 })
         {
             tb.GlobalVariables[idx] =
                 new Variable("Pavl_dbm", dbm.ToString("G17", CultureInfo.InvariantCulture), orig.Unit);

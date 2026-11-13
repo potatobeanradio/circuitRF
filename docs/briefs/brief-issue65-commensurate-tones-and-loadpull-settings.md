@@ -4,6 +4,12 @@ Issue 65's other parts are fixed: a block whose terminals come in pairs keys eac
 name (`A1:out+`, no longer `A1:in-`), and a swept loadpull or pursuit now receives the sweep's cancellation. Two parts
 are left.
 
+**Status (2026-11-13): done.** §1: each source drives only the lowest-order product at its frequency (the root
+defect), and tones that are low harmonics of their common fundamental run as single-tone HB on it with the warning
+`hb.tones.commensurate`; closely spaced tones stay on the lattice (owner, after the first version, which took every
+coincidence, hung five multi-tone tests). §2: measured bit-identical across CLI, sweep and GUI; the sweep passes its
+settings through and `LoadpullEngine` carries `--max-iter` (DC) and `--diag`. Detail in `src/Engine/RESOLVED.md`.
+
 ## 1. Two tones that are commensurate within the mixing order
 
 ### Why

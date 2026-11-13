@@ -4548,3 +4548,28 @@ Gates: `EnvelopeShortStopAndInputPowerTests`.
   run with no device-only labelled net is unchanged bit for bit.
 
 Gate: `EnvelopeDeviceOnlyNetTests` (2 s; 36.4 against 0.002 before the fix).
+
+## Multi-tone HB: a source drove every product on its frequency; harmonically related tones (issue 65, 2026-11-13)
+
+- **The defect.** Both multi-tone paths extracted each product's Norton source at the product's frequency, so every
+  product landing on a source's frequency was driven by it: with tones 100 and 300 MHz, `(3,0)` and `(0,1)` both carried
+  the 300 MHz source, `(2,−1)` and `(1,0)` the 100 MHz one; at 100/200 MHz `(2,−1)` sits on 0 Hz and took the bias. The
+  lattice and the FFT path then disagreed by tens of percent on IM3 and by 1e3 on higher bins, and an odd PIM read
+  even-order products. Equally spaced tones had it too: in `hero5_3tone.cnl` (1.99/2.00/2.01 GHz) `(0,2,−1)` and
+  `(−1,2,0)` sit on the outer tones and were driven, which is why the undamped loop failed from 17 dBm there; with the fix
+  every level to 34 dBm converges and the line search first refuses a step at 24 dBm (`HbLineSearchTests` repointed).
+- **Fix 1.** `HbEngine.SourceDrivenProducts`: each frequency's excitation goes to its lowest-order product only, in
+  extraction and in the linear back-solve. Coinciding products stay independent unknowns, as designed (§6.5).
+- **Fix 2.** Tones that are low harmonics of their common fundamental (each within `MaxHarm` of it) run as single-tone
+  HB on it and are read onto the mixing indices, with the warning `hb.tones.commensurate`. Exact for such a set, where
+  the products add coherently. A first version took every coincidence there; closely spaced tones then became
+  single-tone runs at hundreds of harmonics (2.00/2.01/2.02 GHz on 10 MHz) and five multi-tone tests hung or broke, so
+  the owner narrowed it.
+- **Measured, loadpull settings (§3 of the issue).** An unswept CLI loadpull (`ConductanceRegularization = Always`), a
+  swept one and a GUI one gave bit-identical cubes on Hero3, Hero3B and the shipped Loadpull/LoadpullPursuit benches:
+  HB and the DC solve apply gmin unless the mode is `Never`, so `Always` and `IfNecessary` are the same there. What
+  differed was that `LoadpullEngine` dropped `NonlinearMaxIter` and `HbConsoleDiagnostics` when it copied its settings,
+  and a sweep handed it only the parallelism cap; both now carry through (`--max-iter` reaches the DC start, `--diag` the
+  trace; HB's own cap stays the directive's `MaxIter`).
+
+Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTests`.

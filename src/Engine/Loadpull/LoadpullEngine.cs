@@ -59,6 +59,9 @@ public sealed class LoadpullEngine
     private readonly HbEngine          _hbEngine;
     private readonly AnalysisSettings  _lpSettings;
 
+    /// <summary>The settings every solve of this loadpull runs under (issue 65: one set, whoever calls).</summary>
+    internal AnalysisSettings LoadpullSettings => _lpSettings;
+
     // brief-wbond-wire-temperature R-wbt-4a — true only inside Run(), the one caller that turns each step's wBond currents
     // into WireTemp. A pursuit's search calls RunOneTermination directly and reads none of them, so it must not pay K+1
     // back-solves per Pin step for them (its follow-on loadpull is a Run(), and reports WireTemp there).
@@ -116,6 +119,10 @@ public sealed class LoadpullEngine
             DriveStepping             = base_.DriveStepping,
             NonlinearAbsTol           = base_.NonlinearAbsTol,
             MaxParallelism            = base_.MaxParallelism,
+            // The caller's DC iteration cap and console trace (the CLI's --max-iter and --diag) reach every loadpull,
+            // swept or not (issue 65). HB's own cap is the directive's MaxIter, per solve, below.
+            NonlinearMaxIter          = base_.NonlinearMaxIter,
+            HbConsoleDiagnostics      = base_.HbConsoleDiagnostics,
         };
         _hbEngine = new HbEngine(netlist, tb, _lpSettings);
     }
@@ -424,6 +431,8 @@ public sealed class LoadpullEngine
             DcBiasStepping            = _lpSettings.DcBiasStepping,
             DriveStepping             = p.DriveStepping,
             NonlinearAbsTol           = _lpSettings.NonlinearAbsTol,
+            NonlinearMaxIter          = _lpSettings.NonlinearMaxIter,
+            HbConsoleDiagnostics      = _lpSettings.HbConsoleDiagnostics,
         };
 
         var sweptModel = p.SweepLoad ? loadModel : srcModel;

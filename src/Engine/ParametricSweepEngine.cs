@@ -628,14 +628,6 @@ public static class ParametricSweepEngine
 
     // ── Inner dispatch ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// What a swept loadpull's engine is handed of the sweep's settings: the parallelism cap and nothing else (LP-1). A
-    /// swept loadpull has always run at the default solver settings, unlike the unswept CLI one (a known gap, not this
-    /// change's), and a cap changes no number — so this keeps every swept result exactly as it was.
-    /// </summary>
-    private static AnalysisSettings? CapOnly(AnalysisSettings? settings)
-        => settings is { MaxParallelism: > 0 } s ? new AnalysisSettings { MaxParallelism = s.MaxParallelism } : null;
-
     private static DataSet RunInner(
         Analysis inner,
         Library lib,
@@ -700,7 +692,7 @@ public static class ParametricSweepEngine
                 // tone (LoadpullEngine.Resolve reads the swept tone via var-unit-wins). Enrich per point
                 // so every freq slice carries the canonical display metrics before stacking.
                 var lp = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(netlist, tb, CapOnly(settings), lib, baseDirectory).Run(lp, control));
+                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(netlist, tb, settings, lib, baseDirectory).Run(lp, control));
             }
 
             case LoadpullPursuitAnalysis lppa:
@@ -718,7 +710,7 @@ public static class ParametricSweepEngine
                 bool hasOutput = !string.IsNullOrEmpty(pp.OutputGridPath);
                 bool append    = hasOutput && writeState.FirstGamWriteDone;
                 if (hasOutput) writeState.FirstGamWriteDone = true;
-                return new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb, CapOnly(settings), lib, baseDirectory))
+                return new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb, settings, lib, baseDirectory))
                     .Run(pp, appendOutputBlock: append, control: control);
             }
 
