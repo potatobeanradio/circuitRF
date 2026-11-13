@@ -751,15 +751,27 @@ public sealed partial class Evaluator
 
     // ── Math helpers ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A one-argument function. A cube takes it element by element, its axes kept, as the operators broadcast — so
+    /// <c>exp(j*x)</c> over a sweep's cube is one value per point exactly as <c>e^(j*x)</c> is. A real cube takes
+    /// <paramref name="realFn"/> and stays real, a complex one <paramref name="complexFn"/>: the scalar rule, element by
+    /// element. A NaN element (a point with no value) goes through the function, which keeps it NaN for every function given
+    /// here.
+    /// </summary>
     private Value UnaryMath(CallExpr cl, Scope scope,
         Func<double, double> realFn, Func<Complex, Complex> complexFn)
     {
         if (cl.Args.Length != 1) throw new ArityException(cl.Name, 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        return v.Kind == ValueKind.Real
-            ? new Value(realFn(v.AsReal()))
-            : new Value(complexFn(v.AsComplex()));
+        return v.Kind switch
+        {
+            ValueKind.Real => new Value(realFn(v.AsReal())),
+            ValueKind.Cube => new Value(DataCube.MapElements(v.AsCube(), realFn, complexFn)),
+            _              => new Value(complexFn(v.AsComplex())),
+        };
     }
+
+    private static bool IsRealCube(Value v) => v.Kind == ValueKind.Cube && v.AsCube().DataKind == DataKind.Real;
 
     private Value BinaryMath(CallExpr cl, Scope scope,
         Func<double, double, double> realFn, Func<Complex, Complex, Complex> complexFn)
@@ -819,15 +831,15 @@ public sealed partial class Evaluator
     }
 
     /// <summary>
-    /// <c>sqrt</c>, cube-aware — unlike the rest of the <see cref="UnaryMath"/> family, which takes a
-    /// scalar only.
+    /// <c>sqrt</c>, cube-aware — and with its own cube rule, which <see cref="UnaryMath"/>'s element-wise map does
+    /// not have: a real cube with a negative element promotes to Complex (<see cref="DataCube.Sqrt"/>).
     ///
-    /// <para><b>It is cube-aware because there is no other way to write one.</b> A per-frequency
-    /// square root has no spelling otherwise: <c>pow</c> and <c>^</c> both route through
-    /// <see cref="Value.Pow"/>, which is scalar too, and <c>exp(0.5*log(x))</c> fails on <c>exp</c>
-    /// for the same reason. A coupling factor k = M/√(L₁L₂) read out of a swept two-port is the case
-    /// that found it (the shipped CoupledInductors example) and it is not an unusual shape — an RMS,
-    /// a |Z| taken from Z², a geometric mean of two swept quantities all want the same thing.</para>
+    /// <para><b>It was made cube-aware first, when it was the only way to write one.</b> A per-frequency
+    /// square root had no spelling otherwise: <c>pow</c> and <c>^</c> both routed through a scalar
+    /// <see cref="Value.Pow"/> then, and <c>exp(0.5*log(x))</c> failed on <c>exp</c>. A coupling
+    /// factor k = M/√(L₁L₂) read out of a swept two-port is the case that found it (the shipped
+    /// CoupledInductors example) and it is not an unusual shape — an RMS, a |Z| taken from Z², a
+    /// geometric mean of two swept quantities all want the same thing.</para>
     ///
     /// <para>The Real/Complex branches are <see cref="SafeSqrt"/> and <see cref="Complex.Sqrt"/>
     /// exactly as before, so a scalar argument behaves identically; only the Cube case is new.</para>
@@ -953,6 +965,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("sign", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (IsRealCube(v)) return new Value(DataCube.MapElements(v.AsCube(), x => double.IsNaN(x) ? x : Math.Sign(x), z => z));
         if (v.Kind != ValueKind.Real)
             throw new TypeErrorException("sign() requires a real argument");
         return new Value((double)Math.Sign(v.AsReal()));
@@ -964,7 +977,7 @@ public sealed partial class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("conj", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
-        if (v.Kind == ValueKind.Cube)  return new Value(v.AsCube().Conj());
+        if (v.Kind == ValueKind.Cube)  return IsRealCube(v) ? v : new Value(v.AsCube().Conj());
         if (v.Kind == ValueKind.Real)   return v;
         return new Value(Complex.Conjugate(v.AsComplex()));
     }

@@ -259,7 +259,8 @@ and under `circuitrf sparam`.
 Measurements are evaluated in declaration order, and each is in scope by name for the ones after
 it — so a complex figure of merit builds from intermediates. Also in scope: every global
 [VAR](components.html#var) variable (by name). The element-wise helpers `conj`, `real`, `imag`,
-`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes; `max_over` and
+`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes, and so do the
+[math functions](expressions.html#constants) (`sin`, `exp`, …); `max_over` and
 `min_over` [reduce one](#spec). Referencing an unknown
 analysis raises an error naming the available ones; a failing measurement is reported as a run
 note and does not fail the whole run.
@@ -270,6 +271,13 @@ A global variable that is also a parametric-sweep axis is injected as a **1-D cu
 per sweep point) rather than a scalar — so `Pin_avail = Pin` over a 10-point `Pin` sweep yields a
 10-element curve. Its axis matches the swept analysis's axis, so it broadcast-aligns: `Gain =
 Pout_dBm - Pin` resolves element-wise, one gain per drive level. A non-swept global stays a scalar.
+
+A global **derived** from a swept one is a cube too. With `x` swept and `y = 2*x` in the VAR block, `y` reads
+as one value per sweep point. Each point's value is evaluated exactly as that point's circuit evaluated it,
+in plain numbers, so a conditional, `max(x, 0)` or `polar(1, x)` work as they do in the circuit. This holds
+through other variables and user-defined functions. Over nested sweeps `y` has an axis for each sweep it
+depends on, outermost first. If `y` has no value at some point (`log(x)` at `x = 0`), a measurement that
+reads it fails and names the point. It never gets the nominal value of `y`.
 
 ## Gain against output power, at each frequency {#gain-vs-pout}
 

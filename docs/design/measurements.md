@@ -301,7 +301,9 @@ What remains:
 1. Build a `MeasurementContext` over the run's analysis results (a name → `DataSet` map) plus optional
    back-solvers.
 2. Create a `globals` scope and inject every resolved global (the VAR variables, from
-   `ElaboratedNetlist.ResolvedGlobals`) so measurements can reference them by name.
+   `ElaboratedNetlist.ResolvedGlobals`) so measurements can reference them by name. Each swept variable
+   overrides its scalar with its axis cube. Each global derived from a swept one is evaluated at every point
+   of its sweeps and overrides its scalar with that cube (see **Swept variables** below).
 3. Create a child `measurements` scope. For each measurement in declaration order: evaluate its
    expression against the context and scope, inject the result back into the scope under its name (so
    later measurements compose), and add the result cube to `ds` (scalars are wrapped as scalar cubes).
@@ -310,19 +312,20 @@ What remains:
 
 The expression surface (the evaluator is the source of truth) includes qualified cube accessors such
 as `HB1.V("n_drain", 1, All)`, `HB1.I("M1:d", 1, All)`, element-wise cube arithmetic that broadcasts
-over `DataCube`s, and the element-wise helpers `conj`, `real`, `imag`, `mag`, `phase`, `dB`, `dB10`,
-`dBm`, `log10`, `ln`, `sqrt`. Cubes are referenced by either the name-keyed accessor or the positional
-bracket index — see **Referencing analysis cubes (two notations)** above for both forms and when to
-use each.
+over `DataCube`s, the element-wise helpers `conj`, `real`, `imag`, `mag`, `phase`, `dB`, `dB10`,
+`dBm`, `log10`, `ln`, `sqrt`, and the one-argument maths functions. Cubes are referenced by either the
+name-keyed accessor or the positional bracket index — see **Referencing analysis cubes (two notations)**
+above for both forms and when to use each.
 
-**The rest of the scalar maths library is scalar only**, and that is a real boundary rather than an
-oversight waiting to be tidied: `sin`, `exp`, `pow`, `^` and the rounding family all take a scalar and
-raise *"Value is Cube, not Complex"* on a swept quantity. `sqrt` joined the cube-aware list on
-2026-09-15 (`src/Core/RESOLVED.md`) because it was the one with **no workaround at all** — `x^0.5`,
-`pow(x, 0.5)` and `exp(0.5*log(x))` each fail on the same rule — and a per-frequency square root is an
-ordinary thing to want: a coupling factor k = M/√(L₁L₂), an RMS, a |Z| taken from Z². On a Real cube
-it stays Real unless an element is negative, which promotes the cube to Complex, matching `Value.Pow`'s
-own rule for a negative base so the two spellings cannot disagree.
+**The one-argument maths functions take a cube element by element** (2026-11-12, `src/Core/RESOLVED.md`):
+`sin cos tan asin acos atan sinh cosh tanh exp floor ceil round int`, as `^` and `pow` broadcast. The axes
+are kept, a Real cube stays Real and a Complex one Complex, and NaN stays NaN. Each element is its number
+form's result. `conj` and `sign` take a Real cube too. `imag`, `phase` and `phase_rad` still refuse one: a
+Real cube is often a complex quantity already reduced (`log` of a cube is ln|z|), and reading 0 or 180 there
+would be a wrong answer with no error. `sqrt` has its own rule (2026-09-15): on a Real cube it stays Real
+unless an element is negative, which promotes the cube to Complex, matching `Value.Pow`'s own rule for a
+negative base so the two spellings cannot disagree. `atan2`, `min`, `max`, `polar` and `complex` take
+scalars only, and so does the condition of `if` and `?:`.
 
 **`freq` is the run's own frequency axis**, injected into measurement scope as a 1-D cube (2026-09-22,
 `src/Engine/RESOLVED.md`) — so a measurement that needs ω can be written directly: an earlier
@@ -379,7 +382,14 @@ curve. The cube's axis has the same name and values as the `Pin` axis in the swe
 it broadcast-aligns with swept analysis data (e.g. `Gain = dB(HB1.V("out",1,All)) - Pin` resolves
 element-wise without a shape error). A non-swept global stays a scalar. If a sweep is disabled/collapsed
 and its axis is absent from the results, the variable falls back to its scalar global value. This
-override applies for the duration of measurement evaluation only.
+override applies for the duration of measurement evaluation only. A global **derived** from a swept one
+(`y = 2*x`, through other globals and user-function bodies) is evaluated at each sweep point exactly as the
+elaborator evaluates it there: in the elaborator's global scope (every global with its expression and unit,
+and the ambient `temp` where the design declares none), with the point's values bound as
+`ParametricSweepEngine.PointVariable` binds them, in plain numbers, with the user functions and the trial's
+draws. The values are stacked over the sweeps it depends on, in the results' axis order. So the measurement
+and the circuit agree by construction, units included. A point that fails is an error naming the point, never
+the nominal value.
 
 ## Authoring — the MEAS Library component (completed)
 
