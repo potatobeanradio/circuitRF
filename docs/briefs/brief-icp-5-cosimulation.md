@@ -39,7 +39,9 @@ footprint part is byte-identical.
 3. **Otherwise** a placeholder, per LCP-7, named in a comment with why.
 
 **R-icp5-3 — Terminals by name.** Each model terminal maps through its symbol pin name to the pin of that name: a pin with
-a port → the port's node; the reference pin (ICP-4) → `0`; a pin with no port whose net in the instance's own schematic is
+a port → the port's node; the reference pin (ICP-4) → `0`; a grounded pin (ICP-4 R-icp4-5) → `0`; an *abutting* pin
+(ICP-2 R-icp2-3: its face touches only another cut-out instance) → one node shared with the pin it touches, named
+`j_<instance>_<pin>`, so the two models connect directly as they do in the chip; a pin with no port whose net in the instance's own schematic is
 ground → `0`; any other unported terminal → `nc_<instance>_<pin>`, with a warning naming it (a thermal terminal included:
 the thermal network is not in the co-simulation). Pin names that do not match the symbol's are a placeholder, listing both
 sets. A cell whose pins are Port numbers (`CellPins.FromSchematicPorts`) maps by `Num`.
@@ -64,6 +66,7 @@ No EM solve: write a small synthetic Touchstone, as LCP-7's gates do. One test p
 4. Pin names that do not match the symbol give a placeholder and the warning lists both sets.
 5. Every derived instance name survives `CnlReader`.
 6. A footprint-part netlist is byte-identical to before.
+7. Two abutting instances share one node in the written netlist, and a grounded pin's terminal is on `0`.
 
 ## Not here
 

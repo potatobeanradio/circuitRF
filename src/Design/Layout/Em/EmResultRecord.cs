@@ -152,10 +152,20 @@ public sealed class EmResultPort
     /// <summary>A component port's pins: the signal pin, then its reference pin when it has one.</summary>
     public List<string>? Pins { get; set; }
 
+    /// <summary>brief-icp-2 R-icp2-5 — a cut instance's cell (its generator for a generated cell); <see cref="Part"/> is then the
+    /// instance's path. Absent from the record otherwise.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Cell { get; set; }
+
     /// <summary>brief-hzn-11 R-hzn11-4 — a wave port whose S is normalised to its mode (its <see cref="Z0Re"/> of 1 is then not an
     /// impedance). Absent from the record when false.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ModeNormalised { get; set; }
+
+    /// <summary>brief-icp-2a — an Uncalibrated Port: driven at its cut and not de-embedded, its launch in the result. Absent
+    /// from the record when false.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Uncalibrated { get; set; }
 
     [JsonIgnore] public Complex Z0 => new(Z0Re, Z0Im);
 }

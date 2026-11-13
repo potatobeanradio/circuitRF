@@ -32,6 +32,7 @@ public sealed class LayoutComponentPortMarksTests(PlanarComponentPortTests.Board
     private static bool Build(LayoutEditorViewModel layout, EmSetupEditorViewModel cem)
     {
         cem.Refresh();
+        cem.WhenRefreshed.GetAwaiter().GetResult();    // brief-icp-2 R-icp2-8: the build lands off the UI thread first
         cem.ComponentPortMarksBuilding.GetAwaiter().GetResult();
         return layout.ShowComponentPortMarks("lcp4.cem", cem.ComponentPortMarks, cem.ComponentPortMarksEditCount);
     }

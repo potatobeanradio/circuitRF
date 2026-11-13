@@ -262,6 +262,7 @@ public static class PlanarFeedExtension
             {
                 if (peer.Number == lead.PortNumber) continue;
                 if (peer.Kind != PlanarPortKind.Edge || port.Kind != PlanarPortKind.Edge) continue;
+                if (peer.Uncalibrated) continue;
                 if (peer.Side != port.Side || peer.Direction != port.Direction) continue;
                 if (peer.LayerIndex != port.LayerIndex) continue;
 
@@ -338,6 +339,9 @@ public static class PlanarFeedExtension
             // all; an internal port does not even name an in-plane direction, and the end face this
             // would extrude is not on its current path.
             if (port.Kind != PlanarPortKind.Edge) continue;
+
+            // brief-icp-2a — an Uncalibrated Port has no calibration for a lead to serve: nothing is grown at it.
+            if (port.Uncalibrated) continue;
 
             bool alongX  = port.Direction == PlanarBasisDirection.X;
             bool fromLow = port.Side is PlanarPortSide.MinX or PlanarPortSide.MinY;

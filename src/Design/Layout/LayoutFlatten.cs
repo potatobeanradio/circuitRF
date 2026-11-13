@@ -27,7 +27,13 @@ public static class LayoutFlatten
         IReadOnlyList<LayoutShape> Shapes,
         IReadOnlyList<LayoutInstance> Instances,
         bool WasArray,
-        IReadOnlyList<string>? Notes = null);
+        IReadOnlyList<string>? Notes = null)
+    {
+        /// <summary>brief-icp-2 — each of <see cref="Instances"/>' LVS path segment (<see cref="LayoutDesignFlatten.PathOf"/>
+        /// of the placement in its own cell), index-aligned; null for an array's exploded cells, which carry no path.
+        /// A composed instance drops its designator, so the segment is taken from the source placement here.</summary>
+        public IReadOnlyList<string>? InstancePaths { get; init; }
+    }
 
     /// <summary>
     /// Flattens <paramref name="inst"/> by exactly one level. <paramref name="parentBaseDir"/> is the
@@ -122,14 +128,16 @@ public static class LayoutFlatten
         if (res.SideNotes.Count > 0) notes = [.. notes ?? [], .. res.SideNotes];
 
         var instances = new List<LayoutInstance>(subView.Instances.Count);
+        var paths = new List<string>(subView.Instances.Count);
         foreach (var subInst in res.SourceView!.Instances)
         {
             var composed = LayoutInstanceTransform.ComposeInstances(inst, 0, 0, subInst);
             composed.CellRef = RebaseCellRef(subInst.CellRef, subBaseDir, parentBaseDir);
+            paths.Add(LayoutDesignFlatten.PathOf(subInst, instances.Count));
             instances.Add(composed);
         }
 
-        return new OneLevelResult(shapes, instances, WasArray: false, notes);
+        return new OneLevelResult(shapes, instances, WasArray: false, notes) { InstancePaths = paths };
     }
 
     /// <summary>One line per KIND with a count, never one line per shape — the same reporting shape
@@ -399,18 +407,32 @@ public static class LayoutFlatten
     /// <param name="tech">The technology the parent is drawn in (brief-bsp-1 R-bsp1-7), passed to every
     /// level's <see cref="FlattenOneLevel"/>.</param>
     public static AllLevelsResult FlattenAllLevels(LayoutInstance inst, string parentBaseDir, Technology? tech = null)
+        => FlattenAllLevels(inst, parentBaseDir, tech, null, null);
+
+    /// <summary>
+    /// brief-icp-2 R-icp2-1 — <see cref="FlattenAllLevels(LayoutInstance, string, Technology?)"/>, leaving out every instance
+    /// whose LVS path (<paramref name="path"/> for <paramref name="inst"/>, its children's joined below it by <c>/</c>) is in
+    /// <paramref name="exclude"/>: an EM setup's cut instances, which leave the solved problem and never the file. With no
+    /// exclusion (or no path) the walk is exactly the one above. An array's cells carry no path, so nothing inside an array
+    /// is excluded — a component port is refused on an arrayed placement anyway.
+    /// </summary>
+    public static AllLevelsResult FlattenAllLevels(LayoutInstance inst, string parentBaseDir, Technology? tech, string? path,
+                                                   IReadOnlySet<string>? exclude)
     {
         var shapes = new List<LayoutShape>();
         var surviving = new List<LayoutInstance>();
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var notes = new List<string>();
-        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving, notes, tech);
+        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving, notes, tech,
+                            exclude is { Count: > 0 } ? path : null, exclude);
         return new AllLevelsResult(shapes, surviving, notes.Count > 0 ? notes : null);
     }
 
     private static void FlattenAllRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth,
-        List<LayoutShape> shapes, List<LayoutInstance> surviving, List<string> notes, Technology? tech)
+        List<LayoutShape> shapes, List<LayoutInstance> surviving, List<string> notes, Technology? tech,
+        string? path = null, IReadOnlySet<string>? exclude = null)
     {
+        if (path is not null && exclude!.Contains(path)) return;
         if (depth >= CellHierarchy.MaxDepth) { surviving.Add(inst); return; }
 
         bool isArray = inst.Rows > 1 || inst.Cols > 1;
@@ -434,8 +456,11 @@ public static class LayoutFlatten
 
         shapes.AddRange(oneLevel.Shapes);
         if (oneLevel.Notes is { } levelNotes) notes.AddRange(levelNotes);
-        foreach (var subInst in oneLevel.Instances)
-            FlattenAllRecursive(subInst, baseDir, visiting, depth + 1, shapes, surviving, notes, tech);
+        for (int i = 0; i < oneLevel.Instances.Count; i++)
+        {
+            string? sub = path is not null && oneLevel.InstancePaths is { } segs ? $"{path}/{segs[i]}" : null;
+            FlattenAllRecursive(oneLevel.Instances[i], baseDir, visiting, depth + 1, shapes, surviving, notes, tech, sub, exclude);
+        }
 
         if (resolvedDir is not null) visiting.Remove(resolvedDir);
     }

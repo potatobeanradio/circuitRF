@@ -68,6 +68,13 @@ public sealed record EmPlanarComponentPort(
     /// <summary>brief-lcp-7 — the layout the part is placed on.</summary>
     public string? ClayPath { get; init; }
 
+    /// <summary>brief-icp-2 — a cut instance's pin port: an Uncalibrated Port at the cut face (<see cref="Gap"/> is its edge label,
+    /// <see cref="Strip"/> null), its <see cref="Refdes"/> the instance's path and its <see cref="Name"/> <c>path.pin</c>.</summary>
+    public bool Cutout { get; init; }
+
+    /// <summary>brief-icp-2 — a cut instance's cell, as a sentence names it (the generator for a generated cell); null otherwise.</summary>
+    public string? Cell { get; init; }
+
     /// <summary>brief-lcp-7 — a connector by its refdes (<see cref="C3dComponentPorts.IsConnectorRefdes"/>): a Port line of the
     /// co-simulation netlist, not a part across its port. A layout has no 3D shell to bridge, so the refdes is all that says so.</summary>
     public bool Connector { get; init; }
@@ -82,7 +89,15 @@ public sealed record EmPlanarComponentPortBuild(
     IReadOnlyList<EmPlanarComponentPort> Ports, IReadOnlyList<string> Notes, IReadOnlyList<string> Warnings, string? Refusal)
 {
     /// <summary>The strips to add to the geometry.</summary>
-    public IReadOnlyList<RectShape> Strips => [.. Ports.Where(p => p.Ok).Select(p => p.Strip!)];
+    public IReadOnlyList<RectShape> Strips => [.. Ports.Where(p => p.Ok && p.Strip is not null).Select(p => p.Strip!)];
+
+    /// <summary>brief-icp-2 — the setup's cut instances applied to the layout's geometry, or null when it cuts none. Its shapes are
+    /// what <see cref="EmGeometry.ForSetup"/> hands every extractor in place of the plain flatten.</summary>
+    public EmCellCutoutResult? Cut { get; init; }
+
+    /// <summary>brief-icp-2 — the gap ports alone: what the co-simulation netlist puts a part across (a cut instance's model goes
+    /// back on its pins in ICP-5).</summary>
+    public bool AnyGapPort => Ports.Any(p => p.Ok && !p.Cutout);
 
     /// <summary>The port labels to add to what port extraction reads.</summary>
     public IReadOnlyList<LabelShape> Labels => [.. Ports.Where(p => p.Ok).Select(p => p.Gap!)];
@@ -136,15 +151,62 @@ public static class EmPlanarComponentPorts
         string key = KeyOf(setup, source);
         lock (CacheGate)
             if (Cache.TryGetValue(source, out var hit) && hit.Key == key) return hit.Build;
-        var built = BuildCore(setup, source);
+        // brief-icp-2 R-icp2-8 — one build per (layout content, setup): the panel's Refresh, Check, the layout's marks and the mesh
+        // preview each hold their own copy of the layout, and on a chip the build is a walk of every cell; they share it here.
+        string content = ContentKeyOf(setup, source);
+        EmPlanarComponentPortBuild? built;
+        bool shared;
+        lock (CacheGate) shared = Shared.TryGetValue(content, out built);
+        if (!shared)
+        {
+            built = BuildCore(setup, source);
+            lock (CacheGate)
+            {
+                if (!Shared.ContainsKey(content)) { SharedOrder.Enqueue(content); if (SharedOrder.Count > SharedCapacity) Shared.Remove(SharedOrder.Dequeue()); }
+                Shared[content] = built;
+            }
+        }
         lock (CacheGate) Cache.AddOrUpdate(source, new CacheEntry(key, built));
         return built;
+    }
+
+    /// <summary>brief-icp-2 R-icp2-8 — whether <see cref="Build"/> on this setup and layout would return at once (built already, by
+    /// any caller holding a copy of the same layout): what the panel asks before deciding to build off its thread.</summary>
+    public static bool IsBuilt(EmSetup setup, EmLayoutSource source)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(source);
+        if (setup.ComponentPorts.Count == 0 || setup.Is3D) return true;
+        string key = KeyOf(setup, source);
+        lock (CacheGate)
+            if (Cache.TryGetValue(source, out var hit) && hit.Key == key) return true;
+        string content = ContentKeyOf(setup, source);
+        lock (CacheGate) return Shared.ContainsKey(content);
+    }
+
+    private const int SharedCapacity = 8;
+    private static readonly Dictionary<string, EmPlanarComponentPortBuild?> Shared = new(StringComparer.Ordinal);
+    private static readonly Queue<string> SharedOrder = new();
+
+    /// <summary>What a build reads, by content: the layout's text and every cell file its flatten reads (by write time), the
+    /// technology, the layout's path (cell references resolve against it), and the setup's component ports, levels and region.</summary>
+    private static string ContentKeyOf(EmSetup setup, EmLayoutSource source)
+    {
+        var sb = new System.Text.StringBuilder();
+        string setupKey = KeyOf(setup, source);    // its last term is the view's object state, which content replaces
+        sb.Append(setupKey[..setupKey.LastIndexOf('#')]).Append('#').Append(source.DbuPerMicron).Append('#').Append(source.AbsolutePath).Append('#');
+        sb.Append(source.Technology?.Name).Append('/').Append(source.Technology is { } t ? RuntimeHelpers.GetHashCode(t) : 0).Append('#');
+        sb.Append(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(LayoutPersistence.Serialize(source.View)))));
+        foreach (var f in LayoutFlatten.FilesRead(source.View, source.AbsolutePath))
+            sb.Append('|').Append(f).Append('@').Append(File.GetLastWriteTimeUtc(f).Ticks);
+        return sb.ToString();
     }
 
     /// <summary>What the build depends on beyond the source: the list, the levels and the region — and enough of the view to
     /// notice an edit made to the same object.</summary>
     private static string KeyOf(EmSetup setup, EmLayoutSource source)
-        => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}"))
+        => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}" +
+                                                             $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}"))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe()
            + "#" + source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron;
 
@@ -166,11 +228,26 @@ public static class EmPlanarComponentPorts
         var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var part in placed.Parts)
             if (!parts.TryAdd(part.Refdes, part)) ambiguous.Add(part.Refdes);
-        var selection = EmPartPads.Select(setup, parts, "this layout");
+        // brief-icp-2 — the cell instances a component port can cut out, projected once per build, over the analysis levels' layers.
+        var levelLayers = source.Technology?.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Conductor && !l.IsGroundReference
+                        && (setup.AnalysisLevelNames.Count == 0 || setup.AnalysisLevelNames.Contains(l.Name, StringComparer.Ordinal)))
+            .SelectMany(l => l.DrawingLayers).ToHashSet();
+        var instances = view.Instances.Count > 0
+            ? EmCellInstances.Project(view, source.AbsolutePath, source.Technology, C3dTransform.Identity, levelLayers)
+            : EmCellInstanceSet.Empty;
+        var selection = EmPartPads.Select(setup, parts, "this layout", instances);
         if (selection.Refusal is { } selectWhy) return Refuse(selectWhy);
+        foreach (var (entry, why) in selection.Unplaced)
+            warnings.Add($"{why} That entry is left out of this run; the other component ports are built.");
+
+        // brief-icp-2 R-icp2-1 — the cut, in the order the cut instances' ports are numbered (R-icp2-5): by the entry that took each,
+        // in list order, then in the hierarchy's walk order.
+        var cuts = selection.Instances.Select((c, i) => (c, i)).OrderBy(t => EntryRank(setup, t.c.Instance)).ThenBy(t => t.i).Select(t => t.c).ToList();
+        var cut = cuts.Count > 0 ? EmCellCutout.Apply(setup, source, cuts, instances) : null;
 
         // ── The copper, one region per connected piece on each layer a pad is on ──────────────────────
-        var flat = EmGeometry.Flatten(view, source.AbsolutePath, source.Technology).Shapes;
+        var flat = cut?.Shapes ?? EmGeometry.Flatten(view, source.AbsolutePath, source.Technology).Shapes;
         var padLayers = placed.Parts.SelectMany(p => p.Pads).Select(p => p.Layer).OfType<LayerKey>().ToHashSet();
         var regions = new List<Region>();
         foreach (var layer in padLayers)
@@ -188,7 +265,7 @@ public static class EmPlanarComponentPorts
         bool IsGround(PartPad p) => p.Net is { } n ? groundNets.Contains(n) : groundNets.Contains(p.Pin);
 
         // ── Numbering: after every number the layout's own ports and its placed parts' declared ports use ──
-        int next = EmPortExtraction.NumberPorts(EmComponentPorts.Collect(source).Shapes).Select(p => p.Number).DefaultIfEmpty(0).Max() + 1;
+        int next = EmPortExtraction.NumberPorts(EmComponentPorts.Collect(source, cut?.Excluded).Shapes).Select(p => p.Number).DefaultIfEmpty(0).Max() + 1;
 
         var results = new List<EmPlanarComponentPort>();
         var noModel = new List<string>();
@@ -264,8 +341,55 @@ public static class EmPlanarComponentPorts
             if (anyBuilt && part.HasModel == false && !connector) noModel.Add(rd);
         }
 
+        // ── brief-icp-2 — the cut instances' pins: an Uncalibrated Port at each routed pin's face, numbered after the gap ports ──
+        if (cut is not null)
+        {
+            if (cut.Notes.Count > 0) notes.AddRange(cut.Notes.Where(n => !notes.Contains(n)));
+            foreach (var pin in cut.Pins)
+            {
+                var entry = cuts.FirstOrDefault(c => c.Instance.Path.Equals(pin.Path, StringComparison.OrdinalIgnoreCase))?.Entry;
+                if (pin.Why is { } why)
+                {
+                    results.Add(Refused(pin.Path, why) with { Name = pin.Name, Pin = pin.Pin.Length > 0 ? pin.Pin : null, Cutout = true, Cell = pin.Cell });
+                    continue;
+                }
+                if (pin.Class == EmPinClass.Floating)
+                {
+                    warnings.Add($"{pin.Name} has nothing connected to it, so it gets no port and {pin.Path}'s model sees an open there.");
+                    continue;
+                }
+                if (pin.Class == EmPinClass.Abutting)
+                {
+                    notes.Add($"{pin.Name} touches only {pin.Abuts}, which is cut out too: no port; the two terminals join directly.");
+                    continue;
+                }
+                if (!pin.HasPort) continue;
+                Complex? z0 = null;
+                if (entry?.Z0 is { Length: > 0 } zText)
+                {
+                    if (!C3dPorts.TryParseZ0(zText, out var z) || !(z.Real > 0))
+                    {
+                        results.Add(Refused(pin.Path, $"{pin.Path}'s Z0 '{zText}' is not a reference impedance: write a number of ohms with a " +
+                                                     "positive real part, or a complex one such as 25+j10.") with { Name = pin.Name, Pin = pin.Pin, Cutout = true, Cell = pin.Cell });
+                        continue;
+                    }
+                    z0 = z;
+                }
+                int number = next++;
+                Numbers.AddOrUpdate(pin.Label!, new StrongBox<int>(number));
+                results.Add(new EmPlanarComponentPort(pin.Path, pin.Name, pin.Pin, null, null, pin.Label, number, z0, 0, pin.WidthM,
+                                                      pin.OutwardDeg is 0 or 180, null)
+                {
+                    Conductor = source.Technology?.Stackup.Layers
+                        .FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(pin.Layer))?.Name,
+                    ClayPath = source.AbsolutePath, Cutout = true, Cell = pin.Cell,
+                    SchematicId = instances.At(pin.Path)?.SchematicId,
+                });
+            }
+        }
+
         foreach (var r in results.Where(p => p.Refusal is not null))
-            warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
+            warnings.Add($"{r.Refusal} {(r.Cutout && r.Pin is not null ? r.Name : r.Refdes)} is left out of this run; the other component ports are built.");
         foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
         // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.
         if (noModel.Count > 0)
@@ -273,11 +397,12 @@ public static class EmPlanarComponentPorts
                          $"co-simulation netlist will carry a placeholder for {(noModel.Count == 1 ? "it" : "each")}.");
 
         // A part that cannot be built is left out and the others run; the list refuses only when nothing at all is left to drive.
-        if (!results.Any(p => p.Ok) && !EmComponentPorts.Collect(source).Shapes.Any(s => s is LabelShape { IsPort: true }))
+        if (!results.Any(p => p.Ok) && !EmComponentPorts.Collect(source, cut?.Excluded).Shapes.Any(s => s is LabelShape { IsPort: true }))
             return new EmPlanarComponentPortBuild(results, notes, [],
                 "None of the component ports this setup names could be built, and the layout has no other port to drive: " +
-                results.First(p => p.Refusal is not null).Refusal);
-        return new EmPlanarComponentPortBuild(results, notes, warnings, null);
+                (results.FirstOrDefault(p => p.Refusal is not null)?.Refusal
+                 ?? warnings.FirstOrDefault() ?? "every pin of every cut instance is unconnected.")) { Cut = cut };
+        return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut };
 
         static EmPlanarComponentPort Refused(string rd, string why) => new(rd, rd, null, null, null, null, 0, null, 0, 0, false, why);
     }
@@ -488,6 +613,25 @@ public static class EmPlanarComponentPorts
         return (strip, gap, airHigh - airLow, w1 - w0, ax);
     }
 
+    /// <summary>brief-icp-2 R-icp2-5 — the position in the setup's list of the entry that takes <paramref name="i"/>: a named path, else
+    /// its cell's entry, else the <c>*</c> or <c>X/*</c> that reached it.</summary>
+    private static int EntryRank(EmSetup setup, EmCellInstance i)
+    {
+        var list = setup.ComponentPorts;
+        for (int k = 0; k < list.Count; k++)
+            if (list[k].Cell is null && list[k].Refdes.Trim().Trim('/').Equals(i.Path, StringComparison.OrdinalIgnoreCase)) return k;
+        for (int k = 0; k < list.Count; k++)
+            if (list[k].Cell is { } cell && i.IsCell(cell)) return k;
+        for (int k = 0; k < list.Count; k++)
+        {
+            string r = list[k].Refdes.Trim();
+            if (list[k].Cell is null && (r == EmSetup.AllComponents
+                || r.EndsWith("/" + EmSetup.AllComponents, StringComparison.Ordinal) && EmCellInstanceSet.IsInside(i.Path, r[..^2].Trim('/'))))
+                return k;
+        }
+        return list.Count;
+    }
+
     // ── Words ──────────────────────────────────────────────────────────────────────────────────────
 
     private static string Mm(double m) => C3dComponentPorts.Mm(m);
@@ -496,8 +640,18 @@ public static class EmPlanarComponentPorts
     /// <summary>One built port's line: what the run notes and the setup's list show.</summary>
     public static string Describe(EmPlanarComponentPort p, EmLayoutSource source)
     {
-        if (!p.Ok) return $"{p.Refdes}: refused — {p.Refusal}";
+        if (!p.Ok) return $"{(p.Cutout ? p.Name : p.Refdes)}: refused — {p.Refusal}";
         double dbu = C3dLowering.Metres(1, source.DbuPerMicron);
+        if (p.Cutout)
+        {
+            string facing = p.Gap!.PortDirection switch
+            {
+                LayoutRotation.R0 => "+x", LayoutRotation.R90 => "+y", LayoutRotation.R180 => "−x", _ => "−y",
+            };
+            return $"{p.Name}: component port {p.Number}, an Uncalibrated Port at the face where {p.Refdes}{(p.Cell is { } cl ? $" ({cl})" : "")} " +
+                   $"is cut out, pin {p.Pin}, {Um(p.WidthM)} µm wide, driving {facing}{(p.Conductor is { Length: > 0 } cn ? $" on '{cn}'" : "")}, " +
+                   $"at ({Mm(p.Gap.X * dbu)}, {Mm(p.Gap.Y * dbu)}) mm; {p.Refdes} is left out of the solved problem only, not the layout.";
+        }
         static string Pad(string? pin, string? net) => net is { Length: > 0 } n ? $"pad {pin} (net {n})" : $"pad {pin}";
         string on = p.Conductor is { Length: > 0 } c ? $" on '{c}'" : "";
         return $"{p.Name}: component port {p.Number}, a delta gap across a strip, {Pad(p.Pin, p.Nets.Positive)} to " +

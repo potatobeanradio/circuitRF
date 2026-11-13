@@ -31184,3 +31184,128 @@ selection rule for footprint parts and cell instances; `EmComponentPort` gained 
 - **The shipped SpiralResonator's cells are rebuilt, not committed** — `.generated-cells/` is git-ignored — so on a fresh
   clone its two instances do not resolve until the kit regenerates them. The `"*"` refusal still names both, by path and
   generator, because the generator id comes from the parent's `PCellSnapshots`, not from the cell.
+
+## brief-icp-2 — the measurement before the cut (ICP-0 § Risks 1 and 2), 2026-11-13
+
+Measured on hand-drawn fixtures on the shipped `mmic-GaAs_2LM_100um` technology (Metal1, 100 µm GaAs, backside ground),
+Planar, cells/λ 20, edge mesh on, 6 points 5–30 GHz, edge ports drawn where a cut would put them. No code beyond ICP-1.
+
+**Device pitch (Risk 1) — the edge port does NOT calibrate at a 3-pin device site, at any realistic pitch.** Three 10 µm
+lines, 300 µm long, meeting a vacated site from the left (gate), the right (drain) and below (source), an edge port on
+each face the site leaves and one at each line's far end:
+
+| pin spacing | outcome | time |
+|---|---|---|
+| 20 µm | refused before meshing | — |
+| 40 µm | refused before meshing | — |
+| 80 µm | refused before meshing | — |
+
+The refusal is the feed-isolation rule (`Calibrated port feeds are not isolated`): a neighbour carrying a port of its own
+must be 5 substrate heights away — 500 µm on this stack — and the source line runs 5 / 15 / 35 µm from the gate's and the
+drain's feeds. It cannot be GROUPED (PCAL4): the source conductor does not cross the gate port's own reference plane, so a
+calibration standard (a uniform extrusion of what crosses that plane) has nothing to make a group of. So the answer is
+"refuse" at every pitch, not "group at 40, alone at 80" — a perpendicular pin is a neighbour no calibration models, and
+no pitch below ~500 µm clears it. The one way through today is `DeembedOutsideCalibrationValidity`, which publishes an
+answer flagged on the Touchstone as calibrated outside its validity; that run was not completed here (it ran past 20
+minutes on this fixture and was stopped).
+
+**Two pins facing each other in line DO calibrate.** The same fixture without the source line — gate and drain faces
+40 µm apart, collinear: both feeds report clear (a conductor in line beyond the end face is not a lateral neighbour),
+each pair of ports shares one calibration, passive at every point (largest column power 0.974–0.996), N = 458,
+**6.7 s per point**. So a two-terminal cell placed in line — a resistor, a MIM cap, a line or inductor section — is
+workable as ICP-0 planned; a device with pins on three sides is not.
+
+**Reference plane (Risk 2).** A 72 µm (50.5 Ω) line 1200 µm long, solved whole (N = 263, 13.9 s for 6 points) and with
+its middle 200 µm removed and edge ports on the two faces left (N = 356, 13.4 s); the cut 4-port closed with an ideal
+line of 200 µm carrying the whole line's own γ and Z_c (read off its ABCD), against the whole line:
+
+| f (GHz) | 5 | 10 | 15 | 20 | 25 | 30 |
+|---|---|---|---|---|---|---|
+| max \|ΔS\| | 2.6e-3 | 5.4e-3 | 1.2e-2 | 1.7e-2 | 0.61 | 0.57 |
+
+Up to 20 GHz the difference grows about as f and stays inside the run's own `DeembedErrorFloor` (0.0226); the cut run
+also reported σ_max(S) up to 1.0020 between 15 and 25 GHz. 25 and 30 GHz straddle the quasi-static crossover (26.07 GHz on
+this stack) and fail grossly; whether that is the de-embedding or this comparison's own closure was not isolated. A
+gate on this would have to be ~2e-2 and stop at 20 GHz.
+
+**A grounded pin does not rescue it.** The 3-pin site at 40 µm with the source a 30 × 30 µm pad on a backside via
+(no port on it): refused the same way. A neighbour carrying no port needs 2 substrate heights (200 µm), and the pad is
+15 µm from both feeds.
+
+**The fallback works: an edge port whose source returns through the ground plane (LFE's grounded return) and is not
+de-embedded.** Solved at the engine with `Deembed = false` and `EdgePortReturn = Ground` (the run service no longer
+offers a raw solve, and a raw SERIES-gap edge port reads as an open), against the de-embedded answer of the same layout:
+
+| fixture | 5 | 10 | 15 | 20 | 25 | 30 GHz |
+|---|---|---|---|---|---|---|
+| 72 µm line, 1200 µm: max \|ΔS\| | 1.5e-2 | 2.6e-2 | 2.7e-2 | 1.3e-2 | 2.3e-2 | 2.3e-2 |
+| 10 µm line, 300 µm: max \|ΔS\| | 5.4e-3 | 1.0e-2 | 2.1e-2 | 3.4e-2 | 4.2e-2 | 7.0e-2 |
+
+A 72 µm line 600 µm long reads 5.6e-2 at 20 GHz — the difference depends on where the line's standing wave puts
+the launch, so the bound is the worst of the three, 7e-2 (the gate in `UncalibratedPortTests`). Passive at every point (largest column power 0.969–0.994), and 3–8× faster than the calibrated run, which solves its
+standards beside the structure (4.0 s against 13.8 s; 4.9 s against 39.3 s). What it carries that a calibrated port
+removes is the launch: the half cell beyond the cut and the grounded source's own lumped series-Z/shunt-Y section, the
+planar counterpart of a 3D lumped port's sheet. On the narrow line it reads |S11| 0.27 where calibration gives 0.34 at
+30 GHz.
+
+The 3-pin site at 40 µm, every port uncalibrated: solved, passive (largest column power 0.982–0.993), reciprocal to
+1e-8, |S14| (gate line through) 0.995–0.953 and |S45| (gate face to drain face) 0.002–0.011. **But it meshed at
+N = 6,348 and took 84 s per point** — the T of three 10 µm lines on a tensor grid, with edge fans from every rim crossing
+the whole part, not the port. A routine gate on that shape needs a coarser fixture (wider lines, edge mesh off).
+
+**Consequence.** By ICP-2's own stop rule the calibrated edge port was not built for cut instances. The fallback is
+`brief-icp-2a-uncalibrated-port.md`: the Uncalibrated Port, which ICP-2 then builds at each cut face.
+
+## brief-icp-2a — the Uncalibrated Port (2026-11-13)
+
+An edge port driven against the ground plane at its cut and not de-embedded: `LabelShape.PortUncalibrated` →
+`PlanarPort.Uncalibrated` → `PlanarPortResolution.Uncalibrated`. Gate: `tests/Ui.Tests/Em/UncalibratedPortTests.cs` (5).
+
+- **A flag on an edge port, not a fourth port kind.** Everything that asks `Kind == Edge` (resolution, level inference, the
+  severed-conductor check, the layout's arrow) keeps working; `IsDeembeddable` is the one place that says no, as it is for
+  `DeembedDeclined`, so the calibration, the clearance measurement and the lead all skip it without being taught to.
+- **It is grounded at every frequency, by a predicate on the grounded update.** A de-embedded run grounds its edge ports only
+  below the quasi-static crossover, and a SeriesGap run never; either way an uncalibrated series-gap edge port would read as
+  an open. `PlanarSolveContext.Excite` applies `PlanarGroundedEdgePort.Solve` to the uncalibrated ports alone at a frequency
+  where it would otherwise ground none — the other ports stay series gaps in the same solve. Gated as S equal to 1e-12 with
+  the run's return set either way.
+- **The file says so only when a port is one**: the Touchstone line reads `edge, uncalibrated (not de-embedded)`, the port
+  hash takes `:U`, the `.cemr` port carries `"Uncalibrated": true` — each appended only then, so an existing `.snp` stays
+  current.
+- **The run's notes had to learn it**: an uncalibrated edge port is not de-embeddable, and the "not de-embedded" sentence
+  would otherwise have called it an internal delta gap. It has its own line.
+
+## brief-icp-2 — what was built (2026-11-13)
+
+`EmCellCutout.Apply` (the cut, the face, every pin classified), `LayoutFlatten.FlattenAllLevels(…, path, exclude)` and
+`EmGeometry.Flatten(…, exclude)`, the builder handing instances to `EmPartPads.Select`, and the panel's Refresh off its
+thread. Gates: `tests/Ui.Tests/Em/PlanarCellCutoutTests.cs` (11).
+
+- **The cut is reached through the build, not called by `ForSetup` directly.** The cut needs the projection and the
+  selection, which the planar component-port build already makes once and caches; `EmGeometry.ForSetup` takes
+  `build.Cut.Shapes` in place of the plain flatten and `EmComponentPorts.Collect(source, setup)` drops the cut instances'
+  declared ports by the same `Excluded` set, so the run, the preflight, the panel, the mesh preview and `explain` see one cut.
+- **Every cut port is an Uncalibrated Port** (ICP-2a), so the reference-plane gate measures an uncalibrated face: the 200 µm
+  cut closed with an ideal line reads 6.1e-2 against the whole line (5 and 20 GHz), where calibrated faces read 1.7e-2 at
+  20 GHz. Built against hand-drawn reads 0 exactly, top level and `X1/Q3`, pin and cell mode.
+- **Pin mode trims only shapes that CROSS the face.** The first version subtracted the whole band beyond the face, which also
+  removed parent metal lying wholly on the cell — exactly what R-icp2-3 wants refused. Now such metal stays, and if it is one
+  piece with a pin's conductor it is refused, naming the place and Cell mode.
+- **How the harder refusals are decided.** "Reaches the pin only through a via the cut removed": no metal on the pin's layer
+  at the face, and metal of another analysis level over the pin. "A parent via lands on metal the cut removed": a via shape
+  overlapping the instance's own metal, pin mode only, refusing the whole instance. Abutting: the probe outside the face lies
+  in another cut instance's box (the pin there is named when one is within the face's half-width).
+- **Ports are numbered after the gap ports**, cut instances ordered by the entry that took them (named, then cell, then `*`)
+  and then the hierarchy's walk order; pins by their Port number where they have one, else the cell's pin order.
+- **Until ICP-5 and ICP-7, a cut port is an ordinary port** to the co-simulation netlist (no part across it, no `_cosim`
+  written for it alone), to the panel's Ports rows and to the layout's marks; `EmPlanarComponentPortBuild.AnyGapPort` is what
+  the run's co-simulation flag reads now.
+- **`Keep` is stored as one normalised string** (`"GND, Metal2"`) and written to the `.cem` as a list: a list property would
+  have broken the entry's value equality, which the selection rule (`SameOptions`) and the round-trip gates depend on.
+- **R-icp2-8 — one build per layout CONTENT, shared.** `EmPlanarComponentPorts.Build` keeps its per-object cache and adds an
+  8-entry cache keyed by the layout's text (SHA-256), every cell file its flatten reads with its write time, the technology,
+  the layout's path and the setup's terms — so Refresh, Check and the marks, which each deserialise their own copy, share one
+  build. The panel's Refresh builds off its thread only when that cache misses; a build whose generation, layout `EditCount`
+  or setup terms moved on is not applied (a moved layout starts a fresh Refresh). The workspace's mesh button awaits it.
+- **Not done here:** the 3D builders still pass no instances (ICP-3), and `MigrateLegacyPortKinds` runs right after an
+  open's Refresh — on a legacy `.cem` that also names component ports it can run before the off-thread build lands.

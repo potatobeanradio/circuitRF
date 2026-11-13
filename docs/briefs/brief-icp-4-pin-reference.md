@@ -1,4 +1,4 @@
-# Brief ICP-4 — A port referenced to one of the instance's pins
+# Brief ICP-4 — Each port's reference, chosen per pin, and pins tied to ground
 
 **Series:** ICP-0 … ICP-9 · **Tag:** `R-icp4-<n>` · **Depends on:** ICP-2, ICP-3
 **Area:** `EmCellCutout.cs`, `src/Engine/Mom/PlanarPort.cs` (read, RP-2a's two-cut port), `src/Design/ThreeD/C3dComponentPorts.cs`
@@ -11,6 +11,12 @@ measured against the source, an emitter-referenced HBT — or a chip with no bac
 driven against a chosen pin of the same instance. `EmComponentPort.Reference` already names such a pin for a footprint part;
 for a cut instance it does nothing.
 
+The requester (issue 69, 2026-11-13) asked for the choice per PORT, not per instance — a port is a source between two
+points, so each pin's port should be referable to another pin (which then stops being a port and is only the return), to
+the global ground, or to one common node for the whole N-port: on an HBT, B and C against E with E carrying no port, or
+all three against ground. They also asked for a pin to be tied straight to ground instead of getting a port (an emitter or
+substrate strapped down), which saves a port and its share of the run time.
+
 ## What exists, and its limits
 
 - **Planar:** `PlanarPortReference.SecondConductor` (RP-2a) cuts the return conductor too and drives the two cuts against
@@ -21,8 +27,13 @@ for a cut instance it does nothing.
 
 ## Requirements
 
-**R-icp4-1 — `Reference` on a cut instance.** A pin name: each other connected pin's port is driven against that pin's cut
-face, and the reference pin gets no port of its own. Absent: ground (ICP-2/3, unchanged).
+**R-icp4-1 — `Reference` on a cut instance, per pin.** The entry's `Reference` keeps its meaning as the default for every
+pin: a pin name (each other routed pin's port is driven against that pin's cut face, and the reference pin gets no port of
+its own), `Ground`, or `Common`. A new optional `Pins` map overrides it per pin — `{ "B": { "Reference": "E" },
+"C": { "Reference": "E" }, "E": { "Port": false } }` — with the same three values, plus `Port: false` for a pin that is
+only a return. Omitted at its default (no `FormatVersion` bump); a file written before this reads and re-saves unchanged.
+A pin named in `Pins` that the instance does not have is refused naming its pins. A pin referenced by another and also
+given a port of its own is refused (it cannot be both the return and a driven port at one face).
 
 **R-icp4-2 — Built only where an existing construction fits.** Planar: when the reference face and the signal face are on
 one station and one level, a two-cut edge port (`PortReference = SecondConductor`, `PortReturn` at the reference face's
@@ -38,6 +49,20 @@ signal terminal on its port's node, exactly as LCP's multi-pad parts map `Refere
 netlist comment says the reference pin is tied to the N-port's reference, which is the standard reading of a
 pin-referenced port and is not the same as that pin being grounded in the chip.
 
+**R-icp4-5 — Grounded pins.** `Pins: { "E": { "Ground": true } }` (or the entry's `Ground: ["E", "SUB"]` for several) ties the
+pin to the run's return at its face instead of building a port. Planar: the cut face is shorted to the ground plane by the
+ground attachment a backside via already uses (`PlanarVia.GroundTerminal`), sized to the face, on the pin's own level —
+or, where no attachment can be built on that level, refused by `<path>.<pin>`; never approximated by a port terminated in
+a short, which costs the port it was meant to save. 3D: a PEC sheet from the face to the return, the shape an edge port's
+sheet takes. The pin's class is *grounded* (ICP-2 R-icp2-3); `_cosim` puts its model terminal on `0` and says so. A
+grounded pin can be another pin's `Reference` only as `Ground`.
+
+**R-icp4-6 — `Common`: one reference node for the instance's ports.** Every port of the instance that says `Common` is
+driven against one node shared by them, not against ground: the N-port's own reference terminal. It is built only where
+the solver has a construction for it — read first whether the Planar two-cut port (RP-2a) or the 3D gap sheet can share
+one return across more than one port; where neither can, `Common` is refused by `<path>`, saying ground builds it. In
+`_cosim` the shared node is the netlist's `0` for that block (R-icp4-4's reading).
+
 ## Gates
 
 No solve beyond the ICP-2 fixture. One test per claim:
@@ -46,6 +71,11 @@ No solve beyond the ICP-2 fixture. One test per claim:
 2. A gate face not on the source's station is left out with the station sentence, and with `Reference` absent builds.
 3. 3D: facing faces assemble one gap sheet; non-facing faces are left out with `Facing`'s wording.
 4. The `_cosim` netlist puts the reference terminal on `0`.
+5. A `Pins` map with B and C against E and E `Port: false` builds two ports and none at E; the same instance with every pin
+   on ground builds three; a pin both referenced and ported is refused.
+6. A grounded pin builds no port, its face carries the ground attachment in the assembled problem, and S of the remaining
+   ports equals the same layout with the attachment drawn by hand, to 1e-9.
+7. `Common` either builds (if the measurement in R-icp4-6 finds a construction) or is refused with its sentence.
 
 ## Not here
 

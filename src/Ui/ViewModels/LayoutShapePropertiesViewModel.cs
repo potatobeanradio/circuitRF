@@ -934,6 +934,33 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// <summary>Whether the Width field takes input: only when no selected port uses its edge width.</summary>
     [ObservableProperty] private bool _portWidthEditable = true;
 
+    /// <summary>
+    /// <b>brief-icp-2a — "Uncalibrated port"</b> (<see cref="LabelShape.PortUncalibrated"/>): null when a multi-selection
+    /// disagrees. Live only when every selected port is an edge port, the one kind a calibration applies to; disabled,
+    /// never hidden, otherwise, so nothing below it moves.
+    /// </summary>
+    [ObservableProperty] private bool? _portUncalibratedValue;
+
+    /// <summary>Whether the Uncalibrated port box takes input: every selected port resolves to an edge port.</summary>
+    [ObservableProperty] private bool _portUncalibratedEditable = true;
+
+    partial void OnPortUncalibratedValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is not { } on || oldValue == newValue || _vm is null || DragBlocksEdits()) return;
+        SelectPinned();
+        IUiCommand? combined = null;
+        foreach (var shape in _selected)
+        {
+            if (shape is not LabelShape { IsPort: true } port || port.PortUncalibrated == on) continue;
+            var captured = port;
+            IUiCommand cmd = new SetShapeFieldCommand<bool>(_vm.Model, "Uncalibrated port", port.PortUncalibrated, on,
+                                                           v => captured.PortUncalibrated = v);
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+        if (combined is not null) _vm.Execute(combined);
+        RefreshFromVm();
+    }
+
     partial void OnPortUseEdgeWidthValueChanged(bool? oldValue, bool? newValue)
     {
         if (_isRefreshing || newValue is not { } use || oldValue == newValue || _vm is null || DragBlocksEdits()) return;
@@ -1030,6 +1057,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
         var kinds = labels.Select(l => LayoutPortDirection.KindOf(lookup, l)).Distinct().ToList();
         PortKindValue = kinds.Count == 1 ? OptionOfKind(kinds[0]) : null;
+
+        // brief-icp-2a — the Uncalibrated port box reads the same resolved type: live only for edge ports.
+        var uncal = labels.Select(l => l.PortUncalibrated).Distinct().ToList();
+        PortUncalibratedValue = uncal.Count == 1 ? uncal[0] : null;
+        PortUncalibratedEditable = kinds is [PlanarPortKind.Edge];
     }
 
     private void RefreshPortReturn(System.Collections.Generic.List<LabelShape> labels)

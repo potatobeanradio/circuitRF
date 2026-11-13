@@ -61,8 +61,10 @@ public static class EmComponentPorts
     public static Result Collect(EmLayoutSource source, EmSetup setup)
     {
         ArgumentNullException.ThrowIfNull(setup);
-        var found = Collect(source);
-        if (found.Refusal is not null || EmPlanarComponentPorts.Build(setup, source) is not { } build) return found;
+        var build = EmPlanarComponentPorts.Build(setup, source);
+        // brief-icp-2 — a cut instance's own declared ports leave the problem with it.
+        var found = Collect(source, build?.Cut?.Excluded);
+        if (found.Refusal is not null || build is null) return found;
         var notes = new List<string>(found.Notes);
         notes.AddRange(build.Notes);
         if (build.Refusal is { } refusal)
@@ -77,11 +79,14 @@ public static class EmComponentPorts
     /// <see cref="EmLayoutSource.View"/>'s top-level shapes plus every component-declared EM port inside its
     /// placed instances, at any depth.
     /// </summary>
-    public static Result Collect(EmLayoutSource source)
+    public static Result Collect(EmLayoutSource source) => Collect(source, (IReadOnlySet<string>?)null);
+
+    /// <summary>brief-icp-2 — <see cref="Collect(EmLayoutSource)"/> with the cut instances at <paramref name="exclude"/> left out.</summary>
+    public static Result Collect(EmLayoutSource source, IReadOnlySet<string>? exclude)
     {
         ArgumentNullException.ThrowIfNull(source);
         var top = source.View.Shapes;
-        var found = Find(source.View, source.AbsolutePath, source.Technology);
+        var found = Find(source.View, source.AbsolutePath, source.Technology, exclude);
         if (found.Count == 0) return new Result(top, null, []);
 
         string At(LabelShape l) => $"({LayoutUnits.Format(l.X, source.View.DisplayUnit, source.DbuPerMicron)}, " +
@@ -116,19 +121,29 @@ public static class EmComponentPorts
     /// coordinates, in placement order. An instance whose cell carries none (and places nothing of its own) is not
     /// flattened, so a board of ordinary lines costs one cached cell read per instance.</summary>
     public static IReadOnlyList<ComponentPort> Find(LayoutView view, string clayPath, Technology? technology)
+        => Find(view, clayPath, technology, null);
+
+    /// <summary>brief-icp-2 R-icp2-1 — <see cref="Find(LayoutView, string, Technology?)"/> with the instances at the paths in
+    /// <paramref name="exclude"/> left out: a cut instance's own declared ports leave the problem with it.</summary>
+    public static IReadOnlyList<ComponentPort> Find(LayoutView view, string clayPath, Technology? technology, IReadOnlySet<string>? exclude)
     {
         ArgumentNullException.ThrowIfNull(view);
         if (view.Instances.Count == 0) return [];
         string baseDir = Path.GetDirectoryName(clayPath) ?? "";
         var ports = new List<ComponentPort>();
-        foreach (var inst in view.Instances)
+        for (int i = 0; i < view.Instances.Count; i++)
         {
+            var inst = view.Instances[i];
+            string path = LayoutDesignFlatten.PathOf(inst, i);
+            if (exclude is not null && exclude.Contains(path)) continue;
             var res = CellLayoutResolver.Resolve(inst, baseDir, technology);
             if (res.State != CellLayoutState.Resolved || res.View is not { } cell) continue;
             if (cell.Instances.Count == 0 && !cell.Shapes.Any(IsComponentPort)) continue;
 
             string owner = inst.SchematicId is { Length: > 0 } id ? id : Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
-            foreach (var s in LayoutFlatten.FlattenAllLevels(inst, baseDir, technology).Shapes)
+            var flat = exclude is { Count: > 0 } ? LayoutFlatten.FlattenAllLevels(inst, baseDir, technology, path, exclude)
+                                                 : LayoutFlatten.FlattenAllLevels(inst, baseDir, technology);
+            foreach (var s in flat.Shapes)
                 if (s is LabelShape l && IsComponentPort(l)) ports.Add(new ComponentPort(l, owner));
         }
         return ports;

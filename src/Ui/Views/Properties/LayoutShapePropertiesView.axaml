@@ -240,6 +240,13 @@
                                       IsChecked="{Binding PortUseEdgeWidthValue, Mode=TwoWay}"
                                       ToolTip.Tip="Drive the whole conductor edge the port stands on, in planar and 3D runs alike. Uncheck to give the port a Width of its own, centred on the port; blank is twice the height to the return."/>
                         </Grid>
+                        <!-- brief-icp-2a: an Uncalibrated Port. Disabled, never hidden, for a port that is not an edge port. -->
+                        <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
+                            <CheckBox Grid.Column="1" Content="Uncalibrated port" FontSize="11"
+                                      IsChecked="{Binding PortUncalibratedValue, Mode=TwoWay}"
+                                      IsEnabled="{Binding PortUncalibratedEditable}"
+                                      ToolTip.Tip="Drive this edge port at its cut without de-embedding it. Its launch stays in the result, and metal close to its feed no longer stops the run; use it where a calibrated port cannot sit, such as a device's pins."/>
+                        </Grid>
                         <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
                             <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
                                        ToolTip.Tip="The port's width along the conductor edge, centred on the port, in planar and 3D runs alike. Live only with Use edge width unchecked. Blank: twice the height to the return, clipped to the edge."

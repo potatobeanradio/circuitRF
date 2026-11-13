@@ -1352,7 +1352,7 @@ public static partial class LayoutRenderer
                 Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                 PortDirection = label.PortDirection, PortLayer = label.PortLayer,
                 PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
-                PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, Style = label.Style,
+                PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, PortUncalibrated = label.PortUncalibrated, Style = label.Style,
                 Font = label.Font, StrokeWidth = label.StrokeWidth,
                 HAlign = label.HAlign, VAlign = label.VAlign,
             };
@@ -3555,7 +3555,7 @@ public static partial class LayoutRenderer
             Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
             PortDirection = label.PortDirection, PortLayer = label.PortLayer,
             PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
-            PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, Style = label.Style,
+            PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, PortUncalibrated = label.PortUncalibrated, Style = label.Style,
             Font = label.Font, StrokeWidth = label.StrokeWidth,
             HAlign = label.HAlign, VAlign = label.VAlign,
         };

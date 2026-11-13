@@ -46,9 +46,10 @@ Component ports today are footprint parts only, and four things stop a cell inst
 | Brief | What | Depends on |
 |---|---|---|
 | `brief-icp-1-instances-and-format.md` | Which instances: the hierarchy walk, paths, pins in world coordinates, the `.cem` entries, the selection rules. No solve | — |
-| `brief-icp-2-planar-cutout.md` | Leave the instance out and put an edge port at each pin face, on Planar. Starts with the measurement in § Risks | 1 |
+| `brief-icp-2a-uncalibrated-port.md` | The Uncalibrated Port: an edge port at a face, grounded, not de-embedded — the fallback § Risks 1 called for, measured | — |
+| `brief-icp-2-planar-cutout.md` | Leave the instance out and put an Uncalibrated Port at each pin face, on Planar. Starts with the measurement in § Risks | 1, 2a |
 | `brief-icp-3-3d-cutout.md` | The same cut and ports on a 3D `.cem` and in a `.c3d` setup | 1, 2 |
-| `brief-icp-4-pin-reference.md` | A port referenced to one of the instance's pins instead of ground | 2, 3 |
+| `brief-icp-4-pin-reference.md` | Each port's reference chosen per pin (ground, another pin, or one common node), and pins tied to ground with no port | 2, 3 |
 | `brief-icp-5-cosimulation.md` | `_cosim` places each instance's own model on its ports, at any depth | 2 |
 | `brief-icp-6-cli-and-check.md` | `em`, `explain`, `check`, the MCP tools and the format reference | 1, 2, 5 |
 | `brief-icp-7-cem-editor-and-marks.md` | The instance tree in the Component ports section, and the cut drawn on the layout | 1, 2 |
@@ -80,12 +81,18 @@ ICP-1, 2 and 5 are the issue's whole request on Planar. 3 and 4 carry it to 3D a
 - **D5 — The port sits at the pin face by default.** A pin already is a face — point, width, outward direction — and a
   kit's model is referenced there. `PortAt: Cell` moves it to the keep-out box's boundary, per entry; at mm-wave the two
   differ and only the user knows which plane the model was characterised at.
-- **D6 — Ground reference by default.** Each port is driven against the run's return (Planar: the ground plane; 3D: the
-  edge sheet to the return). With a backside ground this loses nothing: the model's reference terminal goes on its own
-  port's node in the netlist. A pin reference is ICP-4 and is built only where an existing two-conductor construction fits.
-- **D7 — One port per connected pin name.** A pin with no interconnect gets no port (its model terminal goes to ground
-  when the schematic grounds it, else to a named unconnected node, with a warning). A pin name at several faces
-  (multi-finger) is refused in this series, by name.
+- **D6 — Ground reference by default, chosen per port.** Each port is driven against the run's return (Planar: the ground
+  plane; 3D: the edge sheet to the return) unless its pin says otherwise. With a backside ground this loses nothing: the
+  model's reference terminal goes on its own port's node in the netlist. ICP-4 lets each pin choose: ground, another pin
+  of the same instance (which then gets no port and is only the return), or one common node shared by the instance's
+  ports; and lets a pin be tied to ground with no port at all. A reference other than ground is built only where an
+  existing two-conductor construction fits.
+- **D7 — One port per connected pin name.** Every pin of a cut instance is classified before meshing (ICP-2 R-icp2-3):
+  *routed* (interconnect meets its face: a port), *abutting* (its face touches only another cut-out instance: no port, the
+  two model terminals are joined directly in `_cosim`), *grounded* (tied to ground by the entry, ICP-4: no port), or
+  *floating* (nothing meets it: no port, and a warning, because the model sees an open there that is easy to miss). A
+  floating pin's model terminal goes to ground when the schematic grounds it, else to a named unconnected node. A pin
+  name at several faces (multi-finger) is refused in this series, by name.
 - **D8 — Cut cells do not nest.** Naming `X1` and `X1/Q3` is a refusal: an instance inside a cut one is already out.
 
 ## Risks — measure before building (ICP-2's first finding)
@@ -110,6 +117,14 @@ the projection is written, and the numbers go into `src/Design/RESOLVED.md` and 
 If (1) shows the edge port cannot be calibrated at realistic device pitches, stop and report: the fallback is a
 non-de-embedded internal port at the face, which the engine does not have today and would be its own brief.
 
+**Measured 2026-11-13 (`src/Design/RESOLVED.md` §brief-icp-2 — the measurement):** a 3-pin site with pins on three sides
+is refused at 20, 40 and 80 µm alike by the feed-isolation rule (a neighbour carrying a port must be 5 substrate heights
+away, 500 µm on 100 µm GaAs, and a perpendicular pin cannot be grouped). Two pins facing each other in line calibrate
+alone at 40 µm. The reference plane agrees with the whole line to 2.6e-3 … 1.7e-2 from 5 to 20 GHz. Grounding the third
+pin does not help. **The fallback was measured and works** (an edge port grounded and not de-embedded: within
+5.4e-3 … 7.0e-2 of the calibrated answer on isolated lines, passive, and the 3-pin site solves) — it is
+`brief-icp-2a-uncalibrated-port.md`, and ICP-2's cut ports are built from it.
+
 ## Simulation budget, for every brief
 
 - Fixtures are a few lines and one or two small cells on the shipped `mmic-GaAs_2LM_100um` technology, at most 6 frequency
@@ -119,6 +134,23 @@ non-de-embedded internal port at the face, which the engine does not have today 
 - No new `Category=Benchmark` test and no timing assertion. One test per claim. Run the named test classes only, never all
   of `Ui.Tests`.
 - Nothing here is run on a real chip.
+
+## Feedback from the requester (issue 69, 2026-11-13)
+
+The requester confirmed the flow matches the one they use and asked for five additions, each now a requirement:
+
+| Ask | Where |
+|---|---|
+| A pin check before meshing: each cut instance's pins as routed, touching only another cut-out instance, or floating, and the ports it will generate, in the report and drawn on the layout | ICP-2 R-icp2-3 (the classification and the report), ICP-6 R-icp6-2 (`check`/`explain`), ICP-7 R-icp7-3 (the marks) |
+| A reference chosen per port: another pin (which then is only the return), the global ground, or one common node for the whole N-port | ICP-4 R-icp4-1…3, R-icp4-6 |
+| A pin marked as grounded instead of getting a port (an emitter or substrate tied to ground), to save ports and run time | ICP-4 R-icp4-5 |
+| Keeping selected shapes or nets apart when a cut would merge the metal around a device into one net | ICP-2 R-icp2-9 |
+| A preview of the exact geometry handed to the solver, with the cut-out instances shaded | ICP-7 R-icp7-6 |
+
+They also offered test layouts: an HBT cascode with one transistor inside a sub-cell, interconnect, a MIM cap and ground
+vias, in an external open SiGe kit they maintain (outside this repository: nothing from it is committed here), and the
+shipped GaAs kit's SpiralResonator. ICP-9's example covers the second shape on the shipped technology; the first is a
+by-hand check once the Planar cut lands, reported on the issue rather than gated.
 
 ## Rules that apply throughout
 

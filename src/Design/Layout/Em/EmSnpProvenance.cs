@@ -189,7 +189,7 @@ public static class EmSnpProvenance
                                ? $" on '{levelNames[lv]}'" : "";
             lines.Add(
                 $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{name}'{level} at " +
-                $"{AsciiCoord(labels, i, dbuPerMicron, displayUnit)}, {KindWord(p.Kind)}, " +
+                $"{AsciiCoord(labels, i, dbuPerMicron, displayUnit)}, {(p.Uncalibrated ? "edge, uncalibrated (not de-embedded)" : KindWord(p.Kind))}, " +
                 $"{AsciiOhms(p.Z0)}");
         }
 
@@ -583,6 +583,8 @@ public static class EmSnpProvenance
             // only when a port is internal makes the pre-existing case bit-identical and still moves
             // the hash the moment any port's type does.
             if (p.Kind != PlanarPortKind.Edge) sb.Append(":K=").Append(p.Kind);
+            // brief-icp-2a — an Uncalibrated Port is a different answer at that port; appended only then (same rule).
+            if (p.Uncalibrated) sb.Append(":U");
 
             sb.Append('|');
         }

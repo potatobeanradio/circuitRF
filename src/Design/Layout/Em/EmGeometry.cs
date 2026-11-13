@@ -62,11 +62,16 @@ public static class EmGeometry
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
 
-        var flat = Flatten(source.View, source.AbsolutePath, source.Technology);
+        // brief-icp-2 R-icp2-1: a setup that cuts cell instances out sees the cut geometry (EmCellCutout.Apply, reached through the
+        // build every caller shares and cached with it), in place of the plain flatten.
+        var components = EmPlanarComponentPorts.Build(setup, source);
+        var flat = components?.Cut is { } cut
+            ? new Result(cut.Shapes, cut.Notes, cut.GeneratorIds)
+            : Flatten(source.View, source.AbsolutePath, source.Technology);
 
         // brief-lcp-1 R-lcp1-4: a component port on a planar run is a strip joining the part's pads, in the solved problem
         // only. Added here so every caller that hands geometry to an extractor sees the same strips.
-        if (EmPlanarComponentPorts.Build(setup, source) is { Strips.Count: > 0 } components)
+        if (components is { Strips.Count: > 0 })
             flat = flat with { Shapes = [.. flat.Shapes, .. components.Strips] };
         if (setup.SolveRegion is null) return flat;
 
@@ -86,7 +91,14 @@ public static class EmGeometry
     /// </summary>
     /// <param name="tech">The layout's technology — what a bottom-side placement's surface roles are
     /// swapped against (brief-bsp-1 R-bsp1-7).</param>
-    public static Result Flatten(LayoutView view, string clayPath, Technology? tech = null)
+    public static Result Flatten(LayoutView view, string clayPath, Technology? tech = null) => Flatten(view, clayPath, tech, null);
+
+    /// <summary>
+    /// brief-icp-2 R-icp2-1 — <see cref="Flatten(LayoutView, string, Technology?)"/>, leaving out every placed instance whose LVS
+    /// path (<see cref="LayoutDesignFlatten.PathOf"/> per level, joined by <c>/</c>) is in <paramref name="exclude"/>: a setup's cut
+    /// instances, at any depth. With none it is the flatten above, byte for byte.
+    /// </summary>
+    public static Result Flatten(LayoutView view, string clayPath, Technology? tech, IReadOnlySet<string>? exclude)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -99,9 +111,12 @@ public static class EmGeometry
         var notes  = new List<string>();
         int unresolved = 0;
 
-        foreach (var inst in view.Instances)
+        for (int i = 0; i < view.Instances.Count; i++)
         {
-            var flat = LayoutFlatten.FlattenAllLevels(inst, baseDir, tech);
+            var inst = view.Instances[i];
+            var flat = exclude is { Count: > 0 }
+                ? LayoutFlatten.FlattenAllLevels(inst, baseDir, tech, LayoutDesignFlatten.PathOf(inst, i), exclude)
+                : LayoutFlatten.FlattenAllLevels(inst, baseDir, tech);
             shapes.AddRange(flat.Shapes);
             unresolved += flat.SurvivingInstances.Count;
         }

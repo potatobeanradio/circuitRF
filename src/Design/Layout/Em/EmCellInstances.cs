@@ -71,6 +71,10 @@ public sealed record EmCellInstance(string Path, string Cell, string? GeneratorI
         return this;
     }
 
+    /// <summary>brief-icp-2 — this placement composed into the root layout's frame (DBU), its <c>CellRef</c> rebased onto the root's
+    /// layout folder: what a keep-out box stated in the instance's own frame is carried through.</summary>
+    public LayoutInstance? Placement { get; init; }
+
     /// <summary>The path of the instance that places this one, or null at the top level.</summary>
     public string? Parent => Path.LastIndexOf('/') is var at and > 0 ? Path[..at] : null;
 
@@ -185,7 +189,7 @@ public static class EmCellInstances
 
                 EmCellInstance Record(EmInstanceKind kind, IReadOnlyList<EmInstancePin> pins, string? why)
                 {
-                    var rec = new EmCellInstance(path, cell, generator, kind, pins, thisChain, why);
+                    var rec = new EmCellInstance(path, cell, generator, kind, pins, thisChain, why) { Placement = placed };
                     found.Add(rec);
                     return rec;
                 }

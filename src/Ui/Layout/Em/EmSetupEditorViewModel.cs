@@ -2312,6 +2312,75 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// settings change, which is exactly what R-em-13 asks for.</summary>
     public void Refresh()
     {
+        int mine = ++_refreshGeneration;
+        // brief-icp-2 R-icp2-8 — a setup with component ports builds them (on a chip: every cell, every level's schematic and the
+        // cut's booleans) OFF this thread, from a copy taken here; the refresh proper runs when it lands, reading the build from
+        // the cache every caller shares. A build already made — by this panel, Check, the marks or the mesh preview — is used at once.
+        if (PrepareComponentBuild() is { } job)
+        {
+            LayoutStatus = "Building component ports…";
+            WhenRefreshed = BuildThenRefreshAsync(mine, job);
+            return;
+        }
+        WhenRefreshed = Task.CompletedTask;
+        RefreshNow();
+    }
+
+    /// <summary>brief-icp-2 R-icp2-8 — the refresh the last <see cref="Refresh"/> started, for a caller that must wait for it (the
+    /// mesh preview, a test). Complete when nothing is being built.</summary>
+    public Task WhenRefreshed { get; private set; } = Task.CompletedTask;
+
+    /// <summary>brief-icp-2 R-icp2-8 — what builds the component ports off the UI thread: the run's own builder, which caches the
+    /// build for every later caller. A seam so a test can hold a build open.</summary>
+    internal Func<EmSetup, EmLayoutSource, EmPlanarComponentPortBuild?> ComponentBuilder { get; set; } = EmPlanarComponentPorts.Build;
+
+    /// <summary>brief-icp-2 R-icp2-8 — the component-port build the last applied refresh read.</summary>
+    internal EmPlanarComponentPortBuild? LastComponentBuild => _lastComponentBuild;
+
+    /// <summary>brief-icp-2 R-icp2-8 — how many refreshes have been applied (a stale build's never is).</summary>
+    internal int RefreshesApplied { get; private set; }
+
+    private int _refreshGeneration;
+
+    /// <summary>One off-thread build: the copy it reads, and what the live layout and setup were when it was taken.</summary>
+    private sealed record ComponentBuildJob(Func<EmPlanarComponentPortBuild?> Build, LayoutView View, long EditCount, string SetupKey);
+
+    /// <summary>The setup's terms a component-port build reads.</summary>
+    private static string ComponentBuildKey(EmSetup setup)
+        => string.Join("|", setup.ComponentPorts) + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe()
+         + "#" + setup.AnalysisKind;
+
+    /// <summary>On the UI thread: a copy of the layout and the setup to build from, or null when there is nothing to build or it is
+    /// built already.</summary>
+    private ComponentBuildJob? PrepareComponentBuild()
+    {
+        if (IsEmbedded || Working.Is3D || Working.ComponentPorts.Count == 0 || EmComponentPorts.Inapplicable(Working) is not null) return null;
+        if (Working.LayoutRef is not { Length: > 0 } r || ResolveLayout?.Invoke(r) is not { Technology: not null } source) return null;
+        if (EmPlanarComponentPorts.IsBuilt(Working, source)) return null;
+        string text = LayoutPersistence.Serialize(source.View);
+        var copy = Working.Clone();
+        var builder = ComponentBuilder;
+        string path = source.AbsolutePath;
+        var tech = source.Technology;
+        int dpm = source.DbuPerMicron;
+        return new ComponentBuildJob(() => builder(copy, new EmLayoutSource(path, LayoutPersistence.Deserialize(text), tech, dpm)),
+                                     source.View, source.View.EditCount, ComponentBuildKey(Working));
+    }
+
+    private async Task BuildThenRefreshAsync(int mine, ComponentBuildJob job)
+    {
+        try { await Task.Run(job.Build); }
+        // What the build cannot read, the refresh that follows says (it builds again, on this thread, and reports).
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException) { }
+        if (mine != _refreshGeneration) return;                       // a later refresh owns the panel now
+        // The layout or the setup moved on while it built: the build is history; take a fresh copy rather than apply it.
+        if (job.View.EditCount != job.EditCount || ComponentBuildKey(Working) != job.SetupKey) { Refresh(); return; }
+        RefreshNow();
+    }
+
+    private void RefreshNow()
+    {
+        RefreshesApplied++;
         _geometryCheckSource = null;
         RefreshCore();
         // brief-lcp-3 — the section follows the setup's type, and the list the parts placed (read again only when they may
@@ -2626,7 +2695,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         for (int i = 0; i < ports.Count; i++)
         {
             // brief-lcp-3 R-lcp3-3 — a built component port's row is its part's: Z0, width and reference write the entry.
-            if (_lastComponentBuild?.Ports.FirstOrDefault(p => p.Ok && p.Number == ports[i].Number) is { } built)
+            // brief-icp-2 — a cut instance's pin port is an ordinary row until ICP-7 gives the instance its own options.
+            if (_lastComponentBuild?.Ports.FirstOrDefault(p => p.Ok && !p.Cutout && p.Number == ports[i].Number) is { } built)
             {
                 PortRows.Add(ComponentPortRow(ports[i], built));
                 continue;

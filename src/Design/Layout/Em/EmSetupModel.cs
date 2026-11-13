@@ -159,9 +159,19 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
     /// takes a gap across its pads, any other cell instance is cut out.</summary>
     public EmComponentConstruction? Construction { get; init; }
 
+    /// <summary>
+    /// brief-icp-2 R-icp2-9 — net names (<see cref="LayoutShape.Net"/>) and drawing-layer names whose shapes a cut leaves in
+    /// place: a cell-mode box does not cut them and a pin-mode cut does not remove them. Held as one normalised string
+    /// (<c>"GND, Metal2"</c>) so the entry keeps its value equality; <see cref="KeepNames"/> splits it. Null: nothing kept.
+    /// </summary>
+    public string? Keep { get; init; }
+
+    /// <summary>The names in <see cref="Keep"/>, trimmed, empty ones dropped.</summary>
+    public IReadOnlyList<string> KeepNames => Keep is null ? [] : [.. Keep.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
     /// <summary>Overrides nothing: written as its refdes alone.</summary>
     public bool IsPlain => Z0 is null && Reference is null && WidthUm is null && Cell is null && PortAt == EmComponentPortAt.Pin
-                           && KeepOutUm is null && Construction is null;
+                           && KeepOutUm is null && Construction is null && Keep is null;
 
     /// <summary>
     /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:

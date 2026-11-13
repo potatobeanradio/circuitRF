@@ -296,6 +296,17 @@ public sealed record PlanarPort(
     public double IncidenceSign =>
         Kind == PlanarPortKind.Internal ? +1.0
         : Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? +1.0 : -1.0;
+
+    /// <summary>
+    /// <b>brief-icp-2a — an Uncalibrated Port.</b> A ground-referenced EDGE port that is not de-embedded: no feed lead is
+    /// grown for it, no clearance is measured, no calibration standard is built, and its source always returns through the
+    /// ground plane (<see cref="PlanarGroundedEdgePort"/>), whatever the run's <see cref="PlanarFillSettings.EdgePortReturn"/>.
+    /// Reported at its cut in its declared Z0, with its launch — the half cell beyond the cut and the grounded source's own
+    /// lumped section — in the answer. It exists for a face a calibrated port cannot reach: a device's pins, whose
+    /// neighbours sit far inside any calibration's clearance (<c>src/Design/RESOLVED.md</c> §brief-icp-2). Meaningless on
+    /// any other port kind, where it is ignored.
+    /// </summary>
+    public bool Uncalibrated { get; init; }
 }
 
 /// <summary>R-pw1-1 — an edge port's transverse extent, metres, <see cref="LoM"/> &lt; <see cref="HiM"/>.</summary>
@@ -851,7 +862,11 @@ public sealed record PlanarPortResolution(
     /// sides and neither. Asked in exactly one place (<c>PlanarSolve</c>) so the two kinds cannot
     /// drift apart, and named rather than written as an enum comparison at each site.
     /// </summary>
-    public bool IsDeembeddable => Kind == PlanarPortKind.Edge && !DeembedDeclined;
+    public bool IsDeembeddable => Kind == PlanarPortKind.Edge && !DeembedDeclined && !Uncalibrated;
+
+    /// <summary>brief-icp-2a — an Uncalibrated Port (<see cref="PlanarPort.Uncalibrated"/>): an edge port reported at its cut
+    /// in its declared Z0, grounded at every frequency, never de-embedded. Set only on a ground-referenced edge port.</summary>
+    public bool Uncalibrated { get; init; }
 
     /// <summary>
     /// brief-port-width-planar-and-c3d R-pw1-2 — an EDGE port that is nonetheless not de-embedded: it is narrower than
@@ -2177,7 +2192,10 @@ public static class PlanarPorts
             GridWidthM:        gridWidth,
             UndrivenMetalM:    undriven,
             Kind:              port.Kind,
-            GapOffsetM:        gapOffset);
+            GapOffsetM:        gapOffset)
+        {
+            Uncalibrated = port.Uncalibrated && port.Kind == PlanarPortKind.Edge && !port.IsConductorReferenced,
+        };
 
         refusal = null;
         return true;

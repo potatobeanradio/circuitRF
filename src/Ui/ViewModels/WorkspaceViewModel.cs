@@ -9832,6 +9832,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             //              minutes, and the only part that touches nothing shared.
             //   3. UI    — adopt the report.
             vm.Refresh();
+            // brief-icp-2 R-icp2-8 — a setup with component ports builds them off the UI thread first; the mesh reads that build.
+            await vm.WhenRefreshed;
 
             if (vm.IsPlanarAnalysis)
             {

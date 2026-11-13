@@ -358,7 +358,8 @@ public static class EmCoSimNetlist
         for (int i = 0; i < ports.Count; i++)
         {
             var p = ports[i];
-            var cp = build?.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
+            // brief-icp-2 — a cut instance's pin port is an ordinary port of the netlist until ICP-5 puts its model back on it.
+            var cp = build?.Ports.FirstOrDefault(c => c.Ok && !c.Cutout && c.Number == p.Number);
             string name = cp?.Name ?? (i < labels.Count && labels[i].Text is { Length: > 0 } text ? text : $"P{p.Number}");
             // brief-isc-1 D6 — a drawn port's number is its label's text (SDL-5 writes the schematic Port's Num there).
             int? num = cp is null && i < labels.Count && int.TryParse(labels[i].Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : null;

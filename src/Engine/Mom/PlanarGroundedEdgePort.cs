@@ -78,14 +78,17 @@ public static class PlanarGroundedEdgePort
 
     /// <summary>The port rooftops whose outer pulse is removed, over every port that
     /// <see cref="Applies"/>, in port then transverse order.</summary>
-    public static IReadOnlyList<Terminal> Terminals(PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports)
+    /// <param name="include">brief-icp-2a — which of those ports to ground (null: every one). A run whose edge ports are
+    /// series gaps at this frequency still grounds its Uncalibrated Ports, and only them.</param>
+    public static IReadOnlyList<Terminal> Terminals(PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
+                                                    Func<PlanarPortResolution, bool>? include = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
         var list = new List<Terminal>();
         foreach (var port in ports)
         {
-            if (!Applies(port)) continue;
+            if (!Applies(port) || include is not null && !include(port)) continue;
             bool x = port.Direction == PlanarBasisDirection.X;
             foreach (int m in port.BasisIndices)
             {
@@ -112,14 +115,15 @@ public static class PlanarGroundedEdgePort
     /// </summary>
     public static PlanarPortSolution Solve(IPlanarOperator system, PlanarMesh mesh,
                                            IReadOnlyList<PlanarPortResolution> ports,
-                                           Func<int, int, Complex> pulse, double omega)
+                                           Func<int, int, Complex> pulse, double omega,
+                                           Func<PlanarPortResolution, bool>? include = null)
     {
         ArgumentNullException.ThrowIfNull(system);
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
         ArgumentNullException.ThrowIfNull(pulse);
 
-        var terms = Terminals(mesh, ports);
+        var terms = Terminals(mesh, ports, include);
         if (terms.Count == 0) return PlanarExcitation.Solve(system, ports);
 
         int n = system.Size, k = terms.Count, p = ports.Count;

@@ -717,7 +717,11 @@ public static class EmPortExtraction
                                      // above uses. On a one-level mesh both terminals infer, and
                                      // there is one candidate, so the answer is the same either way.
                                      NegativeLayerIndex: problem.Layers.Count > 1 ? negLevel : null,
-                                     Span: portSpan));
+                                     Span: portSpan)
+            {
+                // brief-icp-2a — an Uncalibrated Port: a ground-referenced edge port only (D5).
+                Uncalibrated = label.PortUncalibrated && kind == PlanarPortKind.Edge && negPoint is null,
+            });
             owners.Add(label);
             rows.Add(new EmPortRow(number, label, ports[^1], null, kind));
 
@@ -767,7 +771,12 @@ public static class EmPortExtraction
                   $"taken to be on the conductor's {SideName(side)} end " +
                   (stated ? "(the port's own direction)" : "(inferred from the nearest conductor boundary)") +
                   (problem.Layers.Count > 1 ? $" of level {level} ('{problem.Layers[level].Name}')" : "") +
-                  $", driving current {CurrentDirection(side)}, at {FormatOhms(z0)}.");
+                  $", driving current {CurrentDirection(side)}, at {FormatOhms(z0)}." +
+                  (ports[^1].Uncalibrated ? " It is an Uncalibrated Port: driven against the ground plane at its cut and not " +
+                                            "de-embedded, so its launch is in the result." : ""));
+            if (label.PortUncalibrated && !ports[^1].Uncalibrated)
+                notes.Add($"Port {number} is marked Uncalibrated, which only an edge port returning through the ground plane " +
+                          "can be: an internal port is never calibrated, and this one is solved as it is drawn.");
             // The de-embedding reference plane's position used to be restated on EVERY port note.
             // Dropped (owner request, 2026-08-11): it is a property of the method rather than
             // anything about this port, it never varies, and it belongs in the documentation.

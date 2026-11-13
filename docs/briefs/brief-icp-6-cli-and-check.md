@@ -17,17 +17,19 @@ was left out of the problem.
 `ComponentPorts` for the run, as the flag does today. Parsing is in the CLI; selection is ICP-1's.
 
 **R-icp6-2 — `explain` reports the walk.** Per instance: its path and cell, how it was selected (`*`, by name, by cell),
-what was left out (its shapes, or the box with its size), and per pin the face (point, width, direction, layer), the port
-number and name, its reference, or why it was left out — read from ICP-2's build, never recomputed. A copper instance that
+what was left out (its shapes, or the box with its size), and per pin its class (routed, abutting, grounded, floating —
+ICP-2 R-icp2-3), the face (point, width, direction, layer), the port number and name it generates, its reference, or why
+it was left out — read from ICP-2's build, never recomputed. This is the pin check the requester asked for before
+meshing (ICP-0 § Feedback): nothing is meshed to produce it. A copper instance that
 `*` passed over is listed once as such. `--json` carries the same, in the existing component-port step shape.
 
 **R-icp6-3 — `check` reports it.** Each verdict as `check.cem.component-port` (info when built, warning when an instance or
-pin was left out), and a `.c3d`'s as `check.c3d.component-port`; the refusal of the whole list as an error, as today.
+pin was left out or a pin is floating), and a `.c3d`'s as `check.c3d.component-port`; the refusal of the whole list as an error, as today.
 
 **R-icp6-4 — `em --dry-run`** counts the cut ports in its unknowns and names them, as it names gap ports.
 
 **R-icp6-5 — MCP.** The `run`, `explain` and `check` tools take the same `componentPorts` spellings; `reference em-setup`
-documents the new keys (`Cell`, `PortAt`, `KeepOutUm`, `Construction`) and the path grammar, from the one schema
+documents the new keys (`Cell`, `PortAt`, `KeepOutUm`, `Construction`, ICP-2's `Keep`, ICP-4's `Pins` and `Ground`) and the path grammar, from the one schema
 `DocumentSchema` already serves.
 
 **R-icp6-6 — The issue's two commands.** On the shipped examples:

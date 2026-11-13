@@ -19,15 +19,18 @@ not). `*` keeps its row; its tooltip says it takes devices and footprint parts, 
 cell ("every KIT_FET — 4 placed"). Checking a parent disables the rows under it (ICP-0 D8) rather than letting the run
 refuse.
 
-**R-icp7-2 — Per-instance options.** Port at (Pin / Cell), Reference (Ground or one of its pins, from its pin list), Z0,
-and the keep-out box (shown in µm, edited as four numbers; empty means the cell's own box). Every edit writes through
+**R-icp7-2 — Per-instance options.** Port at (Pin / Cell), Reference (Ground, Common, or one of its pins, from its pin
+list) with a per-pin row under the instance for its own reference, Port off, or Ground (ICP-4), Z0, the nets or layers
+kept out of the cut (ICP-2 `Keep`), and the keep-out box (shown in µm, edited as four numbers; empty means the cell's own box). Every edit writes through
 `EmComponentPort.Override` (LCP-3's one entry-writing rule) as one undo entry. Picker buttons and their glyphs follow the
 panel's existing rules; no control shifts when an option appears.
 
 **R-icp7-3 — Marks on the layout.** From the open `.cem`, built off-thread as LCP-4's are (`ScheduleComponentPortMarks`,
 `LayoutView.EditCount` guarding stale builds): what will be left out drawn as a hatched outline (the instance's shapes'
 outline in Pin mode, the box in Cell mode), and at each built port the edge-port arrow at the cut face with its number.
-A pin left out shows a small marker whose tooltip is the reason. A press on a mark selects its instance. Marks follow the
+Every pin carries its class from ICP-2's per-pin record — a routed pin its port arrow, a grounded pin a ground mark,
+an abutting pin a join mark to the pin it touches, a floating pin a warning marker — and a pin left out shows a small
+marker whose tooltip is the reason. This is where the ports can be seen landing before a run (ICP-0 § Feedback). A press on a mark selects its instance. Marks follow the
 instance when it moves, and draw nothing extra when no `.cem` names it.
 
 **R-icp7-4 — `.c3d` rows.** The `.c3d` editor's component-port rows take the same tree for its layout instances, with the
@@ -37,6 +40,12 @@ layout instance as the first level when the view places more than one.
 Refresh, Check, the marks and the mesh preview. The tree and its option edits here read that cache and never build on the UI
 thread; an option edit invalidates it through the setup it keys on.
 
+**R-icp7-6 — The solver's geometry, previewed.** A toggle on the layout (beside the marks) draws exactly what
+`EmGeometry.ForSetup` hands the extractor for the open `.cem` — the cut applied, kept shapes kept, the solve region
+clipped — over the layout dimmed, with each cut-out instance shaded in its outline or box. It reads ICP-2's cached build
+(R-icp2-8) and so costs nothing a Refresh has not already paid; it builds nothing of its own, so it cannot show different
+metal from the run. The mesh preview, where it is already shown, shades the cut-out instances the same way.
+
 ## Gates
 
 1. View-model tests: tree shape for a two-level fixture; a parent checked disables its children; each option writes one
@@ -44,6 +53,8 @@ thread; an option edit invalidates it through the setup it keys on.
 2. UiSnapshot PNGs, looked at: the section with a three-instance tree and one instance refused; the layout with a Pin-mode
    and a Cell-mode cut and their port arrows (`--clay … --component-ports <cem>`, as LCP-4 added).
 3. A stale mark build is discarded after an edit.
+4. The solver-geometry preview draws the same shapes `EmGeometry.ForSetup` returns (compared shape for shape), and a
+   UiSnapshot PNG of it with one Pin-mode and one Cell-mode cut, looked at.
 
 ## Not here
 

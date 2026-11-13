@@ -1245,9 +1245,25 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                     throw new JsonException("A ComponentPorts entry's KeepOutUm [x0, y0, x1, y1] needs x1 > x0 and y1 > y0.");
                 keepOut = new EmKeepOut(v[0], v[1], v[2], v[3]);
             }
+            // brief-icp-2 R-icp2-9 — Keep: a list of net and layer names (a single string is read as one list).
+            string? keep = null;
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (!prop.Name.Equals("Keep", StringComparison.OrdinalIgnoreCase) || prop.Value.ValueKind == JsonValueKind.Null) continue;
+                var names = prop.Value.ValueKind switch
+                {
+                    JsonValueKind.String => (prop.Value.GetString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    JsonValueKind.Array when prop.Value.EnumerateArray().All(e => e.ValueKind == JsonValueKind.String)
+                        => prop.Value.EnumerateArray().Select(e => (e.GetString() ?? "").Trim()).Where(n => n.Length > 0).ToArray(),
+                    _ => throw new JsonException("A ComponentPorts entry's Keep is a list of net or layer names."),
+                };
+                if (names.Any(n => n.Contains(',')))
+                    throw new JsonException("A ComponentPorts entry's Keep names may not contain a comma.");
+                keep = names.Length > 0 ? string.Join(", ", names) : null;
+            }
             list.Add(new EmComponentPort(refdes ?? "", Get("Z0"), Get("Reference"), width)
             {
-                Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction,
+                Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction, Keep = keep,
             });
         }
         return list;
@@ -1275,6 +1291,12 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                 writer.WriteEndArray();
             }
             if (c.Construction is { } con) writer.WriteString("Construction", con.ToString());
+            if (c.KeepNames is { Count: > 0 } kept)
+            {
+                writer.WriteStartArray("Keep");
+                foreach (var n in kept) writer.WriteStringValue(n);
+                writer.WriteEndArray();
+            }
             writer.WriteEndObject();
         }
         writer.WriteEndArray();

@@ -193,7 +193,8 @@ public sealed class LayoutComponentPortsHost(Func<EmLayoutSource?> source, Func<
         {
             var build = EmPlanarComponentPorts.Build(copy, s with { View = LayoutPersistence.Deserialize(text) });
             return build is null ? []
-                : [.. build.Ports.Where(p => p.Ok).Select(p => new LayoutComponentPortMark(p.Number, p.Name, p.Refdes, p.Gap!, p.Strip!))];
+                // brief-icp-2 — a cut instance's pin port has no strip to draw; ICP-7 draws the cut.
+                : [.. build.Ports.Where(p => p.Ok && !p.Cutout).Select(p => new LayoutComponentPortMark(p.Number, p.Name, p.Refdes, p.Gap!, p.Strip!))];
         });
     }
 

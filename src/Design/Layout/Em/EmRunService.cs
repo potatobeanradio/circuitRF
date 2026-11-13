@@ -257,7 +257,7 @@ public static class EmRunService
                 portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup), source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
             if (!extracted.Ok) return null;
-            bool built = portLabels.ComponentBuild is { } components && components.Ports.Any(c => c.Ok);
+            bool built = portLabels.ComponentBuild is { AnyGapPort: true };
             return new EmResultPorts(EmCoSimNetlist.PortsOf(extracted.Ports, extracted.SourceLabels, portLabels.ComponentBuild), built);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or InvalidOperationException or FormatException)
@@ -1106,6 +1106,15 @@ public static class EmRunService
     /// nothing is lost by asking it first. <see cref="Preview"/> and the EM panel's own
     /// <c>BlockingReason</c> order the two the same way for the same reason.</para>
     /// </summary>
+    /// <summary>brief-icp-2 R-icp2-5 — a cut instance's pin port as the record carries it: the instance's path, the pin, the cell.</summary>
+    private static EmResultPort CutRecord(EmResultPort r, EmPlanarComponentPort cut)
+    {
+        r.Part = cut.Refdes;
+        r.Pins = cut.Pin is { } pin ? [pin] : null;
+        r.Cell = cut.Cell;
+        return r;
+    }
+
     private static EmRunResult RunPlanar(
         EmSetup setup, EmLayoutSource source, string resultsRoot,
         PlanarExtractionResult extraction, double[] freqs, EmKernelChoice choice,
@@ -1373,7 +1382,9 @@ public static class EmRunService
                 Name = i < ports.SourceLabels.Count && ports.SourceLabels[i].Text is { Length: > 0 } label ? label : $"P{p.Number}",
                 Z0Re = p.Z0.Real, Z0Im = p.Z0.Imaginary,
                 Kind = p.Kind == PlanarPortKind.InternalDeltaGap ? EmResultPort.Gap : EmResultPort.Plane,
-            })],
+                Uncalibrated = p.Uncalibrated,
+            }).Select(r => portLabels.ComponentBuild?.Ports.FirstOrDefault(c => c.Ok && c.Cutout && c.Number == r.Number) is { } cutPort
+                ? CutRecord(r, cutPort) : r)],
             (stagedBase, stamp) =>
             {
                 WritePlanarSnp(solved.Data, stagedBase,
@@ -1393,7 +1404,7 @@ public static class EmRunService
         // reads the Touchstone when a pattern was asked for and none could be stored.
         // brief-isc-1 — every solved port goes to the caller, so a cell made from the schematic can wire them by number; only a run
         // that built a component port writes the _cosim netlist.
-        bool componentPortsBuilt = portLabels.ComponentBuild is { } components && components.Ports.Any(p => p.Ok);
+        bool componentPortsBuilt = portLabels.ComponentBuild is { AnyGapPort: true };
         coSimPorts?.Invoke(new EmResultPorts(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild), componentPortsBuilt));
         if (componentPortsBuilt)
         {

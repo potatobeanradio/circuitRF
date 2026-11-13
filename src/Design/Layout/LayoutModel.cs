@@ -705,6 +705,16 @@ public sealed class LabelShape : LayoutShape
     public bool? PortUseEdgeWidth { get; set; }
 
     /// <summary>
+    /// <b>brief-icp-2a — an Uncalibrated Port</b> (the "Uncalibrated port" box in its Properties): an edge port driven
+    /// against the ground plane at its cut and not de-embedded, so its launch is in the result and other metal close to its
+    /// feed does not refuse it. Read by the planar run (<c>PlanarPort.Uncalibrated</c>) for an edge port only; an internal
+    /// port is never calibrated, and a 3D run's edge port is a lumped sheet either way. Additive: no <c>.clay</c>
+    /// <c>FormatVersion</c> bump, omitted from the file when false.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PortUncalibrated { get; set; }
+
+    /// <summary>
     /// <b>brief-dfr26-7 R-dfr26-7-3 — a port a COMPONENT declares, which an EM setup collects from inside the
     /// placed instance.</b> Meaningful only with <see cref="IsPort"/>. Absent (false) means what every port label
     /// meant before: a port of the layout it is drawn in, and — inside a placed cell — that cell's terminal, which

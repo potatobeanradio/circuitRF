@@ -21,6 +21,7 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
             PostMessage = (text, warning) => _posted.Add((text, warning)),
         };
         vm.Refresh();
+        vm.WhenRefreshed.GetAwaiter().GetResult();     // brief-icp-2 R-icp2-8: the build lands off the UI thread first
         vm.ComponentPartsListing.GetAwaiter().GetResult();
         return vm;
     }

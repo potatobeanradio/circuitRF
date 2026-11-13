@@ -196,7 +196,11 @@ public sealed class PlanarSolveContext
         Levels   = levels;
         Settings = settings ?? PlanarFillSettings.Default;
         foreach (var port in ports)
-            if (PlanarGroundedEdgePort.Applies(port)) { _hasGroundedEdgePort = true; break; }
+        {
+            if (!PlanarGroundedEdgePort.Applies(port)) continue;
+            _hasGroundedEdgePort = true;
+            if (port.Uncalibrated) _hasUncalibratedPort = true;
+        }
 
         // R-fil-10, before the core allocates. The accelerator holds no N×N anything, so the DENSE
         // ceiling is the wrong question to ask of it — brief-em-aim-ceiling.md answered what the
@@ -287,14 +291,20 @@ public sealed class PlanarSolveContext
     // Every path below excites through here, so the DUT and every calibration standard take the
     // same port (D4). With SeriesGap, or with no edge port on this mesh, it is the very call each
     // path made before LFE.
+    // brief-icp-2a — an Uncalibrated Port is grounded at EVERY frequency: where the run grounds no edge port (SeriesGap, or
+    // above the de-embedded run's crossover) the update is applied to the uncalibrated ports alone. A raw series-gap edge
+    // port is an open circuit, and the crossover exists for calibration standards this port does not have.
     private PlanarPortSolution Excite(IPlanarOperator op, Func<Func<int, int, Complex>> pulse, double omega)
     {
-        if (!Settings.EdgePortGroundedAt(omega / (2.0 * Math.PI)) || !_hasGroundedEdgePort)
-            return PlanarExcitation.Solve(op, Ports);
-        return PlanarGroundedEdgePort.Solve(op, Mesh, Ports, pulse(), omega);
+        if (Settings.EdgePortGroundedAt(omega / (2.0 * Math.PI)) && _hasGroundedEdgePort)
+            return PlanarGroundedEdgePort.Solve(op, Mesh, Ports, pulse(), omega);
+        if (_hasUncalibratedPort)
+            return PlanarGroundedEdgePort.Solve(op, Mesh, Ports, pulse(), omega, static p => p.Uncalibrated);
+        return PlanarExcitation.Solve(op, Ports);
     }
 
     private readonly bool _hasGroundedEdgePort;
+    private readonly bool _hasUncalibratedPort;
 
     /// <summary>The frequency-independent class memo LFE's on-demand P reads on the DENSE path —
     /// built once per mesh, on first use.</summary>
@@ -2984,12 +2994,15 @@ public static class PlanarSolve
             var uncalibrated = new List<int>();
             var gapPorts     = new List<int>();
             var groundPorts  = new List<int>();
+            var faceUncal    = new List<int>();
             for (int i = 0; i < ports.Count; i++)
             {
                 if (ports[i].IsDeembeddable) { deembedded++; continue; }
                 // R-pw1-2 — an edge port whose span-width feed could not be grown; the feed extension's own note
                 // names it and says why.
                 if (ports[i].DeembedDeclined) continue;
+                // brief-icp-2a — an Uncalibrated Port: an edge port, said in its own sentence below.
+                if (ports[i].Uncalibrated) { faceUncal.Add(ports[i].Number); continue; }
                 uncalibrated.Add(ports[i].Number);
                 (ports[i].Kind == PlanarPortKind.Internal ? groundPorts : gapPorts)
                     .Add(ports[i].Number);
@@ -3024,6 +3037,9 @@ public static class PlanarSolve
                           "s-matrix and each keeps its own reference."
                         : " No port in this run is de-embedded, so nothing here is calibrated against " +
                           "a uniform line at all."));
+
+            if (faceUncal.Count > 0)
+                notes.Add(UncalibratedPortNote(faceUncal, deembedded));
 
             if (calibrators.Count > 0)
             notes.Add($"De-embedding costs {calibrators.Count} calibration(s) over {deembedded} de-embedded port(s), " +
@@ -5090,6 +5106,16 @@ public static class PlanarSolve
             f >= 1e3 ? $"{f / 1e3:0.###} kHz" :
                        $"{f:0.###} Hz";
     }
+
+    /// <summary>brief-icp-2a — the one sentence a run's Uncalibrated Ports get: what the answer carries at them.</summary>
+    internal static string UncalibratedPortNote(IReadOnlyList<int> numbers, int deembedded)
+        => $"Port(s) {string.Join(", ", numbers)} {(numbers.Count == 1 ? "is an Uncalibrated Port" : "are Uncalibrated Ports")}: " +
+           "edge ports driven against the ground plane at their cut and NOT de-embedded. No feed line was grown and no " +
+           "calibration line solved for them, so other metal close to the feed does not refuse them; their s-parameters " +
+           "are reported at the cut, in the reference impedance declared for each, with the launch included — the half " +
+           "cell beyond the cut and the grounded source's own small series and shunt parasitic, which a calibrated port " +
+           "removes." +
+           (deembedded > 0 ? " The remaining edge port(s) are de-embedded normally; both share one s-matrix." : "");
 
     /// <summary>
     /// <b>QSC — the run says which calibration produced which points, and why.</b> Null when no
