@@ -27,9 +27,10 @@ public static class HbNewton2D
 {
     /// <summary>
     /// One device's per-port time-domain terminal contributions over the 2-D grid: the conduction
-    /// current (H=1) and the charge (H=jω). A port's current spectrum is the weighted sum of the
-    /// two, so a branch whose only nonlinear content is charge — where <c>res.I[p]</c> is
-    /// identically zero — is reported as its actual current rather than as zero.
+    /// current (H=1), the charge (H=jω) and any <c>w ≥ 2</c> weighted term. A port's current
+    /// spectrum is the weighted sum of them all, so a branch whose only nonlinear content is charge
+    /// — where <c>res.I[p]</c> is identically zero — is reported as its actual current rather than
+    /// as zero.
     /// </summary>
     public sealed class PortTermTimes2D
     {
@@ -50,12 +51,40 @@ public static class HbNewton2D
         public int N2        { get; }
         public double[][,] W0 { get; }   // conduction current I[p,0]
         public double[][,] W1 { get; }   // charge I[p,1]
+
+        private Dictionary<int, double[][,]>? _higher;
+
+        /// <summary>The w≥2 rows this device produced, or null when it produced none.</summary>
+        public IReadOnlyDictionary<int, double[][,]>? Higher => _higher;
+
+        /// <summary>The w≥2 rows for weighting index <paramref name="w"/>, allocated on first use.</summary>
+        public double[][,] HigherFor(int w)
+        {
+            _higher ??= [];
+            if (!_higher.TryGetValue(w, out var rows))
+            {
+                rows = new double[PortCount][,];
+                for (int p = 0; p < PortCount; p++) rows[p] = new double[N1, N2];
+                _higher[w] = rows;
+            }
+            return rows;
+        }
     }
 
+    /// <summary>
+    /// One device's <c>w ≥ 2</c> weighted bucket over the two-tone lattice — the 2-D twin of
+    /// <see cref="HigherWeightBucket"/>. <c>WNl[n,mix]</c> is the bucket's injection at the retained
+    /// products; <c>Dw[n·N+m]</c> its full non-folded derivative spectrum, read by
+    /// <see cref="BuildJ2D"/> at difference and sum indices exactly as <c>G</c> is. The model is
+    /// kept for <c>H[w]</c>, weighted at each product's own signed frequency.
+    /// </summary>
+    public sealed record Bucket2D(ComponentModel Model, int W, Complex[,] WNl, Complex[][,] Dw);
+
     /// <param name="INl">
-    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>,
-    /// the same sum <see cref="BuildF2D"/> adds to the residual, and therefore what the linear
-    /// back-solve must inject to recover a branch current or a linear-interior node voltage.
+    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m] +
+    /// Σ_w H[w](ω(m))·WNl[n,m]</c>, the same sum <see cref="BuildF2D"/> adds to the residual, and
+    /// therefore what the linear back-solve must inject to recover a branch current or a
+    /// linear-interior node voltage.
     /// </param>
     /// <param name="PortTerms">
     /// Per-device, per-port terminal contributions over the 2-D time grid — <c>[deviceOrdinal]</c>
@@ -110,9 +139,9 @@ public static class HbNewton2D
         var V0 = new Complex[N, M];
         var judge = HbNewton.JudgeFor(netlist, interfaceNodes);   // MC-25, MC-30: see HbNewton.JudgeFor
 
-        var (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
+        var (iNl, qNl, G, C, buckets) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
         iNlLast   = iNl;
-        var    F  = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2);
+        var    F  = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2, buckets);
         double fN = HbNewton.L2(F);
 
         for (int iter = 0; iter < maxIter; iter++)
@@ -121,10 +150,10 @@ public static class HbNewton2D
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 return new SolveResult(true, iter + 1, trace,
-                    TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
+                    TotalInjection2D(iNl, qNl, grid, N, f1, f2, buckets), portITime);
             }
 
-            var J = BuildJ2D(yNN, G, C, grid, N, f1, f2, guardOrder);
+            var J = BuildJ2D(yNN, G, C, grid, N, f1, f2, guardOrder, buckets);
 
             var negF = new double[unknowns];
             for (int r = 0; r < unknowns; r++) negF[r] = -F[r];
@@ -134,7 +163,7 @@ public static class HbNewton2D
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HB2D] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
                 return new SolveResult(false, iter + 1, trace,
-                    TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
+                    TotalInjection2D(iNl, qNl, grid, N, f1, f2, buckets), portITime);
             }
 
             double fEntry = fN;
@@ -145,8 +174,8 @@ public static class HbNewton2D
             {
                 Array.Copy(V0, V, V.Length);
                 ApplyUpdate2D(V, dV, N, M, lam);
-                (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
-                F = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2);
+                (iNl, qNl, G, C, buckets) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
+                F = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2, buckets);
                 return norm.Of(F);
             });
             if (w is not null) step = step with { Residual = HbNewton.L2(F) };
@@ -158,16 +187,18 @@ public static class HbNewton2D
 
         trace.Add(new HbConvergenceTrace.IterRecord(maxIter, fN));
         return new SolveResult(false, maxIter, trace,
-            TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
+            TotalInjection2D(iNl, qNl, grid, N, f1, f2, buckets), portITime);
     }
 
     /// <summary>
-    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>,
-    /// exactly the nonlinear part <see cref="BuildF2D"/> adds to the residual. The DC product
-    /// (m=0) carries no charge current, matching BuildF2D's own <c>mix != 0</c> guard.
+    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m] +
+    /// Σ_w H[w](ω(m))·WNl[n,m]</c>, exactly the nonlinear part <see cref="BuildF2D"/> adds to the
+    /// residual. The DC product (m=0) carries no charge current, matching BuildF2D's own
+    /// <c>mix != 0</c> guard.
     /// </summary>
     internal static Complex[,] TotalInjection2D(
-        Complex[,] iNl, Complex[,] qNl, MixingGrid grid, int N, double f1, double f2)
+        Complex[,] iNl, Complex[,] qNl, MixingGrid grid, int N, double f1, double f2,
+        IReadOnlyList<Bucket2D>? buckets = null)
     {
         int M = grid.MixCount;
         var tot = new Complex[N, M];
@@ -175,11 +206,22 @@ public static class HbNewton2D
         {
             double omegaMix = mix == 0 ? 0.0 : OmegaOf(grid, mix, f1, f2);
             for (int n = 0; n < N; n++)
-                tot[n, mix] = mix == 0
+                tot[n, mix] = (mix == 0
                     ? iNl[n, mix]
-                    : iNl[n, mix] + new Complex(0, omegaMix) * qNl[n, mix];
+                    : iNl[n, mix] + new Complex(0, omegaMix) * qNl[n, mix])
+                    + BucketInjection(buckets, n, mix, omegaMix);
         }
         return tot;
+    }
+
+    /// <summary><c>Σ_w H[w](ω)·WNl[n,mix]</c> at the product's signed frequency
+    /// (<see cref="HbNewton.WeightAt"/>) — zero when the netlist has no weighted bucket.</summary>
+    private static Complex BucketInjection(IReadOnlyList<Bucket2D>? buckets, int n, int mix, double omegaMix)
+    {
+        if (buckets is not { Count: > 0 }) return Complex.Zero;
+        Complex f = Complex.Zero;
+        foreach (var b in buckets) f += HbNewton.WeightAt(b.Model, b.W, omegaMix) * b.WNl[n, mix];
+        return f;
     }
 
     private static void ApplyUpdate2D(Complex[,] V, double[] dV, int N, int M, double lambda)
@@ -209,8 +251,10 @@ public static class HbNewton2D
     /// The G/C spectra are NOT folded (unlike <see cref="HbFft2D.Forward2D"/>): the k₂=0 negative-k₁
     /// conjugate bins are retained so SpecGet can reconstruct every difference/sum lookup the
     /// Jacobian needs. On the retained half-plane this convention agrees bin-for-bin with Forward2D.
+    /// Each <c>w ≥ 2</c> bucket a device produces comes back as a <see cref="Bucket2D"/> with its
+    /// injection and its derivative spectrum in exactly those two conventions.
     /// </summary>
-    public static (Complex[,] iNl, Complex[,] qNl, Complex[][,] G, Complex[][,] C)
+    public static (Complex[,] iNl, Complex[,] qNl, Complex[][,] G, Complex[][,] C, List<Bucket2D> buckets)
         EvaluateNonlinear2D(Complex[,] V, MixingGrid grid, int N, int N1, int N2,
             ElaboratedNetlist netlist, int[] interfaceNodes, PortTermTimes2D[]? portITime = null)
     {
@@ -233,6 +277,10 @@ public static class HbNewton2D
         var dgTime = new double[N * N][,];
         var dcTime = new double[N * N][,];
         for (int idx = 0; idx < N * N; idx++) { dgTime[idx] = new double[N1, N2]; dcTime[idx] = new double[N1, N2]; }
+
+        // Per-(device, w) grid buffers for the w≥2 buckets, as HbNewton.RunDevicePass keeps them.
+        var bucketTime = new Dictionary<(int nlIdx, int w),
+            (ComponentModel model, double[][,] wTime, double[][,] dwTime)>();
 
         for (int devOrd = 0; devOrd < netlist.NonlinearComponents.Count; devOrd++)
         {
@@ -309,6 +357,21 @@ public static class HbNewton2D
                                  portPlusIdx[q], portMinusIdx[q], t1, t2, res.Dc[p, q]);
                     }
                 }
+
+                foreach (var term in res.Terms)
+                {
+                    if (!bucketTime.TryGetValue((nlIdx, term.W), out var bt))
+                        bucketTime[(nlIdx, term.W)] = bt = (ec.Model, Grids(N, N1, N2), Grids(N * N, N1, N2));
+                    var devW = devPort?.HigherFor(term.W);
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        if (devW is not null) devW[p][t1, t2] = term.Value[p];
+                        PortAdd(bt.wTime, portPlusIdx[p], portMinusIdx[p], t1, t2, term.Value[p]);
+                        for (int q = 0; q < portCount; q++)
+                            PortAdd4(bt.dwTime, N, portPlusIdx[p], portMinusIdx[p],
+                                     portPlusIdx[q], portMinusIdx[q], t1, t2, term.Jac[p, q]);
+                    }
+                }
             }
         }
 
@@ -334,7 +397,32 @@ public static class HbNewton2D
             G[idx] = ForwardConv2D(dgTime[idx], N1, N2);
             C[idx] = ForwardConv2D(dcTime[idx], N1, N2);
         }
-        return (iNl, qNl, G, C);
+
+        var buckets = new List<Bucket2D>(bucketTime.Count);
+        foreach (var ((_, w), (model, wTime, dwTime)) in bucketTime)
+        {
+            var wNl = new Complex[N, M];
+            for (int n = 0; n < N; n++)
+            {
+                var wSpec = ForwardConv2D(wTime[n], N1, N2);
+                for (int m = 0; m < M; m++)
+                {
+                    var (k1, k2) = grid.ToneOf(m);
+                    wNl[n, m] = HbFft2D.SpecGet(wSpec, k1, k2);
+                }
+            }
+            var dw = new Complex[N * N][,];
+            for (int idx = 0; idx < N * N; idx++) dw[idx] = ForwardConv2D(dwTime[idx], N1, N2);
+            buckets.Add(new Bucket2D(model, w, wNl, dw));
+        }
+        return (iNl, qNl, G, C, buckets);
+    }
+
+    private static double[][,] Grids(int rows, int N1, int N2)
+    {
+        var a = new double[rows][,];
+        for (int r = 0; r < rows; r++) a[r] = new double[N1, N2];
+        return a;
     }
 
     /// <summary>
@@ -387,11 +475,12 @@ public static class HbNewton2D
 
     /// <summary>
     /// Two-tone residual: F[n,mix] = iSrc[mix][n] + Σ_m yNN[mix][n,m]·V[m,mix] + iNl[n,mix]
-    ///                              + j·ω(mix)·qNl[n,mix].
+    ///                              + j·ω(mix)·qNl[n,mix] + Σ_w H[w](ω(mix))·WNl[n,mix].
     /// ω(mix) = 2π(k₁f₁ + k₂f₂) (signed). DC (mix=0 = (0,0)): Im part of F is forced to 0.
     /// </summary>
     public static double[] BuildF2D(Complex[,] V, Complex[][,] yNN, Complex[][] iSrc,
-        Complex[,] iNl, Complex[,] qNl, MixingGrid grid, int N, double f1, double f2)
+        Complex[,] iNl, Complex[,] qNl, MixingGrid grid, int N, double f1, double f2,
+        IReadOnlyList<Bucket2D>? buckets = null)
     {
         int M   = grid.MixCount;
         int dof = 2 * N * M;
@@ -410,6 +499,7 @@ public static class HbNewton2D
 
             double omegaMix = OmegaOf(grid, mix, f1, f2);
             if (mix != 0) f += new Complex(0, omegaMix) * qNl[n, mix];
+            f += BucketInjection(buckets, n, mix, omegaMix);
 
             F[rRe] = f.Real;
             // DC (mix=0 = (0,0)): Im part of F is always 0 (real signal — Maas §7.3).
@@ -424,15 +514,28 @@ public static class HbNewton2D
     /// Two-tone analytic Jacobian. For each (row node n, row mix (k₁,k₂)) × (col node m, col mix
     /// (i₁,i₂)) the conductive block is wD·G[(k₁−i₁,k₂−i₂)] + wS·G[(k₁+i₁,k₂+i₂)] with per-axis
     /// weights from <see cref="HbFft2D.ConversionWeight2D"/>; the charge block adds the same
-    /// structure rotated by j·ω(row mix). Y_NN sits on the mix==mix diagonal; the (0,0) DC index
-    /// gets the Maas §7.3 real-only special cases.
+    /// structure rotated by j·ω(row mix), and each weighted bucket the same structure multiplied by
+    /// its <c>H[w](ω(row mix))</c> — <see cref="HbNewton.BuildJ"/>'s bucket block on the 2-D lattice.
+    /// Y_NN sits on the mix==mix diagonal; the (0,0) DC index gets the Maas §7.3 real-only special
+    /// cases.
     /// </summary>
     public static double[] BuildJ2D(Complex[][,] yNN, Complex[][,] G, Complex[][,] C,
-        MixingGrid grid, int N, double f1, double f2, int guardOrder = 0)
+        MixingGrid grid, int N, double f1, double f2, int guardOrder = 0,
+        IReadOnlyList<Bucket2D>? buckets = null)
     {
         int M   = grid.MixCount;
         int dof = 2 * N * M;
         var J   = new double[dof * dof];
+
+        // H[w] per bucket per row product — constant for the whole build, as HbNewton.BuildJ's hkCache.
+        Complex[,]? hW = null;
+        if (buckets is { Count: > 0 })
+        {
+            hW = new Complex[buckets.Count, M];
+            for (int bi = 0; bi < buckets.Count; bi++)
+            for (int k = 0; k < M; k++)
+                hW[bi, k] = HbNewton.WeightAt(buckets[bi].Model, buckets[bi].W, OmegaOf(grid, k, f1, f2));
+        }
 
         for (int n = 0; n < N; n++)
         for (int kMix = 0; kMix < M; kMix++)
@@ -474,6 +577,21 @@ public static class HbNewton2D
                 double cb11 =  wD * Cd.Real      - wS * Cs.Real;
                 a00 += -omegaK * cb10;  a01 += -omegaK * cb11;
                 a10 +=  omegaK * cb00;  a11 +=  omegaK * cb01;
+
+                if (hW is not null)
+                    for (int bi = 0; bi < buckets!.Count; bi++)
+                    {
+                        var dnm = buckets[bi].Dw[n * N + m];
+                        Complex Dd = HbFft2D.SpecGet(dnm, d1, d2);
+                        Complex Ds = HbFft2D.SpecGet(dnm, s1, s2);
+                        double d00 =  wD * Dd.Real      + wS * Ds.Real;
+                        double d01 = -wD * Dd.Imaginary + wS * Ds.Imaginary;
+                        double d10 =  wD * Dd.Imaginary + wS * Ds.Imaginary;
+                        double d11 =  wD * Dd.Real      - wS * Ds.Real;
+                        double ha = hW[bi, kMix].Real, hb = hW[bi, kMix].Imaginary;
+                        a00 += ha * d00 - hb * d10;  a01 += ha * d01 - hb * d11;
+                        a10 += hb * d00 + ha * d10;  a11 += hb * d01 + ha * d11;
+                    }
 
                 // Guard: hard cutoff above total order guardOrder (J only). Applies to G/C, not Y_NN.
                 if (guardOrder > 0 &&
@@ -531,8 +649,8 @@ public static class HbNewton2D
         int M   = grid.MixCount;
         int dof = 2 * N * M;
 
-        var (iNl0, qNl0, G0, C0) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes);
-        double[] analyticJ = BuildJ2D(yNN, G0, C0, grid, N, f1, f2);
+        var (iNl0, qNl0, G0, C0, b0) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes);
+        double[] analyticJ = BuildJ2D(yNN, G0, C0, grid, N, f1, f2, buckets: b0);
 
         double[] fdJ = new double[dof * dof];
         for (int j = 0; j < dof; j++)
@@ -547,13 +665,13 @@ public static class HbNewton2D
 
             var Vp = (Complex[,])V.Clone();
             Vp[jNode, jMix] += jIsIm ? new Complex(0, eps) : new Complex(eps, 0);
-            var (iNlp, qNlp, _, _) = EvaluateNonlinear2D(Vp, grid, N, N1, N2, netlist, interfaceNodes);
-            double[] Fp = BuildF2D(Vp, yNN, iSrc, iNlp, qNlp, grid, N, f1, f2);
+            var (iNlp, qNlp, _, _, bp) = EvaluateNonlinear2D(Vp, grid, N, N1, N2, netlist, interfaceNodes);
+            double[] Fp = BuildF2D(Vp, yNN, iSrc, iNlp, qNlp, grid, N, f1, f2, bp);
 
             var Vm = (Complex[,])V.Clone();
             Vm[jNode, jMix] += jIsIm ? new Complex(0, -eps) : new Complex(-eps, 0);
-            var (iNlm, qNlm, _, _) = EvaluateNonlinear2D(Vm, grid, N, N1, N2, netlist, interfaceNodes);
-            double[] Fm = BuildF2D(Vm, yNN, iSrc, iNlm, qNlm, grid, N, f1, f2);
+            var (iNlm, qNlm, _, _, bm) = EvaluateNonlinear2D(Vm, grid, N, N1, N2, netlist, interfaceNodes);
+            double[] Fm = BuildF2D(Vm, yNN, iSrc, iNlm, qNlm, grid, N, f1, f2, bm);
 
             for (int r = 0; r < dof; r++)
                 fdJ[r * dof + j] = (Fp[r] - Fm[r]) / (2.0 * eps);
@@ -623,9 +741,9 @@ public static class HbNewton2D
     /// Values are numerically identical to INl at nodes belonging exclusively to this device
     /// (both follow the passive-sign convention: positive = current INTO the device port = FROM node).
     ///
-    /// <para>A terminal current is <c>FT{I[p,0]} + jω(m)·FT{I[p,1]}</c> — conduction PLUS charge,
-    /// the same sum the residual forms at the node. The conduction term alone reports a
-    /// charge-only branch as exactly zero.</para>
+    /// <para>A terminal current is <c>FT{I[p,0]} + jω(m)·FT{I[p,1]} + Σ_w H[w](ω(m))·FT{I[p,w]}</c>
+    /// — conduction, charge and every weighted term, the same sum the residual forms at the node.
+    /// The conduction term alone reports a charge-only branch as exactly zero.</para>
     /// </summary>
     public static Dictionary<string, Complex[]> ComputeDevicePortCurrents2D(
         Complex[,]        V,
@@ -706,6 +824,11 @@ public static class HbNewton2D
                         portTerms.W0[p][t1, t2] = res.I[p];
                         portTerms.W1[p][t1, t2] = res.Q[p];
                     }
+                    foreach (var term in res.Terms)
+                    {
+                        var devW = portTerms.HigherFor(term.W);
+                        for (int p = 0; p < portCount; p++) devW[p][t1, t2] = term.Value[p];
+                    }
                 }
             }
 
@@ -726,6 +849,17 @@ public static class HbNewton2D
                         iAmpl[m] += new Complex(0, OmegaOf(grid, m, f1, f2))
                                   * HbFft2D.SpecGet(qSpec, k1, k2);
                 }
+                if (portTerms.Higher is { Count: > 0 })
+                    foreach (var (w, rows) in portTerms.Higher)
+                    {
+                        var wSpec = ForwardConv2D(rows[p], N1, N2);
+                        for (int m = 0; m < M; m++)
+                        {
+                            var (k1, k2) = grid.ToneOf(m);
+                            iAmpl[m] += HbNewton.WeightAt(ec.Model, w, OmegaOf(grid, m, f1, f2))
+                                      * HbFft2D.SpecGet(wSpec, k1, k2);
+                        }
+                    }
                 result[key] = iAmpl;
 
                 // Also emit a 0-based port-index alias ("M1:0", "M1:1", …) so generic SDDs

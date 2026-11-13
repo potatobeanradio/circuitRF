@@ -18,12 +18,10 @@ namespace CircuitRF.Engine.Tests.HarmonicBalance;
 /// scale, into a nonlinear current, through a Newton solve and back out as a voltage at a load is
 /// exactly what is being gated.</para>
 ///
-/// <para><b>Every block in here has a REAL S-matrix</b> — the attenuator, the circulator, the
-/// in-phase coupler. The 90° hybrid is deliberately absent and that is not an oversight: its
-/// quadrature half rides in an <c>H[2]</c> weighting bucket, and the multi-tone Newton loops
-/// (<c>HbNewton2D</c>, <c>HbNewtonNd</c>) read no buckets at all — only the single-tone
-/// <c>HbNewton</c> does. See <c>The90DegreeHybridsQuadratureHalfIsLostInAMultiToneRun</c> at the
-/// bottom, which measures that rather than asserting it, and <c>src/Core/RESOLVED.md</c>.</para>
+/// <para>The attenuator, the circulator and the in-phase coupler have a REAL S-matrix. The 90° hybrid
+/// is the one whose S is complex: its quadrature half rides in an <c>H[2]</c> weighting bucket, which
+/// every multi-tone solver carries since <c>MultiToneWeightedTermsTests</c> (where it is held to the
+/// single-tone HB); before that a two-tone run dropped it and saw four open circuits.</para>
 /// </summary>
 public class PassiveIntermodHbTests(ITestOutputHelper output)
 {
@@ -261,24 +259,15 @@ R:R4  n4 0  R=50
         Assert.True(v4 < 1e-9 * v2, $"the isolated port holds {v4:E3} V of product");
     }
 
-    // ── The one thing that does NOT work, measured rather than asserted ────────
+    // ── The quadrature hybrid: a complex S, carried by its H[2] bucket ─────────
 
     [Fact]
-    public void The90DegreeHybridsQuadratureHalfIsLostInAMultiToneRun()
+    public void AQuadratureHybridsProduct_ComesOutAtTheStatedLevel_InQuadratureLikeTheSignal()
     {
-        // NOT a gate on desired behaviour — a gate on a KNOWN ENGINE GAP, so that closing it fails
-        // this test and forces the write-up to be corrected rather than quietly rotting.
-        //
-        // A block whose S is complex carries half of itself in an H[2](ω) = j·sign(ω) weighting
-        // bucket. HbNewton (single tone) honours buckets; HbNewton2D and HbNewtonNd do not read
-        // Terms at all, so in a TWO-TONE run the hybrid's Im(Y) is dropped and what is left is
-        // Re(Y) — which for the ideal quadrature hybrid is exactly zero, i.e. four open circuits.
-        // The symptom is therefore loud rather than subtle: no carrier gets through.
-        //
-        // src/Engine is out of scope for the SYS series by its own convention, so this is reported
-        // and not fixed here. The fix is to mirror HbNewton's bucket handling (:349, :783, :811)
-        // into HbNewton2D and HbNewtonNd; it would also repair the SDD's user-defined H[w], which
-        // has the same gap today.
+        // Half of this block's admittance — for the ideal hybrid, all of it — rides in an H[2](ω) = j·sign(ω)
+        // weighting bucket. Until the multi-tone solvers carried buckets, this run delivered −276 dBm to the through
+        // port and read the source node 6 dB high: the hybrid was four open circuits. Now the product comes out where
+        // the specification puts it, split like the carrier and in the carrier's own quadrature.
         string cnl = $@"
 {Source(43.0)}
 Coupler:H1  n1 0 n2 0 n3 0 n4 0  Coupling=3.0103 Phase=90 deg Directivity=200 IL=0 RL=200 PIM=-110 PIMPc=43
@@ -289,15 +278,17 @@ R:R4  n4 0  R=50
 ";
         var ds = Run(cnl);
 
-        double drive   = PDbm(ds, "n1", 1, 0);
-        double through = PDbm(ds, "n2", 1, 0);
-        output.WriteLine($"two-tone HB, PIM ON: drive {drive:F3} dBm at n1, {through:F3} dBm at n2 "
-                       + $"— a 3 dB hybrid should deliver about {drive - 3.01:F3}");
+        double thru = PDbm(ds, "n2", 2, -1);
+        double cpl  = PDbm(ds, "n3", 2, -1);
+        double carrierSplit = PDbm(ds, "n2", 1, 0) - PDbm(ds, "n3", 1, 0);
+        double Quadrature(int k1, int k2) =>
+            (TwoToneMeasurements.Tone(ds, 0, "n3", k1, k2) / TwoToneMeasurements.Tone(ds, 0, "n2", k1, k2)).Phase * 180 / Math.PI;
+        output.WriteLine($"carrier: drive {PDbm(ds, "n1", 1, 0):F4} dBm, thru {PDbm(ds, "n2", 1, 0):F4} dBm, cpl/thru ∠{Quadrature(1, 0):F4}°; "
+                       + $"product: thru {thru:F4} dBm, cpl {cpl:F4} dBm, cpl/thru ∠{Quadrature(2, -1):F4}°");
 
-        Assert.True(through < drive - 30.0,
-            $"the quadrature bucket now REACHES the multi-tone solver ({through:F3} dBm at the "
-          + $"through port against a {drive:F3} dBm drive). That is good news: HbNewton2D/HbNewtonNd "
-          + $"have gained bucket support. Delete this test, gate the hybrid's PIM level alongside "
-          + $"the other blocks, and correct the note in src/Core/RESOLVED.md.");
+        Assert.Equal(-110.0, thru, 1);
+        Assert.Equal(carrierSplit, thru - cpl, 3);
+        Assert.Equal(-90.0, Quadrature(1, 0), 3);
+        Assert.Equal(Quadrature(1, 0), Quadrature(2, -1), 3);
     }
 }

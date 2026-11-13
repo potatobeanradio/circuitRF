@@ -1,4 +1,5 @@
 using System.Numerics;
+using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
@@ -194,6 +195,7 @@ public static class HbSmallSignal
         private readonly MixingLattice _l2;        // the difference lattice, order 2·O
         private readonly Complex[,,]   _g;         // [N, N, M2] one-sided full-amplitude
         private readonly Complex[,,]   _c;
+        private readonly IReadOnlyList<(ComponentModel Model, int W, Complex[,,] Dw)> _buckets;
         private readonly double[]      _omegas;    // per-tone ω_t
         private readonly int[]         _mixOf;     // sideband → half-space rep index
         private readonly int[]         _signOf;    // sideband → ±1
@@ -204,10 +206,13 @@ public static class HbSmallSignal
         /// <param name="ssOrder">The sideband diamond order — <c>SSMaxHarm</c>'s lattice form. Every
         /// retained representative of order at or below it contributes a <c>±</c> pair of sidebands;
         /// DC contributes one. Pass the lattice's own <c>MaxMixOrder</c> for no truncation.</param>
+        /// <param name="buckets">The <c>w ≥ 2</c> derivative spectra over <paramref name="diffLattice"/>,
+        /// as <see cref="LatticeSpectra"/> returns them; null or empty when no device has any.</param>
         public LatticeSidebands(MixingLattice lattice, MixingLattice diffLattice,
-            Complex[,,] g, Complex[,,] c, double[] omegas, int ssOrder)
+            Complex[,,] g, Complex[,,] c, double[] omegas, int ssOrder,
+            IReadOnlyList<(ComponentModel Model, int W, Complex[,,] Dw)>? buckets = null)
         {
-            _l = lattice; _l2 = diffLattice; _g = g; _c = c; _omegas = omegas;
+            _l = lattice; _l2 = diffLattice; _g = g; _c = c; _omegas = omegas; _buckets = buckets ?? [];
             _work = new int[lattice.ToneCount];
 
             int M = lattice.MixCount;
@@ -235,12 +240,9 @@ public static class HbSmallSignal
         public Complex G(int n, int m, int s, int t) => TwoSided(_g, n, m, s, t);
         public Complex C(int n, int m, int s, int t) => TwoSided(_c, n, m, s, t);
 
-        /// <summary>The T-tone path carries no <c>w ≥ 2</c> buckets — <see cref="HbNewtonNd"/>'s
-        /// Jacobian has none either, so there is nothing here that the nonlinear solve itself
-        /// modelled.</summary>
-        public int Buckets => 0;
-        public Complex Dw(int b, int n, int m, int s, int t) => Complex.Zero;
-        public Complex BucketWeight(int b, double omega) => Complex.Zero;
+        public int Buckets => _buckets.Count;
+        public Complex Dw(int b, int n, int m, int s, int t) => TwoSided(_buckets[b].Dw, n, m, s, t);
+        public Complex BucketWeight(int b, double omega) => HbNewton.WeightAt(_buckets[b].Model, _buckets[b].W, omega);
 
         /// <summary>2·ω_ss equal to a retained mixing frequency — the lattice form of
         /// <see cref="ToneSidebands.IsDegenerate"/>. Tested over the DIFFERENCE lattice, which is
@@ -903,7 +905,8 @@ public static class HbSmallSignal
     /// identity, because the index order is a locked contract about the narrow lattice and not a
     /// promise about the pair.</para>
     /// </summary>
-    public static (MixingLattice Diff, Complex[,,] G, Complex[,,] C) LatticeSpectra(
+    public static (MixingLattice Diff, Complex[,,] G, Complex[,,] C,
+                   List<(ComponentModel Model, int W, Complex[,,] Dw)> Buckets) LatticeSpectra(
         Complex[,] v, HbApft apft, double oversample, int nInt,
         ElaboratedNetlist netlist, int[] interfaceNodes)
     {
@@ -935,20 +938,21 @@ public static class HbSmallSignal
             for (int n = 0; n < nInt; n++) vWide[n, j] = v[n, m];
         }
 
-        var (_, _, dg, dc) = HbNewtonNd.EvaluateNonlinearNd(vWide, apft2, nInt, netlist, interfaceNodes);
+        var (_, _, dg, dc, bk) = HbNewtonNd.EvaluateNonlinearNd(vWide, apft2, nInt, netlist, interfaceNodes);
 
-        var g   = new Complex[nInt, nInt, m2];
-        var c   = new Complex[nInt, nInt, m2];
         var buf = new Complex[m2];
-        for (int n = 0; n < nInt; n++)
-        for (int m = 0; m < nInt; m++)
+        Complex[,,] Spectrum(double[][] samples)
         {
-            apft2.Analyze(dg[n * nInt + m], buf);
-            for (int k = 0; k < m2; k++) g[n, m, k] = buf[k];
-            apft2.Analyze(dc[n * nInt + m], buf);
-            for (int k = 0; k < m2; k++) c[n, m, k] = buf[k];
+            var a = new Complex[nInt, nInt, m2];
+            for (int n = 0; n < nInt; n++)
+            for (int m = 0; m < nInt; m++)
+            {
+                apft2.Analyze(samples[n * nInt + m], buf);
+                for (int k = 0; k < m2; k++) a[n, m, k] = buf[k];
+            }
+            return a;
         }
-        return (l2, g, c);
+        return (l2, Spectrum(dg), Spectrum(dc), [.. bk.Select(b => (b.Model, b.W, Spectrum(b.Dw)))]);
     }
 
     // ── Dense complex LU ─────────────────────────────────────────────────────

@@ -1503,10 +1503,10 @@ public sealed class HbEngine
             }
 
             int ssOrder = Math.Clamp(p.SsMaxHarm ?? p.MaxMixOrder, 0, p.MaxMixOrder);
-            var (diffLattice, gSpec, cSpec) = HbSmallSignal.LatticeSpectra(
+            var (diffLattice, gSpec, cSpec, wSpec) = HbSmallSignal.LatticeSpectra(
                 V, apft, _settings.HbApftOversample, N, _netlist, ifNodes);
             var sidebandsNd = new HbSmallSignal.LatticeSidebands(
-                lattice, diffLattice, gSpec, cSpec, omegas, ssOrder);
+                lattice, diffLattice, gSpec, cSpec, omegas, ssOrder, wSpec);
             if (ssOrder < p.MaxMixOrder)
                 _netlist.AddNoteOnce("wsprobe.hb-ss-maxharm",
                     $"WSProbe small-signal sweep: SSMaxHarm = {ssOrder} truncates the sideband set " +
@@ -1529,9 +1529,9 @@ public sealed class HbEngine
             if (T >= 3)
                 throw new InvalidOperationException(HbNoiseDiagnostics.TonesUnsupported(T).Render());
             int ssOrder = Math.Clamp(p.SsMaxHarm ?? p.MaxMixOrder, 0, p.MaxMixOrder);
-            var (diffLattice, gSpec, cSpec) = HbSmallSignal.LatticeSpectra(
+            var (diffLattice, gSpec, cSpec, wSpec) = HbSmallSignal.LatticeSpectra(
                 V, apft, _settings.HbApftOversample, N, _netlist, ifNodes);
-            var sidebandsNd = new HbSmallSignal.LatticeSidebands(lattice, diffLattice, gSpec, cSpec, omegas, ssOrder);
+            var sidebandsNd = new HbSmallSignal.LatticeSidebands(lattice, diffLattice, gSpec, cSpec, omegas, ssOrder, wSpec);
             var sideValues = new double[sidebandsNd.Count];
             var sideLabels = new string[sidebandsNd.Count];
             for (int s = 0; s < sidebandsNd.Count; s++)

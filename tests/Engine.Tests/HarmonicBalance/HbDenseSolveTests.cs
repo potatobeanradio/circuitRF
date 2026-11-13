@@ -92,7 +92,7 @@ public class HbDenseSolveTests(ITestOutputHelper output)
             for (int m = 1; m < M; m++) V[n, m] = new Complex(1e-3, 1e-3);
         }
 
-        var (iNl, qNl, dg, dcw) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, netlist, ifNodes);
+        var (iNl, qNl, dg, dcw, _) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, netlist, ifNodes);
         var J = HbNewtonNd.BuildJNd(yNN, dg, dcw, apft, N, toneFreqs);
         var F = HbNewtonNd.BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqs);
 
