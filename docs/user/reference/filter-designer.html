@@ -85,19 +85,23 @@ the existing optimizer's problem, on an E-series or on a part.</p>
 </tr>
 <tr>
 <td>Response</td>
-<td>Above the plots. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian.</td>
+<td>In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian.</td>
 </tr>
 <tr>
 <td>Form</td>
 <td>Lowpass, highpass, bandpass, bandstop.</td>
 </tr>
 <tr>
+<td>Order</td>
+<td><strong>Minimum</strong> is the smallest prototype order that meets Ap, As and the mask edges. <strong>Specify</strong> types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. An even-order inverse Chebyshev or elliptic steps to the next odd (those even orders have no LC ladder).</td>
+</tr>
+<tr>
 <td>Ap, As</td>
-<td>Passband and stopband figures, in dB. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. The others ignore them for the synthesis and the mask still draws them.</td>
+<td>Passband and stopband attenuation, in dB. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording.</td>
 </tr>
 <tr>
 <td>Edges</td>
-<td>Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). The unit sits on the row.</td>
+<td>Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. The unit sits on the row.</td>
 </tr>
 </tbody>
 </table>
@@ -111,11 +115,11 @@ a parallel LC in the through path or a series LC to ground. An even order of eit
 finite floor at infinite frequency, and a ladder cannot, so the window keeps the ideal curve and
 says so.</p>
 <h2 id="mask">The plot</h2>
-<p>The two plots sit side by side across the top, with the response and <strong>dB / division</strong> on the row
-above them. Both are Data Display plots. The magnitude plot carries the ideal |S21|, the ladder's
-|S21|, and the ladder's |S11| on the right axis. The phase plot is the ladder's phase and its group
-delay, in the same nanoseconds the rest of the application uses. <strong>dB / division</strong> is the
-magnitude plot's vertical grid. The ladder is drawn underneath.</p>
+<p>The two plots sit side by side across the top. Both are Data Display plots. The magnitude plot
+carries the ideal |S21|, the ladder's |S21|, and the ladder's |S11| on the right axis. The phase
+plot is the ladder's phase and its group delay, in the same nanoseconds the rest of the application
+uses. The ladder is drawn underneath: a series LC stub shares one column, and a parallel LC in the
+through path shares one series column so the pins meet.</p>
 <p><strong>Design</strong> and <strong>Redraw</strong> both rebuild the ladder and the curves. The synthesis is closed form, so
 there is no separate long step to wait for.</p>
 <p>Design information reports the order, the ladder's load, and the minimum insertion loss in the

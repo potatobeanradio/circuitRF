@@ -52,7 +52,10 @@ the value by name.
 
 `FilterDesignerViewModel.Design` is the rebuild. It evaluates `FilterNetwork` for the ideal curve,
 builds the ladder, snaps it, elaborates the `.cnl` and runs `SParameterEngine`. Both curves go on
-one magnitude plot; phase and group delay go on the second.
+one magnitude plot; phase and group delay go on the second. `FilterOrder.Minimum` is the closed-form
+order for Butterworth, Chebyshev, inverse Chebyshev and elliptic against the mask; the window can
+take that or a typed override. `FilterLadderDrawing` maps tanks onto the Match layout so a series
+LC stub and a through-path parallel LC each occupy one column rather than a broken chain of shunts.
 
 `circuitrf filter` parses the specification and calls `FilterLadder.Synthesize` and
 `FilterValues.Snap`. It writes no second synthesis. Exit 0 with a ladder, 1 when the family has

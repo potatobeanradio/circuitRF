@@ -41,6 +41,16 @@ public sealed record FilterResponseChoice(FilterResponse Value, string Label)
     public override string ToString() => Label;
 }
 
+/// <summary>Whether the order is the smallest that meets the mask, or a typed override.</summary>
+public enum FilterOrderMode
+{
+    /// <summary>The closed-form minimum for the family and the mask edges.</summary>
+    Minimum,
+
+    /// <summary>The order in the Order box.</summary>
+    Specify,
+}
+
 /// <summary>
 /// The Filter Assistant. The specification is the one on the assistant screenshots — source and
 /// load, first element, order, the mask frequencies, Ap and As, and the response family — and the
@@ -69,6 +79,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     /// <summary>Exact, or an IEC series.</summary>
     public IReadOnlyList<FilterSeriesKind> SeriesKinds { get; } = Enum.GetValues<FilterSeriesKind>();
+
+    /// <summary>Compute the smallest order that meets the mask, or type one.</summary>
+    public IReadOnlyList<FilterOrderMode> OrderModes { get; } =
+        [FilterOrderMode.Minimum, FilterOrderMode.Specify];
 
     /// <summary>The frequency unit the four edge boxes are typed in.</summary>
     public IReadOnlyList<string> Units { get; } = ["Hz", "kHz", "MHz", "GHz"];
@@ -116,28 +130,39 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private NetworkForm _form = NetworkForm.Bandpass;
     [ObservableProperty] private FilterFirstElement _first = FilterFirstElement.Parallel;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
+    [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     [ObservableProperty] private string _unit = "GHz";
     [ObservableProperty] private string _orderText = "5";
     [ObservableProperty] private string _apText = "3";
     [ObservableProperty] private string _asText = "20";
     [ObservableProperty] private string _sourceText = "50";
     [ObservableProperty] private string _loadText = "50";
-    [ObservableProperty] private string _dbPerDivText = "2";
     [ObservableProperty] private string _faText = "0.5";
     [ObservableProperty] private string _fbText = "1";
     [ObservableProperty] private string _fcText = "2";
     [ObservableProperty] private string _fdText = "2.5";
     [ObservableProperty] private bool _showC;
     [ObservableProperty] private bool _showD;
+    [ObservableProperty] private bool _orderEditable;
     [ObservableProperty] private string _labelA = "Fs1";
     [ObservableProperty] private string _labelB = "Fp1";
     [ObservableProperty] private string _labelC = "Fp2";
     [ObservableProperty] private string _labelD = "Fs2";
+    [ObservableProperty] private string _tipA = "";
+    [ObservableProperty] private string _tipB = "";
+    [ObservableProperty] private string _tipC = "";
+    [ObservableProperty] private string _tipD = "";
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _designInfo = "";
     [ObservableProperty] private FilterLibrarySeries? _inductorChoice;
     [ObservableProperty] private FilterLibrarySeries? _capacitorChoice;
     [ObservableProperty] private bool _libraryAvailable;
+
+    /// <summary>Ap — passband attenuation (ripple for Chebyshev and elliptic).</summary>
+    public string TipAp { get; } = "Passband attenuation, in dB.";
+
+    /// <summary>As — stopband attenuation floor.</summary>
+    public string TipAs { get; } = "Stopband attenuation, in dB.";
 
     /// <summary>The ladder as the Match Designer's own schematic canvas draws it.</summary>
     [ObservableProperty] private MatchLadderLayout _ladder = MatchLadderLayout.Empty;
@@ -148,6 +173,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public FilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
+        OrderEditable = false;
         MagnitudeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 0, 640, 280);
         PhaseContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 280, 640, 220);
         MagnitudePlot.Axes.LockedPanning = true;
@@ -161,6 +187,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         var match = ResponseChoices.First(c => c.Value == value);
         if (!Equals(ResponseChoice, match)) ResponseChoice = match;
+        OrderEditable = OrderMode == FilterOrderMode.Specify
+                        || value is FilterResponse.Bessel or FilterResponse.Gaussian;
         Design();
     }
 
@@ -169,10 +197,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (value is not null && value.Value != Response) Response = value.Value;
     }
 
-    partial void OnDbPerDivTextChanged(string value) => Design();
     partial void OnFirstChanged(FilterFirstElement value) => Design();
     partial void OnSeriesChanged(FilterSeriesKind value) => Design();
     partial void OnUnitChanged(string value) => Design();
+    partial void OnOrderModeChanged(FilterOrderMode value)
+    {
+        OrderEditable = value == FilterOrderMode.Specify
+                        || Response is FilterResponse.Bessel or FilterResponse.Gaussian;
+        Design();
+    }
     partial void OnInductorChoiceChanged(FilterLibrarySeries? value) => Design();
     partial void OnCapacitorChoiceChanged(FilterLibrarySeries? value) => Design();
 
@@ -183,19 +216,29 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             case NetworkForm.Lowpass:
                 LabelA = "Fp"; LabelB = "Fs"; ShowC = false; ShowD = false;
+                TipA = "Passband frequency."; TipB = "Stopband frequency edge.";
+                TipC = TipD = "";
                 break;
             case NetworkForm.Highpass:
                 LabelA = "Fs"; LabelB = "Fp"; ShowC = false; ShowD = false;
+                TipA = "Stopband frequency edge."; TipB = "Passband frequency.";
+                TipC = TipD = "";
                 break;
             case NetworkForm.Bandstop:
                 LabelA = "Fp1"; LabelB = "Fs1"; LabelC = "Fs2"; LabelD = "Fp2";
                 ShowC = true; ShowD = true;
+                TipA = "Lower passband frequency."; TipB = "Lower stopband frequency edge.";
+                TipC = "Upper stopband frequency edge."; TipD = "Upper passband frequency.";
                 break;
             default:
                 LabelA = "Fs1"; LabelB = "Fp1"; LabelC = "Fp2"; LabelD = "Fs2";
                 ShowC = true; ShowD = true;
+                TipA = "Lower stopband frequency edge."; TipB = "Lower passband frequency.";
+                TipC = "Upper passband frequency."; TipD = "Upper stopband frequency edge.";
                 break;
         }
+        OrderEditable = OrderMode == FilterOrderMode.Specify
+                        || Response is FilterResponse.Bessel or FilterResponse.Gaussian;
         Design();
     }
 
@@ -261,10 +304,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         }
 
         double minIl = MinimumInsertionLoss(ladderSnp ?? idealSnp, freqs, spec);
-        DesignInfo = $"Order: {spec.Order}\nMinimum insertion loss: {minIl:0.0000} dB" +
+        DesignInfo = $"Order: {spec.Order}" +
+                     (spec.OrderFromMinimum ? " (minimum for the mask)" : "") +
+                     $"\nMinimum insertion loss: {minIl:0.0000} dB" +
                      (built.Realization is { } r ? $"\nLoad: {r.LoadOhms:0.###} Ω" : "");
         Status = note;
-        BuildPlots(idealSnp, ladderSnp, spec.DbPerDiv);
+        BuildPlots(idealSnp, ladderSnp);
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
@@ -329,18 +374,17 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private void ApplyLabelsWithoutDesign() { }
 
     private sealed record Spec(
-        FilterResponse Response, NetworkForm Form, int Order, FilterFirstElement First,
+        FilterResponse Response, NetworkForm Form, int Order, bool OrderFromMinimum,
+        FilterFirstElement First,
         double FcHz, double F1Hz, double F2Hz, double RippleDb, double AsDb,
-        double SourceOhms, double LoadOhms, double DbPerDiv,
+        double SourceOhms, double LoadOhms,
         double PassLoHz, double PassHiHz, bool PassIsOutside);
 
     private bool TrySpec(out Spec spec, out string? error)
     {
-        spec = new Spec(FilterResponse.Butterworth, NetworkForm.Lowpass, 1, FilterFirstElement.Series,
-                        1, 0, 0, 0.1, 20, 50, 50, 2, 0, 1, false);
+        spec = new Spec(FilterResponse.Butterworth, NetworkForm.Lowpass, 1, false,
+                        FilterFirstElement.Series, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false);
         error = null;
-        if (!int.TryParse(OrderText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int order) || order < 1)
-        { error = "Order is a whole number, 1 or more."; return false; }
         if (!double.TryParse(ApText, NumberStyles.Float, CultureInfo.InvariantCulture, out double ap) || ap < 0)
         { error = "Ap is a number of dB, zero or more."; return false; }
         if (!double.TryParse(AsText, NumberStyles.Float, CultureInfo.InvariantCulture, out double astop) || !(astop > 0))
@@ -349,39 +393,69 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         { error = "The source impedance is a positive number of ohms."; return false; }
         if (!double.TryParse(LoadText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rl) || !(rl > 0))
         { error = "The load impedance is a positive number of ohms."; return false; }
-        if (!double.TryParse(DbPerDivText, NumberStyles.Float, CultureInfo.InvariantCulture, out double db) || !(db > 0))
-            db = 2;
         double scale = UnitScale();
         if (!Hz(FaText, scale, out double a) || !Hz(FbText, scale, out double b))
         { error = "A frequency edge is a positive number."; return false; }
         Hz(FcText, scale, out double c);
         Hz(FdText, scale, out double d);
 
-        double fc, f1, f2, passLo, passHi;
+        double fc, f1, f2, passLo, passHi, fp = 0, fs = 0, fp1 = 0, fp2 = 0, fs1 = 0, fs2 = 0;
         bool outside;
         switch (Form)
         {
             case NetworkForm.Lowpass:
-                fc = a; f1 = f2 = 0; passLo = 0; passHi = a; outside = false; // A is Fp
+                // Inverse Chebyshev's Fc is the stopband edge; every other family's is the passband.
+                fp = a; fs = b;
+                fc = Response == FilterResponse.InvChebyshev ? b : a;
+                f1 = f2 = 0; passLo = 0; passHi = a; outside = false;
                 break;
             case NetworkForm.Highpass:
-                fc = b; f1 = f2 = 0; passLo = b; passHi = double.PositiveInfinity; outside = false; // B is Fp
+                fs = a; fp = b;
+                fc = Response == FilterResponse.InvChebyshev ? a : b;
+                f1 = f2 = 0; passLo = b; passHi = double.PositiveInfinity; outside = false;
                 break;
             case NetworkForm.Bandstop:
                 // A Fp1, B Fs1, C Fs2, D Fp2. The cutoff pair is the stopband.
                 if (!(b > 0) || !(c > b)) { error = "A bandstop needs 0 < Fs1 < Fs2."; return false; }
+                fp1 = a; fs1 = b; fs2 = c; fp2 = d;
                 fc = 0; f1 = b; f2 = c; passLo = a; passHi = d; outside = true;
                 break;
             default:
                 if (!(b > 0) || !(c > b)) { error = "A bandpass needs 0 < Fp1 < Fp2."; return false; }
+                fs1 = a; fp1 = b; fp2 = c; fs2 = d;
                 fc = 0; f1 = b; f2 = c; passLo = b; passHi = c; outside = false;
                 break;
         }
+
+        bool fromMin = false;
+        int order;
+        if (OrderMode == FilterOrderMode.Minimum
+            && Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
+        {
+            var n = FilterOrder.Minimum(Response, Form, ap, astop, fp, fs, fp1, fp2, fs1, fs2);
+            if (n is null)
+            {
+                error = "The mask edges do not form a transition (Fs must sit outside the passband).";
+                return false;
+            }
+            order = n.Value;
+            // Even-order inverse Chebyshev and elliptic have no LC ladder; step to the next odd.
+            if ((Response is FilterResponse.InvChebyshev or FilterResponse.Elliptic) && (order & 1) == 0)
+                order++;
+            fromMin = true;
+            OrderText = order.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            if (!int.TryParse(OrderText, NumberStyles.Integer, CultureInfo.InvariantCulture, out order) || order < 1)
+            { error = "Order is a whole number, 1 or more."; return false; }
+        }
+
         // Chebyshev and elliptic read Ap as the ripple. The other families ignore it, and a 0 would
         // be refused by the prototype, so a maximally-flat Ap of 0 stays 0 and is not passed.
         double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
             ? (ap > 0 ? ap : 0.1) : 0.1;
-        spec = new Spec(Response, Form, order, First, fc, f1, f2, ripple, astop, rs, rl, db,
+        spec = new Spec(Response, Form, order, fromMin, First, fc, f1, f2, ripple, astop, rs, rl,
                         passLo, passHi, outside);
         return true;
     }
@@ -441,19 +515,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// The same placement the Match Designer uses, so the filter is a circuitRF schematic rather
     /// than a table of numbers.
     /// </summary>
-    private static MatchLadderLayout LadderOf(IReadOnlyList<FilterElement> used, double rs, double rl)
-    {
-        var net = new MatchNetwork { R1 = rs, R2 = rl };
-        foreach (var e in used)
-            net.Elements.Add(new MatchElement
-            {
-                Name = e.Name,
-                Type = e.Inductor ? ElementType.L : ElementType.C,
-                IsShunt = e.Shunt,
-                Value = e.Value,
-            });
-        return MatchLadderLayout.Build(net, applied: null, valueText: el => Eng(el.Type == ElementType.L, el.Value));
-    }
+    private static MatchLadderLayout LadderOf(IReadOnlyList<FilterElement> used, double rs, double rl) =>
+        FilterLadderDrawing.Build(used, rs, rl, Eng);
 
     private void FillRows(IReadOnlyList<FilterElement> exact, List<FilterElement> used)
     {
@@ -537,7 +600,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return double.IsPositiveInfinity(best) ? 0 : Math.Max(0, best);
     }
 
-    private void BuildPlots(SNP ideal, SNP? ladder, double dbPerDiv)
+    private void BuildPlots(SNP ideal, SNP? ladder)
     {
         MagnitudePlot.Traces.Clear();
         PhasePlot.Traces.Clear();
@@ -570,9 +633,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         MagnitudePlot.CustomTitleOn = true;
         MagnitudePlot.CustomTitle = "Insertion loss";
         MagnitudePlot.Autoscale(force: true);
-        // After autoscale, keep the grid at the requested dB spacing. SetTicks overwrites YTick
-        // when the window is assigned, so this assignment has to come last.
-        MagnitudePlot.Axes.YTick = dbPerDiv;
         PhasePlot.CustomTitleOn = true;
         PhasePlot.CustomTitle = "Phase and group delay";
         PhasePlot.Autoscale(force: true);

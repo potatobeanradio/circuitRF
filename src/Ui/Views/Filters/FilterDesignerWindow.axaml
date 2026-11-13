@@ -93,29 +93,40 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Topology"/>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
                                 <TextBlock Classes="lbl" Text="First"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding FirstElements}"
                                           SelectedItem="{Binding First}"/>
                                 <TextBlock Grid.Row="1" Classes="lbl" Text="Order"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding OrderText}"/>
+                                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding OrderModes}"
+                                          SelectedItem="{Binding OrderMode}"
+                                          ToolTip.Tip="Minimum is the smallest prototype order that meets Ap, As and the mask edges. Specify overrides it."/>
+                                <TextBlock Grid.Row="2" Classes="lbl" Text="N"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding OrderText}"
+                                         IsEnabled="{Binding OrderEditable}"
+                                         ToolTip.Tip="Prototype order. A bandpass or bandstop replaces each element by a resonator. An even-order inverse Chebyshev or elliptic has no ladder."/>
                             </Grid>
-                            <TextBlock Classes="note" Text="Order is the prototype order. A bandpass or bandstop replaces each element by a resonator. An even-order inverse Chebyshev or elliptic has no ladder."/>
                         </StackPanel>
                     </Border>
 
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Shape"/>
-                            <Grid ColumnDefinitions="70,*">
-                                <TextBlock Classes="lbl" Text="Form"/>
-                                <ComboBox Grid.Column="1" ItemsSource="{Binding Forms}" SelectedItem="{Binding Form}"/>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <TextBlock Classes="lbl" Text="Response"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding ResponseChoices}"
+                                          SelectedItem="{Binding ResponseChoice}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="Form"/>
+                                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Forms}"
+                                          SelectedItem="{Binding Form}"/>
                             </Grid>
                             <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
-                                <TextBlock Classes="lbl" Text="Ap, dB"/>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="As, dB"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding AsText}"/>
+                                <TextBlock Classes="lbl" Text="Ap, dB" ToolTip.Tip="{Binding TipAp}"/>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"
+                                         ToolTip.Tip="{Binding TipAp}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="As, dB" ToolTip.Tip="{Binding TipAs}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding AsText}"
+                                         ToolTip.Tip="{Binding TipAs}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -128,14 +139,20 @@
                                           MinWidth="72"/>
                             </Grid>
                             <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="{Binding LabelB}"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"/>
-                                <TextBlock Grid.Row="2" Classes="lbl" Text="{Binding LabelC}" IsVisible="{Binding ShowC}"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}" IsVisible="{Binding ShowC}"/>
-                                <TextBlock Grid.Row="3" Classes="lbl" Text="{Binding LabelD}" IsVisible="{Binding ShowD}"/>
-                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}" IsVisible="{Binding ShowD}"/>
+                                <TextBlock Classes="lbl" Text="{Binding LabelA}" ToolTip.Tip="{Binding TipA}"/>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"
+                                         ToolTip.Tip="{Binding TipA}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="{Binding LabelB}" ToolTip.Tip="{Binding TipB}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"
+                                         ToolTip.Tip="{Binding TipB}"/>
+                                <TextBlock Grid.Row="2" Classes="lbl" Text="{Binding LabelC}" IsVisible="{Binding ShowC}"
+                                           ToolTip.Tip="{Binding TipC}"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}"
+                                         IsVisible="{Binding ShowC}" ToolTip.Tip="{Binding TipC}"/>
+                                <TextBlock Grid.Row="3" Classes="lbl" Text="{Binding LabelD}" IsVisible="{Binding ShowD}"
+                                           ToolTip.Tip="{Binding TipD}"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}"
+                                         IsVisible="{Binding ShowD}" ToolTip.Tip="{Binding TipD}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -227,27 +244,17 @@
             </Grid>
         </Border>
 
-        <!-- ── Response plots, side by side, with the family above them ──── -->
+        <!-- ── Response plots, side by side ──────────────────────────────── -->
         <Border Grid.Column="1" Classes="pane">
-            <Grid RowDefinitions="Auto,*">
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto,72" Margin="0,0,0,6">
-                    <TextBlock Classes="lbl" Text="Response" Margin="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" MinWidth="180"
-                              ItemsSource="{Binding ResponseChoices}" SelectedItem="{Binding ResponseChoice}"
-                              HorizontalAlignment="Left"/>
-                    <TextBlock Grid.Column="3" Classes="lbl" Text="dB/div" Margin="0,0,8,0"/>
-                    <TextBox Grid.Column="4" Classes="num" Text="{Binding DbPerDivText}"/>
-                </Grid>
-                <Grid Grid.Row="1" ColumnDefinitions="*,*">
-                    <ddc:PlotControl Name="MagnitudePlotControl"
-                                     Plot="{Binding MagnitudePlot}"
-                                     Library="{Binding PlotHost.Library}"
-                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
-                    <ddc:PlotControl Grid.Column="1" Name="PhasePlotControl" Margin="6,0,0,0"
-                                     Plot="{Binding PhasePlot}"
-                                     Library="{Binding PlotHost.Library}"
-                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
-                </Grid>
+            <Grid ColumnDefinitions="*,*">
+                <ddc:PlotControl Name="MagnitudePlotControl"
+                                 Plot="{Binding MagnitudePlot}"
+                                 Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                <ddc:PlotControl Grid.Column="1" Name="PhasePlotControl" Margin="6,0,0,0"
+                                 Plot="{Binding PhasePlot}"
+                                 Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
             </Grid>
         </Border>
     </Grid>
