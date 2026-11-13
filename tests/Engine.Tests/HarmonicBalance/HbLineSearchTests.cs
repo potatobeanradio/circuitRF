@@ -199,10 +199,9 @@ public sealed class HbLineSearchTests(ITestOutputHelper output)
 
     /// <summary>
     /// The three-tone loop had the same defect and the same cure. Measured against the pre-HB-P3
-    /// engine on <c>hero5_3tone.cnl</c>: <b>17 dBm is the first level at which the undamped loop
-    /// fails</b> — it returns non-converged at ‖F‖ = 2.53e-1 there and at every level above (0.26 at
-    /// 18 dBm, 0.34 at 20). With the line search the same cold point converges in 8 iterations with
-    /// two backtracks.
+    /// engine on <c>hero5_3tone.cnl</c>, before issue 65: 17 dBm was the first level at which the
+    /// undamped loop failed (‖F‖ = 2.53e-1 there, 0.26 at 18 dBm, 0.34 at 20), and with the line search
+    /// the same cold point converged in 8 iterations with two backtracks.
     ///
     /// <para><b>The two-tone loops did NOT have a failure level to find, and the brief assumed they
     /// would.</b> Both routes — the mixing lattice (<c>HbNewtonNd</c>, the default since 2026-08-30)
@@ -217,9 +216,8 @@ public sealed class HbLineSearchTests(ITestOutputHelper output)
     /// search refuses a step at 24 and 26 dBm, which is what this now pins.</para>
     /// </summary>
     [Fact]
-    public void AThreeToneColdSolve_AtTheLevelTheUndampedLoopFailed_Converges()
+    public void AThreeToneColdSolve_WhereTheLineSearchBacktracks_Converges()
     {
-
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(TestDataDir("Hero5"), "hero5_3tone.cnl"));
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
         int idx = tb.GlobalVariables.FindIndex(v => v.Name == "Pavl_dbm");
@@ -241,8 +239,8 @@ public sealed class HbLineSearchTests(ITestOutputHelper output)
 
             Assert.True(rr.Converged, $"3-tone cold at {dbm} dBm did not converge");
             Assert.True(bt > 0,
-                $"at {dbm} dBm the line search refused no step — the level the pre-brief loop failed " +
-                "at has moved, and this test no longer pins what it says it does");
+                $"at {dbm} dBm the line search refused no step — the levels where it backtracks have moved, " +
+                "and this test no longer pins what it says it does");
             Assert.DoesNotContain(steps.SelectMany(s => s.IterTrace), r => r.Stalled);
         }
         tb.GlobalVariables[idx] = orig;

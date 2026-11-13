@@ -1115,8 +1115,8 @@ that span.
 **The three-tone loop did have one, and it is sharp: `hero5_3tone.cnl` at 17 dBm.** The pre-brief engine
 returns non-converged there (‖F‖ = 2.53e-1) and at every level above (0.26 at 18, 0.34 at 20); 16 dBm
 converges in 7. With the line search the same cold point converges in 8 iterations with two backtracks.
-That level is what `HbLineSearchTests.AThreeToneColdSolve_AtTheLevelTheUndampedLoopFailed_Converges`
-pins, and the test says in its own comment that the two-tone half of the brief's expectation was not
+That level is what `HbLineSearchTests.AThreeToneColdSolve_WhereTheLineSearchBacktracks_Converges`
+pinned until issue 65 removed the excess drive (it now pins 24 and 26 dBm, where the line search still backtracks), and the test says in its own comment that the two-tone half of the brief's expectation was not
 reproducible rather than manufacturing a fixture to make it so.
 
 ### A converging solve is NOT unconditionally byte-identical — the brief's fact 2 is half true
@@ -4565,11 +4565,19 @@ Gate: `EnvelopeDeviceOnlyNetTests` (2 s; 36.4 against 0.002 before the fix).
   the products add coherently. A first version took every coincidence there; closely spaced tones then became
   single-tone runs at hundreds of harmonics (2.00/2.01/2.02 GHz on 10 MHz) and five multi-tone tests hung or broke, so
   the owner narrowed it.
-- **Measured, loadpull settings (§3 of the issue).** An unswept CLI loadpull (`ConductanceRegularization = Always`), a
-  swept one and a GUI one gave bit-identical cubes on Hero3, Hero3B and the shipped Loadpull/LoadpullPursuit benches:
-  HB and the DC solve apply gmin unless the mode is `Never`, so `Always` and `IfNecessary` are the same there. What
-  differed was that `LoadpullEngine` dropped `NonlinearMaxIter` and `HbConsoleDiagnostics` when it copied its settings,
-  and a sweep handed it only the parallelism cap; both now carry through (`--max-iter` reaches the DC start, `--diag` the
-  trace; HB's own cap stays the directive's `MaxIter`).
+- **The single-tone run must keep the lattice's termination bands.** A source's or load tuner's `Z[k]`/`G[k]` band is
+  `round(f / f_c)`, and the lattice measures it from the MEAN of the tones; the first version let the single-tone run use
+  its own fundamental, so at 100/300 MHz the 300 MHz tone sat in band 3 instead of band 2 (and |Vs|, which is computed
+  from that impedance, moved with it). With `Z[2] = 10 Ω` the input read 0.316 V at 300 MHz and 0.236 V at 300.001 MHz.
+  `RunCommensurate` now hands the single-tone run the multi-tone ruler and the multi-tone default drive (a P1Tone with
+  no `Freq` drives at the first tone). A source with one flat `Z` never noticed, which is why the first gate passed.
+- **Seed chaining.** A commensurate point returns its single-tone interface seed, marked in a weak table so the next
+  commensurate point warm-starts from it and a lattice point never reads it as mixing products when its length happens
+  to equal M. Without it a swept commensurate run cold-started every point.
+- **Which sets take the single-tone run** is keyed on `MaxHarm`: every tone at most `MaxHarm` times the common
+  fundamental. The lattice itself never reads `MaxHarm` (its only knob is `MaxMixOrder`), so this is the one place it
+  matters on a multi-tone analysis; the user page says so. A sweep across tone frequency therefore mixes locked points
+  (exactly commensurate) with independent ones, which is the physics of an exact ratio rather than a defect.
+- **Loadpull settings (§3 of the issue):** measured in `src/Engine/Loadpull/RESOLVED.md`.
 
 Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTests`.

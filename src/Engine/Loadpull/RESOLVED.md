@@ -479,3 +479,16 @@ issue.
 
 **Found, not fixed:** `ModelValidation.Dc`/`SParams`/`LoadSweep` run their points in `Parallel.For` without asking
 `CanElaborateInParallel`, so an external device there is elaborated once per point at once.
+
+## One loadpull, one answer, however it is run (issue 65 §3, 2026-11-13)
+
+- **Measured.** An unswept CLI loadpull (`ConductanceRegularization = Always`), a swept one and a GUI one gave
+  bit-identical cubes on Hero3, Hero3B and the shipped Loadpull/LoadpullPursuit benches: HB and the DC solve apply gmin
+  unless the mode is `Never`, so `Always` and `IfNecessary` are the same there. The GUI's settings were therefore left
+  as they are (the parallelism cap only).
+- **What did differ.** `LoadpullEngine` dropped `NonlinearMaxIter` and `HbConsoleDiagnostics` when it copied its
+  settings, and a sweep handed it only the parallelism cap (`CapOnly`, now gone). Both carry through: `--max-iter`
+  reaches the DC start, `--diag` the trace; HB's own cap stays the directive's `MaxIter`.
+
+Gate: `LoadpullSettingsReachTests` (Hero 3 unswept under the CLI's settings, under the defaults, and swept over one
+point, bit for bit).

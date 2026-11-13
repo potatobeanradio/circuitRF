@@ -470,7 +470,7 @@ public sealed partial class HbEngine
         // Tones whose retained products coincide in frequency run as single-tone HB on their common fundamental, on
         // either multi-tone path, and say so (issue 65; HbEngine.Commensurate.cs).
         if (p.ToneFreqsHz.Length >= 2 && Commensurate(p, _settings.HbMaxMixProducts) is { } commensurate)
-            return RunCommensurate(p, commensurate);
+            return RunCommensurate(p, commensurate, warmStart);
         // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
         // rectangular-FFT path instead; AnalysisSettings.HbTwoToneOnLattice (default TRUE since
         // 2026-08-30) is the switch back, and that setting carries the measurements the default
@@ -512,25 +512,28 @@ public sealed partial class HbEngine
         CheckCommensurability(f0, K);
 
         // ── Configure P1Tone / PnTone / Tuner terminations with tone context (must precede extraction) ──
+        // A commensurate multi-tone run made here keeps the multi-tone band ruler and default drive (issue 65).
+        double bandFc       = _commensurateRuler?.Fc ?? f0;
+        double defaultDrive = _commensurateRuler?.DefaultDriveHz ?? f0;
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is P1ToneModel p1)
             {
                 double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
-                    ? fv.AsReal() : f0;
-                p1.SetToneContext(fc: f0, driveFreqHz: driveHz);
+                    ? fv.AsReal() : defaultDrive;
+                p1.SetToneContext(fc: bandFc, driveFreqHz: driveHz);
             }
             else if (ec.Model is ModSourceModel ms)
             {
-                ms.SetToneContext(fc: f0);   // CW tone at Fc carrying the signal's average power
+                ms.SetToneContext(fc: bandFc);   // CW tone at Fc carrying the signal's average power
             }
             else if (ec.Model is PnToneModel pn)
             {
-                pn.SetToneContext(fc: f0);   // single-tone band ruler; PnTone drives at its own Freq[i]
+                pn.SetToneContext(fc: bandFc);   // single-tone band ruler; PnTone drives at its own Freq[i]
             }
             else if (ec.Model is TunerModel tn)
             {
-                GiveTunerItsBandRuler(tn, f0);
+                GiveTunerItsBandRuler(tn, bandFc);
             }
         }
 
@@ -1240,7 +1243,8 @@ public sealed partial class HbEngine
     private Complex[,] SeedLattice(Complex[,]? warmStart, int N, int M, int[] ifNodes,
         AnalysisSettings settings)
     {
-        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == M)
+        // A commensurate point's seed is over harmonics, not mixing products, even when its length happens to be M.
+        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == M && !IsCommensurateSeed(warmStart))
             return (Complex[,])warmStart.Clone();
 
         var dcResult = NonlinearDcEngine.Run(_netlist, settings);

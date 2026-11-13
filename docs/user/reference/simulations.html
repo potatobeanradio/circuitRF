@@ -1741,6 +1741,19 @@ tones</strong>. On a single-FET PA, six tones at order 3 solves in a few seconds
     products with their own phasors, and the spectrum plot shows both stems at the same position — they are
     not added together. Use the marker readout, which names the product, to tell them apart.</p>
   </div>
+<div class="callout note">
+    <span class="label">Tones that are harmonics of one fundamental run as single-tone HB</span>
+    <p>When every tone is a low multiple of one common fundamental — 100 and 300&nbsp;MHz, or an LO at twice the
+    RF — the tones make one periodic waveform, and products landing on the same frequency add as one. circuitRF then
+    solves the analysis as single-tone harmonic balance on that fundamental and reads the result back onto the
+    usual (k₁,&nbsp;k₂) products, so measurements and plots work unchanged. Products on one frequency read the same
+    value. The Messages pane says when this happens and names two products that coincide; the small-signal sweep and
+    noise are not run on that path.</p>
+    <p>"Low multiple" means at most <strong>MaxHarm</strong> times the fundamental. That is the only thing MaxHarm
+    does in a multi-tone analysis: set it below the largest ratio to solve the tones as independent instead. Closely
+    spaced carriers, like the ones above, are always solved as independent tones. A sweep across a tone frequency can
+    land on an exact ratio at some points; those points show the phase-locked result.</p>
+  </div>
 <table class="param-table">
     <thead><tr><th>(k₁, k₂)</th><th>Order</th><th>Frequency</th><th>What it is</th><th>At f₁=1.99, f₂=2.01 GHz</th></tr></thead>
     <tbody>

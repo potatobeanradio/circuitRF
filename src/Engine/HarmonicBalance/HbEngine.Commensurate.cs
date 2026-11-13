@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using CircuitRF.Diagnostics;
 using RfCore.Data;
 
@@ -24,6 +25,17 @@ public sealed partial class HbEngine
 {
     /// <summary>Two retained products within this of each other are one frequency (the lattice's own on-grid tolerance).</summary>
     private const double CoincidenceHz = 1.0;
+
+    /// <summary>The multi-tone band ruler (mean of the tones) and default drive (first tone) the single-tone run of a
+    /// commensurate set must use; set only while <see cref="RunCommensurate"/>'s run is in progress.</summary>
+    private (double Fc, double DefaultDriveHz)? _commensurateRuler;
+
+    /// <summary>The interface seeds commensurate runs hand back. Such a seed is over the single-tone run's harmonics, so a
+    /// sweep may chain it into the next commensurate point, and a lattice point must not read it as mixing products even
+    /// when its length happens to equal M. A sweep re-elaborates (and so makes a new engine) per point, hence static.</summary>
+    private static readonly ConditionalWeakTable<Complex[,], object> CommensurateSeeds = new();
+
+    private static bool IsCommensurateSeed(Complex[,] seed) => CommensurateSeeds.TryGetValue(seed, out _);
 
     /// <summary>
     /// Which retained products a source drives: the lowest-order product at each frequency, and no other (issue 65).
@@ -93,13 +105,15 @@ public sealed partial class HbEngine
         }
     }
 
-    private HbRunResult RunCommensurate(HbAnalysisParams p, (double F0, int K, MixingLattice Lattice, int A, int B) c)
+    private HbRunResult RunCommensurate(HbAnalysisParams p, (double F0, int K, MixingLattice Lattice, int A, int B) c,
+                                        Complex[,]? warmStart = null)
     {
         var (f0, k, lattice, a, b) = c;
         double[] f = p.ToneFreqsHz;
-        if (f0 < CoincidenceHz || k > MaxCommensurateHarmonic)
+        if (k > MaxCommensurateHarmonic)   // Commensurate() already guarantees f0 >= CoincidenceHz
             throw new InvalidOperationException(HbCommensurateDiagnostics.NoCommonFundamental(
-                f, p.MaxMixOrder, lattice.Label(a), lattice.Label(b), lattice.FrequencyOf(a, f), f0, k).Render());
+                f, p.MaxMixOrder, lattice.Label(a), lattice.Label(b), lattice.FrequencyOf(a, f), f0, k,
+                f.Max(x => (int)Math.Round(x / f0))).Render());
 
         bool dropped = p.HasSsSweep || p.Noise is not null;
         _netlist.AddWarningOnce($"hb-commensurate:{string.Join(",", f.Select(x => x.ToString("R", CultureInfo.InvariantCulture)))}:{p.MaxMixOrder}",
@@ -107,8 +121,19 @@ public sealed partial class HbEngine
                 f, p.MaxMixOrder, lattice.Label(a), lattice.Label(b), Math.Abs(lattice.FrequencyOf(a, f)), f0, k, dropped).Render());
 
         var single = p with { ToneFreqsHz = [f0], MaxHarmonic = k, GuardHarmonic = 0, SsFreqsHz = null, Noise = null };
-        var run = Run(single);
-        return new HbRunResult(OntoMixingIndices(run.DataSet, lattice, f, f0, k), converged: run.Converged, trace: run.Trace);
+        // The terminations and drives are the multi-tone run's: a source's Z[k] bands are measured from the mean of the
+        // tones, and a P1Tone with no Freq drives at the first tone, exactly as on the lattice. Ruling the bands from
+        // the common fundamental instead put the 300 MHz tone of 100/300 MHz in band 3 where the lattice has band 2,
+        // so its source impedance jumped between 300 and 300.001 MHz.
+        _commensurateRuler = (f.Average(), f[0]);
+        HbRunResult run;
+        // Continuation across a sweep: only the previous commensurate point's own seed, whose shape the single-tone
+        // path checks against this point's harmonic count.
+        try { run = Run(single, warmStart is not null && IsCommensurateSeed(warmStart) ? warmStart : null); }
+        finally { _commensurateRuler = null; }
+        if (run.InterfaceV is { } seed) CommensurateSeeds.AddOrUpdate(seed, seed);
+        return new HbRunResult(OntoMixingIndices(run.DataSet, lattice, f, f0, k), converged: run.Converged,
+                               interfaceV: run.InterfaceV, trace: run.Trace);
     }
 
     /// <summary>A single-tone result at <paramref name="f0"/> read onto <paramref name="lattice"/>'s mixing indices: every
@@ -214,11 +239,11 @@ public static class HbCommensurateDiagnostics
 
     /// <summary>The tones coincide but share no fundamental a single-tone run can reach.</summary>
     public static Diagnostic NoCommonFundamental(double[] tones, int order, string a, string b, double sharedHz, double f0,
-                                                 int k) => Diagnostic.Create(
+                                                 int k, int highestTone) => Diagnostic.Create(
         "hb.tones.no-common-fundamental", DiagnosticSeverity.Error,
         "HB: the tones {tones} are harmonics of one fundamental, {f0Mhz} MHz, so at MaxMixOrder {order} their products " +
         "coincide ({a} and {b} are both {sharedMhz} MHz), and a single-tone run on it would need harmonic {k} (at most " +
-        "{max}). Lower MaxMixOrder or MaxHarm.",
+        "{max}). Lower MaxMixOrder, or set MaxHarm below {highest} to solve the tones as independent on the mixing lattice.",
         ("tones", Tones(tones)), ("order", order), ("a", a), ("b", b), ("sharedMhz", Mhz(sharedHz)), ("f0Mhz", Mhz(f0)),
-        ("k", k), ("max", HbEngine.MaxCommensurateHarmonic));
+        ("k", k), ("max", HbEngine.MaxCommensurateHarmonic), ("highest", highestTone));
 }
