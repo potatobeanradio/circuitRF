@@ -393,8 +393,8 @@ Design note: `docs/design/hb-noise.md` §9. What was found on the way:
 
 ## Where a loadpull's time goes, and the grid in parallel (LP-0/LP-1, 2026-11-12)
 
-**LP-0, measured** with `LoadpullCostTests.M0` and `HarmonicaCostTests.M0` (both `Category=Benchmark`; Release, serial,
-20 cores visible in the container, a shared machine). Four devices: Hero 3's SDD, the native Angelov FET, the
+**LP-0, measured** with `LoadpullCostTests.M0` and `HarmonicaCostTests.M0` (both `Category=Benchmark`; Release, serial).
+Four devices: Hero 3's SDD, the native Angelov FET, the
 synthetic GaN `.cmodel` as a ComposedFET (N = 8, its traps and self-heating), and `tools/fake-osdi-model`'s `crf_fet`
 through the OSDI device worker. Each solve below is one warm `RunSinglePoint` at a middle load, averaged over its rungs,
 best of 3.
@@ -432,7 +432,7 @@ depth 17; both example `load_grid.gam` files: 49, depth 16). Scheduling whole lo
 at 2.5-3.6×. But the seed is a load's FIRST rung only, and that rung is its first solve, so a load publishes it at once
 and only the first solves chain. The rest of each drive-up runs in parallel.
 
-**LP-1, measured** with `LoadpullCostTests.M1` (Release, 20 cores visible, a shared machine at a load average of 30-40;
+**LP-1, measured** with `LoadpullCostTests.M1` (Release;
 every parallel run checked bit for bit against the serial one). Two runs on different days; the cheap devices' runs
 are 0.06-0.3 s, so their ratios are noisy:
 
@@ -452,8 +452,8 @@ are 0.06-0.3 s, so their ratios are noisy:
   worker that reaches the elaboration lock after the others have claimed nearly every load starts no copy.
 - **End to end**, `circuitrf lp` with the process start included, median of three (range), on the two shipped 49-load
   examples netlisted to `.cnl`: `GanLoadpull` (ComposedFET) 21.7 s (20.8-23.7) serial, 4.4 s (4.3-4.4) at
-  `Workers=8`, 3.6 s (3.4-4.6) at 16 and 4.3 s (3.8-5.6) at the default, 20 workers: 5.1× at the default and 6.0× at 16.
-  An independent review measured the default at 2.19 s against 18.59 s serial (8.5×) on a quieter machine.
+  `Workers=8`, 3.6 s (3.4-4.6) at 16 and 4.3 s (3.8-5.6) at the default (one worker per core): 5.1× at the default and 6.0× at 16.
+  Another set of runs measured the default at 2.19 s against 18.59 s serial (8.5×).
   `examples/Loadpull` (SDD) 1.8 s (1.4-2.4) serial and 0.8 s (0.77-0.87) at the default, most of what is left being the
   process start. The `.npy`, `.spl` and `.lpcwave` files, and the `[LP]` lines on stderr, are byte-identical at every
   worker count.
