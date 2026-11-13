@@ -222,8 +222,12 @@ full <code>I[p,w]</code> / <code>Q[p]</code> / <code>H[w]</code> behavior applie
 <li><p><strong>Nonlinear DC</strong> — full <code>I[p,w]</code>, charge (drops at DC), and control currents (exact — the
 referenced current is a solver unknown).</p>
 </li>
-<li><p><strong>Harmonic Balance</strong> — full weighting sum, with the control-current Jacobian coupling for fast
-convergence.</p>
+<li><p><strong>Harmonic Balance</strong> — full weighting sum, single- and multi-tone, with <code>H[w]</code> taken at every
+harmonic and mixing product (and conjugated for a product the lattice keeps at a negative
+frequency). The control-current Jacobian coupling gives fast convergence.</p>
+</li>
+<li><p><strong>Envelope</strong> — full weighting sum, with <code>H[w]</code> taken at each harmonic's or mixing product's
+carrier frequency: it is held constant across that envelope's own bandwidth.</p>
 </li>
 <li><p><strong>Loadpull &amp; Loadpull Pursuit</strong> — the SDD is balanced by HB at each termination, so all SDD
 behavior is honored throughout the sweep/search.</p>

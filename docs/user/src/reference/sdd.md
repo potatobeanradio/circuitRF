@@ -236,8 +236,12 @@ full `I[p,w]` / `Q[p]` / `H[w]` behavior applies to the DUT at every termination
 - **Nonlinear DC** — full `I[p,w]`, charge (drops at DC), and control currents (exact — the
   referenced current is a solver unknown).
 
-- **Harmonic Balance** — full weighting sum, with the control-current Jacobian coupling for fast
-  convergence.
+- **Harmonic Balance** — full weighting sum, single- and multi-tone, with `H[w]` taken at every
+  harmonic and mixing product (and conjugated for a product the lattice keeps at a negative
+  frequency). The control-current Jacobian coupling gives fast convergence.
+
+- **Envelope** — full weighting sum, with `H[w]` taken at each harmonic's or mixing product's
+  carrier frequency: it is held constant across that envelope's own bandwidth.
 
 - **Loadpull & Loadpull Pursuit** — the SDD is balanced by HB at each termination, so all SDD
   behavior is honored throughout the sweep/search.

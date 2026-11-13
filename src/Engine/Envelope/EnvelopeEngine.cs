@@ -540,7 +540,16 @@ public sealed class EnvelopeEngine
                 if (prof) { swE.Stop(); swF.Start(); }
                 var inj = new Complex[N, K + 1];
                 for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) inj[a, k] = iNl[a, k] + alpha * qNl[a, k] + qh[a, k];
-                var F = HbNewton.BuildF(v, yEff, iSrc, inj, qNl, N, K, omega0, buckets);
+                // A w>=2 bucket is memoryless in the envelope (H[w] at each harmonic), so it joins the injection here:
+                // the residual and the linear state's update below then both carry it. Handed to BuildF instead, it
+                // balanced the interface but never reached the state, which read the block as missing.
+                foreach (var b in buckets)
+                    for (int k = 0; k <= K; k++)
+                    {
+                        var h = b.Model.Weight(b.W, k * omega0);
+                        for (int a = 0; a < N; a++) inj[a, k] += h * b.WNl[a, k];
+                    }
+                var F = HbNewton.BuildF(v, yEff, iSrc, inj, qNl, N, K, omega0);
                 if (prof) swF.Stop();
                 return (F, new StepEval(qNl, inj, G, Cc, buckets));
             }, e =>

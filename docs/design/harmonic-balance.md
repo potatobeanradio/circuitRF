@@ -130,6 +130,19 @@ This is exactly the `(i, q, dg, dc)` extension the data model fixed (§5): the p
 
 `I_Qnonlinear` and its Jacobian contribution are simply **omitted for a purely resistive nonlinearity** (`q ≡ 0`), recovering the IV-only case the deck uses for the Hero-class loadline/loadpull comparisons.
 
+### 4.1 Weighted terms (`w ≥ 2`) — every solver carries them (2026-11-13)
+
+A device may also return weighted terms, `NonlinearResult.Terms`: a time-domain current `I_w(t)` with its derivative `∂I_w/∂v`, whose spectrum is multiplied by the device's own `H[w](ω)` before it joins the node. `H[0] = 1` and `H[1] = jω` are the two built-ins (`i` and `q` above). Two producers exist today: an SDD with `I[p,w]`, `w ≥ 2`, and a system block with PIM on whose S is complex (the 90° hybrid), which carries `Im(Y)` and `Im(N)` in an `H[2] = j·sign(ω)` bucket — for the ideal hybrid that is its whole admittance.
+
+Every solver folds a bucket in exactly as it folds the charge, with `jω` replaced by `H[w]`:
+
+- **Residual and reported injection:** `+ Σ_w H[w](ω_k)·FFT{I_w}_k` at every harmonic or retained mixing product. The same total is what the linear back-solve injects (§9) and what a device terminal current reports.
+- **Jacobian:** `H[w](ω_row)` times the bucket's own conversion block — the `Dw[k−i]`/`Dw[k+i]` block of §7.2 on the single-tone and two-tone FFT paths, `A·diag(dw)·Γ` on the lattice (§6.5).
+- **Negative frequencies:** a lattice representative can sit at `ω < 0`. `H[w]` there is `conj(H[w](|ω|))` (`HbNewton.WeightAt`), never a model call at a negative argument — the rule `Y_NN` follows (`HbSmallSignal.YNNAt`; `src/Engine/HarmonicBalance/CLAUDE.md`, "Models are evaluated only at ω ≥ 0").
+- **Envelope:** both envelope engines add the bucket to each step's injection with `H[w]` at the harmonic's or mixing product's own frequency, so the residual and the linear state they report from carry the same total. The small-signal conversion matrix around a lattice point (§7.5) carries the bucket spectra as the single-tone one does.
+
+Until 2026-11-13 only the single-tone `HbNewton` did this. The two-tone and lattice loops never read `Terms`, and the single envelope balanced the bucket but left it out of its linear state, so all three dropped it silently (`src/Engine/RESOLVED.md`).
+
 ---
 
 ## 5. Time/frequency transform — conventions and the evaluation grid
@@ -261,7 +274,7 @@ Everything in §6.1–§6.3 holds with `(k₁,k₂)` replaced by the vector `k =
 J_block(n,m) = A·diag(dg)·Γ  +  R(ω_row)·[ A·diag(dc)·Γ ]
 ```
 
-where `R(ω_row)` is the per-row real form of multiplying by `jω` (row `2k` takes `−ω_k ×` row `2k+1`; row `2k+1` takes `+ω_k ×` row `2k`) — the same rotation §7.2/§7.4 applies to the two-tone 2×2 charge block. `Y_NN` on the mix diagonal, the guard-order cutoff and the Maas §7.3 DC row/column special cases then follow unchanged.
+where `R(ω_row)` is the per-row real form of multiplying by `jω` (row `2k` takes `−ω_k ×` row `2k+1`; row `2k+1` takes `+ω_k ×` row `2k`) — the same rotation §7.2/§7.4 applies to the two-tone 2×2 charge block. A weighted bucket (§4.1) adds `R_w(ω_row)·[A·diag(dw)·Γ]`, the same real form with the bucket's complex `H[w](ω_k)` in place of `jω`. `Y_NN` on the mix diagonal, the guard-order cutoff and the Maas §7.3 DC row/column special cases then follow unchanged.
 
 This is the exact derivative of what is actually computed, not an approximation of a convolution, and **it needs no spectrum of the derivative waveform at difference and sum indices at all**. That is the second reason the rectangular route is unnecessary: the `4·order` per-axis rule existed precisely to give the Jacobian its `2·MaxMixOrder` reach (§5.2), and there is nothing left for it to reach.
 

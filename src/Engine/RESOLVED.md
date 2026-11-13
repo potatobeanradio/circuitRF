@@ -4470,3 +4470,51 @@ taken for the same floor, is its own thermal SNR at −60 dBm: it reads 61 dB at
 0.343 % at `standard` on the bandpass above); the presets keep their meaning for it. A single envelope's IMD products
 far from Fc, which move with the centre (above), meet the same error; the rule resolves the carriers, not their
 products.
+
+## Weighted terms (`w ≥ 2`) in the multi-tone solvers and both envelope engines (HB-TERMS, 2026-11-13)
+
+A device's `NonlinearResult.Terms` — a current whose spectrum the device's own `H[w](ω)` multiplies before it joins the
+node — were honoured by the single-tone `HbNewton` only. Two producers exist: an SDD with `I[p,w]`, `w ≥ 2`, and a
+system block with PIM on whose S is complex (the 90° hybrid), whose `Im(Y)` and `Im(N)` ride in `H[2] = j·sign(ω)`.
+For the ideal hybrid `Re(Y) = 0`, so a solver that drops the bucket sees four open circuits. Nothing refused or warned.
+
+**Where each path lost it, and the three different shapes of the same bug:**
+
+- `HbNewton2D` and `HbNewtonNd` never read `Terms`: residual, Jacobian, the reported total injection (and so the
+  linear back-solve) and the device terminal currents all lacked the bucket. Two tones, 100/110 MHz at 30 dBm into
+  the hybrid: the through port at −289 dBm and the source node at 36.02 dBm (open-circuit doubling), against 26.99 dBm
+  and 30.00 dBm single-tone.
+- `EnvelopeEngineMt` reaches devices only through `HbNewtonNd.EvaluateNonlinearNd`, so it inherited the drop — same
+  numbers.
+- `EnvelopeEngine` (single envelope) **did** hand the buckets to `HbNewton.BuildF`, so Newton balanced the interface
+  correctly — and then updated the linear state, which every probe, IProbe and the next step's history read, from an
+  injection without them. A correct solve reported the hybrid as open: through port −125 dBm. Handing a term to the
+  residual is not enough when a second consumer reads the injection; both envelope engines now add the bucket to the
+  step's injection itself and pass it separately only to the Jacobian.
+- `HbSmallSignal.LatticeSidebands` declared `Buckets => 0` on the grounds that `HbNewtonNd` had none either. The
+  premise went stale with this fix; it now carries the bucket spectra from `LatticeSpectra` (the WSProbe sweep and HB
+  noise around a two-tone point).
+
+**`H[w]` at a negative mixing frequency is `conj(H[w](|ω|))`** (`HbNewton.WeightAt`), never a model call at a negative
+argument — the rule `Y_NN` and `HbSmallSignal.ToneSidebands.BucketWeight` already follow. Single tone never meets a
+negative frequency, which is why the single-tone code calls `Weight` directly.
+
+**Measured agreement with single-tone HB** (`MultiToneWeightedTermsTests`, tones on multiples of 10 MHz so every product
+is a harmonic): two tones 5e-9 on the lattice and 4e-12 on the FFT path; envelopes 2e-6 at the carriers and 7e-6 at the
+products (one drive-level offset at the first and third power: the envelope's own tolerance); three tones at
+`MaxMixOrder = 3` up to 7e-4, which is the fifth-order content the lattice drops and the reference keeps on the same
+frequencies (`3f1 − 2f2 = 2f2 − f3`). An SDD under a low-pass `H[2]` at 0 dBm: 6e-5, again truncation.
+
+**The FD Jacobian oracle's relative metric is floored here.** At mixing order 2 it reads 1.7e-5 (lattice) / 1.5e-5
+(FFT path) for the hybrid on near-zero entries, and 2.1e-4 / 2.1e-5 for an in-phase coupler that has no bucket at all;
+the worst ABSOLUTE error against the Jacobian's scale (4e-10–6e-10) is the meaningful number, since a missing or
+misrotated bucket is an error of the scale itself.
+
+**Now visible, not new:** the quadrature hybrid's PIM product also leaves the isolated port, about 3 dB under the
+through port. Single-tone HB has always shown the same; it is the overlay's memoryless projection of the incident
+wave for a complex `T` (`src/Core/RESOLVED.md`), not the solver.
+
+**Blast radius, checked.** The only shipped examples with a weighted-term candidate in a multi-tone run are the three
+System Design transmitters (`TxDirectConversion`, `TxFetFinal`, `TxSuperhet`), whose PIM sits on a circulator with a
+real S — no bucket. Their HB results are bit-identical before and after. No example has an SDD with `w ≥ 2` or a PIM
+coupler.

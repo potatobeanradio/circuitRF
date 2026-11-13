@@ -18,6 +18,9 @@
 //  the same w >= 0 contract the harmonic-balance engine keeps.  The
 //  device Jacobian is HbNewtonNd.BuildJNd with dg + alpha*dc as the
 //  conductance waveform, which adds exactly the alpha*C triple product.
+//  A device's w >= 2 weighted terms (a 90-degree hybrid's PIM quadrature,
+//  an SDD's H[w]) join each step's injection with H[w] at the product's
+//  signed carrier frequency, so the residual and the linear state agree.
 //  Lines are stepped as their delay and SnP blocks and other non-affine
 //  elements are rational fits for the run, exactly as in EnvelopeEngine;
 //  a product at a negative frequency sees a line at |w|, as its state is.
@@ -41,7 +44,8 @@ public sealed class EnvelopeEngineMt
     private readonly AnalysisSettings _settings;
 
     /// <summary>What one envelope Newton evaluation hands on (see <see cref="EnvelopeNewton"/>).</summary>
-    private sealed record StepEval(Complex[,] Q, Complex[,] Inj, double[][] Dg, double[][] Dc);
+    private sealed record StepEval(Complex[,] Q, Complex[,] Inj, double[][] Dg, double[][] Dc,
+                                   IReadOnlyList<HbNewtonNd.BucketNd> Buckets);
 
     public EnvelopeEngineMt(ElaboratedNetlist netlist, AnalysisSettings? settings = null)
     {
@@ -402,10 +406,13 @@ public sealed class EnvelopeEngineMt
 
             var accepted = nw.Solve(V, tolRun, v =>
             {
-                var (iNl, qNl, dg, dc) = HbNewtonNd.EvaluateNonlinearNd(v, apft, N, _nl, ifNodes);
+                var (iNl, qNl, dg, dc, buckets) = HbNewtonNd.EvaluateNonlinearNd(v, apft, N, _nl, ifNodes);
                 var injNow = new Complex[N, M];
                 for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) injNow[a, m] = iNl[a, m] + alpha * qNl[a, m] + qh[a, m];
-                return (HbNewtonNd.BuildFNd(v, yEff, iSrc, injNow, qNl, lat, N, tones), new StepEval(qNl, injNow, dg, dc));
+                // A w>=2 bucket is memoryless in the envelope (H[w] at each product's carrier), so it joins the
+                // injection here: the residual and the linear state's update below then both carry it.
+                HbNewtonNd.AddBucketInjection(injNow, buckets, wMix);
+                return (HbNewtonNd.BuildFNd(v, yEff, iSrc, injNow, qNl, lat, N, tones), new StepEval(qNl, injNow, dg, dc, buckets));
             }, e =>
             {
                 var dgA = new double[e.Dg.Length][];
@@ -414,7 +421,7 @@ public sealed class EnvelopeEngineMt
                     dgA[i] = new double[e.Dg[i].Length];
                     for (int j = 0; j < e.Dg[i].Length; j++) dgA[i][j] = e.Dg[i][j] + alpha * e.Dc[i][j];
                 }
-                return HbNewtonNd.BuildJNd(yEff, dgA, e.Dc, apft, N, tones);
+                return HbNewtonNd.BuildJNd(yEff, dgA, e.Dc, apft, N, tones, buckets: e.Buckets);
             }, p.MinNewton);
             if (accepted is null) { qNow = null!; return null; }
             qNow = accepted.Q;
@@ -599,7 +606,7 @@ public sealed class EnvelopeEngineMt
                 X[m] = ex.SolveFullNetwork(m == 0 ? 0.0 : Math.Abs(wMix[m]), inl, bSrc[m]);  // canonical |w| state
                 baseband.Holding = false;
             }
-            var (_, qNl, _, _) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, _nl, ifNodes);
+            var (_, qNl, _, _, _) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, _nl, ifNodes);
             return (V, X, qNl);
         }
         finally { baseband.Holding = false; foreach (var s in srcs) s.EnvelopeDrive = null; }

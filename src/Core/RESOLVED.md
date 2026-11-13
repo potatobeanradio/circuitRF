@@ -1897,6 +1897,11 @@ decimals at every swept frequency.
 
 ### THE OPEN ITEM: a complex-S block's PIM is wrong in a MULTI-TONE HB, and it is an engine gap
 
+**Closed 2026-11-13 (HB-TERMS):** every multi-tone solver and both envelope engines now carry weighting buckets, and
+the gap test below became `PassiveIntermodHbTests.AQuadratureHybridsProduct_ComesOutAtTheStatedLevel_InQuadratureLikeTheSignal`
+(the product at −110.0000 dBm through, split and in quadrature like the carrier). `src/Engine/RESOLVED.md` has the record;
+what follows is the gap as it was.
+
 **`HbNewton2D` and `HbNewtonNd` read `NonlinearResult.Terms` nowhere at all.** Only the single-tone
 `HbNewton` honours weighting buckets (HbNewton.cs:349, :783, :811, :980). So in a two-tone run — the
 analysis passive intermod exists for — a 90° hybrid with PIM on loses its `Im(Y)`, and what is left

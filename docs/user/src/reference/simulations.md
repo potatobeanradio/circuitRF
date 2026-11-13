@@ -508,6 +508,8 @@ carriers the **IM2 / IM3 / IM5** products. For a pulsed-CW source it measures in
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
 harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
 Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.
+A device's frequency-weighted terms (a 90&deg; hybrid's PIM, an SDD's `H[w]`) enter each step at the
+harmonic's or mixing product's carrier frequency, as in harmonic balance.
 Each Newton update is damped by a line search, so a device driven hard at a signal peak, or one with
 trap or thermal states, does not throw the solve off. A step that still does not converge is retaken
 as up to 16 shorter steps, and the Messages pane says how many were.
