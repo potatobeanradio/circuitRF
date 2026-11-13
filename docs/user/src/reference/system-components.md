@@ -239,17 +239,10 @@ drive gets close to the limiter's own scale — the product falls slightly **bel
 extrapolation, by 0.06 dB at 30 dB below the equivalent intercept and 0.6 dB at 20 dB below it —
 which is exactly how an intercept has to be read off a bench measurement too.
 
-<div class="callout warn">
-<span class="label">Known gap: a 90&deg; hybrid with PIM on, in a <em>multi-tone</em> run</span>
-<p>The quadrature hybrid is the one PIM-capable block whose S-matrix is genuinely complex, and it
-needs a frequency-domain factor that only the <b>single-tone</b> harmonic-balance solver honours
-today. In a two-tone run — which is the analysis PIM exists for — that factor is dropped and the
-block degenerates to four open circuits. The failure is loud rather than plausible: essentially
-nothing reaches the through port and the source node reads about 6 dB high.</p>
-<p><b>Every real-S block is unaffected and fully correct in multi-tone runs</b> — the attenuator, the
-circulator, the in-phase coupler and the 180&deg; hybrid. For a quadrature hybrid, put the PIM on an
-attenuator beside it instead, exactly as you would for a filter.</p>
-</div>
+**A 90&deg; hybrid with PIM on works in every analysis.** It is the one PIM-capable block whose
+S-matrix is genuinely complex, and half of it rides in a frequency-domain factor. Single- and
+multi-tone harmonic balance and both envelope modes carry that factor at every harmonic and mixing
+product, so its product comes out at the level you typed, split and in quadrature like the signal.
 
 ## The blocks, one by one {#catalogue}
 

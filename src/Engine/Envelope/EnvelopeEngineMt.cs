@@ -18,6 +18,9 @@
 //  the same w >= 0 contract the harmonic-balance engine keeps.  The
 //  device Jacobian is HbNewtonNd.BuildJNd with dg + alpha*dc as the
 //  conductance waveform, which adds exactly the alpha*C triple product.
+//  A device's w >= 2 weighted terms (a 90-degree hybrid's PIM quadrature,
+//  an SDD's H[w]) join each step's injection with H[w] at the product's
+//  signed carrier frequency, so the residual and the linear state agree.
 //  Lines are stepped as their delay and SnP blocks and other non-affine
 //  elements are rational fits for the run, exactly as in EnvelopeEngine;
 //  a product at a negative frequency sees a line at |w|, as its state is.
