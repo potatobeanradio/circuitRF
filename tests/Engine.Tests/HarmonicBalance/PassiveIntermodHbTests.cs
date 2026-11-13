@@ -256,7 +256,10 @@ R:R4  n4 0  R=50
 
         Assert.Equal(-110.0, thru, 1);
         Assert.Equal(carrierSplit, thru - cpl, 3);
-        Assert.True(v4 < 1e-9 * v2, $"the isolated port holds {v4:E3} V of product");
+        // What the isolated port holds is the 43 dBm carrier's round-off, not product: 5.2e-16 V on macOS and 1.7e-15 V on
+        // Linux arm64 against a ~1e-6 V product, the platforms' libm differing in the last bits of a ~45 V carrier. A bound
+        // 120 dB under the product still says "nothing" and sits clear of that floor; 1e-9 sat on it.
+        Assert.True(v4 < 1e-6 * v2, $"the isolated port holds {v4:E3} V of product");
     }
 
     // ── The quadrature hybrid: a complex S, carried by its H[2] bucket ─────────

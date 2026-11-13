@@ -29,4 +29,15 @@
     <ProjectReference Include="..\Cli.Verbs\CircuitRF.Cli.Verbs.csproj" />
   </ItemGroup>
 
+  <!--
+    LINUX'S NATIVE SkiaSharp, NAMED OUTRIGHT. The SkiaSharp package brings only its Windows and macOS
+    natives; src/Ui gets the Linux one through Avalonia.Skia, and nothing gave it to this process, so on
+    Linux every verb that draws or reads a picture died with "Unable to load shared library
+    'libSkiaSharp'". The version is the one Avalonia.Skia resolves for src/Ui, so the CLI and the
+    application load the same native library and the byte-identity gates compare like with like.
+  -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4-preview.1.1" />
+  </ItemGroup>
+
 </Project>

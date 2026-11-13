@@ -91,16 +91,24 @@ public sealed class ArtworkBoardArrangementTests : IDisposable
     }
 
     /// <summary>SHA-256 of the synthetic board's Tidy drawing (provenance block aside) as it was drawn before "As on the
-    /// board" existed.</summary>
-    private const string TidyBefore = "9cd8fcbff7b4f01ead12adf46478e4aaee0529ddf73e8d43485d624cb0200dea";
+    /// board" existed, every number of ten or more decimals taken to 12 significant digits first (<see cref="LastBitsAside"/>).</summary>
+    private const string TidyBefore = "672cc2e5da3685826c4f28e1196292fba1c6d3da4d4084de9277778d8b854e36";
 
     [Fact]
     public void Tidy_IsByteIdenticalToBefore()
     {
         var m = Draw(EmitBoards.Saved(_root), ArtworkArrange.Tidy).Schematic!;
         m.ArtworkSource = null;
-        Assert.Equal(TidyBefore, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(SchematicPersistence.Serialize(m)))));
+        Assert.Equal(TidyBefore, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(LastBitsAside(SchematicPersistence.Serialize(m))))));
     }
+
+    /// <summary>The lines' computed Eeff and Z0 differ in their last bits between platforms (macOS 3.197740411708634,
+    /// Linux arm64 3.197740411708622: libm), and nothing else in the drawing does. Rounded to 12 significant digits they
+    /// agree, and a drawing that moved anything still changes the hash.</summary>
+    private static string LastBitsAside(string json) =>
+        System.Text.RegularExpressions.Regex.Replace(json, @"-?\d+\.\d{10,}(?:[eE][-+]?\d+)?",
+            x => double.Parse(x.Value, System.Globalization.CultureInfo.InvariantCulture)
+                       .ToString("G12", System.Globalization.CultureInfo.InvariantCulture));
 
     // ── R-3: the loop fixture ───────────────────────────────────────────────────────────────────────
 

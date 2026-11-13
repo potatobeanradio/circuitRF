@@ -3607,3 +3607,16 @@ Gate: `tests/Ui.Tests/Em/PlanarComponentPortCliTests.cs`, plus `ToolCatalogAgree
   (`own`). A plugin whose requirements use a path relative to its own folder fails the shared dry run (pip resolves it
   against the working directory) and so lands in its own environment, where it works. `pip install --dry-run` needs pip
   22.2; an older pip in the shared environment sends every plugin to its own. PDK kits keep their own environments.
+
+## The developer CLI had no Linux SkiaSharp native (2026-11-13)
+
+On Linux every verb that draws or reads a picture died with "Unable to load shared library 'libSkiaSharp'" when run
+from `src/Cli` (the tests' and `dotnet run`'s front door), so `ImageConvertCliVerbTests`, the `serve` render tests and
+`RenderCliVerbTests` could only pass on macOS and Windows. The SkiaSharp package carries its Windows and macOS natives as
+dependencies and no Linux one; `src/Ui` gets it through Avalonia.Skia, which is why the installed `circuitRF` was never
+affected. `CircuitRF.Cli.csproj` now names `SkiaSharp.NativeAssets.Linux` at the version Avalonia.Skia resolves for
+`src/Ui`, so both processes load the same native library and the byte-identity gates compare like with like.
+
+The same Linux run found one diagnostic id declared twice (`check.path.foreign`, the `.hzn` and `.c3d` sentences as two
+`Diagnostic.Create` calls): `CheckForeignFile` now declares it once and picks the sentence, which is what
+`CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` holds.

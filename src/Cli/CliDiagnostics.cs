@@ -1596,13 +1596,15 @@ internal static class CliDiagnostics
     public static Diagnostic EmAdoptRefused(string reason) => Diagnostic.Create(
         "cli.em.adopt-refused", DiagnosticSeverity.Error, "em --adopt: {reason}", ("reason", reason));
 
-    public static Diagnostic CheckForeignFile(string path) => string.Equals(System.IO.Path.GetExtension(path), ".hzn", StringComparison.OrdinalIgnoreCase)
-        ? Diagnostic.Create("check.path.foreign", DiagnosticSeverity.Info,
-            "'{path}' is not a Hertzon project: it is JSON, but its format is not 'hertzon-project'. There is nothing here to check.", ("path", path))
-        : Diagnostic.Create("check.path.foreign", DiagnosticSeverity.Info,
-            "'{path}' is not a circuitRF 3D view: it has the .c3d extension but not a 3D view's content "
-            + "(a motion-capture program uses the same extension). There is nothing here to check.",
-            ("path", path));
+    /// <summary>One id for both foreign kinds, a .hzn that is not a Hertzon project and a .c3d that is not a 3D view: a
+    /// caller relays them the same way, and only the sentence names which.</summary>
+    public static Diagnostic CheckForeignFile(string path) => Diagnostic.Create(
+        "check.path.foreign", DiagnosticSeverity.Info,
+        string.Equals(System.IO.Path.GetExtension(path), ".hzn", StringComparison.OrdinalIgnoreCase)
+            ? "'{path}' is not a Hertzon project: it is JSON, but its format is not 'hertzon-project'. There is nothing here to check."
+            : "'{path}' is not a circuitRF 3D view: it has the .c3d extension but not a 3D view's content "
+              + "(a motion-capture program uses the same extension). There is nothing here to check.",
+        ("path", path));
 
     /// <summary>brief-img-2 R-im2-6 — a picture, named by the kind of drawing it reads as. Info: a picture is not a
     /// circuitRF document and nothing in it can be wrong; Create Schematic/Layout from Image is what reads it.</summary>
