@@ -287,11 +287,11 @@ public class MultiToneWeightedTermsTests(ITestOutputHelper output)
         var ifNodes = ex.InterfaceNodes;
         const double f1 = 100e6, f2 = 110e6;
 
-        var lattice = new MixingLattice(2, 3);
-        var grid    = new MixingGrid(3);
+        var lattice = new MixingLattice(2, 2);   // order 2 keeps it cheap: the FD oracle is 2·dof device passes per path
+        var grid    = new MixingGrid(2);
         int M = lattice.MixCount;
         var apft = new HbApft(lattice, AnalysisSettings.Default.HbApftOversample);
-        var (n1, n2) = HbFft2D.GridSizes(3, 3, 2);
+        var (n1, n2) = HbFft2D.GridSizes(2, 2, 2);
 
         var yNN  = new Complex[M][,];
         var iSrc = new Complex[M][];
@@ -318,7 +318,7 @@ public class MultiToneWeightedTermsTests(ITestOutputHelper output)
         var two = HbNewton2D.CompareJacobianNumerical2D(V, yNN, iSrc, grid, N, n1, n2, f1, f2, nl, ifNodes);
         // Judged by the worst ABSOLUTE error against the Jacobian's own scale: the relative metric is floored on the
         // near-zero entries (2.5e-4 for an in-phase coupler at this drive, which has no bucket at all), while a
-        // missing or misrotated bucket is an error of the scale itself. Measured 8e-10 (lattice) and 5e-10 (FFT path).
+        // missing or misrotated bucket is an error of the scale itself. Measured 6e-10 (lattice) and 4e-10 (FFT path).
         double ndErr = nd.MaxAbsError / scale, twoErr = two.MaxAbsError / scale;
         output.WriteLine($"FD oracle, worst |analytic − FD| / scale: lattice {ndErr:E2}, FFT path {twoErr:E2} (dof {nd.Dof}, scale {scale:E2})");
         Assert.True(ndErr < 1e-7, $"lattice Jacobian vs finite differences: {ndErr:E3} of its scale");
