@@ -520,6 +520,11 @@ setup's refusals and notes, the mesh, the field) are always shown.
     strength in dB reads in **dBµV/m** (H and surface current in **dBµA/m**), the EMC convention; any other
     quantity reads in dB re 1 of its unit. A power or energy density (the Poynting vector, the energy
     densities) is 10·log₁₀ of the value, and a field strength is 20·log₁₀.
+  - **Smooth** — Palace at element order 1 writes each tetrahedron's own corner values, so neighbouring cells disagree
+    at a point they share and a plot shows its cells as a mosaic. Ticked, each value is averaged over the corners that
+    meet at its point in cells of the **same material**, and never across a material's boundary, where the field's
+    normal part really jumps. It is worked out once when the field loads, so moving the view costs nothing more. It is
+    saved with the plot, and `circuitrf render --field` draws it too (`--smooth` smooths any plot for one picture).
   - **Drive** — for a driven solution, two more rows set the drive the field is
     [shown at](#field-drive). *Drive power* is the power, in W, mW or dBm, set per plot and saved with it.
     *Referred to* chooses **Incident**, the power a source matched to the port's Z₀ makes available, or

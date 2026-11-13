@@ -49,6 +49,8 @@ internal static class RenderEm3d
         public bool Labels { get; init; }
         /// <summary>brief-em3d-88 Q2 — the page is the section alone, its height following the section's aspect.</summary>
         public bool Tight { get; init; }
+        /// <summary>brief-cxp-5 — a clip-plane field averaged over coincident nodes within each material (FieldSmoothing).</summary>
+        public bool Smooth { get; init; }
         /// <summary>brief-em3d-88 — the 3D view's axis indicator, bottom left of the frame.</summary>
         public bool Axes { get; init; }
         /// <summary>brief-em3d-88 — the 3D view's scale bar, bottom right of the frame (a section only).</summary>

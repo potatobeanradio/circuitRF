@@ -2494,6 +2494,9 @@ the model's outlines and its legend beside it.
   50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
   The report says `drawn as …` when that happened, and `--no-thin` draws every triangle. `--no-legend`
   leaves the legend off.
+- **`--smooth`** averages a clip-plane field over the coincident nodes of cells of one material before cutting. Palace
+  at element order 1 writes each tetrahedron's own corner values, so a cut is otherwise drawn as a mosaic of its cells;
+  across a material's boundary nothing is averaged, since the field's normal part really jumps there.
 - `--json` adds `render.em3d.field`: the plot, its setup, the solution as the file spells it, the run
   directory it read, the triangle counts, the range and whether the run is stale — and for a temperature,
   each wire drawn with its temperature span and where it crosses the plane. `--list-fields --json` returns

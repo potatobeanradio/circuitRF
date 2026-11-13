@@ -67,7 +67,7 @@ the order below.
 | `ActiveSetup` | string? | The setup the editor shows; editor state |
 | `AirBox`, `AirBoxHidden` | | The air box while no setup is active; editor state. A run reads its setup's own air box |
 | `AirBoxMaterial` | string? | The material filling the air box |
-| `MeshRegions` | [mesh region] | Boxes with a target mesh size, for Gmsh-meshed solves |
+| `MeshRegions` | [mesh region] | Boxes with a target mesh size, for Gmsh-meshed solves, and for an openEMS setup whose `OpenEms.MeshRegions` is true (a cap on the grid cell across each box's extent) |
 | `SymmetryPlanes`, `HeatSources`, `Probes`, `ContactResistances`, `EffectiveBlocks`, `WireGroundPlane` | | Read by circuitRF's thermal solver only; never by an EM solver |
 | `BandSweeps` | [band sweep] | Phone-SAR band tables; never read by a run |
 | `FieldPlots`, `Look` | | Drawing state: field plots and the realistic view's lighting. No solver reads them |

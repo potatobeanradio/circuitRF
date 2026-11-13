@@ -52,6 +52,9 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         Assert.Contains("Top Copper (1 oz)/1", copper.Objects);
         Assert.DoesNotContain("RO4350", copper.Objects);
         Assert.Equal([1, 2], copper.Ports.Select(p => p.Number));
+        // brief-cxp-5 — the ports are sheets across the line's two ends, parallel to a cut across its middle and off it, so
+        // that cut draws neither
+        Assert.Empty(Em3dSectionScene.Build(problem, new Em3dView(Em3dViewKind.SectionX, (problem.Ports[0].Min.X + problem.Ports[1].Min.X) / 2)).Ports);
 
         // The strip's cut is its outline: 10 mm long, 1.1 mm wide.
         var strip = copper.Regions.Single(r => r.Object == "Top Copper (1 oz)/1");

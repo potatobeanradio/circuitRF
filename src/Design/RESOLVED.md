@@ -30825,3 +30825,50 @@ inward. A ring on a face of the box is refused; so is one whose current probe ha
   capacitance (0.5 mm of air to the PEC wall) predicts, and openEMS −42 to −48 dB at every grid tried (80 cells/λ moved its port
   phase only to −0.42°). Reported to the owner rather than the tolerance loosened; the owner accepted that accuracy and the
   ring ships on openEMS, the gate restated at 3.5°.
+
+## Three things the Loop Sensor example needed (brief-cxp-5, 2026-11-12)
+
+**A loop fed across its two open ends was refused.** A lumped port between a loop's arms touches ONE conductor on both
+opposite edges, and `C3dPorts.Lumped` refused it as "both of its ends are one conductor", which is right for a sheet lying
+on a strip (shorted) and wrong for a loop antenna, whose two ends meet only the long way round. `LoopPair` now accepts it
+when one pair of opposite edges touches the same single conductor, the other pair touches nothing, and the port's centre is
+off that conductor (the sheet spans a gap in the metal); the left/bottom edge is −, and Flip swaps it. A sheet drawn on a
+strip has its centre on the metal and is still refused. Palace, EMerge and openEMS never read the two names except for the
+direction, so nothing downstream changed. Test: `C3dPortDirectionTests.ALoopFedAcrossItsOpenEnds_IsAPort_AndASheetOnAStripIsNot`.
+
+**Gmsh's curving can leave nodes with NaN coordinates, and Palace then fails naming nothing.** On the loop board (a
+128-facet copper ring under the PDMS's round reservoir, curved second-order elements because the reservoir is a cylinder)
+Gmsh's high-order optimisation wrote 2,113 nodes as `nan nan nan` (its log: "worst distortion = -224.178 (avg = nan)"), and
+Palace aborted with `Required mesh-end tag not found` from MFEM's loader — the NaN text breaks the stream each rank reads
+its partition from. `Em3dMeshCheck` let it through because every comparison with NaN is false: `det <= floor` passed a
+NaN Jacobian as positive. The check now treats a non-finite determinant as inverted (`!(det > floor)`), and
+`PalaceRun.Mesh` counts non-finite nodes (`Em3dMeshCheck.NonFiniteNodes`) after a curved mesh and remeshes straight-sided
+once, with a note, as it already did when the curving ran past `MeshCurvingMinutes`. The reused-mesh note now covers both
+causes. Moving the PDMS down onto the FR-4 (it had left a 35 µm air layer round every trace) also removed the slivers that
+caused it in this example.
+
+**openEMS put 2 mm cells on a printed ring.** A curved or diagonal edge places no grid line of its own (R-em3d8-2a), so on
+the loop board the grid was set by the wavelength alone and the 0.4 mm inner ring was lost: no resonance at all in
+0.4–1.6 GHz. `OpenEms.MeshRegions: true` now lets the view's `MeshRegions` cap the cell on each axis across their extent
+(`FdtdGrid.Context.MaxCell`/`MaxCellAt`, as a voxel body's own grid step already did). It is opt-in per setup because a
+shipped view (3D Wave Ports' Coupled Microstrip) holds 20 µm regions for Palace beside an openEMS setup, and honouring them
+there would have put 20 µm cells along 15 mm. The run scope reads the regions for such a setup, so editing one marks it stale.
+
+**A clip-plane field was drawn as a mosaic (`render --smooth`).** Palace's ParaView output gives every cell its own nodes
+(the loop board's cut read 72,392 points for 18,098 tetrahedra), so at element order 1 neighbouring cells hold different
+values at one point and the Gouraud-blended PNG still showed each cell. `FieldSmoothing.WithinMaterials` (in
+`src/Render/Scene3D/Fields/FieldSection.cs`) averages each node over the coincident nodes whose cell has the same attribute,
+never across a material boundary, where the normal part of E jumps by the permittivities' ratio. It is a per-plot setting
+(`C3dFieldPlot.Smooth`, the **Smooth** box beside dB in the plot's Properties), so a user recreates a smoothed picture in the
+3D view and `render --field` draws the same one; `render --smooth` smooths any plot for one picture. `FieldSmoothing.Cached`
+makes it once per loaded array (a `ConditionalWeakTable`), on the plot's background build: a moved plane or a new drive
+reuses it and nothing runs per frame, since smoothing changes values, not triangles. Measured on the Loop Sensor board
+(about 700,000 field nodes), a whole headless render took 1.17–1.32 s with it and without it. Off by default, so every
+existing picture is unchanged.
+
+**A section drew a port lying off it.** `Em3dSectionScene` projected every port's box onto the cut, so a coax's ring at a
+connector's back face appeared in a cut across the board 20 mm away. A port sheet parallel to the cut and off it is no longer
+drawn; a port across the cut is drawn as before.
+
+**A single-port field plot naming `Port: 1` found nothing.** Palace writes a single-excitation run's fields with no
+excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plots do.

@@ -66,7 +66,8 @@ and 4 (strip b): **S21 is the near-end coupling, S31 the thru and S41 the far-en
 
 The deep null the 3D Connector showed at 18 GHz on Palace was the gap's capacitance tuning out the launch's own
 reactance. With the gap gone, the launch's |S11| is about −20 dB across the upper band on both solvers: that is the
-launch itself.
+launch itself. A connector that ends inside the model rather than on the box's face is fed across the same ring of PTFE by
+a **coaxial port** instead (**EM Setup ▸ Coaxial ports**; the **Loop Sensor** example feeds a real-size SMA that way).
 
 ## Pair, by hand
 

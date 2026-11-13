@@ -72,6 +72,21 @@ public static class Em3dMeshCheck
         return Check(mesh, groups, lengthUnitM, robustMeshing);
     }
 
+    /// <summary>brief-cxp-5 — how many of the mesh's nodes have a coordinate that is not a finite number: Gmsh's high-order
+    /// optimisation can leave NaN on mid-edge nodes, and Palace then fails reading the mesh naming nothing. Null when there is no
+    /// such file or it cannot be read.</summary>
+    public static int? NonFiniteNodes(string mshPath)
+    {
+        if (!File.Exists(mshPath)) return null;
+        MshMesh mesh;
+        try { mesh = MshReader.Read(mshPath); }
+        catch (Exception e) when (e is InvalidDataException or IOException) { return null; }
+        int bad = 0;
+        for (int i = 0; i + 2 < mesh.Nodes.Length; i += 3)
+            if (!double.IsFinite(mesh.Nodes[i]) || !double.IsFinite(mesh.Nodes[i + 1]) || !double.IsFinite(mesh.Nodes[i + 2])) bad++;
+        return bad;
+    }
+
     /// <summary>A via's Fill is advice only where the elements touch a via: on a board edge or a pour it changes nothing.</summary>
     private static string Remedy(IEnumerable<string> where, bool robustMeshing)
     {
@@ -111,7 +126,8 @@ public static class Em3dMeshCheck
                                       Sq(x[3 * corner[i] + 2] - x[3 * corner[j] + 2]));
             double l3 = l2 * Math.Sqrt(l2), floor = ZeroVolumeRelative * l3;
             double det = Det(x, a, b, c, d);
-            bool isZero = l3 == 0 || Math.Abs(det) <= floor, isInverted = !isZero && det < 0;
+            // A corner with no position (NaN) is never usable: it reads as inverted, since no comparison with NaN is true.
+            bool isZero = l3 == 0 || Math.Abs(det) <= floor, isInverted = !isZero && !(det > 0);
             if (!isZero && !isInverted && high)
             {
                 for (int k = 0; k < 10; k++)
@@ -246,7 +262,7 @@ public static class Em3dMeshCheck
                 }
             double det = jac[0] * (jac[4] * jac[8] - jac[5] * jac[7]) - jac[1] * (jac[3] * jac[8] - jac[5] * jac[6]) +
                          jac[2] * (jac[3] * jac[7] - jac[4] * jac[6]);
-            if (det <= floor) return false;
+            if (!(det > floor)) return false;           // NaN (a node with no position) fails too
         }
         return true;
     }

@@ -63,6 +63,10 @@ public sealed record OpenEmsGridSettings(
     /// them.</summary>
     public FdtdExplicitLines? ExplicitLines { get; init; }
 
+    /// <summary>brief-cxp-5 — the problem's mesh regions cap the cell on each axis across their extent (<c>OpenEms.MeshRegions</c>).
+    /// False (the default, and what every existing setup means) leaves them to the Gmsh-meshed solvers.</summary>
+    public bool MeshRegions { get; init; }
+
     /// <summary>Every value that cannot be built, as sentences naming the field — empty when all can.</summary>
     public IReadOnlyList<string> Problems()
     {
@@ -1712,6 +1716,12 @@ public static partial class FdtdGrid
                 var (r0, r1) = a == FdtdAxis.X ? (x0, x1) : (y0, y1);
                 if (r0 < hi - Tol && r1 > lo + Tol) cap = Math.Min(cap, cell);
             }
+            if (_settings.MeshRegions)
+                foreach (var m in _p.MeshRegions)
+                {
+                    var (r0, r1) = a switch { FdtdAxis.X => (m.Min.X, m.Max.X), FdtdAxis.Y => (m.Min.Y, m.Max.Y), _ => (m.Min.Z, m.Max.Z) };
+                    if (r0 < hi - Tol && r1 > lo + Tol) cap = Math.Min(cap, m.SizeM);
+                }
             return Math.Min(cap, C0 / (_p.Frequency.StopHz * n * _settings.CellsPerWavelength));
         }
 
@@ -1730,6 +1740,12 @@ public static partial class FdtdGrid
                 var (r0, r1) = a == FdtdAxis.X ? (x0, x1) : (y0, y1);
                 if (r0 <= at + Tol && r1 >= at - Tol) cap = Math.Min(cap, cell);
             }
+            if (_settings.MeshRegions)
+                foreach (var m in _p.MeshRegions)
+                {
+                    var (r0, r1) = a switch { FdtdAxis.X => (m.Min.X, m.Max.X), FdtdAxis.Y => (m.Min.Y, m.Max.Y), _ => (m.Min.Z, m.Max.Z) };
+                    if (r0 <= at + Tol && r1 >= at - Tol) cap = Math.Min(cap, m.SizeM);
+                }
             return Math.Min(cap, C0 / (_p.Frequency.StopHz * n * _settings.CellsPerWavelength));
         }
 

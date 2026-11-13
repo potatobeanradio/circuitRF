@@ -216,7 +216,7 @@ public static class FieldSurfacePlot
     public static FieldEmBuild Em(FieldQuantity q, FieldStep? vol, FieldStep? bnd, IReadOnlyList<FieldGroup> groups, Scene3DModel scene,
                                   ClipPlane3D clip, bool onPlane, bool onSurfaces, Scene3DObject? selected,
                                   IReadOnlyList<(PaintedFieldFace Face, FieldFaceTarget Target)> targets, FieldSampler? sampler, bool sampled,
-                                  CancellationToken ct, bool sliceClipped = true, FieldDriveReading? drive = null)
+                                  CancellationToken ct, bool sliceClipped = true, FieldDriveReading? drive = null, bool smooth = false)
     {
         var origin = scene.Origin;
         var surfaces = new List<FieldSurface>();
@@ -226,8 +226,9 @@ public static class FieldSurfacePlot
         // A surface lies ON its face or plane; it moves a hair toward the eye's side so nothing it lies on hides it.
         float eps = NudgeLength(scene);
         string? hint = null;
-        if (!q.OnBoundary && vol?.Load(q.Array.Name) is { } array)
+        if (!q.OnBoundary && vol?.Load(q.Array.Name) is { } loaded)
         {
+            var array = smooth ? FieldSmoothing.Cached(vol.Mesh, loaded) : loaded;    // brief-cxp-5 — once per loaded field
             if (onPlane && clip.Enabled)
             {
                 var e = clip.Equation;

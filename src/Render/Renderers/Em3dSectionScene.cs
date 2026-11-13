@@ -334,7 +334,10 @@ public static partial class Em3dSectionScene
         var precedence = Em3dPrecedence.Of(problem);
         regions.Sort((a, b) => precedence.Of(a.Role, a.Order, a.IsSheet).CompareTo(precedence.Of(b.Role, b.Order, b.IsSheet)));
 
-        var ports = problem.Ports.Select(p =>
+        // brief-cxp-5 — a port sheet PARALLEL to the cut and off it (a coax's ring at a connector's back, in a cut across the
+        // board) is not in this section: drawing its box here put it there. A port across the cut is drawn as before.
+        bool Parallel(Em3dPort p) => Math.Abs(Coord(p.Max, axis) - Coord(p.Min, axis)) <= tol;
+        var ports = problem.Ports.Where(p => !Parallel(p) || Math.Abs(Coord(p.Min, axis) - at) <= tol).Select(p =>
         {
             var (a, c) = (P(p.Min), P(p.Max));
             return new Em3dScenePort(p.Number, [a, new Uv(c.U, a.V), c, new Uv(a.U, c.V)]);

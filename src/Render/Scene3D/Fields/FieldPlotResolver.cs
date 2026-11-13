@@ -56,6 +56,9 @@ public sealed record FieldPlotRequest
     public IReadOnlyList<PaintedFieldFace> Faces { get; init; } = [];
 
     public bool Db { get; init; }
+
+    /// <summary>brief-cxp-5 — the plot's <c>Smooth</c>: values averaged within each material before drawing.</summary>
+    public bool Smooth { get; init; }
     public double Percentile { get; init; } = 99;
     public bool FixRange { get; init; }
 
@@ -114,7 +117,7 @@ public static class FieldPlotResolver
         return new FieldPlotRequest
         {
             Name = p.Name, SetupName = setupName, RunSetup = run, SetupProblem = setupProblem, Solver = solver,
-            Solution = p.Solution, Quantity = p.Quantity, On = p.On, Db = p.Db, Percentile = p.Percentile, FixRange = p.FixRange,
+            Solution = p.Solution, Quantity = p.Quantity, On = p.On, Db = p.Db, Smooth = p.Smooth, Percentile = p.Percentile, FixRange = p.FixRange,
             DrivePowerW = p.DrivePowerW, DriveReferredTo = p.DriveReferredTo,
             Mip = p.Mip && p.On == C3dFieldPlotOn.ClipPlane && FieldNames.IsSar(p.Quantity),
             Mode = Enum.TryParse<FieldMode>(p.Mode, ignoreCase: true, out var m) ? m : null,

@@ -1,0 +1,227 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "body",
+			"Op": "Unite",
+			"Blank": {
+				"$type": "Boolean",
+				"Op": "Subtract",
+				"KeepTools": true,
+				"Blank": {
+					"$type": "Cylinder",
+					"Material": "Connector alloy",
+					"Base": [
+						0,
+						{
+							"Expr": "-fl_t - body_l",
+							"Unit": "Mm"
+						},
+						0
+					],
+					"Axis": "Y",
+					"Length": {
+						"Expr": "body_l",
+						"Unit": "Mm"
+					},
+					"Radius": {
+						"Expr": "body_d/2",
+						"Unit": "Mm"
+					}
+				},
+				"Tools": [
+					{
+						"$type": "Cylinder",
+						"Name": "bore",
+						"Material": "PTFE",
+						"Base": [
+							0,
+							{
+								"Expr": "-fl_t - body_l",
+								"Unit": "Mm"
+							},
+							0
+						],
+						"Axis": "Y",
+						"Length": {
+							"Expr": "fl_t + body_l",
+							"Unit": "Mm"
+						},
+						"Radius": {
+							"Expr": "bore_d/2",
+							"Unit": "Mm"
+						}
+					}
+				]
+			},
+			"Tools": [
+				{
+					"$type": "Step",
+					"Name": "flange",
+					"Material": "Connector alloy",
+					"File": "sma-flange.step",
+					"Part": "1/1",
+					"Hash": "sha256:248c5a6573711bb7aeeb9a2dea8530ed507d53bb5c7c2d24c7768a70819ae834",
+					"Unit": "millimetre",
+					"SourcePath": "sma-flange.step"
+				}
+			]
+		},
+		{
+			"$type": "Fillet",
+			"Name": "pin",
+			"Radius": {
+				"Expr": "tip_r",
+				"Unit": "Mm"
+			},
+			"Edges": [
+				"side|top"
+			],
+			"Target": {
+				"$type": "Cylinder",
+				"Material": "Connector alloy",
+				"Base": [
+					0,
+					{
+						"Expr": "-fl_t - body_l",
+						"Unit": "Mm"
+					},
+					0
+				],
+				"Axis": "Y",
+				"Length": {
+					"Expr": "fl_t + body_l + pin_out",
+					"Unit": "Mm"
+				},
+				"Radius": {
+					"Expr": "pin_d/2",
+					"Unit": "Mm"
+				}
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "pin_d",
+			"Expression": "1.27",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "bore_d",
+			"Expression": "4.1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "body_d",
+			"Expression": "6.35",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "body_l",
+			"Expression": "6",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "fl_t",
+			"Expression": "1.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "pin_out",
+			"Expression": "2.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "tip_r",
+			"Expression": "0.3",
+			"Unit": "Mm"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "XZ",
+			"Offset": -7500000,
+			"Annulus": {
+				"Centre": [
+					0,
+					0
+				],
+				"Inner": {
+					"Expr": "pin_d/2",
+					"Unit": "Mm"
+				},
+				"Outer": {
+					"Expr": "bore_d/2",
+					"Unit": "Mm"
+				}
+			},
+			"Z0": "50"
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Palace",
+			"Frequency": {
+				"StartExpr": "0.4",
+				"StopExpr": "1.6",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"Kind": "Linear",
+				"StepExpr": "",
+				"NumPoints": 13,
+				"Mode": "PointCount",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 5000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"LinearSolver": "Direct"
+			}
+		}
+	]
+}

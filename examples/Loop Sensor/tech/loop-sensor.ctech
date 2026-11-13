@@ -1,0 +1,149 @@
+{
+  "FormatVersion": 1,
+  "Name": "Loop sensor: FR-4, copper, PDMS, water, and an SMA's PTFE and connector alloy",
+  "DefaultDisplayUnit": "Mm",
+  "DefaultSnapDbu": 10000,
+  "DefaultFlattenTolDbu": 1000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 204,
+        "g": 120,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 20,
+        "Datatype": 0
+      },
+      "Name": "Board Edge",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Purpose": "drawing",
+      "Interchange": {
+        "GerberFileFunction": "Profile,NP"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true,
+        "Material": "Copper"
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "FR-4",
+        "ThicknessDbu": 1600000,
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false,
+        "Material": "FR-4"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Top Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 150000,
+      "Severity": "Error"
+    }
+  ],
+  "Materials": [
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.00393,
+      "DensityKgM3": 8960,
+      "Color": "#b87333",
+      "Appearance": {
+        "BaseColor": "#FAD1C2",
+        "Metallic": 1,
+        "Roughness": 0.35
+      }
+    },
+    {
+      "Name": "FR-4",
+      "Epsr": 4.4,
+      "TanD": 0.02,
+      "Mur": 1,
+      "Color": "#3f8f4a"
+    },
+    {
+      "Name": "Connector alloy",
+      "Sigma20": 15000000,
+      "Mur": 1,
+      "Color": "#c9a93b"
+    },
+    {
+      "Name": "PTFE",
+      "Epsr": 2.1,
+      "TanD": 0.0002,
+      "Mur": 1,
+      "Color": "#f2f2f2"
+    },
+    {
+      "Name": "PDMS",
+      "Epsr": 2.7,
+      "TanD": 0.02,
+      "Mur": 1,
+      "Color": "#d6e9f0"
+    },
+    {
+      "Name": "Water",
+      "Epsr": 78,
+      "TanD": 0.05,
+      "Mur": 1,
+      "Color": "#3b7bd6"
+    }
+  ]
+}

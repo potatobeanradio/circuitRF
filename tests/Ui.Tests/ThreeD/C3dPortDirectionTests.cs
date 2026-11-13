@@ -62,6 +62,30 @@ public sealed class C3dPortDirectionTests : IDisposable
         Assert.Equal(1, r.Resolved.Cylinder.Sign);
     }
 
+    /// <summary>brief-cxp-5 — a loop fed across its two open ends: a U of one conductor whose arms touch the port's left and right
+    /// edges, the sheet between them open. It runs between the loop's two ends; the same sheet drawn ON a strip, whose centre lies
+    /// on the metal, stays refused (its two ends are shorted).</summary>
+    [Fact]
+    public void ALoopFedAcrossItsOpenEnds_IsAPort_AndASheetOnAStripIsNot()
+    {
+        var loop = new C3dDocument
+        {
+            Objects = [new C3dSheet { Name = "loop", Material = "Copper", Plane = C3dPlane.XY, Offset = 0,
+                                      Outline = [P(0, 0), P(100, 0), P(100, 300), P(400, 300), P(400, 0), P(500, 0), P(500, 400), P(0, 400)] }],
+        };
+        loop.Ports.Add(new C3dPort { Number = 1, Name = "P1", Plane = C3dPlane.XY, Offset = 0, Rect = Rect(100, 0, 300, 100) });
+        var r = Resolve(loop);
+        Assert.Null(r.Refusal);
+        Assert.Equal(("loop", "loop"), (r.Resolved!.PositiveObject, r.Resolved.NegativeObject));
+        Assert.Contains("fed across an open gap in it", r.Reason);
+
+        var strip = new C3dDocument { Objects = [Sheet("strip", 0, 0, 500, 100)] };
+        strip.Ports.Add(new C3dPort { Number = 1, Name = "P1", Plane = C3dPlane.XY, Offset = 0, Rect = Rect(100, 0, 300, 100) });
+        Assert.Contains("both of its ends are one conductor", Resolve(strip).Refusal);
+
+        static C3dPoint2 P(long u, long v) => new(u * Um, v * Um);
+    }
+
     /// <summary>R-emb3-1 — two stated conductors over the middle of the sheet face no pair of its edges: refused, naming the port,
     /// both ends and that its direction is undecided, never ±u.</summary>
     [Fact]

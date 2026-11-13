@@ -1,0 +1,237 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [],
+	"Instances": [
+		{
+			"Name": "S1",
+			"CellRef": "../../Sensor",
+			"View": "ThreeD"
+		},
+		{
+			"Name": "J1",
+			"CellRef": "../../SMA",
+			"View": "ThreeD",
+			"Placement": {
+				"Origin": [
+					10500000,
+					0,
+					{
+						"Expr": "axis_z",
+						"Unit": "Mm"
+					}
+				]
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "sub_h",
+			"Expression": "1.6",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "cu_t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "pin_d",
+			"Expression": "1.27",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "bore_d",
+			"Expression": "4.1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "axis_z",
+			"Expression": "sub_h + cu_t/2 + pin_d/2"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "XZ",
+			"Offset": -7500000,
+			"Annulus": {
+				"Centre": [
+					10500000,
+					{
+						"Expr": "axis_z",
+						"Unit": "Mm"
+					}
+				],
+				"Inner": {
+					"Expr": "pin_d/2",
+					"Unit": "Mm"
+				},
+				"Outer": {
+					"Expr": "bore_d/2",
+					"Unit": "Mm"
+				}
+			},
+			"Z0": "50"
+		}
+	],
+	"MeshRegions": [
+		{
+			"Name": "rings",
+			"Min": [
+				3500000,
+				0,
+				1600000
+			],
+			"Size": [
+				18000000,
+				22000000,
+				35000
+			],
+			"SizeUm": 300.0
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Palace",
+			"Frequency": {
+				"StartExpr": "0.4",
+				"StopExpr": "1.6",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"Kind": "Linear",
+				"StepExpr": "1",
+				"Mode": "StepSize",
+				"StepUnit": "MHz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"LinearSolver": "Direct",
+				"SweepAdaptiveTol": 0.001,
+				"SaveFieldsGHz": [
+					0.875
+				]
+			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "EMerge",
+			"Frequency": {
+				"StartExpr": "0.4",
+				"StopExpr": "1.6",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"Kind": "Linear",
+				"StepExpr": "1",
+				"Mode": "StepSize",
+				"StepUnit": "MHz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"DispersionCorrection": true,
+			"Solver3D": "Emerge",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"EMerge": {
+				"Quality": "Draft",
+				"AdaptiveSweep": true,
+				"ElementOrder": 1
+			}
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "E on the board",
+			"Setup": "Palace",
+			"Solution": {
+				"GHz": 0.875
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Z",
+			"Offset": 1700000,
+			"Db": true,
+			"Smooth": true
+		},
+		{
+			"Name": "E through the gap",
+			"Setup": "Palace",
+			"Solution": {
+				"GHz": 0.875
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 13000000,
+			"Db": true,
+			"Smooth": true
+		}
+	]
+}

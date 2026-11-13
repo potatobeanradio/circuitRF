@@ -111,6 +111,7 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private string _plotFacesText = "";
     [ObservableProperty] private bool _plotIsTemperature;
     [ObservableProperty] private bool _plotDb;
+    [ObservableProperty] private bool _plotSmooth;
     [ObservableProperty] private double _plotPercentile = 99;
     [ObservableProperty] private bool _plotFixRange;
     /// <summary>brief-sar-6 R-sar6-5 — a SAR clip plane drawn as its maximum-intensity projection; offered for SAR only.</summary>
@@ -219,6 +220,7 @@ public sealed partial class C3dPropertiesViewModel
             ? "None yet: right-click a face ▸ " + (p.IsTemperature ? "Plot Temperature" : "Plot Field") + " while this plot is drawn."
             : string.Join("\n", p.Faces.Select(f => f.Face + f.Side switch { C3dFieldSide.Top => " (top side)", C3dFieldSide.Bottom => " (bottom side)", _ => "" }));
         PlotDb = p.Db;
+        PlotSmooth = p.Smooth;
         PlotPercentile = p.Percentile;
         PlotFixRange = p.FixRange;
         PlotMip = p.Mip;
@@ -445,6 +447,7 @@ public sealed partial class C3dPropertiesViewModel
     }
 
     partial void OnPlotDbChanged(bool value) => CommitPlot($"{_plotName} in {(value ? "dB" : "linear units")}", p => p.Db = value);
+    partial void OnPlotSmoothChanged(bool value) => CommitPlot($"{_plotName} {(value ? "smoothed" : "as solved")}", p => p.Smooth = value);
     partial void OnPlotMipChanged(bool value) => CommitPlot($"{_plotName} as {(value ? "a maximum-intensity projection" : "a clip plane")}", p => p.Mip = value);
     partial void OnPlotPercentileChanged(double value) => CommitPlot($"{_plotName}'s range to the {value} percentile", p => p.Percentile = value);
     partial void OnPlotFixRangeChanged(bool value) => CommitPlot($"{(value ? "Fix" : "Free")} the range of {_plotName}", p => p.FixRange = value);

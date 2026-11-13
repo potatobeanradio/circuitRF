@@ -1741,8 +1741,19 @@ wall or the planes of a stackup — those keep MinCell.</p>
 <td>8</td>
 <td>Uniform cells added outside each absorbing face</td>
 </tr>
+<tr>
+<td><code>MeshRegions</code></td>
+<td>false</td>
+<td>A 3D view's mesh regions also cap the cell: no cell crossing a region's extent on an axis is larger than its size</td>
+</tr>
 </tbody>
 </table>
+<p><strong>A curved conductor needs a mesh region.</strong> A round or diagonal edge places no line of its own, so a printed ring is
+gridded at the wavelength's cell and a narrow ring can fall between lines. Draw a mesh region over it in the 3D view (its
+<code>MeshRegions</code>, with a size a third of the narrowest trace or so) and set <code>MeshRegions: true</code> in the setup's <code>OpenEms</code>
+section. It is off unless set because a mesh region is usually drawn for Palace or EMerge, and a fine one honoured along
+a whole axis would multiply an openEMS grid; a region also refines the Gmsh mesh of every Palace or EMerge setup of the
+view. The <strong>Loop Sensor</strong> example's rings use one.</p>
 <p><code>circuitrf explain</code> on the setup prints the grid before anything runs: lines per axis, the total
 cells, the smallest cell <strong>and the features that set it</strong>, the time step it allows (an estimate —
 openEMS computes its own), the steps and memory the run would take, and every merge. A grid that would
@@ -2457,6 +2468,35 @@ the face's modes give, as a note per port. <strong>A difference over 1 %</strong
 there; refine the mesh at the port face. The same voltages tell whether <strong>a terminal reads another port face's modes</strong>.
 An adaptive sweep solves no requested frequency directly, so a note says these two checks were not made.</li>
 </ul>
+<h3 id="coaxial-ports">Coaxial ports</h3>
+<p>A <strong>coaxial port</strong> is a lumped port whose sheet is a <strong>ring</strong>: the flat annulus of a coax's cross-section between its pin
+(radius <em>a</em>) and its outer conductor (radius <em>b</em>). Where a rectangular lumped port imposes a field of one direction across
+its sheet, the ring imposes a <strong>radial</strong> one falling as 1/r, E(r) = V / (r·ln(b/a)), which is the transverse field of the
+coax's own TEM mode. Its voltage is the line integral of that field from one conductor to the other, the same along every
+radius. It needs no air-box face and solves no mode, so it sits where a cable would feed a connector: across the
+dielectric at the connector's back face, wherever the connector is. It assumes the TEM mode, the only one a connector
+carries in its band.</p>
+<ul>
+<li><strong>Polarity.</strong> The conductor the inner circle lies on is <strong>+</strong> and the one the outer circle lies on is <strong>−</strong>: the pin is
+positive, as on a cable. <em>Flip</em> swaps them; <code>Positive</code> and <code>Negative</code> in the <code>.c3d</code> state them instead.</li>
+<li><strong>Z0.</strong> The port's reference impedance is its own setting, like any port's, and is what the result is normalised to.
+<code>check</code> also gives the ring's own impedance as a coax, η₀/(2π√εr)·ln(b/a) with the dielectric filling it, so a bore
+that is not quite 50 Ω is visible before a run: <em>As a coax filled with 'PTFE' (εr 2.1), its ring is 48.49 Ω; its Z0
+is 50 Ω</em>.</li>
+<li><strong>Where it may lie.</strong> On the XY, YZ or XZ plane, centred anywhere; its open area must be dielectric. A PEC face of the
+air box in the ring's own plane is never one of its two conductors, so a coax may end on the box's wall. The mesher puts
+eight elements across the ring's radial gap.</li>
+<li><strong>Which solvers.</strong> <strong>Palace</strong> writes it as a lumped port with a radial direction, on a box face or inside the model.
+<strong>EMerge</strong> runs it as circuitRF's radial lumped port, in either place. <strong>openEMS</strong> writes it inside the model as a
+radially weighted source, a thin conducting slab and two probes, and <strong>refuses it on a face of the box</strong>: give the
+connector some air behind its back face, or run Palace or EMerge.</li>
+</ul>
+<p><strong>When the coax wave port is still the better choice.</strong> A <a href="#wave-ports">wave port</a> on the air box's face solves the
+coax's mode at every frequency and terminates the line exactly, with no sheet of its own in the answer, so where a coax
+runs out to the box's face it is the exact port and the reference for the other two. The ring is for a connector that
+ends inside the model, with air or other parts behind it, and for a feed that should not depend on where the box is. A <strong>rectangular gap port</strong> at the bore's floor, the older way of feeding a
+connector, puts the gap's capacitance and one forced field direction into every answer; the <strong>Loop Sensor</strong> example
+measures the difference on one connector.</p>
 <h3 id="eigenmodes">Eigenmodes</h3>
 <p><strong>Problem</strong> <em>Eigenmode</em> finds the structure's resonant frequencies and their Q — &quot;is there a lid
 resonance inside my band?&quot;. <code>Eigenmode</code> sets how many modes (<code>Count</code>, default 3) above which frequency

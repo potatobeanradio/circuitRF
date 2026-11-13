@@ -3333,6 +3333,9 @@ mesh, so in SVG and PDF each triangle takes the colour of its centre. A vector s
 50,000 triangles merges neighbours that fall in the same step of the colour map, never dropping area.
 The report says <code>drawn as …</code> when that happened, and <code>--no-thin</code> draws every triangle. <code>--no-legend</code>
 leaves the legend off.</li>
+<li><strong><code>--smooth</code></strong> averages a clip-plane field over the coincident nodes of cells of one material before cutting. Palace
+at element order 1 writes each tetrahedron's own corner values, so a cut is otherwise drawn as a mosaic of its cells;
+across a material's boundary nothing is averaged, since the field's normal part really jumps there.</li>
 <li><code>--json</code> adds <code>render.em3d.field</code>: the plot, its setup, the solution as the file spells it, the run
 directory it read, the triangle counts, the range and whether the run is stale — and for a temperature,
 each wire drawn with its temperature span and where it crosses the plane. <code>--list-fields --json</code> returns

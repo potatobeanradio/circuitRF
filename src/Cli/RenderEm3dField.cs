@@ -240,7 +240,7 @@ internal static class RenderEm3dField
                                 realistic, realisticDirection);
         var clip = FieldPlotResolver.ScenePlane(plot, doc.DbuPerMicron, origin);
         FieldSectionCut? cut;
-        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive, own.Line); }
+        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive, own.Line, req.Smooth || plot.Smooth); }
         catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
         if (cut is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone ?? $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
@@ -390,7 +390,7 @@ internal static class RenderEm3dField
                         plot.On == C3dFieldPlotOn.Faces ? "a Faces plot paints the faces it names." : $"{q.Label} is drawn on the conductors, not on a region."));
                 var b = FieldSurfacePlot.Em(q, volume, boundary, found.Groups, scene, default, onPlane: false, plot.On == C3dFieldPlotOn.Surfaces,
                     region, FieldSurfacePlot.FaceTargets(scene, faces), null, string.Equals(item.Run.Solver, "openEMS", StringComparison.OrdinalIgnoreCase), ct,
-                    drive: drive);
+                    drive: drive, smooth: req.Smooth || plot.Smooth);
                 refused = [.. b.Refused];
                 if (b.Surfaces.Count == 0)
                     return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, string.Join(" ", refused.Append(b.Hint ?? "")).Trim()));

@@ -136,6 +136,7 @@ internal static class Render
         // brief-em3d-88 Q2 — material labels, and the page cropped to the section.
         public bool         Labels;
         public bool         Tight;
+        public bool         Smooth;
         // brief-em3d-89 — a Surfaces or Faces plot: which way to look, the region a volume quantity is drawn on, the mirror.
         public string?      ViewDir;
         public string?      Region;
@@ -218,6 +219,7 @@ internal static class Render
             "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso\n" +
             "                        [--axes] [--scale-bar]\n" +
             "  a .c3d also takes:    --field <plot> [--phase <deg>] [--mip x|y|z] [--no-legend] [--no-thin] [--labels] [--tight]\n" +
+            "                        [--smooth] (a clip-plane field averaged over coincident nodes within each material)\n" +
             "                        a Surfaces or Faces plot, as a .png: --iso | --view-dir top|bottom|front|back|left|right\n" +
             "                        | --view-dir x,y,z (toward the viewer) [--region <object>] [--no-mirror]\n" +
             "                        | --list-fields\n" +
@@ -392,6 +394,7 @@ internal static class Render
                 case "--no-thin":   o.NoThin = true;   continue;
                 case "--labels":    o.Labels = true;   continue;
                 case "--tight":     o.Tight = true;    continue;
+                case "--smooth":    o.Smooth = true;   continue;
                 case "--view-dir" when i + 1 < args.Length: o.ViewDir = args[++i]; continue;
                 case "--region"   when i + 1 < args.Length: o.Region = args[++i];  continue;
                 case "--no-mirror": o.NoMirror = true; continue;
@@ -658,7 +661,7 @@ internal static class Render
             emit: (w, h, draw) => Emit(o, w, h, draw))
         {
             Field = o.Field, ListFields = o.ListFields, Phase = o.Phase, Mip = o.Mip, NoLegend = o.NoLegend, NoThin = o.NoThin,
-            Labels = o.Labels, Tight = o.Tight, Axes = o.Axes, ScaleBar = o.ScaleBar,
+            Labels = o.Labels, Tight = o.Tight, Smooth = o.Smooth, Axes = o.Axes, ScaleBar = o.ScaleBar,
             ViewDir = o.ViewDir, Region = o.Region, NoMirror = o.NoMirror, Transparency = o.Transparency,
             Setup = o.Setup, OutputStated = o.Output is not null,
             Realistic = o.Realistic, LookSet = o.LookSet, Supersample = o.Supersample ?? CircuitRF.Render.Scene3D.Look.PictureResample.DefaultFactor,
@@ -668,7 +671,7 @@ internal static class Render
     /// <summary>brief-em3d-84 — the first field-plot option typed, for the refusal on a document that has no field plots.</summary>
     private static string? FieldOptionNamed(Options o)
         => o.Field is not null ? "--field" : o.ListFields ? "--list-fields" : o.Phase is not null ? "--phase"
-         : o.Mip is not null ? "--mip" : o.NoLegend ? "--no-legend" : o.NoThin ? "--no-thin" : o.Labels ? "--labels" : o.Tight ? "--tight"
+         : o.Mip is not null ? "--mip" : o.NoLegend ? "--no-legend" : o.NoThin ? "--no-thin" : o.Labels ? "--labels" : o.Tight ? "--tight" : o.Smooth ? "--smooth"
          : o.ViewDir is not null ? "--view-dir" : o.Region is not null ? "--region" : o.NoMirror ? "--no-mirror" : null;
 
     /// <summary>

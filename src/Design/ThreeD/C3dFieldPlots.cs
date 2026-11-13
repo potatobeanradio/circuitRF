@@ -224,6 +224,12 @@ public sealed class C3dFieldPlot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Db { get; set; }
 
+    /// <summary>brief-cxp-5 — drawn smooth: each value averaged over the coincident nodes of cells of one material
+    /// (<c>FieldSmoothing</c>), for a solver that writes every cell's own nodes. Computed once per loaded field, so it costs
+    /// nothing while the view moves.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Smooth { get; set; }
+
     /// <summary>The colour scale's top: this percentile of what is drawn (95, 99, 99.9, 100).</summary>
     [DefaultValue(99.0)]
     public double Percentile { get; set; } = 99;

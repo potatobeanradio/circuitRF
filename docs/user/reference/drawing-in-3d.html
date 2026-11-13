@@ -1889,6 +1889,17 @@ arrow and all. While it is drawn, the arrow (or the reason there cannot be one) 
 two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, from the floor up to the lead:
 each runs <strong>from <code>floor</code> (−) up to its lead (+)</strong>. <em>Flip</em> on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.</p>
+<p><a id="coaxial-port"></a><strong>A coaxial port.</strong> A coax is fed across the ring of dielectric between its pin and its shell:
+right-click the flat ring face where a coax ends (a bore's end face round a pin, or the pin's own end face inside its bore)
+and choose <em>Make Port ▸ Coaxial</em>. The ring's centre and its two radii are taken from the circles of the face, and are bound
+to the cylinders' variables where those have them, so changing <code>bore_d</code> moves the port with the bore. The pin's tip out in
+the air offers no ring. Or draw one with the <strong>Coaxial Port</strong> tool (<strong>Shift+A X</strong>, or <em>3D ▸ Draw ▸ Coaxial Port</em>): click the
+coax's centre on the drawing plane, then the pin's surface for the inner radius, then the shell's inner surface for the
+outer, or type each. The <strong>pin is +</strong> and the shell −, as on a cable; <em>Flip</em> swaps them. The ring is drawn as a checkerboard
+of radial and round cells over exactly its annulus, with four arrows from − to +, and its Properties show the centre, the
+inner and outer radius (each may hold an expression) and the ring's own impedance as a coax. It runs on Palace and EMerge
+anywhere, and on openEMS inside the model (not on a face of the box): <a href="em-setup.html#coaxial-ports">EM Setup ▸ Coaxial ports</a>.
+The <strong>Loop Sensor</strong> example feeds a real-size SMA this way.</p>
 <p><a id="expand-edges"></a><strong>Expand Edges and Contract Edges.</strong> A sheet or lumped port need not be drawn exactly. Right-click a drawn
 rectangular sheet or a lumped port, in the view or on its Object Tree row, and choose <em>Expand Edges</em> or <em>Contract Edges</em>: <em>All</em>, one
 edge (<em>-X Only</em>, <em>+X Only</em>) or both edges of an axis (<em>X</em>), for the two axes of its plane. A refused port has no sheet in the view, so
@@ -2386,7 +2397,8 @@ placed cell), because a drawn object has no net. <em>Show 3D</em> on a <code>.ce
 editor, with that <code>.cem</code> listed read-only and active, so its ports and boundaries can be seen.</li>
 <li><strong>Ports</strong> (<strong>P</strong> in the Shift+A popup, or <em>3D ▸ Draw ▸ Port</em>). A port is drawn like a sheet —
 two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
-<em>Make Port ▸ Lumped</em> or <em>Wave</em> (a wave port takes any flat face, as the rectangle round it). It takes the next free number and the last port's Z0. <strong>Which way round it
+<em>Make Port ▸ Lumped</em> or <em>Wave</em> (a wave port takes any flat face, as the rectangle round it), or <em>Make Port ▸ Coaxial</em> on a
+coax's flat ring face. It takes the next free number and the last port's Z0. <strong>Which way round it
 is comes from what it touches</strong>: each edge of the rectangle is tested against every conductor, and exactly
 one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
 Ground net, a placed layout's ground plane, or a PEC face of the air box — is <strong>−</strong>; otherwise the larger
@@ -2404,6 +2416,8 @@ conductor and Z0. Right-click the port for <em>Set Reference</em> (any conductor
 terminal's conductor swaps it with the reference), <em>Model</em> and <em>Delete</em>; with a terminal's arrow selected, the
 same menu adds <em>Flip</em> and <em>Z0…</em> for that terminal. <em>Flip</em> reverses the terminal's arrow; the reference stays
 the reference.</li>
+<li><strong>Coaxial ports</strong> (<strong>X</strong> in the Shift+A popup, or <em>3D ▸ Draw ▸ Coaxial Port</em>). The coax's centre, then the pin's radius,
+then the shell's, each a click or typed; the pin is <strong>+</strong> (<a href="#coaxial-port">A coaxial port</a>).</li>
 <li><strong>Bond wires</strong> (<strong>W</strong>, <strong>W</strong> in the Shift+A popup, or <em>3D ▸ Draw ▸ Wire</em>). A wire runs between two metal
 objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a <code>.wBond</code>
 cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to

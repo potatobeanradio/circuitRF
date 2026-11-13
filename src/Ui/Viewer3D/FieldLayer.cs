@@ -28,7 +28,7 @@ public sealed class FieldLayer
 
     // ── what it shows: a plot's settings, or (the view's own layer) the toolbar's ──────────────
 
-    internal bool OnClip = true, OnSurfaces = true, Db, FixRange, TempAllFaces, TempOnClip;
+    internal bool OnClip = true, OnSurfaces = true, Db, FixRange, TempAllFaces, TempOnClip, Smooth;
     internal double Percentile = 99;
     internal readonly List<PaintedFieldFace> Faces = [];
     internal readonly List<TemperatureFace> TempFaces = [];

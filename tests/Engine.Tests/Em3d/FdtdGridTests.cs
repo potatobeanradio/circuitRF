@@ -100,6 +100,26 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// brief-cxp-5 — a mesh region caps the openEMS cell across its extent only when the setup opts in
+    /// (<c>OpenEms.MeshRegions</c>): with it no x cell crossing the region is larger than its size; without it the grid is
+    /// exactly the grid with no region at all, so a region drawn for Palace never moves an openEMS run.
+    /// </summary>
+    [Fact]
+    public void AMeshRegion_CapsTheCell_OnlyWhenTheSetupOptsIn()
+    {
+        var plain = Microstrip();
+        var region = new Em3dMeshRegion("rings", new Point3(-1000 * Um, -1000 * Um, 0), new Point3(1000 * Um, 1000 * Um, 300 * Um), 50 * Um, null);
+        var withRegion = plain with { MeshRegions = [region] };
+        Assert.Equal(FdtdGrid.Build(plain, Defaults, Plenty).X.Lines, FdtdGrid.Build(withRegion, Defaults, Plenty).X.Lines);
+
+        var x = FdtdGrid.Build(withRegion, Defaults with { MeshRegions = true }, Plenty).X.Lines;
+        for (int i = 1; i < x.Count; i++)
+            if (x[i] > -1000 * Um + 1e-9 && x[i - 1] < 1000 * Um - 1e-9)
+                Assert.True(x[i] - x[i - 1] <= 50 * Um * (1 + 1e-9), $"a {(x[i] - x[i - 1]) / Um:F1} µm cell at x = {x[i - 1] / Um:F0} µm");
+        Assert.True(x.Count > FdtdGrid.Build(plain, Defaults, Plenty).X.Lines.Count);
+    }
+
+    /// <summary>
     /// A coplanar waveguide: a 400 µm strip in a 100 µm slot cut in a same-layer ground pour. The pour's
     /// box CONTAINS the strip's, which the gap clamp used to read as "the same conductor" — so neither
     /// side of the slot was clamped, and the strip's outside line landed 160 µm out, inside the pour.

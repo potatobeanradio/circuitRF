@@ -133,7 +133,8 @@ public static class C3dSetups
         var read = Read(doc);
         if (read.FirstOrDefault(s => s.Name == setupName)?.Setup is not { } mine) return new C3dRunScope(names, false, true, null);
         if (!mine.IsThermal)
-            return new C3dRunScope(names, false, mine.Solver3D.IsNone || Em3d.Em3dSolvers.Any(mine.Solver3D, c => c.MeshRegions), null);
+            return new C3dRunScope(names, false, mine.Solver3D.IsNone || Em3d.Em3dSolvers.Any(mine.Solver3D, c => c.MeshRegions) ||
+                                                 mine.OpenEms?.MeshRegions == true, null);
         var currents = names.Select(n => read.FirstOrDefault(s => s.Name == n)?.Setup).OfType<EmSetup>()
                             .SelectMany(s => s.Thermal?.Currents ?? []).ToList();
         IReadOnlySet<int>? ports = currents.Any(c => c.FromCircuit is not null) ? null : currents.Select(c => c.Port).OfType<int>().ToHashSet();

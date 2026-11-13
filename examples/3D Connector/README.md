@@ -79,11 +79,14 @@ step 5 — and its parts are mapped to materials by name or colour, or chosen in
 
 ## First: why the coax port is a gap
 
-A 3D view's ports are rectangles, and openEMS drives only rectangular (lumped) ports, so the coax end is fed the way a
-probe is: **P1 bridges the 0.3 mm gap between the bore's floor and the pin's end**, the housing (−) to the pin (+). The
-gap is a small capacitance across the port, the same in every run below, so it moves the numbers but not the
-comparisons between them. A coaxial wave port would have given Palace a pure coaxial mode and let it report the line's
-own impedance to set against 50.06 Ω; it would have ruled openEMS out, which is why it is not used.
+The coax end is fed the way a probe is: **P1 bridges the 0.3 mm gap between the bore's floor and the pin's end**, the
+housing (−) to the pin (+). The gap is a small capacitance across the port, the same in every run below, so it moves the
+numbers but not the comparisons between them, and it is kept here because every number on this page was measured with it.
+A coax can also be fed in its own field, with nothing of the port's in the answer, in two ways: a **coaxial port**, a
+lumped port whose sheet is the ring of PTFE at the bore's end (*Make Port ▸ Coaxial*, on all three solvers;
+**EM Setup ▸ Coaxial ports**), or a **coaxial wave port** where the coax runs out to the air box's face. The
+**Loop Sensor** example sets a coaxial port against a gap port on one connector, and the **3D Wave Ports** example runs
+this launch on a wave port.
 
 ## The numbers, and where they come from
 

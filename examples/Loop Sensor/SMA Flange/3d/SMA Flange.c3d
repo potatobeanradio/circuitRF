@@ -1,0 +1,260 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "flange",
+			"Op": "Unite",
+			"Blank": {
+				"$type": "Boolean",
+				"Op": "Subtract",
+				"Blank": {
+					"$type": "Box",
+					"Material": "Connector alloy",
+					"Min": [
+						{
+							"Expr": "-fl_w/2",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "-fl_t",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "-fl_h/2",
+							"Unit": "Mm"
+						}
+					],
+					"Size": [
+						{
+							"Expr": "fl_w",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "fl_t",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "fl_h",
+							"Unit": "Mm"
+						}
+					]
+				},
+				"Tools": [
+					{
+						"$type": "Cylinder",
+						"Name": "hole",
+						"Material": "Connector alloy",
+						"Base": [
+							0,
+							{
+								"Expr": "-fl_t",
+								"Unit": "Mm"
+							},
+							0
+						],
+						"Axis": "Y",
+						"Length": {
+							"Expr": "fl_t",
+							"Unit": "Mm"
+						},
+						"Radius": {
+							"Expr": "bore_d/2",
+							"Unit": "Mm"
+						}
+					}
+				]
+			},
+			"Tools": [
+				{
+					"$type": "Box",
+					"Name": "leg_top_left",
+					"Material": "Connector alloy",
+					"Min": [
+						{
+							"Expr": "-leg_x - leg_w/2",
+							"Unit": "Mm"
+						},
+						0,
+						{
+							"Expr": "-pin_d/2",
+							"Unit": "Mm"
+						}
+					],
+					"Size": [
+						{
+							"Expr": "leg_w",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_l",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_t",
+							"Unit": "Mm"
+						}
+					]
+				},
+				{
+					"$type": "Box",
+					"Name": "leg_top_right",
+					"Material": "Connector alloy",
+					"Min": [
+						{
+							"Expr": "leg_x - leg_w/2",
+							"Unit": "Mm"
+						},
+						0,
+						{
+							"Expr": "-pin_d/2",
+							"Unit": "Mm"
+						}
+					],
+					"Size": [
+						{
+							"Expr": "leg_w",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_l",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_t",
+							"Unit": "Mm"
+						}
+					]
+				},
+				{
+					"$type": "Box",
+					"Name": "leg_bottom_left",
+					"Material": "Connector alloy",
+					"Min": [
+						{
+							"Expr": "-leg_x - leg_w/2",
+							"Unit": "Mm"
+						},
+						0,
+						{
+							"Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t",
+							"Unit": "Mm"
+						}
+					],
+					"Size": [
+						{
+							"Expr": "leg_w",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_l",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_t",
+							"Unit": "Mm"
+						}
+					]
+				},
+				{
+					"$type": "Box",
+					"Name": "leg_bottom_right",
+					"Material": "Connector alloy",
+					"Min": [
+						{
+							"Expr": "leg_x - leg_w/2",
+							"Unit": "Mm"
+						},
+						0,
+						{
+							"Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t",
+							"Unit": "Mm"
+						}
+					],
+					"Size": [
+						{
+							"Expr": "leg_w",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_l",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "leg_t",
+							"Unit": "Mm"
+						}
+					]
+				}
+			]
+		}
+	],
+	"Variables": [
+		{
+			"Name": "bore_d",
+			"Expression": "4.1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "pin_d",
+			"Expression": "1.27",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "fl_w",
+			"Expression": "9.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "fl_h",
+			"Expression": "6.35",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "fl_t",
+			"Expression": "1.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "leg_x",
+			"Expression": "4",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "leg_w",
+			"Expression": "1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "leg_t",
+			"Expression": "0.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "leg_l",
+			"Expression": "2.5",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "sub_h",
+			"Expression": "1.6",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "cu_t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	}
+}

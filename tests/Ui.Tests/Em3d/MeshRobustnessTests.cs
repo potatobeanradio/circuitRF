@@ -87,7 +87,7 @@ public sealed class MeshRobustnessTests : IDisposable
         var again = PalaceRun.Mesh(Path.Combine(_root, "run"), curved, fake, null, default,
                                    straight: () => Lowering(GmshGeoWriter.StraightSidedLine), curvingMinutes: 0.005);
         Assert.True(again.Reused);
-        Assert.StartsWith("The reused mesh is the one made when", again.Note);
+        Assert.StartsWith("The reused mesh has straight-sided second-order elements", again.Note);
     }
 
     /// <summary>A flat element makes the run remake the mesh once on the Delaunay surface mesher, say so, and reuse that mesh next

@@ -210,6 +210,9 @@ public sealed partial class Viewer3DViewModel
         layer.OnClip = p.On == C3dFieldPlotOn.ClipPlane;
         layer.OnSurfaces = p.On == C3dFieldPlotOn.Surfaces;
         layer.Db = p.Db;
+        // brief-cxp-5 — a changed Smooth changes the plot's key, so the plot is applied again and EnsureFieldLoaded rebuilds
+        // its geometry once, off the UI thread; nothing of it runs per frame.
+        layer.Smooth = p.Smooth;
         layer.Percentile = p.Percentile;
         layer.FixRange = p.FixRange;
         layer.Faces.Clear();

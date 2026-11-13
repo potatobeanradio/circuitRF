@@ -1,0 +1,118 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "pdms",
+			"Op": "Subtract",
+			"Transparency": 85,
+			"Blank": {
+				"$type": "Box",
+				"Material": "PDMS",
+				"Min": [
+					0,
+					0,
+					{
+						"Expr": "sub_h",
+						"Unit": "Mm"
+					}
+				],
+				"Size": [
+					25000000,
+					25000000,
+					{
+						"Expr": "cu_t + pdms_t",
+						"Unit": "Mm"
+					}
+				]
+			},
+			"Tools": [
+				{
+					"$type": "Cylinder",
+					"Name": "reservoir",
+					"Material": "PDMS",
+					"Base": [
+						6200000,
+						13000000,
+						{
+							"Expr": "sub_h",
+							"Unit": "Mm"
+						}
+					],
+					"Axis": "Z",
+					"Length": {
+						"Expr": "cu_t + pdms_t",
+						"Unit": "Mm"
+					},
+					"Radius": {
+						"Expr": "res_d/2",
+						"Unit": "Mm"
+					}
+				}
+			]
+		},
+		{
+			"$type": "Cylinder",
+			"Name": "sample",
+			"Material": "Water",
+			"Transparency": 40,
+			"Base": [
+				6200000,
+				13000000,
+				{
+					"Expr": "sub_h",
+					"Unit": "Mm"
+				}
+			],
+			"Axis": "Z",
+			"Length": {
+				"Expr": "cu_t + pdms_t",
+				"Unit": "Mm"
+			},
+			"Radius": {
+				"Expr": "res_d/2",
+				"Unit": "Mm"
+			}
+		}
+	],
+	"Instances": [
+		{
+			"Name": "L1",
+			"CellRef": "..",
+			"View": "Layout"
+		}
+	],
+	"Variables": [
+		{
+			"Name": "sub_h",
+			"Expression": "1.6",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "cu_t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "pdms_t",
+			"Expression": "4",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "res_d",
+			"Expression": "5",
+			"Unit": "Mm"
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	}
+}

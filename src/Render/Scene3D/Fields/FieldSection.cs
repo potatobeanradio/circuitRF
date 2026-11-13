@@ -95,15 +95,65 @@ public static class FieldSection
     /// maximum), painted with the quantity's map.
     /// Null when the step holds no such volume array. brief-em3d-100 — the slice carries <paramref name="drive"/>, the plot's.
     /// </summary>
+    /// <param name="smooth">brief-cxp-5 — <see cref="FieldSmoothing.WithinMaterials"/> first: each node's value averaged over the
+    /// coincident nodes of cells of its own material, for a solver that writes each cell's own nodes (Palace at order 1).</param>
     public static FieldSectionCut? Cut(FieldQuantity q, FieldStep volume, (double X, double Y, double Z) origin, ClipPlane3D clip,
                                        bool db, double percentile, CancellationToken ct = default, FieldDriveReading? drive = null,
-                                       FieldSectionLine? line = null)
+                                       FieldSectionLine? line = null, bool smooth = false)
     {
         if (q.OnBoundary || volume.Load(q.Array.Name) is not { } array) return null;
+        if (smooth) array = FieldSmoothing.Cached(volume.Mesh, array);
         var slice = Slice(volume.Mesh, array, origin, clip, ct);
         FieldDrive.Apply([slice], drive?.Factor ?? 1);      // brief-em3d-100 — the plot's drive, as the view applies it
         // brief-em3d-88 — a temperature is ranged as the 3D view ranges one (brief-em3d-75 D9): its true minimum and maximum.
         var scale = q.IsTemperature ? FieldColorScale.MinMax(q, [slice]) : FieldSurfacePlot.EmScale(q, [slice], db, percentile, drive);
         return new FieldSectionCut(q, slice, scale, ColorMap3D.For(q), origin, (int)clip.Axis, line);
+    }
+}
+
+/// <summary>
+/// brief-cxp-5 — a display smoothing for a field written element by element. Palace's ParaView output gives every cell its own
+/// nodes (four per first-order tetrahedron), so neighbouring cells hold different values at one point and a cut through them
+/// is drawn as a mosaic. This averages each node's channels over every node at the same position whose cell has the same
+/// attribute (the same material region), and only those: across a material interface the normal part of E really jumps (by
+/// the permittivities' ratio at water against PDMS), and averaging there would draw a field that is not there. A per-cell
+/// array, or one whose nodes are already shared, comes back unchanged in effect.
+/// </summary>
+public static class FieldSmoothing
+{
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FieldArray, FieldArray> Smoothed = new();
+
+    /// <summary><see cref="WithinMaterials"/>, made once per loaded array and kept while the array is: a plot rebuilt for a moved
+    /// plane, a new drive or a phase reuses it, and nothing of it runs per frame.</summary>
+    public static FieldArray Cached(FieldMesh mesh, FieldArray a) => Smoothed.GetValue(a, x => WithinMaterials(mesh, x));
+
+    public static FieldArray WithinMaterials(FieldMesh mesh, FieldArray a)
+    {
+        if (a.Info.PerCell || mesh.NodeCount == 0) return a;
+        int n = mesh.NodeCount, c = a.Components, npc = mesh.NodesPerCell;
+        var attr = new int[n];
+        for (int cell = 0; cell < mesh.CellCount; cell++)
+            for (int k = 0; k < npc; k++) attr[mesh.Cells[cell * npc + k]] = mesh.Attribute[cell];
+        // Positions are float in the file and coincident nodes are written identically, so the bits are the key.
+        var groups = new Dictionary<(float, float, float, int), List<int>>();
+        for (int i = 0; i < n; i++)
+        {
+            var key = (mesh.Points[3 * i], mesh.Points[3 * i + 1], mesh.Points[3 * i + 2], attr[i]);
+            if (!groups.TryGetValue(key, out var list)) groups[key] = list = [];
+            list.Add(i);
+        }
+        var re = (float[])a.Re.Clone();
+        var im = a.Im is null ? null : (float[])a.Im.Clone();
+        foreach (var list in groups.Values)
+        {
+            if (list.Count < 2) continue;
+            for (int j = 0; j < c; j++)
+            {
+                double sr = 0, si = 0;
+                foreach (int i in list) { sr += a.Re[i * c + j]; if (a.Im is { } ai) si += ai[i * c + j]; }
+                foreach (int i in list) { re[i * c + j] = (float)(sr / list.Count); if (im is not null) im[i * c + j] = (float)(si / list.Count); }
+            }
+        }
+        return new FieldArray { Info = a.Info, Re = re, Im = im };
     }
 }

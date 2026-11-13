@@ -544,6 +544,13 @@ public sealed class CemOpenEms
     /// </summary>
     public CemGridLines? GridLines { get; set; }
 
+    /// <summary>
+    /// brief-cxp-5 — the view's mesh regions (<c>.c3d</c> <c>MeshRegions</c>) also cap the grid cell: on each axis, no cell crossing a
+    /// region's extent is larger than its size. Off unless set, so a region drawn for a Gmsh-meshed setup beside this one never
+    /// changes its grid. What a curved conductor needs, since a curved or diagonal edge places no grid line of its own.
+    /// </summary>
+    public bool? MeshRegions { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemOpenEms Clone()
     {
@@ -562,7 +569,7 @@ public sealed class CemOpenEms
         CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
         EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null && SaveH is null &&
         Grid is null && Axis is null && AxisOriginUm is null && AzimuthLines is null && CellConstantMaterial is null && GridLines is null &&
-        MultiGridRadiiUm is null;
+        MultiGridRadiiUm is null && MeshRegions is null;
 
     /// <summary>
     /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
@@ -601,6 +608,7 @@ public sealed class CemOpenEms
             section.MinCellUm is { } um ? um * 1e-6 : d.MinCellM,
             section.PmlCells           ?? d.PmlCells)
         {
+            MeshRegions = section.MeshRegions == true,
             // brief-em3d-120 — a malformed origin resolves to NaN, which OpenEmsGridSettings.Problems names.
             Cylindrical = section.Grid != OpenEmsGridKind.Cylindrical ? null : new CircuitRF.Engine.Em3d.OpenEmsCylindrical(
                 (CircuitRF.Engine.Em3d.FdtdAxis)(int)(section.Axis ?? OpenEmsGridAxis.Z),

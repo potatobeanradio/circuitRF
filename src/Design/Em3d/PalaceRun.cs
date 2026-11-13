@@ -247,6 +247,24 @@ public static class PalaceRun
                     run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
                                      Watch(limits, gmshLog.Line, physicalBytes, stage));
                 }
+                // brief-cxp-5 — curving that left a node with no position (NaN): Gmsh's high-order optimisation can, beside short
+                // facets meeting a curved face, and Palace then fails reading the mesh with "Required mesh-end tag not found",
+                // naming nothing. Straight-sided second-order elements carry no such node.
+                if (!run.Cancelled && run.Stopped is null && run.StartFailure is null && run.ExitCode == 0 && !capped && straight is not null &&
+                    GmshGeoWriter.Curves(lowering) && Em3dMeshCheck.NonFiniteNodes(Path.Combine(stage, GmshGeoWriter.MeshFile)) is > 0 and var lost &&
+                    straight() is { Ok: true } flatter)
+                {
+                    note = Joined(note, NonFiniteCurvingNote(lost));
+                    WriteText(geoPath, flatter.Geo!);
+                    WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), flatter.Geo!);
+                    foreach (string partial in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
+                        if (File.Exists(Path.Combine(stage, partial))) File.Delete(Path.Combine(stage, partial));
+                    gmshLog = new GmshLogProgress(control) { GeometryCuts = cuts };
+                    gmshLog.Begin();
+                    Interlocked.Increment(ref _gmsh);
+                    run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
+                                     Watch(limits, gmshLog.Line, physicalBytes, stage));
+                }
                 // A flat tetrahedron the mesher left: once more on the Delaunay surface mesher, from the geometry just saved. A mesh
                 // still holding one is refused by the check the run makes next, with its place.
                 if (!run.Cancelled && run.Stopped is null && run.StartFailure is null && run.ExitCode == 0 && lowering.Built is not null &&
@@ -396,10 +414,19 @@ public static class PalaceRun
     /// high-order optimisation and its node count included.</summary>
     internal static readonly string[] GmshArguments = [GmshGeoWriter.GeoFile, "-3", "-v", "5", "-o", GmshGeoWriter.MeshFile];
 
+    /// <summary>brief-cxp-5 — the note when curving left nodes with no position and the mesh was made straight-sided.</summary>
+    internal static string NonFiniteCurvingNote(int nodes)
+        => $"Gmsh's curving of the second-order elements left {nodes.ToString("N0", CultureInfo.InvariantCulture)} node(s) with no " +
+           "position, which the solver cannot read, so the mesh was made again with straight-sided second-order elements. A curved " +
+           "surface is then faceted at its mesh size.";
+
     /// <summary>brief-emb-2 R-emb2-1 — what a run says when the curving cap stepped in (or its mesh is reused).</summary>
     internal static string CurvingNote(double minutes, bool reused)
-        => (reused ? "The reused mesh is the one made when " : "") +
-           $"Gmsh's curving of the second-order elements ran past {minutes.ToString("G4", CultureInfo.InvariantCulture)} min " +
+        => reused
+            ? "The reused mesh has straight-sided second-order elements: when it was made, Gmsh's curving either ran past " +
+              $"{minutes.ToString("G4", CultureInfo.InvariantCulture)} min (Palace.MeshCurvingMinutes) or left nodes with no position. " +
+              "A curved surface is faceted at its mesh size."
+            : $"Gmsh's curving of the second-order elements ran past {minutes.ToString("G4", CultureInfo.InvariantCulture)} min " +
            "(Palace.MeshCurvingMinutes), so the mesh was made again with straight-sided second-order elements. A curved " +
            "surface is then faceted at its mesh size; raise MeshCurvingMinutes to let the curving finish.";
 

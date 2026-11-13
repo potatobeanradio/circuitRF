@@ -107,3 +107,36 @@ reference machine (Apple M4, 16 GB).
 2. `check` on the workspace reports no error; any warning is explained in the README.
 3. Pictures (UiSnapshot / `render`, looked at): the board, the connector on the board with the ring port visible, and
    one |S11| plot of *Ideal Port* against *With Connector*.
+
+## Completion note (2026-11-12)
+
+Built as `examples/Loop Sensor`: *Sensor* (layout, and a 3D view with the PDMS layer and a water `sample` in the reservoir),
+*SMA Flange* → `sma-flange.step`, *SMA*, *Ideal Port*, *With Connector* and *Gap Fed*. Each assumption the brief listed is a
+VAR or a technology value with a sentence in the README. Two were read differently from the brief, each for a reason the
+paper's figure gives: R1 and R2 are to the rings' **outer edges** (their ratio there is 8.5/6.5 to 0.1 %) and l2 is the
+**clear gap** between the arms (its arrow spans it); the traces are 0.9, 0.4 and 1.0 mm. The README runs the brief's reading
+too (825 MHz, −15.34 dB). The legs are at ±4 mm so one lands on the other arm.
+
+**Where it resonates.** Empty, the board resonates at 1,989 MHz; with the paper's sample in the reservoir, at 873 MHz
+(Palace, ideal port) — the sample is what puts it near the paper's 1 GHz, so every shipped run has it. The connector moves the
+dip +2 MHz and 1.2 dB; the coaxial port against a gap port, 5 MHz and 0.6 dB. Palace and EMerge agree to 10 MHz.
+
+**Solvers.** Palace (*Draft*) and EMerge (element order 1: order 2 needed 29 GB) on every board; openEMS on *Ideal Port* only
+(4 min 11 s). *With Connector*'s openEMS dry run said about 18 min (the coaxial port's slab lines put an 88 µm cell on the
+grid), so none ships for it, as the owner allowed. Gate 2: `check` reports no error and no warning. Gate 3: pictures (looked
+at) of the board, the connector with its ring port, both E-field projections at the dip and |S11| of Ideal Port against With
+Connector, in `pictures/` and the README.
+
+**Fixed along the way** (`src/Design/RESOLVED.md`): a lumped port across a loop's two open ends (one conductor touching both
+edges) was refused; Gmsh's curving could leave NaN nodes that Palace failed on without naming them, and the mesh check passed
+them — a curved mesh with such nodes is now remeshed straight-sided; openEMS ignored mesh regions, so curved printed traces
+fell between cells — `OpenEms.MeshRegions: true` now caps the cell (opt-in, so no shipped grid moves); a section drew a port
+lying off it; and a field plot's **Smooth** (a box beside dB in its Properties, saved in the `.c3d`, drawn by the 3D view and by `render
+--field`; `render --smooth` for one picture) averages an element-by-element field within each material, made once per
+loaded field so the view's frame rate is unchanged; a toggle redraws at once. The example's two plots have it ticked.
+
+Tests: `LoopSensorExampleTests` (routine: the README quotes only recorded values, each dip is its recorded minimum, the coax
+closed form, `check`, vendor names; Benchmark: every shipped run's |S11| at every frequency, per solver),
+`C3dPortDirectionTests.ALoopFedAcrossItsOpenEnds…`, `FdtdGridTests.AMeshRegion_CapsTheCell_OnlyWhenTheSetupOptsIn`,
+`FieldTests.Smoothing_…` and `ASmoothPlot_…`, `FieldPlotTests.Gate3` (a Smooth toggle redraws at once), and an assertion in `Em3dRenderExplainTests.Gate1`. Docs: *EM Setup ▸ Coaxial ports* and the openEMS
+grid's `MeshRegions`, *The 3D Editor ▸ A coaxial port*, `render --smooth`; pages regenerated.

@@ -123,6 +123,15 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(C3dAxis.Z, vm.FieldPlot("Field1")!.Axis);
         Until(() => vm.Viewer.FieldGeometryBuilds > builds + 0 && Settled(vm).Vertices == z.Vertices, "undo never drew the z cut again");
         Assert.Equal(z, Settled(vm));
+
+        // brief-cxp-5 — ticking Smooth redraws the plot at once, as one undo entry, with nothing else done
+        entries = vm.UndoEntries;
+        builds = vm.Viewer.FieldGeometryBuilds;
+        vm.Properties.PlotSmooth = true;
+        Assert.Equal(entries + 1, vm.UndoEntries);
+        Assert.True(vm.FieldPlot("Field1")!.Smooth);
+        Until(() => vm.Viewer.FieldGeometryBuilds > builds, "ticking Smooth never redrew the plot");
+        Assert.Equal(z.Vertices, Settled(vm).Vertices);                          // the same triangles: only their values move
     }
 
     // ── 4. missing data ─────────────────────────────────────────────────────────────────────

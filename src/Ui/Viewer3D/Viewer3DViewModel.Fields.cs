@@ -730,6 +730,7 @@ public sealed partial class Viewer3DViewModel
         var drive = DriveOf(layer, q);                         // brief-em3d-100 — this plot's drive, on its own values
         FieldSampler? sampler = layer.Loaded?.Solver == "openEMS" ? layer.VolumeSampler : null;
         bool unclipped = layer.IsClipPlanePlot;
+        bool smooth = layer.Smooth;
         bool sampled = layer.Loaded?.Solver == "openEMS";
         Task.Run(() =>
         {
@@ -737,7 +738,7 @@ public sealed partial class Viewer3DViewModel
             {
                 // brief-em3d-89 — built by FieldSurfacePlot.Em, which `render --field` draws a Surfaces or Faces plot from too
                 var built = FieldSurfacePlot.Em(q, vol, bnd, groups, scene, clip, onPlane, onSurfaces, selected, targets, sampler, sampled, cts.Token,
-                                                sliceClipped: !unclipped, drive: drive);
+                                                sliceClipped: !unclipped, drive: drive, smooth: smooth);
                 var surfaces = built.Surfaces;
                 var refused = built.Refused;
                 string? hint = built.Hint;

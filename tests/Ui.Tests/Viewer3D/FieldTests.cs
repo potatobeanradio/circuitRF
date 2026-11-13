@@ -34,6 +34,42 @@ public sealed class FieldTests(ITestOutputHelper output)
 
     // ── 1. goldens: only the output lines differ ────────────────────────────────────────────────
 
+    /// <summary>brief-cxp-5 — <see cref="FieldSmoothing.WithinMaterials"/>: two tetrahedra written element by element (four nodes
+    /// each, three of them coincident on their shared face) average the shared face's values when they are one material, and
+    /// keep them apart across a material boundary, where the field's normal part really jumps.</summary>
+    [Fact]
+    public void Smoothing_AveragesCoincidentNodes_OnlyWithinOneMaterial()
+    {
+        float[] pts = [0, 0, 0,  1, 0, 0,  0, 1, 0,  0, 0, 1,     0, 0, 0,  1, 0, 0,  0, 1, 0,  0, 0, -1];
+        var info = new FieldArrayInfo("E", 1, false, false);
+        var a = new FieldArray { Info = info, Re = [1, 1, 1, 5,  3, 3, 3, 7] };
+        FieldMesh Mesh(int second) => new()
+        {
+            Shape = FieldCellShape.Tetrahedron, Order = 1, NodesPerCell = 4, Points = pts,
+            Cells = [0, 1, 2, 3, 4, 5, 6, 7], Attribute = [1, second], ToMetres = 1,
+        };
+        Assert.Equal([2f, 2, 2, 5, 2, 2, 2, 7], FieldSmoothing.WithinMaterials(Mesh(1), a).Re);
+        Assert.Equal(a.Re, FieldSmoothing.WithinMaterials(Mesh(2), a).Re);
+    }
+
+    /// <summary>brief-cxp-5 — a plot's Smooth is saved with it and reaches the request the 3D view and <c>render --field</c> both
+    /// draw from.</summary>
+    [Fact]
+    public void ASmoothPlot_SurvivesASave_AndReachesTheRequest()
+    {
+        var doc = new CircuitRF.Design.ThreeD.C3dDocument();
+        doc.FieldPlots.Add(new CircuitRF.Design.ThreeD.C3dFieldPlot { Name = "E", Setup = "Palace", Smooth = true });
+        string path = Path.Combine(Path.GetTempPath(), "crf-smooth-" + Guid.NewGuid().ToString("N")[..8] + ".c3d");
+        try
+        {
+            CircuitRF.Design.ThreeD.C3dPersistence.SaveToFile(path, doc);
+            var back = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(path).FieldPlots.Single();
+            Assert.True(back.Smooth);
+            Assert.True(FieldPlotResolver.Request(back, "Palace", null, null, null).Smooth);
+        }
+        finally { File.Delete(path); }
+    }
+
     /// <summary>
     /// Every committed Palace config golden, with its field-output lines taken out, is the config the
     /// writer produces with fields OFF (<c>SaveFieldsGHz: []</c>) — which is what every golden was before

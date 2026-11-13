@@ -4,7 +4,7 @@ slug: reference/drawing-in-3d.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > The 3D editor
 lede: Drawing a cell in three dimensions — boxes, cylinders, faces, booleans, fillets, STEP parts, placed cells, bond wires and ports — in circuitRF's own 3D editor, which needs no solver to draw anything. Taught through two examples, an MMIC in a lidded package and a coaxial connector launching onto a board.
-keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sphere, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
+keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sphere, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, coaxial port, annular port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
 ---
 
 The **3D editor** is where a cell's **3D view** is drawn: solids, sheets, bond wires and ports in three
@@ -1311,6 +1311,18 @@ two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, fr
 each runs **from `floor` (−) up to its lead (+)**. *Flip* on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.
 
+<a id="coaxial-port"></a>**A coaxial port.** A coax is fed across the ring of dielectric between its pin and its shell:
+right-click the flat ring face where a coax ends (a bore's end face round a pin, or the pin's own end face inside its bore)
+and choose *Make Port ▸ Coaxial*. The ring's centre and its two radii are taken from the circles of the face, and are bound
+to the cylinders' variables where those have them, so changing `bore_d` moves the port with the bore. The pin's tip out in
+the air offers no ring. Or draw one with the **Coaxial Port** tool (**Shift+A X**, or *3D ▸ Draw ▸ Coaxial Port*): click the
+coax's centre on the drawing plane, then the pin's surface for the inner radius, then the shell's inner surface for the
+outer, or type each. The **pin is +** and the shell −, as on a cable; *Flip* swaps them. The ring is drawn as a checkerboard
+of radial and round cells over exactly its annulus, with four arrows from − to +, and its Properties show the centre, the
+inner and outer radius (each may hold an expression) and the ring's own impedance as a coax. It runs on Palace and EMerge
+anywhere, and on openEMS inside the model (not on a face of the box): [EM Setup ▸ Coaxial ports](em-setup.html#coaxial-ports).
+The **Loop Sensor** example feeds a real-size SMA this way.
+
 <a id="expand-edges"></a>**Expand Edges and Contract Edges.** A sheet or lumped port need not be drawn exactly. Right-click a drawn
 rectangular sheet or a lumped port, in the view or on its Object Tree row, and choose *Expand Edges* or *Contract Edges*: *All*, one
 edge (*-X Only*, *+X Only*) or both edges of an axis (*X*), for the two axes of its plane. A refused port has no sheet in the view, so
@@ -1764,7 +1776,8 @@ order a pane presents them, with the rules each one follows.
   editor, with that `.cem` listed read-only and active, so its ports and boundaries can be seen.
 - **Ports** (**P** in the Shift+A popup, or *3D ▸ Draw ▸ Port*). A port is drawn like a sheet —
   two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
-  *Make Port ▸ Lumped* or *Wave* (a wave port takes any flat face, as the rectangle round it). It takes the next free number and the last port's Z0. **Which way round it
+  *Make Port ▸ Lumped* or *Wave* (a wave port takes any flat face, as the rectangle round it), or *Make Port ▸ Coaxial* on a
+  coax's flat ring face. It takes the next free number and the last port's Z0. **Which way round it
   is comes from what it touches**: each edge of the rectangle is tested against every conductor, and exactly
   one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
   Ground net, a placed layout's ground plane, or a PEC face of the air box — is **−**; otherwise the larger
@@ -1782,6 +1795,8 @@ order a pane presents them, with the rules each one follows.
   terminal's conductor swaps it with the reference), *Model* and *Delete*; with a terminal's arrow selected, the
   same menu adds *Flip* and *Z0…* for that terminal. *Flip* reverses the terminal's arrow; the reference stays
   the reference.
+- **Coaxial ports** (**X** in the Shift+A popup, or *3D ▸ Draw ▸ Coaxial Port*). The coax's centre, then the pin's radius,
+  then the shell's, each a click or typed; the pin is **+** ([A coaxial port](#coaxial-port)).
 - **Bond wires** (**W**, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
   objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a `.wBond`
   cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to

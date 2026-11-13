@@ -532,13 +532,18 @@ public static class C3dPorts
             for (int k = 0; k < 2; k++)
                 if (touching[2 * k].Count == 1 && touching[2 * k + 1].Count == 1 && touching[2 * k][0] != touching[2 * k + 1][0])
                     valid.Add(k);
-            if (valid.Count != 1)
+            int loop = valid.Count == 0 ? LoopPair(touching, ctx, P((u0 + u1) / 2, (v0 + v1) / 2), tol) : -1;
+            if (valid.Count != 1 && loop < 0)
                 return Refuse(port, ContactRefusal(label, touching, valid.Count, edges, ctx), contacts);
-            pair = valid[0];
+            pair = valid.Count == 1 ? valid[0] : loop;
             string low = touching[2 * pair][0], high = touching[2 * pair + 1][0];
             var lc = ctx.Conductors.First(c => c.Name == low);
             var hc = ctx.Conductors.First(c => c.Name == high);
-            (negative, reason) = Negative(lc, hc, ctx);
+            if (loop >= 0)
+                (negative, reason) = (low, $"both ends are '{low}', fed across an open gap in it (a loop's two ends): its " +
+                                           $"{EdgeNames[2 * pair]} edge is negative");
+            else
+                (negative, reason) = Negative(lc, hc, ctx);
             negativeOnLow = negative == low;
             positive = negativeOnLow ? high : low;
             if (ctx.OutlineMoveM > 0 && FollowOutline(ctx, pair, lc, hc, ref u0, ref v0, ref u1, ref v1, P, Edge) is { } moved)
@@ -868,6 +873,24 @@ public static class C3dPorts
         int ne = 2 * pair + (lowOf[pair] ? 0 : 1), pe = 2 * pair + (lowOf[pair] ? 1 : 0);
         if (!(dn[ne] + tol < dn[pe]) || !(dp[pe] + tol < dp[ne])) return null;
         return (pair, lowOf[pair]);
+    }
+
+    /// <summary>
+    /// brief-cxp-5 — a loop fed across its two open ends: one pair of opposite edges touches the SAME single conductor, the other
+    /// pair touches nothing, and the port's centre is off that conductor, so the sheet spans a gap in the metal rather than lying
+    /// on it. Such a port is between the conductor's two ends, which meet only the long way round. Returns that pair (0 along u,
+    /// 1 along v), or −1. A port drawn ON a strip has its centre on the metal and stays refused: its two ends are shorted.
+    /// </summary>
+    private static int LoopPair(List<string>[] touching, C3dPortContext ctx, Point3 centre, double tol)
+    {
+        for (int k = 0; k < 2; k++)
+        {
+            var (a, b) = (touching[2 * k], touching[2 * k + 1]);
+            if (a.Count != 1 || b.Count != 1 || a[0] != b[0] || touching[2 - 2 * k].Count + touching[3 - 2 * k].Count != 0) continue;
+            var c = ctx.Conductors.First(x => x.Name == a[0]);
+            if (ctx.Distance(c, centre, centre, bounded: false) > tol) return k;
+        }
+        return -1;
     }
 
     /// <summary>R-emb3-1 — the refusal when <see cref="StatedPair"/> cannot decide: the port, both ends, and how far each is from

@@ -1,0 +1,237 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "floor",
+			"Op": "Subtract",
+			"KeepTools": true,
+			"Blank": {
+				"$type": "Cylinder",
+				"Material": "Connector alloy",
+				"Base": [
+					10500000,
+					{
+						"Expr": "-7.5 - gap - floor_t",
+						"Unit": "Mm"
+					},
+					{
+						"Expr": "axis_z",
+						"Unit": "Mm"
+					}
+				],
+				"Axis": "Y",
+				"Length": {
+					"Expr": "gap + floor_t",
+					"Unit": "Mm"
+				},
+				"Radius": {
+					"Expr": "body_d/2",
+					"Unit": "Mm"
+				}
+			},
+			"Tools": [
+				{
+					"$type": "Cylinder",
+					"Name": "gap_fill",
+					"Material": "PTFE",
+					"Base": [
+						10500000,
+						{
+							"Expr": "-7.5 - gap",
+							"Unit": "Mm"
+						},
+						{
+							"Expr": "axis_z",
+							"Unit": "Mm"
+						}
+					],
+					"Axis": "Y",
+					"Length": {
+						"Expr": "gap",
+						"Unit": "Mm"
+					},
+					"Radius": {
+						"Expr": "bore_d/2",
+						"Unit": "Mm"
+					}
+				}
+			]
+		}
+	],
+	"Instances": [
+		{
+			"Name": "S1",
+			"CellRef": "../../Sensor",
+			"View": "ThreeD"
+		},
+		{
+			"Name": "J1",
+			"CellRef": "../../SMA",
+			"View": "ThreeD",
+			"Placement": {
+				"Origin": [
+					10500000,
+					0,
+					{
+						"Expr": "axis_z",
+						"Unit": "Mm"
+					}
+				]
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "sub_h",
+			"Expression": "1.6",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "cu_t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "pin_d",
+			"Expression": "1.27",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "bore_d",
+			"Expression": "4.1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "axis_z",
+			"Expression": "sub_h + cu_t/2 + pin_d/2"
+		},
+		{
+			"Name": "body_d",
+			"Expression": "6.35",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "gap",
+			"Expression": "0.3",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "floor_t",
+			"Expression": "0.5",
+			"Unit": "Mm"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 10500000,
+			"Rect": {
+				"Min": [
+					{
+						"Expr": "-7.5 - gap",
+						"Unit": "Mm"
+					},
+					{
+						"Expr": "axis_z - pin_d/2",
+						"Unit": "Mm"
+					}
+				],
+				"Size": [
+					{
+						"Expr": "gap",
+						"Unit": "Mm"
+					},
+					{
+						"Expr": "pin_d",
+						"Unit": "Mm"
+					}
+				]
+			},
+			"Positive": "J1/pin",
+			"Negative": "floor",
+			"Z0": "50"
+		}
+	],
+	"MeshRegions": [
+		{
+			"Name": "rings",
+			"Min": [
+				3500000,
+				0,
+				1600000
+			],
+			"Size": [
+				18000000,
+				22000000,
+				35000
+			],
+			"SizeUm": 300.0
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Palace",
+			"Frequency": {
+				"StartExpr": "0.4",
+				"StopExpr": "1.6",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"Kind": "Linear",
+				"StepExpr": "1",
+				"Mode": "StepSize",
+				"StepUnit": "MHz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 20000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"LinearSolver": "Direct",
+				"SweepAdaptiveTol": 0.001
+			}
+		}
+	]
+}
