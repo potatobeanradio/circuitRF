@@ -551,10 +551,15 @@ Three things make long modulated runs practical:
   Whatever the preset, the step reaches every carrier's band edge, the highest frequency in its
   envelope, at least ten times a cycle, as the signal rate does for a carrier at the envelope's
   centre. A carrier off the centre, one of several in a signal or in a group, is stepped more finely
-  when it needs it, so where it sits does not change what it reads. Gear-2 reads a frequency f in the
-  envelope as f·(1 + (2πfh)²/3), a phase error that a filter's delay turns into EVM: at *draft*, a
-  5 MHz NR carrier 4.5 MHz off the centre was stepped at 0.7 rad at its band edge and read 1.1 % EVM
-  through a 60 MHz bandpass, where the same carrier centred reads 0.38 %. It now reads 0.39 %.
+  when it needs it, and the Messages pane says so. Gear-2 damps a frequency f in the envelope by
+  θ⁴/(4h), θ = 2πfh, and warps it slightly; through a filter's delay the damping tilts the gain across
+  a carrier off the centre, which reads as EVM. At *draft*, a 5 MHz NR carrier 4.5 MHz off the centre
+  was stepped at 0.7 rad at its band edge and read 1.1 % EVM through a 60 MHz bandpass, where the same
+  carrier centred reads 0.38 %; it now reads 0.39 %. The rule bounds the step, not the error, which
+  still grows with the offset and with the filter's delay: through the same bandpass at *draft* a
+  carrier 3.5 MHz off reads about 0.69 % (the rule does not act there) and one 22 MHz off about 1.5 %;
+  at *standard*, 15 MHz off reads 0.60 %, where *fine* reads 0.36 %. For EVM through a filter, use
+  *standard* or *fine*, or put the source's `Fc` on the carrier you measure.
 
 **Frequency-dependent blocks.** Resistors, capacitors and inductors enter every step exactly. Other
 blocks are handled as follows.
@@ -901,10 +906,11 @@ would be a circle; these say more.
   ripple of a filter counts as error, as it does in NMSE.
 - **Through a matched pad** the error is the source signal's own: the Signal Designer's EVM for LTE
   and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.
-- **The step.** EVM reads the circuit as the run steps it, and through a filter *draft* reads a
-  little more than *standard*: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at *draft*
-  and 0.34 % at *standard*. A carrier off the envelope's centre reads what it reads at the centre
-  ([the step](#envelope)).
+- **The step.** EVM reads the circuit as the run steps it, and through a filter *draft* reads more
+  than *standard*: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at *draft* and 0.34 % at
+  *standard* when it is at the envelope's centre. Off the centre the difference grows with the offset
+  and with the filter's delay ([the step](#envelope)), so measure EVM through a filter at *standard* or
+  *fine*, or with the source's `Fc` on the carrier.
 - **The record.** A run of whole records (`Stop` a multiple of the source's record, with a warm-up)
   measures every symbol. A shorter run measures the symbols, bits or chirps it holds whole, apart
   from a few samples at each end. A run shorter than one has no result, and the run says so.

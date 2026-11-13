@@ -129,7 +129,7 @@ NF and array gain at each peak, like every variant's gain and NF on the Combiner
 of ideal blocks has no drive level to differ by.
 
 The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.001 to
-0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 0.7 % of the
+0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 0.64 % of the
 depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.1 %. The demo's SNR is
 the budget's to 0.05 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.0 % until
 compression. Without the LO's mask the SNR follows the budget to 64 dB, and the EVM's distortion part, which leaves the
@@ -146,6 +146,10 @@ phase noise out, is 0.39 % until compression, nearly all of it the NR source's o
 | Combiners | | 1 s |
 | Levels | 7 s | |
 | Blockers | 3 s | |
-| Demo | 3 min 30 s | |
+| Demo | about 5 min (estimate) | |
 
-The Front End's Canceller bench runs its envelope sweeps in about 70 s.
+The Front End's Canceller bench runs its envelope sweeps in about 70 s (estimate).
+
+The Demo and the Canceller are estimates. Both have a carrier off the envelope's centre, and the envelope now steps
+those twice as finely (*Reference ▸ Simulations*, the accuracy preset): measured on a shared machine, one demo point took
+2.0 to 2.3 times as long and one canceller point 1.7 times. Before that, they took 2 min 20 s and about 40 s.
