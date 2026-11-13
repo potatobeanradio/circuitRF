@@ -99,6 +99,10 @@ public sealed class TunerModel : ComponentModel
 
     public void ClearHarmonicOverride() => _overrideHarmonic = null;
 
+    /// <summary>The override in force, or null — what a parallel loadpull copies onto each worker's own tuner, so a pursuit's
+    /// follow-on Zsource reaches every worker.</summary>
+    public (int Harmonic, Complex Z)? HarmonicOverride => _overrideHarmonic is int h ? (h, _overrideZ) : null;
+
     // ── Exposed handles for regularization and Pdc readback ──────────────────
     // Set during each Stamp() call.
 

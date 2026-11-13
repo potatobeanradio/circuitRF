@@ -119,6 +119,8 @@ public sealed partial class LppBodyViewModel : ObservableObject
     [ObservableProperty] private string _tolPreview         = "";
     [ObservableProperty] private string _driveSteppingExpr  = "IfNecessary";
     [ObservableProperty] private string _guardHarmonicExpr  = "0";
+    /// <summary>LP-1 — <c>Workers=</c>: at most this many grid points at once; 0 is one per core, 1 one at a time.</summary>
+    [ObservableProperty] private int    _workers;
     [ObservableProperty] private string _guardHarmonicPreview = "";
 
     // ── Validation (Grid NOT required for LPP) ────────────────────────────────
@@ -235,6 +237,7 @@ public sealed partial class LppBodyViewModel : ObservableObject
         TolExpr         = TolExpr,
         DriveSteppingExpr = DriveSteppingExpr,
         GuardHarmonicExpr = GuardHarmonicExpr,
+        WorkersExpr       = Math.Max(0, Workers).ToString(System.Globalization.CultureInfo.InvariantCulture),
         NoiseExpr         = NoiseVm.NoiseExpr,
         NoiseFreqExpr     = NoiseVm.NoiseFreqExpr,
         NoiseFreqUnit     = NoiseVm.NoiseFreqUnitExpr,
@@ -280,6 +283,9 @@ public sealed partial class LppBodyViewModel : ObservableObject
             TolExpr         = lpp.TolExpr,
             DriveSteppingExpr = lpp.DriveSteppingExpr,
             GuardHarmonicExpr = lpp.GuardHarmonicExpr,
+            // A plain whole number, as the run reads it; anything else is the run's warning and the default here.
+            Workers           = int.TryParse(lpp.WorkersExpr, System.Globalization.NumberStyles.None,
+                                             System.Globalization.CultureInfo.InvariantCulture, out int w) ? w : 0,
             EffTypeExpr           = lpp.EffTypeExpr,
             ZsourceOboExpr        = lpp.ZsourceOBOExpr,
             SearchMethodExpr      = lpp.SearchMethodExpr,

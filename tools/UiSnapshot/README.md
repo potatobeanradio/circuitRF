@@ -517,3 +517,6 @@ through its own handler — and capture again.
 HZN-5: `--hzn-save-dialog changed|refused --hzn-open <project.hzn> --hzn-design <name> -o out.png` renders the two answers a save of
 an edited design gives besides success: the project changed on disk (Reload / Save As .c3d / Cancel, the unsaved edits named), and a
 save refused with its reasons. Edits are made to a scratch copy; the given file is never written.
+
+`--analysis-body lp|lpp -o out.png [--size WxH] [--dark]` hosts the loadpull or pursuit analysis body as the analysis
+dialog does, its Advanced section open and scrolled to, with *Grid points at once* set to 4.

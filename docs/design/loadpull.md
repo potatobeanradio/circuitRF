@@ -135,6 +135,20 @@ The stop decision needs gain *now* to know when to quit driving — and the stop
 ### 3.3 Γ-grid warm-starting (continuation across the grid)
 Each grid point's HB solve warm-starts from the **nearest already-converged adjacent grid point** (its converged spectra are a good seed), making the hundreds-of-points loadpull tractable on the proven 4a engine. "Nearest" is measured by **`RFNetwork.VSWR`** (RfCore): the VSWR between two complex Γ (or Z) points — **closer to 1 ⇒ closer points**. So the engine picks, among converged neighbors, the one with VSWR-to-this-point nearest 1 as the seed. (The inner Pin direction warm-starts from the previous Pin point, per the HB note's `DriveStepping`.)
 
+**What is seeded, exactly.** The seed is the neighbour's **first converged rung** — the tickle, or `PinStart` without one — and only an **earlier** load in grid order is a candidate, ties going to the lower index. A ladder stops at its first failed rung, so a load's first rung is also its first solve.
+
+### 3.4 Parallel grid, serial semantics (LP-1)
+The loads are solved side by side, and the result is the serial loop's **bit for bit** at any worker count: every cube, the warnings and notes in their order, and the exported `.spl`/`.lpcwave`. Exactness follows from §3.3. A load depends on another load only through its seed, which is that load's first solve, so:
+
+- each worker has its **own elaborated copy** of the netlist and its own engine, as in the S-parameter sweep. A model writes state while it stamps, so the copies are the whole thread-safety story. Each worker's tuners carry the caller's harmonic overrides, such as a pursuit's follow-on Zsource;
+- a load **publishes its first rung the moment it is solved**, and load *i* starts once loads 0 … *i*−1 have published. The first solves follow one another in grid order, and everything after them runs in parallel: the drive-up, its continuations, the noise read;
+- a reused factorisation is reused only when the re-stamped matrix is bit-identical (HB-P2), so which worker solved which load before does not matter;
+- diagnostics are taken **per load** and replayed into the caller's netlist in grid order, so a "first seen at Γ = …" names the load the serial loop would. Progress lines are buffered per load and printed in grid order. A failure is the lowest failing load's, raised once the loads beside it finish.
+
+**How many workers.** `Workers=` and `AnalysisSettings.MaxParallelism` are both caps, and the smaller wins (0 is no cap; with neither set, one per core), with never more than one worker per two loads (`MinLoadsPerWorker`). The copies are elaborated one at a time, and a worker that reaches the lock when the others have claimed nearly every load starts none. A copy that cannot be set up costs only its own worker; the run fails on it only if loads are left unsolved. **An external device stays serial by design**: its instances are slots in one worker process, whose channel serialises every call, so copies would buy nothing; a control-referencing SDD is serial for the same rule (`SParameterEngine.CanElaborateInParallel`). A caller that does not hand the engine its `Library` also gets the serial loop. **An outer loop that already runs evaluations side by side** (the optimizer, yield, corners, DOE: `OptimizationRun.EvaluateKeyed`) passes `CircuitEvaluationRequest.LoadpullWorkers = 1`, which pins every loadpull inside its points, bare, swept or pursued, to the serial loop. A pursuit's search stays one query at a time; its follow-on loadpull is a grid like any other.
+
+**What is not in grid order.** Only the engine's own `[LP]` lines are buffered per load. A line a solve writes straight to stderr (`[HB] Jacobian singular`, an AD domain clamp, a model's validity notice) is printed when it happens. Thread-static test knobs and counters (`HbNewton.Evaluations`, `UnscaledLineSearch`, `SddModel.GridParallelThreshold`, …) are the calling thread's and do not reach the workers. Measured speedups and the per-solve cost split are in `src/Engine/Loadpull/RESOLVED.md` (LP-0/LP-1).
+
 ---
 
 ## 4. The live measurements (the subset the stop needs)

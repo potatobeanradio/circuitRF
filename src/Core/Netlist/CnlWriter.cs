@@ -473,6 +473,7 @@ public static class CnlWriter
         sb.Append($" Tol={lp.TolExpr}");
         sb.Append($" DriveStepping={lp.DriveSteppingExpr}");
         sb.Append($" GuardHarmonic={lp.GuardHarmonicExpr}");
+        if (lp.WorkersExpr != "0") sb.Append($" Workers={lp.WorkersExpr}");
         AppendLoadpullNoise(sb, lp);
         return sb.ToString();
     }
@@ -510,6 +511,7 @@ public static class CnlWriter
         sb.Append($" nonconvergentVSWR={lpp.NonconvergentVswrExpr}");
         sb.Append($" CreateLoadpullResult={lpp.CreateLoadpullResultExpr}");
         sb.Append($" LoadpullResultZsource={lpp.LoadpullResultZsourceExpr}");
+        if (lpp.WorkersExpr != "0") sb.Append($" Workers={lpp.WorkersExpr}");
         AppendLoadpullNoise(sb, lpp);
         return sb.ToString();
     }

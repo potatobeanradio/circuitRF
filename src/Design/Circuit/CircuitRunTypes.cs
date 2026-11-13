@@ -190,6 +190,9 @@ public sealed class RunPlan
     internal ElaboratedNetlist? Nl           { get; init; }
     internal string?           BaseDirectory { get; init; }
     internal IReadOnlyList<PlannedAnalysis> Analyses { get; init; } = [];
+    /// <summary><see cref="CircuitEvaluationRequest.LoadpullWorkers"/> as the settings a loadpull (bare, swept or pursued)
+    /// is handed; null without one — the defaults, as every evaluation ran before.</summary>
+    internal CircuitRF.Engine.AnalysisSettings? LoadpullSettings { get; init; }
 
     /// <summary>brief-sdl-6 — whether any analysis this plan dispatches runs by EM (or was asked to and cannot): such a
     /// run is counted before it starts (D5).</summary>

@@ -389,3 +389,93 @@ Design note: `docs/design/hb-noise.md` §9. What was found on the way:
   `__SweptSource` (1) and `__FixedLoadZ` (the load tuner's declared Z[1]); `.spl` declares `VAR=<F0 Source Gamma>` with the
   swept Γ in `gamma_src1` and the fixed load in `gamma_ld1`, `.lpcwave` a `! Load Impedance` line, and both readers write
   the markers back. A loadpull writes neither, byte for byte as before. Gate: `LoadpullWriterTests.Sourcepull_RoundTrip_…`.
+
+
+## Where a loadpull's time goes, and the grid in parallel (LP-0/LP-1, 2026-11-12)
+
+**LP-0, measured** with `LoadpullCostTests.M0` and `HarmonicaCostTests.M0` (both `Category=Benchmark`; Release, serial).
+Four devices: Hero 3's SDD, the native Angelov FET, the
+synthetic GaN `.cmodel` as a ComposedFET (N = 8, its traps and self-heating), and `tools/fake-osdi-model`'s `crf_fet`
+through the OSDI device worker. Each solve below is one warm `RunSinglePoint` at a middle load, averaged over its rungs,
+best of 3.
+
+| per warm solve | SDD | native FET | ComposedFET | external `.osdi` |
+|---|---|---|---|---|
+| `RunSinglePoint` | 0.23 ms | 0.22 ms | 17.1 ms | 0.23 ms |
+| device evaluation (in Newton) | 0.12 ms, 50 % | 0.10 ms, 43 % | 15.8 ms, 92 % | 0.19 ms, 83 % (worker IPC included) |
+| Newton linear algebra | 0.08 ms, 35 % | 0.09 ms, 41 % | ~0 | 0.05 ms, 23 % |
+| extraction K+1 (stamp, bit compare, RHS solve) | 10 % | 10 % | 0.2 % | 3 % |
+| `BuildSourceRhs` K+1 (the duplicate stamps) | 4 % | 4 % | 0.1 % | 2 % |
+| back-solve the FOMs read | 11 % | 11 % | 0.3 % | 4 % |
+| evaluations per rung, over the run | 2.8 | 3.0 | 11.4 | 4.3 |
+| LU factorisations per run | 25 (20 loads) | 25 | 19 (12 loads) | 25 |
+| elaboration, once | 173 ms (first, with JIT) | 21 ms | 164 ms | 37 ms |
+| run, per load | 12 ms | 11 ms | 375 ms | 11 ms |
+
+- **The factorisation is not where the time goes.** HB-P2 already refactors only the swept harmonic per load (one LU
+  per load). Extraction, the duplicate source RHS and the back-solve together are ≤ 25 % of a solve on the toy
+  devices and < 1 % on a real compact model, so closing the tuner algebraically (harmonicaRF's `InterfaceNetwork.Close`)
+  would buy at most that. **Not done**, and not worth a later PR on these numbers.
+- **The duplicate `BuildSourceRhs` stamps are 2-4 %**, under the 5 % the decision rule set. Left as they are.
+- **stderr is free:** the line per rung costs nothing measurable once the JIT is warm (a first-run JIT made it look like
+  35 %).
+- **harmonicaRF evaluated the devices once more after every solve** (`HarmonicaContext.Solve`): 13 % (native), 19 %
+  (SDD, composed) and 21 % (external) of a warm solve. `HbNewton.SolveResult.Conduction` now carries the solve's own
+  last evaluation, which is at the reported iterate on every return path, so that evaluation is gone, bit for bit
+  (`SolveReusesTheLastEvaluationTests`). A 37-point ring grid's serial build, per solve, before and after: SDD 0.159 →
+  0.141 ms, native 0.320 → 0.251 ms, composed 13.1 → 11.0 ms, external 0.360 → 0.292 ms. harmonicaRF's own pool on the
+  same grids: 1.5-1.9× on the cheap devices, 2.6-2.8× on the composed one, 1.3× on the external one.
+
+**The seed graph is deep, and why that does not matter.** Seeding each load from its VSWR-nearest earlier load gives a
+dependency chain 15-17 deep on 37-61-point ring grids (`RingGrid(3,12)`: 37 loads, depth 15; `RingGrid(5,12)`: 61,
+depth 17; both example `load_grid.gam` files: 49, depth 16). Scheduling whole loads along that graph caps the speedup
+at 2.5-3.6×. But the seed is a load's FIRST rung only, and that rung is its first solve, so a load publishes it at once
+and only the first solves chain. The rest of each drive-up runs in parallel.
+
+**LP-1, measured** with `LoadpullCostTests.M1` (Release;
+every parallel run checked bit for bit against the serial one). Two runs on different days; the cheap devices' runs
+are 0.06-0.3 s, so their ratios are noisy:
+
+| grid | serial | 4 workers | 8 workers | 16 workers |
+|---|---|---|---|---|
+| SDD, 61-point ring | 0.23-0.31 s | 2.0-2.9× | 2.8-3.5× | 3.4-3.6× |
+| native FET, 61-point ring | 0.22-0.30 s | 2.3-3.0× | 3.5-4.4× | 2.4-5.1× |
+| ComposedFET, GanLoadpull's 49 loads | 18.6-20.0 s | 2.9-3.6× | 4.0-5.7× | 4.9-6.5× |
+| the same, `DOTNET_gcServer=1` | 19.5 s | 3.6× | 7.2× | 10.5× |
+| external `.osdi` (serial by design) | 0.78 s | 1× | 1× | 1× |
+
+- **On a real model the garbage collector is a limit.** With the workstation GC every thread stops for each collection,
+  and a ComposedFET evaluation allocates; under the server GC the same run reached 10.5× at 16 workers. circuitRF ships
+  the default GC, so that is a setting a user can make (`DOTNET_gcServer=1`), or a follow-up that allocates less.
+- **The cheap devices stop at 3-5×** because a load is only ~5 ms: the serial first solves, the copies' elaboration
+  (one at a time, under a lock) and the join are then a large share. Hence the floor of two loads per worker, and a
+  worker that reaches the elaboration lock after the others have claimed nearly every load starts no copy.
+- **End to end**, `circuitrf lp` with the process start included, median of three (range), on the two shipped 49-load
+  examples netlisted to `.cnl`: `GanLoadpull` (ComposedFET) 21.7 s (20.8-23.7) serial, 4.4 s (4.3-4.4) at
+  `Workers=8`, 3.6 s (3.4-4.6) at 16 and 4.3 s (3.8-5.6) at the default (one worker per core): 5.1× at the default and 6.0× at 16.
+  Another set of runs measured the default at 2.19 s against 18.59 s serial (8.5×).
+  `examples/Loadpull` (SDD) 1.8 s (1.4-2.4) serial and 0.8 s (0.77-0.87) at the default, most of what is left being the
+  process start. The `.npy`, `.spl` and `.lpcwave` files, and the `[LP]` lines on stderr, are byte-identical at every
+  worker count.
+
+**What had to be carried to the copies.** A pursuit's follow-on sets its Zsource as a harmonic override on the CALLER's
+source tuner before `Run`; a fresh elaboration does not have it, and every follow-on number moved until `Mirror` copied
+the override onto each worker's tuners. Diagnostics: a copy's once-per-key rule would hide a key from an earlier load
+that a later load on the same copy raised first, so `ElaboratedNetlist.TakeRunDiagnostics` takes each load's findings
+and forgets their keys, and they are replayed into the caller's netlist in grid order
+(`LoadpullParallelTests.AWarningRaisedAtSeveralLoads_NamesTheFirstInGridOrder`: two loads raise the energy warning with
+different messages).
+
+**Nested parallelism.** The optimizer, yield, corners and DOE already run their points side by side at all cores
+(`OptimizationRun.EvaluateKeyed`). Each point reaching a parallel grid would have made points × cores threads and
+netlist copies, so while points run side by side each evaluation carries `CircuitEvaluationRequest.LoadpullWorkers = 1`,
+which every loadpull in it, bare, swept or pursued, takes as a cap of one.
+
+**Found, not fixed — solver settings reach a loadpull differently from the CLI and from the GUI.** `circuitrf lp` and
+`lpp` hand an unswept loadpull the CLI's `AnalysisSettings`; a swept one (`ParametricSweepEngine.RunInner`) and every
+GUI run (`CircuitEvaluation`) run at the defaults, so Gmin and the regularization settings the CLI takes reach only the
+first. That is as on main; LP-1 passes a sweep's parallelism cap through and nothing else, so no result moves. A separate
+issue.
+
+**Found, not fixed:** `ModelValidation.Dc`/`SParams`/`LoadSweep` run their points in `Parallel.For` without asking
+`CanElaborateInParallel`, so an external device there is elaborated once per point at once.

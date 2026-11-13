@@ -204,6 +204,7 @@ public static partial class AnalysisDirectiveSchema
             new("DriveStepping", Default: "IfNecessary", Summary: "Drive-ladder policy."),
             new("GuardHarmonic", Default: "0",Summary: "Aliasing guard harmonics."),
             new("ContinuityMargin", Default: "3", Summary: "dB margin the continuity gate allows between adjacent grid points."),
+            new("Workers",    Default: "0",   Summary: "Loads solved at once: 0 = one per core, 1 = serial, n = at most n. Same result at any value."),
             .. _loadpullNoise,
         ]),
 
@@ -228,6 +229,7 @@ public static partial class AnalysisDirectiveSchema
             new("DriveStepping", Default: "IfNecessary", Summary: "Drive-ladder policy."),
             new("GuardHarmonic", Default: "0",Summary: "Aliasing guard harmonics."),
             new("ContinuityMargin", Default: "3", Summary: "dB margin the continuity gate allows."),
+            new("Workers",    Default: "0",   Summary: "Loads the follow-on loadpull solves at once: 0 = one per core, 1 = serial, n = at most n."),
             new("EffType",    Default: "DE",  Summary: "Efficiency the pursuit maximises: DE | PAE."),
             new("ZsourceOBO", Default: "5",   Summary: "Output back-off, dB, at which the source impedance is recommended."),
             new("SearchMethod", Default: "SteepestAscent", Summary: "SteepestAscent | IteratedQuadratic."),

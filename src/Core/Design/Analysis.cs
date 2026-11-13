@@ -644,6 +644,9 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name), ILoadpullNoi
     /// taken in one leap (<c>DriveLadder</c>). <c>0</c> disables the guard. Default 3 dB.
     /// </summary>
     public string ContinuityMarginExpr { get; init; } = "3";
+    /// <summary>LP-1 — how many loads are solved at once: 0 (the default) one per core, 1 the serial loop, n at most n.
+    /// The result is the same bits at every value; only the time changes.</summary>
+    public string WorkersExpr { get; init; } = "0";
 
     // ── Noise figure at each rung (brief NZ-6) — see ILoadpullNoiseKeys ────────
     public string NoiseExpr         { get; init; } = Analysis.NoiseDefault;
@@ -689,6 +692,9 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name), ILoad
     /// <summary>Round 11 — see <see cref="LoadpullAnalysis.ContinuityMarginExpr"/>; the pursuit's own
     /// inner drive-up is the same one, so it takes the same key.</summary>
     public string ContinuityMarginExpr { get; init; } = "3";
+    /// <summary>LP-1 — see <see cref="LoadpullAnalysis.WorkersExpr"/>; read by the follow-on loadpull only, the search
+    /// being one load at a time.</summary>
+    public string WorkersExpr { get; init; } = "0";
 
     // ── Noise figure at each rung (brief NZ-6) — see ILoadpullNoiseKeys; read by the follow-on loadpull only ────────
     public string NoiseExpr         { get; init; } = Analysis.NoiseDefault;

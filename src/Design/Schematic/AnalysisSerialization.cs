@@ -201,6 +201,8 @@ public sealed class CschAnalysis
     public string?  LpTolExpr          { get; set; }
     public string?  LpDriveSteppingExpr{ get; set; }
     public string?  LpGuardHarmonicExpr{ get; set; }
+    // LP-1 — Workers= (loads at once), LP and LPP alike; null is the default "0", so a document without it reads back unchanged.
+    public string?  LpWorkersExpr      { get; set; }
     // Brief NZ-6 — the loadpull noise keys, LP and LPP alike; null is the default, so a document without them reads back unchanged.
     public string?  LpNoiseExpr         { get; set; }
     public string?  LpNoiseFreqExpr     { get; set; }
@@ -509,6 +511,7 @@ public static class AnalysisSerialization
             LpTolExpr         = lp.TolExpr,
             LpDriveSteppingExpr = lp.DriveSteppingExpr,
             LpGuardHarmonicExpr = lp.GuardHarmonicExpr,
+            LpWorkersExpr       = lp.WorkersExpr != "0" ? lp.WorkersExpr : null,
             LpNoiseExpr         = lp.NoiseExpr != Analysis.NoiseDefault ? lp.NoiseExpr : null,
             LpNoiseFreqExpr     = NullIfBlank(lp.NoiseFreqExpr),
             LpNoiseFreqUnit     = lp.NoiseFreqUnit != "Hz" ? lp.NoiseFreqUnit : null,
@@ -540,6 +543,7 @@ public static class AnalysisSerialization
             LpTolExpr         = lpp.TolExpr,
             LpDriveSteppingExpr = lpp.DriveSteppingExpr,
             LpGuardHarmonicExpr = lpp.GuardHarmonicExpr,
+            LpWorkersExpr       = lpp.WorkersExpr != "0" ? lpp.WorkersExpr : null,
             LpNoiseExpr         = lpp.NoiseExpr != Analysis.NoiseDefault ? lpp.NoiseExpr : null,
             LpNoiseFreqExpr     = NullIfBlank(lpp.NoiseFreqExpr),
             LpNoiseFreqUnit     = lpp.NoiseFreqUnit != "Hz" ? lpp.NoiseFreqUnit : null,
@@ -718,6 +722,7 @@ public static class AnalysisSerialization
             TolExpr         = dto.LpTolExpr         ?? "1e-6",
             DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
             GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+            WorkersExpr       = dto.LpWorkersExpr       ?? "0",
             NoiseExpr         = dto.LpNoiseExpr         ?? Analysis.NoiseDefault,
             NoiseFreqExpr     = dto.LpNoiseFreqExpr     ?? "",
             NoiseFreqUnit     = dto.LpNoiseFreqUnit     ?? "Hz",
@@ -747,6 +752,7 @@ public static class AnalysisSerialization
             TolExpr         = dto.LpTolExpr         ?? "1e-6",
             DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
             GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+            WorkersExpr       = dto.LpWorkersExpr       ?? "0",
             NoiseExpr         = dto.LpNoiseExpr         ?? Analysis.NoiseDefault,
             NoiseFreqExpr     = dto.LpNoiseFreqExpr     ?? "",
             NoiseFreqUnit     = dto.LpNoiseFreqUnit     ?? "Hz",

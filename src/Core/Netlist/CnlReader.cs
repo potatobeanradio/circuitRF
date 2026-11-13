@@ -1358,6 +1358,7 @@ public sealed class CnlReader
             DriveSteppingExpr     = kv.GetValueOrDefault("DriveStepping",       "IfNecessary"),
             GuardHarmonicExpr     = kv.GetValueOrDefault("GuardHarmonic",       "0"),
             ContinuityMarginExpr  = kv.GetValueOrDefault("ContinuityMargin",    "3"),
+            WorkersExpr           = kv.GetValueOrDefault("Workers",             "0"),
             // Noise figure at each rung (brief NZ-6): every default leaves the run as it was.
             NoiseExpr         = kv.GetValueOrDefault("Noise",         CircuitRF.Core.Design.Analysis.NoiseDefault),
             NoiseFreqExpr     = kv.GetValueOrDefault("NoiseFreq",     ""),
@@ -1439,6 +1440,7 @@ public sealed class CnlReader
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping", "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic", "0"),
             ContinuityMarginExpr = kv.GetValueOrDefault("ContinuityMargin", "3"),
+            WorkersExpr          = kv.GetValueOrDefault("Workers",          "0"),
             // Noise figure at each rung (brief NZ-6): every default leaves the run as it was.
             NoiseExpr         = kv.GetValueOrDefault("Noise",         CircuitRF.Core.Design.Analysis.NoiseDefault),
             NoiseFreqExpr     = kv.GetValueOrDefault("NoiseFreq",     ""),

@@ -208,6 +208,16 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- Grid points at once (LP-1) -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Grid points at once" FontSize="10" Opacity="0.6"/>
+                        <NumericUpDown Value="{Binding Workers, Mode=TwoWay}"
+                                       Minimum="0" Maximum="1024" Increment="1" FormatString="0"
+                                       HorizontalAlignment="Left" MinWidth="120" FontSize="11"
+                                       ToolTip.Tip="How many grid points are solved at once. 0 uses every core, 1 runs them one at a time. The result is the same either way."/>
+                        <TextBlock Text="0 = one per core, 1 = one at a time; same result" FontSize="10" Opacity="0.55"/>
+                    </StackPanel>
+
                 </StackPanel>
             </Expander>
 

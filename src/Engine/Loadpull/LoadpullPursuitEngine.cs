@@ -246,6 +246,7 @@ public sealed class LoadpullPursuitEngine
         double pinStep   = Num(lpa.PinStepExpr,    1.0);
         double pinMax    = Num(lpa.PinMaxExpr,     10.0);
         double contMargin = Num(lpa.ContinuityMarginExpr, DriveLadder.DefaultContinuityMarginDb);
+        int    workers    = LoadpullEngine.ParseWorkers(lpa.WorkersExpr);
 
         double? tickle = null;
         var ts = lpa.TickleExpr.Trim();
@@ -267,7 +268,7 @@ public sealed class LoadpullPursuitEngine
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,
             lpa.LoadTunerName, lpa.SourceTunerName,
             sweepLoad, tuneHarm, dummyGrid,
-            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz);
+            compress, useGt, pinStart, pinStep, pinMax, tickle, contMargin, noise, noiseHz, workers);
 
         bool usePae  = lpa.EffTypeExpr.Trim().Equals("PAE", StringComparison.OrdinalIgnoreCase);
         double obo   = Num(lpa.ZsourceOBOExpr, 5.0);

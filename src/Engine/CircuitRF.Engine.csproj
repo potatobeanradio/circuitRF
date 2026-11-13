@@ -18,6 +18,7 @@
          (NdfCalculator), and the gate that gives it teeth has to call it directly against a device
          block rather than through a whole S-parameter run. -->
     <InternalsVisibleTo Include="CircuitRF.Engine.Tests" />
+    <InternalsVisibleTo Include="CircuitRF.Ui.Tests" />
   </ItemGroup>
 
   <ItemGroup>

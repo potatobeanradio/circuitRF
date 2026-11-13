@@ -309,6 +309,10 @@ public sealed class AnalysisSettings
     /// thread-safety story, since a model writes state during <c>Stamp</c>. The knob exists so a
     /// laptop can be pinned and a test can force a chosen degree; it does not change any result,
     /// which stays bit-identical to the serial path at every degree.</para>
+    ///
+    /// <para>A loadpull's grid takes the same cap for its loads (LP-1), each worker again on its own copy, and its
+    /// <c>Workers=</c> key wins over this when set. Bit-identical there too: a load seeds only from an EARLIER load's
+    /// first rung, which is published the moment it is solved (<c>docs/design/loadpull.md</c> §3.4).</para>
     /// </summary>
     public int MaxParallelism { get; init; } = 0;
 

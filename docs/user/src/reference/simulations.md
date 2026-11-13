@@ -958,6 +958,22 @@ harmonic-balance solve runs per point (with previous-point continuation for conv
 are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts
 contour lines; measured loadpull files (`.spl`/`.lpcwave`) plot identically.
 
+**The grid points run in parallel**, and the result is the same, bit for bit, as one point after another: the
+numbers, the warnings and the exported files. Each point starts from the nearest earlier point's first drive level,
+so the points wait only for each other's first solve.
+
+- **How many at once.** By default one per core, and never more than one per two points. `Workers=1` runs them one at a
+  time and `Workers=4` uses at most four cores, which is polite on a shared machine. In the analysis dialog this is
+  **Grid points at once**, under *Advanced*; `0` is the default. A [pursuit](#loadpull-pursuit) takes the same key
+  for its follow-on loadpull.
+- **When they run one at a time anyway.** A design with a compiled (`.osdi`) or vendor-kit device: the device lives in
+  one worker process, which answers one call at a time. A design whose SDD reads a [control current](sdd.html#control) (`C[n]`, `_cn`). And inside
+  an optimizer, yield, corner or DOE run that already simulates its points side by side, so that it does not start one
+  worker per core for each of them.
+- **The progress lines** printed while it runs come in grid order. A few other lines a solve may print as it goes,
+  such as a singular-Jacobian notice or an expression's domain clamp, can appear out of that order; the results,
+  warnings and notes do not depend on it.
+
 <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
     <tbody>
