@@ -556,7 +556,8 @@ public sealed class NonlinearDcEngine
 
     /// <summary>
     /// How strongly each thermal node is held by the DEVICES on it, rather than by the network
-    /// around them — the sum of their own positive thermal-diagonal entries, in W/°C.
+    /// around them — the sum of each device's own positive conductance on that net, through its own thermal network
+    /// (<see cref="ExternalThermalPaths"/>), in W/°C.
     ///
     /// <para><b>Why it has to be asked for separately.</b> The measurement above solves the LINEAR
     /// system, and a device's own internal thermal resistance is not in it: the device is nonlinear,
@@ -595,17 +596,17 @@ public sealed class NonlinearDcEngine
                                      ControlCurrents.Empty).Dg; }
             catch { dg = null; }   // refused the point: nothing learned, so nothing claimed
 
-            foreach (var n in thermalPins)
+            // Per NET, through the device's own thermal network (ExternalThermalPaths): a pin collapsed onto an internal
+            // node has its 1/Rth at that node's index, not on its own diagonal (issue 67).
+            var nets = dg is null
+                ? thermalPins.Select(n => ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0).Distinct()
+                             .ToDictionary(np => np, _ => double.PositiveInfinity)
+                : ExternalThermalPaths.HeldByDevice(ec, ed, dg);
+            foreach (var (np, held) in nets)
             {
-                int np = ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0;
                 if (np <= 0 || np - 1 >= _nodeCount) continue;
                 int row = np - 1;
-
-                double g;
-                if (dg is null) g = double.PositiveInfinity;
-                else if (n.Index >= dg.GetLength(0) || n.Index >= dg.GetLength(1)) continue;
-                else g = Math.Max(0.0, dg[n.Index, n.Index]);
-
+                double g = Math.Max(0.0, held);
                 byRow[row] = byRow.TryGetValue(row, out double had) ? had + g : g;
             }
         }

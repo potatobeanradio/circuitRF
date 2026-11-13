@@ -4654,3 +4654,21 @@ Gates: `tests/Engine.Tests/Linear/DelayTests.cs`, and the Delay tile in `SystemB
   still take numbers.
 
 Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.
+
+## An unwired thermal pin collapsed onto an internal node was held at the ambient (issue 67, 2026-11-13)
+
+- **What OSDI does with the pin.** circuitRF's own Verilog-A export of a composed FET writes its network on the internal
+  node `ti` and, when the port is connected, `potential(t, ti) <+ 0`. The worker reports that as a collapsed pair: `t`
+  is `SlavedTo` `ti` (index 10 of 14), the elaborator gives `ti` the pin's net, and the model's `1/Rth` (0.02 S for
+  50 K/W) sits at `Dg[10,10]` on that net while `Dg[3,3]`, the pin's own entry, is 0. There is no branch unknown.
+- **The defect.** `SelfReferencedThermalNodes` read only the pin's own diagonal, so a pin drawn on a net of its own was
+  judged unreferenced and `PinUnreferencedThermalNodes` held it at the ambient. The pin carries the rise (convention B,
+  `docs/design/pdk-external-devices.md` §5.1), so the part ran 25 K hot and its network was overridden.
+  `NonlinearDcEngine.DeviceThermalConductance` had the same blind spot.
+- **Fix.** `ExternalThermalPaths.HeldByDevice` sums every local entry that lands on a net, groups nets the model joins
+  through thermal-to-thermal entries into one network, and reports that network's conductance to everything outside it
+  (a network on ground is held by definition). Both checks read it. A convention-A pin, which the model holds by
+  nothing, is still held at the ambient, which is right for it: its node is the absolute junction temperature.
+- Gate: `VerilogAThermalTests.DrawnButUnwiredPin_IsNotHeld_AndReadsItsOwnRise` (no source added, no warning; Id and
+  the pin's rise equal an open-ended 1e12 Ω to 1e-6 and agree with the `ComposedFET`). The convention-A path stays
+  gated by `ThermalNodeRobustnessTests`.

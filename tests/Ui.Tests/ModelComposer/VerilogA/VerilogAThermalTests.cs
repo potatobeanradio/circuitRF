@@ -77,6 +77,27 @@ public sealed class VerilogAThermalTests : IDisposable
         Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal", StringComparison.Ordinal));
     }
 
+    /// <summary>Issue 67: the pin DRAWN on a net of its own that reaches nothing else. The model collapses it onto its
+    /// internal node <c>ti</c>, where its own <c>Rth</c> sits, so it is referenced and nothing is held: it reads what an
+    /// open-ended 1e12 Ω to ground reads, and what the <c>ComposedFET</c> reads. Held at the ambient, as it was, the
+    /// rise-type node ran 25 K hot.</summary>
+    [CompilerFact]
+    public void DrawnButUnwiredPin_IsNotHeld_AndReadsItsOwnRise()
+    {
+        var (cmodel, va) = Files("ThermalOnePole", Cases["OnePole"].Model);
+        string bench = Bench(0, 8);
+        var nl = Elaborate(bench + VaBench.VerilogA(va, pin: "tn"));
+        Assert.DoesNotContain(nl.Components, c => c.InstancePath.Contains("__ambient__", StringComparison.Ordinal));
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal", StringComparison.Ordinal));
+
+        var drawn = Dc(bench + VaBench.VerilogA(va, pin: "tn"), "drawn");
+        var open = Dc(bench + "R:RT tn 0 R=1e12\n" + VaBench.VerilogA(va, pin: "tn"), "open-ended");
+        Assert.Equal(open.Id, drawn.Id, Math.Abs(open.Id) * 1e-6);
+        Assert.Equal(open.V["tn"], drawn.V["tn"], Math.Abs(open.V["tn"]) * 1e-6);
+        Assert.True(drawn.V["tn"] > 5, $"the pin rose only {drawn.V["tn"]:G3} K");
+        DcAgrees("drawn", bench, ComposedFet(cmodel, pin: "tn"), VaBench.VerilogA(va, pin: "tn"), ("tn", "tn"));
+    }
+
     /// <summary>The pin wired to an external thermal resistance, which sits in parallel with the model's own network, agrees
     /// with the <c>ComposedFET</c> given the same pin-4 network — Id, and the pin's temperature.</summary>
     [CompilerFact]

@@ -293,9 +293,14 @@ compact-model families surveyed in 2026-09 are built this way. Under this conven
 for the design to build and nothing for circuitRF to add.
 
 **How circuitRF tells them apart.** By asking the device, at the all-zero point the solve's own bias
-ramp starts from, whether it puts a real **positive** conductance on that node's own diagonal — a
-model of convention A puts none there (its thermal row is empty, or carries only its self-heating
-feedback, which is negative), and one of convention B puts `1/rth`. The mechanism already existed for
+ramp starts from, whether its own thermal network holds that node's NET by a real **positive**
+conductance — a model of convention A holds it by none (its thermal rows are empty, or carry only its
+self-heating feedback, which is negative), and one of convention B by `1/rth`. It is the net, not the
+pin's own diagonal (`ExternalThermalPaths`): a model commonly writes its network on an internal node
+and joins the pin to it with a zero-temperature-difference branch, which OSDI reports as a collapsed
+pair, so `1/rth` lands at the internal node's index on the pin's net while the pin's own entry is
+zero. Nets the model joins through thermal-to-thermal entries count as one network, held by that
+network's conductance to everything outside it. The mechanism already existed for
 the open-pin case (`Elaborator.SelfReferencedThermalNodes`) and is the right one; nothing about it is
 specific to either family. Two consequences follow, and both are gated:
 

@@ -22,6 +22,12 @@ Two things combine.
    like circuitRF's native thermal nodes and most compact models, carries the rise above ambient, so 25 is +25 K. The
    warning then says the part "is simulated with no temperature rise", the opposite of what happened.
 
+**Status (2026-11-13): done.** R-1's answer and the fix are in `src/Core/RESOLVED.md`. R-3 was decided as (c), not
+listed below: `docs/design/pdk-external-devices.md` §5.1 already separates a model that owns its network (convention B,
+the pin carries the rise, never held) from one that does not (convention A, the pin is the absolute junction
+temperature, held at the ambient). The issue's model is convention B misdetected, so fixing the detection (R-2) is the
+whole fix, and a convention-A pin keeps the ambient and its warning.
+
 ## Requirements
 
 **R-1 — Find out where the zero-volt branch goes.** Before changing the check, establish what `ExternalDeviceModel`

@@ -355,8 +355,10 @@ public sealed class Elaborator
     }
 
     /// <summary>
-    /// Which thermal nodes their own device already references — the ones whose row in the device's
-    /// Jacobian is not empty, so the node has a path to a solution without the host adding one.
+    /// Which thermal nodes their own device already references — the ones the device's own thermal network holds by a
+    /// real conductance (<see cref="ExternalThermalPaths"/>), so the node has a path to a solution without the host adding
+    /// one. That is the net's, not the pin's own diagonal: a pin collapsed onto an internal node carries nothing on its own
+    /// entry (issue 67).
     ///
     /// <para><b>A real path means a POSITIVE conductance, not a non-zero one.</b> An electrothermal
     /// model's thermal row is routinely non-zero and NEGATIVE — that entry is its self-heating
@@ -389,10 +391,14 @@ public sealed class Elaborator
             try   { res = ec.Evaluate(new PortVoltages(new double[ec.Model.PortCount]), ControlCurrents.Empty); }
             catch { foreach (var n in thermalPins) MarkPin(ec, n, selfReferenced); continue; }
 
+            // Not the pin's own diagonal: a model that collapses its pin onto an internal node puts 1/Rth at that node's
+            // index, on the pin's net (issue 67). ExternalThermalPaths sums what lands on the net, through the model's
+            // own thermal couplings.
+            var held = ExternalThermalPaths.HeldByDevice(ec, ed, res.Dg);
             foreach (var n in thermalPins)
             {
-                if (n.Index >= res.Dg.GetLength(0) || n.Index >= res.Dg.GetLength(1)) continue;
-                if (res.Dg[n.Index, n.Index] > 1.0 / Temperature.ImplausibleThermalResistanceCPerW)
+                int np = ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0;
+                if (held.TryGetValue(np, out double g) && g > 1.0 / Temperature.ImplausibleThermalResistanceCPerW)
                     MarkPin(ec, n, selfReferenced);
             }
         }
