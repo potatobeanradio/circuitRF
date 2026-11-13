@@ -291,6 +291,6 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 | TX | | | | 35 s to 1 min |
 
 The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
-envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).
+envelope one for its 50 MHz NR carrier, ten times the others'.
 
 The Front End's Canceller bench runs its envelope sweeps in about 40 s.

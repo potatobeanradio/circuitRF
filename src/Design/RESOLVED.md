@@ -30881,7 +30881,7 @@ benches the analyses refuse, with nothing to say so. Measured on a 2.45 GHz → 
 - **HB noise takes one or two tones.** The 1-Tone bench's noise run on (RF, LO1, LO2) is refused ("HB noise supports
   one and two tones"). Its compression sweep on the same three tones at MaxMixOrder 7 does run (288 products), in 193 s.
 - **The 600-product cap.** The 2-Tone and Levels runs, four tones at 5 + mixers = 7, retain 1,121 products. At 5 they
-  run (341), in 1.5 to 3 minutes by the machine's load, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
+  run (341), in 1.5 to 3 minutes, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
   mixer). The first such run read 0.038 dB, which was not the order: a narrow second IF filter's skirt took 0.08 dB off
   the output's IM3.
 - **Two envelope fundamentals.** A second LO is a third fundamental (with one carrier group, a tone counts as reached

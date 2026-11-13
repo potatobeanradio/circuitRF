@@ -292,7 +292,7 @@ mixer k, so the filter in front of each mixer is in its conversion; driven at th
 the blockers as they arrive there, and a source temperature of the noise delivered there, (Ts + Te)·Gn, which makes
 its SNR and noise floor the whole chain's at every node. The 1-Tone, Levels and Blockers benches split together, since
 the Levels display reads all three, and a display draws no trace of a bench that is not written. The 2-Tone bench stays
-whole at MaxMixOrder 5 (341 products), 1.5 to 3 minutes by the machine's load, and reads its intercepts 3×10⁻³ dB high,
+whole at MaxMixOrder 5 (341 products), 1.5 to 3 minutes, and reads its intercepts 3×10⁻³ dB high,
 against 2×10⁻⁴ dB at the order a single mixer's converge at.
 
 **The second envelope LO, and blockers on images.** An envelope run takes a tone as a fundamental of its own only more
