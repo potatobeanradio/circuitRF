@@ -141,6 +141,17 @@ public sealed record MatchTransformBracket(string Label, int TransformIndex, dou
 public sealed record MatchLadderTermination(int End, string InstanceName, string ResistanceText, double X);
 
 /// <summary>
+/// A through-path parallel arm drawn above the spine: vertical drops at <see cref="X0"/> /
+/// <see cref="X1"/> from the spine up to <see cref="Y"/>, with horizontal runs in the gaps the
+/// element glyph does not cover. Used by the Filter Designer for L∥C in a series arm; the Match
+/// Designer never emits these (its shunt drops were designed away).
+/// </summary>
+/// <param name="X0">Left drop, world units.</param>
+/// <param name="X1">Right drop, world units.</param>
+/// <param name="Y">Centre y of the parallel element(s) on this rail.</param>
+public sealed record MatchParallelArm(double X0, double X1, double Y);
+
+/// <summary>
 /// The ladder preview's geometry (match.md §9.3): where each element sits, and where each transform
 /// bracket goes.
 /// </summary>
@@ -251,6 +262,12 @@ public sealed class MatchLadderLayout
 
     /// <summary>The transform brackets, already assigned to non-overlapping rows.</summary>
     public IReadOnlyList<MatchTransformBracket> Brackets { get; init; } = [];
+
+    /// <summary>
+    /// Parallel through-path arms above the spine (Filter Designer elliptic / inverse-Chebyshev).
+    /// Empty for every Match Designer layout.
+    /// </summary>
+    public IReadOnlyList<MatchParallelArm> ParallelArms { get; init; } = [];
 
     /// <summary>x of the port-1 connection.</summary>
     public double PortLeftX { get; init; }

@@ -139,13 +139,34 @@ public static class MatchSchematicCopy
         double y = MatchLadderLayout.SpineY;
         double cursor = layout.PortLeftX;
 
-        foreach (var e in layout.Elements.Where(e => !e.IsShunt).OrderBy(e => e.X))
+        foreach (var e in layout.Elements
+                     .Where(e => !e.IsShunt && e.Y == MatchLadderLayout.SpineY)
+                     .OrderBy(e => e.X))
         {
             double left = e.X - lead;
             if (left > cursor) yield return Wire(cursor, y, left, y);
             cursor = Math.Max(cursor, e.X + lead);
         }
         if (layout.PortRightX > cursor) yield return Wire(cursor, y, layout.PortRightX, y);
+
+        foreach (var arm in layout.ParallelArms)
+        {
+            if (arm.Y != y)
+            {
+                yield return Wire(arm.X0, y, arm.X0, arm.Y);
+                yield return Wire(arm.X1, y, arm.X1, arm.Y);
+            }
+            double run = arm.X0;
+            foreach (var e in layout.Elements
+                         .Where(e => !e.IsShunt && Math.Abs(e.Y - arm.Y) < 1e-9)
+                         .OrderBy(e => e.X))
+            {
+                double left = e.X - lead;
+                if (left > run) yield return Wire(run, arm.Y, left, arm.Y);
+                run = Math.Max(run, e.X + lead);
+            }
+            if (arm.X1 > run) yield return Wire(run, arm.Y, arm.X1, arm.Y);
+        }
     }
 
     private static EditableWire Wire(double x0, double y0, double x1, double y1)
