@@ -62,6 +62,19 @@ each of its pins. The Touchstone header reads `! Port[5] = X1/Q3.G` and the `.ce
 **R-icp2-6 — The open-parts group.** `EmPartsOpen` adds the cut ports to the ports it opens, so the automatic plot shows the
 interconnect with the cut instances absent, as it shows a board with its parts not fitted.
 
+**R-icp2-8 — Off the UI thread, and built once.** The setup panel's Refresh (`EmSetupEditorViewModel.RefreshCore`) calls
+`EmComponentPorts.Collect(source, setup)` and `EmGeometry.ForSetup` synchronously on the UI thread, and those are where this brief
+builds the cut — on a chip that is a walk of every cell, every level's schematic and the cut's booleans. Before the builders hand
+instances in:
+- Refresh takes a snapshot on the UI thread (the layout as `LayoutEditorViewModel`'s other off-thread builders take it, and a
+  copy of the setup) and builds on a worker, as the panel's Check and the layout marks already do; a stale build (the layout's
+  `EditCount` or the setup moved on) is discarded, not applied. The mesh preview (`PreparePlanarMesh`) follows the same rule.
+- One build per (layout snapshot, setup) is cached and shared by Refresh, Check, the marks and the mesh preview, so an edit
+  costs one walk rather than four. The cache key is what the build reads: the layout's text, the technology, the setup's
+  component ports, analysis levels and solve region.
+Gate: a view-model test that Refresh returns before a slow build finishes (a builder seam that blocks), applies the result
+when it lands, and drops a result whose snapshot is stale.
+
 **R-icp2-7 — Nothing reaches the file.** The `.clay` and every cell's `.clay` are byte-identical after a run, a Check and a
 save of the `.cem`.
 

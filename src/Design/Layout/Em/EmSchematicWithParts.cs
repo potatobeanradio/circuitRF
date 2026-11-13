@@ -290,11 +290,11 @@ public static class EmSchematicWithParts
         foreach (var c in model.Components)
         {
             if (classified.Contains(c) || !SchematicLayoutPlanner.IsPhysical(c) || c.InstanceName.Length == 0) continue;
-            switch (EmModelSwitch.KindOf(c, schematicDir))
+            switch (EmPartKinds.Of(c, schematicDir))
             {
-                case EmModelSwitch.PartKind.Copper:   removed.Add(c); break;
-                case EmModelSwitch.PartKind.Part:     footprintNoPort.Add(c); break;
-                case EmModelSwitch.PartKind.NoLayout: offBoard.Add(c); break;
+                case EmPartKind.Copper:   removed.Add(c); break;
+                case EmPartKind.Part:     footprintNoPort.Add(c); break;
+                case EmPartKind.NoLayout: offBoard.Add(c); break;
             }
         }
 

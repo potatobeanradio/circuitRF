@@ -74,3 +74,13 @@ No solve. One test per claim:
 ## Not here
 
 Leaving geometry out, ports, co-simulation, UI, CLI.
+
+## Completion note (2026-11-13)
+
+Built: `src/Design/Layout/Em/EmCellInstances.cs` (the projection), `EmPartKinds.cs` (the shared kind rule, moved from
+`EmModelSwitch`), `EmPartPads.Select(setup, parts, where, instances)`, and the four entry keys in `EmSetupModel.cs` /
+`EmSetupPersistence.cs`. Gate `tests/Ui.Tests/Em/CellInstanceProjectionTests.cs`, six tests; the existing component-port and
+EM-cell classes pass unchanged. Where this differs from the requirements above, and why, is in `src/Design/RESOLVED.md`
+§brief-icp-1: `"*"` walks down through copper to the first device on each branch rather than stopping at the top level; a path
+or cell matching nothing is left out with its sentence rather than refusing the list; the Planar and 3D builders do not pass
+instances until ICP-2.

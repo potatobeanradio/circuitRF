@@ -182,11 +182,11 @@ public static class EmModelSwitch
         foreach (var c in target.ThreeDOnly ? Enumerable.Empty<EditableComponent>() : model.Components)
         {
             if (!SchematicLayoutPlanner.IsPhysical(c) || PortPlacement.IsPort(c) || c.InstanceName.Length == 0) continue;
-            switch (KindOf(c, schematicDir))
+            switch (EmPartKinds.Of(c, schematicDir))
             {
-                case PartKind.Copper: break;
-                case PartKind.Part:     notCopper.Add(Label(c)); break;
-                case PartKind.NoLayout: noLayout.Add(Label(c)); break;
+                case EmPartKind.Copper: break;
+                case EmPartKind.Part:     notCopper.Add(Label(c)); break;
+                case EmPartKind.NoLayout: noLayout.Add(Label(c)); break;
             }
         }
         if (noLayout.Count > 0)
@@ -252,44 +252,6 @@ public static class EmModelSwitch
             new ParameterAssignment(ParametricModelRegistry.SetupParameter, Quote(target.CemPath)),
         ]));
         return new EmSwitched(bench, lib, target, inCells);
-    }
-
-    internal enum PartKind { Copper, Part, NoLayout }
-
-    /// <summary>
-    /// What a placed part is to an EM result: copper when its layout is generated geometry (a line, a tee, a bend — the
-    /// microstrip family) or a sub-cell's drawn layout; a part when a footprint or a kit's artwork stands for it (its pads
-    /// are copper, the part itself is not); nothing when it has no layout at all.
-    /// </summary>
-    /// <remarks>A sub-cell is copper only when its reference resolves to a cell folder with a layout view — the test the
-    /// planner places it by. A schematic-only sub-cell, or a model-library part (<c>vendormodel://</c>, never a folder),
-    /// would be skipped by the planner and so be missing from the EM result; it has no layout, and is refused by name.</remarks>
-    internal static PartKind KindOf(EditableComponent c, string? schematicDir)
-    {
-        if (c.Footprint is { Length: > 0 }) return PartKind.Part;
-        if (SchematicLayoutPlanner.HasPCellGenerator(c.Symbol, c.PortCount, out _)) return PartKind.Copper;
-        if (c.CellRef is { Length: > 0 } cellRef)
-        {
-            if (cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)) return PartKind.Part;
-            return HasLayoutView(cellRef, schematicDir) ? PartKind.Copper : PartKind.NoLayout;
-        }
-        return PartKind.NoLayout;
-    }
-
-    private static bool HasLayoutView(string cellRef, string? schematicDir)
-    {
-        if (CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef) || schematicDir is not { Length: > 0 }) return false;
-        try
-        {
-            if (CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir) is not { } dir || !Directory.Exists(dir))
-                return false;
-            var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(dir, CircuitRF.Design.Cells.ViewType.Layout);
-            return primary.State is CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            return false;
-        }
     }
 
     private static string Label(EditableComponent c) => $"{c.InstanceName} ({ComponentTypeRegistry.DisplayName(c.Symbol, c.PortCount)})";

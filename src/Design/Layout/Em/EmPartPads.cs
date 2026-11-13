@@ -24,6 +24,10 @@ public sealed record PlacedPart(string Refdes, IReadOnlyList<PartPad> Pads, stri
     public string? SchematicId { get; init; }
 }
 
+/// <summary>brief-icp-1 R-icp1-6 — one cell instance a setup's component ports cut out, with the entry whose options it takes (its
+/// <see cref="EmComponentPort.Refdes"/> the instance's path).</summary>
+public sealed record EmCellSelection(EmComponentPort Entry, EmCellInstance Instance);
+
 /// <summary>One layout's placed parts, the projection's refusal when it could not be made, and its notes.</summary>
 public sealed record PlacedParts(IReadOnlyList<PlacedPart> Parts, string? Refusal, IReadOnlyList<string> Notes);
 
@@ -115,7 +119,17 @@ public static class EmPartPads
     // ── Which parts (R-emb1-2) ────────────────────────────────────────────────────────────────────
 
     /// <summary>The entries a setup's <see cref="EmSetup.ComponentPorts"/> asks for, one per part, or the refusal of the list.</summary>
-    public sealed record Selection(IReadOnlyList<EmComponentPort> Wanted, string? Refusal);
+    /// <param name="Wanted">The footprint parts, one entry each, refdes resolved — what LCP's gap is built on.</param>
+    public sealed record Selection(IReadOnlyList<EmComponentPort> Wanted, string? Refusal)
+    {
+        /// <summary>brief-icp-1 R-icp1-4 — the cell instances to cut out, each with the entry whose options it takes. Empty when the
+        /// caller handed no instances.</summary>
+        public IReadOnlyList<EmCellSelection> Instances { get; init; } = [];
+
+        /// <summary>brief-icp-1 R-icp1-4 — entries naming a path or a cell that matches no placed instance, each with its sentence:
+        /// left out, the others run.</summary>
+        public IReadOnlyList<(EmComponentPort Entry, string Why)> Unplaced { get; init; } = [];
+    }
 
     /// <summary>
     /// The entries <paramref name="setup"/> names, against <paramref name="parts"/> by refdes. <c>"*"</c> takes every part with
@@ -124,19 +138,58 @@ public static class EmPartPads
     /// refdes. <paramref name="where"/> names what the parts are placed on, for the refusal when <c>"*"</c> finds none.
     /// </summary>
     public static Selection Select(EmSetup setup, IReadOnlyDictionary<string, PlacedPart> parts, string where)
+        => Select(setup, parts, where, null);
+
+    /// <summary>
+    /// brief-icp-1 R-icp1-4 — the one selection rule for footprint parts and cell instances. With <paramref name="instances"/> null
+    /// it is exactly the footprint rule above (a <c>Cell</c> entry, which only an instance can match, is set aside). With them:
+    /// <list type="bullet">
+    /// <item>a part whose top-level instance is not a footprint (a PCell placed with a designator) is an instance, not a part;</item>
+    /// <item><c>"*"</c> also takes every device instance (<see cref="EmInstanceKind.Part"/>) with pins, walking down through copper
+    /// instances and stopping at the first device on each branch; <c>X1/*</c> does the same inside <c>X1</c>;</item>
+    /// <item>a <c>Cell</c> entry takes every instance of that cell, anywhere; a named path takes that instance;</item>
+    /// <item>an instance takes the options of its named entry, else its cell entry, else its <c>*</c> entry; two entries of one rank
+    /// that disagree are refused, as are an instance and one inside it (ICP-0 D8);</item>
+    /// <item>a path or cell that matches nothing is <see cref="Selection.Unplaced"/>, with the sentence saying what is there.</item>
+    /// </list>
+    /// </summary>
+    public static Selection Select(EmSetup setup, IReadOnlyDictionary<string, PlacedPart> parts, string where, EmCellInstanceSet? instances)
     {
+        // ── Sort the entries ─────────────────────────────────────────────────────────────────────────────────────────
+        static bool IsAll(EmComponentPort c) => c.Cell is null && c.Refdes.Trim() == EmSetup.AllComponents;
+        static bool IsSubtreeAll(EmComponentPort c) => c.Cell is null && c.Refdes.Trim().EndsWith("/" + EmSetup.AllComponents, StringComparison.Ordinal);
+        static string Key(EmComponentPort c) => c.Refdes.Trim().Trim('/');
+        // A part whose top-level instance is not a footprint (a PCell placed with a designator) is an instance, not a part.
+        bool IsPart(string rd) => parts.ContainsKey(rd)
+                                  && (instances?.At(rd) is not { Depth: 0 } top || top.Kind == EmInstanceKind.Footprint);
+
+        var footprintEntries = new List<EmComponentPort>();
+        var instanceEntries = new List<EmComponentPort>();
+        var unplaced = new List<(EmComponentPort, string)>();
+        foreach (var c in setup.ComponentPorts)
+        {
+            if (c.Cell is not null || IsSubtreeAll(c)) continue;
+            if (IsAll(c)) { footprintEntries.Add(c); continue; }
+            string rd = Key(c);
+            if (instances is null || IsPart(rd)) footprintEntries.Add(c);
+            else if (instances.At(rd) is not null) instanceEntries.Add(c);
+            else if (LooksLikePath(c)) unplaced.Add((c, instances.NamesNothing(rd)));
+            else footprintEntries.Add(c);      // an unplaced refdes: the caller refuses it by refdes, as it always has
+        }
+
+        // ── Footprint parts: the rule as it always was, over the footprint entries ─────────────────────────────────────
         var overrides = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in setup.ComponentPorts.Where(c => c.Refdes.Trim() != EmSetup.AllComponents))
+        foreach (var entry in footprintEntries.Where(c => !IsAll(c)))
         {
             var rd = entry.Refdes.Trim();
             if (!overrides.TryAdd(rd, entry with { Refdes = rd })) return new([], $"ComponentPorts names {rd} twice; each part is one entry.");
         }
         var wanted = new List<EmComponentPort>();
-        foreach (var entry in setup.ComponentPorts)
+        foreach (var entry in footprintEntries)
         {
-            if (entry.Refdes.Trim() == EmSetup.AllComponents)
+            if (IsAll(entry))
             {
-                foreach (var p in parts.Values.Where(p => p.Pads.Count == 2).OrderBy(p => p.Refdes, NaturalOrder.Instance))
+                foreach (var p in parts.Values.Where(p => p.Pads.Count == 2 && IsPart(p.Refdes)).OrderBy(p => p.Refdes, NaturalOrder.Instance))
                     if (!wanted.Any(w => w.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)))
                         wanted.Add(overrides.GetValueOrDefault(p.Refdes) is { } own ? own with { Refdes = p.Refdes } : entry with { Refdes = p.Refdes });
                 continue;
@@ -144,10 +197,118 @@ public static class EmPartPads
             var rd = entry.Refdes.Trim();
             if (!wanted.Any(w => w.Refdes.Equals(rd, StringComparison.OrdinalIgnoreCase))) wanted.Add(overrides[rd]);
         }
-        if (wanted.Count == 0)
+
+        if (instances is null)
+        {
+            if (wanted.Count > 0) return new(wanted, null);
+            var cells = setup.ComponentPorts.Where(c => c.Cell is not null).Select(c => c.Cell!).ToList();
+            if (cells.Count > 0 && setup.ComponentPorts.All(c => c.Cell is not null))
+                return new([], $"ComponentPorts selects the instances of {string.Join(", ", cells)}, and this run builds component ports on " +
+                               "placed parts' pads only.");
             return new([], $"ComponentPorts asks for every placed two-terminal part, and no part placed on {where} has two pads.");
-        return new(wanted, null);
+        }
+
+        // ── Cell instances: named, by cell, then "*" ─────────────────────────────────────────────────────────────────
+        var named = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in instanceEntries)
+        {
+            var path = instances.At(Key(entry))!.Path;
+            if (!named.TryAdd(path, entry)) return new([], $"ComponentPorts names {path} twice; each instance is one entry.");
+        }
+
+        var byCell = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in setup.ComponentPorts.Where(c => c.Cell is not null))
+        {
+            var matches = instances.Instances.Where(i => i.IsCell(entry.Cell!)).ToList();
+            if (matches.Count == 0) { unplaced.Add((entry, NoInstanceOf(entry.Cell!, instances))); continue; }
+            foreach (var m in matches)
+            {
+                if (byCell.TryGetValue(m.Path, out var other) && !SameOptions(other, entry))
+                    return new([], Disagree(m.Path, $"Cell {other.Cell}", $"Cell {entry.Cell}"));
+                byCell.TryAdd(m.Path, entry);
+            }
+        }
+
+        // "*" and "X/*": every device with pins, walking down through copper and stopping at the first device on each branch, or
+        // at an instance a named or cell entry already took.
+        var byAll = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in setup.ComponentPorts.Where(c => IsAll(c) || IsSubtreeAll(c)))
+        {
+            string? root = null;
+            if (IsSubtreeAll(entry))
+            {
+                string at = entry.Refdes.Trim()[..^2].Trim('/');
+                if (instances.At(at) is not { } r) { unplaced.Add((entry, instances.NamesNothing(at))); continue; }
+                root = r.Path;
+            }
+            var reached = new List<EmCellInstance>();
+            void Down(string? parent)
+            {
+                foreach (var child in instances.ChildrenOf(parent))
+                {
+                    if (named.ContainsKey(child.Path) || byCell.ContainsKey(child.Path)) continue;
+                    if (child.Kind == EmInstanceKind.Part) { if (child.Pins.Count > 0) reached.Add(child); }
+                    else if (child.Kind == EmInstanceKind.Copper) Down(child.Path);
+                }
+            }
+            Down(root);
+            foreach (var i in reached)
+            {
+                if (byAll.TryGetValue(i.Path, out var other) && !SameOptions(other, entry))
+                    return new([], Disagree(i.Path, other.Refdes.Trim(), entry.Refdes.Trim()));
+                byAll.TryAdd(i.Path, entry);
+            }
+        }
+
+        // The most specific entry wins: named, then cell, then "*".
+        var chosen = new Dictionary<string, EmComponentPort>(byAll, StringComparer.OrdinalIgnoreCase);
+        foreach (var (k, v) in byCell) chosen[k] = v;
+        foreach (var (k, v) in named) chosen[k] = v;
+        var list = instances.Instances.Where(i => chosen.ContainsKey(i.Path))
+                            .Select(i => new EmCellSelection(chosen[i.Path] with { Refdes = i.Path, Cell = null }, i)).ToList();
+
+        // ICP-0 D8: an instance inside a cut one is already out.
+        foreach (var inner in list)
+            if (list.FirstOrDefault(o => EmCellInstanceSet.IsInside(inner.Instance.Path, o.Instance.Path)) is { } outer)
+                return new([], $"ComponentPorts selects {outer.Instance.Path} and {inner.Instance.Path}, which is inside it; an instance inside " +
+                               "a cut one is already left out of the problem.");
+
+        if (wanted.Count == 0 && list.Count == 0 && unplaced.Count == 0)
+            return new([], NothingToTake(where, instances));
+        return new(wanted, null) { Instances = list, Unplaced = unplaced };
     }
+
+    /// <summary>The refusal when <c>"*"</c> finds nothing: what is placed, and how to cut out a copper instance.</summary>
+    private static string NothingToTake(string where, EmCellInstanceSet instances)
+    {
+        var copper = instances.Instances.Where(i => i.Kind == EmInstanceKind.Copper).ToList();
+        string head = $"ComponentPorts asks for every placed part that is not copper, and no part placed on {where} is a two-pad part or a device";
+        if (copper.Count == 0) return head + ".";
+        bool one = copper.Count == 1;
+        string listed = string.Join(", ", copper.Take(8).Select(i => $"{i.Path} ({i.CellLabel})")) +
+                        (copper.Count > 8 ? $" and {copper.Count - 8} more" : "");
+        return $"{head}; {listed} {(one ? "is" : "are")} copper the solver can solve: name {(one ? "it" : "them")}, or select " +
+               $"{(one ? "its" : "their")} cell, to cut {(one ? "it" : "them")} out.";
+    }
+
+    private static string NoInstanceOf(string cell, EmCellInstanceSet instances)
+    {
+        var placed = instances.Instances.Select(i => i.CellLabel).Distinct(StringComparer.OrdinalIgnoreCase)
+                              .OrderBy(n => n, NaturalOrder.Instance).ToList();
+        if (placed.Count == 0) return $"No instance of {cell} is placed: this layout places no cell instance.";
+        return $"No instance of {cell} is placed (the cells placed are {string.Join(", ", placed.Take(20))}" +
+               $"{(placed.Count > 20 ? $" and {placed.Count - 20} more" : "")}).";
+    }
+
+    private static string Disagree(string path, string a, string b)
+        => $"{path} is selected by two entries that disagree ({a} and {b}); state its options in one entry naming it.";
+
+    /// <summary>Whether a named entry is spelled as an instance path rather than a refdes: it has a segment separator or is an "@n".</summary>
+    private static bool LooksLikePath(EmComponentPort c) => c.Refdes.Contains('/') || c.Refdes.TrimStart().StartsWith('@');
+
+    /// <summary>Two entries asking the same of an instance, the selector aside.</summary>
+    private static bool SameOptions(EmComponentPort a, EmComponentPort b)
+        => (a with { Refdes = "", Cell = null }) == (b with { Refdes = "", Cell = null });
 
     /// <summary>The parts a refusal lists when a named one is not placed.</summary>
     public static string KnownParts(IEnumerable<string> refdes)

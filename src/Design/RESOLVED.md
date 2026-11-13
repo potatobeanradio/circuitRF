@@ -31083,3 +31083,37 @@ Findings, each now in the code and stated in `docs/design/chain-budget.md` §2.3
 
 Gates: `tests/Ui.Tests/Chain/ChainLinkBudgetTests.cs`, against `testdata/chain/link_reference.json` (an independent
 standard-library calculation, `link_reference.py`), and `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
+
+## brief-icp-1 — which cell instances a component port can name (2026-11-13)
+
+`EmCellInstances.Project` walks a layout's whole instance tree once and records, per instance, its path, cell (and PCell
+generator), pins as faces in world metres, schematic chain, kind and box; `EmPartPads.Select(…, instances)` is the one
+selection rule for footprint parts and cell instances; `EmComponentPort` gained `Cell`, `PortAt`, `KeepOutUm` and
+`Construction`. Gate: `tests/Ui.Tests/Em/CellInstanceProjectionTests.cs`.
+
+- **What an EM cell calls copper is what `"*"` leaves in the problem.** `EmModelSwitch.KindOf` moved unchanged to
+  `EmPartKinds.Of` (it had a second caller, `EmSchematicWithParts`); the projection reads it for an instance with a
+  schematic counterpart. Without one: a generated cell is copper (a land-pattern generator's is a footprint), a placement
+  carrying its own designator or part kind is a footprint part, anything else is copper.
+- **`"*"` walks down, it does not stop at the top level.** On a hierarchical chip the devices sit inside sub-blocks, and
+  a sub-block (a cell with a layout and a schematic) is copper. The walk passes through copper instances and stops at the
+  first device on each branch, or at an instance a named or cell entry already took — so `"*"` beside a named sub-block
+  never produces the nested-cut refusal. `X1/*` is the same walk rooted at `X1`.
+- **A path or cell that matches nothing is left out, not a refusal of the list** (`Selection.Unplaced`, with a sentence
+  listing what is placed at that level), as an unplaced refdes always was. The list is refused for a name given twice,
+  two entries of one rank disagreeing about one instance, and an instance with one inside it.
+- **A designated top-level instance that is not a footprint is an instance, not a part.** `EmPartPads.Project` lists
+  every placement with a designator, so a PCell Update Layout placed with a `SchematicId` appears among the parts too;
+  with instances handed in, `Select` sends it to the instance side and `"*"`'s footprint half skips it.
+- **The builders do not hand instances in yet.** `Select` without them is the footprint rule byte for byte (every
+  existing component-port gate passes unchanged); brief-icp-2 is where the Planar and 3D builders pass them and build the
+  cut. Meanwhile a list of nothing but `Cell` entries gets its own refusal instead of the two-pad one.
+- **An instance's box is lazy and computed once per cell.** Only a cut at the cell edge or a keep-out box reads it, so the
+  projection flattens nothing for it until `EmCellInstance.Box` is read; then the cell's own box is flattened once in its own
+  frame (per face: a bottom placement's swapped layers are the ones the level filter sees) and its corners carried through each
+  placement — exact at the multiples of 90° a component port is built at. The first version flattened every placement of every
+  instance eagerly, which on a chip placing one device a hundred times was a hundred flattens of one cell, on every Refresh.
+  Refresh itself still builds on the UI thread; brief-icp-2 R-icp2-8 moves it to a worker before the builders call this.
+- **The shipped SpiralResonator's cells are rebuilt, not committed** — `.generated-cells/` is git-ignored — so on a fresh
+  clone its two instances do not resolve until the kit regenerates them. The `"*"` refusal still names both, by path and
+  generator, because the generator id comes from the parent's `PCellSnapshots`, not from the cell.

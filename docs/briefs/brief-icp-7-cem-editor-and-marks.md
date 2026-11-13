@@ -33,8 +33,9 @@ instance when it moves, and draw nothing extra when no `.cem` names it.
 **R-icp7-4 — `.c3d` rows.** The `.c3d` editor's component-port rows take the same tree for its layout instances, with the
 layout instance as the first level when the view places more than one.
 
-**R-icp7-5 — Off the UI thread.** The section's Refresh builds through ICP-2 off the UI thread (LCP review's open item B5
-applies doubly: a chip has hundreds of instances).
+**R-icp7-5 — Off the UI thread.** ICP-2 (R-icp2-8) moved Refresh's build to a worker and shared one cached build between
+Refresh, Check, the marks and the mesh preview. The tree and its option edits here read that cache and never build on the UI
+thread; an option edit invalidates it through the setup it keys on.
 
 ## Gates
 

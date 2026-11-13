@@ -107,6 +107,27 @@ public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped,
                              && string.IsNullOrEmpty(Return);
 }
 
+/// <summary>brief-icp-1 R-icp1-3 — where a cut instance's ports sit (ICP-0 D5).</summary>
+public enum EmComponentPortAt
+{
+    /// <summary>At each pin's face: a pin is a point, a width and an outward direction, and a kit's model is referenced there.</summary>
+    Pin,
+    /// <summary>Where the interconnect crosses the instance's keep-out box.</summary>
+    Cell,
+}
+
+/// <summary>brief-icp-1 R-icp1-3 — how a component port is built (ICP-0 D1).</summary>
+public enum EmComponentConstruction
+{
+    /// <summary>A gap across the part's pads, the part's copper kept (brief-lcp-1, brief-emb-1).</summary>
+    Gap,
+    /// <summary>The instance left out of the problem and a port at each of its connected pins (brief-icp-2).</summary>
+    Cutout,
+}
+
+/// <summary>brief-icp-1 R-icp1-3 — a keep-out box, micrometres, in the instance's own frame.</summary>
+public readonly record struct EmKeepOut(double X0, double Y0, double X1, double Y1);
+
 /// <summary>
 /// brief-emb-1 R-emb1-2 — one component port a 3D setup asks for: a lumped gap port built on the pads of the part placed with
 /// <paramref name="Refdes"/> on the 3D view's layout (<see cref="EmSetup.AllComponents"/> for every placed two-terminal part).
@@ -119,8 +140,28 @@ public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped,
 /// pads share. An entry beside <c>*</c> overrides that part's port without naming it twice.</param>
 public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? Reference = null, double? WidthUm = null)
 {
+    /// <summary>
+    /// brief-icp-1 R-icp1-3 — select every placed instance of this cell, anywhere in the layout's hierarchy: the cell folder's name,
+    /// or for a generated cell its PCell generator id. An entry states <see cref="Refdes"/> or this, never both; a cell entry's
+    /// <see cref="Refdes"/> is empty.
+    /// </summary>
+    public string? Cell { get; init; }
+
+    /// <summary>brief-icp-1 R-icp1-3 — where a cut instance's ports sit: at each pin's face (the default) or where the interconnect
+    /// crosses the instance's keep-out box.</summary>
+    public EmComponentPortAt PortAt { get; init; }
+
+    /// <summary>brief-icp-1 R-icp1-3 — the box left out around a cut instance, micrometres in the instance's own frame. Null: the
+    /// bounding box of the instance's own shapes on the setup's analysis levels.</summary>
+    public EmKeepOut? KeepOutUm { get; init; }
+
+    /// <summary>brief-icp-1 R-icp1-3 / ICP-0 D1 — how the port is built. Null infers it from what the instance is: a footprint part
+    /// takes a gap across its pads, any other cell instance is cut out.</summary>
+    public EmComponentConstruction? Construction { get; init; }
+
     /// <summary>Overrides nothing: written as its refdes alone.</summary>
-    public bool IsPlain => Z0 is null && Reference is null && WidthUm is null;
+    public bool IsPlain => Z0 is null && Reference is null && WidthUm is null && Cell is null && PortAt == EmComponentPortAt.Pin
+                           && KeepOutUm is null && Construction is null;
 
     /// <summary>
     /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:

@@ -1200,7 +1200,8 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
         {
             if (reader.TokenType == JsonTokenType.String) { list.Add(new EmComponentPort(reader.GetString() ?? "")); continue; }
             if (reader.TokenType != JsonTokenType.StartObject)
-                throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes, Z0, Reference and WidthUm.");
+                throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes or Cell, Z0, Reference, " +
+                                        "WidthUm, PortAt, KeepOutUm and Construction.");
             using var doc = JsonDocument.ParseValue(ref reader);
             string? Get(string key)
             {
@@ -1216,7 +1217,38 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
             }
             double? width = Get("WidthUm") is { } w && double.TryParse(w, System.Globalization.NumberStyles.Float,
                                                                        System.Globalization.CultureInfo.InvariantCulture, out double wv) ? wv : null;
-            list.Add(new EmComponentPort(Get("Refdes") ?? "", Get("Z0"), Get("Reference"), width));
+            // brief-icp-1 R-icp1-3 — the cut-instance keys, each optional.
+            string? cell = Get("Cell");
+            string? refdes = Get("Refdes");
+            if (cell is not null && refdes is { Length: > 0 })
+                throw new JsonException($"A ComponentPorts entry names Refdes '{refdes}' and Cell '{cell}'; an entry selects by one of them.");
+            // By name only: a number would be the enum's position, which the file never states.
+            static T? Named<T>(string? text, string key) where T : struct, Enum
+            {
+                if (text is null) return null;
+                foreach (var name in Enum.GetNames<T>())
+                    if (name.Equals(text.Trim(), StringComparison.OrdinalIgnoreCase)) return Enum.Parse<T>(name);
+                throw new JsonException($"A ComponentPorts entry's {key} is {string.Join(" or ", Enum.GetNames<T>().Select(n => $"\"{n}\""))}, " +
+                                        $"not '{text}'.");
+            }
+            var portAt = Named<EmComponentPortAt>(Get("PortAt"), "PortAt") ?? EmComponentPortAt.Pin;
+            var construction = Named<EmComponentConstruction>(Get("Construction"), "Construction");
+            EmKeepOut? keepOut = null;
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (!prop.Name.Equals("KeepOutUm", StringComparison.OrdinalIgnoreCase) || prop.Value.ValueKind == JsonValueKind.Null) continue;
+                var v = prop.Value.ValueKind == JsonValueKind.Array && prop.Value.GetArrayLength() == 4
+                     && prop.Value.EnumerateArray().All(e => e.ValueKind == JsonValueKind.Number)
+                    ? prop.Value.EnumerateArray().Select(e => e.GetDouble()).ToArray()
+                    : throw new JsonException("A ComponentPorts entry's KeepOutUm is four numbers [x0, y0, x1, y1], micrometres.");
+                if (!(v[2] > v[0] && v[3] > v[1]))
+                    throw new JsonException("A ComponentPorts entry's KeepOutUm [x0, y0, x1, y1] needs x1 > x0 and y1 > y0.");
+                keepOut = new EmKeepOut(v[0], v[1], v[2], v[3]);
+            }
+            list.Add(new EmComponentPort(refdes ?? "", Get("Z0"), Get("Reference"), width)
+            {
+                Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction,
+            });
         }
         return list;
     }
@@ -1230,10 +1262,19 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
         {
             if (c.IsPlain) { writer.WriteStringValue(c.Refdes); continue; }
             writer.WriteStartObject();
-            writer.WriteString("Refdes", c.Refdes);
+            if (c.Cell is { } cell) writer.WriteString("Cell", cell);
+            else writer.WriteString("Refdes", c.Refdes);
             if (c.Z0 is { } z) writer.WriteString("Z0", z);
             if (c.Reference is { } r) writer.WriteString("Reference", r);
             if (c.WidthUm is { } w) writer.WriteNumber("WidthUm", w);
+            if (c.PortAt != EmComponentPortAt.Pin) writer.WriteString("PortAt", c.PortAt.ToString());
+            if (c.KeepOutUm is { } k)
+            {
+                writer.WriteStartArray("KeepOutUm");
+                writer.WriteNumberValue(k.X0); writer.WriteNumberValue(k.Y0); writer.WriteNumberValue(k.X1); writer.WriteNumberValue(k.Y1);
+                writer.WriteEndArray();
+            }
+            if (c.Construction is { } con) writer.WriteString("Construction", con.ToString());
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
