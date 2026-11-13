@@ -265,14 +265,19 @@ public sealed class SddModel : ComponentModel
     }
 
     // w<2: built-in weights (1 for current, jω for charge) — fall through to base.
-    // w≥2: evaluate H[w] expression at this frequency using the Complex Evaluator.
+    // w≥2: evaluate H[w] expression at this frequency using the Complex Evaluator — once per (w, ω): the parameters are
+    // fixed at construction, an evaluation costs ~10 µs, and a harmonic-balance or envelope run asks for the same few
+    // frequencies at every Newton evaluation.
     public override Complex Weight(int w, double omega)
     {
         if (w < 2) return base.Weight(w, omega);
-        if (!_weightAst.TryGetValue(w, out var ast))
-            throw new InvalidOperationException($"SDD '{_name}': I[p,{w}] used but H[{w}] is not defined");
-        return EvalWeight(ast, omega);
+        return _weightMemo.GetOrAdd((w, omega), k =>
+            _weightAst.TryGetValue(k.w, out var ast)
+                ? EvalWeight(ast, k.omega)
+                : throw new InvalidOperationException($"SDD '{_name}': I[p,{k.w}] used but H[{k.w}] is not defined"));
     }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int w, double omega), Complex> _weightMemo = new();
 
     // H[w] is frequency-domain (Complex, freq-controlled) — use the general Evaluator,
     // NOT SddEvaluator (which is real-only, voltage-controlled, with dual AD).

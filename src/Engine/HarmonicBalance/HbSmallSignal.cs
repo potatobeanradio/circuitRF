@@ -148,13 +148,7 @@ public static class HbSmallSignal
         public int Buckets => _buckets.Count;
         public Complex Dw(int b, int n, int m, int s, int t) => TwoSided(_buckets[b].Dw, n, m, s - t);
 
-        public Complex BucketWeight(int b, double omega)
-        {
-            var buc = _buckets[b];
-            return omega >= 0
-                ? buc.Model.Weight(buc.W, omega)
-                : Complex.Conjugate(buc.Model.Weight(buc.W, -omega));
-        }
+        public Complex BucketWeight(int b, double omega) => HbNewton.WeightAt(_buckets[b].Model, _buckets[b].W, omega);
 
         /// <summary>2·ω_ss an exact multiple of ω0 — the whole condition, and independent of
         /// K_ss: it is a statement about the frequencies, not about the truncation.</summary>

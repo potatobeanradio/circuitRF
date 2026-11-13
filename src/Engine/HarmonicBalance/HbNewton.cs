@@ -1798,7 +1798,8 @@ public static class HbNewton
     /// <summary>
     /// <c>H[w](ω)</c> at a SIGNED frequency: the model's own value at <c>ω ≥ 0</c> and the conjugate of
     /// <c>|ω|</c>'s below it. A multi-tone mixing product can sit at a negative frequency, and no model
-    /// is ever evaluated at one (CLAUDE.md, "Models are evaluated only at ω ≥ 0"); a real weighting
+    /// is ever evaluated at one (<c>src/Engine/HarmonicBalance/CLAUDE.md</c>, "Models are evaluated only at
+    /// ω ≥ 0"); a real weighting
     /// function has <c>H(−ω) = conj(H(ω))</c>, which is also what the jω charge factor does at ω &lt; 0.
     /// </summary>
     internal static Complex WeightAt(ComponentModel model, int w, double omega)
