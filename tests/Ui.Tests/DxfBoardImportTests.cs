@@ -511,7 +511,8 @@ public sealed class DxfBoardImportTests : IDisposable
         }
 
         Assert.Equal(["Top Copper"], names);
-        Assert.Single(DxfReader.Read(new StreamReader(dxf)).WirePolylines);
+        using var reader = new StreamReader(dxf);   // closed before Dispose deletes the folder
+        Assert.Single(DxfReader.Read(reader).WirePolylines);
     }
 
     [Fact]

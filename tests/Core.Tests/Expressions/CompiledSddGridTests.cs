@@ -215,12 +215,12 @@ public sealed class CompiledSddGridTests
         {
             Console.SetError(sink);
             compiled.EvalDualGrid(portV, [], s, 0, s, value, grad, compiled.CreateScratch(s), name, ref warn);
-            Assert.Equal("", sink.ToString());   // nothing printed DURING the grid
+            Assert.Empty(LinesNaming(sink, name));   // nothing printed DURING the grid
             warn.Emit(name);
         }
         finally { Console.SetError(original); }
 
-        var lines = sink.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var lines = LinesNaming(sink, name);
         Assert.Single(lines);
         Assert.Contains(name, lines[0]);
         Assert.Contains("log(", lines[0]);
@@ -446,10 +446,13 @@ public sealed class CompiledSddGridTests
         }
         finally { SddModel.GridParallelThreshold = saved; Console.SetError(original); }
 
-        var lines = sink.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Single(lines);
-        Assert.Contains("M_warn", lines[0]);
+        Assert.Single(LinesNaming(sink, "M_warn"));
     }
+
+    /// <summary>The captured stderr lines that name <paramref name="model"/>. <see cref="Console.SetError"/> is process-wide,
+    /// so a test in another class running at the same time writes into the same sink; only this model's lines are ours.</summary>
+    private static string[] LinesNaming(StringWriter sink, string model) =>
+        [.. sink.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(l => l.Contains(model, StringComparison.Ordinal))];
 
     private static void AssertBitEqual(double expected, double actual, string what)
     {

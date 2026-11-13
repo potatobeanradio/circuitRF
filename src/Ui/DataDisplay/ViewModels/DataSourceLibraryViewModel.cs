@@ -453,8 +453,9 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         {
             DataSet data;
             try { data = (await Task.Run(() => DataSetImporter.Import(newPath))).DataSet; }
-            catch { return; }
+            catch (Exception ex) { MarkRefused(entry, ex); return; }
 
+            entry.LoadError = null;
             entry.RefreshNpy(data, newPath);
             UpdateDisplayNames();
             LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -463,8 +464,9 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         {
             DataSet data;
             try { data = await Task.Run(() => SplReader.ReadSpl(newPath)); }
-            catch { return; }
+            catch (Exception ex) { MarkRefused(entry, ex); return; }
 
+            entry.LoadError = null;
             entry.RefreshLoadpull(data, newPath);
             UpdateDisplayNames();
             LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -473,8 +475,9 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         {
             DataSet data;
             try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(newPath)); }
-            catch { return; }
+            catch (Exception ex) { MarkRefused(entry, ex); return; }
 
+            entry.LoadError = null;
             entry.RefreshLoadpull(data, newPath);
             UpdateDisplayNames();
             LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -709,7 +712,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
         DataSet data;
         try { data = (await Task.Run(() => DataSetImporter.Import(path))).DataSet; }
-        catch { return; }
+        catch (Exception ex) { AddRefusedEntry(path, SourceKind.Npy, ex); return; }
 
         // A grouped run ("SP1.S") deliberately gets NO SNP — it goes through the cube path, which
         // can carry axes an SNP structurally cannot (a swept S cube is rank 4). See
@@ -748,7 +751,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
         DataSet data;
         try { data = await Task.Run(() => SplReader.ReadSpl(path)); }
-        catch { return; }
+        catch (Exception ex) { AddRefusedEntry(path, SourceKind.Spl, ex); return; }
 
         var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Spl);
         Entries.Add(entry);
@@ -773,13 +776,37 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
         DataSet data;
         try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(path)); }
-        catch { return; }
+        catch (Exception ex) { AddRefusedEntry(path, SourceKind.Lpcwave, ex); return; }
 
         var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Lpcwave);
         Entries.Add(entry);
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// A <c>.npy</c>, <c>.spl</c> or <c>.lpcwave</c> that is there but could not be read: a BROKEN entry carrying why,
+    /// as a refused binary dataset gets, so the source shows as Unreadable instead of vanishing and its traces say so.
+    /// </summary>
+    private void AddRefusedEntry(string path, SourceKind kind, Exception ex)
+    {
+        var entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this, kind);
+        entry.LoadError = RefusalSentence(ex);
+        Entries.Add(entry);
+        UpdateDisplayNames();
+    }
+
+    private static void MarkRefused(DataSourceEntryViewModel entry, Exception ex)
+    {
+        entry.LoadError = RefusalSentence(ex);
+        entry.NotifyBrokenStateChanged();
+    }
+
+    /// <summary>A reader's own refusal reads as it is; anything else is a defect in the reader, so its kind is kept.</summary>
+    internal static string RefusalSentence(Exception ex) =>
+        ex is InvalidDataException or FormatException or IOException or UnauthorizedAccessException or NotSupportedException
+            ? ex.Message
+            : $"{ex.GetType().Name}: {ex.Message}";
 
     /// <summary>
     /// A binary simulation dataset, read through <see cref="CircuitRF.Render.DataDisplay.PlotSourceFile"/> — the
