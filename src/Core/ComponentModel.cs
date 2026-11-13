@@ -26,6 +26,22 @@ public abstract class ComponentModel
         => Enumerable.Range(1, PortCount).Select(i => i.ToString()).ToArray();
 
     /// <summary>
+    /// The name a port's current is keyed by (<c>instancePath:name</c>). <see cref="TerminalNames"/> is one name per
+    /// port for most models, but a block whose ports are terminal PAIRS lists both ends of each (the amplifier's
+    /// <c>in+, in-, out+, out-</c>), and LVS and the model-library export read it that way. Indexed by port, such a list
+    /// named the amplifier's output current <c>in-</c> (issue 65); a pair takes its first name instead, so the output is
+    /// <c>out+</c> and the input keeps <c>in+</c>.
+    /// </summary>
+    public string PortCurrentName(int port)
+    {
+        var t = TerminalNames;
+        bool pairs = t.Length == 2 * PortCount && PortCount > 0;
+        for (int p = 0; pairs && p < PortCount; p++)
+            pairs = t[2 * p].EndsWith('+') && t[2 * p + 1].EndsWith('-');
+        return pairs ? t[2 * port] : port < t.Length ? t[port] : (port + 1).ToString();
+    }
+
+    /// <summary>
     /// Linear contribution — the model contributes stamps; the engine owns the matrix.
     /// Called once per frequency point during analysis assembly.
     /// </summary>

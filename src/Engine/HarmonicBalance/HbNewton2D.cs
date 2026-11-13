@@ -835,7 +835,7 @@ public static class HbNewton2D
             // FFT each port → spectrum, extract retained mixing products
             for (int p = 0; p < portCount; p++)
             {
-                string term = p < terms.Length ? terms[p] : (p + 1).ToString();
+                string term = ec.Model.PortCurrentName(p);
                 string key  = $"{ec.InstancePath}:{term}";
 
                 var iSpec = ForwardConv2D(portTerms.W0[p], N1, N2);

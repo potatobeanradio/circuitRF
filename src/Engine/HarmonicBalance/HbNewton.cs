@@ -2009,7 +2009,7 @@ public static class HbNewton
         var iX = new double[gridN];
         for (int p = 0; p < portCount; p++)
         {
-            string term = p < terms.Length ? terms[p] : (p + 1).ToString();
+            string term = ec.Model.PortCurrentName(p);
             string key  = $"{ec.InstancePath}:{term}";
 
             for (int t = 0; t < gridN; t++) iX[t] = pt.W0[p, t];

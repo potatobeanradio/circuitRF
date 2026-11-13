@@ -816,7 +816,7 @@ public static class HbNewtonNd
             var qAmpl = new Complex[M];
             for (int p = 0; p < portCount; p++)
             {
-                string term = p < terms.Length ? terms[p] : (p + 1).ToString();
+                string term = ec.Model.PortCurrentName(p);
                 string key  = $"{ec.InstancePath}:{term}";
 
                 var iAmpl = new Complex[M];
