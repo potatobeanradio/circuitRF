@@ -293,7 +293,8 @@ Rules a reader must apply:
   - Any of the three planes. Never a wave port, turned, or on a cylinder.
   - The mesher puts `GmshGeoWriter.RingCellsAcross` (8) elements across the radial gap.
   - Palace writes it as a `LumpedPort` with `Direction` `+R` or `-R`. EMerge runs it as circuitRF's radial lumped port
-    (`circuitrf_emerge.RadialLumpedPort`). openEMS and the Hertzon export refuse it by name.
+    (`circuitrf_emerge.RadialLumpedPort`). openEMS writes it inside the model as a radial source, a conducting slab and two
+    probes (`FdtdRingPorts`), and refuses it on a face of the box. The Hertzon export refuses it by name.
   - On a face of the box or inside the model: inside, the pin's end cap lies in the ring's plane and is never part of the port.
 - **A wave port's rectangle is a region of an air-box face.**
   - `VoltagePath` {`From`, `To`} states its voltage line.

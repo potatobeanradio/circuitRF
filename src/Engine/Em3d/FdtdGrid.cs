@@ -720,6 +720,25 @@ public static partial class FdtdGrid
             double lo = A3(port.Min, axis), hi = A3(port.Max, axis);
             Add(lo, true, new FdtdLineSource(port.Name, FdtdLineKind.PortExtent, lo));
             if (hi != lo) Add(hi, true, new FdtdLineSource(port.Name, FdtdLineKind.PortExtent, hi));
+            // brief-cxp-4 — a ring's square gives its outer radius and its plane; its centre (where its voltage line runs) and its
+            // inner radius (the pin's extremes) are lines too
+            if (port.Annulus is { } ring && hi != lo)
+            {
+                double c = (lo + hi) / 2;
+                foreach (double at in new[] { c - ring.InnerRadiusM, c, c + ring.InnerRadiusM })
+                    Add(at, true, new FdtdLineSource(port.Name, FdtdLineKind.PortExtent, at));
+            }
+            // ...and along its normal, a line either side of its plane a RingAxialCellFraction of its gap away: its voltage is read on
+            // the plane and its current on the half-cell plane beside it, and over the coarse axial cell a coax's ends are otherwise
+            // given, that half cell read the 20 mm test coax's |S11| at −22 dB and its two ports' own phase at −5.5° at 10 GHz;
+            // with the lines, −42 dB and −1.1° (brief-cxp-4).
+            if (port.Annulus is { } axial && hi == lo)
+            {
+                double d = RingAxialCellFraction * (axial.OuterRadiusM - axial.InnerRadiusM);
+                foreach (double at in new[] { lo - d, lo + d })
+                    if (at > ctx.BoxMin(axis) && at < ctx.BoxMax(axis))
+                        Add(at, true, new FdtdLineSource(port.Name, FdtdLineKind.PortExtent, at));
+            }
         }
         // brief-sar-3 R-sar3-3 — a lumped element's sheet is gridded exactly as a lumped port's is, and snaps the same way.
         foreach (var le in problem.LumpedElements)
@@ -1225,6 +1244,9 @@ public static partial class FdtdGrid
 
     /// <summary>brief-sar-8 — the grid line nearest <paramref name="at"/>, as its own value: what a coordinate already known to
     /// be on a line (to rounding) is written as, since openEMS tests a box or polygon against its lines with no tolerance.</summary>
+    /// <summary>brief-cxp-4 — how far, as a fraction of a coaxial port's radial gap, the grid lines either side of its plane stand.</summary>
+    public const double RingAxialCellFraction = 0.0625;
+
     public static double NearestLine(IReadOnlyList<double> lines, double at)
         => lines.Count == 0 ? at : lines.MinBy(l => Math.Abs(l - at));
 

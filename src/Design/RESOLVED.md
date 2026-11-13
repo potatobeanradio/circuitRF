@@ -30803,3 +30803,25 @@ faces: |S11| −52 to −57 dB, |S21| within 0.002 dB of the copper's closed for
   outer circle, so none lies inside it. The same open-ended coax then agrees with EMerge to 0.006 dB / 0.24° in |S21| and within
   0.8 dB in |S11| (−29 to −52 dB). A design whose ring sits at a pin's end inside its bore (Make Port ▸ Coaxial on that face) is
   exactly this case.
+
+## The coaxial port on openEMS (brief-cxp-4, 2026-11-12) — built; gate 2 short at 10 GHz, reported
+
+`FdtdRingPorts.Place` (Engine) and `CsxcadWriter.RingPort`: the coax wave port's own radial source
+(`FdtdWavePorts.RadialWeights`, now shared, its output unchanged), a conducting `CylindricalShell` over the ring plane's dual
+cell (κ = ln(b/a)/(2π·Z0·t)), a radial voltage line and a square current probe round the inner conductor on the half-cell plane
+inward. A ring on a face of the box is refused; so is one whose current probe has no cell of room.
+
+- **The axial cell at the ring decides the port's phase.** V is read on the ring's plane and I on the half-cell plane beside it;
+  over the coarse axial cell a coax's ends get, the 20 mm coax read |S11| −22 dB and its two ports' own phase −5.5° at 10 GHz.
+  Lines at ±gap/16 either side of the plane (`FdtdGrid.RingAxialCellFraction`): −42 to −47 dB and −1.1°. ±gap/32 moves the phase
+  only to −0.9°, so it is converged there.
+- **openEMS's staircased coax is not PTFE's: εeff 2.61.** Measured by the length difference (10 mm and 20 mm, so the ports
+  cancel), and the whole line reads the same 2.60 — the excess phase against −βℓ is the LINE's, which no port fixes (the 3D Wave
+  Ports example's notes measured 3.08 on its grid). Palace's line reads 2.11. So the brief's "∠S21 within 3° of −βℓ" is not a
+  port test on openEMS; the gate holds the PORTS' own phase (2·φ(10) − φ(20)) to Palace's instead.
+- **Gate 2 result:** |S11| −42 to −50 dB, |S21| within 0.05 dB of Palace's (perfect metal against copper), the ports' own phase
+  −0.05 / −0.34 / −1.08° against Palace's 0.20 / 1.10 / 2.05° at 1 / 5.5 / 10 GHz: 3.1° apart at 10 GHz against a 3° tolerance.
+  The difference follows the open coax ends, not the ring: Palace reads |S11| −29 dB at 10 GHz, about what the ring-to-wall
+  capacitance (0.5 mm of air to the PEC wall) predicts, and openEMS −42 to −48 dB at every grid tried (80 cells/λ moved its port
+  phase only to −0.42°). Reported to the owner rather than the tolerance loosened; the owner accepted that accuracy and the
+  ring ships on openEMS, the gate restated at 3.5°.

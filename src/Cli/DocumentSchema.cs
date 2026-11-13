@@ -998,7 +998,7 @@ internal static class DocumentSchema
             box's wall. A circle on no conductor or on two, both circles on one, or metal between
             them is refused, naming what was found. Any of XY, YZ and XZ; never a wave port, turned
             or on a cylinder. `explain` gives the ring's TEM impedance for the dielectric it lies on
-            beside Z0. Palace and EMerge run it, on the box's wall or inside the model; openEMS and a Hertzon export refuse it by name.
+            beside Z0. Palace and EMerge run it, on the box's wall or inside the model; openEMS runs it inside the model and refuses it on a face of the box (its wall would short it); a Hertzon export refuses it by name.
           * A WAVE port's rectangle is a region of an air-box face of the setup being run — the box
             is each setup's own, so this is checked per setup. Its two conductors are the ones that
             meet the region, and its voltage path runs across the gap between them at the positive

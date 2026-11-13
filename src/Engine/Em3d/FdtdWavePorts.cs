@@ -369,15 +369,7 @@ public static class FdtdWavePorts
                         // E outward for a positive voltage (the path runs shield → pin), inward when flipped.
                         // The denominator never reaches 0: on the axis (often a grid line) 0/0 would be evaluated, and the
                         // mask is 0 there anyway.
-                        string s = flipped ? "-" : "";
-                        string du = Shift(AxisVar(u), cu), dv = Shift(AxisVar(v), cv);
-                        string r2 = $"({du}^2+{dv}^2)";
-                        string mask = $"(sqrt{r2}>={Ex(ri)})*(sqrt{r2}<={Ex(ro)})";
-                        string den = $"max({r2},{Ex(ri * ri)})";
-                        var weight = new string[3];
-                        weight[axis] = "0";
-                        weight[u] = $"{s}{Ex(ri)}*{du}/{den}*{mask}";
-                        weight[v] = $"{s}{Ex(ri)}*{dv}/{den}*{mask}";
+                        var weight = RadialWeights(axis, u, v, cu, cv, ri, ro, inward: flipped);
                         var e = new int[3];
                         e[u] = 1; e[v] = 1;
                         sources.Add(new FdtdSourceBox("", At3(source, u0, v0), At3(source, u1, v1), e, weight));
@@ -1032,6 +1024,32 @@ public static class FdtdWavePorts
     private static Point3 Pt(int a, double av, int b, double bv, int c, double cv) => Make(a, av, b, bv, c, cv);
 
     private static string AxisVar(int axis) => axis switch { 0 => "x", 1 => "y", _ => "z" };
+
+    /// <summary>
+    /// A coax's TEM source as openEMS weight functions about the centre (<paramref name="cu"/>, <paramref name="cv"/>) on axes
+    /// <paramref name="u"/> and <paramref name="v"/> of a plane facing <paramref name="axis"/>: r_i·r̂/r between the radii, 0 outside them and along the axis; outward, or inward when
+    /// <paramref name="inward"/>. The denominator never reaches 0: on the axis (often a grid line) 0/0 would be evaluated, and the
+    /// mask is 0 there anyway. The coax wave port's source (brief-em3d-116), and brief-cxp-4's coaxial lumped port's.
+    /// </summary>
+    public static string[] RadialWeights(int axis, int u, int v, double cu, double cv, double ri, double ro, bool inward)
+    {
+        string s = inward ? "-" : "";
+        string du = Shift(AxisVar(u), cu), dv = Shift(AxisVar(v), cv);
+        string r2 = $"({du}^2+{dv}^2)";
+        string mask = $"(sqrt{r2}>={Ex(ri)})*(sqrt{r2}<={Ex(ro)})";
+        string den = $"max({r2},{Ex(ri * ri)})";
+        var weight = new string[3];
+        weight[axis] = "0";
+        weight[u] = $"{s}{Ex(ri)}*{du}/{den}*{mask}";
+        weight[v] = $"{s}{Ex(ri)}*{dv}/{den}*{mask}";
+        return weight;
+    }
+
+    /// <summary>brief-cxp-4 — <see cref="Below"/>, <see cref="Above"/>, <see cref="DualOut"/> and <see cref="CellAt"/> for the ring port.</summary>
+    internal static double BelowLine(IReadOnlyList<double> lines, double x) => Below(lines, x);
+    internal static double AboveLine(IReadOnlyList<double> lines, double x) => Above(lines, x);
+    internal static double DualOutLine(IReadOnlyList<double> lines, double edge, int dir) => DualOut(lines, edge, dir);
+    internal static double CellAtLine(IReadOnlyList<double> lines, double x) => CellAt(lines, x);
 
     private static string Shift(string var, double c) => c >= 0 ? $"({var}-{Ex(c)})" : $"({var}+{Ex(-c)})";
 

@@ -35,7 +35,9 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
     /// every face PEC with no padding, so each ring lies on a face of the box.
     /// </summary>
     /// <param name="order">The Palace setup's element order; null leaves Draft's own (1).</param>
-    /// <param name="solver">The embedded setup's solver and name: <c>Palace</c>, or <c>Emerge</c> (EMerge at its Accurate quality).</param>
+    /// <param name="solver">The embedded setup's solver and name: <c>Palace</c>, <c>Emerge</c> (EMerge at its Accurate quality), or
+    /// <c>OpenEms</c> (a grading ratio of 1.15 near the coax, the 3D Wave Ports Launch's).</param>
+    /// <param name="lengthUm">The coax's length.</param>
     /// <param name="endPaddingUm">Air beyond the coax's two ends before the box's PEC faces: 0 puts each ring ON a face of the box;
     /// more puts it inside, an open coax end with the air behind it.</param>
     /// <param name="boolean">The shell as the editor makes one — a box with the bore subtracted and kept as the PTFE — which needs the
@@ -43,7 +45,8 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
     /// inside the round PTFE, which is no matter to the port's inference but leaves slivers Gmsh cannot mesh: a solve takes the
     /// boolean.</param>
     internal static C3dDocument Coax(C3dPlane plane = C3dPlane.YZ, double startGHz = 1, double stopGHz = 10, int points = 3, bool boolean = false,
-                                     int? order = null, string solver = "Palace", long endPaddingUm = 0)
+                                     int? order = null, string solver = "Palace", long endPaddingUm = 0,
+                                     int? openEmsCellsPerWavelength = null, long lengthUm = LengthUm)
     {
         var axis = plane switch { C3dPlane.YZ => C3dAxis.X, C3dPlane.XZ => C3dAxis.Y, _ => C3dAxis.Z };
         C3dPoint2 P(long u, long v) => new(u * Um, v * Um);
@@ -65,26 +68,26 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
                 new C3dBoolean
                 {
                     Name = "shell", Op = C3dBooleanOp.Subtract, KeepTools = true,
-                    Blank = new C3dBox { Material = "Copper", Min = At(-ShellUm, -ShellUm, 0), Size = Extent(2 * ShellUm, 2 * ShellUm, LengthUm) },
-                    Tools = [new C3dCylinder { Name = "ptfe", Material = "PTFE", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = LengthUm * Um, Radius = BoreUm * Um }],
+                    Blank = new C3dBox { Material = "Copper", Min = At(-ShellUm, -ShellUm, 0), Size = Extent(2 * ShellUm, 2 * ShellUm, lengthUm) },
+                    Tools = [new C3dCylinder { Name = "ptfe", Material = "PTFE", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = lengthUm * Um, Radius = BoreUm * Um }],
                 },
-                new C3dCylinder { Name = "pin", Material = "Copper", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = LengthUm * Um, Radius = PinUm * Um },
+                new C3dCylinder { Name = "pin", Material = "Copper", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = lengthUm * Um, Radius = PinUm * Um },
             ]
             :
             [
                 new C3dPrism
                 {
-                    Name = "shell", Material = "Copper", Plane = plane, Offset = 0, Height = LengthUm * Um,
+                    Name = "shell", Material = "Copper", Plane = plane, Offset = 0, Height = lengthUm * Um,
                     Outline = [P(-ShellUm, -ShellUm), P(ShellUm, -ShellUm), P(ShellUm, ShellUm), P(-ShellUm, ShellUm)],
                     Holes = [[.. Enumerable.Range(0, 64).Select(k => new C3dPoint2((long)Math.Round(BoreUm * Um * Math.Cos(2 * Math.PI * k / 64)),
                                                                                   (long)Math.Round(BoreUm * Um * Math.Sin(2 * Math.PI * k / 64))))]],
                 },
-                new C3dCylinder { Name = "ptfe", Material = "PTFE", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = LengthUm * Um, Radius = BoreUm * Um },
-                new C3dCylinder { Name = "pin", Material = "Copper", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = LengthUm * Um, Radius = PinUm * Um },
+                new C3dCylinder { Name = "ptfe", Material = "PTFE", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = lengthUm * Um, Radius = BoreUm * Um },
+                new C3dCylinder { Name = "pin", Material = "Copper", Base = new C3dPoint3(0, 0, 0), Axis = axis, Length = lengthUm * Um, Radius = PinUm * Um },
             ],
-            Ports = [Ring(1, 0), Ring(2, LengthUm)],
+            Ports = [Ring(1, 0), Ring(2, lengthUm)],
         };
-        doc.Setups.Add(JsonDocument.Parse(PalaceSetupJson(startGHz, stopGHz, points, plane, order, solver, endPaddingUm)).RootElement.Clone());
+        doc.Setups.Add(JsonDocument.Parse(PalaceSetupJson(startGHz, stopGHz, points, plane, order, solver, endPaddingUm, openEmsCellsPerWavelength)).RootElement.Clone());
         return doc;
 
         // (u, v) in the plane and w along its normal, as a world point and as a world size
@@ -106,12 +109,13 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>Every face PEC: the coax's two ends on the box with no padding, so each ring lies on a face; 0.2 mm of air round
     /// the shell's sides, so each face has something besides metal to select.</summary>
-    private static string PalaceSetupJson(double startGHz, double stopGHz, int points, C3dPlane plane, int? order, string solver, long endPaddingUm)
+    private static string PalaceSetupJson(double startGHz, double stopGHz, int points, C3dPlane plane, int? order, string solver, long endPaddingUm,
+                                           int? openEmsCellsPerWavelength)
     {
         string Pad(string axis) => (plane, axis) is (C3dPlane.YZ, "X") or (C3dPlane.XZ, "Y") or (C3dPlane.XY, "Z")
             ? endPaddingUm.ToString(System.Globalization.CultureInfo.InvariantCulture) : "200";
-        string block = solver == "Emerge"
-            ? "\"EMerge\": { \"Quality\": \"Accurate\" }"
+        string block = solver == "Emerge" ? "\"EMerge\": { \"Quality\": \"Accurate\" }"
+            : solver == "OpenEms" ? "\"OpenEms\": { \"GradingRatio\": 1.15" + (openEmsCellsPerWavelength is { } cpw ? $", \"CellsPerWavelength\": {cpw}" : "") + " }"
             : "\"Palace\": { \"Quality\": \"Draft\", \"LinearSolver\": \"Direct\"" + (order is { } o ? $", \"ElementOrder\": {o}" : "") + " }";
         return $$"""
         {
@@ -327,20 +331,44 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(EmergeLoweringRules.Mappings(problem, EmergeSettings.Default, 1e-4), r => r.Mapping.StartsWith("a coaxial lumped port, number 1", StringComparison.Ordinal));
     }
 
+    /// <summary>brief-cxp-4 R-cxp4-4 — on a face of the box openEMS's wall would short the ring: refused, saying to move it in.</summary>
     [Fact]
-    public void openEMS_RefusesTheRing_ByName()
+    public void openEMS_RefusesARingOnAFaceOfTheBox()
     {
-        string path = Save(_root, Coax());
-        var doc = C3dPersistence.LoadFromFile(path);
-        var embedded = C3dSetups.Read(doc).Single().Setup!;
-        embedded.Solver3D = Em3dSolverId.OpenEms;
-        embedded.OpenEms = new CemOpenEms();
-        var setup = C3dSetups.ForRun(embedded, path);
-        var assembled = C3dProblemAssembly.Assemble(setup, doc, path, null);
+        var written = OpenEms(Coax(solver: "OpenEms"));
+        Assert.Contains("P1 is a coaxial port on a face of the air box.", written.Refusal);
+    }
+
+    /// <summary>brief-cxp-4 R-cxp4-1…3 — inside the box: the conducting slab with κ = ln(b/a)/(2π·Z0·t), the radial source, and the
+    /// two probes, all on the ring's grid plane.</summary>
+    [Fact]
+    public void openEMS_WritesARingInsideTheBox_AsSourceSlabAndProbes()
+    {
+        var written = OpenEms(Coax(solver: "OpenEms", endPaddingUm: 500));
+        Assert.True(written.Ok, written.Refusal);
+        string xml = written.Model!;
+        Assert.Contains("Name=\"port1_resist\"", xml);
+        Assert.Contains("<CylindricalShell Priority=", xml);
+        Assert.Contains("Name=\"port1_u\"", xml);
+        Assert.Contains("Name=\"port1_i\"", xml);
+        // κ = ln(0.67/0.2)/(2π · 50 Ω · t): the slab's conductance is the ring's 50 Ω
+        double kappa = double.Parse(System.Text.RegularExpressions.Regex.Match(xml[xml.IndexOf("port1_resist", StringComparison.Ordinal)..], "Kappa=\"([^,\"]+)").Groups[1].Value,
+                                    System.Globalization.CultureInfo.InvariantCulture);
+        output.WriteLine($"κ = {kappa} S/m");
+        Assert.InRange(kappa, 1.0, 1e5);
+        Assert.Contains("(sqrt((y-0)^2+(z-0)^2)&gt;=0.0002)*(sqrt((y-0)^2+(z-0)^2)&lt;=0.00067)", written.PortFiles[0]);   // the radial source, XML-escaped
+        output.WriteLine(written.Notes.Single(n => n.StartsWith("Port 1 is coaxial", StringComparison.Ordinal)));
+    }
+
+    private CsxcadLowering OpenEms(C3dDocument doc)
+    {
+        string path = Save(_root, doc);
+        var read = C3dPersistence.LoadFromFile(path);
+        var setup = C3dSetups.ForRun(C3dSetups.Read(read).Single().Setup!, path);
+        var assembled = C3dProblemAssembly.Assemble(setup, read, path, null);
         Assert.True(assembled.Ok, assembled.Refusal);
         var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
         var grid = FdtdGrid.Build(assembled.Problem!, gridSettings, long.MaxValue);
-        var written = CsxcadWriter.Write(assembled.Problem!, grid, gridSettings, CemOpenEms.ResolveRun(setup.OpenEms));
-        Assert.Contains("Port 1 is a coaxial port, which circuitRF does not write for openEMS yet.", written.Refusal);
+        return CsxcadWriter.Write(assembled.Problem!, grid, gridSettings, CemOpenEms.ResolveRun(setup.OpenEms));
     }
 }

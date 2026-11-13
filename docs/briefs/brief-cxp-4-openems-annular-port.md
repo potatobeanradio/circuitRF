@@ -50,3 +50,18 @@ and the existing staircase warnings fire on the pin and the bore.
 
 openEMS's cylindrical grid (a ring about the cylinder's axis on that grid would be exact; a later brief if wanted), and
 multi-port excitation changes beyond what one more port kind needs.
+
+## Completion note (2026-11-12) — built; gate 2 short at 10 GHz, reported
+
+Built as R-cxp4-1…5 describe (`FdtdRingPorts`, `CsxcadWriter.RingPort`, the ring's centre, inner radius and two axial lines in
+`FdtdGrid`), with the coax wave port's source expression shared rather than re-spelled. Gate 1 (routine): `CoaxialPortTests`
+— the slab, the source and the probes on the ring's plane, and the refusal on a box face.
+
+Gate 2 could not be met as written, and was not loosened: openEMS's staircased coax has εeff 2.61 (Palace's 2.11; measured by
+the length difference, so it is the line's, not the ports'), so ∠S21 against −βℓ tests the grid, not the port. The gate as
+built (`CoaxialPortOpenEmsTests`, Benchmark, ~3 min) holds the ports' own phase to Palace's: 0.25° and 1.4° apart at 1 and 5.5
+GHz, **3.1° at 10 GHz against 3°**, with |S11| below −42 dB and |S21| within 0.05 dB of Palace's. The 10 GHz difference follows
+the open coax ends (Palace −29 dB |S11|, openEMS −45 dB), not the ring; `src/Design/RESOLVED.md` has the measurements. The
+owner decides whether that is shipped as is, the tolerance restated, or openEMS's ring refused.
+
+**Owner decision (2026-11-12):** the accuracy is accepted and openEMS's ring ships; the gate holds the ports' own phase to 3.5°.

@@ -225,14 +225,14 @@ public static partial class CsxcadWriter
                     : $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. An openEMS lumped port is " +
                       "terminated in a resistance, which must be positive: set the port's Z0 to a value with a " +
                       "positive real part.");
-            // brief-cxp-1 R-cxp1-5 — said by name, never written as its bounding square
-            if (p.Annulus is not null)
-                return No($"Port {p.Number} is a coaxial port, which circuitRF does not write for openEMS yet. Run the setup on Palace, " +
-                          "or feed the coax with a rectangular port or a wave port.");
+            // brief-cxp-4 — a ring is written as a coaxial lumped port on the Cartesian grid only (below)
+            if (p.Annulus is not null && grid.Cylinder is not null)
+                return No($"Port {p.Number} is a coaxial port, which circuitRF writes on openEMS's Cartesian grid only. Set OpenEms.Grid " +
+                          "to Cartesian, or run the setup on Palace or EMerge.");
             if (p.Quad is not null)
                 return No($"Port {p.Number} is turned in its plane. openEMS's grid and its lumped port run along x, y and z, so a " +
                           "turned port cannot be written for it. Run the setup on Palace or EMerge, or set the port's Angle to 0.");
-            if (p.Kind == Em3dPortKind.Lumped && p.Cylinder is null && ExcitationAxis(p) is null)
+            if (p.Kind == Em3dPortKind.Lumped && p.Cylinder is null && p.Annulus is null && ExcitationAxis(p) is null)
                 return No($"Port {p.Number}'s direction is not along an axis in the port's own sheet, so openEMS's " +
                           "lumped port cannot state it.");
         }
@@ -426,6 +426,12 @@ public static partial class CsxcadWriter
                 var t = waveTerminals.Single(w => w.Port == p.Number);
                 probeNames.Add(WaveProbes(props, ref id, t));
                 excitations.Add(WaveExcitation(t, portPriority));
+                continue;
+            }
+            if (p.Annulus is { } ring)
+            {
+                if (RingPort(props, ref id, p, ring, grid, problem, materials, portPriority, excitations, notes) is { } refused) return No(refused);
+                probeNames.Add(new OpenEmsProbeNames(p.Number, [VoltageProbe(p.Number)], [CurrentProbe(p.Number)]));
                 continue;
             }
             probeNames.Add(new OpenEmsProbeNames(p.Number, [VoltageProbe(p.Number)], [CurrentProbe(p.Number)]));
@@ -860,6 +866,60 @@ public static partial class CsxcadWriter
         sb.Append("                <Primitives>\n");
         sb.Append(primitives);
         sb.Append("                </Primitives>\n");
+    }
+
+    /// <summary>
+    /// brief-cxp-4 — a coaxial port (<see cref="FdtdRingPorts"/>): its termination slab, its voltage and current probes, and its
+    /// radial source as the excited file's last property. The slab takes the permittivity of the dielectric on the ring's inward
+    /// side, so the termination changes nothing but the conductance there. The refusal, or null.
+    /// </summary>
+    private static string? RingPort(StringBuilder props, ref int id, Em3dPort p, Em3dAnnulus ring, FdtdGridResult grid, Em3dProblem problem,
+                                    IReadOnlyDictionary<string, Em3dMaterial> materials, int priority, List<string> excitations, List<string> notes)
+    {
+        var (el, why) = FdtdRingPorts.Place(p, ring, grid);
+        if (el is null) return why;
+        var q = el.SideProbe;
+        var fill = problem.Solids.Where(s => s.Role != Em3dRole.Conductor && Inside(Em3dProblem.Bounds(s.Primitive), q))
+                          .OrderByDescending(s => s.Order).FirstOrDefault();
+        double er = fill is not null && materials.TryGetValue(fill.Material, out var fm) ? fm.Epsr
+                  : problem.Boundary.Material is { } bm && materials.TryGetValue(bm, out var am) ? am.Epsr : 1.0;
+
+        Open(props, "Material", id++, $"port{p.Number}_resist", Colors.Port, " Isotropy=\"1\"");
+        AppendPrimitives(props,
+            $"                    <CylindricalShell Priority=\"{priority}\" Radius=\"{R(el.ShellRadiusM)}\" ShellWidth=\"{R(el.ShellWidthM)}\">\n" +
+            $"                        {P("P1", el.ShellP1)}\n" +
+            $"                        {P("P2", el.ShellP2)}\n" +
+            "                    </CylindricalShell>\n");
+        props.Append($"                <Property Epsilon=\"{R(er)},{R(er)},{R(er)}\" Mue=\"1,1,1\" Kappa=\"{R(el.KappaSm)},{R(el.KappaSm)},{R(el.KappaSm)}\" " +
+                     "Sigma=\"0,0,0\" Density=\"0\" />\n");
+        props.Append("                <Weight Epsilon=\"1,1,1\" Mue=\"1,1,1\" Kappa=\"1,1,1\" Sigma=\"1,1,1\" Density=\"1\" />\n");
+        props.Append("            </Material>\n");
+
+        OpenProbe(props, id++, VoltageProbe(p.Number), type: 0, weight: -1, normDir: -1);
+        AppendPrimitives(props, Box(0, el.Voltage.From, el.Voltage.To));
+        props.Append("            </ProbeBox>\n");
+        OpenProbe(props, id++, CurrentProbe(p.Number), type: 1, weight: el.CurrentWeight, normDir: el.Normal);
+        AppendPrimitives(props, Box(0, el.CurrentMin, el.CurrentMax));
+        props.Append("            </ProbeBox>\n");
+
+        var src = el.Source;
+        var c = Colors.Excitation;
+        var sb = new StringBuilder();
+        sb.Append($"            <Excitation ID=\"{{ID0}}\" Name=\"port{p.Number}_excite\" Number=\"0\" Enabled=\"1\" Frequency=\"0\" " +
+                  $"Delay=\"0\" Type=\"0\" Excite=\"{src.Excite[0]},{src.Excite[1]},{src.Excite[2]}\" PropDir=\"0,0,0\">\n");
+        sb.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+        sb.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+        AppendPrimitives(sb, Box(priority, src.Min, src.Max));
+        sb.Append($"                <Weight X=\"{Esc(src.Weight![0])}\" Y=\"{Esc(src.Weight[1])}\" Z=\"{Esc(src.Weight[2])}\" />\n");
+        sb.Append("            </Excitation>\n");
+        excitations.Add(sb.ToString());
+        notes.Add($"Port {p.SourceNumber ?? p.Number} is coaxial: a radial source on its ring, terminated in {G(p.Z0.Real)} Ω by a conducting slab " +
+                  $"of κ = {G(el.KappaSm)} S/m over the {FdtdGrid.FormatLength(el.SlabM)} cell at its plane; its current probe clears the shell by " +
+                  $"{el.ClearanceCells:0.#} cells. The grid staircases the ring with its pin and shell.");
+        return null;
+
+        static bool Inside((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b, Point3 q)
+            => q.X >= b.X0 && q.X <= b.X1 && q.Y >= b.Y0 && q.Y <= b.Y1 && q.Z >= b.Z0 && q.Z <= b.Z1;
     }
 
     /// <summary>The excited port's property, with an <c>{ID0}</c> placeholder: it is always the last.</summary>
