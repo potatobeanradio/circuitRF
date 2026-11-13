@@ -151,5 +151,5 @@ phase noise out, is 0.39 % until compression, nearly all of it the NR source's o
 The Front End's Canceller bench runs its envelope sweeps in about 70 s (estimate).
 
 The Demo and the Canceller are estimates. Both have a carrier off the envelope's centre, and the envelope now steps
-those twice as finely (*Reference ▸ Simulations*, the accuracy preset): measured on a shared machine, one demo point took
+those twice as finely (*Reference ▸ Simulations*, the accuracy preset): one demo point took
 2.0 to 2.3 times as long and one canceller point 1.7 times. Before that, they took 2 min 20 s and about 40 s.

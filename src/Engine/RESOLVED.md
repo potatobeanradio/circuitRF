@@ -4414,7 +4414,7 @@ at draft (the rate is at least five bandwidths). A run whose carriers are all ce
 never changes, and `standard` changes only for a carrier more than 7.5 bandwidths off the centre; the most it raises any
 run is 5x. The runner's `StepSeconds` and both engines call it, the lattice plan carrying each group's band edge, and a
 raised step is said in one note and in the oversampling the CLI and the run's summary print. The demo's step halves (one
-point took 2.0 to 2.3 times as long on a shared machine); its distortion part reads 0.39 %, nearly all the source's own;
+point took 2.0 to 2.3 times as long); its distortion part reads 0.39 %, nearly all the source's own;
 the filter bench's off-centre NR carrier 0.390 % and DBPSK 0.036 %. The Canceller bench, whose 20 MHz interference
 carrier sits 20 MHz off its centre, now reads its closed-form depth to 0.64 % (0.09 dB at 49.7 dB deep) instead of
 1.34 % (0.67 dB there). Gates: `EnvelopeSignalQualityTests.ACarrierOffTheEnvelopesCentre_ReadsCloseToItsCentredEvm` and
