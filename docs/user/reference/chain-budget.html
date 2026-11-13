@@ -1213,16 +1213,17 @@ Scroll to zoom, drag with the middle button to pan. <strong>Z</strong> and a dra
 a double-click fits. Right-click ▸ <strong>Copy</strong> copies it as the schematic editor copies: a picture for a slide or a
 document, and parts and wires to paste into a schematic.</li>
 </ul>
-<p>Clicking a block, or a part in the schematic, selects its stage, and the selected stage is drawn selected in both.</p>
+<p>Clicking a block, or a part in the schematic, selects its stage, and the selected stage is drawn selected in both.
+A click off every block or part, or Escape outside a text box, clears the selection.</p>
 </li>
 <li><p><strong>The stages</strong>, one row each: the name, the part, and the part's parameters. Selecting a stage in either view
 scrolls its row to the top of the list.</p>
 </li>
 <li><p><strong>The cascade, the levels and the canceller</strong>, <a href="data-display.html">Data Display</a> tabs: the cascade table, one
 row per stage; the <a href="#levels">levels at every node</a>, the budget's lines with the transferred benches' simulated
-points once they have run, where a marker on a trace selects its node's stage in both views; the <a href="#link">Link</a> tab,
-with the link's and the receiver's inputs and numbers; a tab for each <a href="#sweeps">sweep</a> the chain asks for; and, for a
-chain with a canceller, <a href="#canceller">its depth</a> against its errors. The chain's totals are below them.</p>
+points once they have run; the <a href="#link">Link</a> tab, with the link's and the receiver's inputs and numbers; a tab for
+each <a href="#sweeps">sweep</a> the chain asks for; and, for a chain with a canceller, <a href="#canceller">its depth</a> against its
+errors. The chain's totals are below them.</p>
 </li>
 </ul>
 <p>Drag the gap between two of the three parts to give one more height.</p>
@@ -2960,8 +2961,6 @@ cumulative NF, from the noise run's own shares, and the noise floor that NF give
 noise gain). In the window they appear once those benches have been simulated beside the <code>.cchain</code>; in the display
 they are its points, the budget its lines. The displays plot against a variable <code>nodeix</code> that each bench sweeps
 around a trivial DC solve, which is how one number per node becomes one curve.</p>
-<p>Add a marker to a trace in the window's Levels plots and its node's stage is selected, in the stage list and in both
-views; move the marker and the selection follows.</p>
 <h2 id="canceller">The canceller</h2>
 <p>A <strong>Canceller</strong> stage subtracts a weighted copy of an interference from the main path: a reference path from the
 interference's own source, through an amplitude setting, a phase setting and a delay, into a directional coupler's
