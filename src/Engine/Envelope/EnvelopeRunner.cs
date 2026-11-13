@@ -306,6 +306,10 @@ public static class EnvelopeRunner
                 $"{EnvelopeEngine.StepsPerEdgeCycle:0} steps a cycle there. EVM through a filter reads closer at standard or fine, " +
                 "or with the source's Fc on the carrier.");
         int totalSteps = (int)Math.Round(p.StopS / h);
+        if (totalSteps + 1 < EnvelopeDataSet.MinimumSamples)
+            throw new InvalidOperationException(EnvelopeToneDiagnostics.StopTooShort(
+                plan.Name, PulsedCw.FormatTime(p.StopS), totalSteps, PulsedCw.FormatTime(h), EnvelopeDataSet.MinimumSamples - 1,
+                PulsedCw.FormatTime((EnvelopeDataSet.MinimumSamples - 1) * h)).Render());
         var bound = Enumerable.Range(0, segs + 1).Select(i => (int)((long)totalSteps * i / segs)).ToArray();
         int tailSteps = segs > 1 ? Math.Max(1, (int)Math.Min(0.25 * totalSteps / segs, Math.Round(1e-6 / h))) : 0;
 

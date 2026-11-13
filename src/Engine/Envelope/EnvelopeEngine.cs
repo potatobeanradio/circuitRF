@@ -100,8 +100,10 @@ public sealed class EnvelopeRunResult
     /// <summary>[step][wBond][product · arrays + array] each array's branch current (A, peak phasors), product 0 real
     /// (<see cref="EnvelopeWireTemperature"/>).</summary>
     public Complex[][][] WBondCurrent { get; init; } = [];
-    /// <summary>Per MOD source: instantaneous available-drive phasor (V peak) at the fundamental.</summary>
+    /// <summary>Instantaneous available-drive phasor (V peak) at the fundamental: one row per MOD source, or on the lattice
+    /// one per (source, tone group), row s·T + t. Rows are different sources or different products, so their powers add.</summary>
     public required Complex[][] Drive { get; init; }
+    /// <summary>Re Z of the source each <see cref="Drive"/> row belongs to.</summary>
     public required double[] DriveRe { get; init; }
     public required double F0Hz { get; init; }
     public required double StepS { get; init; }

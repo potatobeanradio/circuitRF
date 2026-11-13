@@ -95,9 +95,10 @@ internal static class EnvelopeVerb
                 EvmSplitExpr = env.EvmSplitExpr,
             };
             // A parametric_sweep wrapping this envelope (e.g. Pavg -> ACPR vs Pout) is dispatched at the SWEEP, the
-            // same promotion `hb` applies: running the inner alone would silently drop the sweep axis.
-            if (tb.Analyses.OfType<ParametricSweepAnalysis>().FirstOrDefault(s => WrapsEnvelope(tb, s, env.Name)) is { } sweep
-                && !tb.Analyses.OfType<ParametricSweepAnalysis>().Any(o => o.InnerAnalysisName == sweep.Name))
+            // same promotion `hb` applies, through the same rule: the OUTERMOST runnable chain holding the envelope,
+            // whatever order the sweeps are declared in (issue 66). Running the inner alone would silently drop the axes.
+            if (ChainSelector.Select(tb, env.Name, a => a is EnvelopeAnalysis, "envelope", "analysis <name> type=env Stop=...")
+                    .Selected is ParametricSweepAnalysis sweep)
             {
                 // overrides land in the directive itself, so every sweep point re-resolves them
                 int at = tb.Analyses.FindIndex(x => x.Name == env.Name);
@@ -161,19 +162,6 @@ internal static class EnvelopeVerb
     }
 
     private static double S(DataSet ds, string k) => ds.Cubes.TryGetValue(k, out var c) ? c.RealValues[0] : double.NaN;
-
-    private static bool WrapsEnvelope(TestBench tb, ParametricSweepAnalysis s, string envName)
-    {
-        string inner = s.InnerAnalysisName;
-        for (int guard = 0; guard < 16; guard++)
-        {
-            if (inner.Equals(envName, StringComparison.OrdinalIgnoreCase)) return true;
-            var next = tb.Analyses.OfType<ParametricSweepAnalysis>().FirstOrDefault(x => x.Name.Equals(inner, StringComparison.OrdinalIgnoreCase));
-            if (next is null) return false;
-            inner = next.InnerAnalysisName;
-        }
-        return false;
-    }
 
     /// <summary>The IProbes carrying RF: those whose gain is a number somewhere in <paramref name="gt"/>
     /// (<c>Gt_dB</c>, branch axis last). A supply or bias probe is NaN there and has nothing to print.</summary>

@@ -76,6 +76,10 @@ public static class EnvelopeDataSet
     /// <summary>10·log10(1000/50): a VSD in dBV/Hz plus this is the power density into 50 Ω in dBm/Hz.</summary>
     public static readonly double VsdTo50OhmDb = 10 * Math.Log10(1000.0 / 50);
 
+    /// <summary>The fewest recorded samples (steps + 1) the measurements are taken over; a shorter Stop is refused before
+    /// the run (<see cref="EnvelopeRunner"/>), since the settle skip and the spectra both need this many (issue 66).</summary>
+    public const int MinimumSamples = 16;
+
     /// <param name="quiet">EvmSplit's second run, with every noise source and mask off (brief NZ-8); null without one.</param>
     public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null,
                                 EnvelopeRunResult? quiet = null)
@@ -86,7 +90,7 @@ public static class EnvelopeDataSet
         int nt = r.Time.Length, np = r.ProbeNames.Length, nb = r.IProbeNames.Length;
         int nk = np > 0 ? r.Probe[0][0].Length : nb > 0 ? r.IProbeCurrent[0][0].Length : multi ? r.MixFreqHz!.Length : r.MaxHarm + 1;
         double fs = 1.0 / r.StepS;
-        int t0 = Math.Min(nt - 16, (int)Math.Round(skipS / r.StepS));
+        int t0 = Math.Max(0, Math.Min(nt - MinimumSamples, (int)Math.Round(skipS / r.StepS)));
         int nm = nt - t0;
         var nodeAxis = new Axis("node", Index(np), "", r.ProbeNames);
         var branchAxis = new Axis("branch", Index(nb), "", r.IProbeNames);
@@ -256,13 +260,18 @@ public static class EnvelopeDataSet
         if (reads.Cast<CarrierRead>().Any(x => x.Sign != 0)) pf = CarrierBandPower(reads, pk, ks);
 
         // ── drive and supplies: scalars, they never depended on an output ──
+        // AM-AM (single envelope only) reads the drive as one waveform on the first source's Z
         var drive = new Complex[nm];
         double reZ = r.DriveRe[0];
         for (int t = 0; t < nm; t++) foreach (var d in r.Drive) drive[t] += d[t0 + t];
-        double pin = 0;
-        for (int t = 0; t < nm; t++) pin += drive[t].Real * drive[t].Real + drive[t].Imaginary * drive[t].Imaginary;
-        pin /= nm;
-        double pinW = pin / (8 * reZ);
+        // each row's mean |d|²/(8 Re Z) at its own source's Z, the rows' powers added (issue 66)
+        double pinW = 0;
+        for (int row = 0; row < r.Drive.Length; row++)
+        {
+            double sq = 0;
+            for (int t = 0; t < nm; t++) { var d = r.Drive[row][t0 + t]; sq += d.Real * d.Real + d.Imaginary * d.Imaginary; }
+            pinW += sq / nm / (8 * r.DriveRe[row]);
+        }
         ds.Add("Pin_avg_dBm", DataCube.Scalar(10 * Math.Log10(pinW * 1e3)));
         double pdc = double.NaN;
         if (r.SupplyNames.Length > 0)

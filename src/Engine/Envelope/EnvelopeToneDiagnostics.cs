@@ -33,6 +33,15 @@ public static class EnvelopeToneDiagnostics
         "{f0Mhz} MHz), so it drives nothing. Leave Envelope auto to give it a fundamental of its own.",
         ("analysis", analysis), ("tone", tone), ("toneMhz", Mhz(toneHz)), ("f0Mhz", Mhz(f0Hz)));
 
+    /// <summary>A Stop too short for the measurements' window (issue 66): refused before solving, naming the shortest that is
+    /// not.</summary>
+    public static Diagnostic StopTooShort(string analysis, string stop, int steps, string step, int needed, string shortest) =>
+        Diagnostic.Create(
+            "envelope.stop.too-short", DiagnosticSeverity.Error,
+            "envelope '{analysis}': Stop {stop} is {steps} step(s) of {step}, and the measurements need at least {needed}: " +
+            "set Stop to {shortest} or more.",
+            ("analysis", analysis), ("stop", stop), ("steps", steps), ("step", step), ("needed", needed), ("shortest", shortest));
+
     /// <summary>The key the round-off-held tolerance is reported once under.</summary>
     public const string RoundOffFloorKey = "envelope-tol-roundoff";
 

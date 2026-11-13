@@ -303,8 +303,10 @@ public sealed class EnvelopeEngineMt
         var ivOut = new Complex[nSteps + 1][][];
         var tOut = new double[nSteps + 1];
         var pOut = new Complex[nSteps + 1][][];
-        var dOut = new Complex[sources.Length][];
-        for (int s = 0; s < sources.Length; s++) dOut[s] = new Complex[nSteps + 1];
+        // one row per (source, tone group), s·T + t: the groups are different lattice products, so their POWERS add, never
+        // their phasors (issue 66: two equal CW carriers summed as phasors read the input 3.01 dB high)
+        var dOut = new Complex[sources.Length * T][];
+        for (int r = 0; r < dOut.Length; r++) dOut[r] = new Complex[nSteps + 1];
         void Record(int step)
         {
             int o = step - nWarm;
@@ -343,7 +345,7 @@ public sealed class EnvelopeEngineMt
             }
             iOut[o] = ic;
             ivOut[o] = iv;
-            for (int s = 0; s < sources.Length; s++) { Complex a = 0; for (int t = 0; t < T; t++) a += drv[s, t][step]; dOut[s][o] = a; }
+            for (int s = 0; s < sources.Length; s++) for (int t = 0; t < T; t++) dOut[s * T + t][o] = drv[s, t][step];
         }
         Record(0);
 
@@ -523,7 +525,7 @@ public sealed class EnvelopeEngineMt
             SupplyNames = Array.Empty<string>(), SupplyCurrent = Enumerable.Range(0, nSteps + 1).Select(_ => Array.Empty<double>()).ToArray(),
             SupplyVoltage = Array.Empty<double>(), IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut,
             WBondPaths = wbonds, WBondCurrent = wOut,
-            Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
+            Drive = dOut, DriveRe = sources.SelectMany(s => Enumerable.Repeat(s.Z.Real, T)).ToArray(),
             F0Hz = tones[0], StepS = h, MaxHarm = M - 1, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1), JacobianBuilds = newton.JacobianBuilds,
             WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,

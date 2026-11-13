@@ -4518,3 +4518,17 @@ wave for a complex `T` (`src/Core/RESOLVED.md`), not the solver.
 System Design transmitters (`TxDirectConversion`, `TxFetFinal`, `TxSuperhet`), whose PIM sits on a circulator with a
 real S — no bucket. Their HB results are bit-identical before and after. No example has an SDD with `w ≥ 2` or a PIM
 coupler.
+
+## Envelope input power on the lattice, and a Stop too short to measure (issue 66, 2026-11-13)
+
+- **Pin_avg 3.01 dB high for two carriers of one source.** `EnvelopeEngineMt` summed one source's drive over its tone
+  groups into one phasor before recording it, and `EnvelopeDataSet` averaged `|Σ|²`. The groups are different lattice
+  products (100 and 110 MHz), so their powers add: two equal CW carriers read `|2a|²` against `2|a|²`, and Gt read
+  −3.01 dB through a wire. `Drive` now has one row per (source, tone group), `s·T + t`, each with its own source's
+  `DriveRe`, and Pin_avg sums each row's mean `|d|²/(8 Re Z)`. The single envelope keeps one row per source, so a
+  one-source run is unchanged. AM-AM (single envelope only) still reads the rows summed, on the first source's Z.
+- **A Stop shorter than 15 steps crashed** with an `IndexOutOfRangeException`: `t0 = Min(nt − 16, skip)` went negative
+  and `Window` read before the record. The runner now refuses it before solving, naming the step and the shortest Stop
+  that measures (`EnvelopeDataSet.MinimumSamples`, 16 samples), and `t0` is clamped at 0.
+
+Gates: `EnvelopeShortStopAndInputPowerTests`.
