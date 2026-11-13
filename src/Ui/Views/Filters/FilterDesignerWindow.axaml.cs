@@ -6,8 +6,8 @@ using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Filters;
-using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.Match;
+using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views.Filters;
 
@@ -98,6 +98,9 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         this.FindControl<PlotControl>("PhasePlotControl")
             ?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
     }
+
+    private void OnZoomFit(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?.ZoomToFit();
 
     private void OnApply(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

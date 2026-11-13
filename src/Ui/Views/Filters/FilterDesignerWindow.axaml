@@ -1,121 +1,246 @@
+<!-- The Filter Designer, in the Match Designer's panel language: a specification column, the ladder
+     drawn by the schematic editor's own renderer, and the Data Display's plots. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:flt="using:CircuitRF.Ui.Filters"
+        xmlns:df="using:CircuitRF.Design.Filters"
+        xmlns:mv="using:CircuitRF.Ui.Views.Match"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Filters.FilterDesignerWindow"
         x:DataType="flt:FilterDesignerViewModel"
         Title="Filter Designer"
-        Width="1100" Height="720"
-        MinWidth="860" MinHeight="560"
+        Width="1199" Height="741"
+        MinWidth="1000" MinHeight="700"
         CanResize="True">
-    <Grid ColumnDefinitions="300,*" Margin="10">
-        <ScrollViewer>
-            <StackPanel Spacing="8" Margin="0,0,10,0">
-                <TextBlock Text="Impedances" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                    <StackPanel>
-                        <TextBlock Text="Source" FontSize="11"/>
-                        <TextBox Text="{Binding SourceText}"/>
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.warn">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"       Value="0,2,0,0"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <Style Selector="Button.gridhdr">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="FontWeight"                 Value="SemiBold"/>
+            <Setter Property="Padding"                    Value="0,2"/>
+            <Setter Property="BorderThickness"            Value="0"/>
+            <Setter Property="Background"                 Value="Transparent"/>
+            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="TextBox.num">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding"  Value="4,2"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="292,*,340">
+
+        <!-- ── Specification ─────────────────────────────────────────────── -->
+        <Border Classes="pane">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Classes="panelhdr" Text="Specification"/>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Impedances"/>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <TextBlock Classes="lbl" Text="Source"/>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="Load"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Topology"/>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <TextBlock Classes="lbl" Text="First"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding FirstElements}"
+                                          SelectedItem="{Binding First}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="Order"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding OrderText}"/>
+                            </Grid>
+                            <TextBlock Classes="note" Text="Order is the prototype order. A bandpass or bandstop of order 3 is six elements."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Response"/>
+                            <ComboBox ItemsSource="{Binding Responses}" SelectedItem="{Binding Response}"/>
+                            <Grid ColumnDefinitions="70,*" Margin="0,3,0,0">
+                                <TextBlock Classes="lbl" Text="Form"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Forms}" SelectedItem="{Binding Form}"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
+                                <TextBlock Classes="lbl" Text="Ap, dB"/>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="As, dB"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding AsText}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="cardhdr" Text="Edges"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                                          MinWidth="72"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="{Binding LabelB}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"/>
+                                <TextBlock Grid.Row="2" Classes="lbl" Text="{Binding LabelC}" IsVisible="{Binding ShowC}"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}" IsVisible="{Binding ShowC}"/>
+                                <TextBlock Grid.Row="3" Classes="lbl" Text="{Binding LabelD}" IsVisible="{Binding ShowD}"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}" IsVisible="{Binding ShowD}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Values"/>
+                            <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
+                                      ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
+                            <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
+                                    HorizontalAlignment="Left" Margin="0,2,0,0"
+                                    ToolTip.Tip="Index the workspace's vendor libraries and offer one inductor series and one capacitor series."/>
+                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
+                                      IsVisible="{Binding LibraryAvailable}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="df:FilterLibrarySeries">
+                                        <TextBlock Text="{Binding Label}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
+                                      IsVisible="{Binding LibraryAvailable}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="df:FilterLibrarySeries">
+                                        <TextBlock Text="{Binding Label}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="cardhdr" Text="Design information"/>
+                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
+                            <TextBlock Classes="warn" Text="{Binding Status}"
+                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                        <Button Content="Design" Command="{Binding DesignCommand}"/>
+                        <Button Content="Apply to Filter" Click="OnApply" IsVisible="{Binding CanApply}"/>
+                        <Button Content="Save netlist…" Click="OnSave"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="Load" FontSize="11"/>
-                        <TextBox Text="{Binding LoadText}"/>
-                    </StackPanel>
-                </Grid>
-                <TextBlock Text="First element" FontSize="11"/>
-                <ComboBox ItemsSource="{Binding FirstElements}" SelectedItem="{Binding First}"/>
-
-                <TextBlock Text="Order (N)" FontSize="11"/>
-                <TextBox Text="{Binding OrderText}" Width="80" HorizontalAlignment="Left"/>
-
-                <TextBlock Text="Response" FontWeight="SemiBold"/>
-                <ComboBox ItemsSource="{Binding Responses}" SelectedItem="{Binding Response}"/>
-                <TextBlock Text="Form" FontSize="11"/>
-                <ComboBox ItemsSource="{Binding Forms}" SelectedItem="{Binding Form}"/>
-
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                    <StackPanel>
-                        <TextBlock Text="Ap (dB)" Foreground="{DynamicResource CrfAccentBrush}" FontSize="11"/>
-                        <TextBox Text="{Binding ApText}"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="As (dB)" FontSize="11"/>
-                        <TextBox Text="{Binding AsText}"/>
-                    </StackPanel>
-                </Grid>
-
-                <TextBlock Text="Edges" FontWeight="SemiBold"/>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto,Auto">
-                    <TextBlock Text="{Binding LabelA}" FontSize="11"/>
-                    <TextBox Grid.Column="1" Text="{Binding FaText}"/>
-                    <TextBlock Grid.Row="1" Text="{Binding LabelB}" FontSize="11"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FbText}"/>
-                    <TextBlock Grid.Row="2" Text="{Binding LabelC}" FontSize="11" IsVisible="{Binding ShowC}"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FcText}" IsVisible="{Binding ShowC}"/>
-                    <TextBlock Grid.Row="3" Text="{Binding LabelD}" FontSize="11" IsVisible="{Binding ShowD}"/>
-                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding FdText}" IsVisible="{Binding ShowD}"/>
-                </Grid>
-                <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}" HorizontalAlignment="Left"/>
-
-                <TextBlock Text="Values" FontWeight="SemiBold"/>
-                <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
-                          ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
-                <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
-                        HorizontalAlignment="Left"
-                        ToolTip.Tip="Index the workspace's vendor libraries. A selected series replaces each element with the nearest part."/>
-                <TextBlock Text="Inductors" FontSize="11" IsVisible="{Binding LibraryAvailable}"/>
-                <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
-                          DisplayMemberBinding="{Binding Label}" IsVisible="{Binding LibraryAvailable}"/>
-                <TextBlock Text="Capacitors" FontSize="11" IsVisible="{Binding LibraryAvailable}"/>
-                <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
-                          DisplayMemberBinding="{Binding Label}" IsVisible="{Binding LibraryAvailable}"/>
-
-                <TextBlock Text="dB / division" FontSize="11"/>
-                <TextBox Text="{Binding DbPerDivText}" Width="80" HorizontalAlignment="Left"/>
-
-                <TextBlock Text="Design information" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding DesignInfo}" TextWrapping="Wrap" FontFamily="Consolas,monospace"/>
-                <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
-                           Foreground="{DynamicResource CrfWarningBrush}"/>
-
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="Design" Command="{Binding DesignCommand}"/>
-                    <Button Content="Redraw" Command="{Binding DesignCommand}"/>
-                    <Button Content="Apply to Filter" Click="OnApply"
-                            IsVisible="{Binding CanApply}"/>
-                    <Button Content="Save netlist…" Click="OnSave"/>
                 </StackPanel>
-            </StackPanel>
-        </ScrollViewer>
+            </ScrollViewer>
+        </Border>
 
-        <DockPanel Grid.Column="1">
-            <Border DockPanel.Dock="Bottom" MaxHeight="220" Margin="0,8,0,0">
-                <ScrollViewer>
+        <!-- ── The ladder, drawn ─────────────────────────────────────────── -->
+        <Border Grid.Column="1" Classes="pane">
+            <Grid RowDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Classes="panelhdr" Text="Filter network"/>
+                <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
+                        BorderBrush="{DynamicResource CrfTileBorderBrush}">
+                    <Panel>
+                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                        <Button HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Margin="4" Padding="6,3" Click="OnZoomFit"
+                                ToolTip.Tip="Zoom to Fit  (F)">
+                            <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                        </Button>
+                    </Panel>
+                </Border>
+
+                <Grid Grid.Row="2" ColumnDefinitions="1.2*,1.2*,*,*" Margin="0,8,0,0">
+                    <TextBlock Classes="lbl" FontWeight="SemiBold" Text="Instance"/>
+                    <TextBlock Grid.Column="1" Classes="lbl" FontWeight="SemiBold" Text="Type"/>
+                    <TextBlock Grid.Column="2" Classes="lbl" FontWeight="SemiBold" Text="Exact"/>
+                    <TextBlock Grid.Column="3" Classes="lbl" FontWeight="SemiBold" Text="Value"/>
+                </Grid>
+                <ScrollViewer Grid.Row="3" MaxHeight="160" Margin="0,2,0,0"
+                              VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Elements}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="flt:FilterElementRow">
-                                <Grid ColumnDefinitions="70,110,110,110,*" Margin="0,1">
-                                    <TextBlock Text="{Binding Name}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Kind}"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding Exact}"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding Used}"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding Part}"/>
+                            <DataTemplate x:DataType="flt:FilterElementRow">
+                                <Grid ColumnDefinitions="1.2*,1.2*,*,*" Margin="0,1">
+                                    <TextBlock Text="{Binding Name}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Kind}" FontSize="11"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Exact}" FontSize="11"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Used}" FontSize="11"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
-            </Border>
-            <Grid RowDefinitions="*,*">
-                <ddc:PlotControl Name="MagnitudePlotControl"
+            </Grid>
+        </Border>
+
+        <!-- ── Response, the Data Display's own plots ────────────────────── -->
+        <Border Grid.Column="2" Classes="pane">
+            <Grid RowDefinitions="Auto,*,*">
+                <TextBlock Classes="panelhdr" Text="Response"/>
+                <ddc:PlotControl Grid.Row="1" Name="MagnitudePlotControl"
                                  Plot="{Binding MagnitudePlot}"
                                  Library="{Binding PlotHost.Library}"
                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
-                <ddc:PlotControl Name="PhasePlotControl" Grid.Row="1" Margin="0,6,0,0"
+                <ddc:PlotControl Grid.Row="2" Name="PhasePlotControl" Margin="0,6,0,0"
                                  Plot="{Binding PhasePlot}"
                                  Library="{Binding PlotHost.Library}"
                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
             </Grid>
-        </DockPanel>
+        </Border>
     </Grid>
 </Window>

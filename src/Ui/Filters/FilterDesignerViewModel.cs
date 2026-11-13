@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Text;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Ui.Matching;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
@@ -11,7 +12,6 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
-using CircuitRF.Ui.Matching;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NumFlat;
@@ -123,6 +123,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private FilterLibrarySeries? _capacitorChoice;
     [ObservableProperty] private bool _libraryAvailable;
 
+    /// <summary>The ladder as the Match Designer's own schematic canvas draws it.</summary>
+    [ObservableProperty] private MatchLadderLayout _ladder = MatchLadderLayout.Empty;
+
     /// <summary>True when a placed Filter can take Apply.</summary>
     public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
 
@@ -174,6 +177,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         Elements.Clear();
         Cnl = "";
+        Ladder = MatchLadderLayout.Empty;
         if (!TrySpec(out var spec, out string? error))
         {
             Status = error ?? "";
@@ -220,6 +224,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                        $"{spec.LoadOhms:0.###} Ω, which Place as Filter keeps; the ladder is built " +
                        "for the ratio the family produces. " + note;
             FillRows(real.Elements, used);
+            Ladder = LadderOf(used, real.SourceOhms, real.LoadOhms);
         }
         else
         {
@@ -401,6 +406,24 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             ? v >= 1e-6 ? (1e6, "µH") : v >= 1e-9 ? (1e9, "nH") : (1e12, "pH")
             : v >= 1e-6 ? (1e6, "µF") : v >= 1e-9 ? (1e9, "nF") : (1e12, "pF");
         return (v * pick.Scale).ToString("0.####", CultureInfo.InvariantCulture) + " " + pick.Unit;
+    }
+
+    /// <summary>
+    /// The same placement the Match Designer uses, so the filter is a circuitRF schematic rather
+    /// than a table of numbers.
+    /// </summary>
+    private static MatchLadderLayout LadderOf(IReadOnlyList<FilterElement> used, double rs, double rl)
+    {
+        var net = new MatchNetwork { R1 = rs, R2 = rl };
+        foreach (var e in used)
+            net.Elements.Add(new MatchElement
+            {
+                Name = e.Name,
+                Type = e.Inductor ? ElementType.L : ElementType.C,
+                IsShunt = e.Shunt,
+                Value = e.Value,
+            });
+        return MatchLadderLayout.Build(net, applied: null, valueText: el => Eng(el.Type == ElementType.L, el.Value));
     }
 
     private void FillRows(IReadOnlyList<FilterElement> exact, List<FilterElement> used)
