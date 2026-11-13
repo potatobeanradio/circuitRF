@@ -77,13 +77,14 @@ The window has three parts, and every edit recomputes all of them at once:
     document, and parts and wires to paste into a schematic.
 
   Clicking a block, or a part in the schematic, selects its stage, and the selected stage is drawn selected in both.
+  A click off every block or part, or Escape outside a text box, clears the selection.
 - **The stages**, one row each: the name, the part, and the part's parameters. Selecting a stage in either view
   scrolls its row to the top of the list.
 - **The cascade, the levels and the canceller**, [Data Display](data-display.html) tabs: the cascade table, one
   row per stage; the [levels at every node](#levels), the budget's lines with the transferred benches' simulated
-  points once they have run, where a marker on a trace selects its node's stage in both views; the [Link](#link) tab,
-  with the link's and the receiver's inputs and numbers; a tab for each [sweep](#sweeps) the chain asks for; and, for a
-  chain with a canceller, [its depth](#canceller) against its errors. The chain's totals are below them.
+  points once they have run; the [Link](#link) tab, with the link's and the receiver's inputs and numbers; a tab for
+  each [sweep](#sweeps) the chain asks for; and, for a chain with a canceller, [its depth](#canceller) against its
+  errors. The chain's totals are below them.
 
 Drag the gap between two of the three parts to give one more height.
 
@@ -554,9 +555,6 @@ cumulative NF, from the noise run's own shares, and the noise floor that NF give
 noise gain). In the window they appear once those benches have been simulated beside the `.cchain`; in the display
 they are its points, the budget its lines. The displays plot against a variable `nodeix` that each bench sweeps
 around a trivial DC solve, which is how one number per node becomes one curve.
-
-Add a marker to a trace in the window's Levels plots and its node's stage is selected, in the stage list and in both
-views; move the marker and the selection follows.
 
 ## The canceller {#canceller}
 
