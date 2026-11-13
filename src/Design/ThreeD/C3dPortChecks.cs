@@ -71,6 +71,15 @@ public static class C3dPortChecks
             yield break;
         }
 
+        // brief-cxp-1 — a ring has no direction to check: its two circles chose its conductors, and the gap is radial
+        if (p.Annulus is { } ring)
+        {
+            yield return (GapId, DiagnosticSeverity.Info,
+                $"{label} is coaxial, across a {L(ring.OuterRadiusM - ring.InnerRadiusM)} radial gap between radii {L(ring.InnerRadiusM)} " +
+                $"and {L(ring.OuterRadiusM)}.");
+            yield break;
+        }
+
         var (uDir, vDir) = C3dTurnedPorts.Axes(port);
         int pair = Math.Abs(Geometry3.Dot(p.Direction, uDir)) >= 0.5 ? 0 : 1;
         double M(long v) => C3dLowering.Metres(v, doc.DbuPerMicron);

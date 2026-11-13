@@ -118,6 +118,12 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Excitation, "cylindrical port", "Hertzon's port is a rectangle sheet in an axis plane", name);
                 continue;
             }
+            // brief-cxp-1 R-cxp1-5 — a coaxial port's sheet is its ring
+            if (port.Annulus is not null)
+            {
+                _r.Add(HznRefusalKind.Excitation, "coaxial port", "Hertzon's port is a rectangle sheet in an axis plane", name);
+                continue;
+            }
             if (port.Angle != 0)
             {
                 _r.Add(HznRefusalKind.Excitation, "turned port", "Hertzon's port is a rectangle sheet in an axis plane", name);

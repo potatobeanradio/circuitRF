@@ -284,6 +284,16 @@ Rules a reader must apply:
 - **A lumped port's two conductors are inferred** from what its rectangle's opposite edges touch. `Positive` and
   `Negative` (elaborated object names, `U1/pad` allowed, or `airbox/zmin`) state them instead, and `Flip` swaps them.
 - `Angle` turns a lumped port in the XY plane about its centre.
+- **`Annulus` makes a coaxial lumped port** (brief-cxp-1): its sheet is a ring, `{ "Centre": [u, v], "Inner": dbu,
+  "Outer": dbu }` on the port's `Plane` and `Offset`, instead of `Rect`. Each value may be an expression.
+  - The conductor the inner circle lies on is positive and the one the outer circle lies on is negative. `Positive` and
+    `Negative` state them instead, and `Flip` swaps them.
+  - A PEC air-box face in the ring's own plane is never one of the two, so a coax may end on the box's wall.
+  - The ring's open area must be dielectric: metal between the circles is refused.
+  - Any of the three planes. Never a wave port, turned, or on a cylinder.
+  - The mesher puts `GmshGeoWriter.RingCellsAcross` (8) elements across the radial gap.
+  - Palace writes it as a `LumpedPort` with `Direction` `+R` or `-R`. openEMS, EMerge and the Hertzon export refuse it by
+    name.
 - **A wave port's rectangle is a region of an air-box face.**
   - `VoltagePath` {`From`, `To`} states its voltage line.
   - `Reference` plus `Terminals` [{`Number`, `Name`, `Conductor`, `Z0`}] make a multi-conductor wave port with

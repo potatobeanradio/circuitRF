@@ -225,6 +225,10 @@ public static partial class CsxcadWriter
                     : $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. An openEMS lumped port is " +
                       "terminated in a resistance, which must be positive: set the port's Z0 to a value with a " +
                       "positive real part.");
+            // brief-cxp-1 R-cxp1-5 — said by name, never written as its bounding square
+            if (p.Annulus is not null)
+                return No($"Port {p.Number} is a coaxial port, which circuitRF does not write for openEMS yet. Run the setup on Palace, " +
+                          "or feed the coax with a rectangular port or a wave port.");
             if (p.Quad is not null)
                 return No($"Port {p.Number} is turned in its plane. openEMS's grid and its lumped port run along x, y and z, so a " +
                           "turned port cannot be written for it. Run the setup on Palace or EMerge, or set the port's Angle to 0.");

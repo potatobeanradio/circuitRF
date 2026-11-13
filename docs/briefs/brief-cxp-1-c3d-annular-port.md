@@ -69,3 +69,18 @@ port's Z0 — not a warning: a port of any Z0 is legal, and the difference is a 
 
 The editor (brief 2), EMerge (brief 3), openEMS (brief 4), a ring on a cylinder or a turned plane, an elliptical or
 off-centre coax, and a multi-mode coaxial port.
+
+## Completion note (2026-11-12)
+
+Built as specified. Two additions the gates showed were needed: a PEC air-box face in the ring's own plane is never one of
+its conductors (a coax ending on the box's wall touched it with both circles), and the ring's open area is checked for metal
+(a circle inside the pin's end face lies on its cap). The mesher now puts eight elements across a ring's radial gap
+(`GmshGeoWriter.RingCellsAcross`); sized by its bounding square, the coax lost 0.37 dB at Draft.
+
+Gate 3 runs at element order 2 (`CoaxialPortPalaceTests`, Benchmark, about 3 min): |S11| −55 to −69 dB, |S21| within
+0.0002 dB of the copper's closed form (−0.0149/−0.0349/−0.0470 dB at 1/5.5/10 GHz), ∠S21 within 0.5° of −βℓ. At Draft the
+ports cost 0.04 dB and the line reads ~4° long at 10 GHz (its first-order dispersion), so Draft would not meet the 0.02 dB and
+1° tolerances; `src/Design/RESOLVED.md` has the numbers. Gate 4: the three orientations agree to 0.0001 dB and 0.01°. The
+routine tier is `CoaxialPortTests` (10 tests, no solver). The frequencies are 1, 5.5 and 10 GHz.
+
+Not done here, as the brief says: the editor (brief 2), EMerge (3), openEMS (4). openEMS's refusal now names the ring.

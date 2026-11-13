@@ -133,6 +133,9 @@ public static partial class GmshGeoWriter
     /// <summary>Elements across a port sheet's smaller side, at least (R-em3d7-2e).</summary>
     public const int PortCellsAcross = 4;
 
+    /// <summary>brief-cxp-1 — the elements a coaxial port's ring gets across its radial gap.</summary>
+    public const int RingCellsAcross = 8;
+
     /// <summary>The query tolerance, micrometres (F0's).</summary>
     private const double Eps = 1e-3;
 
@@ -1437,13 +1440,28 @@ public static partial class GmshGeoWriter
         L($"s = news; Plane Surface(s) = {{c}}; {list}[] = {{s}};");
     }
 
-    /// <summary>brief-em3d-22 — a coaxial port's annulus, in its plane of constant z.</summary>
+    /// <summary>brief-em3d-22 — a coaxial port's annulus. brief-cxp-1 R-cxp1-3 — in a plane of constant x, y or z: Gmsh makes a
+    /// disk in XY, so a ring facing x or y is made at the origin, turned to face its axis, and moved to its centre.</summary>
     private static void EmitAnnulus(StringBuilder g, string list, Em3dPort p, Em3dAnnulus ring)
     {
         void L(string line) => g.Append(line).Append('\n');
-        double cx = (p.Min.X + p.Max.X) / 2, cy = (p.Min.Y + p.Max.Y) / 2;
-        L($"d1 = news; Disk(d1) = {{{Um(cx)}, {Um(cy)}, {Um(p.Min.Z)}, {Um(ring.OuterRadiusM)}}};");
-        L($"d2 = news; Disk(d2) = {{{Um(cx)}, {Um(cy)}, {Um(p.Min.Z)}, {Um(ring.InnerRadiusM)}}};");
+        int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+        var c = Em3dAnnulus.Centre(p.Min, p.Max);
+        if (normal == 2)
+        {
+            L($"d1 = news; Disk(d1) = {{{Um(c.X)}, {Um(c.Y)}, {Um(p.Min.Z)}, {Um(ring.OuterRadiusM)}}};");
+            L($"d2 = news; Disk(d2) = {{{Um(c.X)}, {Um(c.Y)}, {Um(p.Min.Z)}, {Um(ring.InnerRadiusM)}}};");
+        }
+        else
+        {
+            // z turned onto +x is a quarter turn about y; onto +y, a quarter turn back about x. A circle has no orientation in
+            // its own plane, so only where its normal ends up matters.
+            string turn = normal == 0 ? "Rotate {{0, 1, 0}, {0, 0, 0}, Pi/2}" : "Rotate {{1, 0, 0}, {0, 0, 0}, -Pi/2}";
+            L($"d1 = news; Disk(d1) = {{0, 0, 0, {Um(ring.OuterRadiusM)}}};");
+            L($"d2 = news; Disk(d2) = {{0, 0, 0, {Um(ring.InnerRadiusM)}}};");
+            L($"{turn} {{ Surface{{d1, d2}}; }}");
+            L($"Translate {{{Um(c.X)}, {Um(c.Y)}, {Um(c.Z)}}} {{ Surface{{d1, d2}}; }}");
+        }
         L($"{list}[] = BooleanDifference{{ Surface{{d1}}; Delete; }}{{ Surface{{d2}}; Delete; }};");
     }
 
@@ -1590,6 +1608,11 @@ public static partial class GmshGeoWriter
             var (length, width) = quad.Extent(p.Direction);
             return Math.Min(length, width);
         }
+        // brief-cxp-1 — a ring's gap is radial, from its inner circle to its outer, and its field falls as 1/r across it: it gets
+        // RingCellsAcross elements there, twice a rectangle's. Sized by its bounding square instead (twice its outer radius), the 3D
+        // Connector's coax had under two first-order elements across, and a matched 20 mm line lost 0.37 dB of |S21| to the two
+        // ports at Draft; four across, 0.13 dB; eight, 0.04 dB (src/Design/RESOLVED.md, brief-cxp-1).
+        if (p.Annulus is { } ring) return (ring.OuterRadiusM - ring.InnerRadiusM) * PortCellsAcross / RingCellsAcross;
         double[] d = [p.Max.X - p.Min.X, p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z];
         return d.Where(v => v > 0).Min();
     }

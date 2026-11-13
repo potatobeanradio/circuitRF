@@ -144,6 +144,10 @@ public static class C3dBindings
         new(typeof(C3dWire), nameof(C3dWire.DiameterUm), 1, C3dFieldKind.Microns),
         new(typeof(C3dRect), nameof(C3dRect.Min), 2, C3dFieldKind.Length),
         new(typeof(C3dRect), nameof(C3dRect.Size), 2, C3dFieldKind.Length),
+        // brief-cxp-1 R-cxp1-1 — a coaxial port's ring
+        new(typeof(C3dPortAnnulus), nameof(C3dPortAnnulus.Centre), 2, C3dFieldKind.Length),
+        new(typeof(C3dPortAnnulus), nameof(C3dPortAnnulus.Inner), 1, C3dFieldKind.Length),
+        new(typeof(C3dPortAnnulus), nameof(C3dPortAnnulus.Outer), 1, C3dFieldKind.Length),
         new(typeof(C3dPlacement), nameof(C3dPlacement.Origin), 3, C3dFieldKind.Length),
         new(typeof(C3dRotation), nameof(C3dRotation.Deg), 1, C3dFieldKind.Angle),
         new(typeof(C3dArray), nameof(C3dArray.Counts), 3, C3dFieldKind.Count),
@@ -276,6 +280,7 @@ public static class C3dBindings
                 break;
             case C3dPort port:
                 yield return ("Rect.", port.Rect);
+                if (port.Annulus is { } ring) yield return ("Annulus.", ring);
                 break;
             // brief-em3d-73 — the thermal places, named as check and the panels name them.
             case C3dHeatSource h when h.Sheet is { } sheet:

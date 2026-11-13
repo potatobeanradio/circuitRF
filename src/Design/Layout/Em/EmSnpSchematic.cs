@@ -456,7 +456,9 @@ public static class EmSnpSchematic
 
         static (double, double) Plan(C3dPort p)
         {
-            double u = p.Rect.Min.U + p.Rect.Size.U / 2.0, v = p.Rect.Min.V + p.Rect.Size.V / 2.0;
+            // brief-cxp-1 — a coaxial port is where its ring's centre is
+            double u = p.Annulus is { } ring ? ring.Centre.U : p.Rect.Min.U + p.Rect.Size.U / 2.0;
+            double v = p.Annulus is { } ringV ? ringV.Centre.V : p.Rect.Min.V + p.Rect.Size.V / 2.0;
             return p.Plane switch
             {
                 C3dPlane.XY => (u, v),

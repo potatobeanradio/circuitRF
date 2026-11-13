@@ -1029,6 +1029,17 @@ public sealed class C3dPortSheet
     public bool SameAs(C3dPort p) => Plane == p.Plane && Offset == p.Offset && Min == p.Rect.Min && Size == p.Rect.Size;
 }
 
+/// <summary>brief-cxp-1 R-cxp1-1 — a coaxial port's ring: its centre in the port's plane (u, v) and its two radii, DBU. Each may be
+/// an expression, as a rectangle's corners may.</summary>
+public sealed class C3dPortAnnulus : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    public C3dPoint2 Centre { get; set; }
+    public long      Inner  { get; set; }
+    public long      Outer  { get; set; }
+}
+
 /// <summary>A wave port's stated voltage path, on the port's own plane: from the negative conductor to the positive one.</summary>
 public sealed class C3dVoltagePath
 {
@@ -1068,6 +1079,15 @@ public sealed class C3dPort
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public C3dCylinderRect? Cylinder { get; set; }
+
+    /// <summary>
+    /// brief-cxp-1 R-cxp1-1 — a COAXIAL lumped port: its sheet is this ring on <see cref="Plane"/> at <see cref="Offset"/>, instead
+    /// of <see cref="Rect"/> (which, with <see cref="Angle"/>, is then not read). The conductor the inner circle lies on is positive
+    /// and the one the outer circle lies on negative, unless <see cref="Positive"/> and <see cref="Negative"/> say. Written only when
+    /// set; a wave port, a turned port and a port on a cylinder are never rings.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dPortAnnulus? Annulus { get; set; }
 
     /// <summary>The reference impedance, Ω — a real number or a complex one (<c>50</c>, <c>25+j10</c>), as a .cem's.</summary>
     public string Z0 { get; set; } = "50";

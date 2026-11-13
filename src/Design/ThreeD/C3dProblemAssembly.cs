@@ -17,6 +17,7 @@
 // setup's result is named as if a .cem called "<c3d stem> <setup name>.cem" stood beside the .c3d — so
 // the run's setup is named "<c3d stem> <setup name>", which is the key that path derives from.
 
+using System.Globalization;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
@@ -821,7 +822,7 @@ public static class C3dPortReports
         if (setups.Count == 0)
         {
             var ctx = C3dProblemAssembly.PortContext(null, doc, Of(null), null);
-            reports.AddRange(C3dPorts.Resolve(doc, ctx).Select(r => new C3dPortReport(null, r)));
+            reports.AddRange(C3dPorts.Resolve(doc, ctx).Select(r => new C3dPortReport(null, RingNote(r, Of(null)))));
             return reports;
         }
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -830,10 +831,38 @@ public static class C3dPortReports
             var es = Of(s.Setup);
             var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _);
             var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, es, box);
-            foreach (var r in C3dPorts.Resolve(doc, ctx))
+            foreach (var resolved in C3dPorts.Resolve(doc, ctx))
+            {
+                var r = RingNote(resolved, es);
                 if (seen.Add(r.Refusal ?? Describe(r))) reports.Add(new C3dPortReport(setups.Count == 1 ? null : s.Name, r));
+            }
         }
         return reports;
+    }
+
+    /// <summary>
+    /// brief-cxp-1 R-cxp1-6 — a coaxial port's ring, as a TEM line: η₀/(2π√εr)·ln(b/a) for the dielectric the ring lies on, beside
+    /// the port's Z0. A NOTE, never a warning: a port of any Z0 is legal, and the difference is a mismatch the result shows. The
+    /// dielectric is the highest-ordered non-conductor solid holding a point midway between the radii, a hair to the side the
+    /// reference plane faces; none is the air box's fill.
+    /// </summary>
+    internal static C3dPortResult RingNote(C3dPortResult r, C3dElaboration e)
+    {
+        if (r.Resolved is not { Annulus: { } ring } p) return r;
+        int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+        var c = Em3dAnnulus.Centre(p.Min, p.Max);
+        double gap = ring.OuterRadiusM - ring.InnerRadiusM, step = 0.1 * gap;
+        var mid = Em3dAnnulus.At(c, normal, (ring.InnerRadiusM + ring.OuterRadiusM) / 2, 0);
+        var n = p.ReferencePlane.Normal;
+        var q = new Point3(mid.X + n.X * step, mid.Y + n.Y * step, mid.Z + n.Z * step);
+        var fill = e.Solids.Where(s => s.Role != Em3dRole.Conductor && C3dThermal.Inside(s.Primitive, q, 0))
+                           .OrderByDescending(s => s.Order).FirstOrDefault();
+        string name = fill?.Material ?? "Air";
+        double er = e.Materials.FirstOrDefault(m => m.Name == fill?.Material)?.Epsr ?? 1.0;
+        double z = 376.730313668 / (2 * Math.PI * Math.Sqrt(er)) * Math.Log(ring.OuterRadiusM / ring.InnerRadiusM);
+        string G(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        string note = $"As a coax filled with '{name}' (εr {G(er)}), its ring is {G(z)} Ω; its Z0 is {C3dPorts.FormatZ0(p.Z0)} Ω.";
+        return r with { Note = r.Note is { } prior ? prior + " " + note : note };
     }
 
     /// <summary>The face boundaries' refusals, in the document's technology at the default temperature.</summary>
@@ -859,6 +888,15 @@ public static class C3dPortReports
         // brief-hzn-11 R-hzn11-2 — a hollow guide has no ends: its walls, its broad side and its polarity line
         if (p.Hollow)
             return $"{r.Label} (wave, hollow guide) on the {Em3dProblemFace(p)} face: {r.Reason}{normalised}.";
+        // brief-cxp-1 R-cxp1-6 — a ring's radii and its log ratio, which is what sets its field
+        if (p.Annulus is { } ring)
+        {
+            string Mm(double m) => (m * 1e3).ToString("0.####", CultureInfo.InvariantCulture) + " mm";
+            return $"{r.Label} (coaxial, a = {Mm(ring.InnerRadiusM)}, b = {Mm(ring.OuterRadiusM)}, ln(b/a) = " +
+                   $"{Math.Log(ring.OuterRadiusM / ring.InnerRadiusM).ToString("0.###", CultureInfo.InvariantCulture)}) runs from " +
+                   $"'{p.NegativeObject}' to '{p.PositiveObject}' radially{(ring.Outward ? ", outward" : "")}: {r.Reason}." +
+                   (r.Note is { } ringNote ? " " + ringNote : "");
+        }
         var d = p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } v
             ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : p.Direction;
         return $"{r.Label} ({(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}) runs from '{p.NegativeObject}' to '{p.PositiveObject}' " +

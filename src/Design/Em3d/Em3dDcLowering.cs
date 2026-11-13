@@ -518,8 +518,10 @@ public static class Em3dDcLowering
         }
         if (annulus is { } an)
         {
-            var c = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, min.Z);
-            IReadOnlyList<Point3> Circle(double r) => [.. Enumerable.Range(0, 8).Select(k => new Point3(c.X + r * Math.Cos(k * Math.PI / 4), c.Y + r * Math.Sin(k * Math.PI / 4), c.Z))];
+            // brief-cxp-1 — in whichever plane the ring lies
+            int ringAxis = Em3dAnnulus.NormalAxis(min, max);
+            var c = Em3dAnnulus.Centre(min, max);
+            IReadOnlyList<Point3> Circle(double r) => [.. Enumerable.Range(0, 8).Select(k => Em3dAnnulus.At(c, ringAxis, r, k * Math.PI / 4))];
             double tolA = 0.05 * an.InnerRadiusM;
             var inner = Circle(an.InnerRadiusM);
             var outer = Circle(an.OuterRadiusM);

@@ -74,6 +74,9 @@ public sealed class C3dPortContext
         /// <see cref="Mesh"/> is the patch's tessellation, for anything else).</summary>
         public Em3dCylinderPatch? Patch { get; init; }
 
+        /// <summary>brief-cxp-1 — a closed solid (its mesh bounds a volume), as against a sheet: whether a point can be inside it.</summary>
+        public bool Closed { get; init; }
+
         /// <summary>A solid that is an outline extruded in z — a layout's copper, a drawn extruded polygon: the only kind a
         /// turned port can end on, because its end becomes two points of that outline.</summary>
         public Em3dExtrudedPolygon? Prism { get; init; }
@@ -126,7 +129,7 @@ public sealed class C3dPortContext
             }
             var mesh = Em3dTessellation.Of(s);
             Conductors.Add(new Conductor(s.Name, Em3dProblem.Bounds(s.Primitive), mesh, null, Area(mesh))
-                           { Prism = s.Primitive as Em3dExtrudedPolygon });
+                           { Prism = s.Primitive as Em3dExtrudedPolygon, Closed = true });
         }
         foreach (var sh in elaboration.Sheets)
         {
@@ -371,6 +374,20 @@ public static class C3dPorts
             if (!(z0.Real > 0))
                 return Refuse(port, $"{label}'s Z0 is {port.Z0} Ω; a port's reference impedance has a positive real part.");
         }
+        if (port.Annulus is { } ring)
+        {
+            // brief-cxp-1 R-cxp1-1 — a ring is a lumped port's sheet, and nothing else's
+            string? clash = port.Kind == Em3dPortKind.Wave ? "Kind Wave" : port.Angle != 0 ? "Angle" : port.Cylinder is not null ? "Cylinder"
+                          : port.Terminals is not null ? "Terminals" : null;
+            if (clash is not null)
+                return Refuse(port, $"{label} states both Annulus and {clash}. A coaxial port is a lumped port whose sheet is its ring, so it " +
+                                    $"is never {(clash == "Kind Wave" ? "a wave port" : clash == "Angle" ? "turned" : clash == "Cylinder" ? "on a cylinder" : "given terminals")}: " +
+                                    $"remove {(clash == "Kind Wave" ? "Kind" : clash)} or Annulus.");
+            if (port.Positive is null != (port.Negative is null))
+                return Refuse(port, $"{label} states its {(port.Positive is null ? "Negative" : "Positive")} end only. State both " +
+                                    "ends, or neither and let what the ring's circles touch decide.");
+            return Annular(port, label, z0, context, ring, dbuPerMicron);
+        }
         if (port.Cylinder is { } onCylinder)
         {
             if (port.Terminals is null && (port.Positive is null) != (port.Negative is null))
@@ -557,6 +574,150 @@ public static class C3dPorts
         var resolved = new Em3dPort(port.Number, ProblemName(port.Number), positive, negative, min, max, direction, z0,
                                     new Em3dReferencePlane(centre, normal, 0)) { Quad = quad };
         return new C3dPortResult(port, resolved, null, contacts, reason) { Seams = seams };
+    }
+
+    // ── brief-cxp-1 — a coaxial (annular) lumped port ─────────────────────────────────────────────
+
+    /// <summary>The points each of a ring's circles is sampled at for contact.</summary>
+    internal const int RingSamples = 16;
+
+    /// <summary>
+    /// R-cxp1-2 — a ring's two conductors, by what its circles lie on: a conductor touches a circle when every sample point of
+    /// the circle is within the tolerance of it. The inner circle's conductor is positive and the outer's negative (D2), unless
+    /// both ends are stated; Flip swaps them. A curved surface reached through a tessellation stands up to half a percent of its
+    /// radius off the true one — far more than a DBU — so each circle's tolerance carries 1 % of its radius.
+    /// </summary>
+    private static C3dPortResult Annular(C3dPort port, string label, Complex z0, C3dPortContext ctx, C3dPortAnnulus ring, int dbuPerMicron)
+    {
+        if (ring.Inner <= 0 || ring.Outer <= ring.Inner)
+            return Refuse(port, $"{label}'s ring needs an inner radius above zero and an outer radius above it; it states " +
+                                $"{ring.Inner} and {ring.Outer} DBU.");
+        double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
+        double a = M(ring.Inner), b = M(ring.Outer), h = M(port.Offset);
+        var centre = C3dLowering.OnPlane(port.Plane, M(ring.Centre.U), M(ring.Centre.V), h);
+        int normal = port.Plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 };
+        Point3[] Circle(double r) => [.. Enumerable.Range(0, RingSamples).Select(k => Em3dAnnulus.At(centre, normal, r, 2 * Math.PI * k / RingSamples))];
+        var inner = Circle(a);
+        var outer = Circle(b);
+        double Tol(double r) => ctx.Dbu + ctx.OutlineMoveM + 0.01 * r;
+
+        // The farthest any sample point of a circle is from a conductor: the circle lies on it when that is within tolerance.
+        double Worst(C3dPortContext.Conductor c, Point3[] circle, double r)
+        {
+            var (x0, y0, z0b, x1, y1, z1) = c.Box;
+            double reach = Tol(r);
+            if (circle.All(q => q.X < x0 - reach || q.X > x1 + reach || q.Y < y0 - reach || q.Y > y1 + reach || q.Z < z0b - reach || q.Z > z1 + reach))
+                return double.PositiveInfinity;
+            double worst = 0;
+            foreach (var q in circle)
+            {
+                worst = Math.Max(worst, ctx.Distance(c, q, q, bounded: false));
+                if (worst > reach) break;
+            }
+            return worst;
+        }
+        string Radius(double r) => C3dUnits.Spell(r, CircuitRF.Design.Layout.LayoutUnit.Mm);
+
+        string negative, positive, reason;
+        bool negativeInner;
+        IReadOnlyList<(string, IReadOnlyList<string>)> contacts = [];
+        C3dPortContext.Conductor? innerConductor;
+        if (port.Positive is { } sp && port.Negative is { } sn)
+        {
+            var pc = ctx.Conductors.FirstOrDefault(c => c.Name == sp);
+            var nc = ctx.Conductors.FirstOrDefault(c => c.Name == sn);
+            if (pc is null || nc is null)
+                return Refuse(port, $"{label} names '{(pc is null ? sp : sn)}' as its {(pc is null ? "Positive" : "Negative")} end, " +
+                                    "which is no conductor of the elaborated model" +
+                                    (ctx.Box is null ? "" : " and no PEC face of the setup's air box") + ".");
+            double pi = Worst(pc, inner, a), po = Worst(pc, outer, b), ni = Worst(nc, inner, a), no = Worst(nc, outer, b);
+            if (pi <= Tol(a) && no <= Tol(b)) negativeInner = false;
+            else if (ni <= Tol(a) && po <= Tol(b)) negativeInner = true;
+            else
+                return Refuse(port, $"{label} states '{sn}' and '{sp}' as its ends, but neither lies on its inner circle " +
+                                    $"(r = {Radius(a)}) with the other on its outer circle (r = {Radius(b)}). Check Positive and " +
+                                    "Negative, or the ring's radii.");
+            (negative, positive) = (sn, sp);
+            innerConductor = negativeInner ? nc : pc;
+            reason = "both ends are stated";
+        }
+        else
+        {
+            ctx.InferenceRuns++;
+            // A PEC face of the box in the ring's own plane holds the whole ring, not one circle of it: the end of a coax that stops
+            // on the box's wall. It is never one of the two conductors.
+            List<string> On(Point3[] circle, double r) => [.. ctx.Conductors.Where(c => c.Axis != normal && Worst(c, circle, r) <= Tol(r)).Select(c => c.Name)];
+            var onInner = On(inner, a);
+            var onOuter = On(outer, b);
+            contacts = [("inner circle", onInner), ("outer circle", onOuter)];
+            foreach (var (which, on, circle, r) in new[] { ("inner", onInner, inner, a), ("outer", onOuter, outer, b) })
+            {
+                if (on.Count == 1) continue;
+                if (on.Count > 1)
+                    return Refuse(port, $"{label}'s {which} circle (r = {Radius(r)}) lies on {string.Join(" and ", on.Select(n => $"'{n}'"))}: " +
+                                        "it must lie on one conductor. State Positive and Negative to choose.", contacts);
+                var near = ctx.Conductors.Where(c => c.Axis != normal).Select(c => (c.Name, D: Worst(c, circle, r))).Where(x => double.IsFinite(x.D))
+                                         .OrderBy(x => x.D).FirstOrDefault();
+                return Refuse(port, $"{label}'s {which} circle (r = {Radius(r)}) lies on no conductor" +
+                                    (near.Name is { } n ? $": the nearest, '{n}', is up to {Radius(near.D)} from it." : ", and none is near it.") +
+                                    $" A coaxial port's {which} circle lies on its {(which == "inner" ? "pin" : "shell")}: match the radius to it.",
+                              contacts);
+            }
+            if (onInner[0] == onOuter[0])
+                return Refuse(port, $"{label}'s two circles both lie on '{onInner[0]}': a coaxial port lies between two conductors, " +
+                                    "its pin and its shell.", contacts);
+            (positive, negative) = (onInner[0], onOuter[0]);
+            negativeInner = false;
+            innerConductor = ctx.Conductors.First(c => c.Name == positive);
+            reason = $"its inner circle lies on '{positive}' and its outer circle on '{negative}'";
+        }
+        // The ring's open area between its circles must be free of metal: a circle inside the pin's end face lies on the pin's
+        // cap, and would pass the contact test with the ring crossing the pin.
+        double inset = 0.05 * (b - a);
+        foreach (double r in new[] { a + inset, (a + b) / 2, b - inset })
+            foreach (var q in Circle(r))
+                if (ctx.Conductors.FirstOrDefault(c => c.Axis != normal && Holds(ctx, c, q)) is { } inside)
+                    return Refuse(port, $"{label}'s ring crosses '{inside.Name}' at r = {Radius(r)}: a coaxial port's inner circle lies on " +
+                                        "its pin's surface and its outer circle on its shell's, with only dielectric between. Match its " +
+                                        "radii to them.", contacts);
+
+        if (port.Flip)
+        {
+            (negative, positive) = (positive, negative);
+            negativeInner = !negativeInner;
+            reason += "; Flip swaps them";
+        }
+
+        double[] lo = [centre.X, centre.Y, centre.Z], hi = [centre.X, centre.Y, centre.Z];
+        var (ua, va) = Em3dAnnulus.PlaneAxes(normal);
+        foreach (int ax in new[] { ua, va }) { lo[ax] -= b; hi[ax] += b; }
+        var min = new Point3(lo[0], lo[1], lo[2]);
+        var max = new Point3(hi[0], hi[1], hi[2]);
+
+        // The reference plane faces the side the inner conductor runs on (into the connector); either side, the structure's.
+        var box = innerConductor.Box;
+        double bLo = normal == 0 ? box.X0 : normal == 1 ? box.Y0 : box.Z0, bHi = normal == 0 ? box.X1 : normal == 1 ? box.Y1 : box.Z1;
+        double t = Tol(a);
+        Point3 n1 = new(normal == 0 ? 1 : 0, normal == 1 ? 1 : 0, normal == 2 ? 1 : 0);
+        var inward = bHi > h + t && bLo >= h - t ? n1
+                   : bLo < h - t && bHi <= h + t ? new Point3(-n1.X, -n1.Y, -n1.Z)
+                   : Into(normal, centre, ctx);
+
+        var resolved = new Em3dPort(port.Number, ProblemName(port.Number), positive, negative, min, max, new Point3(0, 0, 0), z0,
+                                    new Em3dReferencePlane(centre, inward, 0))
+        { Annulus = new Em3dAnnulus(a, b, Outward: negativeInner) };
+        return new C3dPortResult(port, resolved, null, contacts, reason);
+    }
+
+    /// <summary>Whether conductor <paramref name="c"/> holds point <paramref name="q"/>: on its surface to within a DBU, or inside a
+    /// closed solid.</summary>
+    private static bool Holds(C3dPortContext ctx, C3dPortContext.Conductor c, Point3 q)
+    {
+        var (x0, y0, z0, x1, y1, z1) = c.Box;
+        double t = ctx.Dbu;
+        if (q.X < x0 - t || q.X > x1 + t || q.Y < y0 - t || q.Y > y1 + t || q.Z < z0 - t || q.Z > z1 + t) return false;
+        if (ctx.Distance(c, q, q, bounded: false) <= t) return true;
+        return c.Closed && c.Mesh is { } m && C3dMeshInside.Contains(m, q);
     }
 
     /// <summary>

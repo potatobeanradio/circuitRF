@@ -983,6 +983,22 @@ internal static class DocumentSchema
             end's two corners, so the sheet meets it exactly (the copper moves by at most the
             tolerance; the layout is not changed). A wave port, a port in XZ or YZ and a gap on a
             cylinder are never turned; openEMS refuses a turned port.
+          * A COAXIAL lumped port's sheet is a RING instead of its Rect: "Annulus" is the ring's centre
+            in the port's Plane (u, v) and its two radii, DBU, each of which may be an expression:
+
+                { "Number": 1, "Name": "P1", "Kind": "Lumped", "Plane": "YZ", "Offset": -5000000,
+                  "Annulus": { "Centre": [0, 1000000],
+                               "Inner": { "Expr": "pin_d/2", "Unit": "Mm" },
+                               "Outer": { "Expr": "bore_d/2", "Unit": "Mm" } }, "Z0": "50" }
+
+            It drives the coax's own radial field, falling as 1/r, across the ring. The conductor its
+            inner circle lies on (the pin) is POSITIVE and the one its outer circle lies on (the
+            shell) NEGATIVE; Positive and Negative state them instead, and Flip swaps them. A PEC
+            air-box face in the ring's own plane is never one of the two, so a coax may end on the
+            box's wall. A circle on no conductor or on two, both circles on one, or metal between
+            them is refused, naming what was found. Any of XY, YZ and XZ; never a wave port, turned
+            or on a cylinder. `explain` gives the ring's TEM impedance for the dielectric it lies on
+            beside Z0. Palace runs it; openEMS, EMerge and a Hertzon export refuse it by name.
           * A WAVE port's rectangle is a region of an air-box face of the setup being run — the box
             is each setup's own, so this is checked per setup. Its two conductors are the ones that
             meet the region, and its voltage path runs across the gap between them at the positive

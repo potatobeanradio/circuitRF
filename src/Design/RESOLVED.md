@@ -30748,3 +30748,31 @@ the script), so it is the RENAME being refused there, transiently, while a sync 
 `AtomicFile.MoveOver` already retried exactly this for saves. `PalaceRun` now moves through `PalaceRun.MoveIn` (that retry,
 then a copy on Windows, since the scratch folder is deleted anyway), and `EmResultStaging`'s publish renames — the next
 renames into the same folder — go through `AtomicFile.MoveOver` without overwrite. Not reproduced: no such folder here.
+
+## The coaxial (annular) lumped port in a .c3d, in any plane (brief-cxp-1, 2026-11-12)
+
+`Em3dPort.Annulus` existed from brief-em3d-22 (Palace `+R`/`-R`, Gmsh, the scene, DC) but nothing a user wrote made one, and
+only a z-facing ring was valid. `C3dPort.Annulus` (`Centre`, `Inner`, `Outer`, each bindable) now resolves to it in XY, YZ or
+XZ (`C3dPorts.Annular`), and the numeric layer's ring geometry is one helper (`Em3dAnnulus.NormalAxis/PlaneAxes/At`) that the
+validator, `GmshGeoWriter.EmitAnnulus` (a disk made in XY, turned, then moved), `Em3dDcLowering` and `Scene3DBuilder` share.
+Palace's own `CoaxialElementData` finds the centre and radii from the boundary elements, so `+R` needs no orientation.
+Findings worth keeping:
+
+- **A ring sized as its bounding square was under-meshed.** `GmshGeoWriter.SmallerSide` took a port's smallest non-zero
+  extent, which for a ring is twice its OUTER radius: the 3D Connector's coax (0.2/0.67 mm) got under two first-order
+  elements across its 0.47 mm gap. A matched 20 mm line at Draft lost **0.37 dB** of |S21| to its two ports (copper's closed
+  form: 0.015 dB at 1 GHz) at a flat −27 dB |S11|. Sized by the radial gap with four across: 0.13 dB; eight
+  (`RingCellsAcross`): **0.04 dB**, |S11| −31 to −44 dB, 13 s a run. At element order 2 the same line is within **0.0002 dB**
+  of the closed form with |S11| below −55 dB — the port is right, and the remainder at Draft is first order.
+- **Draft's first order is ~4° long at 10 GHz over 20 mm of coax** (1.2 % of 348°), unchanged by the port's sizing: the
+  line's own dispersion. `CoaxialPortPalaceTests` therefore gates at element order 2.
+- **A PEC air-box face in the ring's plane touches BOTH circles** — every sample point lies on it — so a coax ending on the
+  box's wall was refused as "lies on 'pin' and 'airbox/xmin'". A face in the ring's own plane is never one of its two
+  conductors.
+- **A circle inside the pin's end face passes the contact test**: it lies on the pin's CAP. So the ring's open area is
+  checked separately (three radii between the circles; a point on a conductor's surface, or inside a closed solid, refuses).
+  `C3dPortContext.Conductor.Closed` marks a solid whose mesh bounds a volume, as against a sheet.
+- **Fixture traps.** A shell drawn as a prism with a 64-gon hole stands its flats 0.8 µm inside a round PTFE cylinder;
+  inference does not care, but Gmsh refused the slivers ("Impossible to mesh periodic surface"). The solve fixture subtracts
+  the bore from a box and keeps it, as the 3D Connector does. With no padding at all, every PEC face was entirely metal and
+  "selected nothing in the mesh" (refused, rightly); the coax's sides take 0.2 mm of air.

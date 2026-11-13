@@ -928,12 +928,14 @@ public static class Scene3DBuilder
         var tris = new List<Em3dTriangle>();
         if (p.Annulus is { } an)
         {
-            double cx = (a.X + c.X) / 2, cy = (a.Y + c.Y) / 2, z = a.Z;
+            // brief-cxp-1 — in whichever plane the ring lies
+            int normal = Em3dAnnulus.NormalAxis(a, c);
+            var centre = Em3dAnnulus.Centre(a, c);
             for (int k = 0; k < AnnulusSegments; k++)
             {
                 double t = 2 * Math.PI * k / AnnulusSegments;
-                verts.Add(new Point3(cx + an.InnerRadiusM * Math.Cos(t), cy + an.InnerRadiusM * Math.Sin(t), z));
-                verts.Add(new Point3(cx + an.OuterRadiusM * Math.Cos(t), cy + an.OuterRadiusM * Math.Sin(t), z));
+                verts.Add(Em3dAnnulus.At(centre, normal, an.InnerRadiusM, t));
+                verts.Add(Em3dAnnulus.At(centre, normal, an.OuterRadiusM, t));
             }
             for (int k = 0; k < AnnulusSegments; k++)
             {

@@ -662,7 +662,34 @@ public sealed record Em3dLumpedElement(
 /// objects: <paramref name="Outward"/> when the negative object is the inner one, which is Palace's
 /// <c>+R</c>.
 /// </summary>
-public sealed record Em3dAnnulus(double InnerRadiusM, double OuterRadiusM, bool Outward);
+public sealed record Em3dAnnulus(double InnerRadiusM, double OuterRadiusM, bool Outward)
+{
+    /// <summary>brief-cxp-1 — the axis a ring's bounding square faces: the one it has no extent along (0 x, 1 y, 2 z). A
+    /// square degenerate in more than one axis (refused by validation) is taken to face z.</summary>
+    public static int NormalAxis(Point3 min, Point3 max)
+        => max.Z == min.Z ? 2 : max.X == min.X ? 0 : max.Y == min.Y ? 1 : 2;
+
+    /// <summary>The two axes in the plane of a ring facing <paramref name="normal"/>, in right-handed order (u × v = normal):
+    /// x and y for z, y and z for x, z and x for y.</summary>
+    public static (int U, int V) PlaneAxes(int normal) => normal switch { 0 => (1, 2), 1 => (2, 0), _ => (0, 1) };
+
+    /// <summary>The centre of a ring's bounding square.</summary>
+    public static Point3 Centre(Point3 min, Point3 max) => new((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
+
+    /// <summary>The point at radius <paramref name="r"/> and angle <paramref name="t"/> (radians, from the plane's u axis toward
+    /// its v axis) on a ring centred at <paramref name="centre"/> facing <paramref name="normal"/>.</summary>
+    public static Point3 At(Point3 centre, int normal, double r, double t)
+    {
+        var (u, v) = PlaneAxes(normal);
+        double[] q = [centre.X, centre.Y, centre.Z];
+        q[u] += r * Math.Cos(t);
+        q[v] += r * Math.Sin(t);
+        return new Point3(q[0], q[1], q[2]);
+    }
+
+    /// <summary>One coordinate of a point: 0 x, 1 y, 2 z.</summary>
+    public static double Get(Point3 p, int axis) => axis == 0 ? p.X : axis == 1 ? p.Y : p.Z;
+}
 
 /// <summary>
 /// brief-em3d-22 R-em3d22-2 — one terminal of a static solve: a name, and the conductors (solids or
@@ -1003,10 +1030,13 @@ public sealed record Em3dProblem(
                 problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
             else if (p.Annulus is { } a)
             {
-                double side = p.Max.X - p.Min.X;
-                if (p.Max.Z != p.Min.Z || Math.Abs((p.Max.Y - p.Min.Y) - side) > 1e-9 * Math.Max(side, 1e-12))
-                    problems.Add($"Port {p.Number} is coaxial, and its rectangle is not a square in a plane of " +
-                                 "constant z: an annulus is supported only facing z, bounded by its square.");
+                // brief-cxp-1 R-cxp1-3 — a ring in a plane of constant x, y or z, bounded by its square
+                int n = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+                var (ua, va) = Em3dAnnulus.PlaneAxes(n);
+                double side = Em3dAnnulus.Get(p.Max, ua) - Em3dAnnulus.Get(p.Min, ua);
+                if (Math.Abs((Em3dAnnulus.Get(p.Max, va) - Em3dAnnulus.Get(p.Min, va)) - side) > 1e-9 * Math.Max(side, 1e-12))
+                    problems.Add($"Port {p.Number} is coaxial, and its rectangle is not a square: an annulus is bounded by the " +
+                                 "square of its outer diameter.");
                 else if (!(a.InnerRadiusM > 0) || !(a.OuterRadiusM > a.InnerRadiusM) ||
                          Math.Abs(2 * a.OuterRadiusM - side) > 1e-9 * side)
                     problems.Add($"Port {p.Number}'s annulus needs 0 < inner radius < outer radius, and an outer " +

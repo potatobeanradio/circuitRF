@@ -1271,7 +1271,7 @@ public static class C3dHierarchy
             if (MatchOf(port, translated, claimed) is not { } now) continue;
             claimed.Add(now);
             // A turned port was turned here, on purpose: it stands for its label and is left as it is.
-            if (port.Angle != 0) continue;
+            if (port.Angle != 0 || port.Annulus is not null) continue;
             if (port.FromLayout?.Taken is { } taken)
             {
                 if (!taken.SameAs(now.Port))
