@@ -4287,6 +4287,10 @@ internal static class CliDiagnostics
     public static Diagnostic ChainNote(string note) => Diagnostic.Create(
         "chain.note", DiagnosticSeverity.Info, "{note}", ("note", note));
 
+    /// <summary>A bench Transfer leaves out because no run can hold it, and why: the cap of the analysis it needs.</summary>
+    public static Diagnostic ChainBenchLeftOut(string path, string why) => Diagnostic.Create(
+        "chain.bench.left-out", DiagnosticSeverity.Warning, "'{path}': {why}", ("path", path), ("why", why));
+
     /// <summary>Why the transfer wrote nothing: a cell already there, a bench the drawing refused.</summary>
     public static Diagnostic ChainTransferRefused(string why) => Diagnostic.Create(
         "chain.transfer.refused", DiagnosticSeverity.Error, "Transfer to schematic: {why}", ("why", why));

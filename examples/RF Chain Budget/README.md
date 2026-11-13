@@ -3,7 +3,7 @@
 **Open a `.cchain` and the RF Chain Budget window shows its cascade.** The benches beside it are its Transfer to
 Schematic: open one, Simulate, and its Data Display opens with the budget's number beside every simulated one.
 
-Three receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already transferred:
+Four receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already transferred:
 
 1. **`Superhet.cchain`**: an LNA, an RF bandpass filter, a mixer to a 350 MHz IF, an IF filter, an IF amplifier and an
    attenuator. Every stage is a System block with its own parameters.
@@ -13,8 +13,15 @@ Three receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already tr
 3. **`Front End.cchain`**: a canceller in front of an LNA, a filter and a second amplifier. The canceller subtracts a
    copy of a −40 dBm interference, 20 dB over the wanted signal, through a 10 dB coupler, with 0.02 dB, 0.2° and 0.05 ns
    of error in its reference path: 47 dB of depth.
+4. **`Dual Conversion.cchain`**: the superhet's front end to a 350 MHz first IF, then a roofing filter, an IF amplifier,
+   an image filter and a second mixer to a 21.4 MHz second IF, an IF filter and an amplifier. Two mixers are more than
+   one simulation run holds, so most of its benches are written once per conversion (below).
 
-The superhet also has two blockers at its input, 150 MHz and 20 MHz above the signal, and asks for the demo bench.
+The superhet also has two blockers at its input, 150 MHz and 20 MHz above the signal, and asks for the demo bench. The
+dual-conversion receiver has one blocker on each mixer's image, and asks for the demo bench too.
+
+And a link: **`26 GHz Link.cchain`**, a 16-element transmitter 200 m from an 8-element receiver at 26 GHz, in NR band
+n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See [The 26 GHz link](#the-26-ghz-link).
 
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
@@ -49,6 +56,41 @@ their uncorrelated noise in power, so the combiner gains 6.02 dB of signal and n
 10·log10 4 = 6.02 dB over one element's, and the MDS per element falls by as much. Its NF, 4.09 dB, is that of one
 element's branch, the combiner's loss and the receiver after it, by Friis' formula. It is higher than the superhet's
 because the phase shifter's 5 dB comes right after the LNA.
+
+The dual-conversion receiver, stage by stage:
+
+| Stage | Part | Gain | NF | Intercept |
+|---|---|---|---|---|
+| LNA, RFBPF, MIX1 | as the superhet's, the LO at 2.1 GHz | | | |
+| IF1BPF | `Filter`, 5th-order Butterworth, 200 to 600 MHz | −1 dB | 1 dB | |
+| IF1A | `Amp` | 15 dB | 3 dB | OIP3 25 dBm |
+| IMGBPF | `Filter`, 5th-order Butterworth, 335 to 365 MHz | −2 dB | 2 dB | |
+| MIX2 | `Mixer`, LO 328.6 MHz at 7 dBm | −6 dB | 8 dB SSB | IIP3 15 dBm |
+| IF2BPF | `Filter`, 5th-order Butterworth, 13.6 to 33.6 MHz | −1 dB | 1 dB | |
+| IF2A | `Amp` | 20 dB | 5 dB | OIP3 30 dBm |
+
+| | Dual conversion | to IF1 (LNA to MIX1) | from IF1 (IF1BPF to IF2A) |
+|---|---|---|---|
+| Gain | 32.50 dB | 7.50 dB | 25.00 dB |
+| NF | 2.74 dB | 1.50 dB | 5.59 dB |
+| IIP3 / OIP3 | −9.60 / 22.90 dBm | −6.10 / 1.40 dBm | 0.47 / 25.47 dBm |
+| IP1dB / OP1dB | −18.56 / 12.94 dBm | −15.07 / −8.57 dBm | −8.49 / 15.51 dBm |
+| MDS in 4.5 MHz | −104.71 dBm | | |
+| Sensitivity at 10 dB SNR | −94.71 dBm | | |
+| SNR | 34.71 dB at −70 dBm | 35.95 dB at IF1 | 34.71 dB at the output |
+| SFDR | 63.40 dB | | |
+
+**The two conversions make the whole chain by the same sums.** F = F₁ + (F₂ − 1)/G₁ = 1.4116 + 2.6190/5.6234 = 1.8774,
+2.74 dB; 1/IIP3 = 1/IIP3₁ + G₁/IIP3₂ = 4.0773 + 5.6234 × 0.8968 = 9.1207 mW⁻¹, −9.60 dBm. The second conversion starts
+at MIX1's output, −62.5 dBm at 350 MHz. Its Envelope and Demo sources are at 2302 K, the noise the first delivers, so
+the SNR they measure is the whole chain's at every node; its 1-Tone source is at 290 K, where a noise figure is stated.
+
+**Each mixer's image filter is right in front of it**, as the budget takes it: the RF filter before MIX1, IMGBPF before
+MIX2, with the IF amplifier ahead of it. With the amplifier between the image filter and MIX2 instead, its own noise at
+MIX2's image reaches the mixer, and the second conversion's NF reads 1.4 dB over its budget. **And a roofing filter,
+IF1BPF, comes before the IF amplifier**: without it IF1A sees MIX1's sum product at 4.55 GHz, and its third-order term
+mixes that with the IF onto the IF's own IM3, which the budget does not have. The whole chain's IIP3 then reads 0.44 dB
+under the budget.
 
 **Try it.** In the array's window set the combiner's `N` to 8: the array gain becomes 9.03 dB and the SNR rises 3 dB,
 while the NF does not move. Set its `Topology` to Tree and the block view draws three levels of 2:1; set `Kind` to Active
@@ -92,6 +134,70 @@ A tree's loss accumulates level by level (two 2:1 levels of 0.5 dB against one 4
 noise figure is set by its first amplifier and its intercept by its last, which sees the most power. All four keep the
 6.02 dB array gain.
 
+## The 26 GHz link
+
+A transmit array, a line-of-sight path and a receive array, on the window's **Link** tab, in front of a receiver whose
+stages are written as values of the frequency. Every coefficient is an illustrative one of this example's own, picked
+to look like a 26 GHz front end; none is a fit to any device or process.
+
+| Transmitter | | Path | |
+|---|---|---|---|
+| `Psat` | `freq < 30e9 ? 32.5 - 6*log10(f_GHz) : 45.79 - 15*log10(f_GHz)` dBm: 24.01 dBm at 26 GHz, a knee at 30 GHz | `Distance` | 200 m |
+| `Backoff` | 8 dB | `Attenuation` | `Atmospheric attenuation.csv`: illustrative dB/km, a gentle water-vapour bump at 22 GHz |
+| `Loss` | `0.012*f_GHz + 0.4` dB (a switch): 0.71 dB | `RxAntennaGain` | 3 dBi |
+| `AntennaGain`, `Elements` | 5 dBi, 16 | | |
+| `PaGain`, `PAE` | 20 dB, `max(32 - 12*log10(f_GHz), 5)` %: 15.0 % | | |
+
+| Stage | Part | At 26 GHz |
+|---|---|---|
+| RXSW | `Switch`, `IL = 0.012*f_GHz + 0.4` | 0.71 dB |
+| LNA | `Amp`, 20 dB, `NF = 0.045*f_GHz + 1.29`, IIP3 −10 dBm, `GainPerStage = 33 - 15*log10(f_GHz)`, 8 mW a stage | NF 2.46 dB; 11.8 dB a stage, so 2 stages (3 above 34 GHz) |
+| PS | `PhaseShifter`, 6 dB, IIP3 10 dBm | |
+| CMB | `Combiner`, N = 8, `Topology = Levels`, 0.8 dB a level, steer 30° | 3 levels: 2.4 dB |
+| DRV | `Amp`, 10 dB, the LNA's NF, OIP3 15 dBm, 15 mW | |
+| BPF | `Filter`, a preselector that follows the carrier: `F1 = freq - 1.5GHz`, `F2 = freq + 1.5GHz`, 1 dB | |
+| MIX | `Mixer`, −7 dB, NF 9 dB, IIP3 3 dBm, `Flo = freq - 3GHz`, 25 mW | a 3 GHz IF at every carrier |
+
+400 MHz of bandwidth (an FR2 channel), two streams (two polarisations), a required SNR of 10 dB. Worked out by hand:
+
+| | |
+|---|---|
+| PA output | 24.01 − 8 = 16.01 dBm |
+| EIRP | 16.01 − 0.71 + 5 + 20·log10 16 = 44.38 dBm |
+| Free space | 20·log10(4π · 200 m · 26 GHz / c) = 106.77 dB, and 0.09 dB/km × 0.2 km = 0.02 dB more |
+| At each receive element | 44.38 − 106.77 − 0.02 + 3 = −59.41 dBm, below the receiver's ceiling of −45.38 dBm |
+| Noise at the input | kT0B in 400 MHz is −87.96 dBm; the element's NF 3.58 dB, less the array gain 9.03 dB: −93.40 dBm |
+| SNR, margin | 34.00 dB, 24.00 dB |
+| Rate | 2 · 400 MHz · log2(1 + 10^3.4) = 9.04 Gb/s |
+| DC power | 16 PAs of (39.9 − 0.4) mW / 15.0 % = 263 mW, 4.21 W; 8 elements of 16 mW, and 40 mW after the combiner, 0.17 W; ×2 streams: 8.75 W |
+| Energy per bit | 8.75 W / 9.04 Gb/s = 969 pJ/bit |
+
+The mixer sets the receiver's compression (89 % of its 1/IP1dB): it comes after the combiner, where the eight
+elements' signals arrive in phase, and the Notes say so. The cascade table's **NF left** column says the stages after
+the LNA may have 16.7 dB of NF together before they cost the chain 1 dB.
+
+**The sweeps.** The Link tab's Sweeps row asks for three, each with its own tab:
+- the carrier from 20 to 40 GHz, beyond n258 to show the trend: the rate falls from 9.9 to 7.2 Gb/s as the PA's output
+  falls past its knee, the loss and the noise rise, and the free-space loss rises, since a fixed-gain element's aperture
+  shrinks with the wavelength; and the DC power steps where the LNA needs a third stage;
+- the transmit array from 4 to 1024 elements: the rate climbs until the received power meets the receiver's ceiling,
+  then stops;
+- the receive array from 1 (no combiner) to 64 elements, sizes that are not powers of 2 among them, which the Levels
+  topology takes.
+
+**The benches.** The link adds a **`26 GHz Link TX`** bench: one transmit element's PA under an NR 64-QAM carrier,
+swept over its back-off. At the link's 8 dB the output is 0.92 dB below the budget's Psat − 8 dB, the EVM 6.3 % and the
+adjacent-channel ratio −30.3 dBc; at 12 dB, 0.41 dB, 2.9 % and −36.9 dBc. The receiver's own benches run at the
+−59.41 dBm the link delivers to each element: its 1-Tone bench reads −0.0001 dB in gain and +0.0003 dB in NF, its
+Steering and Combiners benches 10⁻¹⁴ dB, its 2-Tone bench +9×10⁻⁴ dB in IIP3 and +6×10⁻⁴ dB in OIP3. Its Levels bench
+drives two tones each at the link's −59.41 dBm, 24 dB under the receiver's input P1dB, and reads the signal within
+0.0015 dB of the budget up to the filter and 0.013 dB under it at the mixer's output, the IM3 0.030 dB under: the tones'
+own slight compression, at the power the link really delivers.
+Its Envelope bench, eight NR carriers of 50 MHz each noisy at 290 K, reads the SNR in the carrier's 48.6 MHz 0.02 dB
+under the budget's 43.15 dB, and the output power 0.006 dB under. The benches' NR carriers use 15 kHz subcarriers, where
+an n258 channel would use 60 or 120 kHz; the spacing changes neither the budget nor what these memoryless blocks do to
+a carrier's SNR and EVM.
+
 ## Levels, blockers, the canceller and the demo
 
 - **`<chain> Levels`** (every chain): two tones at the input power, the signal and its IM3 at every node. Its display
@@ -107,6 +213,28 @@ noise figure is set by its first amplifier and its intercept by its last, which 
 - **`Superhet Demo`**: the superhet demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, the input
   power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's 1/√SNR, and its
   noise and distortion parts.
+
+## Two conversions
+
+`Dual Conversion` is written as two chains: `Dual Conversion IF1 …`, the front end to MIX1's output at 350 MHz, and
+`Dual Conversion IF2 …`, from there to the output at 21.4 MHz. Each has its own 1-Tone, Levels, Blockers, Envelope and
+Demo bench, and each display sets the simulation beside that conversion's own budget. One harmonic-balance noise run
+takes two tones and one envelope run two fundamentals, and every LO is one, so no single run of these holds both mixers.
+The 2-Tone bench is one run of the whole chain: four tones at MaxMixOrder 5, the most the 600-product cap allows.
+
+The second conversion's benches start at MIX1's output: their sources are at 350 MHz and −62.5 dBm, the level MIX1
+delivers. The Envelope and Demo sources are also at 2302 K, the noise MIX1 delivers (the MOD_Source's `Temp`,
+2028.93 °C), so the SNR they measure is the whole chain's, node by node; the 1-Tone bench's source is at 290 K, the
+temperature its NF is stated at.
+
+**Images.** The budget takes each image as filtered; a blocker at an image's offset shows how well. Blocker 1, at
+−40 dBm, sits on MIX1's image, 700 MHz below the signal at 1.75 GHz. The RF filter takes 55.4 dB off it beyond its IL,
+and after MIX1 it is on the IF itself, at 350 MHz and then at 21.4 MHz: at the output 25.4 dB under the signal, which it
+was 30 dB over at the input. Blocker 2, at −50 dBm, sits 1 MHz inside MIX2's image band, 41.8 MHz below the signal. The
+RF filter and the roofing filter pass it, MIX1 moves it to 308.2 MHz, IMGBPF takes 47.0 dB off it, and MIX2 puts it at 20.4 MHz,
+inside the second IF's channel, 27.0 dB under the signal. Exactly on the image, it would land on the same frequency as
+blocker 1 after MIX2, which a harmonic-balance run cannot tell apart, and Transfer would leave that Blockers bench out
+and say so.
 
 ## What the displays show
 
@@ -133,17 +261,36 @@ The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻�
 depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.2 %. The demo's SNR is
 the budget's to 0.2 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.2 % until compression.
 
+The dual-conversion receiver, each conversion against its own budget:
+
+| | To IF1 | From IF1 |
+|---|---|---|
+| Gain | −0.0001 dB | −0.0001 dB |
+| NF, and each stage's | +0.00003 dB | +0.0001 dB |
+| IP1dB | +0.033 dB | +0.044 dB |
+| Signal and IM3, every node | 0.00001 and 0.00003 dB | 0.00001 and 0.0003 dB |
+| SNR | −0.45 dB | +0.02 dB |
+
+The two conversions' simulated gains added, and their noise factors cascaded by Friis, land on the whole chain's budget
+to −0.0002 dB and +0.0001 dB. The whole chain's 2-Tone bench reads its IIP3 0.003 dB high: four tones on the order the cap allows. The
+first conversion's SNR is 0.45 dB under its budget because its output is MIX1's: with 7.5 dB of gain over a noise
+factor of 1.41, the load's own noise, which the budget leaves out, is an eighth of what reaches it (0.52 dB).
+
 **Run the bench first.** A display reads `results/<bench>.npy`, which Simulate writes. Measured wall clock, release build:
 
-| Bench | Superhet | Array |
-|---|---|---|
-| 1-Tone | 3 s | 6 s |
-| 2-Tone | 7 s | 50 s |
-| Envelope | 9 s | 25 s |
-| Steering | | 2 s |
-| Combiners | | 1 s |
-| Levels | 7 s | |
-| Blockers | 3 s | |
-| Demo | 2 min 20 s | |
+| Bench | Superhet | Array | Dual Conversion, each conversion | 26 GHz Link |
+|---|---|---|---|---|
+| 1-Tone | 3 s | 6 s | 4 s | 1 s |
+| 2-Tone | 7 s | 50 s | 1.5 to 3 min, the whole chain | 3 min |
+| Envelope | 9 s | 25 s | 12 s, 18 s | 33 min |
+| Steering | | 2 s | | 2 s |
+| Combiners | | 1 s | | 1 s |
+| Levels | 7 s | | 4 s, 7 s | 4 min |
+| Blockers | 3 s | | 1 s | |
+| Demo | 2 min 20 s | | 1 min 45 s, 3 min | |
+| TX | | | | 35 s to 1 min |
+
+The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
+envelope one for its 50 MHz NR carrier, ten times the others'.
 
 The Front End's Canceller bench runs its envelope sweeps in about 40 s.

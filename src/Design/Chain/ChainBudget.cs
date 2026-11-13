@@ -28,7 +28,12 @@ public sealed record ChainTotals(
     double SfdrDb, double ArrayGainDb, double OutputFrequencyHz);
 
 public sealed record ChainBudgetResult(
-    IReadOnlyList<ChainStageResult> Stages, ChainTotals? Totals, IReadOnlyList<string> Refusals, IReadOnlyList<string> Notes);
+    IReadOnlyList<ChainStageResult> Stages, ChainTotals? Totals, IReadOnlyList<string> Refusals, IReadOnlyList<string> Notes)
+{
+    /// <summary>The design as it was budgeted (<see cref="ChainDesign.Resolve"/>): every expression and table its number
+    /// at its stage's frequency. The levels, the diagram and the benches read this one. Null when refused.</summary>
+    public ChainDesign? Design { get; init; }
+}
 
 public static class ChainBudget
 {
@@ -44,6 +49,10 @@ public static class ChainBudget
     /// <summary>The budget, or the refusals that stop it. Never throws.</summary>
     public static ChainBudgetResult Evaluate(ChainDesign d)
     {
+        // Expressions and tables first, each read at its stage's frequency; then the resolved design's own refusals.
+        var unread = new List<string>();
+        d = d.Resolve(unread);
+        if (unread.Count > 0) return new([], null, unread, []);
         var refusals = d.Refusals();
         if (refusals.Count > 0) return new([], null, refusals, []);
 
@@ -84,6 +93,8 @@ public static class ChainBudget
         // Each stage's share of F − 1 (which is what an S-parameter or harmonic-balance noise run's NFpct reports).
         for (int i = 0; i < rows.Count; i++)
             rows[i] = rows[i] with { NoiseSharePct = te > 0 ? 100 * shares[i] / te : 0 };
+        // A link delivering more than the receiver takes is held at its ceiling, on the cascade's own input P1dB.
+        d = ChainLink.Cap(d, rows, notes);
 
         if (budgets.Any(b => b.ArrayN > 1)
             && d.Stages.Any(s => s.Part == ChainParts.Combiner && ChainValue.Or(s.Get("Steer"), 0) != 0)
@@ -99,7 +110,8 @@ public static class ChainBudget
             mdsT + d.RequiredSnrDb, d.InputPowerDbm - mdsT,
             double.IsPositiveInfinity(last.Iip3Dbm) ? double.PositiveInfinity : 2.0 / 3.0 * (last.Iip3Dbm - mdsT),
             Db(a), f);
-        return new(rows, totals, [], notes);
+        notes.AddRange(ChainCapacity.Notes(d, rows, totals));
+        return new(rows, totals, [], notes) { Design = d };
     }
 
     /// <summary>Each blocker that reaches an SnP stage outside its file's range: carried at the file's edge value, as the
@@ -151,6 +163,12 @@ public static class ChainBudget
         Per("StageGain_dB", "dB", s => s.Stage.GainDb);
         Per("StageNF_dB", "dB", s => s.Stage.NfDb);
         Per("StageIIP3_dBm", "dBm", s => s.Stage.Iip3Dbm);
+        if (r.Design is { } d)
+        {
+            // Each Amp's amplifier stages (NaN where it states none) and each stage's DC power.
+            ds.Add("Nstg", new DataCube([stage], [.. d.Stages.Select(s => ChainParts.StageCount(s) is { } n ? n : double.NaN)]));
+            ds.Add("Pdc_W", new DataCube([stage], [.. d.Stages.Select(ChainParts.StagePdcW)]) { Unit = "W" });
+        }
 
         One("Gain_dB", "dB", t.GainDb);
         One("NFtot_dB", "dB", t.NfDb);
@@ -168,6 +186,127 @@ public static class ChainBudget
         One("SFDR_dB", "dB", t.SfdrDb);
         One("ArrayGain_dB", "dB", t.ArrayGainDb);
         One("Fout_Hz", "Hz", t.OutputFrequencyHz);
+        ChainCapacity.AddTo(ds, r, stage);
+        ChainLink.AddTo(ds, r);
         return ds;
     }
+
+    /// <summary>What a sweep reads at every point, by the name of its cube.</summary>
+    public static readonly (string Name, string Unit, Func<ChainBudgetResult, double> Pick)[] SweepQuantities =
+    [
+        ("EIRP_dBm", "dBm", r => r.Design!.Link?.Budget(r.Design.FrequencyHz).EirpDbm ?? double.NaN),
+        ("Prx_dBm", "dBm", r => r.Design!.Link?.Budget(r.Design.FrequencyHz).PrxDbm ?? r.Design.InputPowerDbm),
+        ("Pin_dBm", "dBm", r => r.Design!.InputPowerDbm),
+        ("Ceiling_dBm", "dBm", r => ChainCapacity.Read(r)!.CeilingDbm),
+        ("MDS_dBm", "dBm", r => r.Totals!.MdsDbm),
+        ("SNR_dB", "dB", r => r.Totals!.SnrDb),
+        ("Margin_dB", "dB", r => ChainCapacity.Read(r)!.MarginDb),
+        ("Rate_Gbps", "Gbit/s", r => ChainCapacity.Read(r)!.RateBps / 1e9),
+        ("Pdc_W", "W", r => ChainLink.Power(r)!.TotalW),
+        ("Ebit_pJ", "pJ", r => ChainLink.Power(r)!.EnergyPerBitJ * 1e12),
+        ("Gain_dB", "dB", r => r.Totals!.GainDb),
+        ("NFtot_dB", "dB", r => r.Totals!.NfDb),
+        ("NFarray_dB", "dB", r => ChainCapacity.Read(r)!.NfArrayDb),
+        ("IP1dBtot_dBm", "dBm", r => r.Totals!.Ip1dbDbm),
+    ];
+
+    /// <summary>
+    /// One sweep of the design (<see cref="ChainSweep"/>): at each point a copy with the carrier, the transmit elements or
+    /// the receive Combiner's N set, budgeted again, every expression and table read there. A cube a quantity over the
+    /// sweep's axis (<c>freq</c> in Hz, <c>Mtx</c>, <c>Mrx</c>). A point the budget refuses is NaN, and one note gives
+    /// how many and the first reason; a receive array of one has no Combiner. Nothing here is a bench: a sweep point is
+    /// verified by transferring the design at that point.
+    /// </summary>
+    public static DataSet Sweep(ChainDesign d, ChainSweep s, List<string>? notes = null)
+    {
+        var values = s.Values();
+        int cmb = d.Stages.FindIndex(st => st.Part == ChainParts.Combiner);
+        var points = values.Select(v =>
+        {
+            var c = d.Clone();
+            c.Sweeps.Clear();   // a point is one chain; one of a single element has no Combiner left to size
+            switch (s.Of)
+            {
+                case ChainSweep.Frequency: c.FrequencyHz = v; break;
+                case ChainSweep.TxElements: if (c.Link is not null) c.Link.Tx["Elements"] = ChainValue.Format(v); break;
+                default:
+                    if (cmb < 0) break;
+                    if (v < 2) c.Stages.RemoveAt(cmb);
+                    else c.Stages[cmb].Parameters["N"] = ChainValue.Format(v);
+                    break;
+            }
+            return Evaluate(c);
+        }).ToList();
+        var refused = points.Where(p => p.Totals is null).ToList();
+        if (refused.Count > 0)
+            notes?.Add($"The {s.Of} sweep leaves out {refused.Count} of its {values.Length} points, which the budget refuses; the first: {refused[0].Refusals[0]}");
+        int outside = s.Of == ChainSweep.Frequency ? points.Count(p => p.Design is { } pd && OutsideAFilter(pd)) : 0;
+        if (outside > 0)
+            notes?.Add($"At {outside} of the {s.Of} sweep's carriers a Filter's passband does not hold the stage's frequency: the budget " +
+                       "takes its IL there, not its roll-off.");
+        var axis = s.Of switch
+        {
+            ChainSweep.Frequency => new Axis("freq", values, "Hz"),
+            ChainSweep.TxElements => new Axis("Mtx", values),
+            _ => new Axis("Mrx", values),
+        };
+        var ds = new DataSet();
+        foreach (var (name, unit, pick) in SweepQuantities)
+            ds.Add(name, new DataCube([axis], [.. points.Select(p => p.Totals is null ? double.NaN : pick(p) is var v && double.IsFinite(v) ? v : double.NaN)]) { Unit = unit });
+        return ds;
+    }
+
+    /// <summary>Every sweep of the design added to <paramref name="ds"/>, a group each, named as its sweep is.</summary>
+    public static void AddSweeps(DataSet ds, ChainDesign d, List<string>? notes = null)
+    {
+        foreach (var s in d.Sweeps)
+            foreach (var (name, cube) in Sweep(d, s, notes).CubesIn(DataSet.DefaultGroup))
+                ds.AddToGroup(s.Of, name, cube);
+    }
+
+    /// <summary>True when a resolved design's Filter stage has its stage's frequency outside its passband.</summary>
+    private static bool OutsideAFilter(ChainDesign d)
+    {
+        var hz = d.StageInputFrequencies();
+        for (int i = 0; i < d.Stages.Count; i++)
+        {
+            var s = d.Stages[i];
+            if (s.Part != ChainParts.Filter) continue;
+            double f = hz[i];
+            string form = s.Get("Form").Trim();
+            bool inside = form.Equals("Lowpass", StringComparison.OrdinalIgnoreCase) ? f <= ChainValue.Or(s.Get("Fc"), double.PositiveInfinity)
+                        : form.Equals("Highpass", StringComparison.OrdinalIgnoreCase) ? f >= ChainValue.Or(s.Get("Fc"), 0)
+                        : f >= ChainValue.Or(s.Get("F1"), 0) && f <= ChainValue.Or(s.Get("F2"), double.PositiveInfinity);
+            if (!inside) return true;
+        }
+        return false;
+    }
+}
+
+/// <summary>
+/// A sweep of a chain: <see cref="Of"/> the carrier frequency (<see cref="Points"/> carriers evenly from
+/// <see cref="From"/> to <see cref="To"/>, Hz), or the transmit or receive array's elements (as many sizes spread evenly
+/// in ratio, each rounded to a whole element, a size once).
+/// </summary>
+public sealed record ChainSweep(string Of, double From, double To, int Points)
+{
+    public const string Frequency = "Frequency", TxElements = "TxElements", RxElements = "RxElements";
+
+    /// <summary>The points, in order.</summary>
+    public double[] Values()
+    {
+        if (Points < 2) return [From];
+        if (Of == Frequency) return [.. Enumerable.Range(0, Points).Select(i => From + i * (To - From) / (Points - 1))];
+        return [.. Enumerable.Range(0, Points).Select(i => Math.Round(From * Math.Pow(To / From, i / (double)(Points - 1)))).Distinct()];
+    }
+
+    /// <summary>Why it cannot be run, or null.</summary>
+    public string? Refusal(ChainDesign d) =>
+        Of is not (Frequency or TxElements or RxElements) ? $"A sweep is of {Frequency}, {TxElements} or {RxElements}, not '{Of}'."
+        : !(From > 0 && To > From) || !double.IsFinite(To) ? $"The {Of} sweep runs from a value above 0 to a larger one."
+        : Points < 2 ? $"The {Of} sweep needs two points at least."
+        : Of != Frequency && (From != Math.Round(From) || To != Math.Round(To)) ? $"The {Of} sweep runs over whole numbers of elements."
+        : Of == TxElements && d.Link is null ? "The TxElements sweep sizes the transmitter, and the chain has no link."
+        : Of == RxElements && d.Stages.All(s => s.Part != ChainParts.Combiner) ? "The RxElements sweep sizes the receive array, which is the chain's Combiner, and the chain has none."
+        : null;
 }

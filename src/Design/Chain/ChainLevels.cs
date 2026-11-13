@@ -30,6 +30,7 @@ public static class ChainLevels
     public static IReadOnlyList<ChainNodeLevel> Evaluate(ChainDesign d, ChainBudgetResult r)
     {
         if (r.Totals is null) return [];
+        d = r.Design ?? d;
         var nodes = new List<ChainNodeLevel>();
         int nb = d.Blockers.Count;
         var blk = d.Blockers.Select(b => b.LevelDbm).ToArray();

@@ -385,6 +385,271 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
     }
 
+    /// <summary>The superhet with its LO above the signal, 2.8 GHz: the IF the same 350 MHz, its spectrum inverted. The IF's
+    /// product is then the conjugate of the one the lattice keeps, and the bench names the one it keeps; the noise run's
+    /// input sideband is the RF's conjugate, reached through the LO.</summary>
+    [Fact]
+    public void AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget()
+    {
+        var d = Superhet();
+        d.Stages[2].Parameters["Flo"] = "2.8 GHz";
+        d.Blockers.AddRange([new(150e6, -40), new(20e6, -50)]);
+        var one = Bench(d, "Hi", ChainBench.OneTone);
+        Assert.InRange(Measure(one, "G_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "IP1dB_err"), -0.1, 0.1);
+        var two = Bench(d, "Hi", ChainBench.TwoTone);
+        Assert.InRange(Measure(two, "IIP3_err"), -1e-3, 1e-3);
+        // The levels and the blockers node by node, every product after the mixer an inverted one. The mixer's own output,
+        // in front of the IF filter, reads the signal 2×10⁻⁴ dB and the IM3 1.3×10⁻³ dB off; every other node 10⁻⁵ dB.
+        var lev = Bench(d, "Hi", ChainBench.Levels);
+        var blk = Bench(d, "Hi", ChainBench.Blockers);
+        for (int k = 0; k <= d.Stages.Count; k++)
+        {
+            Assert.InRange(Measure(lev, $"Psig_{k}_err"), -5e-4, 5e-4);
+            if (k > 0) Assert.InRange(Measure(lev, $"IM3_{k}_err"), -2e-3, 2e-3);
+            for (int b = 1; b <= 2; b++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 1e-4);
+        }
+    }
+
+    /// <summary>A blocker below a low-side LO, on its image: after the mixer its product is an inverted one, and the
+    /// Blockers bench reads it as the lattice keeps it, node by node on the budget (the RF filter's 55 dB on it).</summary>
+    [Fact]
+    public void ABlockerOnALowSideMixersImage_IsReadAtEveryNode()
+    {
+        var d = Superhet();
+        d.Blockers.AddRange([new(-700e6, -40), new(150e6, -50)]);
+        var blk = Bench(d, "Img", ChainBench.Blockers);
+        for (int k = 0; k <= d.Stages.Count; k++)
+            for (int b = 1; b <= 2; b++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 1e-4);
+    }
+
+    // ── more than one mixer ──────────────────────────────────────────────────
+
+    /// <summary>The example's dual-conversion receiver: 2.45 GHz to 350 MHz to 21.4 MHz, a roofing filter after the first
+    /// mixer and each mixer's image filter right in front of it; a blocker on the first mixer's image and one 1 MHz inside
+    /// the second's.</summary>
+    internal static ChainDesign DualConversion(string flo2 = "328.6 MHz") => new()
+    {
+        FrequencyHz = 2.45e9, BandwidthHz = 4.5e6, InputPowerDbm = -70, TemperatureK = 290, RequiredSnrDb = 10, Demo = true,
+        Stages =
+        [
+            S("LNA", "Amp", ("Gain", "16"), ("NF", "1"), ("IP3", "15"), ("IP3Ref", "Output")),
+            S("RFBPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "3"), ("F1", "2.35 GHz"), ("F2", "2.55 GHz"), ("IL", "1.5")),
+            S("MIX1", "Mixer", ("ConvGain", "-7"), ("NF", "7"), ("NFType", "ssb"), ("IIP3", "10"), ("Plo", "7"), ("Flo", "2.1 GHz")),
+            S("IF1BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "200 MHz"), ("F2", "600 MHz"), ("IL", "1")),
+            S("IF1A", "Amp", ("Gain", "15"), ("NF", "3"), ("IP3", "25"), ("IP3Ref", "Output")),
+            S("IMGBPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "335 MHz"), ("F2", "365 MHz"), ("IL", "2")),
+            S("MIX2", "Mixer", ("ConvGain", "-6"), ("NF", "8"), ("NFType", "ssb"), ("IIP3", "15"), ("Plo", "7"), ("Flo", flo2)),
+            S("IF2BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "13.6 MHz"), ("F2", "33.6 MHz"), ("IL", "1")),
+            S("IF2A", "Amp", ("Gain", "20"), ("NF", "5"), ("IP3", "30"), ("IP3Ref", "Output")),
+        ],
+        Blockers = [new(-700e6, -40), new(-41.8e6, -50)],
+    };
+
+    /// <summary>
+    /// Each conversion is the whole chain's budget from where it starts: by hand, the two conversions' gains add, their
+    /// noise factors cascade by Friis and their intercepts by the intercept sum to the whole chain's; the second starts
+    /// at 350 MHz at the first's output level, from a source at (Ts + Te₁)·G₁; its SNR, noise floor and blockers at every
+    /// node are the whole chain's there.
+    /// </summary>
+    [Fact]
+    public void ADualConversionChain_IsCutIntoItsConversions_EachTheWholeChainsBudgetFromThere()
+    {
+        var d = DualConversion();
+        var r = ChainBudget.Evaluate(d);
+        var t = r.Totals!;
+        // The whole chain by hand: Friis and the intercept sum over the eight stages.
+        double[] g = [16, -1.5, -7, -1, 15, -2, -6, -1, 20], nf = [1, 1.5, 7, 1, 3, 2, 8, 1, 5];
+        double[] iip3 = [-1, double.PositiveInfinity, 10, double.PositiveInfinity, 10, double.PositiveInfinity, 15, double.PositiveInfinity, 10];
+        double f = 1, gain = 1, inv = 0;
+        for (int i = 0; i < g.Length; i++)
+        {
+            f += (Lin(nf[i]) - 1) / gain;
+            if (double.IsFinite(iip3[i])) inv += gain / Lin(iip3[i]);
+            gain *= Lin(g[i]);
+        }
+        Assert.Equal(32.5, t.GainDb, 12);
+        Assert.Equal(Db(f), t.NfDb, 12);
+        Assert.Equal(-Db(inv), t.Iip3Dbm, 12);
+        Assert.Equal(21.4e6, t.OutputFrequencyHz, 3);
+
+        var c = ChainBenches.Conversions(d, r, "Dual")!;
+        Assert.Equal(["Dual IF1", "Dual IF2"], c.Select(x => x.Chain));
+        Assert.Equal(["LNA", "RFBPF", "MIX1"], c[0].Design.Stages.Select(s => s.Name));
+        Assert.Equal(["IF1BPF", "IF1A", "IMGBPF", "MIX2", "IF2BPF", "IF2A"], c[1].Design.Stages.Select(s => s.Name));
+        var (t1, t2) = (c[0].Budget.Totals!, c[1].Budget.Totals!);
+        Assert.Equal(350e6, c[1].Design.FrequencyHz, 3);
+        Assert.Equal(-70 + 7.5, c[1].Design.InputPowerDbm, 12);
+        Assert.Equal((290 + t1.TeK) * Lin(t1.GainDb), c[1].Design.TemperatureK, 9);
+        Assert.Equal(t.GainDb, t1.GainDb + t2.GainDb, 12);
+        Assert.Equal(t.NfDb, Db(Lin(t1.NfDb) + (Lin(t2.NfDb) - 1) / Lin(t1.GainDb)), 12);
+        Assert.Equal(t.Iip3Dbm, -Db(1 / Lin(t1.Iip3Dbm) + Lin(t1.GainDb) / Lin(t2.Iip3Dbm)), 12);
+        Assert.Equal(t.SnrDb, t2.SnrDb, 9);
+        // The second conversion's nodes are the whole chain's from MIX1's output on.
+        var whole = ChainLevels.Evaluate(d, r);
+        var second = ChainLevels.Evaluate(c[1].Design, c[1].Budget);
+        for (int k = 0; k < second.Count; k++)
+        {
+            Assert.Equal(whole[3 + k].SignalDbm, second[k].SignalDbm, 9);
+            Assert.Equal(whole[3 + k].NoiseDbm, second[k].NoiseDbm, 9);
+            Assert.Equal(whole[3 + k].SnrDb, second[k].SnrDb, 9);
+            for (int b = 0; b < 2; b++) Assert.Equal(whole[3 + k].BlockerDbm[b], second[k].BlockerDbm[b], 9);
+        }
+        // The first blocker is on the first mixer's image: after it, on the IF itself.
+        Assert.Equal(0, c[1].Design.Blockers[0].OffsetHz, 3);
+
+        // What Transfer writes: the 2-Tone whole, at the order the cap allows, said; the rest once per conversion.
+        var notes = new List<string>();
+        var leftOut = new List<string>();
+        var benches = ChainBenches.Build(d, r, "Dual", notes: notes, leftOut: leftOut);
+        Assert.Empty(leftOut);
+        Assert.Equal(["Dual IF1 1-Tone", "Dual IF2 1-Tone", "Dual 2-Tone", "Dual IF1 Envelope", "Dual IF2 Envelope",
+                      "Dual IF1 Levels", "Dual IF2 Levels", "Dual IF1 Blockers", "Dual IF2 Blockers", "Dual IF1 Demo", "Dual IF2 Demo"],
+                     benches.Select(b => b.CellName));
+        Assert.Contains("MaxMixOrder=5", benches.Single(b => b.CellName == "Dual 2-Tone").Netlist);
+        Assert.Contains(notes, n => n.StartsWith("Dual 2-Tone: its harmonic-balance run HB2 runs at MaxMixOrder 5", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.StartsWith("Dual 1-Tone is written once per conversion", StringComparison.Ordinal) &&
+                                    n.Contains("a noise run takes at most 2", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.StartsWith("Dual Envelope is written once per conversion", StringComparison.Ordinal) &&
+                                    n.Contains("2 LOs would make 3", StringComparison.Ordinal));
+        // A single-mixer chain writes what it always did: no conversions, no notes.
+        notes.Clear();
+        var one = ChainBenches.Build(Superhet(), ChainBudget.Evaluate(Superhet()), "Rx", notes: notes, leftOut: leftOut);
+        Assert.Null(ChainBenches.Conversions(Superhet(), ChainBudget.Evaluate(Superhet()), "Rx"));
+        Assert.Equal(ChainBenches.BenchesFor(Superhet()).Select(b => ChainBenches.CellName("Rx", b)), one.Select(b => b.CellName));
+        Assert.Empty(notes);
+        Assert.Empty(leftOut);
+    }
+
+    /// <summary>
+    /// Three mixers, 2.45 GHz to 350, 70 and 21.4 MHz: three conversions, each from the IF the one before ends at. The
+    /// 2-Tone bench goes per conversion too, five tones being over the cap at every order that carries the output's IM3;
+    /// the third conversion's 1-Tone bench simulates to its budget.
+    /// </summary>
+    [Fact]
+    public void ATripleConversionChain_IsWrittenAsThreeConversions_AndTheThirdSimulates()
+    {
+        var d = DualConversion();
+        d.Stages[d.Stages.FindIndex(s => s.Name == "MIX2")].Parameters["Flo"] = "280 MHz";
+        int f2 = d.Stages.FindIndex(s => s.Name == "IF2BPF");
+        d.Stages[f2] = S("IF2BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "50 MHz"), ("F2", "98 MHz"), ("IL", "1"));
+        d.Stages.InsertRange(f2 + 1,
+        [
+            S("MIX3", "Mixer", ("ConvGain", "-6"), ("NF", "8"), ("NFType", "ssb"), ("IIP3", "15"), ("Plo", "7"), ("Flo", "48.6 MHz")),
+            S("IF3BPF", "Filter", ("Response", "Butterworth"), ("Form", "Bandpass"), ("Order", "5"), ("F1", "13.6 MHz"), ("F2", "33.6 MHz"), ("IL", "1")),
+        ]);
+        d.Blockers.Clear();
+        var r = ChainBudget.Evaluate(d);
+        Assert.Equal(21.4e6, r.Totals!.OutputFrequencyHz, 3);
+        var c = ChainBenches.Conversions(d, r, "Tri")!;
+        Assert.Equal([2.45e9, 350e6, 70e6], c.Select(x => Math.Round(x.Design.FrequencyHz)));
+        Assert.Equal(r.Totals.SnrDb, c[2].Budget.Totals!.SnrDb, 9);
+        var notes = new List<string>();
+        var leftOut = new List<string>();
+        var benches = ChainBenches.Build(d, r, "Tri", notes: notes, leftOut: leftOut);
+        Assert.Empty(leftOut);
+        foreach (var kind in new[] { "1-Tone", "2-Tone", "Envelope", "Levels", "Demo" })
+            Assert.Equal([$"Tri IF1 {kind}", $"Tri IF2 {kind}", $"Tri IF3 {kind}"], benches.Select(b => b.CellName).Where(n => n.EndsWith(" " + kind, StringComparison.Ordinal)));
+        Assert.Contains(notes, n => n.StartsWith("Tri 2-Tone is written once per conversion", StringComparison.Ordinal) &&
+                                    n.Contains("retains 1,827 mixing products", StringComparison.Ordinal));
+        var one = Bench(d, "Tri IF3", ChainBench.OneTone, write: () => ChainBenches.Write(d, _ws, "Tri"));
+        Assert.InRange(Measure(one, "G_err"), -1e-3, 1e-3);
+        Assert.InRange(Measure(one, "NF_err"), -1e-3, 1e-3);
+    }
+
+    /// <summary>
+    /// A bench no run can hold is not written, and Transfer and <c>check</c> say why: the second LO 10.7 MHz from the 5 MHz
+    /// carrier an envelope run sends (within three bandwidths), a blocker on the second mixer's image whose product
+    /// lands on the other's, and a harmonic-balance run of more tones than a run takes.
+    /// </summary>
+    [Fact]
+    public void WhatNoRunCanHold_IsNotWritten_AndTransferAndCheckSayWhy()
+    {
+        var d = DualConversion("339.3 MHz");
+        d.Blockers[1] = new(-21.4e6, -50);
+        var notes = new List<string>();
+        var leftOut = new List<string>();
+        var benches = ChainBenches.Build(d, ChainBudget.Evaluate(d), "Dual", notes: notes, leftOut: leftOut);
+        Assert.Contains(leftOut, x => x.StartsWith("Dual IF2 Envelope is not written: its LO at 339.3 MHz is 10.7 MHz from the 5 MHz carrier at 350 MHz", StringComparison.Ordinal));
+        Assert.Contains(leftOut, x => x.StartsWith("Dual IF2 Demo is not written: its LO at 339.3 MHz", StringComparison.Ordinal));
+        Assert.Contains(leftOut, x => x.StartsWith("Dual IF2 Blockers is not written: on its harmonic-balance run HBK the products (1,0,-1) and (0,1,-1) fall on the same frequency, 10.7 MHz", StringComparison.Ordinal));
+        Assert.DoesNotContain(benches, b => b.CellName is "Dual IF2 Envelope" or "Dual IF2 Demo" or "Dual IF2 Blockers");
+        Assert.Contains(benches, b => b.CellName == "Dual IF1 Envelope");
+
+        // Transfer writes the rest and says what it left out; check says it as a warning.
+        Directory.CreateDirectory(_ws);
+        File.WriteAllText(Path.Combine(_ws, ".cws"), "{\"FormatVersion\": 2, \"LibraryRefs\": [], \"KnownFiles\": []}");
+        var w = ChainBenches.Write(d, _ws, "Dual");
+        Assert.Equal(benches.Count, w.SchematicPaths.Count);
+        Assert.Contains(w.Notes, x => x.StartsWith("Dual IF2 Envelope is not written", StringComparison.Ordinal));
+        Assert.False(Directory.Exists(Path.Combine(_ws, "Dual IF2 Envelope")));
+        // check: a warning, so the chain checks clean at the error threshold and not at the warning one, where the same
+        // chain at 21.4 MHz, with nothing left out, does.
+        string path = Path.Combine(_ws, "Dual.cchain"), good = Path.Combine(_ws, "Good.cchain");
+        ChainDesignIo.SaveToFile(path, d);
+        ChainDesignIo.SaveToFile(good, DualConversion());
+        Assert.Equal(0, CliEntry.Run(["check", path]));
+        Assert.Equal(1, CliEntry.Run(["check", path, "--severity", "warning"]));
+        Assert.Equal(0, CliEntry.Run(["check", good, "--severity", "warning"]));
+        // The second conversion's Levels display reads no Blockers bench of its own, there being none.
+        var written = benches.Select(b => b.CellName).ToHashSet();
+        var lev2 = benches.Single(b => b.CellName == "Dual IF2 Levels");
+        Assert.DoesNotContain(Traces(lev2.Chain, ChainBench.Levels, lev2.Design, lev2.Budget, written), t => t == "Dual IF2 Blockers.npy");
+        Assert.Contains(Traces(lev2.Chain, ChainBench.Levels, lev2.Design, lev2.Budget, written), t => t == "Dual IF2 1-Tone.npy");
+
+        // One mixer and six blockers: seven tones, more than a harmonic-balance run takes, and no conversion to split into.
+        var many = Superhet();
+        many.Blockers.AddRange(Enumerable.Range(1, 6).Select(k => new ChainBlocker(k * 37e6, -60)));
+        leftOut.Clear();
+        var b6 = ChainBenches.Build(many, ChainBudget.Evaluate(many), "Rx", leftOut: leftOut);
+        Assert.Equal(["Rx Blockers is not written: its harmonic-balance run HBK has 7 tones, and a run takes at most 6."], leftOut);
+        Assert.Contains(b6, b => b.Kind == ChainBench.Levels);
+        Assert.DoesNotContain(Traces("Rx", ChainBench.Levels, many, ChainBudget.Evaluate(many), b6.Select(b => b.CellName).ToHashSet()),
+                              t => t == "Rx Blockers.npy");
+
+        // An LO two thirds of the signal: on the envelope run's lattice of (1.6, 2.4 GHz) the IF, 800 MHz, is also 2·2.4 − 1.6.
+        var lo = Superhet();
+        lo.FrequencyHz = 2.4e9;
+        lo.Stages[2].Parameters["Flo"] = "1.6 GHz";
+        leftOut.Clear();
+        ChainBenches.Build(lo, ChainBudget.Evaluate(lo), "Lo", leftOut: leftOut);
+        Assert.Contains("Lo Envelope is not written: its envelope run's products (1,-1) and (2,-1) fall on the same frequency, " +
+                        "800 MHz at MaxMixOrder 3, and an envelope run cannot tell two products on one frequency apart.", leftOut);
+    }
+
+    /// <summary>
+    /// Two products on one frequency stop an order only when the bench reads one of them. Blockers 10 and 20 MHz either
+    /// side of the signal: at MaxMixOrder 3 an IM3 of three of them lands on the fourth, which the bench reads, so the run
+    /// takes 2, and says why; there two of their differences share 10 MHz, which it reads neither of, and says so. The
+    /// bench simulates to its budget.
+    /// </summary>
+    [Fact]
+    public void ACoincidenceOnAProductTheBenchReads_LowersTheOrder_AndOneItDoesNotRead_IsSaid()
+    {
+        var d = RfArray();
+        d.Stages.RemoveRange(1, 2);   // LNA, BPF, A2: no array, no mixer
+        d.Blockers.AddRange([new(10e6, -50), new(-10e6, -50), new(20e6, -50), new(-20e6, -50)]);
+        var notes = new List<string>();
+        var benches = ChainBenches.Build(d, ChainBudget.Evaluate(d), "Even", notes: notes);
+        Assert.Contains("analysis HBK type=hb NumFreqs=4 Tone[1]=\"FB1\" ToneUnit[1]=Hz Tone[2]=\"FB2\" ToneUnit[2]=Hz " +
+                        "Tone[3]=\"FB3\" ToneUnit[3]=Hz Tone[4]=\"FB4\" ToneUnit[4]=Hz MaxHarm=3 MaxMixOrder=2 Tol=1e-12",
+                        benches.Single(b => b.Kind == ChainBench.Blockers).Netlist);
+        var lowered = Assert.Single(notes, n => n.StartsWith("Even Blockers: its harmonic-balance run HBK runs at MaxMixOrder 2", StringComparison.Ordinal));
+        Assert.Contains("which it reads", lowered);
+        Assert.DoesNotContain("a run takes", lowered);
+        Assert.Single(notes, n => n.StartsWith("Even Blockers: on its harmonic-balance run HBK the products", StringComparison.Ordinal) &&
+                                  n.Contains("The bench reads neither", StringComparison.Ordinal));
+        var blk = Bench(d, "Even", ChainBench.Blockers);
+        for (int b = 1; b <= 4; b++)
+            for (int k = 0; k <= 3; k++) Assert.InRange(Measure(blk, $"Blk{b}_{k}_err"), -0.01, 0.01);
+    }
+
+    /// <summary>The source paths of a display's traces.</summary>
+    private static IEnumerable<string> Traces(string chain, ChainBench bench, ChainDesign d, ChainBudgetResult r, IReadOnlySet<string> written)
+        => CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Build(chain, bench, d, r, written).Tabs[0].Plots
+               .SelectMany(p => p.Traces).Select(t => t.SourcePath ?? "");
+
     // ── the combiner's four variants ─────────────────────────────────────────
 
     /// <summary>The RF array with the combiner as given; a tree's two levels set level by level.</summary>
@@ -884,15 +1149,19 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(Path.Combine(_ws, "gain.s2p"), text);
     }
 
-    private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null)
+    /// <param name="write">How the benches are written, when not as <paramref name="chain"/>'s own: a conversion's bench
+    /// is written by its whole chain's transfer.</param>
+    private DataSet Bench(ChainDesign d, string chain, ChainBench which, Func<string, string>? edit = null,
+                          Func<ChainTransferResult>? write = null)
     {
         Directory.CreateDirectory(_ws);
         if (!File.Exists(Path.Combine(_ws, ".cws")))
             File.WriteAllText(Path.Combine(_ws, ".cws"), "{\"FormatVersion\": 2, \"LibraryRefs\": [], \"KnownFiles\": []}");
         if (!Directory.Exists(Path.Combine(_ws, ChainBenches.CellName(chain, which))))
         {
-            var w = ChainBenches.Write(d, _ws, chain);
-            Assert.True(w.SchematicPaths.Count == ChainBenches.BenchesFor(d).Count, string.Join("\n", w.Refusals));
+            var w = write?.Invoke() ?? ChainBenches.Write(d, _ws, chain);
+            Assert.True(write is not null ? w.SchematicPaths.Count > 0 : w.SchematicPaths.Count == ChainBenches.BenchesFor(d).Count,
+                        string.Join("\n", w.Refusals));
         }
         string cell = ChainBenches.CellName(chain, which);
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell));

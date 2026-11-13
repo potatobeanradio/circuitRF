@@ -93,7 +93,9 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
 
     private IEnumerable<CircuitRF.Ui.DataDisplay.Controls.PlotControl> Plots()
     {
-        foreach (var name in new[] { "CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl" })
+        foreach (var name in (string[])["CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl",
+                                       "LinkPlotControl", "ReceiverPlotControl",
+                                       .. Enumerable.Range(0, 4).SelectMany(i => new[] { $"SweepF{i}", $"SweepT{i}", $"SweepR{i}" })])
             if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } p) yield return p;
     }
 
@@ -429,7 +431,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         var design = vm.ToDesign();
 
         bool replace = false;
-        var existing = ChainBenches.BenchesFor(design).Select(b => ChainBenches.CellName(name, b))
+        var existing = ChainBenches.Build(design, ChainBudget.Evaluate(design), name).Select(b => b.CellName)
                            .Where(c => Directory.Exists(Path.Combine(dir, c))).ToList();
         if (existing.Count > 0)
         {

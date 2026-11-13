@@ -1,0 +1,123 @@
+{
+  "FormatVersion": 1,
+  "FrequencyHz": 2450000000,
+  "BandwidthHz": 4500000,
+  "InputPowerDbm": -70,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "LNA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "16",
+        "NF": "1",
+        "IP3": "15",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "RFBPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "F1": "2.35 GHz",
+        "F2": "2.55 GHz",
+        "IL": "1.5"
+      }
+    },
+    {
+      "Name": "MIX1",
+      "Part": "Mixer",
+      "Parameters": {
+        "ConvGain": "-7",
+        "NF": "7",
+        "NFType": "ssb",
+        "IIP3": "10",
+        "Plo": "7",
+        "Flo": "2.1 GHz"
+      }
+    },
+    {
+      "Name": "IF1BPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "5",
+        "F1": "200 MHz",
+        "F2": "600 MHz",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "IF1A",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "15",
+        "NF": "3",
+        "IP3": "25",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "IMGBPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "5",
+        "F1": "335 MHz",
+        "F2": "365 MHz",
+        "IL": "2"
+      }
+    },
+    {
+      "Name": "MIX2",
+      "Part": "Mixer",
+      "Parameters": {
+        "ConvGain": "-6",
+        "NF": "8",
+        "NFType": "ssb",
+        "IIP3": "15",
+        "Plo": "7",
+        "Flo": "328.6 MHz"
+      }
+    },
+    {
+      "Name": "IF2BPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "5",
+        "F1": "13.6 MHz",
+        "F2": "33.6 MHz",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "IF2A",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "20",
+        "NF": "5",
+        "IP3": "30",
+        "IP3Ref": "Output"
+      }
+    }
+  ],
+  "Blockers": [
+    {
+      "OffsetHz": -700000000,
+      "LevelDbm": -40
+    },
+    {
+      "OffsetHz": -41800000,
+      "LevelDbm": -50
+    }
+  ],
+  "Demo": true
+}

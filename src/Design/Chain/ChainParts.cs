@@ -31,8 +31,11 @@ namespace CircuitRF.Design.Chain;
 /// <param name="Options">For a parameter that names a choice (<c>IP3Ref</c>, <c>Response</c>), the choices.</param>
 /// <param name="BlankAllowed">True when blank means something (an Amp's blank NF is a noiseless amplifier).</param>
 /// <param name="IsFile">The parameter names a file, which the window offers a picker for.</param>
+/// <param name="BudgetOnly">Read by the budget and never written onto the part's netlist line (a DC power, a gain per
+/// amplifier stage).</param>
 public sealed record ChainParam(string Name, string Default, string Unit, bool Numeric = true, bool BlankAllowed = false,
-                                IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false);
+                                IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false,
+                                bool BudgetOnly = false);
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
@@ -95,11 +98,33 @@ public static class ChainParts
 
     private static double P1(double iip3) => double.IsPositiveInfinity(iip3) ? iip3 : iip3 - TanhP1dbBelowIip3;
 
-    public static readonly IReadOnlyList<ChainPart> All =
+    /// <summary>Every part's DC power, which only the budget's power readout reads.</summary>
+    public static readonly ChainParam Pdc = new("Pdc", "", "W", BlankAllowed: true, BudgetOnly: true,
+        Help: "DC power, W or with its unit (5 mW); with GainPerStage, per amplifier stage; blank: none");
+
+    /// <summary>An Amp's gain per amplifier stage, which its stage count follows from.</summary>
+    public static readonly ChainParam GainPerStage = new("GainPerStage", "", "dB", BlankAllowed: true, BudgetOnly: true,
+        Help: "the gain of one amplifier stage: Gain takes ceil(Gain / GainPerStage) of them, each drawing Pdc; blank: Pdc is the whole amplifier's");
+
+    /// <summary>The stages an Amp of <paramref name="gainDb"/> takes at <paramref name="perStageDb"/> each,
+    /// ⌈G/g − 10⁻⁹⌉ (the 10⁻⁹ so that 20/5 is 4, not 5, after rounding); null when either is not above 0 dB.</summary>
+    public static int? StageCount(double gainDb, double perStageDb)
+        => gainDb > 0 && perStageDb > 0 ? (int)Math.Ceiling(gainDb / perStageDb - 1e-9) : null;
+
+    /// <summary>A resolved stage's amplifier-stage count, null when it states no GainPerStage.</summary>
+    public static int? StageCount(ChainStage s)
+        => s.Part == Amp && ChainValue.TryParse(s.Get("GainPerStage"), out double g) ? StageCount(ChainValue.Or(s.Get("Gain"), 0), g) : null;
+
+    /// <summary>A resolved stage's DC power, W: its Pdc, times its stage count when it has one.</summary>
+    public static double StagePdcW(ChainStage s) => ChainValue.Or(s.Get("Pdc"), 0) * (StageCount(s) ?? 1);
+
+    public static readonly IReadOnlyList<ChainPart> All = [.. Parts().Select(p => p with { Parameters = [.. p.Parameters, Pdc] })];
+
+    private static IReadOnlyList<ChainPart> Parts() =>
     [
         new(Amp, "Amplifier", true,
             [Reg(SymbolKind.Amp, "Gain"), Reg(SymbolKind.Amp, "NF", blank: true, help: "blank: noiseless"),
-             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"])],
+             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"]), GainPerStage],
             "An ideal gain block. P1dB follows from IP3: IIP3 − 8.96 dB. Any gain, negative included, so it is also the " +
             "stage for any other block that has a gain, a noise figure and an intercept.",
             (s, _) =>
@@ -213,8 +238,9 @@ public static class ChainParts
             (s, c) => ChainSnp.Budget(s, c)),
         new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
-             new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree"],
-                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2"),
+             new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree", "Levels"],
+                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2. Levels: one N:1 " +
+                       "combiner, any N, with the loss of ceil(log2 N) levels of IL each"),
              new("Kind", "Passive", "", Numeric: false, Options: ["Passive", "Active"],
                  Help: "Active: an amplifier after each combiner"),
              new("IL", "0.5", "dB", Numeric: false,
@@ -253,14 +279,17 @@ public static class ChainParts
         string topo = s.Get("Topology").Trim(), kind = s.Get("Kind").Trim();
         bool tree = topo.Equals("Tree", StringComparison.OrdinalIgnoreCase);
         bool active = kind.Equals("Active", StringComparison.OrdinalIgnoreCase);
-        if (topo.Length > 0 && !tree && !topo.Equals("Direct", StringComparison.OrdinalIgnoreCase))
-            No($"Topology = '{topo}' is neither Direct nor Tree.");
+        // Levels: the loss of the ceil(log2 N) levels a tree of any N would take, on one N:1 combiner.
+        int lossLevels = 0;
+        if (topo.Equals("Levels", StringComparison.OrdinalIgnoreCase)) while ((1 << lossLevels) < n) lossLevels++;
+        else if (topo.Length > 0 && !tree && !topo.Equals("Direct", StringComparison.OrdinalIgnoreCase))
+            No($"Topology = '{topo}' is neither Direct nor Tree, nor Levels.");
         if (kind.Length > 0 && !active && !kind.Equals("Passive", StringComparison.OrdinalIgnoreCase))
             No($"Kind = '{kind}' is neither Passive nor Active.");
         if (tree && (n & (n - 1)) != 0)
         {
             No($"a tree combines in pairs, so its N is a power of 2 (2, 4, 8, …), and {n} is not. Set Topology to Direct " +
-               $"for {n} elements.");
+               $"for {n} elements, or to Levels for one combiner with the loss of a tree's levels.");
             tree = false;
         }
         int levels = tree ? (int)Math.Round(Math.Log2(n)) : 1;
@@ -278,6 +307,7 @@ public static class ChainParts
             return v.Count == 1 ? [.. Enumerable.Repeat(v[0], levels)] : v;
         }
         var il = PerLevel("IL", "0");
+        if (lossLevels > 0) il = [il[0] * lossLevels];
         var gain = active ? PerLevel("Gain", "10") : [];
         var nf = active ? PerLevel("NF", "2") : [];
         var ip3 = active ? PerLevel("IIP3", "10") : [];
@@ -295,7 +325,7 @@ public static class ChainParts
         for (int l = 0; l < levels; l++)
             lv.Add(new CombinerLevel(tree ? 2 : n, tree ? n >> (l + 1) : 1, il[l],
                                      active ? gain[l] : 0, active ? nf[l] : 0, active ? ip3[l] : double.PositiveInfinity));
-        return new CombinerSpec(n, tree, active, lv, path);
+        return new CombinerSpec(n, tree, active, lv, path, lossLevels);
     }
 }
 
@@ -317,8 +347,9 @@ public sealed record CombinerLevel(int Ways, int Parts, double IlDb, double Gain
 /// signal gain, noise gain, noise figure and intercept, all referred to ONE element's input. The array gain
 /// is the signal gain over the noise gain, (Σa_k)²/Σa_k², N for equal paths.</para>
 /// </summary>
+/// <param name="LossLevels">Levels only: the ceil(log2 N) levels whose loss its one combiner takes; 0 otherwise.</param>
 public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<CombinerLevel> Levels,
-                                  IReadOnlyList<double> PathIlDb)
+                                  IReadOnlyList<double> PathIlDb, int LossLevels = 0)
 {
     /// <summary>Path k's amplitude weight (1-based), 1 with no PathIL.</summary>
     public double Weight(int k) => PathIlDb.Count == N ? Math.Pow(10, -PathIlDb[k - 1] / 20) : 1;
@@ -353,7 +384,8 @@ public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<C
     }
 
     /// <summary>"Direct, passive", "Tree of 3 levels, active", as the block view and the variants bench say it.</summary>
-    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1" : $"Direct {N}:1")
+    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1"
+                                 : LossLevels > 0 ? $"{N}:1, {LossLevels} levels' loss" : $"Direct {N}:1")
                                 + (Active ? ", active" : ", passive");
 }
 

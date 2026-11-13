@@ -63,8 +63,21 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainRefused(path, budget.Refusals[^1]));
         }
         foreach (var n in budget.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        if (ChainLink.Power(budget)?.Note is { } dcNote) JsonRun.Note(CliDiagnostics.ChainNote(dcNote));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
+        // The sweeps, a group each: every point the whole chain budgeted again there.
+        var sweepNotes = new List<string>();
+        ChainBudget.AddSweeps(JsonRun.Data, design, sweepNotes);
+        foreach (var n in sweepNotes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        foreach (var s in design.Sweeps)
+        {
+            var rate = JsonRun.Data[s.Of + ".Rate_Gbps"].RealValues.Where(double.IsFinite).DefaultIfEmpty(double.NaN).ToArray();
+            string unit = s.Of == ChainSweep.Frequency ? " GHz" : "";
+            double scale = s.Of == ChainSweep.Frequency ? 1e9 : 1;
+            Console.WriteLine($"  sweep {s.Of}: {s.From / scale:0.###} to {s.To / scale:0.###}{unit}, {s.Values().Length} points, "
+                            + $"rate {D(rate.Min())} to {D(rate.Max())} Gb/s (group '{s.Of}' of the DataSet)");
+        }
 
         if (output is not null)
         {
@@ -102,6 +115,7 @@ internal static class Chain
 
     private static void Report(ChainBudgetResult r, ChainDesign d)
     {
+        d = r.Design ?? d;   // the chain as budgeted: a link's input power, a fractional bandwidth
         var t = r.Totals!;
         Console.WriteLine($"Chain budget: {r.Stages.Count} stage(s), {d.FrequencyHz / 1e6:0.###} MHz in, {t.OutputFrequencyHz / 1e6:0.###} MHz out, "
                         + $"{d.BandwidthHz / 1e6:0.###} MHz bandwidth, {D(d.InputPowerDbm)} dBm in, source {d.TemperatureK:0.#} K");
@@ -114,5 +128,15 @@ internal static class Chain
         Console.WriteLine($"  thermal floor {D(t.ThermalFloorDbm)} dBm, output noise {D(t.NoiseOutDbm)} dBm, MDS {D(t.MdsDbm)} dBm, "
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));
+        if (ChainCapacity.Read(r) is { } o)
+            Console.WriteLine($"  NF of the array {D(o.NfArrayDb)} dB, "
+                            + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
+                            + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $", ceiling {D(o.CeilingDbm)} dBm");
+        if (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l)
+            Console.WriteLine($"  link: {D(l.PoutDbm)} dBm from each of {l.Mtx} PAs, EIRP {D(l.EirpDbm)} dBm, free space {D(l.LfsDb)} dB "
+                            + $"and {D(l.AtmDb)} dB more over the path, {D(l.PrxDbm)} dBm at each element, {D(rd.InputPowerDbm)} dBm in");
+        if (ChainLink.Power(r) is { TotalW: > 0 } p)
+            Console.WriteLine($"  DC power: transmit {ChainLink.Watts(p.TxW)}, receive {ChainLink.Watts(p.RxW)} ({p.Mrx} element(s)), "
+                            + $"total {ChainLink.Watts(p.TotalW)}, {D(p.EnergyPerBitJ * 1e12)} pJ/bit");
     }
 }

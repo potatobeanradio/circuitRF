@@ -1,0 +1,1031 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Dual Conversion IF2 Envelope",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SRC",
+      "Symbol": "ModSource",
+      "X": 0,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Fc",
+          "Expression": "Frf",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavg",
+          "Expression": "Pin",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Carrier[1]",
+          "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Record",
+          "Expression": "0.0005",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Noise",
+          "Expression": "yes",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Temp",
+          "Expression": "2028.929186",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "IF1BPF",
+      "Symbol": "Filter",
+      "X": 700,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Butterworth",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Fc",
+          "Expression": "1",
+          "Unit": "GHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F1",
+          "Expression": "200",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "600",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Astop",
+          "Expression": "40",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IF1A",
+      "Symbol": "Amp",
+      "X": 1700,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "15",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "3",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "25",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IMGBPF",
+      "Symbol": "Filter",
+      "X": 2700,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Butterworth",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Fc",
+          "Expression": "1",
+          "Unit": "GHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F1",
+          "Expression": "335",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "365",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Astop",
+          "Expression": "40",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "2",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ISO_MIX2",
+      "Symbol": "Circulator",
+      "X": 3700,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Direction",
+          "Expression": "CW",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ISO_MIX2_R",
+      "Symbol": "Resistor",
+      "X": 3700,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "MIX2",
+      "Symbol": "Mixer",
+      "X": 4800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "ConvGain",
+          "Expression": "-6",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "8",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NFType",
+          "Expression": "ssb",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IIP3",
+          "Expression": "15",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Plo",
+          "Expression": "7",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LO_MIX2",
+      "Symbol": "P1Tone",
+      "X": 4800,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Freq",
+          "Expression": "328600000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl",
+          "Expression": "7",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "IF2BPF",
+      "Symbol": "Filter",
+      "X": 5800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Butterworth",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "5",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Fc",
+          "Expression": "1",
+          "Unit": "GHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F1",
+          "Expression": "13.6",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "33.6",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Astop",
+          "Expression": "40",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IF2A",
+      "Symbol": "Amp",
+      "X": 6800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "20",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "5",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "30",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "Iout",
+      "Symbol": "IProbe",
+      "X": 7600,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
+      ]
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 8200,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 3700,
+      "Y": 1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 4800,
+      "Y": 1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 8200,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 0,
+      "Y": -1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Frf",
+          "Expression": "350000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pin",
+          "Expression": "-62.5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Flo1",
+          "Expression": "328600000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Bocc",
+          "Expression": "4500000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 1500,
+      "Y": -1900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pout_calc",
+          "Expression": "-37.5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_calc",
+          "Expression": "34.707575252072985",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_calc",
+          "Expression": "1.8391673030880211",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Nout_calc",
+          "Expression": "-72.20757525207298",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pout_sim",
+          "Expression": "ENV1.Pavg_dBm[\u0022Iout\u0022]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_sim",
+          "Expression": "ENV1.SNR_dB[\u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_sim",
+          "Expression": "ENV1.EVMnoise_pct[\u0022Iout\u0022, 0]",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Nout_sim",
+          "Expression": "Pout_sim - SNR_sim",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pout_err",
+          "Expression": "Pout_sim - Pout_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_err",
+          "Expression": "SNR_sim - SNR_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Nout_err",
+          "Expression": "Nout_sim - Nout_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          3700,
+          300
+        ],
+        [
+          3700,
+          700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          -200
+        ],
+        [
+          300,
+          -200
+        ],
+        [
+          300,
+          0
+        ],
+        [
+          500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          7700,
+          0
+        ],
+        [
+          7700,
+          200
+        ],
+        [
+          7400,
+          200
+        ],
+        [
+          7400,
+          -400
+        ],
+        [
+          8200,
+          -400
+        ],
+        [
+          8200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          0
+        ],
+        [
+          2500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          0
+        ],
+        [
+          1400,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          6000,
+          0
+        ],
+        [
+          6500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2900,
+          0
+        ],
+        [
+          3400,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4000,
+          0
+        ],
+        [
+          4500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          5100,
+          0
+        ],
+        [
+          5600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          7100,
+          0
+        ],
+        [
+          7300,
+          0
+        ],
+        [
+          7300,
+          300
+        ],
+        [
+          7600,
+          300
+        ],
+        [
+          7600,
+          0
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 4800,
+      "Y": 700,
+      "Name": "lo_MIX2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4800,
+      "Y": 300,
+      "Name": "lo_MIX2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 100,
+      "Y": -200,
+      "Name": "in",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 1,
+      "AlongT": 0.3333333333333333,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1100,
+      "Y": 0,
+      "Name": "n_IF1BPF",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2200,
+      "Y": 0,
+      "Name": "n_IF1A",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3100,
+      "Y": 0,
+      "Name": "n_IMGBPF",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4200,
+      "Y": 0,
+      "Name": "n_IMGBPF_rf",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3700,
+      "Y": 500,
+      "Name": "ISO_MIX2_t",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5300,
+      "Y": 0,
+      "Name": "n_MIX2",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 6200,
+      "Y": 0,
+      "Name": "n_IF2BPF",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 7400,
+      "Y": 300,
+      "Name": "out",
+      "OwnerWireIndex": 9,
+      "SegmentIndex": 2,
+      "AlongT": 0.3333333333333333,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 7800,
+      "Y": -400,
+      "Name": "load",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 3,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "env",
+      "Name": "ENV1",
+      "Enabled": true,
+      "MaxMixOrderExpr": "3",
+      "MaxHarmonicExpr": "1",
+      "TolExpr": "1e-6",
+      "EnvStop": "0.5e-3",
+      "EnvStep": "auto",
+      "EnvAccuracy": "draft",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "yes",
+      "EnvNoise": "yes",
+      "EnvEvmSplit": "yes"
+    }
+  ]
+}

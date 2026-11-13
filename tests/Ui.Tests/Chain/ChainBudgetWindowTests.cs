@@ -169,6 +169,19 @@ public sealed class ChainBudgetWindowTests
         Assert.False(vm.UndoCommand.CanExecute(null));
     }
 
+    /// <summary>The Levels tab of a chain whose Levels bench Transfer writes per conversion says where its simulated points
+    /// are, rather than waiting for a whole-chain bench that is never written; a single conversion's waits for its own.</summary>
+    [Fact]
+    public void TheLevelsNote_SaysWhereAChainOfTwoConversionsHasItsPoints()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-chain-note-" + Guid.NewGuid().ToString("N")[..8]);
+        var dual = new ChainBudgetViewModel(ChainBudgetTests.DualConversion()) { FilePath = Path.Combine(dir, "Dual.cchain") };
+        Assert.Contains("written once per conversion", dual.LevelsNote);
+        var one = new ChainBudgetViewModel(ChainBudgetTests.Superhet()) { FilePath = Path.Combine(dir, "Rx.cchain") };
+        Assert.DoesNotContain("per conversion", one.LevelsNote);
+        Assert.Contains("Rx Levels not simulated yet", one.LevelsNote);
+    }
+
     [Fact]
     public async System.Threading.Tasks.Task Save_IsTheCleanPoint_ThatUndoAndRedoCross()
     {

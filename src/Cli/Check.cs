@@ -1532,7 +1532,14 @@ internal static class Check
         var r = CircuitRF.Design.Chain.ChainBudget.Evaluate(design);
         foreach (var why in r.Refusals) f.Add(CliDiagnostics.ChainRefused(path, why));
         foreach (var n in r.Notes) f.Add(CliDiagnostics.ChainNote(n));
-        if (r.Totals is { } t) f.Add(CliDiagnostics.CheckChainSummary(path, r.Stages.Count, t.GainDb, t.NfDb));
+        if (r.Totals is not { } t) return;
+        f.Add(CliDiagnostics.CheckChainSummary(path, r.Stages.Count, t.GainDb, t.NfDb));
+        // What Transfer would write: each bench a run can hold, the others per conversion or not at all, and why.
+        var notes = new List<string>();
+        var leftOut = new List<string>();
+        CircuitRF.Design.Chain.ChainBenches.Build(design, r, Path.GetFileNameWithoutExtension(path), notes: notes, leftOut: leftOut);
+        foreach (var n in notes) f.Add(CliDiagnostics.ChainNote(n));
+        foreach (var why in leftOut) f.Add(CliDiagnostics.ChainBenchLeftOut(path, why));
     }
 
     private static void CheckSmith(string path, Findings f)

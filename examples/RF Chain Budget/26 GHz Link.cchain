@@ -1,0 +1,127 @@
+{
+  "FormatVersion": 2,
+  "FrequencyHz": 26000000000,
+  "BandwidthHz": 400000000,
+  "InputPowerDbm": -70,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "RXSW",
+      "Part": "Switch",
+      "Parameters": {
+        "IL": "0.012*f_GHz + 0.4"
+      }
+    },
+    {
+      "Name": "LNA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "20",
+        "NF": "0.045*f_GHz + 1.29",
+        "IP3": "-10",
+        "IP3Ref": "Input",
+        "GainPerStage": "33 - 15*log10(f_GHz)",
+        "Pdc": "8 mW"
+      }
+    },
+    {
+      "Name": "PS",
+      "Part": "PhaseShifter",
+      "Parameters": {
+        "Phase": "0",
+        "IL": "6",
+        "NF": "",
+        "IIP3": "10"
+      }
+    },
+    {
+      "Name": "CMB",
+      "Part": "Combiner",
+      "Parameters": {
+        "N": "8",
+        "Topology": "Levels",
+        "Kind": "Passive",
+        "IL": "0.8",
+        "PathIL": "",
+        "Gain": "10",
+        "NF": "2",
+        "IIP3": "10",
+        "Steer": "30"
+      }
+    },
+    {
+      "Name": "DRV",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "10",
+        "NF": "0.045*f_GHz + 1.29",
+        "IP3": "15",
+        "IP3Ref": "Output",
+        "Pdc": "15 mW"
+      }
+    },
+    {
+      "Name": "BPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "F1": "freq - 1.5GHz",
+        "F2": "freq + 1.5GHz",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "MIX",
+      "Part": "Mixer",
+      "Parameters": {
+        "ConvGain": "-7",
+        "NF": "9",
+        "NFType": "ssb",
+        "IIP3": "3",
+        "Plo": "7",
+        "Flo": "freq - 3GHz",
+        "Pdc": "25 mW"
+      }
+    }
+  ],
+  "Streams": 2,
+  "Link": {
+    "Tx": {
+      "Psat": "freq < 30e9 ? 32.5 - 6*log10(f_GHz) : 45.79 - 15*log10(f_GHz)",
+      "Backoff": "8",
+      "Loss": "0.012*f_GHz + 0.4",
+      "AntennaGain": "5",
+      "Elements": "16",
+      "PaGain": "20",
+      "PAE": "max(32 - 12*log10(f_GHz), 5)"
+    },
+    "Path": {
+      "Distance": "200 m",
+      "Attenuation": "Atmospheric attenuation.csv",
+      "RxAntennaGain": "3"
+    }
+  },
+  "Sweeps": [
+    {
+      "Of": "Frequency",
+      "From": 20000000000,
+      "To": 40000000000,
+      "Points": 41
+    },
+    {
+      "Of": "TxElements",
+      "From": 4,
+      "To": 1024,
+      "Points": 9
+    },
+    {
+      "Of": "RxElements",
+      "From": 1,
+      "To": 64,
+      "Points": 13
+    }
+  ]
+}

@@ -56,6 +56,29 @@ public sealed class ChainDesign
     /// <summary>The SNR the demodulator needs, dB: sensitivity is the MDS plus this.</summary>
     public double RequiredSnrDb { get; set; } = 10;
 
+    /// <summary>The bandwidth as a fraction of the frequency (0.1 for 10 %), which then replaces
+    /// <see cref="BandwidthHz"/>; null: the bandwidth as stated.</summary>
+    public double? FractionalBandwidth { get; set; }
+
+    /// <summary>Orthogonal streams (polarisations, layers), each with its own hardware: the rate and the DC power are
+    /// both this many times one stream's.</summary>
+    public int Streams { get; set; } = 1;
+
+    /// <summary>The NF allocation's step, dB: after each stage, the largest NF the rest may have keeps the whole chain
+    /// within this of the NF up to that stage.</summary>
+    public double NfAllowanceDb { get; set; } = 1;
+
+    /// <summary>The receiver's ceiling below its input P1dB, dB.</summary>
+    public double RxBackoffDb { get; set; } = 10;
+
+    /// <summary>A transmitter and a path in front of the chain (<see cref="ChainLink"/>): the power it delivers to each
+    /// element becomes the input power. Null: the chain alone, at <see cref="InputPowerDbm"/>.</summary>
+    public ChainLink? Link { get; set; }
+
+    /// <summary>The sweeps the window, the CLI and the DataSet show (<see cref="ChainBudget.Sweep"/>): at most one each of
+    /// the carrier, the transmit elements and the receive elements.</summary>
+    public List<ChainSweep> Sweeps { get; set; } = [];
+
     public List<ChainStage> Stages { get; set; } = [];
 
     /// <summary>Blockers at the chain's input, each a carrier at an offset from the frequency and a level, carried
@@ -85,6 +108,10 @@ public sealed class ChainDesign
         return f;
     }
 
+    /// <summary>A copy with every parameter written as an expression in <c>freq</c> or as a table its number at its
+    /// stage's input frequency (<see cref="ChainScaling"/>); what cannot be read is added to <paramref name="refusals"/>.</summary>
+    public ChainDesign Resolve(List<string> refusals) => ChainScaling.Resolve(this, refusals);
+
     /// <summary>Why this design cannot be budgeted, or null. Every cause, one sentence each.</summary>
     public IReadOnlyList<string> Refusals()
     {
@@ -92,6 +119,10 @@ public sealed class ChainDesign
         if (!(FrequencyHz > 0)) r.Add("The frequency must be above 0 Hz.");
         if (!(BandwidthHz > 0)) r.Add("The bandwidth must be above 0 Hz.");
         if (!(TemperatureK >= 0)) r.Add("The source temperature cannot be below 0 K.");
+        if (FractionalBandwidth is { } fbw && !(fbw > 0 && fbw < 2)) r.Add("The fractional bandwidth is a fraction of the frequency, above 0 and below 2.");
+        if (Streams < 1) r.Add("Streams must be 1 or more.");
+        if (!(NfAllowanceDb > 0)) r.Add("The NF allowance must be above 0 dB.");
+        if (!double.IsFinite(RxBackoffDb)) r.Add("The receiver back-off must be a number of dB.");
         if (Stages.Count == 0) r.Add("The chain has no stages.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int combiners = 0;
@@ -109,7 +140,15 @@ public sealed class ChainDesign
             int before = r.Count;
             foreach (var p in part.Parameters.Where(p => p.Numeric))
                 if (!ChainValue.TryParse(s.Get(p.Name), out _) && !(p.BlankAllowed && s.Get(p.Name).Trim().Length == 0))
-                    r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number.");
+                    r.Add($"Stage '{s.Name}': {p.Name} = '{s.Get(p.Name)}' is not a number{ChainScaling.WhyNotANumber(s.Get(p.Name))}.");
+            if (r.Count == before && ChainValue.Or(s.Get("Pdc"), 0) < 0) r.Add($"Stage '{s.Name}': Pdc = '{s.Get("Pdc")}' is below 0 W.");
+            if (part.Token == ChainParts.Amp && r.Count == before && ChainValue.TryParse(s.Get("GainPerStage"), out double gps)
+                && ChainParts.StageCount(s) is null)
+                r.Add(gps > 0
+                    ? $"Stage '{s.Name}': GainPerStage is set, so the Gain is built of amplifier stages, and {s.Get("Gain")} dB needs none: " +
+                      "clear GainPerStage, or give the Gain above 0 dB."
+                    : $"Stage '{s.Name}': GainPerStage is {ChainValue.Format(gps)} dB at {ChainSnp.Hz(inputHz[si])}: no number of stages " +
+                      "reaches the gain at this frequency.");
             if (part.Token == ChainParts.Combiner)
             {
                 combiners++;
@@ -119,6 +158,10 @@ public sealed class ChainDesign
                 ChainSnp.Read(s, new ChainStageContext(inputHz[si], BaseDirectory), r);
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
+        Link?.Refusals(r);
+        foreach (var sw in Sweeps)
+            if (sw.Refusal(this) is { } no) r.Add(no);
+        if (Sweeps.GroupBy(sw => sw.Of).Any(g => g.Count() > 1)) r.Add("A chain sweeps each of the frequency and the two arrays once at most.");
         foreach (var b in Blockers)
             if (!double.IsFinite(b.OffsetHz) || !double.IsFinite(b.LevelDbm))
                 r.Add("A blocker is an offset and a level, \"150 MHz, -40\"; one of them is not a number.");
@@ -142,11 +185,14 @@ public sealed class ChainDesign
         TemperatureK = TemperatureK, RequiredSnrDb = RequiredSnrDb,
         Stages = [.. Stages.Select(s => s.Clone())], Blockers = [.. Blockers], Demo = Demo,
         BaseDirectory = BaseDirectory,
+        FractionalBandwidth = FractionalBandwidth, Streams = Streams, NfAllowanceDb = NfAllowanceDb, RxBackoffDb = RxBackoffDb,
+        Link = Link?.Clone(), Sweeps = [.. Sweeps],
     };
 }
 
 /// <summary>A stage parameter's text as a number: a bare number, or one with a unit (<c>2.35 GHz</c>, <c>16 dB</c>,
-/// <c>350MHz</c>, <c>0.5 ns</c>). Frequency and time prefixes scale; dB, dBm, deg and Ohm do not.</summary>
+/// <c>350MHz</c>, <c>0.5 ns</c>, <c>5 mW</c>). Frequency, time and power prefixes scale; dB, dBm, deg, Ohm, W and %
+/// do not.</summary>
 public static class ChainValue
 {
     public static bool TryParse(string? text, out double value)
@@ -160,7 +206,7 @@ public static class ChainValue
         else if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
                  && Units.TrySplitGluedNumber(t, out var n, out var u)) { num = n; unit = u; }
         if (!double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return false;
-        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K") return true;
+        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "%" or "dBi") return true;
         if (Units.Scale(unit) is { } s) { value *= s; return true; }
         // A time: "s", or a prefix and "s" ("0.5 ns", "50 ps").
         if (unit == "s") return true;
@@ -179,10 +225,19 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
+
+    /// <summary>A chain is written as version 2 only when it uses what version 1 did not have, so a reader of version 1
+    /// refuses it rather than dropping it on save, and every other chain stays readable there.</summary>
+    private static int VersionOf(ChainDesign d) =>
+        d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
+        || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
+        || d.Stages.Any(s => s.Part == ChainParts.Combiner && s.Get("Topology").Trim().Equals("Levels", StringComparison.OrdinalIgnoreCase)) ? 2 : 1;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
+        // An expression is written as typed: `0.012*f_GHz + 0.4`, `freq < 30e9 ? …`, not `\u002B` and `\u003C`.
+        Encoder                     = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented               = true,
         DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true,
@@ -199,13 +254,23 @@ public static class ChainDesignIo
         public List<ChainStage>? Stages { get; set; }
         public List<ChainBlocker>? Blockers { get; set; }
         public bool? Demo { get; set; }
+        public double? FractionalBandwidth { get; set; }
+        public int? Streams { get; set; }
+        public double? NfAllowanceDb { get; set; }
+        public double? RxBackoffDb { get; set; }
+        public ChainLink? Link { get; set; }
+        public List<ChainSweep>? Sweeps { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
     {
+        FormatVersion = VersionOf(d),
         FrequencyHz = d.FrequencyHz, BandwidthHz = d.BandwidthHz, InputPowerDbm = d.InputPowerDbm,
         TemperatureK = d.TemperatureK, RequiredSnrDb = d.RequiredSnrDb, Stages = d.Stages,
         Blockers = d.Blockers.Count > 0 ? d.Blockers : null, Demo = d.Demo ? true : null,
+        FractionalBandwidth = d.FractionalBandwidth, Streams = d.Streams != 1 ? d.Streams : null,
+        NfAllowanceDb = d.NfAllowanceDb != 1 ? d.NfAllowanceDb : null, RxBackoffDb = d.RxBackoffDb != 10 ? d.RxBackoffDb : null,
+        Link = d.Link, Sweeps = d.Sweeps.Count > 0 ? d.Sweeps : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -227,6 +292,13 @@ public static class ChainDesignIo
         d.RequiredSnrDb = f.RequiredSnrDb ?? d.RequiredSnrDb;
         d.Blockers.AddRange(f.Blockers ?? []);
         d.Demo = f.Demo ?? false;
+        d.FractionalBandwidth = f.FractionalBandwidth;
+        d.Streams = f.Streams ?? 1;
+        d.NfAllowanceDb = f.NfAllowanceDb ?? 1;
+        d.RxBackoffDb = f.RxBackoffDb ?? 10;
+        d.Sweeps.AddRange(f.Sweeps ?? []);
+        if (f.Link is { } l)
+            d.Link = new ChainLink { Tx = new(l.Tx ?? [], StringComparer.Ordinal), Path = new(l.Path ?? [], StringComparer.Ordinal) };
         foreach (var s in f.Stages ?? [])
             d.Stages.Add(new ChainStage
             {
