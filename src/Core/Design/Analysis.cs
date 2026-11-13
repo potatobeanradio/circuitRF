@@ -363,7 +363,8 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string StopExpr      { get; init; } = "100e-6";
     /// <summary>Envelope step (s) or <c>auto</c> (signal rate x the accuracy preset's oversampling).</summary>
     public string StepExpr      { get; init; } = "auto";
-    /// <summary><c>draft</c> (1x), <c>standard</c> (4x, default), <c>fine</c> (8x) — oversampling of the signal rate.</summary>
+    /// <summary><c>draft</c> (1x), <c>standard</c> (4x, default), <c>fine</c> (8x) — oversampling of the signal rate, finer
+    /// for a carrier off the envelope's centre.</summary>
     public string Accuracy      { get; init; } = "standard";
     public string MaxHarmExpr   { get; init; } = "5";
     /// <summary><c>auto</c> (default): carriers farther apart than 3x their bandwidth each get their own

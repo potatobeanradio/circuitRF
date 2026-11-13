@@ -360,16 +360,20 @@ The levels, the canceller and the demo, read from the example's benches as the G
   budget, its own slight compression at −40 and −50 dBm (`ChainBudgetExampleTests.Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`).
 - **The canceller's noise**: the front end's 1-Tone NF on F = L_t + (F_ref·G_ref − 1)·c/(1 − c) to 10⁻⁶ dB.
 - **The canceller's depth**: at three carriers (10 MHz centred, 5 MHz at −15 MHz, 20 MHz at +20 MHz) and every swept
-  error, within 1.4 % of the closed form's depth, worst 0.7 dB at 49.7 dB deep, under 0.3 dB shallower than 45 dB. The
-  wanted 64-QAM carrier's EVM goes from 840 % to 3.2 %, the QPSK one's from 1036 % to 8.6 %.
+  error, within 0.64 % of the closed form's depth, 0.09 dB at 49.7 dB deep, under 0.12 dB shallower than 45 dB (1.4 %
+  and 0.7 dB before the envelope step resolved the +20 MHz carrier's band edge). The wanted 64-QAM carrier's EVM goes
+  from 840 % to 3.1 %, the QPSK one's from 1036 % to 8.6 %.
 
 ![The Canceller bench's display: depth against each error, EVM and constellations with and without](../images/rf-chain-budget/canceller-display.png)
 
-- **The demo**: the SNR 0.20 dB under the budget at the lowest power, the EVM's noise part 57.0 % against 1/√SNR's
-  56.2 %. Higher, two floors the budget leaves out: the distortion part's 1.23 %, the LO mask integrated over the channel
-  (−38.2 dBc), and a noise part that stops at about 1 %, 40 dB of SNR, for the DBPSK carrier too. The Canceller bench,
-  with no LO and another chain, stops at 41 dB, so the floor belongs to the envelope measurement rather than to either
-  chain; where in it is an open question. Past compression the distortion part is 15.5 %.
+- **The demo**: the SNR 0.04 dB over the budget at the lowest power, the EVM's noise part 55.4 % against 1/√SNR's
+  56.2 %. Higher, the noise part stops at about 1 %, 40 dB of SNR, for the DBPSK carrier too: the LO's phase noise,
+  which EvmSplit's noiseless run leaves out with the thermal noise. Its mask integrates to −38.5 dBc over the channel,
+  1.18 % of EVM; without the mask the SNR follows the budget to 64 dB. The Canceller bench's 41 dB is its own thermal
+  SNR at −60 dBm (61 dB at −40 dBm), not a floor. The distortion part is 0.39 % until compression, the NR source's own
+  0.35 % and the draft step's, and 15.4 % past it. It read 1.23 % before the envelope step resolved the band edge of a
+  carrier off the envelope's centre (the NR carrier sits 4.5 MHz below the centre of its group with the DBPSK one;
+  `src/Engine/RESOLVED.md`).
 
 ![The demo's display: EVM against the input power, its split, the SNR and two constellations](../images/rf-chain-budget/demo-display.png)
 

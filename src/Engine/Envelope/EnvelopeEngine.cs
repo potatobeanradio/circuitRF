@@ -54,7 +54,8 @@ public sealed record EnvelopeParams
     public double StopS { get; init; } = 100e-6;
     /// <summary>Explicit envelope step (s); 0 = automatic from the signal rate x <see cref="Oversample"/>.</summary>
     public double StepS { get; init; }
-    /// <summary>Steps per signal sample when the step is automatic (1 draft, 4 standard, 8 fine).</summary>
+    /// <summary>Steps per signal sample when the step is automatic (1 draft, 4 standard, 8 fine); a run takes more for a
+    /// carrier off the envelope's centre (<see cref="EnvelopeEngine.Oversample"/>).</summary>
     public int Oversample { get; init; } = 4;
     public int MaxHarm { get; init; } = 5;
     public int FftOverSample { get; init; } = 1;
@@ -171,6 +172,31 @@ public sealed class EnvelopeEngine
     internal const int MaxStepSplit = 16;
 
     /// <summary>
+    /// The fewest steps a run takes per cycle of the highest frequency in any carrier's envelope, its band edge
+    /// (<see cref="Oversample"/>). The signal rate is at least five bandwidths, so a carrier at the envelope's centre gets
+    /// ten at <c>draft</c>; this gives a carrier off the centre at least as many. It bounds the step at the band edge,
+    /// not the error: 20 would cost up to 7x at draft, and no fixed count suits every filter's delay.
+    /// </summary>
+    internal const double StepsPerEdgeCycle = 10;
+
+    /// <summary>
+    /// The steps per signal sample a run takes: the accuracy preset's, or more when a carrier's band edge
+    /// <paramref name="edgeHz"/> (its offset from the envelope's centre plus half its bandwidth) would get fewer than
+    /// <see cref="StepsPerEdgeCycle"/> steps a cycle. Gear-2 steps an envelope frequency f as
+    /// jω(1 + θ²/3 − 7θ⁴/60) + θ⁴/(4h), θ = 2π f h. Its damping θ⁴/(4h), through a filter's group delay τ, scales the gain
+    /// by e^(−σ τ), a tilt across a carrier off the centre; the warp's f³ phase is the smaller part. The signal rate only
+    /// holds an off-centre carrier's spectrum: a 5 MHz NR carrier 4.5 MHz off the centre of a draft run, at
+    /// 2π·7 MHz·16.3 ns = 0.72 rad, read 1.1 % EVM through a 60 MHz bandpass where the same carrier centred reads 0.38 %,
+    /// and reads 0.39 % at this rule's step. What is left still grows with the offset and with the filter's delay (the
+    /// carrier centred in that bandpass, the envelope's centre moved: 0.69 % at 3.5 MHz, where the rule does not act,
+    /// and 1.5 % at 22 MHz, at draft), so EVM through a filter is read at standard or fine, or with Fc on the carrier.
+    /// A carrier at the centre, every carrier at <c>fine</c> and nearly every one at <c>standard</c> keep their preset,
+    /// bit for bit.
+    /// </summary>
+    internal static int Oversample(int preset, double rateHz, double edgeHz)
+        => Math.Max(Math.Max(1, preset), (int)Math.Ceiling(StepsPerEdgeCycle * edgeHz / rateHz - 1e-9));
+
+    /// <summary>
     /// The Newton tolerance is at most this fraction of the run's RF excitation (<see cref="RunTolerance"/>). Tol is absolute,
     /// in amperes at the nonlinear interface; at 1e-6 A it was ~1 % of a -37 dBm signal's current, which a noiseless run
     /// then read as distortion (an amplifier far below compression showed NMSE -32 dB, -36 dB once converged). 1e-4 of the
@@ -250,16 +276,17 @@ public sealed class EnvelopeEngine
         int K = p.MaxHarm;
         double omega0 = 2 * Math.PI * f0;
         var signals = sources.Select(s => s.Signal).ToArray();
-        double need = 0;
+        double need = 0, edge = 0;
         for (int s = 0; s < sources.Length; s++)
             foreach (var c in signals[s].Carriers)
             {
                 double off = sources[s].FcHz + c.OffsetHz - f0;
                 need = Math.Max(need, 2 * (Math.Abs(off) + 2.5 * c.Spec.BandwidthHz));
                 need = Math.Max(need, c.NativeRateHz);
+                edge = Math.Max(edge, Math.Abs(off) + 0.5 * c.Spec.BandwidthHz);
             }
         double rate = SignalRate.AtLeast(need, signals);
-        int osr = Math.Max(1, p.Oversample);
+        int osr = Oversample(p.Oversample, rate, edge);
         double h = p.StepS > 0 ? p.StepS : 1.0 / (rate * osr);
         double recordRate = 1.0 / h;
         double record = signals.Min(sg => sg.RecordSeconds);

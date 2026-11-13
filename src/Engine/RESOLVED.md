@@ -4412,3 +4412,61 @@ gate 5 lists only diode/BJT shot and series-R thermal.
   and anything derived from it, stays a nominal scalar in a measurement, as before.
 
 Gates: `tests/Engine.Tests/Measurements/DerivedVariableMeasurementTests.cs`.
+
+## An envelope EVM floor near 1 %: the draft step against a carrier off the envelope's centre (2026-11-12)
+
+The RF Chain Budget's Superhet Demo read 1.55 % EVM from −56 to −41 dBm, where the budget's SNR predicts 0.34 % to
+0.06 %, split into two floors near 1 %: a distortion part of 1.23 %, put down to the LO's phase noise, and a noise part
+stopping at 40 dB of SNR, put down to the envelope measurement. Neither was what it was said to be.
+
+**The measurement is exact.** Source → matched pad → load reads the source's own EVM: NR 64-QAM 0.353 % (its spectral
+shaping; 0.017 % with `Shaping=off`), DBPSK 0.002 %, the same with the carrier 4.5 MHz off the envelope's centre, and
+with `Noise=yes` and EvmSplit 1/√SNR up to 98 dB of SNR.
+
+**The distortion part was the step.** EvmSplit's noiseless run has no noise and no phase-noise mask, so its 1.23 % could
+not be the LO. Bisected on the demo at −40.87 dBm, noiseless: the NR source alone through the chain 0.406 %; with the
+DBPSK source beside it, even at −200 dBm, 1.225 %. The second carrier, 9 MHz up, makes the group's envelope centre their
+midpoint, so the NR carrier sits 4.5 MHz below it and its band reaches 6.75 MHz, which the draft step (64 MS/s) takes at
+0.66 rad. Gear-2 steps an envelope frequency f as jω(1 + θ²/3 − 7θ⁴/60) + θ⁴/(4h), θ = 2πfh. The damping σ = θ⁴/(4h)
+dominates: through a filter's group delay τ it scales the gain by e^(−στ), and since σ grows as f⁴ that is a tilt across
+a carrier off the centre; the warp's f³ phase is the smaller part. Neither is a delay or a gain, so the demodulator's
+fit cannot take them out. On the bench below at the old step, with the NR carrier 4.5 MHz off, the closed form gives
+1.02 % with both, 0.95 % from the damping alone and 0.35 % from the warp alone. The smallest reproduction is a 60 MHz
+third-order Butterworth bandpass between 50 Ω terminations: the NR carrier 4.5 MHz off the centre reads 1.108 % against
+0.379 % centred, an excess of 1.05 %, where the closed form through that filter, delay and gain fitted, gives 1.06 %.
+With the source's Fc moved 4.5 MHz up instead, so that only the envelope's centre moves, the carrier reads 1.066 %,
+0.379 % and 0.343 % at h, h/2 and h/4 (`standard`): excesses of 1.01 %, 0.16 % and ~0 over the last, against 1.02 %,
+0.17 % and 0.03 % from the closed form. DBPSK 9 MHz off the centre read 0.829 % (centred 0.006 %).
+
+The signal rate, 2(|offset| + 2.5 BW) per carrier, holds an off-centre carrier's spectrum, and the presets multiplied
+it, so an off-centre carrier's band edge got fewer steps a cycle than a centred one's. `EnvelopeEngine.Oversample`
+raises the preset until every carrier's band edge, |offset| + BW/2, gets 10 steps a cycle, what a centred carrier gets
+at draft (the rate is at least five bandwidths). A run whose carriers are all centred keeps its step bit for bit, `fine`
+never changes, and `standard` changes only for a carrier more than 7.5 bandwidths off the centre; the most it raises any
+run is 5x. The runner's `StepSeconds` and both engines call it, the lattice plan carrying each group's band edge, and a
+raised step is said in one note and in the oversampling the CLI and the run's summary print. The demo's step halves (one
+point took 2.0 to 2.3 times as long); its distortion part reads 0.39 %, nearly all the source's own;
+the filter bench's off-centre NR carrier 0.390 % and DBPSK 0.036 %. The Canceller bench, whose 20 MHz interference
+carrier sits 20 MHz off its centre, now reads its closed-form depth to 0.64 % (0.09 dB at 49.7 dB deep) instead of
+1.34 % (0.67 dB there). Gates: `EnvelopeSignalQualityTests.ACarrierOffTheEnvelopesCentre_ReadsCloseToItsCentredEvm` and
+`ARaisedStep_IsPrintedAndNoted`.
+
+**The rule bounds the step at the band edge, not the EVM.** The demo and the gate are clean because the ceiling
+overshoots there (ceil(1.14) = 2 gives 17.6 steps a cycle). What is left grows with the offset and with the filter's
+delay. The NR carrier centred in the bandpass above, only the envelope's centre moved: at draft 0.388 % centred, 0.691 %
+3.5 MHz off (10.2 steps a cycle, so the rule does not act), 1.172 % at 15 MHz and 1.506 % at 22 MHz; at `standard`
+0.602 % at 15 MHz and 0.894 % at 18 MHz, where `fine` reads 0.36 %. The closed form matches every point to ±0.01 %. A
+fixed count of 20 would cost up to 7x at draft and still suit no filter in general, so the count stays 10 and the
+reference says to read EVM through a filter at `standard` or `fine`, or with Fc on the carrier. Stronger fixes, none
+taken here: centring the envelope on a single-carrier group, a less dissipative integrator, or a count set from the
+circuit's delay.
+
+**The noise part is the LO's phase noise.** The noisy run carries the LO's mask, the noiseless one does not. The mask's
+closed form, EVM² = Σ 2·10^(L(f)/10)/T·(1 − f/B) over the record's bins, is −38.5 dBc, 1.18 %; one seed reads 0.96 %.
+Without the mask the demo's SNR at −40.87 dBm is 63.8 dB against the budget's 64.0 dB. The Canceller bench's 41 dB,
+taken for the same floor, is its own thermal SNR at −60 dBm: it reads 61 dB at −40 dBm.
+
+**Found, not changed.** At draft a centred carrier still reads Gear-2's error through a narrow filter (0.379 % against
+0.343 % at `standard` on the bandpass above); the presets keep their meaning for it. A single envelope's IMD products
+far from Fc, which move with the centre (above), meet the same error; the rule resolves the carriers, not their
+products.

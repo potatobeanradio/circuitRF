@@ -130,21 +130,33 @@ public static class EnvelopeRunner
                "labeled nets and power at its IProbes; to measure the power into a load, place an IProbe in series with it.";
     }
 
-    /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, or explicit).</summary>
+    /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, raised to resolve every
+    /// carrier's band edge (EnvelopeEngine.Oversample), or explicit).</summary>
     public static double StepSeconds(Core.Devices.ModSourceModel[] sources, EnvelopeParams p, int fundamentals, bool spanIntermod = false)
+        => StepRule(sources, p, fundamentals, spanIntermod).StepS;
+
+    /// <summary><see cref="StepSeconds"/> with the steps per signal sample it took and the band edge that set them.</summary>
+    private static (double StepS, int Oversample, double EdgeHz) StepRule(Core.Devices.ModSourceModel[] sources, EnvelopeParams p,
+                                                                          int fundamentals, bool spanIntermod)
     {
-        if (p.StepS > 0) return p.StepS;
-        double need;
-        if (fundamentals == 2) need = EnvelopeEngineMt.Plan(sources).Max(g => g.needRate);
+        if (p.StepS > 0) return (p.StepS, Math.Max(1, p.Oversample), 0);
+        double need, edge;
+        if (fundamentals == 2)
+        {
+            var groups = EnvelopeEngineMt.Plan(sources);
+            need = groups.Max(g => g.needRate);
+            edge = groups.Max(g => g.edgeHz);
+        }
         else
         {
-            need = 0;
+            need = edge = 0;
             double f0 = sources[0].FcHz;
             foreach (var s in sources)
                 foreach (var c in s.Signal.Carriers)
                 {
                     need = Math.Max(need, 2 * (Math.Abs(s.FcHz + c.OffsetHz - f0) + 2.5 * c.Spec.BandwidthHz));
                     need = Math.Max(need, c.NativeRateHz);
+                    edge = Math.Max(edge, Math.Abs(s.FcHz + c.OffsetHz - f0) + 0.5 * c.Spec.BandwidthHz);
                 }
             // One envelope over carriers that are far apart (Envelope=single): the band must also hold their
             // third-order products 2fi - fj, or IM3 would fold back across the envelope's Nyquist edge.
@@ -158,7 +170,33 @@ public static class EnvelopeRunner
             }
         }
         double rate = SignalRate.AtLeast(need, sources.Select(s => s.Signal).ToArray());
-        return 1.0 / (rate * Math.Max(1, p.Oversample));
+        int osr = EnvelopeEngine.Oversample(p.Oversample, rate, edge);
+        return (1.0 / (rate * osr), osr, edge);
+    }
+
+    /// <summary>
+    /// The steps per signal sample a run of <paramref name="plan"/> on <paramref name="nl"/> takes: the Accuracy preset's,
+    /// or more where a carrier's band edge needs them (EnvelopeEngine.Oversample). The preset when Step is explicit or
+    /// the netlist has no MOD_Source.
+    /// </summary>
+    public static int Oversampling(Plan plan, ElaboratedNetlist nl)
+    {
+        var src = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().ToArray();
+        if (plan.Params.StepS > 0 || src.Length == 0) return Math.Max(1, plan.Params.Oversample);
+        var (fundamentals, groups) = Fundamentals(plan, src, EnvelopeEngineMt.ToneSources(nl));
+        return StepRule(src, plan.Params, fundamentals, fundamentals == 1 && groups > 1).Oversample;
+    }
+
+    /// <summary>The fundamentals a run takes (one, or the lattice's carrier groups and off-carrier tones) and the carrier
+    /// groups.</summary>
+    private static (int Fundamentals, int Groups) Fundamentals(Plan plan, Core.Devices.ModSourceModel[] src,
+                                                                IReadOnlyList<(string Name, double Hz)> tones)
+    {
+        int groups = EnvelopeEngineMt.Plan(src).Count;
+        int fundamentals = plan.Mode == "single"
+            ? 1
+            : EnvelopeEngineMt.Plan(src, tones, src[0].FcHz, plan.Params.MaxHarm, plan.MaxMixOrder).Count;
+        return (fundamentals, groups);
     }
 
     /// <summary>Runs the plan; <paramref name="elaborate"/> must return a fresh netlist on every call. The FIRST one
@@ -213,12 +251,9 @@ public static class EnvelopeRunner
         _ = src.Signal;                                             // generate (or load) the signal once, up front
         var allSrc = first.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().ToArray();
         foreach (var m in allSrc) _ = m.Signal;
-        int groups = EnvelopeEngineMt.Plan(allSrc).Count;
         // A P1Tone off the carriers' frequencies (an LO) is a fundamental of its own (brief NZ-11).
         var toneSources = EnvelopeEngineMt.ToneSources(first);
-        int fundamentals = plan.Mode == "single"
-            ? 1
-            : EnvelopeEngineMt.Plan(allSrc, toneSources, allSrc[0].FcHz, p.MaxHarm, plan.MaxMixOrder).Count;
+        var (fundamentals, groups) = Fundamentals(plan, allSrc, toneSources);
         if (plan.Mode == "single" && groups > 1)
             note?.Invoke($"envelope: Envelope=single - one envelope around {allSrc[0].FcHz / 1e9:0.####} GHz spans all {groups} carrier groups and their IM3 (no lattice)");
         if (plan.Mode == "single")
@@ -263,7 +298,13 @@ public static class EnvelopeRunner
         if (segs > 1 && warm <= 0)
             note?.Invoke($"envelope: Warmup=0 with {segs} parallel segments - each segment starts cold, so the seams are not settled (see EnvSeamError); leave Warmup auto or use Segments=1");
         // segment boundaries on WHOLE steps (a non-integer split drifts the stitched record by samples)
-        double h = StepSeconds(allSrc, p, fundamentals, spanIntermod: fundamentals == 1 && groups > 1);
+        var (h, osr, edge) = StepRule(allSrc, p, fundamentals, spanIntermod: fundamentals == 1 && groups > 1);
+        if (p.StepS <= 0 && osr > Math.Max(1, p.Oversample))
+            first.AddNoteOnce("envelope-oversample:" + plan.Name,
+                $"Envelope '{plan.Name}': stepped at {osr}x the signal rate, not the Accuracy's {Math.Max(1, p.Oversample)}x: a carrier's " +
+                $"band reaches {edge / 1e6:0.###} MHz from the envelope's centre, and the step takes at least " +
+                $"{EnvelopeEngine.StepsPerEdgeCycle:0} steps a cycle there. EVM through a filter reads closer at standard or fine, " +
+                "or with the source's Fc on the carrier.");
         int totalSteps = (int)Math.Round(p.StopS / h);
         var bound = Enumerable.Range(0, segs + 1).Select(i => (int)((long)totalSteps * i / segs)).ToArray();
         int tailSteps = segs > 1 ? Math.Max(1, (int)Math.Min(0.25 * totalSteps / segs, Math.Round(1e-6 / h))) : 0;

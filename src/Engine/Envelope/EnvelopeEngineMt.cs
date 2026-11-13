@@ -49,8 +49,9 @@ public sealed class EnvelopeEngineMt
         _settings = settings ?? new AnalysisSettings();
     }
 
-    /// <summary>Carrier clusters: one fundamental per group of carriers closer than 3x the larger bandwidth.</summary>
-    public static List<(double centreHz, List<(int src, int car)> members, double needRate)> Plan(ModSourceModel[] sources)
+    /// <summary>Carrier clusters: one fundamental per group of carriers closer than 3x the larger bandwidth, with the rate its
+    /// envelope needs and its band edge, the furthest any member's band reaches from the centre (EnvelopeEngine.Oversample).</summary>
+    public static List<(double centreHz, List<(int src, int car)> members, double needRate, double edgeHz)> Plan(ModSourceModel[] sources)
     {
         var all = new List<(double f, double bw, int s, int c)>();
         for (int s = 0; s < sources.Length; s++)
@@ -67,13 +68,13 @@ public sealed class EnvelopeEngineMt
             if (all[i].f - prev.f > 3 * Math.Max(all[i].bw, prev.bw)) groups.Add(new());
             groups[^1].Add(all[i]);
         }
-        var res = new List<(double, List<(int, int)>, double)>();
+        var res = new List<(double, List<(int, int)>, double, double)>();
         foreach (var g in groups)
         {
             double centre = 0.5 * (g.Min(x => x.f) + g.Max(x => x.f));
             double need = g.Max(x => 2 * (Math.Abs(x.f - centre) + 2.5 * x.bw));
             foreach (var x in g) need = Math.Max(need, sources[x.s].Signal.Carriers[x.c].NativeRateHz);
-            res.Add((centre, g.Select(x => (x.s, x.c)).ToList(), need));
+            res.Add((centre, g.Select(x => (x.s, x.c)).ToList(), need, g.Max(x => Math.Abs(x.f - centre) + 0.5 * x.bw)));
         }
         return res;
     }
@@ -94,7 +95,7 @@ public sealed class EnvelopeEngineMt
     /// frequencies is refused, as is a third fundamental: either would otherwise run with the tone driving nothing.
     /// </summary>
     /// <param name="f0Single">The single envelope's fundamental (the first MOD_Source's Fc), when the carriers make one group.</param>
-    public static List<(double centreHz, List<(int src, int car)> members, double needRate)> Plan(
+    public static List<(double centreHz, List<(int src, int car)> members, double needRate, double edgeHz)> Plan(
         ModSourceModel[] sources, IReadOnlyList<(string Name, double Hz)> tones, double f0Single, int maxHarm, int maxMixOrder)
     {
         var plan = Plan(sources);
@@ -131,7 +132,7 @@ public sealed class EnvelopeEngineMt
         if (plan.Count + added.Count > 2)
             throw new InvalidOperationException(
                 EnvelopeToneDiagnostics.TooManyFundamentals(plan.Count, added, plan.Count + added.Count).Render());
-        foreach (var (_, f) in added) plan.Add((f, [], 0.0));
+        foreach (var (_, f) in added) plan.Add((f, [], 0.0, 0.0));
         plan.Sort((x, y) => x.centreHz.CompareTo(y.centreHz));
         return plan;
     }
@@ -164,7 +165,7 @@ public sealed class EnvelopeEngineMt
         var tones = plan.Select(g => g.centreHz).ToArray();
         double need = plan.Max(g => g.needRate);
         double rate = SignalRate.AtLeast(need, sources.Select(s => s.Signal).ToArray());
-        int osr = Math.Max(1, p.Oversample);
+        int osr = EnvelopeEngine.Oversample(p.Oversample, rate, plan.Max(g => g.edgeHz));
         double h = p.StepS > 0 ? p.StepS : 1.0 / (rate * osr);
         double recordRate = 1.0 / h;
 

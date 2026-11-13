@@ -255,6 +255,64 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         if (cube != "FSKerr_pct") Assert.InRange(e * e * snr, 0.8, 1.2);
     }
 
+    // A 60 MHz bandpass (third-order Butterworth, ~10 ns of group delay) between a 50 Ω source and a 50 Ω load, at draft,
+    // over 0.5 ms (the NR record; half the DBPSK one, read in its whole bits). Its own distortion across the 5 MHz NR
+    // carrier, delay and gain fitted, is 2.4e-5 centred, 2.9e-4 at 4.5 MHz off, 7.7e-4 at 9 MHz and 1.0e-3 at 10 MHz.
+    private static string Bandpass(string carrier) => $"""
+        MOD_Source:S1 s 0 Fc=2.45e9 Pavg=-30 Z=50 Record=0.5e-3 Carrier[1]="{carrier}"
+        Filter:BPF s 0 b 0 Response=Butterworth Form=Bandpass Order=3 F1=2.42 GHz F2=2.48 GHz IL=0 dB
+        IProbe:Iout b c
+        R:RL c 0 R=50 Ohm
+        analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop=0.5e-3
+        """;
+
+    /// <summary>
+    /// A carrier off the envelope's centre is stepped finely enough to read close to its centred EVM
+    /// (EnvelopeEngine.Oversample). Gear-2 steps an envelope frequency f as jω(1 + θ²/3 − 7θ⁴/60) + θ⁴/(4h), θ = 2π f h:
+    /// mostly a damping that, through the filter's delay, tilts the gain across an off-centre carrier, and a smaller f³
+    /// phase. The signal rate held an off-centre carrier's spectrum but stepped its band edge at 0.7 rad (NR, 4.5 MHz off)
+    /// and 2 rad (DBPSK, 9 MHz off), and they read 1.11 % and 0.83 % against 0.38 % and 0.006 % centred.
+    /// Bound: the excess √(EVM_off² − EVM_centred²) under 0.25 %. For the NR carrier the closed form of Gear-2's error
+    /// through this filter is 1.06 % at the old step (1.05 % read) and 0.18 % at the step the rule takes, and the filter's
+    /// own distortion 0.03 %: the excess is at most their root sum, 0.18 %, before the centred draft reading's own 0.18 %
+    /// is taken off. 0.25 % leaves 40 % over that for what the closed form leaves out.
+    /// </summary>
+    [Theory]
+    [InlineData("NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1", "-4.5MHz")]
+    [InlineData("DBPSK;Rb=1Mbps;Data=PN9;P=0", "9MHz")]
+    public void ACarrierOffTheEnvelopesCentre_ReadsCloseToItsCentredEvm(string carrier, string off)
+    {
+        double Evm(string o) => At(Run(Bandpass($"{carrier};Off={o}")).ds, "EVM_pct");
+        double centred = Evm("0"), offCentre = Evm(off);
+        double excess = Math.Sqrt(Math.Max(0, offCentre * offCentre - centred * centred));
+        output.WriteLine($"EVM centred {centred:F4} %, {off} off {offCentre:F4} %, excess {excess:F4} %");
+        Assert.InRange(excess, 0, 0.25);
+    }
+
+    /// <summary>
+    /// A raised step is said. The NR carrier 4.5 MHz off the centre is stepped at 2x the draft rate, which
+    /// EnvelopeRunner.Oversampling gives (the CLI and the run's summary print it) and one note names; centred, the run
+    /// keeps the preset and says nothing.
+    /// </summary>
+    [Fact]
+    public void ARaisedStep_IsPrintedAndNoted()
+    {
+        foreach (var (off, osr, step) in new[] { ("0", 1, 1 / 30.72e6), ("-4.5MHz", 2, 1 / (2 * 61.44e6)) })
+        {
+            var (lib, tb) = new CnlReader().Read(Bandpass($"NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1;Off={off}"));
+            using var nl = new Elaborator(lib).Elaborate(tb);
+            var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+            Assert.Equal(osr, EnvelopeRunner.Oversampling(plan, nl));
+            using (var prepared = EnvelopeRunner.Prepare(plan, () => nl))
+                Assert.Equal(step, prepared.StepS, 1e-20);
+            var notes = nl.Notes.Where(n => n.Contains("stepped at", StringComparison.Ordinal)).ToList();
+            output.WriteLine(string.Join("\n", notes));
+            if (osr == 1) Assert.Empty(notes);
+            else Assert.Contains(notes, n => n.Contains("stepped at 2x the signal rate, not the Accuracy's 1x", StringComparison.Ordinal)
+                                             && n.Contains("reaches 7 MHz from", StringComparison.Ordinal));
+        }
+    }
+
     // An amplifier far below compression (output -37 dBm, IP3 20 dBm) behind a 50 Ω source resistor, noiseless.
     private static string SmallAmp(string source, string stop) => $"""
         temp = 16.85

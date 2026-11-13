@@ -624,8 +624,8 @@ input P1dB. Its display:
 - the 64-QAM constellation at the output, received points over the ideal ones, at the middle and the highest power;
 - the EVM against the input power, 64-QAM and DBPSK, and beside it the budget's from its SNR, EVM ≈ 1/√SNR, which holds
   where noise dominates;
-- the EVM's split into its noise and distortion parts: noise at low power, the LO's phase noise as a floor, distortion
-  past compression;
+- the EVM's split into its noise and distortion parts: noise at low power, the LO's phase noise as a floor under the
+  noise part, distortion past compression;
 - the SNR in the carrier's channel, simulated and the budget's.
 
 ## How closely the simulation agrees {#agreement}
@@ -651,14 +651,15 @@ Blockers bench reads each blocker 0.001 to 0.003 dB below the budget, the blocke
 coupled noise, on the formula to 10⁻⁶ dB.
 
 The Canceller bench's depth, at each of the three interference carriers and every swept error, is the closed form's to
-within 1.4 % of the depth, 0.7 dB at 49.7 dB deep and under 0.3 dB everywhere shallower than 45 dB. With cancellation the
-64-QAM carrier's EVM falls from 840 % to 3.2 % and the QPSK one's from 1036 % to 8.6 %.
+within 0.64 % of the depth, 0.09 dB at 49.7 dB deep and under 0.12 dB everywhere shallower than 45 dB. With cancellation
+the 64-QAM carrier's EVM falls from 840 % to 3.1 % and the QPSK one's from 1036 % to 8.6 %.
 
-The superhet's Demo bench reads the SNR 0.20 dB under the budget at its lowest power, where noise dominates, and the
-EVM's noise part 57.0 % against the budget's 1/√SNR of 56.2 %. Higher up, two floors the budget does not model take
-over: the LO's phase noise, 1.23 % of EVM in the distortion part, which is the mask integrated over the channel
-(−38.2 dBc), and a noise part that stops at about 1 % (40 dB of SNR), which the Canceller bench's NR carriers show as
-well. At 5 dB past the input P1dB the distortion part is 15.5 %.
+The superhet's Demo bench reads the SNR 0.04 dB over the budget at its lowest power, where noise dominates, and the
+EVM's noise part 55.4 % against the budget's 1/√SNR of 56.2 %. Higher up, the noise part stops at about 1 % (40 dB of
+SNR), for the DBPSK carrier too: that is the LO's phase noise, which the budget does not model. Its mask integrates to
+−38.5 dBc over the channel, 1.18 % of EVM, and with the mask removed the SNR follows the budget to 64 dB. The
+distortion part is 0.39 % until compression, nearly all of it the NR source's own 0.35 %, and 15.4 % at 5 dB past the
+input P1dB.
 
 The dual-conversion receiver's benches, each conversion's against its own budget:
 

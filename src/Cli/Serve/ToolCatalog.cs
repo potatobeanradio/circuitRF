@@ -510,7 +510,7 @@ internal static class ToolCatalog
                     [Analysis, Set, Output, All, .. Narrowing,
                      new("stop",     "--stop",     OptKind.Str, "Simulated time, s (200e-6)."),
                      new("step",     "--step",     OptKind.Str, "Envelope step, s, or auto: the signal's sample rate times the accuracy."),
-                     new("accuracy", "--accuracy", OptKind.Str, "draft (1x the signal rate), standard (4x) or fine (8x)."),
+                     new("accuracy", "--accuracy", OptKind.Str, "draft (1x the signal rate), standard (4x) or fine (8x); finer for a carrier off the envelope's centre."),
                      new("envelope", "--envelope", OptKind.Str, "auto, single or lattice: whether widely spaced carriers get their own fundamental."),
                      new("segments", "--segments", OptKind.Str, "Parallel-in-time segments: auto (one per core) or a count; 1 runs sequentially."),
                      new("warmup",   "--warmup",   OptKind.Str, "Warm-up before each segment, s, or auto."),

@@ -257,9 +257,11 @@ NF and array gain at each peak, like every variant's gain and NF on the Combiner
 of ideal blocks has no drive level to differ by.
 
 The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.001 to
-0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 1.4 % of the
-depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.2 %. The demo's SNR is
-the budget's to 0.2 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.2 % until compression.
+0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 0.64 % of the
+depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.1 %. The demo's SNR is
+the budget's to 0.05 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.0 % until
+compression. Without the LO's mask the SNR follows the budget to 64 dB, and the EVM's distortion part, which leaves the
+phase noise out, is 0.39 % until compression, nearly all of it the NR source's own.
 
 The dual-conversion receiver, each conversion against its own budget:
 
@@ -287,10 +289,14 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 | Combiners | | 1 s | | 1 s |
 | Levels | 7 s | | 4 s, 7 s | 4 min |
 | Blockers | 3 s | | 1 s | |
-| Demo | 2 min 20 s | | 1 min 45 s, 3 min | |
+| Demo | about 5 min (estimate) | | 1 min 45 s, 3 min | |
 | TX | | | | 35 s to 1 min |
 
 The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
 envelope one for its 50 MHz NR carrier, ten times the others'.
 
-The Front End's Canceller bench runs its envelope sweeps in about 40 s.
+The Front End's Canceller bench runs its envelope sweeps in about 70 s (estimate).
+
+The Demo and the Canceller are estimates. Both have a carrier off the envelope's centre, and the envelope now steps
+those twice as finely (*Reference ▸ Simulations*, the accuracy preset): one demo point took
+2.0 to 2.3 times as long and one canceller point 1.7 times. Before that, they took 2 min 20 s and about 40 s.

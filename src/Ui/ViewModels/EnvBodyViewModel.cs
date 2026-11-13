@@ -18,8 +18,8 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     public static readonly string[] AccuracyOptions = ["draft", "standard", "fine"];
     public static readonly string[] AccuracyHelp =
     [
-        "draft — 1x the signal rate: fastest; ACPR2 and bias-node memory read ~0.4 dB / 20 % off on a measured PA",
-        "standard — 4x the signal rate: converged on every measured case (ACPR within 0.03 dB of 8x)",
+        "draft — 1x the signal rate (finer for a carrier off the envelope's centre): fastest; ACPR2 and bias-node memory read ~0.4 dB / 20 % off on a measured PA",
+        "standard — 4x the signal rate (finer for a carrier far off the centre): converged on every measured case (ACPR within 0.03 dB of 8x)",
         "fine — 8x the signal rate: reference runs",
     ];
 

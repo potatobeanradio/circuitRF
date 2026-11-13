@@ -548,6 +548,18 @@ Three things make long modulated runs practical:
 - **The step follows an accuracy preset.** *standard* (default) steps at 4× the signal's sample rate,
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
   0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
+  Whatever the preset, the step reaches every carrier's band edge, the highest frequency in its
+  envelope, at least ten times a cycle, as the signal rate does for a carrier at the envelope's
+  centre. A carrier off the centre, one of several in a signal or in a group, is stepped more finely
+  when it needs it, and the Messages pane says so. Gear-2 damps a frequency f in the envelope by
+  θ⁴/(4h), θ = 2πfh, and warps it slightly; through a filter's delay the damping tilts the gain across
+  a carrier off the centre, which reads as EVM. At *draft*, a 5 MHz NR carrier 4.5 MHz off the centre
+  was stepped at 0.7 rad at its band edge and read 1.1 % EVM through a 60 MHz bandpass, where the same
+  carrier centred reads 0.38 %; it now reads 0.39 %. The rule bounds the step, not the error, which
+  still grows with the offset and with the filter's delay: through the same bandpass at *draft* a
+  carrier 3.5 MHz off reads about 0.69 % (the rule does not act there) and one 22 MHz off about 1.5 %;
+  at *standard*, 15 MHz off reads 0.60 %, where *fine* reads 0.36 %. For EVM through a filter, use
+  *standard* or *fine*, or put the source's `Fc` on the carrier you measure.
 
 **Frequency-dependent blocks.** Resistors, capacitors and inductors enter every step exactly. Other
 blocks are handled as follows.
@@ -583,7 +595,7 @@ blocks are handled as follows.
 | Setting | Default | Meaning |
 |---|---|---|
 | Stop | 100e-6 s | Signal time simulated. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR. |
-| Accuracy | standard | draft / standard / fine = 1× / 4× / 8× the signal rate. |
+| Accuracy | standard | draft / standard / fine = 1× / 4× / 8× the signal rate, and never fewer than ten steps a cycle at a carrier's band edge. |
 | MaxHarm | 5 | Harmonics of the fundamental at every step. |
 | Envelope | auto | *auto* / *lattice*: carriers more than 3× their bandwidth apart get their own fundamentals, and so does a P1Tone off the carriers' frequencies (an LO). *single*: one envelope around Fc spans every carrier and their IM3 (smaller step, slower). |
 | MaxMixOrder | 7 | Lattice order when carriers get their own fundamentals; 7 converges IM5. |
@@ -894,6 +906,11 @@ would be a circle; these say more.
   ripple of a filter counts as error, as it does in NMSE.
 - **Through a matched pad** the error is the source signal's own: the Signal Designer's EVM for LTE
   and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.
+- **The step.** EVM reads the circuit as the run steps it, and through a filter *draft* reads more
+  than *standard*: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at *draft* and 0.34 % at
+  *standard* when it is at the envelope's centre. Off the centre the difference grows with the offset
+  and with the filter's delay ([the step](#envelope)), so measure EVM through a filter at *standard* or
+  *fine*, or with the source's `Fc` on the carrier.
 - **The record.** A run of whole records (`Stop` a multiple of the source's record, with a warm-up)
   measures every symbol. A shorter run measures the symbols, bits or chirps it holds whole, apart
   from a few samples at each end. A run shorter than one has no result, and the run says so.
@@ -915,6 +932,10 @@ distortion and its noise, and the in-channel SNR is measured:
 | `EVMdist_pct`, `FSKerrDist_pct`, `CSSerrDist_pct` | the error without noise: the distortion |
 | `EVMnoise_pct`, `FSKerrNoise_pct`, `CSSerrNoise_pct` | √(error² − distortion²): the noise's part |
 | `SNR_dB` | the in-channel signal over the in-channel noise, the noise being the difference between the two runs |
+
+A source's `PhaseNoise` mask is off in the second run too, so phase noise is in the noise part and
+lowers `SNR_dB` as thermal noise does. An LO whose mask integrates to −38.5 dBc over the channel holds
+the noise part near 1 % however strong the signal; the distortion part is the error without it.
 
 For LTE, NR, DBPSK and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
 frequency more than the amplitude, so its error is larger than that. The split is what decides
