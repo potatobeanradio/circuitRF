@@ -570,6 +570,105 @@ def rectangle(gmsh, origin, u, v):
     return planar(gmsh, [ring])
 
 
+def ring(gmsh, a):
+    """brief-cxp-3 — a coaxial port's ring: the disk of its outer radius less the disk of its inner, facing its normal."""
+    occ = gmsh.model.occ
+    k = MODEL_SCALE
+    c, n = a["centre"], list(a["normal"])
+    outer = occ.addDisk(c[0] * k, c[1] * k, c[2] * k, a["outer"] * k, a["outer"] * k, zAxis=n)
+    inner = occ.addDisk(c[0] * k, c[1] * k, c[2] * k, a["inner"] * k, a["inner"] * k, zAxis=n)
+    out, _ = occ.cut([(2, outer)], [(2, inner)])
+    return [t for d, t in out if d == 2]
+
+
+def port_surface(gmsh, p):
+    """A lumped port's sheet: its ring when it is coaxial, else its rectangle."""
+    return ring(gmsh, p["annulus"]) if "annulus" in p else rectangle(gmsh, p["origin"], p["u"], p["v"])
+
+
+# brief-cxp-3 — the elements across a coaxial port's radial gap, as circuitRF's Gmsh lowering puts there for Palace
+# (GmshGeoWriter.RingCellsAcross).
+RING_CELLS_ACROSS = 8
+
+# brief-cxp-3 — how far, as a fraction of the gap, a coaxial port's voltage lines stop short of each conductor (RadialLumpedPort).
+RING_LINE_INSET = 0.02
+
+
+def radial_lumped_port_class():
+    """
+    brief-cxp-3 R-cxp3-1 — a COAXIAL lumped port: EMerge's LumpedPort with its field radial instead of uniform.
+
+    EMerge's LumpedPort is a Robin condition on its sheet: a surface impedance Zs = Z0*width/height, so that a sheet of
+    uniform Zs between two straight edges a height apart and a width wide is Z0, and an incident field
+    -j*2*k0*V*(eta0/Zs)/height along its direction, whose line integral across the height is V times that factor. Its
+    S-parameters come from the voltage along voltage_integration_line, which EMerge fills (from the sheet's mesh nodes)
+    only when the port has none.
+
+    On a ring the current runs radially. A uniform sheet impedance Zs between radii a and b has a resistance of
+    Zs*ln(b/a)/(2*pi), so Zs = 2*pi*Z0/ln(b/a) terminates the port in Z0. The coax's field is V/(r*ln(b/a)) along r-hat,
+    whose integral from a to b is V: so the incident field is the base's with the 1/height and the unit direction replaced
+    by r-hat/(r*ln(b/a)) — the same factor, -j*2*k0*V*(eta0/Zs), in front. Its sign: from the negative circle to the positive
+    one, the sense circuitRF's port direction has and EMerge's integration line runs. The voltage lines are set here, radial,
+    from the negative circle to the positive one, at eight angles, which EMerge averages as it averages its own; each stops just inside both conductors, its step scaled
+    so it still integrates the whole 1/r field (see the note in __init__).
+    """
+    import numpy as np
+    from emerge._emerge.physics.microwave.bcs.port_bcs import LumpedPort
+    from emerge._emerge.coord import Line
+    from emerge._emerge.const import Z0 as ETA0
+
+    class RadialLumpedPort(LumpedPort):
+        def __init__(self, face, port_number, annulus, Z0):
+            gap = annulus["outer"] - annulus["inner"]
+            super().__init__(face, port_number, width=gap, height=gap, direction=tuple(annulus["normal"]), Z0=Z0)
+            self.centre = np.asarray(annulus["centre"], dtype=np.float64)
+            self.axis = np.asarray(annulus["normal"], dtype=np.float64)
+            self.r_in, self.r_out = float(annulus["inner"]), float(annulus["outer"])
+            self.log_ratio = float(np.log(self.r_out / self.r_in))
+            self.sign = 1.0 if annulus["outward"] else -1.0
+            # two unit vectors in the ring's plane (its normal is x, y or z)
+            n = int(np.argmax(np.abs(self.axis)))
+            e1 = np.zeros(3); e1[(n + 1) % 3] = 1.0
+            e2 = np.zeros(3); e2[(n + 2) % 3] = 1.0
+            # Each line stops RING_LINE_INSET of the gap inside both conductors: the mesh's walls are polygons inscribed in the true
+            # circles, so a point ON the outer radius lies outside the meshed space, where EMerge reads the field as zero — half a
+            # step of the strongest part of a 1/r field, which read the 3D Connector's coax 1.4 % low (0.09 dB of |S21|, |S11|
+            # -39 dB on a matched line). The step is scaled by ln(b/a)/ln(b'/a') so the shorter line still integrates the coax's
+            # own field to the whole voltage (EMerge's integral is linear in it: dx, dy, dz times the sampled field).
+            inset = RING_LINE_INSET * (self.r_out - self.r_in)
+            a1, b1 = self.r_in + inset, self.r_out - inset
+            scale = self.log_ratio / float(np.log(b1 / a1))
+            r_neg, r_pos = (a1, b1) if annulus["outward"] else (b1, a1)
+            self.voltage_integration_line = []
+            for k in range(8):
+                t = 2 * np.pi * (k + 0.5) / 8
+                d = np.cos(t) * e1 + np.sin(t) * e2
+                line = Line.from_points(self.centre + r_neg * d, self.centre + r_pos * d, 21)
+                line.dx, line.dy, line.dz = line.dx * scale, line.dy * scale, line.dz * scale
+                self.voltage_integration_line.append(line)
+            self.v_integration = True
+
+        @property
+        def surfZ(self):
+            return self.Z0 * 2 * np.pi / self.log_ratio
+
+        def get_Uinc(self, x_global, y_global, z_global, k0, mode_nr=1):
+            Emag = -1j * 2 * k0 * self.voltage * (ETA0 / self.surfZ)
+            return Emag * self.port_mode_3d_global(x_global, y_global, z_global, k0)
+
+        def port_mode_3d_global(self, x_global, y_global, z_global, k0, which="E", mode_nr=1):
+            c, n = self.centre, self.axis
+            px, py, pz = (np.asarray(x_global, dtype=np.float64) - c[0], np.asarray(y_global, dtype=np.float64) - c[1],
+                          np.asarray(z_global, dtype=np.float64) - c[2])
+            along = px * n[0] + py * n[1] + pz * n[2]
+            px, py, pz = px - along * n[0], py - along * n[1], pz - along * n[2]
+            r2 = np.maximum(px * px + py * py + pz * pz, (1e-6 * self.r_in) ** 2)
+            f = self.sign / (r2 * self.log_ratio)
+            return np.array([px * f, py * f, pz * f]).astype(np.complex128)
+
+    return RadialLumpedPort
+
+
 def volumes_of(dimtags):
     return [t for d, t in dimtags if d == 3]
 
@@ -789,7 +888,7 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             # FiniteThickness, which EMerge's own PCB builder adds this way and its boundary conditions read.
             g.properties += FiniteThickness(sh["thicknessM"])
         sheets.append((sh, g))
-    ports = [(p, GeoSurface(rectangle(gmsh, p["origin"], p["u"], p["v"]), name=p["name"])) for p in problem["ports"]]
+    ports = [(p, GeoSurface(port_surface(gmsh, p), name=p["name"])) for p in problem["ports"]]
     elements = [(e, GeoSurface(rectangle(gmsh, e["origin"], e["u"], e["v"]), name=e["name"]))
                 for e in problem["lumpedElements"]]
     # brief-emw-2: a wave port's region is a surface of its own on the air box's face, built as a lumped port's plate is;
@@ -869,6 +968,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         if area > 0:
             sim.mesher.set_face_size(g, (area / PORT_TRIANGLES * 4 / 3 ** 0.5) ** 0.5)
 
+    # brief-cxp-3 — a coaxial port's ring: RING_CELLS_ACROSS elements across its radial gap. Set here because the ports are made
+    # after the mesh (below), so EMerge never applies a port's own _size_constraint; left to the conductor-edge size, the ring's
+    # 1/r field across the 3D Connector's 0.47 mm gap read its voltage ~1 % low and a matched line lost 0.09 dB of |S21|.
+    for p, g in ports:
+        if "annulus" in p:
+            a = p["annulus"]
+            sim.mesher.set_face_size(g, (a["outer"] - a["inner"]) / RING_CELLS_ACROSS * k)
+
     # The air box's faces: every outer face of meshed space on a box plane. PEC is EMerge's own default for an outer face,
     # so only PMC and absorbing faces are stated.
     size = max(hi[a] - lo[a] for a in range(3)) * k
@@ -919,7 +1026,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                                     [t for key, kind in box["faces"].items() if kind == "absorbing" for t in faces[key]])
     numbers = emerge_numbers(problem)
     lumped = []
+    radial = radial_lumped_port_class() if any("annulus" in p for p, _ in ports) else None
     for p, plate in ports:
+        if "annulus" in p:
+            # brief-cxp-3 — registered as EMerge registers its own conditions, so it is one of the simulation's ports
+            lumped.append((p, sim.mw.bc._construct_bc(radial)(plate, numbers[p["number"]], p["annulus"], p["z0"])))
+            continue
         lumped.append((p, sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
                                                direction=tuple(p["direction"]), Z0=p["z0"])))
     for e, plate in elements:

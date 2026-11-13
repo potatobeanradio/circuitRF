@@ -410,6 +410,24 @@ public static partial class GmshGeoWriter
                     L($"claimed[] += q{k}[];");
                     L("claimed[] += x[];");
                 }
+                else if (p.Annulus is { } ring)
+                {
+                    // brief-cxp-3 — a ring's box also holds what lies inside its inner circle: the pin's end cap, a surface of
+                    // the meshed space wherever the coax ends INSIDE the model (on the box's wall it bounds nothing). Claimed
+                    // into the port it made the pin's own end part of the sheet, driven and terminated, and the port read as
+                    // nearly open (a matched coax: |S11| −2 dB). Every piece of the ring reaches its outer circle, so none lies
+                    // in the inner circle's box.
+                    int n = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+                    var c = Em3dAnnulus.Centre(p.Min, p.Max);
+                    double[] lo = [c.X, c.Y, c.Z], hi = [c.X, c.Y, c.Z];
+                    foreach (int ax in new[] { Em3dAnnulus.PlaneAxes(n).U, Em3dAnnulus.PlaneAxes(n).V })
+                    {
+                        lo[ax] -= ring.InnerRadiusM;
+                        hi[ax] += ring.InnerRadiusM;
+                    }
+                    Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)],
+                          [Query((lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]), 0)]);
+                }
                 else Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)], []);
             }
         }

@@ -292,8 +292,9 @@ Rules a reader must apply:
   - The ring's open area must be dielectric: metal between the circles is refused.
   - Any of the three planes. Never a wave port, turned, or on a cylinder.
   - The mesher puts `GmshGeoWriter.RingCellsAcross` (8) elements across the radial gap.
-  - Palace writes it as a `LumpedPort` with `Direction` `+R` or `-R`. openEMS, EMerge and the Hertzon export refuse it by
-    name.
+  - Palace writes it as a `LumpedPort` with `Direction` `+R` or `-R`. EMerge runs it as circuitRF's radial lumped port
+    (`circuitrf_emerge.RadialLumpedPort`). openEMS and the Hertzon export refuse it by name.
+  - On a face of the box or inside the model: inside, the pin's end cap lies in the ring's plane and is never part of the port.
 - **A wave port's rectangle is a region of an air-box face.**
   - `VoltagePath` {`From`, `To`} states its voltage line.
   - `Reference` plus `Terminals` [{`Number`, `Name`, `Conductor`, `Z0`}] make a multi-conductor wave port with

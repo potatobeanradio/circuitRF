@@ -30776,3 +30776,30 @@ Findings worth keeping:
   inference does not care, but Gmsh refused the slivers ("Impossible to mesh periodic surface"). The solve fixture subtracts
   the bore from a box and keeps it, as the 3D Connector does. With no padding at all, every PEC face was entirely metal and
   "selected nothing in the mesh" (refused, rightly); the coax's sides take 0.2 mm of air.
+
+## The coaxial port on EMerge, and a ring inside the model on Palace (brief-cxp-3, 2026-11-12)
+
+EMerge runs a ring as `RadialLumpedPort` in `circuitrf_emerge.py`: EMerge's `LumpedPort` with its sheet impedance 2π·Z0/ln(b/a),
+its incident field r̂/(r·ln(b/a)) times the base's own factor, and its voltage lines set radial (the derivation is in the class's
+docstring), registered through `sim.mw.bc._construct_bc` as EMerge registers its own. The 20 mm coax, rings on the box's PEC
+faces: |S11| −52 to −57 dB, |S21| within 0.002 dB of the copper's closed form, ∠S21 within 0.7°, 15 s. Findings:
+
+- **A voltage line ending ON the outer radius read the port 1.4 % low.** The mesh's bore wall is a polygon inscribed in the
+  true circle, so the line's last point lies outside the meshed space, where EMerge's interpolation (`usenan=False`) returns
+  zero — half a step of the strongest part of a 1/r field. On a matched line that is exactly a flat 0.09 dB loss in |S21|
+  and a −39 dB |S11| (both ports' voltages low by the same 1 %). Each line now stops 2 % of the gap inside both conductors
+  (`RING_LINE_INSET`), its step (EMerge integrates dx·Ex + dy·Ey + dz·Ez with one fixed step) scaled by ln(b/a)/ln(b′/a′) so it
+  still integrates the coax's own field to the whole voltage. Measured alone, the mesh size on the ring moved |S21| by 0.005 dB;
+  the inset moved it 0.085 dB.
+- **EMerge never applies a port's `_size_constraint` here**: the driver makes its ports AFTER `generate_mesh` (as it must, for
+  the face fragments), so a ring is sized by an explicit `set_face_size` before meshing, as the wave-port regions are.
+- **`circuitrf_emerge.py` is an EMBEDDED RESOURCE of `CircuitRF.Design`**: edit it, then build, before a `--no-build` test run —
+  three runs here measured the first version of the driver and agreed to the last digit with each other, which is how it showed.
+- **Palace: a ring INSIDE the model claimed the pin's end cap.** The port's surfaces are taken by `Surface In BoundingBox` of the
+  ring's square, which also holds the pin's end cap — a surface of the meshed space when the coax ends inside the model (air or
+  dielectric beyond it), never on the box's wall, which is why brief 1's gate (rings on the PEC faces) could not see it. The cap
+  became part of the port's sheet, driven and terminated, and a matched open-ended coax read |S11| −2 dB, |S21| −14 dB (port
+  voltage 1.76× the incident wave). The ring's claim now subtracts its inner circle's square; every piece of a ring reaches its
+  outer circle, so none lies inside it. The same open-ended coax then agrees with EMerge to 0.006 dB / 0.24° in |S21| and within
+  0.8 dB in |S11| (−29 to −52 dB). A design whose ring sits at a pin's end inside its bore (Make Port ▸ Coaxial on that face) is
+  exactly this case.

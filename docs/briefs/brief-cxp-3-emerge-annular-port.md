@@ -48,3 +48,17 @@ pass; refuse the other by name, giving the alternative (a coax wave port on the 
 
 EMerge's `CoaxPort` as a second, wave-like spelling (D5: the wave port already covers a coax on the face), and
 eigenmode problems (lumped ports there follow EMerge's existing rules).
+
+## Completion note (2026-11-12)
+
+Built as R-cxp3-1 describes, in `circuitrf_emerge.py` (`ring`, `port_surface`, `RadialLumpedPort`); the C# side writes the ring
+(`annulus`: centre, normal, inner, outer, outward) instead of a rectangle, the EMerge refusal is gone, and the run's mapping table
+names the radial port. R-cxp3-2: both placements pass, so neither is refused.
+
+Gate 2 (`CoaxialPortEmergeTests`, Benchmark): on the box's PEC faces |S11| −52.0/−57.4/−53.8 dB, |S21| −0.0129/−0.0345/−0.0477 dB
+against the closed form's −0.0148/−0.0347/−0.0468 dB, ∠S21 within 0.7° (15 s, EMerge Accurate). Inside the box (open coax ends,
+0.5 mm of air to PEC walls) EMerge and Palace at element order 2 agree to 0.006 dB and 0.24° in |S21|, 0.8 dB in |S11|. Two fixes
+the gate needed: the voltage lines stop just inside both conductors (an endpoint on the outer radius read zero, 0.09 dB), and the
+Palace lowering no longer claims the pin's end cap into a ring inside the model (it had made the port nearly open — a CXP-1 defect
+this gate is the first to reach). Routine tier: `CoaxialPortTests` (the written EMerge input, the Palace claim) and
+`EmergeLoweringTests` (the refusal row removed).

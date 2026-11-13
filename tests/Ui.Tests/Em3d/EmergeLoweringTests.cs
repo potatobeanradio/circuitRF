@@ -203,7 +203,6 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     [InlineData("settings", "EMerge.ElementOrder is 3")]
     [InlineData("terminal-group-moved", "Port 'Left' has its reference plane moved 1 mm off its face; EMerge runs terminal ports with the reference plane on the port face")]
     [InlineData("hollow-waveguide", "names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow guide")]
-    [InlineData("coaxial-port", "is a coaxial lumped port")]
     [InlineData("complex-z0", "terminated in a real resistance")]
     [InlineData("voxel", "is a voxelized phantom")]
     [InlineData("face-boundary", "is a face boundary")]
@@ -227,7 +226,6 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
                                                          ReferencePlane = q.ReferencePlane with { ShiftM = 1e-3 } })],
             },
             "hollow-waveguide" => p with { Ports = [port with { Kind = Em3dPortKind.Wave, NegativeObject = port.PositiveObject }, .. p.Ports.Skip(1)] },
-            "coaxial-port" => p with { Ports = [port with { Annulus = new Em3dAnnulus(1e-4, 3e-4, true) }, .. p.Ports.Skip(1)] },
             "complex-z0" => p with { Ports = [port with { Z0 = new Complex(50, 5) }, .. p.Ports.Skip(1)] },
             "voxel" => p with { Solids = [p.Solids[0] with { Voxel = new Em3dVoxelLattice("Head", new Point3(0, 0, 0), 1e-3) }, .. p.Solids.Skip(1)] },
             "face-boundary" => p with { FaceBoundaries = [new Em3dFaceBoundary(p.Solids[0].Name, "zmax", Em3dFaceBoundaryKind.Pec)] },

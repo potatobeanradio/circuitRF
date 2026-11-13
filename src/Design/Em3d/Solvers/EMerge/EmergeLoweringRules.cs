@@ -197,10 +197,6 @@ internal static class EmergeLoweringRules
         if (p.Kind == Em3dPortKind.Wave && !p.Hollow && FdtdWavePorts.IsHollow(problem, p))
             return $"Port {n} names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow " +
                    "guide there: a hollow guide's port states neither end. Remove its Positive and Negative and let the reader decide.";
-        if (p.Annulus is not null)
-            return $"Port {n} is a coaxial lumped port. EMerge's lumped port drives one uniform field direction across its sheet, " +
-                   "and a coaxial annulus is fed radially, which it cannot state. Run the setup on Palace or openEMS, or draw a " +
-                   "rectangular port.";
         return null;
     }
 
@@ -255,7 +251,8 @@ internal static class EmergeLoweringRules
         if (p.Z0.Imaginary != 0 || !(p.Z0.Real > 0))
             return $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's lumped port is terminated in a real resistance, " +
                    "which must be positive: set the port's Z0 to a positive real value.";
-        if (PortRect(p) is null)
+        // brief-cxp-3 — a ring is the driver's radial lumped port (circuitrf_emerge.RadialLumpedPort), not a rectangle
+        if (p.Annulus is null && PortRect(p) is null)
             return $"Port {n}'s direction is not along a side of its sheet, so its height (the side the voltage is across) " +
                    "cannot be told to EMerge. Draw the port with its direction along one of the sheet's sides.";
         return null;
@@ -440,6 +437,14 @@ internal static class EmergeLoweringRules
             if (p.Kind == Em3dPortKind.Wave)
             {
                 rows.Add(new(p.Name, "port", WaveMapping(problem, p)));
+                continue;
+            }
+            if (p.Annulus is { } ring)
+            {
+                rows.Add(new(p.Name, "port",
+                    $"a coaxial lumped port, number {p.Number}: a ring from {Mm(ring.InnerRadiusM)} to {Mm(ring.OuterRadiusM)} in radius, " +
+                    $"its field radial and falling as 1/r, from '{p.NegativeObject}' to '{p.PositiveObject}', terminated in Z0 " +
+                    $"{G(p.Z0.Real)} Ω as a sheet of 2π·Z0/ln(b/a) (circuitRF's radial lumped port on EMerge's)"));
                 continue;
             }
             var r = PortRect(p)!.Value;

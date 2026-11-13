@@ -35,12 +35,15 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
     /// every face PEC with no padding, so each ring lies on a face of the box.
     /// </summary>
     /// <param name="order">The Palace setup's element order; null leaves Draft's own (1).</param>
+    /// <param name="solver">The embedded setup's solver and name: <c>Palace</c>, or <c>Emerge</c> (EMerge at its Accurate quality).</param>
+    /// <param name="endPaddingUm">Air beyond the coax's two ends before the box's PEC faces: 0 puts each ring ON a face of the box;
+    /// more puts it inside, an open coax end with the air behind it.</param>
     /// <param name="boolean">The shell as the editor makes one — a box with the bore subtracted and kept as the PTFE — which needs the
     /// geometry kernel; else a square prism whose hole is a 64-sided polygon, which needs none. The polygon's flats stand 0.8 µm
     /// inside the round PTFE, which is no matter to the port's inference but leaves slivers Gmsh cannot mesh: a solve takes the
     /// boolean.</param>
     internal static C3dDocument Coax(C3dPlane plane = C3dPlane.YZ, double startGHz = 1, double stopGHz = 10, int points = 3, bool boolean = false,
-                                     int? order = null)
+                                     int? order = null, string solver = "Palace", long endPaddingUm = 0)
     {
         var axis = plane switch { C3dPlane.YZ => C3dAxis.X, C3dPlane.XZ => C3dAxis.Y, _ => C3dAxis.Z };
         C3dPoint2 P(long u, long v) => new(u * Um, v * Um);
@@ -81,7 +84,7 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
             ],
             Ports = [Ring(1, 0), Ring(2, LengthUm)],
         };
-        doc.Setups.Add(JsonDocument.Parse(PalaceSetupJson(startGHz, stopGHz, points, plane, order)).RootElement.Clone());
+        doc.Setups.Add(JsonDocument.Parse(PalaceSetupJson(startGHz, stopGHz, points, plane, order, solver, endPaddingUm)).RootElement.Clone());
         return doc;
 
         // (u, v) in the plane and w along its normal, as a world point and as a world size
@@ -103,19 +106,23 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>Every face PEC: the coax's two ends on the box with no padding, so each ring lies on a face; 0.2 mm of air round
     /// the shell's sides, so each face has something besides metal to select.</summary>
-    private static string PalaceSetupJson(double startGHz, double stopGHz, int points, C3dPlane plane, int? order)
+    private static string PalaceSetupJson(double startGHz, double stopGHz, int points, C3dPlane plane, int? order, string solver, long endPaddingUm)
     {
-        string Pad(string axis) => (plane, axis) is (C3dPlane.YZ, "X") or (C3dPlane.XZ, "Y") or (C3dPlane.XY, "Z") ? "0" : "200";
+        string Pad(string axis) => (plane, axis) is (C3dPlane.YZ, "X") or (C3dPlane.XZ, "Y") or (C3dPlane.XY, "Z")
+            ? endPaddingUm.ToString(System.Globalization.CultureInfo.InvariantCulture) : "200";
+        string block = solver == "Emerge"
+            ? "\"EMerge\": { \"Quality\": \"Accurate\" }"
+            : "\"Palace\": { \"Quality\": \"Draft\", \"LinearSolver\": \"Direct\"" + (order is { } o ? $", \"ElementOrder\": {o}" : "") + " }";
         return $$"""
         {
-          "FormatVersion": 1, "Name": "Palace",
+          "FormatVersion": 1, "Name": "{{solver}}",
           "Frequency": { "StartExpr": "{{startGHz}}", "StopExpr": "{{stopGHz}}", "StepExpr": "", "NumPoints": {{points}}, "Mode": "PointCount",
                          "Kind": "Linear", "StartUnit": "GHz", "StopUnit": "GHz", "StepUnit": "Hz" },
-          "Solver3D": "Palace",
+          "Solver3D": "{{solver}}",
           "AirBox": { "XMin": { "PaddingUm": {{Pad("X")}}, "Boundary": "Pec" }, "XMax": { "PaddingUm": {{Pad("X")}}, "Boundary": "Pec" },
                       "YMin": { "PaddingUm": {{Pad("Y")}}, "Boundary": "Pec" }, "YMax": { "PaddingUm": {{Pad("Y")}}, "Boundary": "Pec" },
                       "ZMin": { "PaddingUm": {{Pad("Z")}}, "Boundary": "Pec" }, "ZMax": { "PaddingUm": {{Pad("Z")}}, "Boundary": "Pec" } },
-          "Palace": { "Quality": "Draft", "LinearSolver": "Direct"{{(order is { } o ? $", \"ElementOrder\": {o}" : "")}} }
+          {{block}}
         }
         """;
     }
@@ -281,6 +288,43 @@ public sealed class CoaxialPortTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(2, ports.GetArrayLength());
         foreach (var port in ports.EnumerateArray())
             Assert.Equal("-R", port.GetProperty("Direction").GetString());      // shell to pin: inward
+    }
+
+    /// <summary>brief-cxp-3 — inside the box the pin's end cap is a surface of the meshed space in the ring's plane: the ring's
+    /// claim subtracts its inner circle's box, so the cap is never part of the port (on the box's wall there is nothing to
+    /// subtract, and the same query takes nothing).</summary>
+    [Fact]
+    public void ARingInsideTheModel_ClaimsItsRingAndNotThePinsEndCap()
+    {
+        string path = Save(_root, Coax(C3dPlane.YZ, endPaddingUm: 500));
+        var doc = C3dPersistence.LoadFromFile(path);
+        var setup = C3dSetups.ForRun(C3dSetups.Read(doc).Single().Setup!, path);
+        var problem = C3dProblemAssembly.Assemble(setup, doc, path, null).Problem!;
+        var low = GmshGeoWriter.Write(problem, PalaceSettings.Default with { AdaptiveMaxIterations = 0 });
+        Assert.True(low.Ok, low.Refusal);
+        foreach (string x in new[] { "0", "20000" })
+            Assert.Contains($"x[] = Surface In BoundingBox{{{x} - e, -200 - e, -200 - e, {x} + e, 200 + e, 200 + e}};", low.Geo);
+    }
+
+    /// <summary>brief-cxp-3 R-cxp3-1 — EMerge is handed the ring (centre, the axis it faces, radii, which circle is negative) and
+    /// no rectangle; its run table names the radial lumped port.</summary>
+    [Fact]
+    public void EMerge_IsHandedTheRing_AndItsTableNamesTheRadialPort()
+    {
+        string path = Save(_root, Coax(C3dPlane.XZ, solver: "Emerge"));
+        var doc = C3dPersistence.LoadFromFile(path);
+        var setup = C3dSetups.ForRun(C3dSetups.Read(doc).Single().Setup!, path);
+        var problem = C3dProblemAssembly.Assemble(setup, doc, path, null).Problem!;
+        var low = EmergeScriptWriter.Write(problem, EmergeSettings.Default);
+        Assert.True(low.Ok, low.Refusal);
+        var ports = System.Text.Json.JsonDocument.Parse(low.ProblemJson!).RootElement.GetProperty("ports");
+        var ring = ports[0].GetProperty("annulus");
+        Assert.Equal([0.0, 1.0, 0.0], ring.GetProperty("normal").EnumerateArray().Select(v => v.GetDouble()));
+        Assert.Equal(200e-6, ring.GetProperty("inner").GetDouble(), 12);
+        Assert.Equal(670e-6, ring.GetProperty("outer").GetDouble(), 12);
+        Assert.False(ring.GetProperty("outward").GetBoolean());
+        Assert.False(ports[0].TryGetProperty("origin", out _));
+        Assert.Contains(EmergeLoweringRules.Mappings(problem, EmergeSettings.Default, 1e-4), r => r.Mapping.StartsWith("a coaxial lumped port, number 1", StringComparison.Ordinal));
     }
 
     [Fact]

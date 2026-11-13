@@ -174,6 +174,22 @@ public static partial class EmergeScriptWriter
         e.Key("ports").BeginArray();
         foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped))
         {
+            // brief-cxp-3 R-cxp3-1 — a coaxial port: its ring's centre, the axis it faces, its radii and which circle is negative;
+            // the driver builds the ring and its radial lumped port from these
+            if (p.Annulus is { } ring)
+            {
+                int axis = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+                e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
+                 .Key("annulus").BeginObject()
+                    .Key("centre").Point(Em3dAnnulus.Centre(p.Min, p.Max))
+                    .Key("normal").Point(new Point3(axis == 0 ? 1 : 0, axis == 1 ? 1 : 0, axis == 2 ? 1 : 0))
+                    .Key("inner").Number(ring.InnerRadiusM).Key("outer").Number(ring.OuterRadiusM)
+                    .Key("outward").Bool(ring.Outward)
+                 .EndObject()
+                 .Key("z0").Number(p.Z0.Real)
+                 .EndObject();
+                continue;
+            }
             var r = EmergeLoweringRules.PortRect(p)!.Value;
             e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
              .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
