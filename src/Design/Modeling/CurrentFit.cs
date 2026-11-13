@@ -765,7 +765,7 @@ public static class CurrentFit
             report.Add($"{t.Name}: RF Gm/Gds at the frozen {(iv.SelfHeated && iv.Trapped ? "junction temperature and trap states" : iv.SelfHeated ? "junction temperature" : "trap states")}, RMS error {G(100 * e.TrainRelative)} % of their range.");
         var f = t.Output(trained.Network);
         var own = OwnOver(t.Own, iv.Inputs.Count);
-        double gx = Gx(f, iv.X, own);
+        double gx = Gx(f, iv.X, own, t.Name, iv.Inputs);
         var eval = Guided(f, iv.Domain, iv.Inputs, gx, own);
         return new Payload(t.Name, eval, [.. trained.Arrays(t.Name)], gx, Error(eval, iv.X, t.Y, held), Edges(f, iv.X, own, gx));
     }
@@ -849,7 +849,7 @@ public static class CurrentFit
             report.Add($"{t.Name}: table step {G(s.GridStep)} V: low-level IM below ~{G(s.GridStep / 2)} V swing unreliable.");
         var f = t.Output(new TableEvaluator(sites, coefficients));
         var own = OwnOver(t.Own, d);
-        double gx = Gx(f, iv.X, own);
+        double gx = Gx(f, iv.X, own, t.Name, iv.Inputs);
         var eval = Guided(f, iv.Domain, iv.Inputs, gx, own);
         return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held), Edges(f, iv.X, own, gx));
     }
@@ -891,7 +891,7 @@ public static class CurrentFit
 
         var f2 = t.Output(new TableEvaluator(sites, coefficients));
         var own = OwnOver(t.Own, iv.Inputs.Count);
-        double gx = Gx(f2, iv.X, own);
+        double gx = Gx(f2, iv.X, own, t.Name, iv.Inputs);
         var eval = Guided(f2, iv.Domain, iv.Inputs, gx, own);
         return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held), Edges(f2, iv.X, own, gx));
     }
@@ -1095,15 +1095,26 @@ public static class CurrentFit
         return new FitErrorRecord(train.Count, Rms(train), Rms(train) / scale, hold.Count, Rms(hold), Rms(hold) / scale);
     }
 
-    /// <summary>MC-2's default G_x: ten times the largest own-branch conductance over the training points, never zero.</summary>
-    private static double Gx(RuntimeEvaluator f, IEnumerable<double[]> x, double[] own)
+    /// <summary>
+    /// MC-2's default G_x: ten times the largest own-branch conductance over the training points, never zero. A point
+    /// where that conductance is not finite (issue 67: a re-gridded, transformed gate current overflowed at forward gate)
+    /// is refused here, naming the branch and the point: <c>Math.Max</c> would carry it into G_x, and the record holding it
+    /// could then not be saved, since JSON has no infinity.
+    /// </summary>
+    internal static double Gx(RuntimeEvaluator f, IEnumerable<double[]> x, double[] own, string branch, IReadOnlyList<string> inputs)
     {
         Span<double> g = stackalloc double[RuntimeEvaluator.MaxInputs];
         double largest = 0;
         foreach (var p in x)
         {
             f.Evaluate(p, g[..p.Length]);
-            largest = Math.Max(largest, Math.Abs(g[0] * own[0] + g[1] * own[1]));
+            double conductance = Math.Abs(g[0] * own[0] + g[1] * own[1]);
+            if (!double.IsFinite(conductance))
+                throw new ModelingException(branch,
+                    $"the fitted current's conductance is {(double.IsNaN(conductance) ? "not a number" : "infinite")} at the training point "
+                    + string.Join(", ", p.Select((v, i) => $"{(i < inputs.Count ? inputs[i] : $"x{i}")} = {G(v)}"))
+                    + ", so no G_x can be set from it. The fit overflows there; it cannot be saved as it stands.");
+            largest = Math.Max(largest, conductance);
         }
         return GuidedExtrapolation.DefaultGx(Math.Max(largest, 1e-12));
     }
@@ -1259,7 +1270,7 @@ public static class CurrentFit
         }, AnnSettings(disp.Hidden, AnnActivation.Tanh, CurrentConstituentSettings.DefaultMaxIterations, settings,
                        settings.HeldOutFraction), rc);
         foreach (string w in trained.Warnings) report.Add($"IdRF: {w}");
-        double gx = Gx(trained.Network, x, Own(0, 1));
+        double gx = Gx(trained.Network, x, Own(0, 1), "IdRF", Inputs);
         var e = trained.Derivatives!;
         var rfEval = Guided(trained.Network, domain, Inputs, gx, Own(0, 1));
         var payload = new Payload("IdRF", p => rfEval([p[0], p[1]]), [.. trained.Arrays("IdRF")], gx,
