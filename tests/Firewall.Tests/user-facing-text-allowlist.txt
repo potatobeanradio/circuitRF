@@ -106,7 +106,7 @@ src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': induct
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found
 src/Core/Devices/MutualInductanceModel.cs|MutualInductanceModel '{c.InstancePath}': Resolve() was not called
 src/Core/Devices/SddModel.cs|SDD '{_name}' has {C} control reference(s), so EvaluateGrid needs a 
-src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{w}] used but H[{w}] is not defined
+src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{k.w}] used but H[{k.w}] is not defined
 src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: no Touchstone file is specified. Open the component's parameters and set 
