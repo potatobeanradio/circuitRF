@@ -484,6 +484,25 @@ public sealed class Viewer3DOverlay : Control
             }
             ctx.DrawGeometry(selected ? PortSelectedFill : PortFill, new Pen(PortBrush, selected ? 2.2 : 1.4), g);
         }
+        // brief-cxp-2 R-cxp2-4 — a coaxial port's ring: the gap between its circles filled, both circles outlined
+        foreach (var (outer, inner, selected) in d.PortRings)
+        {
+            var o = outer.Select(Screen).ToList();
+            var i = inner.Select(Screen).ToList();
+            if (o.Any(q => !q.Ok) || i.Any(q => !q.Ok)) continue;
+            var g = new StreamGeometry();
+            using (var c = g.Open())
+            {
+                c.SetFillRule(FillRule.EvenOdd);
+                foreach (var loop in new[] { o, i })
+                {
+                    c.BeginFigure(loop[0].P, true);
+                    for (int k = 1; k < loop.Count; k++) c.LineTo(loop[k].P);
+                    c.EndFigure(true);
+                }
+            }
+            ctx.DrawGeometry(selected ? PortSelectedFill : PortFill, new Pen(PortBrush, selected ? 2.2 : 1.4), g);
+        }
         var construction = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 200, 205, 215)) : new SolidColorBrush(Color.FromArgb(200, 70, 75, 85)), 1.2)
         {
             DashStyle = new DashStyle([4, 3], 0),

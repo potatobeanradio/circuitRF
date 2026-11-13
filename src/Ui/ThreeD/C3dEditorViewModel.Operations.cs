@@ -206,7 +206,8 @@ public sealed partial class C3dEditorViewModel
             return;
         }
         var first = movable[0];
-        long cu = first.Rect.Min.U + first.Rect.Size.U / 2, cv = first.Rect.Min.V + first.Rect.Size.V / 2;
+        // brief-cxp-2 R-cxp2-4 — a ring moves by its centre
+        long cu = first.Annulus?.Centre.U ?? first.Rect.Min.U + first.Rect.Size.U / 2, cv = first.Annulus?.Centre.V ?? first.Rect.Min.V + first.Rect.Size.V / 2;
         var pivot = first.Plane switch
         {
             C3dPlane.XZ => new C3dPoint3(cu, first.Offset, cv),
@@ -244,6 +245,14 @@ public sealed partial class C3dEditorViewModel
                     _ => (d.X, d.Y, d.Z),
                 };
                 p.Offset += da;
+                if (p.Annulus is { } ring)
+                {
+                    // the centre is where the ring was put, no longer what an expression says; its radii keep theirs
+                    foreach (var spec in C3dBindings.Fields.Where(f => f.Owner == typeof(C3dPortAnnulus) && f.Property == nameof(C3dPortAnnulus.Centre)))
+                        for (int k = 0; k < 2; k++) C3dBindings.SetExpr(ring, spec, k, null);
+                    ring.Centre = new C3dPoint2(ring.Centre.U + du, ring.Centre.V + dv);
+                    continue;
+                }
                 p.Rect = new C3dRect { Min = new C3dPoint2(p.Rect.Min.U + du, p.Rect.Min.V + dv), Size = p.Rect.Size };
             }
         });

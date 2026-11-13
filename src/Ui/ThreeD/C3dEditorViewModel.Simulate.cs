@@ -1591,7 +1591,8 @@ public sealed partial class C3dEditorViewModel
                 new Viewer3DMenuItem((existing is null ? "● " : "") + "None", () => Report(SetFaceBoundary(o.Name, faceName, null))),
             ]);
         }
-        yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(item, Em3dPortKind.Lumped), MakePortItem(item, Em3dPortKind.Wave)]);
+        yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(item, Em3dPortKind.Lumped), MakePortItem(item, Em3dPortKind.Wave),
+                                                                  .. MakeCoaxialPortItem(item) is { } coaxial ? new[] { coaxial } : []]);
         if (SheetReplacedBy(o) is var drawnIndex and >= 0)
             foreach (var m in EdgeMenuItems(SheetEdgeTarget((C3dSheet)Document.Objects[drawnIndex], out string? faceWhy), faceWhy)) yield return m;
         yield return Viewer3DMenuItem.Separator;
@@ -1672,12 +1673,13 @@ public sealed partial class C3dEditorViewModel
             FillPortLabels(overlay, dbu);
         }
         if (_tool is PortTool pt && pt.Preview(CursorInput()) is { } draft) FillPortPreview(overlay, draft, dbu);
+        if (_tool is CoaxialPortTool ct && ct.Preview(CursorInput()) is { } ring) FillPortPreview(overlay, ring, dbu);
     }
 
     /// <summary>brief-dfr34-1 R-dfr34-1-2 — whether the ports are drawn over the geometry: the Port tool or a port's Move is
     /// running, or a port is selected in the view or the tree. A port is a thin sheet inside metal; while it is being worked on
     /// it must be seen.</summary>
-    public bool PortsOnTop => _tool is PortTool || _tool is Operations.MoveTool { Ports.Count: > 0 } || SelectedPorts().Count > 0
+    public bool PortsOnTop => _tool is PortTool || _tool is CoaxialPortTool || _tool is Operations.MoveTool { Ports.Count: > 0 } || SelectedPorts().Count > 0
                               || _selectedTreeItems.Any(t => t.Kind is "Port" or TerminalKind);
 
     /// <summary>Every shown port's sheet as four corners for the overlay; a port being moved where the cursor puts it.</summary>
@@ -1695,6 +1697,15 @@ public sealed partial class C3dEditorViewModel
         foreach (var r in PortResults)
         {
             if (r.Port.Cylinder is not null || !C3dPorts.Numbers(r.Port).Any(n => IsPortShown(C3dPorts.ProblemName(n)))) continue;
+            if (r.Port.Annulus is not null)
+            {
+                // brief-cxp-2 R-cxp2-4 — a ring: its two circles, the gap between them filled
+                var ring = RingCircles(r.Port, dbu);
+                bool movedRing = C3dPorts.Numbers(r.Port).Any(moving.Contains);
+                Point3[] Shift(Point3[] q) => movedRing ? [.. q.Select(c => new Point3(c.X + shift.X, c.Y + shift.Y, c.Z + shift.Z))] : q;
+                overlay.PortRings.Add((Shift(ring.Outer), Shift(ring.Inner), movedRing || C3dPorts.Numbers(r.Port).Any(selected.Contains)));
+                continue;
+            }
             Point3[] corners = r.Resolved?.Quad is { } q ? [q.A, q.B, q.C, q.D] : RectCorners(r.Port, dbu);
             var numbers = C3dPorts.Numbers(r.Port);
             bool moved = numbers.Any(moving.Contains);
@@ -1734,6 +1745,14 @@ public sealed partial class C3dEditorViewModel
                 overlay.Labels.Add((Centre(p.Min, p.Max), r.Port.Number.ToString(CultureInfo.InvariantCulture)));
                 continue;
             }
+            if (r.Port.Annulus is not null)
+            {
+                var ring = RingCircles(r.Port, dbu);
+                AddLoop(overlay.Crossing, ring.Outer);
+                AddLoop(overlay.Crossing, ring.Inner);
+                overlay.Labels.Add((ring.Centre, $"{C3dPorts.Label(r.Port)}: refused"));
+                continue;
+            }
             var (min, max) = Rectangle(r.Port, dbu);
             AddRect(overlay.Crossing, r.Port, dbu);
             overlay.Labels.Add((Centre(min, max), $"{C3dPorts.Label(r.Port)}: refused"));
@@ -1743,6 +1762,20 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The port tool's preview: the port it would add, its + and − ends, or why it cannot be one.</summary>
     private void FillPortPreview(Viewer3DDrawOverlay overlay, C3dPort draft, int dbu)
     {
+        if (draft.Annulus is not null)
+        {
+            // brief-cxp-2 — a ring being drawn: its + and − circles named, or why it cannot be a port
+            var ring = RingCircles(draft, dbu);
+            var rr = C3dPorts.Resolve(draft, dbu, CurrentPortContext());
+            if (rr.Resolved is { } rp)
+            {
+                bool outward = rp.Annulus!.Outward;
+                overlay.Labels.Add(((outward ? ring.Outer : ring.Inner)[0], $"+ {rp.PositiveObject}"));
+                overlay.Labels.Add(((outward ? ring.Inner : ring.Outer)[RingPreviewSegments / 2], $"− {rp.NegativeObject}"));
+            }
+            else overlay.Labels.Add((ring.Centre, rr.Refusal ?? ""));
+            return;
+        }
         {
             var r = C3dPorts.Resolve(draft, dbu, CurrentPortContext());
             var (min, max) = Rectangle(draft, dbu);
@@ -1762,6 +1795,26 @@ public sealed partial class C3dEditorViewModel
     }
 
     private static Point3 Centre(Point3 a, Point3 b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Z + b.Z) / 2);
+
+    /// <summary>The points each circle of a ring is drawn with in the overlay.</summary>
+    private const int RingPreviewSegments = 48;
+
+    /// <summary>brief-cxp-2 — a coaxial port's ring as the document states it: its centre and its two circles, world metres.</summary>
+    internal static (Point3 Centre, Point3[] Inner, Point3[] Outer) RingCircles(C3dPort p, int dbu)
+    {
+        double M(long v) => C3dLowering.Metres(v, dbu);
+        var ring = p.Annulus!;
+        var centre = C3dLowering.OnPlane(p.Plane, M(ring.Centre.U), M(ring.Centre.V), M(p.Offset));
+        int normal = p.Plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 };
+        Point3[] Circle(long r) => [.. Enumerable.Range(0, RingPreviewSegments)
+                                        .Select(k => Em3dAnnulus.At(centre, normal, M(r), 2 * Math.PI * k / RingPreviewSegments))];
+        return (centre, Circle(ring.Inner), Circle(ring.Outer));
+    }
+
+    private static void AddLoop(List<Render.Scene3D.Edit.DrawSegment> into, Point3[] loop)
+    {
+        for (int k = 0; k < loop.Length; k++) into.Add(new Render.Scene3D.Edit.DrawSegment(loop[k], loop[(k + 1) % loop.Length]));
+    }
 
     private static (Point3 Min, Point3 Max) Rectangle(C3dPort p, int dbu)
     {

@@ -355,6 +355,7 @@
                                         </NativeMenu>
                                     </NativeMenuItem>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
+                                    <NativeMenuItem Header="Coaxial Port" ToolTip="A coaxial port: the centre of a coax, then its pin's radius, then its shell's; the pin is +. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="CoaxialPort"/>
                                     <NativeMenuItem Header="Lumped Element" ToolTip="R, L or C across a gap between two conductors, two clicks, drawn as a port is. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="LumpedElement"/>
                                     <NativeMenuItem Header="Wire" ToolTip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. W in the view. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
                                     <NativeMenuItemSeparator/>
@@ -1493,6 +1494,10 @@
                     <MenuItem Header="_Port" Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"
                               ToolTip.Tip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Coa_xial Port" Command="{Binding ThreeDDrawCommand}" CommandParameter="CoaxialPort"
+                              ToolTip.Tip="A coaxial port: the centre of a coax, then its pin's radius, then its shell's; the pin is +. Requires an active 3D editor.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="CircleDouble" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Lumped Element" Command="{Binding ThreeDDrawCommand}" CommandParameter="LumpedElement"
                               ToolTip.Tip="R, L or C across a gap between two conductors, two clicks, drawn as a port is. Requires an active 3D editor.">

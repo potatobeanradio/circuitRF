@@ -42215,3 +42215,27 @@ left the list on other cards; a click on Silicon from the top did too, stopping 
 - The chain window's plots never draw a marker, yet Add Marker was live. `PlotControl.CanAddMarkers` (default true) greys
   the item, the table menu's item and the double-tap add; the five chain plots set it false. The marker-to-stage
   selection hooks they carried had nothing to listen to and are gone with `ChainBudgetViewModel.SelectNode`.
+
+## The coaxial port in the 3D editor (brief-cxp-2, 2026-11-12)
+
+- **Make Port ▸ Coaxial** (`C3dEditorViewModel.CoaxialPorts.cs`) reads the face's plane, centre and radius from its corners (a
+  face is round when its farthest corner is within 2 % of half its square bounding box — a square face fails that). The face is
+  then either edge of the ring: its OUTER edge (the dielectric's end round the pin: the inner radius is a smaller coaxial
+  cylinder, or a hole in the face) or its INNER edge (the pin's own end face inside its bore: the outer radius is a larger
+  coaxial cylinder). Every pairing is tried, nearest first, and the first ring the RUN'S resolver accepts is kept — no guess
+  about materials: the PTFE bore is coaxial too, and its circle is rejected because it lies on no conductor. The first version
+  offered only the dielectric's face, and a pin's end face inside the bore — the face a user clicks with the housing hidden —
+  showed no item; that is the second pairing. **The face's own object never supplies the other edge**: a filleted pin's tip is
+  a disc smaller than the pin, and the pin was taken for a shell round itself. The cylinders' `Radius` and the inner one's
+  in-plane `Base` expressions are copied onto the ring; matching on stored numbers as world coordinates means a placed (moved)
+  cylinder simply does not match. The item is hidden where no coaxial cylinder reaches the face's plane (the bore's floor,
+  which the pin stops short of; the pin's tip in the air), disabled with the refusal otherwise.
+- **The ring's checkerboard** (asked for during the brief, to match a rectangular lumped port): `Scene3DBuilder.RingCheckerboard`
+  lays the cells radially (two across the gap) and round (an even count, near square at mid-radius, each arc in the 32-per-turn
+  steps of `AnnulusSegments`), with four flat arrows from the − circle to the + one in the rectangle's arrow colour and size
+  rules. Seen from behind (the side its normal points away from) a port reads paler, as a rectangular one does.
+- **A typed expression in a ring field takes the display unit as its site unit** (`pin_d/2` typed in a µm document is stored
+  `Unit: Um`), as every dimension field's does; Make Port copies the cylinder's own unit (`Mm`) instead.
+- Headless (`UiSnapshot --c3d-setups --editor`), `--key F` does not reach the canvas (no focus), so Face mode cannot be entered and
+  the Make Port submenu cannot be pictured there; `CoaxialPortEditorTests` reads it through `DrawMenuItems()` with the face
+  selected in Face mode instead.

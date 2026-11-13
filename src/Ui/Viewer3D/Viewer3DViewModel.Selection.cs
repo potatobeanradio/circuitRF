@@ -211,11 +211,15 @@ public sealed class Viewer3DDrawOverlay
     /// <summary>brief-dfr34-1 R-dfr34-1-2 — port sheets drawn over the geometry, not depth-tested, while ports are being worked
     /// on: each one's four corners, and whether it is selected.</summary>
     public List<(CircuitRF.Engine.Em3d.Point3[] Corners, bool Selected)> Ports { get; } = [];
+    /// <summary>brief-cxp-2 — coaxial ports' rings drawn the same way: each one's outer and inner circle, and whether it is
+    /// selected.</summary>
+    public List<(CircuitRF.Engine.Em3d.Point3[] Outer, CircuitRF.Engine.Em3d.Point3[] Inner, bool Selected)> PortRings { get; } = [];
 
     public void Clear()
     {
         TargetFaces.Clear();
         Ports.Clear();
+        PortRings.Clear();
         FieldPlanes.Clear();
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
         HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear(); SymmetryPlanes.Clear(); LumpedElements.Clear();

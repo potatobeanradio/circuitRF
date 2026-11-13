@@ -214,6 +214,10 @@
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
                     <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-cxp-2 R-cxp2-2 — a coaxial port's ring: centre, the pin's radius, the shell's. -->
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCoaxialPortArmed}" ToolTip.Tip="Coaxial Port: the centre of a coax on the drawing plane, then the pin's radius, then the shell's. The pin is +, the shell −  (Shift+A, X)">
+                    <mi:MaterialIcon Kind="CircleDouble" Width="16" Height="16"/>
+                </ToggleButton>
                 <!-- brief-sar-3 R-sar3-3 — a lumped R, L or C, drawn as a port is: not a port, no row in S. -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsLumpedElementArmed}" ToolTip.Tip="Lumped element: two corners across a gap between two conductors; R, L and C in the Inspector  (Shift+A, C)">
                     <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Capacitor}"/>

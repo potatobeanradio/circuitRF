@@ -281,6 +281,39 @@ public sealed class MetalPrecedenceTests
         Assert.All(lines, v => Assert.Equal(lo.Z, v.Z, tol));
     }
 
+    /// <summary>brief-cxp-2 — a coaxial port is the same checkerboard on its ring: two cells across the gap and an even number round
+    /// it, every vertex in the ring's plane between its radii, four arrows last in the arrow's colour pointing from the shell
+    /// in to the pin, and its two circles as its lines.</summary>
+    [Fact]
+    public void ACoaxialPort_IsACheckerboardOverExactlyItsRing_WithFourArrowsFromTheShellToThePin()
+    {
+        var (a, b0) = (0.2 * mm, 0.67 * mm);
+        var ring = new Em3dPort(1, "port/1", "pin", "shell", new(-5 * mm, -b0, -b0), new(-5 * mm, b0, b0), new(0, 0, 0), 50,
+                                new Em3dReferencePlane(new(-5 * mm, 0, 0), new(1, 0, 0), 0)) { Annulus = new Em3dAnnulus(a, b0, Outward: false) };
+        var p = Problem(coverLast: false) with { Ports = [ring], Solids = [], Boundary = new Em3dAirBox(new(-6 * mm, -1 * mm, -1 * mm), new(-4 * mm, 1 * mm, 1 * mm), Problem(coverLast: false).Boundary.Faces) };
+        var scene = Scene3DBuilder.Build(p, 1, options: new Scene3DBuildOptions(DrawAirBox: false, Origin: (0, 0, 0), HideOutermostDielectric: false));
+        uint id = scene.Objects.Single(o => o.Name == "port/1").Id;
+        var batch = scene.Batches.Single(x => x.ObjectId == id);
+        var verts = Enumerable.Range(batch.FirstIndex, batch.IndexCount).Select(i => scene.Vertices[scene.Indices[i]]).ToList();
+        // gap 0.47 mm, cells 0.235 mm: round the mid-radius 0.435 mm, 2π·0.435/0.235 → 12; 32 segments a turn → 3 steps a cell;
+        // two cells deep: 2·12·3 quads of 6 indices, then four arrows of 9.
+        Assert.Equal(2 * 12 * 3 * 6 + 4 * 9, batch.IndexCount);
+        Assert.Equal(3, verts.Select(v => v.Rgba).Distinct().Count());
+        var centre = scene.ToLocal(-5 * mm, 0, 0);
+        double R(Scene3DVertex v) => Math.Sqrt(Math.Pow(v.Y - centre.Y, 2) + Math.Pow(v.Z - centre.Z, 2));
+        Assert.All(verts, v => Assert.Equal(centre.X, v.X, 1e-9f));
+        Assert.All(verts, v => Assert.InRange(R(v), a - 1e-9, b0 + 1e-9));
+        // each arrow's tip (its head's middle vertex) is nearer the pin than any of its other vertices: shell to pin
+        var arrows = verts.Skip(2 * 12 * 3 * 6).Chunk(9).ToList();
+        Assert.Equal(4, arrows.Count);
+        Assert.All(arrows, arrow => Assert.Equal(arrow.Min(R), R(arrow[7]), 1e-9));
+        Assert.Single(arrows.SelectMany(x => x).Select(v => v.Rgba).Distinct());
+        // its lines are its two circles, in its plane
+        var lines = scene.LineBatches.Where(l => l.ObjectId == id).SelectMany(l => scene.LineVertices.Skip(l.FirstVertex).Take(l.VertexCount)).ToList();
+        Assert.Equal(2 * 2 * Scene3DBuilder.AnnulusSegments, lines.Count);
+        Assert.All(lines, v => Assert.Equal(centre.X, v.X, 1e-9f));
+    }
+
     /// <summary>A copper layer embedded in the slab above it and reaching the board's side (0.6 mm either side of x = 0, on
     /// y = −1 mm), its top face hidden; the realistic view of it, and the copper top's own colour from that view.</summary>
     private static (Scene3DModel Scene, Viewer3DViewState View, Camera3D Cam, uint Copper) BoardSide(float yawDeg)

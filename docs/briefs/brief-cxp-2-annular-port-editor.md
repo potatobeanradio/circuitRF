@@ -42,3 +42,23 @@ treat it as any port; Move moves the centre.
 
 Solvers (briefs 3, 4), and any automatic port placement on a connector imported from STEP beyond what Make Port on its
 face does.
+
+## Completion note (2026-11-12)
+
+Built as specified, plus the ring's checkerboard (cells radial and round, four filled arrows from − to +) to match a
+rectangular lumped port's, asked for while this brief was being built. The draw tool is its own kind, **Coaxial Port**
+(Shift+A X, toolbar toggle beside Port, Draw menus beside Port), rather than a shape switch on Port: each Draw tool here is one
+gesture. Moving a ring drops its centre's expressions and keeps its radii's. Expand/Contract Edges refuses a ring.
+
+R-cxp2-1 said a pin's end face does not offer Coaxial; it does, when the pin's end lies inside its bore (the ring is then the
+face's circle out to the bore), which is the face a user clicks with the housing hidden. The pin's tip out in the air does not.
+
+Gates: `CoaxialPortEditorTests` (6 — Make Port on the 3D Wave Ports Launch's bore face bound to `pin_d/2`, `bore_d/2` and
+`axis_z`, the menu offering Coaxial there and on the pin's end face but not its tip; on the 3D Connector Launch's pin end face
+inside the bore, and its bore's front face but not its floor; `bore_d` 1.34 → 1.5 mm moving the ring to 0.75 mm; the tool
+in each plane; the Inspector fields), and `MetalPrecedenceTests.ACoaxialPort_IsACheckerboardOverExactlyItsRing_…`.
+
+Pictures (UiSnapshot, looked at, on a scratch copy of 3D Wave Ports whose P1 is a ring): the ring face-on from the front and
+from behind the connector, the whole launch, and the Properties panel (Centre y/z, Inner/Outer radius as expressions, Ring,
+Between, "Ring Z 50.02 Ω, estimated"). The Make Port submenu could not be pictured headless (`src/Ui/RESOLVED.md`); the test
+reads it instead.

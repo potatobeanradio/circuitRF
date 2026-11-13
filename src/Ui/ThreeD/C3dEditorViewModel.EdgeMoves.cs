@@ -46,6 +46,7 @@ public sealed partial class C3dEditorViewModel
     private EdgeTarget? PortEdgeTarget(C3dPort p, out string? why)
     {
         why = null;
+        if (p.Annulus is not null) { why = $"{C3dPorts.Label(p)} is a coaxial port's ring: set its radii in the Inspector."; return null; }
         if (p.Angle != 0) { why = $"{C3dPorts.Label(p)} is turned {C3dTurnedPorts.Degrees(p.Angle)}°: its edges do not lie along its plane's axes. Set its Angle to 0 first."; return null; }
         _ = Resolution;
         return new EdgeTarget(C3dPorts.Label(p), p.Rect, p.Plane, p.Offset, null, p, 0, 0, 0);

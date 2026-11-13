@@ -26,6 +26,9 @@ public sealed partial class C3dPropertiesViewModel
     public static IReadOnlyList<string> PortPlanes { get; } = [nameof(C3dPlane.XY), nameof(C3dPlane.XZ), nameof(C3dPlane.YZ)];
 
     [ObservableProperty] private bool _isPortPage;
+    /// <summary>brief-cxp-2 R-cxp2-3 — a coaxial port: its ring's centre and radii are dimension fields (a length or an
+    /// expression, as a cylinder's radius is), its plane a read-only row.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(FieldsVisible))] private bool _isRingPort;
     /// <summary>False for a cylinder-patch port, whose place is its cylinder's: its name, number and Z0 only.</summary>
     [ObservableProperty] private bool _portPlaceEditable;
     [ObservableProperty] private string _portName = "";
@@ -58,6 +61,7 @@ public sealed partial class C3dPropertiesViewModel
     private void ClearPortPages()
     {
         IsPortPage = false;
+        IsRingPort = false;
         IsComponentPortPage = false;
         _shownPort = null;
         _shownComponent = null;
@@ -75,12 +79,43 @@ public sealed partial class C3dPropertiesViewModel
         if (editor.IsViewOnly) return;
         _shownPort = port;
         IsPortPage = true;
-        PortPlaceEditable = port.Cylinder is null && !C3dPorts.HasTerminals(port);
+        PortPlaceEditable = port.Cylinder is null && port.Annulus is null && !C3dPorts.HasTerminals(port);
         PortName = port.Name;
         PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ShowPortReference(port);
         ShowPortPlace(port);
+        if (port.Annulus is not null) LoadRing(port);
     }
+
+    /// <summary>brief-cxp-2 R-cxp2-3 — a ring's plane and conductors as rows, its centre and radii as fields, and the ring's own
+    /// TEM impedance for the dielectric it lies on, estimated.</summary>
+    private void LoadRing(C3dPort port)
+    {
+        IsRingPort = true;
+        string at = port.Plane switch { C3dPlane.YZ => "x", C3dPlane.XZ => "y", _ => "z" };
+        Rows.Add(new C3dPropertyRow("Ring", $"coaxial, in the {port.Plane} plane at {at} = {Spell(port.Offset)} {LayoutUnits.Suffix(editor.Document.DisplayUnit)}"));
+        var report = editor.PortReport(port);
+        if (report?.Resolved is { } r) Rows.Add(new C3dPropertyRow("Between", $"{r.NegativeObject} → {r.PositiveObject}"));
+        if (report?.RingImpedance is { } z) Rows.Add(new C3dPropertyRow("Ring Z", $"{z.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} Ω, estimated"));
+        foreach (var f in editor.DimensionFields(port, C3dPorts.Label(port), RingFieldLabel(port), path => C3dEditorViewModel.PlaceFieldGroup(port, RingFieldLabel(port)(path)))
+                                .Where(f => f.Path.StartsWith("Annulus.", StringComparison.Ordinal)))
+            Fields.Add(f);
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    /// <summary>The Inspector's label of a ring's dimension: <c>Centre y</c>, <c>Inner radius</c>, <c>Outer radius</c>.</summary>
+    private static Func<string, string> RingFieldLabel(C3dPort port) => path =>
+    {
+        var (u, v) = port.Plane switch { C3dPlane.YZ => ("y", "z"), C3dPlane.XZ => ("x", "z"), _ => ("x", "y") };
+        return path switch
+        {
+            "Annulus.Centre[0]" => $"Centre {u}",
+            "Annulus.Centre[1]" => $"Centre {v}",
+            "Annulus.Inner" => "Inner radius",
+            "Annulus.Outer" => "Outer radius",
+            _ => path,
+        };
+    };
 
     /// <summary>The port's Z0 box and its Reference picker, from what the port states.</summary>
     private void ShowPortReference(C3dPort port)

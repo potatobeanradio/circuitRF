@@ -848,7 +848,17 @@ public static class C3dPortReports
     /// </summary>
     internal static C3dPortResult RingNote(C3dPortResult r, C3dElaboration e)
     {
-        if (r.Resolved is not { Annulus: { } ring } p) return r;
+        if (RingImpedance(r, e) is not var (z, name, er)) return r;
+        string G(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        string note = $"As a coax filled with '{name}' (εr {G(er)}), its ring is {G(z)} Ω; its Z0 is {C3dPorts.FormatZ0(r.Resolved!.Z0)} Ω.";
+        return r with { Note = r.Note is { } prior ? prior + " " + note : note };
+    }
+
+    /// <summary>brief-cxp-1/2 — a resolved ring's TEM impedance, the material it lies on and that material's εr; null on any other
+    /// port (<see cref="RingNote"/> says how the material is found).</summary>
+    public static (double Ohms, string Material, double Epsr)? RingImpedance(C3dPortResult r, C3dElaboration e)
+    {
+        if (r.Resolved is not { Annulus: { } ring } p) return null;
         int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
         var c = Em3dAnnulus.Centre(p.Min, p.Max);
         double gap = ring.OuterRadiusM - ring.InnerRadiusM, step = 0.1 * gap;
@@ -860,9 +870,7 @@ public static class C3dPortReports
         string name = fill?.Material ?? "Air";
         double er = e.Materials.FirstOrDefault(m => m.Name == fill?.Material)?.Epsr ?? 1.0;
         double z = 376.730313668 / (2 * Math.PI * Math.Sqrt(er)) * Math.Log(ring.OuterRadiusM / ring.InnerRadiusM);
-        string G(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
-        string note = $"As a coax filled with '{name}' (εr {G(er)}), its ring is {G(z)} Ω; its Z0 is {C3dPorts.FormatZ0(p.Z0)} Ω.";
-        return r with { Note = r.Note is { } prior ? prior + " " + note : note };
+        return (z, name, er);
     }
 
     /// <summary>The face boundaries' refusals, in the document's technology at the default temperature.</summary>

@@ -552,6 +552,14 @@ public static class Scene3DBuilder
                 b.Object(obj, patch, PortArrow(p).Select(q => (q, pinLine)), features: Snaps(patch));
                 continue;
             }
+            // brief-cxp-2 — a coaxial port's ring takes the same checkerboard, its cells radial and round, its arrows radial
+            if (p.Kind == Em3dPortKind.Lumped && p.Annulus is { } ring && RingCheckerboard(p, ring, pinFill, checkFill, checkArrow) is { } ringBoard)
+            {
+                var (rv, rt) = PortSheet(p);
+                b.Object(obj, ringBoard.Mesh, RingOutline(p, ring).Select(q => (q, pinLine)), vertexRgba: ringBoard.Rgba,
+                         features: Snaps(new Em3dTriangleMesh(rv, rt)));
+                continue;
+            }
             if (p.Kind == Em3dPortKind.Lumped && p.Annulus is null && Checkerboard(p, pinFill, checkFill, checkArrow) is { } board)
             {
                 var (sv, st) = PortSheet(p);
@@ -1053,6 +1061,86 @@ public static class Scene3DBuilder
         return (new Em3dTriangleMesh(verts, tris), [.. rgba]);
     }
 
+    /// <summary>
+    /// brief-cxp-2 — a coaxial port's ring as <see cref="Checkerboard"/> draws a rectangle: cells of <paramref name="a"/> and
+    /// <paramref name="b"/>, two across the radial gap and an even number round it, as near square at mid-radius as that allows
+    /// (each cell's arcs in <see cref="AnnulusSegments"/>-per-turn steps, so the ring stays round); over them four flat
+    /// <paramref name="arrow"/>-coloured arrows across the gap from the negative circle to the positive one, sized as a
+    /// rectangle's arrow is against the gap. Null for a degenerate ring.
+    /// </summary>
+    internal static (Em3dTriangleMesh Mesh, uint[] Rgba)? RingCheckerboard(Em3dPort p, Em3dAnnulus ring, uint a, uint b, uint arrow)
+    {
+        double r0 = ring.InnerRadiusM, r1 = ring.OuterRadiusM, gap = r1 - r0;
+        if (!(r0 > 0 && gap > 0)) return null;
+        int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+        var centre = Em3dAnnulus.Centre(p.Min, p.Max);
+        double cell = gap / 2;
+        int round = Math.Clamp(2 * (int)Math.Round(Math.PI * (r0 + r1) / 2 / cell), 8, 2 * CheckerCellsMax);
+        int steps = Math.Max(1, (int)Math.Ceiling((double)AnnulusSegments / round));
+        var verts = new List<Point3>();
+        var tris = new List<Em3dTriangle>();
+        var rgba = new List<uint>();
+        void Quad(Point3 p0, Point3 p1, Point3 p2, Point3 p3, uint colour)
+        {
+            int k = verts.Count;
+            verts.AddRange([p0, p1, p2, p3]);
+            rgba.AddRange([colour, colour, colour, colour]);
+            tris.Add(new Em3dTriangle(k, k + 1, k + 2, p.Name));
+            tris.Add(new Em3dTriangle(k, k + 2, k + 3, p.Name));
+        }
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < round; j++)
+            {
+                double ra = r0 + gap * i / 2, rb = r0 + gap * (i + 1) / 2;
+                uint colour = ((i + j) & 1) == 0 ? a : b;
+                for (int s = 0; s < steps; s++)
+                {
+                    double t0 = 2 * Math.PI * (j + (double)s / steps) / round, t1 = 2 * Math.PI * (j + (double)(s + 1) / steps) / round;
+                    Quad(Em3dAnnulus.At(centre, normal, ra, t0), Em3dAnnulus.At(centre, normal, rb, t0),
+                         Em3dAnnulus.At(centre, normal, rb, t1), Em3dAnnulus.At(centre, normal, ra, t1), colour);
+                }
+            }
+
+        // Four arrows across the gap, between the cells' seams: a rectangle's arrow, with "along" radial and "across" round.
+        double h = gap, w = Math.Min(gap, 2 * Math.PI * r0 / 4), sz = Math.Min(h, w);
+        double headLen = Math.Min(0.4 * h, 0.6 * sz), headHalf = 0.35 * sz, shaftHalf = 0.12 * sz;
+        double tail = 0.1 * h, tip = 0.9 * h, neck = tip - headLen;
+        for (int k = 0; k < 4; k++)
+        {
+            double t = Math.PI / 4 + k * Math.PI / 2;
+            var radial = Em3dAnnulus.At(new Point3(0, 0, 0), normal, 1, t);
+            var tangent = Em3dAnnulus.At(new Point3(0, 0, 0), normal, 1, t + Math.PI / 2);
+            // distance from the negative circle, and the offset across
+            Point3 At(double from, double c)
+            {
+                double r = ring.Outward ? r0 + from : r1 - from;
+                return new Point3(centre.X + radial.X * r + tangent.X * c, centre.Y + radial.Y * r + tangent.Y * c,
+                                  centre.Z + radial.Z * r + tangent.Z * c);
+            }
+            Quad(At(tail, -shaftHalf), At(neck, -shaftHalf), At(neck, shaftHalf), At(tail, shaftHalf), arrow);
+            int n = verts.Count;
+            verts.AddRange([At(neck, -headHalf), At(tip, 0), At(neck, headHalf)]);
+            rgba.AddRange([arrow, arrow, arrow]);
+            tris.Add(new Em3dTriangle(n, n + 1, n + 2, p.Name));
+        }
+        return (new Em3dTriangleMesh(verts, tris), [.. rgba]);
+    }
+
+    /// <summary>brief-cxp-2 — a ring's two circles, as pairs of points.</summary>
+    private static List<Point3> RingOutline(Em3dPort p, Em3dAnnulus ring)
+    {
+        int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+        var centre = Em3dAnnulus.Centre(p.Min, p.Max);
+        var lines = new List<Point3>(4 * AnnulusSegments);
+        foreach (double r in new[] { ring.InnerRadiusM, ring.OuterRadiusM })
+            for (int k = 0; k < AnnulusSegments; k++)
+            {
+                lines.Add(Em3dAnnulus.At(centre, normal, r, 2 * Math.PI * k / AnnulusSegments));
+                lines.Add(Em3dAnnulus.At(centre, normal, r, 2 * Math.PI * (k + 1) / AnnulusSegments));
+            }
+        return lines;
+    }
+
     /// <summary>3D editor bugs round 9 — a rectangular port's four edges, as pairs of points.</summary>
     private static List<Point3> Outline(Em3dPort p)
     {
@@ -1066,6 +1154,26 @@ public static class Scene3DBuilder
     /// its voltage path; a lumped port's runs along its direction through the sheet's centre.</summary>
     private static List<Point3> PortArrow(Em3dPort p)
     {
+        // brief-cxp-2 R-cxp2-4 — a ring's field is radial: four arrows across its gap, from the negative circle to the positive one,
+        // their barbs in the ring's plane
+        if (p.Annulus is { } ring)
+        {
+            int normal = Em3dAnnulus.NormalAxis(p.Min, p.Max);
+            var centre = Em3dAnnulus.Centre(p.Min, p.Max);
+            double gap = ring.OuterRadiusM - ring.InnerRadiusM;
+            double rNeg = ring.Outward ? ring.InnerRadiusM + 0.2 * gap : ring.OuterRadiusM - 0.2 * gap;
+            double rPos = ring.Outward ? ring.OuterRadiusM - 0.2 * gap : ring.InnerRadiusM + 0.2 * gap;
+            var arrows = new List<Point3>();
+            for (int k = 0; k < 4; k++)
+            {
+                double t = Math.PI / 4 + k * Math.PI / 2;
+                Point3 tail = Em3dAnnulus.At(centre, normal, rNeg, t), tip = Em3dAnnulus.At(centre, normal, rPos, t);
+                double barb = 0.25 * Math.Abs(rPos - rNeg), back = rPos > rNeg ? rPos - barb : rPos + barb;
+                arrows.AddRange([tail, tip, tip, Em3dAnnulus.At(centre, normal, back, t + barb * 0.5 / back),
+                                 tip, Em3dAnnulus.At(centre, normal, back, t - barb * 0.5 / back)]);
+            }
+            return arrows;
+        }
         Point3 from, to;
         if (p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } vp) (from, to) = (vp.From, vp.To);
         else
@@ -1073,7 +1181,6 @@ public static class Scene3DBuilder
             var c = p.Cylinder?.Patch.Centre ?? p.Quad?.Centre ?? new Point3((p.Min.X + p.Max.X) / 2, (p.Min.Y + p.Max.Y) / 2, (p.Min.Z + p.Max.Z) / 2);
             double side = p.Quad is { } quad ? Math.Max(quad.Extent(p.Direction).Length, quad.Extent(p.Direction).Width)
                         : Math.Max(p.Max.X - p.Min.X, Math.Max(p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z));
-            if (p.Annulus is { } an) side = 2 * an.OuterRadiusM;
             double h = side * ArrowFraction / 2;
             var d = p.Direction;
             from = new Point3(c.X - d.X * h, c.Y - d.Y * h, c.Z - d.Z * h);

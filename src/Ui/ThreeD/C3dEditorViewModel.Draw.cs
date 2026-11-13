@@ -52,6 +52,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         (C3dToolKind.Polyline, 'L', "VectorPolyline"),
         // brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet.
         (C3dToolKind.Port, 'P', "ArrowUpBoldBoxOutline"),
+        // brief-cxp-2 R-cxp2-2 — a coaxial port's ring: co_X, as P is the rectangle's.
+        (C3dToolKind.CoaxialPort, 'X', "CircleDouble"),
         // brief-sar-3 R-sar3-3 — a lumped element, drawn like a port: _C for its capacitor glyph.
         (C3dToolKind.LumpedElement, 'C', nameof(Viewer3DPathGlyph.Capacitor)),
         // brief-em3d-50 R-em3d50-3a — a bond wire, pad to pad.
@@ -294,6 +296,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool IsEllipsoidArmed { get => ArmedTool == C3dToolKind.Ellipsoid; set => ArmToggle(C3dToolKind.Ellipsoid, value); }
     public bool IsLumpedElementArmed { get => ArmedTool == C3dToolKind.LumpedElement; set => ArmToggle(C3dToolKind.LumpedElement, value); }
     public bool IsPortArmed { get => ArmedTool == C3dToolKind.Port; set => ArmToggle(C3dToolKind.Port, value); }
+    public bool IsCoaxialPortArmed { get => ArmedTool == C3dToolKind.CoaxialPort; set => ArmToggle(C3dToolKind.CoaxialPort, value); }
     // brief-em3d-75 — the thermal tools' toolbar toggles.
     public bool IsHeatSourceArmed { get => ArmedTool is C3dToolKind.HeatSource or C3dToolKind.HeatSourcePolygon; set => ArmToggle(C3dToolKind.HeatSource, value); }
     public bool IsProbeArmed { get => ArmedTool is C3dToolKind.ProbePoint or C3dToolKind.ProbeSpot or C3dToolKind.ProbeLine; set => ArmToggle(C3dToolKind.ProbePoint, value); }
@@ -321,6 +324,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.Ellipsoid => new EllipsoidTool(this),
             C3dToolKind.LumpedElement => new LumpedElementTool(this, NewLumpedElementTemplate),
             C3dToolKind.Port => new PortTool(this, () => NewPortTemplate()),
+            C3dToolKind.CoaxialPort => new CoaxialPortTool(this, () => NewPortTemplate()),
             C3dToolKind.Wire => WireToolArmed(),
             C3dToolKind.HeatSource => new HeatSourceTool(this),
             C3dToolKind.HeatSourcePolygon => new HeatSourcePolygonTool(this),
@@ -367,7 +371,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         Viewer.ClearSnapReferences();
         Viewer.SnapTrackingActive = tool is not null;
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
-                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsSphereArmed), nameof(IsEllipsoidArmed), nameof(IsLumpedElementArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
+                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsSphereArmed), nameof(IsEllipsoidArmed), nameof(IsLumpedElementArmed), nameof(IsPortArmed), nameof(IsCoaxialPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
                                      nameof(IsHeatSourceArmed), nameof(IsProbeArmed), nameof(IsMeshRegionArmed) })
             OnPropertyChanged(p);
         Viewer.RequestFrame();
@@ -532,8 +536,9 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             Viewer.RequestFrame();
             return;
         }
-        if (step.Finished && _tool is PortTool portTool && portTool.Made is { } port)
+        if (step.Finished && (_tool is PortTool { Made: { } } || _tool is CoaxialPortTool { Made: { } }))
         {
+            var port = _tool is PortTool portTool ? portTool.Made! : ((CoaxialPortTool)_tool).Made!;
             AddPort(port);
             OnPropertyChanged(nameof(ToolPrompt));
             Viewer.RequestFrame();

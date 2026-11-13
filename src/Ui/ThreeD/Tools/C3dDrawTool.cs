@@ -31,7 +31,7 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 /// region) and Temperature Along's two-point pick.</para>
 public enum C3dToolKind { Box, Sheet, Polygon, Polyline, Cylinder, Extrude, Move, Rotate, PushPull, FaceMove, VertexMove, ExtrudeFace, AlignFace, Place, Port, Wire,
                           HeatSource, HeatSourcePolygon, ProbePoint, ProbeSpot, ProbeLine, MeshRegion, TemperatureAlong,
-                          EffectiveBlock, Sphere, Ellipsoid, LumpedElement, SectionThrough }
+                          EffectiveBlock, Sphere, Ellipsoid, LumpedElement, SectionThrough, CoaxialPort }
 
 /// <summary>
 /// Where the cursor is, as a tool reads it: the snap in force (a DBU point, and whether it is exact and on geometry

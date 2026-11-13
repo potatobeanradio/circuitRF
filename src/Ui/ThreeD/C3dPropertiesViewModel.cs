@@ -264,7 +264,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private string _featurePath = "";
 
     /// <summary>The dimension lines: an object's, or a feature row's size fields.</summary>
-    public bool FieldsVisible => IsEditable || IsFeature || IsThermalPlace || IsSymmetryPlane;
+    public bool FieldsVisible => IsEditable || IsFeature || IsThermalPlace || IsSymmetryPlane || IsRingPort;
 
     /// <summary>brief-em3d-75 R-em3d75-1c — a heat source, probe or mesh region is shown: its name, its dimensions (through
     /// the same field editor as an object's, expressions included) and its other fields.</summary>
@@ -1485,6 +1485,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (IsThermalPlace)
         {
             if (field.Text != field.Loaded) Error = editor.SetPlaceFieldText(_placeName, field.Path, field.Text) ?? "";
+            return;
+        }
+        // brief-cxp-2 R-cxp2-3 — a coaxial port's ring
+        if (IsRingPort && _shownPort is { } ringPort)
+        {
+            if (field.Text != field.Loaded) Error = editor.SetPortFieldText(ringPort, field.Path, field.Text) ?? "";
             return;
         }
         // brief-em3d-90 — a symmetry plane's At: refused off the model's extent, with the rule's own sentence
