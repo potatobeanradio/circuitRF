@@ -256,8 +256,8 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
     }
 
     // A 60 MHz bandpass (third-order Butterworth, ~10 ns of group delay) between a 50 Ω source and a 50 Ω load, at draft,
-    // over 0.5 ms (the NR record; half the DBPSK one, read in its whole bits). Its own distortion across a carrier within
-    // ±10 MHz of its centre is under 1e-4, so a carrier reads the same EVM anywhere in that range.
+    // over 0.5 ms (the NR record; half the DBPSK one, read in its whole bits). Its own distortion across the 5 MHz NR
+    // carrier, delay and gain fitted, is 2.4e-5 centred, 2.9e-4 at 4.5 MHz off, 7.7e-4 at 9 MHz and 1.0e-3 at 10 MHz.
     private static string Bandpass(string carrier) => $"""
         MOD_Source:S1 s 0 Fc=2.45e9 Pavg=-30 Z=50 Record=0.5e-3 Carrier[1]="{carrier}"
         Filter:BPF s 0 b 0 Response=Butterworth Form=Bandpass Order=3 F1=2.42 GHz F2=2.48 GHz IL=0 dB
@@ -267,17 +267,20 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         """;
 
     /// <summary>
-    /// A carrier off the envelope's centre reads the EVM it reads at the centre (EnvelopeEngine.Oversample). Gear-2 reads
-    /// an envelope frequency f as f·(1 + (2π f h)²/3), a phase error through the filter's delay that no delay fit takes
-    /// out. The signal rate held an off-centre carrier's spectrum but stepped its band edge at 0.7 rad (NR, 4.5 MHz off)
-    /// and 2 rad (DBPSK, 9 MHz off), and they read 1.11 % and 0.83 % against 0.38 % and 0.006 % centred. Bound: the
-    /// excess √(EVM_off² − EVM_centred²) under 0.25 %, a quarter of the old error. The warp's closed form through this
-    /// filter is 1.06 % for the NR carrier at the old step (1.05 % read) and 0.18 % at the step the rule now takes.
+    /// A carrier off the envelope's centre is stepped finely enough to read close to its centred EVM
+    /// (EnvelopeEngine.Oversample). Gear-2 steps an envelope frequency f as jω(1 + θ²/3 − 7θ⁴/60) + θ⁴/(4h), θ = 2π f h:
+    /// mostly a damping that, through the filter's delay, tilts the gain across an off-centre carrier, and a smaller f³
+    /// phase. The signal rate held an off-centre carrier's spectrum but stepped its band edge at 0.7 rad (NR, 4.5 MHz off)
+    /// and 2 rad (DBPSK, 9 MHz off), and they read 1.11 % and 0.83 % against 0.38 % and 0.006 % centred.
+    /// Bound: the excess √(EVM_off² − EVM_centred²) under 0.25 %. For the NR carrier the closed form of Gear-2's error
+    /// through this filter is 1.06 % at the old step (1.05 % read) and 0.18 % at the step the rule takes, and the filter's
+    /// own distortion 0.03 %: the excess is at most their root sum, 0.18 %, before the centred draft reading's own 0.18 %
+    /// is taken off. 0.25 % leaves 40 % over that for what the closed form leaves out.
     /// </summary>
     [Theory]
     [InlineData("NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1", "-4.5MHz")]
     [InlineData("DBPSK;Rb=1Mbps;Data=PN9;P=0", "9MHz")]
-    public void ACarrierOffTheEnvelopesCentre_ReadsTheEvmItReadsAtTheCentre(string carrier, string off)
+    public void ACarrierOffTheEnvelopesCentre_ReadsCloseToItsCentredEvm(string carrier, string off)
     {
         double Evm(string o) => At(Run(Bandpass($"{carrier};Off={o}")).ds, "EVM_pct");
         double centred = Evm("0"), offCentre = Evm(off);

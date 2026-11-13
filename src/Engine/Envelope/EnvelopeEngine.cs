@@ -174,18 +174,24 @@ public sealed class EnvelopeEngine
     /// <summary>
     /// The fewest steps a run takes per cycle of the highest frequency in any carrier's envelope, its band edge
     /// (<see cref="Oversample"/>). The signal rate is at least five bandwidths, so a carrier at the envelope's centre gets
-    /// ten at <c>draft</c>; this gives a carrier off the centre the same.
+    /// ten at <c>draft</c>; this gives a carrier off the centre at least as many. It bounds the step at the band edge,
+    /// not the error: 20 would cost up to 7x at draft, and no fixed count suits every filter's delay.
     /// </summary>
     internal const double StepsPerEdgeCycle = 10;
 
     /// <summary>
     /// The steps per signal sample a run takes: the accuracy preset's, or more when a carrier's band edge
     /// <paramref name="edgeHz"/> (its offset from the envelope's centre plus half its bandwidth) would get fewer than
-    /// <see cref="StepsPerEdgeCycle"/> steps a cycle. Gear-2 reads an envelope frequency f as f·(1 + (2π f h)²/3), and the
-    /// signal rate only holds an off-centre carrier's spectrum: a 5 MHz NR carrier 4.5 MHz off the centre of a draft run,
-    /// at 2π·7 MHz·16.3 ns = 0.72 rad, read 1.1 % EVM through a 60 MHz bandpass where the same carrier centred reads
-    /// 0.38 %. A carrier at the centre, every carrier at <c>fine</c> and nearly every one at <c>standard</c> keep their
-    /// preset, bit for bit.
+    /// <see cref="StepsPerEdgeCycle"/> steps a cycle. Gear-2 steps an envelope frequency f as
+    /// jω(1 + θ²/3 − 7θ⁴/60) + θ⁴/(4h), θ = 2π f h. Its damping θ⁴/(4h), through a filter's group delay τ, scales the gain
+    /// by e^(−σ τ), a tilt across a carrier off the centre; the warp's f³ phase is the smaller part. The signal rate only
+    /// holds an off-centre carrier's spectrum: a 5 MHz NR carrier 4.5 MHz off the centre of a draft run, at
+    /// 2π·7 MHz·16.3 ns = 0.72 rad, read 1.1 % EVM through a 60 MHz bandpass where the same carrier centred reads 0.38 %,
+    /// and reads 0.39 % at this rule's step. What is left still grows with the offset and with the filter's delay (the
+    /// carrier centred in that bandpass, the envelope's centre moved: 0.69 % at 3.5 MHz, where the rule does not act,
+    /// and 1.5 % at 22 MHz, at draft), so EVM through a filter is read at standard or fine, or with Fc on the carrier.
+    /// A carrier at the centre, every carrier at <c>fine</c> and nearly every one at <c>standard</c> keep their preset,
+    /// bit for bit.
     /// </summary>
     internal static int Oversample(int preset, double rateHz, double edgeHz)
         => Math.Max(Math.Max(1, preset), (int)Math.Ceiling(StepsPerEdgeCycle * edgeHz / rateHz - 1e-9));
