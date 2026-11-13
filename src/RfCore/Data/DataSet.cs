@@ -106,6 +106,15 @@ namespace RfCore.Data
         /// </summary>
         public DataCube this[string spec] => Resolve(spec);
 
+        /// <summary>
+        /// Set by a display when it loads a source (issue 66). When this DataSet holds no analysis group of its own — a
+        /// CLI run verb's <c>-o</c> writes one analysis's cubes ungrouped, where Simulate groups them under the analysis's
+        /// name — a qualified <c>Analysis.Cube</c> whose group is absent resolves as the bare <c>Cube</c>, so a display
+        /// made from a Simulate result reads a CLI result of the same bench. Such a file holds one analysis, so the
+        /// binding is unambiguous; a DataSet with any analysis group of its own never takes it.
+        /// </summary>
+        public bool BindsAnalysisNamesToFlatCubes { get; set; }
+
         /// <summary>Returns <c>true</c> when <see cref="this[string]"/> would succeed.</summary>
         public bool Contains(string spec)
         {
@@ -129,8 +138,14 @@ namespace RfCore.Data
             }
             // Group not found — fall back to bare-resolving the whole spec so that
             // default-group cubes literally named "a.b" still resolve.
+            if (BindsAnalysisNamesToFlatCubes && !HasAnalysisGroup()
+                && _groups.TryGetValue(DefaultGroup, out var flat) && !flat.ContainsKey(spec) && flat.TryGetValue(cube, out var bare))
+                return bare;
             return BareResolve(spec);
         }
+
+        private bool HasAnalysisGroup()
+            => _groupOrder.Any(g => g != DefaultGroup && g != MeasurementsGroup && _groups[g].Count > 0);
 
         private DataCube BareResolve(string name)
         {

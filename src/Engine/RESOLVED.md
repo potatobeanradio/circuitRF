@@ -4532,3 +4532,19 @@ coupler.
   that measures (`EnvelopeDataSet.MinimumSamples`, 16 samples), and `t0` is clamped at 0.
 
 Gates: `EnvelopeShortStopAndInputPowerTests`.
+
+## A net only nonlinear devices touch was recorded with Newton's residual on it (issue 66, 2026-11-13)
+
+- **Cause.** Both envelopes recorded a labelled net from the linear state after the step's update,
+  `x = x_oc − Z·injection`. Where only device ports hold a node (two `Amp` outputs feeding a third's input), the
+  driving-point impedance there is huge, so the injection's residual, within `Tol` in amps, became a large voltage
+  error. Nothing downstream read it; the seam check compared it between segments: EnvSeamError 20.6 and a "segments
+  disagree" note, against 0.0025 unlabelled, every output identical.
+- **Fix.** A recorded node that no linear element touches is read from the step's accepted Newton unknown `V`
+  (`EnvelopeEngine.DeviceOnlyInterfaceIndexOf`, both engines). With `n2` labelled the seam error is 0.0025, the
+  unlabelled value. `V` was not taken at every interface node: where a linear element also holds the node, `V` and the
+  linear state differ by about 1e-5 relative, and the IProbe's voltage there comes from the linear state, so a node
+  record and a probe record of one net would disagree (the AM-AM gates in `EnvelopeProbesRetiredTests` saw it). Every
+  run with no device-only labelled net is unchanged bit for bit.
+
+Gate: `EnvelopeDeviceOnlyNetTests` (2 s; 36.4 against 0.002 before the fix).

@@ -4,6 +4,10 @@ Issue 66's other parts are fixed: a Stop below 15 steps is refused with the shor
 envelope's input power adds a source's carrier groups as powers, and `circuitrf env` dispatches at the outermost sweep
 through `ChainSelector`. Two parts are left, each needing a decision first.
 
+**Status (2026-11-13): done.** §1: a recorded node that no linear element touches is read from the accepted Newton
+unknown (D1: only device-only nets, so a node record and its IProbe's voltage never disagree; `src/Engine/RESOLVED.md`).
+§2: D2 = (b), displays accept both (`docs/design/cli.md` §3, `src/RfCore/RESOLVED.md`).
+
 ## 1. A net only nonlinear-device ports touch is recorded with Newton's residual on it
 
 ### Why

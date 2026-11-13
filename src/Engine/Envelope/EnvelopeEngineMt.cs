@@ -296,6 +296,7 @@ public sealed class EnvelopeEngineMt
 
         var probes = EnvelopeEngine.RecordedNodes(_nl, p.Probes, srcEcs);
         int P = probes.Length;
+        var probeIf = EnvelopeEngine.DeviceOnlyInterfaceIndexOf(_nl, probes, ifNodes);   // a device-only node is read from V (issue 66)
         var (iprobes, iprobeRows, iprobeNodes) = EnvelopeEngine.IProbesOf(_nl);
         var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
         var wOut = new Complex[wbonds.Length > 0 ? nSteps + 1 : 0][][];
@@ -318,10 +319,10 @@ public sealed class EnvelopeEngineMt
             for (int pi = 0; pi < P; pi++)
             {
                 pr[pi] = new Complex[M];
-                int row = probes[pi].node - 1;
+                int row = probes[pi].node - 1, j = probeIf[pi];
                 for (int m = 0; m < M; m++)
                 {
-                    var v = row >= 0 ? prods[m].Xm1[row] : Complex.Zero;
+                    var v = j >= 0 ? V[j, m] : row >= 0 ? prods[m].Xm1[row] : Complex.Zero;
                     pr[pi][m] = prods[m].Neg ? Complex.Conjugate(v) : v;
                 }
                 pr[pi][0] = new Complex(pr[pi][0].Real, 0);

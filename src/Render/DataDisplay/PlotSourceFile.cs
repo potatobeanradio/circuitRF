@@ -58,6 +58,7 @@ public static class PlotSourceFile
             if (string.Equals(Path.GetExtension(path), ".npy", StringComparison.OrdinalIgnoreCase))
             {
                 var (data, _) = DataSetImporter.Import(path);
+                data.BindsAnalysisNamesToFlatCubes = true;   // a CLI -o result answers a display made from Simulate's
 
                 // The two things a loaded source GAINS before a trace can be resolved against it.
                 // Without the first, a trace on "SP1.Z" — a VIRTUAL cube, converted from S and Z0 on
@@ -80,6 +81,7 @@ public static class PlotSourceFile
 
             // .spl / .lpcwave and anything else the importer recognizes.
             var (other, _) = DataSetImporter.Import(path);
+            other.BindsAnalysisNamesToFlatCubes = true;     // a CLI -o .mat, as the .npy above
             return (other, null, null, []);
         }
         catch (Exception ex) { return (null, null, ex.Message, []); }

@@ -1226,3 +1226,12 @@ DBPSK, so each is measured as its receiver reads it (`SignalQuality.cs`, tests `
 - **The delay** is fitted from H = X conj(S) over the passband, by `SignalEvm.Delay`. Its flat-phase test now compares
   against the largest element of H: a bin near a null of DBPSK's spectrum carried round-off at any phase and turned an
   exact zero delay into a 1e-15 s fit.
+
+## A display reads a CLI result made ungrouped (issue 66, 2026-11-13)
+
+Every CLI run verb's `-o` writes one analysis's cubes in the default group; Simulate groups them under the analysis's
+name. A `.cdd` made from a Simulate result asks for `ENV1.Pavg`, and a CLI file had no `ENV1` group, so every trace was
+empty. `DataSet.BindsAnalysisNamesToFlatCubes`, set by the display's loaders (`PlotSourceFile`, the Data Display
+library), resolves `Group.Cube` as the bare `Cube` when the DataSet has no analysis group of its own and no cube literally
+named `Group.Cube`. It is opt-in so nothing else that resolves specs (measurements, `read`, the engines) changes, and a
+grouped file never binds another analysis's name. Gate: `FlatCliResultBindingTests`.

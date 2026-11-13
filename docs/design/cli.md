@@ -259,6 +259,13 @@ into a folder it created leaves no folder, for every source.
    while assembling and solving, long after elaboration finished); evaluate measurements; print;
    export.
 
+**What `-o` writes: one analysis's cubes in the default group**, `V`, `Pavg`, … with no group. Simulate
+writes the same cubes under the analysis's name (`ENV1.V`). The two are not made the same on purpose:
+scripts read the CLI's fields by their bare names, and renaming them would break every one. A display
+reads both instead: a source it loads takes `DataSet.BindsAnalysisNamesToFlatCubes`, so in a file with no
+analysis group of its own, `ENV1.Pavg` resolves as the bare `Pavg` (issue 66). The file holds one
+analysis, so the binding is unambiguous, and a file with analysis groups of its own never takes it.
+
 ### 3.1 Two channels, and they are not interchangeable
 
 **stdout is the result. stderr is everything else** — progress, per-grid-point and per-query

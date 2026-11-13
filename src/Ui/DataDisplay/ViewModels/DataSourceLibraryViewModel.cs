@@ -452,7 +452,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Npy)
         {
             DataSet data;
-            try { data = (await Task.Run(() => DataSetImporter.Import(newPath))).DataSet; }
+            try { data = (await Task.Run(() => DataSetImporter.Import(newPath))).DataSet; data.BindsAnalysisNamesToFlatCubes = true; }
             catch (Exception ex) { MarkRefused(entry, ex); return; }
 
             entry.LoadError = null;
@@ -532,7 +532,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Npy)
         {
             DataSet data;
-            try { data = (await Task.Run(() => DataSetImporter.Import(entry.FilePath!))).DataSet; }
+            try { data = (await Task.Run(() => DataSetImporter.Import(entry.FilePath!))).DataSet; data.BindsAnalysisNamesToFlatCubes = true; }
             catch { return; }
 
             // The file on disk is the newer version now, published or not (R-to3-5).
@@ -711,7 +711,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
 
         DataSet data;
-        try { data = (await Task.Run(() => DataSetImporter.Import(path))).DataSet; }
+        try { data = (await Task.Run(() => DataSetImporter.Import(path))).DataSet; data.BindsAnalysisNamesToFlatCubes = true; }
         catch (Exception ex) { AddRefusedEntry(path, SourceKind.Npy, ex); return; }
 
         // A grouped run ("SP1.S") deliberately gets NO SNP — it goes through the cube path, which
