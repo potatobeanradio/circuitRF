@@ -1057,3 +1057,24 @@ a via through two dielectrics. Files written by `circuitrf new workspace/cell/vi
   `mmic-GaAs_2LM_100um_uncovered.ctech`, the same stack without the covers. 50 Ω on Metal2 is 95 µm. Numbers: covers
   +2.0 % ε_eff; pad 143.8 fF 3D / 140.5 fF planar (1 GHz); bonded pad at Accurate again (the sliver that broke Gmsh is
   gone), passive to 0.9 %. The planar pad is now ~110 s per frequency (two levels 6 µm apart, polyimide between).
+
+## The examples in the user documentation (2026-11-12)
+
+`docs/user/src/examples/index.md` is the Example Workspaces page: one abstract per example, each under its own `{#ex-…}`
+heading so search finds it, and `ExampleWorkspacesTests.EveryExample_HasItsAbstractOnTheExamplesPage` fails when an
+example in `examples.json` has none. DocGen (`tools/DocGen/Pipeline/ExamplePages.cs`) also renders every example's
+`README.md` as `docs/user/examples/<folder>/index.html`, its pictures copied beside it at the README's own relative paths,
+so the abstract links to the walk-through the workspace opens on. The README is the only source; nothing is copied into
+`docs/user/src`.
+
+Three things that took deciding:
+- **The pages are outside the reading order** (page kind `example`, excluded from `_nav.txt`'s orphan check as a retired
+  page is) — 39 more pages in Previous/Next would bury the chapters — **but they are searched**.
+- **A README would have taken a chapter's place in search.** The Hierarchy example's README is titled "Hierarchy", and the
+  search's "a page whose title IS the query" lift sent "hierarchy" there instead of the Schematic Editor's chapter
+  (`DocsSearchRankingTests` caught it). `docs-search.js` now gives an example's README a 0.8 prior and never treats it as
+  the page a query names; `AnExamplesReadme_NeverTakesTheChaptersPlace` and `NamingAnExample_FindsTheExamples` hold both
+  directions.
+- **The documentation is otherwise vector-only** (`DocsFactoryTests.NoDocumentationImageIsABitmap`). A README's pictures are
+  the example's own, shown as the application shows them, so `examples/<folder>/pictures/` is exempted beside
+  `assets/fixed/` — not copied into `assets/fixed/`, whose contract is that DocGen never writes there.

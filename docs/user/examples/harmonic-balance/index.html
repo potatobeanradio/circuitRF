@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Harmonic Balance</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Harmonic Balance/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Harmonic Balance</p>
+  </div>
+
+  <h1>Harmonic Balance</h1>
+  <p class="lede">A 48 V GaN power amplifier driven into compression, and the same amplifier under two tones for IM2/IM3/IM5. The FET is a reusable sub-cell.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Harmonic Balance</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 48 V GaN power amplifier, in two benches, over one reusable device cell.</p>
+<h2 id="fet">FET</h2>
+<p>The device: an <strong>SDD</strong> whose drain current is written as an equation in the same expression
+language everything else uses, wrapped in a cell with two pins and one parameter, <code>Periphery_mm</code>.
+Both benches place it and override that parameter. Push into it (<code>Ctrl+]</code>) to see the equations.</p>
+<h2 id="poweramplifier">PowerAmplifier</h2>
+<p>Single tone at 2 GHz, drive swept 0 → 30 dBm. Gate biased at −3.05 V through a choke, drain fed
+from 48 V through another, 50 Ω load through a DC block.</p>
+<p><strong><code>RL</code> is a resistor, not a Term, and that is deliberate.</strong> A Term is an S-parameter element: a
+driven port in an S-parameter analysis, and <strong>inert (open) in every other analysis</strong>, DC and
+harmonic balance alike. Its <code>Z</code> is the renormalization reference the S-matrix is defined against,
+not a resistor in the network — so an output terminated with one has no load at all, and the bench
+reports a gain of about −72 dB while converging happily on every point. In HB, drive with a
+<code>P1Tone</code>/<code>PnTone</code> source and terminate with an ordinary <code>R</code>.</p>
+<p>Four measurement blocks, which between them cover most of what a measurement can do:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MeasInput</code></td>
+<td>reading a swept variable (<code>Pin</code>) as a curve; a measure built on an earlier measure</td>
+</tr>
+<tr>
+<td><code>MeasOutput</code></td>
+<td><code>V</code> and <code>I</code> at the <strong>fundamental</strong> (harmonic index 1)</td>
+</tr>
+<tr>
+<td><code>MeasEfficiency</code></td>
+<td>harmonic index <strong>0</strong> is DC; drain efficiency and PAE</td>
+</tr>
+<tr>
+<td><code>MeasHarmonics</code></td>
+<td><code>dB()</code> and <code>mag()</code> over a cube; a <strong>complex</strong> measure that plots on a Smith chart</td>
+</tr>
+</tbody>
+</table>
+<p><code>abs()</code> does <strong>not</strong> broadcast over a cube — use <code>mag()</code>. <code>dB()</code>, <code>dB10()</code>, <code>dBm()</code>, <code>conj()</code>,
+<code>real()</code>, <code>imag()</code>, <code>phase()</code>, <code>log10()</code> and <code>ln()</code> all do.</p>
+<p>Expected result: about 39.5 dBm output, 43 % drain efficiency, gain compressing from 16.6 dB to
+9.5 dB. Two outer sweeps (<code>RFfreq</code>, <code>VDD</code>) are declared and disabled — enable one to get a surface.</p>
+<h2 id="twotone">TwoTone</h2>
+<p>The same amplifier with a <strong>PnTone</strong> source at 1990 and 2010 MHz. Under two tones the spectral axis
+is <code>mixIndex</code> and the second accessor argument is a mixing-product tag rather than a harmonic
+number: <code>&quot;(1,0)&quot;</code> is the first carrier, <code>&quot;(0,1)&quot;</code> is the second, <code>&quot;(1,-1)&quot;</code> is IM2, <code>&quot;(2,-1)&quot;</code> is
+the lower IM3, <code>&quot;(0,0)&quot;</code> is DC.</p>
+<p>Only one of each conjugate pair is stored: <strong>2f₂−f₁ is addressed as <code>&quot;(1,-2)&quot;</code></strong>, not <code>&quot;(-1,2)&quot;</code>.
+Asking for a tag that is not there is an error that lists every tag that is.</p>
+<p><strong>Each carrier is measured separately, and the efficiency adds them.</strong> <code>Pout_f1_W</code> and <code>Pout_f2_W</code>
+are read at <code>&quot;(1,0)&quot;</code> and <code>&quot;(0,1)&quot;</code>, and <code>Eff</code> is <code>(Pout_f1_W + Pout_f2_W)/PDC_W*100</code>. Doubling one
+carrier instead would assume the two come out equal, and they do not — here the upper carrier runs
+0.03 dB low in back-off, the gap grows to 0.06 dB through compression and then <strong>changes sign</strong> near
+the top of the sweep, where the upper carrier comes out ahead. Doubling <code>Pout_f1_W</code> reads 0.25 pp
+high at 16 dBm drive and 0.22 pp low at 20 dBm — wrong in both directions, and worst exactly where
+the efficiency number is the one being quoted.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

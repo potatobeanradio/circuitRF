@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Loadpull and Pursuit</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Loadpull/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Loadpull and Pursuit</p>
+  </div>
+
+  <h1>Loadpull and Pursuit</h1>
+  <p class="lede">The same device swept over a polar load grid (LP), and again with the pursuit search walking to the optimum (LPP).</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Loadpull and Pursuit</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Two ways to find a device's optimum load, over the same GaN model.</p>
+<h2 id="loadpull-a-grid-you-specify">Loadpull — a grid you specify</h2>
+<p><code>Loadpull</code> terminates the device between a <strong>SourceTuner</strong> and a <strong>LoadTuner</strong>, both with their
+bias tees on, and sweeps the load over the grid in <code>load_grid.gam</code>. At each grid point the engine
+walks a drive ladder up to 3 dB gain compression and reports the operating point there — which is
+what makes the resulting contours comparable point to point.</p>
+<p>The grid file is plain text and worth reading:</p>
+<pre><code># gamma Z0=50 mag_ang
+0.0  0
+0.20  0
+0.20  30
+...
+</code></pre>
+<p>The header tags say what the numbers mean. <strong>With no <code>gamma</code> tag the file is read as impedance</strong>, so
+a grid written without one is a completely different sweep that runs without complaint.</p>
+<p><code>RFfreq</code> is authored as expression <code>2</code> with unit <code>GHz</code> in the VAR's own unit column. A unit written
+<strong>inside</strong> the expression (<code>2 GHz</code>) is a parse error — circuitRF's grammar has no unit suffix — and
+an unresolvable variable is skipped rather than reported where you typed it.</p>
+<h2 id="loadpullpursuit-a-search-not-a-grid">LoadpullPursuit — a search, not a grid</h2>
+<p><code>LoadpullPursuit</code> starts from a guess and walks toward the optimum, then draws two constant-VSWR
+rings around what it found. It needs no grid file. The outer sweep takes it across 1.8–2.2 GHz;
+a second, disabled sweep over <code>VDD</code> is there to enable when you want a surface.</p>
+<p>Both benches carry <code>Meas</code> blocks reading <code>V</code> at the drain by net name and harmonic index — the same
+accessor the harmonic-balance benches use, because a loadpull result is a cube like any other.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

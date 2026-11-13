@@ -156,7 +156,7 @@ the whole band: at 10 GHz Palace reads |S11| **−17.38 dB** and |S22| **−16.0
 Every time and size below was **measured once**, on an Apple M4 with 10 cores and 16 GB, running macOS 27.0, Palace
 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3 and OpenCASCADE 8.0.1. A time is the wall clock for the whole
 run; memory is Palace's own peak over all its processes; openEMS's size is the number of cells in its grid. Your
-machine will differ. They are also in `expected-numbers.json`, with **every** frequency's recorded |S|.
+machine will differ.
 
 | Run | Time | Size | \|S11\| at 10 GHz | \|S11\| at 18 GHz | \|S21\| at 18 GHz |
 |---|---|---|---|---|---|
@@ -194,15 +194,6 @@ Coupled Microstrip's Palace setup is the *Standard* preset's element order 2 wit
 two passes the estimate is 8.5 GB) and four mesh regions, 20 µm boxes along the strips' edges; its openEMS setup takes
 300 cells per wavelength and a 5 µm smallest cell (6.05 million cells; the grid's own smallest is 36 µm). Both sweep
 2–12 GHz in 21 points, below the housing's own modes: Palace's check finds the faces' third mode evanescent at 12 GHz.
-
-## The regression test
-
-`Em3dWavePortsExampleTests` holds this page together: every number above is in `expected-numbers.json`, the closed
-forms are recomputed from the cells' VARs, and the recorded Pair result is held to Cohn's line (thru within 0.1 dB /
-1°, coupling within 0.5 dB / 1°, every entry within 0.015). Its gate 4 re-runs the five shipped runs and holds every
-recorded |S| to its run's tolerance. It is `Category=Benchmark` (about half an hour, and it needs Palace and openEMS):
-
-    dotnet test tests/Ui.Tests --settings circuitrf.benchmark.runsettings --filter "FullyQualifiedName~Em3dWavePortsExampleTests"
 
 ## What is deliberately not here
 

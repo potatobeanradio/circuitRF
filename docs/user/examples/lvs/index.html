@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Layout versus schematic</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/LVS/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Layout versus schematic</p>
+  </div>
+
+  <h1>Layout versus schematic</h1>
+  <p class="lede">A 3 dB attenuator whose artwork matches its drawing, the SAME board with six deliberate faults in its artwork, and an MMIC bias tee. The broken copy is broken ON PURPOSE — each fault is one thing LVS exists to find, and the README says what it is and what the report should say about it.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Layout versus schematic</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Three designs that exist to answer one question — <strong>does the artwork implement the drawing</strong> — and
+to be checkable by hand while they do it.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>what it is</th>
+<th>what it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Attenuator</strong></td>
+<td>a 3 dB resistive pi attenuator on a 2-layer board</td>
+<td>the artwork matches the drawing, and LVS must say so with <strong>nothing to report</strong></td>
+</tr>
+<tr>
+<td><strong>Attenuator broken</strong></td>
+<td>the <strong>same</strong> schematic, byte for byte, and a layout carrying <strong>six deliberate faults</strong></td>
+<td>each fault is one thing LVS exists to find</td>
+</tr>
+<tr>
+<td><strong>Bias tee</strong></td>
+<td>an MMIC cell on the shipped GaAs process — a spiral inductor, two MIM capacitors and a thin-film resistor</td>
+<td>three things only a die can exercise: an undrawn ground, parameters on the layout side, and a device whose terminals are on different layers</td>
+</tr>
+<tr>
+<td><strong>Attenuator bench</strong></td>
+<td>the correct cell between two 50 Ω terminations, swept 0.1–6 GHz</td>
+<td>something to run: press <strong>Simulate</strong> and read the attenuation</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong><code>Attenuator broken</code> is broken on purpose.</strong> It is not a mistake and it is not a bug report.
+Its schematic is a byte-for-byte copy of <code>Attenuator</code>'s; only the artwork differs, and it differs
+in six named ways listed below. It still passes <code>circuitrf check</code> with <strong>zero errors</strong> — being
+broken for LVS is not the same as being malformed, and a fixture that could not be opened would
+be testing the wrong thing.</p>
+</blockquote>
+<p>Everything here is an ordinary editable workspace: open it, change it, re-run the generators.</p>
+<hr />
+<h2 id="the-correct-board-and-why-this-circuit">The correct board, and why this circuit</h2>
+<pre><code>          R2 (17.4 ohm)
+   IN ──────/\/\/\────── OUT
+    │    ┌───┤├───┐       │
+    │    └─ C1 1 pF ┘     │
+    │                     │
+   R1 (294)              R3 (294)
+    │                     │
+   ─┴─ ground            ─┴─ ground
+</code></pre>
+<p>It is the smallest design that is at once <strong>symmetric</strong>, <strong>grounded</strong>, <strong>multi-layer</strong> and boring
+enough to verify by reading it. Run <code>Attenuator bench</code> and it reads <strong>−2.97 dB at 0.1 GHz</strong>, rising
+to <strong>−2.55 dB at 6 GHz</strong> — the roll-off is C1 shunting R2, which is exactly what a part the
+topology does not need looks like when you measure it.</p>
+<ul>
+<li><strong>Symmetric.</strong> R1 and R3 are the same part, at the same value, in the same orientation. Swapping
+them is an <em>automorphism</em> of the netlist: the two circuits are indistinguishable, so a comparison
+cannot read the pairing off the designators and has to resolve it. A design where every part is
+distinguishable would never exercise the branch that is hardest to get right.</li>
+<li><strong>C1 is across R2</strong>, which keeps that symmetry and is deliberately a part the topology does not
+need. Something has to be there that the attenuator does not require.</li>
+<li><strong>Grounded on drawn copper.</strong> <code>Bottom Copper</code> is the stackup's ground reference <em>and</em> it draws,
+so the ground net here is ordinary metal and nothing is inferred. <code>Bias tee</code> is the other half of
+that story.</li>
+<li><strong>Multi-layer.</strong> The top ground is three separate pieces, stitched to the bottom pour by four
+barrels. That is what makes an open reachable by deleting one of them.</li>
+</ul>
+<p><strong>The artwork is generated</strong>, from <code>Attenuator/layout/Attenuator.gen.py</code>:</p>
+<pre><code>python3 &quot;examples/LVS/Attenuator/layout/Attenuator.gen.py&quot; examples/LVS
+</code></pre>
+<p>It writes <code>Attenuator.clay</code> and nothing else, and it refuses to write anything at all if its own
+audit of the geometry fails. Hand-drawn artwork in a fixture is artwork nobody can regenerate after
+a format change.</p>
+<hr />
+<h2 id="the-six-faults">The six faults</h2>
+<p><code>Attenuator broken/layout/Attenuator broken.break.py</code> reads the correct board and mutates it:</p>
+<pre><code>python3 &quot;examples/LVS/Attenuator broken/layout/Attenuator broken.break.py&quot; examples/LVS
+python3 &quot;examples/LVS/Attenuator broken/layout/Attenuator broken.break.py&quot; examples/LVS --only F4
+</code></pre>
+<p>The no-argument form writes all six, which is the realistic case. <code>--only Fn</code> writes exactly one,
+which is how you see a single finding on its own.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>the mutation</th>
+<th>what LVS should say</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>F1</strong> swapped net</td>
+<td>R2's output link is re-pointed: it runs up into the top ground instead of right into the output trace</td>
+<td>R2's terminal 2 is on the wrong net, <strong>naming both</strong> — it is on ground and it should be on the output. Not an open: the output net is still there, fed by R3 and C1</td>
+</tr>
+<tr>
+<td><strong>F2</strong> missing part</td>
+<td>C1's placement is deleted; its two risers and its run are left bare</td>
+<td>C1 is in the schematic and not in the layout</td>
+</tr>
+<tr>
+<td><strong>F3</strong> extra part</td>
+<td>a second 294 Ω resistor, designator <code>R4</code>, placed and wired to nothing</td>
+<td>R4 is in the layout and not in the schematic</td>
+</tr>
+<tr>
+<td><strong>F4</strong> short</td>
+<td>a 0.2 mm spur of copper from the lower ground strip up to the input trace</td>
+<td>IN and ground are one net — <strong>with the path, and the spur's own coordinate</strong>. A short reported without its path is a finding nobody can act on</td>
+</tr>
+<tr>
+<td><strong>F5</strong> open</td>
+<td>the upper-left ground's only stitching via is deleted</td>
+<td>ground is in <strong>two</strong> islands, and R1's return is on the one that reaches nothing else</td>
+</tr>
+<tr>
+<td><strong>F6</strong> wrong value</td>
+<td>R3's placement is re-pointed from the 294 Ω part to a 150 Ω one</td>
+<td>R3's value disagrees — <em>schematic 294 Ω, layout 150 Ω, tolerance 1 %</em>. Same land pattern, same designator, same topology, so it is the one fault here that is not a topology fault at all</td>
+</tr>
+</tbody>
+</table>
+<p><strong>F5 splits the ground into two islands, not three.</strong> A via joins at most one piece of copper per
+conductor, so on a two-layer board it is an edge of degree two and deleting one edge of a tree
+splits it in two. Three islands from one deleted via is not reachable at any geometry.</p>
+<hr />
+<h2 id="the-mmic-cell">The MMIC cell</h2>
+<p><code>Bias tee</code> is a die: two RF pads, a MIM DC block between them, a spiral inductor feeding the bias
+node, a MIM capacitor decoupling it to ground and a thin-film resistor out to a gate pad. It runs
+on <code>tech/mmic-GaAs_2LM_100um.ctech</code>, which is the <strong>shipped</strong> starter technology copied in with
+nothing changed — partly to prove that technology works.</p>
+<p>Three things here that a board cannot show:</p>
+<ol>
+<li><strong>The ground reference is not drawn.</strong> <code>Backside Metal</code> has no drawing layers at all, so the two
+backside vias terminate on metal that exists in the <em>stackup</em> and nowhere in the artwork. Read
+naively, every grounded device on this process reads as open. LVS says so on every run that
+relies on it, because it is the one inference the user cannot see on their own screen.</li>
+<li><strong>The parts carry parameters.</strong> Each cell under <code>parts/</code> records the generator that drew it, the
+resolved values it drew from, and which of those the generator <em>derived</em> from its own geometry
+rather than reading. A board's land pattern claims nothing about resistance; these do.</li>
+<li><strong>The MIM capacitor is a multi-layer device.</strong> Its bottom plate is Metal1 and its top plate is
+MIM Metal, joined by neither a via nor a touch — the dielectric between them <em>is</em> the device —
+and it comes out on Metal2 through a MIM via. So terminal 1 is on layer 1 and terminal 2 is on
+layer 2. A pin lookup that ignores layers passes every board test and fails here.</li>
+</ol>
+<pre><code>python3 &quot;examples/LVS/Bias tee/layout/Bias tee.gen.py&quot; examples/LVS
+</code></pre>
+<p>That writes the four part cells and the cell itself, and prints the table below.</p>
+<h3 id="what-the-geometry-actually-resolves-to">What the geometry actually resolves to</h3>
+<p>Each part is drawn on a 0.25 µm grid, so the value it ends up with is not exactly the value the
+schematic asked for. The gap is the <strong>quantisation of a correct design</strong>, and it is the floor under
+any property tolerance: a tolerance tighter than this rejects good artwork.</p>
+<table>
+<thead>
+<tr>
+<th>part</th>
+<th>dimension</th>
+<th>requested</th>
+<th>resolved</th>
+<th>spread</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MIM-0P8P</code></td>
+<td>capacitance</td>
+<td>0.8 pF</td>
+<td>0.79844 pF</td>
+<td>0.195 %</td>
+</tr>
+<tr>
+<td><code>MIM-4P0P</code></td>
+<td>capacitance</td>
+<td>4.0 pF</td>
+<td>3.99861 pF</td>
+<td>0.035 %</td>
+</tr>
+<tr>
+<td><code>SPIRAL-1N2</code></td>
+<td>inductance</td>
+<td>1.2 nH</td>
+<td>1.19985 nH</td>
+<td>0.013 %</td>
+</tr>
+<tr>
+<td><code>TFR-62R</code></td>
+<td>resistance</td>
+<td>62 Ω</td>
+<td>61.875 Ω</td>
+<td>0.202 %</td>
+</tr>
+</tbody>
+</table>
+<p>Re-run the generator and it prints these again.</p>
+<p>That table is also where LVS's <strong>property tolerances</strong> come from. The widest gap above is 0.2 %, and
+one step of the E96 series — the smallest wrong part anybody could have fitted — is 2.4 %, so the
+shipped default sits between them at <strong>1 %</strong>, for resistance, capacitance and inductance alike. A
+length is compared to one database unit instead, because a smaller difference cannot be drawn. Every
+other dimension is compared exactly and the report says that no tolerance has been measured for it,
+rather than a plausible number being invented. The numbers are provisional, they are overridable per
+technology in the <code>.ctech</code>, and <strong>every finding prints the tolerance it applied</strong>, so a wrong default
+shows up on the line it produced.</p>
+<hr />
+<h2 id="reading-the-workspace">Reading the workspace</h2>
+<pre><code>LVS/
+  tech/
+    pcb-2layer-lvs.ctech          a trimmed 2-layer board process
+    mmic-GaAs_2LM_100um.ctech     the shipped MMIC stackup, byte for byte
+  footprints/                     the board's parts: one land pattern each, with the value it is for
+  parts/                          the die's parts: a spiral, two MIM caps, a thin-film resistor
+  Attenuator/                     the correct board — schematic, symbol, layout
+  Attenuator broken/              the same schematic and symbol, six faults in the artwork
+  Attenuator bench/               two terminations and an S-parameter sweep
+  Bias tee/                       the MMIC cell
+</code></pre>
+<p>Each cell's <code>.ccell</code> states its <strong>terminal map</strong> — which layout pin is which schematic port. None
+of the three designs relies on a positional guess, which is what lets them be an oracle for
+anything: a fixture whose correspondence was derived by counting pins would be testing the
+derivation rather than the comparison.</p>
+<p>The board's parts are named after what they <em>are</em> — <code>R0402-294R</code> is a 294 Ω 0402, not a bare land
+pattern — because that is the only place a board layout can state a value. <code>R0402-150R</code> exists for
+one reason: to be the wrong part F6 points at.</p>
+<h2 id="two-things-this-workspace-does-not-do">Two things this workspace does not do</h2>
+<p><strong>The three design cells declare no analysis.</strong> They are cells with ports, not benches, so
+<code>circuitrf check</code> reports one warning each saying no analysis will dispatch. That is accurate —
+<code>Attenuator bench</code> is the one that runs, and it is what a cell is for.</p>
+<p><strong>No copper carries a net name except the board's ground pour.</strong> That is not an oversight either —
+a <code>Net</code> stamped on a trace that touches unnamed copper (a footprint's pad, which lives in a shared
+cell and can never carry a board net) is currently reported as a minimum-spacing violation. The
+pour is the only shape on its layer, so it is the one place a name is safe. <code>examples/RESOLVED.md</code>
+records the detail.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

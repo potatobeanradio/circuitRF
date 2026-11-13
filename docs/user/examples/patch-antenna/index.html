@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Patch Antenna</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Patch Antenna/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Patch Antenna</p>
+  </div>
+
+  <h1>Patch Antenna</h1>
+  <p class="lede">A 5.8 GHz microstrip patch with an inset feed, set up for a full-wave planar solve with a radiation pattern.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Patch Antenna</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 5.8 GHz rectangular microstrip patch with an inset feed on 30 mil RO4350B, with a ground plane
+below it, set up for a full-wave planar solve.</p>
+<p><code>patch/em/patch-5p8GHz.cem</code> sweeps 5.3–6.3 GHz with <strong>resonance search</strong> and <strong>radiation pattern</strong>
+both on. Resonance search is the one mode allowed to add frequencies between the ones you asked
+for, which is what puts points where the resonance actually is rather than where the grid happened
+to fall.</p>
+<p>Open the <code>.cem</code> and press <strong>Simulate</strong>. No results ship with this example.</p>
+<p>Worth looking at afterwards: the input match around resonance, the surface-current map, and the
+pattern cuts. The patch is fed at a single edge port, so it is a one-port structure — the antenna's
+behaviour is entirely in S11 and in what the pattern shows is being radiated rather than reflected.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

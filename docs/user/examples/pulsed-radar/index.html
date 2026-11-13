@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Pulsed Radar</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Pulsed Radar/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Pulsed Radar</p>
+  </div>
+
+  <h1>Pulsed Radar</h1>
+  <p class="lede">A 48 V S-band GaN stage driven by 100 &#181;s pulses at 10 % duty from a pulsed-CW source: pulse droop from channel heating and supply sag, pulse-to-pulse spread from drain lag, rise and fall, from one envelope run. The device is a synthetic radar-class GaN model with a three-pole thermal ladder.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Pulsed Radar (pulsed CW)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 48 V S-band GaN power stage driven by <strong>pulses</strong>: 100 µs of carrier every 1 ms from a pulsed-CW
+<code>MOD_Source</code>, simulated with the <strong>Envelope</strong> analysis. A pulsed-radar amplifier is specified by what happens
+inside a pulse — how far the output <strong>droops</strong> across the top as the channel heats and the drain supply
+sags, and how much pulses differ from one another (<strong>pulse-to-pulse stability</strong>). Harmonic balance cannot see
+either: it solves one steady state, so the device sits at one temperature and one trap state. The envelope
+run steps the device's thermal and trap states, and the supply's storage capacitor, as memory over time.</p>
+<h2 id="radar-gan-the-device">radar-gan: the device</h2>
+<p>The transistor is a <strong>synthetic</strong> GaN HEMT, meant to stand in for the kind of 48 V GaN-on-SiC part a
+pulsed S-band amplifier would use: a 12 mm device (<code>N=48</code>) carrying about 1 A/mm, with a three-pole
+thermal path from the channel to the flange (1.5 °C/W in all) and drain-lag trapping. No real device was
+measured: <code>radar-gan/radar_gan_8x250.cmodel</code> was built with <strong>Tools ▸ Model Composer…</strong> from simulated data.</p>
+<h2 id="pulsedpa-the-stage-under-cw">PulsedPA: the stage under CW</h2>
+<p>The device at <code>N=48</code> in a class-AB stage at <strong>3 GHz</strong>, Vgs −2.6 V, Vdd 48 V, matched rather than put into
+50 Ω: a low-pass L match on each side, to about 1.5 + j4.5 Ω at the gate and 4 + j4 Ω at the drain, the
+power optimum (5.5 + j6 Ω is the efficiency optimum, and dissipates half as much). A stage this size needs stabilising: 1 Ω in series and 10 Ω ∥ 50 pF in
+the gate, 5 Ω + 20 pF from the gate to ground, and 50 Ω in the gate feed. Without them it is unstable from
+0.1 to 8 GHz. The drain is fed through a choke from a <strong>470 µF storage capacitor</strong>, which the 48 V supply
+charges through <strong>0.2 Ω</strong>: both are drawn on the schematic, so the supply sags during a pulse in the
+envelope run as it does on a real bench.</p>
+<p>A harmonic-balance drive sweep, 20 … 34 dBm: Pout, gain, drain efficiency, PAE and the junction's rise
+(<code>Tj_rise</code>, read from the T pin, the net <code>tj</code>). This is the steady state of a pulse that never ends: the
+device at the temperature a CW drive heats it to. <strong>Under a second</strong>; every point converges. Past 34 dBm
+the solve fails to converge at most drives, so the sweep stops at the design drive.</p>
+<table>
+<thead>
+<tr>
+<th>Pin (dBm)</th>
+<th>Pout (dBm)</th>
+<th>Gain (dB)</th>
+<th>PAE (%)</th>
+<th>Junction rise (K)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20</td>
+<td>30.4</td>
+<td>10.4</td>
+<td>5.7</td>
+<td>25</td>
+</tr>
+<tr>
+<td>30</td>
+<td>42.3</td>
+<td>12.3</td>
+<td>25.6</td>
+<td>66</td>
+</tr>
+<tr>
+<td>32</td>
+<td>45.4</td>
+<td>13.4</td>
+<td>36.6</td>
+<td>78</td>
+</tr>
+<tr>
+<td>34</td>
+<td>48.6</td>
+<td>14.6</td>
+<td>53.2</td>
+<td>78</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pulsedpa_pcw-the-stage-on-pulses">PulsedPA_pCW: the stage on pulses</h2>
+<p>The same stage on a pulsed-CW source: <strong>100 µs pulses every 1 ms</strong> (10 % duty), 0.5 µs edges, the first
+rising edge 10 µs into the record, and the source's <code>Pavg</code> the <strong>pulse-top</strong> power. Open the source's
+<strong>Design signal…</strong> to see the pulse.</p>
+<p>One envelope run of 3 ms holds three whole pulse periods: <strong>about 105 s</strong>, as one segment. Before it starts, the
+Messages pane says what it will show: the slowest memory, the drain-lag state's 1 ms emission, needs
+about 5 ms to settle, so the run shows <strong>the first pulse from cold</strong>, not a settled train. Simulate opens <strong>PulsedPA_pCW.cdd</strong>: the output power
+over the run, the junction's temperature rise over the same time, the first pulse's top zoomed, and the
+per-pulse table. The output power is measured at <code>Iout</code>, an IProbe in series with the 50 Ω load, and the
+pulse figures are its rows; the run also records the voltage at every labeled net, <code>tj</code> among them.</p>
+<p>At the 34 dBm design drive (pulse-top available power):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Pulse 1</th>
+<th>Pulse 2</th>
+<th>Pulse 3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Top (dBm)</td>
+<td>49.07</td>
+<td>49.14</td>
+<td>49.15</td>
+</tr>
+<tr>
+<td>Droop, 10–90 % of the top (dB)</td>
+<td>0.26</td>
+<td>0.30</td>
+<td>0.30</td>
+</tr>
+<tr>
+<td>Phase droop (°)</td>
+<td>−0.63</td>
+<td>−0.76</td>
+<td>−0.76</td>
+</tr>
+<tr>
+<td>Rise / fall (ns)</td>
+<td>449 / 422</td>
+<td>414 / 422</td>
+<td>414 / 422</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>The junction heats 47 K across the first pulse</strong>, from its 15 K quiescent rise to 63 K, and the
+storage capacitor sags 0.34 V (0.7 %). Under CW the same drive sits at 78 K.</li>
+<li><strong>Most of the heat arrives before the droop window opens.</strong> The channel's own 1 µs pole has heated it
+within the first few microseconds (the zoomed plot shows the output falling 0.26 dB over the first 10 µs of the top),
+and the window, 10–90 % of the top, sees the die's 20 µs pole and the start of the package's 0.5 ms one.</li>
+<li><strong>Pulse-to-pulse: 0.08 dB and 0.22°.</strong> After pulse 1 the junction cools to 4.8 K, below its 15 K
+quiescent value: the drain-lag state captured at the pulse's peak and emits over a millisecond, so the
+quiescent current is lower until it does. That is current collapse, and it is why pulse 1 differs from
+pulses 2 and 3.</li>
+<li><code>Pin_avg_dBm</code>, and <code>Pavg_dBm</code> and <code>DE_pct</code> (50.4 %) at <code>Iout</code>, are averages over the whole 3 ms run, off-time
+included. The run ends a whole period after the last pulse's rising edge, so the supply has recharged the
+storage capacitor that pulse drew on: stopped just after a pulse, <code>DE_pct</code> counts the capacitor's share of
+the pulse as free and reads high.</li>
+</ul>
+<h2 id="settings-traded-away-for-speed">Settings traded away for speed</h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Here</th>
+<th>Why, and what it costs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Accuracy</td>
+<td><code>draft</code> (the envelope step is the signal's own rate, 32.6 ns)</td>
+<td><code>standard</code> is 4× the steps. The pulse top is flat and the droop is thermal, so a coarser step costs nothing there; the edges are drawn with 15 steps each instead of 60</td>
+</tr>
+<tr>
+<td>Edges</td>
+<td>0.5 µs</td>
+<td>a real radar pulse's edges are often ~100 ns, which needs a 4× faster native rate and 4× the steps</td>
+</tr>
+<tr>
+<td>Record</td>
+<td>three pulse periods, 3 ms</td>
+<td>a settled train needs about five of the 1 ms drain-lag emission and ten or more pulses</td>
+</tr>
+</tbody>
+</table>
+<p>A sweep of the pulse width is not offered: a carrier is a quoted description, which a sweep variable does
+not reach into, so each width is its own run. Edit <code>PW</code> on the source and run again.</p>
+<h2 id="not-modelled-here">Not modelled here</h2>
+<p>Modulation inside the pulse (chirps, phase codes), pulsing the gate or drain bias with the RF, and radar
+range-sidelobe and spectral-mask figures.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

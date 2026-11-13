@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — 3D Eigenmode</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/3D Eigenmode/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › 3D Eigenmode</p>
+  </div>
+
+  <h1>3D Eigenmode</h1>
+  <p class="lede">Is there a cavity resonance in my band? A 50 ohm line through an aluminium housing whose first mode lies inside 8-12 GHz, found by Palace&#39;s eigenmode solve and seen as a notch in a driven sweep, and the same housing with one grounded post, which shortens the cavity the mode sees and moves it above the band.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ 3D Eigenmode (a cavity resonance)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Is there a cavity resonance inside my band, and what moves it?</strong> A line in a metal housing with a lid on is a line
+in a <strong>cavity</strong>, and a cavity has resonant modes. The lowest has its electric field pointing from the floor up to the
+lid, strongest in the middle, which is where the line runs. If that mode falls inside the band the line carries, the
+housing couples the line to itself through it, and the transmission has a notch.</p>
+<p>This workspace answers that question with an <strong>eigenmode</strong> solve, which finds each mode's frequency and Q directly,
+on Palace and on EMerge, the two finite-element solvers circuitRF runs. A <strong>driven</strong> sweep of the same model then
+shows the notch at the same frequency. It has two cells:</p>
+<ul>
+<li><strong>Cavity</strong>: a 50 Ω microstrip through an aluminium housing. Its first cavity mode is inside the band.</li>
+<li><strong>Cavity with post</strong>: the same housing with one grounded post from the floor to the lid, beside the line. The mode
+moves <strong>above</strong> the band and the notch is gone.</li>
+</ul>
+<p>The reference chapter is <strong>EM Setup ▸ Eigenmodes</strong>, in <strong>Help ▸ circuitRF Documentation</strong>. This page is the
+walk-through; it does not repeat that chapter. Opening, orbiting, <code>check</code> and <code>explain</code> need no solver. <strong>Run</strong> needs
+the setup's solver — Palace for <em>Modes</em> and <em>Driven</em>, EMerge for <em>Modes (EMerge)</em> and <em>Driven (EMerge)</em> — and the
+first press without it offers to install it. The walk-through below is Palace's; <em>On EMerge</em> repeats it on EMerge.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cavity</strong></td>
+<td>3D view, mm</td>
+<td>An aluminium housing, a laminate on its floor, a 50 Ω line along its length, and the lid. A lumped port at each end of the line, 0.2 mm short of the end wall. Setups <em>Modes</em> (eigenmode) and <em>Driven</em> on Palace, and <em>Modes (EMerge)</em> and <em>Driven (EMerge)</em>, the same two on EMerge</td>
+</tr>
+<tr>
+<td><strong>Cavity with post</strong></td>
+<td>3D view, mm</td>
+<td>The same, plus one aluminium post, <code>post_d</code> across, from the floor through the laminate to the lid. The same four setups</td>
+</tr>
+</tbody>
+</table>
+<p>Two cells rather than one with a switch, so each opens and runs as it stands, and their results sit side by side.
+One technology, <code>tech/housing-and-board.ctech</code>, serves both.</p>
+<p><strong>The cavity, stated once as each cell's VARs</strong> (the Variables panel): interior <code>a</code> = 22 mm along the line, <code>d</code> = 20 mm
+across it and <code>h</code> = 4 mm high, walls, floor and lid <code>wall</code> = 1 mm thick. The laminate is <code>t_sub</code> = 0.254 mm of
+PTFE-glass (εr 2.2, the technology's material) and the line <code>w</code> = 0.78 mm wide, which is 50 Ω on it. The post is
+<code>post_d</code> = 2.5 mm across, centred on the cavity's length and <code>post_gap</code> = 0.8 mm clear of the line's edge. The ports
+are numbers, not expressions: change <code>a</code> and move them yourself.</p>
+<p><strong>The band</strong> is X band, <strong>8–12 GHz</strong>, the band this line is meant for.</p>
+<p><strong>The line is a sheet of perfect conductor</strong>, not copper. With every metal lossy, Palace's search for the second and
+third modes below did not finish (the reason is in <em>Run settings</em>). The housing and the post are aluminium, and their
+loss is in every Q below.</p>
+<h2 id="the-question-in-one-closed-form">The question, in one closed form</h2>
+<p>An empty rectangular cavity a × d, with its field from floor to lid, has its lowest mode at
+f = (c/2)·√((1/a)² + (1/d)²). For 22 × 20 mm that is <strong>10.13 GHz</strong>, just above the band's middle. That figure is an
+<strong>upper bound</strong>, not a prediction: the laminate on the floor stores some of the field in εr 2.2, which pulls the real
+mode down. It is the one number on this page that is not circuitRF's own output.</p>
+<h2 id="cavity-modes">Cavity: <em>Modes</em></h2>
+<ol>
+<li>Open <strong>Cavity</strong>'s 3D view. <strong>Simulate ▸ Setup Analyses…</strong>, make <em>Modes</em> the active setup and <strong>Run</strong>.</li>
+<li>The mode table:</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>f</th>
+<th>Q</th>
+<th>Q unloaded</th>
+<th>Most energy in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>9.956 GHz</strong></td>
+<td><strong>539</strong></td>
+<td><strong>3,236</strong></td>
+<td>the air, 97 %</td>
+</tr>
+<tr>
+<td>2</td>
+<td>10.18 GHz</td>
+<td>1.1</td>
+<td>lossless</td>
+<td>the laminate, 83 %</td>
+</tr>
+<tr>
+<td>3</td>
+<td>14.43 GHz</td>
+<td>1.4</td>
+<td>lossless</td>
+<td>the laminate, 83 %</td>
+</tr>
+</tbody>
+</table>
+<p>How to read it:</p>
+<ul>
+<li><strong>f</strong> is the mode's frequency. Mode 1 is 1.7 % below the closed form's 10.13 GHz: the laminate's pull.</li>
+<li><strong>Q</strong> is the <em>loaded</em> Q, with every loss the problem has. Here that is the aluminium, the laminate, and the two
+ports: an eigenmode solve treats each 50 Ω port as a resistor that the mode drives. <strong>Q unloaded</strong> takes the ports'
+share out. Mode 1's Q of <strong>539</strong> against <strong>3,236</strong> unloaded says the ports, not the walls, are what damp it most.
+The ports are the rest of your circuit, so the loaded Q is the one that sets the notch's width: about f/Q, 18 MHz.</li>
+<li><strong>Most energy in</strong> is each mode's energy participation: where it lives. Mode 1 lives in the air of the cavity.</li>
+<li><strong>Modes 2 and 3 are not resonances.</strong> A Q of about 1 means the energy leaves within one cycle. These two rows are
+the line itself, between its two 50 Ω ports, with its field in the laminate under the strip. They have no notch, and
+nothing the post does moves them much. A cavity resonance is a row with a Q in the hundreds or more.</li>
+</ul>
+<p><code>circuitrf em &quot;Cavity/3d/Cavity.c3d&quot; --setup Modes</code> prints the same table.</p>
+<h2 id="cavity-where-the-mode-lives">Cavity: where the mode lives</h2>
+<p>The object tree's <strong>Field plots</strong> has one saved plot, <strong>Cavity mode</strong>: |E| of mode 1 on a horizontal cut at
+mid-laminate height, 0.127 mm above the floor. Tick it after the run. The field is strongest in the middle of the
+cavity, on the line, and falls to zero at all four walls. That middle is where the post goes.</p>
+<h2 id="cavity-driven">Cavity: <em>Driven</em></h2>
+<p>Make <em>Driven</em> the active setup and <strong>Run</strong>: Palace over 8–12 GHz, 801 points, a 5 MHz step. The step has to be
+under the notch's width, which the loaded Q gave as about 18 MHz. At a 0.1 GHz step the two nearest points,
+9.9 and 10.0 GHz, read −0.11 and −0.35 dB, and the notch would not be there to see.</p>
+<p>Plot S21 in dB. It sits within 0.15 dB of 0 dB across the band, except within 0.1 GHz of one sharp notch:
+<strong>−11.69 dB</strong> at <strong>9.955 GHz</strong>. That is the eigenmode's 9.956 GHz to within the 5 MHz step: the same resonance, found two ways. The
+depth depends on which sample lands nearest the bottom of a notch 18 MHz wide; its frequency does not.</p>
+<h2 id="cavity-with-post-modes">Cavity with post: <em>Modes</em></h2>
+<p>Open <strong>Cavity with post</strong> and run <em>Modes</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>f</th>
+<th>Q</th>
+<th>Q unloaded</th>
+<th>Most energy in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>10.22 GHz</td>
+<td>1.1</td>
+<td>lossless</td>
+<td>the laminate, 83 %</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>12.84 GHz</strong></td>
+<td><strong>2,480</strong></td>
+<td><strong>2,879</strong></td>
+<td>the air, 97 %</td>
+</tr>
+<tr>
+<td>3</td>
+<td>14.45 GHz</td>
+<td>1.4</td>
+<td>lossless</td>
+<td>the laminate, 83 %</td>
+</tr>
+</tbody>
+</table>
+<p>Rows 1 and 3 are the line again, barely moved. The cavity mode is row 2, at <strong>12.84 GHz</strong>: above the band's top of
+12 GHz. Its loaded Q is now close to its unloaded Q, because little of its field is left at the ports. The saved
+<strong>Cavity mode</strong> plot shows mode 2.</p>
+<h2 id="cavity-with-post-driven">Cavity with post: <em>Driven</em></h2>
+<p>Run <em>Driven</em>. S21 stays within <strong>−0.093 dB</strong> of 0 dB across the whole band: no notch. The resonance is still there,
+at 12.84 GHz, and a sweep that ran past 12 GHz would find it. It is just no longer in the band.</p>
+<h2 id="why-it-moved">Why it moved</h2>
+<p><strong>The post does not damp the mode. It shortens the cavity the mode sees.</strong> A conductor from floor to lid forces the
+vertical electric field to zero where it stands, so the field cannot peak there any more. Look at the two <strong>Cavity
+mode</strong> plots: with the post, |E| is zero round the post and the mode has moved into the open half of the housing, on
+the far side of the line. A smaller cavity resonates higher, so the frequency rises from 9.956 GHz to 12.84 GHz.</p>
+<p>The Q confirms it: with the post the loaded Q went <strong>up</strong>, from 539 to 2,480. A damped mode would have a lower Q.</p>
+<p>The post works because it stands at the mode's maximum. One post moves this mode by about 30 %; moving it further
+needs more posts, or a wall.</p>
+<h2 id="on-emerge">On EMerge</h2>
+<p>Each cell also has <em>Modes (EMerge)</em> and <em>Driven (EMerge)</em>: the same two setups, solved by EMerge at its <em>Draft</em>
+preset (element order 2). Run them as above. They need EMerge, which <strong>Settings ▸ Solvers ▸ Install EMerge …</strong>
+installs in about two minutes.</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th></th>
+<th>Palace</th>
+<th>EMerge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cavity</td>
+<td>the cavity mode</td>
+<td>9.956 GHz, Q 539, Q unloaded 3,236</td>
+<td><strong>9.9567 GHz</strong>, Q <strong>564</strong>, Q unloaded <strong>2,568</strong></td>
+</tr>
+<tr>
+<td>Cavity</td>
+<td>|S21| at 9.955 GHz, the deepest sample</td>
+<td>−11.69 dB</td>
+<td><strong>−12.56 dB</strong></td>
+</tr>
+<tr>
+<td>Cavity</td>
+<td>the worst |S21| more than 0.1 GHz from the notch</td>
+<td>within 0.15 dB of 0 dB</td>
+<td><strong>−0.106 dB</strong></td>
+</tr>
+<tr>
+<td>Cavity with post</td>
+<td>the cavity mode</td>
+<td>12.84 GHz, Q 2,480, Q unloaded 2,879</td>
+<td><strong>12.82 GHz</strong>, Q <strong>3,345</strong>, Q unloaded <strong>3,784</strong></td>
+</tr>
+<tr>
+<td>Cavity with post</td>
+<td>the least |S21| in the band</td>
+<td>−0.093 dB</td>
+<td><strong>−0.121 dB</strong></td>
+</tr>
+</tbody>
+</table>
+<p>EMerge's mode tables, as <code>circuitrf em &quot;Cavity/3d/Cavity.c3d&quot; --setup &quot;Modes (EMerge)&quot;</code> prints them:</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Mode</th>
+<th>f</th>
+<th>Q</th>
+<th>Q unloaded</th>
+<th>Most energy in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cavity</td>
+<td>1</td>
+<td><strong>9.9567 GHz</strong></td>
+<td>564</td>
+<td>2,568</td>
+<td>the air, 97 %</td>
+</tr>
+<tr>
+<td>Cavity</td>
+<td>2</td>
+<td>11.80 GHz</td>
+<td>2.0</td>
+<td>12</td>
+<td>the laminate, 84 %</td>
+</tr>
+<tr>
+<td>Cavity with post</td>
+<td>1</td>
+<td>11.81 GHz</td>
+<td>2.0</td>
+<td>12</td>
+<td>the laminate, 84 %</td>
+</tr>
+<tr>
+<td>Cavity with post</td>
+<td>2</td>
+<td><strong>12.82 GHz</strong></td>
+<td>3,345</td>
+<td>3,784</td>
+<td>the air, 97 %</td>
+</tr>
+</tbody>
+</table>
+<p>How to read the differences:</p>
+<ul>
+<li><strong>The resonance agrees.</strong> The cavity mode is within 0.003 % of Palace's with the line alone and 0.15 % with the
+post, and both solvers put the Cavity's notch on the same 5 MHz sample.</li>
+<li><strong>The EMerge setups search from 10 GHz, the band's centre</strong>, where Palace's search from 8. EMerge's eigensolver
+finds the modes nearest the frequency it is given, on either side of it, where Palace's finds the first ones above
+it. From 8 GHz with three modes, EMerge found the Cavity's mode, but with the post only one of the line's rows: the
+12.84 GHz mode was too far away. EMerge also evaluates the ports' resistance at that frequency rather than at each
+mode's own, which moves the loaded Q: the Cavity's mode reads Q 694 searched from 8 GHz and 564 from 10 GHz.</li>
+<li><strong>Q unloaded is the least certain number in EMerge's table.</strong> circuitRF computes each port's external Q from
+EMerge's mode field and takes the ports' share out of the loaded Q, a small difference of two larger numbers. It
+reads 21 % below Palace's with the line alone and 31 % above with the post.</li>
+<li><strong>The line's rows differ</strong>, and that is expected. They are not resonances (a Q near 1 or 2); each solver returns
+whichever heavily damped solutions lie nearest its search.</li>
+<li><strong>The notch's depth is not a difference between the solvers.</strong> It is where the 9.955 GHz sample falls on a notch
+18 MHz wide. At the bottom of a notch like this one, |S21| is the loaded Q over the unloaded Q, and Palace's own
+table gives 539 / 3,236: <strong>−15.57 dB</strong>. Swept across the notch in 0.1 MHz steps (9.94–9.97 GHz, Standard),
+EMerge's bottom is <strong>−15.55 dB</strong> at <strong>9.9564 GHz</strong>. The two samples read −11.69 and −12.56 dB because each solver's
+resonance sits a different fraction of a megahertz from 9.955 GHz. To read a notch's depth, sweep across it finely.</li>
+</ul>
+<h2 id="eigenmode-is-fem-only">Eigenmode is FEM only</h2>
+<p>openEMS is a time-domain solver and has no eigensolver. Set <em>Modes</em>' solver to openEMS and <strong>Run</strong> refuses before
+anything is meshed: <em>&quot;This setup asks for an eigenmode solve on openEMS, and only Palace and EMerge find eigenmodes:
+openEMS is a time-domain (FDTD) solver and has no eigensolver. Set the setup's Solver3D to Palace, or run it with
+<code>circuitrf em --solver palace</code>.&quot;</em></p>
+<h2 id="run-settings-and-the-numbers">Run settings, and the numbers</h2>
+<p>Every setup is <strong>Draft with element order 2</strong>, &quot;At metal and ports&quot; (<code>EdgeRefinement</code>) <strong>1</strong>, and the <strong>Direct</strong>
+linear solver, as in the 3D Package example's <em>Lid modes</em>. The air box is flush with the housing's outside and PEC on
+every face: the housing's interior is the problem. <em>Modes</em> asks for 3 modes above 8 GHz, the band's start.</p>
+<p>The EMerge setups are <strong>Draft</strong>, which sets element order 2, elements at most 0.2 of a wavelength and 0.25 of that
+along metal edges, and an adaptive sweep to 0.001 on |S|. <em>Modes (EMerge)</em> asks for 3 modes about 10 GHz.</p>
+<p>Measured once, on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, and EMerge
+3.0.0b2 with its fast sparse solver. A time is the whole run's wall clock and memory is the solver's own peak over its
+processes. Your machine will differ.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Time</th>
+<th>Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cavity, <em>Modes</em></td>
+<td>3 min 42 s</td>
+<td>3.7 GB</td>
+</tr>
+<tr>
+<td>Cavity, <em>Driven</em></td>
+<td>34 s</td>
+<td>4.3 GB</td>
+</tr>
+<tr>
+<td>Cavity with post, <em>Modes</em></td>
+<td>1 min 47 s</td>
+<td>4.9 GB</td>
+</tr>
+<tr>
+<td>Cavity with post, <em>Driven</em></td>
+<td>41 s</td>
+<td>4.3 GB</td>
+</tr>
+<tr>
+<td>Cavity, <em>Modes (EMerge)</em></td>
+<td>3 min 21 s</td>
+<td>2.7 GB</td>
+</tr>
+<tr>
+<td>Cavity, <em>Driven (EMerge)</em></td>
+<td>3 s</td>
+<td>1.6 GB</td>
+</tr>
+<tr>
+<td>Cavity with post, <em>Modes (EMerge)</em></td>
+<td>3 min 21 s</td>
+<td>2.9 GB</td>
+</tr>
+<tr>
+<td>Cavity with post, <em>Driven (EMerge)</em></td>
+<td>3 s</td>
+<td>1.8 GB</td>
+</tr>
+</tbody>
+</table>
+<p>An EMerge eigenmode run uses one core, whatever is installed, so it takes minutes where its driven sweep takes
+seconds.</p>
+<p><strong>What Draft trades on EMerge, and how to change it.</strong> Set <strong>Quality</strong> to <em>Standard</em> or <em>Accurate</em> in the setup's
+EMerge section (<code>&quot;EMerge&quot;: { &quot;Quality&quot;: &quot;Standard&quot; }</code> in the file). On the Cavity's <em>Driven (EMerge)</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Quality</th>
+<th>Tetrahedra</th>
+<th>Notch</th>
+<th>|S21| at 9.955 GHz</th>
+<th>Time</th>
+<th>Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft (shipped)</td>
+<td>7,410</td>
+<td>9.955 GHz</td>
+<td>−12.56 dB</td>
+<td>3 s</td>
+<td>1.6 GB</td>
+</tr>
+<tr>
+<td>Standard</td>
+<td>15,124</td>
+<td>9.955 GHz</td>
+<td>−13.03 dB</td>
+<td>6 s</td>
+<td>3.1 GB</td>
+</tr>
+<tr>
+<td>Accurate (three mesh refinement passes)</td>
+<td>60,503</td>
+<td>9.955 GHz</td>
+<td>−13.49 dB</td>
+<td>34 s</td>
+<td>6.9 GB</td>
+</tr>
+</tbody>
+</table>
+<p>The notch's frequency is settled at Draft; its sampled depth is not, for the reason above. On <em>Modes (EMerge)</em>,
+searched from 8 GHz, Draft found the cavity mode at 9.9571 GHz with Q 694 in 2 min 20 s, and Standard at 9.9569 GHz
+with Q 729 in 4 min 56 s (2.8 GB).</p>
+<p><em>Modes</em> takes longer than <em>Driven</em> because a lossy metal makes the eigenproblem nonlinear: Palace finds the modes of
+a linearised problem in seconds, then refines each one, and the refinement is most of the time. That refinement is what
+did not finish when the line was lossy too, and why the line is a perfect conductor.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

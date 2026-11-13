@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Tuning and Optimization</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Optimization/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Tuning and Optimization</p>
+  </div>
+
+  <h1>Tuning and Optimization</h1>
+  <p class="lede">An L-section match, a three-resonator bandpass filter set up for minimax, and a FET amplifier stabilized for &#181; ≥ 1.05 while its complex source impedance is tuned by magnitude and phase. Each optimizes in under a second; the amplifier has one range drawn too narrow on purpose.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Tuning and Optimization</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Three test benches, each small enough that a whole optimization takes well under a second. Each one
+already has its values set up for tuning, its goals written and an algorithm chosen, so you can open
+it and press <strong>Run</strong> in the <strong>Optimizer</strong> panel (tabbed behind Tuning, which is tabbed behind
+Analyses) before reading anything else.</p>
+<p><strong>Simulate a bench once first.</strong> Its Data Display, <code>&lt;cell&gt;.cdd</code> beside this workspace's <code>.cws</code>, then
+opens already plotting the quantities its goals read, with each goal's limit in the plot title. Leave
+it open: it follows the sliders while you tune and the best point while the optimizer runs.</p>
+<h2 id="lsectionmatch-two-values-one-goal">LSectionMatch — two values, one goal</h2>
+<p>A series <code>L1</code> and a shunt <code>C1</code> matching a 200 Ω load (port 2) to 50 Ω (port 1). As drawn
+(<code>L1</code> = 5 nH, <code>C1</code> = 0.5 pF) the match is poor: |S11| sits between −5.2 and −5.4 dB across the band.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Variables</td>
+<td><code>L1.L</code> 1–50 nH, <code>C1.C</code> 0.1–10 pF, both tune and opt</td>
+</tr>
+<tr>
+<td>Goal</td>
+<td><code>Match = dB(SP1.S(1,1))</code>, <strong>≤ −20 dB</strong> over 0.95–1.05 GHz</td>
+</tr>
+<tr>
+<td>Algorithm</td>
+<td>Gradient (Levenberg–Marquardt), seed 1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Run</strong> finishes in 12 iterations and 39 simulations with the goal met:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Start</th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>L1.L</code></td>
+<td>5 nH</td>
+<td>12.709 nH</td>
+</tr>
+<tr>
+<td><code>C1.C</code></td>
+<td>0.5 pF</td>
+<td>1.4851 pF</td>
+</tr>
+<tr>
+<td>worst |S11| in the band</td>
+<td>−5.17 dB</td>
+<td>−20.00 dB at 1.05 GHz</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The worst point lands exactly on the limit, and that is how least squares behaves.</strong> The cost is
+zero the moment every point meets its limit, so the run stops there rather than going further. The
+best point is −23.4 dB at 1.00 GHz and exactly −20.0 dB at the band edge. If you want margin, ask for
+it: write −22 dB and run again.</p>
+<p>Two presets are saved in the schematic — open <strong>Presets</strong> in the Tuning panel:</p>
+<ul>
+<li><strong>As drawn</strong> — the starting values.</li>
+<li><strong>Textbook</strong> — the closed-form L-section for 50 Ω to 200 Ω at 1 GHz (Q = √3: X<sub>L</sub> = 86.6 Ω,
+B<sub>C</sub> = 8.66 mS). It centres the match at 1 GHz, and its worst point in the band is
+−22.3 dB at 1.05 GHz: 2.3 dB of margin the optimizer's answer does not have, because the run stopped
+the moment the goal was met.</li>
+</ul>
+<p>Recall one, <strong>Push</strong> it, and run again — or <strong>Reset</strong> in the Optimizer panel to put back what a Push
+wrote — to compare how different algorithms get from the same start to the goal.</p>
+<p>This is also the file the command line is checked against —
+<code>circuitrf opt LSectionMatch/schematic/LSectionMatch.csch</code> prints the same values, cost and
+simulation count as the panel.</p>
+<h2 id="bandpassfilter-four-values-three-goals-minimax">BandpassFilter — four values, three goals, minimax</h2>
+<p>A three-resonator bandpass filter: a shunt LC at each end and a series LC between them. The two
+shunt resonators read the same two variables, so four VAR rows drive six parts.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Variables</td>
+<td><code>Lp</code> 0.5–2 nH, <code>Cp</code> 10–50 pF, <code>Ls</code> 20–80 nH, <code>Cs</code> 0.3–1.2 pF</td>
+</tr>
+<tr>
+<td>Goals</td>
+<td><code>Passband</code>: dB(S21) <strong>in −0.5 … 0 dB</strong> over 0.9–1.1 GHz · <code>StopLow</code>: <strong>≤ −25 dB</strong> over 0.5–0.7 GHz · <code>StopHigh</code>: <strong>≤ −25 dB</strong> over 1.35–2 GHz</td>
+</tr>
+<tr>
+<td>Algorithm</td>
+<td>Minimax, seed 1</td>
+</tr>
+</tbody>
+</table>
+<p>As drawn the filter is tuned to about 1.13 GHz: dB(S21) is −20.9 dB at the bottom of the passband
+and the upper stopband reaches −14.8 dB at 1.35 GHz. <strong>Run</strong> meets all three goals in 12 iterations
+and 85 simulations.</p>
+<p><strong>Minimax</strong> lowers the single largest violation rather than the sum of squares, so it levels the
+worst points against one another. Here that is the passband: it ends at −0.50 dB at both band edges
+and at the bottom of its deepest ripple (1.04 GHz) at once, while the stopbands keep 10 dB (low side,
+−35.0 dB) and 6.1 dB (high side, −31.1 dB) to spare. The values it
+finds are within 6 % of the textbook 0.5 dB Chebyshev design for this band (0.997 nH, 25.4 pF,
+43.6 nH, 0.581 pF).</p>
+<p>Two presets are saved in the schematic. Open <strong>Presets</strong> in the Tuning panel:</p>
+<ul>
+<li><strong>As drawn</strong> — the starting values. Recall it to see where the run started.</li>
+<li><strong>Equiripple</strong> — the run's best point, with its cost. Recall it, then <strong>Push</strong>, to put it in the
+schematic.</li>
+</ul>
+<p>Start tuning (▶), recall <em>As drawn</em>, press <strong>Snapshot</strong>, then recall <em>Equiripple</em>: the Data Display
+shows both responses at once, the earlier one as faded ghosts.</p>
+<h2 id="stabilityandgain-a-complex-value-tuned-by-its-parts-and-a-range-drawn-too-narrow">StabilityAndGain — a complex value tuned by its parts, and a range drawn too narrow</h2>
+<p>A FET amplifier biased at V<sub>GS</sub> = −1 V, V<sub>DS</sub> = 10 V, with a series resistor
+<code>R1 = Rstab</code> and a shunt resistor <code>R2 = Rshunt</code> at its gate to stabilize it. Port 1's impedance is
+the VAR <code>Zs = polar(50, 0) Ohm</code>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Variables</td>
+<td><code>Rstab</code> <strong>1–3 Ω</strong>, <code>Rshunt</code> 20–2000 Ω, <code>mag(Zs)</code> 10–200 Ω, <code>phase(Zs)</code> −80…80°</td>
+</tr>
+<tr>
+<td>Goals</td>
+<td><code>Stable</code>: <code>mu(SP1.S)</code> <strong>≥ 1.05</strong> over 0.5–10 GHz · <code>Gain</code>: dB(S21) <strong>≥ 13 dB</strong> over 2–3 GHz</td>
+</tr>
+<tr>
+<td>Algorithm</td>
+<td>Auto (a global search, then a local polish), seed 1</td>
+</tr>
+</tbody>
+</table>
+<p>As drawn the amplifier is unstable everywhere: μ is between 0.20 (at 1.8 GHz) and 0.54. The gain is
+15.5–17.7 dB.</p>
+<p><strong>Two goals on one analysis.</strong> Both read <code>SP1</code>, so each simulation answers both. They pull against
+each other: the resistors that raise μ also cost gain. μ is a property of the two-port alone, so it
+does not depend on <code>Zs</code>, but the gain does — the source impedance is what the optimizer uses to win
+gain back.</p>
+<p><strong>A complex value tuned by its parts.</strong> <code>Zs</code> is not tuned whole. Its <strong>magnitude</strong> and <strong>phase</strong> are
+two rows of their own, each with its own slider and range. Moving the magnitude slider keeps the
+phase where it is, and moving the phase keeps the magnitude. The optimizer treats them as two
+coordinates. <strong>Push</strong> writes <code>Zs</code> back whole and in the form it was written: <code>polar(…, …) Ohm</code>, not a
+rectangular number.</p>
+<p><strong>The range of <code>Rstab</code> is drawn too narrow on purpose.</strong> <strong>Run</strong> ends after 53 iterations and 394
+simulations with <strong>neither goal met</strong>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Rstab</code></td>
+<td><strong>3 Ω — at the top of its range, marked railed</strong></td>
+</tr>
+<tr>
+<td><code>Rshunt</code></td>
+<td>31.8 Ω</td>
+</tr>
+<tr>
+<td><code>Zs</code></td>
+<td>polar(25.1, 39.0°) Ω</td>
+</tr>
+<tr>
+<td>worst μ</td>
+<td>0.985 at 7.9 GHz</td>
+</tr>
+<tr>
+<td>worst gain</td>
+<td>12.66 dB at 3 GHz</td>
+</tr>
+</tbody>
+</table>
+<p>The ⚠ on the <code>Rstab</code> row says the best value is at an edge of its range: the optimizer wanted more
+than it was allowed. <strong>Widen</strong> doubles the range on that side — 1–3 Ω becomes 1–5 Ω — as one undo
+step. Run again and it rails again at 5 Ω (μ 1.041, gain 12.90 dB). Widen once more, to 1–9 Ω, and
+the run meets both goals after 25 iterations and 200 simulations:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Rstab</code></td>
+<td>6.58 Ω</td>
+</tr>
+<tr>
+<td><code>Rshunt</code></td>
+<td>49.7 Ω</td>
+</tr>
+<tr>
+<td><code>Zs</code></td>
+<td>polar(42.4, 21.3°) Ω</td>
+</tr>
+<tr>
+<td>worst μ</td>
+<td>1.055 at 4.1 GHz</td>
+</tr>
+<tr>
+<td>worst gain</td>
+<td>13.18 dB at 3 GHz</td>
+</tr>
+</tbody>
+</table>
+<p>A railed variable is a hint, never a stop. The run still finishes, and the range is yours to change.</p>
+<h2 id="settings">Settings</h2>
+<p>The amplifier's 0.5–10 GHz sweep has 96 points (100 MHz steps). A sweep ten times finer moves its
+worst μ at the widened optimum from 1.0552 at 4.10 GHz to 1.0551 at 4.14 GHz.</p>
+<p><strong>The filter's sweep was kept at 151 points (10 MHz steps) to keep each simulation cheap</strong>, and that
+setting matters. The optimizer only sees the grid, so it can only hold the passband at −0.5 dB at the
+grid points. With 1,501 points (1 MHz steps) the Equiripple preset's worst passband point is
+<strong>−0.509 dB at 1.045 GHz</strong>, between two of the coarse points. To hold the limit between grid points,
+use the finer sweep and run again (each simulation costs ten times as much), or tighten the goal by
+the difference.</p>
+<p>The L-section's 21 points over 0.9–1.1 GHz are enough: 2,001 points over the goal's band give the same
+worst point, −20.0 dB at 1.05 GHz.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Via Contact Resistor</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Via Contact Resistor/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Via Contact Resistor</p>
+  </div>
+
+  <h1>Via Contact Resistor</h1>
+  <p class="lede">A thin-film resistor on a level of its own on a silicon back-end, contacted through vias, with a Metal1 line crossing under it that does not touch it.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Via Contact Resistor</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A thin-film resistor contacted through vias, on a silicon back-end. The technology, <code>tech/rfic-Si_3LM_TFR_100um.ctech</code>, is an example with
+generic round numbers, taken from no process.</p>
+<p>The film has a level of its own between Metal1 and Metal2. The <code>TFR</code> in the schematic chooses <code>Resistor</code>, 50 Ω/sq, in its <code>Film</code> row, and the
+part draws a Metal2 head and a contact via at each end. Its length is the distance between the vias' inner edges.</p>
+<h2 id="what-it-shows">What it shows</h2>
+<p><strong>Metal can cross the film.</strong> The Metal1 line under the resistor joins the input through <code>Via12</code> and passes under the film without touching
+it, and <code>circuitrf lvs</code> reads one resistor between two nets. On a level with metal, the same crossing would short that part of the film.</p>
+<p><strong>The film chooses the contact.</strong> Change <code>Film</code> to <code>Resistor Hi</code>, 500 Ω/sq, and the readout follows. It is the same level, so the artwork
+keeps its shape. A film on a level with metal would draw overlap contacts instead.</p>
+<p><strong>The substrate states a conductivity.</strong> <code>Silicon, 10 kΩ·cm</code> is σ 0.01 S/m with no loss tangent, so its loss falls as 1/f, as conduction
+loss does. <strong>Stackup ▸ A conducting substrate</strong>, in <strong>Help ▸ circuitRF Documentation</strong>, says when to state σ rather than tanδ.</p>
+<h2 id="running-it">Running it</h2>
+<p><code>ViaResistor/em/ViaResistor.cem</code> is a planar run of all four levels at DC, with a coarse mesh and no edge mesh. It took 3 s and 3.8 GB on one
+machine, and reads 251.4 Ω against the part's 250 Ω: a via-contacted film reads long by up to half a via cell at each end.</p>
+<p>A full-wave point on this artwork is refused on a 16 GB machine: the calibration standards alone need about 30 GB, at the coarsest mesh
+tried, because a 100 µm substrate asks for long standards and the stack's thin levels ask for small cells. Solve it in 3D on Palace if you
+need the sweep. EMerge cannot take this artwork, whose Metal1 and Metal2 are both closer to the film than the volume it solves a film as,
+and openEMS needs a cell the size of the thinnest gap, which costs hours.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

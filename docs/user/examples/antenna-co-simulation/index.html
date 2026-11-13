@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Antenna Co-Simulation</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Antenna Co-Simulation/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Antenna Co-Simulation</p>
+  </div>
+
+  <h1>Antenna Co-Simulation</h1>
+  <p class="lede">A meander antenna on a 45 x 95 mm board, solved once at five frequencies with each of its parts as a port. An EM Field Data block then gives S11, the radiation pattern and realized gain from a schematic, so the optimizer matches it and a sweep shows an inductor&#39;s error with no new EM run.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Antenna Co-Simulation</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A meander antenna on a 45 × 95 mm board, solved once with each of its parts as a port. From then on a schematic gives S11,
+the radiation pattern and realized gain for any part values, in under a second and with no new EM run.</p>
+<h2 id="the-two-cells">The two cells</h2>
+<p><strong>Meander Antenna.</strong> One copper layer on 1.6 mm FR-4: a 43 × 62 mm ground, a 1 mm coplanar feed in a slot in the ground, and a
+2 mm wide meander about 98 mm long above it. Three 0402 land patterns sit where the feed meets the antenna:</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Where it goes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C1</code></td>
+<td>shunt, feed to ground</td>
+</tr>
+<tr>
+<td><code>L1</code></td>
+<td>series, feed to antenna</td>
+</tr>
+<tr>
+<td><code>C2</code></td>
+<td>shunt, antenna to ground, not fitted (Disable = Open)</td>
+</tr>
+</tbody>
+</table>
+<p>Its schematic is the board's circuit: the source, <code>C1</code> and <code>L1</code>, with <code>C2</code> drawn but not fitted. The layout labels <code>P1</code> where the feed
+starts. <strong>A 3D view does not take port labels from a layout it places,</strong> so the 3D view has a <code>P1</code> of its own, a lumped sheet across the
+0.5 mm gap at the end of the slot.</p>
+<p>Its 3D view has one setup, <strong>Pattern</strong>: EMerge at the Accurate preset, 828 to 908 MHz in 20 MHz steps, with <strong>Component ports</strong>
+on every part and <strong>Radiation pattern</strong> on. It keeps a far field at each of the five frequencies.</p>
+<p><strong>Antenna Bench</strong> (a test bench). The saved run as one <strong>EM Field Data</strong> block, <code>EM1</code>, on
+<code>results/Meander Antenna Pattern.emerge.cemr</code>, with the parts drawn around it. Each part stands from its port's pin to ground,
+because a gap port's own pad is that port's reference. The values come from the variables <code>Lser</code>, <code>dL</code> and <code>Cshunt</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Analysis</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SP1</code></td>
+<td>S11 from 828 to 908 MHz</td>
+</tr>
+<tr>
+<td><code>F1</code></td>
+<td>the pattern at 868 MHz, for the goals and the first tab</td>
+</tr>
+<tr>
+<td><code>F2</code></td>
+<td>the pattern at every stored frequency</td>
+</tr>
+<tr>
+<td><code>F3</code>, swept by <code>F3_sweep_dL</code></td>
+<td>the pattern at 868 MHz with the inductor 2 nH low to 2 nH high</td>
+</tr>
+</tbody>
+</table>
+<h2 id="run-it">Run it</h2>
+<ol>
+<li><strong>Simulate the Meander Antenna's 3D view</strong> (setup <code>Pattern</code>). It needs EMerge, and the first run offers to install it. On a 10-core
+Mac with 17 GB it took 2 min 45 s, peaking at 9.4 GB, on 81,547 tetrahedra.</li>
+<li><strong>Simulate the Antenna Bench</strong>, then open its Data Display.</li>
+<li><strong>Optimize.</strong> The Optimizer panel already holds the variables, two goals and an algorithm (simplex, seed 1). Press <strong>Run</strong>, apply its best
+values and simulate again to redraw the plots. Moving a tuning slider on <code>Lser</code> or <code>Cshunt</code> redraws the pattern as you go.</li>
+</ol>
+<h2 id="what-you-will-see">What you will see</h2>
+<p>As drawn, with 10 nH and 2.7 pF, the antenna is badly mismatched. The optimizer meets both goals in 3 iterations and 9 evaluations,
+in under a second:</p>
+<table>
+<thead>
+<tr>
+<th>At 868 MHz</th>
+<th>As drawn</th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Lser</code></td>
+<td>10 nH</td>
+<td>2.57 nH</td>
+</tr>
+<tr>
+<td><code>Cshunt</code></td>
+<td>2.7 pF</td>
+<td>3.99 pF</td>
+</tr>
+<tr>
+<td><code>Match</code>: S11, ≤ −15 dB</td>
+<td>−3.22 dB</td>
+<td>−16.9 dB</td>
+</tr>
+<tr>
+<td><code>Gain</code>: realized gain, ≥ 1.5 dBi</td>
+<td>−0.77 dBi</td>
+<td>2.06 dBi</td>
+</tr>
+<tr>
+<td>Gain</td>
+<td>2.04 dBi</td>
+<td>2.15 dBi</td>
+</tr>
+<tr>
+<td>Directivity</td>
+<td>2.21 dBi</td>
+<td>2.28 dBi</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The parts decide how much power gets in, and barely change the shape.</strong> Directivity moves by 0.07 dB between the two columns while
+realized gain moves by 2.8 dB. The tabs of the Data Display show this three ways, and these numbers are for the best values:</p>
+<ul>
+<li><strong>Match and pattern.</strong> S11 is below −9.5 dB from 858 to 894 MHz. The pattern is a donut around the board's long axis, with a
+shallow null along it.</li>
+<li><strong>Across the band.</strong> Realized gain is −0.61, 1.02, 2.06, 1.94 and 0.71 dBi from 828 to 908 MHz, while the cuts stay nearly on top of each other.</li>
+<li><strong>Inductor error.</strong> With <code>L1</code> 2 nH low to 2 nH high, realized gain is 1.03, 1.67, 2.06, 2.12 and 1.85 dBi. The best point on
+this curve is not 0 nH, since the optimizer stopped once both goals were met.</li>
+</ul>
+<p>The curves on the last two tabs come from the stored results. A frequency between the five stored ones has S but no pattern, so
+<code>F1</code> and <code>F3</code> must name one of the five, and <code>F2</code> takes them all with <code>freq=all</code>.</p>
+<h2 id="checked-against-palace">Checked against Palace</h2>
+<p>The same board at 868 MHz, on Palace at second order, 74,472 tetrahedra. It took 9 min 26 s for this one frequency, with other work running on the machine.</p>
+<table>
+<thead>
+<tr>
+<th>At 868 MHz</th>
+<th>As drawn: EMerge</th>
+<th>As drawn: Palace</th>
+<th>Best: EMerge</th>
+<th>Best: Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S11</td>
+<td>−3.22 dB</td>
+<td>−3.17 dB</td>
+<td>−16.9 dB</td>
+<td>−19.9 dB</td>
+</tr>
+<tr>
+<td>Directivity</td>
+<td>2.21 dBi</td>
+<td>2.01 dBi</td>
+<td>2.28 dBi</td>
+<td>2.03 dBi</td>
+</tr>
+<tr>
+<td>Gain</td>
+<td>2.04 dBi</td>
+<td>1.36 dBi</td>
+<td>2.15 dBi</td>
+<td>1.55 dBi</td>
+</tr>
+<tr>
+<td>Realized gain</td>
+<td>−0.77 dBi</td>
+<td>−1.50 dBi</td>
+<td>2.06 dBi</td>
+<td>1.51 dBi</td>
+</tr>
+<tr>
+<td>Radiation efficiency</td>
+<td>96.1 %</td>
+<td>86.2 %</td>
+<td>97.2 %</td>
+<td>89.6 %</td>
+</tr>
+</tbody>
+</table>
+<p>The two agree on the match and on the part values that reach it. <strong>EMerge's gain reads about 0.6 dB above Palace's and its efficiency about 8 to 10 points higher,</strong> so read this
+example's gain as showing how the parts move it, rather than as a value to design to. To compare for yourself, set the setup's solver to Palace.</p>
+<h2 id="what-was-traded-for-speed">What was traded for speed</h2>
+<ul>
+<li><strong>One copper layer and no vias.</strong> Stitching vias set the size of a mesh long before the wavelength does, so leaving them out
+is most of the saving. A two-layer board of the same outline with 324 vias took 7 min 12 s at one frequency in Palace.</li>
+<li><strong>Parts are ideal,</strong> and their bodies are not in the 3D model.</li>
+<li><strong>The air box is 170 mm on every face,</strong> about λ/2. On such a board gain and efficiency keep changing as the box grows, even after
+S11 and directivity have settled, so compare a pattern's gain at a second box size before relying on it. EMerge's far field also reads
+high when the box is close.</li>
+<li><strong>Nothing is compared with a measurement.</strong> This board was never built, so the numbers show the method rather than a design to copy.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

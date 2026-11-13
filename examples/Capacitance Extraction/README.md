@@ -52,7 +52,6 @@ terminal and is not ground, so it **floats**: **Other metal** is left at *Float*
 
 Measured once on an Apple M4 with 10 cores and 16 GB, macOS 27.0, Palace 0.18.1 on 10 processes and Gmsh
 4.15.2, at the **Standard** preset. A time is the whole run's wall clock. A memory figure is Palace's own peak.
-The numbers are also in `expected-numbers.json`, which circuitRF's own tests re-run against.
 
 **Pad and line** took **14 s**, with a peak of **2.6 GB**. The result
 (`results/Pad and Line Pad and line.palace_es.npy`) holds two matrices:

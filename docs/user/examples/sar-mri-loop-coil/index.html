@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — SAR: MRI Loop Coil</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/SAR MRI Loop Coil/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › SAR: MRI Loop Coil</p>
+  </div>
+
+  <h1>SAR: MRI Loop Coil</h1>
+  <p class="lede">A 7 T surface coil beside a head phantom with every capacitor gap a port: openEMS runs once and keeps each port&#39;s fields, and a schematic then tunes, matches and optimizes the coil against S11, B1 and psSAR goals while B1 and SAR follow every value with no new EM run.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ SAR: MRI Loop Coil</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 7 T (298 MHz) surface coil beside a head phantom, designed the way coil designers work: <strong>every capacitor gap is a
+port</strong>. openEMS runs once, keeps each port's fields, and from then on the schematic tunes, matches and optimizes the
+coil while B1 and SAR follow every value with no new EM run. circuitRF's SAR is for research and engineering use; it is
+not a compliance tool.</p>
+<p>The coil and the phantom are openEMS's own <code>MRI_Loop_Coil</code> tutorial, rebuilt from 3D-view objects. circuitRF reproduces
+that tutorial's numbers on the tutorial's own grid; this example runs on circuitRF's own, coarser grid, so it solves in
+about a minute and a half (see <em>What was traded for speed</em>, below).</p>
+<h2 id="the-two-cells">The two cells</h2>
+<p><strong>Loop Coil</strong> (its 3D view). An 80 mm (z) by 60 mm (y) loop of 5 mm strips at x = −130 mm, drawn as eight PEC
+sheets, with four gaps a third of a strip wide. <strong>Each gap is a 50 Ω lumped port</strong>: the feed at the bottom is port 1,
+the left, right and top gaps are ports 2, 3 and 4. Beside it is the head phantom: three nested ellipsoids (skin, skull,
+brain; semi-axes 100, 80 and 100 mm, shells 9 mm), solved as 2.5 mm voxels, in the tissue values openEMS's tutorial
+uses at 298 MHz (each with its density, which SAR needs).</p>
+<p>Its one setup, <strong>CoSim</strong>: openEMS, 98–498 MHz in 41 points, first-order absorbing (Mur) faces, an end criterion of
+−40 dB, and a <strong>Sar</strong> group at 298 MHz — 10 g averaged SAR by cubes, B1 with B0 along +z, and <strong>Keep per-port fields</strong>
+on. Two field plots are saved: B1+ and SAR on the axial plane, both drawn from the schematic's fields analysis <code>F1</code>.</p>
+<p><strong>Coil Bench</strong> (a test bench). The coil's saved run as one <strong>EM Field Data</strong> block, <code>EM1</code>, on <code>results/Loop Coil CoSim.openems.cemr</code>, with its
+four pins named after the run's ports, and around it:</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cleft</code>, <code>Cright</code>, <code>Ctop</code></td>
+<td>the three gap capacitors, all set by the variable <code>Cgap</code></td>
+</tr>
+<tr>
+<td><code>Cf</code></td>
+<td>the capacitor across the feed gap, in series with the loop like the other three</td>
+</tr>
+<tr>
+<td><code>Cm</code></td>
+<td>the series match from the 50 Ω source to the feed</td>
+</tr>
+<tr>
+<td><code>P1</code></td>
+<td>the 50 Ω source</td>
+</tr>
+</tbody>
+</table>
+<p>and two analyses: <code>SP1</code>, S-parameters over 280–316 MHz, and <code>F1</code>, a <strong>fields</strong> analysis at 298 MHz that recombines the
+four ports' fields with the waves this circuit delivers into them. <code>F1</code> is normalised <strong>per watt available</strong> from the
+source (<code>norm=available</code>), so a poor match shows as weak B1, as it would on the scanner.</p>
+<h2 id="run-it">Run it</h2>
+<ol>
+<li><strong>Simulate the Loop Coil's 3D view</strong> (setup <code>CoSim</code>). It needs openEMS; the first run offers to install it. Four
+openEMS runs, one per port, about 95 s in all, and a result record and a field set of 87 MB written beside the <code>.s4p</code> in <code>results/</code>.</li>
+<li><strong>Simulate the Coil Bench.</strong> <code>EM1</code> reads the saved result, so editing the setup later changes nothing it uses until the setup runs
+again; its <strong>Run settings…</strong> shows what differs. <code>SP1</code> gives S11 and <code>F1</code> gives B1 and SAR. The Messages pane's <strong>Open in 3D view</strong>
+shows them on the coil.</li>
+<li><strong>Optimize.</strong> The Optimizer panel already holds the variables, the goals and an algorithm (simplex, seed 1). Press
+<strong>Run</strong>.</li>
+</ol>
+<p>As drawn, with the tutorial's 5.4 pF in the gaps, a 33 pF feed capacitor and a 4.7 pF match, the coil is far off
+resonance on this grid: 0.3 % of the available power is accepted and the mean |B1+| in the brain is 0.010 µT per √W.
+The optimizer meets all three goals in 21 iterations and 40 simulations, about 4 s:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>As drawn</th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cgap</code></td>
+<td>5.4 pF</td>
+<td>7.450 pF</td>
+</tr>
+<tr>
+<td><code>Cf.C</code></td>
+<td>33 pF</td>
+<td>14.10 pF</td>
+</tr>
+<tr>
+<td><code>Cm.C</code></td>
+<td>4.7 pF</td>
+<td>5.061 pF</td>
+</tr>
+<tr>
+<td><code>Match</code>: S11 at 298 MHz, ≤ −20 dB</td>
+<td>−0.01 dB</td>
+<td>−20.5 dB</td>
+</tr>
+<tr>
+<td><code>B1</code>: mean |B1+| over the brain, ≥ 0.2 µT/√W</td>
+<td>0.010</td>
+<td>0.203</td>
+</tr>
+<tr>
+<td><code>SAR10g</code>: psSAR10g, ≤ 2 W/kg per W</td>
+<td>0.005</td>
+<td>1.80</td>
+</tr>
+</tbody>
+</table>
+<p><strong>No EM run starts during any of it.</strong> Each of the 40 simulations solves the circuit, recombines the stored fields and,
+for <code>SAR10g</code>, averages the recombined SAR over 10 g cubes from scratch. The run's notes name that goal as the expensive
+one.</p>
+<p>The three gap capacitors and the two match capacitors are also on the <strong>Tuning</strong> panel. Drag <code>Cgap</code> with the 3D view's
+B1+ plot open and the plot follows the slider; the averaged SAR is recomputed when you let go.</p>
+<h2 id="the-numbers-at-the-optimum">The numbers at the optimum</h2>
+<p>Per watt accepted at the feed, against the same coil solved with ports for capacitors on the tutorial's own grid lines
+(circuitRF's replication of the tutorial, <code>docs/design/sar.md</code> §11.6):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>This example (circuitRF's grid)</th>
+<th>The tutorial's grid</th>
+<th>Difference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>grid</td>
+<td>103 × 92 × 110 = 1.04 M cells</td>
+<td>154 × 122 × 162 = 3.04 M cells</td>
+<td></td>
+</tr>
+<tr>
+<td>mean |B1+| over the brain</td>
+<td>0.2040 µT/√W</td>
+<td>0.2049 µT/√W</td>
+<td>−0.4 %</td>
+</tr>
+<tr>
+<td>psSAR10g</td>
+<td>1.814 W/kg</td>
+<td>1.868 W/kg</td>
+<td>−2.9 %</td>
+</tr>
+<tr>
+<td>peak local SAR (one cell)</td>
+<td>6.63 W/kg</td>
+<td>8.92 W/kg</td>
+<td>−26 %</td>
+</tr>
+<tr>
+<td>absorbed / accepted</td>
+<td>80.8 %</td>
+<td>83.1 %</td>
+<td></td>
+</tr>
+<tr>
+<td>EM run</td>
+<td>95 s</td>
+<td>about 3 min</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The 10 g peak sits in the skin, level with the coil's side, at (−80.6, +33.1, −11.6) mm; on the tutorial's grid it is the
+mirror-image point at y = −29.2 mm. The loop is nearly symmetric about y = 0, so the two sides' peaks are close, and which
+side wins moves with the grid.</p>
+<h2 id="what-was-traded-for-speed">What was traded for speed</h2>
+<ul>
+<li><strong>The grid.</strong> circuitRF places its own lines (<code>CellsPerWavelength</code> 30 at the sweep's 498 MHz) instead of the
+tutorial's 3.04 M-cell grid, a third of the cells. B1 and the 10 g average are within 3 %. The single-cell peak of local
+SAR is not: it is set by the few cells at the skin nearest the strips, and it reads 26 % low here. Read local SAR's
+peak from a finer grid, or from the averaged values.</li>
+<li><strong>The coil's tuning moved.</strong> The cells normal to the coil's plane are coarse on this grid, which lowers the loop's
+inductance (<code>docs/design/sar.md</code> §10.7). With the tutorial's own 2.5 Ω feed this grid resonates the loop at about
+6.4 pF, not 5.4 pF. The circuit absorbs that: the optimizer finds the values for this grid, which is the point of
+keeping the capacitors out of the EM run.</li>
+<li><strong>The sweep.</strong> 98–498 MHz in 41 points (10 MHz apart), where the tutorial's runs 0.4–595.6 MHz in 497 points. With every
+gap a port the block has no resonance of its own, so 10 MHz is enough between points, and 298 MHz is one of them: the
+match goal and <code>F1</code> read the block where it was solved.</li>
+</ul>
+<p>To run on the tutorial's own lines, <code>OpenEms.GridLines</code> in the setup takes a grid from a file (the EM Setup reference,
+&quot;Running on given grid lines&quot;).</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li>Change the phantom's tissues to circuitRF's own frequency-dependent ones (the technology editor's <strong>Add Tissue
+Materials</strong>, then Muscle, Bone (cortical) and Brain (grey matter); Skin (wet) states no density, so SAR refuses it).
+Re-run the 3D view: the fields belong to the tissues they were solved with.</li>
+<li>See how uneven a surface coil's field is: <code>measure Flat = B1pCoV(F1, &quot;brain&quot;)</code>, the spread of |B1+| over the brain
+divided by its mean, reads about 1.07 at the optimum.</li>
+<li>Put a tolerance on the gap capacitors (<code>dist=gauss sd=2%</code> on <code>Cgap</code>'s tuning row), add a yield spec
+(<code>goal SAR10gY = psSAR(F1, 10) analysis=F1 le 2 use=yield</code>) and run a yield analysis: every trial recombines the
+stored fields, and none starts openEMS.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

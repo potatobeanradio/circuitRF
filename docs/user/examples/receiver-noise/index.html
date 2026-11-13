@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Receiver Noise</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Receiver Noise/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Receiver Noise</p>
+  </div>
+
+  <h1>Receiver Noise</h1>
+  <p class="lede">The noise work of a 2.45 GHz receiver, bench by bench: a FET LNA noise-matched with its circles and which part sets its noise, the chain&#39;s budget against Friis, a diode mixer&#39;s SSB and DSB noise figure against LO drive, the LNA under a blocker, a noise sourcepull under drive, an NR signal&#39;s EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Receiver Noise</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Open a numbered bench, Simulate, and its Data Display opens on the result.</strong> Run them in order: each one builds on
+the one before it.</p>
+<ol>
+<li><strong><code>1 LNA Noise Match</code></strong>: a one-stage FET LNA, noise-matched at 2.45 GHz. NF, NFmin, the noise and gain circles, and
+which part sets the noise. Under a second.</li>
+<li><strong><code>2 Receiver Budget</code></strong>: the receiver as system blocks, LNA to IF amplifier. Its NF lies on Friis' formula at every
+LNA gain. Under a second.</li>
+<li><strong><code>3 Mixer Noise</code></strong>: a single-diode mixer. SSB and DSB noise figure against LO drive, and how much of the noise comes
+in through the image. Under a second.</li>
+<li><strong><code>4 LNA Under a Blocker</code></strong>: bench 1's LNA with a 2.3 GHz blocker in front of it. NF against blocker power. Under a
+second.</li>
+<li><strong><code>5 Noise Sourcepull</code></strong>: bench 1's transistor stage on a source-tuner grid. NF and gain contours on the source plane,
+at two drive levels. Two seconds.</li>
+<li><strong><code>6 Receiver EVM</code></strong>: an NR signal through bench 2's chain, with a real mixer and a phase-noisy LO. EVM against input
+power, split into noise and distortion. About twenty seconds.</li>
+<li><strong><code>7 VCO Phase Noise</code></strong>: the LO itself, a varactor-tuned Colpitts VCO. Its tuning curve and phase noise. Bench 6's LO
+carries this VCO's phase noise. Two seconds.</li>
+</ol>
+<p>Every bench sets <code>temp = 16.85</code>, which puts the whole design at 290 K, the temperature a noise figure is referred to. A
+design that states no temperature runs at 300 K, and its passive parts are then a little noisier than their loss.
+<code>circuitrf check</code> on this workspace reports that setting once per bench, as a warning, and nothing else.</p>
+<p>The noise conventions, and which analysis computes what, are in <em>Reference ▸ Simulations ▸ Noise</em>.</p>
+<h2 id="lna-noise-match">1 LNA Noise Match</h2>
+<p>A Statz-model FET at −0.5 V gate and 3 V drain, with <code>Ri = 3 Ω</code>, <code>Tg = 300 K</code> and <code>Td = 3000 K</code>. That is the
+two-temperature noise model: the intrinsic gate resistance is thermal at the gate temperature, and the output conductance
+is thermal at the drain temperature. Beside it are the parts a real stage has:</p>
+<ul>
+<li><code>Rg</code> (1 Ω) and <code>Rs</code> (0.5 Ω): extrinsic gate and source resistance, thermal at 290 K.</li>
+<li><code>LS</code> (1 nH): source degeneration.</li>
+<li><code>Rd</code> (10 Ω) and <code>Rstab</code> (82 Ω to ground): the stabilising network at the drain.</li>
+<li><code>L1</code> (5.7 nH, 2.19 Ω, a Q of 40) and <code>C1</code> (0.56 pF): the input noise match. They were tuned so that the LNA's own
+optimum source is 50 Ω at 2.45 GHz.</li>
+</ul>
+<p><code>SP1</code> runs from 1.5 to 3.5 GHz with <strong>Noise</strong> ticked.</p>
+<table>
+<thead>
+<tr>
+<th>At 2.45 GHz</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NF from 50 Ω</td>
+<td>0.618 dB</td>
+</tr>
+<tr>
+<td>NFmin</td>
+<td>the same, to 0.001 dB: Sopt is within 0.02 of the chart's centre</td>
+</tr>
+<tr>
+<td>Gain</td>
+<td>11.2 dB</td>
+</tr>
+<tr>
+<td>Rollett K</td>
+<td>above 2 across the whole sweep</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Which part sets the noise</strong> (<code>NFpct</code>, each part's share of F − 1):</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>F1</code>, the transistor</td>
+<td>34.1 %</td>
+</tr>
+<tr>
+<td><code>Rstab</code></td>
+<td>30.4 %</td>
+</tr>
+<tr>
+<td><code>L1</code>, the match inductor's loss</td>
+<td>28.7 %</td>
+</tr>
+<tr>
+<td><code>Rg</code></td>
+<td>3.5 %</td>
+</tr>
+<tr>
+<td><code>Rs</code>, <code>Rd</code></td>
+<td>under 2 % each</td>
+</tr>
+</tbody>
+</table>
+<p>The stabilising resistor costs as much as the transistor. It sits at the drain, after only one stage of gain, so its
+thermal noise is not divided down much. A resistor further down the chain would cost less, and a lossless stabilising
+network would cost nothing.</p>
+<p><strong>What the display shows</strong> (<code>1 LNA Noise Match.cdd</code>):</p>
+<ul>
+<li><strong>Noise figure of the LNA</strong>: NF from 50 Ω against NFmin. They touch at 2.45 GHz, where the marker reads 0.618 dB.</li>
+<li><strong>Noise and gain circles at 2.45 GHz</strong>: the <strong>Noise and Gain Circles</strong> chart from the toolbar. Sopt sits at the
+centre. The three noise circles are 0.25, 0.5 and 1 dB above NFmin, and the three available-gain circles are 1, 2 and
+3 dB below the maximum. The source stability circle is off the chart, because the stage is unconditionally stable.</li>
+<li><strong>Which part sets the noise at 2.45 GHz</strong>: <code>NFpct</code> as bars, one per part.</li>
+<li><strong>Gain and stability</strong>: dB(S21) and Rollett's K.</li>
+</ul>
+<h2 id="receiver-budget">2 Receiver Budget</h2>
+<p>The receiver as system blocks, at 2.45 GHz and 290 K:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Part</th>
+<th>Gain</th>
+<th>NF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LNA</td>
+<td><code>Amp</code>, <code>Gain=G_lna NF=NF_lna</code></td>
+<td><code>G_lna</code>, swept 4 to 24 dB</td>
+<td>0.62 dB, bench 1's</td>
+</tr>
+<tr>
+<td>RF filter</td>
+<td><code>Filter</code>, 3rd-order Butterworth, 2.35 to 2.55 GHz</td>
+<td>−2 dB</td>
+<td>2 dB, its loss</td>
+</tr>
+<tr>
+<td>Mixer stand-in</td>
+<td><code>Atten</code>, 7 dB</td>
+<td>−7 dB</td>
+<td>7 dB, its loss</td>
+</tr>
+<tr>
+<td>IF amplifier</td>
+<td><code>Amp</code>, <code>Gain=20 NF=4</code></td>
+<td>20 dB</td>
+<td>4 dB</td>
+</tr>
+</tbody>
+</table>
+<p>An S-parameter run has no LO, so a mixer cannot convert in it. The stand-in is a 7 dB pad, the loss and the noise
+figure of a passive mixer. Bench 3 has a real one, and bench 6 runs the chain with a <code>Mixer</code> block and an LO.</p>
+<p><code>MEAS1</code> writes Friis' formula for four matched stages as <code>NF_friis</code>:</p>
+<pre><code>F = F1 + (Lf − 1)/G1 + (Lm − 1)·Lf/G1 + (F4 − 1)·Lf·Lm/G1
+</code></pre>
+<p>The run's NF agrees with it to 1e-9 dB at every LNA gain.</p>
+<table>
+<thead>
+<tr>
+<th>LNA gain</th>
+<th>NF</th>
+<th>LNA's share</th>
+<th>IF amplifier's share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>16 dB</td>
+<td><strong>2.12 dB</strong></td>
+<td>24.4 %</td>
+<td>47.9 %</td>
+</tr>
+<tr>
+<td>24 dB</td>
+<td>0.90 dB</td>
+<td>67.0 %</td>
+<td>20.9 %</td>
+</tr>
+</tbody>
+</table>
+<p>At 16 dB of LNA gain, the IF amplifier sets half the receiver's noise and the LNA a quarter. The receiver's gain there
+is 27 dB. The LNA dominates only above about 20 dB of gain.</p>
+<p><strong>What the display shows</strong> (<code>2 Receiver Budget.cdd</code>):</p>
+<ul>
+<li><strong>Receiver noise figure against the LNA's gain</strong>: the run's NF as dots on <code>NF_friis</code>. The marker is at 16 dB.</li>
+<li><strong>Each stage's share of F − 1</strong>: <code>NFpct</code> for each block against the LNA's gain. The LNA's share climbs and crosses the
+IF amplifier's.</li>
+<li><strong>Receiver gain</strong>.</li>
+</ul>
+<h2 id="mixer-noise">3 Mixer Noise</h2>
+<p>A single Schottky-like diode (<code>Is = 5 nA</code>, <code>N = 1.05</code>, <code>Rs = 4 Ω</code>) to ground. The RF port reaches it through a series
+resonator at 2.45 GHz, and the LO through one at 2.1 GHz. The IF, 350 MHz, comes out through a low-pass to port 2. The
+LO is a P1Tone, <code>PLO</code>: an available power <code>Plo</code> behind 50 Ω.</p>
+<p><code>HB1</code> has <strong>Noise</strong> ticked with <code>NoiseSideband=1</code>: the signal comes in at f_IF + f_LO = 2.45 GHz. The image is at
+f_LO − f_IF = 1.75 GHz. <code>SW1</code> sweeps the LO's available power <code>Plo</code> from −10 to +14 dBm.</p>
+<table>
+<thead>
+<tr>
+<th>LO</th>
+<th>SSB NF</th>
+<th>DSB NF</th>
+<th>Conversion gain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0 dBm</td>
+<td>7.96 dB</td>
+<td>6.75 dB</td>
+<td>−13.40 dB</td>
+</tr>
+<tr>
+<td><strong>+6 dBm</strong></td>
+<td><strong>4.73 dB</strong></td>
+<td><strong>3.46 dB</strong></td>
+<td><strong>−9.20 dB</strong></td>
+</tr>
+<tr>
+<td>+10 dBm</td>
+<td>4.38 dB</td>
+<td>3.09 dB</td>
+<td>−8.49 dB</td>
+</tr>
+</tbody>
+</table>
+<p>With too little LO the diode never switches, and the mixer does not convert: at −10 dBm the SSB noise figure is
+above 39 dB.</p>
+<p>SSB is 1.27 dB above DSB at +6 dBm, not 3 dB. SSB − DSB is 10·log10(1 + image gain / signal gain), and the RF resonator
+reflects part of the image, so the image converts at about a third of the signal's gain.</p>
+<p>At +6 dBm, the noise arrives through these input sidebands (<code>NFsb</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Sideband</th>
+<th>Share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>+1, the signal</td>
+<td>38.7 %</td>
+</tr>
+<tr>
+<td>−1, the image</td>
+<td>17.2 %</td>
+</tr>
+</tbody>
+</table>
+<p>The diode's own noise is the remainder, and it cannot be split by sideband. By part (<code>NFpct</code>), the diode is 53.7 %, port
+1's termination at its other sidebands (mostly the image) 27.7 %, and the two resonators' losses 9.4 % (<code>LR</code>) and
+9.2 % (<code>LL</code>). <strong>The diode sets half this mixer's noise</strong>: it is noisy only while it conducts, and the LO switches it on
+for part of every cycle.</p>
+<p>The P1Tone is noiseless, as every source is in a harmonic-balance noise analysis: its 50 Ω is the LO's termination, not
+a noise source. A real LO's own noise reaches the diode through the LO resonator, which passes 1.75 GHz and 2.45 GHz
+almost as well as 2.1 GHz. To see what it costs, replace <code>PLO</code> by a <code>V_1Tone</code> behind a 50 Ω resistor: the resistor is
+thermal, and its share of the noise is the LO port's.</p>
+<p><strong>What the display shows</strong> (<code>3 Mixer Noise.cdd</code>):</p>
+<ul>
+<li><strong>Mixer noise figure against LO drive</strong>: SSB and DSB. The marker is at +6 dBm.</li>
+<li><strong>Conversion gain, RF to IF</strong>.</li>
+<li><strong>Where the noise comes in</strong>: <code>NFsb</code> as bars over the input sideband at +6 dBm.</li>
+<li><strong>Which part sets the noise</strong>: <code>NFpct</code> as bars at +6 dBm.</li>
+</ul>
+<h2 id="lna-under-a-blocker">4 LNA Under a Blocker</h2>
+<p>Bench 1's LNA, part for part, with port 1 a <code>P1Tone</code> putting a 2.3 GHz blocker of <code>Pblk</code> into it. <code>HB1</code> is a harmonic
+balance at the blocker, with <strong>Noise</strong> ticked and <code>NoiseSideband=0</code>, reading the noise figure at 2.45 GHz. <code>SW1</code> sweeps
+<code>Pblk</code> from −40 to +10 dBm.</p>
+<table>
+<thead>
+<tr>
+<th>Blocker</th>
+<th>NF at 2.45 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−40 dBm</td>
+<td>0.618 dB, bench 1's S-parameter NF to 1e-4 dB</td>
+</tr>
+<tr>
+<td>−2.5 dBm</td>
+<td>0.67 dB</td>
+</tr>
+<tr>
+<td>+2.5 dBm</td>
+<td>1.62 dB</td>
+</tr>
+<tr>
+<td>+10 dBm</td>
+<td>4.45 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The blocker's own gain is 11.83 dB while it is small, and it is 1 dB compressed between +2.5 and +5 dBm. The noise
+figure has risen by 1 dB by then. A blocker 10 dB below the LNA's compression point costs almost nothing. A blocker at
+compression costs as much as the LNA's whole noise figure. The signal's gain at 2.45 GHz falls faster than the
+blocker's own, which is desensitisation.</p>
+<p><strong>What the display shows</strong> (<code>4 LNA Under a Blocker.cdd</code>):</p>
+<ul>
+<li><strong>LNA noise figure against a 2.3 GHz blocker</strong>. The marker is on the small-blocker end, bench 1's 0.618 dB.</li>
+<li><strong>Gain, blocker and signal</strong>: the blocker's own gain (<code>Gblk_dB</code>) and the signal's at 2.45 GHz (<code>Gc</code>).</li>
+</ul>
+<h2 id="noise-sourcepull">5 Noise Sourcepull</h2>
+<p>Bench 1's transistor stage without its input match: <code>Rg</code>, the FET, <code>Rs</code>, <code>LS</code>, <code>Rd</code> and <code>Rstab</code>. A source tuner <code>TS</code>
+replaces the match and a load tuner <code>TL</code> holds 50 Ω. Each tuner carries its bias. <code>LP1</code> is a sourcepull with <strong>Noise</strong>
+ticked: at every point of <code>source_grid.gam</code> (|Γ| = 0 to 0.9 in steps of 0.15, at 24 angles), it drives the stage from
+−30 to 0 dBm and reads NF at every step.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>At −30 dBm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lowest NF</td>
+<td>0.39 dB, at Γs = 0.75∠15°</td>
+</tr>
+<tr>
+<td>Highest gain</td>
+<td>11.50 dB, at Γs = 0.60∠15°</td>
+</tr>
+<tr>
+<td>NF from 50 Ω</td>
+<td>0.97 dB</td>
+</tr>
+</tbody>
+</table>
+<p>At 0 dBm of drive, the lowest NF on the grid has risen to 0.53 dB.</p>
+<p>Source degeneration (<code>LS</code>) put the noise and gain optima on the same angle, close together. The lowest NF is 0.23 dB
+below bench 1's 0.618 dB. Most of that difference is the match's own loss, <code>L1</code>'s 28.7 % share in bench 1, so a
+lower-loss inductor wins most of it back.</p>
+<p><strong>What the display shows</strong> (<code>5 Noise Sourcepull.cdd</code>):</p>
+<ul>
+<li><strong>NF and gain on the source plane, −30 dBm</strong>: NF contours from 0.5 dB in 0.25 dB steps, and gain contours from 7 dB in
+1 dB steps.</li>
+<li><strong>NF on the source plane, −30 and 0 dBm</strong>: the same NF contours at both drive levels. The drive shrinks the low-NF
+region.</li>
+</ul>
+<h2 id="receiver-evm">6 Receiver EVM</h2>
+<p>Bench 2's chain in an envelope run, with a real mixer:</p>
+<ul>
+<li><code>SRC</code>: a <code>MOD_Source</code> sending an NR carrier, 5 MHz, 15 kHz subcarriers, 64QAM, at 2.45 GHz. <strong>Noisy</strong> is ticked at
+290 K, so its 50 Ω adds the input noise a noise figure is referred to.</li>
+<li><code>LNA</code>: <code>Gain=16 dB NF=0.62 IP3=5 dBm</code>, so it compresses.</li>
+<li><code>FLT</code>: the RF filter.</li>
+<li><code>MIX</code>: a <code>Mixer</code> block, −7 dB, <code>NF=7</code>.</li>
+<li><code>VCO</code>: the LO, a P1Tone at 2101.2 MHz and 7 dBm. Its <code>PhaseNoise</code> is bench 7's VCO at 3.5 V, copied from that bench's
+phase-noise trace with <strong>Copy as Phase-Noise Mask</strong>. The envelope run gives it a fundamental of its own, because it is
+far from the signal's frequency.</li>
+<li><code>FIF</code>: an IF filter at 349 MHz.</li>
+<li><code>IFA</code>: the IF amplifier, 20 dB, <code>NF=4</code>.</li>
+</ul>
+<p>The IProbe <code>Iif</code> is after the IF amplifier. Each carrier is measured where it arrives, its power, gain, ACLR and EVM
+alike. Here that is the IF, 348.8 MHz (2.45 GHz − 2101.2 MHz). At −50 dBm the IF power is −24.0 dBm: the chain's
+26.0 dB of gain (16 − 2 − 7 − 1 + 20). At −20 dBm the LNA has compressed it to 23.8 dB.</p>
+<p><code>ENV1</code> has <strong>Noise</strong> and <strong>EvmSplit</strong> ticked: each point runs twice, the second time with every noise source and the
+phase-noise mask off. The EVM then splits into its noise part and its distortion part. <code>SW1</code> sweeps the input power <code>Pin</code>
+from −95 to −20 dBm.</p>
+<table>
+<thead>
+<tr>
+<th>Pin</th>
+<th>EVM</th>
+<th>Noise part</th>
+<th>Distortion part</th>
+<th>SNR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−95 dBm</td>
+<td>31.08 %</td>
+<td>31.08 %</td>
+<td>0.40 %</td>
+<td>10.1 dB</td>
+</tr>
+<tr>
+<td>−80 dBm</td>
+<td>5.66 %</td>
+<td>5.65 %</td>
+<td>0.40 %</td>
+<td>25.0 dB</td>
+</tr>
+<tr>
+<td>−65 dBm</td>
+<td>1.64 %</td>
+<td>1.60 %</td>
+<td>0.40 %</td>
+<td>36.0 dB</td>
+</tr>
+<tr>
+<td><strong>−50 dBm</strong></td>
+<td><strong>1.34 %</strong></td>
+<td>1.28 %</td>
+<td>0.40 %</td>
+<td>37.9 dB</td>
+</tr>
+<tr>
+<td>−35 dBm</td>
+<td>1.53 %</td>
+<td>1.28 %</td>
+<td>0.83 %</td>
+<td>37.9 dB</td>
+</tr>
+<tr>
+<td>−20 dBm</td>
+<td>11.76 %</td>
+<td>1.29 %</td>
+<td>11.69 %</td>
+<td>37.8 dB</td>
+</tr>
+</tbody>
+</table>
+<p>There are three regimes:</p>
+<ul>
+<li><strong>Below about −70 dBm, thermal noise.</strong> EVM falls 1 dB for every dB of signal.</li>
+<li><strong>From about −60 to −35 dBm, the LO's phase noise.</strong> The SNR stops at 37.9 dB, and stays there however strong the signal
+is: the LO's phase noise multiplies the signal, so it grows with it.</li>
+<li><strong>Above −35 dBm, distortion.</strong> The LNA compresses.</li>
+</ul>
+<p>The distortion part's floor, 0.40 %, is the NR signal's own EVM from its shaping, plus the filters' in-band ripple.</p>
+<p><strong>What the display shows</strong> (<code>6 Receiver EVM.cdd</code>):</p>
+<ul>
+<li><strong>EVM against input power</strong>: EVM, its noise part and its distortion part, in dB. The marker is at −50 dBm.</li>
+<li><strong>Signal over the noise the run added</strong>: the in-channel SNR, rising and then flat at the phase-noise floor.</li>
+<li>Three constellations. At −50 dBm the points are tight. At −20 dBm compression scatters them. At −95 dBm thermal noise
+blurs every point into a cloud.</li>
+</ul>
+<h2 id="vco-phase-noise">7 VCO Phase Noise</h2>
+<p>A common-base Colpitts on the built-in BJT (<code>Kf = 1e-10</code>, so its base current has flicker noise), with a 3.2 nH tank.
+A reverse-biased diode <code>DV</code>, coupled through 1 pF, tunes it from <code>Vtune</code> through 10 kΩ. <code>OSC1</code> is an oscillator analysis
+with <strong>Phase noise</strong> ticked, from 100 Hz to 10 MHz off the carrier. <code>SW1</code> sweeps <code>Vtune</code> from 3 to 9 V.</p>
+<table>
+<thead>
+<tr>
+<th>Vtune</th>
+<th>Fosc</th>
+<th>Kvco</th>
+<th>PN at 100 kHz</th>
+<th>Flicker corner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3 V</td>
+<td>2092.7 MHz</td>
+<td>17.1 MHz/V</td>
+<td>−106.6 dBc/Hz</td>
+<td>6.9 kHz</td>
+</tr>
+<tr>
+<td><strong>3.5 V</strong></td>
+<td><strong>2101.2 MHz</strong></td>
+<td>16.1 MHz/V</td>
+<td><strong>−106.5 dBc/Hz</strong></td>
+<td>under 10 Hz</td>
+</tr>
+<tr>
+<td>4 V</td>
+<td>2108.7 MHz</td>
+<td>14.3 MHz/V</td>
+<td>−106.4 dBc/Hz</td>
+<td>3.2 kHz</td>
+</tr>
+<tr>
+<td>9 V</td>
+<td>2155.6 MHz</td>
+<td>6.6 MHz/V</td>
+<td>−105.6 dBc/Hz</td>
+<td>42.3 kHz</td>
+</tr>
+</tbody>
+</table>
+<p>At 3.5 V the phase noise is −128.8 dBc/Hz at 1 MHz, 20 dB per decade, which is white noise turned into phase noise.
+<code>PNpct</code> names the transistor (about 80 %), the tuning resistor <code>Rt</code> and the tank's load <code>RL</code>. <code>Rt</code> matters because its
+thermal noise is a voltage on the varactor, and the varactor turns it straight into frequency.</p>
+<p>The flicker corner, below which phase noise falls at 30 dB per decade, moves with tuning. At 3.5 V it almost vanishes,
+because there the oscillation's frequency is insensitive to the transistor's flicker current. That makes 3.5 V the
+quietest place to run this VCO close in, which is why bench 6's LO is this curve.</p>
+<p>Copying it: in the display, right-click the 3.5 V <code>PN</code> trace's legend entry and choose <strong>Copy as Phase-Noise Mask</strong>. The
+clipboard then holds <code>PhaseNoise=&quot;100Hz:-49.20, …&quot;</code>, which is what <code>VCO</code>'s <code>PhaseNoise</code> in bench 6 holds.</p>
+<p><strong>What the display shows</strong> (<code>7 VCO Phase Noise.cdd</code>):</p>
+<ul>
+<li><strong>Tuning curve</strong> and <strong>Tuning sensitivity</strong>: Fosc in MHz and Kvco = d(Fosc)/d(Vtune).</li>
+<li><strong>Phase noise</strong> at 3.5, 6 and 9 V on a log offset axis. The marker is on 3.5 V at 100 kHz. The 6 V and 9 V curves bend
+up below their flicker corners. The 3.5 V curve does not.</li>
+<li><strong>Flicker corner against tuning</strong>, with its null at 3.5 V.</li>
+<li><strong>Which part sets the phase noise, 3.5 V</strong>: <code>PNpct</code> as bars at 100 kHz.</li>
+</ul>
+<h2 id="the-parts">The parts</h2>
+<p>Every part in this workspace is a circuitRF built-in with typed values. None is a model of a real product.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

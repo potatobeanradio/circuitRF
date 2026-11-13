@@ -59,6 +59,23 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
 
     private static string SourceExamplesRoot() => Path.Combine(RepoRoot(), "examples");
 
+    /// <summary>
+    /// Every example in the index has its abstract on the user documentation's Example Workspaces page, under a heading
+    /// with its own anchor (each is a search result), and the page lists nothing the index does not. A new example that
+    /// skipped the page is otherwise found only by someone already browsing File ▸ New ▸ Examples.
+    /// </summary>
+    [Fact]
+    public void EveryExample_HasItsAbstractOnTheExamplesPage()
+    {
+        string page = File.ReadAllText(Path.Combine(RepoRoot(), "docs", "user", "src", "examples", "index.md"));
+        using var index = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(SourceExamplesRoot(), ExampleWorkspaces.IndexFileName)));
+        var folders = index.RootElement.GetProperty("Examples").EnumerateArray().Select(e => e.GetProperty("Folder").GetString()!).ToList();
+        var onPage = System.Text.RegularExpressions.Regex.Matches(page, @"\*Folder:\* `([^`]+)`").Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(folders.Order(), onPage.Order());
+        foreach (string f in folders)
+            Assert.Contains("{#ex-" + f.ToLowerInvariant().Replace(' ', '-') + "}", page);
+    }
+
     // ══ 1. They ship ════════════════════════════════════════════════════════
 
     /// <summary>

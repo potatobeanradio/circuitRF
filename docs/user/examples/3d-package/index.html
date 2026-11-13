@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — 3D Package</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/3D Package/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › 3D Package</p>
+  </div>
+
+  <h1>3D Package</h1>
+  <p class="lede">An MMIC die placed from its layout into a lidded ceramic package drawn in circuitRF&#39;s 3D editor, with bond wires, ports and a driven sweep and the lid&#39;s resonance for Palace. Drawing needs no solver; the README lists the gestures that drew it.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ 3D Package (the 3D editor)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>An MMIC die in a ceramic package with a lid on, <strong>drawn in circuitRF's 3D editor</strong>: the package in mil, the die's
+layout in µm, placed inside it, and bond wires from the die to the package's leads. Two setups solve it with
+<strong>Palace</strong>: the S-parameters through the package, and the resonances of the cavity under the lid.</p>
+<p>The chapter that teaches the editor through this workspace is <strong>The 3D Editor</strong>, in <strong>Help ▸ circuitRF
+Documentation</strong>. It quotes the same numbers as this file.</p>
+<h2 id="you-can-draw-without-a-solver">You can draw without a solver</h2>
+<p>The 3D editor is circuitRF's own. <strong>Opening this workspace, orbiting, selecting, editing, placing cells, drawing
+wires and ports, <code>check</code> and <code>explain</code> all work with no solver installed.</strong> Only <strong>Run</strong> needs Palace. The first
+time you press it without Palace, the run is refused with <strong>Install Palace …</strong> — the expected first step, not a
+fault. Palace is built from source, which took 52 minutes on the reference machine below.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Thru die</strong></td>
+<td>layout, µm, <code>tech/mmic-gaas.ctech</code></td>
+<td>A 1000 × 600 µm GaAs die, 100 µm thick with a gold back side: a 75 µm line between two 100 µm pads</td>
+</tr>
+<tr>
+<td><strong>Package</strong></td>
+<td>3D view, mil, <code>tech/ceramic-package.ctech</code></td>
+<td>The package, drawn: floor, alumina base, die-attach pad on four vias, two leads, the die placed as <code>U1</code>, two bond wires, two ports, four walls and a lid</td>
+</tr>
+</tbody>
+</table>
+<p>The two technologies are different on purpose: a die is made in one process and packaged in another. A 3D view
+places a layout through the layout's own technology, so the GaAs die sits in the alumina package exactly as
+drawn.</p>
+<p><strong>The package, dimension by dimension</strong> (the cell's parameters and the 3D view's VARs, in the Variables panel):</p>
+<ul>
+<li>The cavity is <code>cav_w</code> × <code>cav_l</code> × <code>cav_h</code> = <strong>400 × 320 × 40 mil</strong> — three <strong>cell parameters</strong>. The floor, the
+base, the walls and the lid are written in terms of them, so changing one redraws the package; the die, its
+pad, the leads, the wires and the ports stay where they are.</li>
+<li>Walls <code>wall</code> = 20 mil thick, the floor <code>floor_t</code> = 2 mil, the lid <code>lid_t</code> = 5 mil (VARs). The floor, walls and
+wires are gold; the lid is a lid alloy of σ = 2 MS/m.</li>
+<li>The base is 5 mil of alumina (εr 9.8) over the whole cavity floor. The leads are 5 mil wide and 0.2 mil thick
+on it — 50 Ω — and 170 mil long, stopping 4 mil short of the walls.</li>
+<li>The die sits on a 46 × 30 mil gold attach pad, 0.5 mil thick, joined to the floor by four gold vias 4 mil across.</li>
+<li>Each wire is 1 mil gold, a ball on the die pad and a wedge on the lead, with an 8 mil loop.</li>
+<li>Each port is a 5 × 5 mil sheet at a lead's outer end, from the floor up to the lead: <strong>floor (−) to lead (+)</strong>.</li>
+</ul>
+<p><strong>How the package was drawn</strong> — every gesture is one the editor offers:</p>
+<ol>
+<li><strong>Variables panel</strong>: <em>Add</em> <code>cav_w</code>, <code>cav_l</code>, <code>cav_h</code>, <code>wall</code>, <code>floor_t</code>, <code>lid_t</code>; <em>Promote to Cell Parameter</em>
+on the first three.</li>
+<li><strong>Box</strong> (Shift+A B), material from the toolbar: one click, then the width, depth and height <strong>typed</strong>, as
+expressions (<code>cav_w + 2*wall</code>, Tab, <code>cav_l + 2*wall</code>, Enter, <code>floor_t</code>, Enter). The corner and the name typed in
+<strong>Properties</strong>. So for the floor, the base, the attach pad and the two leads.</li>
+<li><strong>Cylinder</strong> (Shift+A Y) for one via — radius <code>2</code>, height <code>5</code> — then <strong>Array…</strong>, 2 × 2 at 36 × 20 mil.</li>
+<li><strong>Place Cell Instance…</strong>: <em>Thru die</em>, View <em>Layout</em>, with the <strong>bottom-centre</strong> handle on the attach pad;
+renamed <code>U1</code>.</li>
+<li><strong>Wire</strong> (Shift+A W), ball–wedge: a click on the die pad, a click on the lead, <code>8</code> typed for the loop height.
+Properties' <em>Start</em> point then put each ball on its pad's centre line.</li>
+<li><strong>Port</strong>, on the YZ drawing plane at each lead's end: two corners.</li>
+<li><strong>Box</strong> again for the four walls and the lid — last, so they did not hide the inside while the rest was drawn.</li>
+<li><strong>Simulate ▸ Setup Analyses…</strong>: <em>Add</em> twice; <em>Driven</em> 2–30 GHz, 1,121 points; <em>Lid modes</em> set to
+<em>Eigenmode</em>, 1 mode above 20 GHz; on each, Quality <em>Draft</em>, element order <code>2</code>, &quot;At metal and ports&quot; <code>1</code>, Linear
+solver <em>Direct</em>; and every face of the air box set to <strong>PEC</strong> with <strong>no padding</strong>, from the box's face menu.</li>
+</ol>
+<h2 id="first-why-the-air-box-is-flush-with-the-metal">First: why the air box is flush with the metal</h2>
+<p>The package is its own shield: floor, walls and lid enclose everything. So each setup's air box is set to lie
+<strong>exactly on the package's outer faces</strong> — every face PEC, padding 0 — and nothing outside the metal is meshed.
+Each face of that box lies wholly inside the floor, a wall and the lid, and circuitRF recognises a face covered
+by metal and asks the mesh for none of it.</p>
+<h2 id="the-numbers-and-where-they-come-from">The numbers, and where they come from</h2>
+<p>Every time and memory figure below was <strong>measured once</strong>, on an Apple M4 with 10 cores and 16 GB, running macOS
+27.0, Palace 0.18.1 on 10 processes, and Gmsh 4.15.2. A time is the wall clock for the whole run, Gmsh and
+Palace together; a memory figure is Palace's own peak over all its processes. Your machine will differ.</p>
+<p><strong><code>check</code></strong> on this workspace reports no error and one warning: the die's port labels carry no area for the
+design rules to check. That is expected — a placed cell's own ports are never used; the package's are.</p>
+<h2 id="driven-s-parameters-through-the-package">Driven: S-parameters through the package</h2>
+<p>Palace, 2–30 GHz, 1,121 points: <strong>4 min 46 s</strong>, peak <strong>6.4 GB</strong>. |S21| is <strong>−0.41 dB</strong> at the band centre, 16 GHz.
+At 22.15 GHz it falls to <strong>−5.35 dB</strong>: a notch about 50 MHz wide. That notch is the lid's cavity mode below — the
+package coupling the line to itself — and it is why the sweep has 25 MHz steps; at 0.5 GHz steps it is invisible.</p>
+<h2 id="lid-modes-the-cavitys-resonance">Lid modes: the cavity's resonance</h2>
+<p>Palace eigenmode, the one mode above 20 GHz: <strong>35 s</strong> of Palace, peak <strong>4.0 GB</strong>. The mode is at <strong>22.16 GHz</strong>
+with a Q of <strong>318</strong> (the gold, the lid alloy and the two ports' 50 Ω all load it). It is the same resonance the
+driven sweep's notch shows.</p>
+<p><strong>The external check.</strong> A rectangular cavity 400 × 320 mil and 40 mil high with a 5 mil alumina slab (εr 9.8) on
+its floor has its lowest mode, from the closed form for a layered cavity, at <strong>22.23 GHz</strong>. That is the one
+number here that is not circuitRF's own output. The package's mode is 0.3 % below it: the die, its attach pad, the
+leads and the wires are what the closed form leaves out. The run of the package without its die, which would
+split that difference, was not made.</p>
+<h2 id="the-settings-traded-away-and-what-they-cost">The settings traded away, and what they cost</h2>
+<p>Both setups use <strong>Draft with element order 2</strong>, &quot;At metal and ports&quot; (<code>EdgeRefinement</code>) <strong>1</strong>, and the <strong>Direct</strong>
+linear solver — chosen so each runs in under five minutes on the machine above. What the alternatives measured:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Driven</th>
+<th>Lid modes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>As shipped</td>
+<td>4 min 46 s, 6.4 GB</td>
+<td>35 s, 4.0 GB</td>
+</tr>
+<tr>
+<td>Linear solver <em>Iterative</em></td>
+<td>7 min 46 s, 3.5 GB; the same S-parameters</td>
+<td>not finished after 10 min</td>
+</tr>
+<tr>
+<td>Element order 1 (plain <em>Draft</em>)</td>
+<td>25 s, 1.9 GB; <strong>no notch</strong>, and |S21| up to 1.2 dB and 60° away</td>
+<td>not run</td>
+</tr>
+<tr>
+<td>&quot;At metal and ports&quot; 0.2 (the default)</td>
+<td>not run</td>
+<td>2.16 M unknowns: not finished after 12 min</td>
+</tr>
+<tr>
+<td><em>Standard</em> (two refinement passes)</td>
+<td>stopped after 14 min, in its second pass</td>
+<td>not run</td>
+</tr>
+</tbody>
+</table>
+<p>The shipped settings refine nothing at metal because every wall here is metal, so the default refinement would
+fill the whole 1 mm-high cavity with fine elements; the wires keep their own curvature sizing and the ports their
+own. Order 2 is what resolves the resonance. <em>Direct</em> is what makes it fast enough.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

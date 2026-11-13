@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — S-Parameters</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/S-Parameters/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › S-Parameters</p>
+  </div>
+
+  <h1>S-Parameters</h1>
+  <p class="lede">A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template&#39;s own Data Display. Stability factors K and mu are written as measurement expressions.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ S-Parameters</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Four testbenches, all driven by <strong>Terms</strong> — the element that defines an S-parameter port and its
+reference impedance. Run any of them from the Analyses panel, then open the result in a Data Display.</p>
+<h2 id="amplifier">Amplifier</h2>
+<p>A two-port Touchstone file (<code>potentially_unstable_amp.s2p</code>) placed as an <strong>SnP</strong> block between two
+50 Ω Terms, swept 1–5 GHz. The part is not unconditionally stable across that band, which is the
+point of the measurement blocks:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>What it computes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MeasGain</code></td>
+<td><code>S11_dB</code>, <code>S21_dB</code>, <code>S12_dB</code>, <code>S22_dB</code>, <code>VSWR_in</code></td>
+</tr>
+<tr>
+<td><code>MeasStability</code></td>
+<td><code>Delta</code>, Rollett <code>K</code>, <code>MU</code>, and <code>MSG_dB</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>None of those stability numbers has to be written out.</strong> <code>K</code>, μ, μ′, |Δ| and MAG/MSG are
+<strong>built into circuitRF</strong>: add a trace in a Data Display, pick the SP1 network as its source, and
+choose the metric from the list under the S-parameter elements — no measurement block, no
+expression, and the equation each one uses is written out in <em>Reference ▸ Derived Metrics</em>. They are
+spelled out here anyway because this is the example that shows you <strong>how to write a custom
+equation</strong>, and a formula you can check against a built-in answer is the one worth learning on.
+Delete <code>MeasStability</code> and the testbench still plots every one of them.</p>
+<p>Three things in those expressions are worth copying:</p>
+<ul>
+<li><strong><code>SP1.S(2,1)</code> is S21.</strong> The <code>i</code> and <code>j</code> arguments are 1-based <strong>port numbers</strong>, not array
+indices — <code>S(2,1)</code> is not &quot;row 2, column 1 of a zero-based matrix&quot;.</li>
+<li><strong><code>x*x</code>, not <code>x^2</code>.</strong> Only <code>+ - * /</code> broadcast over a result cube; the power operator does not,
+and the run reports the measurement as failed rather than guessing.</li>
+<li><strong>A measure can use an earlier one.</strong> <code>K</code> reads <code>Delta</code>, which is declared above it. Order is
+declaration order, across blocks as well as within one.</li>
+</ul>
+<h2 id="coupledinductors">CoupledInductors</h2>
+<p>Two 1 nH inductors with a 500 pH <strong>Mutual</strong> between them. Small enough to check by hand, and it
+shows <code>phase()</code> — which is in <strong>degrees</strong>, not radians.</p>
+<p>It also shows <strong>how to get a real coupling factor out of s-parameters</strong>, which is not <code>mag(S21)</code>.
+Each winding is grounded at one end, so the two-port impedances are the windings themselves —
+Z₁₁ = jωL₁, Z₂₂ = jωL₂, Z₂₁ = jωM — and the measurements convert S to Z and read them off:</p>
+<pre><code>Zden = (1-S11)*(1-S22) - S12*S21          the S → Z denominator
+wL1  = 50*imag(((1+S11)*(1-S22) + S12*S21)/Zden)     Im(Z11) = 2*pi*f*L1
+wL2  = 50*imag(((1-S11)*(1+S22) + S12*S21)/Zden)     Im(Z22) = 2*pi*f*L2
+wM   = 50*imag(2*S21/Zden)                           Im(Z21) = 2*pi*f*M
+k    = wM/sqrt(wL1*wL2)                              M/sqrt(L1*L2)
+</code></pre>
+<p><strong><code>k</code> comes out flat at 0.500000000 across the whole 0.1–5 GHz sweep</strong>, which is the point:
+<code>mag(S21)</code> on this circuit runs from 0.013 to 0.436 over the same band. A coupling factor is a
+property of the windings and does not move with frequency; a transmission magnitude does.</p>
+<p>Two things worth noticing:</p>
+<ul>
+<li><strong>Both <code>2πf</code> and the 50 Ω cancel in <code>k</code>.</strong> It is a ratio of impedances that are all <code>jω ×</code>
+something, so the frequency divides out and the extraction needs no frequency at all. That matters
+because a measurement expression has no way to reach the sweep's own frequency axis — which is
+also why <code>wL1</code>, <code>wL2</code> and <code>wM</code> are published as <strong>reactances in ohms</strong> rather than henries.
+Divide by <code>2πf</code> for the inductance: 0.628 Ω at 100 MHz is 1 nH.</li>
+<li><strong>The 50 in those three lines is the port reference impedance</strong>, the <code>Z</code> on Term1 and Term2. It
+scales all three the same way and is gone by the time <code>k</code> is formed, so it only matters if you
+want the ohms to be real ohms.</li>
+</ul>
+<h2 id="fetbias-and-fetstability">FetBias and FetStability</h2>
+<p><strong>FetStability</strong> is what the <strong>Two-Port Stability</strong> schematic template makes — New Cell ▸ Template ▸
+<em>Two Port Stability</em>, with <em>Include Data Display</em> ticked — pointed at a two-port file. Simulate it and
+<code>FetStability.cdd</code>, beside the workspace's <code>.cws</code>, opens filled: the source and load stability
+circles, μ and μ′, |S11| and |S22|, |S21| against |S12| on a second axis, and the maximum available
+gain. None of those traces is an expression; each is a built-in metric of the SP1 result.</p>
+<p>The two-port it reads, <code>FetStability/schematic/fet_bias.s2p</code>, was made by circuitRF itself from the
+<strong>FetBias</strong> bench beside it — the <em>FET S-Parameters</em> template with a 0.1 pF gate-drain capacitance,
+λ = 0.05, and biased at V<sub>GS</sub> = −1 V, V<sub>DS</sub> = 10 V:</p>
+<pre><code>circuitrf sparam FetBias/schematic/FetBias.csch -o FetStability/schematic/fet_bias.s2p
+</code></pre>
+<p><strong>μ stays below 1 across the whole 1–10 GHz sweep</strong> (about 0.02 at 1 GHz, rising to about 0.18 at
+10 GHz), so the device is only potentially stable anywhere in the band, and every stability circle
+cuts the chart. Max Gain is therefore the maximum STABLE gain, |S21|/|S12|: about 24 dB at 1 GHz and
+14 dB at 10 GHz. A bare transistor with feedback capacitance and no loading looks like this; the
+page is where a matching or stabilising network starts.</p>
+<p>The stability circles are drawn for <strong>every frequency in the sweep</strong>; a marker placed on one reads
+that circle's frequency.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

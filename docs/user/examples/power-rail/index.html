@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Power Rail Integrity</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Power Rail/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Power Rail Integrity</p>
+  </div>
+
+  <h1>Power Rail Integrity</h1>
+  <p class="lede">A four-layer board with one 3.3 V rail: the DC drop and where it goes, Z(f) against a flat target, and which of thirteen capacitors are actually doing anything.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Power Rail Integrity</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A synthetic four-layer board with one supply rail on it, set up for all four of the questions
+railRF answers. Nothing here was measured on a real product: every shape was drawn to make a
+particular answer legible, and the numbers below are what this workspace produces today.</p>
+<p>Open <strong>Sensor board ▸ Sensor board.crail</strong>. The window opens on the Fast model with the board
+already loaded; press <strong>Run</strong>.</p>
+<h2 id="the-board">The board</h2>
+<p>30 × 20 mm, four copper layers, reference plane on <strong>L2</strong>. The outline is drawn on <strong>Edge.Cuts</strong>, so
+the extent is on the picture rather than implied by where the copper stops.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TOP</strong> (1 oz, 35 µm)</td>
+<td>the regulator's output run, the ferrite, the run that lands at the loads, and every part's lands</td>
+</tr>
+<tr>
+<td><strong>GND</strong> (½ oz, 17.5 µm)</td>
+<td>the reference plane, with an anti-pad round every barrel on the rail</td>
+</tr>
+<tr>
+<td><strong>IN3</strong> (½ oz)</td>
+<td>two local <code>+3V3</code> pours — one under the load field, one at the regulator</td>
+</tr>
+<tr>
+<td><strong>BOT</strong> (1 oz)</td>
+<td>the supply's long way round the connector cut-out, 0.20 mm wide</td>
+</tr>
+<tr>
+<td><strong>F.Mask / F.SilkS</strong></td>
+<td>every part's mask openings and its body outline, drawn by its own footprint</td>
+</tr>
+</tbody>
+</table>
+<p>One rail, <code>+3V3</code>. One source at the regulator's output pad: 3.3 V open circuit behind <strong>40 mΩ and
+50 nH</strong>, which is the protection FET's on-resistance and the regulator's own output loop. Two loads
+— <code>U1</code> drawing <strong>350 mA</strong>, and <code>U3</code> stating <strong>no current at all</strong>.</p>
+<p><code>U3</code> is the point of having two. A load row with no current is an <strong>observation port</strong>: it
+contributes nothing to the DC solve and is still reported, and over frequency it is a place the
+impedance is judged. The DC report lists it as <em>observed</em> rather than leaving it out, which is what
+tells you the tool did not simply ignore a row you meant to fill in.</p>
+<p><strong>The two IN3 pours are local, and neither bridges the board.</strong> Each hangs off the rail at one
+place and carries no through current. A single pour spanning both ends would put a second path in
+parallel with the 0.20 mm BOT run and delete the finding Q0 exists for — which is worth saying out
+loud, because on the picture the two arrangements look much the same.</p>
+<h2 id="the-parts-are-parts">The parts are parts</h2>
+<p>Seventeen placements, and <strong>every one of them is an instance of a cell</strong> — not a pair of bare
+rectangles with a netlist claiming they belong together:</p>
+<table>
+<thead>
+<tr>
+<th>refdes</th>
+<th>part</th>
+<th>footprint cell</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C1</code>–<code>C6</code>, <code>C11</code>–<code>C13</code></td>
+<td>100 nF X7R</td>
+<td><code>footprints/C0402</code> (<code>smt:0402@N</code>)</td>
+</tr>
+<tr>
+<td><code>C7</code>, <code>C8</code></td>
+<td>1 µF X5R</td>
+<td><code>footprints/C0603</code> (<code>smt:0603@N</code>)</td>
+</tr>
+<tr>
+<td><code>C9</code></td>
+<td>10 µF X5R</td>
+<td><code>footprints/C0805</code> (<code>smt:0805@N</code>)</td>
+</tr>
+<tr>
+<td><code>C10</code></td>
+<td>100 µF polymer bulk</td>
+<td><code>footprints/C7343-31</code> (<code>smt:7343-31@N</code>)</td>
+</tr>
+<tr>
+<td><code>FB1</code></td>
+<td>ferrite bead</td>
+<td><code>footprints/C0603</code> (<code>smt:0603@N</code>)</td>
+</tr>
+<tr>
+<td><code>U2</code>, <code>U1</code>, <code>U3</code></td>
+<td>the regulator output and the two loads</td>
+<td><code>footprints/TERM-OUT</code>, <code>footprints/TERM-VDD</code> — one pin, no copper</td>
+</tr>
+</tbody>
+</table>
+<p>The four capacitor cells were <strong>generated by circuitRF's own land-pattern generator</strong> against this
+workspace's technology, at IPC-7351B's nominal density, and committed. Nothing drew them by hand:
+the lands, the mask openings and the body outlines all came out of the same generator the Footprint
+picker offers, which is why they are on this technology's own mask and silkscreen layers rather
+than on somebody's guess at a layer number.</p>
+<p>That is what makes the rest of this page readable. <strong>Each part draws its reference designator on
+Silk Top</strong>, so you can see which pads are <code>C10</code> without counting rectangles; selecting a row in the
+parts table highlights a part rather than an anonymous pair of pads; and a part can be taken off the
+board — <em>Unmount</em> — without touching the artwork.</p>
+<p><strong><code>C10</code> is not shorted.</strong> The question is worth asking, because a bulk capacitor whose return via
+has no anti-pad under it shorts the rail to its reference and the board still solves. Here its power
+via reaches the <code>+3V3</code> pour on IN3 and has an anti-pad cut in GND, and its return via reaches GND
+and reaches neither IN3 nor BOT. The generator refuses to write the board if either is false, and
+railRF reads a <strong>566.5 pH</strong> mounting loop for it off the geometry — which it could not do for a
+shorted part.</p>
+<p><code>C10</code> is a <strong>7343-31 (EIA D) moulded polymer</strong> rather than an 0805, and that matters to the
+mounting-loop story below: its two lands are 6.05 mm apart, so its loop is set by the barrels alone
+with almost no mutual term left.</p>
+<p><strong>This board is specified via-in-pad, filled and capped.</strong> Seven of the parts have a barrel in each
+of their two lands, and that is a fabrication requirement rather than a free choice: an <em>open</em> plated
+via under a solder land wicks solder down the hole at reflow, and what comes out is a starved joint,
+a voided one, or a tombstoned chip. Done properly the barrel is plugged — with non-conductive epoxy,
+on this board — and plated over flat, which is IPC-4761's Type VII and is an extra step the fab
+charges for. The plug is not a conductor, so the stackup's via entry is unchanged by it: a <strong>0.3 mm
+barrel with a 25 µm plated wall</strong>, which is what every via figure below is computed from.</p>
+<p>It is worth the money here for the reason Q2 is about, and the ranking is where you can see how
+much: a via in the land is <strong>555 pH</strong> and 0.9 mm of fan-out to a shared via is <strong>1201 pH</strong> on the
+same purchased part. If your board is not specified that way, the 0.35 mm fan-out row is the one to
+read — those vias are outside the land and need no plug at all.</p>
+<h2 id="where-the-refdes-come-from">Where the refdes come from</h2>
+<p>The <code>.crail</code> names three companion files beside the board, and they are what make a reference
+designator mean anything:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>layout/Sensor board.clay</code></td>
+<td>the artwork — copper, barrels, anti-pads, and the seventeen placements</td>
+</tr>
+<tr>
+<td><code>layout/Sensor board.ipc</code></td>
+<td>the board netlist: a net name per pad, and the refdes and pin it belongs to</td>
+</tr>
+<tr>
+<td><code>layout/Sensor board.placement.csv</code></td>
+<td>the placement: a centroid and a side per refdes</td>
+</tr>
+</tbody>
+</table>
+<p>Without the netlist every port would have to be a <strong>coordinate</strong>, and railRF could compute no
+mounting inductance for any part — a part's mounting loop is a property of <em>where it was placed</em>,
+and nothing would have said where. With it, the ports read <code>U1.VDD</code> rather than a point in DBU, the
+parts table fills in its <strong>Position</strong> column, and every mounting inductance below was read off the
+artwork rather than typed.</p>
+<p><code>layout/Sensor board.gen.py</code> writes the <strong>artwork</strong>, and only the artwork. It does not compute a land
+pattern of its own — it <em>reads</em> the footprint cells, so its audit runs against the same copper the
+board draws, and it refuses to write anything if a land has no anti-pad under it.</p>
+<p><strong>The other two are projected from the <code>.clay</code> by circuitRF itself</strong>, in one command:</p>
+<pre><code>dotnet run --project src/Cli -- netlist &quot;examples/Power Rail/Sensor board/layout/Sensor board.clay&quot; \
+    --ipc       &quot;examples/Power Rail/Sensor board/layout/Sensor board.ipc&quot; \
+    --placement &quot;examples/Power Rail/Sensor board/layout/Sensor board.placement.csv&quot;
+</code></pre>
+<p>One invocation, one projection, two files that cannot disagree — and the check the generator used
+to perform, <em>that every pad in the netlist stands on a land in the <code>.clay</code></em>, became impossible to
+fail rather than merely checked: a netlist projected from the lands cannot name a pad that is not
+under one. <strong>File ▸ Export ▸ Board netlist / Placement / Bill of materials</strong> writes the same bytes
+from the layout editor.</p>
+<p><strong>The regulator and the two loads are placements too.</strong> <code>U1</code>, <code>U2</code> and <code>U3</code> are instances of a
+one-pin, no-copper cell under <code>footprints/</code> — the board does not draw those parts, and what it has
+is the bare copper their terminals land on. Saying where that is in the <em>artwork</em> rather than only
+in the <code>.ipc</code> is what lets the netlist be projected at all; without it <code>U1.VDD</code> would resolve to
+nothing. They draw no copper, so every number on this page is unchanged by them.</p>
+<p><strong>The net names come from the copper's own <code>Net</code> stamps</strong>, which this board carries on its rail
+runs, its two <code>+3V3</code> pours and its <code>GND</code> plane. Nothing in circuitRF writes that field for you —
+Update Layout does not stamp it — because a name it invented could go stale against the board. On a
+board with a schematic behind it the names come from the schematic instead; this one has none, so
+it says what its copper is the way a hand-drawn board does, through the Net field in the layout
+editor's properties panel.</p>
+<h2 id="q0-is-it-connected-and-what-does-it-cost">Q0 — is it connected, and what does it cost</h2>
+<p><strong>47.6 mV</strong> at <code>U1</code> against a <strong>52 mV</strong> budget. Met, and only just.</p>
+<pre><code>22.050 mV  46%   26.204 mm of 0.211 mm BOT copper       63.001 mOhm
+14.000 mV  29%   the source's own series resistance     40.000 mOhm
+ 7.000 mV  15%   FB1's own DC resistance                20.000 mOhm
+ 1.860 mV   4%   2.575 mm of 0.473 mm TOP copper         5.313 mOhm
+ 1.434 mV   3%   the reference return                    4.097 mOhm
+ 0.479 mV   1%   9.3 mm of 0.229 mm BOT copper          21.611 mOhm
+ 0.381 mV   1%   0.9 mm of 0.382 mm TOP copper           1.162 mOhm
+ 0.250 mV   1%   0.735 mm of 0.508 mm TOP copper         0.713 mOhm
+</code></pre>
+<p>Those are the top eight of seventeen rows, and the window states the rest and their total. <strong>Do not
+add the millivolts up and expect 47.6</strong> — the full seventeen come to 48.2 mV, and that is not a
+disagreement. The table counts every group carrying current anywhere on the rail, and the port drops
+only what is on the path from the source to it: where the rail divides into two legs that rejoin,
+each leg drops its own millivolts between the same pair of nodes, and the port drops one of them
+while the table lists both. The Breakdown card names its own total and says so on any board where
+the two differ.</p>
+<p>Half the budget is one trace. That is the finding this example exists for: on a compact board
+with thin copper the artwork is not a rounding error on the parts, it is the largest single term
+after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout
+editor, re-run, and the drop falls to <strong>39.724 mV</strong> — eight millivolts back from one change to the
+artwork, and the budget has room in it again.</p>
+<p>Seventeen via transitions, none over its current limit: the rail's own three, and one for each
+capacitor's power via down to its <code>+3V3</code> pour on IN3, which carries nothing at DC.</p>
+<h2 id="the-ferrite-is-a-row-of-its-own">The ferrite is a row of its own</h2>
+<p><code>FB1</code> sits <strong>in</strong> the rail rather than across it: a part row marked <em>series</em>, with its two rail-side
+terminals, a <strong>20 mΩ</strong> DC resistance and an <strong>R-L of 0.05 Ω + 600 nH</strong> over frequency. Which side of
+it everything sits on is <strong>measured off the artwork</strong>, not typed — the copper is genuinely cut at
+<code>FB1</code>'s two lands, so cutting the rail there separates it into two galvanically independent regions
+and every row lands in one of them by where its own pads are. The run says so, and it names the
+count: one source upstream, thirteen parts and two ports downstream.</p>
+<p>At DC the element is a <strong>ranked breakdown row</strong> and not an annotation: 20 mΩ carrying the whole
+350 mA is 7 mV, which is 14 % of the budget and the third-largest term on the board.</p>
+<p>Over frequency it is what the rail's source branch IS above about 100 kHz — the regulator's own
+50 nH is worth j31 mΩ at 100 kHz and the bead is worth j377 mΩ, and by 10 MHz the bead is two orders
+above it. <strong>What it does to the top of the band is nothing, and that is the point</strong>: at 100 MHz
+every capacitor is its own mounting inductance and the source branch is already irrelevant, so a
+bead cannot fix the top of the band. It moves the low-frequency corner between the source and the
+bulk, and it keeps the converter's own switching current out of the field — neither of which is a
+thing the capacitor bank can do.</p>
+<p><strong>Both observation ports are downstream of <code>FB1</code>, so they read the same curve</strong>, and the run says
+that rather than claiming otherwise. A port upstream of the bead would genuinely differ, by the
+bead's own impedance at every frequency; the node up there carries no decoupling at all, so what it
+would read is the regulator's output inductance — tens of ohms at the top of the band, against a
+target written for a die. A monitor point judged against somebody else's requirement is not a
+finding, which is why this board does not have one.</p>
+<p><strong>An R-L standing in for a bead is optimistic and the result says so.</strong> A bead's impedance is
+strongly bias-dependent and its datasheet curve is measured at zero DC bias; at a few hundred
+milliamps the same part is worth a fraction of its marked figure, and the curve looks entirely
+ordinary. Attach the part's own measured impedance as a Touchstone file to replace the caveat.</p>
+<h2 id="q1-does-it-meet-its-target">Q1 — does it meet its target</h2>
+<p>The band is 100 kHz to 100 MHz, the target a flat <strong>55 mΩ</strong>: a 13.75 mV ripple allowance against a
+250 mA step. The rail <strong>passes by 0.793 dB at its worst, at 100 MHz</strong> — the top of the band, where
+every capacitor is its own mounting inductance and nothing else.</p>
+<p>Two anti-resonances are named rather than left to be found on the plot:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.137 MHz, 17.868 mΩ</td>
+<td>L(C9) against C(C7–C8)</td>
+</tr>
+<tr>
+<td>10.798 MHz, 19.79 mΩ</td>
+<td>L(C7–C8) against C(C1–C13)</td>
+</tr>
+</tbody>
+</table>
+<p>and the converter's <strong>fifth harmonic at 11 MHz sits 1.8 % away from the second of them</strong>, which is
+the coincidence check earning its place: neither the peak nor the harmonic is alarming on its own,
+and 1.8 % is close enough that the two are the same event.</p>
+<h2 id="q2-which-capacitors-are-doing-anything">Q2 — which capacitors are doing anything</h2>
+<p>The ranking re-solves the whole sweep once per part and reports what deleting it would cost:</p>
+<pre><code>C10  100 uF bulk   18.6 dB   -&gt; -17.8 dB.  It is holding the low band up on its own.
+C7   1 uF 0603      0.9 dB   -&gt;  -0.1 dB.  Removing it fails the target.
+C1   100 nF 0402    0.9 dB   -&gt;  -0.1 dB.  Removing it fails the target.
+C9   10 uF 0805     0.8 dB   -&gt;   0.0 dB.  Removing it lands exactly on the target.
+C4   100 nF 0402    0.7 dB   -&gt;   0.1 dB.  Removing it still passes, barely.
+C11  100 nF 0402    0.5 dB   -&gt;   0.3 dB.  Removing it still passes.
+</code></pre>
+<p><strong><code>C1</code>–<code>C3</code>, <code>C4</code>–<code>C6</code> and <code>C11</code>–<code>C13</code> are the same purchased part</strong> — one 100 nF 0402 part number,
+placed nine times — and they are worth three different amounts. The whole of the difference is how
+each one reaches its vias, which railRF read off the artwork:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>how it is mounted</th>
+<th>computed mounting loop</th>
+<th>worth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C1</code>–<code>C3</code>, <code>C7</code>–<code>C10</code></td>
+<td>a via in each land — <em>filled and capped</em></td>
+<td><strong>555–566 pH</strong></td>
+<td>0.8–0.9 dB</td>
+</tr>
+<tr>
+<td><code>C4</code>–<code>C6</code></td>
+<td>0.35 mm of fan-out</td>
+<td><strong>708.8 pH</strong></td>
+<td>0.7 dB</td>
+</tr>
+<tr>
+<td><code>C11</code>–<code>C13</code></td>
+<td>0.9 mm of 0.2 mm fan-out</td>
+<td><strong>1201.1 pH</strong></td>
+<td>0.5 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The first row is the one that costs money at the fab rather than on the bill of materials — see
+<em>The parts are parts</em>, above. The other two need no plugged vias and are what a board built on the
+default process gets.</p>
+<p>Select a row in the parts table to see which one is which on the board — and, now that each
+placement draws its own designator, to see it <em>named</em>. The number railRF prints for <code>C11</code> is</p>
+<pre><code>C11: 1201.1 pH — 552.1 pH power via + 16 pH return via − 2 × 2 pH mutual
+     + 636.9 pH pad trace, with the pair 2.6 mm apart over 1065 µm of dielectric.
+</code></pre>
+<p>— and the <strong>636.9 pH of pad trace</strong> is the entire penalty. Two 0.9 mm stubs cost more than the
+barrel they reach. That is a finding you can act on in an afternoon, and it is not visible in any
+part's datasheet.</p>
+<p><strong>Unmount <code>C10</code></strong> on the parts table and re-run: the worst margin goes to <strong>−17.767 dB</strong>, which is
+what the ranking said it would. Nothing in the <code>.clay</code> is touched — depopulating a board is a
+statement about what is fitted to the geometry, not a change to it, and the part keeps its position
+and its computed mounting loop so it can be put back exactly as it was.</p>
+<h2 id="q3-did-the-form-factor-break-it">Q3 — did the form factor break it</h2>
+<p>Press <strong>Compare…</strong> and pick a second <code>.crail</code>. The way to make one is to copy this workspace,
+re-shape the board in the copy, and compare the two. There is deliberately no second board shipped
+here: the comparison is about <em>your</em> re-layout, and a canned pair would teach the report's format
+rather than the question.</p>
+<p>The per-part table is the half worth looking at first, now that the mounting loops come off the
+artwork: <em>a part that was 555 pH on the reference and is 1.2 nH on yours because its fan-out grew</em>
+is the kind of row that explains a whole band.</p>
+<h2 id="what-the-aggressors-are">What the aggressors are</h2>
+<p>Three rows — <code>Y1</code> at 32.768 kHz, <code>U2</code> at 2.2 MHz, <code>Y2</code> at 26 MHz — and they are <strong>typed, not
+derived</strong>. Each row is a name, a fundamental and a harmonic count, and every row says <code>Typed</code> on it
+for exactly that reason: railRF cannot see what switches on your board, and a frequency somebody
+pre-filled and nobody checked is the one that will be wrong.</p>
+<p>They are an input, not a decoration. They put markers on the impedance plot and they drive the
+coincidence check — which is where the 1.8 % above came from. <code>U2</code> is the regulator, and it is on
+this board and in the netlist; <code>Y1</code> and <code>Y2</code> are a timekeeping crystal and a radio reference that
+this synthetic board does not draw, because nothing about the check needs them drawn. To use them
+on your own board, replace the frequencies with your converter's switching frequency and your
+oscillators', and set the harmonic count to as far up as each one still has energy.</p>
+<h2 id="fast-and-accurate-what-this-example-is-set-up-for">Fast and Accurate — what this example is set up for</h2>
+<p>railRF opens on <strong>Fast</strong>, which is what makes the window re-solve while you edit. Fast reads each
+trace section as one resistance from its own geometry; <strong>Accuracy</strong> meshes the copper instead.</p>
+<p>Run both. On this board they agree closely:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Drop at U1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast (the default)</td>
+<td>47.656 mV</td>
+</tr>
+<tr>
+<td>Accuracy</td>
+<td>49.164 mV</td>
+</tr>
+</tbody>
+</table>
+<p><strong>3.1 % apart, and the Fast answer is the optimistic one</strong> — which is the direction it is always
+wrong in, and the reason the two are worth running once on any board you intend to trust. The
+difference is in the rail's copper rather than its return: Fast prices each trace section from its
+own length and width and leaves out the constriction where current enters it, about a square at
+each end, which is 1.8 mV here. Both mesh the return plane — Fast refined under the ports, 4.097 mΩ
+from 9,973 cells; Accuracy 3.263 mΩ from 481,268. On this board Accuracy gives up its own refinement
+under the ports to stay under its cell ceiling, so it lands them in cells four times the size Fast
+does, and the spreading out of a port grows with the cell it lands in.</p>
+<p>Both models report the same plane capacitance, <strong>9.826 pF over 2.19 cm² at εr 4.3</strong>. That is the
+cheapest check on this page: one glance at it tests the permittivity, the overlap area and the
+dielectric thickness at once, and a stackup copied from the last board shows up there immediately.</p>
+<h2 id="what-this-example-does-not-show">What this example does not show</h2>
+<ul>
+<li><strong>The mounting loop is a via pair and two pad traces, and nothing else.</strong> It does not carry the
+part's own body inductance or the loop area in the plane of the board. On a board whose rail is a
+trace on the same layer as its capacitors — no power via at all — the computed figure is
+structurally low, and typing one is the right answer there.</li>
+<li><strong>Every observation port on this rail reads the same Z(f), because both of them are on one side
+of the ferrite.</strong> That is a fact about where the ports were put rather than a limit of the model:
+put one on the other side of <code>FB1</code> and the two differ by that element's own impedance at every
+frequency, and the note saying they read one curve is then absent because it would be false.</li>
+<li><strong>A ferrite modelled as an R-L is optimistic, and railRF says so on the result.</strong> See <em>The ferrite
+is a row of its own</em>, above.</li>
+<li><strong>Nothing above about 180 MHz.</strong> The top of the band is a tenth of this plane pair's first cavity
+mode; past that the plane is distributed and the lumped answer is not the right one.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

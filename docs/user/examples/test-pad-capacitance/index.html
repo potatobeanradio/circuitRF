@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Test Pad Capacitance</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Test Pad Capacitance/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Test Pad Capacitance</p>
+  </div>
+
+  <h1>Test Pad Capacitance</h1>
+  <p class="lede">A test pad on the far side of a six-layer board with no nets, joined to a 50 ohm line through a via with unused inner pads: its capacitance as built and with the pads removed, what goes wrong when the ground planes are left floating, and a schematic showing the electrostatic C reproduce a driven 3D run below the via&#39;s resonance.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Test Pad Capacitance</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A test pad on the far side of a six-layer board, reached from a 50 Ω line on top through a via. The via keeps
+an unused pad in every inner plane it passes, as board CAD does unless told otherwise. How much does the test
+pad load the line, and how much does removing those pads save? Palace's electrostatic solver answers in under a
+minute per board. A driven 3D run of the same board then shows where that answer holds.</p>
+<p>The board has <strong>no nets</strong>, like a board imported from Gerber files. Every terminal is chosen by clicking the
+metal, and the ground by choosing <strong>Every body not in a terminal</strong>. <strong>Capacitance Extraction</strong>, the example before
+this one, introduces the method on a simpler board. The note <strong>AN-03 Extracting capacitance</strong> (<strong>Help ▸ circuitRF
+Documentation ▸ Application Notes</strong>) explains it.</p>
+<h2 id="first-simulate-will-ask-you-to-install-palace">First: Simulate will ask you to install Palace</h2>
+<p>Opening this workspace needs no solver. The first time you press <strong>Simulate</strong> on a setup without Palace, the
+run is refused with <strong>Install Palace …</strong>. That is the expected first step.</p>
+<h2 id="the-board">The board</h2>
+<p>12 × 8 mm of the technology <code>tech/six-layer-fr4.ctech</code>: FR-4 (εr 4.4) in five layers, 1.6 mm in all. <strong>No
+layer is marked as a ground reference</strong>, and no piece of copper carries a net.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What is on it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Top Copper</td>
+<td>the 0.38 mm line, 50 Ω over Inner 1, end to end; a 0.6 mm pad at the via and at each stitching via</td>
+</tr>
+<tr>
+<td>Inner 1 – Inner 4</td>
+<td>a ground plane each, with a 1.0 mm opening round the via; in <strong>As built</strong>, a 0.6 mm unused pad on the via inside each opening</td>
+</tr>
+<tr>
+<td>Bottom Copper</td>
+<td>the 1.5 mm test pad on the via, and a ground pour with a 2.5 mm opening round it</td>
+</tr>
+</tbody>
+</table>
+<p>A 0.3 mm via joins the line to the test pad, and eight stitching vias join the planes and the pour.</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What is different</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>As built</strong></td>
+<td>as above</td>
+</tr>
+<tr>
+<td><strong>Fixed</strong></td>
+<td>the four unused pads removed, and Inner 4's opening under the test pad enlarged to 2.5 mm</td>
+</tr>
+<tr>
+<td><strong>Line only</strong></td>
+<td>the via, its pads and the test pad cut away: the line by itself</td>
+</tr>
+<tr>
+<td><strong>Compare</strong></td>
+<td>a schematic of the line with each answer on it, and the driven run</td>
+</tr>
+</tbody>
+</table>
+<p>Each board cell holds its layout and a 3D view of it (<strong>New 3D View from Layout</strong>), and the setups are in the
+3D view's <strong>Simulate ▸ Setup Analyses…</strong>.</p>
+<h2 id="how-the-setup-was-made">How the setup was made</h2>
+<ol>
+<li><strong>Add</strong>, then <strong>Electrostatic</strong> and <strong>Palace</strong>.</li>
+<li>In <strong>Terminals</strong> press <strong>+</strong>, name the row <code>TP</code>, press <strong>Pick</strong>, and click the test pad on the bottom of the
+board. The row takes the whole piece of metal the pad is part of: the pad, the via, the unused pads, the top
+pad and the line. They touch, so they are one conductor. The 3D view selects all of it.</li>
+<li>Open the <strong>Ground</strong> list (▾) and choose <strong>Every body not in a terminal</strong>. The planes, the pour and the
+stitching vias are ground, and <strong>Other metal</strong> reads <em>Ground</em>.</li>
+</ol>
+<p><strong>Test pad C, planes floating</strong> in As built is the same setup with step 3 left out.</p>
+<h2 id="test-pad-capacitance-the-numbers">Test Pad Capacitance: the numbers</h2>
+<p>Measured once on an Apple M4 with 10 cores and 16 GB, macOS 27.0, Palace 0.18.1 on 10 processes and Gmsh
+4.15.2. A time is the whole run's wall clock and a memory figure is Palace's own peak. The electrostatic setups
+run at <strong>Standard</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setup</th>
+<th>Test-pad net</th>
+<th>Time</th>
+<th>Peak</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>As built ▸ Test pad C</td>
+<td><strong>2.140 pF</strong></td>
+<td>44 s</td>
+<td>5.3 GB</td>
+</tr>
+<tr>
+<td>Fixed ▸ Test pad C</td>
+<td><strong>1.830 pF</strong></td>
+<td>48 s</td>
+<td>6.0 GB</td>
+</tr>
+<tr>
+<td>Line only ▸ Line C</td>
+<td><strong>1.450 pF</strong></td>
+<td>40 s</td>
+<td>5.9 GB</td>
+</tr>
+</tbody>
+</table>
+<p>The terminal is the whole net, line included. <strong>The test pad's own share</strong> is the difference from the line alone:</p>
+<ul>
+<li><strong>As built</strong>: <strong>0.689 pF</strong> more than the line alone.</li>
+<li><strong>Fixed</strong>: <strong>0.379 pF</strong>, 45 % less.</li>
+</ul>
+<p><strong>What a designer does with the number.</strong> Put it on the line in the schematic as a shunt capacitor, at the via,
+and see what it costs at the operating frequency. At 2.4 GHz the as-built pad costs a few tenths of a dB and
+returns a reflection a matching network has to absorb. If that matters, removing the unused pads and opening the
+plane under the pad are two fabrication notes, and this is how much they buy.</p>
+<h2 id="ground-or-floating">Ground, or floating</h2>
+<p><strong>As built ▸ Test pad C, planes floating</strong> took 56 s and reads <strong>0.920 pF</strong>: less than half. With the ground box left
+as it opens, the planes are in no terminal and are not ground, so they <strong>float</strong>: connected to nothing and with no
+net charge. The only ground left is the metal box round the model, and the floating planes sit between it and the
+pad. On a real board the planes are ground, so on a board with no nets, choose <strong>Every body not in a terminal</strong>.</p>
+<h2 id="compare">Compare</h2>
+<p><code>Compare/schematic/Compare.csch</code> holds five copies of the 12 mm line, each from its own pair of ports. The line
+is the line calculator's: Z₀ 50 Ω, εeff 3.33, and its loss at 2.4 GHz. The line's middle carries:</p>
+<table>
+<thead>
+<tr>
+<th>Ports</th>
+<th>On the line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1, 2</td>
+<td><code>C_built</code>, the as-built test pad from the electrostatic solve</td>
+</tr>
+<tr>
+<td>3, 4</td>
+<td><code>C_fixed</code>, the fixed one</td>
+</tr>
+<tr>
+<td>5, 6</td>
+<td>TESTPAD, the closed-form model of the as-built pad, its via and its unused pads</td>
+</tr>
+<tr>
+<td>7, 8</td>
+<td>the driven 3D run of the as-built board, <code>Compare/data/As built driven.s2p</code></td>
+</tr>
+<tr>
+<td>9, 10</td>
+<td><code>C_built</code> behind <code>L_via</code>, the via inductance TESTPAD reports (0.526 nH)</td>
+</tr>
+</tbody>
+</table>
+<p>Simulate it and open <code>Compare.cdd</code> beside this file. It plots |S21| of all five.</p>
+<p><strong>At 2.4 GHz</strong> the electrostatic shunt C gives <strong>−0.44 dB</strong>, and the driven run <strong>−0.69 dB</strong>. Below about half the
+stub's resonance the electrostatic number stands in for the driven run. Above that the via's inductance takes
+over: the driven run dips to −29.6 dB at 7.4 GHz, where the stub resonates, and no capacitor can do that.
+Ports 9 and 10 put the inductance back, and the dip returns at 8.4 GHz, a little higher because TESTPAD's inductance
+is an estimate.</p>
+<p><strong>The driven run</strong> is <code>As built ▸ Driven (Draft)</code>: Palace at <strong>Draft</strong> with two refinement passes (first-order
+elements), 0.5–10 GHz, lumped ports from the line's ends down to Inner 1. It took <strong>7.3 min</strong>, with a peak of
+<strong>7.8 GB</strong>. Its file in <code>Compare/data</code> is that run's result, kept so Compare works without it. A new run writes to
+<code>results/</code>, not there. <strong>What Draft trades away:</strong> at first order the mesh round a small pad and via is coarse,
+and a coarse mesh overstates a small capacitor's loading. Draft with no refinement loaded the line about as much as
+twice the electrostatic stub below 3 GHz. The two refinement passes close most of that gap, and take three to four times
+as long. A
+second-order driven run was not made, so how far this one still is from a converged answer has not been measured.</p>
+<h2 id="what-is-deliberately-not-here">What is deliberately not here</h2>
+<p><strong>Results</strong>, other than the driven run's file in <code>Compare/data</code>. Run the setups yourself.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

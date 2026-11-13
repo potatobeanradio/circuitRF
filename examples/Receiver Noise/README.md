@@ -269,8 +269,7 @@ because there the oscillation's frequency is insensitive to the transistor's fli
 quietest place to run this VCO close in, which is why bench 6's LO is this curve.
 
 Copying it: in the display, right-click the 3.5 V `PN` trace's legend entry and choose **Copy as Phase-Noise Mask**. The
-clipboard then holds `PhaseNoise="100Hz:-49.20, …"`, which is what `VCO`'s `PhaseNoise` in bench 6 holds. The example's
-test checks that bench 6's mask is this bench's result, point for point.
+clipboard then holds `PhaseNoise="100Hz:-49.20, …"`, which is what `VCO`'s `PhaseNoise` in bench 6 holds.
 
 **What the display shows** (`7 VCO Phase Noise.cdd`):
 

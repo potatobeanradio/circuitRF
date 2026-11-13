@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Thermal: Die to Heatsink</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Thermal Die to Heatsink/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Thermal: Die to Heatsink</p>
+  </div>
+
+  <h1>Thermal: Die to Heatsink</h1>
+  <p class="lede">A GaN-on-SiC die on a copper–molybdenum flange, a board with a field of plated vias, and a heatsink at 85 &#176;C: the junction temperature and Rth against dissipated power, with the via field solved as drawn or as one effective block.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Thermal: Die to Heatsink</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Power in, temperature out. A GaN-on-SiC power transistor die is sintered to a copper–molybdenum flange, the flange is soldered to
+a two-layer board with a field of plated vias, and the board sits on a thermal interface material on a heatsink held at
+<code>Ths</code> = 85 °C. The setup sweeps the transistor's dissipated power, <code>Pdiss</code>, from 3 W to 11 W and reads the
+junction-to-case and junction-to-heatsink thermal resistances.</p>
+<p>The chapter that teaches this is <strong>Thermal</strong> in <strong>Help ▸ circuitRF Documentation</strong>. It quotes the same numbers as this file.</p>
+<p><strong>What to expect when you press Run:</strong> about <strong>1 min 17 s</strong> and <strong>1.1 GB</strong> for the three power points on the reference machine
+(an Apple M4, the Debug build), on a mesh of 543,980 tetrahedra. Thermal needs <strong>Gmsh</strong>; the first run without it offers to install it.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Board</strong></td>
+<td>layout, µm</td>
+<td>10 × 8 mm of 508 µm FR-4 with 70 µm copper both sides: a pad under the flange on top, a plane underneath, and a 5 × 3 field of plated vias (0.3 mm drill, 25 µm wall) on a 1 mm pitch</td>
+</tr>
+<tr>
+<td><strong>Die to Heatsink</strong></td>
+<td>3D view, µm</td>
+<td>The board placed as <code>B1</code>; a 100 µm thermal interface material under it; the 6 × 4 × 1 mm flange; the 2.5 × 1 × 0.1 mm SiC die; the transistor as one heat-source sheet; five probes; the setup <code>Steady</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every material is one of circuitRF's generic materials, from <code>tech/generic-materials.cmat</code>.</p>
+<h2 id="how-it-is-modelled">How it is modelled</h2>
+<ul>
+<li><strong>The transistor</strong> is the heat-source sheet <code>fet</code>, 0.8 × 0.25 mm on the die's top: its fingers' area as one sheet. At this scale
+the 2 µm GaN epitaxy is not drawn — drawn, it would force micrometre elements over the whole die. <strong>Thermal Channel vs
+Surface</strong> draws it, one finger at a time.</li>
+<li><strong>The bond lines</strong> — 20 µm of sintered silver under the die, 50 µm of solder under the flange — are <strong>contact resistances</strong>,
+each its thickness over its conductivity (<code>ContactResistances</code> in the 3D view: 1E-07 and 8.62E-07 m²·°C/W). A thin layer
+drawn as a solid meshes at its own thickness across its whole area, and these two alone would multiply the run time.</li>
+<li><strong>The heatsink</strong> is the bottom face of the interface material, held at <code>Ths</code>. Every other face is insulated.</li>
+</ul>
+<h2 id="what-it-reads">What it reads</h2>
+<table>
+<thead>
+<tr>
+<th>Probe</th>
+<th>Where</th>
+<th>Statistic</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>die_top</code></td>
+<td>the die's top face</td>
+<td>Max — the junction</td>
+</tr>
+<tr>
+<td><code>flange_bot</code></td>
+<td>the flange's bottom face</td>
+<td>Avg — <strong>the case</strong></td>
+</tr>
+<tr>
+<td><code>flange_bot_hot</code></td>
+<td>the same face</td>
+<td>Max</td>
+</tr>
+<tr>
+<td><code>via_centre</code></td>
+<td>the centre via's barrel</td>
+<td>Max</td>
+</tr>
+<tr>
+<td><code>board_under</code></td>
+<td>the board's underside, on the interface material</td>
+<td>Avg</td>
+</tr>
+</tbody>
+</table>
+<p>The measures: <code>Rth_jc = (Tmax(die_top) - Tavg(flange_bot)) / Pdiss</code>, <code>Rth_jc_hot</code> (the same with the flange's hottest point),
+<code>Rth_ja = (Tmax(die_top) - Ths) / Pdiss</code>, and <code>T_interface = Tavg(board_under)</code>.</p>
+<p><strong>&quot;Case temperature&quot; here is the flange bottom's AVERAGE.</strong> A lab's definition may differ — a thermocouple under the centre of the
+flange reads close to its hottest point — and the difference is not small: at 11 W, <code>Rth_jc</code> is <strong>5.83 °C/W</strong> against the average
+and <code>Rth_jc_hot</code> is <strong>5.42 °C/W</strong> against the hottest point. Say which one a datasheet number means before comparing.</p>
+<h2 id="results">Results</h2>
+<table>
+<thead>
+<tr>
+<th>Pdiss</th>
+<th>Die top</th>
+<th>Rth_jc</th>
+<th>Rth_ja</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3 W</td>
+<td>116.2 °C</td>
+<td>5.08 °C/W</td>
+<td>10.41 °C/W</td>
+</tr>
+<tr>
+<td>7 W</td>
+<td>160.5 °C</td>
+<td>5.45 °C/W</td>
+<td>10.79 °C/W</td>
+</tr>
+<tr>
+<td>11 W</td>
+<td>207.9 °C</td>
+<td>5.83 °C/W</td>
+<td>11.18 °C/W</td>
+</tr>
+</tbody>
+</table>
+<p>At 11 W the flange bottom averages <strong>143.8 °C</strong> and the board's underside <strong>89.58 °C</strong>.</p>
+<p><strong>Rth rises with power.</strong> Silicon carbide's conductivity falls as it heats (374 W/(m·K) at 25 °C, its library table), and the
+run solves that as a Newton loop over k(T) — 3 to 4 steps a point, reported in the run's notes. A constant-k model would give
+one Rth for every power.</p>
+<p><strong>A check that is not circuitRF's.</strong> The heat crosses the interface material in one dimension, so its top averages
+<code>85 + 11 × 100 µm / (3 W/(m·K) × 80 mm²) = 89.58 °C</code> at 11 W — exactly what <code>T_interface</code> reads.</p>
+<p><strong>See it.</strong> The view carries two field plots of the last point (11 W): <strong>Surface</strong>, the temperature on every exposed face,
+drawn when you open the results; and <strong>Section</strong>, a clip plane through the middle of the stack (tick it in the tree to draw it
+instead) — the heat spreading from the die through the flange and funnelling into the vias.</p>
+<h2 id="the-settings-chosen-for-speed-and-what-they-cost">The settings chosen for speed, and what they cost</h2>
+<p><strong>Element order 1</strong> (the setup's <em>Mesh ▸ Order</em>). The default is order 2. On the same mesh:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Order 1 (shipped)</th>
+<th>Order 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Die top, 11 W</td>
+<td>207.9 °C</td>
+<td>210.9 °C</td>
+</tr>
+<tr>
+<td>Rth_jc, 11 W</td>
+<td>5.83 °C/W</td>
+<td>5.99 °C/W</td>
+</tr>
+<tr>
+<td>Rth_ja, 11 W</td>
+<td>11.18 °C/W</td>
+<td>11.45 °C/W</td>
+</tr>
+<tr>
+<td>Run</td>
+<td>1 min 17 s, 1.1 GB</td>
+<td>17 min 55 s, 8.3 GB</td>
+</tr>
+</tbody>
+</table>
+<p>Order 1 reads the junction about 2.5 % cool. The setup refines the mesh at the source (<code>SizeFromSources</code> 12) to recover most of
+what order 1 loses there.</p>
+<p><strong>The mesh check</strong> (<em>Mesh ▸ Check</em>, off in the shipped setup) meshes again with every element size × 0.7 and re-solves the first
+point: 1,153,126 tetrahedra, <strong>2 min 57 s</strong>, and the die top moves by <strong>+0.13 °C (+0.41 % of its rise)</strong>. That is small because the check
+refines the SAME order-1 elements; it does not see the order-2 difference above, so do not read it as the error of order 1.</p>
+<p><strong>One element through thin solids</strong> (<code>MinThroughThickness</code> 1; the default is 2). Every solid is meshed at an element size from
+its thinnest dimension, so the 70 µm copper and the 100 µm interface material set the element count; the setting halves it.</p>
+<h2 id="the-via-field-as-an-effective-block">The via field as an effective block</h2>
+<p>The view has an <strong>effective block</strong>, <code>via_field</code>, over the vias under the flange — disabled. Enable it (select it in the tree,
+tick <em>Enabled</em>) and run again: the board's laminate, copper and via barrels under the flange become one block of
+k_xy = 81.74 and k_z = 7.241 W/(m·K), and the vias are no longer meshed.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Vias as drawn (shipped)</th>
+<th>Effective block</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Die top, 11 W</td>
+<td>207.9 °C</td>
+<td>194.0 °C</td>
+</tr>
+<tr>
+<td>Rth_ja, 11 W</td>
+<td>11.18 °C/W</td>
+<td>9.91 °C/W</td>
+</tr>
+<tr>
+<td>Run</td>
+<td>1 min 17 s</td>
+<td>3 min 10 s</td>
+</tr>
+</tbody>
+</table>
+<p>The block reads the die <strong>13.9 K</strong> cooler: here it is an optimistic approximation, and it did not make this run faster. It pays
+where there are hundreds of vias. While the block is on, the <code>via_centre</code> probe reads nothing (its via is replaced).</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li>Change <code>Ths</code> or <code>Pdiss</code> in the <strong>Variables</strong> panel, or the sweep on the setup's page.</li>
+<li>Right-click the die's top face ▸ <strong>Plot Temperature</strong>.</li>
+<li>Move the vias (edit <strong>Board</strong>) and watch <code>Rth_ja</code>.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

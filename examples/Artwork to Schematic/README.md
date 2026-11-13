@@ -87,6 +87,4 @@ tee's reference plane, a ground plane drawn, then **File ▸ Export ▸ Gerber**
 placement and BOM were cut to the three soldered parts — circuitRF's own writers list every placed instance, lines
 included — and L1's BOM row was deleted. The file set was then imported with **File ▸ Import ▸ Board**.
 
-The whole sequence is `tests/Ui.Tests/Examples/ArtworkToSchematicExampleAuthoring.cs`, which rebuilds this folder
-with `CRF_AUTHOR_ARTWORK=1`; the same board, sent round the same loop, is the acceptance test of the command
-(`tests/Ui.Tests/Recognition/ArtworkRoundTripTests.cs`).
+

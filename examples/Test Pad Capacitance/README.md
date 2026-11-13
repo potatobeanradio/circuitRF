@@ -53,7 +53,7 @@ Each board cell holds its layout and a 3D view of it (**New 3D View from Layout*
 
 Measured once on an Apple M4 with 10 cores and 16 GB, macOS 27.0, Palace 0.18.1 on 10 processes and Gmsh
 4.15.2. A time is the whole run's wall clock and a memory figure is Palace's own peak. The electrostatic setups
-run at **Standard**. The numbers are also in `expected-numbers.json`, which circuitRF's own tests re-run against.
+run at **Standard**.
 
 | Setup | Test-pad net | Time | Peak |
 |---|---|---|---|

@@ -476,6 +476,8 @@ public sealed class DocGenRun
                              .OrderBy(p => p, StringComparer.Ordinal)
                              .Select(DocPage.Load)
                              .ToList();
+        // Each shipped example workspace's README, as a page of its own under examples/ (ExamplePages).
+        pages.AddRange(ExamplePages.Load(_docsRoot));
 
         // Every anchor the generated site will offer, known BEFORE any page is written, so a
         // forward cross-link resolves as readily as a backward one.
@@ -493,7 +495,9 @@ public sealed class DocGenRun
             // A RETIRED page is deliberately not in the reading order: it is a slug that must not 404
             // for somebody with a bookmark, not a chapter, and a reader following Next should never
             // arrive at one. Excluded from `emitted` so the orphan check does not refuse it.
-            var emitted = pages.Where(p => p.Kind is not "slides" and not "retired").Select(p => p.Slug)
+            // An example's README page is reached from the Example Workspaces page, not by Previous/Next: 39 more pages in
+            // the chain would bury the chapters, so it is outside the reading order as a retired page is (but searched).
+            var emitted = pages.Where(p => p.Kind is not "slides" and not "retired" and not ExamplePages.Kind).Select(p => p.Slug)
                                .Concat(CopiedThroughPages(pages))
                                .ToHashSet(StringComparer.Ordinal);
             nav.Validate(emitted);
@@ -568,6 +572,8 @@ public sealed class DocGenRun
             File.WriteAllText(outPath, html);
             _written.Add(outPath);
             Account(outPath, htmlOnly: true);
+            if (page.Kind == ExamplePages.Kind)
+                foreach (string copied in ExamplePages.CopyPictures(page, Path.GetDirectoryName(outPath)!)) _written.Add(copied);
         }
 
         // The search index is written LAST, from what the pages turned out to contain — so it cannot

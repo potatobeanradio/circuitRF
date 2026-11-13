@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — S-Parameter Noise</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/S-Parameter Noise/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › S-Parameter Noise</p>
+  </div>
+
+  <h1>S-Parameter Noise</h1>
+  <p class="lede">Noise=yes on an S-parameter run: a 6 dB pad whose noise figure follows its temperature, a cascade of two amplifiers and a pad laid over Friis&#39; formula, and a noise-matched LNA with its optimum source and two constant-noise-figure circles on a Smith chart. Every number is checked against a closed form.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Open a numbered bench, Simulate, and its Data Display opens on the result.</strong> The three run in a second each, in any
+order:</p>
+<ul>
+<li><strong><code>1 Attenuator</code></strong>: a matched 6 dB pad, its temperature swept from 20 K to 400 K. Its noise figure is 6 dB at 290 K
+and <code>1 + (T/T0)(L − 1)</code> at every other temperature.</li>
+<li><strong><code>2 Friis Cascade</code></strong>: a low-noise stage, a pad and a second stage. The run's noise figure lies on Friis' formula at
+every pad loss from 1 to 10 dB.</li>
+<li><strong><code>3 LNA Noise Circles</code></strong>: a transistor-like two-port behind an input noise match, with a stabilising resistor. NF
+against NFmin, the noise temperatures, the optimum source on a Smith chart and as an impedance, and two circles of
+constant noise figure.</li>
+</ul>
+<p>Each bench's S-parameter analysis has <strong>Noise</strong> ticked (<code>Noise=yes</code> in the netlist). That adds the noise-wave
+correlation <code>Cs</code> to the run, and for a two-port the noise figure and noise parameters as cubes beside <code>S</code>: <code>NF</code> and
+<code>NFmin</code> (dB), <code>Fn</code> and <code>Fmin</code> (the same, linear), <code>Te</code> and <code>Tmin</code> (the noise temperatures, K), <code>Rn</code> (Ω), and the
+optimum source <code>Sopt</code>, also as an impedance <code>Zopt</code>. They take the names commonly used for them. Every part in these benches is noisy: the resistors and the lossy L and C are thermal at their own temperature, and
+each SnP block is noisy by the noise data in its file. So no run warns about a noiseless part. The full description is
+in <em>Reference ▸ Simulations ▸ Small-signal noise</em>.</p>
+<h2 id="running-a-bench">Running a bench</h2>
+<ol>
+<li><strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> copies this workspace to a folder you choose and opens it.</li>
+<li>In the Workspace tree, open a bench's schematic, for example <code>1 Attenuator</code>'s.</li>
+<li><strong>Simulate.</strong></li>
+<li>The bench's Data Display, <code>1 Attenuator.cdd</code> beside the <code>.cws</code>, opens on the new result. It is in the tree too, to
+open again later.</li>
+</ol>
+<p>To see the noise switch, open the bench's <code>SP1</code> from the Analyses panel: the <strong>Noise</strong> box is under the frequency plan.</p>
+<h2 id="attenuator">1 Attenuator</h2>
+<p>A π pad of three resistors between 50 Ω ports. Its loss is the variable <code>L_dB = 6</code>, and the resistors follow from it:</p>
+<pre><code>K = 10^(L_dB/20)      Rsh = 50·(K + 1)/(K − 1) = 150.48 Ω      Rse = 50·(K² − 1)/(2K) = 37.35 Ω
+</code></pre>
+<p><code>temp = 16.85</code> is the design's ambient in °C, which is 290 K. A parametric sweep <code>SW1</code> steps <code>temp</code> from −253.15 °C to
+126.85 °C, which is 20 K to 400 K in 10 K steps, around one frequency, 1 GHz. A pad is flat, so one is enough.</p>
+<p>A passive part's noise is the thermal noise of its own loss, at its own temperature. For a matched pad at temperature T
+with loss L (a ratio), that gives</p>
+<pre><code>F = 1 + (T/T0)·(L − 1)          T0 = 290 K
+</code></pre>
+<p>At T = T0 the noise figure is the loss. The <code>MEAS1</code> block writes this formula as <code>NF_closed</code>, beside the run's <code>NF</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Pad temperature</th>
+<th>NF, circuitRF</th>
+<th><code>NF_closed</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20 K</td>
+<td>0.812 dB</td>
+<td>0.812 dB</td>
+</tr>
+<tr>
+<td>80 K</td>
+<td>2.606 dB</td>
+<td>2.606 dB</td>
+</tr>
+<tr>
+<td>290 K</td>
+<td><strong>6.000 dB</strong></td>
+<td>6.000 dB</td>
+</tr>
+<tr>
+<td>300 K, circuitRF's default ambient</td>
+<td>6.111 dB</td>
+<td>6.111 dB</td>
+</tr>
+<tr>
+<td>400 K</td>
+<td>7.086 dB</td>
+<td>7.086 dB</td>
+</tr>
+</tbody>
+</table>
+<p>They agree to 1e-14 dB at all 39 temperatures. <strong>What the display shows</strong> (<code>1 Attenuator.cdd</code>):</p>
+<ul>
+<li><strong>Noise figure of a 6 dB pad against its temperature</strong>: the run's NF as dots, <code>NF_closed</code> as a line through them, and
+the loss, −dB(S21), dashed at 6 dB. The two cross at 290 K, where the marker reads 6.000 dB.</li>
+<li><strong>Noise temperature of the wave leaving port 2</strong>: <code>Tn = Re Cs(2,2)/k</code>, against Bosma's <code>T(1 − 1/L)</code> for a passive
+network. At 290 K both are 217.2 K.</li>
+</ul>
+<p><strong>A design that states no temperature runs at 26.85 °C, 300 K</strong>, not at T0, and there this pad reads 6.111 dB.
+Noise figures are referred to 290 K, so a passive part 10 K warmer than that makes a little more noise than its loss.
+Write <code>temp = 16.85</code> in a design whose passive parts should be at T0.</p>
+<h2 id="friis-cascade">2 Friis Cascade</h2>
+<p>Port 1, stage A, a matched π pad, stage B, port 2, all matched to 50 Ω. Both stages are SnP blocks whose files carry a
+Touchstone noise block:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>File</th>
+<th>Gain</th>
+<th>Noise data</th>
+<th>NF from 50 Ω</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A, low-noise</td>
+<td><code>data/amp_a.s2p</code></td>
+<td>16 dB</td>
+<td>NFmin 0.8 dB at Γopt 0.25∠45°, rn 0.25</td>
+<td>0.957 dB</td>
+</tr>
+<tr>
+<td>Pad</td>
+<td>three resistors at 290 K</td>
+<td>−<code>L_dB</code></td>
+<td>its loss</td>
+<td><code>L_dB</code></td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>data/amp_b.s2p</code></td>
+<td>12 dB</td>
+<td>NFmin 3 dB at Γopt 0, rn 0.4</td>
+<td>3 dB</td>
+</tr>
+</tbody>
+</table>
+<p><code>SW1</code> sweeps the pad's loss <code>L_dB</code> from 1 to 10 dB. Friis' formula for three matched stages is</p>
+<pre><code>F = FA + (L − 1)/GA + (FB − 1)·L/GA
+</code></pre>
+<p>where FA is stage A's noise factor from a 50 Ω source. Stage A's optimum source is not 50 Ω, so FA is above its Fmin:</p>
+<pre><code>FA = Fmin + 4·rn·|Γopt|² / |1 + Γopt|²       (Γs = 0)
+</code></pre>
+<p>The VAR block holds each stage's numbers as its file states them (<code>GA_dB</code>, <code>NFminA_dB</code>, <code>GoptA</code>, <code>rnA</code>, <code>GB_dB</code>,
+<code>NFB_dB</code>). <code>MEAS1</code> turns them into <code>FA</code>, <code>GA</code>, <code>FB</code>, and <code>NF_friis</code> is the formula above.</p>
+<table>
+<thead>
+<tr>
+<th>Pad</th>
+<th>NF, circuitRF</th>
+<th><code>NF_friis</code></th>
+<th>NFmin, circuitRF</th>
+<th>Pad first, <code>NF_padfirst</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 dB</td>
+<td>1.087 dB</td>
+<td>1.087 dB</td>
+<td>0.943 dB</td>
+<td>2.043 dB</td>
+</tr>
+<tr>
+<td>3 dB</td>
+<td><strong>1.210 dB</strong></td>
+<td>1.210 dB</td>
+<td>1.078 dB</td>
+<td>4.043 dB</td>
+</tr>
+<tr>
+<td>10 dB</td>
+<td>2.362 dB</td>
+<td>2.362 dB</td>
+<td>2.296 dB</td>
+<td>11.043 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The run and the formula agree to 3e-14 dB at every loss and at each of the four frequencies, 1 to 4 GHz. The gain is
+<code>GA − L + GB</code> to 2e-13 dB. <strong>What the display shows</strong> (<code>2 Friis Cascade.cdd</code>):</p>
+<ul>
+<li><strong>Cascade noise figure against the pad's loss</strong>: the run's NF as dots on <code>NF_friis</code>, and the run's NFmin dashed below
+it. NFmin is lower because stage A would rather see a source of 0.25∠45° than 50 Ω. The marker is on the 3 dB pad.</li>
+<li><strong>Why the low-noise stage goes first</strong>: the same cascade, against <code>NF_padfirst</code>, Friis' formula with the pad ahead of
+stage A, <code>L·FA + (FB − 1)·L/GA</code>. A loss in front of the first gain adds to the noise figure decibel for decibel; behind
+16 dB of gain, the 3 dB pad costs 0.17 dB over the 1.04 dB of the two stages alone.</li>
+<li><strong>Cascade gain</strong>: the run's gain on <code>GA − L + GB</code>.</li>
+</ul>
+<p>The pad is at 290 K (<code>temp = 16.85</code>), which is what makes its noise factor equal to its loss. Noise data from a file is
+absolute and does not move with the ambient.</p>
+<h2 id="lna-noise-circles">3 LNA Noise Circles</h2>
+<p><code>data/transistor.s2p</code> is a synthetic transistor-like two-port from 2 to 6 GHz with a noise block. At 4 GHz it has
+NFmin 0.65 dB at Γopt 0.65∠75° and rn 0.19. It is not unconditionally stable below about 4 GHz. The bench builds a
+narrow-band LNA around it:</p>
+<ul>
+<li><strong>Input noise match</strong>: a shunt <code>C1</code> (SRC, 0.43 pF with 0.25 Ω of ESR) and a series <code>L1</code> (SRL, 3.16 nH with 2 Ω, a Q
+of 40 at 4 GHz). They were tuned so that the LNA's own optimum source is 50 Ω at 4 GHz.</li>
+<li><strong>Stabilising resistor</strong>: <code>Rstab</code>, 300 Ω from the output to ground. With it, Rollett's K is 1.27 to 1.64 across
+the band. Without it, K falls to 1.01 at 3 GHz, which leaves no margin; the transistor on its own is at 0.92
+there.</li>
+</ul>
+<p><code>SP1</code> runs from 3 to 5 GHz in 50 MHz steps. <code>MEAS1</code> adds the gain, <code>K_rollett = K(SP1.S)</code>, and two noise circles,
+<code>NF_125 = ns_circle(SP1.S, 1.25)</code> and <code>NF_200 = ns_circle(SP1.S, 2)</code>. Each circle is a cube over frequency and 101
+points: the source reflections that give that noise figure.</p>
+<table>
+<thead>
+<tr>
+<th>At 4 GHz</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NF from 50 Ω</td>
+<td>0.979 dB</td>
+</tr>
+<tr>
+<td>NFmin</td>
+<td>0.979 dB, at an Sopt within 0.002 of the centre</td>
+</tr>
+<tr>
+<td>Te and Tmin</td>
+<td>73.4 K, both</td>
+</tr>
+<tr>
+<td>Zopt</td>
+<td>50.08 − j0.13 Ω</td>
+</tr>
+<tr>
+<td>Rn</td>
+<td>5.0 Ω</td>
+</tr>
+<tr>
+<td>Gain</td>
+<td>11.4 dB</td>
+</tr>
+<tr>
+<td>K</td>
+<td>1.43</td>
+</tr>
+</tbody>
+</table>
+<p>The LNA's NFmin is 0.33 dB above the transistor's. Most of that, 0.28 dB, is the loss in <code>L1</code> and <code>C1</code>: with their
+resistances set to 0, NFmin is 0.70 dB. <code>Rstab</code>'s own noise is the other 0.06 dB.</p>
+<p><strong>What the display shows</strong> (<code>3 LNA Noise Circles.cdd</code>):</p>
+<ul>
+<li><strong>Noise figure of the LNA</strong>: NF from 50 Ω against NFmin, 3 to 5 GHz. They touch at 4 GHz, where the match puts 50 Ω
+at the optimum, and part on either side. Below 4 GHz the NF is lower still, since NFmin falls faster than the mismatch
+grows.</li>
+<li><strong>Sopt and two noise circles</strong>: Sopt's locus from 3 to 5 GHz, passing through the centre of the chart at
+4 GHz (the marker), and the 1.25 dB and 2 dB circles at 4 GHz, about 0.27 dB and 1 dB above NFmin. The circle traces
+are <code>NF_125[20, :]</code> and <code>NF_200[20, :]</code>: point 20 of the frequency axis is 4 GHz. <code>NF_125[~, :]</code> draws one circle per
+frequency instead.</li>
+<li><strong>Gain</strong> and <strong>Stability</strong>: dB(S21), and K above 1 everywhere.</li>
+<li><strong>Equivalent input noise temperature</strong>: Te from 50 Ω against Tmin, T0·(F − 1) and T0·(Fmin − 1) with T0 = 290 K.
+They meet at 73.4 K at 4 GHz (the marker), as NF and NFmin do; a noise temperature reads small differences at a
+low noise figure more plainly than decibels.</li>
+<li><strong>Optimum source impedance Zopt</strong>: Sopt as an impedance, Re and Im, from 33 + j32 Ω at 3 GHz to 137 Ω at 5 GHz. The
+marker reads 50.08 Ω at 4 GHz, the port's own 50 Ω.</li>
+</ul>
+<p>Every point of both circles gives its own noise figure back through <code>nf(SP1.S, Γs)</code>, to 3e-15 dB.</p>
+<h2 id="the-data">The data</h2>
+<p>Every file in <code>data/</code> is synthetic, written for this example, and says what it is in its header. None is a real part.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data/amp_a.s2p</code></td>
+<td>Stage A: matched and unilateral, 16 dB, NFmin 0.8 dB at Γopt 0.25∠45°, rn 0.25, flat from 1 to 4 GHz</td>
+</tr>
+<tr>
+<td><code>data/amp_b.s2p</code></td>
+<td>Stage B: matched and unilateral, 12 dB, NFmin 3 dB at Γopt 0, rn 0.4, flat from 1 to 4 GHz</td>
+</tr>
+<tr>
+<td><code>data/transistor.s2p</code></td>
+<td>A transistor-like two-port, 2 to 6 GHz in 0.5 GHz steps; every S and noise value runs linearly between the end values in its header</td>
+</tr>
+</tbody>
+</table>
+<p>The noise block is Touchstone 1.x: after the S data, one row per frequency of <code>f NFmin(dB) |Γopt| ∠Γopt(°) rn</code>, with
+rn = Rn/R on the option line's R. Between rows the noise parameters are linear.</p>
+<p>To keep a run's noise as a file, export S as Touchstone, or from a terminal:</p>
+<pre><code>circuitrf sparam &quot;3 LNA Noise Circles/schematic/3 LNA Noise Circles.csch&quot; -o lna.s2p
+</code></pre>
+<p>The <code>.s2p</code> it writes carries the noise block, so the LNA can be placed as an SnP in a bigger design with its noise.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -223,6 +223,9 @@ Because RF data comes in different flavors:
 
 ## 10 · Two worked examples {#examples}
 
+Beyond these two, circuitRF ships with complete example workspaces you can open, edit and run from
+**File ▸ New ▸ Examples**; [Example Workspaces](../examples/index.html) lists every one with what it shows.
+
 ### A. The simplest possible DC simulation
 
 <ol class="steps">

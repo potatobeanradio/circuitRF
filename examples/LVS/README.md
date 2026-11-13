@@ -110,10 +110,6 @@ Three things here that a board cannot show:
    and it comes out on Metal2 through a MIM via. So terminal 1 is on layer 1 and terminal 2 is on
    layer 2. A pin lookup that ignores layers passes every board test and fails here.
 
-**There is no broken copy of this cell**, and that asymmetry is deliberate: its faults are produced
-in a test by mutating the loaded model, because a second MMIC would double the artwork for faults
-the board already covers.
-
 ```
 python3 "examples/LVS/Bias tee/layout/Bias tee.gen.py" examples/LVS
 ```
@@ -133,8 +129,7 @@ any property tolerance: a tolerance tighter than this rejects good artwork.
 | `SPIRAL-1N2` | inductance | 1.2 nH | 1.19985 nH | 0.013 % |
 | `TFR-62R` | resistance | 62 Ω | 61.875 Ω | 0.202 % |
 
-Re-run the generator and it prints these again; if a change to a generator widens one of them past
-the tolerance, that is a real regression and the test suite fails on it.
+Re-run the generator and it prints these again.
 
 That table is also where LVS's **property tolerances** come from. The widest gap above is 0.2 %, and
 one step of the E96 series — the smallest wrong part anybody could have fitted — is 2.4 %, so the

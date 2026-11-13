@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Klopfenstein Taper — closed form vs MoM</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Klopfenstein Taper/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Klopfenstein Taper — closed form vs MoM</p>
+  </div>
+
+  <h1>Klopfenstein Taper — closed form vs MoM</h1>
+  <p class="lede">A 50-to-100 ohm taper solved twice: once from the closed-form model, once by the planar EM engine. Run the EM setup and compare.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Klopfenstein Taper vs MoM</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 50 → 100 Ω Klopfenstein taper, 15 mm long, on 30 mil RO4350B. The same structure is described
+twice, and the point of the example is to run both and put the two S11 curves on one plot.</p>
+<h2 id="the-equation-based-side">The equation-based side</h2>
+<p><code>Taper/schematic/Taper.csch</code> places an <strong>MKLOPF</strong> between a 50 Ω and a 100 Ω Term and sweeps
+0.5–12 GHz. It solves in well under a second. The substrate (H, εr, tanδ, metal thickness and
+conductivity) is not typed in anywhere — MKLOPF reads it from the workspace's technology, which is
+the same <code>.ctech</code> the EM setup reads.</p>
+<h2 id="the-em-side">The EM side</h2>
+<p><code>Taper/em/Taper-MoM.cem</code> runs the <strong>full-wave planar</strong> kernel over the identical artwork in
+<code>Taper/layout/Taper.clay</code>, with an edge port at each end, 20 cells per wavelength and edge meshing
+on. It takes about a minute. Press <strong>Simulate</strong> with the <code>.cem</code> open, or run</p>
+<pre><code>circuitrf em &quot;Taper/em/Taper-MoM.cem&quot;
+</code></pre>
+<p>No EM results ship with this example — the whole point is to generate them.</p>
+<p>The <code>.clay</code> is drawn artwork, not a placed MKLOPF instance, so that the EM run works straight
+from a clone with nothing generated first. That also means <strong>Update Layout from Schematic</strong> has
+nothing here to recognise as <code>TL1</code>: run it and the taper is placed a second time, on top of the
+one already drawn. circuitRF says so when it happens — undo, or delete one of the two.</p>
+<h2 id="comparing-them">Comparing them</h2>
+<p>Port 2 is referenced to <strong>100 Ω</strong>, not 50. The <code>.npy</code> the EM writes carries the per-port reference
+impedances and is the file to plot; the companion <code>.s2p</code> can only state <strong>one</strong> reference impedance
+in its header, so reading S11 back from the Touchstone file compares the taper against the wrong
+termination and makes it look far worse than it is.</p>
+<p>Expect close agreement through the rolloff (about −10 dB at 1 GHz, −20 dB by 5 GHz) and a visible
+difference in exactly where the deep nulls land above 8 GHz — the closed form is a cascade of ideal
+uniform sections, while the EM sees the real staircased flare, the substrate's dispersion and the
+de-embedding reference planes.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

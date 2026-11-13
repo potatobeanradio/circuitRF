@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Thermal: Channel vs Surface</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Thermal Channel vs Surface/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Thermal: Channel vs Surface</p>
+  </div>
+
+  <h1>Thermal: Channel vs Surface</h1>
+  <p class="lede">One GaN finger under its field plate, and eight at their pitch: how much hotter the channel is than what an IR camera sees, the Rth matrix across the fingers, and a radar pulse through the fitted Z_th.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Thermal: Channel vs Surface</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>How hot is the transistor's channel, and what does an infrared camera looking at the chip actually see? A GaN transistor's
+hottest point is in the channel, a fraction of a micrometre under the surface, at the drain-side edge of the gate — and a
+<strong>field plate</strong> sits right over it. The camera sees the passivation above the field plate, averaged over its spot. This example
+measures the difference, and shows why it is not one number.</p>
+<p>The chapter that teaches this is <strong>Thermal</strong> in <strong>Help ▸ circuitRF Documentation</strong>. It quotes the same numbers as this file.</p>
+<p><strong>What to expect when you press Run:</strong> <em>One Finger</em> takes about <strong>3 min 28 s</strong> and <strong>2.0 GB</strong> on the reference machine (an Apple
+M4, the Debug build, on 216,837 tetrahedra — measured while another run shared the machine, so yours should be no slower); <em>Eight Fingers</em> takes less.
+Thermal needs <strong>Gmsh</strong>; the first run without it offers to install it.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>One Finger</strong></td>
+<td>3D view, µm</td>
+<td>One gate finger's unit cell: from the middle of its source to the middle of its drain (20 µm, half the 40 µm pitch), 100 µm of SiC, 1.5 µm of GaN, the passivation, the gate, the field plate, source and drain metal. The setup <code>Steady</code></td>
+</tr>
+<tr>
+<td><strong>Eight Fingers</strong></td>
+<td>3D view, µm</td>
+<td>Eight fingers at the 40 µm pitch on 100 µm of SiC over a 500 µm copper–tungsten carrier, 1 × 1 mm. The setup <code>Array</code>: the Rth matrix, Z_th, and a radar pulse train</td>
+</tr>
+</tbody>
+</table>
+<p>Every material is one of circuitRF's generic materials, from <code>tech/generic-materials.cmat</code> — including the <strong>GaN/SiC interface
+resistance</strong>, 3.3E-08 m²·°C/W, which the library states as a pair and every run applies where the epitaxy meets the substrate.
+It is a property of a growth process, not of the two materials: put your own process's value there.</p>
+<h2 id="one-finger">One Finger</h2>
+<ul>
+<li><strong>The channel</strong> is a GaN box 0.5 µm wide and 0.25 µm deep at the drain-side edge of the gate, carrying the finger's heat as a
+volume source (<code>hot_spot</code>). <code>P_finger</code> = 0.25 W is the whole finger's power — 5 W/mm over its 50 µm width.</li>
+<li><strong>A symmetry plane</strong> at the finger's mid-width (y = 0) halves the model, so the source carries <code>P_finger / 2</code>, and <code>Rth_ch</code>
+multiplies back by <code>SymmetryFactor</code> — nothing is multiplied silently. The two side walls are insulated too: they are the mirror
+planes between neighbouring fingers, so this is an <strong>inner finger of a long array</strong>. <em>Eight Fingers</em> shows what the array's
+ends do.</li>
+<li><strong>The IR spot</strong>, <code>ir</code>, is a disk of diameter <code>ir_spot</code> (a VAR, 3 µm) on the passivation's top, straight over the channel: its
+average is what the camera reports.</li>
+<li><strong>A line probe</strong>, <code>up</code>, runs from the channel straight up through the field plate to the surface.</li>
+<li>The substrate's bottom is held at <code>Tbase</code> = 85 °C.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Channel, <code>Tmax(channel_T)</code></td>
+<td>202.7 °C</td>
+</tr>
+<tr>
+<td>IR spot, <code>Tavg(ir)</code>, 3 µm</td>
+<td>182.5 °C</td>
+</tr>
+<tr>
+<td><code>dT_ch_ir</code>, the offset</td>
+<td>20.2 K</td>
+</tr>
+<tr>
+<td><code>Rth_ch</code>, the whole finger</td>
+<td>470.9 °C/W</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why there is an offset at all.</strong> The heat is generated in a sliver under the gate's edge and spreads down into the SiC; the
+surface above it is reached only through the passivation, and the gold field plate over the channel spreads what does reach it
+sideways. The camera never sees the peak. Plot the line probe (<code>up</code>) to see where the 20 K is lost.</p>
+<p><strong>The setting that moves the answer most is the spot.</strong> The same run with <code>ir_spot</code> changed in the <strong>Variables</strong> panel:</p>
+<table>
+<thead>
+<tr>
+<th><code>ir_spot</code></th>
+<th>Offset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 µm</td>
+<td>18.1 K</td>
+</tr>
+<tr>
+<td>3 µm (shipped)</td>
+<td>20.2 K</td>
+</tr>
+<tr>
+<td>10 µm</td>
+<td>30.1 K</td>
+</tr>
+</tbody>
+</table>
+<p>A larger spot averages cooler surface in, so the offset grows. Quote an IR measurement with its spot size, and correct it with the
+offset for THAT spot.</p>
+<p><strong>See it.</strong> The view carries the field plot <strong>Section</strong>, a clip plane through the finger 10 µm from its mid-width: the hot sliver
+under the gate's edge, the field plate above it, and the heat fanning out into the SiC. <strong>Surface</strong> (untick <em>Section</em>, tick
+<em>Surface</em>) paints every exposed face instead.</p>
+<p><strong>Element order 2 is kept here, on purpose.</strong> At order 1 the same mesh runs in <strong>12 s</strong> but reads the channel at <strong>199.5 °C</strong>,
+the offset at <strong>18.4 K</strong> and <code>Rth_ch</code> at <strong>458.2 °C/W</strong>: 9 % low on exactly the number this example exists for. The heat sits in a
+sub-micrometre region and order 1 cannot follow its curvature.</p>
+<h2 id="eight-fingers">Eight Fingers</h2>
+<p>Eight 10 × 200 µm heat-source strips on a 40 µm pitch — the plan of the eight-finger reference case in
+<code>testdata/thermal/fingers</code> — each at <code>P_finger</code> = 0.25 W, the substrate's bottom at 85 °C, modelled as the half on one side of the
+fingers' mid-length: 58,032 tetrahedra.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fourth finger (the middle of the array), <code>T_centre</code></td>
+<td>105.1 °C</td>
+</tr>
+<tr>
+<td>Edge finger, <code>T_edge</code></td>
+<td>101.6 °C</td>
+</tr>
+<tr>
+<td><code>dT_centre_edge</code></td>
+<td>3.5 K</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The Rth matrix</strong> (the run prints it, and plots it from the tree): each finger's own resistance is <strong>52.91 °C/W</strong> at the edge and
+<strong>53.17 °C/W</strong> for the fourth finger, and a neighbour adds <strong>20.52 °C/W</strong> per watt. These are per watt in the MODELLED half of each
+finger (the run's notes say so). With all eight on, the edge finger rises <strong>15.84 K</strong> and the fourth <strong>19.13 K</strong>: the middle
+of the array runs hotter because it has neighbours on both sides.</p>
+<p><strong>A radar pulse</strong>, 1 ms period at 10 % duty: the fourth finger peaks at <strong>90.71 °C</strong>, a single pulse reaches <strong>90.62 °C</strong>, and
+the average is <strong>85.75 °C</strong>. The pulse comes from Z_th solved at the harmonics of 1 kHz (49 of them here), so the heat that crosses
+the 120 µm from the edge finger is counted exactly. It arrives late, and a Foster fit of it could not show that: the peak was
+0.3 K lower when it was built from that fit. Each finger's own Z_th is still fitted as a Foster network, written as a <code>.cnl</code>
+you can simulate. Change the pulse on the setup's page; <code>PeakPower</code>, <code>Period</code> and <code>Duty</code> are expressions.</p>
+<p>The fingers here run at 1.25 W/mm (0.25 W over 200 µm), a quarter of <em>One Finger</em>'s density, which is why the array is cooler.
+Set <code>P_finger</code> to 1 for the same 5 W/mm.</p>
+<p><strong>See it.</strong> The view opens on the field plot <strong>Surface</strong>, every exposed face. It also carries two clip planes, hidden: <strong>Top — 1 µm
+under the surface</strong> and <strong>Across the fingers — y = 1 µm</strong>. Tick either in the tree, or draw one with no window:
+<code>circuitrf render &quot;Eight Fingers/3d/Eight Fingers.c3d&quot; -o top.png --field &quot;Top — 1 µm under the surface&quot;</code>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

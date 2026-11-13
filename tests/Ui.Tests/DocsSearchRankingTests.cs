@@ -148,6 +148,24 @@ public class DocsSearchRankingTests(ITestOutputHelper output)
         => AssertTopPage(query, slug);
 
     /// <summary>
+    /// The example workspaces' READMEs are pages too (DocGen's ExamplePages), and they must not take a chapter's place: a
+    /// query naming a feature still opens its chapter ("hierarchy", "Smith Chart" and "Layout versus schematic" are also examples'
+    /// titles), while a query naming an example finds that example, on the Example Workspaces page or its README.
+    /// </summary>
+    [NodeTheory]
+    [InlineData("smith chart",              "reference/smith-chart.html")]
+    [InlineData("layout versus schematic",  "reference/lvs.html")]
+    [InlineData("optimization",             "reference/optimization.html")]
+    public void AnExamplesReadme_NeverTakesTheChaptersPlace(string query, string slug)
+        => AssertTopPage(query, slug);
+
+    [NodeTheory]
+    [InlineData("loop sensor")]
+    [InlineData("example workspaces")]
+    public void NamingAnExample_FindsTheExamples(string query)
+        => Assert.StartsWith("examples/", Rank(query)[0].Slug);
+
+    /// <summary>
     /// A short query still has to be ALLOWED to match a real short name. The rule that saved "CLI"
     /// from "clicks" is a rule about where a short term may match, not a ban on short terms — and a
     /// file extension is exactly the short thing people search for.

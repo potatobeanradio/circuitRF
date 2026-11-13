@@ -38,8 +38,7 @@ drawn.
 - Each wire is 1 mil gold, a ball on the die pad and a wedge on the lead, with an 8 mil loop.
 - Each port is a 5 × 5 mil sheet at a lead's outer end, from the floor up to the lead: **floor (−) to lead (+)**.
 
-**How the package was drawn** — every gesture is one the editor offers, and
-`tests/Ui.Tests/Examples/Em3dPackageAuthoring.cs` replays them to re-draw the file:
+**How the package was drawn** — every gesture is one the editor offers:
 
 1. **Variables panel**: *Add* `cav_w`, `cav_l`, `cav_h`, `wall`, `floor_t`, `lid_t`; *Promote to Cell Parameter*
    on the first three.
@@ -70,8 +69,6 @@ Every time and memory figure below was **measured once**, on an Apple M4 with 10
 27.0, Palace 0.18.1 on 10 processes, and Gmsh 4.15.2. A time is the wall clock for the whole run, Gmsh and
 Palace together; a memory figure is Palace's own peak over all its processes. Your machine will differ.
 
-The numbers are also in `expected-numbers.json`, beside this file, with the tolerance each is held to.
-circuitRF's own tests re-run every setup against that file, so this page and the solver cannot quietly disagree.
 
 **`check`** on this workspace reports no error and one warning: the die's port labels carry no area for the
 design rules to check. That is expected — a placed cell's own ports are never used; the package's are.

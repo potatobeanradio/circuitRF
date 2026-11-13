@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PCB Component Ports</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/PCB Component Ports/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › PCB Component Ports</p>
+  </div>
+
+  <h1>PCB Component Ports</h1>
+  <p class="lede">A 50 ohm line with a three-part pi low-pass filter, solved once with each part as a component port, on Planar MoM, Palace and EMerge. A test bench puts the parts back and lays the three answers over the schematic alone; change a part value and no EM run is needed.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ PCB Component Ports</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 50 Ω microstrip line on a two-layer board with a three-part pi low-pass filter on it: a shunt capacitor, a series
+inductor and a second shunt capacitor. The board is solved once with each part as a <strong>component port</strong>: a port across the
+part's own pads that you never draw. From then on the parts live in a schematic. Change a value and the response
+changes in a fraction of a second, with no new EM run.</p>
+<p>The board is solved three ways, on the Planar MoM solver, on Palace and on EMerge, and a test bench lays the three answers
+over the schematic alone.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Filter Board</strong></td>
+<td>schematic, symbol, layout, 3D view, EM setup</td>
+<td>The board. Its parts take their values from two cell parameters, <code>Cshunt</code> (1.5 pF) and <code>Lseries</code> (8.2 nH), and each has a 0603 footprint</td>
+</tr>
+<tr>
+<td><strong>Bench</strong></td>
+<td>schematic</td>
+<td>The test bench: Filter Board as a circuit, and the three EM results, each closed by the same three parts</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-the-board-was-built">How the board was built</h2>
+<p>These are the steps to copy when you build your own.</p>
+<ol>
+<li><strong>Schematic first.</strong> Filter Board's schematic is the circuit: two 100 mil MLIN lines, <code>C1</code> and <code>C2</code> to ground and <code>L1</code> in
+series, with <code>IN</code> and <code>OUT</code> pins. Each part's <code>Footprint</code> is <code>smt:0603</code>.</li>
+<li><strong>Design ▸ Update Layout from Schematic.</strong> It places the lines and the land patterns, drops a ground via beside each
+capacitor's ground pad, and pours the ground plane on Bottom Copper under them. <code>C2</code> was then moved to the same side of the
+line as <code>C1</code>, so the two ground vias sit 2.4 mm apart. The Planar solver needs vias within a tenth of a wavelength of each
+other at the top of the sweep, which is 5 mm at 6 GHz. A top-side ground bar joins the two via pads.</li>
+<li><strong>Ports where the signal enters and leaves.</strong> <code>P1</code> and <code>P2</code> are ordinary edge ports drawn at the two line ends. Nothing is
+drawn for the three parts.</li>
+<li><strong>LVS.</strong> <code>circuitrf lvs &quot;Filter Board&quot;</code> matches. Each board pin sits on a short launch drawn over its line end, so the pin
+has copper of its own.</li>
+<li><strong>The EM setup, <code>Filter Board Planar</code></strong> (<code>Filter Board/em</code>). Under <strong>Component ports</strong>, <code>C1</code>, <code>L1</code> and <code>C2</code> are ticked.
+<strong>Check</strong> builds each one before anything is meshed and posts its verdict to Messages. With the setup open, the layout
+shows each component port as a dashed gap mark with its number: 3, 4 and 5, after the two drawn ports.</li>
+<li><strong>Design ▸ New 3D View from Layout.</strong> The 3D view places the board's layout and brings its component ports with it, as
+a 3D setup. That setup was copied once more, so the view has two: <strong>Palace</strong> and <strong>EMerge</strong>.</li>
+</ol>
+<h2 id="run-it">Run it</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What</th>
+<th>Time on a 10-core Mac</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Simulate the EM setup <strong>Filter Board Planar</strong></td>
+<td>about 2.5 min</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Open Filter Board's 3D view, run setup <strong>Palace</strong></td>
+<td>about 3.5 min</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Run setup <strong>EMerge</strong> in the same view</td>
+<td>about 10 s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Simulate <strong>Bench</strong>, then open <code>Bench.cdd</code></td>
+<td>under a second</td>
+</tr>
+</tbody>
+</table>
+<p>The first 3D run offers to install its solver. Each run also makes a cell named after it, such as
+<code>Filter Board Planar_cosim</code>: the board's result with each part across its own port. It is ready to simulate, so you can
+look at one solver's answer before the others have run. The Bench reads all three results, so run all three before
+simulating it.</p>
+<h2 id="what-you-will-see">What you will see</h2>
+<p><code>Bench.cdd</code> plots |S21| four ways:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Schematic only</th>
+<th>Planar MoM</th>
+<th>Palace</th>
+<th>EMerge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−3 dB</td>
+<td>1.98 GHz</td>
+<td>1.67 GHz</td>
+<td>1.70 GHz</td>
+<td>1.70 GHz</td>
+</tr>
+<tr>
+<td>Deepest point</td>
+<td>none below 6 GHz</td>
+<td>3.75 GHz, −25.3 dB</td>
+<td>3.75 GHz, −22.5 dB</td>
+<td>3.8 GHz, −22.3 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2 GHz</td>
+<td>−3.1 dB</td>
+<td>−7.0 dB</td>
+<td>−6.3 dB</td>
+<td>−6.4 dB</td>
+</tr>
+<tr>
+<td>|S21| at 6 GHz</td>
+<td>−28.1 dB</td>
+<td>−17.2 dB</td>
+<td>−14.8 dB</td>
+<td>−14.7 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The schematic alone gets this filter wrong.</strong> It knows nothing about the board. The pads add capacitance, so the cutoff
+falls from 1.98 to 1.70 GHz. Each shunt capacitor reaches ground through its pad, its via and the ground bar, and that path's
+inductance resonates with the capacitor at about 3.8 GHz. That is the notch, and above it the stopband rises again where the
+schematic says it keeps falling. All three EM solvers show it.</p>
+<p><strong>Palace and EMerge agree within 0.4 dB</strong> at every frequency.</p>
+<p><strong>Planar MoM follows them</strong> to within 0.7 dB up to the cutoff and reads 2 to 3 dB deeper in the stopband. Most of that
+difference sits at the two edge ports, which the two kinds of solver model differently. Planar removes its edge port's own
+effect back to the end of the line. In 3D, the port is a lumped sheet from the line down to the ground plane, and its height
+stays in the answer. Treat Planar and 3D as two models of the board, not as one checking the other.</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li><strong>Change a part.</strong> Edit <code>Cshunt</code> or <code>Lseries</code> in the Bench's VAR block and simulate again. All four curves move, and no EM
+run is needed. Tuning and the Optimizer work on these variables the same way.</li>
+<li><strong>Make it an attenuator.</strong> Replace the three parts on an EM result with resistors, 292 Ω, 17.6 Ω and 292 Ω for a 3 dB pi
+pad. The board's EM result is the same one, because the parts are not in it.</li>
+<li><strong>Turn a part around.</strong> A component port follows its part. Move or rotate <code>L1</code> in the layout, and the next run, Check or
+mark uses its new place. The setup is not edited.</li>
+</ul>
+<h2 id="what-was-traded-for-speed">What was traded for speed</h2>
+<ul>
+<li><strong>Planar: Edge mesh off.</strong> With it on, the mesh has about five times the unknowns and the run takes several times as long.
+On this board it moves |S| by at most 0.015.</li>
+<li><strong>Palace: one adaptive pass</strong> (<code>AdaptiveMaxIterations</code> 0, inside the setup's Palace settings). The default three passes
+took over 30 minutes.</li>
+<li><strong>The air box is stated: 5 mm on the top and sides</strong> of both 3D setups, about 10 times the substrate height. The default
+puts the top face one board-thickness above the copper, inside the line's fringing field, where it absorbs power that is
+not really lost. With it, Palace read |S11| −0.84 dB at 6 GHz where the 5 mm box reads −0.29 dB.</li>
+<li><strong>The parts are ideal</strong>, and their bodies are not in any of the EM models.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

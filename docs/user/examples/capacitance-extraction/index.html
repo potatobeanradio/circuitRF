@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Capacitance Extraction</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Capacitance Extraction/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Capacitance Extraction</p>
+  </div>
+
+  <h1>Capacitance Extraction</h1>
+  <p class="lede">A pad beside a microstrip line, solved for its capacitance by Palace&#39;s electrostatic solver in about fifteen seconds: how to pick the terminals and the ground, how the Maxwell matrix becomes the capacitors a schematic wants, and each answer checked against a parallel-plate estimate and the line calculator.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Capacitance Extraction</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A square pad beside a 50 Ω microstrip line on a two-layer FR-4 board, solved for its <strong>capacitance</strong> by
+Palace's electrostatic solver in about fifteen seconds. Each answer is checked against a number you can work out
+by hand: the pad against a parallel-plate capacitor, and the line against the line calculator.
+The note <strong>AN-03 Extracting capacitance</strong> (<strong>Help ▸ circuitRF Documentation ▸ Application Notes</strong>) says when
+this is the right tool and when it is not. <strong>Test Pad Capacitance</strong>, the next example, uses the same method on
+a multilayer board with no nets.</p>
+<h2 id="first-simulate-will-ask-you-to-install-palace">First: Simulate will ask you to install Palace</h2>
+<p>Opening this workspace needs no solver. The first time you press <strong>Simulate</strong> on a setup without Palace, the
+run is refused with <strong>Install Palace …</strong>. That is the expected first step. Everything below can be looked at
+before anything is installed.</p>
+<h2 id="the-board">The board</h2>
+<p><code>Pad and Line/3d/Pad and Line.c3d</code> is drawn in the 3D editor from seven variables (the <strong>Variables</strong> panel,
+the <em>x</em> button):</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>h</code></td>
+<td>0.508 mm</td>
+<td>FR-4, εr 4.4</td>
+</tr>
+<tr>
+<td><code>t</code></td>
+<td>0.035 mm</td>
+<td>the copper</td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>0.92 mm</td>
+<td>the line's width: 50 Ω on this laminate, from the line calculator</td>
+</tr>
+<tr>
+<td><code>len</code></td>
+<td>20 mm</td>
+<td>the line's length, and the board's</td>
+</tr>
+<tr>
+<td><code>brd</code></td>
+<td>16 mm</td>
+<td>the board's width</td>
+</tr>
+<tr>
+<td><code>a</code></td>
+<td>2 mm</td>
+<td>the pad's side</td>
+</tr>
+<tr>
+<td><code>gap</code></td>
+<td>0.5 mm</td>
+<td>copper to copper, line to pad</td>
+</tr>
+</tbody>
+</table>
+<p>The objects are <code>ground</code> (the bottom copper), <code>substrate</code>, <code>line</code> and <code>pad</code>. None of them carries a net.</p>
+<p><strong>The two walls at the line's ends are zero-charge walls</strong> (PMC in the air-box face menu). No field line ends
+on one, so the line carries on through it as if it were infinitely long. That is what lets the answer be
+divided by the length and read as a capacitance per metre, with no end effect in it. The other walls are 2 mm
+of air beyond the board and zero-charge too. The ground plane's own bottom face is the box's floor.</p>
+<h2 id="how-the-setups-were-made">How the setups were made</h2>
+<p>Both setups are in <strong>Simulate ▸ Setup Analyses…</strong>. To make the first one yourself:</p>
+<ol>
+<li><strong>Add</strong>, then choose <strong>Electrostatic</strong> and <strong>Palace</strong>.</li>
+<li>In the <strong>Terminals</strong> table press <strong>+</strong>, name the row <code>pad</code>, press its <strong>Pick</strong> button and click the pad in
+the 3D view. The row fills with the pad's piece of metal, and the pad is selected in the view.</li>
+<li><strong>+</strong> again, name it <code>line</code>, <strong>Pick</strong>, click the line.</li>
+<li>Open the <strong>Ground</strong> list (▾). It lists every piece of metal not in a terminal. Choose <code>ground</code>.</li>
+</ol>
+<p>The second setup, <strong>Pad, line floating</strong>, has the <code>pad</code> row only and the same ground. The line is in no
+terminal and is not ground, so it <strong>floats</strong>: <strong>Other metal</strong> is left at <em>Float</em>, its default.</p>
+<h2 id="capacitance-extraction-the-numbers">Capacitance Extraction: the numbers</h2>
+<p>Measured once on an Apple M4 with 10 cores and 16 GB, macOS 27.0, Palace 0.18.1 on 10 processes and Gmsh
+4.15.2, at the <strong>Standard</strong> preset. A time is the whole run's wall clock. A memory figure is Palace's own peak.</p>
+<p><strong>Pad and line</strong> took <strong>14 s</strong>, with a peak of <strong>2.6 GB</strong>. The result
+(<code>results/Pad and Line Pad and line.palace_es.npy</code>) holds two matrices:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>C</code> (Maxwell)</th>
+<th></th>
+<th><code>C_mutual</code> (circuit)</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td><strong>pad</strong></td>
+<td><strong>line</strong></td>
+<td><strong>pad</strong></td>
+<td><strong>line</strong></td>
+</tr>
+<tr>
+<td><strong>pad</strong></td>
+<td>532 fF</td>
+<td>−31 fF</td>
+<td>501 fF</td>
+<td>31 fF</td>
+</tr>
+<tr>
+<td><strong>line</strong></td>
+<td>−31 fF</td>
+<td>2,460 fF</td>
+<td>31 fF</td>
+<td>2,429 fF</td>
+</tr>
+</tbody>
+</table>
+<p><code>C</code> is the <strong>Maxwell</strong> matrix: the diagonal is a terminal's capacitance with every other terminal grounded, and
+the off-diagonal entries are negative. <code>C_mutual</code> is what you would draw in a schematic: the diagonal is each
+terminal's capacitor to ground, the row sum of <code>C</code>, and the off-diagonal is the capacitor between the two.
+So the pad has <strong>532 fF</strong> to everything, made of 501 fF to ground and <strong>31 fF</strong> to the line.</p>
+<p><strong><code>Pad and Line.cdd</code></strong>, beside this file, shows both matrices side by side once <strong>Pad and line</strong> has run: the
+columns headed <em>Maxwell C</em> are <code>C</code>, and those headed <em>Circuit C</em> are <code>C_mutual</code>.</p>
+<h3 id="the-pad-against-ad">The pad against εA/d</h3>
+<p>A parallel-plate capacitor with the pad's area over the laminate gives ε₀·4.4·(2 mm)²/0.508 mm = <strong>307 fF</strong>.
+The solve gives 532 fF with the line grounded. The parallel-plate formula therefore misses <strong>42 %</strong> of the pad's
+capacitance. That share is the fringing field: from the pad's edges, from its top surface through the air, and to
+the line. On a small pad over a thick laminate, fringing is not a correction. It is nearly half the answer.</p>
+<h3 id="the-line-against-the-line-calculator">The line against the line calculator</h3>
+<p>The line's capacitance to ground is <strong>2,429 fF</strong> over 20 mm, which is <strong>121.5 pF/m</strong>. A lossless line's
+capacitance per metre is C′ = √εeff/(c·Z₀). The line calculator (<code>circuitrf impedance --tech tech/two-layer-fr4.ctech --layer &quot;Top Copper (1 oz)&quot; --width 0.92mm</code>, or the parameter dialog of an MLIN) gives
+Z₀ 49.95 Ω and εeff 3.327 in its circuit-model column. That is <strong>121.8 pF/m</strong>, 0.3 % from the solve. Two
+different methods agree on a number every RF designer already trusts, so the setup is right.</p>
+<h3 id="the-gap-sweep">The gap sweep</h3>
+<p>The coupling between pad and line falls quickly as the gap opens. Set <code>gap</code> in the Variables panel and press
+<strong>Simulate</strong> again; the 3D view reshapes and the run re-meshes.</p>
+<table>
+<thead>
+<tr>
+<th><code>gap</code></th>
+<th>pad to line, <code>C_mutual</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.25 mm</td>
+<td>57 fF</td>
+</tr>
+<tr>
+<td>0.5 mm</td>
+<td>31 fF</td>
+</tr>
+<tr>
+<td>1 mm</td>
+<td>13 fF</td>
+</tr>
+</tbody>
+</table>
+<p>Each point took 14 s. A 3D setup has no sweep of a variable that changes the geometry, so the three
+points are three runs. Each run writes the same result file, so copy it aside if you want to keep one.</p>
+<h3 id="floating-versus-ground">Floating versus ground</h3>
+<p><strong>Pad, line floating</strong> gives the pad <strong>531.48 fF</strong>, against 531.87 fF with the line grounded. A floating conductor
+carries no net charge, and removing it from the matrix is exact: C_pad − C_pl²/C_line = 531.87 − 31.00²/2,460.11 =
+531.48 fF, the floating run's own number. Here it hardly matters, because the line takes only 31 fF of the pad's field. Where floating metal sits
+between a conductor and its ground, it matters a great deal: <strong>Test Pad Capacitance</strong> shows a test pad reading
+less than half its capacitance because its ground planes were left floating.</p>
+<h2 id="the-field">The field</h2>
+<p>The 3D view's <strong>Field Plots</strong> group holds <strong>E through the pad</strong>: |E| for the pad's solution, on a clip plane
+across the board through the pad's centre. Run <strong>Pad and line</strong>, tick the plot, and drag its position slider in
+the Properties Inspector to move the cut along the line. The field is strongest in the laminate under the pad and
+in the gap, and the fringing that the parallel-plate formula misses can be seen curling round the pad's edges.</p>
+<h2 id="what-is-deliberately-not-here">What is deliberately not here</h2>
+<p><strong>Results.</strong> Run the setups yourself; each takes about fifteen seconds. The answers depend on the solver
+version, and a committed result would go stale without anyone noticing.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

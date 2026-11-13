@@ -105,8 +105,7 @@ Every time and size below was **measured once**, on an Apple M4 with 10 cores an
 0.18.1 on 10 processes, Gmsh 4.15.2, EMerge 3.0.0 and openEMS 0.37.0. A time is the wall clock for the whole run; a size
 is the run's own tetrahedron count, or openEMS's grid cells. Each board's sweep is 0.4–1.6 GHz, the paper's plotted range,
 in 1 MHz steps — 1201 points, built by Palace's and EMerge's adaptive sweeps from a handful of full solves — so a dip is
-placed to the MHz. All of it, with **every** frequency's |S11| for the seven shipped runs, is in `expected-numbers.json`
-beside this file.
+placed to the MHz.
 
 | Cell | Setup | Time | Size | Dip | \|S11\| at the dip |
 |---|---|---|---|---|---|
@@ -228,16 +227,3 @@ All the setups are chosen so a first Simulate finishes in about two minutes or l
   *With Connector* the coaxial port's thin slab and probe lines put an 88 µm cell on the grid, and its dry run says
   **1,426,368 cells**, a smallest cell of **88 µm** and **about 18 min**, so no openEMS setup ships for it. To run it,
   add an openEMS setup (Setup Analyses ▸ Add ▸ openEMS) and copy *Ideal Port*'s `OpenEms` section into it.
-
-## The regression test
-
-`LoopSensorExampleTests` re-runs every shipped run, one test per solver, and holds every recorded |S11| to ±0.1 dB at
-every frequency of its sweep, naming the run and the frequency of anything that moved. The solves are
-`Category=Benchmark` (about five minutes on Palace, under a minute on EMerge and four on openEMS) and are skipped when
-their solver is absent:
-
-    dotnet test tests/Ui.Tests --settings circuitrf.benchmark.runsettings --filter "FullyQualifiedName~LoopSensorExampleTests"
-
-The routine tier checks that this page quotes only recorded values, that each quoted dip is its run's recorded minimum and
-that the coax's closed form is the drawn SMA's. A deliberate change that moves an answer re-records the table and the
-values quoted here.

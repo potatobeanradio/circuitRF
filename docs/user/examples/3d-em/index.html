@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — 3D EM</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/3D EM/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › 3D EM</p>
+  </div>
+
+  <h1>3D EM</h1>
+  <p class="lede">A bond wire, a via through a ground plane and a lidded package, each solved in 3D by Palace in minutes: S-parameters, capacitance and inductance matrices, and the lid&#39;s resonances. Simulate offers to install Palace the first time.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ 3D EM (Palace)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Three structures that circuitRF's planar solver cannot represent, or can only compare against, each
+set up for <strong>Palace</strong>, the 3D finite-element solver circuitRF runs. Each one runs in minutes on a 16 GB
+laptop. The guide to 3D EM in circuitRF is the <strong>3D EM</strong> page of <strong>Help ▸ circuitRF Documentation</strong>,
+which walks through this same workspace.</p>
+<h2 id="first-simulate-will-ask-you-to-install-palace">First: Simulate will ask you to install Palace</h2>
+<p>Palace and its mesher, Gmsh, are separate programs, and circuitRF does not include them. <strong>Opening this
+workspace needs neither.</strong> The first time you press <strong>Simulate</strong> on a 3D setup without them, the run
+is refused with <strong>Install Palace …</strong>. That is the expected first step, not a fault. Palace is built from
+source, which took 52 minutes on the reference machine below. Gmsh installs in under a minute.</p>
+<p><strong>You can look at every model before installing anything:</strong> open a setup in a cell's <code>em</code> folder and
+press <strong>Show 3D</strong>.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bond wire</strong></td>
+<td>One 1 mil gold wire between two pads, solved in 3D, beside the wire kernel's answer for the same wire</td>
+</tr>
+<tr>
+<td><strong>Via through a plane</strong></td>
+<td>A line that changes sides of its ground plane through a via. The planar solver refuses it; Palace answers it</td>
+</tr>
+<tr>
+<td><strong>Package</strong></td>
+<td>A package with its lid on: its capacitance and inductance matrices, and the lid's resonances</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-numbers-and-where-they-come-from">The numbers, and where they come from</h2>
+<p>Every time and memory figure below was <strong>measured once</strong>, on an Apple M4 with 10 cores and 16 GB, running
+macOS 27.0, Palace 0.18.1 on 10 processes, and Gmsh 4.15.2. A time is the wall clock for the whole run,
+Gmsh and Palace together. A memory figure is Palace's own peak over all its processes. Your machine will
+differ in time, and very slightly in the last digit of an answer.</p>
+<p><strong><code>check</code> on this workspace</strong> reports one warning per layout: its port labels carry no area for the
+design rules to check. That is expected. The one error, on the planar via setup, is there on purpose
+(see below).</p>
+<h2 id="bond-wire">Bond wire</h2>
+<p>A 1 mil (25.4 µm) gold wire with a hexagonal section and a wedge foot at each end, between two 100 µm pads
+on 100 µm of alumina, inside a closed metal box 3 × 2 × 1.1 mm. Its loop is not symmetric: it rises steeply
+from the left pad to 290 µm above the pads about a third of the way across, then falls in a long slope to
+the right pad. A port sheet runs
+from each pad's outer edge down to the ground.</p>
+<p><code>Bond wire/em/Bond wire 3D.cem</code>, Palace at the <strong>Standard</strong> preset, 1–40 GHz. (Measured on the wire's earlier, symmetric 150 µm loop; the Palace figures in this section have not been re-run for the loop above. Kernel W's have.)</p>
+<ul>
+<li>Took <strong>179 s</strong>, with a peak of <strong>3.1 GB</strong>.</li>
+<li>|S21| is <strong>−0.765 dB</strong> at 10 GHz.</li>
+<li>The series inductance is <strong>906 pH</strong> at 1 GHz: the π-model's series term, −Im(1/Y21)/ω.</li>
+</ul>
+<p><strong>What the other presets give.</strong> <em>Draft</em> takes 5 s but reads 813 pH and −0.514 dB. The starting mesh
+around a 25 µm wire is exactly what refinement exists to fix, so on a wire Draft is not enough.
+<em>Accurate</em> took 8.5 min at 7.0 GB and reads 908 pH and
+−0.772 dB: within 2 pH and 0.01 dB of Standard, for nearly three times the time and more than twice
+the memory. Standard is the setting for a wire.</p>
+<p><strong>The same wire through kernel W.</strong> <code>Bond wire/layout/Bond wire.wBond</code> holds the wire, and wBond's wire
+kernel solves it: open it and <strong>Export Touchstone …</strong> with the <em>Distributed</em> model. It reads <strong>768 pH</strong>
+and <strong>−0.800 dB</strong>. The 202 pH between the two answers is <strong>where the terminals are</strong>, not a disagreement
+between the solvers. Kernel W's terminals are the wire's own ends. Palace's ports are at the pads' outer
+edges, so its answer also contains the pad between each port and the wire, and the 100 µm drop from the pad
+to ground.</p>
+<h2 id="via-through-a-plane">Via through a plane</h2>
+<p>A 400 µm microstrip on top of a four-layer board, a via through a 900 µm clearance in the middle ground
+plane, and an inverted microstrip underneath leaving the other way. The laminate has εr 3.66 and tanδ
+0.004, and the metal is copper. Both lines return through the same plane, one from above and one from
+below.</p>
+<p><strong>First, see the planar solver refuse it.</strong> Open <code>Via through a plane/em/Via planar.cem</code> and press
+Simulate. It is refused, with this message:</p>
+<p><em>This EM setup names 'Ground Plane' as its return plane, but its top surface is at 270 µm, which is NOT below the lowest analysis level 'Bottom Copper' at 0 µm. A return plane must lie BENEATH the conductor it feeds, or there is no dielectric slab between them to solve on. Name a conductor below 0 µm, or restrict this setup's analysis levels to conductors above 'Ground Plane'.</em></p>
+<p>A planar solver's return plane is the boundary its field solution ends on, so it has to lie beneath
+every conductor it solves. Here one line is under it. <code>check</code> reports the same sentence as an error on
+this setup. It is the only error in the workspace, and it is there on purpose.</p>
+<p><strong>Then Palace.</strong> <code>Via through a plane/em/Via 3D.cem</code>, at the <strong>Draft</strong> preset, 0.1–20 GHz, with 1.5 mm of
+air on every side of the board and absorbing walls:</p>
+<ul>
+<li>Took <strong>62 s</strong>, with a peak of <strong>4.8 GB</strong>.</li>
+<li>|S21| is <strong>−0.228 dB</strong> at 10 GHz and <strong>−0.430 dB</strong> at 20 GHz.</li>
+</ul>
+<p><strong>What Draft trades away is phase.</strong> Against an independent, hand-built Palace model of the same via
+(element order 2, 155,883 tetrahedra), Draft's |S21| is within 0.1 dB, but its phase is 12° off at
+10 GHz and 23° off at 20 GHz. The alternatives, each measured on this structure:</p>
+<ul>
+<li><strong>Element order 2</strong>, keeping Draft's other values: write <code>&quot;ElementOrder&quot;: 2</code> beside <code>&quot;Quality&quot;</code> in the
+setup's <code>Palace</code> section. It took 6.5 min at 9.2 GB, and landed within 0.02 dB and 5° of that model.</li>
+<li><strong>Standard</strong> took 35 min at 9.3 GB, when the presets were measured.</li>
+<li><strong>Accurate</strong> has never finished on this structure: it was stopped after 23 minutes in its third solve.</li>
+</ul>
+<h2 id="package">Package</h2>
+<p>A ceramic package with its lid on. The 8 × 8 mm cavity has a 254 µm alumina base on a metal floor. Two
+200 µm gold leads stop 100 µm short of the side walls, and a 1 mil bond wire runs from each lead to a die
+pad inside. The lid and seal ring are the closed metal box around it: side walls 100 µm beyond the
+leads, and a lid 700 µm above the wires, 1.13 mm above the floor. The die itself is not in the model.</p>
+<p><strong>Capacitance.</strong> <code>Package/em/Package C.cem</code>, electrostatic, <strong>Standard</strong>:</p>
+<ul>
+<li>Took <strong>8 s</strong>, with a peak of <strong>1.1 GB</strong>.</li>
+<li>Each lead, with its wire and die pad, has <strong>586 fF</strong> to ground.</li>
+<li>The two leads couple through <strong>0.74 fF</strong>.</li>
+</ul>
+<p>Capacitance extraction as a method of its own, on a board, is the subject of the <strong>Capacitance Extraction</strong> and
+<strong>Test Pad Capacitance</strong> examples.</p>
+<p><strong>Inductance.</strong> <code>Package/em/Package L.cem</code>, magnetostatic, <strong>Standard</strong>:</p>
+<ul>
+<li>Took <strong>22 s</strong>, with a peak of <strong>1.8 GB</strong>.</li>
+<li>Each lead, wire and die pad path has <strong>1.98 nH</strong>.</li>
+<li>The mutual inductance between the two is <strong>0.032 nH</strong>.</li>
+</ul>
+<p>The inductance runs on <code>Package shorted.clay</code>, a copy of the layout with a via from each die pad to the
+floor. Shorting the far end gives each terminal's current a loop, which is the ordinary way to read a
+series inductance. It is <strong>external</strong> inductance, the RF value: a 3D run carries current on conductor
+surfaces only, and the result's notes say how much the DC value would add.</p>
+<p><strong>Draft is not enough for either.</strong> It runs in 2–3 s but reads 831 fF (42 % high) and 1.66 nH (16 %
+low). A static solve has no wavelength to size its elements by, so its first mesh is coarse, and
+refinement is what finds the field around the metal.</p>
+<p><strong>The lid's modes.</strong> <code>Package/em/Package lid modes.cem</code>, eigenmode, the three modes above 5 GHz, at
+<strong>Draft with element order 2</strong> (<code>&quot;ElementOrder&quot;: 2</code> in its <code>Palace</code> section):</p>
+<ul>
+<li>Took <strong>166 s</strong>, with a peak of <strong>1.7 GB</strong>.</li>
+<li><strong>Mode 3, at 23.65 GHz, is the lid's first cavity mode.</strong> 94 % of its energy is in the air under the
+lid. Its Q is <strong>1,662</strong>, which counts the gold's loss and the two ports' 50 Ω as loads.</li>
+<li>A closed form agrees. The estimate for a cavity much thinner than a wavelength puts the empty
+8 × 8 mm cavity, with the base and the air in series under the lid, at 23.7 GHz. The leads pull it
+down slightly.</li>
+<li><strong>Modes 1 and 2, at 14.3 GHz, are not the lid.</strong> They are the two leads ringing as lines into their
+ports, with 92 % of their energy in the base. With a Q below 1 they are not sharp resonances: the
+ports' 50 Ω absorbs them.</li>
+</ul>
+<p>For a design whose band reaches 20 GHz, the lid's mode is clear of the band. The mode's frequency
+scales inversely with the cavity's size, so a cavity 20 % larger each way would bring it to about
+19.7 GHz, inside the band.</p>
+<p><strong>What the other settings give.</strong> <em>Draft</em> takes 13 s and finds the lid mode at 23.39 GHz, but reads its
+Q as 176, ten times too low: order 1 cannot resolve the loss. <em>Standard</em> adds refinement passes to the
+nonlinear eigenvalue solve, and was stopped after 28 minutes in its last pass.</p>
+<h2 id="what-is-deliberately-not-here">What is deliberately not here</h2>
+<p><strong>Results.</strong> Run the setups yourself. The answers depend on the solver version, and a committed result
+would outlive its version.</p>
+<p><strong>openEMS.</strong> Every setup here is Palace's. An openEMS run of the via or the bond wire is a cross-check,
+not a reference. Choose <strong>Compare…</strong> in a setup's Solver group, tick the solvers to run, and see how far
+apart they are.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

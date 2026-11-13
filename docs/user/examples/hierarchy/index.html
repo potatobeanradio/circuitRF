@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Hierarchy</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Hierarchy/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Hierarchy</p>
+  </div>
+
+  <h1>Hierarchy</h1>
+  <p class="lede">A 9 dB attenuator built as cells inside cells: a parameterised pi pad placed twice on a board, simulated from a test bench, laid out with Update Layout from Schematic at both levels, and assembled in 3D from 3D views of other cells you can push into.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Hierarchy</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>One small design, built as cells inside cells, so you can follow hierarchy through all three
+places it appears: the <strong>schematic</strong> a simulation runs, the <strong>layout</strong> that schematic produces,
+and the <strong>3D view</strong> that places that layout.</p>
+<p>The circuit is a 9 dB attenuator on a 50 Ω board: a 3 dB pi pad and a 6 dB pi pad, joined by three
+microstrip lines. It is deliberately simple, so you can check every number below by hand.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pad</strong></td>
+<td>schematic, symbol, layout</td>
+<td>A matched pi attenuator. Its attenuation is a <strong>cell parameter</strong>, <code>dB</code>, default 3</td>
+</tr>
+<tr>
+<td><strong>Board</strong></td>
+<td>schematic, symbol, layout, 3D view</td>
+<td>Two <code>Pad</code> instances, <code>X1</code> (dB = 3) and <code>X2</code> (dB = 6), joined by three 50 Ω microstrip lines. Its 3D view is the board as built: its own layout on an aluminium carrier</td>
+</tr>
+<tr>
+<td><strong>Launch</strong></td>
+<td>3D view</td>
+<td>A coaxial edge launch, copied from the <strong>3D Connector</strong> example: a housing whose bore is filled with PTFE, a flange imported from STEP, and a centre pin insulated from the housing by the PTFE</td>
+</tr>
+<tr>
+<td><strong>Bench</strong></td>
+<td>schematic</td>
+<td>The test bench: <code>Board</code> between two 50 Ω terminations, swept 0.1–6 GHz</td>
+</tr>
+<tr>
+<td><strong>Assembly</strong></td>
+<td>3D view</td>
+<td>Board's 3D view placed as <code>B1</code>, and Launch placed twice, as <code>J1</code> and <code>J2</code></td>
+</tr>
+</tbody>
+</table>
+<p>The hierarchy, top to bottom:</p>
+<pre><code>Bench (schematic)          Assembly (3D view)
+  X1: Board                  B1: Board (3D view)
+        X1: Pad dB=3               L1: Board (layout)
+        X2: Pad dB=6                     X1: Pad (layout)    R1 R2 R3: 0402 land patterns
+        TL1 TL2 TL3: MLIN                X2: Pad (layout)    R1 R2 R3: 0402 land patterns
+                                         TL1 TL2 TL3: MLIN artwork
+                             J1: Launch (3D view)
+                             J2: Launch (3D view), turned 180°
+</code></pre>
+<h2 id="schematic-hierarchy-and-a-simulation-through-it">1. Schematic hierarchy, and a simulation through it</h2>
+<p>Open <code>Bench</code> and press <strong>Simulate</strong>. The sweep runs through two levels of hierarchy, Bench into
+Board into Pad, and the Data Display shows <code>S21_dB</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th>S21</th>
+<th>S11</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.1 GHz</td>
+<td>−9.01 dB</td>
+<td>−60 dB</td>
+</tr>
+<tr>
+<td>1 GHz</td>
+<td>−9.03 dB</td>
+<td>−41 dB</td>
+</tr>
+<tr>
+<td>3 GHz</td>
+<td>−9.06 dB</td>
+<td>−33 dB</td>
+</tr>
+<tr>
+<td>6 GHz</td>
+<td>−9.10 dB</td>
+<td>−33 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The 9 dB is the two pads in cascade. The loss in the lines adds the last tenth of a dB by
+6 GHz.</p>
+<p><strong>Go down a level</strong> with <strong>View ▸ Push Into Cell</strong> (Ctrl+], ⌘] on macOS): select <code>X1</code> in Bench
+and push in to reach Board, then push into either Pad. <strong>Pop Out</strong> (Ctrl+[) goes back up.</p>
+<p><strong>Parameters pass down.</strong> Pad has no resistor values typed into it. Its VAR block computes them
+from <code>dB</code>:</p>
+<pre><code>K   = 10^(dB/20)
+Rsh = Z0*(K+1)/(K-1)      shunt arms:  292.4 Ω at 3 dB,  150.5 Ω at 6 dB
+Rse = Z0*(K^2-1)/(2*K)    series arm:   17.6 Ω at 3 dB,   37.4 Ω at 6 dB
+</code></pre>
+<p>A VAR block inside a cell belongs to that cell. Each instance evaluates it in its own scope, so
+<code>X1</code> and <code>X2</code> are one cell drawn once but resolve to different resistors. Change <code>X2</code>'s <code>dB</code> to 10
+and simulate again: S21 moves to about −13 dB, and nothing else needs editing.</p>
+<p>Run the same thing headless with:</p>
+<pre><code>circuitrf netlist &quot;Bench/schematic/Bench.csch&quot;
+circuitrf sparam  &quot;Bench/schematic/Bench.csch&quot;
+</code></pre>
+<p>The netlist shows the hierarchy as written: <code>define Pad</code>, then <code>define Board</code> placing it twice.</p>
+<h2 id="layout-hierarchy-linked-to-the-schematic-at-both-levels">2. Layout hierarchy, linked to the schematic at both levels</h2>
+<p>Both layouts were made with <strong>Design ▸ Update Layout from Schematic</strong>, which is what makes them
+<em>linked</em>. Each placed part remembers which schematic component it came from.</p>
+<ul>
+<li><strong>Pad's layout.</strong> Update Layout from Schematic places R1, R2 and R3 as 0402 land patterns, read
+from each resistor's <code>Footprint</code> parameter. It also drops a ground via beside every pad whose
+schematic pin is on a ground symbol, and pours the ground plane under them. The parts were then
+arranged by hand along a 200 mil run, and the traces and the <code>IN</code>/<code>OUT</code> pins were drawn.</li>
+<li><strong>Board's layout.</strong> The same command on Board's schematic places the three lines as MLIN
+artwork. It places <strong>Pad's own layout</strong> for <code>X1</code> and <code>X2</code>, because a schematic instance of a cell
+becomes a layout instance of that cell's layout. The parts were then lined up end to end, and a
+short launch was drawn at each board edge for the board's pins to sit on.</li>
+</ul>
+<p>Because the layouts are linked, <strong>run Update Layout from Schematic again</strong> at either level and
+nothing changes. Parts you moved stay where you put them, and ground vias follow their pads. Now
+edit a schematic, for example add a fourth resistor to Pad, and run it again. Only the difference
+is placed, and the Messages panel lists what was added.</p>
+<p>Pad's layout is drawn <strong>once</strong> and appears twice in Board. Edit it, and both instances change.</p>
+<p><strong>Silkscreen designators.</strong> On Board, each resistor's designator is drawn on the silkscreen inside
+its Pad, and the Gerber export carries the same text. It is Pad's own text, R1, R2 and R3, exactly
+what you see when you push into Pad, so the board shows each name twice, once per Pad. <code>X1</code> and
+<code>X2</code> themselves carry no designator: a module is not a part, so its designator is switched off on
+each instance (the checkbox beside <strong>Designator</strong> in the Properties panel). The lines <code>TL1</code>–<code>TL3</code> keep theirs.</p>
+<blockquote>
+<p><strong>Not yet: unique board numbering.</strong> A PCB annotator would number the six resistors R1–R6
+across the board. circuitRF does not do that yet; the designators come from the sub-cell, so a
+module placed twice repeats them. It is planned for a future release.</p>
+</blockquote>
+<p><strong>Layout versus schematic</strong> compares each level on its own:</p>
+<pre><code>circuitrf lvs .
+</code></pre>
+<ul>
+<li><strong>Pad matches.</strong> On its own, Pad is compared at its parameter's default, <code>dB = 3</code>, which is
+what an instance with no override would give it.</li>
+<li><strong>Board matches,</strong> with one warning: the ground copper &quot;carries no pin&quot;. That is accurate. Board's
+schematic states no ground of its own, because the lines' return and the pads' grounds are inside
+cells, so at Board's level the ground plane has no schematic net to belong to.</li>
+<li><strong>Pad's <code>.ccell</code> sets FlattenForLvs</strong>, and that is required, not a preference. A pad's ground is
+its own vias and pour, which meet Board's ground plane through metal that no pin declares. A cell
+connected to its parent that way has no hierarchical reading, so LVS reads Pad flat inside Board.</li>
+</ul>
+<h2 id="d-hierarchy">3. 3D hierarchy</h2>
+<p>Open <code>Assembly</code>. It places two kinds of thing, and the difference matters when you go down a level.</p>
+<ul>
+<li><strong><code>B1</code> and <code>J1</code>/<code>J2</code> are 3D views of other cells.</strong> Select <code>B1</code> and press <strong>Push Into Cell</strong>,
+either the ↓ button in the 3D toolbar or Ctrl+] (⌘] on macOS). Board's 3D view opens in the
+same tab, and only Board is drawn, as in the layout editor. A bar above the view shows where you
+are (<code>Assembly › B1 · Board</code>); click a level in it to jump back to that level. Edits are made in
+Board's own coordinates and saved to Board's own file. <strong>Pop Out</strong> (the ↑ button, or Ctrl+[)
+returns to the assembly and asks whether to save first.</li>
+<li><strong><code>L1</code>, inside Board's 3D view, is a layout.</strong> Push into it and Board's layout opens in the
+layout editor, because a layout is edited in 2D. Push into <code>X1</code> there and you reach Pad's
+layout. That is four levels, Assembly ▸ Board (3D) ▸ Board (layout) ▸ Pad (layout), each one a
+file of its own.</li>
+</ul>
+<p><strong>One cell, placed twice.</strong> <code>J1</code> and <code>J2</code> are the same Launch cell. <code>J2</code> is turned 180° to face the
+other edge. Push into either one, change the pin, and both launches change, as the two Pads do in
+2D. Launch is drawn with booleans, a fillet and a STEP import, so it needs the geometry kernel
+(OpenCASCADE) that ships inside circuitRF, as the <strong>3D Connector</strong> example does.</p>
+<p><strong>A cell's 3D view can place its own layout.</strong> That is how Board's 3D view gets its copper. The
+stackup in the technology turns the 2D artwork into substrate, ground plane, traces and both pads'
+vias, so editing Pad's layout changes the 3D assembly two levels up. What a 3D view cannot hold is
+its own 3D view, because a cell can't contain itself.</p>
+<p>The 3D views have <strong>no EM setup</strong>: a land pattern is copper only, with no resistor body, so a
+full-wave solve of this board would model an open circuit where each resistor should be. They are
+here to show the hierarchy. The <strong>3D Package</strong> and <strong>3D Connector</strong> examples cover solving one.</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li>Change <code>X1</code>'s <code>dB</code> on Board's schematic and simulate Bench. The layout does not need updating,
+because the 0402 land pattern is the same whatever resistor value is fitted.</li>
+<li>Change a line's <code>L</code> on Board's schematic, then <strong>Update Layout from Schematic</strong>. That line's
+artwork is regenerated in place, and the Messages panel reports it as updated.</li>
+<li>Delete <code>TL2</code> from Board's schematic and update the layout. The artwork it placed is <strong>reported,
+not deleted</strong> (&quot;no longer in the schematic&quot;), because removing board artwork is a decision for
+you to make, not the command.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

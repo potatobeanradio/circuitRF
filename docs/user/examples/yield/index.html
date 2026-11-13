@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Yield, Corners and Centering</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Yield/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Yield, Corners and Centering</p>
+  </div>
+
+  <h1>Yield, Corners and Centering</h1>
+  <p class="lede">A bandpass filter built from &#177;2 % parts and judged against loosened specs, an amplifier that fails one of six temperature and supply corners until it is optimized across all of them, a bias divider whose yield is centred from about 70 % to above 95 %, and an amplifier and spiral inductor, both Touchstone blocks, ranked in the Sensitivity panel. Every run takes a second or two.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Yield, Corners and Centering</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Three test benches, one for each question the <strong>Yield</strong> panel answers (View ▸ Panels ▸ Yield, tabbed
+behind the Optimizer), and a fourth for the question to ask before any of them — which values matter —
+in the <strong>Sensitivity</strong> panel (the tab between the Optimizer and Yield). Each one already has its tolerances, its specs and its run settings saved in
+the schematic, so you can open it, pick the mode named below and press <strong>▶</strong> before reading anything
+else. Every run here takes a second or two.</p>
+<p>Every number below is for the saved seed, 1. The same seed draws the same trials on any machine, so
+your run prints the same numbers.</p>
+<h2 id="bandpassyield-centre-loosen-estimate">BandpassYield — centre, loosen, estimate</h2>
+<p>The three-resonator bandpass filter from the Optimization example, at that example's <em>Equiripple</em>
+point. Each of the six parts has its own value here — 1.052 nH and 24.44 pF in each shunt
+resonator, 44.67 nH and 0.5712 pF in the series one — because a tolerance belongs to a part. Two
+parts that read one variable would always be drawn equal.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tolerances</td>
+<td>every L and C <strong>± 2 %</strong>, Gaussian, ± 2 % at 3σ, truncated at 3σ</td>
+</tr>
+<tr>
+<td>Correlation</td>
+<td><code>C1.C</code> and <code>C3.C</code>, <strong>ρ = 0.9</strong> — the two shunt capacitors come from one lot</td>
+</tr>
+<tr>
+<td>Optimizer goals (<code>use=opt</code>)</td>
+<td><code>Passband</code> −0.5 … 0 dB · <code>StopLow</code> ≤ −25 dB · <code>StopHigh</code> ≤ −25 dB</td>
+</tr>
+<tr>
+<td>Specs (<code>use=yield</code>)</td>
+<td><code>PassbandSpec</code> ≥ <strong>−1 dB</strong> over 0.9–1.1 GHz · <code>StopHighSpec</code> ≤ <strong>−22 dB</strong> over 1.35–2 GHz</td>
+</tr>
+<tr>
+<td>Run</td>
+<td>500 trials, seed 1, random sampling, target 80 %</td>
+</tr>
+</tbody>
+</table>
+<p>The goals come in two sets, and that is the workflow this bench shows:</p>
+<ol>
+<li><strong>Centre</strong> with the tight goals. In the Optimizer, <strong>Run</strong> meets all three in 3 iterations and 41
+simulations — the values as drawn are the equiripple point rounded to four digits, so there is
+little to do. The optimizer ignores the two specs.</li>
+<li><strong>Loosen.</strong> The specs are what a built filter must meet, and they are looser than the goals the
+design was centred on. The yield ignores the three tight goals.</li>
+<li><strong>Estimate.</strong> In the Yield panel, choose <strong>Yield</strong> and press <strong>▶</strong>:</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Yield</th>
+<th>95 % interval</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Overall</td>
+<td><strong>86.4 %</strong> (432 of 500)</td>
+<td>83.1 % – 89.3 %</td>
+</tr>
+<tr>
+<td><code>PassbandSpec</code></td>
+<td>86.4 %</td>
+<td>83.1 % – 89.3 %</td>
+</tr>
+<tr>
+<td><code>StopHighSpec</code></td>
+<td>100 %</td>
+<td>99.3 % – 100 %</td>
+</tr>
+</tbody>
+</table>
+<p>The whole interval lies above the 80 % target, so the target is met. Every failure is the
+passband's: the high stopband has 9 dB to spare at the centre, and its worst trial still has 8 dB.</p>
+<p><strong>Open yield display</strong> (the chart button) opens <code>BandpassYield.yield.cdd</code>, saved beside the
+schematic and waiting for your run. It holds each spec's trials as a family against its limit, a
+histogram of each spec's worst value, the yield against <code>C1.C</code>, and the statistics table.</p>
+<p><strong>Contributions</strong> ranks <code>C1.C</code> first for <code>PassbandSpec</code>, but a straight line through the trials
+explains only about 4 % of that spec's spread. The reason is in the filter: a shunt capacitor
+2 % low drops the passband edge at 0.9 GHz to −0.66 dB, and 2 % high drops the edge at 1.1 GHz to
+−0.72 dB. The spec gets worse whichever way the part moves, and no straight line follows that. The
+yield-against-<code>C1.C</code> plot says the same thing another way: the yield stays between about 70 % and
+100 % across the whole spread of <code>C1.C</code>, so no single part's value decides whether a filter passes.
+To see which trials fail and why, select one in the trial table and <strong>Send trial to Tuning</strong>.</p>
+<h2 id="amplifiercorners-six-corners-one-failing-then-optimized-across-all-of-them">AmplifierCorners — six corners, one failing, then optimized across all of them</h2>
+<p>A small FET amplifier with resistive feedback (<code>Rfb</code> from drain to gate), biased at
+V<sub>GS</sub> = <code>VGS</code> = −0.8 V from a supply <code>Vdd</code> = 3.3 V. The FET's current falls with
+temperature (<code>Betatc</code> = −0.3 %/°C), so it loses gain hot, and it loses a little more at low supply.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Variables</td>
+<td><code>VGS</code> −1.2 … −0.4 V and <code>Rfb.R</code> 150–1000 Ω, both tune and opt</td>
+</tr>
+<tr>
+<td>Tolerances</td>
+<td><code>Rfb.R</code> ± 5 % · <code>Q1.Beta</code> ± 10 % (both at 3σ) · <code>Q1.Vto</code> σ 0.05 V</td>
+</tr>
+<tr>
+<td>Goals</td>
+<td><code>Gain</code>: dB(S21) <strong>≥ 12.3 dB</strong> over 1.8–2.2 GHz · <code>Match</code>: dB(S11) <strong>≤ −9.5 dB</strong> over the same band</td>
+</tr>
+<tr>
+<td>Corners</td>
+<td>−40, 25 and 85 °C × <code>Vdd</code> 3.0 and 3.6 V, plus <code>WorstGain</code></td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td>Gradient (Levenberg–Marquardt), seed 1, <strong>across all corners</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>Q1.Vto</code> is written as an absolute σ and the other two as percentages. A percentage follows the
+nominal when the nominal moves; an absolute spread stays the same size.</p>
+<p><strong>The six temperature and supply corners were made by Generate…</strong> in Corners mode, from the
+temperatures −40, 25, 85 and the values <code>Vdd</code> = 3.0, 3.6. Choose <strong>Corners</strong> and press <strong>▶</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Corner</th>
+<th>Gain margin</th>
+<th>Match margin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nominal</td>
+<td>0.79 dB</td>
+<td>1.48 dB</td>
+</tr>
+<tr>
+<td><code>tm40_Vdd3p0</code></td>
+<td>1.44 dB</td>
+<td>1.93 dB</td>
+</tr>
+<tr>
+<td><code>tm40_Vdd3p6</code></td>
+<td>1.81 dB</td>
+<td>1.91 dB</td>
+</tr>
+<tr>
+<td><code>t25_Vdd3p0</code></td>
+<td>0.61 dB</td>
+<td>1.39 dB</td>
+</tr>
+<tr>
+<td><code>t25_Vdd3p6</code></td>
+<td>1.01 dB</td>
+<td>1.58 dB</td>
+</tr>
+<tr>
+<td><strong><code>t85_Vdd3p0</code></strong></td>
+<td><strong>−0.23 dB — fails</strong></td>
+<td>0.59 dB</td>
+</tr>
+<tr>
+<td><code>t85_Vdd3p6</code></td>
+<td>0.18 dB</td>
+<td>0.90 dB</td>
+</tr>
+<tr>
+<td><code>WorstGain</code></td>
+<td>0.18 dB</td>
+<td>1.26 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Hot at low supply is the one corner that fails, and only on gain. With <strong>MC at each corner</strong> ticked,
+the grid shows each corner's yield instead: 100 % at room temperature, 74.5 % at 85 °C and 3.6 V,
+and <strong>13.5 %</strong> at 85 °C and 3.0 V.</p>
+<p>That run has trials to plot. <strong>Open yield display</strong> writes <code>AmplifierCorners.yield.corners.cdd</code> beside
+the schematic: one tab per corner, each with that corner's trials, histograms, yield sensitivity and
+statistics table. It opens on <code>t85_Vdd3p0</code>, where 27 of the 200 trials pass. The corners run without
+MC has no trials, so there is no display of it.</p>
+<p><strong><code>WorstGain</code> is a statistical corner.</strong> It was saved from a Yield run at the nominal: trial 131
+had the smallest gain margin of the 200 (0.18 dB), and right-click ▸ <strong>Save as corner…</strong> on its row
+made a corner that replays that trial's draws — its <code>Rfb</code>, <code>Beta</code> and <code>Vto</code> offsets — around
+whatever the design's values are now.</p>
+<p><strong>Optimized across the corners.</strong> The Optimizer is set to evaluate every point at all eight corners,
+so each point costs eight simulations. <strong>Run</strong> meets both goals at every corner in 5 iterations and
+128 simulations:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Start</th>
+<th>Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>VGS</code></td>
+<td>−0.8 V</td>
+<td>−0.772 V</td>
+</tr>
+<tr>
+<td><code>Rfb.R</code></td>
+<td>300 Ω</td>
+<td>310.3 Ω</td>
+</tr>
+<tr>
+<td>worst gain, <code>t85_Vdd3p0</code></td>
+<td>12.07 dB</td>
+<td>12.30 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The report names <code>t85_Vdd3p0</code> as the corner that binds both goals. The optimizer raised the bias
+current just enough to bring that corner's gain to 12.3 dB, and stopped there.</p>
+<p><strong>Meeting a goal at a corner is not a yield at that corner.</strong> The optimizer meets the gain goal
+at <code>t85_Vdd3p0</code> with nothing to spare, so the parts' tolerances push about half of the amplifiers
+built below it: run <strong>MC at each corner</strong> again after <strong>Push</strong>, and that corner's yield is 43 %. To
+leave room for the tolerances, write the goal with a margin (12.6 dB, say), optimize, and run the
+corners' Monte Carlo again.</p>
+<h2 id="dividercentering-from-70-to-above-95">DividerCentering — from 70 % to above 95 %</h2>
+<p>A 1 V supply divided down to a 0.5 V reference, which must stay inside <strong>0.49–0.51 V</strong>. Both
+resistors are ± 3 % Gaussian (at 3σ). <code>R2</code> is 1033 Ω and <code>R1</code> starts at 1000 Ω, so the output sits at
+0.508 V, close to the top of the window.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Designable</td>
+<td><code>R1.R</code> 500–2000 Ω (opt)</td>
+</tr>
+<tr>
+<td>Tolerances</td>
+<td><code>R1.R</code> and <code>R2.R</code> ± 3 % (3σ)</td>
+</tr>
+<tr>
+<td>Spec</td>
+<td><code>Vout</code> = DC1.V(&quot;out&quot;), <strong>in 0.49 … 0.51 V</strong></td>
+</tr>
+<tr>
+<td>Run</td>
+<td>500 trials, seed 1, target 95 %</td>
+</tr>
+<tr>
+<td>Centering</td>
+<td>CMA-ES, 100 common trials, 10 iterations, 1000 verification trials</td>
+</tr>
+</tbody>
+</table>
+<p>Choose <strong>Yield</strong> and press <strong>▶</strong>: <strong>70.8 %</strong> [66.6 %, 74.8 %] of 500 trials pass, short of the
+95 % target.</p>
+<p>Now choose <strong>Centering</strong> and press <strong>▶</strong>. The search moves <code>R1</code> and scores every position on the
+same 100 trials, then the starting value and the centred one are each run on 1000 fresh trials:</p>
+<blockquote>
+<p>yield 73 % [70.1 %, 75.7 %] → 99.1 % [98.3 %, 99.6 %] on the same 1000 fresh trials; the
+intervals do not overlap</p>
+</blockquote>
+<p><code>R1</code> moves from 1000 Ω to 1039 Ω, which puts the output close to 0.5 V, in the middle of its window.
+That verified pair, not the search's own figure, is the result. <strong>Lock in</strong> keeps the centred value
+as a preset, and <strong>Push</strong> writes it into the schematic.</p>
+<p>With <strong>Surrogate: quadratic</strong> in the centering settings, each position costs 10 simulations instead
+of 100, because circuitRF fits <code>Vout</code> to a smooth curve through a few runs and counts the yield on
+the curve. The whole run takes 410 simulations instead of 4,100 and verifies at 99.5 %
+[98.8 %, 99.8 %] — the final check is still simulated.</p>
+<h2 id="snpsensitivity-which-s-parameters-move-the-gain">SnpSensitivity — which S-parameters move the gain</h2>
+<p>An amplifier's Touchstone block (<code>AMP</code>) driving a spiral inductor's (<code>L1</code>) into a 0.5 pF shunt
+capacitor. Two specs over 2.4–3 GHz: <code>Gain</code> dB(S21) <strong>≥ 9 dB</strong> and <code>Isolation</code> dB(S12) <strong>≤ −36 dB</strong>.
+<code>C1.C</code> is ± 5 % (3σ); nothing else has a tolerance.</p>
+<p>Open the schematic and the <strong>Sensitivity</strong> tab. Before anything runs it lists both blocks under
+<strong>S-parameter blocks</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th></th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AMP</code></td>
+<td>2 ports · <strong>untied</strong> · 8 factors</td>
+<td>an amplifier: S21 is about 50 dB above S12, so each of the four entries moves on its own</td>
+</tr>
+<tr>
+<td><code>L1</code></td>
+<td>2 ports · <strong>tied</strong> · 6 factors</td>
+<td>a passive spiral: S21 = S12, so one value moves both</td>
+</tr>
+</tbody>
+</table>
+<p>and the cost: 15 factors, <strong>31 simulations</strong>. Press <strong>▶</strong>. For <code>Gain</code> the list reads:</p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>basis</th>
+<th>share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>L1 · S21</code></td>
+<td>0.1 dB · 1°</td>
+<td>54 %</td>
+</tr>
+<tr>
+<td><code>AMP · S21</code></td>
+<td>0.1 dB · 1°</td>
+<td>33 %</td>
+</tr>
+<tr>
+<td><code>L1 · S11</code></td>
+<td>0.1 dB · 1°</td>
+<td>6.4 %</td>
+</tr>
+<tr>
+<td><code>AMP · S22</code></td>
+<td>0.1 dB · 1°</td>
+<td>5.5 %</td>
+</tr>
+<tr>
+<td><code>C1.C</code></td>
+<td>σ</td>
+<td>1.1 %</td>
+</tr>
+</tbody>
+</table>
+<p>The two S21s are almost all of it — the gain is the amplifier's gain less the spiral's loss. <code>AMP · S11</code>
+and <code>AMP · S12</code> are last with 0 %: with 50 Ω at the input the gain does not depend on them. Choose
+<code>Isolation</code> in the picker and <code>AMP · S12</code> comes second, at 42 % — the same block, ranked by a different
+spec. Under <strong>Specs</strong>, <code>Gain</code> reads m₀ 0.048 · σ 0.020: met at the nominal, by about two and a half times
+what all these steps together move it.</p>
+<p>Things to click:</p>
+<ul>
+<li><strong>Port</strong> regroups the same run by port (no simulation): <code>L1 · port 1</code> and <code>L1 · port 2</code> lead, at 60 % and
+54 % — they overlap, because S21 belongs to both ports.</li>
+<li><strong>Instance</strong>, then the arrow on <code>L1</code>, opens it into its entries, and each entry into its dB and phase.</li>
+<li>Select <code>AMP · S21</code>: the matrix tile opens, <code>S21</code> the darkest cell, with <strong>Tie reciprocal pairs</strong> unticked.
+Select <code>L1 · S21</code> and the tile colours S21 and S12 together, ticked.</li>
+<li>Untick <code>AMP</code> under S-parameter blocks: the cost drops to <strong>15 simulations</strong>, and after <strong>▶</strong> <code>AMP</code> is a
+greyed <code>excluded</code> row at the bottom — left out, not found insensitive.</li>
+<li>Right-click <code>C1.C</code> ▸ <strong>Send to Tuning</strong>, or <code>L1 · S21</code> ▸ <strong>Add tolerance</strong> — then <strong>Run Yield on these</strong>
+opens the Yield panel on the same schematic in Monte Carlo mode.</li>
+</ul>
+<p>The command line runs the same: <code>circuitrf yield sens SnpSensitivity/schematic/SnpSensitivity.csch --by port</code>.</p>
+<h2 id="settings">Settings</h2>
+<p>The trial counts are kept small so that every run here finishes in a second or two:</p>
+<ul>
+<li><strong>BandpassYield, 500 trials.</strong> The interval is ± 3 %. Halving its width takes four times the
+trials: about 2,000 for ± 1.5 %.</li>
+<li><strong>AmplifierCorners, 200 trials.</strong> Enough for the corner yields above to be told apart. At 200
+trials the interval around a 100 % yield still reaches down to 98.2 %.</li>
+<li><strong>DividerCentering, 100 common trials.</strong> Every candidate is scored on the same 100 trials. That
+is enough to tell 60 % from 100 %, but not 99 % from 100 %. The 1000 verification trials are what
+measure the final yield.</li>
+</ul>
+<p>The amplifier's sweep is 21 points over 1–3 GHz (100 MHz steps), five of them in the goals' band.
+The bandpass keeps the Optimization example's 151-point sweep.</p>
+<p>The command line runs the same: <code>circuitrf yield estimate BandpassYield/schematic/BandpassYield.csch</code>,
+<code>circuitrf yield corners AmplifierCorners/schematic/AmplifierCorners.csch --mc</code>,
+<code>circuitrf opt AmplifierCorners/schematic/AmplifierCorners.csch</code> and
+<code>circuitrf yield center DividerCentering/schematic/DividerCentering.csch</code>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

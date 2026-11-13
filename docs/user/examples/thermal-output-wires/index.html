@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Thermal: Output Wires</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Thermal Output Wires/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Thermal: Output Wires</p>
+  </div>
+
+  <h1>Thermal: Output Wires</h1>
+  <p class="lede">Six gold bond wires from a die to a package lead inside a mould compound: how hot each wire runs under DC current up to thermal runaway, under RF current at 2 GHz (the edge wires run hottest), and under the currents of a power amplifier&#39;s harmonic-balance drive sweep.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Thermal: Output Wires</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>How hot do a power die's output bond wires run? Six 1 mil (25.4 µm) gold wires, wedge-bonded from the drain pad on a SiC die to
+a copper package lead, carry the device's current. <strong>Everything above the flange is embedded in a mould compound — the
+overmold</strong> — so the wires lose their heat into the mould, and through it to the flange, which is held at <code>Tcase</code> = 85 °C. The
+wires are solved as one-dimensional conductors along their true 3D paths, with gold's electrical and thermal conductivity
+following the temperature; the rest of the package is solved in 3D.</p>
+<p>The chapter that teaches this is <strong>Thermal</strong> in <strong>Help ▸ circuitRF Documentation</strong>. It quotes the same numbers as this file.</p>
+<p><strong>What to expect when you press Run</strong> (an Apple M4, the Release build): <code>DcSweep</code> about <strong>21 s</strong>, <code>RfHarmonics</code> about <strong>7 s</strong>,
+<code>FromHB</code> about <strong>12 s</strong> once the EM result exists, on a mesh of 123,818 tetrahedra. The EM setup takes <strong>1 min 37 s</strong> in Palace
+and <strong>5.8 GB</strong>. Thermal needs <strong>Gmsh</strong>, and the EM setup <strong>Palace</strong>; the first run without either offers to install it.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pads</strong></td>
+<td>layout, µm</td>
+<td>The die: 100 µm of SiC on a 25 µm gold-tin die attach, with a 10 µm gold drain pad along its edge, and the lead finger (10 µm gold) — plus <strong><code>Pads.wBond</code></strong>, the six wires, 150 µm apart</td>
+</tr>
+<tr>
+<td><strong>Die</strong></td>
+<td>layout, µm</td>
+<td>The same artwork without the wires, for <em>Drawn Wires</em></td>
+</tr>
+<tr>
+<td><strong>Output</strong></td>
+<td>3D view, µm</td>
+<td>The die placed as <code>U1</code> on a copper–molybdenum flange; a copper lead on an alumina standoff under the finger; the mould over all of it; two ports, one probe per wire; the setups <code>EM</code>, <code>DcSweep</code>, <code>RfHarmonics</code> and <code>FromHB</code></td>
+</tr>
+<tr>
+<td><strong>Drawn Wires</strong></td>
+<td>3D view, µm</td>
+<td>The same model with the six wires drawn in the 3D view instead of read from <code>Pads.wBond</code>; the setup <code>DcSweep</code></td>
+</tr>
+<tr>
+<td><strong>Amplifier</strong></td>
+<td>schematic (test bench)</td>
+<td><code>Amplifier.csch</code>: the harmonic-balance drive sweep <code>FromHB</code> takes its currents from</td>
+</tr>
+<tr>
+<td><strong>Amplifier Wires</strong></td>
+<td>schematic (test bench)</td>
+<td>The same drive with a wBond carrying <code>Pads.wBond</code>'s wires in place of the EM block: the wire temperature with no 3D run</td>
+</tr>
+</tbody>
+</table>
+<p>Every material is one of circuitRF's generic materials, from <code>tech/generic-materials.cmat</code>. The mould's glass transition is taken
+as 150 °C, and every wire probe's <em>Limit</em> is set to it, so a run says when and where a wire first passes it.</p>
+<h2 id="how-it-is-modelled">How it is modelled</h2>
+<ul>
+<li><strong>The overmold.</strong> The box <code>mould</code> (generic mould compound, 0.9 W/(m·K)) fills everything from the flange up to 600 µm. The
+wires run through it, and each wire element loses heat into the mould around it.</li>
+<li><strong>The wires</strong> are the six wires of <code>Pads.wBond</code>, reached through the layout. Each is a chain of second-order line elements
+along its 3D path (feet included), its section πd²/4, its feet bonded perfectly to their pads — the pad's surface under a
+foot is one temperature and one potential with the wire's heel.</li>
+<li><strong>The pad and the lead are one potential each.</strong> Their resistance at 20 °C is 0.071 mΩ (the drain pad) and 0.047 mΩ (the lead
+with its finger), against 47.7 mΩ for a wire, so the run solves no potential inside them and says so in its notes (below 1 %
+of a wire, <em>Balance ▸ EquipotentialBelow</em>).</li>
+<li><strong>The flange's bottom</strong> is held at <code>Tcase</code>. Every other outer face is insulated.</li>
+</ul>
+<h2 id="dcsweep-a-dc-current-up-to-runaway">DcSweep: a DC current up to runaway</h2>
+<p>Port 1's current enters through the lead finger's outer edge and leaves through the drain pad's inner edge; <code>Idc</code> sweeps 6 → 18 A
+for the six wires together.</p>
+<table>
+<thead>
+<tr>
+<th>Idc</th>
+<th>Hottest wire</th>
+<th>An edge wire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6 A</td>
+<td>119.8 °C</td>
+<td>117.0 °C</td>
+</tr>
+<tr>
+<td>10 A</td>
+<td>197.3 °C</td>
+<td>188.7 °C</td>
+</tr>
+<tr>
+<td>14 A</td>
+<td>393.0 °C</td>
+<td>371.5 °C</td>
+</tr>
+<tr>
+<td>18 A</td>
+<td>runaway</td>
+<td>runaway</td>
+</tr>
+</tbody>
+</table>
+<p>At DC the six wires share the current almost equally, and the centre ones run hottest, because the mould between their neighbours
+is warmer. Every wire passes the 150 °C limit by 10 A.</p>
+<p><strong>Runaway is an answer, not a failure.</strong> Above about 16.69 A there is no steady state: gold's resistance rises with temperature,
+the heat rises with it, and past that current nothing balances. The run brackets it and reports it — <em>&quot;No steady state above
+about 16.69 A: thermal runaway. The last converged point is 16.62 A (wire U1/wire/Out/3 at 944 °C).&quot;</em> The 18 A point has no
+temperature. (The gold table ends at 1,027 °C, just below melting; a state hotter than a table states is not taken as a steady
+state.)</p>
+<p><strong>What the two switches contribute</strong> (the setup's <em>Balance</em>), at 10 A: with both on the hottest wire reads <strong>197.3 °C</strong>; with
+k(T) off, <strong>194.8 °C</strong>; with σ(T) off, <strong>158.7 °C</strong>. Almost all of the temperature-dependence here is gold's resistance, not the
+conductivities.</p>
+<h2 id="rfharmonics-rf-current-at-2-ghz">RfHarmonics: RF current at 2 GHz</h2>
+<p><code>Idc</code> = 4 A with a fundamental <code>I1</code> at 2 GHz stated as a <strong>Peak</strong> current, swept 0 → 12 A, and a second harmonic of 1 A stated as
+<strong>RMS</strong>. At RF the current does not share equally: it divides by the wires' inductance, and <strong>the two edge wires carry the
+most</strong>. At 8 A peak the edge wires reach <strong>270.8 °C</strong> and the centre ones <strong>199.5 °C</strong>; at 12 A, <strong>594.4 °C</strong> against <strong>366.7 °C</strong>.</p>
+<h2 id="fromhb-the-currents-of-a-power-amplifier">FromHB: the currents of a power amplifier</h2>
+<p>The <strong>Amplifier</strong> test bench is a generic GaN-like FET (circuitRF's Angelov model) biased in class AB, its drain on this view's EM result (the <code>SnP</code> block <code>XOUT</code>), fed
+from 40 V through a choke on the lead side, into a 5 Ω load. <strong>It exists to drive currents through the wires, not to be a good
+amplifier:</strong> nothing is matched. Its harmonic-balance sweep takes <code>Pin</code> from 10 to 28 dBm, and at every drive level the thermal
+run takes each port's DC and harmonic currents (pin p is port p). Both ports are referenced to the flange, across the die and the
+standoff, so the run solves them as a balanced pair.</p>
+<p><strong>Run <code>EM</code> first.</strong> <code>FromHB</code> reads the S-parameters <code>EM</code> writes; without them it refuses and says so.</p>
+<ul>
+<li>At <code>Pin</code> = 28 dBm the circuit gives <strong>49.51 dBm</strong> from <strong>4.43 A</strong>, and the edge wires reach <strong>205.1 °C</strong> (the centre ones
+<strong>164.7 °C</strong>).</li>
+<li>The limit sentence: <em>&quot;Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2).&quot;</em></li>
+</ul>
+<p>One way only: the circuit saw the wires at the temperature their S-parameters were solved at; the thermal run reports what they
+actually reach. The DC resistance of the EM block is its lowest frequency's (0.1 GHz), so the drain sits a few volts below the
+lead at DC; the DC <strong>current</strong> through the wires, which is what heats them, is the circuit's own.</p>
+<h2 id="amplifier-wires-the-quick-check-with-no-3d-run">Amplifier Wires: the quick check, with no 3D run</h2>
+<p>The <strong>Amplifier Wires</strong> test bench is the <code>Amplifier</code> bench's drive — the same FET, bias, choke, load and <code>Pin</code> sweep 10 → 28 dBm
+— with a <strong>wBond component carrying the six wires of <code>Pads.wBond</code></strong> where <code>Amplifier</code> has the EM block. Its temperature is
+<strong>solved</strong> (the checkbox on its <code>Temp</code> row is clear), between 125 °C at the die end and 85 °C at the lead end, and every point of
+the sweep reports <strong><code>WireTemp</code></strong>: the hottest wire, at its hottest point. It needs no EM run and no Gmsh: the whole sweep takes
+<strong>0.4 s</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Pin</th>
+<th>WireTemp</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 dBm</td>
+<td>166.5 °C</td>
+</tr>
+<tr>
+<td>20 dBm</td>
+<td>464.9 °C</td>
+</tr>
+<tr>
+<td>28 dBm</td>
+<td>503.0 °C</td>
+</tr>
+</tbody>
+</table>
+<p>Against <code>FromHB</code>'s 205.1 °C at 28 dBm, <strong>the quick check runs hotter because no heat leaves through a wire's sides</strong>: it has no
+mould, so every watt flows along the wire to its ends, and it is an upper bound. The circuit is not quite <code>Amplifier</code>'s either —
+its output network is the wires alone, over the flange as their ground plane, not the EM block of the whole package — so at 28
+dBm it gives <strong>51.32 dBm</strong> from <strong>5.37 A</strong>. The component's <code>GroundPlane</code> is on: <code>Pads.wBond</code> stores it off, because the 3D EM
+setup has its own flange, and a placed wBond needs a return path.</p>
+<h2 id="drawn-wires-one-wire-model-two-ways-to-draw-it">Drawn Wires: one wire model, two ways to draw it</h2>
+<p>The same DcSweep with the wires drawn in the 3D view instead of read from <code>Pads.wBond</code>: the hottest wire at 14 A reads 393.0 °C
+and the runaway is the same, to every printed digit. The two are one thermal problem.</p>
+<h2 id="checks-that-are-not-circuitrfs">Checks that are not circuitRF's</h2>
+<p><strong>One isolated wire (brief 72's W1, a closed form).</strong> A single wire of this span in AIR, its ends held at the heels' solved
+temperature (98.9 °C), gold's resistance linear in temperature and its conductivity constant, carrying 2.31 A: its centre reaches
+<strong>642.2 °C</strong>, and its own runaway is at <strong>3.15 A</strong>. The model's wire at the same current reads 393.0 °C: the overmold takes away
+most of the rise. The two runaways are not the same limit — the closed form's is where a linear resistance goes infinite, the
+model's a fold of gold's measured resistance just below melting.</p>
+<p><strong>Would an outer EM loop change the RF answer?</strong> The run shares each harmonic by the wires' inductance. Recomputing the share with
+each wire's AC resistance at its solved temperature added moves any wire's current by at most <strong>0.83 %</strong> at 8 A peak: the wires'
+reactance is fifty times their resistance.</p>
+<h2 id="see-it">See it</h2>
+<p><code>Output</code> carries four field plots — a section along wire 4 at 14 A DC (drawn when you open the results), across the six wires at DC
+and at RF, and in plan through the loops at RF. Tick one in the tree to draw it. Each wire is coloured from its own solved
+temperature along its length, over the mould around it.</p>
+<h2 id="the-settings-chosen-for-speed-and-what-they-cost">The settings chosen for speed, and what they cost</h2>
+<p><strong>The EM setup at the Draft preset.</strong> <em>Standard</em> took <strong>10 min 10 s</strong> and <strong>7.6 GB</strong>, and read the wires' series inductance at
+2 GHz as <strong>233.6 pH</strong> against Draft's <strong>228.5 pH</strong>; driven from it, <code>FromHB</code>'s edge wire at 28 dBm reads <strong>201.2 °C</strong> and <code>w1</code>
+reaches its limit at <code>Pin</code> ≈ <strong>13.18</strong>. Draft is the setting for a run you repeat; Standard for the number you quote.</p>
+<p><strong>The pad and the lead as one potential each.</strong> With <em>Balance ▸ EquipotentialBelow</em> = 0 every conductor's potential is solved in
+3D: the DcSweep takes <strong>42 s</strong> instead of 21 s, and the hottest wire at 14 A reads <strong>393.3 °C</strong> against 393.0 °C.</p>
+<p><strong>Element order 1</strong> and one element through thin solids (<code>MinThroughThickness</code> 1). The 10 µm gold pads set the element size where
+they are; order 2 multiplies the unknowns by about eight.</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li>Change <code>Tcase</code>, or the sweep on a setup's page.</li>
+<li>Move the wires closer together in <code>Pads.wBond</code> (the <em>wBond</em> window) and run <code>RfHarmonics</code>: the edge wires' share grows.</li>
+<li>Right-click the lead's top face ▸ <strong>Plot Temperature</strong> after a run.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

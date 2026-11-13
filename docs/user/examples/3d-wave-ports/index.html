@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — 3D Wave Ports</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/3D Wave Ports/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › 3D Wave Ports</p>
+  </div>
+
+  <h1>3D Wave Ports</h1>
+  <p class="lede">How to set up a wave port: the 3D Connector&#39;s launch with its back end open and fed by a coaxial wave port on Palace and on openEMS, and an edge-coupled stripline pair whose four strip ends are each a terminal of a wave port on openEMS, plotted against Cohn&#39;s ideal coupled line.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ 3D Wave Ports</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>How to set up and run a <strong>wave port</strong>, on Palace and on openEMS. A wave port turns a region of the air box's face
+into a matched continuation of the line that ends there: the line is fed and measured in its own field, so there is no
+gap and no parasitic of the port's own in the answer. This workspace has three cells that use one:</p>
+<ul>
+<li><strong>Launch</strong> is the <strong>3D Connector</strong> example's launch with its back end open: the coax runs to the air box's face, and
+that end is a wave port. Set against the 3D Connector's lumped gap port, it shows what the gap was costing.</li>
+<li><strong>Pair</strong> is an edge-coupled stripline pair with <strong>two conductors ending on each face</strong>. Each strip end is its own
+port, a <strong>terminal</strong> of the face's wave port, so the pair is a four-port. It runs on openEMS (below says why not on Palace).</li>
+<li><strong>Coupled Microstrip</strong> is a pair of microstrip lines of <strong>different widths</strong> in a closed housing, with a two-terminal
+wave port at each end, run on <strong>both</strong> solvers: on Palace, each end is one port face carrying both strips' modes,
+converted to one port per strip.</li>
+</ul>
+<p>The reference chapter is <strong>EM Setup ▸ Wave ports</strong>, and its section <strong>Several conductors on one face</strong>, in
+<strong>Help ▸ circuitRF Documentation</strong>. This page is the walk-through; it does not repeat that chapter.</p>
+<p>Opening, orbiting, <code>check</code> and <code>explain</code> need no solver. The Launch needs the geometry kernel (its housing is a boolean
+and its pin is filleted, as in the 3D Connector), and <strong>Run</strong> needs Palace or openEMS; the first press without one
+offers to install it.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Board</strong></td>
+<td>layout, mil</td>
+<td>The 3D Connector's board, unchanged: 20 mil PTFE-glass laminate and a 62 mil line</td>
+</tr>
+<tr>
+<td><strong>Flange</strong></td>
+<td>3D view, mm</td>
+<td>The 3D Connector's flange, unchanged, the source of <code>Launch/3d/flange.step</code></td>
+</tr>
+<tr>
+<td><strong>Launch</strong></td>
+<td>3D view, mm</td>
+<td>The 3D Connector's launch with the bore cut through the housing's back and the pin run to it. P1 is a wave port on the air box's xmin face; P2 is still the board's lumped port. Setups <em>Palace</em> and <em>openEMS</em></td>
+</tr>
+<tr>
+<td><strong>Pair</strong></td>
+<td>3D view, mm</td>
+<td>Two copper strips of zero thickness in a PTFE fill between two ground planes, 15 mm long, with a two-terminal wave port at each end. Setup <em>openEMS</em></td>
+</tr>
+<tr>
+<td><strong>Coupled Microstrip</strong></td>
+<td>3D view, mm</td>
+<td>Two copper strips of zero thickness, 1.2 mm and 2 mm wide and 0.3 mm apart, on the 20 mil PTFE-glass laminate, 15 mm long, in a housing whose floor, sides and lid are PEC, with a two-terminal wave port at each end. Setups <em>Palace</em> and <em>openEMS</em></td>
+</tr>
+</tbody>
+</table>
+<p>One technology, <code>tech/board-and-connector.ctech</code>, the 3D Connector's, serves all five.</p>
+<p><strong>The Launch's coax</strong> is the 3D Connector's: <code>pin_d</code> = 0.4 mm inside <code>bore_d</code> = 1.34 mm of PTFE (εr 2.1). Its
+impedance by the closed form is Z₀ = η₀/(2π√εr)·ln(D/d) = <strong>50.02 Ω</strong>. The 3D Connector's README says 50.06 Ω because
+it writes η₀/2π as 60; this page uses η₀ itself. The only change from that launch: the bore and the pin now run to
+the housing's back face at x = −5 mm, which is the air box's xmin face (its padding is 0).</p>
+<p><strong>Pair's section</strong>, stated once as the cell's VARs: strip width <code>w</code> = 1.65 mm, gap <code>s</code> = 0.4 mm, ground-plane spacing
+<code>b</code> = 2 mm, length <code>len</code> = 15 mm. The strips are sheets, because Cohn's closed form for this line is exact only at zero
+thickness. The fill's top and bottom are the air box's <strong>PEC</strong> faces (the two ground planes); its sides are <strong>PMC</strong>
+faces, 10 strip widths out from each strip, standing in for an unbounded plane; its ends are the two wave ports. By
+Cohn's closed form, the even mode's impedance is <strong>57.51 Ω</strong> and the odd mode's <strong>43.10 Ω</strong>: they straddle 50 Ω, so
+the coupling is easy to see, and the line as a whole is matched to 50 Ω.</p>
+<p><strong>Pair's numbering.</strong> The xmin face's terminals are 1 (strip a) and 2 (strip b), and the xmax face's are 3 (strip a)
+and 4 (strip b): <strong>S21 is the near-end coupling, S31 the thru and S41 the far-end coupling.</strong></p>
+<h2 id="launch-by-hand">Launch, by hand</h2>
+<ol>
+<li>Open <strong>Launch</strong>'s 3D view and look at the object tree's <strong>P1</strong>: a wave port on the xmin face, its rectangle over
+the coax. The overlay draws its <strong>voltage-path arrow from the housing to the pin</strong>, across the PTFE.</li>
+<li>P1 states nothing but its rectangle, 2 mm square and centred on the axis. To draw it yourself, delete it and use the
+<strong>Port</strong> tool (<strong>Shift+A P</strong>) on the YZ plane at x = −5 mm, the air box's xmin face, with two corners 1 mm either
+side of the axis. The pin lies inside the housing on that face, so the arrow is inferred along a ray from the bore's
+wall to the pin, and the status line says so: <em>&quot;… the path runs from 'housing' to 'pin' along a ray, because
+'housing' encloses 'pin' on the face.&quot;</em> Read the arrow before a run.
+Right-clicking the bore's end face (the PTFE disc round the pin) and choosing <em>Make Port ▸ Wave</em> makes the same port
+on the 1.34 mm square round the disc. Both solvers run that one too. openEMS's current probe round the pin needs a
+grid cell of room from the housing, which is why this setup's openEMS section states a grading ratio of <strong>1.15</strong>: at
+the default 1.3 the cells in the bore grow too fast from the pin, and openEMS refuses either rectangle, naming the
+clearance it is short of.</li>
+<li><strong>Simulate ▸ Setup Analyses…</strong>: run <em>Palace</em>, then make <em>openEMS</em> the active setup and run it.</li>
+<li>Compare |S11| with the 3D Connector's (its <em>fillet</em> runs, below). At 18 GHz the lumped gap port read <strong>−40.75 dB</strong>
+on Palace and <strong>−19.03 dB</strong> on openEMS; the wave port reads <strong>−19.53 dB</strong> on Palace and <strong>−21.38 dB</strong> on openEMS.</li>
+</ol>
+<p>The deep null the 3D Connector showed at 18 GHz on Palace was the gap's capacitance tuning out the launch's own
+reactance. With the gap gone, the launch's |S11| is about −20 dB across the upper band on both solvers: that is the
+launch itself. A connector that ends inside the model rather than on the box's face is fed across the same ring of PTFE by
+a <strong>coaxial port</strong> instead (<strong>EM Setup ▸ Coaxial ports</strong>; the <strong>Loop Sensor</strong> example feeds a real-size SMA that way).</p>
+<h2 id="pair-by-hand">Pair, by hand</h2>
+<ol>
+<li>Open <strong>Pair</strong>'s 3D view. Each end face carries one port with <strong>two numbered arrows</strong>, one per strip, each running up
+from the bottom ground plane (<code>airbox/zmin</code>, the port's <strong>reference</strong>) to its strip.</li>
+<li>To make them yourself, delete both ports, right-click the fill's end face at x = 0 and choose <em>Make Port ▸ Wave</em>,
+then do the same on its end face at x = 15 mm. Each makes one port, named after its face, with a <strong>terminal</strong> per
+strip: 1 (strip a) and 2 (strip b) on xmin, 3 and 4 on xmax. The two ground planes are the air box's PEC faces,
+which count as one reference, and the status line names it: <em>&quot;'airbox/zmin' is the reference: the air box's PEC
+faces are one ground; 'airbox/zmin' names it.&quot;</em></li>
+<li><strong>Terminal S</strong> means each strip end is a port of its own: the voltage from the reference to that strip, the current
+on that strip. The result is a four-port, numbered as above, so S21 is the near-end coupling, S31 the thru and S41
+the far-end coupling.</li>
+<li>Run <em>openEMS</em>. Open the result in a <strong>Data Display</strong> and plot dB(S31), dB(S21) and dB(S41). Cohn's ideal coupled line
+gives at 10 GHz <strong>−0.088 dB</strong>, <strong>−16.98 dB</strong> and <strong>−64.47 dB</strong>; openEMS reads <strong>−0.092 dB</strong>, <strong>−16.94 dB</strong> and
+<strong>−60.88 dB</strong>. The near-end coupling peaks where the line is a quarter wave long (3.4, 10.3 and 17.2 GHz) and falls to
+nulls between; the far-end coupling of a homogeneous line is zero, and what is left is the residue of the small
+reflections at each end.</li>
+</ol>
+<h2 id="coupled-microstrip-by-hand">Coupled Microstrip, by hand</h2>
+<ol>
+<li>Open <strong>Coupled Microstrip</strong>'s 3D view: strip <strong>a</strong> (1.2 mm) and strip <strong>b</strong> (2 mm) on the laminate, the floor the
+ground, the housing's sides 4.5 mm out from the centre and its lid 3 mm above the laminate, all PEC. Each end face
+carries one port with two terminals, numbered as Pair's: 1 (a) and 2 (b) at x = 0, 3 (a) and 4 (b) at x = 15 mm, so
+<strong>S31 is a's thru, S21 the near-end and S41 the far-end coupling, and S11 and S22 are the two lines' reflections.</strong>
+Each terminal's arrow runs up from the floor (<code>airbox/zmin</code>, the reference) to its strip.</li>
+<li>Run <em>Palace</em>, then <em>openEMS</em> (2–12 GHz in 21 points). Plot dB(S11) and dB(S22) from both on one Data Display: the
+two lines reflect differently, which no symmetry route could have produced. At 2 GHz Palace reads <strong>−21.74 dB</strong> and
+<strong>−15.48 dB</strong>, openEMS <strong>−21.00 dB</strong> and <strong>−15.72 dB</strong>.</li>
+<li>Read Palace's notes: one per port says its terminals were converted from the face's two modes (<em>modes not
+degenerate, Robin correction K = 1.048 to 1.060</em>), and one gives each terminal's power and the singular values of S.</li>
+</ol>
+<h2 id="what-each-solver-did">What each solver did</h2>
+<p><strong>On the Launch, Palace</strong> solved the coax's own mode on the face at every frequency and projected the field onto it.
+It reports the mode's impedance, <strong>49.18 to 49.31 Ω</strong> over the sweep, against the closed form's 50.02 Ω, and the run's
+note says it renormalised the port to 50 Ω. That 1.7 % is the <em>Draft</em> preset's first-order elements: at element order 2
+(8 min 30 s, 8.9 GB) the same run reports 50.13 to 50.26 Ω, and |S11| moves to −25.02 dB at 10 GHz and −21.44 dB at
+18 GHz. As on the 3D Connector, Draft's |S11| is a first look, not a converged one, and the port is not what limits it.</p>
+<p><strong>On the Launch, openEMS</strong> computed no mode. It grew its grid out past the face, carried the coax through that
+extension, fed it from the far end with a radial source, and measured voltage and current on three planes around the
+face. The run's note reports what that line measured: <strong>54.59 Ω</strong>, <strong>ε_eff 3.08</strong>, where the coax is 50.02 Ω and
+2.1. <strong>On this grid openEMS does not resolve the coax</strong>: its Cartesian cells staircase the round pin, and at this
+setup's grid (20 cells per wavelength, grading 1.15) the pin is 3 cells across. The run's note names the staircase; its error
+falls with the cell, but a coax needs about 20 cells across its pin to come within a few percent, and openEMS's grid
+has one largest cell for the whole problem: at 20 cells across the pin, this one would be 137 million cells. A cylindrical grid, which is exact
+for a coax, cannot be used either: the coax meets a board. <strong>So on this cell, Palace's answer is the one to trust</strong>, and
+openEMS's shows what its port does, not what this connector does.</p>
+<p><strong>On Pair, openEMS</strong> fed each strip on its own, one run per terminal, four runs, and built S from all four runs
+together: a coupled pair whose ends run into the feed's absorber is terminated in the pair's own impedances, so no
+single run gives a column of S by itself. Each terminal's line measured <strong>50.17 Ω</strong> and <strong>ε_eff 2.10</strong> with the others
+passive, and the whole S matrix lies within 0.003 of Cohn's ideal line at every frequency from 2 to 18 GHz. The grid is
+90 cells per wavelength, which puts 8 cells between each strip and a ground plane: with 4, a stripline's impedance
+reads about 5 % low.</p>
+<p><strong>Why Pair has no Palace setup.</strong> Pair's two strips sit in one homogeneous fill, so their two modes travel at one
+speed, and a Palace run refuses such a face before its 3D solve, naming openEMS (<strong>EM Setup ▸ Wave ports ▸ On
+Palace</strong>). Palace returns two such modes in an arbitrary mixture, drawn again every time it solves the face: over a
+sweep Pair's modal S came back non-reciprocal, and even solved one frequency at a time one face's two modes came back
+as nearly the same field at 10 GHz. Giving Pair PEC sides (its PMC sides leave the two ground planes separate
+conductors on the face, a third mode) or perfect-conductor strips does not change that, so they were not taken further.</p>
+<p><strong>On Coupled Microstrip, Palace</strong> solved each end face's two modes, which travel at different speeds (K, the ratio of
+their wavenumbers, is 1.048 to 1.060), launched each in turn, and converted the modal S to one port per strip. Its
+adaptive sweep writes no wavenumber, so the run also solved each face's modes on their own at five of the sweep's
+frequencies, a few seconds each. Its own check warns at 12 GHz that terminal 4's voltage is 0.11 % off Palace's mode
+impedance, just past the 0.1 % it warns at: that is the copper's loss, which the conversion was not measured with.</p>
+<p><strong>On Coupled Microstrip, openEMS</strong> fed each strip on its own as for Pair. The two agree to max |ΔS| 0.008–0.027 over
+the whole band: at 10 GHz Palace reads |S11| <strong>−17.38 dB</strong> and |S22| <strong>−16.08 dB</strong>, openEMS <strong>−17.82 dB</strong> and
+<strong>−15.30 dB</strong>. Two things to know:</p>
+<ul>
+<li><strong>The lid.</strong> Each strip has PEC on both sides of it, the floor below and the lid above, so openEMS's port feeds it
+from both, as it feeds a stripline. But a strip on the laminate with air above it is a microstrip, and its voltage to
+the lid is not its voltage to the floor, so the port reads the floor's alone: the reference the terminal's arrow runs
+from, as Palace does. The run's notes say so for each end face. A strip with one material on both sides, as in Pair,
+is read to both planes.</li>
+<li><strong>The loss.</strong> The laminate's loss tangent is a conductivity to openEMS, exact at the band's centre only, and the
+strips are <strong>copper</strong>, the technology's metal, which each solver models its own way on a sheet of zero thickness:
+Palace's terminals keep 97.9–99.1 % of their power, openEMS's 96.4–100.1 %. Perfect-conductor strips would take that
+difference away; whether the example should use them is left open, so it uses the technology's copper.</li>
+</ul>
+<h2 id="the-numbers">The numbers</h2>
+<p>Every time and size below was <strong>measured once</strong>, on an Apple M4 with 10 cores and 16 GB, running macOS 27.0, Palace
+0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3 and OpenCASCADE 8.0.1. A time is the wall clock for the whole
+run; memory is Palace's own peak over all its processes; openEMS's size is the number of cells in its grid. Your
+machine will differ.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Time</th>
+<th>Size</th>
+<th>|S11| at 10 GHz</th>
+<th>|S11| at 18 GHz</th>
+<th>|S21| at 18 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launch, Palace (Draft)</td>
+<td>1 min 5 s</td>
+<td>4.5 GB</td>
+<td>−21.71 dB</td>
+<td>−19.53 dB</td>
+<td>−0.562 dB</td>
+</tr>
+<tr>
+<td>Launch, openEMS (20 cells per wavelength, grading 1.15)</td>
+<td>2 min 17 s</td>
+<td>937,440 cells</td>
+<td>−19.36 dB</td>
+<td>−21.38 dB</td>
+<td>−0.452 dB</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Coupled Microstrip</th>
+<th>Time</th>
+<th>Size</th>
+<th>|S11| / |S22| at 2 GHz</th>
+<th>at 6 GHz</th>
+<th>at 10 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Palace (element order 2, no refinement passes)</td>
+<td>14 min 34 s</td>
+<td>5.1 GB</td>
+<td>−21.74 / −15.48 dB</td>
+<td>−24.31 / −18.63 dB</td>
+<td>−17.38 / −16.08 dB</td>
+</tr>
+<tr>
+<td>openEMS (300 cells per wavelength)</td>
+<td>7 min 28 s</td>
+<td>6,053,568 cells</td>
+<td>−21.00 / −15.72 dB</td>
+<td>−24.05 / −18.27 dB</td>
+<td>−17.82 / −15.30 dB</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Coupled Microstrip, thru |S31| / near-end |S21| / far-end |S41|</th>
+<th>at 2 GHz</th>
+<th>at 6 GHz</th>
+<th>at 10 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Palace</td>
+<td>−0.149 / −19.10 / −35.94 dB</td>
+<td>−0.139 / −21.31 / −24.19 dB</td>
+<td>−0.314 / −16.63 / −19.57 dB</td>
+</tr>
+<tr>
+<td>openEMS</td>
+<td>−0.096 / −19.43 / −35.56 dB</td>
+<td>−0.077 / −21.56 / −23.52 dB</td>
+<td>−0.218 / −17.43 / −19.07 dB</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Pair, openEMS (90 cells per wavelength), at 10 GHz</th>
+<th>Time</th>
+<th>Size</th>
+<th>|S31| thru</th>
+<th>|S21| near-end</th>
+<th>|S41| far-end</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>openEMS</td>
+<td>52 s</td>
+<td>1,033,923 cells</td>
+<td>−0.092 dB</td>
+<td>−16.94 dB</td>
+<td>−60.88 dB</td>
+</tr>
+<tr>
+<td>Cohn's ideal line</td>
+<td></td>
+<td></td>
+<td>−0.088 dB</td>
+<td>−16.98 dB</td>
+<td>−64.47 dB</td>
+</tr>
+</tbody>
+</table>
+<p><code>check</code> on this workspace reports no error and one warning, the 3D Connector's: openEMS will not represent the pin's
+100 µm fillet. The Pair's openEMS runs also warn that openEMS chose a time step about 1.45 times circuitRF's own
+estimate; that is the estimate disagreeing, not the answer.</p>
+<p><strong>Settings, and what they trade.</strong> The Launch's setups are the 3D Connector's: Palace's <em>Draft</em> preset (element order 1,
+no refinement passes) and openEMS's default grid but for its grading ratio, 1.15 against the default 1.3, each 2–18 GHz in
+5 points, so a first run takes a minute or two.
+Palace at element order 2 is above: eight times the time and twice the memory, and |S11| moves by 3.3 dB at 10 GHz and 1.9 dB at 18 GHz. The grading is
+the one openEMS setting this coax needs (above): it buys the current probe its cell of room for 937,440 cells against
+526,768, and more cells per wavelength would not, since the cells in the bore are set by the grading from the pin, not by
+the wavelength. The Pair's setup is 2–18 GHz in 33 points, which costs openEMS nothing (one run
+covers the band) and shows the coupling's shape; its 90 cells per wavelength are the cost of 8 cells per strip height.
+Coupled Microstrip's Palace setup is the <em>Standard</em> preset's element order 2 with no refinement passes (with Standard's
+two passes the estimate is 8.5 GB) and four mesh regions, 20 µm boxes along the strips' edges; its openEMS setup takes
+300 cells per wavelength and a 5 µm smallest cell (6.05 million cells; the grid's own smallest is 36 µm). Both sweep
+2–12 GHz in 21 points, below the housing's own modes: Palace's check finds the faces' third mode evanescent at 12 GHz.</p>
+<h2 id="what-is-deliberately-not-here">What is deliberately not here</h2>
+<ul>
+<li><strong>Mixed-mode S-parameters</strong> (Sdd, Scc): circuitRF plots terminal S; a differential view of the pair needs a
+mixed-mode conversion it does not have yet.</li>
+<li><strong>A hollow waveguide on openEMS</strong>: a region met by one conductor has no voltage between conductors, and openEMS would
+need a mode-matching port, which circuitRF does not build. Palace runs one.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

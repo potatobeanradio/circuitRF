@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — TRL and De-embedding</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/TRL and De-embedding/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › TRL and De-embedding</p>
+  </div>
+
+  <h1>TRL and De-embedding</h1>
+  <p class="lede">TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ TRL and De-embedding</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Run the three numbered benches in order, top of the Workspace tree first:</strong></p>
+<ul>
+<li><strong><code>1 TRL Calibration</code></strong> solves the Thru, Reflect and Line for the two fixtures and writes them to <code>fixtures/</code>.</li>
+<li><strong><code>2 Deembed DUT</code></strong> removes both fixtures from a measured filter and lays the result over the filter itself. It reads
+the files <code>1 TRL Calibration</code> writes, so run that first.</li>
+<li><strong><code>3 FET Deembed</code></strong> removes a GaN FET's extrinsic network, a 6-port, to show the device at its intrinsic plane.</li>
+</ul>
+<p>Each opens its Data Display when it finishes. The <code>Lab</code> benches made the files in <code>measurements/</code> and need not be run.</p>
+<p>A part is rarely measured on its own. The instrument is calibrated at its connectors, and between those and the part
+sit fixtures: launches, lines, probe pads. TRL finds both fixtures from three measurements made through them, and a
+<strong>Deembed</strong> block then takes them off any measurement made the same way. The three benches above are the ones to
+duplicate for your own data.</p>
+<h2 id="what-trl-is">What TRL is</h2>
+<p>The fixture between the instrument's port 1 and the part is fixture A, and the one between the part and port 2 is
+fixture B. Neither is known. TRL measures three standards through the same two fixtures:</p>
+<ul>
+<li><strong>Thru</strong>: A and B joined directly.</li>
+<li><strong>Reflect</strong>: A into a reflection, and the same reflection into B. Its value need not be known, only whether it is
+nearer an open or a short.</li>
+<li><strong>Line</strong>: A and B joined by a short extra length of uniform line. Its length and loss need not be known either.</li>
+</ul>
+<p>From those three, both fixtures come out, and the part's own S-parameters follow from any measurement made through
+them. Very little has to be known about the standards, which is why TRL is used where good standards are hard to make:
+on a board, on a wafer, in a test fixture.</p>
+<h2 id="the-model-and-the-equations">The model and the equations</h2>
+<p>Each two-port is written as a cascade matrix T, so that networks in a chain multiply. From S:</p>
+<pre><code>T = 1/S21 · [ −det S    S11 ]        det S = S11·S22 − S12·S21
+            [ −S22       1  ]
+</code></pre>
+<p>and back again:</p>
+<pre><code>S11 = T12/T22    S12 = det T/T22    S21 = 1/T22    S22 = −T21/T22
+</code></pre>
+<p>With A and B the fixtures' cascade matrices, the measured Thru and Line are</p>
+<pre><code>Mt = A·B
+Ml = A·L·B        L = diag(e^−γℓ, e^+γℓ)
+</code></pre>
+<p>where L is the extra length of line, with propagation constant γ and length ℓ. Then</p>
+<pre><code>Ml·Mt⁻¹ = A·L·A⁻¹
+</code></pre>
+<p>so the columns of A are the eigenvectors of Ml·Mt⁻¹, and its eigenvalues are e<sup>−γℓ and e</sup>+γℓ: the Line's electrical
+length and loss come out too. An eigenvector fixes a column only up to a scale, so one unknown is left over, and the
+Reflect fixes it: the same reflection seen through A and through B must be the same reflection. Its sign is the one
+choice the solve cannot make for itself, which is why <code>reflectType</code> says open or short. B follows from B = A⁻¹·Mt, and
+any measurement M gives the part:</p>
+<pre><code>DUT = A⁻¹ · M · B⁻¹
+</code></pre>
+<h2 id="what-the-standards-must-be">What the standards must be</h2>
+<ul>
+<li><strong>Thru</strong>: the reference plane is its middle. The de-embedded part is the part between the two halves of the Thru.</li>
+<li><strong>Reflect</strong>: the same on both ports, highly reflecting, and known only as an open or a short. It need not be ideal;
+the one here is a short behind 1 mm of line and 0.5 Ω.</li>
+<li><strong>Line</strong>: the same line as the Thru's, longer by an electrical length between <strong>20° and 160°</strong> at every frequency of
+the band. Near 0° or 180° the Line looks like the Thru and the two cannot be told apart. The Line's impedance is the
+impedance the part comes back referenced to.</li>
+</ul>
+<p>The Line is best at 90° at the middle of the band. For a band f1 to f2, with fc = (f1 + f2)/2:</p>
+<pre><code>ℓ = c₀ / (4 · fc · √εeff)                    a quarter wave at fc
+θ(f1) = 90° · f1/fc = 180° · f1/(f1 + f2)    ≥ 20° needs f2/f1 ≤ 8
+</code></pre>
+<p>So one Line covers an 8:1 band. For a wider one, use two Lines and two calibrations, each over its own band. The
+<code>Line Standard</code> cell is cut this way for 1 to 8 GHz, which puts its edges at exactly 20° and 160°: the <code>1 TRL Calibration</code>
+display plots the Line's length against both limits.</p>
+<h2 id="using-your-own-measurements">Using your own measurements</h2>
+<p>Duplicate <code>1 TRL Calibration</code>, then point it at your files:</p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>To</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>THRU</code>, <code>REFLECT</code>, <code>LINE</code></td>
+<td>Each SnP's File: your Thru, Reflect and Line <code>.s2p</code>, all on one frequency grid</td>
+</tr>
+<tr>
+<td><code>CAL</code>'s Reflect</td>
+<td>Open or Short, whichever your reflect is nearer</td>
+</tr>
+<tr>
+<td><code>CAL</code>'s fixture files</td>
+<td>Where the two fixtures are written; the same strings go into the Deembeds' File</td>
+</tr>
+<tr>
+<td><code>SP1</code></td>
+<td>Your band, if you want to see the raw standards</td>
+</tr>
+</tbody>
+</table>
+<p>Run it. If the Line leaves 20° to 160° anywhere in the band, the run says where; the fixtures there are not to be
+trusted. Then duplicate <code>2 Deembed DUT</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>To</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MEAS</code></td>
+<td>Your part's measured <code>.s2p</code></td>
+</tr>
+<tr>
+<td><code>DA</code> and <code>DB</code></td>
+<td>The two fixture files, if you renamed them</td>
+</tr>
+<tr>
+<td><code>SP1</code></td>
+<td>Your band</td>
+</tr>
+<tr>
+<td><code>X1</code>, <code>RAW</code> and ports 3 to 6</td>
+<td>Delete them: they are this example's comparison</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-deembed-component">The Deembed component</h2>
+<p>A Deembed is the opposite of an SnP. An SnP on a file adds that network to the circuit; a Deembed on the same file takes
+it away. It takes any even number of ports: ports 1 to N/2 are one side of the network, and the rest the other, in the
+file's order.</p>
+<p><strong>Wire it the way you would wire the SnP that adds the network, then swap the SnP for the Deembed and the part for its
+measurement.</strong> Fixture A's port 1 is the instrument side, so <code>Port 1 — Deembed(A) — measurement</code>. Fixture B's port 1 is
+the part's side, so <code>measurement — Deembed(B) — Port 2</code>. Neither needs flipping.</p>
+<p>It works in every analysis an SnP works in: DC, S-parameters, harmonic balance, loadpull and sweeps. An SnP and a
+Deembed on one file, side by side, are a through connection to rounding, at the file's points and between them.</p>
+<p>The inverse of a lossy network has gain, so a Deembed is active: a stability analysis that needs every part to be
+passive refuses it by name.</p>
+<h2 id="the-fet">The FET</h2>
+<p><code>3 FET Deembed</code> places the 8-finger GaN device from the Model Composer example (<code>models/gan_4x125.cmodel</code>) twice, biased
+as there: −0.8 V on the gate and 8 V on the drain. Its model carries an extrinsic network (pad capacitances, lead
+inductances, access resistances) between its outer gate, drain and source and its intrinsic device. <code>GaN Extrinsic</code> is
+that network as a cell, and <code>Lab Extrinsic</code> measures it as a 6-port: ports 1 to 3 the outer gate, drain and source, and
+4 to 6 the inner ones.</p>
+<p>On ports 1 and 2, a Deembed of that 6-port sits between the ports and the device, so the ports see the intrinsic device.
+The bias tees are outside the Deembed, so the DC current flows through it. On ports 3 and 4, the same device is measured
+as it is. Each copy's intrinsic elements are read from its Y-parameters:</p>
+<pre><code>Cgs = Im(Y11 + Y12)/ω      Cgd = −Im(Y12)/ω      gm = |Y21 − Y12|      Rds = 1/Re(Y22 + Y12)
+</code></pre>
+<p>The <code>3 FET Deembed</code> display plots all four against frequency. After de-embedding they are flat, as an intrinsic device's
+are: Cgs within 0.4 % from 1 to 20 GHz, Rds within 0.01 %. As measured, the lead inductances and pad capacitances bend
+them: Cgs by 17 % and Rds by 57 % over the same band. That is the point of de-embedding to the intrinsic plane. Below
+1 GHz both copies' Cgs dip: the 10 µH gate chokes are outside the Deembed, and at 0.5 GHz theirs is the admittance
+left in Im(Y11).</p>
+<p><strong>The source needs a net of its own.</strong> The Deembed's pin 3 (the outer source) goes to ground, and pin 6 (the inner
+source) goes to the device's source, which is on nothing else. Pins 3 and 6 are the two ends of one path through the
+network, the source lead. With both on ground, the current leaving one is not made equal to the current entering the
+other, so that path is never removed, and the answer is wrong while looking plausible. A run with both ends of a path on
+ground warns, naming the pins.</p>
+<p>The HB analysis drives both copies at 10 dBm. <code>IG1</code> and <code>ID1</code> sit at the Deembed's pins 1 and 2, so <code>Vgs_intrinsic</code>,
+<code>Ig_intrinsic</code>, <code>Vds_intrinsic</code> and <code>Id_intrinsic</code> are the voltages and currents at the intrinsic plane.</p>
+<h2 id="the-synthetic-data">The synthetic data</h2>
+<p>Every measurement here is made by circuitRF from cells whose values are stated, so the de-embedded answer can be checked
+against the truth, which a real measurement never allows. The files in <code>measurements/</code> are inputs, and each Lab bench
+writes one. To make them again, run the bench and export S as Touchstone, or from a terminal:</p>
+<pre><code>circuitrf sparam &quot;Lab Thru/schematic/Lab Thru.csch&quot; -o measurements/thru.s2p
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Launch A</code></td>
+<td>Fixture A: 0.3 nH in series, 0.15 pF shunt, 9 mm of 40 Ω line. Port 1 is the instrument side</td>
+</tr>
+<tr>
+<td><code>Launch B</code></td>
+<td>Fixture B: 12 mm of 60 Ω line, 0.12 pF shunt, 0.35 nH in series. Port 1 is the part's side</td>
+</tr>
+<tr>
+<td><code>Line Standard</code></td>
+<td>50 Ω line, a quarter wave at 4.5 GHz: 20° at 1 GHz and 160° at 8 GHz</td>
+</tr>
+<tr>
+<td><code>DUT</code></td>
+<td>A five-section stepped-impedance low-pass filter, 20 Ω and 110 Ω sections, cut off near 5 GHz</td>
+</tr>
+<tr>
+<td><code>GaN Extrinsic</code></td>
+<td>The FET's extrinsic network, its values the elaborated device's at 8 fingers</td>
+</tr>
+<tr>
+<td><code>Lab Thru</code></td>
+<td>A then B: <code>measurements/thru.s2p</code>, 1 to 8 GHz, 141 points</td>
+</tr>
+<tr>
+<td><code>Lab Reflect</code></td>
+<td>A into a short, and the same short into B: <code>measurements/reflect.s2p</code></td>
+</tr>
+<tr>
+<td><code>Lab Line</code></td>
+<td>A, the Line, then B: <code>measurements/line.s2p</code></td>
+</tr>
+<tr>
+<td><code>Lab DUT</code></td>
+<td>A, the filter, then B: <code>measurements/dut.s2p</code></td>
+</tr>
+<tr>
+<td><code>Lab Extrinsic</code></td>
+<td>The 6-port network from 0 to 20 GHz, so DC through the Deembed uses its real DC values: <code>measurements/gan_extrinsic.s6p</code></td>
+</tr>
+</tbody>
+</table>
+<p>The lines are lossy, with conductor and dielectric loss, and the two fixtures are deliberately different and
+mismatched. On this data, <code>2 Deembed DUT</code> returns the filter to within 2e-10 in S, which is the precision the Touchstone
+files are written to.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

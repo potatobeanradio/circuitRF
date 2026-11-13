@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Model Composer</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Model Composer/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Model Composer</p>
+  </div>
+
+  <h1>Model Composer</h1>
+  <p class="lede">Device models built from data: a GaN FET from synthetic DC, pulsed and two-temperature S data, with a fitted network, ANN currents and charges, self-heating and drain lag, placed as an 8-finger device in a power sweep and a loadpull; a spiral-inductor family placed between two measured turn counts; and a model from a simulator&#39;s tables.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Model Composer</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Three device models built from data with <strong>Tools ▸ Model Composer…</strong>, and the circuits that use them. Every data file
+here is <strong>synthetic</strong>: circuitRF simulated it from a device whose equations are known, and each data set's note says so.
+That is what makes the example checkable. The model can be compared with the device it was built from, which measured
+data never allows.</p>
+<p>Open a <code>.cmc</code> from the project tree to see its steps, its plots and its results.</p>
+<h2 id="synthetic-gan">synthetic-gan</h2>
+<p>A GaN FET, four fingers of 125 µm, measured as a lab would measure one:</p>
+<table>
+<thead>
+<tr>
+<th>Data set</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dc_25C</code></td>
+<td>DC I–V at 25 °C, Vgs −5 … 1.4 V, Vds 0 … 20 V. The junction heats, and drain lag sits at its DC state.</td>
+</tr>
+<tr>
+<td><code>pulsed_q0_25C</code>, <code>pulsed_q0_125C</code></td>
+<td>Pulsed I–V from a quiescent point of (−6 V, 0 V), at two chuck temperatures.</td>
+</tr>
+<tr>
+<td><code>pulsed_q10_25C</code>, <code>pulsed_q20_25C</code></td>
+<td>Pulsed I–V from quiescent drain voltages of 10 V and 20 V.</td>
+</tr>
+<tr>
+<td><code>pulsed_dp20_25C</code></td>
+<td>A double pulse: a 50 µs pre-pulse to 20 V sets the traps, then the measuring pulse 1 µs later.</td>
+</tr>
+<tr>
+<td><code>s_25C</code>, <code>s_85C</code></td>
+<td>S-parameters at 49 biases and two temperatures, 0.5 … 20 GHz.</td>
+</tr>
+</tbody>
+</table>
+<p>The data is at the <strong>probe</strong> plane. The pads come off with the open and short dummies in <code>pads/</code>, and the network is the
+<code>GaNTwoShell</code> cell, the stock GaN two-shell network placed in this workspace as a cell of its own.</p>
+<p>The document carries every step:</p>
+<ul>
+<li><strong>Network</strong>: <code>Lg</code>, <code>Ld</code> and <code>Ls</code> fitted by the multi-bias method; every other value is held at the stock value.</li>
+<li><strong>Thermal</strong>: self-heating with Rth = 25 °C/W and τth = 10 µs, typed rather than extracted (see the note below).</li>
+<li><strong>Current</strong>: ANN <code>Id</code> and <code>Ig</code>, with the junction temperature and the drain-lag state as inputs.</li>
+<li><strong>Traps</strong>: CaptureEmission drain lag at its defaults, from the three trap-setting levels 0, 10 and 20 V. The
+pulses from 10 V that go above 10 V lie beyond their trap-setting bias and are kept for validation only.</li>
+<li><strong>Charge</strong>: adjoint-trained ANN charges from both S sets.</li>
+</ul>
+<p>The exported model is <code>gan_4x125.cmodel</code>. Two test benches place it as an <strong>8-finger</strong> device (<code>N=8</code>), so its core is
+doubled, its series resistances halved and its Rth halved:</p>
+<table>
+<thead>
+<tr>
+<th>Bench</th>
+<th>What it runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GanPowerSweep</code></td>
+<td>A class-AB stage at 2 GHz, Vgs −0.8 V, Vdd 8 V, 50 Ω in and out, drive swept −4 … 22 dBm</td>
+</tr>
+<tr>
+<td><code>GanLoadpull</code></td>
+<td>The same device over 49 loads centred between its maximum-power and maximum-efficiency loads, each driven to 3 dB compression</td>
+</tr>
+<tr>
+<td><code>GanVerilogA</code></td>
+<td>The same device twice on identical bias networks: as the <code>.cmodel</code> on ports 1 and 2, and as <code>gan_4x125.va</code> on ports 3 and 4. A Vgs sweep, S-parameters and a drive sweep 0 … 16 dBm, each measure in pairs. Needs a Verilog-A compiler</td>
+</tr>
+</tbody>
+</table>
+<p><code>gan_4x125.va</code> is the same model as Verilog-A source, for another simulator: <strong>Export Verilog-A…</strong> on the Export step,
+or <code>circuitrf model export synthetic-gan/gan_4x125.cmodel -o synthetic-gan/gan_4x125.va</code>.</p>
+<p><strong>Settings chosen for this example</strong>, with what a real job would use:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Here</th>
+<th>A real job</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data points</td>
+<td>≤ 150 per I–V set, 49 S biases, 12 frequencies</td>
+<td>Denser near the knee and pinch-off; 50+ frequencies</td>
+</tr>
+<tr>
+<td>Rth</td>
+<td>Typed, 25 °C/W</td>
+<td>Extracted from pulsed I–V at two or more chuck temperatures, when drain lag is not modelled; typed from a thermal simulation when it is</td>
+</tr>
+<tr>
+<td><code>IgFloor</code></td>
+<td>1e-7</td>
+<td>The default 1e-4 suits a gate whose leakage is not needed. This example's gate current spans ten decades, and at pinch-off the default's resolution is microamps</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>Three inductances free</td>
+<td>Every value free that the data determines; check the ± and the ⚠ marks</td>
+</tr>
+<tr>
+<td>Drain bias</td>
+<td>8 V. The drain swings to about twice its bias, and this data ends at Vds 20 V</td>
+<td>The rated drain voltage, with I–V data reaching past twice it</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why Rth is typed.</strong> A pulse from a 0 V drain leaves the drain-lag state half a volt short of its DC value, because
+capture slows as the gap closes. Rth extraction compares pulsed and DC currents at the same bias, and reads that half
+volt as heating. With drain lag modelled, type Rth.</p>
+<p><strong>The data reaches −5 V and +1.4 V on the gate on purpose.</strong> In the power sweep the gate swings from about −4.4 V into
+forward conduction. A model is continued linearly outside its data, with an added conductance, and a gate that swings
+past the last measured Vgs is no longer the device.</p>
+<h2 id="passive-spiral">passive-spiral</h2>
+<p>Six spiral inductors of 1.5 … 6.5 turns, as two-port S-parameters from 0.2 to 20 GHz. <code>spiral.cmc</code> fits the library's
+<code>spiral</code> topology to all six at once, with one law per element value in the turns. Its substrate network under port 2
+is tied to the one under port 1, and the 3.5-turn spiral is held out and predicted. It exports the cell <code>SpiralFamily</code>,
+whose one parameter is <code>turns</code>. The element values are variables on the cell's own schematic, each a law of <code>turns</code>
+written in nH, fF and Ω: <code>x</code> is <code>turns</code> normalised to the fitted range, and <code>Ls</code>, <code>Cs</code>, <code>Cox1</code> and the rest are
+polynomials in <code>x</code>.</p>
+<p><code>SpiralFilter</code> places that cell at <strong>3 turns</strong>, between two measured spirals, in a π low-pass between 50 Ω ports. Set
+<code>turns</code> outside 1.5 … 6.5 and the run warns once.</p>
+<h2 id="simulated-tables">simulated-tables</h2>
+<p><code>tables.npy</code> is what a simulator writes for a transistor: per bias, the terminal voltages and currents, the intrinsic
+voltages its internal nodes carry, and Y at 1 GHz. <code>fet_tables.cmc</code> imports it at the device plane. Because the tables
+also carry intrinsic voltages, de-embedding checks its own computed ones against them, and the Data step reports the
+largest difference. The network is held at the stock values the tables were simulated with. The data is at one
+temperature, so the model has no temperature dependence.</p>
+<h2 id="headless">Headless</h2>
+<p>Every step above is a <code>circuitrf model</code> noun:</p>
+<pre><code>circuitrf model deembed synthetic-gan/gan_4x125.cmc
+circuitrf model fit synthetic-gan/gan_4x125.cmc --step all
+circuitrf model validate synthetic-gan/gan_4x125.cmc
+circuitrf model export synthetic-gan/gan_4x125.cmc -o synthetic-gan/gan_4x125.cmodel
+circuitrf model export synthetic-gan/gan_4x125.cmodel -o synthetic-gan/gan_4x125.va
+circuitrf hb GanPowerSweep/schematic/GanPowerSweep.csch
+</code></pre>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

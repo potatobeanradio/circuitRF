@@ -71,9 +71,14 @@
 
   var SECTIONS = DATA.s.map(function (row) {
     var page = DATA.p[row[0]];
+    /* An example workspace's README (examples/<folder>/index.html) is the second answer to a question about a feature,
+       never the first: "hierarchy" wants the Schematic Editor's chapter, then the Hierarchy example. It ranks a fifth
+       below an equal match in a chapter and never counts as the page a query names (liftPageTops). */
+    var example = page[0].indexOf('examples/') === 0 && page[0] !== 'examples/index.html';
     return {
       /* 1.15 for the landing page down to 1.00 for the last reference page. */
-      prior:    1 + 0.15 * (1 - row[0] / LAST_PAGE),
+      prior:    (example ? 0.8 : 1) * (1 + 0.15 * (1 - row[0] / LAST_PAGE)),
+      example:  example,
       slug:     page[0],
       pageTitle: page[1],
       docKind:  page[2],
@@ -300,6 +305,7 @@
     var landing = {}, maxDeclared = -1, maxOther = 0;
     for (var key in top) {
       var t = top[key].section;
+      if (t.example) continue;
       if (t.nameTitle === bare || findTerm(t.lcKeywords, phrase).kind === WHOLE) {
         landing[key] = t.nameTitle === bare ? top[key] : (named[key] || top[key]);
         if (best[key] > maxDeclared) maxDeclared = best[key];

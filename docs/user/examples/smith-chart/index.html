@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Smith Chart — a narrowband match, by hand</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Smith Chart/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Smith Chart — a narrowband match, by hand</p>
+  </div>
+
+  <h1>Smith Chart — a narrowband match, by hand</h1>
+  <p class="lede">A device input of 8 − j12 Ω, stated over three frequencies, matched to 50 Ω by hand with a series L and a shunt C. Drag either gripper and watch the band edges move.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Smith Chart (narrowband match)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A device input impedance, stated over three frequencies, matched to 50 Ω with two parts. It is
+one screen of work and it is meant to be <strong>dragged</strong>, not read.</p>
+<p>Open <strong>Gate match.csmith</strong> from the project tree. The window opens with the network already built
+and the chart already drawn.</p>
+<h2 id="the-design">The design</h2>
+<p>The generator is the thing being matched: the input of a small-signal device, low and capacitive,
+measured at three frequencies across a 2.3–2.6 GHz band.</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th>Z<sub>gen</sub></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.30 GHz</td>
+<td>8.6 − j12.8 Ω</td>
+</tr>
+<tr>
+<td>2.45 GHz</td>
+<td>8.0 − j12.0 Ω</td>
+</tr>
+<tr>
+<td>2.60 GHz</td>
+<td>7.5 − j11.3 Ω</td>
+</tr>
+</tbody>
+</table>
+<p>The design frequency is <strong>2.45 GHz</strong>, in the middle of the table. Two elements take it to 50 Ω:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>L1</code></td>
+<td>series</td>
+<td>1.97 nH</td>
+</tr>
+<tr>
+<td><code>C1</code></td>
+<td>shunt</td>
+<td>2.98 pF</td>
+</tr>
+</tbody>
+</table>
+<p>That is the classical low-to-high L match, and the chart draws it as exactly the two arcs it is:
+<code>L1</code> walks a <strong>constant-resistance</strong> circle from 8 − j12 up to 8 + j18.3, and <code>C1</code> walks a
+<strong>constant-conductance</strong> circle from there to the middle of the chart.</p>
+<h2 id="what-it-lands-on">What it lands on</h2>
+<p>Read at each of the three table frequencies — the numbers the status strip states, and the numbers
+<code>circuitrf smith</code> prints:</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th>Z<sub>load</sub></th>
+<th>|Γ|</th>
+<th>VSWR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.30 GHz</td>
+<td>35.40 + j7.87 Ω</td>
+<td>0.193</td>
+<td>1.48</td>
+</tr>
+<tr>
+<td><strong>2.45 GHz</strong></td>
+<td><strong>49.98 − j0.10 Ω</strong></td>
+<td><strong>0.0010</strong></td>
+<td><strong>1.002</strong></td>
+</tr>
+<tr>
+<td>2.60 GHz</td>
+<td>56.14 − j23.09 Ω</td>
+<td>0.220</td>
+<td>1.56</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The band edges come apart, and that is the whole point of the example.</strong> The match is essentially
+exact at the design frequency and is 1.5:1 at each end of a band only ±6 % wide. That is not sloppy
+work: it is what a two-element match on a device this far from 50 Ω costs. The loaded Q at the
+corner between the two arcs is</p>
+<pre><code>Q = |X| / R = 18.33 / 8.00 = 2.291
+</code></pre>
+<p>and the bandwidth follows from it. The <strong>constant-Q arcs are switched on at Q = 2.291</strong> in the
+shipped document for exactly that reason — the pair of arcs passes through the corner gripper, so
+the thing that sets the bandwidth is drawn on the same picture as the thing that sets the match.</p>
+<h2 id="what-to-drag-and-what-to-watch">What to drag, and what to watch</h2>
+<p>The three grippers are at the three nodes of the walk: the generator (anchored), the corner between
+<code>L1</code> and <code>C1</code>, and the load point.</p>
+<ul>
+<li><strong>Drag the corner gripper.</strong> It is <code>L1</code>'s, so it slides along the constant-resistance circle
+through 8 Ω and drags <code>C1</code>'s whole arc after it. Watch the three <strong>load points</strong> — the 2.45 GHz
+one moves off the centre first, and the two band-edge points swing much further than it does.
+That asymmetry is the Q.</li>
+<li><strong>Drag the load-point gripper.</strong> It is <code>C1</code>'s, and it is the last element in the cascade, so it
+moves along the constant-conductance circle <code>C1</code> is on. It does <strong>not</strong> solve the network for you:
+dragging the end moves the last element's value and nothing else.</li>
+<li><strong>Turn the constant-Q arcs off and on</strong> — the <strong>Show arcs</strong> box in the generator panel's <em>Constant Q</em> card. With them on, the corner gripper has
+somewhere to be: a corner inside the arcs is a wider match, a corner outside them is narrower.</li>
+<li><strong>Change the design frequency</strong> to 2.30 or 2.60 GHz. The trajectories redraw at the new frequency
+and the generator impedance is interpolated from the table, so the arcs move but the components do
+not. The emphasised load point moves to whichever frequency you chose.</li>
+<li><strong>Switch the swept band off</strong> — the <em>Swept band</em> card's <strong>Draw band</strong> box; it is on, 2.3–2.6 GHz, 61 points. The continuous locus through the
+three load points is what makes the narrowness visible rather than inferable.</li>
+</ul>
+<h2 id="the-copied-schematic">The copied schematic</h2>
+<p><strong>Matched input ▸ schematic ▸ Matched input.csch</strong> is this same network after <strong>Copy</strong> on the
+network strip and a paste into a new schematic — component for component, wire for wire, with the
+two ends terminated. Nothing in it was drawn by hand except the S-parameter card.</p>
+<p>The generator end is <code>Generator</code>, a <code>TermG</code> with <code>Num=1</code> and <code>Z = complex(8,-12)</code>; the far end is <code>load</code>,
+a <code>TermG</code> with <code>Num=2</code> and <code>Z = 50 Ω</code>. <strong>Port 1 carries the generator impedance at the design
+frequency and nowhere else</strong> — a <code>Term</code> holds one impedance and the generator table holds three
+rows, which is what the strip says when you press Copy.</p>
+<p>Run it (<code>SP1</code>, 2.2–2.7 GHz, 101 points) and plot <code>dB(S(1,1))</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th>dB(S11)</th>
+<th>dB(S21)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.30 GHz</td>
+<td>−15.8 dB</td>
+<td>−0.12 dB</td>
+</tr>
+<tr>
+<td>2.45 GHz</td>
+<td>−59.8 dB</td>
+<td>−0.00 dB</td>
+</tr>
+<tr>
+<td>2.60 GHz</td>
+<td>−15.1 dB</td>
+<td>−0.14 dB</td>
+</tr>
+</tbody>
+</table>
+<p>S11 here is referenced to the complex port-1 impedance, so it is the <strong>conjugate match</strong> at the
+device's own terminals — which is why it goes to −59.8 dB at 2.45 GHz rather than merely small. It
+is the engine's independent reading of the same network the chart drew, and the two agree.</p>
+<h2 id="settings">Settings</h2>
+<p><strong>Nothing here was traded for speed.</strong> The whole example is closed-form arithmetic — the chart
+evaluates in microseconds and the 101-point S-parameter run finishes before the window repaints —
+so every setting in it was chosen to make the picture legible and nothing else:</p>
+<ul>
+<li>the swept band's <strong>61 points</strong> is a drawing choice. 201 points draws the same locus, smoother, and
+changes no number in the tables above;</li>
+<li>the S-parameter card's <strong>101 points over 2.2–2.7 GHz</strong> frames the null. 1,001 points over the same
+span resolves the bottom of it (which is a numerical zero, not a physical one) and moves nothing
+at the three frequencies quoted.</li>
+</ul>
+<h2 id="two-readings-of-the-same-network-against-two-references">Two readings of the same network, against two references</h2>
+<p>The status strip's <strong>mismatch</strong> is the power the reflection costs against the <strong>chart's own Z₀</strong>,
+−10·log₁₀(1−|Γ|²) — the same Γ the VSWR beside it is made of. Here it reads <strong>0.00 dB</strong> at 2.45 GHz,
+0.17 dB at 2.30 GHz and 0.22 dB at 2.60 GHz, so it moves with the VSWR and with the picture.</p>
+<p>The <strong>−59.8 dB</strong> in the table above is a different reference and a different question: S11 out of the
+copied schematic is taken against the complex port-1 impedance, which makes it the <strong>conjugate match
+at the device's own terminals</strong>. That is what the faint ⊕ target glyphs on the chart mark, and it is
+why the two numbers are not two spellings of one thing — 50 Ω and conj(8 − j12) Ω are different
+points, and this network lands on both at once because it was designed to.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

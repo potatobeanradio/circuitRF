@@ -19,6 +19,7 @@
 == Getting started
 quick-start/index.html      | Run a simulation and read a plot, for engineers who already use circuit simulators.
 new-user-guide/index.html   | Libraries, cells, test benches and analyses, explained from the ground up.
+examples/index.html         | Every example workspace and what it shows, with its README; open one from File ▸ New ▸ Examples.
 
 == Core concepts
 reference/index.html            | The Reference Guide contents, and the in-app Help anchor scheme.

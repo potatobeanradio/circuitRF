@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Passivated Pad</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Passivated Pad/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Passivated Pad</p>
+  </div>
+
+  <h1>Passivated Pad</h1>
+  <p class="lede">Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Passivated Pad</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Run the numbered cells in order, top of the Workspace tree first.</strong> Each is one EM setup, and none reads another's result:</p>
+<ul>
+<li><strong><code>1a Bare Line</code></strong> and <strong><code>1b Covered Line</code></strong>: the same Metal2 line, without and with the two covers.</li>
+<li><strong><code>2 Probe Pad</code></strong>: a probe pad seen through an opening in the covers, in 3D (its 3D view) and in the planar solver (its EM
+setup).</li>
+<li><strong><code>3 Through-Silicon Via</code></strong>: a via that passes through two dielectrics on its way to the backside.</li>
+<li><strong><code>4 Bonded Pad</code></strong>: the probe pad's die placed in a 3D view beside a carrier, with a bond wire from the pad, through the
+opening, to the carrier.</li>
+</ul>
+<p>The stackup is entered as a process states it, with nothing added to suit the solver: two dielectrics over the top metal, a mask
+that opens both over the pad, and a via that crosses from one dielectric into the next with no metal at the crossing.</p>
+<h2 id="the-technologies">The technologies</h2>
+<p><code>tech/mmic-GaAs_2LM_100um_passivated.ctech</code> is the workspace's technology. It starts from the shipped GaAs process and is
+changed where that process is simplified, so that the 3D view looks like the die:</p>
+<ul>
+<li><strong>Interlayer</strong>: 2.55 µm of polyimide, εr 3.3, between the capacitor's top plate and Metal2, where the shipped process has
+air. The shipped process treats Metal2 as an airbridge level everywhere; here a Metal2 line sits on dielectric, as it
+does on a die away from its airbridges.</li>
+<li><strong>MIM Dielectric</strong>: the capacitor nitride, 0.2 µm, is a blanket layer rather than present only under a drawn capacitor,
+so no sliver of air is left where none is drawn. The technology states <code>MimCapDensity</code> as a constant, because the
+capacitor rule can no longer derive it from a dielectric tied to the capacitor mask.</li>
+<li><strong>Passivation</strong>: 1 µm of nitride, εr 7.0, tanδ 0.001, <strong>Conformal</strong>, so it starts on top of the metal.</li>
+<li><strong>Polyimide</strong>: 5 µm, εr 3.3, above it.</li>
+<li><strong><code>PAD_OPEN</code></strong>: both covers are <strong>Opened by</strong> it, so each is cut away wherever it is drawn.</li>
+<li><strong><code>Die Edge</code></strong>: the chip's outline, which bounds the substrate and the covers in 3D.</li>
+</ul>
+<p><code>1a Bare Line</code> uses <code>tech/mmic-GaAs_2LM_100um_uncovered.ctech</code>, the same stack without the two covers and their layers,
+through its layout's own technology.
+<code>3 Through-Silicon Via</code> uses <code>tech/rfic-Si_3LM_TFR_100um.ctech</code>, the shipped silicon process unchanged, the same way.</p>
+<p><strong>In 3D the passivation follows the metal</strong>: 1 µm on its top, down its sides and on the floor beside it, with square
+corners, and the polyimide fills what that leaves. The planar runs treat both covers as flat slabs. Every opening has
+straight walls, where a real one slopes.</p>
+<p><img class="readme-picture" src="pictures/passivation-edge.png" alt="The feed line's edge at the die's edge, orthographic: the passivation over the gold line's top, down its side and along the floor beside it, the polyimide above, and the interlayer, the capacitor nitride and the GaAs below." width="600"></p>
+<h2 id="a-line-under-two-covers">1 · A line under two covers</h2>
+<p>A 1 mm Metal2 line, 95 µm wide, which is 50 Ω on the uncovered stack. Run <strong>Bare Line</strong> and <strong>Covered Line</strong> and compare
+S21's phase.</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>S21 at 10 GHz and 40 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bare</td>
+<td>−31.91° and −130.30°</td>
+</tr>
+<tr>
+<td>Covered</td>
+<td>−32.23° and −131.56°</td>
+</tr>
+</tbody>
+</table>
+<p>The covers raise the line's effective permittivity by 2.0 %, at every frequency. The covered run's notes name both covers
+and the height the medium continues to above Metal2. They took 17 s and 21 s on a 10-core machine.</p>
+<h2 id="a-probe-pad-through-an-opening">2 · A probe pad through an opening</h2>
+<p>A 200 µm square pad at the end of a 95 µm wide, 300 µm long feed, on a 650 × 500 µm piece of die. The pad is stacked, as a GaAs bond pad is
+built: Metal1 under the Metal2 pad, joined over the whole pad by the Metal1–Metal2 post, so the pad is metal from the GaAs
+up. <code>PAD_OPEN</code> is drawn 10 µm inside the pad's edge, so both covers overlap the pad's rim and the rest of the pad is bare.</p>
+<p><img class="readme-picture" src="pictures/probe-pad-3d.png" alt="The probe pad in its 3D view: the covers over the whole die, and the gold pad exposed through the opening in both." width="600"></p>
+<ul>
+<li><strong>The 3D view</strong> (<code>3d/2 Probe Pad.c3d</code>, setup <strong>Driven</strong>, EMerge) cuts the opening out of both covers. Its notes say what
+was cut: one opening in each, 32,400 µm².</li>
+<li><strong>The planar setup</strong> (<code>em/Probe Pad Planar.cem</code>) cannot make a dielectric stop, so it keeps both covers across the
+opening, and its notes say so with the fraction of the layout that is opened: 32.4 %.</li>
+</ul>
+<p>With its feed, the pad reads 144.0 fF at 1 GHz in 3D and 140.5 fF in the planar run, and the two S11 phases are 2.1°
+apart at 40 GHz. The 3D run took 30 s and the planar one 3 min 41 s: the post makes it a two-level run, and two levels
+6 µm apart cost close to two minutes per frequency on this stack.</p>
+<h2 id="a-via-through-two-dielectrics">3 · A via through two dielectrics</h2>
+<p>On the silicon process, a 40 µm square through-silicon via joins the middle of an 800 µm Metal3 line to the backside. It
+passes through the oxide under Metal3 and then through the silicon, with no metal level between them that it stops at.</p>
+<p>The planar run solves it as one via, and the line sees it as a shunt of about 15 pH: |S21| is −42 dB at 2 GHz and −25.5 dB at
+14 GHz. It took 36 to 56 s, most of it the calibration.</p>
+<h2 id="a-bond-wire-on-the-opened-pad">4 · A bond wire on the opened pad</h2>
+<p><code>3d/4 Bonded Pad.c3d</code> places the <code>2 Probe Pad</code> die, <code>U1</code>, on a gold floor beside a 127 µm alumina carrier with a 120 µm gold
+trace on it. A 1 mil gold wire, <code>w1</code>, bonds a ball onto the pad, inside the opening, and a wedge onto the trace, with a held
+100 µm loop. Port 1 is the die's line at its edge, port 2 the trace's far end.</p>
+<p><img class="readme-picture" src="pictures/bonded-pad-3d.png" alt="The bonded pad in its 3D view: the die under its covers, the wire's ball on the pad in the opening, and the wedge on the carrier's trace." width="600"></p>
+<p><img class="readme-picture" src="pictures/bonded-pad-ball.png" alt="Close up, orthographic: the ball sits on the bare pad, with both covers cut back round it." width="600"></p>
+<p>The ball lands on <code>U1/Metal2/1</code>, the pad's metal, at its top, below the two covers; <code>explain</code> lists the wire as running from
+<code>U1/Metal2/1</code> to <code>trace</code>. The path through it loses 0.02 dB at 1 GHz and 0.69 dB at 40 GHz, where the wire's inductance
+has brought the return loss down to 8.3 dB. About a minute, on EMerge at <strong>Accurate</strong>.</p>
+<p><strong>A bond reaches bare metal only.</strong> Draw the wire onto a pad the covers still hide, here by deleting the <code>PAD_OPEN</code>
+rectangle from <code>2 Probe Pad</code>'s layout, and <code>check</code> and the run warn that <code>w1</code>'s start lands under <code>Passivation</code> and
+<code>Polyimide</code>, naming both ways out. The wire is still built, so the run would connect it through the dielectric.</p>
+<p>The ball and wedge sizes are circuitRF's built-in starting values, and the run's notes say so. Put the real ones on the
+wire's ends, or in the workspace's assembly rules.</p>
+<h2 id="what-was-traded-for-speed">What was traded for speed</h2>
+<ul>
+<li><strong>The line runs</strong> are solved at 10, 20, 30 and 40 GHz only. Add points in the setup's frequency list for a smooth curve;
+each one costs a few seconds.</li>
+<li><strong>The via run</strong> stops at 14 GHz, with three points. Above about 18 GHz the de-embedding's error shows as a slightly
+non-passive answer, because a line shorted by a via reflects almost all of its power, and above 39.6 GHz the via is
+too long for one vertical basis. The run says so in either case.</li>
+<li><strong>The planar probe pad</strong> is solved at 1 and 40 GHz only, the two ends of the 3D sweep, because each frequency of a
+two-level run on this stack costs close to two minutes.</li>
+<li><strong>The 3D runs</strong> have four frequencies each, at EMerge's <strong>Accurate</strong> quality. The bonded pad's answer is passive to within
+0.9 % of the power.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

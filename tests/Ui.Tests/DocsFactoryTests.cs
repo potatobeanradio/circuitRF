@@ -169,6 +169,9 @@ public class DocsFactoryTests
             .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp")
             .Select(f => Path.GetRelativePath(DocsRoot(), f))
             .Where(f => !f.StartsWith(FixedPictures, StringComparison.Ordinal))
+            // An example workspace's README pictures, copied verbatim beside its page (examples/<folder>/pictures/) by
+            // DocGen's ExamplePages: the example's own pictures, as the application shows them, not figures DocGen draws.
+            .Where(f => !Regex.IsMatch(f.Replace(Path.DirectorySeparatorChar, '/'), @"^examples/[^/]+/pictures/"))
             .ToList();
 
         Assert.True(bitmaps.Count == 0,

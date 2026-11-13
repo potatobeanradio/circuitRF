@@ -27,9 +27,15 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
    (`![what it shows](pictures/name.png)`, relative to the README, PNG, JPEG, GIF, BMP or WebP);
    anything else degrades to plain text (`src/Ui/Markdown/`). A picture inside a sentence, or one
    that does not resolve, shows its alt text, so write the alt text as a sentence.
+5. Add its abstract to the user documentation's **Example Workspaces** page,
+   `docs/user/src/examples/index.md`: a `###` heading with the menu title and an `{#ex-<folder>}` anchor, 100–250
+   words on what it builds and shows, and a `*Folder:*` line naming the folder. Each heading is its own search result,
+   which is how a user finds an example by subject. DocGen also renders this README, with its pictures, as
+   `docs/user/examples/<folder>/index.html`, which the abstract links to; regenerate with DocGen.
 
 `tests/Ui.Tests/Examples/ExampleWorkspacesTests.cs` holds the rest shut: the index and the disk
-agree both ways, every design document is a view of a cell, every schematic still extracts with
+agree both ways, every example has its abstract on the documentation's Example Workspaces page, every design
+document is a view of a cell, every schematic still extracts with
 its device in it, nothing names anybody's home directory, and the tree reaches the build output.
 
 ## What is deliberately not here

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Schematic from Image</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Schematic from Image/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Schematic from Image</p>
+  </div>
+
+  <h1>Schematic from Image</h1>
+  <p class="lede">A picture of a schematic and a picture of its board, each made into a cell by Create Schematic from Image: the parts read from the pictures, drawn over them, and the values no picture states arriving as variables to tune.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Schematic from Image</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Two pictures of one small network — a capacitor and an inductor in series on a line — and the cells circuitRF made
+from them with <strong>Create Schematic from Image</strong>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>what it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pictures/matching-network.png</code></td>
+<td>the schematic as a datasheet prints it. The inductor's value is left off, on purpose.</td>
+</tr>
+<tr>
+<td><code>pictures/matching-network-board.png</code></td>
+<td>its board as a Gerber viewer shows it: the copper and the silkscreen's designators, 20 µm to a pixel.</td>
+</tr>
+<tr>
+<td><strong>Matching network</strong></td>
+<td>the schematic made from the first picture, drawn as the picture draws it, over it.</td>
+</tr>
+<tr>
+<td><strong>Matching board</strong></td>
+<td>the layout traced from the second picture, and the schematic recognised from it, each over the picture.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="open-what-was-made">1. Open what was made</h2>
+<p><strong>File ▸ New ▸ Examples ▸ Schematic from Image</strong>, choose a folder for your copy, and open <strong>Matching network ▸ schematic</strong>.</p>
+<p>The picture lies under the drawing, locked and faded, so every part sits on the symbol it was read from. Select it to
+hide or fade it, as any bitmap. C1 is 1.5 pF, read from the picture. L1 has no value printed, so it arrived as the
+global variable <strong><code>L1_L</code></strong> with a tune entry, starting at 100 pH — small enough that the first simulation shows the
+circuit as if L1 were a plain wire.</p>
+<p>Open <strong>Matching board ▸ layout</strong>: the copper traced from the picture, on the technology's top layer, with the picture
+under it. Its schematic has the two lines, both parts — named by the silkscreen, their land patterns read as 0603 —
+and a port where each line leaves the picture. A board prints no values, so both are variables: <strong><code>C1_C</code></strong> and
+<strong><code>L1_L</code></strong>.</p>
+<h2 id="tune">2. Tune</h2>
+<p>Open the <strong>Tuning</strong> panel on either schematic and press <strong>Simulate</strong>. Drag <code>L1_L</code> (and on the board, <code>C1_C</code>) and watch
+S21 move. The variables are ordinary globals: type the value once you know it.</p>
+<h2 id="make-them-again-yourself">3. Make them again yourself</h2>
+<p><strong>Design ▸ Create ▸ Schematic from Image…</strong>, then drop <code>pictures/matching-network.png</code> on the dialog — or browse to it.
+It is read at once; <strong>Create</strong> makes a new cell. Drop it onto an open schematic instead, as a bitmap, and right-click
+it: the command then draws the circuit over the picture where it lies.</p>
+<p>The board picture needs two answers the picture cannot give:</p>
+<ul>
+<li><strong>Scale.</strong> A picture has no millimetres in it. Type <code>20um</code> per pixel in the scale row, or pick two points a known
+distance apart.</li>
+<li><strong>The blue.</strong> The automatic map gives the copper layers by area, so the blue designators land on a copper layer.
+Set that colour's row to <strong>Silk Top</strong>: the designators are then read, and the parts get their kinds.</li>
+</ul>
+<p>The same from a terminal:</p>
+<pre><code>circuitrf recognize pictures/matching-network.png --into new:Again
+circuitrf recognize pictures/matching-network-board.png --scale 20um/px --layer-map &quot;#ffffff=background,#c87533=Top Copper,#203090=silk&quot; --into new:Again_board
+</code></pre>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

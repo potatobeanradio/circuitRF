@@ -297,6 +297,9 @@ figure.figure .frame {
 figure.figure .sym-light, figure.figure .sym-dark { display: flex; max-width: 100%; }
 figure.figure svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
 figure.figure img { max-width: 100%; height: auto; display: block; margin: 0 auto; }   /* a fixed picture (assets/fixed) */
+.page p > img { max-width: 100%; height: auto; display: block; margin: 0.5rem auto; }   /* a README's picture (examples/) */
+.page img.readme-picture { box-sizing: content-box; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.5rem; background: var(--surface); margin: 0.9rem auto; }   /* half its pixel width (ExamplePages), framed as figure.figure .frame is */
 figure.figure figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
 figure.figure .sym-dark { display: none; }
 @media (prefers-color-scheme: dark) {

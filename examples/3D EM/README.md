@@ -30,10 +30,6 @@ macOS 27.0, Palace 0.18.1 on 10 processes, and Gmsh 4.15.2. A time is the wall c
 Gmsh and Palace together. A memory figure is Palace's own peak over all its processes. Your machine will
 differ in time, and very slightly in the last digit of an answer.
 
-The key numbers are also in `expected-numbers.json`, beside this file, with the tolerance each is held
-to. circuitRF's own tests re-run every setup against that file, so this page and the solver cannot
-quietly disagree.
-
 **`check` on this workspace** reports one warning per layout: its port labels carry no area for the
 design rules to check. That is expected. The one error, on the planar via setup, is there on purpose
 (see below).

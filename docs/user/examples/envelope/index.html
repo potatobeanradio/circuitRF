@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Envelope</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Envelope/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Envelope</p>
+  </div>
+
+  <h1>Envelope</h1>
+  <p class="lede">The same GaN amplifier driven by an NR 20 MHz signal from a MOD_Source: ACPR1/ACPR2, spectrum, AM-AM/AM-PM and efficiency from one envelope run, and ACPR against drive from a sweep.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Envelope (modulated)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>The 48 V GaN power amplifier from the Harmonic Balance example, driven by a <strong>modulated</strong> signal —
+one NR 20 MHz carrier (30 kHz subcarriers, 64QAM, unclipped) — and simulated with the <strong>Envelope
+(modulated)</strong> analysis. The FET is the same reusable sub-cell.</p>
+<h2 id="the-source-src1-a-mod_source">The source: <code>SRC1</code>, a MOD_Source</h2>
+<p>A <code>MOD_Source</code> plays a modulated signal around <code>Fc</code> at an average power <code>Pavg</code>, behind <code>Z</code>. Each
+<code>Carrier[i]</code> is one line of text describing one carrier — standard, bandwidth, subcarrier spacing,
+modulation, offset from <code>Fc</code>, relative power and random seed:</p>
+<pre><code>NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1
+</code></pre>
+<p>Select it and press <strong>Design signal…</strong> in the inspector to edit the carriers in the Signal
+Designer: presets (LTE 20, NR 20, NR 100, two carriers at any spacing, four contiguous LTE), the
+spectrum and CCDF of the signal, and its PAPR and ideal ACLR. The signal is generated the first time
+it is needed and cached, so a sweep never generates it twice. <code>Fc = RFfreq</code> and <code>Pavg = Pin</code> are
+expressions, so the variables block drives them and a sweep of <code>Pin</code> sweeps the drive.</p>
+<h2 id="nr20_acpr">NR20_ACPR</h2>
+<p>One envelope run: 200 µs of the signal at <code>Pin</code> = 20 dBm average. The step is chosen from the
+signal's sample rate (<code>Accuracy = standard</code> is four steps per sample), and the record is split into
+time segments that run in parallel.</p>
+<p>The run records a voltage at every labeled net (<code>VDD</code>, <code>Vin</code>, <code>Vout</code>) and a power at every IProbe:
+<code>Iout</code> in front of the output DC block and its 50 Ω load, <code>Iin</code> at the gate, <code>IDC</code> in the drain supply.</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>At</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>V</code>, <code>VSD</code></td>
+<td>each net</td>
+<td>the complex envelope at every harmonic of <code>Fc</code> against time, and the voltage spectrum (dBV/Hz)</td>
+</tr>
+<tr>
+<td><code>PSD</code>, <code>ACLR</code></td>
+<td>each IProbe</td>
+<td>the delivered power spectrum (dBm/Hz); channel power and ACPR1/ACPR2, lower and upper (dBc)</td>
+</tr>
+<tr>
+<td><code>Pavg_dBm</code>, <code>Gt_dB</code>, <code>DE_pct</code>, <code>NMSE_dB</code>, <code>PAPR_dB</code></td>
+<td>each IProbe</td>
+<td>at <code>Iout</code>: output power, gain, drain efficiency, error, PAPR</td>
+</tr>
+<tr>
+<td><code>AMAM</code>, <code>AMPM</code> (and <code>_min</code>, <code>_max</code>)</td>
+<td>each IProbe</td>
+<td>gain and phase against instantaneous input power</td>
+</tr>
+<tr>
+<td><code>Gt_t_dB</code>, <code>Pin_inst_t_dBm</code></td>
+<td>each IProbe</td>
+<td>the memory cloud: every sample's gain and drive</td>
+</tr>
+<tr>
+<td><code>Pin_avg_dBm</code>, <code>Pdc_W</code></td>
+<td>the run</td>
+<td>the available drive and the DC power</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>MeasPA</code> block adds three measure lines from the probe powers: <code>Pin_del_dBm</code>, the power delivered
+into the gate network; <code>Gp_dB</code>, the power gain from that to the load; and <code>PAE_pct</code>.</p>
+<p>Simulate opens <strong>NR20_ACPR.cdd</strong>, the display laid out beside the bench: the power spectrum delivered at
+<code>Iout</code> and <code>Iin</code> with the voltage spectrum at <code>Vout</code> on the right axis, AM-AM (mean, minimum and maximum
+gain in each 0.5 dB input-power bin) and AM-PM at <code>Iout</code>, 2 µs of the envelope at the fundamental, the
+power, gain and efficiency table with the three measure lines, ACLR, and the memory cloud.</p>
+<p>The figures at <code>Iin</code> are the power the gate network actually takes in. Its adjacent channels read blank:
+the distortion there flows from the device back toward the source, which is a power flowing the other way
+through the probe.</p>
+<h2 id="nr20_acpr_vs_pin">NR20_ACPR_vs_Pin</h2>
+<p>The same bench with the envelope inside a parametric sweep of <code>Pin</code>, 10 → 26 dBm in 4 dB steps:
+ACPR1 and ACPR2 against drive, the curve a linearity budget is read from. The five points run at the
+same time, each split into fewer time segments so they share the cores. <strong>NR20_ACPR_vs_Pin.cdd</strong> plots
+ACPR1/ACPR2 (both sides), output power and gain, drain efficiency and DC power against <code>Pin</code>, all at
+<code>Iout</code>, and the AM-AM of every drive level on one axis — they lie on one curve, because AM-AM against the
+instantaneous input power does not depend on the average drive. The table lists the <code>MeasPA</code> lines
+against <code>Pin</code> as well: a measure line stacks over a sweep with no edit. The memory plot draws one cloud
+per drive level.</p>
+<h2 id="two-carriers-far-apart">Two carriers far apart</h2>
+<p>Change the source to two carriers (the Signal Designer's <strong>2C NR 20 at spacing</strong> preset, e.g. 400 MHz)
+and run again. Carriers more than three channel bandwidths apart each get their own envelope
+fundamental, so the step stays at the single carrier's rate however wide the spacing is, and the
+<code>IMD</code> cube reports the carriers, IM3, IM5, IM2 and the second harmonics. Keep <code>Max mix order</code> at 7:
+at 5 the IM5 products are truncated by about a decibel.</p>
+<p>To simulate the two carriers as ONE envelope instead — the whole signal in a single time vector around
+<code>Fc</code>, spanning both carriers and their IM3 — set <strong>Envelope</strong> to <code>single</code> on the analysis card. The step
+then follows the spacing rather than the channel: about 16× more steps at 400 MHz, so use <code>fine</code>.
+Carriers, ACPR, IM3L and IM2 agree with the default lattice run. Products far from <code>Fc</code> (IM5, and
+IM3 on the far side) depend on where the single envelope is centred, so read those from the lattice.</p>
+<h2 id="nr20_2c_400mhz_single-two-nr-20-carriers-400-mhz-apart-on-a-narrowband-test-pa"><code>NR20_2C_400MHz_single</code>: two NR 20 carriers 400 MHz apart on a narrowband test PA</h2>
+<p>This cell is a ready-made two-carrier case: NR 20 + NR 20 at ±200 MHz around 2 GHz, Pin 14 dBm, one
+envelope (<code>Envelope=single</code>). It uses a different amplifier from the cells above, <code>TestPA_FET</code>. The drain
+current is the same, and the cell adds the gate and drain charges, Cgd and Cds, and a 50 Ω gate shunt.
+The output is narrowband: a 20 nH drain line into a 5 nF bypass, then 20 nH + 0.3166 pF in series,
+resonant at 2.0 GHz, into 50 Ω. Its gain therefore falls away on both sides of 2 GHz, unevenly, and the
+two carriers come out about 5 dB apart at the load (C1 ≈ 18.7 dBm, C2 ≈ 23.5 dBm). A broadband PA would
+put them within a decibel. <code>Vout</code> is the load and <code>Vd</code> the drain. <code>Iout</code> sits in front of the load, so
+its power, ACLR, AM-AM and IMD are what reaches the 50 Ω.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

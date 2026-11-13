@@ -49,8 +49,7 @@ connector alloy (σ = 15 MS/m) for the housing, flange and pin.
 Those two closed-form impedances are **external references**: the only numbers on this page that are not
 circuitRF's own output.
 
-**How it was drawn** — every gesture is one the editor offers, and `tests/Ui.Tests/Examples/Em3dConnectorAuthoring.cs`
-replays them to redraw both cells:
+**How it was drawn** — every gesture is one the editor offers:
 
 1. **Flange**: **Box** (Shift+A B) for the plate, its size typed; **Cylinder** (Shift+A Y) on the **YZ** drawing plane
    for the hole; select the cylinder, then the plate, and right-click ▸ **Boolean ▸ Subtract…** — the first selected is
@@ -73,8 +72,7 @@ replays them to redraw both cells:
    with no padding, and the other five **absorbing**, 2 mm out.
 
 **Where the STEP file came from.** `flange.step` is circuitRF's own export of the Flange cell, not a third party's
-file, and a test re-exports the Flange and compares the result with the shipped file byte for byte (all but the
-header's time stamp and version). A real connector's STEP model from its maker is imported exactly the same way —
+file. A real connector's STEP model from its maker is imported exactly the same way —
 step 5 — and its parts are mapped to materials by name or colour, or chosen in the table.
 
 ## First: why the coax port is a gap
@@ -94,9 +92,6 @@ Every time and size below was **measured once**, on an Apple M4 with 10 cores an
 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3 and OpenCASCADE 8.0.1. A time is the wall clock for the whole
 run; memory is Palace's own peak over all its processes; openEMS's size is the number of cells in its grid. Your
 machine will differ.
-
-The numbers are also in `expected-numbers.json`, beside this file, with the tolerance each is held to — and with
-**every** frequency's |S11|, |S21| and |S22| for the four shipped runs, which the regression test below holds.
 
 **`check`** on this workspace reports no error and two warnings, both from the openEMS setup:
 *"openEMS will not represent the 100 µm fillet on 'pin' (fillet(side|top)): the grid cell there is 200 µm, so the
@@ -162,19 +157,3 @@ quality (adaptive refinement) was not run. Nor was a full sweep: the shipped set
 of the A/B is quick, and a finer sweep (Setup Analyses ▸ the setup's frequency) was not measured here. openEMS at 30 cells per wavelength still puts a 200 µm cell on the fillet, and its grid is no larger: the
 cells beside the metal are set by its edges and the grading from them, not by the wavelength, so representing the
 fillet would take a finer grid near the pin itself — or Palace.
-
-## The regression test
-
-`Em3dConnectorExampleTests.Gate6_EveryRun_ReproducesItsRecordedSParameters` re-runs the four shipped runs and holds
-every recorded |S11| and |S22| to ±0.05 dB and every |S21| to ±0.005 dB, at every frequency. It is the net for 3D EM
-results: a change anywhere between this `.c3d` and its Touchstone — the elaborator, the geometry kernel, the lowering,
-the mesher settings, the solvers' inputs — that moves an answer fails it, naming the run, the quantity and the
-frequency. It is `Category=Benchmark` (about six minutes, and it needs Palace and openEMS), so it runs only when asked:
-
-    dotnet test tests/Ui.Tests --settings circuitrf.benchmark.runsettings --filter "FullyQualifiedName~Em3dConnectorExampleTests"
-
-The table holds magnitudes only: the runs it was recorded from printed |S| in dB, and phase was not kept. A
-deliberate change that moves the answers re-records the table — the run's own output lists every value it read, beside
-the recorded one — and the pages that quote a moved value change with it (`TheQuotedValues_AreTheRecordedOnes` and
-gate 4 hold them together). A new Palace, Gmsh, openEMS or OpenCASCADE version can move the answers too; that is worth
-knowing, and the test says so rather than hiding it.

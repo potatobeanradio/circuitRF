@@ -213,6 +213,4 @@ with Q 729 in 4 min 56 s (2.8 GB).
 a linearised problem in seconds, then refines each one, and the refinement is most of the time. That refinement is what
 did not finish when the line was lossy too, and why the line is a perfect conductor.
 
-The numbers on this page are also in `expected-numbers.json`, beside this file. circuitRF's own tests re-run every
-setup against that file, Palace's against its own numbers and EMerge's against Palace's, so this page and the solvers
-cannot quietly disagree.
+

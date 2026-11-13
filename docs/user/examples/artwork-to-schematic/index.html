@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Artwork to Schematic</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Artwork to Schematic/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Artwork to Schematic</p>
+  </div>
+
+  <h1>Artwork to Schematic</h1>
+  <p class="lede">A small board as a fabricator receives it — Gerber, drill, placement and BOM files — imported and turned into a schematic of lines, a bend, a tee and three parts in seconds. The BOM leaves one inductor out on purpose, so it arrives as a variable to tune against the design the board was drawn from.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Artwork to Schematic</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A small board that arrives the way a real one does — as a fabricator's file set — and the schematic it turns into
+in seconds, with no EM run.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>what it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Board</strong></td>
+<td>the board as imported from <code>fab/</code>: copper, solder mask and vias, nothing else. This is the artwork you recognise.</td>
+</tr>
+<tr>
+<td><strong>Board design</strong></td>
+<td>the schematic the board was drawn from, swept 0.1–3 GHz. Keep it closed until you have recognised the board; it is the answer to compare against.</td>
+</tr>
+<tr>
+<td><code>fab/Board/</code></td>
+<td>the Gerber and Excellon files and their job file</td>
+</tr>
+<tr>
+<td><code>fab/Board.pos</code>, <code>fab/Board-bom.csv</code></td>
+<td>the placement file and bill of materials</td>
+</tr>
+</tbody>
+</table>
+<p>The board: a 450 µm microstrip line enters at the left edge, turns up through a 90° bend, passes a tee whose branch
+is an open stub, then a series 2.2 pF capacitor (0402), a shunt inductor (0402) to a ground via standing on the line,
+and a series 10 Ω resistor (0603), and leaves at the top edge. Two copper layers on a 254 µm laminate, the bottom
+layer a solid ground plane.</p>
+<p><strong>The bill of materials gives no value for L1, on purpose.</strong> A real BOM is often incomplete, and an unknown value is
+what the recognition turns into a variable for you to tune. L1 still has its row: a part the BOM does not list at all
+is read as not fitted.</p>
+<hr />
+<h2 id="open-the-artwork">1. Open the artwork</h2>
+<p><strong>File ▸ New ▸ Examples ▸ Artwork to Schematic</strong>, choose a folder for your copy, and open <strong>Board ▸ Board</strong> (its layout).</p>
+<p>Its technology, <code>Board/Board.ctech</code>, is the one the Gerber import wrote beside the board. The import cannot read a
+stackup out of Gerber files and guessed ordinary FR-4; the copy here carries the fabricator's numbers instead
+(254 µm, εr 3.66), typed in on the <strong>Stackup</strong> tab as the import asks. Do the same on your own boards: every line's
+impedance comes from it.</p>
+<h2 id="create-schematic-from-artwork">2. Create Schematic from Artwork</h2>
+<p>With the layout focused, choose <strong>Design ▸ Create ▸ Schematic from Artwork…</strong>. Recognition runs as the dialog opens.
+Then:</p>
+<ul>
+<li><strong>Placement…</strong> → <code>fab/Board.pos</code>. The file states its own origin, so no origin choice appears.</li>
+<li><strong>BOM…</strong> → <code>fab/Board-bom.csv</code>.</li>
+</ul>
+<p>The bottom strip reports what was read: ground on the bottom plane, one via kept as <code>VIAGND</code>, two ports where the
+line leaves the board, seven <code>MLIN</code>s, a bend and a tee, and one open line end — the stub.</p>
+<h2 id="review-the-parts-table">3. Review the parts table</h2>
+<table>
+<thead>
+<tr>
+<th>Refdes</th>
+<th>Kind</th>
+<th>Connection</th>
+<th>Case</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>C</td>
+<td>series</td>
+<td>0402</td>
+<td>2.2 pF</td>
+</tr>
+<tr>
+<td>L1</td>
+<td>L</td>
+<td>shunt</td>
+<td>0402</td>
+<td><em>(empty — variable <code>L1_L</code>)</em></td>
+</tr>
+<tr>
+<td>R1</td>
+<td>R</td>
+<td>series</td>
+<td>0603</td>
+<td>10 Ohm</td>
+</tr>
+</tbody>
+</table>
+<p>Select a row and its pads are marked on the layout. C1 and R1 take their values from the BOM. L1's kind comes from
+the BOM's description and its case from the land pattern, but nothing states its value, so it becomes the global variable
+<strong><code>L1_L</code></strong>, starting at 1 µH — a shunt inductor large enough to be invisible, so the first simulation shows the lines
+alone. You could type a value into the cell now; leave it empty to tune it in step 5.</p>
+<h2 id="create-and-simulate">4. Create, and simulate</h2>
+<p>Leave the target at <strong>New cell</strong>, <code>Board_model</code>, and click <strong>Create</strong>. The schematic opens; the report goes to
+<strong>Messages</strong>. Press <strong>Simulate</strong>.</p>
+<p>At 2 GHz the recognised board reads S11 ≈ −7.7 dB.</p>
+<h2 id="tune-the-unknown-part">5. Tune the unknown part</h2>
+<p>Simulate <strong>Board design</strong>: at 2 GHz its S11 is −15.8 dB. The difference is L1.</p>
+<p>Back in <strong>Board_model</strong>, open the <strong>Tuning</strong> panel. <code>L1_L</code> is there already, its range 100 nH – 10 µH around the
+starting value. Click the minimum and type <code>1 nH</code>, then drag the slider down: the match deepens as L1 falls and
+reaches S11 ≈ −15.9 dB at <strong>8.2 nH</strong> — the value in <strong>Board design</strong>. Everything else in the two schematics already
+agrees: the line lengths came off the copper to the micrometre.</p>
+<p>Then try:</p>
+<ul>
+<li><strong>Show in Artwork</strong> (right-click any component of <code>Board_model</code>) marks the copper it came from.</li>
+<li><strong>Swap Line Type</strong> on one of the lines, to <code>TLIN</code> and back: width and length are kept.</li>
+<li><code>circuitrf recognize Board/Board --placement fab/Board.pos --bom fab/Board-bom.csv</code> from the workspace folder prints
+the same report and parts table without writing anything.</li>
+</ul>
+<hr />
+<h2 id="how-the-board-was-made">How the board was made</h2>
+<p>It was authored in circuitRF, as any board would be: the <strong>Board design</strong> schematic, with footprints on its three
+parts, <strong>Update Layout from Schematic</strong>, the parts arranged with each line ending at its part's pad or at a bend's or
+tee's reference plane, a ground plane drawn, then <strong>File ▸ Export ▸ Gerber</strong> and the placement and BOM writers. The
+placement and BOM were cut to the three soldered parts — circuitRF's own writers list every placed instance, lines
+included — and L1's BOM row was deleted. The file set was then imported with <strong>File ▸ Import ▸ Board</strong>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

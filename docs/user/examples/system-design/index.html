@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — System Design</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/System Design/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › System Design</p>
+  </div>
+
+  <h1>System Design</h1>
+  <p class="lede">A 2.4 GHz transmitter and receiver drawn twice — direct conversion and superheterodyne — from the System block library, plus a transmitter whose final stage is a nonlinear FET and a cascade gain/IP3/noise budget.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ System Design (TX and RX)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A complete 2.4 GHz radio, built from the <strong>System</strong> block library: transmitters and receivers,
+each drawn twice — once as a <strong>direct-conversion (zero-IF)</strong> radio and once as a
+<strong>superheterodyne</strong> — so the two architectures can be compared on the same band, at the same
+power, with the same parts.</p>
+<p>Six benches. Every number below is what the shipped file produces; nothing here is quoted from a
+datasheet.</p>
+<h2 id="why-2.4-ghz">Why 2.4 GHz</h2>
+<p>The band is 2400-2483.5 MHz, and it is the one worth building an example on:</p>
+<ul>
+<li><strong>It is shared.</strong> Several short-range standards occupy it at once, so one front end illustrates
+all of them without the example belonging to any particular one. The benches name the <strong>band</strong>
+and never a standard, which is also why nothing here is tuned to a channel plan.</li>
+<li><strong>Direct conversion is what is really used there</strong>, so the zero-IF bench is not a strawman - and
+putting a superhet beside it at the <em>same</em> RF frequency makes the comparison an argument about
+the conversion plan alone.</li>
+<li><strong>+30 dBm is a plausible output</strong>, which is enough power for passive intermod to be worth
+computing rather than asserted.</li>
+</ul>
+<h2 id="the-benches">The benches</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TxDirectConversion</code></td>
+<td>I/Q modulator, four gain stages, coupler, circulator</td>
+</tr>
+<tr>
+<td><code>TxSuperhet</code></td>
+<td>the same output section fed through a 374 MHz IF</td>
+</tr>
+<tr>
+<td><code>RxDirectConversion</code></td>
+<td>I/Q demodulator, and the DC offset that comes with it</td>
+</tr>
+<tr>
+<td><code>RxSuperhet</code></td>
+<td>preselector, LNA, downconversion, IF strip</td>
+</tr>
+<tr>
+<td><code>TxFetFinal</code></td>
+<td>System driver stages into a <strong>nonlinear FET</strong> final</td>
+</tr>
+<tr>
+<td><code>CascadeBudget</code></td>
+<td>the gain / IP3 / noise-figure arithmetic, beside a real S-parameter run</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>T/R switch</strong> is the one part all five radio benches share. It is the same SPDT in every one of
+them, wired the same way - <code>T1</code> is the transmit arm, <code>T2</code> the receive arm - and the only thing the
+transmitters and receivers differ in is <code>State</code>. Its <code>IL</code>, <code>Isolation</code> and return loss are VAR-block numbers
+(<code>SWil</code>, <code>SWiso</code>, <code>SWrl</code>), so changing the part changes every bench that carries it.</p>
+<p>Every bench <strong>sweeps its drive level</strong>, so each figure of merit is a curve rather than a number:
+the transmitters over baseband or IF drive, the receivers over signal level at the antenna. The
+single-point numbers quoted below are read off those sweeps at the operating point each bench
+centres on.</p>
+<h2 id="data-displays">Data displays</h2>
+<p>Beside each bench is a <strong><code>.cdd</code> data display</strong> of the same name, laid out and ready: output power,
+gain and compression, two-tone linearity, spectral purity, and a table carrying every metric at
+every drive point. <code>CascadeBudget.cdd</code> shows the measured front-end response instead, because its
+budget numbers are scalars and live in the schematic's own measurement blocks.</p>
+<p><strong>Run the bench first.</strong> A display reads <code>results/&lt;Cell&gt;.npy</code>, which Simulate writes; the results
+themselves are not shipped, so the order is: open the schematic, Simulate, open the display of the
+same name. Measured wall clock for the whole sweep, release build:</p>
+<table>
+<thead>
+<tr>
+<th>Bench</th>
+<th>Sweep</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TxSuperhet</code></td>
+<td>15 points</td>
+<td>13.3 s</td>
+</tr>
+<tr>
+<td><code>TxDirectConversion</code></td>
+<td>15 points</td>
+<td>11.8 s</td>
+</tr>
+<tr>
+<td><code>RxSuperhet</code></td>
+<td>13 points</td>
+<td>7.1 s</td>
+</tr>
+<tr>
+<td><code>RxDirectConversion</code></td>
+<td>15 points</td>
+<td>4.9 s</td>
+</tr>
+<tr>
+<td><code>TxFetFinal</code></td>
+<td>29 points</td>
+<td>3.0 s</td>
+</tr>
+<tr>
+<td><code>CascadeBudget</code></td>
+<td>601 points</td>
+<td>0.2 s</td>
+</tr>
+</tbody>
+</table>
+<p>They render headlessly too, which is how the pictures in this file were checked:</p>
+<pre><code>circuitrf hb    &quot;TxDirectConversion/schematic/TxDirectConversion.csch&quot; -o results/TxDirectConversion.npy
+circuitrf render TxDirectConversion.cdd --data results/TxDirectConversion.npy -o tx.png
+</code></pre>
+<p><code>CascadeBudget</code> is an S-parameter bench, so it is <code>circuitrf sparam</code>, not <code>hb</code>.</p>
+<h2 id="transmitters">Transmitters</h2>
+<p>Both transmitters end in the same output section — bandpass filter, 20 dB directional coupler,
+circulator, and an antenna deliberately mismatched to <strong>100 Ω (VSWR 2)</strong> so the circulator has
+something to do. The reflected power lands in the circulator's dump load instead of the PA, and
+the coupler's two ports read it.</p>
+<p><code>TxDirectConversion</code> builds an <strong>I/Q modulator</strong> out of two mixers and a quadrature hybrid:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Output, both carriers</td>
+<td><strong>+30.0 dBm</strong></td>
+</tr>
+<tr>
+<td>Gain, baseband to antenna</td>
+<td><strong>54.0 dB</strong></td>
+</tr>
+<tr>
+<td>Gain, modulator output to antenna</td>
+<td><strong>61.3 dB</strong></td>
+</tr>
+<tr>
+<td>Sideband rejection</td>
+<td>33.0 dBc</td>
+</tr>
+<tr>
+<td>Carrier (LO) feedthrough</td>
+<td>32.4 dBc</td>
+</tr>
+<tr>
+<td>IM3 / OIP3</td>
+<td>33.9 dBc / +43.9 dBm</td>
+</tr>
+<tr>
+<td>Leakage into the receiver port</td>
+<td><strong>+1.9 dBm per carrier</strong></td>
+</tr>
+<tr>
+<td>T/R isolation</td>
+<td>25.1 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The sideband rejection is an I/Q imbalance calculation, and the VAR block holds both halves.</strong>
+At the shipped 0.3 dB and 2° it is 33.0 dBc, which is what an uncalibrated modulator achieves, and
+it is set by those two numbers alone. They contribute about equally here: halving the gain error
+alone gives 35.1 dBc, halving the phase error alone gives 35.1 dBc, and halving both gives
+39.3 dBc — the 6 dB you would expect from cutting the whole imbalance in half.</p>
+<p>Set <code>IQgain</code> and <code>IQphase</code> to 0 and the rejection jumps to <strong>63.4 dBc</strong>. That is <em>not</em> the circuit —
+the cancellation in the circuit is exact, and what is left is the harmonic-balance spectrum's own
+truncation floor. You can watch it be numerical: the same point reads 64.7, 74.8, 97.2 and 105.1 dBc
+at <code>MaxMixOrder</code> 4, 5, 6 and 7 (63.4 at the shipped drive). Make the amplifiers ideal as well and it
+falls to the solve's floor. A number that moves 10 dB every time you add a mixing index is a property of the
+spectrum, not of the radio — which is the reason the shipped imbalance is non-zero.</p>
+<p><strong>The carrier feedthrough is the zero-IF problem, stated as a number.</strong> <code>LOIFiso</code> is the mixer's
+LO-to-IF isolation and ships at 70 dB, which represents a double-balanced mixer <em>after</em> carrier-null
+calibration. Set it to 40 — the raw part — and the feedthrough collapses to <strong>2.2 dBc</strong>: the LO comes
+out at +24.6 dBm against the wanted +26.8, sitting in the middle of the channel where <strong>no filter can
+reach it</strong>, because the LO <em>is</em> the channel centre.</p>
+<p><code>TxSuperhet</code> puts a 374 MHz IF in front of the same output section, with a 2066 MHz LO:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Output, both carriers</td>
+<td><strong>+30.0 dBm</strong></td>
+</tr>
+<tr>
+<td>Gain, IF to antenna</td>
+<td><strong>54.0 dB</strong></td>
+</tr>
+<tr>
+<td>Sideband rejection</td>
+<td>below what the solve can resolve</td>
+</tr>
+<tr>
+<td>Carrier (LO) feedthrough</td>
+<td>below what the solve can resolve</td>
+</tr>
+<tr>
+<td>IM3 / OIP3</td>
+<td>34.0 dBc / +44.0 dBm</td>
+</tr>
+<tr>
+<td>Leakage into the receiver port</td>
+<td>+1.9 dBm per carrier</td>
+</tr>
+</tbody>
+</table>
+<p><strong>That contrast is the whole point of the pair.</strong> The superhet's unwanted sideband lands at
+1692 MHz and its LO at 2066 MHz — both far outside the passband — so the RF filters delete them, and
+what the display shows is not a rejection figure but an absence. Do not read a number off those two
+traces: they sit at the spectrum's truncation floor and climb with every mixing index you add
+(141 dBc at <code>MaxMixOrder</code> 4, 151 at 5, 188 at 6). The zero-IF radio's two spurs land <em>on top of</em> its
+own channel and are stuck at 32-33 dBc for as long as the I/Q balance and the carrier null hold.
+That is a real number, and it is the one that matters.</p>
+<p><strong>The two transmitters are not identical parts in a different order</strong>, and it is worth knowing where
+they differ, because only the conversion plan is being argued about. The output section from the
+first gain stage onward is the same chain with the same coupler, circulator, switch and antenna; the
+gain is redistributed slightly (<code>A3</code> is 14 dB in the zero-IF bench and 16 dB in the superhet, and
+<code>A4</code> is 14.8 against 14.9) and the superhet's first RF filter is 5th-order rather than 3rd, so both
+land on +30.0 dBm through different conversion losses. The superhet also carries an IF filter the zero-IF radio has no place
+for, and its mixer is specified by <code>IsoLO_IF</code>/<code>IsoRF_IF</code> rather than by <code>LOIFiso</code>, because out-of-band
+leakage is a filter's problem there and an in-band one here. Everything else is shared.</p>
+<h2 id="the-tr-switch">The T/R switch</h2>
+<p>One SPDT, carried by all five radio benches, with the same convention everywhere: <strong><code>T1</code> is the
+transmit arm, <code>T2</code> the receive arm, and <code>State</code> says which one is live.</strong> The transmitters set
+<code>State = 1</code> and terminate <code>T2</code> in the 50 Ω the receiver presents; the receivers set <code>State = 2</code> and
+terminate <code>T1</code> in the 50 Ω the PA presents. Nothing else about the part changes between them, which
+is the point — it is one component in one radio, drawn from each side.</p>
+<p>Its three numbers are VAR-block globals — <code>SWil</code> 0.5 dB, <code>SWiso</code> 28 dB, <code>SWrl</code> 26 dB — so changing
+the part changes every bench at once. <strong>The three are not independent</strong>, and the section on passive
+blocks below says why: 26 dB is the least return loss a 0.5 dB switch can have and still be a
+passive part in this model.</p>
+<p>Three things it is worth placing for:</p>
+<p><strong>Deleting it and setting its loss to zero are different measurements, and the gap between them is
+the point.</strong> Deleted, the antenna sees +30.34 dBm; with the switch in place, +29.99; with the switch
+in place and <code>SWil</code> set to 0, <strong>+30.50</strong>. So the part specifies 0.5 dB and costs 0.51 dB of
+through loss — and then hands <strong>0.16 dB back</strong>, because a well-matched lossy two-port between a
+source and a VSWR-2 antenna improves that mismatch. A pad IS a match improver; it is just a much
+smaller effect than the arithmetic of &quot;0.5 dB in, 0.5 dB out&quot; suggests, and the only way to see the
+two halves separately is to change the part rather than remove it.</p>
+<p><strong>On transmit, the receiver port is a hostile place.</strong> The switch specifies 28 dB of isolation and
+the bench measures 25.1 dB of T/R isolation end to end, so at +27.0 dBm per carrier at the antenna
+<code>Prx1</code> reads <strong>+1.9 dBm per carrier</strong> — a milliwatt and a half arriving at an LNA input that
+expects −70. That is the number behind every receive-path limiter and shunt protection switch in a
+TDD radio, and it is why <code>Isolation</code> is the specification that matters on this part rather than
+<code>IL</code>. Raise <code>SWiso</code> and watch it fall away decibel for decibel.</p>
+<p><strong>On receive, it is the first element in the chain</strong>, so its loss goes straight into the noise
+figure — see <code>CascadeBudget</code>, where it is stage 0.</p>
+<h2 id="passive-intermod">Passive intermod</h2>
+<p>The circulator carries <code>PIM = −67 dBm</code> at <code>PIMPc = 43 dBm</code> — a ferrite part quoted the usual way,
+as a product level at a stated power <em>per carrier</em>. Ferrites are among the worst PIM offenders in a
+transmit chain, which is why the specification lives on this block.</p>
+<p>At the shipped drive the carriers reach the circulator at <strong>+28.68 dBm</strong>, 14.32 dB below the
+condition the part was measured at. <strong>The product rides the third power of drive</strong>, so it falls
+3 × 14.32 = 43.0 dB, to −110.0 dBm at the circulator's own port.</p>
+<p>To read it you have to switch off <strong>every other</strong> source of third-order product in the bench, which
+means six parts and not four: set the four amplifier <code>IP3</code> fields <em>and both mixers'</em> <code>IIP3</code> to 200.
+The IM3 bin at the antenna then holds <strong>−110.1 dBm</strong>, and nothing else — set <code>PIM</code> to −300 as well and
+it drops below −280 dBm, which is the solve's floor. (Leave the mixers alone and you get −56.1 dBm,
+because the mixers are then the loudest thing in the bin; that number is a real measurement of a
+different quantity.)</p>
+<p><strong>Do the arithmetic for the run you are reading</strong>, because idealising the amplifiers moves the
+level: they no longer compress, so the carriers now reach the circulator at +29.22 dBm rather than
++28.68, which lifts the product 3 × 0.54 = 1.6 dB to −108.3 dBm there, and the antenna is a further
+1.69 dB away through the circulator and the switch. That predicts −110.0 dBm at the antenna against
+−110.1 measured — <strong>the cubic law to 0.1 dB</strong>, and real rather than a rule of thumb. Quoting the
+shipped-drive figure straight against the idealised run happens to land on the same answer, because
+those two 1.7 dB corrections nearly cancel; it is the right number for the wrong reason.</p>
+<p>And at 1 W the circulator's intermod sits <strong>103 dB below the amplifiers' own IM3</strong> — PIM is a
+high-power, multi-carrier problem, and this bench shows <em>why</em> it is not the binding spec on a 1 W
+radio rather than pretending it is.</p>
+<h2 id="receivers">Receivers</h2>
+<p><code>RxSuperhet</code> is a preselector, an LNA, a second gain stage, the mixer, a 374 MHz IF filter and an
+IF strip with a 6 dB pad in it:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gain, antenna to IF output</td>
+<td><strong>52.0 dB</strong></td>
+</tr>
+<tr>
+<td>OIP3 / IIP3</td>
+<td>+21.3 dBm / <strong>−30.7 dBm</strong></td>
+</tr>
+<tr>
+<td>IM3 at −70 dBm per carrier</td>
+<td>78.6 dBc</td>
+</tr>
+</tbody>
+</table>
+<p><code>RxDirectConversion</code> splits the RF in phase and the LO in quadrature into two mixers:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gain, antenna to I baseband</td>
+<td><strong>32.4 dB</strong></td>
+</tr>
+<tr>
+<td>OIP3 / IIP3</td>
+<td>+15.0 dBm / <strong>−17.4 dBm</strong></td>
+</tr>
+<tr>
+<td>I/Q amplitude balance</td>
+<td>0.0000004 dB</td>
+</tr>
+<tr>
+<td><strong>DC offset at the I output</strong></td>
+<td><strong>39.7 mV</strong></td>
+</tr>
+<tr>
+<td>Wanted signal at the same node</td>
+<td>4.2 mV</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The in-phase RF splitter costs 3.01 dB, and it has to.</strong> <code>SPL</code> is a four-port coupler set to split
+equally with no phase difference — and a matched, lossless, reciprocal four-port <em>cannot</em> do that:
+its two outputs must differ by 90° (or 180°). That is a theorem, not a modelling limitation, and it
+is why a real in-phase splitter is a Wilkinson, which is a THREE-port with a resistor in it.
+circuitRF has no Wilkinson block, so the only in-phase split a <code>Coupler</code> can honestly represent is a
+resistive one, whose 3.01 dB of dissipation is exactly what buys back passivity. Set its <code>IL</code> to
+0.2 dB and the Messages panel says so: σ_max = 1.38, a splitter with 2.8 dB of gain in it.</p>
+<p><strong>The DC offset is simulated, not asserted.</strong> The mixer leaks LO back to its own RF port through
+<code>LORFiso</code>, and the multiplier then mixes that leakage with the LO it came from: <code>v_lo × v_lo</code> has a
+DC term. It lands at mixing index <code>(0,0,0)</code> and comes out <strong>9.5 times larger than the signal it is
+sitting on</strong> at −70 dBm in, and 24 times larger at −78. That is the reason a zero-IF receiver needs DC servo or offset cancellation before its
+baseband chain can have any gain at all. Raise <code>LORFiso</code> and watch it fall away.</p>
+<h2 id="mixing-system-blocks-with-a-compact-model">Mixing System blocks with a compact model</h2>
+<p><code>TxFetFinal</code> is the same idea as the transmitters above, except the final stage is not an <code>Amp</code>
+tile — it is the <strong>SDD FET</strong> from the Harmonic Balance example, with its own gate and drain bias
+networks, in a cell you can push into (<code>Ctrl+]</code>). Two System gain stages and a pad drive it:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Output at the antenna, both carriers</td>
+<td><strong>+30.1 dBm</strong></td>
+</tr>
+<tr>
+<td>Gain, source to antenna</td>
+<td><strong>52.1 dB</strong></td>
+</tr>
+<tr>
+<td>RF out of the drain, both carriers</td>
+<td>1.77 W</td>
+</tr>
+<tr>
+<td>RF into the gate</td>
+<td>7.8 mW</td>
+</tr>
+<tr>
+<td>DC draw</td>
+<td>7.71 W</td>
+</tr>
+<tr>
+<td>PAE at the device</td>
+<td><strong>22.9 %</strong></td>
+</tr>
+<tr>
+<td>IM3 / OIP3</td>
+<td>25.0 dBc / +39.6 dBm</td>
+</tr>
+<tr>
+<td>Second harmonic at the antenna</td>
+<td>−106 dBc</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Read the four power rows together — they are the reason the bench carries an <code>IProbe</code> on each
+side of the FET.</strong> <code>Ppa_W</code> sums <em>both</em> carriers out of the drain and <code>Pin_W</code> sums both into the
+gate, so <code>PAE = (Ppa − Pin)/PDC</code> is the device's own power-added efficiency. The antenna sees
+1.02 W, which is 2.38 dB less than the drain's 1.77 W: the output filter, coupler, circulator and
+switch specify 2.05 dB of insertion loss between them, and the antenna is deliberately mismatched.
+Dividing antenna power by DC draw instead would give 13.3 %, and that is neither PAE nor drain
+efficiency — it is the whole transmitter's efficiency with the output network's losses charged to
+the device. Both numbers are worth having; they are not the same number.</p>
+<p><strong>Nothing special is needed to mix the two worlds.</strong> A System block presents an impedance and a
+transfer function; the FET is a nonlinear device in the same MNA matrix, behind an ordinary DC block
+and choke. The only thing to watch is levels: the <code>Amp</code> tiles are ideal until their <code>IP3</code> says
+otherwise, and the FET is not — 23 % PAE at 8 dB of back-off from saturation is the honest two-tone
+answer, not an underperforming design.</p>
+<p>The second harmonic reading is the output bandpass doing its job; delete <code>F2</code> and it comes back.</p>
+<p><strong>The IM3 curve has a null in it, and it is real.</strong> Sweeping the drive, IM3 falls to 21.6 dBc at
+−28 dBm, climbs slowly, and then at <strong>−23 dBm jumps to 40.7 dBc before coming straight back
+down</strong> — 16 dB above the surrounding trend in one step, with the two points either side of it at
+29.0 and 33.5 dBc. That is a third-order
+<em>sweet spot</em>: the device's third- and fifth-order contributions arrive in antiphase and cancel, and
+a real FET does exactly this. The sweep steps 1 dB rather than 2 for this reason — at 2 dB the null
+lands between samples and reads as a single wild point, which looks like a solver artifact and is
+not one. Its <strong>depth</strong> is the one number here not to quote to three figures: a cancellation this
+sharp moves 1.5 dB between <code>MaxMixOrder</code> 5 and 6, while the output power and the gain move by less
+than 0.1 dB. An <code>Amp</code> tile has one nonlinearity and so cannot produce this; it is the compact
+model's own behaviour, which is most of why the bench exists.</p>
+<h2 id="noise-figure-read-this-before-looking-for-it">Noise figure — read this before looking for it</h2>
+<p><strong>The System blocks carry no noise figure.</strong> circuitRF's S-parameter analysis does compute noise
+(<code>Noise=yes</code>): every passive part is thermal at its own temperature, and an SnP block or a compiled
+model brings its own noise data. But an <code>Amp</code> or a <code>Mixer</code> tile has no <code>NF</code> parameter, so a noise run
+of these benches would treat every gain stage as noiseless and say so in a warning, and the figure
+it gave would be the passive blocks' alone. The <strong>S-Parameter Noise</strong> example simulates a Friis
+cascade whose stages are SnP files with noise data.</p>
+<p>So <code>CascadeBudget</code> does the next honest thing: it computes the <strong>Friis cascade</strong> in ordinary
+measurement expressions, from a per-stage noise figure you type into a VAR block, <em>beside</em> two
+quantities the engine really does compute. The point of putting them together is that you can see
+which column is which:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Arithmetic vs engine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cascade gain</td>
+<td>52.00 dB vs <strong>51.99 dB</strong> simulated</td>
+</tr>
+<tr>
+<td>Cascade IIP3</td>
+<td>−30.65 dBm vs <strong>−30.71 dBm</strong> simulated</td>
+</tr>
+<tr>
+<td>Cascade NF</td>
+<td>3.84 dB — <strong>arithmetic only</strong></td>
+</tr>
+<tr>
+<td>Noise floor in 20 MHz</td>
+<td>−97.1 dBm — follows from the NF</td>
+</tr>
+<tr>
+<td>Sensitivity at 10 dB SNR</td>
+<td>−87.1 dBm — follows from the NF</td>
+</tr>
+</tbody>
+</table>
+<p>The gain and IIP3 rows are cross-checks: the same chain, worked out two completely different ways,
+agreeing to 0.06 dB. (The simulated column is <code>RxSuperhet</code>, whose front end this budget describes.)</p>
+<p><strong>The sum is written one term per stage</strong>, not as a single Friis expression, because which stage
+the noise figure came from is the thing worth reading off it. <code>F0</code> to <code>F8</code> are each stage's
+contribution to the total noise factor, referred to the input; add them and you have <code>Ftot</code>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>F0 switch</th>
+<th>F1 preselector</th>
+<th>F2 LNA</th>
+<th>F3 second stage</th>
+<th>F4–F8 everything after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>contribution to <code>Ftot</code></td>
+<td>1.122</td>
+<td>0.656</td>
+<td>0.566</td>
+<td>0.035</td>
+<td>0.042</td>
+</tr>
+<tr>
+<td>share</td>
+<td>46 %</td>
+<td>27 %</td>
+<td>23 %</td>
+<td>1.4 %</td>
+<td>1.7 %</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Stage 0 is the T/R switch, and it is the single largest term</strong> — which is where a front-end loss
+hurts most: it lands ahead of every gain stage, so its 0.5 dB goes into the noise figure one for
+one, 3.34 dB becomes 3.84 dB, and the sensitivity moves with it. Everything from the mixer onward
+is 1.7 % of the total put together, which is the Friis result stated as a design instruction: past
+the LNA, only the gain in front of a stage matters. The NF row has no simulated partner and will
+not have one until the tiles carry noise data. Treat it as a spreadsheet that happens to live in
+the design.</p>
+<p>The same cell also carries a real S-parameter run over the RF front end, 1.5–2.7 GHz:</p>
+<table>
+<thead>
+<tr>
+<th>Frequency</th>
+<th>Front-end S21</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2440 MHz (wanted)</td>
+<td>+27.50 dB</td>
+</tr>
+<tr>
+<td>1692 MHz (image)</td>
+<td>−22.34 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>49.8 dB of image rejection</strong>, set by the elliptic preselector's 45 dB stopband floor. The image
+sits at <code>f_RF − 2·f_IF</code>, which is why the IF choice and the preselector are one decision: halve the
+IF and the image moves into the filter's transition, where the same part rejects far less.</p>
+<p><strong>The preselector is Elliptic and not Chebyshev on purpose.</strong> Swap <code>Response</code> to Chebyshev, leaving
+everything else alone, and the front end reads −48.21 dB at the image instead of −22.34: 75.7 dB of
+image rejection rather than 49.8. That is the difference between a stopband that keeps falling
+forever and one with a floor. A real preselector has a floor — set by package feedthrough and board
+coupling, not by its own poles — and <code>Astop</code> is the parameter that says where it is. With it, the
+rejection you read is the one you specified; without it, the number is whatever the polynomial
+happens to give at that frequency.</p>
+<h2 id="the-harmonic-balance-spectrum-and-how-to-change-it">The harmonic-balance spectrum, and how to change it</h2>
+<p>The four benches with three tones — both transmitters and both receivers — run at
+<strong><code>MaxMixOrder</code> 4</strong>. <code>TxFetFinal</code> has two tones and runs at 5.</p>
+<p>That choice is the single thing that sets how long a run takes, and it is worth knowing why. With
+three tones, order 4 puts 65 mixing indices in the spectrum and order 5 puts 116, and the cost of a
+Newton iteration goes as the cube of that number: a measured 94 ms per iteration at order 4 against
+470 ms at order 5, on the same circuit. The iteration <em>count</em> does not go the same way — the
+solve converges in 7 Newton steps at order 5, 17 at order 4 and 26 at order 3, and the line search
+has to backtrack 2, 35 and 75 times respectively. A smaller spectrum is a worse-conditioned problem;
+truncating harder is not simply cheaper.</p>
+<p><strong>To raise it,</strong> open the bench's HB analysis and set <strong>Max mix order</strong> to 5. Every run gets
+about 5× slower (<code>TxDirectConversion</code>: 11.8 s becomes 57.0 s). Here is what changes, at each
+bench's own operating point:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>order 4</th>
+<th>order 5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TxDirectConversion</code> output, gain, T/R isolation</td>
+<td>+29.992 dBm, 53.989 dB, 25.099 dB</td>
+<td>+29.988, 53.987, 25.099</td>
+</tr>
+<tr>
+<td><code>TxDirectConversion</code> IM3 / OIP3</td>
+<td>33.891 dBc / +43.934 dBm</td>
+<td>33.842 / +43.908</td>
+</tr>
+<tr>
+<td><code>TxDirectConversion</code> sideband / LO feedthrough</td>
+<td>33.027 dBc / 32.402 dBc</td>
+<td>32.853 / 32.268</td>
+</tr>
+<tr>
+<td><code>TxSuperhet</code> output, gain</td>
+<td>+29.992 dBm, 53.983 dB</td>
+<td>+29.987, 53.982</td>
+</tr>
+<tr>
+<td><code>TxSuperhet</code> IM3 / OIP3</td>
+<td>34.004 dBc / +43.985 dBm</td>
+<td>33.947 / +43.955</td>
+</tr>
+<tr>
+<td><code>TxSuperhet</code> sideband / LO feedthrough</td>
+<td>140.59 dBc / 120.38 dBc</td>
+<td>150.79 / 129.81</td>
+</tr>
+<tr>
+<td><code>RxDirectConversion</code> gain, OIP3, DC offset</td>
+<td>32.432 dB, +16.597 dBm, 39.705 mV</td>
+<td>32.432, +16.592, 39.705</td>
+</tr>
+<tr>
+<td><code>RxSuperhet</code> gain, OIP3, IM3</td>
+<td>51.992 dB, +21.282 dBm, 78.58 dBc</td>
+<td>51.992, +21.385, 78.79</td>
+</tr>
+</tbody>
+</table>
+<p>Every physical quantity is settled by order 4 — powers, gains and isolations to better than 0.03 dB,
+intercepts and IM3 to better than 0.21 dB. <strong>The one row that moves by ten decibels is the one that
+is below the solve's floor at either order</strong>, which is the point made under <code>TxSuperhet</code> above: a
+suppressed sideband that climbs with every index you add is not being measured, it is being
+truncated. Order 5 does not make those numbers true; it makes them larger. (The zero-IF radio's own
+sideband and LO rows move by 0.15 dB, because there they are real signals in the channel.)</p>
+<p>The same field is <code>--maxmix</code> on the command line, so a run can be checked both ways without editing
+the document: <code>circuitrf hb &quot;TxSuperhet/schematic/TxSuperhet.csch&quot; --maxmix 5</code>.</p>
+<h2 id="passive-blocks-and-the-numbers-they-can-actually-have">Passive blocks, and the numbers they can actually have</h2>
+<p>Every System block here except the amplifiers declares itself <strong>passive</strong>, and circuitRF checks that
+claim against the numbers in the file on every run. If a block's S-matrix can deliver more power
+than it absorbs, the Messages panel names the instance:</p>
+<pre><code>system.block-not-passive: 'SW1' (SwitchModel) is declared passive and is not — σ_max(S) = 1.09993,
+so it delivers up to 0.83 dB more power than it absorbs.
+</code></pre>
+<p><strong>A plausible datasheet can fail it, and that is worth understanding before you edit one of these
+parts.</strong> The blocks build their S-matrix from real, in-phase amplitudes: <code>IL</code>, <code>RL</code>, <code>Isolation</code> and
+<code>Directivity</code> are each <code>10^(−dB/20)</code> with no phase. In a real part those terms arrive at arbitrary
+phases and do not add; here they do. So the test is not &quot;does each port absorb more than it emits&quot; —
+every one of these blocks passes that — but whether the whole matrix does, which is σ_max(S) ≤ 1.
+Three shapes of it come up in this workspace:</p>
+<ul>
+<li><strong>The T/R switch</strong> ships at 0.5 dB loss, 28 dB isolation, <strong>26 dB return loss</strong>, off-state
+<strong>absorptive</strong> (<code>SWil</code>, <code>SWiso</code>, <code>SWrl</code> in the VAR block). The return loss is not free to choose:
+a symmetric two-port needs <code>RL ≥ −20·log₁₀(1 − 10^(−IL/20))</code>, which is 25.1 dB at 0.5 dB of loss
+and 19.3 dB at 1 dB. Drop <code>SWrl</code> to 18 and the message appears; raise <code>SWil</code> to 1 dB and 20 dB of
+return loss is enough again. The off-state matters more than it looks: a <strong>reflective</strong> open throw
+returns <code>S = 1</code> at that port, and then any leakage into it puts the matrix over unity whatever the
+other numbers are — a 0.5 dB switch with 28 dB of isolation is over unity at <em>infinite</em> return
+loss. Absorptive costs nothing here, because every throw is terminated externally in 50 Ω: the two
+off-states give results identical to the last printed digit.</li>
+<li><strong>The circulator</strong> ships at 0.6 dB loss, 30 dB isolation, 32 dB return loss. Its S is circulant,
+so σ_max is exactly <code>10^(−IL/20) + 10^(−Iso/20) + 10^(−RL/20)</code> — three numbers you can add in your
+head. That makes the trade explicit: a 0.4 dB circulator with 22 dB of isolation is over unity
+<em>before its return loss is counted</em>, and no return loss rescues it. You buy the suppressions with
+loss. A real ferrite does not face this trade, because its isolation and its reflection are not in
+phase with its through path.</li>
+<li><strong>The in-phase splitter</strong> in <code>RxDirectConversion</code> pays 3.01 dB, and has to — see the receiver
+section above. A matched lossless reciprocal four-port must put 90° between its outputs, so the
+only in-phase split a <code>Coupler</code> can represent is a resistive one.</li>
+</ul>
+<p>The check is cheap enough to leave on: a norm bound per block per frequency, and a singular-value
+decomposition only where that bound cannot settle it.</p>
+<p><strong>Where to see it mattering.</strong> <code>CascadeBudget</code>'s antenna-port match plot reads −0.10 dB or better at
+every one of its 601 points — no passive chain can do better than 0 dB, and a block that is not
+passive puts that plot above it, two components away from the part responsible.</p>
+<h2 id="notes-that-will-save-you-an-afternoon">Notes that will save you an afternoon</h2>
+<p><strong>A swept measurement may not use <code>^</code>.</strong> <code>mag(V)^2</code> evaluates happily at a single point and fails
+the moment a sweep makes it a cube — <em>&quot;Cube operand must go through Add/Sub/Mul/Div&quot;</em>. Every power
+here is written <code>dB(V) + K</code> instead (<code>K</code> is 10 into 50 Ω, 6.9897 into 100 Ω), and a sum of powers as
+<code>mag(V)*mag(V) + ...</code>. <code>dB</code>, <code>mag</code>, <code>log10</code>, <code>real</code>, <code>conj</code> and the rest broadcast; the power
+operator does not. The measurements in these benches therefore read the same swept or not.
+(<code>CascadeBudget</code> does use <code>^</code>, on the scalars of its Friis sum, where there is no cube to broadcast.)</p>
+<p><strong>The Mixer converts RF port → IF port, and only that way.</strong> Its law is
+<code>i_if = (v_if − K·v_rf·v_lo − …)/Zif</code>; there is no term carrying the IF port back to RF. So an
+<strong>upconverter drives the RF pin with baseband or IF and takes the RF output off the IF pin</strong>, which
+is what both transmitters do. Wiring an upconverter &quot;the way the block diagram reads&quot; gives a
+circuit that solves and produces nothing.</p>
+<p><strong>Both sidebands always appear.</strong> A product of two cosines is half the sum plus half the difference,
+so a real mixer tile cannot select one. The superhet selects by filtering; the zero-IF radio selects
+by quadrature cancellation. Those are the only two options, here and in hardware.</p>
+<p><strong>In a multi-tone run, two mixing indices that land on the same frequency cannot be separated.</strong>
+An interferer exactly at the image converts to exactly the wanted IF, and the solver has no way to
+tell the two apart — the number it reports for either is meaningless. That is not a modelling
+shortcoming so much as a statement about images: they land <em>on</em> the wanted signal, which is why the
+preselector has to remove the whole image band. Measure image rejection the way <code>CascadeBudget</code>
+does, from the front end's S-parameters.</p>
+<p><strong>An intercept read where the product is below the solver's floor is not a measurement, and the
+FIRST point of a sweep is the one to distrust.</strong> The zero-IF receiver's IIP3 curve sits flat at
+−17.4 dBm from −66 dBm upward, reads 1.6 dB high over the −82 to −70 dBm rungs, and at the bottom
+rung reads <strong>−44 dBm</strong> — 27 dB out. Every point of a swept HB run but the first is warm-started from
+the one below it; the first is cold-started, and its third-order product, at −137 dBm, is the one
+that lands on the solve's own floor. Moving the sweep's start does not help — it only moves which
+rung is cold. Read an intercept off the FLAT part of its curve, which is the same rule that applies
+on a bench and the reason the curve is worth plotting instead of quoting one point.</p>
+<p><strong>A suppressed spur is the same trap, one level up.</strong> A sideband or an LO that the filters have
+removed does not read as zero; it reads as whatever the truncated mixing spectrum leaves behind, and
+that number changes when you change <code>MaxMixOrder</code>. If a rejection figure moves with the spectrum
+setting, it is telling you about the spectrum. The section above shows how to make it do that.</p>
+<p><strong>Keep multi-tone runs to three tones where you can.</strong> Four tones on a common frequency grid made
+two identical carriers here come out 6.2 dB apart; moving two of them off the grid brought them back
+to within 0.19 dB. The benches use three tones each and every carrier pair agrees to better than
+0.03 dB.</p>
+<p><strong>A measurement row ending in a variable name loses it.</strong> A row is <code>name = expression [unit]</code>, and
+the last token of <code>Gain = Pout − Pin</code> is read as the unit, leaving an expression that will not
+parse. Two habits avoid it, and both are used here: put the expression in parentheses, or lift the
+global into a measurement of its own first (<code>Prf_dBm = Prf</code>, then subtract <em>that</em>). The same rule is
+why several rows here end in a <code>;</code> comment.</p>
+<p><strong>An angle typed into a hand-written <code>.cnl</code> without a unit is radians.</strong> <code>Phase=90</code> is 90 radians —
+116.62° — and an I/Q modulator built that way quietly achieves about 13 dB of sideband rejection
+instead of cancelling. The schematic editor always writes the unit, so this only bites netlists you type
+yourself. Write <code>Phase=90 deg</code>.</p>
+<p><strong>A stopband filter is reflective.</strong> Looking at the node between the mixer and the RF filter, the
+rejected sideband reads about 6 dB <em>higher</em> than the wanted one — the filter's stopband input is
+nearly an open, so the node voltage roughly doubles. Nothing is wrong; measure what the load
+receives, not what a reflective node swings to.</p>
+<p><strong>Three separately plausible numbers on one passive block can still sum above unity</strong>, because the
+family builds its S-matrix from real, IN-PHASE amplitudes converted straight from dB. The section
+on passive blocks above has the arithmetic and the three shapes it takes here.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>
