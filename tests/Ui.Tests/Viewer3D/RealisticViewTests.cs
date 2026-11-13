@@ -184,6 +184,34 @@ public sealed class RealisticViewTests : IDisposable
         Assert.All(scene.ShadeVertices.Skip(faded.FirstVertex).Take(faded.VertexCount), v => Assert.NotEqual(0u, v.Slot & Scene3DShadeVertex.StatedAlpha));
     }
 
+    /// <summary>A see-through dielectric resting on an opaque slab (a cover on a board) shares the slab's top as its bottom. Both took
+    /// the dielectric's tie, so the two triangulations fought per pixel — fans across the board that flickered as the camera moved. The
+    /// translucent one gives way: its polygon offset is further from the eye than the slab's in the constant AND the slope term (the
+    /// constant alone is below the rasteriser's interpolation error across a board-sized triangle seen obliquely).</summary>
+    [Fact]
+    public void Gate1_ATranslucentBodyOnAnOpaqueSlab_GivesWayWhereTheirFacesCoincide()
+    {
+        var a = Em3dBoundaryKind.Absorbing;
+        var problem = new Em3dProblem(
+            [new Em3dSolid("board", "FR4", Em3dRole.Dielectric, new Em3dBox(new(0, 0, 0), new(1e-3, 1e-3, 1e-4)), 0),
+             new Em3dSolid("cover", "FR4", Em3dRole.Dielectric, new Em3dBox(new(0, 0, 1e-4), new(1e-3, 1e-3, 5e-4)), 0)],
+            [], [], [], new Em3dAirBox(new(-5e-3, -5e-3, -5e-3), new(5e-3, 5e-3, 5e-3), new Em3dFaces(a, a, a, a, a, a)),
+            new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), 25);
+        var scene = Scene3DBuilder.Build(problem, 1, options: new Scene3DBuildOptions(DrawAirBox: false, Origin: (0, 0, 0), HideOutermostDielectric: false,
+            Transparency: n => n == "cover" ? new Scene3DTransparency(85, 1) : null));
+        var view = new Viewer3DViewState { Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1.6f) };
+        view.Adopt(scene, null);
+        Array.Fill(view.Visible, true);
+        Realistic(view);
+        var draws = Draws(Plan(scene, view, Scene3DOverlay.None));
+        uint Id(string n) => scene.Objects.Single(o => o.Name == n).Id;
+        Assert.Contains(draws, d => d.Object == Id("board") && d.Pipeline == Scene3DPipeline.Pbr && d.Tie == Scene3DDepthTie.Behind);
+        Assert.All(draws.Where(d => d.Object == Id("cover")), d => Assert.Equal(Scene3DDepthTie.Translucent, d.Tie));
+        var (slabC, slabS, _) = Scene3DFramePlan.DepthBias(Scene3DDepthTie.Behind);
+        var (coverC, coverS, _) = Scene3DFramePlan.DepthBias(Scene3DDepthTie.Translucent);
+        Assert.True(coverC > slabC && coverS > slabS, $"cover ({coverC}, {coverS}) vs slab ({slabC}, {slabS})");
+    }
+
     /// <summary>An array element is drawn whole from its prototype's DEFAULT-opaque triangles. A dielectric is translucent by its
     /// kind's default and so is not in that draw — yet with no Transmission the realistic view draws it opaque, so each element's copy
     /// must still be drawn by itself (it once vanished from every element but the prototype).</summary>

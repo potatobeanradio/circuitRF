@@ -116,6 +116,10 @@ public struct Scene3DDraw
 /// </summary>
 public enum Scene3DDepthTie : sbyte
 {
+    /// <summary>A realistic view's TRANSLUCENT material, dielectric or metal (<see cref="Scene3DFramePlan.TranslucentTie"/>): gives way
+    /// to every opaque face it lies on, with a slope factor of its own (<see cref="Scene3DFramePlan.TranslucentSlopeScale"/>). A chrome
+    /// row keeps the default view's tie, since it is drawn exactly as the default view draws it.</summary>
+    Translucent = -3,
     /// <summary>brief-em3d-101 R-em3d101-4b — an image sheet: gives way to EVERY face lying on its plane, so what is traced on it
     /// is drawn over it and is what a click finds — the 3D form of the layout's "bitmaps always render behind" (R-bmp-2). One
     /// whose image is <c>InFront</c> (a picture placed on a solid's face) ties <see cref="FaceImage"/> instead.</summary>
@@ -337,8 +341,23 @@ public sealed class Scene3DFramePlan
     /// which coincide with nothing and take no polygon offset — a face ending on a biased face leaks within the bias.</summary>
     public static Scene3DDepthTie TieOf(Scene3DModel scene, in Scene3DBatch b) => b.Free ? Scene3DDepthTie.None : TieOf(scene, b.ObjectId);
 
+    /// <summary>Where a realistic view's TRANSLUCENT draw stands: it writes no depth, so a face of it lying on an opaque object's face
+    /// of the same tie — a see-through dielectric body resting on the board's slab, its bottom on the slab's top — fought it per pixel
+    /// along the two triangulations (fans across the board, flickering as the camera orbits). A dielectric or a metal gives way to
+    /// every opaque face it lies on instead (<see cref="Scene3DDepthTie.Translucent"/>): its faces that are seen are not coincident with
+    /// anything and are drawn as before; a via, a port or anything on a face keeps its own.</summary>
+    public static Scene3DDepthTie TranslucentTie(Scene3DDepthTie tie)
+        => tie is Scene3DDepthTie.Behind or Scene3DDepthTie.None ? Scene3DDepthTie.Translucent : tie;
+
+    /// <summary>The slope factor a <see cref="Scene3DDepthTie.Translucent"/> draw is pushed away by. Every other tie behind
+    /// <see cref="Scene3DDepthTie.None"/> takes <see cref="BehindSlopeScale"/>, so two of them differ by the constant alone — a few float
+    /// steps, less than the rasteriser's interpolation error across a board-sized triangle seen obliquely, and the see-through body on
+    /// the board still fought it. A whole step of the face's own depth gradient is what separates them; what it costs is about a pixel of
+    /// a translucent face where it meets an opaque one.</summary>
+    public const float TranslucentSlopeScale = 1;
+
     /// <summary>The lowest and highest tie, for a backend that makes one state per tie (D3D11's rasterizer states).</summary>
-    public const Scene3DDepthTie TieMin = Scene3DDepthTie.Underlay, TieMax = Scene3DDepthTie.Field;
+    public const Scene3DDepthTie TieMin = Scene3DDepthTie.Translucent, TieMax = Scene3DDepthTie.Field;
 
     /// <summary>The polygon offset a <paramref name="tie"/> draw takes, in the backends' terms (constant steps, slope factor,
     /// clamp — the bias's largest magnitude in depth units, 0 for none): one <see cref="BehindDepthBias"/> per step, away from
@@ -349,7 +368,8 @@ public sealed class Scene3DFramePlan
     /// (<see cref="DecalSlopeScale"/>, <see cref="DecalBiasClamp"/>): each is a different triangulation of the face's plane, and
     /// seen obliquely the two interpolate depths further apart than the constant covers.</summary>
     public static (float Constant, float Slope, float Clamp) DepthBias(Scene3DDepthTie tie)
-        => tie < Scene3DDepthTie.None ? (-(int)tie * BehindDepthBias, BehindSlopeScale, 0)
+        => tie == Scene3DDepthTie.Translucent ? (-(int)tie * BehindDepthBias, TranslucentSlopeScale, 0)
+         : tie < Scene3DDepthTie.None ? (-(int)tie * BehindDepthBias, BehindSlopeScale, 0)
          : tie >= Scene3DDepthTie.FaceImage ? (-(int)tie * BehindDepthBias, -DecalSlopeScale, -DecalBiasClamp)
          : (-(int)tie * BehindDepthBias, 0, 0);
 
@@ -888,7 +908,7 @@ public sealed class Scene3DFramePlan
             var b = batches[_order[k]];
             if (_chromeOf[b.ObjectId - 1] == Material)
                 AddMoved(preview, b.ObjectId, Scene3DPipeline.PbrTranslucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
-                         b.Element, TieOf(scene, b));
+                         b.Element, TranslucentTie(TieOf(scene, b)));
             else if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: true);
             else AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
                           b.Element, TieOf(scene, b));

@@ -5904,3 +5904,20 @@ could not come within 30 px. No placement inside the column could fix it.
 - Measured at 900 px: rfic is drawn at 1.52× (worst 18.9 px), the 10-layer board at 1.15× (worst 11.3, from 25.8); the
   2-, 4- and 6-layer boards and MMIC are built once and draw exactly as before. `ABandsNameSitsOnTheBand…` now states the
   hairline stack's floor as the scene's thinnest conductor, since that stack is drawn 1.15× taller too.
+
+## A see-through body resting on the board fought the board's top in the realistic view (2026-11-12)
+
+A `.c3d` with a translucent PDMS block (Transparency 85) and a water cylinder sitting on a board drew fans across the board
+top and through the water in the realistic view, flickering as the camera orbited. The plain view was clean because the
+board's slab is translucent there too. The block's bottom face is the board's top: both are dielectrics, so both took
+`Scene3DDepthTie.Behind`. The block draws translucent (writing no depth) over the slab's opaque top, and their two
+triangulations, the block's fan round its reservoir hole and the slab's two board-sized triangles, won pixel by pixel.
+
+- **A translucent MATERIAL draw now takes `Scene3DDepthTie.Translucent`** (`TranslucentTie`, below `Underlay`) and gives way
+  to every opaque face it lies on. A chrome row in the realistic view keeps the default view's tie, because
+  `RealisticViewTests` holds it to being drawn exactly as the default view draws it.
+- **The constant alone was not enough.** Every tie behind `None` shares `BehindSlopeScale` (1/16), so moving the block to
+  `Underlay` changed only the constant: 4 float steps, about 2.4e-7 of depth, against an interpolation error near 1e-6
+  across a board-sized triangle seen obliquely. The fans did not change. The new tie takes a slope factor of 1
+  (`TranslucentSlopeScale`), which cleared every camera tried, from straight down to 8° grazing, orthographic and perspective.
+  Shadows and occlusion were ruled out first: switching each off in the Look left the fans exactly as they were.
