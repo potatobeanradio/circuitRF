@@ -71,6 +71,18 @@ internal sealed partial class HznTranslator
     private Box3? Bounds(C3dObject o)
     {
         var pl = o.Placement;
+        // brief-hzn-14 — a turned sheet (an upright polyline's frame) reaches as far as its polygon's corners carried by its placement
+        if ((pl.Rotate.Count > 0 || pl.MirrorX) && o is C3dSheet turned)
+        {
+            var (ring, _) = C3dEllipses.Polygon(turned);
+            if (ring.Count == 0) return null;
+            var t = pl.ToTransform();
+            var pts = ring.Select(q => C3dLowering.OnPlane(turned.Plane, q.U, q.V, turned.Offset))
+                          .Select(p => t.Apply(new C3dPoint3((long)p.X, (long)p.Y, (long)p.Z))).ToList();
+            static long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
+            return new Box3([R(pts.Min(p => p.Item1)), R(pts.Min(p => p.Item2)), R(pts.Min(p => p.Item3))],
+                            [R(pts.Max(p => p.Item1)), R(pts.Max(p => p.Item2)), R(pts.Max(p => p.Item3))]);
+        }
         if (pl.Rotate.Count > 0 || pl.MirrorX) return null;
         Box3? own = o switch
         {
@@ -331,6 +343,17 @@ internal sealed partial class HznTranslator
                : ImpedanceOhms(props["RenormImpedance"], name) is { } rz ? Num(rz) : "";
         }
         else z0 = ImpedanceOhms(props["Impedance"], name) is { } lz ? Num(lz) : "";
+        if (Terminal)
+        {
+            // brief-hzn-14 R-hzn14-3 — established black-box: a Terminal design's Touchstone is referenced to each port's
+            // RenormImpedance whether or not the port renormalises
+            if (!wave)
+            {
+                _r.Add(HznRefusalKind.Excitation, "Lumped Port in a Terminal design", "how Hertzon numbers a lumped port among the terminals is not established", name);
+                return;
+            }
+            z0 = ImpedanceOhms(props["RenormImpedance"] ?? "50ohm", name) is { } tz ? Num(tz) : "";
+        }
         if (z0.Length == 0) return;
 
         var port = new C3dPort { Number = number.Value, Name = name, Kind = wave ? Em3dPortKind.Wave : Em3dPortKind.Lumped, Z0 = z0 };
@@ -341,12 +364,22 @@ internal sealed partial class HznTranslator
             if (!_sheets.TryGetValue(hz, out var geom) || geom.Placed)
             {
                 _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'",
-                       "a port is a rectangle sheet in an axis plane, drawn and not moved or rotated afterwards", name);
+                       "a port is a rectangle sheet in an axis plane or an upright one, drawn and not moved or rotated afterwards", name);
                 return;
             }
             sheetObject = hz;
             port.Plane = geom.Plane;
             port.Offset = Dbu(geom.Offset);
+            if (geom.Angle != 0)
+            {
+                // brief-hzn-14 R-hzn14-1 — a sheet in a turned upright plane: a lumped port turned about the vertical through its centre
+                if (wave)
+                {
+                    _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'", "its sheet stands in a turned upright plane, and a wave port is never turned", name);
+                    return;
+                }
+                port.Angle = geom.Angle;
+            }
             PutAll(port.Rect, nameof(C3dRect.Min), geom.Min);
             PutAll(port.Rect, nameof(C3dRect.Size), geom.Size);
             if (!geom.Offset.IsLiteral)
@@ -384,10 +417,11 @@ internal sealed partial class HznTranslator
         }
         _doc.Ports.Add(port);
         _prov.Ports.Add(new HznPortOrigin(port.Number, name, sheetObject));
+        if (Terminal) _terminalPorts.Add((port, props["ReferenceConductor"] ?? ""));
         foreach (var (k, v) in props.Names.Select(k => (k, props[k]!)))
             // a port normalised to its mode reads no RenormImpedance (the save keeps it as written)
             if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance" or "ModeType")
-                && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0))
+                && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0) && !(Terminal && k == "ReferenceConductor"))
                 _prov.Unused.Add(new HznUnusedSetting($"port {name}", k, v));
     }
 
@@ -420,9 +454,13 @@ internal sealed partial class HznTranslator
     private void Boundaries()
     {
         AutoOpen();
-        string solution = _design.Json.GetObject("settings")?.GetString("SolutionType") ?? "Modal";
-        if (solution != "Modal")
-            _r.Add(HznRefusalKind.Setting, $"solution type '{solution}'", "driven modal S-parameters are translated", DesignName);
+        string solution = SolutionType;
+        // brief-hzn-14 R-hzn14-3 — Terminal: the wave ports become terminals (HznTranslator.Terminals.cs)
+        if (solution is not ("Modal" or "Terminal"))
+            _r.Add(HznRefusalKind.Setting, $"solution type '{solution}'", "driven modal and terminal S-parameters are translated", DesignName);
+        if (solution == "Terminal")
+            foreach (string k in new[] { "DifferentialPairs", "OutputVariables", "Sources" })
+                if (_design.Json.GetObject("settings")?.GetString(k) is { Length: > 0 } v) _prov.Unused.Add(new HznUnusedSetting("design settings", k, v));
 
         foreach (var b in _design.Boundaries)
         {
@@ -837,7 +875,7 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.Boundary, "Lumped element from a Touchstone file", "a mount from data is not translated", name);
             return;
         }
-        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed)
+        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed || geom.Angle != 0)
         {
             _r.Add(HznRefusalKind.Boundary, "Lumped RLC not on one drawn sheet", "the element's gap is the rectangle of a sheet", name);
             return;

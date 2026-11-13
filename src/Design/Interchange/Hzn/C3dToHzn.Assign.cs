@@ -101,17 +101,36 @@ internal sealed partial class C3dToHznWriter
 
     // ── ports ─────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>brief-hzn-14 R-hzn14-3 — true when a port has terminals: the design is written as Hertzon's Terminal solution.</summary>
+    private bool _terminalDesign;
+
     private void Ports()
     {
+        // brief-hzn-14 R-hzn14-3 — a port with terminals makes the design a Terminal one: Hertzon finds each port's terminals itself
+        // (one per conductor reaching it), so every port is written as one Wave Port, numbered in the order of its terminals
+        _terminalDesign = _doc.Ports.Any(C3dPorts.HasTerminals);
+        var terminalOrder = _doc.Ports.OrderBy(p => C3dPorts.HasTerminals(p) ? p.Terminals!.Min(t => t.Number) : p.Number).ToList();
         foreach (var port in _doc.Ports)
         {
             string name = port.Name.Length > 0 ? port.Name : $"P{port.Number}";
             _user = name;
             bool wave = port.Kind == Em3dPortKind.Wave;
-            if (C3dPorts.HasTerminals(port))
+            string renorm = "";
+            if (_terminalDesign)
             {
-                _r.Add(HznRefusalKind.Excitation, "wave port with several terminals", "one mode is written", name);
-                continue;
+                if (!wave)
+                {
+                    _r.Add(HznRefusalKind.Excitation, "lumped port beside terminals", "how Hertzon numbers a lumped port among the terminals is not established", name);
+                    continue;
+                }
+                var z0s = C3dPorts.HasTerminals(port) ? port.Terminals!.Select(t => t.Z0.Trim()).Distinct().ToList() : [port.Z0.Trim()];
+                if (z0s.Count != 1 || !C3dPorts.TryParseZ0(z0s[0], out var tz) || tz.Real <= 0 || tz.Imaginary != 0)
+                {
+                    _r.Add(HznRefusalKind.Excitation, "terminal reference impedances",
+                           "Hertzon refers a port's terminals to its one real RenormImpedance; these terminals state " + string.Join(", ", z0s), name);
+                    continue;
+                }
+                renorm = Num(tz.Real) + "ohm";
             }
             if (port.Cylinder is not null)
             {
@@ -124,41 +143,50 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Excitation, "coaxial port", "Hertzon's port is a rectangle sheet in an axis plane", name);
                 continue;
             }
-            if (port.Angle != 0)
-            {
-                _r.Add(HznRefusalKind.Excitation, "turned port", "Hertzon's port is a rectangle sheet in an axis plane", name);
-                continue;
-            }
+            bool turned = port.Angle != 0;   // brief-hzn-14 — written as its four corners, a polyline sheet
             if (wave && port.VoltagePath is not null)
             {
                 _r.Add(HznRefusalKind.Excitation, "wave port with a stated voltage path", "a wave port's polarity is not written", name);
                 continue;
             }
             // brief-hzn-11 R-hzn11-5 — a wave port normalised to its mode is Hertzon's Renormalize False
-            bool mode = wave && C3dPorts.IsModeZ0(port.Z0);
+            bool mode = wave && !_terminalDesign && C3dPorts.IsModeZ0(port.Z0);
             var z = Complex.Zero;
-            if (!mode && (!C3dPorts.TryParseZ0(port.Z0, out z) || z.Real <= 0 || z.Imaginary != 0))
+            if (!_terminalDesign && !mode && (!C3dPorts.TryParseZ0(port.Z0, out z) || z.Real <= 0 || z.Imaginary != 0))
             {
                 _r.Add(HznRefusalKind.Excitation, "reference impedance", $"'{port.Z0}' is not a real positive number of ohms; Hertzon's port has a real impedance", name);
                 continue;
             }
-            var sheetSource = new C3dSheet { Plane = port.Plane, Offset = port.Offset, Rect = port.Rect };
             var sheetSteps = new List<HStep>();
-            if (!SheetSteps(sheetSource, sheetSteps, name)) continue;
+            if (turned) sheetSteps.Add(TurnedSheet(port));
+            else
+            {
+                var sheetSource = new C3dSheet { Plane = port.Plane, Offset = port.Offset, Rect = port.Rect };
+                if (!SheetSteps(sheetSource, sheetSteps, name)) continue;
+            }
             var sheet = new HObj
             {
                 Name = UniqueObjectName(name + "_sheet"), History = sheetSteps, IsSheet = true, Source = null,
                 Visible = true, Model = true,
             };
             _objects.Add(sheet);
-            _extraSheets.Add((sheet, port.Plane, port.Offset, port.Rect));
+            if (turned) _extraBoxes.Add(TurnedBox(port));
+            else _extraSheets.Add((sheet, port.Plane, port.Offset, port.Rect));
 
             var x = new HAssign
             {
                 Name = name, Kind = wave ? "Wave Port" : "Lumped Port", Objects = [sheet.Name], Enabled = port.Model,
             };
-            x.Props.Add(("PortNumber", port.Number.ToString(CultureInfo.InvariantCulture)));
-            if (wave)
+            int number = _terminalDesign ? terminalOrder.IndexOf(port) + 1 : port.Number;
+            x.Props.Add(("PortNumber", number.ToString(CultureInfo.InvariantCulture)));
+            if (wave && _terminalDesign)
+            {
+                // the reference: a named conductor, or (unstated, or a box face) Hertzon's own inference, the closed box
+                string reference = port.Reference is { } r && !r.StartsWith("airbox/", StringComparison.Ordinal) ? ObjectName(r) : "";
+                x.Props.AddRange([("NumberOfModes", "1"), ("ModeType", "Auto"), ("ImpedanceDefinition", "Zpv"), ("Renormalize", "False"),
+                                  ("RenormImpedance", renorm), ("Deembed", "False"), ("DeembedDistance", "0"), ("ReferenceConductor", reference)]);
+            }
+            else if (wave)
             {
                 x.Props.Add(("NumberOfModes", "1"));
                 x.Props.Add(("ModeType", "Auto"));
@@ -183,9 +211,47 @@ internal sealed partial class C3dToHznWriter
             }
             _excitations.Add(x);
         }
-        var dup = _doc.Ports.GroupBy(p => p.Number).FirstOrDefault(g => g.Count() > 1);
+        var dup = _terminalDesign ? null : _doc.Ports.GroupBy(p => p.Number).FirstOrDefault(g => g.Count() > 1);
         if (dup is not null) _r.Add(HznRefusalKind.Excitation, $"port number {dup.Key}", "two ports have it", DesignName);
     }
+
+    /// <summary>brief-hzn-14 — a turned port's sheet as Hertzon's polyline of its four corners, in order round it (the map
+    /// <see cref="C3dTurnedPorts"/> gives); its heights keep the rectangle's expressions when it stands in an upright plane.</summary>
+    private HStep TurnedSheet(C3dPort port)
+    {
+        var corners = TurnedCorners(port);
+        string[] z = ["", "", "", ""];
+        if (port.Plane == C3dPlane.XY) z = [.. Enumerable.Repeat(Lit(port.Offset), 4)];
+        else
+        {
+            string lo = Dim(port.Rect, nameof(C3dRect.Min), 1, port.Rect.Min.V);
+            bool bound = C3dBindings.GetExpr(port.Rect, nameof(C3dRect.Min), 1) is not null || C3dBindings.GetExpr(port.Rect, nameof(C3dRect.Size), 1) is not null;
+            string hi = !bound ? Lit(port.Rect.Min.V + port.Rect.Size.V)
+                      : port.Rect.Min.V == 0 && C3dBindings.GetExpr(port.Rect, nameof(C3dRect.Min), 1) is null ? Dim(port.Rect, nameof(C3dRect.Size), 1, port.Rect.Size.V)
+                      : $"({lo})+({Dim(port.Rect, nameof(C3dRect.Size), 1, port.Rect.Size.V)})";
+            z = [lo, lo, hi, hi];
+        }
+        string pts = string.Join(";", corners.Select((c, k) => $"{Lit(c.X)},{Lit(c.Y)},{z[k]}"));
+        return new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", "")));
+    }
+
+    /// <summary>A turned port's four corners, world DBU, in order round it; in an upright plane the first two are the lower edge.</summary>
+    private static List<C3dPoint3> TurnedCorners(C3dPort port)
+    {
+        double u0 = port.Rect.Min.U, v0 = port.Rect.Min.V, u1 = u0 + port.Rect.Size.U, v1 = v0 + port.Rect.Size.V;
+        var map = C3dTurnedPorts.MapDbu(port.Plane, port.Angle, u0, v0, u1, v1, port.Offset);
+        static long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
+        return [.. new[] { map(u0, v0), map(u1, v0), map(u1, v1), map(u0, v1) }.Select(p => new C3dPoint3(R(p.X), R(p.Y), R(p.Z)))];
+    }
+
+    private static Box3 TurnedBox(C3dPort port)
+    {
+        var c = TurnedCorners(port);
+        return new Box3([c.Min(p => p.X), c.Min(p => p.Y), c.Min(p => p.Z)], [c.Max(p => p.X), c.Max(p => p.Y), c.Max(p => p.Z)]);
+    }
+
+    /// <summary>brief-hzn-14 — turned port sheets' world boxes: the air box must enclose them too.</summary>
+    private readonly List<Box3> _extraBoxes = [];
 
     /// <summary>Port and element sheets, with the plane, offset and rectangle they were drawn from: the air box must enclose them.</summary>
     private readonly List<(HObj Sheet, C3dPlane Plane, long Offset, C3dRect Rect)> _extraSheets = [];
@@ -523,6 +589,7 @@ internal sealed partial class C3dToHznWriter
             (lo[v], hi[v]) = (rect.Min.V, rect.Min.V + rect.Size.V);
             hz = Union(hz, new Box3(lo, hi))!.Value;
         }
+        foreach (var turnedBox in _extraBoxes) hz = Union(hz, turnedBox)!.Value;
         var hzPad = new long[6];
         for (int a = 0; a < 3; a++)
         {

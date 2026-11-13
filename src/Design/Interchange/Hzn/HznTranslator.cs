@@ -71,6 +71,7 @@ internal sealed partial class HznTranslator
         Boundaries();
         Setups();
         MaterialsToTechnology();
+        Terminals();                // brief-hzn-14 — after the boundaries, which make sheets metal
         if (_r.Any) return Finish(null);
 
         Check();
@@ -348,7 +349,9 @@ internal sealed partial class HznTranslator
     private readonly List<string> _topOrder = [];
 
     /// <summary>A rectangle sheet that is an exact rectangle in an axis plane: what a port needs.</summary>
-    internal sealed record SheetGeom(C3dPlane Plane, Dim Offset, Dim[] Min, Dim[] Size, bool Placed);
+    /// <summary>A sheet a port or element can take: its rectangle on a plane, and (brief-hzn-14) the turn about the vertical through its
+    /// centre when it stands in a vertical plane that is no axis plane, in degrees as a port's <c>Angle</c>.</summary>
+    internal sealed record SheetGeom(C3dPlane Plane, Dim Offset, Dim[] Min, Dim[] Size, bool Placed, double Angle = 0);
 
     private sealed record Folded(C3dObject Tree, SheetGeom? Sheet, IReadOnlyList<string> Consumed, IReadOnlyList<HznStepOrigin> Steps);
 
@@ -483,7 +486,7 @@ internal sealed partial class HznTranslator
 
     // ── folding one object's history ──────────────────────────────────────────────────────────────
 
-    private enum Pend { None, Rect, Circle, Poly }
+    private enum Pend { None, Rect, Circle, Poly, VPoly }
 
     private sealed class State
     {
@@ -494,6 +497,10 @@ internal sealed partial class HznTranslator
         public Dim[]? Origin;
         public readonly List<(C3dAxis Axis, Ang Angle)> Rot = [];
         public bool Mirror;
+        /// <summary>brief-hzn-14 — an upright polyline's own turn about z and its origin: the sheet's frame, not a move the history
+        /// made, so they do not make it Placed (a port can still take it).</summary>
+        public double? OwnTurn;
+        public C3dPoint3 OwnOrigin;
         public bool Placed => Mirror || Rot.Count > 0 || (Origin is not null && Origin.Any(d => !d.IsZeroLiteral));
         public readonly List<string> Consumed = [];
         public readonly List<HznStepOrigin> Steps = [];
@@ -725,8 +732,15 @@ internal sealed partial class HznTranslator
     private sealed record RectInfo(C3dAxis Normal, Dim[] Pos, Dim[] Min2, Dim[] Size2);
     /// <summary>A circle, or (brief-hzn-13) an ellipse when <paramref name="RadiusV"/> is set: its second radius, along the plane's v.</summary>
     private sealed record CircleInfo(C3dAxis Normal, Dim[] Centre, Dim Radius, Dim? RadiusV = null);
-    /// <summary>A polyline in an axis plane: its offset and each point's (u, v), each component a number or an expression (brief-hzn-13).</summary>
-    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, Dim Offset, List<Dim[]> Outline);
+    /// <summary>A polyline in an axis plane: its offset and each point's (u, v), each component a number or an expression (brief-hzn-13).
+    /// <paramref name="Rect"/> is its rectangle when it is one (brief-hzn-14: a port may take it).</summary>
+    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, Dim Offset, List<Dim[]> Outline, SheetGeom? Rect = null);
+
+    /// <summary>brief-hzn-14 R-hzn14-2 — a polyline standing in a vertical plane that is no axis plane: a sheet on <paramref name="Plane"/>
+    /// (XZ or YZ) at offset 0, its outline (distance along the plane from <paramref name="Origin"/>, z), turned about z by
+    /// <paramref name="Degrees"/> and moved to <paramref name="Origin"/> by its placement. <paramref name="Rect"/> is the port sheet it
+    /// is when it is a rectangle.</summary>
+    private sealed record VPolyInfo(C3dPlane Plane, double Degrees, C3dPoint3 Origin, List<Dim[]> Outline, SheetGeom? Rect);
 
     private object? _pendingInfo;
 
@@ -846,7 +860,14 @@ internal sealed partial class HznTranslator
             if (pts.All(q => Dbu(q[a]) == Dbu(pts[0][a]))) axes.Add((C3dAxis)a);
         if (axes.Count != 1)
         {
-            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline outside an axis plane", "its points do not lie in one plane perpendicular to X, Y or Z", name);
+            if (VerticalPolyline(pts, dims, name, Dbu) is { } vertical)
+            {
+                st.Pending = Pend.VPoly;
+                _pendingInfo = vertical;
+                return true;
+            }
+            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline outside an axis plane",
+                   "its points lie neither in one plane perpendicular to X, Y or Z nor in one upright plane", name);
             return false;
         }
         var normal = axes[0];
@@ -857,8 +878,100 @@ internal sealed partial class HznTranslator
             _notes.Add($"{name}: its points spell their {normal} coordinate differently ({string.Join(", ", dims.Select(q => TextOf(q[ni])).Distinct().Take(4).Select(t => $"'{t}'"))}), " +
                        $"which all evaluate to the plane it lies in; the sheet's offset is the first point's, '{TextOf(offset)}'.");
         st.Pending = Pend.Poly;
-        _pendingInfo = new PolyInfo(plane, normal, offset, [.. dims.Select(q => new[] { q[ui], q[vi] })]);
+        var outline2 = dims.Select(q => new[] { q[ui], q[vi] }).ToList();
+        _pendingInfo = new PolyInfo(plane, normal, offset, outline2, AxisRect(plane, offset, outline2, pts.Select(q => (Dbu(q[ui]), Dbu(q[vi]))).ToList()));
         return true;
+    }
+
+    /// <summary>brief-hzn-14 — an axis-plane polyline that is a rectangle (four points on two u and two v values) as the sheet a port
+    /// takes, its corner and size keeping the points' expressions; null otherwise.</summary>
+    private SheetGeom? AxisRect(C3dPlane plane, Dim offset, List<Dim[]> outline, List<(long U, long V)> at)
+    {
+        if (outline.Count != 4) return null;
+        var us = at.Select(p => p.U).Distinct().ToList();
+        var vs = at.Select(p => p.V).Distinct().ToList();
+        if ((us.Count != 2 || vs.Count != 2) && plane == C3dPlane.XY) return TurnedXyRect(offset, at);
+        if (us.Count != 2 || vs.Count != 2) return null;
+        foreach (long u in us) foreach (long v in vs) if (!at.Contains((u, v))) return null;
+        int iu0 = at.FindIndex(p => p.U == us.Min()), iu1 = at.FindIndex(p => p.U == us.Max());
+        int iv0 = at.FindIndex(p => p.V == vs.Min()), iv1 = at.FindIndex(p => p.V == vs.Max());
+        var min = new[] { outline[iu0][0], outline[iv0][1] };
+        var size = new[] { Add(outline[iu1][0], Neg(outline[iu0][0])), Add(outline[iv1][1], Neg(outline[iv0][1])) };
+        return new SheetGeom(plane, offset, min, size, Placed: false);
+    }
+
+    /// <summary>brief-hzn-14 — four XY points that are a rectangle turned in the plane (each corner square and opposite sides equal, to
+    /// two DBU: a turned port written as its corners rounds each of them): the turned port sheet it is, numbers only; null otherwise.</summary>
+    private static SheetGeom? TurnedXyRect(Dim offset, List<(long U, long V)> at)
+    {
+        double Len(int i) { var (a, b) = (at[i], at[(i + 1) % 4]); return Math.Sqrt((double)(b.U - a.U) * (b.U - a.U) + (double)(b.V - a.V) * (b.V - a.V)); }
+        double w = Len(0), l = Len(1);
+        if (w < 1 || l < 1 || Math.Abs(w - Len(2)) > 2 || Math.Abs(l - Len(3)) > 2) return null;
+        double cu = at.Average(p => p.U), cv = at.Average(p => p.V);
+        for (int i = 0; i < 4; i++)
+        {
+            double r = Math.Sqrt((at[i].U - cu) * (at[i].U - cu) + (at[i].V - cv) * (at[i].V - cv));
+            if (Math.Abs(r - Math.Sqrt(w * w + l * l) / 2) > 2) return null;     // corners on one circle: every corner square
+        }
+        double degrees = Math.Atan2(at[1].V - at[0].V, at[1].U - at[0].U) * 180 / Math.PI;
+        long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
+        return new SheetGeom(C3dPlane.XY, offset, [new Dim(null, R(cu - w / 2), true), new Dim(null, R(cv - l / 2), true)],
+                             [new Dim(null, R(w), true), new Dim(null, R(l), true)], Placed: false, Angle: degrees);
+    }
+
+    /// <summary>
+    /// brief-hzn-14 R-hzn14-2 — a polyline whose points stand in one upright plane (their plan positions on one line, their heights
+    /// spanning more than a DBU): the sheet it is, on XZ or YZ — whichever needs the smaller turn about z — with its outline as
+    /// (distance along the line, z). The heights keep their expressions; the distances are numbers (a turn is not linear in the
+    /// points' coordinates), noted when the points named variables. Null when the points are not so.
+    /// </summary>
+    private VPolyInfo? VerticalPolyline(List<double[]> pts, List<Dim[]> dims, string name, Func<double, long> dbu)
+    {
+        var plan = pts.Select(q => (X: dbu(q[0]), Y: dbu(q[1]))).ToList();
+        var far = plan.OrderByDescending(p => (double)(p.X - plan[0].X) * (p.X - plan[0].X) + (double)(p.Y - plan[0].Y) * (p.Y - plan[0].Y)).First();
+        double dx = far.X - plan[0].X, dy = far.Y - plan[0].Y, len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1 || pts.Max(q => dbu(q[2])) - pts.Min(q => dbu(q[2])) < 1) return null;
+        (dx, dy) = (dx / len, dy / len);
+        if (plan.Any(p => Math.Abs((p.X - plan[0].X) * dy - (p.Y - plan[0].Y) * dx) > 1)) return null;   // off the line, past a DBU
+        // The turn: XZ's u axis is +x turned by θ, YZ's is +y turned by θ; the line may run either way, so θ is taken in (−90°, 90°].
+        static double Fold(double deg) { deg %= 180; if (deg > 90) deg -= 180; else if (deg <= -90) deg += 180; return deg; }
+        double phi = Math.Atan2(dy, dx) * 180 / Math.PI;
+        double xz = Fold(phi), yz = Fold(phi - 90);
+        var (plane, degrees) = Math.Abs(xz) <= Math.Abs(yz) ? (C3dPlane.XZ, xz) : (C3dPlane.YZ, yz);
+        double t = degrees * Math.PI / 180;
+        var (ax, ay) = plane == C3dPlane.XZ ? (Math.Cos(t), Math.Sin(t)) : (-Math.Sin(t), Math.Cos(t));   // the plane's turned u axis
+        var origin = new C3dPoint3(plan[0].X, plan[0].Y, 0);
+        var s = plan.Select(p => (long)Math.Round((p.X - origin.X) * ax + (p.Y - origin.Y) * ay, MidpointRounding.AwayFromZero)).ToList();
+        if (dims.Any(d => !d[0].IsLiteral || !d[1].IsLiteral))
+            _notes.Add($"{name}: it stands in an upright plane turned {HznExpressionWriter.Digits(degrees)}° about z, so its points' x and y are numbers " +
+                       "in the sheet; their heights keep their expressions.");
+        var outline = dims.Select((d, k) => new[] { new Dim(null, s[k], true), d[2] }).ToList();
+
+        // A rectangle: two heights, the same two plan points at each — the port sheet it is, turned about its centre.
+        SheetGeom? rect = null;
+        var z = pts.Select(q => dbu(q[2])).ToList();
+        var levels = z.Distinct().OrderBy(v => v).ToList();
+        if (pts.Count == 4 && levels.Count == 2)
+        {
+            var low = Enumerable.Range(0, 4).Where(k => z[k] == levels[0]).ToList();
+            var high = Enumerable.Range(0, 4).Where(k => z[k] == levels[1]).ToList();
+            var lowS = low.Select(k => s[k]).Order().ToList();
+            var highS = high.Select(k => s[k]).Order().ToList();
+            if (low.Count == 2 && lowS.SequenceEqual(highS) && lowS[1] > lowS[0])
+            {
+                double mid = (lowS[0] + lowS[1]) / 2.0;
+                double cx = origin.X + mid * ax, cy = origin.Y + mid * ay;
+                long width = lowS[1] - lowS[0];
+                double cu = plane == C3dPlane.XZ ? cx : cy;
+                long offset = (long)Math.Round(plane == C3dPlane.XZ ? cy : cx, MidpointRounding.AwayFromZero);
+                long u0 = (long)Math.Round(cu - width / 2.0, MidpointRounding.AwayFromZero);
+                var zLow = dims[low[0]][2];
+                var zHigh = dims[high[0]][2];
+                rect = new SheetGeom(plane, new Dim(null, offset, true), [new Dim(null, u0, true), zLow], [new Dim(null, width, true), Add(zHigh, Neg(zLow))],
+                                     Placed: false, Angle: degrees);
+            }
+        }
+        return new VPolyInfo(plane, degrees, origin, outline, rect);
     }
 
     /// <summary>A pending 2D shape that nothing swept becomes what it is: a rectangle, polyline, circle or ellipse a sheet.</summary>
@@ -885,6 +998,19 @@ internal sealed partial class HznTranslator
                 var sheet = new C3dSheet { Plane = q.Plane };
                 PutOutline(sheet, nameof(C3dSheet.Offset), nameof(C3dSheet.Outline), q);
                 st.Root = sheet;
+                st.Sheet = q.Rect;          // brief-hzn-14 — a rectangle drawn as a polyline is a port sheet too
+                break;
+            }
+            case Pend.VPoly:
+            {
+                // brief-hzn-14 R-hzn14-2 — a sheet in an upright plane: on XZ or YZ, turned about z and moved by its placement
+                var q = (VPolyInfo)_pendingInfo!;
+                var sheet = new C3dSheet { Plane = q.Plane };
+                PutOutline(sheet, nameof(C3dSheet.Offset), nameof(C3dSheet.Outline), new PolyInfo(q.Plane, C3dAxis.Z, Dim.Zero, q.Outline));
+                st.OwnTurn = q.Degrees;           // FlushPlacement writes the frame, with any move the history adds
+                st.OwnOrigin = q.Origin;
+                st.Root = sheet;
+                st.Sheet = q.Rect;
                 break;
             }
             default:
@@ -911,6 +1037,13 @@ internal sealed partial class HznTranslator
         if (st.Pending == Pend.None)
         {
             _r.Add(HznRefusalKind.Operation, "SweepAlongVector", $"on {(st.Root is null ? "nothing" : "a " + C3dObject.KindOf(st.Root).ToLowerInvariant())}; only a rectangle, circle or polyline in an axis plane swept along its normal is translated", name);
+            return false;
+        }
+        if (st.Pending == Pend.VPoly)
+        {
+            _r.Add(HznRefusalKind.Operation, "SweepAlongVector of an upright polyline", "a polygon in a turned upright plane swept along a vector has no .c3d primitive", name);
+            st.Pending = Pend.None;
+            _pendingInfo = null;
             return false;
         }
         var v = Triple(p.GetValueOrDefault("Vector"), user);
@@ -1071,8 +1204,19 @@ internal sealed partial class HznTranslator
     {
         if (st.Root is null) return;
         var pl = st.Root.Placement;
+        bool placed = st.Placed;            // what the history moved, before the upright sheet's own frame is added
         pl.Rotate.Clear();
         pl.MirrorX = st.Mirror;
+        if (st.OwnTurn is { } own)
+        {
+            // brief-hzn-14 — the upright sheet's frame: its turn first, its origin added to any move. A rotation or mirror the history
+            // adds would act on the moved frame, which one placement cannot state.
+            if (st.Mirror || st.Rot.Count > 0)
+                _r.Add(HznRefusalKind.Operation, "Rotate or Mirror of an upright polyline", "its own turn and a later rotation about the origin are not one placement", name);
+            if (own != 0) pl.Rotate.Add(new C3dRotation { Axis = C3dAxis.Z, Deg = own });
+            var o = st.Origin ?? [Dim.Zero, Dim.Zero, Dim.Zero];
+            st.Origin = [Add(o[0], new Dim(null, st.OwnOrigin.X, true)), Add(o[1], new Dim(null, st.OwnOrigin.Y, true)), o[2]];
+        }
         if (st.Origin is { } origin) PutAll(pl, nameof(C3dPlacement.Origin), origin);
         foreach (var (axis, ang) in st.Rot)
         {
@@ -1081,7 +1225,7 @@ internal sealed partial class HznTranslator
             else C3dBindings.SetExpr(rot, C3dBindings.SpecOf(typeof(C3dRotation), nameof(C3dRotation.Deg))!, 0, new C3dExpr(ang.Text, C3dUnits.Degrees));
             pl.Rotate.Add(rot);
         }
-        if (st.Sheet is { } sh && st.Placed) st.Sheet = sh with { Placed = true };
+        if (st.Sheet is { } sh && placed) st.Sheet = sh with { Placed = true };
         st.Origin = null;
         st.Rot.Clear();
         st.Mirror = false;

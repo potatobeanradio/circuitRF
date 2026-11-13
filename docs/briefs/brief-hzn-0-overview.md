@@ -68,6 +68,7 @@ black-box runs of an installed Hertzon (0.3.19):
 | `brief-hzn-11-hollow-wave-ports.md` | A hollow waveguide wave port normalised to its mode; Hertzon's WR90 post examples open | 2, 7, 10 |
 | `brief-hzn-12-plane-wave-rcs.md` | An incident plane wave and radar cross-section on EMerge, then the faceted sphere; Hertzon's sphere scattering examples open | 2, 7, 11 |
 | `brief-hzn-13-outline-expressions-and-ellipse-sheets.md` | Expressions in prism and sheet outlines, and the circular/elliptical sheet; Hertzon's hairpin and GPS examples open | 2, 10 |
+| `brief-hzn-14-vertical-turned-ports-and-terminals.md` | Lumped ports turned in a vertical plane, and Hertzon's Terminal solution; the Rotman lens and differential-pair examples open | 2, 11, 13 |
 
 Brief 6 can run beside 3–5. Brief 7 and brief 8 are independent of each other, and so is brief 9 once brief 2 is in.
 

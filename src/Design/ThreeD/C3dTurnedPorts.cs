@@ -1,5 +1,7 @@
 // A lumped port turned in its plane: a rectangle at any angle in the XY plane, for a gap between pads that are not square
-// to the axes.
+// to the axes — or (brief-hzn-14) a rectangle in the XZ or YZ plane turned about the vertical through its centre, for an edge
+// port standing at the end of a line that is not square to the axes. A vertical one's ends are horizontal edges: they lie on
+// a sheet or on the top or bottom of extruded copper, inside it or along one straight side of its outline.
 //
 // WHY ONLY A RECTANGLE. A lumped port drives one uniform field along one direction across its sheet and turns voltage and
 // current into impedance with the sheet's length along that direction and its width across it. Both mean something only
@@ -42,24 +44,43 @@ public static class C3dTurnedPorts
                    "square to its edges; set its Angle to 0.";
         if (port.Cylinder is not null)
             return $"{label} is a gap on a cylinder with an Angle of {Deg(port.Angle)}°; a gap on a cylinder is not turned. Set its Angle to 0.";
-        if (port.Plane != C3dPlane.XY)
-            return $"{label} lies in the {port.Plane} plane with an Angle of {Deg(port.Angle)}°. A port is turned only in the XY " +
-                   "plane, where a board's pads lie; set its Angle to 0.";
+        // brief-hzn-14 R-hzn14-1 — a port in the XZ or YZ plane turns about the vertical through its centre
         return null;
     }
 
     /// <summary>The port's two in-plane axes, world: its plane's, turned by its Angle when it is a turned port.</summary>
     public static (Point3 U, Point3 V) Axes(C3dPort port)
     {
-        if (port.Angle == 0 || port.Plane != C3dPlane.XY) return C3dPorts.PlaneAxes(port.Plane);
-        var (_, u, v) = Map(port.Angle, 0, 0, 0, 0, 0);
+        if (port.Angle == 0) return C3dPorts.PlaneAxes(port.Plane);
+        var (_, u, v) = Map(port.Plane, port.Angle, 0, 0, 0, 0, 0);
         return (u, v);
     }
 
     /// <summary>The map from the port's rectangle before it is turned to the world, turned by <paramref name="degrees"/>
     /// about the rectangle's centre at height <paramref name="h"/>, and the two turned axes.</summary>
     internal static (Func<double, double, Point3> P, Point3 U, Point3 V) Map(double degrees, double u0, double v0, double u1, double v1, double h)
+        => Map(C3dPlane.XY, degrees, u0, v0, u1, v1, h);
+
+    /// <summary>brief-hzn-14 — the same map in whatever unit its arguments are in (the Hertzon writer works in DBU).</summary>
+    public static Func<double, double, Point3> MapDbu(C3dPlane plane, double degrees, double u0, double v0, double u1, double v1, double h)
+        => Map(plane, degrees, u0, v0, u1, v1, h).P;
+
+    /// <summary>
+    /// brief-hzn-14 R-hzn14-1 — the map for a port on any plane: in XY, turned about the rectangle's centre at height
+    /// <paramref name="h"/>; in XZ or YZ (<paramref name="h"/> the plane's offset), turned about the vertical through the
+    /// rectangle's centre, counter-clockwise seen from +z: the plane's horizontal axis turns, its vertical axis stays z.
+    /// </summary>
+    internal static (Func<double, double, Point3> P, Point3 U, Point3 V) Map(C3dPlane plane, double degrees, double u0, double v0, double u1, double v1, double h)
     {
+        if (plane != C3dPlane.XY)
+        {
+            double tt = degrees * Math.PI / 180, cc = Math.Cos(tt), ss = Math.Sin(tt), mid = (u0 + u1) / 2;
+            // XZ: u is x, the normal y; YZ: u is y, the normal x. Unturned, u runs along +x or +y; turned, along (cos, sin) of
+            // that direction's own angle plus the turn.
+            var axisU = plane == C3dPlane.XZ ? new Point3(cc, ss, 0) : new Point3(-ss, cc, 0);
+            var centre = plane == C3dPlane.XZ ? (X: mid, Y: h) : (X: h, Y: mid);
+            return ((u, v) => new Point3(centre.X + (u - mid) * axisU.X, centre.Y + (u - mid) * axisU.Y, v), axisU, new Point3(0, 0, 1));
+        }
         double t = degrees * Math.PI / 180, c = Math.Cos(t), s = Math.Sin(t);
         double uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
         return ((u, v) => new Point3(uc + (u - uc) * c - (v - vc) * s, vc + (u - uc) * s + (v - vc) * c, h),
@@ -78,9 +99,17 @@ public static class C3dTurnedPorts
         var (neg, pos) = quad.Ends(direction);
         var found = new List<C3dSeam>(2);
         double tol = Tolerance(ctx);
+        bool vertical = quad.Corners.Max(c => c.Z) - quad.Corners.Min(c => c.Z) > tol;
         foreach (var (name, (p, q), which) in new[] { (negative, neg, "negative"), (positive, pos, "positive") })
         {
             var c = ctx.Conductors.FirstOrDefault(k => k.Name == name);
+            // brief-hzn-14 — a port standing in a vertical plane (its corners span a height): its ends are horizontal
+            if (vertical && Math.Abs(p.Z - q.Z) <= tol)
+            {
+                if (HorizontalEnd(label, which, name, c, p, q, tol) is { } why) return why;
+                if (HorizontalSeam(c!, p, q, tol) is { } seam) found.Add(seam);
+                continue;
+            }
             if (c?.Prism is not { } prism)
                 return $"{label} is turned, and its {which} end is on '{name}', which is {KindOf(c)}. A turned port ends on copper " +
                        "drawn as an outline (a layout's copper, or an extruded polygon), whose side its end lies along.";
@@ -100,11 +129,83 @@ public static class C3dTurnedPorts
         return null;
     }
 
+    /// <summary>
+    /// brief-hzn-14 — why a vertical turned port's horizontal end from <paramref name="p"/> to <paramref name="q"/> cannot end on
+    /// <paramref name="c"/>, or null: it must lie on a horizontal surface of it at its height (a flat sheet, or an extruded solid's
+    /// top or bottom), inside that surface or along its outline.
+    /// </summary>
+    private static string? HorizontalEnd(string label, string which, string name, C3dPortContext.Conductor? c, Point3 p, Point3 q, double tol)
+    {
+        if (Surface(c, p.Z, tol) is not { } rings)
+            return $"{label} is turned in a vertical plane, and its {which} end is on '{name}', which has no flat horizontal surface at " +
+                   $"z = {Um(p.Z)} µm. A port turned in a vertical plane ends on a sheet, or on the top or bottom of extruded copper, at the " +
+                   "height of its end.";
+        var a = new Point2(p.X, p.Y);
+        var b = new Point2(q.X, q.Y);
+        for (int k = 0; k <= 8; k++)
+        {
+            var at = new Point2(a.X + (b.X - a.X) * k / 8, a.Y + (b.Y - a.Y) * k / 8);
+            if (!Covers(rings, at, tol))
+                return $"{label} is turned in a vertical plane, and its {which} end, from ({Mm(a.X)}, {Mm(a.Y)}) to ({Mm(b.X)}, {Mm(b.Y)}) mm " +
+                       $"at z = {Um(p.Z)} µm, leaves '{name}': draw the port so its end lies on that surface or along its edge.";
+        }
+        return null;
+    }
+
+    /// <summary>The seam a horizontal end makes when it lies along one straight side of its surface's outline (so the port and the
+    /// conductor share their points exactly); null when it lies inside the surface, where the mesher imprints it.</summary>
+    private static C3dSeam? HorizontalSeam(C3dPortContext.Conductor c, Point3 p, Point3 q, double tol)
+    {
+        var a = new Point2(p.X, p.Y);
+        var b = new Point2(q.X, q.Y);
+        var rings = Surface(c, p.Z, tol)!;
+        return rings.Any(r => SeamRing(r, a, b, tol) is not null) ? new C3dSeam(c.Name, a, b) : null;
+    }
+
+    /// <summary>The rings (outline first, then holes) of <paramref name="c"/>'s flat horizontal surface at height
+    /// <paramref name="z"/>, in plan; null when it has none there.</summary>
+    private static IReadOnlyList<IReadOnlyList<Point2>>? Surface(C3dPortContext.Conductor? c, double z, double tol)
+    {
+        if (c?.Sheet is { Frame: null } sh && Math.Abs(sh.Z - z) <= tol) return [sh.Outline, .. sh.Holes];
+        if (c?.Prism is { } pr && (Math.Abs(pr.ZTop - z) <= tol || Math.Abs(pr.ZBottom - z) <= tol)) return [pr.Outline, .. pr.Holes];
+        return null;
+    }
+
+    /// <summary>Whether <paramref name="at"/> lies on the surface (inside its outline and outside every hole), or within
+    /// <paramref name="tol"/> of its edge.</summary>
+    private static bool Covers(IReadOnlyList<IReadOnlyList<Point2>> rings, Point2 at, double tol)
+    {
+        bool NearEdge(IReadOnlyList<Point2> r) => Enumerable.Range(0, r.Count).Any(i => SegmentDistance(at, r[i], r[(i + 1) % r.Count]) <= tol);
+        if (rings.Any(NearEdge)) return true;
+        if (!Inside(rings[0], at)) return false;
+        return !rings.Skip(1).Any(h => Inside(h, at));
+
+        static bool Inside(IReadOnlyList<Point2> r, Point2 t)
+        {
+            bool inside = false;
+            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++)
+                if ((r[i].Y > t.Y) != (r[j].Y > t.Y) && t.X < (r[j].X - r[i].X) * (t.Y - r[i].Y) / (r[j].Y - r[i].Y) + r[i].X) inside = !inside;
+            return inside;
+        }
+    }
+
     /// <summary>The solids of a solved problem with every seam of <paramref name="seams"/> applied, or the refusal.</summary>
-    public static string? Apply(List<Em3dSolid> solids, IEnumerable<C3dSeam> seams, double tol)
+    public static string? Apply(List<Em3dSolid> solids, IEnumerable<C3dSeam> seams, double tol) => Apply(solids, null, seams, tol);
+
+    /// <summary>The solids and (brief-hzn-14) flat sheets of a solved problem with every seam applied, or the refusal: a seam on a
+    /// sheet takes the end's two corners into the sheet's outline as a prism's does.</summary>
+    public static string? Apply(List<Em3dSolid> solids, List<Em3dSheet>? sheets, IEnumerable<C3dSeam> seams, double tol)
     {
         foreach (var seam in seams)
         {
+            if (sheets is not null && sheets.FindIndex(s => s.Name == seam.Conductor) is >= 0 and var si)
+            {
+                var sh = sheets[si];
+                if (sh.Frame is not null || SeamSheet(sh, seam.A, seam.B, tol) is not { } seamed)
+                    return $"Two turned ports end on the same side of '{seam.Conductor}' and cannot both meet it exactly.";
+                sheets[si] = seamed;
+                continue;
+            }
             int at = solids.FindIndex(s => s.Name == seam.Conductor);
             if (at < 0 || solids[at].Primitive is not Em3dExtrudedPolygon prism)
                 return $"'{seam.Conductor}', which a turned port ends on, is not in the solved problem as an outline.";
@@ -120,6 +221,21 @@ public static class C3dTurnedPorts
     /// replaced by those two points; null when no ring has both within <paramref name="tol"/> of it with every vertex between
     /// them within <paramref name="tol"/> of the line a–b.
     /// </summary>
+    /// <summary>brief-hzn-14 — a flat sheet with the stretch of one ring from <paramref name="a"/> to <paramref name="b"/> replaced
+    /// by those two points, as <see cref="Seam"/> does a prism's.</summary>
+    internal static Em3dSheet? SeamSheet(Em3dSheet sheet, Point2 a, Point2 b, double tol)
+    {
+        if (SeamRing(sheet.Outline, a, b, tol) is { } outer) return sheet with { Outline = outer };
+        for (int k = 0; k < sheet.Holes.Count; k++)
+            if (SeamRing(sheet.Holes[k], a, b, tol) is { } hole)
+            {
+                var holes = sheet.Holes.ToList();
+                holes[k] = hole;
+                return sheet with { Holes = holes };
+            }
+        return null;
+    }
+
     internal static Em3dExtrudedPolygon? Seam(Em3dExtrudedPolygon prism, Point2 a, Point2 b, double tol)
     {
         if (SeamRing(prism.Outline, a, b, tol) is { } outer) return prism with { Outline = outer };

@@ -389,7 +389,7 @@
                         <TextBlock Grid.Row="10" Grid.Column="2" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
                         <TextBlock Grid.Row="8" Grid.Column="4" Text="Angle" FontSize="11" Opacity="0.7"/>
                         <TextBox Grid.Row="10" Grid.Column="4" Text="{Binding PortAngle}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
-                                 ToolTip.Tip="Degrees the port is turned about its centre, counter-clockwise seen from +z. A lumped port in the XY plane turns; each end must lie along a straight side of its copper."/>
+                                 ToolTip.Tip="Degrees the port is turned about its centre, counter-clockwise seen from +z. A lumped port turns: in the XY plane each end lies along a straight side of its copper; in an upright plane it turns about the vertical, and each end lies on a sheet or on the top or bottom of its copper."/>
                         <TextBlock Grid.Row="10" Grid.Column="6" Text="°" FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>

@@ -543,6 +543,19 @@ public sealed record Em3dPortQuad(Point3 A, Point3 B, Point3 C, Point3 D)
     /// <summary>The four corners, in order.</summary>
     public Point3[] Corners => [A, B, C, D];
 
+    /// <summary>brief-hzn-14 — true when the sheet stands in an upright plane: its normal is horizontal (to one part in 10⁹), so it
+    /// is an edge port turned about z.</summary>
+    public bool Upright
+    {
+        get
+        {
+            var (u, v) = Sides;
+            double nx = u.Y * v.Z - u.Z * v.Y, ny = u.Z * v.X - u.X * v.Z, nz = u.X * v.Y - u.Y * v.X;
+            double n = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            return n > 0 && Math.Abs(nz) <= 1e-9 * n;
+        }
+    }
+
     /// <summary>The centre.</summary>
     public Point3 Centre => new((A.X + C.X) / 2, (A.Y + C.Y) / 2, (A.Z + C.Z) / 2);
 
@@ -1018,7 +1031,8 @@ public sealed record Em3dProblem(
                 if (p.Kind == Em3dPortKind.Wave) problems.Add($"Port {p.Number} is a wave port turned in its plane; a wave port's region is a rectangle of an air-box face.");
                 if (p.Annulus is not null) problems.Add($"Port {p.Number} is coaxial and turned; an annulus has no angle to turn.");
                 if (quad.Problem() is { } shape) problems.Add($"Port {p.Number}'s turned sheet {shape}.");
-                else if (zeroAxes != 1) problems.Add($"Port {p.Number}'s turned sheet does not lie flat in a plane of constant x, y or z.");
+                // brief-hzn-14 — or in an upright plane turned about z (its normal horizontal): an edge port at a turned line's end
+                else if (zeroAxes != 1 && !quad.Upright) problems.Add($"Port {p.Number}'s turned sheet lies flat neither in a plane of constant x, y or z nor in an upright plane.");
                 else if (!Inside(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
                     problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
                 continue;

@@ -1021,8 +1021,10 @@ public sealed partial class C3dEditorViewModel
     {
         if (port.Cylinder is not null) return $"{C3dPorts.Label(port)} is a patch of a cylinder; its place is its cylinder's.";
         if (width <= 0 || height <= 0) return "A port's width and height are lengths greater than zero.";
-        if (port.Angle != 0 && plane != C3dPlane.XY)
-            return $"{C3dPorts.Label(port)} is turned {C3dTurnedPorts.Degrees(port.Angle)}°, and a port is turned only in the XY plane. Set its Angle to 0 first.";
+        // brief-hzn-14 — a turned port turns about z in any plane, so a turn means the same about its new centre
+        if (port.Angle != 0 && plane != port.Plane && (plane == C3dPlane.XY) != (port.Plane == C3dPlane.XY))
+            return $"{C3dPorts.Label(port)} is turned {C3dTurnedPorts.Degrees(port.Angle)}°: moving it between the XY plane and an upright plane " +
+                   "changes what the turn means. Set its Angle to 0 first.";
         var was = PortPlace(port);
         bool samePlane = plane == port.Plane;
         long minU = samePlane && width == was.Width && centreU == was.CentreU ? port.Rect.Min.U : centreU - width / 2;
@@ -1037,8 +1039,9 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>
-    /// Turns a drawn port by <paramref name="degrees"/> about its centre in the XY plane, counter-clockwise seen from +z (0 makes it
-    /// upright). Only a lumped port in the XY plane turns. One undo entry; null on success, else why not.
+    /// Turns a drawn port by <paramref name="degrees"/> about its centre, counter-clockwise seen from +z (0 makes it upright): in the
+    /// XY plane, or (brief-hzn-14) about the vertical through its centre in the XZ or YZ plane. Only a lumped port turns. One undo
+    /// entry; null on success, else why not.
     /// </summary>
     public string? SetPortAngle(C3dPort port, double degrees)
     {
@@ -1052,7 +1055,6 @@ public sealed partial class C3dEditorViewModel
             string label = C3dPorts.Label(port);
             if (port.Kind == Em3dPortKind.Wave) return $"{label} is a wave port: a rectangle of an air-box face, square to its edges, never turned.";
             if (port.Cylinder is not null) return $"{label} is a patch of a cylinder, which is not turned.";
-            if (port.Plane != C3dPlane.XY) return $"{label} lies in the {port.Plane} plane; a port is turned only in the XY plane.";
         }
         ChangeRecords(degrees == 0 ? $"Make {C3dPorts.Label(port)} upright" : $"Turn {C3dPorts.Label(port)} to {C3dTurnedPorts.Degrees(degrees)}°",
                       _ => port.Angle = degrees);

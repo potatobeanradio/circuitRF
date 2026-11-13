@@ -1,0 +1,290 @@
+{
+ "name": "upright-ports",
+ "variables": {},
+ "materials": [
+  {
+   "name": "sub",
+   "permittivity": "3.5",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.002",
+   "magnetic_loss_tangent": "0",
+   "pec": false,
+   "dispersion": "None",
+   "anisotropic": false
+  }
+ ],
+ "designs": [
+  {
+   "name": "Upright",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Auto Open"
+   },
+   "variables": {
+    "h": "0.508mm"
+   },
+   "objects": [
+    {
+     "name": "Substrate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-20,-20,0",
+        "XSize": "40",
+        "YSize": "40",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "sub",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ground",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-20,-20,0",
+        "Axis": "Z",
+        "XSize": "40",
+        "YSize": "40"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Slant",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "-0.5196,-0.3000,h;0.5196,0.3000,h;-4.4804,8.9603,h;-5.5196,8.3603,h",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "P_Slant",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "-0.5196,-0.3000,0;0.5196,0.3000,0;0.5196,0.3000,h;-0.5196,-0.3000,h",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Straight",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "8,-15,h",
+        "Axis": "Z",
+        "XSize": "1.2",
+        "YSize": "10"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "P_Straight",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "8,-15,0;9.2,-15,0;9.2,-15,h;8,-15,h",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Fin",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "-10,-10,0;-8,-8.8453,0;-8,-8.8453,3;-10,-10,2",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "PerfE",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Ground",
+      "Slant",
+      "Straight",
+      "Fin"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm"
+     },
+     "faces": [],
+     "objects": [
+      "P_Slant"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "2",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "2",
+      "Impedance": "50ohm"
+     },
+     "faces": [],
+     "objects": [
+      "P_Straight"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "3GHz",
+      "MaximumPasses": "6",
+      "BasisOrder": "Second Order",
+      "MaximumDeltaS": "0.02"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Interpolating",
+        "Distribution": "Linear Count",
+        "Start": "2GHz",
+        "Stop": "4GHz",
+        "Count": "21"
+       }
+      }
+     ]
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": [],
+   "parametrics": []
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

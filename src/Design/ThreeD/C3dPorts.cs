@@ -80,6 +80,10 @@ public sealed class C3dPortContext
         /// <summary>A solid that is an outline extruded in z — a layout's copper, a drawn extruded polygon: the only kind a
         /// turned port can end on, because its end becomes two points of that outline.</summary>
         public Em3dExtrudedPolygon? Prism { get; init; }
+
+        /// <summary>brief-hzn-14 — a sheet's own geometry: a port turned in a vertical plane can end on a flat one, inside it or
+        /// along its outline.</summary>
+        public Em3dSheet? Sheet { get; init; }
     }
 
     internal readonly List<Conductor> Conductors = [];
@@ -135,7 +139,7 @@ public sealed class C3dPortContext
         {
             var mesh = Em3dTessellation.OfSheet(sh);
             // Both of a sheet's faces are surface: a sheet is a conductor thin enough to be one.
-            Conductors.Add(new Conductor(sh.Name, sh.WorldBounds(), mesh, null, 2 * Area(mesh)));
+            Conductors.Add(new Conductor(sh.Name, sh.WorldBounds(), mesh, null, 2 * Area(mesh)) { Sheet = sh });
         }
         foreach (var cs in elaboration.CylinderSheets)
         {
@@ -414,7 +418,7 @@ public static class C3dPorts
         // outline are all measured through this one map, so they are the turned sheet's.
         Func<double, double, Point3> P;
         Point3 uDir, vDir;
-        if (turned) (P, uDir, vDir) = C3dTurnedPorts.Map(port.Angle, u0, v0, u1, v1, h);
+        if (turned) (P, uDir, vDir) = C3dTurnedPorts.Map(port.Plane, port.Angle, u0, v0, u1, v1, h);
         else
         {
             P = (u, v) => C3dLowering.OnPlane(port.Plane, u, v, h);

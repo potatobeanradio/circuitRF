@@ -284,7 +284,11 @@ Rules a reader must apply:
   - `"mode"` on a lumped port, or on a terminal, is an error that names it.
 - **A lumped port's two conductors are inferred** from what its rectangle's opposite edges touch. `Positive` and
   `Negative` (elaborated object names, `U1/pad` allowed, or `airbox/zmin`) state them instead, and `Flip` swaps them.
-- `Angle` turns a lumped port in the XY plane about its centre.
+- `Angle` turns a lumped port about its centre, counter-clockwise seen from +z. In the XY plane each end must lie along a
+  straight side of its copper. In the XZ or YZ plane it turns about the vertical through its centre (the plane's horizontal
+  axis turns, z stays), and each end is a horizontal edge that must lie on a flat sheet or on the top or bottom of extruded
+  copper at its height, inside it or along its outline. An end along an outline gives that outline the port's two corners, so
+  the two meet exactly. Palace and EMerge run a turned port; openEMS refuses it.
 - **`Annulus` makes a coaxial lumped port** (brief-cxp-1): its sheet is a ring, `{ "Centre": [u, v], "Inner": dbu,
   "Outer": dbu }` on the port's `Plane` and `Offset`, instead of `Rect`. Each value may be an expression.
   - The conductor the inner circle lies on is positive and the one the outer circle lies on is negative. `Positive` and

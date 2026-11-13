@@ -938,6 +938,73 @@ A heat source's sheet is `C3dHeatSheet`, a separate type, and is untouched.
   already in an axis plane; why is not yet investigated.
 - `GerberTestBoard` is now down to `CreateRegion` with a percentage offset, a face of a sheet, and an impedance boundary.
 
+### HZN-14 — ports turned in an upright plane, and Hertzon's Terminal solution (2026-11-13)
+
+**40 of 58** Hertzon example designs open, up from 36: `Rotman`, `RotmanArray`, `DifferentialPair` and `G_DiffPair_Terminal`. Gate 1 (save
+with no edit, byte for byte) holds for all four.
+
+**Terminal mode, established black-box.** Each fact below comes from one-frequency Hertzon runs of a coupled pair, about 4 s each.
+- The Touchstone states `R 50`, the ports' `RenormImpedance`, although every port says `Renormalize: False`.
+- It has one row per terminal: 4 × 4, port by port.
+- Within a port, terminals are numbered by the conductor's position across the face (x ascending on a y-facing port). Swapping the
+  traces' order in the file kept the numbering; swapping their x positions changed it.
+- A trace shortened to miss port 2 gave a 3 × 3 result: a conductor that does not reach a port gives that port no terminal.
+
+The translation writes this as `.c3d` `Terminals` named `<port>_<conductor>` at the `RenormImpedance`, and leaves `Reference` to the
+run. The run's box-referenced reading (brief-em3d-121) then takes the closed box's PEC faces, as Hertzon's empty or `Outer`
+`ReferenceConductor` does. `DifferentialPairs`, `OutputVariables` and `Sources` are Hertzon's reports and drive weights, and are
+listed as unused. A port facing x or z uses the same world order, which is assumed, not established; the translation notes it.
+
+**Traps:**
+- **The port's rectangle is bound after the translator's first resolution**, so the terminal pass resolves the document again before
+  it measures which conductors reach a port. Without that, every rectangle read as zero and no port had a conductor.
+- **An upright polyline's turn and origin are its frame, not a move.**
+  - `State.Placed` counts any rotation or origin, and a placed sheet can take no port. So the frame is kept in its own fields and
+    `FlushPlacement` writes it, measuring `Placed` before adding it.
+  - A Hertzon Rotate or Mirror after such a sheet is refused: one placement cannot state a rotation about the origin applied after
+    the frame's move.
+  - `FlushPlacement` can run twice for one object, so the frame is kept rather than consumed.
+- **A turned quad must be accepted where it stands.** `Em3dProblem.Validate` required it to lie in a plane of constant x, y or z.
+  An upright one's normal is horizontal (`Em3dPortQuad.Upright`). Gmsh writes the four corners as given, and claims the sheet by its
+  box after every upright port's, as for XY turned ports. Palace's lumped `Direction` is a free vector, and EMerge's port rectangle
+  takes any two side vectors. openEMS keeps refusing a turned port.
+- **Ends of an upright turned port are horizontal edges** (`C3dTurnedPorts.Ends`).
+  - Each must lie on a flat sheet, or on an extruded solid's top or bottom, at its height. Checked at nine points along the end, to
+    the turned-port tolerance.
+  - Along a side of that surface's outline, it seams the outline as an XY port seams copper. `Apply` now takes the problem's
+    sheets too, and `SeamSheet` is `Seam` for an `Em3dSheet`.
+  - Inside the surface it needs nothing: Gmsh's fragment imprints the edge.
+  - The XY branch is kept by asking whether the quad's corners span a height. An XY port's ends are horizontal too.
+- **Export.**
+  - A turned port (XY or upright) is written as a 4-point world polyline. The translator reads it back as the same port: an XY
+    rectangle turned in the plane is now a port sheet too (`TurnedXyRect`, corners square to 2 DBU).
+  - Both the translator and the export now state a rotated sheet's extent from its polygon carried by its placement. Neither needed
+    the geometry worker for it, and the air region's faces were refused without it.
+  - A Terminal design's ports are written as Wave Ports numbered by their terminals' order, with `SolutionType: Terminal`.
+
+**`DifferentialPair` against Hertzon at 5 GHz** (by hand; both coarse meshes):
+
+| | Hertzon (adaptive, 6 passes, 3,681 tets, last ΔS 0.0206) | circuitRF EMerge, Accurate, 2nd order (8,271 tets, 7 s) |
+|---|---|---|
+| \|S13\|, \|S24\| (through) | 0.982 ∠160.4° | 0.980 ∠158.4° / ∠162.7° |
+| \|S14\| (far-end coupling) | 0.132 ∠67.2° | 0.110 ∠69.2° |
+| \|S12\| (near-end coupling) | 0.069 ∠62.8° | 0.036 ∠−99.9° |
+| \|S11\| | 0.053 | 0.019 |
+
+- The largest |ΔS| is 0.10, in the near-end and reflection terms, which are small. Recorded, not tuned.
+- The table confirms the numbering (a swap would trade S13 for S14) and the 50 Ω terminal reference (a wrong one would show in S11).
+- At circuitRF's Standard preset with first-order elements (3,406 tets) |S13| was 0.79, and the run warned that the terminal voltages
+  disagreed with the face's modes by 30 %. **That warning is the one to trust.**
+
+**Rotman's ports** each run from `Ground` to `Lens` (the feed lines are united into the lens) across the 0.508 mm substrate, about
+1.1 mm wide. They were turned from 4-decimal millimetre points, so a width reads 1.099963 mm rather than 1.1 mm.
+
+**Next census items** are unchanged from HZN-13's list minus these four:
+- `Coax50`: a coaxial wave port, and the closed-design rule that a non-box model's outside is metal;
+- the Dipole half: `Split`;
+- `Meta_Ex1`: a one-sided lossy sheet;
+- the PlaneWave designs: radiation boundaries inside the model.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

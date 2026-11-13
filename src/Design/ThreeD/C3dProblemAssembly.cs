@@ -573,7 +573,7 @@ public static class C3dProblemAssembly
             if (seams.Count > 0)
             {
                 double reach = C3dTurnedPorts.Tolerance(context);
-                if (C3dTurnedPorts.Apply(solids, seams, reach) is { } seamRefusal) return No(seamRefusal, e.Warnings);
+                if (C3dTurnedPorts.Apply(solids, sheets, seams, reach) is { } seamRefusal) return No(seamRefusal, e.Warnings);
                 notes.Add($"{seams.Count / 2} turned port(s): the copper at each end takes the port's corners, moving its side by at most " +
                           $"{reach * 1e9:0.###} nm, so the sheet meets it exactly.");
             }

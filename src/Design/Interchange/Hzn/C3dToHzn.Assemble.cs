@@ -218,7 +218,7 @@ internal sealed partial class C3dToHznWriter
         var d = new HznJsonObject();
         d.SetString("name", DesignName);
         d.SetString("units", UnitName(_unit));
-        d.Set("settings", Strings([("SolutionType", "Modal"), ("AutoOpen", "Off")]));
+        d.Set("settings", Strings([("SolutionType", _terminalDesign ? "Terminal" : "Modal"), ("AutoOpen", "Off")]));   // brief-hzn-14
         d.Set("variables", Strings(variables.Select(v => (v.Name, v.Text))));
         d.Set("objects", Array(objects));
         d.Set("boundaries", Array(_boundaries.Select(b => (HznJsonValue)AssignJson(b))));

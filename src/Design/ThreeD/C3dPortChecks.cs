@@ -162,8 +162,8 @@ public static class C3dPortChecks
         double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
         double u0 = M(port.Rect.Min.U), v0 = M(port.Rect.Min.V), u1 = u0 + M(port.Rect.Size.U), v1 = v0 + M(port.Rect.Size.V);
         double h = M(port.Offset), um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
-        Func<double, double, Point3> P = port.Angle != 0 && port.Plane == C3dPlane.XY
-            ? C3dTurnedPorts.Map(port.Angle, u0, v0, u1, v1, h).P
+        Func<double, double, Point3> P = port.Angle != 0
+            ? C3dTurnedPorts.Map(port.Plane, port.Angle, u0, v0, u1, v1, h).P
             : (a, b) => C3dLowering.OnPlane(port.Plane, a, b, h);
         Point3[] mids = [P(u0, vm), P(u1, vm), P(um, v0), P(um, v1)];
         var nearest = mids.Select(m => TwoNearest(ctx, m)).ToArray();

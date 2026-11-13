@@ -217,6 +217,8 @@ internal sealed partial class C3dToHznWriter
     private Box3? AnalyticExtent(C3dObject o)
     {
         var pl = o.Placement;
+        // brief-hzn-14 — a turned sheet (an upright polyline's frame) reaches as far as its polygon's corners carried by its placement
+        if ((pl.Rotate.Count > 0 || pl.MirrorX) && o is C3dSheet turned) return TurnedSheetBox(turned);
         if (pl.Rotate.Count > 0 || pl.MirrorX) return null;
         Box3? own = o switch
         {
@@ -234,6 +236,17 @@ internal sealed partial class C3dToHznWriter
         if (own is not { } box) return null;
         long[] d = [pl.Origin.X, pl.Origin.Y, pl.Origin.Z];
         return new Box3([box.Min[0] + d[0], box.Min[1] + d[1], box.Min[2] + d[2]], [box.Max[0] + d[0], box.Max[1] + d[1], box.Max[2] + d[2]]);
+    }
+
+    private static Box3? TurnedSheetBox(C3dSheet s)
+    {
+        var (ring, _) = C3dEllipses.Polygon(s);
+        if (ring.Count == 0) return null;
+        var t = s.Placement.ToTransform();
+        var pts = ring.Select(q => C3dLowering.OnPlane(s.Plane, q.U, q.V, s.Offset)).Select(p => t.Apply(new C3dPoint3((long)p.X, (long)p.Y, (long)p.Z))).ToList();
+        static long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
+        return new Box3([R(pts.Min(p => p.Item1)), R(pts.Min(p => p.Item2)), R(pts.Min(p => p.Item3))],
+                        [R(pts.Max(p => p.Item1)), R(pts.Max(p => p.Item2)), R(pts.Max(p => p.Item3))]);
     }
 
     private static Box3 CylinderBox(C3dCylinder c)
