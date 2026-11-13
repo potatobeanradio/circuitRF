@@ -640,7 +640,7 @@ public static class CircuitEvaluation
                 var plan = CircuitRF.Engine.Envelope.EnvelopeRunner.Resolve(env, nl.ResolvedGlobals);
                 string segs = plan.Segments == 0 ? "auto" : plan.Segments.ToString(CultureInfo.InvariantCulture);
                 return ("Envelope '" + env.Name + "': " + (plan.Params.StopS * 1e6).ToString("G4", CultureInfo.InvariantCulture)
-                        + " us, x" + plan.Params.Oversample + " oversampling, segments " + segs, 1, false);
+                        + " us, x" + CircuitRF.Engine.Envelope.EnvelopeRunner.Oversampling(plan, nl) + " oversampling, segments " + segs, 1, false);
             }
 
             case HarmonicBalanceAnalysis hba:

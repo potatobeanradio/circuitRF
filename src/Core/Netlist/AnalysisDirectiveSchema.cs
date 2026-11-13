@@ -134,7 +134,7 @@ public static partial class AnalysisDirectiveSchema
         [
             new("Stop",      Default: "100e-6",  Summary: "Simulated time after the start point (s)."),
             new("Step",      Default: "auto",    Summary: "Envelope time step (s), or auto: the signal rate times the Accuracy oversampling."),
-            new("Accuracy",  Default: "standard",Summary: "draft (1x the signal rate), standard (4x) or fine (8x). 1x reads ACPR2 ~0.4 dB and bias-node memory poorly; 4x is converged on measured cases."),
+            new("Accuracy",  Default: "standard",Summary: "draft (1x the signal rate), standard (4x) or fine (8x), finer for a carrier off the envelope's centre. 1x reads ACPR2 ~0.4 dB and bias-node memory poorly; 4x is converged on measured cases."),
             new("MaxHarm",   Default: "5",       Summary: "Highest harmonic of the fundamental carried by every envelope step."),
             new("Envelope",  Default: "auto",    Summary: "auto: carriers farther apart than 3x their bandwidth each get their own fundamental (two-fundamental lattice), and so does a P1Tone off the carriers' frequencies (an LO); a P1Tone within 3x a carrier's bandwidth but off its frequency is refused. single: one envelope around Fc spanning every carrier and their IM3 - the step shrinks with the spacing. lattice: as auto."),
             new("MaxMixOrder", Default: "7",     Summary: "Mixing order kept when widely spaced carriers get their own fundamentals (|k1|+|k2| <= order). 7 converges IM5; at 5, IM5 sits on the truncation edge (measured 0.5-1 dB off)."),

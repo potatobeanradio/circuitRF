@@ -286,6 +286,30 @@ public sealed class EnvelopeSignalQualityTests(ITestOutputHelper output)
         Assert.InRange(excess, 0, 0.25);
     }
 
+    /// <summary>
+    /// A raised step is said. The NR carrier 4.5 MHz off the centre is stepped at 2x the draft rate, which
+    /// EnvelopeRunner.Oversampling gives (the CLI and the run's summary print it) and one note names; centred, the run
+    /// keeps the preset and says nothing.
+    /// </summary>
+    [Fact]
+    public void ARaisedStep_IsPrintedAndNoted()
+    {
+        foreach (var (off, osr, step) in new[] { ("0", 1, 1 / 30.72e6), ("-4.5MHz", 2, 1 / (2 * 61.44e6)) })
+        {
+            var (lib, tb) = new CnlReader().Read(Bandpass($"NR;BW=5MHz;SCS=15kHz;Mod=64QAM;P=0;Seed=1;Off={off}"));
+            using var nl = new Elaborator(lib).Elaborate(tb);
+            var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+            Assert.Equal(osr, EnvelopeRunner.Oversampling(plan, nl));
+            using (var prepared = EnvelopeRunner.Prepare(plan, () => nl))
+                Assert.Equal(step, prepared.StepS, 1e-20);
+            var notes = nl.Notes.Where(n => n.Contains("stepped at", StringComparison.Ordinal)).ToList();
+            output.WriteLine(string.Join("\n", notes));
+            if (osr == 1) Assert.Empty(notes);
+            else Assert.Contains(notes, n => n.Contains("stepped at 2x the signal rate, not the Accuracy's 1x", StringComparison.Ordinal)
+                                             && n.Contains("reaches 7 MHz from", StringComparison.Ordinal));
+        }
+    }
+
     // An amplifier far below compression (output -37 dBm, IP3 20 dBm) behind a 50 Ω source resistor, noiseless.
     private static string SmallAmp(string source, string stop) => $"""
         temp = 16.85

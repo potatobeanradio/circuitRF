@@ -54,7 +54,8 @@ public sealed record EnvelopeParams
     public double StopS { get; init; } = 100e-6;
     /// <summary>Explicit envelope step (s); 0 = automatic from the signal rate x <see cref="Oversample"/>.</summary>
     public double StepS { get; init; }
-    /// <summary>Steps per signal sample when the step is automatic (1 draft, 4 standard, 8 fine).</summary>
+    /// <summary>Steps per signal sample when the step is automatic (1 draft, 4 standard, 8 fine); a run takes more for a
+    /// carrier off the envelope's centre (<see cref="EnvelopeEngine.Oversample"/>).</summary>
     public int Oversample { get; init; } = 4;
     public int MaxHarm { get; init; } = 5;
     public int FftOverSample { get; init; } = 1;
