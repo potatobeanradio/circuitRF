@@ -12,52 +12,20 @@
 			"Blank": {
 				"$type": "Cylinder",
 				"Material": "Connector alloy",
-				"Base": [
-					10500000,
-					{
-						"Expr": "-7.5 - gap - floor_t",
-						"Unit": "Mm"
-					},
-					{
-						"Expr": "axis_z",
-						"Unit": "Mm"
-					}
-				],
+				"Base": [10500000, { "Expr": "-7.5 - gap - floor_t", "Unit": "Mm" }, { "Expr": "axis_z", "Unit": "Mm" }],
 				"Axis": "Y",
-				"Length": {
-					"Expr": "gap + floor_t",
-					"Unit": "Mm"
-				},
-				"Radius": {
-					"Expr": "body_d/2",
-					"Unit": "Mm"
-				}
+				"Length": { "Expr": "gap + floor_t", "Unit": "Mm" },
+				"Radius": { "Expr": "body_d/2", "Unit": "Mm" }
 			},
 			"Tools": [
 				{
 					"$type": "Cylinder",
 					"Name": "gap_fill",
 					"Material": "PTFE",
-					"Base": [
-						10500000,
-						{
-							"Expr": "-7.5 - gap",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "axis_z",
-							"Unit": "Mm"
-						}
-					],
+					"Base": [10500000, { "Expr": "-7.5 - gap", "Unit": "Mm" }, { "Expr": "axis_z", "Unit": "Mm" }],
 					"Axis": "Y",
-					"Length": {
-						"Expr": "gap",
-						"Unit": "Mm"
-					},
-					"Radius": {
-						"Expr": "bore_d/2",
-						"Unit": "Mm"
-					}
+					"Length": { "Expr": "gap", "Unit": "Mm" },
+					"Radius": { "Expr": "bore_d/2", "Unit": "Mm" }
 				}
 			]
 		}
@@ -65,22 +33,13 @@
 	"Instances": [
 		{
 			"Name": "S1",
-			"CellRef": "../../Sensor",
-			"View": "ThreeD"
+			"CellRef": "../../Sensor"
 		},
 		{
 			"Name": "J1",
 			"CellRef": "../../SMA",
-			"View": "ThreeD",
 			"Placement": {
-				"Origin": [
-					10500000,
-					0,
-					{
-						"Expr": "axis_z",
-						"Unit": "Mm"
-					}
-				]
+				"Origin": [10500000, 0, { "Expr": "axis_z", "Unit": "Mm" }]
 			}
 		}
 	],
@@ -133,46 +92,20 @@
 			"Plane": "YZ",
 			"Offset": 10500000,
 			"Rect": {
-				"Min": [
-					{
-						"Expr": "-7.5 - gap",
-						"Unit": "Mm"
-					},
-					{
-						"Expr": "axis_z - pin_d/2",
-						"Unit": "Mm"
-					}
-				],
-				"Size": [
-					{
-						"Expr": "gap",
-						"Unit": "Mm"
-					},
-					{
-						"Expr": "pin_d",
-						"Unit": "Mm"
-					}
-				]
+				"Min": [{ "Expr": "-7.5 - gap", "Unit": "Mm" }, { "Expr": "axis_z - pin_d/2", "Unit": "Mm" }],
+				"Size": [{ "Expr": "gap", "Unit": "Mm" }, { "Expr": "pin_d", "Unit": "Mm" }]
 			},
+			"Z0": "50",
 			"Positive": "J1/pin",
-			"Negative": "floor",
-			"Z0": "50"
+			"Negative": "floor"
 		}
 	],
 	"MeshRegions": [
 		{
 			"Name": "rings",
-			"Min": [
-				3500000,
-				0,
-				1600000
-			],
-			"Size": [
-				18000000,
-				22000000,
-				35000
-			],
-			"SizeUm": 300.0
+			"Min": [3500000, 0, 1600000],
+			"Size": [18000000, 22000000, 35000],
+			"SizeUm": 300
 		}
 	],
 	"Look": {

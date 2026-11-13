@@ -197,6 +197,9 @@ public sealed class C3dFaceEditor
 
     // ── Move (free) ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>brief-hzn-13 R-hzn13-2 — what an ellipse sheet says to a vertex or edge move.</summary>
+    public const string EllipseVertexMove = "An ellipse sheet has no corners to move: change its Centre and Radius in Properties, or move the whole sheet.";
+
     /// <summary>What a cylinder says to a free move of an end or its side (R-em3d47-2).</summary>
     public const string CylinderFreeMove = "A cylinder's end moves only along its axis. Convert to Polyhedron to move it freely.";
 
@@ -214,6 +217,7 @@ public sealed class C3dFaceEditor
                 if (w != 0) return C3dFaceEditResult.Refuse("A sheet moves out of its plane only as a whole, along its normal: Move Along Normal (N).");
                 var copy = Copy(s);
                 if (copy.Rect is { } r) r.Min = new C3dPoint2(r.Min.U + u, r.Min.V + v);
+                else if (copy.Ellipse is { } el) el.Centre = new C3dPoint2(el.Centre.U + u, el.Centre.V + v);   // brief-hzn-13
                 else
                 {
                     copy.Outline = [.. copy.Outline.Select(p => new C3dPoint2(p.U + u, p.V + v))];
@@ -247,6 +251,7 @@ public sealed class C3dFaceEditor
             case C3dSphere: return C3dFaceEditResult.Refuse(SphereVertexMove);
             case C3dEllipsoid: return C3dFaceEditResult.Refuse(EllipsoidVertexMove);
             case C3dSheet { Image: not null, Rect: { } rect } img when vertex is >= 0 and < 4: return ImageCorner(img, rect, vertex, to, freeAspect, aspect);
+            case C3dSheet { Ellipse: not null }: return C3dFaceEditResult.Refuse(EllipseVertexMove);
             case C3dSheet s: return SheetVertex(s, vertex, to);
             case C3dPolyline: return C3dFaceEditResult.Refuse("A polyline is construction geometry: edit it by drawing it again.");
             case C3dWire w:
@@ -269,6 +274,7 @@ public sealed class C3dFaceEditor
     /// </summary>
     public static IReadOnlyList<C3dPoint3> OutlinePoints(C3dObject o) => o switch
     {
+        C3dSheet { Ellipse: not null } => [],   // brief-hzn-13 — an ellipse is edited by its centre and radii
         C3dSheet s => SheetCorners(s),
         C3dPrism p => [.. p.Outline.Concat(p.Holes.SelectMany(h => h)).Select(q => C3dBrepBuild.OnPlane(p.Plane, q.U, q.V, p.Offset))],
         C3dPolyline l => l.Points3 is { } p3 ? [.. p3] : [.. l.Points.Select(q => C3dBrepBuild.OnPlane(l.Plane, q.U, q.V, l.Offset))],
@@ -278,6 +284,7 @@ public sealed class C3dFaceEditor
     /// <summary>The ring lengths behind <see cref="OutlinePoints"/>: the outline, then each hole.</summary>
     public static IReadOnlyList<int> Rings(C3dObject o) => o switch
     {
+        C3dSheet { Ellipse: not null } => [],
         C3dSheet { Rect: not null } => [4],
         C3dSheet s => [s.Outline.Count, .. s.Holes.Select(h => h.Count)],
         C3dPrism p => [p.Outline.Count, .. p.Holes.Select(h => h.Count)],
@@ -299,7 +306,14 @@ public sealed class C3dFaceEditor
     {
         switch (Source)
         {
-            case C3dSheet s: return SheetVertex(s, vertex, to);
+            case C3dSheet { Ellipse: not null }: return C3dFaceEditResult.Refuse(EllipseVertexMove);
+            case C3dSheet s:
+            {
+                // brief-hzn-13 R-hzn13-1 — a typed point is numbers: it replaces the expressions that point held.
+                var r = SheetVertex(s, vertex, to);
+                if (r.Object is C3dSheet moved && vertex < moved.Outline.Count) Unbind(moved, nameof(C3dSheet.Outline), vertex, 2);
+                return r;
+            }
             case C3dPrism p:
             {
                 var (u, v, w) = C3dBrepBuild.ToPlane(p.Plane, to);
@@ -309,6 +323,7 @@ public sealed class C3dFaceEditor
                 if (!SetRingPoint(copy.Outline, copy.Holes, vertex, new C3dPoint2(u, v))) return C3dFaceEditResult.Refuse("There is no such vertex.");
                 foreach (var ring in copy.Holes.Prepend(copy.Outline))
                     if (SelfCrossing(ring)) return C3dFaceEditResult.Refuse($"'{p.Name}''s outline would cross itself.");
+                if (vertex < copy.Outline.Count) Unbind(copy, nameof(C3dPrism.Outline), vertex, 2);   // brief-hzn-13 R-hzn13-1
                 return Done(copy);
             }
             case C3dPolyline l:
@@ -353,9 +368,9 @@ public sealed class C3dFaceEditor
     }
 
     /// <summary>Every component of point <paramref name="k"/> of the list <paramref name="property"/> made a number.</summary>
-    private static void Unbind(C3dPolyline l, string property, int k, int components)
+    private static void Unbind(C3dObject l, string property, int k, int components)
     {
-        if (C3dBindings.SpecOf(typeof(C3dPolyline), property) is not { } spec) return;
+        if (C3dBindings.SpecOf(l.GetType(), property) is not { } spec) return;
         var element = spec.ElementAt(k);
         for (int c = 0; c < components; c++) C3dBindings.SetExpr(l, element, c, null);
     }
@@ -528,9 +543,8 @@ public static class C3dFaceCommands
             case C3dSheet s:
             {
                 var (_, _, w) = C3dBrepBuild.Axes(s.Plane);
-                List<List<C3dPoint2>> uv = s.Rect is { } r
-                    ? [[r.Min, new(r.Min.U + r.Size.U, r.Min.V), new(r.Min.U + r.Size.U, r.Min.V + r.Size.V), new(r.Min.U, r.Min.V + r.Size.V)]]
-                    : [s.Outline, .. s.Holes];
+                var (ring0, holes0) = C3dEllipses.Polygon(s);   // brief-hzn-13 — a rectangle, an outline or an ellipse's polygon
+                List<List<C3dPoint2>> uv = [ring0, .. holes0];
                 return ([.. uv.Select(ring => ring.Select(p => C3dBrepBuild.OnPlane(s.Plane, p.U, p.V, s.Offset)).ToList())], (w, 1));
             }
         }

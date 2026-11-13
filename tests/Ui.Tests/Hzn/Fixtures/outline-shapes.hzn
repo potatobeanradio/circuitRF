@@ -1,0 +1,238 @@
+{
+ "name": "OutlineShapes",
+ "variables": {},
+ "materials": [
+  {
+   "name": "sub",
+   "permittivity": "4.4",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.02",
+   "magnetic_loss_tangent": "0",
+   "pec": false,
+   "dispersion": "None",
+   "anisotropic": false
+  }
+ ],
+ "designs": [
+  {
+   "name": "Shapes",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "h": "1.6mm",
+    "Ws": "40mm",
+    "w": "3mm",
+    "L": "12mm",
+    "c": "1mm",
+    "fx": "4mm",
+    "fy": "-2mm",
+    "ra": "0.9mm",
+    "R": "2mm"
+   },
+   "objects": [
+    {
+     "name": "Substrate",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-Ws/2,-Ws/2,0",
+        "XSize": "Ws",
+        "YSize": "Ws",
+        "ZSize": "h"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "sub",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ground",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-Ws/2,-Ws/2,0",
+        "Axis": "Z",
+        "XSize": "Ws",
+        "YSize": "Ws"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "AntiPad",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "AntiPad",
+     "history": [
+      {
+       "kind": "CreateCircle",
+       "props": {
+        "CenterPosition": "fx,fy,0",
+        "Axis": "Z",
+        "Radius": "ra",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Ground",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Trace",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "-L/2+c,w/2,h;L/2,w/2,h;L/2,-w/2,h;-L/2,-w/2,h;-L/2,w/2-c,h",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Oval",
+     "history": [
+      {
+       "kind": "CreateEllipse",
+       "props": {
+        "CenterPosition": "-8,10,h",
+        "Axis": "Z",
+        "MajorRadius": "R",
+        "Ratio": "0.5"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "PerfE_Ground",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Ground"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "PerfE_Top",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Trace",
+      "Oval"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "3GHz",
+      "MaximumPasses": "6",
+      "BasisOrder": "Second Order",
+      "MaximumDeltaS": "0.02"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Interpolating",
+        "Distribution": "Linear Count",
+        "Start": "2GHz",
+        "Stop": "4GHz",
+        "Count": "21"
+       }
+      }
+     ]
+    }
+   ],
+   "coord_systems": [],
+   "working_cs": "Global",
+   "reports": [],
+   "field_plots": [],
+   "notes": [],
+   "parametrics": []
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

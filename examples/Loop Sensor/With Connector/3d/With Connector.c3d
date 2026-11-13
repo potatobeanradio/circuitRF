@@ -7,22 +7,13 @@
 	"Instances": [
 		{
 			"Name": "S1",
-			"CellRef": "../../Sensor",
-			"View": "ThreeD"
+			"CellRef": "../../Sensor"
 		},
 		{
 			"Name": "J1",
 			"CellRef": "../../SMA",
-			"View": "ThreeD",
 			"Placement": {
-				"Origin": [
-					10500000,
-					0,
-					{
-						"Expr": "axis_z",
-						"Unit": "Mm"
-					}
-				]
+				"Origin": [10500000, 0, { "Expr": "axis_z", "Unit": "Mm" }]
 			}
 		}
 	],
@@ -59,22 +50,14 @@
 			"Kind": "Lumped",
 			"Plane": "XZ",
 			"Offset": -7500000,
+			"Rect": {
+				"Min": [0, 0],
+				"Size": [0, 0]
+			},
 			"Annulus": {
-				"Centre": [
-					10500000,
-					{
-						"Expr": "axis_z",
-						"Unit": "Mm"
-					}
-				],
-				"Inner": {
-					"Expr": "pin_d/2",
-					"Unit": "Mm"
-				},
-				"Outer": {
-					"Expr": "bore_d/2",
-					"Unit": "Mm"
-				}
+				"Centre": [10500000, { "Expr": "axis_z", "Unit": "Mm" }],
+				"Inner": { "Expr": "pin_d/2", "Unit": "Mm" },
+				"Outer": { "Expr": "bore_d/2", "Unit": "Mm" }
 			},
 			"Z0": "50"
 		}
@@ -82,17 +65,37 @@
 	"MeshRegions": [
 		{
 			"Name": "rings",
-			"Min": [
-				3500000,
-				0,
-				1600000
-			],
-			"Size": [
-				18000000,
-				22000000,
-				35000
-			],
-			"SizeUm": 300.0
+			"Min": [3500000, 0, 1600000],
+			"Size": [18000000, 22000000, 35000],
+			"SizeUm": 300
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "E on the board",
+			"Setup": "Palace",
+			"Solution": {
+				"GHz": 0.875
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Z",
+			"Offset": 1700000,
+			"Db": true,
+			"Smooth": true
+		},
+		{
+			"Name": "E through the gap",
+			"Setup": "Palace",
+			"Solution": {
+				"GHz": 0.875
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 13000000,
+			"Db": true,
+			"Smooth": true
 		}
 	],
 	"Look": {
@@ -204,34 +207,6 @@
 				"AdaptiveSweep": true,
 				"ElementOrder": 1
 			}
-		}
-	],
-	"FieldPlots": [
-		{
-			"Name": "E on the board",
-			"Setup": "Palace",
-			"Solution": {
-				"GHz": 0.875
-			},
-			"Quantity": "E",
-			"On": "ClipPlane",
-			"Axis": "Z",
-			"Offset": 1700000,
-			"Db": true,
-			"Smooth": true
-		},
-		{
-			"Name": "E through the gap",
-			"Setup": "Palace",
-			"Solution": {
-				"GHz": 0.875
-			},
-			"Quantity": "E",
-			"On": "ClipPlane",
-			"Axis": "Y",
-			"Offset": 13000000,
-			"Db": true,
-			"Smooth": true
 		}
 	]
 }

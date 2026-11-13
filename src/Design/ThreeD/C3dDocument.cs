@@ -504,8 +504,24 @@ public sealed class C3dRect : IC3dBindable
     public C3dPoint2 Size { get; set; }
 }
 
-/// <summary>A conductor thin enough to be a surface, on a drawing plane: a <see cref="Rect"/>, or an
-/// <see cref="Outline"/> with <see cref="Holes"/> — one or the other.</summary>
+/// <summary>
+/// brief-hzn-13 R-hzn13-2 — an ellipse on a sheet's plane: its centre and its two radii along the plane's u and v, and how many
+/// vertices the polygon it is built as has (<see cref="Segments"/>; omitted, <see cref="C3dEllipses.DefaultSegments"/>). A circle is
+/// an ellipse with equal radii.
+/// </summary>
+public sealed class C3dEllipse : IC3dBindable
+{
+    [JsonIgnore] public Dictionary<string, C3dExpr?[]>? Exprs { get; set; }
+
+    public C3dPoint2 Centre { get; set; }
+    public C3dPoint2 Radii  { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Segments { get; set; }
+}
+
+/// <summary>A conductor thin enough to be a surface, on a drawing plane: a <see cref="Rect"/>, an <see cref="Outline"/> with
+/// <see cref="Holes"/>, or an <see cref="Ellipse"/> (brief-hzn-13) — exactly one of them.</summary>
 public sealed class C3dSheet : C3dObject
 {
     public C3dPlane Plane  { get; set; }
@@ -513,6 +529,11 @@ public sealed class C3dSheet : C3dObject
     public C3dRect? Rect   { get; set; }
     public List<C3dPoint2>       Outline { get; set; } = [];
     public List<List<C3dPoint2>> Holes   { get; set; } = [];
+
+    /// <summary>brief-hzn-13 R-hzn13-2 — the sheet is this ellipse, built as a polygon (<see cref="C3dEllipses.Ring"/>). Written only
+    /// when set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dEllipse? Ellipse { get; set; }
 
     /// <summary>The metal's real thickness, micrometres — what the solver's surface impedance uses.</summary>
     public double? ThicknessUm { get; set; }

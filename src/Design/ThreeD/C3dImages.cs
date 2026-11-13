@@ -193,6 +193,8 @@ public static class C3dImages
             long v0 = Math.Min(r.Min.V, r.Min.V + r.Size.V), v1 = Math.Max(r.Min.V, r.Min.V + r.Size.V);
             return u1 > u0 && v1 > v0 ? (u0, v0, u1, v1) : null;
         }
+        if (s.Ellipse is { } el)   // brief-hzn-13 — the ellipse's bounding rectangle, which the ellipse then clips
+            return el.Radii.U > 0 && el.Radii.V > 0 ? (el.Centre.U - el.Radii.U, el.Centre.V - el.Radii.V, el.Centre.U + el.Radii.U, el.Centre.V + el.Radii.V) : null;
         if (s.Outline.Count < 3) return null;
         long a = s.Outline.Min(p => p.U), b = s.Outline.Min(p => p.V), c = s.Outline.Max(p => p.U), d = s.Outline.Max(p => p.V);
         return c > a && d > b ? (a, b, c, d) : null;

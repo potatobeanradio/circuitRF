@@ -32,7 +32,8 @@ public sealed class NewThreeDViewOpensTests
         string td = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.ThreeD.cs"));
         start = td.IndexOf("private async Task NewThreeDViewFromLayoutAsync(", StringComparison.Ordinal);
         Assert.Contains("OpenOrActivateC3dEditor(path)", td[start..]);
-        Assert.Matches(@"vm\.Viewer\.IsPerspective = false;\s*if \(StoredCamera\(full\) is \{ \} camera\) vm\.Viewer\.RestoreCamera\(camera\);", td);
+        // HZN-3 — a design held in a Hertzon project has no per-file window state, so its camera is not restored (`!held`).
+        Assert.Matches(@"vm\.Viewer\.IsPerspective = false;\s*if \(!held && StoredCamera\(full\) is \{ \} camera\) vm\.Viewer\.RestoreCamera\(camera\);", td);
         string v3 = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.Viewer3D.cs"));
         Assert.Matches(@"vm\.IsPerspective = false;\s*vm\.RestoreCamera\(StoredCamera\(full\)\);", v3);
     }
@@ -44,12 +45,13 @@ public sealed class NewThreeDViewOpensTests
     {
         string td = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.ThreeD.cs"));
         int start = td.IndexOf("private void OpenC3dEditor(", StringComparison.Ordinal);
-        Assert.Contains("if (StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);", td[start..]);
+        Assert.Contains("if (!held && StoredCamera(full) is { } camera) vm.Viewer.RestoreCamera(camera);", td[start..]);   // HZN-3
         start = td.IndexOf("private void ClosedC3dEditor(", StringComparison.Ordinal);
         Assert.Contains("doc.ViewModel.Viewer.CameraToPersist()", td[start..td.IndexOf("doc.ViewModel.Dispose()", start, StringComparison.Ordinal)]);
         string v3 = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.Viewer3D.cs"));
         start = v3.IndexOf("Viewer3DCamerasToPersist()", StringComparison.Ordinal);
-        Assert.Matches(@"OfType<CircuitRF\.Ui\.ThreeD\.C3dEditorDocument>\(\)\)\s*if \(!doc\.IsScratch", v3[start..]);
+        // HZN-3 — IsPersistedFile: neither a scratch view nor a design held in a project has a per-file camera.
+        Assert.Matches(@"OfType<CircuitRF\.Ui\.ThreeD\.C3dEditorDocument>\(\)\)\s*if \(doc\.IsPersistedFile", v3[start..]);
     }
 
     /// <summary>Settings ▸ General ▸ Open in realistic view: a per-user preference, off by default, applied by the workspace

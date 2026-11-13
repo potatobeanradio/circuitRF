@@ -112,6 +112,12 @@ internal sealed partial class HznTranslator
             (min[u], max[u]) = (r.Min.U, r.Min.U + r.Size.U);
             (min[v], max[v]) = (r.Min.V, r.Min.V + r.Size.V);
         }
+        else if (s.Ellipse is { } el)
+        {
+            // brief-hzn-13 — an ellipse sheet's extent is its centre ± its radii
+            (min[u], max[u]) = (el.Centre.U - el.Radii.U, el.Centre.U + el.Radii.U);
+            (min[v], max[v]) = (el.Centre.V - el.Radii.V, el.Centre.V + el.Radii.V);
+        }
         else if (s.Outline.Count > 0)
         {
             (min[u], max[u]) = (s.Outline.Min(q => q.U), s.Outline.Max(q => q.U));

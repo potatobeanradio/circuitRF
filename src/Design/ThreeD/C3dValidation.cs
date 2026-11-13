@@ -524,8 +524,21 @@ public static class C3dValidation
     private static void Sheet(C3dSheet s, List<Diagnostic> found)
     {
         bool hasOutline = s.Outline.Count > 0;
-        if (s.Rect is null && !hasOutline) { found.Add(C3dDiagnostics.SheetShape(s.Name, "has neither a Rect nor an Outline")); return; }
-        if (s.Rect is not null && hasOutline) { found.Add(C3dDiagnostics.SheetShape(s.Name, "has both a Rect and an Outline; it must have one")); return; }
+        // brief-hzn-13 R-hzn13-2 — an Ellipse is the third shape: exactly one of the three.
+        int shapes = (s.Rect is null ? 0 : 1) + (hasOutline ? 1 : 0) + (s.Ellipse is null ? 0 : 1);
+        if (shapes == 0) { found.Add(C3dDiagnostics.SheetShape(s.Name, "has none of a Rect, an Outline and an Ellipse")); return; }
+        if (shapes > 1)
+        {
+            string both = string.Join(" and ", new[] { s.Rect is null ? null : "a Rect", hasOutline ? "an Outline" : null, s.Ellipse is null ? null : "an Ellipse" }.Where(x => x is not null));
+            found.Add(C3dDiagnostics.SheetShape(s.Name, $"has {both}; it must have one"));
+            return;
+        }
+        if (s.Ellipse is { } e)
+        {
+            if (C3dEllipses.Fault(e) is { } why) found.Add(C3dDiagnostics.SheetShape(s.Name, why));
+            if (s.Holes.Count > 0) found.Add(C3dDiagnostics.SheetShape(s.Name, "is an ellipse with Holes; holes belong to an Outline"));
+            return;
+        }
 
         if (s.Rect is { } r)
         {

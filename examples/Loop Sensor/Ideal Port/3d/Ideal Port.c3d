@@ -7,8 +7,7 @@
 	"Instances": [
 		{
 			"Name": "S1",
-			"CellRef": "../../Sensor",
-			"View": "ThreeD"
+			"CellRef": "../../Sensor"
 		}
 	],
 	"Variables": [
@@ -31,33 +30,19 @@
 			"Plane": "XY",
 			"Offset": 1617500,
 			"Rect": {
-				"Min": [
-					11000000,
-					0
-				],
-				"Size": [
-					3000000,
-					1000000
-				]
+				"Min": [11000000, 0],
+				"Size": [3000000, 1000000]
 			},
-			"Flip": true,
-			"Z0": "50"
+			"Z0": "50",
+			"Flip": true
 		}
 	],
 	"MeshRegions": [
 		{
 			"Name": "rings",
-			"Min": [
-				3500000,
-				0,
-				1600000
-			],
-			"Size": [
-				18000000,
-				22000000,
-				35000
-			],
-			"SizeUm": 300.0
+			"Min": [3500000, 0, 1600000],
+			"Size": [18000000, 22000000, 35000],
+			"SizeUm": 300
 		}
 	],
 	"Look": {

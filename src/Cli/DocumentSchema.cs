@@ -793,6 +793,11 @@ internal static class DocumentSchema
             boundary's face — is refused, naming both. A port that is off is absent (open, not
             terminated in its Z0), and the result's ports are the modelled ones renumbered 1…N in Number
             order, the mapping in the run's notes and the .sNp header.
+          * A SHEET is a Rect, an Outline (with Holes), or an Ellipse — exactly one:
+            "Ellipse": {"Centre": [u, v], "Radii": [ru, rv]} on its Plane at its Offset, ru along u and
+            rv along v (a circle has both equal). It is built as a polygon of Segments vertices (72 when
+            omitted; 8 to 1024), on the ellipse, the first at the +u end, counter-clockwise, and every
+            solver, port and boolean sees that polygon.
           * A REFERENCE IMAGE is a Sheet carrying "Image": {"Path": "ref/die.png"} — drawn with that
             picture instead of its material's colour, whatever its material (or none). Path is a
             reference, never the bytes: relative to the .c3d when the file lies inside its workspace,
@@ -1117,7 +1122,7 @@ internal static class DocumentSchema
           * A NAMED DIMENSION may hold an expression instead of a number: Min and Size (box,
             rectangle), Offset, Height and Shear (prism, sheet, polyline), Base, Length and Radius
             (cylinder), ThicknessUm, a placement's Origin and each Rotate angle, an array's Counts and
-            Pitch, a port's Rect, a wire's DiameterUm and its Array's Count and Pitch, a Fillet's Radius
+            Pitch, a port's Rect, a sheet's Ellipse Centre and Radii, a wire's DiameterUm and its Array's Count and Pitch, a Fillet's Radius
             and a Chamfer's Distance and Distance2. It is an object
             that ALWAYS carries the unit it
             was typed in, component by component:
@@ -1129,7 +1134,7 @@ internal static class DocumentSchema
             Deg; a count has none and must come out a whole number of at least 1 — never rounded.
             Everything resolves BEFORE any geometry is built; a length is rounded to the DBU once,
             and `check` notes a rounding that moved it by more than 1e-9.
-          * A WIRE'S AND A POLYLINE'S POINTS may hold expressions too, any component of any point,
+          * A WIRE'S AND A POLYLINE'S POINTS, AND A PRISM'S OR A SHEET'S OUTLINE, may hold expressions too, any component of any point,
             spelled exactly as a named dimension's components are — the point stays on one line:
 
                 "Points": [
@@ -1144,7 +1149,8 @@ internal static class DocumentSchema
 
             A polyline that has Points3 ignores its Points, so an expression in those is refused on
             read. `check` names a point that does not resolve as `'w1' point 2 z = h_loop: …`, 1-based.
-            Outline, Holes and a polyhedron's Vertices hold numbers only.
+            An Outline's points are [u, v] in the object's Plane, as a polyline's Points. Holes and a
+            polyhedron's Vertices hold numbers only.
           * A WIRE'S LoopHeight AND Span may be HELD: `"LoopHeight": { "Expr": "h_loop", "Unit": "Um" }`,
             `"Span": { "Expr": "s_w", "Unit": "Um" }`. Each is written only when held. Elaboration shapes
             the points to them, Span first: Span moves the end foot along the run in plan with the

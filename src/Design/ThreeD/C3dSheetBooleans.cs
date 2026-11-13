@@ -186,12 +186,19 @@ public static class C3dSheetBooleans
         return moved;
     }
 
-    /// <summary>A sheet's own polygon: its rectangle, or its outline and holes, through the layout code's conversion (which
+    /// <summary>A sheet's own polygon: its rectangle, its ellipse's ring, or its outline and holes, through the layout code's conversion (which
     /// orients the outline positive and every hole negative).</summary>
     private static Paths64 SheetPaths(C3dSheet s)
     {
         PolygonShape shape;
-        if (s.Rect is { } r)
+        if (s.Ellipse is { } e)
+        {
+            // brief-hzn-13 — an ellipse takes part as the polygon it is built as, everywhere else too.
+            var ring = C3dEllipses.Ring(e);
+            if (ring.Count < 3) return [];
+            shape = new PolygonShape { Xy = Flat(ring) };
+        }
+        else if (s.Rect is { } r)
         {
             long u0 = Math.Min(r.Min.U, r.Min.U + r.Size.U), u1 = Math.Max(r.Min.U, r.Min.U + r.Size.U);
             long v0 = Math.Min(r.Min.V, r.Min.V + r.Size.V), v1 = Math.Max(r.Min.V, r.Min.V + r.Size.V);

@@ -86,7 +86,7 @@ internal static class HznCli
             {
                 var doc = t.Document!;
                 walks.Add(new ResolutionStepJson("design", name,
-                    $"{doc.Objects.Count} object(s), {doc.Ports.Count} port(s), {doc.Variables.Count} variable(s), {doc.Setups.Count} setup(s), {t.Technology?.Materials.Count ?? 0} material(s)",
+                    $"{doc.Objects.Count} object(s), {doc.Ports.Count} port(s), {doc.Variables.Count} variable(s), {doc.Setups.Count} setup(s), {t.Technology?.ResolvedMaterials.Count ?? 0} material(s)",
                     "translated to a 3D view held in memory"));
                 // HZN-7: the setups it became, and which one `em` would run (and where its answer would land).
                 foreach (var (c3dSetup, hznOrigin) in t.Provenance.Setups)

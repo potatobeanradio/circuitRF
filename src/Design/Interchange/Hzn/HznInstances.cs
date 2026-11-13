@@ -236,7 +236,7 @@ public static class HznInstances
     public static IReadOnlyList<string> MaterialConflicts(Technology placed, Technology? parent, double tempC)
     {
         var found = new List<string>();
-        foreach (var m in placed.Materials)
+        foreach (var m in placed.ResolvedMaterials)
         {
             if (IsConductor(m, tempC)) continue;
             var mine = Values(m, tempC);
@@ -253,7 +253,7 @@ public static class HznInstances
     public static IReadOnlyList<string> ConductorDifferences(Technology placed, Technology? parent, double tempC)
     {
         var found = new List<string>();
-        foreach (var m in placed.Materials)
+        foreach (var m in placed.ResolvedMaterials)
         {
             if (!IsConductor(m, tempC)) continue;
             var mine = Values(m, tempC);

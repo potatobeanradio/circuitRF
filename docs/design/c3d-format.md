@@ -108,10 +108,11 @@ as a warning.
   - an array's `Counts`/`Pitch`
   - a port's `Rect`
   - a wire's `DiameterUm`, points, `LoopHeight` and `Span`
-  - a polyline's points
+  - a polyline's points, and a prism's or a sheet's `Outline` points
+  - a sheet's `Ellipse` `Centre` and `Radii`
   - `Radius`, `Distance` and `Distance2` of fillets and chamfers
 
-  `Outline`, `Holes` and polyhedron `Vertices` hold numbers only.
+  `Holes` and polyhedron `Vertices` hold numbers only.
 - **Units inside expressions.**
   - A number may carry a unit glued to it (`2*w + 5um`).
   - The field's own `Unit` applies to the bare numbers added to, subtracted from or compared with a unit-bearing
@@ -162,7 +163,7 @@ order Z, Y, X, each omitted at 0°. Any rigid motion, a mirror in any plane incl
 | `Sphere` | `Centre`, `Radius`; `FacetVertices` (omitted: a true sphere) makes it faceted, the convex hull of that many points of a golden-spiral lattice on it: point j of N from the top at z = 1 − (2j + 1)/N and azimuth −(j + ½)·π(3 − √5) | `surface` (every facet of a faceted one) |
 | `Ellipsoid` | `Centre`, `SemiAxes` (own frame) | `surface` |
 | `Polyhedron` | `Vertices` [[x,y,z]], `Faces` [{`Name`, `Outer` [vertex index], `Holes`}]: closed, each edge used twice in opposite directions, each face planar within 1 DBU | each face's own `Name` |
-| `Sheet` | `Plane`, `Offset`, and either `Rect` {`Min`,`Size`} or `Outline` + `Holes`; `ThicknessUm` (the metal's thickness). A sheet always conducts. `Image`, `Locked`: a reference picture | — |
+| `Sheet` | `Plane`, `Offset`, and exactly one of `Rect` {`Min`,`Size`}, `Outline` + `Holes`, or `Ellipse` {`Centre` [u,v], `Radii` [ru,rv], `Segments`} (a circle has equal radii; built as a polygon of `Segments` vertices, 72 when omitted, 8 to 1024, on the ellipse, the first at +u, counter-clockwise, which is what every solver, port and boolean sees); `ThicknessUm` (the metal's thickness). A sheet always conducts. `Image`, `Locked`: a reference picture | — |
 | `CylinderSheet` | A patch of a cylinder: `Axis`, `Base`, `Radius`, `Length`, `StartDeg`, `SweepDeg` | — |
 | `Polyline` | `Plane`, `Offset`, `Points` [[u,v]] (or `Points3` [[x,y,z]] when a vertex leaves the plane), `Closed`. **Construction geometry only: never solved** | — |
 | `Wire` | A bond wire: `Points` [[x,y,z]], `DiameterUm`, `Section` (`Hexagon`/`Round`), `Start`/`End` {`Style` `Wedge`/`Ball`, `FootLengthUm`}, `Array` {`Count`, `Pitch`}, optional held `LoopHeight`/`Span` | — |
@@ -394,7 +395,7 @@ document's contract and versions with it.
 | Torus | `Torus` | `Centre`, `Axis`, `MajorRadius`, `MinorRadius` | `surface` |
 | Helix (a round wire on a helical path) | `Helix` | `Base`, `Axis`, `Radius`, `Pitch`, `Turns`, `RightHanded`, `WireRadius` | `surface`, `start`, `end` |
 | Planar spiral trace | `Spiral` (a sheet) | `Plane`, `Offset`, `Centre` [u,v], `InnerRadius`, `Pitch`, `Turns`, `Width`, `RightHanded` | — |
-| Circle / ellipse sheet | `Sheet` gains `Ellipse` {`Centre` [u,v], `Radii` [ru, rv]} as a third shape beside `Rect` and `Outline` | | — |
+| Circle / ellipse sheet | **Built** (brief-hzn-13): `Sheet`'s `Ellipse` (§4.3) | | — |
 | Regular polygon (sheet) and regular prism | `Sheet`/`Prism` gain `Regular` {`Centre` [u,v], `Sides`, `Start` [u,v]} beside `Outline`; the outline is generated at elaboration, so expressions survive | | `side<k>` as for any prism |
 | Arcs in an outline | `Outline` gains a parallel `Arcs` list: `{ "From": k, "Through": [u,v] }` turns edge k→k+1 into the circular arc through that point | | the arc edge keeps `side<k>` |
 | Bond wire by profile (start, end, two heights) | **Existing** `Wire`, with a `Profile` {`Kind`, `H1`, `H2`} that generates `Points` | | — |

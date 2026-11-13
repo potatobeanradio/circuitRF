@@ -776,6 +776,7 @@ public static class C3dHierarchy
             case C3dSheet s:
                 s.Offset *= k;
                 if (s.Rect is { } r) s.Rect = new C3dRect { Min = Mul(r.Min, k), Size = Mul(r.Size, k) };
+                if (s.Ellipse is { } se) { se.Centre = Mul(se.Centre, k); se.Radii = Mul(se.Radii, k); }
                 s.Outline = [.. s.Outline.Select(q => Mul(q, k))];
                 s.Holes = [.. s.Holes.Select(h => h.Select(q => Mul(q, k)).ToList())];
                 break;

@@ -112,7 +112,8 @@ public sealed record C3dBoundField(string Item, string Path, IC3dBindable Owner,
 public static class C3dBindings
 {
     /// <summary>R-em3d51-1b — every named dimension that may hold an expression. Of the point lists, a wire's and a
-    /// polyline's take expressions per point (brief-em3d-132); outlines, holes and a polyhedron's vertices stay numbers.</summary>
+    /// polyline's take expressions per point (brief-em3d-132), and a prism's and a sheet's outline (brief-hzn-13); holes and a
+    /// polyhedron's vertices stay numbers.</summary>
     public static IReadOnlyList<C3dFieldSpec> Fields { get; } =
     [
         new(typeof(C3dBox), nameof(C3dBox.Min), 3, C3dFieldKind.Length),
@@ -179,6 +180,12 @@ public static class C3dBindings
         new(typeof(C3dWire), nameof(C3dWire.Points), 3, C3dFieldKind.Length) { IsList = true },
         new(typeof(C3dPolyline), nameof(C3dPolyline.Points), 2, C3dFieldKind.Length) { IsList = true },
         new(typeof(C3dPolyline), nameof(C3dPolyline.Points3), 3, C3dFieldKind.Length) { IsList = true },
+        // brief-hzn-13 R-hzn13-1 — a prism's and a sheet's outline, in the plane's (u, v), point by point as a polyline's.
+        new(typeof(C3dPrism), nameof(C3dPrism.Outline), 2, C3dFieldKind.Length) { IsList = true },
+        new(typeof(C3dSheet), nameof(C3dSheet.Outline), 2, C3dFieldKind.Length) { IsList = true },
+        // brief-hzn-13 R-hzn13-2 — an ellipse sheet's centre and radii
+        new(typeof(C3dEllipse), nameof(C3dEllipse.Centre), 2, C3dFieldKind.Length),
+        new(typeof(C3dEllipse), nameof(C3dEllipse.Radii), 2, C3dFieldKind.Length),
         // brief-em3d-135 — a wire's held loop height and span: the arch is shaped to them when the document resolves.
         new(typeof(C3dWire), nameof(C3dWire.LoopHeight), 1, C3dFieldKind.Length),
         new(typeof(C3dWire), nameof(C3dWire.Span), 1, C3dFieldKind.Length),
@@ -267,6 +274,7 @@ public static class C3dBindings
             case C3dObject o:
                 yield return ("", o);
                 if (o is C3dSheet { Rect: { } r }) yield return ("Rect.", r);
+                if (o is C3dSheet { Ellipse: { } el }) yield return ("Ellipse.", el);
                 if (o is C3dWire { Array: { } wa }) yield return ("Array.", wa);
                 foreach (var p in Placement(o.Placement)) yield return p;
                 // brief-em3d-64 — an operation's operands are owned inline, so their fields are the operation's own,

@@ -10,7 +10,7 @@
 //   Ellipsoid (brief-sar-3)                                   → Em3dEllipsoid (the placement turns its axes)
 //   Anything else                                             → Em3dPolyhedron
 //
-// A sheet lies flat (Em3dSheet at Z) under the same condition a prism stays an extrusion, and otherwise
+// A sheet (a Rect, an Outline, or an Ellipse built as a polygon, brief-hzn-13) lies flat (Em3dSheet at Z) under the same condition a prism stays an extrusion, and otherwise
 // carries a frame (Em3dPlaneFrame). A polyline is construction geometry and lowers to nothing.
 // A Boolean of coplanar sheets (brief-hzn-10) lowers here too, to one sheet geometry per piece of its result.
 //
@@ -144,18 +144,10 @@ public static class C3dLowering
             }
             case C3dSheet s:
             {
-                List<Point2> outline;
-                List<IReadOnlyList<Point2>> holes = [];
-                if (s.Rect is { } r)
-                {
-                    double u0 = M(r.Min.U), v0 = M(r.Min.V), u1 = M(r.Min.U + r.Size.U), v1 = M(r.Min.V + r.Size.V);
-                    outline = [new(u0, v0), new(u1, v0), new(u1, v1), new(u0, v1)];
-                }
-                else
-                {
-                    outline = [.. s.Outline.Select(q => new Point2(M(q.U), M(q.V)))];
-                    holes = [.. s.Holes.Select(h => (IReadOnlyList<Point2>)[.. h.Select(q => new Point2(M(q.U), M(q.V)))])];
-                }
+                // brief-hzn-13 — a rectangle, an outline, or an ellipse's polygon (C3dEllipses.Polygon), all one polygon from here on.
+                var (ring, rings) = C3dEllipses.Polygon(s);
+                List<Point2> outline = [.. ring.Select(q => new Point2(M(q.U), M(q.V)))];
+                List<IReadOnlyList<Point2>> holes = [.. rings.Select(h => (IReadOnlyList<Point2>)[.. h.Select(q => new Point2(M(q.U), M(q.V)))])];
                 double h = M(s.Offset);
                 var sheet = s.Plane == C3dPlane.XY
                     ? new C3dSheetGeometry(outline, holes, h, null)

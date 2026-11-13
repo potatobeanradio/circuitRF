@@ -884,6 +884,60 @@ phase origin unless that is the unstated (0, 0, 0) off the model. It still stand
 the direction of travel inside the model changes nothing drawn (nor anything solved but the phase). The tree's menu is built
 from its own row now, not the selected one, so a disabled wave's Move is greyed saying why.
 
+### HZN-13 — expressions in outlines, and circular and elliptical sheets (2026-11-13)
+
+**36 of 58** Hertzon example designs open, up from 33: `HairpinFilter`, the scaling benchmark's `medium_hairpin`, and `GPS_L1`.
+The count was predicted before building, by relaxing the two refusals in a scratch translator and re-running the census.
+
+**Outline expressions reuse the polyline's list binding.** `C3dPrism.Outline` and `C3dSheet.Outline` are two more `IsList` rows in
+`C3dBindings.Fields`, keyed `Outline[k]`. Every generic piece then worked unchanged: reading, writing, resolution, the drag rule's
+`PreviewThroughNames` and `check`'s `point k u` naming. `Holes` stay numbers.
+- The edits that are not generic:
+  - `C3dFaceEditor.MoveOutlinePoint` unbinds the typed point for a sheet and a prism, as it already did for a polyline;
+  - Properties marks a bound point's row with ƒ, with the expressions in its tooltip.
+- **The translator now reads every polyline component through `Len`**, so a literal point is still a number.
+  - The plane test runs on the evaluated points.
+  - The normal component becomes `Offset`, from the first point, with a note when the points spell it differently.
+- **Export no longer freezes a polyline's offset.** It writes the offset's expression into every point. The `Frozen` helper is gone.
+
+**An ellipse is built as a polygon in exactly one place.** That place is `C3dEllipses`: `Ring` builds the ellipse, and `Polygon`
+gives any sheet's polygon, whichever of its three shapes it has.
+- The polygon has 72 vertices by default, on the ellipse, the first at +u, counter-clockwise.
+- The quarter points are exact, so a circle's extremes are its radius to the DBU.
+- Area is 0.13 % under the ellipse, and the largest inward sagitta is 0.095 % of the radius.
+- Below the lowering nothing knows about ellipses. Gmsh (GPS_L1 meshed for Palace, 125,159 tetrahedra, no warnings), EMerge and
+  openEMS read ordinary sheets.
+- A true curved disc in Gmsh is deferred. It matters only where a disc must meet a curved solid's edge, which is the coax wave-port
+  case.
+
+**The readers that branch on a sheet's shape, and what each does with an ellipse:**
+- `C3dValidation`: exactly one of the three shapes, positive radii, `Segments` from 8 to 1024, no `Holes`.
+- `C3dLowering` and the face-edit polygon (`C3dFaceCommands.Polygon`): `Polygon`.
+- `C3dSheetBooleans.SheetPaths`: the ring.
+- `C3dHierarchy.Scale`: centre and radii.
+- `C3dImages.FillRect`: the bounding rectangle.
+- The two `SheetBox` extents in HZN translate and export: centre ± radii.
+- `C3dFaceEditor`: a vertex or edge move is refused with `EllipseVertexMove`; a whole-sheet move in its plane moves `Centre`.
+- `OutlinePoints`/`Rings`: empty, so no corner handles.
+- `ExtrudeTool`: the prism of its polygon.
+- Properties: Centre and Radius rows, and a Shape row.
+
+A heat source's sheet is `C3dHeatSheet`, a separate type, and is untouched.
+
+**Hertzon's ellipse.** On `Axis: Z` its major radius lies along x. This was found black-box: Hertzon's own geometry report gives a
+4 × 2 mm bounding box for `MajorRadius` 2 and `Ratio` 0.5.
+- On X or Y the direction is not established, so translation refuses it. Only Z ellipses occur in the examples.
+- Export writes equal radii as `CreateCircle`, and an XY ellipse with the larger radius along u as `CreateEllipse`. It refuses
+  anything else, and a stated `Segments`.
+- **Hertzon's MCP server opened a GUI window on `open_project` even with `open_in_gui: false`.** Probe it only when nothing else
+  answers.
+
+**The next census items:**
+- `Coax50` needs a circular wave-port shape.
+- The Rotman lenses need sheets in slanted vertical planes. They also refuse the lumped ports on `P_Beam3`/`P_Arr4`, whose sheets are
+  already in an axis plane; why is not yet investigated.
+- `GerberTestBoard` is now down to `CreateRegion` with a percentage offset, a face of a sheet, and an impedance boundary.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

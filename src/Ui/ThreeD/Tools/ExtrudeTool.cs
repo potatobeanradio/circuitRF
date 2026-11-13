@@ -70,10 +70,10 @@ public sealed class ExtrudeTool : C3dDrawTool
         {
             case C3dSheet s:
                 _plane = s.Plane; _offset = s.Offset;
-                _outline = s.Rect is { } r
-                    ? [r.Min, new(r.Min.U + r.Size.U, r.Min.V), new(r.Min.U + r.Size.U, r.Min.V + r.Size.V), new(r.Min.U, r.Min.V + r.Size.V)]
-                    : [.. s.Outline];
-                _holes = s.Rect is null ? [.. s.Holes.Select(h => h.ToList())] : [];
+                // brief-hzn-13 — a rectangle, an outline or an ellipse's polygon (an extruded ellipse is the prism of its polygon)
+                var (ring, rings) = C3dEllipses.Polygon(s);
+                _outline = [.. ring];
+                _holes = [.. rings.Select(h => h.ToList())];
                 break;
             case C3dPolyline l:
                 _plane = l.Plane; _offset = l.Offset;

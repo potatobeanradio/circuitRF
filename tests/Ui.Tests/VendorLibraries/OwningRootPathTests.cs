@@ -140,6 +140,8 @@ public sealed class OwningRootPathTests : IDisposable
             ["TrlRun"]                     = [("Deembed", "File")],
             ["Trl"]                        = [("Deembed", "File")],
             ["GoalTemplates"]              = [("EmFieldData", "File")],
+            // Issue 56 — an RF Chain Budget's Touchstone stage names its file as a schematic's SnP File does, resolved by that rule.
+            ["ChainSnp"]                   = [("SnP", "File")],
         };
         foreach (var (site, entries) in bySite)
             foreach (var (reference, param) in entries)

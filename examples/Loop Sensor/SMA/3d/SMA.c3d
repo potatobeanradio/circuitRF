@@ -15,46 +15,20 @@
 				"Blank": {
 					"$type": "Cylinder",
 					"Material": "Connector alloy",
-					"Base": [
-						0,
-						{
-							"Expr": "-fl_t - body_l",
-							"Unit": "Mm"
-						},
-						0
-					],
+					"Base": [0, { "Expr": "-fl_t - body_l", "Unit": "Mm" }, 0],
 					"Axis": "Y",
-					"Length": {
-						"Expr": "body_l",
-						"Unit": "Mm"
-					},
-					"Radius": {
-						"Expr": "body_d/2",
-						"Unit": "Mm"
-					}
+					"Length": { "Expr": "body_l", "Unit": "Mm" },
+					"Radius": { "Expr": "body_d/2", "Unit": "Mm" }
 				},
 				"Tools": [
 					{
 						"$type": "Cylinder",
 						"Name": "bore",
 						"Material": "PTFE",
-						"Base": [
-							0,
-							{
-								"Expr": "-fl_t - body_l",
-								"Unit": "Mm"
-							},
-							0
-						],
+						"Base": [0, { "Expr": "-fl_t - body_l", "Unit": "Mm" }, 0],
 						"Axis": "Y",
-						"Length": {
-							"Expr": "fl_t + body_l",
-							"Unit": "Mm"
-						},
-						"Radius": {
-							"Expr": "bore_d/2",
-							"Unit": "Mm"
-						}
+						"Length": { "Expr": "fl_t + body_l", "Unit": "Mm" },
+						"Radius": { "Expr": "bore_d/2", "Unit": "Mm" }
 					}
 				]
 			},
@@ -74,33 +48,17 @@
 		{
 			"$type": "Fillet",
 			"Name": "pin",
-			"Radius": {
-				"Expr": "tip_r",
-				"Unit": "Mm"
-			},
+			"Radius": { "Expr": "tip_r", "Unit": "Mm" },
 			"Edges": [
 				"side|top"
 			],
 			"Target": {
 				"$type": "Cylinder",
 				"Material": "Connector alloy",
-				"Base": [
-					0,
-					{
-						"Expr": "-fl_t - body_l",
-						"Unit": "Mm"
-					},
-					0
-				],
+				"Base": [0, { "Expr": "-fl_t - body_l", "Unit": "Mm" }, 0],
 				"Axis": "Y",
-				"Length": {
-					"Expr": "fl_t + body_l + pin_out",
-					"Unit": "Mm"
-				},
-				"Radius": {
-					"Expr": "pin_d/2",
-					"Unit": "Mm"
-				}
+				"Length": { "Expr": "fl_t + body_l + pin_out", "Unit": "Mm" },
+				"Radius": { "Expr": "pin_d/2", "Unit": "Mm" }
 			}
 		}
 	],
@@ -148,19 +106,14 @@
 			"Kind": "Lumped",
 			"Plane": "XZ",
 			"Offset": -7500000,
+			"Rect": {
+				"Min": [0, 0],
+				"Size": [0, 0]
+			},
 			"Annulus": {
-				"Centre": [
-					0,
-					0
-				],
-				"Inner": {
-					"Expr": "pin_d/2",
-					"Unit": "Mm"
-				},
-				"Outer": {
-					"Expr": "bore_d/2",
-					"Unit": "Mm"
-				}
+				"Centre": [0, 0],
+				"Inner": { "Expr": "pin_d/2", "Unit": "Mm" },
+				"Outer": { "Expr": "bore_d/2", "Unit": "Mm" }
 			},
 			"Z0": "50"
 		}

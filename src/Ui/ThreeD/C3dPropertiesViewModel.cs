@@ -145,6 +145,10 @@ public sealed class C3dOutlinePointRow
     public bool YReadOnly { get; init; }
     public bool ZReadOnly { get; init; }
     public string EdgeText { get; init; } = "";
+
+    /// <summary>brief-hzn-13 R-hzn13-1 — what the point's components hold when any is an expression (the row's tooltip, and an ƒ
+    /// beside its number); null when they are numbers.</summary>
+    public string? Bound { get; init; }
     public bool Changed => X != LoadedX || Y != LoadedY || Z != LoadedZ;
 }
 
@@ -724,7 +728,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         if (obj is C3dBoolean b) { LoadBoolean(index, b); return; }
         foreach (var row in Dimensions(obj)) Rows.Add(row);
-        if (obj is C3dSheet { Rect: null } or C3dPrism or C3dPolyline) LoadOutlinePoints(obj);
+        if (obj is C3dSheet { Rect: null, Ellipse: null } or C3dPrism or C3dPolyline) LoadOutlinePoints(obj);
         foreach (var f in editor.DimensionFields(obj).Where(f => obj is not C3dPhantom ph || PhantomUses(ph, f.Path))) Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
         if (obj is C3dPhantom phantom && !operand) LoadPhantomLayers(index, phantom);
@@ -1122,9 +1126,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                     edge = LayoutUnits.Format((long)Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz)), doc.DisplayUnit, doc.DbuPerMicron);
                 }
                 string x = L(p.X), y = L(p.Y), z = L(p.Z);
+                string? bound = ring == 0 ? BoundPoint(obj, k) : null;
                 OutlinePoints.Add(new C3dOutlinePointRow
                 {
-                    Index = start + k, Label = (k + 1).ToString(CultureInfo.InvariantCulture),
+                    Index = start + k, Label = (k + 1).ToString(CultureInfo.InvariantCulture) + (bound is null ? "" : "ƒ"), Bound = bound,
                     X = x, Y = y, Z = z, LoadedX = x, LoadedY = y, LoadedZ = z,
                     XReadOnly = normal == 0, YReadOnly = normal == 1, ZReadOnly = normal == 2, EdgeText = edge,
                 });
@@ -1133,6 +1138,24 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         HasOutlinePoints = true;
         OutlinePointsTitle = obj is C3dPrism ? $"Points (x, y, z) — its bottom, {LengthUnit}" : $"Points (x, y, z), {LengthUnit}";
+    }
+
+    /// <summary>brief-hzn-13 R-hzn13-1 — point <paramref name="k"/> of an outline's (or a planar polyline's) list, when a component holds an
+    /// expression: each such component as <c>u = text</c>, and what typing does to them. Null when every component is a number.</summary>
+    private static string? BoundPoint(C3dObject obj, int k)
+    {
+        string? property = obj switch
+        {
+            C3dSheet or C3dPrism => "Outline",
+            C3dPolyline { Points3: null } => nameof(C3dPolyline.Points),
+            _ => null,
+        };
+        if (property is null || C3dBindings.SpecOf(obj.GetType(), property) is not { } spec) return null;
+        var element = spec.ElementAt(k);
+        var parts = new List<string>();
+        for (int c = 0; c < 2; c++)
+            if (C3dBindings.GetExpr(obj, element, c) is { } e) parts.Add($"{(c == 0 ? "u" : "v")} = {e.Expr}");
+        return parts.Count == 0 ? null : $"Point {k + 1} holds {string.Join(", ", parts)}. Typing a number here replaces it.";
     }
 
     /// <summary>A point's Enter or lost focus: three lengths in the display unit (a suffix may name another), the point moved
@@ -1254,6 +1277,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 if (head == "Offset") return $"Offset ({n})";
                 if (head == "Rect.Min") return $"Corner {(k == 0 ? u : v)}";
                 if (head == "Rect.Size") return $"{Up(k == 0 ? u : v)} size";
+                // brief-hzn-13 R-hzn13-2 — an ellipse's centre and its radius along each of the plane's axes
+                if (head == "Ellipse.Centre") return $"Centre {(k == 0 ? u : v)}";
+                if (head == "Ellipse.Radii") return $"Radius {(k == 0 ? u : v)}";
                 if (head == "ThicknessUm") return "Thickness";
                 break;
             }
@@ -1586,7 +1612,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 break;
             case C3dSheet s:
                 yield return new("Plane", s.Plane.ToString());
-                if (s.Rect is null) yield return new("Outline", $"{s.Outline.Count} points" + (s.Holes.Count > 0 ? $", {s.Holes.Count} hole(s)" : ""));
+                if (s.Ellipse is { } el)
+                    yield return new("Shape", $"{(el.Radii.U == el.Radii.V ? "circle" : "ellipse")}, built of {C3dEllipses.SegmentsOf(el)} straight edges");
+                else if (s.Rect is null) yield return new("Outline", $"{s.Outline.Count} points" + (s.Holes.Count > 0 ? $", {s.Holes.Count} hole(s)" : ""));
                 break;
             case C3dPolyline l:
                 yield return new("Plane", l.Plane.ToString());

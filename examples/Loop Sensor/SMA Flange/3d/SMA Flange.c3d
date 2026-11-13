@@ -14,57 +14,18 @@
 				"Blank": {
 					"$type": "Box",
 					"Material": "Connector alloy",
-					"Min": [
-						{
-							"Expr": "-fl_w/2",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "-fl_t",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "-fl_h/2",
-							"Unit": "Mm"
-						}
-					],
-					"Size": [
-						{
-							"Expr": "fl_w",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "fl_t",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "fl_h",
-							"Unit": "Mm"
-						}
-					]
+					"Min": [{ "Expr": "-fl_w/2", "Unit": "Mm" }, { "Expr": "-fl_t", "Unit": "Mm" }, { "Expr": "-fl_h/2", "Unit": "Mm" }],
+					"Size": [{ "Expr": "fl_w", "Unit": "Mm" }, { "Expr": "fl_t", "Unit": "Mm" }, { "Expr": "fl_h", "Unit": "Mm" }]
 				},
 				"Tools": [
 					{
 						"$type": "Cylinder",
 						"Name": "hole",
 						"Material": "Connector alloy",
-						"Base": [
-							0,
-							{
-								"Expr": "-fl_t",
-								"Unit": "Mm"
-							},
-							0
-						],
+						"Base": [0, { "Expr": "-fl_t", "Unit": "Mm" }, 0],
 						"Axis": "Y",
-						"Length": {
-							"Expr": "fl_t",
-							"Unit": "Mm"
-						},
-						"Radius": {
-							"Expr": "bore_d/2",
-							"Unit": "Mm"
-						}
+						"Length": { "Expr": "fl_t", "Unit": "Mm" },
+						"Radius": { "Expr": "bore_d/2", "Unit": "Mm" }
 					}
 				]
 			},
@@ -73,121 +34,29 @@
 					"$type": "Box",
 					"Name": "leg_top_left",
 					"Material": "Connector alloy",
-					"Min": [
-						{
-							"Expr": "-leg_x - leg_w/2",
-							"Unit": "Mm"
-						},
-						0,
-						{
-							"Expr": "-pin_d/2",
-							"Unit": "Mm"
-						}
-					],
-					"Size": [
-						{
-							"Expr": "leg_w",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_l",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_t",
-							"Unit": "Mm"
-						}
-					]
+					"Min": [{ "Expr": "-leg_x - leg_w/2", "Unit": "Mm" }, 0, { "Expr": "-pin_d/2", "Unit": "Mm" }],
+					"Size": [{ "Expr": "leg_w", "Unit": "Mm" }, { "Expr": "leg_l", "Unit": "Mm" }, { "Expr": "leg_t", "Unit": "Mm" }]
 				},
 				{
 					"$type": "Box",
 					"Name": "leg_top_right",
 					"Material": "Connector alloy",
-					"Min": [
-						{
-							"Expr": "leg_x - leg_w/2",
-							"Unit": "Mm"
-						},
-						0,
-						{
-							"Expr": "-pin_d/2",
-							"Unit": "Mm"
-						}
-					],
-					"Size": [
-						{
-							"Expr": "leg_w",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_l",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_t",
-							"Unit": "Mm"
-						}
-					]
+					"Min": [{ "Expr": "leg_x - leg_w/2", "Unit": "Mm" }, 0, { "Expr": "-pin_d/2", "Unit": "Mm" }],
+					"Size": [{ "Expr": "leg_w", "Unit": "Mm" }, { "Expr": "leg_l", "Unit": "Mm" }, { "Expr": "leg_t", "Unit": "Mm" }]
 				},
 				{
 					"$type": "Box",
 					"Name": "leg_bottom_left",
 					"Material": "Connector alloy",
-					"Min": [
-						{
-							"Expr": "-leg_x - leg_w/2",
-							"Unit": "Mm"
-						},
-						0,
-						{
-							"Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t",
-							"Unit": "Mm"
-						}
-					],
-					"Size": [
-						{
-							"Expr": "leg_w",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_l",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_t",
-							"Unit": "Mm"
-						}
-					]
+					"Min": [{ "Expr": "-leg_x - leg_w/2", "Unit": "Mm" }, 0, { "Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t", "Unit": "Mm" }],
+					"Size": [{ "Expr": "leg_w", "Unit": "Mm" }, { "Expr": "leg_l", "Unit": "Mm" }, { "Expr": "leg_t", "Unit": "Mm" }]
 				},
 				{
 					"$type": "Box",
 					"Name": "leg_bottom_right",
 					"Material": "Connector alloy",
-					"Min": [
-						{
-							"Expr": "leg_x - leg_w/2",
-							"Unit": "Mm"
-						},
-						0,
-						{
-							"Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t",
-							"Unit": "Mm"
-						}
-					],
-					"Size": [
-						{
-							"Expr": "leg_w",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_l",
-							"Unit": "Mm"
-						},
-						{
-							"Expr": "leg_t",
-							"Unit": "Mm"
-						}
-					]
+					"Min": [{ "Expr": "leg_x - leg_w/2", "Unit": "Mm" }, 0, { "Expr": "-pin_d/2 - sub_h - cu_t/2 - leg_t", "Unit": "Mm" }],
+					"Size": [{ "Expr": "leg_w", "Unit": "Mm" }, { "Expr": "leg_l", "Unit": "Mm" }, { "Expr": "leg_t", "Unit": "Mm" }]
 				}
 			]
 		}

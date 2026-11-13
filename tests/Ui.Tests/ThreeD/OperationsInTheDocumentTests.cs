@@ -41,8 +41,12 @@ public sealed class OperationsInTheDocumentTests : IDisposable
         string examples = Path.Combine(RepoRoot(), "examples");
         var all = Directory.GetFiles(examples, "*.c3d", SearchOption.AllDirectories);
         var usesKernel = all.Where(f => C3dKernelUse.Of(C3dPersistence.LoadFromFile(f)).Count > 0).ToList();
+        // brief-cxp-5 — the Loop Sensor example's connector, flange, board cut-out and gap feed are built with the same
+        // operations, so they use the kernel too.
         Assert.Equal(["3D Connector/Flange/3d/Flange.c3d", "3D Connector/Launch/3d/Launch.c3d",
-                       "3D Wave Ports/Flange/3d/Flange.c3d", "3D Wave Ports/Launch/3d/Launch.c3d", "Hierarchy/Launch/3d/Launch.c3d"],
+                       "3D Wave Ports/Flange/3d/Flange.c3d", "3D Wave Ports/Launch/3d/Launch.c3d", "Hierarchy/Launch/3d/Launch.c3d",
+                       "Loop Sensor/Gap Fed/3d/Gap Fed.c3d", "Loop Sensor/SMA Flange/3d/SMA Flange.c3d", "Loop Sensor/SMA/3d/SMA.c3d",
+                       "Loop Sensor/Sensor/3d/Sensor.c3d"],
             usesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal));
         // The Hierarchy Assembly holds no kernel object but PLACES that launch, so its elaboration reaches the kernel too.
         bool Places(string f) => C3dPersistence.LoadFromFile(f).Instances.Any(i =>
@@ -52,8 +56,9 @@ public sealed class OperationsInTheDocumentTests : IDisposable
                 || all.Where(o => o.StartsWith(cell, StringComparison.Ordinal) && o != f).Any(Places);
         });
         var placesKernel = all.Except(usesKernel).Where(Places).ToList();
-        Assert.Equal(["Hierarchy/Assembly/3d/Assembly.c3d"],
-            placesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')));
+        // The Loop Sensor's ideal-port board places the sensor, and its connector board places the sensor and the SMA.
+        Assert.Equal(["Hierarchy/Assembly/3d/Assembly.c3d", "Loop Sensor/Ideal Port/3d/Ideal Port.c3d", "Loop Sensor/With Connector/3d/With Connector.c3d"],
+            placesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal));
         var files = all.Except(usesKernel).Except(placesKernel).ToList();
         Assert.NotEmpty(files);
         foreach (string f in files)

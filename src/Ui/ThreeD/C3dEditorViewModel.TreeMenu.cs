@@ -250,6 +250,10 @@ public sealed partial class C3dEditorViewModel
         if (item.IsGroup) return SceneObjectsOfGroup(item.GroupPath!);
         // brief-sar-3 — a phantom's row is its layers' solids
         bool phantom = item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && item.OperandPath is null && Document.Objects[item.ObjectIndex] is C3dPhantom;
+        // A wire's row is its elements: a row of wires is drawn as w1[0], w1[1] …, never as w1, so the row's own name finds nothing
+        // and the selection was lost the moment a wire became a row (SceneObjectsFor knows the element names).
+        if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && item.OperandPath is null && Document.Objects[item.ObjectIndex] is C3dWire wire)
+            return [.. SceneObjectsFor(wire)];
         var names = item.InstanceIndex >= 0 || phantom ? item.Children.Select(c => c.Name) : [item.Name];
         return [.. names.Select(SceneObject).OfType<Scene3DObject>()];
     }

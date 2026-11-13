@@ -302,7 +302,7 @@
                             <TextBlock Text="{Binding Text}" FontSize="10" FontWeight="SemiBold" Opacity="0.7" Margin="0,5,0,1"/>
                         </DataTemplate>
                         <DataTemplate DataType="t3:C3dOutlinePointRow">
-                            <Grid ColumnDefinitions="22,*,3,*,3,*,46" Margin="0,1">
+                            <Grid ColumnDefinitions="22,*,3,*,3,*,46" Margin="0,1" ToolTip.Tip="{Binding Bound}">
                                 <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10" Opacity="0.6" VerticalAlignment="Center"/>
                                 <TextBox Grid.Column="1" Text="{Binding X}" Classes="dim" Padding="3,1" IsReadOnly="{Binding XReadOnly}"
                                          KeyDown="OnOutlinePointKey" LostFocus="OnOutlinePointLostFocus"/>

@@ -33,6 +33,7 @@ public sealed partial class C3dEditorViewModel
     private EdgeTarget? SheetEdgeTarget(C3dSheet s, out string? why)
     {
         why = null;
+        if (s.Ellipse is not null) { why = CircuitRF.Design.ThreeD.Kernel.C3dFaceEditor.EllipseVertexMove; return null; }   // brief-hzn-13
         if (s.Rect is null) { why = $"'{s.Name}' is not a rectangle: its edges are moved by its corners."; return null; }
         if (s.Locked) { why = LockedRefusal(s.Name); return null; }
         if (s.Placement.Rotate.Count > 0 || s.Placement.MirrorX) { why = $"'{s.Name}' is rotated, so its edges do not lie along its plane's axes."; return null; }

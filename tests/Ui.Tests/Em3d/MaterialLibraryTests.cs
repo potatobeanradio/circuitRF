@@ -126,6 +126,13 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
                                                               // to the own list, which the saved file must carry
             "CircuitRF.Cli.Check",                            // MaterialValidation over a refused file's own list
             "CircuitRF.Cli.Explain",                          // "N own and M from libraries"
+            "CircuitRF.Design.Interchange.Hzn.HznConvert",    // the translated design's own technology (it names no library), and
+                                                              // a WRITE: --add-materials adds what FindMaterial found missing to a
+                                                              // CLONE of the destination's own list (HZN-6)
+            "CircuitRF.Design.Interchange.Hzn.HznExport",     // a WRITE: a flattened instance's material that FindMaterial cannot find
+                                                              // is added to a CLONE's own list for the export (HZN-4)
+            "CircuitRF.Design.Interchange.Hzn.HznTranslator", // a WRITE: a translation's technology is built new, from the materials
+                                                              // the translated design uses (HZN-2)
             "CircuitRF.Design.ThreeD.C3dRunDocument",         // a run input's physics hash: the FILE's records (brief-em3d-105)
             "CircuitRF.Design.ThreeD.Appearance.AppearanceResolver", // a previewed look's technology keeps own and library apart, so
                                                               // the provenance still names the library (brief-em3d-108)

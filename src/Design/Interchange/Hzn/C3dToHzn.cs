@@ -183,14 +183,6 @@ internal sealed partial class C3dToHznWriter
     private string Dim3(IC3dBindable owner, string property, C3dPoint3 p) =>
         $"{Dim(owner, property, 0, p.X)},{Dim(owner, property, 1, p.Y)},{Dim(owner, property, 2, p.Z)}";
 
-    /// <summary>A length that must be a number in the file (a polyline's point): the expression is frozen at its value.</summary>
-    private string Frozen(IC3dBindable owner, string property, long number, string what)
-    {
-        if (C3dBindings.GetExpr(owner, property, 0) is { } e)
-            _notes.Add($"{what}: '{e.Expr}' was written as {Lit(number)}; a polyline's points hold numbers when Hertzon's design is read back.");
-        return Lit(number);
-    }
-
     // ── extents, for the air box and for integration lines ────────────────────────────────────────
 
     internal readonly record struct Box3(long[] Min, long[] Max);
@@ -263,6 +255,12 @@ internal sealed partial class C3dToHznWriter
         {
             (min[u], max[u]) = (r.Min.U, r.Min.U + r.Size.U);
             (min[v], max[v]) = (r.Min.V, r.Min.V + r.Size.V);
+        }
+        else if (s.Ellipse is { } el)
+        {
+            // brief-hzn-13 — an ellipse sheet's extent is its centre ± its radii
+            (min[u], max[u]) = (el.Centre.U - el.Radii.U, el.Centre.U + el.Radii.U);
+            (min[v], max[v]) = (el.Centre.V - el.Radii.V, el.Centre.V + el.Radii.V);
         }
         else if (s.Outline.Count > 0)
         {

@@ -161,8 +161,9 @@ internal sealed partial class C3dToHznWriter
             return false;
         }
         var (_, _, n) = Axes(p.Plane);
-        string at = Frozen(p, nameof(C3dPrism.Offset), p.Offset, $"Prism '{label}' offset");
-        string pts = string.Join(";", p.Outline.Select(q => Point(p.Plane, Lit(q.U), Lit(q.V), at)));
+        // brief-hzn-13 R-hzn13-3 — the outline's expressions are the points', and the offset is written into every point.
+        string at = Dim(p, nameof(C3dPrism.Offset), 0, p.Offset);
+        string pts = OutlinePoints(p, nameof(C3dPrism.Outline), p.Plane, p.Outline, at);
         steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", ""))));
         string h = Dim(p, nameof(C3dPrism.Height), 0, p.Height);
         string[] v = ["0", "0", "0"];
@@ -190,6 +191,7 @@ internal sealed partial class C3dToHznWriter
             steps.Add(new("CreateRectangle", props));
             return true;
         }
+        if (s.Ellipse is { } el) return EllipseSteps(s, el, steps, label);
         if (s.Holes.Count > 0)
         {
             _r.Add(HznRefusalKind.CreationStep, "sheet with holes", "a polyline with holes is not read back by circuitRF", label);
@@ -200,9 +202,63 @@ internal sealed partial class C3dToHznWriter
             _r.Add(HznRefusalKind.CreationStep, "sheet without an outline", "it has neither a rectangle nor three points", label);
             return false;
         }
-        string at = Frozen(s, nameof(C3dSheet.Offset), s.Offset, $"Sheet '{label}' offset");
-        string pts = string.Join(";", s.Outline.Select(q => Point(s.Plane, Lit(q.U), Lit(q.V), at)));
+        string at = Dim(s, nameof(C3dSheet.Offset), 0, s.Offset);
+        string pts = OutlinePoints(s, nameof(C3dSheet.Outline), s.Plane, s.Outline, at);
         steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", ""))));
+        return true;
+    }
+
+    /// <summary>brief-hzn-13 — each outline point as Hertzon's <c>u,v,n</c> in world order, a component holding an expression written
+    /// as that expression, <paramref name="at"/> the plane's coordinate.</summary>
+    private string OutlinePoints(C3dObject owner, string property, C3dPlane plane, List<C3dPoint2> outline, string at)
+    {
+        var spec = C3dBindings.SpecOf(owner.GetType(), property)!;
+        return string.Join(";", outline.Select((q, k) =>
+        {
+            var e = spec.ElementAt(k);
+            return Point(plane, Dim(owner, e.Key, 0, q.U), Dim(owner, e.Key, 1, q.V), at);
+        }));
+    }
+
+    /// <summary>
+    /// brief-hzn-13 R-hzn13-3 — an ellipse sheet: equal radii are a <c>CreateCircle</c> on the plane's normal; on XY with the u radius
+    /// the larger, a <c>CreateEllipse</c> whose major radius is the u radius (Hertzon's lies along x) and whose ratio is v over u. Any
+    /// other ellipse, and a stated segment count, is refused by name.
+    /// </summary>
+    private bool EllipseSteps(C3dSheet s, C3dEllipse el, List<HStep> steps, string label)
+    {
+        if (el.Segments is not null)
+        {
+            _r.Add(HznRefusalKind.CreationStep, "ellipse with a segment count", "Hertzon's faceted circle is not known to put its vertices where circuitRF does", label);
+            return false;
+        }
+        var (u, v, n) = Axes(s.Plane);
+        string Centre(int k) => Dim(el, nameof(C3dEllipse.Centre), k, k == 0 ? el.Centre.U : el.Centre.V);
+        string ru = Dim(el, nameof(C3dEllipse.Radii), 0, el.Radii.U), rv = Dim(el, nameof(C3dEllipse.Radii), 1, el.Radii.V);
+        var pos = new string[3];
+        pos[n] = Dim(s, nameof(C3dSheet.Offset), 0, s.Offset);
+        pos[u] = Centre(0);
+        pos[v] = Centre(1);
+        string centre = string.Join(",", pos);
+        var eu = C3dBindings.GetExpr(el, nameof(C3dEllipse.Radii), 0);
+        var ev = C3dBindings.GetExpr(el, nameof(C3dEllipse.Radii), 1);
+        bool equal = eu is null && ev is null ? el.Radii.U == el.Radii.V : ru == rv;
+        if (equal)
+        {
+            steps.Add(new("CreateCircle", P(("CenterPosition", centre), ("Axis", AxisName((C3dAxis)n)), ("Radius", ru), ("NumberOfSegments", "0"))));
+            return true;
+        }
+        if (s.Plane != C3dPlane.XY || el.Radii.U < el.Radii.V)
+        {
+            _r.Add(HznRefusalKind.CreationStep, "ellipse",
+                   "Hertzon's ellipse has its major radius along x on Axis Z; this one is on another plane, or its larger radius is along v", label);
+            return false;
+        }
+        string ratio;
+        if (eu is null && ev is null) ratio = HznExpressionWriter.Digits((double)el.Radii.V / el.Radii.U);
+        else if (rv.StartsWith($"({ru})*(", StringComparison.Ordinal) && rv.EndsWith(')')) ratio = rv[$"({ru})*(".Length..^1];   // as the reader made it
+        else ratio = $"({rv})/({ru})";
+        steps.Add(new("CreateEllipse", P(("CenterPosition", centre), ("Axis", "Z"), ("MajorRadius", ru), ("Ratio", ratio))));
         return true;
     }
 

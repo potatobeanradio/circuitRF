@@ -285,6 +285,20 @@ internal sealed partial class HznTranslator
         for (int k = 0; k < dims.Length; k++) Put(owner, property, k, dims[k]);
     }
 
+    /// <summary>brief-hzn-13 — a polyline's offset and outline into a sheet or prism: the outline sized first (every point a number,
+    /// the literal's or 0 until the document resolves), then each component that is an expression bound in place.</summary>
+    private void PutOutline(C3dObject owner, string offsetProperty, string outlineProperty, PolyInfo q)
+    {
+        Put(owner, offsetProperty, 0, q.Offset);
+        var spec = C3dBindings.SpecOf(owner.GetType(), outlineProperty)!;
+        var list = (List<C3dPoint2>)spec.Info.GetValue(owner)!;
+        list.Clear();
+        list.AddRange(q.Outline.Select(d => new C3dPoint2(d[0].Dbu, d[1].Dbu)));
+        for (int e = 0; e < q.Outline.Count; e++)
+            for (int k = 0; k < 2; k++)
+                if (!q.Outline[e][k].IsLiteral) C3dBindings.SetExpr(owner, spec.ElementAt(e), k, new C3dExpr(q.Outline[e][k].Text!, _siteUnit));
+    }
+
     /// <summary>A value that must be a plain number (a segment count, a flag): evaluated, never an expression.</summary>
     private double? Plain(string? source, string user)
     {
@@ -544,6 +558,7 @@ internal sealed partial class HznTranslator
             case "CreateSphere": return CreateSphere(st, p, user);
             case "CreateRectangle": return CreateRectangle(st, p, user);
             case "CreateCircle": return CreateCircle(st, p, user);
+            case "CreateEllipse": return CreateEllipse(st, p, user);
             case "CreatePolyline": return CreatePolyline(st, p, user);
             case "SweepAlongVector": return Sweep(st, p, user);
             case "Subtract" or "Unite" or "Intersect": return Boolean(st, o, p, kind, user);
@@ -563,7 +578,7 @@ internal sealed partial class HznTranslator
             case "CreateRegion":
                 _r.Add(HznRefusalKind.CreationStep, "CreateRegion", "a region that is not the object's only step is not translated", name);
                 return false;
-            case "CreateCone" or "CreateTorus" or "CreateHelix" or "CreateSpiral" or "CreateEllipse" or "CreateRegularPolygon"
+            case "CreateCone" or "CreateTorus" or "CreateHelix" or "CreateSpiral" or "CreateRegularPolygon"
                 or "CreateRegularPolyhedron":
                 _r.Add(HznRefusalKind.CreationStep, kind, "circuitRF has no primitive that states it exactly", name);
                 return false;
@@ -708,8 +723,10 @@ internal sealed partial class HznTranslator
     };
 
     private sealed record RectInfo(C3dAxis Normal, Dim[] Pos, Dim[] Min2, Dim[] Size2);
-    private sealed record CircleInfo(C3dAxis Normal, Dim[] Centre, Dim Radius);
-    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, long Offset, List<C3dPoint2> Outline);
+    /// <summary>A circle, or (brief-hzn-13) an ellipse when <paramref name="RadiusV"/> is set: its second radius, along the plane's v.</summary>
+    private sealed record CircleInfo(C3dAxis Normal, Dim[] Centre, Dim Radius, Dim? RadiusV = null);
+    /// <summary>A polyline in an axis plane: its offset and each point's (u, v), each component a number or an expression (brief-hzn-13).</summary>
+    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, Dim Offset, List<Dim[]> Outline);
 
     private object? _pendingInfo;
 
@@ -751,6 +768,34 @@ internal sealed partial class HznTranslator
         return true;
     }
 
+    /// <summary>brief-hzn-13 R-hzn13-3 — an ellipse: its major radius along x (established black-box: a 2 × 1 bounding box from
+    /// MajorRadius 2 and Ratio 0.5 on Axis Z), its minor radius MajorRadius × Ratio. On Axis X or Y the major axis's direction is not
+    /// established, so it is refused rather than guessed.</summary>
+    private bool CreateEllipse(State st, Dictionary<string, string> p, string user)
+    {
+        if (!NeedShape(st, user)) return false;
+        if (AxisOf(p.GetValueOrDefault("Axis")) is not C3dAxis.Z)
+        {
+            _r.Add(HznRefusalKind.CreationStep, "CreateEllipse off Axis Z",
+                   $"its axis is '{p.GetValueOrDefault("Axis")}'; which way the major radius lies is known only for Axis Z (along x)", user.Split(' ')[0]);
+            return false;
+        }
+        var centre = Triple(p.GetValueOrDefault("CenterPosition"), user);
+        var major = Len(p.GetValueOrDefault("MajorRadius"), user);
+        if (centre is null || major is null) return false;
+        if (p.GetValueOrDefault("Ratio") is not { } ratioText) { _r.Add(HznRefusalKind.Setting, "missing property", $"{user} Ratio is not stated", DesignName); return false; }
+        var ratio = _expr.Translate(ratioText, user);
+        if (ratio is null) return false;
+        UseProjectRefs(ratio);
+        Dim minor;
+        if (major.IsLiteral && ratio.LiteralSi is { } rs && !ratio.Bearing)
+            minor = new Dim(null, (long)Math.Round(major.Dbu * rs, MidpointRounding.AwayFromZero), true);
+        else minor = new Dim($"({TextOf(major)})*({ratio.Text})", 0, major.Bearing);
+        st.Pending = Pend.Circle;
+        _pendingInfo = new CircleInfo(C3dAxis.Z, centre, major, minor);
+        return true;
+    }
+
     private bool CreatePolyline(State st, Dictionary<string, string> p, string user)
     {
         if (!NeedShape(st, user)) return false;
@@ -774,26 +819,25 @@ internal sealed partial class HznTranslator
         }
         if (!ok) return false;
 
+        // brief-hzn-13 R-hzn13-3 — each component keeps its expression (Len): the in-plane ones go to the outline's points, the
+        // normal one to the offset. The plane test below runs on the EVALUATED points.
         var pts = new List<double[]>();
+        var dims = new List<Dim[]>();
         foreach (string text in (p.GetValueOrDefault("Points") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
         {
             var comps = HznExpressionTranslator.SplitTopLevel(text, ',');
             if (comps.Count != 3) { _r.Add(HznRefusalKind.Expression, "polyline point", $"'{text}' is not three values", user); return false; }
             var m = new double[3];
+            var d = new Dim[3];
             for (int i = 0; i < 3; i++)
             {
-                var e = _expr.Translate(comps[i], user);
-                if (e is null) return false;
-                if (e.Refs.Count > 0)
-                {
-                    _r.Add(HznRefusalKind.Expression, "polyline outline built from named dimensions",
-                           $"'{comps[i]}' uses {string.Join(", ", e.Refs)}; a .c3d sheet or prism outline holds numbers, not expressions, so it could not follow the variable", name);
-                    return false;
-                }
-                if (EvalMetres(e, user) is not { } metres) return false;
-                m[i] = metres;
+                if (Len(comps[i], user) is not { } dim) return false;
+                double metres = Metres(dim);
+                if (double.IsNaN(metres)) return false;
+                (d[i], m[i]) = (dim, metres);
             }
             pts.Add(m);
+            dims.Add(d);
         }
         if (pts.Count < 3) { _r.Add(HznRefusalKind.CreationStep, "CreatePolyline", "it has fewer than three points", name); return false; }
         long Dbu(double metres) => (long)Math.Round(metres * 1e6 * HznToC3d.DbuPerMicron, MidpointRounding.AwayFromZero);
@@ -807,13 +851,17 @@ internal sealed partial class HznTranslator
         }
         var normal = axes[0];
         var (plane, ui, vi) = PlaneOf(normal);
-        var outline = pts.Select(q => new C3dPoint2(Dbu(q[ui]), Dbu(q[vi]))).ToList();
+        int ni = (int)normal;
+        var offset = dims[0][ni];
+        if (dims.Any(q => TextOf(q[ni]) != TextOf(offset)))
+            _notes.Add($"{name}: its points spell their {normal} coordinate differently ({string.Join(", ", dims.Select(q => TextOf(q[ni])).Distinct().Take(4).Select(t => $"'{t}'"))}), " +
+                       $"which all evaluate to the plane it lies in; the sheet's offset is the first point's, '{TextOf(offset)}'.");
         st.Pending = Pend.Poly;
-        _pendingInfo = new PolyInfo(plane, normal, Dbu(pts[0][(int)normal]), outline);
+        _pendingInfo = new PolyInfo(plane, normal, offset, [.. dims.Select(q => new[] { q[ui], q[vi] })]);
         return true;
     }
 
-    /// <summary>A pending 2D shape that nothing swept becomes what it is: a rectangle or polyline a sheet; a circle is refused.</summary>
+    /// <summary>A pending 2D shape that nothing swept becomes what it is: a rectangle, polyline, circle or ellipse a sheet.</summary>
     private bool FinalisePending(State st, string name)
     {
         switch (st.Pending)
@@ -834,14 +882,23 @@ internal sealed partial class HznTranslator
             case Pend.Poly:
             {
                 var q = (PolyInfo)_pendingInfo!;
-                st.Root = new C3dSheet { Plane = q.Plane, Offset = q.Offset, Outline = q.Outline };
+                var sheet = new C3dSheet { Plane = q.Plane };
+                PutOutline(sheet, nameof(C3dSheet.Offset), nameof(C3dSheet.Outline), q);
+                st.Root = sheet;
                 break;
             }
             default:
-                _r.Add(HznRefusalKind.CreationStep, "CreateCircle", "a circular sheet has no .c3d equivalent; a circle swept along its axis is a cylinder", name);
-                st.Pending = Pend.None;
-                _pendingInfo = null;
-                return false;
+            {
+                // brief-hzn-13 R-hzn13-2 — an unswept circle or ellipse is an Ellipse sheet, its centre and radii kept as expressions.
+                var c = (CircleInfo)_pendingInfo!;
+                var (plane, u, v) = PlaneOf(c.Normal);
+                var sheet = new C3dSheet { Plane = plane, Ellipse = new C3dEllipse() };
+                Put(sheet, nameof(C3dSheet.Offset), 0, c.Centre[(int)c.Normal]);
+                PutAll(sheet.Ellipse, nameof(C3dEllipse.Centre), [c.Centre[u], c.Centre[v]]);
+                PutAll(sheet.Ellipse, nameof(C3dEllipse.Radii), [c.Radius, c.RadiusV ?? c.Radius]);
+                st.Root = sheet;
+                break;
+            }
         }
         st.Pending = Pend.None;
         _pendingInfo = null;
@@ -892,13 +949,21 @@ internal sealed partial class HznTranslator
             case Pend.Circle:
             {
                 var c = (CircleInfo)_pendingInfo!;
+                if (c.RadiusV is not null)
+                {
+                    _r.Add(HznRefusalKind.Operation, "SweepAlongVector of an ellipse", "an elliptic cylinder has no .c3d primitive", name);
+                    st.Pending = Pend.None;
+                    _pendingInfo = null;
+                    return false;
+                }
                 st.Root = Cylinder(c.Centre, c.Normal, c.Radius, h);
                 break;
             }
             default:
             {
                 var q = (PolyInfo)_pendingInfo!;
-                var prism = new C3dPrism { Plane = q.Plane, Offset = q.Offset, Outline = q.Outline };
+                var prism = new C3dPrism { Plane = q.Plane };
+                PutOutline(prism, nameof(C3dPrism.Offset), nameof(C3dPrism.Outline), q);
                 Put(prism, nameof(C3dPrism.Height), 0, h);
                 st.Root = prism;
                 break;
